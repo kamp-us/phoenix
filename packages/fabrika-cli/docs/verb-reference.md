@@ -381,19 +381,21 @@ Four behaviours are worth knowing:
   comment a skill already carries, so the set cannot rot while the guards move.
 - **The enumerated file set is the file set, and GitHub's `changed_files` never refuses one.**
   `review scope`, `governance scope`, `governance guards` and `governance sweep` take the set from
-  `readLocalFileSet`'s local three-dot read; `ship gate`, `ship floor` and `heal-ci diagnose` take it
-  from `platformFileSet` over `pulls/<n>/files`, which is the same report for callers that must run
+  `readLocalFileSet`'s local three-dot read; `ship scope`, `ship cp-approval`, `ship gate`,
+  `ship floor`, `ship release` and `heal-ci diagnose` take it from `platformFileSet` over
+  `pulls/<n>/files`, which is the same report for callers that must run
   without a fetch — the merge gate's common path reads no git at all, and `heal-ci sweep` loops its
   chain over every open PR. Either way a count disagreement prints as a line. GitHub computes
   `changed_files` against a base it cached at the last push, and nothing a caller can do invalidates
   the cache, so refusing on it stranded review rounds and then merges with no route out
   ([#9144](https://github.com/kamp-us/phoenix/issues/9144#issuecomment-5687540528),
-  [#9322](https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377)). What still
-  refuses is an **empty** read — `13` in `review scope`, `7` in the other six — because a derivation
+  [#9322](https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377)). No verb refuses
+  on that count any longer. What still
+  refuses is an **empty** read — `13` in `review scope`, `7` in the other nine — because a derivation
   over no files prints as a clean answer otherwise. So does a read short of a second enumeration of
   the *same range*, where a verb has one to compare: `governance scope`'s range mode, and
   `governance guards`' diff body against its status list. That is git against git; GitHub's count is
-  not. The three `platformFileSet` callers refuse on one more fact of their own: a list arriving at
+  not. The six `platformFileSet` callers refuse on one more fact of their own: a list arriving at
   the endpoint's 3000-file ceiling (`PULL_FILES_CAP`) is `13`, because GitHub stops serving files
   there and ends the Link chain as a complete read ends, so the pagination proof passes over a list
   it already cut short.
@@ -1097,8 +1099,8 @@ record it. Contract:
 
 | Verb | Answers |
 |---|---|
-| `ship scope` | head, lifecycle state, linked issue, artifact classes with their required namespaces, and the three-state §CP classification — refusing `33` before any of it when the checkout it runs in is the repository's main working tree, so a shipper that never got the worktree its spawn asked for stops instead of reading a driver's checkout whose branch moves mid-drive |
-| `ship cp-approval` | the ADR 0175 cardinality discharge — `discharge` / `stop` / `n/a`, from head-bound signals only |
+| `ship scope` | head, lifecycle state, linked issue, artifact classes with their required namespaces, and the three-state §CP classification, partitioned over the enumerated changed-file list — refusing `33` before any of it when the checkout it runs in is the repository's main working tree, so a shipper that never got the worktree its spawn asked for stops instead of reading a driver's checkout whose branch moves mid-drive |
+| `ship cp-approval` | the ADR 0175 cardinality discharge — `discharge` / `stop` / `n/a`, from head-bound signals only, over the enumerated changed-file list |
 | `ship gate` | the verdict conjunction over every required namespace |
 | `ship floor` | whether a governance-root diff carries its head-bound `governance` verdict |
 | `ship checks` | the head CI rollup, with the running-vs-wedged split, the zero-checkset facts, and the gate-coverage floor under `green` |
@@ -1111,10 +1113,12 @@ record it. Contract:
 | `ship disarm` | the four-site merge-intent lifecycle (ADR 0198), read-back-verified |
 | `ship nudge` | the at-most-once dropped-trigger remedy, precondition re-derived here |
 | `ship note` | the durable stop-path comment, leak-scanned and read back |
-| `ship release` | dark-ship detection and the `status:awaiting-release` label |
+| `ship release` | dark-ship detection over the enumerated changed-file list and the diff, and the `status:awaiting-release` label |
 
 **Exit codes.** The shared table, plus `12` the live head moved past the inspected `--sha` · `13` a
-read completed and its scope is provably incomplete · `16` proven not in the state this write acts
+read completed and its scope is provably incomplete — a changed-file list short of the pull-request
+record's own `changed_files` is not that proof in any verb here, and a list at GitHub's 3000-file
+ceiling is · `16` proven not in the state this write acts
 on, nothing mutated · `17` the nudge's close landed and its reopen is unconfirmed — the PR may be
 left closed · `18` a governance-root diff has no head-bound `governance` PASS · `19` the repository
 permits no merge method at all · `23` a label this run would POST is absent from the taxonomy ·

@@ -12,6 +12,19 @@
  * The write is also taxonomy-guarded like every other board-label writer: GitHub's
  * label POST creates what it cannot find, so on a repo that never bootstrapped its taxonomy an
  * unguarded write mints `status:awaiting-release` with a random colour and no description.
+ *
+ * **The flag scan runs over the enumerated file list, not over GitHub's `changed_files`.** A list
+ * short of that declared count used to refuse at `13`, and the count is the stale side: GitHub
+ * computes it against a base cached at the PR's last push, which nothing on the caller's side can
+ * invalidate, so the refusal blocked the scan with no act available to clear it.
+ * {@link platformFileSet} owns that argument; the disagreement leaves as a `scanned` line.
+ *
+ * **What survives is an empty list and the endpoint's own ceiling.** A zero would answer `n/a` over
+ * a diff nobody read, which is the dark ship this verb exists to catch, so it refuses at `7`. And
+ * `pulls/<n>/files` serves at most 3000 files (`PULL_FILES_CAP`) and ends its Link chain normally
+ * there, so a flag declaration could sit in the part the platform never served — that stays `13`.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -19,6 +32,7 @@ import {addLabels, getIssue, listLabels} from "../io/issues.ts";
 import {getPullDiff, listPullFiles} from "../io/pulls.ts";
 import {AWAITING_RELEASE} from "../labels.ts";
 import {linkedIssueOf} from "../review/classes.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	INCOMPLETE_SCAN,
@@ -26,6 +40,7 @@ import {
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
+	ZERO_SCOPE,
 } from "./codes.ts";
 import {detect, FLAG_REGISTRY} from "./dark-ship.ts";
 import {readFileAtRef} from "./github.ts";
@@ -61,17 +76,40 @@ export const runRelease = (
 		if (target._tag === "Refused") return target.outcome;
 		const pull = target.pull;
 
-		const files = yield* listPullFiles(repo, pr);
-		if (files._tag === "Failure") {
-			return refuse(PRECONDITION_UNKNOWN, unreadable("the changed-file list", files.reason));
+		const listed = platformFileSet(
+			VERB,
+			`#${pr}`,
+			pull.changedFiles,
+			yield* listPullFiles(repo, pr),
+		);
+		if (listed._tag === "Unreadable") {
+			return refuse(PRECONDITION_UNKNOWN, unreadable("the changed-file list", listed.reason));
 		}
+		const files = listed.set.files;
 		const diagnostics = [
-			scannedLine(VERB, files.value.length, "changed file", `${pull.changedFiles} declared`),
+			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared`),
+			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
 		];
-		if (files.value.length < pull.changedFiles) {
+		// Zero is the shortfall the enumeration alone establishes, and with the declared count no longer
+		// refusing it is the only seat left: an empty list carries no flag declaration to find, so `n/a`
+		// would be answered over a diff nobody read.
+		if (files.length === 0) {
+			return refuse(
+				ZERO_SCOPE,
+				`${VERB}: PR #${pr} has zero changed files — whether it carries a flag signal is unanswerable, and "n/a" would be a dark ship nobody queued.`,
+				diagnostics,
+			);
+		}
+		// The ceiling is the one truncation the enumeration cannot rule out on its own: the endpoint
+		// stops serving files there and ends its Link chain as a complete read ends.
+		if (listed.set.capped) {
 			return refuse(
 				INCOMPLETE_SCAN,
-				`${VERB}: received ${files.value.length} of ${pull.changedFiles} declared files — refusing to scan a truncated diff for flag signals.`,
+				platformCapLine(
+					VERB,
+					`#${pr}`,
+					"a flag declaration could sit in the part the platform never served.",
+				),
 				diagnostics,
 			);
 		}

@@ -37,7 +37,7 @@ Named because a spec that leaves the substrate open makes the implementer guess.
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `ship scope` | one PR's state, head, linked issue, class set with required namespaces, and §CP three-state classification | path partition against single-sourced maps, count-checked reads, and closing-keyword resolution are mechanical; what each state means for the run is judgment |
+| `ship scope` | one PR's state, head, linked issue, class set with required namespaces, and §CP three-state classification | path partition against single-sourced maps, exhaustion-checked reads, and closing-keyword resolution are mechanical; what each state means for the run is judgment |
 | `ship cp-approval` | the roster-cardinality discharge: `discharge` / `stop` / `n/a` from head-bound signals only | the case split and the head-binding are a transcription of a ruled table; nothing in it is judgment, and a verb that judged here shipped an unapproved control-plane PR |
 | `ship gate` | the verdict conjunction: every required namespace's in-force, current-head verdict, §CP advisory resolution and native-review fold included | in-force resolution (write-stamp ordering, staleness, authorization) is mechanical; what to do with `blocked` is judgment |
 | `ship floor` | whether the governance floor binds on this diff and is discharged at this head — `n/a` / `satisfied` / a refusal CI reds on | asking `ship gate` for the one `governance` namespace and seating the answer on an exit code is mechanical; nothing about the verdict itself is decided here |
@@ -214,7 +214,7 @@ authority.
 | `10` | a supplied classification value is off the closed vocabulary — an unknown `--require` namespace, a bad `--site` | `gate`, `disarm` |
 | `11` | a **precondition read failed** — nothing was proven and (for a write) nothing was written | all |
 | `12` | refused: the live head moved past the inspected `--sha` — a mutation formed over a tree that is no longer the PR | `enqueue`, `merge`, `nudge` |
-| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page. A changed-file list short of the pull-request record's own `changed_files` is **not** that proof: `gate` and `floor` report it and derive from the list they read. A list at GitHub's own 3000-file ceiling **is** that proof, because the Link header ends there as a complete read ends | `scope`, `cp-approval`, `gate`, `floor`, `checks`, `evidence`, `threads`, `nudge`, `release`, `reconcile` |
+| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page. A changed-file list short of the pull-request record's own `changed_files` is **not** that proof: no verb in this group refuses on it any more — `scope`, `cp-approval`, `gate`, `floor` and `release` report it and derive from the list they read. A list at GitHub's own 3000-file ceiling **is** that proof, because the Link header ends there as a complete read ends | `scope`, `cp-approval`, `gate`, `floor`, `checks`, `evidence`, `threads`, `nudge`, `release`, `reconcile` |
 | `14`, `15` | *(deliberate gaps — `review`'s ACL and append-only seats; no verb here performs either)* | — |
 | `16` | refused: the target is **proven not in the state this write acts on** — nothing was mutated | `resolve`, `enqueue`, `merge`, `nudge` |
 | `17` | refused: the nudge's close landed and the reopen is **unconfirmed — the PR may be left closed**; a human re-opens before anything else happens | `nudge` |
@@ -400,9 +400,9 @@ downstream verb consumes, and that verb guards itself.
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent (404); or it has zero changed files; or its non-empty diff derives zero required namespaces — a vacuous conjunction |
+| `7` | the PR is proven absent (404); or the enumerated changed-file list is empty; or its non-empty diff derives zero required namespaces — a vacuous conjunction |
 | `11` | the PR, its file list, the §CP boundary, or the worktree fact could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
-| `13` | the changed-file enumeration is provably short (received < declared count) |
+| `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a class, a namespace or a §CP path could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 | `33` | the verb is standing in the repository's main working tree — the driver's checkout, not the shipper's own worktree. Proven before anything is read, and only on a shipper's own run: `recipe unpark`'s in-process call is exempt |
 
 **Errors**
@@ -414,13 +414,18 @@ downstream verb consumes, and that verb guards itself.
 | `ship scope: #<n>'s diff derives zero review namespaces — a merge gated on nothing is vacuously green; the class map has a hole, file it.` | 7 | refusal |
 | `ship scope: cannot read <what> for #<n>: <reason> — the scope is UNKNOWN.` | 11 | refusal |
 | `ship scope: cannot read <base>'s landing path: <reason> — reporting it unknown; `ship merge` refuses on the same read rather than landing.` | 0 | notice |
-| `ship scope: file list shows <k> of <m> declared files — refusing to partition a truncated read.` | 13 | refusal |
+| `ship scope: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
+| `ship scope: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a class, a namespace or a §CP path could sit in the part the platform never served.` | 13 | refusal |
 | `ship scope: cannot tell whether this tree is a linked worktree: <reason> — whether this shipper stands in the driver's checkout is UNKNOWN, and nothing was read.` | 11 | refusal |
 | `ship scope: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. Nothing was read.` | 33 | refusal |
 
 **Scope** — on a shipper's own run, one `git rev-parse --git-dir --git-common-dir` in the checkout
-the verb runs in, then one PR's metadata and changed-file list, paginated and count-checked, plus one boundary read from
-the PR's base ref and one `governedRoots` read from that same checkout. The worktree read is first
+the verb runs in, then one PR's metadata and changed-file list, paginated to exhaustion, plus one boundary read from
+the PR's base ref and one `governedRoots` read from that same checkout. The partition is taken over
+that enumerated list rather than over the pull-request record's `changed_files`: GitHub computes the
+record's count against a base it cached at the PR's last push, so a disagreement is reported and
+never refused on. What still refuses is the list arriving at GitHub's own 3000-file ceiling, where
+the endpoint stops serving files and ends its Link chain normally. The worktree read is first
 and writes nothing; a boundary read that failed refuses `11` on the spot and reads no config. The
 partition is total over what was read.
 
@@ -541,9 +546,9 @@ approval scan.
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent (404) or closed |
+| `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — `classify` over no files answers `not-control-plane`, so a zero would render as a discharged boundary |
 | `11` | the CODEOWNERS boundary, the roster, the reviews, the marker comments, or the live head could not be read — the discharge is UNKNOWN, never `stop`, never `awaiting approval` |
-| `13` | the changed-file or comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page |
+| `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
 
@@ -552,14 +557,19 @@ approval scan.
 | `ship cp-approval: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship cp-approval: PR #<n> is closed — nothing to discharge.` | 7 | refusal |
 | `ship cp-approval: cannot read <what>: <reason> — the discharge is UNRESOLVED, not "awaiting approval".` | 11 | refusal |
-| `ship cp-approval: received <k> of <m> changed files — refusing the partial sweep.` | 13 | refusal |
+| `ship cp-approval: PR #<n> has zero changed files — whether it crosses the §CP boundary is unanswerable.` | 7 | refusal |
+| `ship cp-approval: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
+| `ship cp-approval: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a control-plane path could sit in the part the platform never served.` | 13 | refusal |
 | `ship cp-approval: received <k> of <m> comments — refusing the partial sweep.` | 13 | refusal |
 | `ship cp-approval: the review read never reached a terminal page — pagination is unexhausted, so an approval could sit on a page nobody read; refusing the partial sweep.` | 13 | refusal |
 
 **Scope** — the control-plane roster (the union over every named team and every individual owner), the PR's changed
-files and comments (paginated, count-checked) and its reviews (paginated to exhaustion), and the
-live head. `n/a` is a proven answer computed from the same `cp`
-derivation `ship scope` prints (one shared module).
+files (paginated to exhaustion) and comments (paginated, count-checked) and its reviews (paginated
+to exhaustion), and the live head. The boundary is classified over the enumerated file list rather
+than over the pull-request record's `changed_files`, whose count GitHub computes against a base it
+cached at the PR's last push — the disagreement is reported, an empty list refuses at `7`, and that
+list at GitHub's own 3000-file ceiling refuses at `13`. `n/a` is a proven answer computed from the
+same `cp` derivation `ship scope` prints (one shared module).
 
 **Examples**
 
@@ -2248,11 +2258,11 @@ only on the path that would post — `n/a` and `no-issue` read none.
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent (404) |
+| `7` | the PR is proven absent (404), or the enumerated changed-file list is empty — a zero carries no declaration to find, and `n/a` there would be a dark ship nobody queued |
 | `8` | the label write, or its confirming re-read, failed — UNKNOWN; the release queue may be missing a real dark ship, say so loudly |
 | `9` | the label write landed but the read-back does not show it |
 | `11` | the diff, body, flag registry, or linked issue could not be read — dark-ship-ness is UNKNOWN, never `n/a` |
-| `13` | the changed-file or diff enumeration is provably short — a partial diff must not read as "no flag declaration added" |
+| `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a flag declaration could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 | `23` | `status:awaiting-release` is absent from the repository's taxonomy — refused rather than let the POST mint it; guarded only on the path that would post, so `n/a` and `no-issue` read no taxonomy |
 
 **Errors**
@@ -2263,13 +2273,18 @@ only on the path that would post — `n/a` and `no-issue` read none.
 | `ship release: cannot read <what>: <reason> — whether this is a dark ship is UNKNOWN, never "n/a".` | 11 | refusal |
 | `ship release: label write failed: <reason> — a real dark ship may be missing from the release queue; escalate.` | 8 | refusal |
 | `ship release: label read-back does not show status:awaiting-release on #<issue> — inspect it.` | 9 | refusal |
-| `ship release: received <k> of <m> declared files — refusing to scan a truncated diff for flag signals.` | 13 | refusal |
+| `ship release: PR #<n> has zero changed files — whether it carries a flag signal is unanswerable, and "n/a" would be a dark ship nobody queued.` | 7 | refusal |
+| `ship release: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
+| `ship release: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a flag declaration could sit in the part the platform never served.` | 13 | refusal |
 | `ship release: label "status:awaiting-release" is absent from <repo>'s taxonomy — refusing to create it. A real dark ship is not queued; run `fabrika status bootstrap label-taxonomy` and re-run.` | 23 | refusal |
 | `ship release: cannot read <repo>'s label taxonomy: <reason> — nothing was written, and a real dark ship is not queued; escalate.` | 11 | refusal |
 
-**Scope** — one PR's diff and body, the flag registry file at the PR's base ref, the repository's
-label taxonomy (read only when a write is due), one linked issue's labels; one label write with
-read-back.
+**Scope** — one PR's changed-file list (paginated to exhaustion), its diff and body, the flag registry
+file at the PR's base ref, the repository's label taxonomy (read only when a write is due), one
+linked issue's labels; one label write with read-back. The scan runs over the enumerated list rather
+than over the pull-request record's `changed_files`, whose count GitHub computes against a base it
+cached at the PR's last push — the disagreement is reported, an empty list refuses at `7`, and that
+list at GitHub's own 3000-file ceiling refuses at `13`.
 
 **Examples**
 
