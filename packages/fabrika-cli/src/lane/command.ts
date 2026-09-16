@@ -252,7 +252,7 @@ const rationaleFlag = Flag.string("rationale").pipe(
 const classFlag = Flag.string("class").pipe(
 	Flag.atLeast(0),
 	Flag.withDescription(
-		`a lane class standing at this event (repeatable) — the fact a \`class:<name>\` transition arm routes on, one of: ${SHIP_CLASS_NAMES.join(", ")}. Pass every class the head raises, since the set replaces the standing one and an omitted class is kept rather than cleared; omit the flag entirely only before a head exists, where the lane document's seed is the whole answer. A spelling outside the set is refused, never routed as unclassed, and a standing class routing this event into a cell the head derives nothing for is refused at exit 67.`,
+		`a lane class standing at this event (repeatable) — the fact a \`class:<name>\` transition arm routes on, one of: ${SHIP_CLASS_NAMES.join(", ")}. Pass every class the head raises, because a non-empty set replaces the standing one outright and a class you leave off that set is cleared; omitting the flag entirely is the separate act that keeps what stands, and it belongs only before a head exists, where the lane document's seed is the whole answer. A spelling outside the set is refused, never routed as unclassed, and a standing class routing this event into a cell the head derives nothing for is refused at exit 67.`,
 	),
 );
 

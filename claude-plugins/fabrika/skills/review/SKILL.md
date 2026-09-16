@@ -545,9 +545,11 @@ The second line is a rendered PR: `ui` is one of `scope`'s own `class` rows ther
 same row that printed `routed\treview-ui`, so relaying every row routes the lane into `review:ui`
 exactly when the head earns it. `--class` is repeatable and carries §1's `class` rows and nothing
 else — relay what printed, never what you inferred. A spelling outside the closed set is refused at
-exit `38`. Relaying a short set is the failure this rule closes: the classes you omit are not
-cleared, they are *kept*, so a `ui` a reviewer never printed can route this `PASS` off a stamp the
-ticket booted with. `lane prove` refuses that at exit `67` with nothing appended, and the remedy on
+exit `38`. Relaying no set at all is the failure this rule closes: omit the flag and the
+standing classes are *kept*, so a `ui` a reviewer never printed can route this `PASS` off a stamp
+the ticket booted with. A non-empty set is the opposite act — it replaces the standing classes
+outright, so every class you leave off it is cleared, which is what makes `--class code` on a
+text-only head retire a stale `ui` rather than sit beside it. `lane prove` refuses that at exit `67` with nothing appended, and the remedy on
 the refusal is this line with the head's rows on it.
 
 Two guards are yours before you record, one per polarity. Record a `FAIL` **only when every derived

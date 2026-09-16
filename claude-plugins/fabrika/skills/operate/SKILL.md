@@ -1075,8 +1075,9 @@ transcribes, and it splits the relay in two.
   nothing here narrows it. No `classes` key means unclassed: record the bare `WIP`.
 - **A head exists** — every later event, the `WIP` after a cleared park included. Relay the classes
   that head raises: `ship scope` / `review scope` name them, one `class` row each, from one
-  derivation printed by both so they cannot disagree. Relay **every** row, because the set you pass
-  replaces the standing one and the rows you omit are kept rather than cleared.
+  derivation printed by both so they cannot disagree. Relay **every** row, because a non-empty set
+  replaces the standing one outright, so a row you leave off a passed set is cleared. Omitting the
+  flag entirely is the separate act that keeps what stands, and it belongs to the no-head arm above.
 
 **A stamp that outlives the head it no longer describes is the defect this closes.** A ticket
 stamped `class:ui` whose fix turns out text-only used to take the `PASS` out of `review` into
