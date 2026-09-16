@@ -251,8 +251,9 @@ armed — on `11` say mergeability is unknown.
 **The definite refusal splits by cause, and the two route the same way and charge differently.** On
 `16` — not mergeable for a reason about the head — route to repair and report `ROUTED-REPAIR`, which
 spends a repair round. On `21` — `mergeable_state: dirty`, the base moved under the branch — route
-to repair exactly the same way and report **`BASE-CONFLICTED`**, which records the machine's own lap
-and carries the `base-conflicted` cause off the routed table, so the retry budget is untouched.
+to repair exactly the same way and **attempt `BASE-CONFLICTED` first, always** — issue that
+`lane report` and read what it answers. The token records the machine's own lap and carries the
+`base-conflicted` cause off the routed table, so the retry budget is untouched.
 Nothing about the artifact was judged; a base that moved says nothing about the diff. Either way the
 PR needs a rebase before any of this runs again, and **you never rebase it** — this skill moves no
 branch.
@@ -265,14 +266,23 @@ its own words that the binding *dies on base movement that reaches* a reviewed p
 *is* base movement reaching one, so every verdict on the PR is void. The rebase gets a full
 re-review; `21` changes what the round costs, never whether it happens.
 
-**`coder.workflow.json` is copied into the lane at `lane open`, so the arm this token needs reaches
-only lanes opened after it landed.** An older lane's `ship` cell answers a lap by re-dispatching the
-shipper, which against a conflicted head refuses identically every round, so `lane report` refuses
-`BASE-CONFLICTED` there at exit `12` with the log untouched rather than let it loop. Fall back to
-`ROUTED-REPAIR`, which every lane's machine answers. That is the same pre-lap fallback
-`QUEUE-EJECTED`/`EJECTED` already carries, and the fallback spends a retry — which is the old
-behaviour, not a new failure. `reconcile`'s terminals are
-the run's terminals: `landed` → step 8. `ejected` → `disarm --site ejected`, note, route to
+**`ROUTED-REPAIR` is legal on a `21` only after `lane report` has refused `BASE-CONFLICTED` at exit
+`12`, and that refusal is one you read.** Where the lane's own machine holds no lap arm for this
+cause, answering the lap would re-dispatch the shipper against a head that is still conflicted, which
+refuses identically every round — so `lane report` refuses there at `12` with the log untouched
+rather than let it loop. Where you see that `12`, and only there, fall back to `ROUTED-REPAIR`, which
+every lane's machine answers. That is the same pre-lap fallback `QUEUE-EJECTED`/`EJECTED` already
+carries, and it spends a retry — the old behaviour, not a new failure.
+
+**A lane's age does not say which arms its machine carries, so the `12` is never one you predict.**
+`coder.workflow.json` is copied into the lane at `lane open`, so a lane opened before the arm landed
+started without it — and a lane is migrated onto the committed machine at any point after that, so an
+old lane may well hold the arm now. Reasoning from when the lane opened, or from when the arm landed,
+skips the one `lane report` that would have settled it, and the lane pays a repair round for a
+conflict nobody's code caused.
+
+**`reconcile`'s terminals are the run's terminals.** `landed` → step 8. `ejected` →
+`disarm --site ejected`, note, route to
 repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue on old verdicts. The
 routing is to repair and the *charge* is not: see the ejection row below for which token records it,
 and why an ejection costs the ticket no repair round.
@@ -327,7 +337,9 @@ exit `12` with the log untouched, which is the one case that token is right) ·
 artifact was judged, so it **spends no repair budget** — report it as `BASE-CONFLICTED`, which
 records the machine's own lap, carries the `base-conflicted` cause, and folds the lane to `build`
 rather than back to `ship`. The re-review is owed with the rebase; only the charge changes.
-`ROUTED-REPAIR` is the pre-lap fallback here, on the same exit `12` an old lane's machine gives) ·
+`ROUTED-REPAIR` is the pre-lap fallback here, and it spends a retry; where the lane's machine holds
+no lap arm for this cause, `BASE-CONFLICTED` is refused on exit `12` with the log untouched, which is
+the one case that fallback is right) ·
 **UNKNOWN — a read failed** (never rendered as any of the above). The three routings are three
 terminals, not one: repair is work this lane retries, heal-ci and review are waits it cannot, and
 a flat "routed" parks the lane on an approval nobody is waiting on. A refusal is not a back-off:
