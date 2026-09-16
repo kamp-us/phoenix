@@ -348,7 +348,8 @@ This group reaches no network: every read is the local tree. It gates no merge a
 
 Keep the governance corpus honest across a diff. The **governance namespace** is derived from a
 diff — named by a PR or by a `--base`/`--tip` range — and is required when any changed path sits
-under one of four harness roots (`.decisions/`, `.claude/`, `.github/`, `claude-plugins/`).
+under one of the harness roots the repo declares in `governedRoots` — by default the decision
+corpus, `.claude/`, `.github/`, `claude-plugins/` and `.fabrika.jsonc`.
 Contract:
 [`skills/governance/contract.md`](../../../claude-plugins/fabrika/skills/governance/contract.md).
 
@@ -368,7 +369,7 @@ completed and its scope is provably incomplete **against a second read of the sa
 `17` a standing verdict of the opposite polarity at this head, or over this range, would be retired
 and `--supersede` was not passed. `4` is a deliberate gap.
 
-Three behaviours are worth knowing:
+Four behaviours are worth knowing:
 
 - **This is not the §CP answer, and `governance scope` says so on stderr on every run.** fabrika's
   §CP model is CODEOWNERS-only, so a second answer here could contradict a merge-gating verdict.
@@ -383,8 +384,10 @@ Three behaviours are worth knowing:
   base it cached at the last push, and nothing a reviewer can do invalidates the cache, so refusing
   on it stranded review rounds with no route out
   ([#9144](https://github.com/kamp-us/phoenix/issues/9144#issuecomment-5687540528)). What still
-  refuses is git against git: an empty range, or a read short of a second enumeration of the same
-  range.
+  refuses is git against git. An empty local read refuses in all three — `13` in `review scope`, `7`
+  in both governance verbs — because a scan over no files prints as a clean answer otherwise. So does
+  a read short of a second enumeration of the same range, where a verb has one to compare:
+  `governance scope`'s range mode, and `governance guards`' diff body against its status list.
 
 ## The `graduate` group
 

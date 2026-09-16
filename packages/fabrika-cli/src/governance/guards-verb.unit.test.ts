@@ -323,6 +323,20 @@ describe("runGuards", () => {
 		);
 	});
 
+	it("refuses an empty local read on 7 rather than answering `no-anchors-in-reach` over nothing", async () => {
+		const out = await run([
+			[PULL, served(pull({changedFiles: 4}))],
+			...binding(),
+			[DIFF_AT(), okOut("")],
+			[STATUS_AT(), statuses()],
+		]);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			`governance guards: ${BASE}...${HEAD} changes no path — refusing to scan an empty file set.`,
+		);
+	});
+
 	it("scans the local set when GitHub declares more files, and prints the disagreement", async () => {
 		const out = await run([
 			[PULL, served(pull({changedFiles: 4}))],

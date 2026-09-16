@@ -14,7 +14,10 @@
  * not that proof and no longer refuses here — the file set is {@link readLocalFileSet}'s local read,
  * shared with `review scope` and `governance scope`, and the count disagreement leaves as a
  * diagnostic line. An under-reported hit list reads as a
- * checked-clean answer that was never checked. For the same reason each changed
+ * checked-clean answer that was never checked. A local read of **zero** files is refused at the
+ * group's zero-scope seat for that same reason: `inReach` is a denominator only over files that were
+ * read, so an empty set renders `no-anchors-in-reach` at exit 0 — a scan of nothing printing clean.
+ * For the same reason each changed
  * file is read at the merge base as well as at the head, so an anchor's paragraph is compared whole
  * instead of only where the diff happens to touch it — see `anchors.ts`. That "before" read
  * is a point read at one commit, not a range, so nothing recomputes a merge base for it the way a
@@ -37,7 +40,7 @@ import {
 	scanAnchorBlocks,
 	scanAnchors,
 } from "./anchors.ts";
-import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {bindGovernanceHead, boundLine} from "./head.ts";
 
 const VERB = "governance guards";
@@ -112,6 +115,18 @@ export const runGuards = (
 		}
 		if (listed.set.disagreement !== null) diagnostics.push(listed.set.disagreement);
 		const changed = listed.set.files;
+
+		// Zero files is the one shortfall a local read alone establishes, and it is the floor `inReach`
+		// cannot supply: with no files the scan below never runs, so `no-anchors-in-reach` would print at
+		// exit 0 over a read that looked at nothing. The PR's declared count refused its own zero above;
+		// this refuses the zero that count can no longer see, now that it is reported and not obeyed.
+		if (changed.length === 0) {
+			return refuse(
+				ZERO_SCOPE,
+				`${VERB}: ${head.mergeBase}...${head.sha} changes no path — refusing to scan an empty file set.`,
+				diagnostics,
+			);
+		}
 
 		// The completeness proof that survives is git against git: the served diff body against the
 		// status enumeration of the same range. A body short of that list really is truncated, and an
