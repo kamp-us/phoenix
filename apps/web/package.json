@@ -6,6 +6,7 @@
 	"exports": {
 		"./db/Drizzle": "./worker/db/Drizzle.ts",
 		"./features/search/normalize": "./worker/features/search/normalize.ts",
+		"./features/sozluk/turkish-alphabet": "./worker/features/sozluk/turkish-alphabet.ts",
 		"./features/search/fts-sync": "./worker/features/search/fts-sync.ts"
 	},
 	"scripts": {

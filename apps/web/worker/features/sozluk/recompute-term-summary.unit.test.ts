@@ -1,6 +1,7 @@
 /** `recomputeTermSummary` — the pure fold deriving a `term_record` row from live definitions. */
 import {describe, expect, it} from "vitest";
 import {recomputeTermSummary, type TermSummaryDefRow} from "./Sozluk.ts";
+import {storedFirstLetter} from "./turkish-alphabet.ts";
 
 const NOW = new Date("2024-06-01T12:00:00.000Z");
 
@@ -131,7 +132,38 @@ describe("recomputeTermSummary", () => {
 		expect(out.lastEditAt).toBe(NOW);
 	});
 
-	it("firstLetter is the lowercased first char of the slug", () => {
-		expect(recomputeTermSummary([], "Zebra", "Zebra", NOW).firstLetter).toBe("z");
+	// The column files a headword under its Turkish letter. It was read off the SLUG, which is
+	// the ASCII fold, so `ç ğ ı ö ş ü` could never appear in it at all (#9331).
+	it("firstLetter is the headword's Turkish letter, never the ASCII-folded slug's", () => {
+		expect(recomputeTermSummary([], "onbellek", "önbellek", NOW).firstLetter).toBe("ö");
+		expect(recomputeTermSummary([], "corba", "çorba", NOW).firstLetter).toBe("ç");
+		expect(recomputeTermSummary([], "isik", "ışık", NOW).firstLetter).toBe("ı");
+	});
+
+	// `I` is the dotless letter's capital and `İ` is `i`'s — the pair ASCII lowercasing gets
+	// backwards, and the reason the fold is a shared function rather than `.toLowerCase()`.
+	it("folds the Turkish capitals to their own letters, not to the ASCII ones", () => {
+		expect(recomputeTermSummary([], "isik", "IŞIK", NOW).firstLetter).toBe("ı");
+		expect(recomputeTermSummary([], "isci", "İŞÇİ", NOW).firstLetter).toBe("i");
+	});
+
+	// A headword outside the alphabet belongs to no letter page: `/sozluk/harf/q` and
+	// `/sozluk/harf/3` both resolve to no letter and send the reader home. `""` is that
+	// "no letter" in a NOT NULL column.
+	it("stores the empty string for a headword the alphabet does not index", () => {
+		expect(recomputeTermSummary([], "3d-baski", "3D baskı", NOW).firstLetter).toBe("");
+		expect(recomputeTermSummary([], "qwerty", "qwerty", NOW).firstLetter).toBe("");
+		expect(recomputeTermSummary([], "dash", "—em dash", NOW).firstLetter).toBe("");
+	});
+
+	// The seed derives the same column (`packages/preview-seed/src/fixtures.ts`) and its own
+	// test asserts against this same function, so the two producers agree by construction
+	// rather than by two hand-kept folds.
+	it("routes the derivation through the shared fold the other producers use", () => {
+		for (const title of ["önbellek", "ışık", "Zebra", "3D baskı"]) {
+			expect(recomputeTermSummary([], "slug", title, NOW).firstLetter).toBe(
+				storedFirstLetter(title),
+			);
+		}
 	});
 });

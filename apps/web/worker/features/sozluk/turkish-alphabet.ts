@@ -86,6 +86,21 @@ export function turkishLetterOf(headword: string): TurkishLetter | null {
 	return isTurkishLetter(folded) ? folded : null;
 }
 
+/**
+ * The value `term_record.first_letter` stores for one headword: its alphabet letter, or the
+ * empty string when the headword starts outside the alphabet.
+ *
+ * Every producer of that column goes through here — the service fold, the page shaper and the
+ * preview seed — because three hand-rolled folds is how the column came to disagree with itself
+ * (#9331). The empty string is the only honest encoding of "no letter" in a `NOT NULL` column:
+ * `/sozluk/harf/<x>` answers a non-alphabet route value with no page at all
+ * ({@link turkishLetterOf} is `null`, and `turkishLetterKeyRange` refuses it), so storing the raw
+ * character would name a page that does not exist.
+ */
+export function storedFirstLetter(headword: string): string {
+	return turkishLetterOf(headword) ?? "";
+}
+
 /** A letter's index in the alphabet, or `-1`. The collation key's origin. */
 export function turkishLetterIndex(letter: string): number {
 	return LETTERS.indexOf(letter);

@@ -28,6 +28,22 @@ describe("Sozluk.listTermSummariesConnection — the letter index (#9267)", () =
 		}),
 	);
 
+	// #9331 corrected `first_letter` and dropped `term_record_letter`, the index over it. The
+	// column stays a wire field; it is NOT what the page's membership is decided by. Filtering
+	// on it while the walk still orders by the collation key would split the two — one read from
+	// stored data, the other from a computed key — the disagreement `turkish-collation.ts` is
+	// built to make impossible.
+	it.effect("decides membership by the collation key, never by the stored first_letter", () =>
+		Effect.gen(function* () {
+			const {page, count} = yield* runList({sort: "alphabetical", letter: "c"});
+			// The page SELECTS the column — it is on the wire — so only what follows `where`
+			// answers what the page's membership is decided by.
+			const [, predicate = ""] = page.split(/\swhere\s/);
+			assert.notMatch(predicate, /first_letter/, "the page read does not filter on the column");
+			assert.notMatch(count, /first_letter/, "nor does the masked count");
+		}),
+	);
+
 	it.effect("carries the letter bound into the masked count, so hasNext cannot overstate", () =>
 		Effect.gen(function* () {
 			const {count} = yield* runList({sort: "alphabetical", letter: "c"});

@@ -14,6 +14,7 @@
  * IDs/slugs are stable string literals (not random) so a re-run upserts the same rows — the
  * idempotency contract lives here, in the fixed identity.
  */
+import {storedFirstLetter} from "@kampus/web/features/sozluk/turkish-alphabet";
 import type {seedSchema} from "./schema.ts";
 
 type TermSummaryInsert = typeof seedSchema.termRecord.$inferInsert;
@@ -76,8 +77,6 @@ const SEED_AUTHOR_NAME = "kampüs";
 const TOP_DEFINITION_ID = "seed-def-merhaba-1";
 const SEARCH_DEFINITION_ID = "seed-def-isik-1";
 
-const lowerFirstLetter = (title: string): string => (title[0] ?? "").toLocaleLowerCase("tr");
-
 const excerptOf = (body: string, max = 160): string =>
 	body.length <= max ? body : `${body.slice(0, max - 1)}…`;
 
@@ -104,7 +103,7 @@ export const buildFixtures = (now: Date = new Date("2026-01-01T00:00:00Z")): Fix
 	const letterTerms: ReadonlyArray<TermSummaryInsert> = LETTER_TERMS.map(([title, slug]) => ({
 		slug,
 		title,
-		firstLetter: lowerFirstLetter(title),
+		firstLetter: storedFirstLetter(title),
 		definitionCount: 1,
 		totalScore: 1,
 		excerpt: excerptOf(letterBody(title)),
@@ -133,7 +132,7 @@ export const buildFixtures = (now: Date = new Date("2026-01-01T00:00:00Z")): Fix
 		{
 			slug: SEED_TERM_SLUG,
 			title: termTitle,
-			firstLetter: lowerFirstLetter(termTitle),
+			firstLetter: storedFirstLetter(termTitle),
 			definitionCount: 2,
 			totalScore: 7,
 			excerpt: excerptOf(topBody),
@@ -145,7 +144,7 @@ export const buildFixtures = (now: Date = new Date("2026-01-01T00:00:00Z")): Fix
 		{
 			slug: SEARCH_TERM_SLUG,
 			title: SEARCH_TERM_TITLE,
-			firstLetter: lowerFirstLetter(SEARCH_TERM_TITLE),
+			firstLetter: storedFirstLetter(SEARCH_TERM_TITLE),
 			definitionCount: 1,
 			totalScore: 3,
 			excerpt: excerptOf(searchBody),
