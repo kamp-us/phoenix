@@ -231,6 +231,8 @@ const causeFlag = Flag.string("cause").pipe(
  * Validated against {@link SHIP_CLASS_NAMES} at the verb, not here: a bare string flag over a
  * routing table that falls through on a miss is a silent miss — `--class UI` would build a plain
  * lane and never ask for the rendered-visual verdict it owed.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
  */
 /**
  * Why a park was cleared, on the one verb a driver clears one from.
@@ -250,7 +252,7 @@ const rationaleFlag = Flag.string("rationale").pipe(
 const classFlag = Flag.string("class").pipe(
 	Flag.atLeast(0),
 	Flag.withDescription(
-		`a lane class standing at this event (repeatable) — the fact a \`class:<name>\` transition arm routes on, one of: ${SHIP_CLASS_NAMES.join(", ")}. Omit it and the classes already standing are left alone; a spelling outside the set is refused, never routed as unclassed.`,
+		`a lane class standing at this event (repeatable) — the fact a \`class:<name>\` transition arm routes on, one of: ${SHIP_CLASS_NAMES.join(", ")}. Pass every class the head raises, since the set replaces the standing one and an omitted class is kept rather than cleared; omit the flag entirely only before a head exists, where the lane document's seed is the whole answer. A spelling outside the set is refused, never routed as unclassed, and a standing class routing this event into a cell the head derives nothing for is refused at exit 67.`,
 	),
 );
 

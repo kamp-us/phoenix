@@ -52,12 +52,22 @@ the class the row printed; never derive one from your own reading of the diff. W
 a reviewer read `class code` as the whole bar, PASSed bare, and the merge gate refused on a
 `review-ui` namespace nobody had been told to route — a wasted ship dispatch and a park per PR.
 
+**Relay every `class` row §1 printed, not the routed ones alone** — the head's diff decides what a
+review round owes, and the set you relay *replaces* the one the lane stood on. That is the ruling
+the decision record *The head's diff decides the classes a review round owes* transcribes, and
+`operate`'s driver reads the same rule at the `WIP` end of the lane. A ticket stamped
+`class:ui` at triage keeps that class over every later event until an event names a different set,
+so a reviewer who relays only the routed rows leaves a stale `ui` standing on a text-only head and
+the `PASS` walks into a rendered round the diff cannot fill. `review scope` refuses an empty diff,
+so there is always at least one row to relay. `lane prove` refuses that stale route at exit `67`
+rather than taking it, naming this relay as the remedy.
+
 **On an epic child that arm does not exist, and the flag still goes on.** A child's region carries
 no `review:ui` cell ([`emit.ts`](../../../../packages/fabrika-cli/src/lane/emit.ts)), so on a child
 the class relays a fact rather than a route: `lane prove` hands `review-ui` to the epic's tail
-itself, whatever classes the event carries, and §6 says what you post in its place. Keep passing
-`--class ui` there anyway — it lands the `classes` field on the event line, and dropping it drops
-that record for nothing.
+itself, whatever classes the event carries, and §6 says what you post in its place. Keep relaying
+the head's rows there anyway — they land the `classes` field on the event line, and dropping them
+drops that record for nothing.
 
 `scope` also prints the head SHA, the issue reference (`fixes:<n>` / `part-of:<n>` / `-`), `self`,
 `harness`, and `governance\t<required|not-required>` — §6's trigger, and a different question from
@@ -524,17 +534,22 @@ has more than one — every epic run. The verb resolves a missing one only on a 
 otherwise refuses at exit `13` before it appends anything, so a report that omits it records
 nothing.
 
-**Add `--class ui` to that line only when §1 printed a `routed\treview-ui` row**, and never
-otherwise:
+**Carry one `--class` per `class` row §1 printed** — the whole derived set, so it replaces whatever
+the lane stood on:
 
 ```bash
-node <fabrika> lane report <lane> --root <root> --task <task> --token PASS --pr <pr-url> --class ui
+node <fabrika> lane report <lane> --root <root> --task <task> --token PASS --pr <pr-url> --class code
+node <fabrika> lane report <lane> --root <root> --task <task> --token PASS --pr <pr-url> --class code --class ui
 ```
 
-`--class` is repeatable and carries §1's `routed` rows and nothing else — relay what printed, never
-what you inferred. A spelling outside the closed set is refused at exit `38`, but the *right*
-spelling on a PR that raised no such row is not refused: it routes the lane into a rendered round its
-diff cannot fill.
+The second line is a rendered PR: `ui` is one of `scope`'s own `class` rows there, and it is the
+same row that printed `routed\treview-ui`, so relaying every row routes the lane into `review:ui`
+exactly when the head earns it. `--class` is repeatable and carries §1's `class` rows and nothing
+else — relay what printed, never what you inferred. A spelling outside the closed set is refused at
+exit `38`. Relaying a short set is the failure this rule closes: the classes you omit are not
+cleared, they are *kept*, so a `ui` a reviewer never printed can route this `PASS` off a stamp the
+ticket booted with. `lane prove` refuses that at exit `67` with nothing appended, and the remedy on
+the refusal is this line with the head's rows on it.
 
 Two guards are yours before you record, one per polarity. Record a `FAIL` **only when every derived
 namespace holds a verdict that still binds at the head** — a `FAIL` beside an in-flight namespace is

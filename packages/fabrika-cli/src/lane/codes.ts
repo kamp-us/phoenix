@@ -650,3 +650,21 @@ export const ROOT_NOT_OWNED = 65;
  * `build clear` from an account that may.
  */
 export const GRANT_UNAUTHORIZED = 66;
+
+/**
+ * The classes standing over a task route this event into a cell the head's own diff owes nothing —
+ * refused with nothing proven and nothing appended.
+ *
+ * A class is a fact about a ticket while no head exists and a fact about the head once one does,
+ * and the two come apart the moment a `class:ui` ticket's fix turns out text-only: the standing set
+ * still takes the `PASS` out of `review` into `review:ui`, the rendered gate refuses a diff with no
+ * rendered surface, and the lane parks on a person for a round no changed file asked for.
+ *
+ * Its own seat rather than {@link PROOF_IN_FLIGHT}'s, because the remedies are opposite. `23` says
+ * a namespace this head derives holds no binding verdict yet, and is answered by producing one.
+ * This says the head derives no such namespace at all, and is answered by relaying the classes the
+ * head raises — `review scope` prints them, one `class` row each.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
+ */
+export const ROUTE_UNDERIVED = 67;
