@@ -2,16 +2,8 @@
  * Route compatibility, checked over registry rows before any process exists — which is what
  * "refused before boot" means. Nothing here spawns, opens a queue, or touches `src/process/`.
  *
- * What "compatible" means is structural wherever it can be (ADR 0395, #8923). A row built by
- * `defineProgram` mints each port's kind from its own program id (`../authoring/port.ts`), so two
- * authored programs never share one and a nominal check could never wire them; what they do share
- * is the payload schema each port publishes beside its predicate (#8959). So when both ends publish
- * a schema the route is decided by `payloadFits` — the same relation, from the same module, that
- * decides whether a program fills a `Program.shape` arg (#8887), because a route and a shaped arg
- * are the two ways programs meet and must not promise different things. When either end publishes
- * none — a hand-written row such as `../ai-agent/ports/ports.ts`'s, which has a predicate and no
- * schema behind it — the kinds must be equal, exactly as before, so every row shipping today keeps
- * routing on the kind it was written against.
+ * A route compiles on payload fit, not on the port kind. `whyNotRouted` below states the rule in
+ * full; why it is that rule, and what it replaced, is ADR 0395 (#8923).
  */
 
 import {Effect, Option} from "effect";

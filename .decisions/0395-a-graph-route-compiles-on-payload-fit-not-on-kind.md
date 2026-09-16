@@ -99,6 +99,13 @@ comparison itself.
 - **A row publishing a schema on one end and not the other is decided nominally.** That is every
   two-way ai-agent kind today (`transcript-page`, `permission`, `mode`), whose tagged unions have no
   schema written yet. Nothing about their routing changes.
+- **This supersedes the nominal-route rule in
+  [`.patterns/tuval-authored-programs.md`](../.patterns/tuval-authored-programs.md).** That page
+  taught that two authored programs could not be routed to each other and prescribed a plain
+  registry row hand-declaring the authored program's kind as the way round it. Both are retired
+  here; the page states this rule instead. The kind-matching sentences in
+  [`.patterns/tuval-program-row-effects.md`](../.patterns/tuval-program-row-effects.md) and
+  `apps/tuval/README.md` are narrowed to the three schema-less two-way kinds they still hold for.
 - **A hypothetical pair whose kinds agree while their schemas do not would now refuse.** No such
   pair exists in the tree — an ai-agent `PortEnd` publishes one schema that both of its ends carry —
   and `apps/tuval/src/ports/compile.unit.test.ts` holds the rule explicitly so the case is decided
