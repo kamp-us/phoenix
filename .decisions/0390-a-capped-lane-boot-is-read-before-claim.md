@@ -1,7 +1,7 @@
 ---
 id: 0390
 title: A capped lane boot is read before the claim, not queued
-status: accepted
+status: amended-in-part by [0398](0398-machine-local-config-layer.md)
 date: 2026-09-11
 tags: [lane, operate, concurrency]
 ---
