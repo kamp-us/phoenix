@@ -363,7 +363,8 @@ Contract:
 | `governance readout` | the digest-publishing protocol: compose, upsert, read back |
 
 **Exit codes.** The shared table, plus `12` the `--sha` given is not the PR's head · `13` a read
-completed and its scope is provably incomplete · `14` this diff derives no governance namespace ·
+completed and its scope is provably incomplete **against a second read of the same git range** ·
+`14` this diff derives no governance namespace ·
 `17` a standing verdict of the opposite polarity at this head, or over this range, would be retired
 and `--supersede` was not passed. `4` is a deliberate gap.
 
@@ -376,6 +377,14 @@ Three behaviours are worth knowing:
   a guard weakened in prose carrying no anchor is invisible to the scan by construction.
 - **The anchor inventory lives in the guarded file.** An anchor is the `<!-- anchor: NAME -->`
   comment a skill already carries, so the set cannot rot while the guards move.
+- **The local three-dot read is the file set, and GitHub's `changed_files` never refuses one.** All
+  three of `review scope`, `governance scope` and `governance guards` take the file set from
+  `readLocalFileSet` and print a count disagreement as a line. GitHub computes that count against a
+  base it cached at the last push, and nothing a reviewer can do invalidates the cache, so refusing
+  on it stranded review rounds with no route out
+  ([#9144](https://github.com/kamp-us/phoenix/issues/9144#issuecomment-5687540528)). What still
+  refuses is git against git: an empty range, or a read short of a second enumeration of the same
+  range.
 
 ## The `graduate` group
 
