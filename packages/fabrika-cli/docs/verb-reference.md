@@ -364,7 +364,8 @@ Contract:
 | `governance readout` | the digest-publishing protocol: compose, upsert, read back |
 
 **Exit codes.** The shared table, plus `12` the `--sha` given is not the PR's head · `13` a read
-completed and its scope is provably incomplete **against a second read of the same git range** ·
+completed and its scope is provably incomplete — in `governance scope`'s range mode and in
+`governance guards`, what proves it incomplete is **a second read of the same range** ·
 `14` this diff derives no governance namespace ·
 `17` a standing verdict of the opposite polarity at this head, or over this range, would be retired
 and `--supersede` was not passed. `4` is a deliberate gap.

@@ -9,11 +9,7 @@ const RANGE = {base: "aaaaaaa", tip: "bbbbbbb"};
 /** The spawner the shared read declares but a scripted reader never reaches. */
 const SEAMS = fakeSeams([]).layer;
 
-const run = (
-	declared: number,
-	read: () => Shell<Attempt<ReadonlyArray<string>>>,
-	// biome-ignore lint/suspicious/useAwait: the layer makes this Effect asynchronous to settle.
-) =>
+const run = (declared: number, read: () => Shell<Attempt<ReadonlyArray<string>>>) =>
 	Effect.runPromise(
 		Effect.provide(
 			readLocalFileSet("review scope", "#4321", RANGE, declared, read),

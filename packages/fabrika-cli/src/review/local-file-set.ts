@@ -22,7 +22,7 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/9144#issuecomment-5687540528
  */
 import {Effect} from "effect";
-import {type Attempt, type Shell} from "../io/git.ts";
+import type {Attempt, Shell} from "../io/git.ts";
 
 /** What the local read found, plus the disagreement line it owes the caller's diagnostics. */
 export interface LocalFileSet<A> {

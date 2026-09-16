@@ -118,8 +118,8 @@ export const runGuards = (
 
 		// Zero files is the one shortfall a local read alone establishes, and it is the floor `inReach`
 		// cannot supply: with no files the scan below never runs, so `no-anchors-in-reach` would print at
-		// exit 0 over a read that looked at nothing. The PR's declared count refused its own zero above;
-		// this refuses the zero that count can no longer see, now that it is reported and not obeyed.
+		// exit 0 over a read that looked at nothing. Nothing earlier in this verb refuses that zero any
+		// more, now that GitHub's declared count is reported and not obeyed, so this seat is the floor.
 		if (changed.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
@@ -141,8 +141,9 @@ export const runGuards = (
 		}
 
 		// Anchors are counted at the bound commit rather than off the diff: `inReach` is how many
-		// anchored invariants EXIST in the files this diff touches, which is the denominator that makes
-		// "I scanned nothing and found nothing" unrenderable as a pass.
+		// anchored invariants EXIST in the files this diff touches, which is a denominator only over the
+		// set that was read. On its own it is no floor, since an empty set renders `no-anchors-in-reach`
+		// at exit 0, and the zero-scope refusal above is what keeps a scan of nothing from printing clean.
 		const inTree: Array<{readonly path: string; readonly anchors: number}> = [];
 		const blockHits: AnchorHit[] = [];
 		let compared = 0;
