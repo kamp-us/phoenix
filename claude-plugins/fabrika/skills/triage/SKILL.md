@@ -252,7 +252,10 @@ routing before a head has graded a diff: `lane open` and `lane emit` read the `c
 and seed the lane document from it, and without it a rendered ticket builds its first round in a
 shell carrying none of the design law and reaches `build:ui` only after a `review-ui` FAIL. The
 vocabulary is closed — `code`, `doc`, `skill`, `ui` — and an off-set spelling refuses on `10` before
-any label is written. Most tickets need no `--class`: text is what the plain shells already serve.
+any label is written. The four labels are minted from that same set by `status bootstrap
+label-taxonomy`; on a board missing one the stamp refuses on `7` rather than letting the API create
+it, and running that bootstrap is the fix, never a run with the flag dropped. Most tickets need no
+`--class`: text is what the plain shells already serve.
 
 **Repeatable `--blocked-by <n>` writes the prerequisites as native graph edges** — the only triage
 route to them, and where an ordering belongs. Pass one per issue this one waits on
