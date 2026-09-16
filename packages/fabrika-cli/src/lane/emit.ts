@@ -32,7 +32,7 @@
  * already on disk.
  *
  * The class axis rides each child's own `classes`, off the `sub_issues` payload's labels: a classed
- * child seeds `context.<task>.classes` and takes the class-guarded arm, an unclassed one is the
+ * child seeds `context.<task>.classes` and takes the class-guarded arms, an unclassed one is the
  * bytes it always was ([`class-seed.ts`](class-seed.ts) carries why that seed matters). Same
  * fixed-at-emission rule — a class stamped after the emit reaches this machine only through an
  * event.
@@ -79,8 +79,9 @@ const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
  * The rendered-surface class and the guard spelling that routes on it — the same two strings the
  * committed coder template carries, so a child region and a single-issue lane read one grammar.
  *
- * A child carrying the class gets the `build:ui` construction cell and the guarded arms into it; a
- * child carrying none is emitted byte-for-byte as it was before this axis existed.
+ * A child carrying the class gets the `build:ui` construction cell and the guarded arms into it —
+ * the `queued` `WIP` and both FAIL arms; a child carrying none is emitted byte-for-byte as it was
+ * before this axis existed.
  *
  * **The rendered REVIEW cell is deliberately not emitted**, on the decision record that rules an
  * epic child's rendered review the tail's by construction. A child opens no pull request, so a
@@ -115,6 +116,26 @@ const lapArm = (
 const SHIP_LAP_ROUTES: Readonly<Record<string, string>> = {"base-conflicted": "build"};
 
 /**
+ * A child's repair arm: go round again while retries remain, else park on `human:budget-spent`, with
+ * a rendered child's round re-entering `build:ui` instead of `build`.
+ *
+ * The class arm is a leading ROUTE rather than the taken arm — `machine.ts` reads it as one because
+ * a budget pair follows it — so the guard that decides whether the round happens at all is still the
+ * retry budget. Written as a two-arm array with the class in the taken position, a spent rendered
+ * child would re-enter the builder forever rather than park, which is the constraint that left this
+ * arm unclassed when the seed first landed.
+ *
+ * An unclassed child emits the pair alone, byte-for-byte what it was before the class axis existed.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9147
+ */
+const repairArm = (ui: boolean): ReadonlyArray<Record<string, unknown>> => [
+	...(ui ? [{target: "build:ui", guard: UI_GUARD}] : []),
+	{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+	{target: "human:budget-spent"},
+];
+
+/**
  * One child's region — the local loop, namespaced to the child's task id.
  *
  * It ends at `landed`: the child's commits are on the epic's shared branch and nothing was pushed,
@@ -123,8 +144,8 @@ const SHIP_LAP_ROUTES: Readonly<Record<string, string>> = {"base-conflicted": "b
  *
  * `integrate` is the merge of the reviewed range into the epic branch, and it is a *state* so that a
  * collision between two children resolves inside the run: its `FAIL` — a textual conflict, or a
- * failed post-merge check, which is the semantic collision — re-enters `build` under the same
- * guarded-FAIL retry array `review` uses, and exhausts into `human:budget-spent` — a park with an
+ * failed post-merge check, which is the semantic collision — re-enters the construction cell under
+ * the same guarded-FAIL retry array `review` uses, and exhausts into `human:budget-spent` — a park with an
  * `UNBLOCKED` door back to the state it left, spent retries held. No route from it reaches a
  * merge queue, and none reaches `landed` without passing back through `review`: post-resolution
  * content is not what the range verdict judged, so the verdict is re-proven before the landing
@@ -157,9 +178,11 @@ const SHIP_LAP_ROUTES: Readonly<Record<string, string>> = {"base-conflicted": "b
  * A `ui`-classed child carries one more state — `build:ui` — and the guarded `queued.WIP` arm into
  * it, so its first construction pass runs in the rendered shell. Without that pair the class seed
  * reached an emitted child and turned nothing, the half of this axis a folded report named from the
- * other end. The template's `review:ui` cell has no counterpart here, for the reason
- * {@link UI_CLASS} carries; a `review` FAIL therefore retries in `build` on every child alike,
- * because a two-arm guarded array holds one guard and this one spends the repair budget.
+ * other end. Its repair rounds run there too: both FAIL arms are {@link repairArm}, which leads the
+ * retry pair with the class route, so a rendered child's every round is served by the rendered
+ * shell and a spent one still parks at `human:budget-spent`. The template's `review:ui` cell has no
+ * counterpart here, for the reason {@link UI_CLASS} carries — a child's rendered review is the
+ * tail's, and the class on these arms picks the BUILDER, never a reviewer.
  */
 const region = (
 	ns: string,
@@ -183,10 +206,7 @@ const region = (
 				on: {
 					[`${ns}.PASS`]: "integrate",
 					[`${ns}.BLOCKED`]: "blocked",
-					[`${ns}.FAIL`]: [
-						{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
-						{target: "human:budget-spent"},
-					],
+					[`${ns}.FAIL`]: repairArm(ui),
 				},
 			},
 			integrate: {
@@ -197,10 +217,7 @@ const region = (
 						{target: "human:replay-stall"},
 					],
 					[`${ns}.BLOCKED`]: "blocked",
-					[`${ns}.FAIL`]: [
-						{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
-						{target: "human:budget-spent"},
-					],
+					[`${ns}.FAIL`]: repairArm(ui),
 					...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
 				},
 			},

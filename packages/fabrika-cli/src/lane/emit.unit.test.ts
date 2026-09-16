@@ -954,6 +954,96 @@ describe("emitMachine — the class axis", () => {
 		expect(statesOf(lane, log).issue_4301?.type).toBe("integrate");
 	});
 
+	it("leads BOTH of the classed child's FAIL arms with the class route, budget pair behind it", () => {
+		const classed = regionOf(classedText(), "issue_4301") as {
+			states: Record<string, {on: Record<string, unknown>}>;
+		};
+		const arm = [
+			{target: "build:ui", guard: "class:ui"},
+			{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+			{target: "human:budget-spent"},
+		];
+
+		expect(classed.states.review?.on["ISSUE_4301.FAIL"]).toEqual(arm);
+		expect(classed.states.integrate?.on["ISSUE_4301.FAIL"]).toEqual(arm);
+	});
+
+	it("retries a classed child's review FAIL in build:ui, and its integrate FAIL there too", () => {
+		const lane = laneOf(classedText());
+		const reviewFailed = driveLog(lane, [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "FAIL"],
+		]);
+		const integrateFailed = driveLog(lane, [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+			["issue_4301", "FAIL"],
+		]);
+
+		expect(statesOf(lane, reviewFailed).issue_4301?.type).toBe("build:ui");
+		expect(statesOf(lane, integrateFailed).issue_4301?.type).toBe("build:ui");
+	});
+
+	// The constraint that left these arms unclassed when the seed landed: the class has to pick the
+	// cell without taking the budget's place, or a spent rendered child loops instead of parking.
+	it("parks the classed child at human:budget-spent once its retries are spent, on either arm", () => {
+		const lane = laneOf(classedText());
+		/** One spent round: the round's own verdict, then the repair's `DONE` back into review. */
+		const reviewRound: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "FAIL"],
+			["issue_4301", "DONE"],
+		];
+		const integrateRound: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "PASS"],
+			["issue_4301", "FAIL"],
+			["issue_4301", "DONE"],
+		];
+		const entered: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+		];
+		const spentAtReview = [
+			...entered,
+			...Array.from({length: RETRY_BUDGET}, () => reviewRound).flat(),
+			["issue_4301", "FAIL"] as const,
+		];
+		const spentAtIntegrate = [
+			...entered,
+			...Array.from({length: RETRY_BUDGET}, () => integrateRound).flat(),
+			["issue_4301", "PASS"] as const,
+			["issue_4301", "FAIL"] as const,
+		];
+
+		expect(statesOf(lane, driveLog(lane, spentAtReview)).issue_4301?.type).toBe(
+			"human:budget-spent",
+		);
+		expect(statesOf(lane, driveLog(lane, spentAtIntegrate)).issue_4301?.type).toBe(
+			"human:budget-spent",
+		);
+	});
+
+	it("leaves an UNCLASSED sibling's two FAIL arms the plain budget pair they always were", () => {
+		const plain = regionOf(classedText(), "issue_4302") as {
+			states: Record<string, {on: Record<string, unknown>}>;
+		};
+		const arm = [
+			{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+			{target: "human:budget-spent"},
+		];
+		const lane = laneOf(classedText());
+		const failed = driveLog(lane, [
+			["issue_4302", "WIP"],
+			["issue_4302", "DONE"],
+			["issue_4302", "FAIL"],
+		]);
+
+		expect(plain.states.review?.on["ISSUE_4302.FAIL"]).toEqual(arm);
+		expect(plain.states.integrate?.on["ISSUE_4302.FAIL"]).toEqual(arm);
+		expect(statesOf(lane, failed).issue_4302?.type).toBe("build");
+	});
+
 	it("still lands the classed child through integrate — the ui arm adds a shell, not a leg", () => {
 		const lane = laneOf(classedText());
 		const log = driveLog(lane, [

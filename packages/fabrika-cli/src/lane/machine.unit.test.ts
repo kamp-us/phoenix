@@ -950,3 +950,70 @@ describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing", (
 		if (classified._tag === "Novel") expect(classified.reason).toContain("head-behind-base");
 	});
 });
+
+/**
+ * A `class:<name>` arm LEADING a budget pair — the third shape of the class spelling, and the one
+ * that lets a rendered repair round re-enter the rendered cell without taking the budget's place.
+ *
+ * The rows that matter are the split: the class picks the target, the counter decides whether a
+ * target is taken at all. Written as the two-arm form with the class on top, a spent task would loop
+ * in the rendered cell forever instead of reaching the fallthrough.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9147
+ */
+describe("`class:<name>` leading a budget pair — a route, not the cell", () => {
+	const routed = (): Record<string, unknown> => {
+		const workflow = twoPhaseWorkflow();
+		regionStates(workflow, "task_a")["doing:ui"] = {
+			on: {"TASK_A.DONE": "checking", "TASK_A.BLOCKED": "blocked"},
+		};
+		stateNode(workflow, "task_a", "checking").on["TASK_A.FAIL"] = [
+			{target: "doing:ui", guard: "class:ui"},
+			{target: "doing", guard: "retriesRemaining", actions: "incrementRetries"},
+			{target: "tripped"},
+		];
+		return workflow;
+	};
+
+	it("routes a classed FAIL to the class's own cell, and spends the retry doing it", () => {
+		const {state} = drive(compiled(routed()), "task_a", ["DONE", "FAIL"], ["ui"]);
+
+		expect(state.type).toBe("doing:ui");
+		expect(state.retries).toBe(1);
+	});
+
+	it("leaves an unclassed FAIL on the budget arm's own target", () => {
+		expect(leaves(compiled(routed()), "task_a", ["DONE", "FAIL"])).toEqual(["checking", "doing"]);
+	});
+
+	it("falls through to the park when the budget is spent, however the class routes", () => {
+		const spent = ["DONE", "FAIL", "DONE", "FAIL", "DONE", "FAIL"];
+
+		expect(leaves(compiled(routed()), "task_a", spent, ["ui"])).toEqual([
+			"checking",
+			"doing:ui",
+			"checking",
+			"doing:ui",
+			"checking",
+			"tripped",
+		]);
+	});
+
+	it("refuses a leading class arm that names no target", () => {
+		const workflow = routed();
+		stateNode(workflow, "task_a", "checking").on["TASK_A.FAIL"] = [
+			{guard: "class:ui"},
+			{target: "doing", guard: "retriesRemaining", actions: "incrementRetries"},
+			{target: "tripped"},
+		];
+
+		expect(defectsOf(workflow)).toContain("routes nowhere");
+	});
+
+	it("keeps the two-arm class form the cell it always was, spending nothing", () => {
+		const {state} = drive(compiled(coderWorkflow()), "issue", ["WIP"], ["ui"]);
+
+		expect(state.type).toBe("build:ui");
+		expect(state.retries).toBe(0);
+	});
+});
