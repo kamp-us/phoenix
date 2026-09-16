@@ -139,7 +139,8 @@ signature — and you name where it came from rather than trusting your environm
 `--auth-secret-from <file>` reads the `BETTER_AUTH_SECRET` the preview worker deploys with out of an
 export of the **ci-credentials** stack's alchemy state, its one readable copy. That value is
 repo-wide, not per-stage: `infra/ci-credentials/github.ts` mints one of it and pushes it as a
-write-only Actions secret every stage's deploy is handed, so there is no preview-stage copy, the app
+write-only Actions secret handed to the deploy of every stage of an app whose worker binds it, so
+there is no preview-stage copy, the app
 stack holds only a `secret_text` binding that does not read back, and the export is taken from the
 ci-credentials state behind `$ALCHEMY_PASSWORD`. Without the flag the verb falls back to the
 ambient `$BETTER_AUTH_SECRET` and **refuses on `11` when that is empty or carries the `insecure_`

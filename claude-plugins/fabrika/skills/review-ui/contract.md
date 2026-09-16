@@ -206,7 +206,8 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   cookie signature verifies, and it is named rather than assumed: `--auth-secret-from <file>` reads
   it from an export of the **ci-credentials** stack's alchemy state, which is its one readable copy.
   That value is repo-wide rather than per-stage — `infra/ci-credentials/github.ts` mints one and
-  pushes it as a write-only Actions secret every stage's deploy is handed — so there is no
+  pushes it as a write-only Actions secret handed to the deploy of every stage of an app whose
+  worker binds it — so there is no
   preview-stage copy to export, and the app stack's deployed `secret_text` binding does not read
   back. Without the
   flag the ambient `$BETTER_AUTH_SECRET` stands in, and **a value that is empty or carries the
@@ -404,7 +405,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: <names>) — the named tier's render is UNKNOWN, never a seeded substitute.` | 11 | refusal |
 | `review-ui render: a tier-naming surface was requested but <the source> carries the insecure_ placeholder prefix — a cookie signed with it is one the preview worker answers as a visitor — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
 | `review-ui render: a tier-naming surface was requested but <the source> is empty — there is no key to sign the tier cookie with — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
-| `review-ui render: cannot read the deployed session-signing secret at <path>: <reason> — the named tier's render is UNKNOWN.` | 11 | refusal |
+| `review-ui render: cannot read the exported repo-wide session-signing secret at <path>: <reason> — the named tier's render is UNKNOWN.` | 11 | refusal |
 | `review-ui render: surface "<id>" at <viewport> did not render signed in (<reason>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
 | `review-ui render: surface "<id>" at <viewport> named tier <wanted> and rendered as <rendered> — the named tier's render is UNKNOWN, never another tier's.` | 11 | refusal |
 | `review-ui render: --flag "<token>" is not a <key>=<on\|off> pair (<reason>) — an operand nothing can force would shoot the default state under the forced name.` | 10 | refusal |

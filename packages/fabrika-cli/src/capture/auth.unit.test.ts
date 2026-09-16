@@ -76,7 +76,7 @@ describe("sessionCookies", () => {
 
 describe("classifyAuthSecret", () => {
 	const ambient = {_tag: "Ambient", name: AUTH_SECRET_ENV} as const;
-	const stage = {_tag: "StageState", path: "/run/preview-secret"} as const;
+	const exported = {_tag: "RepoWideExport", path: "/run/preview-secret"} as const;
 
 	it("reads the .env.example placeholder as unusable rather than as a signing key", () => {
 		expect(classifyAuthSecret(`${PLACEHOLDER_SECRET_PREFIX}f0fe1c42`, ambient)).toEqual({
@@ -87,23 +87,23 @@ describe("classifyAuthSecret", () => {
 
 	it("reads an absent or blank value as empty, not as a key of zero length", () => {
 		expect(classifyAuthSecret("", ambient)).toEqual({_tag: "Empty", source: ambient});
-		expect(classifyAuthSecret("   \n", stage)).toEqual({_tag: "Empty", source: stage});
+		expect(classifyAuthSecret("   \n", exported)).toEqual({_tag: "Empty", source: exported});
 	});
 
 	// A file export ends in a newline far more often than not, and a trailing byte in the key signs a
 	// cookie the worker rejects exactly as an outright wrong key does.
 	it("trims a file export's trailing newline off the key it hands back", () => {
-		expect(classifyAuthSecret(`${SECRET}\n`, stage)).toEqual({
+		expect(classifyAuthSecret(`${SECRET}\n`, exported)).toEqual({
 			_tag: "Usable",
 			value: SECRET,
-			source: stage,
+			source: exported,
 		});
 	});
 });
 
 describe("describeAuthSecretSource", () => {
-	it("names the stage export by its path and the fallback by its variable", () => {
-		expect(describeAuthSecretSource({_tag: "StageState", path: "/run/s"})).toContain("/run/s");
+	it("names the export by its path and the fallback by its variable", () => {
+		expect(describeAuthSecretSource({_tag: "RepoWideExport", path: "/run/s"})).toContain("/run/s");
 		expect(describeAuthSecretSource({_tag: "Ambient", name: AUTH_SECRET_ENV})).toContain(
 			AUTH_SECRET_ENV,
 		);
@@ -111,8 +111,8 @@ describe("describeAuthSecretSource", () => {
 });
 
 describe("readIdentity", () => {
-	const stage = {_tag: "StageState", path: "/run/preview-secret"} as const;
-	const usable = {_tag: "Usable", value: SECRET, source: stage} as const;
+	const exported = {_tag: "RepoWideExport", path: "/run/preview-secret"} as const;
+	const usable = {_tag: "Usable", value: SECRET, source: exported} as const;
 
 	it("names the unset tier token", () => {
 		expect(readIdentity({}, ["yazar"], usable)).toEqual({
@@ -141,11 +141,11 @@ describe("readIdentity", () => {
 	it("refuses an empty secret as unusable, and never as an unset variable name", () => {
 		const read = readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN}, ["yazar"], {
 			_tag: "Empty",
-			source: stage,
+			source: exported,
 		});
 		expect(read._tag).toBe("Unusable");
 		if (read._tag !== "Unusable") return;
-		expect(read.reason).toContain(stage.path);
+		expect(read.reason).toContain(exported.path);
 	});
 
 	it("reads the state-sourced secret through onto the identity it hands the signer", () => {

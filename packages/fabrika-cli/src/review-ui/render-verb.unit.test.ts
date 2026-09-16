@@ -181,7 +181,7 @@ describe("runRender", () => {
 
 	/**
 	 * The defect this closes: the seat's `.env` carries the example file's throwaway key, the
-	 * cookie signs cleanly, and the preview worker — deployed with the real per-stack secret —
+	 * cookie signs cleanly, and the preview worker — deployed with the real repo-wide secret —
 	 * answers it as a visitor. Two gate rounds read that as an unseeded preview, because a bad
 	 * signature and an absent session row are the same bare `null` from better-auth.
 	 */
@@ -201,7 +201,7 @@ describe("runRender", () => {
 		expect(said).toContain("--auth-secret-from");
 	});
 
-	it("signs with the exported deployed secret when --auth-secret-from names it", async () => {
+	it("signs with the exported repo-wide secret when --auth-secret-from names it", async () => {
 		const seen = new Map<string, readonly {name: string; value: string}[]>();
 		const {outcome} = await run(
 			happy(),

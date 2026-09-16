@@ -18,14 +18,14 @@
  * **The signing key is the one the deployed worker verifies against, and this module refuses to
  * guess at it.** That value is repo-wide, not per-stage: `infra/ci-credentials/github.ts` mints one
  * `BETTER_AUTH_SECRET` into the ci-credentials stack's alchemy state and pushes it as a write-only
- * Actions secret that `deploy.yml` passes into every stage's deploy, so the app stack holds only a
- * `secret_text` binding that does not read back and the one readable copy is that ci-credentials
- * state, behind `$ALCHEMY_PASSWORD` — so the caller names its source ({@link AuthSecretSource}) and
- * this module judges what came back
- * ({@link classifyAuthSecret}). An empty value and a `.env.example` placeholder are both
- * refusals here rather than a cookie the worker rejects at the shot, because the two look identical
- * from the far side: better-auth answers a bad signature and an absent session row with the same
- * bare `null`.
+ * Actions secret that `deploy.yml` passes into the deploy of every stage of an app whose worker
+ * binds it, so the app stack holds only a `secret_text` binding that does not read back and the one
+ * readable copy is that ci-credentials state, behind `$ALCHEMY_PASSWORD` — so the caller names its
+ * source ({@link AuthSecretSource}) and this module judges what came back
+ * ({@link classifyAuthSecret}). An empty value and a `.env.example` placeholder are both refusals
+ * here rather than a cookie the worker rejects at the shot, because the two look identical from the
+ * far side: better-auth answers a bad signature and an absent session row with the same bare
+ * `null`.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9288#issuecomment-5703250637
  */
@@ -87,17 +87,16 @@ export const PLACEHOLDER_SECRET_PREFIX = "insecure_";
  * opposite directions: a named export that is unreadable is an operator step not taken, and an
  * ambient value that carries the placeholder prefix is a seat quietly signing with a dev key.
  *
- * `StageState` names the file the operator exported the deployed value into; the value itself is
- * repo-wide, read out of the ci-credentials stack's alchemy state, so the tag names the export's
- * role in this run rather than a per-stage secret.
+ * `RepoWideExport` names the file an operator exported the one repo-wide `BETTER_AUTH_SECRET` into,
+ * taken from the ci-credentials stack's alchemy state, its one readable copy.
  */
 export type AuthSecretSource =
-	| {readonly _tag: "StageState"; readonly path: string}
+	| {readonly _tag: "RepoWideExport"; readonly path: string}
 	| {readonly _tag: "Ambient"; readonly name: string};
 
 export const describeAuthSecretSource = (source: AuthSecretSource): string =>
-	source._tag === "StageState"
-		? `the deployed session-signing secret at ${source.path}`
+	source._tag === "RepoWideExport"
+		? `the exported repo-wide session-signing secret at ${source.path}`
 		: `the ambient $${source.name}`;
 
 /**
