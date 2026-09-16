@@ -31,6 +31,11 @@
  * `../test-consumer/` is a fixture that emits exactly such a declaration, and
  * `public-surface.unit.test.ts` runs `tsc --declaration` over it.
  *
+ * **`HostHandlers` is here because R12.1's other half needs a name.** A program that answers an
+ * effect of its own — `defineProgram`'s `X` — supplies the handler for it by spreading the compiled
+ * row, and `HostHandlers<Msg, MyEffect, Failure, Services>` is the type that handler record is
+ * written against (#9294). Nothing else of the kernel's row types is on this door.
+ *
  * **The window half is its own door, `@kampus/tuval/window` (`./window.ts`).** Not because
  * `./view.ts` is unsafe — its value-import closure reaches no `node:` builtin, and
  * `window-closure.unit.test.ts` pins that — but because *this* barrel is not: it reaches
@@ -47,7 +52,7 @@
 
 export {ProcessId} from "../process/process.ts";
 export {STATUS_PORT, TITLE_PORT} from "../process/self-report.ts";
-export type {AnyProgram, InPort, OutPort, PortSchema} from "../registry/program.ts";
+export type {AnyProgram, HostHandlers, InPort, OutPort, PortSchema} from "../registry/program.ts";
 export {
 	type AnyArgRef,
 	type AnyArgRefs,

@@ -210,7 +210,7 @@ write instead of a relative path into `src/`. Four doors, and they are the whole
 
 | Subpath | What it carries |
 |---|---|
-| `@kampus/tuval/authoring` | `defineProgram`, `port`, `programArgs`, `Program`, the effect constructors (`spawn`, `send`, `ask`, `reply`, `emit`, `stop`), `testProgram`, and the types an authored `update` annotates itself with. `src/authoring/index.ts` says at length what is on it and what is deliberately not. |
+| `@kampus/tuval/authoring` | `defineProgram`, `port`, `programArgs`, `Program`, the effect constructors (`spawn`, `send`, `ask`, `reply`, `emit`, `stop`), `testProgram`, `HostHandlers`, and the types an authored `update` annotates itself with. `src/authoring/index.ts` says at length what is on it and what is deliberately not. |
 | `@kampus/tuval/ai-agent/ports` | The AI-agent port vocabulary — `PromptPayloadSchema`, `TurnResultSchema` and the rest of `src/ai-agent/ports/index.ts`. It stays its own door because its `boundary.unit.test.ts` holds it closed over `effect` plus the kernel's program row, and folding it into the authoring door would make one surface owe two stabilities. |
 | `@kampus/tuval/window` | The window half — `windowRenderer` and `WindowHost` for a `kind: module` window, and the `AuthoredWindow` / `WindowView` types the `window` field on an authored record is written against. Its own door because its closure is browser-safe and `./authoring`'s is not. |
 | `@kampus/tuval/sessions` | The shipped session rows a *config* fills a shaped arg with — `claudeSession`, `codexSession`, and the `WorkspaceId` / `ClientId` constructors a row's `scope` is built from. |
@@ -228,6 +228,51 @@ and its config hands the shaped arg a real row:
 ```ts
 import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval/sessions";
 ```
+
+### An effect of your own
+
+The six kernel effects are what every program gets for free. A program that has real work to do — a
+shell command, an HTTP call, a git worktree — names its own effect type and supplies the handler
+that runs it, which is R12.1 of #8716 and is reachable from an authored `update` as of #9294. Two
+halves, both written by the author: the type goes on `defineProgram` as its last type argument, and
+the handler goes onto the compiled row by spread. That handler is a `HostHandlers` handler, so it
+answers `Effect.Effect<ReadonlyArray<Msg>>` — its follow-up Msgs as a *list*, one entry or none,
+never a bare Msg.
+
+```ts
+type Run = {readonly type: "run"; readonly command: string};
+type Ran = {readonly type: "ran"; readonly output: string};
+
+const run = (command: string): Run => ({type: "run", command});
+const ran = (output: string): Ran => ({type: "ran", output});
+
+const update = {
+	go: (state: State): Answer<State, Run> => [state, [run("git status")]],
+	ran: (state: State, event: Ran): Answer<State, Run> => [{...state, output: event.output}, []],
+};
+
+const row = defineProgram<State, typeof ports, typeof update, Commands, unknown, Run>({
+	id: "runner",
+	ports,
+	init: (): State => ({output: null}),
+	update,
+});
+
+export const runner: AnyProgram = {
+	...row,
+	handlers: {
+		...row.handlers,
+		run: (cmd: Run) => Effect.map(shell(cmd.command), (output) => [ran(output)]),
+	},
+};
+```
+
+The type argument list is stated in full because `Run` appears only in a cell's *answer*, which is
+not a place inference can reach; a program naming no effect of its own writes none of it and keeps
+every default, so `Answer<State>` stays the six effects and a typo'd effect is still refused at
+compile. The handler comes from the spread and from nowhere else — `defineProgram` cannot see one
+added after it returns, so an effect the row has no handler for is skipped silently by the actor
+rather than refused at definition.
 
 The kernel is not on any of them: the compilers (`compilePorts`, `compileCommands`, `fillArgs`,
 `FIELD_COMPILERS`, `compileWindow`, …) stay reachable only by relative path from inside `src/`.
