@@ -5,24 +5,23 @@
  * lives in [`append-lock.unit.test.ts`](append-lock.unit.test.ts). What that tier cannot prove is
  * that two live processes launched against the same ledger actually interleave badly enough for
  * the guard to matter, and that when they do, the outcome stays coherent: every appended line
- * parses, every exit is one of the four legal seats (won / machine-refused / lock-refused /
- * state-unread), and an event that did not win never reaches the log.
+ * parses, every exit is one of the three legal seats (won / machine-refused / lock-refused), and an
+ * event that did not win never reaches the log.
  *
- * The fourth seat is the one a reader trips over, so it is written down here as well as beside the
- * assertion. A writer's first load runs before the lock on purpose, and on a fresh lane
- * `events.jsonl` does not exist yet, so `loadLane` reads a `NotFound` and then probes the path to
- * tell "absent" from "unreadable". Those are two instants. A winner that appends between them flips
- * the probe, and the loser reports `LANE_UNREADABLE` about a log that was genuinely absent when it
- * read. That is coherent, not a hole in the lock: the loser holds nothing, writes nothing, and asks
- * for the same retry `CONCURRENT_WRITE` asks for. The window is two adjacent syscalls wide, so a
- * plain loop will not produce it — it reds a CI job roughly once in a very large number of runs,
- * which is how it reached this file's expected set late.
+ * A fourth seat used to sit beside those, and its retirement is why the set here is narrower than
+ * the one the first ruling below widened. A writer's first load runs before the lock on purpose,
+ * and on a fresh lane `events.jsonl` does not exist yet, so `loadLane` read a `NotFound` and then
+ * probed the path to tell "absent" from "unreadable" — two instants. A winner appending in between flipped the
+ * probe, and the loser reported `LANE_UNREADABLE` about a log that was genuinely absent when it
+ * read. `loadLane` now decides that split off the read's own failure, so the probe cannot
+ * contradict it and no writer in this race can reach `LANE_UNREADABLE`.
  *
  * The children run this checkout's own `src/bin.ts` under node's type stripping — no build step on
  * the gate path. Collision frequency depends on real scheduling, so the invariants are asserted
  * across repeated pairs rather than trusting one lucky race.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9138#issuecomment-5702162985
+ * @ruling https://github.com/kamp-us/phoenix/issues/9315
  */
 import {execFile} from "node:child_process";
 import {existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync} from "node:fs";
@@ -91,10 +90,10 @@ describe("two concurrent lane writers stay coherent", {
 			];
 
 			for (const r of runs) {
-				// 0 won · 12 the machine refused it against the true state · 40 the lock said wait longer ·
-				// 11 the log turned up between this writer's read of it and its probe, so the lane's state
-				// was never sampled at one instant — UNKNOWN, and the same retry 40 asks for.
-				expect([0, 11, 12, 40]).toContain(r.code);
+				// 0 won · 12 the machine refused it against the true state · 40 the lock said wait longer.
+				// 11 is NOT among them: the loser's pre-lock read of an absent log now proves that absence
+				// off its own NotFound, so a winner appending mid-window no longer answers UNKNOWN.
+				expect([0, 12, 40]).toContain(r.code);
 				if (r.code === 0) expect(() => JSON.parse(r.stdout)).not.toThrow();
 			}
 			// A fresh lane accepts WIP exactly once: both writers cannot both win it.

@@ -35,9 +35,10 @@ import {offeredLanes, type StandingLane} from "./standing-lanes.ts";
 /**
  * The roadmap side of the join: a file that was read and parsed, or one proven absent.
  *
- * A filesystem probe is what separates the two, never the shape of a read failure — `readFile`
- * lowers `NotFound` and `EACCES` into one flat `reason` string, so telling them apart by its text
- * would be a guess. Absent joins to nothing; unreadable stays UNKNOWN.
+ * A filesystem probe is what separates the two here, and it is this reader's ONLY sample, so
+ * nothing it answers can contradict a read already taken. (A reader that has already read the path
+ * splits the two off `ReadFailed.notFound` instead — see `loadLane` — because a second sample of a
+ * racing path answers about a different instant.) Absent joins to nothing; unreadable stays UNKNOWN.
  */
 type RoadmapSide =
 	| {readonly _tag: "Absent"}
