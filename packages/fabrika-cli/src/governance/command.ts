@@ -192,7 +192,7 @@ const sweep = leafCommand(
 ).pipe(
 	Command.withShortDescription("Rank the live records whose domain this subject touches."),
 	Command.withDescription(
-		"Rank the uncited live-accepted records whose decision domain the subject touches, reading the subject out of a bound commit or out of the corpus. All three outcomes — shortlist, no-overlap, indeterminate — exit 0 and none of them is a clearance. Exits 7 (--dir holds zero records, or the PR is absent or closed), 10 (a non-four-digit id, a --sha that is not a head SHA, a negative --limit, or both a PR and --landed), 11 (the subject or a corpus member could not be read — an incomplete corpus is UNKNOWN), 12 (--sha is not the PR's head), 13 (the changed-file list proving the record is in this PR is provably short). Example: fabrika governance sweep 4321 --record 0240",
+		"Rank the uncited live-accepted records whose decision domain the subject touches, reading the subject out of a bound commit or out of the corpus. All three outcomes — shortlist, no-overlap, indeterminate — exit 0 and none of them is a clearance. On the PR path the file set proving the record is in this PR is the local three-dot read shared with `governance scope` and `governance guards`; GitHub's `changed_files` is reported beside it on stderr and never refused on. Exits 7 (--dir holds zero records, the PR is absent or closed, or the local range changes no path), 10 (a non-four-digit id, a --sha that is not a head SHA, a negative --limit, or both a PR and --landed), 11 (the subject or a corpus member could not be read — an incomplete corpus is UNKNOWN), 12 (--sha is not the PR's head). Example: fabrika governance sweep 4321 --record 0240",
 	),
 );
 

@@ -153,7 +153,7 @@ package**, never from a sibling `contract.md`.
 | `10` | a supplied value is off the closed vocabulary — a bad `--polarity`, a `--sha` that is not a head SHA, an unparseable `--since`, a `--record` that is not a four-digit id, a `--path` outside this skill's own resolved directory | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `12` | refused: the `--sha` given is not the PR's head — a read taken over, or a verdict bound to, a tree that is no longer the PR | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| `13` | refused: the read completed but its scope is **provably incomplete** — a truncated changed-file list or diff, a comment enumeration short of its declared count | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
+| `13` | refused: the read completed but its scope is **provably incomplete** — a truncated changed-file list or diff, a comment enumeration short of its declared count. A local read short of GitHub's `changed_files` is **not** that proof anywhere in this group | ✓ | — | ✓ | — | — | ✓ | ✓ |
 | `14` | refused: this PR's diff derives **no** governance namespace — a verdict in a namespace the diff did not require | — | — | — | — | ✓ | — | — |
 | `17` | refused: the write would retire a standing verdict of the **opposite polarity** at this head — ranged, over this range — and `--supersede` was not passed; nothing written | — | — | — | — | ✓ | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -550,11 +550,10 @@ implementer reproduces scores from the imported module, never from this document
 
 | Code | Trigger |
 |---|---|
-| `7` | `--dir` was read and held zero decision records — zero scope, refused fail-closed; or the PR is proven absent (404) or closed |
+| `7` | `--dir` was read and held zero decision records — zero scope, refused fail-closed; or the PR is proven absent (404) or closed, or its local three-dot range changes no path |
 | `10` | `--record` / `--landed` is not a four-digit id; `--sha` is not a head SHA; `--limit` is negative; or the positional and `--landed` were both given |
 | `11` | the subject record could not be read at the bound commit, the commit could not be bound, **or a corpus member exists and could not be read** — an incomplete corpus is UNKNOWN |
 | `12` | `--sha` is not the PR's head |
-| `13` | the changed-file list proving `--record` is in this PR is provably short |
 
 **Errors**
 
@@ -570,14 +569,17 @@ implementer reproduces scores from the imported module, never from this document
 | `governance sweep: cannot read <dir>/<file>: <reason> — an incomplete corpus is UNKNOWN, never "no-overlap".` | 11 | refusal |
 | `governance sweep: <what> — the subject cannot be bound to a commit, so what it says is UNKNOWN.` | 11 | refusal |
 | `governance sweep: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live>.` | 12 | refusal |
-| `governance sweep: <sha> carries <k> of the <m> files #<n> declares — refusing to prove <id> is in this PR from a short read.` | 13 | refusal |
+| `governance sweep: <base>...<tip> changes no path — refusing to sweep over an empty diff.` | 7 | refusal |
+| `governance sweep: git and GitHub disagree on #<n>'s file count (<local> vs <declared>) — different merge base and different rename detection; reported, never refused on.` | 0 | notice |
 | `governance sweep: ranked <k> uncited live-accepted records of <m> in scope.` | 0 | notice |
 | `governance sweep: only <k> live-accepted records in <dir> (rarity needs at least 10) — the run carries no information.` | 0 | notice |
 
-**Scope** — the live-`accepted` records in `--dir`, minus those the subject already cites. The scope
-line names the corpus size and the in-scope count on stderr, because the outcome is only readable
-against them. Zero records is a refusal; a corpus below the rarity floor is `indeterminate` at
-exit 0, which is a different fact and stays a different answer.
+**Scope** — the live-`accepted` records in `--dir`, minus those the subject already cites. On the PR
+path the file set proving `--record` is in this PR is the local three-dot read, shared with
+`governance scope` and `governance guards`; GitHub's `changed_files` is reported beside it and
+never refused on. The scope line names the corpus size and the in-scope count on stderr, because
+the outcome is only readable against them. Zero records is a refusal; a corpus below the rarity
+floor is `indeterminate` at exit 0, which is a different fact and stays a different answer.
 
 **Examples**
 

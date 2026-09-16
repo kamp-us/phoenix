@@ -379,16 +379,24 @@ Four behaviours are worth knowing:
   a guard weakened in prose carrying no anchor is invisible to the scan by construction.
 - **The anchor inventory lives in the guarded file.** An anchor is the `<!-- anchor: NAME -->`
   comment a skill already carries, so the set cannot rot while the guards move.
-- **The local three-dot read is the file set, and GitHub's `changed_files` never refuses one.** All
-  three of `review scope`, `governance scope` and `governance guards` take the file set from
-  `readLocalFileSet` and print a count disagreement as a line. GitHub computes that count against a
-  base it cached at the last push, and nothing a reviewer can do invalidates the cache, so refusing
-  on it stranded review rounds with no route out
-  ([#9144](https://github.com/kamp-us/phoenix/issues/9144#issuecomment-5687540528)). What still
-  refuses is git against git. An empty local read refuses in all three — `13` in `review scope`, `7`
-  in both governance verbs — because a scan over no files prints as a clean answer otherwise. So does
-  a read short of a second enumeration of the same range, where a verb has one to compare:
-  `governance scope`'s range mode, and `governance guards`' diff body against its status list.
+- **The enumerated file set is the file set, and GitHub's `changed_files` never refuses one.**
+  `review scope`, `governance scope`, `governance guards` and `governance sweep` take the set from
+  `readLocalFileSet`'s local three-dot read; `ship gate`, `ship floor` and `heal-ci diagnose` take it
+  from `platformFileSet` over `pulls/<n>/files`, which is the same report for callers that must run
+  without a fetch — the merge gate's common path reads no git at all, and `heal-ci sweep` loops its
+  chain over every open PR. Either way a count disagreement prints as a line. GitHub computes
+  `changed_files` against a base it cached at the last push, and nothing a caller can do invalidates
+  the cache, so refusing on it stranded review rounds and then merges with no route out
+  ([#9144](https://github.com/kamp-us/phoenix/issues/9144#issuecomment-5687540528),
+  [#9322](https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377)). What still
+  refuses is an **empty** read — `13` in `review scope`, `7` in the other six — because a derivation
+  over no files prints as a clean answer otherwise. So does a read short of a second enumeration of
+  the *same range*, where a verb has one to compare: `governance scope`'s range mode, and
+  `governance guards`' diff body against its status list. That is git against git; GitHub's count is
+  not. The three `platformFileSet` callers refuse on one more fact of their own: a list arriving at
+  the endpoint's 3000-file ceiling (`PULL_FILES_CAP`) is `13`, because GitHub stops serving files
+  there and ends the Link chain as a complete read ends, so the pagination proof passes over a list
+  it already cut short.
 
 ## The `graduate` group
 

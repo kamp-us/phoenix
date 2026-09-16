@@ -7,6 +7,23 @@
  *
  * The reads are exposed as {@link diagnoseOne} so `heal-ci sweep` classifies through this same chain
  * rather than a second one.
+ *
+ * **The changed-file read is one exception to that, and it reports rather than refuses.** GitHub's
+ * `changed_files` on the pull-request record is computed against a base cached at the last push, so
+ * a file list short of it says nothing about the list's completeness — and this is the verb an
+ * operator reaches for when a PR is already stuck, which is the worst place to keep a refusal a
+ * stuck PR can trigger. The disagreement leaves as a notice
+ * ({@link platformFileSet}); an **empty** list still refuses, because every classification
+ * downstream would otherwise read clean over a diff nothing was read from. The check-run shortfall
+ * below is a different proof and still refuses: `total_count` and the enumerated runs come from one
+ * read of one endpoint, so a shortfall there really is a truncated page.
+ *
+ * **The changed-file read keeps one `13` of its own, the endpoint's ceiling.** `pulls/<n>/files`
+ * serves at most 3000 files (`PULL_FILES_CAP`) and ends its Link chain normally there, so the
+ * pagination proof passes over a list GitHub already truncated. That is a fact about the read
+ * itself, not two counts disagreeing, and every classification below derives from the file set.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -24,6 +41,7 @@ import {
 	permissionFor,
 } from "../io/pulls.ts";
 import {partitionWithUi, shipNamespacesOf, touchesGovernanceRoot} from "../review/classes.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {inForce, ROUTABLE} from "../ship/gate-verb.ts";
 import {
@@ -239,14 +257,36 @@ export const diagnoseOne = (
 			outcome: refuse(code, reason, notices),
 		});
 
-		const filed = yield* listPullFiles(repo, pr);
-		if (filed._tag === "Failure") {
+		const filed = platformFileSet(
+			VERB,
+			`#${pr}`,
+			pull.changedFiles,
+			yield* listPullFiles(repo, pr),
+		);
+		if (filed._tag === "Unreadable") {
 			return refused(PRECONDITION_UNKNOWN, unreadable("the changed files", pr, filed.reason));
 		}
-		if (filed.value.length < pull.changedFiles) {
+		if (filed.set.disagreement !== null) notices.push(filed.set.disagreement);
+		const changed = filed.set.files;
+		// Zero is the shortfall the enumeration alone establishes, and with the declared count no
+		// longer refusing it is the only seat left: an empty list raises no namespace and touches no
+		// governance root, so every classification below would read clean over a diff nobody read.
+		if (changed.length === 0) {
+			return refused(
+				ZERO_SCOPE,
+				`${VERB}: PR #${pr} has zero changed files — refusing to classify a stall over an empty diff.`,
+			);
+		}
+		// The ceiling is the one truncation the enumeration cannot rule out on its own: the endpoint
+		// stops serving files there and ends its Link chain as a complete read ends.
+		if (filed.set.capped) {
 			return refused(
 				INCOMPLETE_SCAN,
-				short(filed.value.length, pull.changedFiles, "changed files"),
+				platformCapLine(
+					VERB,
+					`#${pr}`,
+					"refusing to classify a stall over a diff the platform cut short.",
+				),
 			);
 		}
 
@@ -346,7 +386,7 @@ export const diagnoseOne = (
 			return refused(PRECONDITION_UNKNOWN, unreadable("the base comparison", pr, drift.reason));
 		}
 
-		const required = shipNamespacesOf(partitionWithUi(filed.value, governedRoots, uiPrefixes));
+		const required = shipNamespacesOf(partitionWithUi(changed, governedRoots, uiPrefixes));
 		const authorized = new Map<string, boolean>();
 		const candidates: Array<{
 			readonly namespace: string;
@@ -405,7 +445,7 @@ export const diagnoseOne = (
 		for (const review of decisive)
 			if (!byAuthor.has(review.login)) byAuthor.set(review.login, review.state);
 		const changesRequested = [...byAuthor.values()].includes("CHANGES_REQUESTED");
-		const controlPlane = touchesGovernanceRoot(filed.value, governedRoots);
+		const controlPlane = touchesGovernanceRoot(changed, governedRoots);
 		const approved = [...byAuthor.values()].includes("APPROVED");
 		const humanBlocked = changesRequested || (controlPlane && !approved);
 
