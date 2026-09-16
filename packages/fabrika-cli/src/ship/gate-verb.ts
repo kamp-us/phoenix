@@ -35,7 +35,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {governedRootsOr} from "../config/paths.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {listPullFiles, permissionFor} from "../io/pulls.ts";
-import {readAdvisory} from "../review/advisory.ts";
+import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
 import {SHIP_NAMESPACES, touchesGovernanceRoot} from "../review/classes.ts";
 import {headContentFor} from "../review/head-content.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -146,9 +146,9 @@ const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
 		? null
 		: {
 				namespace: advisory.namespace,
-				// The advisory carrier is PASS-only. A `[FAIL]` row inside one is an invalid
-				// emission, caught below and reported — never read as a pass.
-				polarity: /\[FAIL\]/.test(comment.body) ? "FAIL" : "PASS",
+				// An invalid `[FAIL]` emission inside an advisory is caught below and reported —
+				// never read as a pass. The predicate is the carrier's own, shared by every reader.
+				polarity: advisoryPolarity(comment.body),
 				sha: advisory.sha,
 				// The §CP advisory withholds a content binding by design: the human-approval half of the
 				// binding question is answered where head-binding is ruled, not here. So an advisory
@@ -188,9 +188,14 @@ export const requiredWithFloor = (
  * The in-force verdict for one namespace: head-bound candidates first, then newest write stamp.
  *
  * Exported so the ordering is testable without a PR: the two rules interact, and "head-bound
- * outranks recency" is only checkable against a stale-but-newer counterexample.
+ * outranks recency" is only checkable against a stale-but-newer counterexample. It is generic in the
+ * claim so a caller carrying a narrower one — `review-ui route`'s two-polarity text claim — gets its
+ * own type back and needs no cast to read a field this module does not know about.
  */
-export const inForce = (candidates: ReadonlyArray<Candidate>, sha: string): Candidate | null => {
+export const inForce = <T extends Candidate>(
+	candidates: ReadonlyArray<T>,
+	sha: string,
+): T | null => {
 	const ordered = [...candidates].sort((a, b) => {
 		const aBound = prefixMatch(a.sha, sha) ? 1 : 0;
 		const bBound = prefixMatch(b.sha, sha) ? 1 : 0;

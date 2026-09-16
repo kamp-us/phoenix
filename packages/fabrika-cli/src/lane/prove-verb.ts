@@ -51,7 +51,7 @@ import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {getPullRequest, listPullFiles} from "../io/pulls.ts";
-import {readAdvisory} from "../review/advisory.ts";
+import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
 import {partitionWithUi, ROUTED_NAMESPACES, shipNamespacesOf} from "../review/classes.ts";
 import {bindRange, contentDigestAt, rangeContentAt} from "../review/content-binding.ts";
 import {bindHead} from "../review/head.ts";
@@ -801,9 +801,9 @@ const readNamespaceRows = (
 				advisories.push({
 					claim: {
 						namespace: advisory.namespace,
-						// The advisory carrier is PASS-only; a [FAIL] row inside one is an
-						// invalid emission — treated as fail below, never read as a pass.
-						polarity: /\[FAIL\]/.test(comment.body) ? "FAIL" : "PASS",
+						// An invalid [FAIL] emission inside an advisory is treated as fail below,
+						// never read as a pass — the carrier's own predicate, one copy.
+						polarity: advisoryPolarity(comment.body),
 						commentId: comment.id,
 						sha: advisory.sha,
 						// The advisory withholds a content binding by design — head-bound only.

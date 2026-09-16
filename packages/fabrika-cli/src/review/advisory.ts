@@ -43,3 +43,17 @@ export const readAdvisory = (body: string): AdvisoryCarrier | null => {
 	const sha = bound?.[1] === undefined ? null : headSha(bound[1]);
 	return sha === null ? null : {namespace: first[1].toLowerCase(), sha};
 };
+
+const FAIL_ROW = /\[FAIL\]/;
+
+/**
+ * The polarity a read advisory carries — `PASS` unless its body holds a `[FAIL]` row.
+ *
+ * The carrier is PASS-only by construction, which is why the rule looks redundant: `review post`
+ * refuses a §CP FAIL through it on `10`. It is not, because a `[FAIL]` row inside an advisory is an
+ * invalid emission every reader has to answer the same way — a hand-written comment reaches this
+ * parse too. Three readers holding the predicate in triplicate is how one gate read such a comment
+ * as a pass while the next read it as a fail; the rule lives here so there is one answer to read.
+ */
+export const advisoryPolarity = (body: string): "PASS" | "FAIL" =>
+	FAIL_ROW.test(body) ? "FAIL" : "PASS";

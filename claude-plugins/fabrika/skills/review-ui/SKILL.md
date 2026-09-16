@@ -72,6 +72,16 @@ the route can post; exit `11` naming the ceiling, or naming the two heads as div
 flag where there is no hand-verification, and never derive the range by hand — a condition you check
 by eye is one the next gate checks differently.
 
+**The route also rests on the text gate's verdict, and the verb reads that for you.** Exit `20`
+means the `review-code` verdict in force at `--sha` is a **FAIL**: the record would assert a text
+PASS that is not there, and the polarity-free format leaves no later reader able to falsify it. That
+is not yours to route around — the text lane repairs, and you route at the head it passes. The same
+`20` covers an **absent** text verdict on a `--verified-at` route, because the exception's clause
+names both halves; a prose-only route with no text verdict posts, and the answer's `textReview`
+field says which of the two it rested on. The verdict is read before the `--verified-at` range, so a
+route that is both spent at `--verified-at` and standing-FAIL at `--sha` meets `20` rather than
+`12` — the text lane is the move to make first, and the desk run is re-run after it.
+
 Exit `7` covers four different facts, and only one of them is a clean end — **read the message
 before you pick a terminal.** `raises no ui class` means nothing required your namespace and there
 is nothing to route: end ROUTED-ELSEWHERE with no write. The other three — the PR proven absent

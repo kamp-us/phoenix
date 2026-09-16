@@ -7,13 +7,20 @@ import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {COMPARE_FILE_CAP} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {read as readVerdict} from "../wire/verdict-marker.ts";
+import {emitAdvisory, reviewedHeadLine} from "../review/advisory.ts";
+import {
+	emit as emitVerdict,
+	headSha,
+	read as readVerdict,
+	clause as toClause,
+} from "../wire/verdict-marker.ts";
 import {
 	EMPTY_STDIN,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	STALE_TREE,
+	TEXT_REVIEW_UNMET,
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {runRoute} from "./route-verb.ts";
@@ -72,6 +79,20 @@ const options = {
 /** The bytes the verb composes, so the read-back fixture is never a hand-typed second grammar. */
 const composed = (sha = HEAD, clause = CLAUSE): string =>
 	`routed-elsewhere: review-ui @ ${sha} — ${clause}\n\n${BODY.replace(/\n+$/, "")}\n`;
+
+/** A `review-code` verdict comment, composed through the wire format the route reads it back with. */
+const textVerdict = (polarity: "PASS" | "FAIL", sha = HEAD): Record<string, unknown> => {
+	const head = headSha(sha);
+	const clause = toClause("merge-ready");
+	if (head === null || clause === null) throw new Error(`unusable fixture: ${sha}`);
+	return {
+		id: 4001,
+		user: {login: "reviewer"},
+		created_at: "2026-09-14T00:00:00Z",
+		updated_at: "2026-09-14T00:00:00Z",
+		body: emitVerdict({namespace: "review-code", polarity, sha: head, content: null, clause}),
+	};
+};
 
 const happy = (): ReadonlyArray<Scripted> => [
 	[PULL, pull()],
@@ -187,7 +208,8 @@ describe("review-ui route", () => {
 			[FILES, PROSE_UI],
 			[COMPARE, reply],
 			[USER, served({login: "reviewer"})],
-			[COMMENTS, {status: 200, body: "[]"}],
+			// A route resting on a hand-verification asserts the text PASS, so one has to stand.
+			[COMMENTS, served([textVerdict("PASS")])],
 			[CREATE, {status: 201, body: JSON.stringify({id: 512399, html_url: URL})}],
 			[READBACK, served({body: composed()})],
 		];
@@ -209,7 +231,7 @@ describe("review-ui route", () => {
 					[FILES, PROSE_UI],
 					[SAME, served({status: "identical", total_commits: 0, files: []})],
 					[USER, served({login: "reviewer"})],
-					[COMMENTS, {status: 200, body: "[]"}],
+					[COMMENTS, served([textVerdict("PASS")])],
 					[CREATE, {status: 201, body: JSON.stringify({id: 512399, html_url: URL})}],
 					[READBACK, served({body: composed()})],
 				],
@@ -274,6 +296,109 @@ describe("review-ui route", () => {
 			expect(outcome.code).toBe(0);
 			expect(JSON.parse(outcome.stdout).verifiedAt).toBeNull();
 			expect(requests.some((request) => request.includes("/compare/"))).toBe(false);
+		});
+	});
+
+	// The clause a hand-verification route carries asserts a text review PASS beside it, and the verb
+	// asserted that while reading neither half.
+	describe("the text review the record rests on", () => {
+		const VERIFIED = "8efd315a1f2e3d4c5b6a7988776655443322110f";
+		const COMPARE = new RegExp(`^GET \\S+/repos/o/r/compare/${VERIFIED}\\.\\.\\.${HEAD}$`);
+		const CLEAR = served({status: "ahead", files: [{filename: "docs/notes.md"}]});
+
+		const withComments = (...comments: ReadonlyArray<unknown>): ReadonlyArray<Scripted> => [
+			[PULL, pull()],
+			[FILES, PROSE_UI],
+			[USER, served({login: "reviewer"})],
+			[COMMENTS, served(comments)],
+			[CREATE, {status: 201, body: JSON.stringify({id: 512399, html_url: URL})}],
+			[READBACK, served({body: composed()})],
+		];
+
+		const onHandVerification = (...comments: ReadonlyArray<unknown>): ReadonlyArray<Scripted> => [
+			[PULL, pull()],
+			[FILES, PROSE_UI],
+			[COMPARE, CLEAR],
+			[USER, served({login: "reviewer"})],
+			[COMMENTS, served(comments)],
+			[CREATE, {status: 201, body: JSON.stringify({id: 512399, html_url: URL})}],
+			[READBACK, served({body: composed()})],
+		];
+
+		it("refuses on 20 over a standing FAIL at this head, posting nothing", async () => {
+			const {outcome, requests} = await run(withComments(textVerdict("FAIL")));
+			expect(outcome.code).toBe(TEXT_REVIEW_UNMET);
+			expect(outcome.stderr.join("\n")).toContain("review-code stands FAIL");
+			expect(requests.some((request) => CREATE.test(request) || PATCH.test(request))).toBe(false);
+		});
+
+		it("refuses on 20 over a standing FAIL even where the hand-verification is current", async () => {
+			const {outcome} = await run(onHandVerification(textVerdict("FAIL")), {
+				verifiedAt: VERIFIED,
+			});
+			expect(outcome.code).toBe(TEXT_REVIEW_UNMET);
+		});
+
+		it("posts over a standing PASS at this head and records which half it read", async () => {
+			const {outcome} = await run(withComments(textVerdict("PASS")));
+			expect(outcome.code).toBe(0);
+			expect(JSON.parse(outcome.stdout)).toMatchObject({answer: "routed", textReview: "pass"});
+		});
+
+		// The exception's clause names both halves, so the evidence path is where absence refuses.
+		it("refuses on 20 when a hand-verification route has no text verdict at this head", async () => {
+			const {outcome, requests} = await run(onHandVerification(), {verifiedAt: VERIFIED});
+			expect(outcome.code).toBe(TEXT_REVIEW_UNMET);
+			expect(outcome.stderr.join("\n")).toContain("no standing review-code verdict");
+			expect(requests.some((request) => CREATE.test(request) || PATCH.test(request))).toBe(false);
+		});
+
+		// A prose-only route asserts nothing about the text lane, so it says so rather than blocking.
+		it("posts with no text verdict at all, stating that the record asserts none", async () => {
+			const {outcome} = await run(withComments());
+			expect(outcome.code).toBe(0);
+			expect(JSON.parse(outcome.stdout)).toMatchObject({textReview: "absent"});
+			expect(outcome.stderr.join("\n")).toContain("asserts nothing about the text lane");
+		});
+
+		// A FAIL the head has moved past is not in force - `ship gate` reads it stale too.
+		it("does not refuse over a FAIL bound to another head", async () => {
+			const {outcome} = await run(withComments(textVerdict("FAIL", MOVED)));
+			expect(outcome.code).toBe(0);
+			expect(JSON.parse(outcome.stdout)).toMatchObject({textReview: "absent"});
+		});
+
+		it("reads the control-plane advisory carrier as the PASS it is", async () => {
+			const {outcome} = await run(
+				onHandVerification({
+					id: 4002,
+					user: {login: "owner"},
+					created_at: "2026-09-14T00:00:00Z",
+					updated_at: "2026-09-14T00:00:00Z",
+					body: `${emitAdvisory("review-code", "merge-ready")}\n${reviewedHeadLine(HEAD)}\n`,
+				}),
+				{verifiedAt: VERIFIED},
+			);
+			expect(outcome.code).toBe(0);
+			expect(JSON.parse(outcome.stdout)).toMatchObject({textReview: "pass"});
+		});
+
+		// `ship gate` and `lane prove` both read a `[FAIL]` row inside an advisory as a fail; a third
+		// reader that read it as a pass is how one comment cleared this route and refused at the gate.
+		it("reads a [FAIL] row inside an advisory as the FAIL its sibling readers read", async () => {
+			const {outcome, requests} = await run(
+				onHandVerification({
+					id: 4003,
+					user: {login: "owner"},
+					created_at: "2026-09-14T00:00:00Z",
+					updated_at: "2026-09-14T00:00:00Z",
+					body: `${emitAdvisory("review-code", "merge-ready")}\n${reviewedHeadLine(HEAD)}\n\n- [FAIL] review-code\n`,
+				}),
+				{verifiedAt: VERIFIED},
+			);
+			expect(outcome.code).toBe(TEXT_REVIEW_UNMET);
+			expect(outcome.stderr.join("\n")).toContain("review-code stands FAIL");
+			expect(requests.some((request) => CREATE.test(request) || PATCH.test(request))).toBe(false);
 		});
 	});
 
