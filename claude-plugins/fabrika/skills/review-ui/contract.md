@@ -782,14 +782,18 @@ diff was read, and is re-read rather than re-bound. Read the changed-file list; 
 the gate is meanwhile blocking. Refuse a diff that raises no `ui` class (`7`) — nothing required
 this namespace, so there is nothing to route; the predicate is `review/classes.ts`'s own
 `isUiSurface`, over the same declared `uiSurfaces` prefixes the gate raised the class from, never a
-second copy. With `--verified-at`, compare that head to `--sha` and refuse on `12` when any file in
+second copy. Read the PR's comments and resolve the `review-code` verdict in force at `--sha`; a
+standing FAIL is `20`, and so is an absent verdict on a route carrying `--verified-at`. That read
+runs **before** the `--verified-at` comparison below, so a route that is both spent at
+`--verified-at` and standing-FAIL at `--sha` exits `20`, not `12` — a record asserting a text PASS
+that is not there is unpostable at any head, while a spent hand-verification is cleared by re-running
+it, so the text lane is the move to name first. With `--verified-at`, compare that head to `--sha`
+and refuse on `12` when any file in
 the range raises the `ui` class — the hand-verification is then spent and a fresh one is owed at
 `--sha`; a comparison that came back at GitHub's 300-file ceiling is `11`, because the compare
 declares no total and a capped list can only ever hide a `ui`-class file, and so is one whose two
 heads have diverged, because the platform's three-dot compare then answers from their merge base and
-the range was never read at all. Read the PR's comments and resolve the `review-code` verdict in
-force at `--sha`; a standing FAIL is `20`, and so is an absent verdict on a route carrying
-`--verified-at`. Compose the record's first
+the range was never read at all. Compose the record's first
 line through the `routed-elsewhere` wire format, leak-scan the assembled comment (`5`/`6`), upsert
 one record for this namespace on the emitter's own comment, and read it back from live state (`9` on
 mismatch, `8` on an unproven write).

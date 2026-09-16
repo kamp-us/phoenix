@@ -78,7 +78,9 @@ PASS that is not there, and the polarity-free format leaves no later reader able
 is not yours to route around — the text lane repairs, and you route at the head it passes. The same
 `20` covers an **absent** text verdict on a `--verified-at` route, because the exception's clause
 names both halves; a prose-only route with no text verdict posts, and the answer's `textReview`
-field says which of the two it rested on.
+field says which of the two it rested on. The verdict is read before the `--verified-at` range, so a
+route that is both spent at `--verified-at` and standing-FAIL at `--sha` meets `20` rather than
+`12` — the text lane is the move to make first, and the desk run is re-run after it.
 
 Exit `7` covers four different facts, and only one of them is a clean end — **read the message
 before you pick a terminal.** `raises no ui class` means nothing required your namespace and there

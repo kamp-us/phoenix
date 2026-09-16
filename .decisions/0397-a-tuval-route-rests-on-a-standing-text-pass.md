@@ -1,12 +1,12 @@
 ---
-id: 0396
+id: 0397
 title: A routed-elsewhere record rests on the text review it asserts
 status: accepted
 date: 2026-09-16
 tags: [fabrika, review-ui, tuval, pipeline, governance]
 ---
 
-# 0396 — A routed-elsewhere record rests on the text review it asserts
+# 0397 — A routed-elsewhere record rests on the text review it asserts
 
 **What this decides:** the `review-code` verdict is a precondition of a `review-ui route`, not
 commentary on it. `review-ui route` reads the verdict in force at `--sha` and refuses on a standing
@@ -79,7 +79,9 @@ the first real Tuval UI review is meant to sweep against.
    does not emit. The merge gate still reads it.
 5. **The exception's text carries the condition.** It lands on #7306 as a dated amendment below the
    2026-09-06 ruling, never as an edit to it, so the sunset list stays readable against the text each
-   entry was posted under — 0391 §5's rule, unchanged.
+   entry was posted under — 0391 §5's rule, unchanged. Landed 2026-09-16:
+   [the amendment comment](https://github.com/kamp-us/phoenix/issues/7306#issuecomment-5701952969),
+   appended to the issue body in the same shape, stating both halves of the clause as required.
 
 **Rejected: dropping the assertion from the clause instead.** It is the cheapest change and it
 weakens what the sunset sweep can rely on: the first real Tuval UI review reads those entries back,
