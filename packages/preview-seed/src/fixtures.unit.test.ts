@@ -5,6 +5,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {normalizeSearchText} from "@kampus/web/features/search/normalize";
+import {storedFirstLetter} from "@kampus/web/features/sozluk/turkish-alphabet";
 import {
 	buildFixtures,
 	LETTER_TERM_LETTER,
@@ -33,10 +34,23 @@ describe("buildFixtures — sözlük content (07-sozluk-term, 00-smoke)", () => 
 		}
 	});
 
-	it("first_letter is the lower-cased first character of the title", () => {
+	// The seed used to run its own `toLocaleLowerCase("tr")` while the app ran a slug fold, so
+	// a seeded row and the same term created through the app carried different letters (#9331).
+	// Asserting against the shared function is what keeps the two producers one producer.
+	it("first_letter comes from the shared fold, not the seed's own lower-casing", () => {
 		for (const t of buildFixtures().terms) {
-			assert.strictEqual(t.firstLetter, t.title[0]?.toLocaleLowerCase("tr"));
+			assert.strictEqual(t.firstLetter, storedFirstLetter(t.title));
 		}
+	});
+
+	// The app side pins the other half of this equality in
+	// `apps/web/worker/features/sozluk/recompute-term-summary.unit.test.ts`: `recomputeTermSummary`
+	// over the same Turkish headword yields `ı` through the same function. A seeded `ışık` and
+	// an app-created `ışık` therefore file under one letter.
+	it("the seeded Turkish headword carries the letter the app computes for it", () => {
+		const search = buildFixtures().terms.find((t) => t.title === SEARCH_TERM_TITLE);
+		assert.strictEqual(search?.firstLetter, "ı");
+		assert.strictEqual(search?.firstLetter, storedFirstLetter(SEARCH_TERM_TITLE));
 	});
 
 	it("seeds at least one non-deleted definition for the seeded term", () => {

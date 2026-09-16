@@ -56,6 +56,7 @@ import {
 	toTermSummaryRow,
 } from "./term-fields.ts";
 import {
+	storedFirstLetter,
 	turkishCollateSql,
 	turkishCollationKey,
 	turkishLetterKeyRange,
@@ -139,7 +140,9 @@ export const recomputeTermSummary = (
 	return {
 		slug,
 		title,
-		firstLetter: slug.charAt(0).toLowerCase(),
+		// The HEADWORD's letter, never the slug's: the slug is the ASCII fold, so `önbellek`
+		// filed under `o` and `ışık` collapsed onto `i` (#9331).
+		firstLetter: storedFirstLetter(title),
 		definitionCount: rows.length,
 		totalScore: rows.reduce((s, d) => s + d.score, 0),
 		topDefinitionId: top?.id ?? null,
@@ -527,6 +530,10 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						target: schema.termRecord.slug,
 						set: {
 							title: sql`excluded.title`,
+							// The title can be re-cased between writes, and a pre-#9331 row carries the
+							// slug-derived letter, so the column has to move with the fold — omitting it
+							// here is what made `reconcileCaches` a no-op for every existing row.
+							firstLetter: sql`excluded.first_letter`,
 							definitionCount: sql`excluded.definition_count`,
 							totalScore: sql`excluded.total_score`,
 							excerpt: sql`excluded.excerpt`,

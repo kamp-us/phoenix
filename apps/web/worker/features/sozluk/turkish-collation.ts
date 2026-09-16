@@ -27,6 +27,7 @@ import {
 export {
 	foldTurkishChar,
 	isTurkishLetter,
+	storedFirstLetter,
 	TURKISH_ALPHABET,
 	type TurkishLetter,
 	turkishLetterOf,
