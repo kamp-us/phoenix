@@ -27,7 +27,7 @@ import {describe, expect, it} from "vitest";
 import {loadGoldenPayload, readGoldenFixture} from "../golden-fixture.ts";
 import {readUsageLedger} from "../spend/usage-ledger.ts";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
-import {MALFORMED_ENVELOPE, WRONG_EVENT} from "./codes.ts";
+import {GROUND_UNKNOWN, MALFORMED_ENVELOPE, WRONG_EVENT} from "./codes.ts";
 import {argvOf, declaredHooks, violations} from "./declaration.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
@@ -217,6 +217,54 @@ describe("this repo's own hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_M
 			hooks: {WorktreeCreate: Array<{hooks: Array<{timeout?: number}>}>};
 		};
 		expect(settings.hooks.WorktreeCreate[0]?.hooks[0]?.timeout).toBe(600);
+	});
+
+	/**
+	 * The plugin-source sync is declared here and not on the plugin surface, for the same reason the
+	 * provider above is: it moves a checkout, and which checkout a marketplace is registered against
+	 * is a fact only the adopting repo knows. A plugin declaration would carry that mutation into
+	 * every repo that installs fabrika.
+	 */
+	it("carries the plugin-source sync on SessionStart, with a budget a fetch fits in", () => {
+		const declared = declaredOn("SessionStart", repoSurface);
+		expect(declared.command).toBe("fabrika hook plugin-sync");
+		const settings = JSON.parse(readGoldenFixture(import.meta.url, SETTINGS_JSON)) as {
+			hooks: {SessionStart: Array<{hooks: Array<{timeout?: number}>}>};
+		};
+		expect(settings.hooks.SessionStart[0]?.hooks[0]?.timeout).toBe(120);
+	});
+});
+
+describe("the plugin-source sync, run against the captured envelopes", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
+	const declared = declaredOn("SessionStart", repoSurface);
+
+	/**
+	 * The captured `cwd` is the throwaway directory the envelope was captured in, which is under no
+	 * clone — so this run proves the arm that matters most for a hook that moves a checkout: over
+	 * ground it cannot read, it refuses and moves nothing, rather than falling back to its own cwd.
+	 * That is also why `--dry-run` is passed: the assertion must hold without the flag doing the work.
+	 */
+	it("refuses over a cwd that belongs to no clone, rather than moving the tree it is standing in", () => {
+		const run = runDeclared(
+			declared.command,
+			readGoldenFixture(import.meta.url, "__fixtures__/session-start.payload.golden.json"),
+			["--dry-run"],
+		);
+		expect(run.code).toBe(GROUND_UNKNOWN);
+		expect(run.stdout).toBe("");
+		expect(run.stderr).toContain("names no clone whose primary worktree this verb can read");
+	});
+
+	it("refuses an envelope for an event it does not judge, rather than syncing from it", () => {
+		const run = runDeclared(
+			declared.command,
+			readGoldenFixture(import.meta.url, "__fixtures__/worktree-create.payload.golden.json"),
+			["--dry-run"],
+		);
+		expect(run.code).toBe(WRONG_EVENT);
+		expect(run.stdout).toBe("");
 	});
 });
 

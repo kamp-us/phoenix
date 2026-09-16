@@ -596,6 +596,7 @@ surface's convention lives in
 |---|---|
 | `hook check` | whether the envelope on stdin is one fabrika can act on |
 | `hook codes` | the exit taxonomy every verb in the group allocates from |
+| `hook plugin-sync` | whether the checkout a directory-source plugin is served from is current, after advancing it |
 | `hook pre-bash` | whether a Bash command opens with a directory jump out of the linked worktree it runs in |
 | `hook worktree-create` | the absolute path of the provisioned worktree the envelope named, after a bounded sweep of what this clone can reclaim |
 
@@ -606,7 +607,10 @@ judges. Three failure codes rather than one, so an unread pipe cannot pass for a
 worktree · `16` the base could not be fetched · `17` `git worktree add` failed · `18` the tree was
 created and arrived dep-less. `pre-bash` adds `19` the working tree the envelope's `cwd` belongs to
 could not be established — a fail-open, since a guard that could not read its own ground has judged
-nothing.
+nothing. `plugin-sync` shares that `19` and adds three of its own: `20` the plugin source's primary
+worktree is in no state to be advanced and nothing moved · `21` its remote could not be fetched, so
+whether it is current is UNKNOWN · `22` a fast-forward every precondition permitted still failed,
+which means the checkout changed under the read.
 
 - **The required fields are captured, not assumed.** They are the keys present in every real
   envelope committed at `src/hook/__fixtures__/`, with each capture's method and harness version
@@ -618,6 +622,24 @@ nothing.
   `node_modules/.pnpm` is still absent. It is declared in phoenix's own `.claude/settings.json` and
   deliberately **not** in the plugin's `hooks.json`, because a plugin-declared provider preempts git
   worktree creation in every adopting repo (ADR 0337).
+- **`hook plugin-sync` is the other verb that writes, and what it writes is one fast-forward.** A
+  `skills:` preload is rendered from the harness's *copy* of a plugin tree, taken from the
+  marketplace's source directory at whatever commit that directory's primary worktree sat at — so a
+  skill-class merge binds no spawned shell until the directory advances, and the failure is silent,
+  because preloaded text names no version. This verb advances it at every session start, so the step
+  is the harness's rather than a driver's to remember
+  ([#9031](https://github.com/kamp-us/phoenix/issues/9031)). It takes a fast-forward and nothing
+  else: a parked branch, a detached HEAD, uncommitted work or a diverged branch is refused with its
+  reason on stderr, since where a human's checkout sits is a human's call. It runs in the **primary**
+  worktree, read off the shared git common dir, never in the session's own linked tree. It is
+  declared in phoenix's own `.claude/settings.json` for the same reason `worktree-create` is: a
+  plugin-declared hook that moves a checkout would move one in every adopting repo.
+- **It reports the second link and drives nothing there.** Re-copying the advanced directory into the
+  plugin cache is the harness's own `autoUpdate` pass, so the verb reads the harness's install
+  records and names every install still bound to an earlier commit — folding the repeated bindings a
+  machine accumulates per throwaway worktree into one row with a count, so nothing is dropped
+  silently. An unreadable record is UNKNOWN, never bound: a session must never be told it has current
+  text over evidence nobody read.
 - **It reaps before it provisions, and that sweep can refuse nothing.** Provisioning is where
   worktree accumulation is bounded: whatever creates one runs `build reap --execute --limit 4` first,
   as a child in the repository the envelope named, before the fetch and the add — the failure it
