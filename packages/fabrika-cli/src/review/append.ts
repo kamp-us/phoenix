@@ -31,21 +31,42 @@ export type CriterionProvenance =
 	| {readonly _tag: "Pull"; readonly pr: number}
 	| {readonly _tag: "Ranged"; readonly range: CommitRange<HeadSha>};
 
+/**
+ * The one tag grammar, written under two kinds: `ac:review` on a row that landed, `ac:escalated`
+ * on a finding the freeze turned away.
+ *
+ * Both kinds say the same two things — which subject the round was judged over, and which round —
+ * so they share one composer and one pattern builder. A second hand-typed grammar would drift the
+ * first time the subject gains a spelling, which is exactly how the `range:` half came to be
+ * invisible to a `pr:#`-only reader.
+ */
+const tagBody = (kind: string, provenance: CriterionProvenance, round: number): string =>
+	provenance._tag === "Pull"
+		? `${kind} pr:#${provenance.pr} round:${round}`
+		: `${kind} range:${renderRange(provenance.range)} round:${round}`;
+
+const tagPattern = (kind: string): RegExp =>
+	new RegExp(`<!--\\s*${kind}\\s+(?:pr:#(\\d+)|range:(\\S+?))\\s+round:(\\d+)\\s*-->`, "i");
+
 /** The provenance tag — what makes a routed row auditable after the fact. */
 export const provenanceTag = (provenance: CriterionProvenance, round: number): string =>
-	provenance._tag === "Pull"
-		? `<!-- ac:review pr:#${provenance.pr} round:${round} -->`
-		: `<!-- ac:review range:${renderRange(provenance.range)} round:${round} -->`;
+	`<!-- ${tagBody("ac:review", provenance, round)} -->`;
 
 /**
- * The grammar {@link provenanceTag} writes, read back.
+ * The escalation tag — what makes a finding the freeze turned away findable by a later round.
  *
- * It sits beside the writer rather than beside a reader because the tag has exactly one author: a
- * reader that re-types the grammar is a second source that drifts the first time the writer gains a
- * spelling. Both spellings are here for that reason — a `range:` row read by a `pr:#`-only regex is
- * invisible, which is how an epic child's routed finding reads as no finding at all.
+ * Fence 3 posts the finding as a comment and appends no row, so the only thing that can carry it
+ * forward is the comment itself. Without a tag that comment is prose a reader has to recognise, and
+ * a repair lane driven past the freeze read a criteria block that did not contain the round it was
+ * dispatched to repair. With it, `build verdicts` folds the finding beside the gate rows.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9058#issuecomment-5625309255
  */
-const PROVENANCE_TAG = /<!--\s*ac:review\s+(?:pr:#(\d+)|range:(\S+?))\s+round:(\d+)\s*-->/i;
+export const escalationTag = (provenance: CriterionProvenance, round: number): string =>
+	`<!-- ${tagBody("ac:escalated", provenance, round)} -->`;
+
+const PROVENANCE_TAG = tagPattern("ac:review");
+const ESCALATION_TAG = tagPattern("ac:escalated");
 
 /** One reviewer-routed row's provenance: what it was judged over, and on which round. */
 export interface RoutedRow {
@@ -53,9 +74,8 @@ export interface RoutedRow {
 	readonly round: number;
 }
 
-/** The provenance {@link criterionRow} wrote into `text`, or `null` when it carries no tag. */
-export const readProvenanceTag = (text: string): RoutedRow | null => {
-	const matched = PROVENANCE_TAG.exec(text);
+const readTag = (pattern: RegExp, text: string): RoutedRow | null => {
+	const matched = pattern.exec(text);
 	if (matched === null) return null;
 	const round = Number.parseInt(matched[3] ?? "", 10);
 	if (!Number.isInteger(round)) return null;
@@ -65,6 +85,17 @@ export const readProvenanceTag = (text: string): RoutedRow | null => {
 	const range = parseRange(matched[2] ?? "");
 	return range === null ? null : {provenance: {_tag: "Ranged", range}, round};
 };
+
+/** The provenance {@link criterionRow} wrote into `text`, or `null` when it carries no tag. */
+export const readProvenanceTag = (text: string): RoutedRow | null => readTag(PROVENANCE_TAG, text);
+
+/**
+ * The escalation {@link escalationTag} wrote into a comment body, or `null` when it carries none.
+ *
+ * Read by `build verdicts` over the comments on the issue the round's subject serves, which is what
+ * gives fence 3's escalation a reader on the repair path.
+ */
+export const readEscalationTag = (text: string): RoutedRow | null => readTag(ESCALATION_TAG, text);
 
 /** `text` without the tag — what a refusal quotes, so the row reads as the reviewer wrote it. */
 export const withoutProvenanceTag = (text: string): string =>

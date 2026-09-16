@@ -101,7 +101,7 @@ Contract: [`skills/build/contract.md`](../../../claude-plugins/fabrika/skills/bu
 | `build commit` / `push` | the commit whose message is proven this lane's, and the push whose ref is proven moved |
 | `build check` | this surface's validators plus every shipped local-tree guard, run in this tree — each guard named in `ran`, or in `skipped` when it refused |
 | `build pr` / `pr-body` / `note` | the guarded, read-back PR write surfaces |
-| `build verdicts` | the latest gate verdict per namespace, each judged current or not against the PR's live head, beside the PR's own mergeability |
+| `build verdicts` | the latest gate verdict per namespace, each judged current or not against the PR's live head, beside the PR's own mergeability — and beside both, the findings the acceptance-criteria freeze turned away, folded off the linked issue's tagged escalation comments so a repair round past the freeze reads them here |
 | `build clear` | the founder's clearance of one extra repair round |
 | `build reap` | which finished harness worktrees — both namings — are provably safe to remove, and which registrations have no tree left at all; a dry run unless `--execute`, journalled per removal, bounded by `--limit` |
 | `build retire-branch` | which of an epic child's lane branches the board attests to, and the rename that moves the rest out of `build/` |
@@ -1046,7 +1046,7 @@ back. Contract:
 | `review verdicts` | every verdict marker on the PR — standing and superseded alike — each with its `current` / `stale` / `unbindable` binding |
 | `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan |
 | `review post` | the single sanctioned verdict emit — compose, bind, append into one comment per namespace, read back; with `--base`/`--tip` the positional is the child issue and the marker binds the range instead of a head. A `PASS` also names its `--round`, and is refused when that round appended an acceptance criterion the `PASS` would bury, or when the contract marks a criterion's evidence as outside the diff and the body names none |
-| `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences, its provenance tag naming the `--pr` or, with `--base`/`--tip`, the range an epic child's round was judged over |
+| `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences, its provenance tag naming the `--pr` or, with `--base`/`--tip`, the range an epic child's round was judged over; at the freeze it appends nothing and posts the finding as an `ac:escalated`-tagged comment instead, which `build verdicts` folds for the next repair round |
 | `review scratch` | the per-lane directory a reviewer's staged files go under — `<temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>` |
 
 **Exit codes.** The shared table, plus `12` the live head moved past the inspected `--sha` · `13`
