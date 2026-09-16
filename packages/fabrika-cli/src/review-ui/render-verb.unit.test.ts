@@ -201,7 +201,7 @@ describe("runRender", () => {
 		expect(said).toContain("--auth-secret-from");
 	});
 
-	it("signs with the preview stage's exported secret when --auth-secret-from names it", async () => {
+	it("signs with the exported deployed secret when --auth-secret-from names it", async () => {
 		const seen = new Map<string, readonly {name: string; value: string}[]>();
 		const {outcome} = await run(
 			happy(),

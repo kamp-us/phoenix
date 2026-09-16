@@ -129,8 +129,8 @@ session cookie: **the value lives only where it was deployed from.** The
 `secret_text` binding does not read back, and `infra/ci-credentials/github.ts`
 mints one stable repo-wide value and pushes it as a write-only GitHub Actions
 secret, which `.github/workflows/deploy.yml` passes into `alchemy deploy` for
-every stage. So the one readable copy is the stack's alchemy state, behind
-`$ALCHEMY_PASSWORD`. A seat that signs a preview session cookie —
+every stage. So the one readable copy is the **ci-credentials** stack's alchemy
+state, behind `$ALCHEMY_PASSWORD`; an app stage's own state holds no copy. A seat that signs a preview session cookie —
 `review-ui render`'s tier states — needs that value and nothing else: the
 throwaway `insecure_`-prefixed secret in `apps/web/.env.example` signs a
 well-formed cookie the deployed worker answers as a visitor, which is

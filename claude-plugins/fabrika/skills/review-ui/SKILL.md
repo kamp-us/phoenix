@@ -136,13 +136,17 @@ suppressed for `:auth` by the product rule, so an `:auth` shot of it comes back 
 The values that make a tier state work come from somewhere specific. The signing secret is the
 **preview worker's**, not your local one, because it is the worker that verifies the cookie's
 signature — and you name where it came from rather than trusting your environment:
-`--auth-secret-from <file>` reads the preview stage's deployed `BETTER_AUTH_SECRET` out of an export
-of the stack's alchemy state, its one readable copy. Without the flag the verb falls back to the
+`--auth-secret-from <file>` reads the `BETTER_AUTH_SECRET` the preview worker deploys with out of an
+export of the **ci-credentials** stack's alchemy state, its one readable copy. That value is
+repo-wide, not per-stage: `infra/ci-credentials/github.ts` mints one of it and pushes it as a
+write-only Actions secret every stage's deploy is handed, so there is no preview-stage copy, the app
+stack holds only a `secret_text` binding that does not read back, and the export is taken from the
+ci-credentials state behind `$ALCHEMY_PASSWORD`. Without the flag the verb falls back to the
 ambient `$BETTER_AUTH_SECRET` and **refuses on `11` when that is empty or carries the `insecure_`
 placeholder** an example env file ships, naming the source it read. That refusal is the whole
 point: a placeholder-signed cookie is well-formed, the worker answers it as a visitor, and at the
 shot that is indistinguishable from a preview nobody seeded — which parked two gates and cost a
-founder read to split. If you hold no stage export and your ambient value is the
+founder read to split. If you hold no export of that value and your ambient value is the
 placeholder, you have not been handed the secret, and `review-ui note` is the honest route.
 Each tier's session token is what an operator passed to
 `node packages/preview-seed/src/bin.ts test-account --database-id <preview-d1>` —

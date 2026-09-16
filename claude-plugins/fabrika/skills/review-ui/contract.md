@@ -201,11 +201,14 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   verb changes behavior based on it. Chrome absent means the default path, silently.
 - Chrome output never enters `review-ui post --evidence`: evidence comes from `review-ui render`
   capture sets only, so the attach path has one validated producer.
-- **A tier-naming surface needs the preview stage's signing secret plus that tier's own session
+- **A tier-naming surface needs the preview worker's signing secret plus that tier's own session
   token**, all unset by default. The secret is the one the *preview worker deployed with*, so the
   cookie signature verifies, and it is named rather than assumed: `--auth-secret-from <file>` reads
-  it from an export of the stack's alchemy state, which is its one readable copy — the deployed
-  `secret_text` binding does not read back and the GitHub Actions secret is write-only. Without the
+  it from an export of the **ci-credentials** stack's alchemy state, which is its one readable copy.
+  That value is repo-wide rather than per-stage — `infra/ci-credentials/github.ts` mints one and
+  pushes it as a write-only Actions secret every stage's deploy is handed — so there is no
+  preview-stage copy to export, and the app stack's deployed `secret_text` binding does not read
+  back. Without the
   flag the ambient `$BETTER_AUTH_SECRET` stands in, and **a value that is empty or carries the
   `insecure_` placeholder an example env file ships is refused on `11` rather than signed with**.
   A placeholder-signed cookie is perfectly well-formed and the worker answers it as a visitor, which
@@ -261,7 +264,7 @@ fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/
 | `--viewport` | string, repeatable | no | `desktop` alone | a viewport to shoot every `--surface` at, over the closed set `desktop` (1280×800) and `mobile` (390×844); crossed with `--surface`, so two of each is four captures. A name outside the set, or one passed twice, is `10` |
 | `--flag` | string, repeatable | no | every flag at its default | force one flag for this run: `<key>=on` or `<key>=off`; anything else, or a key forced twice, is `10` |
 | `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve |
-| `--auth-secret-from` | string | no | the ambient `$BETTER_AUTH_SECRET` | a file holding the preview stage's deployed `BETTER_AUTH_SECRET`; a file that cannot be read is `11`, and so is a resolved value that is empty or carries the `insecure_` placeholder |
+| `--auth-secret-from` | string | no | the ambient `$BETTER_AUTH_SECRET` | a file holding the `BETTER_AUTH_SECRET` the preview worker deploys with — one repo-wide value, exported from the ci-credentials stack's alchemy state, its one readable copy; a file that cannot be read is `11`, and so is a resolved value that is empty or carries the `insecure_` placeholder |
 | `--repo` | string | no | resolved | the repository |
 
 A `:state` suffix is admitted **only for a state something here actually puts on screen**, and
@@ -352,7 +355,8 @@ bound to a new SHA are the stale-verdict class at the capture seam. **Resolve th
 secret** — the file `--auth-secret-from` names, else the ambient variable — and refuse on `11`
 before a browser launches when it cannot be read, is empty, or carries the `insecure_` placeholder.
 The refusal names the source it read and the route out, and the route differs by source: with no
-flag it is to pass one, and with a flag it is to export the stage's own secret into that file.
+flag it is to pass one, and with a flag it is to re-export the repo-wide value from the
+ci-credentials stack's alchemy state, since the named file does not hold the deployed one.
 For each `--surface` at each
 `--viewport`, in the provisioned headless browser sized to that viewport: navigate to
 `<previewUrl><route>`; status ≥ 400 or failed navigation is **unreachable** (`14`); an uncaught
@@ -400,7 +404,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: <names>) — the named tier's render is UNKNOWN, never a seeded substitute.` | 11 | refusal |
 | `review-ui render: a tier-naming surface was requested but <the source> carries the insecure_ placeholder prefix — a cookie signed with it is one the preview worker answers as a visitor — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
 | `review-ui render: a tier-naming surface was requested but <the source> is empty — there is no key to sign the tier cookie with — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
-| `review-ui render: cannot read the preview stage's deployed secret at <path>: <reason> — the named tier's render is UNKNOWN.` | 11 | refusal |
+| `review-ui render: cannot read the deployed session-signing secret at <path>: <reason> — the named tier's render is UNKNOWN.` | 11 | refusal |
 | `review-ui render: surface "<id>" at <viewport> did not render signed in (<reason>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
 | `review-ui render: surface "<id>" at <viewport> named tier <wanted> and rendered as <rendered> — the named tier's render is UNKNOWN, never another tier's.` | 11 | refusal |
 | `review-ui render: --flag "<token>" is not a <key>=<on\|off> pair (<reason>) — an operand nothing can force would shoot the default state under the forced name.` | 10 | refusal |

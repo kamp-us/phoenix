@@ -22,8 +22,10 @@
  * comes back at a different tier than the surface named. Each produces a perfectly valid PNG of a
  * page nobody asked for, which no byte check can tell from the real thing.
  *
- * `--auth-secret-from <file>` names where the tier cookie's signing key comes from: the preview
- * stage's deployed `BETTER_AUTH_SECRET`, exported from the stack's alchemy state. Omitted, the
+ * `--auth-secret-from <file>` names where the tier cookie's signing key comes from: the
+ * `BETTER_AUTH_SECRET` the preview worker deploys with, which is one repo-wide value rather than a
+ * per-stage one — `infra/ci-credentials/github.ts` mints it into the ci-credentials stack's alchemy
+ * state, its one readable copy, behind `$ALCHEMY_PASSWORD`. Omitted, the
  * ambient variable stands in — and is refused on `11` when it is empty or carries `.env.example`'s
  * `insecure_` placeholder, which is the fourth arm of the same class. A placeholder-signed cookie is
  * well-formed and the worker answers it as a visitor, so without this refusal the seat's own
@@ -142,8 +144,9 @@ export interface RenderOptions {
 	readonly flags: readonly string[];
 	readonly app: string | null;
 	/**
-	 * A file holding the preview stage's deployed `BETTER_AUTH_SECRET`, exported from the stack's
-	 * alchemy state. `null` falls back to the ambient variable, which is accepted only when it is
+	 * A file holding the `BETTER_AUTH_SECRET` the preview worker deploys with, exported from the
+	 * ci-credentials stack's alchemy state — one repo-wide value, not a per-stage one.
+	 * `null` falls back to the ambient variable, which is accepted only when it is
 	 * neither empty nor the `.env.example` placeholder.
 	 */
 	readonly authSecretFrom: string | null;
@@ -229,9 +232,11 @@ type UnreadableSecret = {
 /**
  * The run's signing key, from the source the operator named.
  *
- * `--auth-secret-from` is the only source that can be *known* to be the stage's: the deployed
- * `secret_text` binding does not read back and the GitHub Actions secret is write-only, so the one
- * readable copy is the stack's alchemy state and an operator exports it from there. With no flag the
+ * `--auth-secret-from` is the only source that can be *known* to be the deployed one: the app
+ * stack's `secret_text` binding does not read back and the GitHub Actions secret is write-only, so
+ * the one readable copy is the ci-credentials stack's alchemy state, where
+ * `infra/ci-credentials/github.ts` mints the single repo-wide value every stage deploys with, and an
+ * operator exports it from there. With no flag the
  * ambient variable stands in, and {@link classifyAuthSecret} is what keeps that fallback honest — a
  * placeholder or empty value refuses rather than signing.
  */
@@ -396,7 +401,7 @@ export const runRender = (
 			const tier = tierOf(stateOf(surface));
 			return tier === null ? [] : [tier];
 		});
-		// The signing key is read before the tokens and refused on its own terms: it is the stage's
+		// The signing key is read before the tokens and refused on its own terms: it is the deployed
 		// value, not the seat's, and a seat signing with `.env.example`'s placeholder produces a
 		// well-formed cookie the worker answers as a visitor — indistinguishable at the shot from a
 		// preview nobody seeded.
@@ -407,7 +412,7 @@ export const runRender = (
 		if (secret._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the preview stage's deployed secret at ${secret.path}: ${secret.reason} — the named tier's render is UNKNOWN.`,
+				`${VERB}: cannot read the deployed session-signing secret at ${secret.path}: ${secret.reason} — the named tier's render is UNKNOWN.`,
 				[scanned],
 			);
 		}
@@ -418,8 +423,8 @@ export const runRender = (
 			// look.
 			const route =
 				options.authSecretFrom === null
-					? " pass --auth-secret-from <file> naming the preview stage's deployed secret."
-					: " export the preview stage's own secret into that file.";
+					? " pass --auth-secret-from <file> holding the repo-wide BETTER_AUTH_SECRET, whose one readable copy is the ci-credentials stack's alchemy state (infra/ci-credentials/github.ts) behind $ALCHEMY_PASSWORD."
+					: " that file does not hold the deployed value: there is no preview-stage copy to export, so re-export the repo-wide BETTER_AUTH_SECRET from the ci-credentials stack's alchemy state (infra/ci-credentials/github.ts) behind $ALCHEMY_PASSWORD.";
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: a tier-naming surface was requested but ${identity.reason} — the named tier's render is UNKNOWN, never a cookie the worker will reject;${route}`,

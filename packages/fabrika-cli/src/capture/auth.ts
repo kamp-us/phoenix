@@ -15,10 +15,14 @@
  * which an app commonly does on preview — so it is a fact about the running worker
  * that no caller out here can observe. The server reads exactly one name and ignores the other.
  *
- * **The signing key is the preview stage's, and this module refuses to guess at it.** The value has
- * to be the one the stage deployed with, and the only readable copy of that is the stack's alchemy
- * state — so the caller names its source ({@link AuthSecretSource}) and this module judges what came
- * back ({@link classifyAuthSecret}). An empty value and a `.env.example` placeholder are both
+ * **The signing key is the one the deployed worker verifies against, and this module refuses to
+ * guess at it.** That value is repo-wide, not per-stage: `infra/ci-credentials/github.ts` mints one
+ * `BETTER_AUTH_SECRET` into the ci-credentials stack's alchemy state and pushes it as a write-only
+ * Actions secret that `deploy.yml` passes into every stage's deploy, so the app stack holds only a
+ * `secret_text` binding that does not read back and the one readable copy is that ci-credentials
+ * state, behind `$ALCHEMY_PASSWORD` — so the caller names its source ({@link AuthSecretSource}) and
+ * this module judges what came back
+ * ({@link classifyAuthSecret}). An empty value and a `.env.example` placeholder are both
  * refusals here rather than a cookie the worker rejects at the shot, because the two look identical
  * from the far side: better-auth answers a bad signature and an absent session row with the same
  * bare `null`.
@@ -80,8 +84,12 @@ export const PLACEHOLDER_SECRET_PREFIX = "insecure_";
 
 /**
  * Where a run's signing secret came from. It rides every refusal because the two sources fail in
- * opposite directions: a stage-state export that is unreadable is an operator step not taken, and an
+ * opposite directions: a named export that is unreadable is an operator step not taken, and an
  * ambient value that carries the placeholder prefix is a seat quietly signing with a dev key.
+ *
+ * `StageState` names the file the operator exported the deployed value into; the value itself is
+ * repo-wide, read out of the ci-credentials stack's alchemy state, so the tag names the export's
+ * role in this run rather than a per-stage secret.
  */
 export type AuthSecretSource =
 	| {readonly _tag: "StageState"; readonly path: string}
@@ -89,7 +97,7 @@ export type AuthSecretSource =
 
 export const describeAuthSecretSource = (source: AuthSecretSource): string =>
 	source._tag === "StageState"
-		? `the preview stage's deployed secret at ${source.path}`
+		? `the deployed session-signing secret at ${source.path}`
 		: `the ambient $${source.name}`;
 
 /**
@@ -120,7 +128,8 @@ export const classifyAuthSecret = (raw: string, source: AuthSecretSource): AuthS
  * session, and a tier with no token of its own is a tier this preview does not carry.
  *
  * `Unusable` is its own arm rather than another name on `Missing`'s list, because the secret is no
- * longer an environment variable among others: it is the preview stage's own value, and a seat
+ * longer an environment variable among others: it is the value the deployed worker verifies
+ * against, and a seat
  * holding the wrong one produces a perfectly well-formed cookie the worker refuses. Collapsing the
  * two spent two review rounds reading "the preview answered the seeded cookie as a visitor" without
  * being able to say which of a wrong key and a missing row it was.
@@ -140,7 +149,7 @@ export type IdentityRead =
  * Fold the tier tokens read off `env` together with an already-resolved secret.
  *
  * The secret arrives as an argument rather than off `env` because its source is the caller's
- * decision — a named export of the preview stage's deployed value, or the ambient variable — and a
+ * decision — a named export of the deployed value, or the ambient variable — and a
  * pure core cannot read a file. An unusable secret is reported ahead of any unset token: the tokens
  * are the operator's own `preview-seed` output and read back plainly, where the secret is the half
  * that has been silently wrong.
