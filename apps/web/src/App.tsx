@@ -70,6 +70,7 @@ import {PanoSubmitPage} from "./pages/PanoSubmitPage";
 import {ProfilePage} from "./pages/ProfilePage";
 import {SearchPage} from "./pages/SearchPage";
 import {SozlukHome} from "./pages/SozlukHome";
+import {SozlukLetter} from "./pages/SozlukLetter";
 import {SozlukTermPage} from "./pages/SozlukTermPage";
 import {useUsernameResolutionPending} from "./pages/signupUsernameGate";
 import {UsernameBootstrap} from "./pages/UsernameBootstrap";
@@ -439,6 +440,8 @@ export function App() {
 	];
 	const sozlukRoutes = [
 		<Route key="sozluk" path="/sozluk" element={<SozlukHome />} />,
+		// Two segments, so it never competes with the one-segment term route below it.
+		<Route key="sozluk-letter" path="/sozluk/harf/:letter" element={<SozlukLetter />} />,
 		<Route key="sozluk-slug" path="/sozluk/:slug" element={<SozlukTermPage />} />,
 	];
 	const divanRoutes = [<Route key="divan" path="/divan" element={<DivanPage />} />];

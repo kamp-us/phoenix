@@ -1,0 +1,48 @@
+/* The per-letter index (#9267). The alphabet strip and the create CTA live in sözlük's
+   persistent Subnav zone, so this page paints only its own masthead and list. Role tokens and
+   the spacing ramp only — no raw values. */
+
+.kp-sozluk-letter__masthead {
+	padding: var(--s-2) 0 var(--s-3);
+	border-bottom: 1px solid var(--border);
+}
+
+.kp-sozluk-letter__crumb {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+.kp-sozluk-letter__crumb a {
+	color: var(--link);
+}
+
+.kp-sozluk-letter__title {
+	font: var(--t-h-page);
+	font-weight: 700;
+	margin: var(--s-1) 0 0;
+	color: var(--text-primary);
+}
+
+.kp-sozluk-letter__count {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	margin: var(--s-3) 0 var(--s-2);
+}
+
+.kp-sozluk-letter__status,
+.kp-sozluk-letter__error {
+	font: var(--t-body-sm);
+	margin: 0;
+	padding: var(--s-3) 0;
+}
+.kp-sozluk-letter__status {
+	color: var(--text-muted);
+}
+.kp-sozluk-letter__error {
+	color: var(--danger);
+}
+
+.kp-sozluk-letter__more {
+	display: flex;
+	justify-content: center;
+	margin-top: var(--s-4);
+}
