@@ -82,12 +82,16 @@ field says which of the two it rested on. The verdict is read before the `--veri
 route that is both spent at `--verified-at` and standing-FAIL at `--sha` meets `20` rather than
 `12` — the text lane is the move to make first, and the desk run is re-run after it.
 
-Exit `7` covers four different facts, and only one of them is a clean end — **read the message
+Exit `7` covers five different facts, and only one of them is a clean end — **read the message
 before you pick a terminal.** `raises no ui class` means nothing required your namespace and there
-is nothing to route: end ROUTED-ELSEWHERE with no write. The other three — the PR proven absent
-(404), the PR closed, the diff empty — are an **unread** PR, not a judged one, so ending
+is nothing to route: end ROUTED-ELSEWHERE with no write. The other four — the PR proven absent
+(404), the PR closed, the diff empty, and GitHub serving no changed files against a record that
+declares some — are an **unread** PR, not a judged one, so ending
 ROUTED-ELSEWHERE on any of them claims a judgment you never formed: end **CANT-SEE** and name the
-message.
+message. **Exit `11` naming GitHub's 3000-file ceiling ends the same way.** The verb never refuses
+on the `changed_files` the pull-request record declares — that count is computed against a base
+cached at the last push and prints as a line beside the enumeration — but a list the platform cut
+short can only shrink the `ui` count, so the class is unread rather than absent.
 
 ## 2 — Read the law you judge by
 

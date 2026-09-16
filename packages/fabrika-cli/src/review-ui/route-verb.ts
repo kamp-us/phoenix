@@ -22,6 +22,13 @@
  * the exact rule that raised the class, or the two drift and this verb refuses on a PR the gate is
  * meanwhile blocking.
  *
+ * The file set that runs over is the `pulls/<n>/files` enumeration read through
+ * {@link platformFileSet}, so the `changed_files` the pull-request record declares is reported as a
+ * disagreement line and never refused on — that count is computed against a base cached at the last
+ * push, and refusing on it stranded the lane with no act available to clear it. Two shapes still
+ * refuse, because neither leaves a ui count anybody read: an **empty** list, and one at the
+ * endpoint's own file ceiling, which can only ever shrink that count.
+ *
  * Whether the diff renders anything is the *skill's* judgment over `review diff`'s refusal-guarded
  * bytes, and it stays there. No verb decides it: that was a rejected candidate, because a
  * second path heuristic is the first one's defect relocated.
@@ -59,6 +66,7 @@ import {normalizeForReadback} from "../report/compose.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "../review/authored.ts";
 import {isUiSurface} from "../review/classes.ts";
 import {headContentFor} from "../review/head-content.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -174,24 +182,46 @@ export const runRoute = (
 			);
 		}
 
-		const listed = yield* listPullFiles(repo, pr);
-		if (listed._tag === "Failure") return unreadable("the changed-file list", pr, listed.reason);
 		const declared = target.pull.changedFiles;
-		const ui = listed.value.filter((file) => isUiSurface(file, options.uiPrefixes));
+		// The enumeration is the file set and `changed_files` is a second opinion beside it —
+		// `platformFileSet` carries why, and the seats it leaves to this verb are the two below.
+		const listed = platformFileSet(VERB, `#${pr}`, declared, yield* listPullFiles(repo, pr));
+		if (listed._tag === "Unreadable") return unreadable("the changed-file list", pr, listed.reason);
+		const files = listed.set.files;
+		const ui = files.filter((file) => isUiSurface(file, options.uiPrefixes));
 		const diagnostics = [
 			scannedLine(
 				VERB,
-				listed.value.length,
+				files.length,
 				"changed file",
 				`${declared} declared; ${ui.length} raise the ui class`,
 			),
+			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
 		];
-		// A truncated list can only ever *shrink* the ui count, so the zero-scope refusal below would
-		// fire on a PR whose class the gate is meanwhile raising. UNKNOWN, never a derivation.
-		if (listed.value.length < declared) {
+		// Zero is the shortfall the enumeration alone establishes, and with the declared count no
+		// longer refusing it is the only seat left: the zero-class refusal below would then answer
+		// "nothing renders" over a diff nobody read.
+		if (files.length === 0) {
+			return refuse(
+				ZERO_SCOPE,
+				`${VERB}: GitHub served no changed files for #${pr} against the ${declared} its own pull-request record declares — refusing to derive the ui class from a diff nobody read.`,
+				diagnostics,
+			);
+		}
+		// The ceiling is the one truncation the enumeration cannot rule out on its own, and a
+		// truncated list can only ever *shrink* the ui count, so the zero-class refusal below would
+		// fire on a PR whose class the gate is meanwhile raising. Seated at PRECONDITION_UNKNOWN
+		// rather than the `13` the `ship` verbs use: `13` is RENDER_CRASHED in this group's table,
+		// and this verb already answers UNKNOWN for its other capped platform read, the
+		// `--verified-at` comparison below.
+		if (listed.set.capped) {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: received ${listed.value.length} of ${declared} changed files — refusing to derive the ui class from a truncated read.`,
+				platformCapLine(
+					VERB,
+					`#${pr}`,
+					"a ui-class file could sit in the part the platform never served.",
+				),
 				diagnostics,
 			);
 		}
