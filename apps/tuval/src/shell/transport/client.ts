@@ -24,13 +24,19 @@ import type {ProgramId} from "../../registry/program.ts";
 import type {TableRow} from "../../table/row.ts";
 import type {PrefixTable} from "../keys/table.ts";
 import {type DispatchResult, delivered, type ProcessView, processGone} from "../window/host.ts";
-import {type AttachRefused, NoSuchProcess, PlacementUnsupported} from "./errors.ts";
+import {
+	type AttachRefused,
+	NoSuchProcess,
+	PlacementUnsupported,
+	type UndecodableReason,
+} from "./errors.ts";
 import {
 	ATTACH_KIND,
 	DETACH_KIND,
 	DISPATCH_KIND,
 	decodeServerFrame,
 	encodeFrame,
+	frameKind,
 	fromWirePrefixTable,
 	fromWireRow,
 	type ServerFrame,
@@ -45,6 +51,31 @@ import {
  * than by any frame the wire keeps for it.
  */
 export const SHELL_PROGRAM_ID = "shell" as ProgramId;
+
+/**
+ * What the page answers a frame it could not decode. The server is the only writer on this socket,
+ * so a frame it sent that does not decode means the two ends disagree about the wire: the page
+ * closes rather than guess.
+ *
+ * It says which kind it refused first, and that line is not decoration. A refused reply frame that
+ * closed the socket in silence is exactly how an authored spell's `Schema.Void` result read on the
+ * desk: the spell ran, the reply was refused for a missing `result` key, and the command line sat
+ * at "Running…" with nothing anywhere naming the frame (#9365). The text itself never reaches the
+ * log — a refusal names the kind and the reason and never echoes the body back, the same rule
+ * `UndecodableMessage` keeps (`./errors.ts`).
+ */
+export const refuseFrame = <E, R>(
+	text: string,
+	reason: UndecodableReason,
+	close: (event: Socket.CloseEvent) => Effect.Effect<unknown, E, R>,
+): Effect.Effect<void, never, R> =>
+	Effect.andThen(
+		Effect.logWarning("tuval transport: the page refused a frame the kernel sent", {
+			kind: frameKind(text),
+			reason,
+		}),
+		Effect.ignore(close(new Socket.CloseEvent(1008, `undecodable frame: ${reason}`))),
+	);
 
 /** One attached process: the two `WindowHost` members a renderer is handed, bound to this process. */
 export interface AttachedProcess<S = unknown, M extends Message = Message> {
@@ -214,13 +245,9 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 			.runString(
 				(text) => {
 					const decoded = decodeServerFrame(text);
-					// The server is the only writer on this socket, so a frame it sent that does not decode
-					// means the two ends disagree about the wire: the page closes rather than guess.
 					return decoded._tag === "Frame"
 						? onFrame(decoded.frame)
-						: Effect.ignore(
-								write(new Socket.CloseEvent(1008, `undecodable frame: ${decoded.reason}`)),
-							);
+						: refuseFrame(text, decoded.reason, write);
 				},
 				{onOpen: Effect.ignore(Deferred.succeed(opened, undefined))},
 			)
