@@ -101,3 +101,16 @@ export const SUPERSEDES_VERDICT = 18;
  * viewport label would make the narrow half of the design law answerable from desktop pixels.
  */
 export const WRONG_VIEWPORT = 19;
+/**
+ * Refused, proven: the text review this route rests on is not a standing PASS at the record's head.
+ *
+ * Two triggers, one meaning and one caller move — the `review-code` verdict in force at `--sha` is a
+ * FAIL, or a route resting on a hand-verification has no text verdict binding that head at all.
+ * Either way the `routed-elsewhere` clause would assert a PASS nobody formed, and the format carries
+ * no polarity for a later reader to tell a true assertion from a false one. Its own seat rather than
+ * {@link STALE_TREE}: nothing here is stale — the tree is the one the reviewer read, and what is
+ * missing is the other gate's verdict over it.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9196#issuecomment-5688739893
+ */
+export const TEXT_REVIEW_UNMET = 20;

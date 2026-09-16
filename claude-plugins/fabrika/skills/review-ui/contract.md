@@ -173,6 +173,7 @@ sibling's numerals is not a goal the doctrine sets.
 | `16` | proven: no preview deployment exists for this PR — the announced-preview convention resolves to nothing; the skill's CANT-SEE route |
 | `17` | proven: at least one evidence upload or upload-verification failed — **nothing was posted** |
 | `18` | refused: the write would retire a standing verdict of the **opposite polarity** at this head and `--supersede` was not passed — nothing posted |
+| `20` | refused, proven: the text review a `route` record rests on is not a standing PASS at the head it binds — the `review-code` verdict in force at `--sha` is a FAIL, or a route resting on a hand-verification has no text verdict binding that head — nothing posted |
 | `127` | the verb never ran at all (unresolved binary) |
 
 **`7` versus `11`** is the package's spine: a 404 is a fact about the repository, an unreachable
@@ -758,9 +759,11 @@ The reasoning arrives on **stdin only**, for the same reason as `post` and `note
 | stdin | markdown | yes | — | which files changed and why none of them renders anything |
 
 **Output** — machine. One JSON object:
-`{"answer":"routed","namespace":"review-ui","sha":"6c6fe226…","uiFiles":2,"verifiedAt":null,"upsert":"created","commentUrl":"…"}`.
+`{"answer":"routed","namespace":"review-ui","sha":"6c6fe226…","uiFiles":2,"verifiedAt":null,"textReview":"absent","upsert":"created","commentUrl":"…"}`.
 `verifiedAt` is the `--verified-at` head the range was cleared over, and `null` where the route
-rested on no hand-verification.
+rested on no hand-verification. `textReview` is the `review-code` verdict this record rests on:
+`pass` where one stands in force at `--sha`, `absent` where none binds that head — and `absent` is
+reachable only on a route carrying no `--verified-at`, because one that does is refused at `20`.
 
 **Why it exists.** `ship scope` raises the `ui` class from a path test that cannot see whether
 pixels moved, so a PR whose only change under a declared `uiSurfaces` prefix is prose requires this namespace — and
@@ -784,7 +787,9 @@ the range raises the `ui` class — the hand-verification is then spent and a fr
 `--sha`; a comparison that came back at GitHub's 300-file ceiling is `11`, because the compare
 declares no total and a capped list can only ever hide a `ui`-class file, and so is one whose two
 heads have diverged, because the platform's three-dot compare then answers from their merge base and
-the range was never read at all. Compose the record's first
+the range was never read at all. Read the PR's comments and resolve the `review-code` verdict in
+force at `--sha`; a standing FAIL is `20`, and so is an absent verdict on a route carrying
+`--verified-at`. Compose the record's first
 line through the `routed-elsewhere` wire format, leak-scan the assembled comment (`5`/`6`), upsert
 one record for this namespace on the emitter's own comment, and read it back from live state (`9` on
 mismatch, `8` on an unproven write).
@@ -798,6 +803,20 @@ It is optional because a prose-only diff under a declared prefix rests on the bo
 head to compare; where a hand-verification exists, naming it is what makes the record checkable.
 Nothing about the `routed-elsewhere` bytes changes either way: the record stays head-bound to
 `--sha` and carries no evidence field.
+
+**The text review the record rests on.** An interim exception that lets a hand-verification stand
+in for a render prescribes the clause such a record carries, and that clause asserts a text review
+PASS beside the hand-verification. The verb used to post it while reading neither half, so a record
+over a standing text FAIL and one over a PASS read identically — and the `routed-elsewhere` format
+carries no polarity for a later reader to tell them apart. The text PASS is a precondition, not
+commentary, and the verb reads it: it resolves the `review-code` verdict in force at `--sha` through
+`review verdicts`' own two carriers — the `verdict-marker` first line and the §CP advisory — ordered
+by `ship gate`'s `inForce` and judged current by the same `bindToContent`, so no two readers hold
+different rules. A standing FAIL refuses on `20`. An **absent** verdict refuses on `20` only where
+`--verified-at` is passed: that route asserts the conjunction, while a prose-only route asserts
+nothing about the text lane and says so on stderr instead of blocking. The host's native review fold
+is `ship gate`'s widening and is not read here — the merge gate still reads it, and this verb only
+judges what its own clause claims.
 
 **What this verb does not decide.** Whether the diff renders anything. That is the skill's judgment
 over `review diff`'s refusal-guarded bytes. Narrowing the `ui` path class instead was proposed and
@@ -817,6 +836,7 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `10` | `--sha` or `--verified-at` is not a head SHA, or `--clause` is blank |
 | `11` | a precondition read failed, the changed-file list came back truncated, or the `--verified-at` comparison came back at the 300-file ceiling or between two diverged heads — nothing was posted |
 | `12` | the live head moved past `--sha` — the diff you read is gone; or a `ui`-class file changed between `--verified-at` and `--sha`, so the hand-verification is spent |
+| `20` | the `review-code` verdict in force at `--sha` is a FAIL, or a route resting on `--verified-at` has no `review-code` verdict binding that head |
 
 **Errors**
 
@@ -839,6 +859,8 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `review-ui route: cannot read <what> for #<n>: <reason> — nothing was posted.` | 11 | refusal |
 | `review-ui route: the live head is <live>, not <sha> — the diff you read is gone; re-read at <live>.` | 12 | refusal |
 | `review-ui route: <files> raise the ui class in <verified>..<sha> — the hand-verification at <verified> is spent; re-run it at <sha>.` | 12 | refusal |
+| `review-ui route: review-code stands FAIL at <sha> (comment <id>) — this record would assert a text PASS that is not there; repair the finding and route at the head the text gate passes.` | 20 | refusal |
+| `review-ui route: no standing review-code verdict binds <sha>, and a route resting on a hand-verification asserts one — land the text verdict first, and read what stands with fabrika review verdicts <n>.` | 20 | refusal |
 
 **Scope** — one PR, one comment write, the caller's stdin.
 
@@ -851,7 +873,7 @@ $ fabrika review-ui route 6326 --sha 6c6fe226 \
 export or type changed. `design-token-lint.config.json` rewrites two note strings; the guard's
 data fields are byte-identical. No component, route, token or style is touched.
 EOF
-{"answer":"routed","namespace":"review-ui","sha":"6c6fe226","uiFiles":2,"verifiedAt":null,"upsert":"created","commentUrl":"https://github.com/<owner>/<repo>/pull/6326#issuecomment-5123990412"}
+{"answer":"routed","namespace":"review-ui","sha":"6c6fe226","uiFiles":2,"verifiedAt":null,"textReview":"absent","upsert":"created","commentUrl":"https://github.com/<owner>/<repo>/pull/6326#issuecomment-5123990412"}
 ```
 
 A route resting on a hand-verification names the head it ran at, and the range decides whether it
@@ -863,7 +885,7 @@ $ fabrika review-ui route 4471 --sha fb01065b --verified-at 8efd315a \
 The desk run at `8efd315a` drove every readout this diff touches. `8efd315a..fb01065b` is one
 commit under `packages/<cli>/`, so the composition is byte-identical.
 EOF
-{"answer":"routed","namespace":"review-ui","sha":"fb01065b","uiFiles":3,"verifiedAt":"8efd315a","upsert":"created","commentUrl":"https://github.com/<owner>/<repo>/pull/4471#issuecomment-5598041887"}
+{"answer":"routed","namespace":"review-ui","sha":"fb01065b","uiFiles":3,"verifiedAt":"8efd315a","textReview":"pass","upsert":"created","commentUrl":"https://github.com/<owner>/<repo>/pull/4471#issuecomment-5598041887"}
 
 $ fabrika review-ui route 4471 --sha fb01065b --verified-at 8efd315a --clause "…" < why.md
 review-ui route: scanned 2 files changed in 8efd315a..fb01065b; 2 raise the ui class.
@@ -875,6 +897,13 @@ $ fabrika review-ui route 4471 --sha 9c40aa71 --verified-at 8efd315a --clause "�
 review-ui route: 8efd315a is diverged of 9c40aa71, not an ancestor — the comparison answers from
 their merge base, so 8efd315a..9c40aa71 was never read. Re-run the hand-verification at 9c40aa71.
 # exit 11
+
+$ fabrika review-ui route 4471 --sha fb01065b --verified-at fb01065b --clause "…" < why.md
+review-ui route: scanned 6 comments.
+review-ui route: scanned 2 review-code claims; FAIL at fb01065b via the marker carrier.
+review-ui route: review-code stands FAIL at fb01065b (comment 5598219196) — this record would
+assert a text PASS that is not there; repair the finding and route at the head the text gate passes.
+# exit 20
 ```
 
 **Grounding**
@@ -890,6 +919,9 @@ their merge base, so 8efd315a..9c40aa71 was never read. Re-run the hand-verifica
 - **A hand-verification's currency is the verb's judgment, not the gate's**, and it binds the
   `ui` files' content rather than the record's own head — a commit that moves no rendered surface
   keeps the evidence rather than spending a desk session to re-prove it.
+- **The text PASS a hand-verification clause asserts is read, not assumed** — a standing
+  `review-code` FAIL at the record's head refuses the route, and the reader is `review verdicts`'
+  own, so the two gates cannot answer one question differently.
 - **The head binding**, and why a moved head is re-read rather than re-bound.
 
 ---

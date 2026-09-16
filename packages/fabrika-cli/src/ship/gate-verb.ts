@@ -188,9 +188,14 @@ export const requiredWithFloor = (
  * The in-force verdict for one namespace: head-bound candidates first, then newest write stamp.
  *
  * Exported so the ordering is testable without a PR: the two rules interact, and "head-bound
- * outranks recency" is only checkable against a stale-but-newer counterexample.
+ * outranks recency" is only checkable against a stale-but-newer counterexample. It is generic in the
+ * claim so a caller carrying a narrower one — `review-ui route`'s two-polarity text claim — gets its
+ * own type back and needs no cast to read a field this module does not know about.
  */
-export const inForce = (candidates: ReadonlyArray<Candidate>, sha: string): Candidate | null => {
+export const inForce = <T extends Candidate>(
+	candidates: ReadonlyArray<T>,
+	sha: string,
+): T | null => {
 	const ordered = [...candidates].sort((a, b) => {
 		const aBound = prefixMatch(a.sha, sha) ? 1 : 0;
 		const bBound = prefixMatch(b.sha, sha) ? 1 : 0;
