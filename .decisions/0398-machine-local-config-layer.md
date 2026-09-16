@@ -40,8 +40,9 @@ that ruling. The filename and the merge rules were left to this record.
 
 What the ruling does not settle is the part worth writing down: an overlay that can override any key
 is also a surface that can locally weaken a guard. `.fabrika.jsonc` carries `codeValidators`,
-`workflowValidators`, `docLeakExempt`, `governedRoots`, `capClearAuthors`, `campaignAuthors` and
-`controlPlane`, and `build check` reads the first three straight out of the working tree. A local
+`workflowValidators`, `docLeakExempt`, `governedRoots`, `portability`, `uiSurfaces`,
+`dependencyReconciler`, `capClearAuthors`, `campaignAuthors` and `controlPlane`, and `build check`
+reads the first three straight out of the working tree. A local
 layer over those keys is a local, invisible, untracked way to shrink what a gate looks at.
 
 ADR [0294](0294-config-narrows-the-acl-never-replaces-it.md) already rules that a config authority
@@ -84,13 +85,38 @@ keys only, and a key it may not carry refuses the whole load.**
    value is in force that is not — the same reason `laneConcurrencyCap` refuses a fraction rather
    than rounding it.
 
-5. **A local value may never weaken a guard, and two rules hold that.** A key that names *who may
-   act* (ADR 0294's authority keys: `capClearAuthors`, `campaignAuthors`, `controlPlane`) or that
-   names a gate's scope, exemptions or validator commands (`governedRoots`, `codeValidators`,
-   `workflowValidators`, `docLeakExempt`, `auditCatalogs`, `ci`, `paths`) is **permanently
-   ineligible** — no later ADR admits one by adding a flag, because admitting one is the thing being
-   banned. Every other key is ineligible by default and becomes machine-local only through a record
-   like this one.
+5. **A local value may never weaken a guard, and the permanently ineligible set is read off the
+   whole config surface rather than sampled from it.** Three classes are **permanently ineligible**
+   — no later ADR admits one by adding a flag, because admitting one is the thing being banned.
+
+   - **Keys naming who may act**, ADR 0294's authority keys: `capClearAuthors`, `campaignAuthors`,
+     `controlPlane`, and `parkCause`, whose `driverRouted` arm says whether `recipe unpark` may
+     clear a driver-routed park with no human in the loop. Eligibility is declared per key group
+     (rule 3), so `parkCause` is barred whole rather than split across its two arms.
+   - **Keys naming a gate's scope, its exemptions or what it may assume**: `governedRoots`,
+     `docLeakExempt`, `auditCatalogs`, `paths`, `ci`, `portability` and `uiSurfaces`.
+     `portability.repoNames` is the fifth rule of `guard portability-guard check` and the other four
+     rules do not read it, so a shorter local list is less guard rather than a different one.
+     `uiSurfaces`' prefixes are what `review scope` and `ship scope` raise the `ui` class from, so a
+     dropped prefix drops a rendered gate out of a pull request's required set with nothing on the
+     pull request to see; the same key group carries `uiCapture.storageState`, which names a
+     credential file.
+   - **Keys naming a command fabrika spawns**: `codeValidators`, `workflowValidators` and
+     `dependencyReconciler` — one `command` argv grammar, and `lane integrate` runs the reconciler
+     in the assembly worktree immediately before those validators.
+
+   Naming a key here is not a claim that it is weak today. Rule 3 already makes every unlisted key
+   ineligible and the allow-list opens with one entry; what this rule adds is that the ban outlives
+   any later widening of that list.
+
+   **Every remaining key stays ineligible by default, which is the weaker bar and is meant to be.**
+   `assemblyRefresh`, `assemblyReplay` and `machineryLaps` are the declared keys that land here.
+   None of them scopes a gate: each governs how an epic run treats the one lane ledger the owning
+   repository holds, so two machines declaring different values would disagree about a ledger
+   neither owns alone. A permanent ban is the wrong instrument for that, because the question such
+   a key has to answer first is divergence, not weakening — and a record like this one is where
+   that answer goes. `laneConcurrencyCap` is the one key that has already answered it: a seat count
+   is a property of the laptop holding the seats.
 
 6. **The local layer is read from the working tree only, never at a ref.** `build clearances` reads
    `.fabrika.jsonc` at a pull request's base ref through `readFileAtRef`; that read, and every other
@@ -116,7 +142,8 @@ keys only, and a key it may not carry refuses the whole load.**
 **Banned.**
 
 - An environment variable for any of this, per the ruling.
-- A local override of an authority key or a gate-scope key, by any mechanism.
+- A local override of an authority key, a gate-scope key, or a key naming a command fabrika spawns,
+  by any mechanism.
 - A deep merge, an array append, or any rule under which the effective value is a value no file
   states.
 - Reading the local layer at a base ref, or shipping it into a container, a CI job or a release
