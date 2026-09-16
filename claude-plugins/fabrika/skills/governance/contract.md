@@ -1019,9 +1019,17 @@ stderr line and the `--json` `floor` field. The six: `refired` (a new attempt ex
 (the re-fired run is queued or running again under its own id with the new attempt number not yet
 published — wait and re-read that run, never escalate it), `green` (the run at this head already
 passed), `in-flight` (the run had not completed, so it may still judge state older than this verdict
-— re-read the check), `no-run` (no floor run at this head: not installed in this repository, or not
-fired yet), `unknown` (the state could not be read or the re-fire could not be proven — never read as
+— re-read the check), `no-run` (the runs listed at this head carry no `governance-floor` one),
+`unknown` (the state could not be read or the re-fire could not be proven — never read as
 a pass).
+
+**`no-run`'s line says which of two facts it is, and it never says "not installed".** The tag is one
+token and the head's own run count is what tells the two apart: a head carrying other runs and no
+floor one is a floor that did not fire for this head, while a head carrying **no run at all** is a
+list that proves nothing about the floor — the same answer the platform gives while it has not
+indexed that head's runs yet, and the line says so rather than offering an absent workflow. One
+message covering both cost a reader a whole hypothesis about the re-fire keying: the floor had run
+at that head minutes before, and the line said it was not installed.
 
 **No advisory carrier.** `review post` takes `--carrier advisory` for §CP PRs, where a human approval
 is the gate. This verb has no such mode: §CP is not this namespace's question, the governance verdict

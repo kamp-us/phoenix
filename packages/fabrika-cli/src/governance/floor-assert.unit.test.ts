@@ -175,8 +175,18 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 		expect(assertion).toEqual({_tag: "Restarting", run: FLOOR, status: "queued"});
 	});
 
-	it("answers NoRun when the repository runs no floor at this head", async () => {
-		expect(await assert(listed({id: 1, name: "ci"}))).toEqual({_tag: "NoRun"});
+	it("answers NoRun carrying how many runs the head did list", async () => {
+		expect(await assert(listed({id: 1, name: "ci"}, {id: 2, name: "leak-guard"}))).toEqual({
+			_tag: "NoRun",
+			runsAtHead: 2,
+		});
+	});
+
+	it("answers NoRun carrying zero when the head lists no run of any name", async () => {
+		expect(await assert([[RUNS, {status: 200, body: runsAtHead(0, []).stdout}]])).toEqual({
+			_tag: "NoRun",
+			runsAtHead: 0,
+		});
 	});
 });
 
@@ -236,6 +246,24 @@ describe("floorLine says what the caller must do next", () => {
 			"may still need a re-fire",
 		);
 		expect(floorLine("governance post", {_tag: "InFlight", run: FLOOR})).toContain("re-read");
+	});
+
+	// The one message covered both NoRun cases and offered "not installed in this repository" over a
+	// repository whose floor had run at that head minutes earlier, which is what sent a reader past
+	// `needsRefire` and into a hypothesis the source never held.
+	it("never claims the floor is uninstalled over a head that carries runs", () => {
+		const line = floorLine("governance post", {_tag: "NoRun", runsAtHead: 30});
+		expect(line).toContain("30 run(s)");
+		expect(line).toContain("did not fire for this head");
+		expect(line).not.toContain("not installed");
+		expect(floorToken({_tag: "NoRun", runsAtHead: 30})).toBe("no-run");
+	});
+
+	it("calls an empty run list unproven rather than an absent floor", () => {
+		const line = floorLine("governance post", {_tag: "NoRun", runsAtHead: 0});
+		expect(line).toContain("no workflow run at all");
+		expect(line).toContain("unproven");
+		expect(line).not.toContain("not installed");
 	});
 
 	it("tells a restarting re-fire to wait on its run rather than escalate", () => {
