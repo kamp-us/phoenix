@@ -48,7 +48,9 @@ waiting to happen; name it.
 `packages/fabrika-cli/src/` and take a red as a finding: a skill installed elsewhere whose refusal
 rationale names a ticket the reader cannot open teaches nothing, and the fix is a self-contained
 sentence, not a shorter pointer. The guard's floor only shrinks, so a diff that lifts a ceiling to
-admit a new reference is the finding rather than the remedy.
+admit a new reference is the finding rather than the remedy. Skill text gets no exception: the
+`@ruling` citation tag the guard admits is scoped to `packages/fabrika-cli/`, because a skill's
+reader is the adopter's agent and a link into this repo's history teaches that agent nothing.
 
 **Every contract read the diff instructs is a section read** — a contract is a reference the reader
 resolves one heading at a time, never a document loaded whole. Skill text and any

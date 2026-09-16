@@ -32,7 +32,11 @@ One row per acceptance criterion, graded against the diff and the CI-at-head fac
   is a finding.
 - **Comment discipline.** Comments earn their place or die: a load-bearing note states a
   constraint the code cannot show; separators, name-restaters, and narration of obvious control
-  flow are findings, not style preferences (the repo's CLAUDE.md comment law).
+  flow are findings, not style preferences (the repo's CLAUDE.md comment law). **Under
+  `packages/fabrika-cli/` the record pointer that law asks for is an `@ruling` tag naming the hosted
+  issue that settled the behaviour** — a decision-record number or a decision-corpus path reds on
+  `portability-guard` there, so asking for one is asking for a revert. Do not raise the collapse
+  finding against a docblock that carries the tag.
 - **Staleness traps.** Session/state caching across a boundary that can move underneath it
   (heads, tokens, label sets) is a finding when nothing re-validates.
 

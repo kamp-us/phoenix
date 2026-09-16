@@ -11,7 +11,9 @@ its `skipped`.
   reads as a different author is a defect before it is a style choice.
 - **Comments earn their place or die.** The *why* belongs in the repo's decision records, the shape
   in its pattern docs; an inline comment is the surface of last resort. Never narrate control flow,
-  never address the reviewer.
+  never address the reviewer. Under `packages/fabrika-cli/` the pointer at that record is an
+  `@ruling` tag naming the hosted issue that settled the behaviour — a decision-record number or a
+  decision-corpus path reds on `portability-guard` in the trees fabrika ships.
 - **Make invalid states unrepresentable; domain logic in domain objects.** Prefer a type that
   cannot hold the bug over a check that catches it.
 - **Ground platform/dependency behavior in source, not intuition** — the dependency's own source or
