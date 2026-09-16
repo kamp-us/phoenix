@@ -1,9 +1,13 @@
 /**
  * Route compatibility, checked over registry rows before any process exists — which is what
  * "refused before boot" means. Nothing here spawns, opens a queue, or touches `src/process/`.
+ *
+ * A route compiles on payload fit, not on the port kind. `whyNotRouted` below states the rule in
+ * full; why it is that rule, and what it replaced, is ADR 0395 (#8923).
  */
 
 import {Effect, Option} from "effect";
+import {describeDifference, payloadDifference, payloadFits} from "../registry/payload-fit.ts";
 import type {InPort, OutPort, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {
@@ -89,15 +93,49 @@ const resolveRoute = Effect.fn("Tuval.ports.resolveRoute")(function* (
 	if (target === undefined) {
 		return yield* new UndeclaredPort({program: targetNode.program, port: to.port, direction: "in"});
 	}
-	if (source.kind !== target.kind) {
+	const refusal = whyNotRouted(
+		source,
+		`${node.program}.${port}`,
+		target,
+		`${targetNode.program}.${to.port}`,
+	);
+	if (refusal !== undefined) {
 		return yield* new IncompatibleRoute({
 			source: {program: node.program, port, kind: source.kind},
 			target: {program: targetNode.program, port: to.port, kind: target.kind},
+			reason: refusal,
 		});
 	}
 	return {
-		kind: source.kind,
+		// The target's: what the payload is checked against on arrival, and what a `PayloadRejected`
+		// naming that end is about. A structural route's two ends carry different kinds (`./graph.ts`).
+		kind: target.kind,
 		source: {node: node.id, port, program: node.program},
 		target: {node: targetNode.id, port: to.port, program: targetNode.program},
 	} satisfies CompiledRoute;
 });
+
+/**
+ * Why these two ends may not be wired, or `undefined` when they may. Structural when both ends
+ * published a schema, nominal when either did not — the two clauses of ADR 0395, in that order,
+ * because a schema is the more truthful of the two and is only absent on a legacy row.
+ */
+const whyNotRouted = (
+	source: OutPort,
+	sourceEnd: string,
+	target: InPort,
+	targetEnd: string,
+): string | undefined => {
+	const {schema: carried} = source;
+	const {schema: accepted} = target;
+	if (carried === undefined || accepted === undefined) {
+		return source.kind === target.kind
+			? undefined
+			: `kinds differ, no schema to compare: source kind "${source.kind}" does not match target kind "${target.kind}"`;
+	}
+	if (payloadFits(carried, accepted)) return undefined;
+	const difference = payloadDifference(carried, accepted);
+	return difference === undefined
+		? `payload does not fit: ${sourceEnd} carries a different payload than ${targetEnd} accepts`
+		: `payload does not fit: ${describeDifference(difference, sourceEnd, targetEnd)}`;
+};

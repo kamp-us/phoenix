@@ -16,7 +16,10 @@ export type ProgramId = typeof ProgramId.Type;
 
 /**
  * A public port: a nominal runtime kind plus a payload predicate, the shape spike #7379 routed on.
- * Not a schema system — the kind names the protocol, the predicate admits a payload. Only an
+ * Not a schema system — the kind names the protocol, the predicate admits a payload. What a graph
+ * route is decided by is the `schema` below where both ends publish one and the kind where either
+ * does not (ADR 0395, `./payload-fit.ts`); the predicate is still the only thing a payload is run
+ * against at delivery. Only an
  * in-port owns a queue, so only an in-port declares the bound (#7371: no unbounded queue by
  * default); an out-port is a name routes leave from. The routing itself is `src/ports/`.
  */

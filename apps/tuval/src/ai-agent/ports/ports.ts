@@ -2,7 +2,9 @@
  * The six ports that make a process a Tuval AI agent, plus the two generic ones it fills like any
  * other program. Each declares one nominal kind, one payload predicate and one queue bound (#7512,
  * #7371); a program spreads the direction it plays into its own `ports` record and the kernel's
- * `compile` refuses a route between two different kinds before any process exists.
+ * `compile` refuses a route whose two ends do not agree before any process exists — by kind for
+ * the three two-way kinds below, which publish no payload schema, and by payload fit for the ones
+ * that do (ADR 0395).
  *
  * `title` and `status` are not of this interface: they are the kernel's own `title@1`/`status@1`
  * (`../../process/self-report.ts`), which any program may declare and which say nothing about what
@@ -25,9 +27,12 @@
  *
  * A kernel `ports` record holds one direction per key, so a program playing both ends of a
  * two-way port (`transcript-page`, `permission`, `mode`) names each end locally — the kind is what
- * `compile` matches, not the key, so `pageRequest`/`pageReply` on one node route to their mirror
- * on the other and a cross-kind route still refuses. Each of those ends declares only its own
- * direction's predicate, so the kernel refuses a wrong-direction payload at the send (#8235).
+ * `compile` matches for those three, not the key, because they publish no payload schema for it to
+ * read instead; so `pageRequest`/`pageReply` on one node route to their mirror on the other and a
+ * cross-kind route still refuses. The one-way kinds are matched on the schema they publish, which
+ * is one object shared by both ends, so their routes are the routes they always were (ADR 0395).
+ * Each of those ends declares only its own direction's predicate, so the kernel refuses a
+ * wrong-direction payload at the send (#8235).
  */
 
 import {Schema} from "effect";

@@ -427,11 +427,14 @@ const inbox = yield* wiring.inbox({node: "c", port: "ticks"});
 ```
 
 `compile` runs over registry rows before any process exists and refuses the graph there: a route
-whose source kind does not match its target kind (`IncompatibleRoute`, naming both kinds and both
-program ids), a route naming a port a program does not declare in that direction
-(`UndeclaredPort`), a route to a node the graph does not declare, a parent the graph does not
-declare before the child (`UnknownParent`), a duplicate node id, or an in-port whose capacity is
-not a positive integer. `open` builds one queue per in-port at its declared bound and delivers
+whose two ends do not fit — payload fit when both ends publish a payload schema, equal kinds when
+either publishes none, raised as `IncompatibleRoute` naming both kinds, both program ids and the
+`reason` it refused
+([ADR 0395](../../.decisions/0395-a-graph-route-compiles-on-payload-fit-not-on-kind.md)); a route
+naming a port a program does not declare in that direction (`UndeclaredPort`), a route to a node
+the graph does not declare, a parent the graph does not declare before the child
+(`UnknownParent`), a duplicate node id, or an in-port whose capacity is not a positive integer.
+`open` builds one queue per in-port at its declared bound and delivers
 each `emit` to every routed target in authoring order, so a compatible route delivers in order.
 The slice never imports `src/process/`.
 
@@ -808,7 +811,10 @@ buried in a handler, and only `start` and the reconnect that repeats it are retr
 `transcript`, `transcript-page`, `prompt`, `permission`, `mode` — each with one nominal kind, one
 payload predicate and one queue bound. Every payload is model-blind: no model name, cost, token
 count, session id or backend type appears on one. A program playing both ends of a two-way port
-names each end locally, and `compile` matches on the kind, so a cross-kind route still refuses.
+(`transcript-page`, `permission`, `mode`) names each end locally, and those three publish no payload
+schema, so `compile` matches them on the kind and a cross-kind route still refuses. The one-way
+ports publish the `Schema` their predicate was written from, so their routes are compiled on payload
+fit instead ([ADR 0395](../../.decisions/0395-a-graph-route-compiles-on-payload-fit-not-on-kind.md)).
 
 **The history.** `src/ai-agent/history/` is pure and imports no Effect, no socket and no other
 `ai-agent/` directory but `ports/`. The window is the live tail only — the newest whole exchanges

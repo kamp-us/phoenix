@@ -1,6 +1,6 @@
 /**
  * The config layer the authoring reload/restore proof boots: the worked `pr-review` example
- * (`../../example/pr-review.ts`), the reviewer it is handed, and the two plain rows that drive it
+ * (`../../example/pr-review.ts`), the reviewer it is handed, and the two authored rows that drive it
  * and read it back.
  *
  * What each generation holds is read at import out of the JSON file `TUVAL_AUTHORING_FIXTURE`
@@ -17,28 +17,28 @@
  * hands is the reviewer's compiled row, whose ports publish the payload schemas a shape is checked
  * against.
  *
- * **One shape here is still the substrate's gap, not the example's.** A graph route compiles only
- * between two ports of one `kind`, which `../../port.ts` derives from the declaring program's id —
- * so `desk` and `sink` are plain rows written against `pr-review`'s own kinds, because two authored
- * programs cannot be routed to each other today
- * ([#8923](https://github.com/kamp-us/phoenix/issues/8923)).
+ * **Every row here is authored.** `desk` and `sink` were plain rows hand-writing `pr-review`'s own
+ * kinds, because a graph route used to compile only between two ports of one `kind` and
+ * `../../port.ts` derives a kind from the declaring program's id — so two authored programs could
+ * never be wired. A route is decided by payload fit now (ADR 0395,
+ * [#8923](https://github.com/kamp-us/phoenix/issues/8923)), so they say what they carry and the
+ * graph does the rest: `desk.pr` carries a number and `pr-review.pr` takes one, `pr-review.verdict`
+ * carries a line and `sink.verdict` takes one. Nothing in this module spells a kind.
  */
 
 import {readFileSync} from "node:fs";
-import {defineMachine} from "@demlik/tea";
-import {Effect, Schema} from "effect";
+import {Schema} from "effect";
 import {
 	type PromptPayload,
 	PromptPayloadSchema,
 	TurnResultSchema,
 } from "../../../ai-agent/ports/index.ts";
 import type {TuvalConfigInput} from "../../../config.ts";
-import {ProcessPorts} from "../../../ports/ProcessPorts.ts";
-import {type AnyProgram, type Program, ProgramId} from "../../../registry/program.ts";
+import type {AnyProgram} from "../../../registry/program.ts";
 import {type Answer, type ArrivalEvent, defineProgram} from "../../define-program.ts";
 import {emit} from "../../effect.ts";
 import {prReview} from "../../example/pr-review.ts";
-import {port, portKind} from "../../port.ts";
+import {port} from "../../port.ts";
 import {
 	DESK_NODE,
 	type DeclaredReview,
@@ -107,78 +107,43 @@ export const reviewRow: ReviewRow = {
 			: [{type: "pr", payload: reviewing(next)} satisfies ArrivalEvent<"pr", number>],
 };
 
-type EmitCmd = {readonly type: "emit"; readonly port: string; readonly payload: unknown};
-
-const emitHandler = (cmd: EmitCmd) =>
-	Effect.gen(function* () {
-		yield* (yield* ProcessPorts).emit(cmd.port, cmd.payload);
-		return [] as ReadonlyArray<never>;
-	});
-
 type DeskState = {readonly sent: ReadonlyArray<number>};
-type DeskMsg = {readonly type: "say"; readonly pr: number};
 
-/** What an operator's window would be: it emits onto the example's `pr` in-port and remembers. */
-const desk: AnyProgram = {
-	id: ProgramId.make(DESK_NODE),
-	core: defineMachine<DeskState, DeskMsg, EmitCmd, never, unknown>({
-		init: (loaded) => [loaded ?? {sent: []}, []],
-		update: {
-			say: (state, msg) => [
-				{sent: [...state.sent, msg.pr]},
-				[{type: "emit", port: "pr", payload: msg.pr}],
-			],
-		},
-		interpret: {emit: () => Promise.resolve()},
-	}),
-	ports: {
-		pr: {
-			kind: portKind(ProgramId.make(REVIEW_PROGRAM), "pr"),
-			direction: "out",
-			accepts: Schema.is(Schema.Number),
-		},
+/** Not a port arrival: the event the proof dispatches to make the desk speak, as `replay` is above. */
+type Say = {readonly type: "say"; readonly pr: number};
+
+/**
+ * What an operator's window would be: it announces a pull request on `pr` and remembers what it
+ * sent. It names no kind and imports nothing of `pr-review`'s — it declares that it carries a
+ * number, and the example declares that it takes one, which is the whole of what makes the route in
+ * `graph` below compile (#8923).
+ */
+const desk = defineProgram({
+	id: DESK_NODE,
+	ports: {pr: port.out(Schema.Number)},
+	init: (): DeskState => ({sent: []}),
+	update: {
+		say: (state: DeskState, event: Say): Answer<DeskState> => [
+			{sent: [...state.sent, event.pr]},
+			[emit("pr", event.pr)],
+		],
 	},
-	handlers: {emit: emitHandler},
-	capabilities: [],
-	identity: {
-		package: "@kampus/tuval",
-		program: DESK_NODE,
-		version: "1.0.0",
-		digest: `sha256:${DESK_NODE}`,
-	},
-	placement: {host: "local"},
-} satisfies Program<DeskState, DeskMsg, EmitCmd, never, unknown, unknown, ProcessPorts>;
+});
 
 type SinkState = {readonly heard: ReadonlyArray<string>};
-type SinkMsg = {readonly type: "took"; readonly verdict: string};
 
 /** The reader on the other end of the example's `verdict` route: what it heard, in arrival order. */
-const sink: AnyProgram = {
-	id: ProgramId.make(SINK_NODE),
-	core: defineMachine<SinkState, SinkMsg, never, never, unknown>({
-		init: (loaded) => [loaded ?? {heard: []}, []],
-		update: {took: (state, msg) => [{heard: [...state.heard, msg.verdict]}, []]},
-		interpret: {},
-	}),
-	ports: {
-		verdict: {
-			kind: portKind(ProgramId.make(REVIEW_PROGRAM), "verdict"),
-			direction: "in",
-			accepts: Schema.is(Schema.String),
-			bound: {capacity: 16, overflow: "suspend"},
-		},
+const sink = defineProgram({
+	id: SINK_NODE,
+	ports: {verdict: port.in(Schema.String)},
+	init: (): SinkState => ({heard: []}),
+	update: {
+		verdict: (state: SinkState, event: ArrivalEvent<"verdict", string>): Answer<SinkState> => [
+			{heard: [...state.heard, event.payload]},
+			[],
+		],
 	},
-	receive: {verdict: (payload: unknown) => ({type: "took", verdict: payload as string})},
-	handlers: {},
-	capabilities: [],
-	identity: {
-		package: "@kampus/tuval",
-		program: SINK_NODE,
-		version: "1.0.0",
-		digest: `sha256:${SINK_NODE}`,
-	},
-	placement: {host: "local"},
-} satisfies Program<SinkState, SinkMsg, never, never, unknown, never, never>;
+});
 
 export default {
 	version: 1,
