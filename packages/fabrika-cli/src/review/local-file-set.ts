@@ -4,9 +4,10 @@
  *
  * {@link readLocalFileSet} is the local three-dot read behind `review scope`, `governance scope`,
  * `governance guards` and `governance sweep`. {@link platformFileSet} is the same report for a
- * caller whose enumeration is GitHub's own `pulls/<n>/files` list: `ship gate`, `ship floor` and
- * `heal-ci diagnose`. Two readers, one result type and one place the two wordings live, so no caller
- * hand-writes a third sentence about the same disagreement.
+ * caller whose enumeration is GitHub's own `pulls/<n>/files` list: `ship scope`, `ship cp-approval`,
+ * `ship gate`, `ship floor`, `ship release` and `heal-ci diagnose`. Two readers, one result type and
+ * one place the two wordings live, so no caller hand-writes a third sentence about the same
+ * disagreement.
  *
  * **The enumeration IS the file set, and GitHub's `changed_files` is a second opinion reported beside
  * it.** The two counts disagree for reasons that have nothing to do with a truncated read: git pairs
@@ -28,7 +29,9 @@
  * The first ruling named the two governance verbs. The second carried the identical retirement to
  * the three verbs on the enqueue and unstick paths, where the strand had moved rather than closed:
  * `ship gate`, `ship floor` and `heal-ci diagnose`, plus `governance sweep`'s fourth copy of the
- * same arm.
+ * same arm. Its third application reached the last three copies: `ship scope`, the first verb a
+ * `ship` run makes, `ship cp-approval`, which gates the §CP discharge, and `ship release`, off the
+ * merge path — so no verb in this package refuses on the declared count any more.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9144#issuecomment-5687540528
  * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
@@ -94,8 +97,9 @@ export const platformDisagreementLine = (
 /**
  * The file set of a caller that enumerates through `pulls/<n>/files` rather than a git range.
  *
- * `ship gate`, `ship floor` and `heal-ci diagnose` read that list, and each has a reason not to bind
- * a head: the two `ship` verbs are the merge authority and the CI job relaying it, and `ship gate`'s
+ * Every `ship` verb that enumerates changed files reads that list, as does `heal-ci diagnose`, and
+ * each has a reason not to bind a head: the `ship` verbs are the merge authority and the CI job
+ * relaying it, and `ship gate`'s
  * common path is asserted to touch git not at all — a merge gate that needs a fetch to answer is a
  * merge gate a checkout-less caller cannot run. `heal-ci sweep` loops this chain over every open PR
  * and ends the board on one refusal, so a fetch per PR would trade this strand for a heavier one.
