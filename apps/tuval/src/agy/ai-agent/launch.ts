@@ -12,6 +12,11 @@
  *   denies every tool rather than widening anything, which is why the posture fails closed.
  * - `--dangerously-skip-permissions` is never composed, on any path. There is no option that
  *   produces it and no branch that could.
+ * - `--effort` is never composed either, for the same reason and by the same construction: agy bakes
+ *   reasoning effort into the model id (`gemini-3.1-pro-high`), so at v1.2.3 the flag is accepted
+ *   only when it repeats the suffix already in `--model` and refused outright for a model carrying
+ *   none — `--effort is not supported for model "claude-sonnet-4-6"`. A launch that composed it
+ *   could only fail to start, so there is no field for it and no branch that reaches it (#9254).
  */
 
 import {AGY_FLAGS, type AgyMode} from "../config.ts";
@@ -24,7 +29,6 @@ export interface LaunchOptions {
 	readonly resume?: string;
 	readonly model?: string;
 	readonly mode?: AgyMode;
-	readonly effort?: string;
 }
 
 const flag = (name: string, value: string): string => `${name}=${value}`;
@@ -33,7 +37,7 @@ const flag = (name: string, value: string): string => `${name}=${value}`;
  * The argv of one streaming session.
  *
  * Order is fixed rather than incidental so a test can assert the whole array: the two format flags
- * and the empty `--print` first, then the three switchable session settings, then the sandbox pair,
+ * and the empty `--print` first, then the two switchable session settings, then the sandbox pair,
  * then the resume. `--input-format=stream-json` requires `--output-format=stream-json` — the CLI
  * says so in its own `--help` — so the two are composed together and never separately.
  */
@@ -45,7 +49,6 @@ export const sessionArgv = (options: LaunchOptions): ReadonlyArray<string> => {
 	];
 	if (options.model !== undefined) argv.push(flag(AGY_FLAGS.model, options.model));
 	if (options.mode !== undefined) argv.push(flag(AGY_FLAGS.mode, options.mode));
-	if (options.effort !== undefined) argv.push(flag(AGY_FLAGS.effort, options.effort));
 	argv.push(AGY_FLAGS.sandbox, flag(AGY_FLAGS.addDir, options.cwd));
 	if (options.resume !== undefined) argv.push(flag(AGY_FLAGS.conversation, options.resume));
 	return argv;

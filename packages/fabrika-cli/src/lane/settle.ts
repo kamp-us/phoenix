@@ -68,20 +68,33 @@ export type AssertedPull =
 	| {readonly _tag: "Unmerged"; readonly number: number; readonly state: string}
 	| {readonly _tag: "Absent"; readonly number: number};
 
-/** The merged pull requests whose body links this issue, through a closing keyword or `Part of`. */
+/**
+ * The merged pull requests whose body names this issue, through a closing keyword or `Part of`.
+ *
+ * The wide set ({@link PullFact.referencedIssues}), which is the same membership `landedFor` reads
+ * in `prove.ts`. {@link PullFact.linkedIssues} holds the winning kind's
+ * numbers alone, so on a body carrying both — an epic tail, closing one child per line and naming
+ * its epic with `Part of` — the epic is not in it, and reading it here made a finished epic's own
+ * tail invisible as evidence for the epic.
+ */
 export const mergedLinking = (
 	issue: number,
 	facts: ReadonlyArray<PullFact>,
 ): ReadonlyArray<PullFact> =>
-	facts.filter((fact) => fact.merged && fact.linkedIssues.includes(issue));
+	facts.filter((fact) => fact.merged && fact.referencedIssues.includes(issue));
 
 /** What one board read of the driving issue, plus its candidate pull requests, entitles. */
 export type Entitlement =
 	/** The board proved a not-planned or duplicate close; nothing shipped, so there is no evidence. */
 	| {readonly _tag: "Cancellable"; readonly event: string; readonly outcome: CancellationOutcome}
 	/**
-	 * The board proved a completed close AND at least one merged pull request linking the issue.
+	 * The board proved a completed close AND at least one merged pull request naming the issue.
 	 * `landed` is those pull requests' numbers — never empty, since an empty one is the `Unknown` arm.
+	 *
+	 * **Both reference kinds count.** A merge is evidence of a landing whether its body closes the
+	 * issue or only names it with `Part of` — the merge is what discharged the lane, and the keyword
+	 * only says who GitHub closes. Reading the closing kind alone loses the epic tail, which closes
+	 * its children and merely names its epic.
 	 */
 	| {
 			readonly _tag: "Landed";

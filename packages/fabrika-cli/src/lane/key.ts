@@ -84,3 +84,51 @@ export const laneRef = (key: LaneKey, root: string | null): LaneRef => ({
  */
 export const templateFile = (kind: LaneKey["_tag"]): string =>
 	kind === "Chore" ? "chore.workflow.json" : "coder.workflow.json";
+
+/**
+ * A lane key's leading board number, dot-separated from whatever follows it.
+ *
+ * The separator is required rather than optional: `8012abc` names no issue, and resolving it to
+ * 8012 would send a board read at an issue this directory does not drive. The leading digit is
+ * non-zero because `#0` is not a board number, so a `0` key names no thread to read or to race on.
+ */
+const ISSUE_SEGMENT = /^([1-9][0-9]*)(?:\.[^/]+)?$/;
+
+/**
+ * What a lane key resolves to on the issue axis.
+ *
+ * Three answers rather than two, because the two ways of naming no issue are different facts. A
+ * chore lane names none *by construction* — it is keyed by a name precisely because no issue exists
+ * for it. A key like `frozen-deadlock` names none *by accident*: it is an issue-kind key whose
+ * directory name carries no leading board number. A refusal that calls the second one a chore lane
+ * sends its reader looking for a `chore:` prefix that is not there.
+ */
+export type KeyIssue =
+	| {readonly _tag: "Issue"; readonly number: number}
+	| {readonly _tag: "Chore"}
+	| {readonly _tag: "Unnumbered"};
+
+/**
+ * The one place the key-to-issue parse lives. Reading a whole directory name as a number yields
+ * `NaN` for the quarantine convention `<issue>.frozen-deadlock-<timestamp>`, which every board read
+ * then asks about as `#NaN` and refuses UNKNOWN — stranding the seat with no verb able to free it.
+ */
+export const resolveKeyIssue = (key: LaneKey): KeyIssue => {
+	if (key._tag === "Chore") return {_tag: "Chore"};
+	const matched = ISSUE_SEGMENT.exec(key.lane);
+	return matched?.[1] === undefined
+		? {_tag: "Unnumbered"}
+		: {_tag: "Issue", number: Number(matched[1])};
+};
+
+/** The issue a key drives, or `null`, for a caller the two no-issue arms read the same to. */
+export const keyIssue = (key: LaneKey): number | null => {
+	const resolved = resolveKeyIssue(key);
+	return resolved._tag === "Issue" ? resolved.number : null;
+};
+
+/** The same resolution from a raw key, for a sweep reading directory names off a root. */
+export const rawKeyIssue = (raw: string): number | null => {
+	const parsed = parseKey(raw);
+	return parsed._tag === "Key" ? keyIssue(parsed.key) : null;
+};

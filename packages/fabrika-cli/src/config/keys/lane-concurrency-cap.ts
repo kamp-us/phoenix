@@ -8,6 +8,11 @@
  * heard it and only for as long as they remembered it. Declared here it binds the boot itself:
  * `lane open` and `lane emit` count the seats before they write, and refuse past the number.
  *
+ * Both read it out of the repository that OWNS the cwd rather than the cwd itself
+ * ([`configRootOrRefuse`](../../lane/ground.ts)), because the seats are counted in that repository's
+ * one shared ledger: a linked worktree's own tracked copy would cap a count it contributed nothing
+ * to.
+ *
  * **The shipped default is `null` — no cap.** A repo that declares nothing is not capped, matching
  * every other shipped default on this surface, which declines rather than guessing a number that
  * fits somebody else's machine. `null` is also writable, and means the same thing said out loud.

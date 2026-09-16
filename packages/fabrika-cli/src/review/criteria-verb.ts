@@ -10,6 +10,15 @@
  * An issue's open/closed state is deliberately not a precondition, asymmetric with
  * `review append-criterion`: reading the contract off a closed issue is a legitimate re-review case,
  * while writing to one buries the row where nobody looks.
+ *
+ * **A criterion's outside-diff evidence marker rides the same read.** It is the format's own field,
+ * so it arrives here parsed rather than as a tail the caller has to recognise in prose, and it is
+ * printed beside the criterion it belongs to — a third column on stdout, an `evidence` field under
+ * `--json`, and a stderr line counting the marked rows so a reviewer scanning diagnostics cannot
+ * miss that this contract has any. Those rows are graded on the evidence they name, never on the
+ * diff alone (`./outside-diff-evidence.ts`).
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9200
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -17,6 +26,7 @@ import {getIssue} from "../io/issues.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria, renderCriteria} from "../wire/acceptance-criteria.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {marked, quoteRows} from "./outside-diff-evidence.ts";
 import {badNumber, resolveTargetRepo} from "./target.ts";
 
 const VERB = "review criteria";
@@ -73,13 +83,21 @@ export const runCriteria = (
 		}
 
 		const criteria = block.value;
+		const markedRows = marked(criteria);
+		if (markedRows.length > 0) {
+			diagnostics.push(
+				`${VERB}: ${markedRows.length} of ${criteria.length} criteria mark evidence outside the diff — grade each on the evidence it names, and name it in the verdict body:`,
+				quoteRows(markedRows),
+			);
+		}
 		return json
 			? answer(
 					JSON.stringify({
 						outcome: "criteria",
 						issue,
 						count: criteria.length,
-						criteria: criteria.map(({text, checked}) => ({text, checked})),
+						marked: markedRows.length,
+						criteria: criteria.map(({text, checked, evidence}) => ({text, checked, evidence})),
 					}),
 					diagnostics,
 				)

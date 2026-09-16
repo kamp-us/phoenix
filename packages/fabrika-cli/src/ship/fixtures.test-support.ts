@@ -4,9 +4,26 @@
  * One module, because every verb in the group reads the same PR shape — a per-test literal is how
  * two tests come to disagree about what the platform returns.
  */
-import type {HttpReply} from "../fakes.test-support.ts";
+import type {HttpReply, Scripted} from "../fakes.test-support.ts";
 import {okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+
+/**
+ * `git rev-parse --git-dir --git-common-dir` as git answers it in a linked worktree — two different
+ * paths, which is the whole fact `standingInLinkedWorktree` reads.
+ *
+ * Shared rather than re-typed per file because `ship scope`'s own tests and the `review`/`ship`
+ * agreement test both run a `shipper`-seated scope read, and an unscripted command falls back to a
+ * failure — so a file that forgets this row does not fail on the fact it is testing, it refuses `11`
+ * before reaching it.
+ *
+ * Script it **last**, so a test wanting git's other two answers puts its own row first and wins the
+ * first-match lookup.
+ */
+export const LINKED_WORKTREE: Scripted = [
+	/^git rev-parse/,
+	{ok: true, stdout: "/repo/.git/worktrees/ship-4321\n/repo/.git\n", reason: ""},
+];
 
 export const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 export const OTHER_HEAD = "9fe12ab04f5a6b7c8d9e0f1a2b3c4d5e6f708192";
@@ -51,6 +68,27 @@ export const pull = (shape: PullShape = {}): ExecResult =>
 			mergeable_state: shape.mergeableState ?? "blocked",
 			assignees: (shape.assignees ?? []).map((login) => ({login})),
 			updated_at: shape.updatedAt ?? "2026-08-08T00:00:00Z",
+		}),
+	);
+
+/**
+ * The same pull request as the **issues** endpoint serves it — a PR is an issue there.
+ *
+ * `listCommentsReconciled` divides its comment list by this payload's own `comments` field, never
+ * the pulls payload's, so a test that says something about comment completeness scripts this read
+ * rather than {@link pull}'s. Omitting the count omits the field, which reads back as `0` and
+ * fences nothing: no list is short of zero.
+ */
+export const pullAsIssue = (shape: {comments?: number} = {}): ExecResult =>
+	okOut(
+		JSON.stringify({
+			number: 4321,
+			title: "t",
+			body: "b",
+			state: "open",
+			labels: [],
+			html_url: "https://example.test/issues/4321",
+			...(shape.comments === undefined ? {} : {comments: shape.comments}),
 		}),
 	);
 

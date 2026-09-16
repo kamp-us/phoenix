@@ -15,6 +15,7 @@
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
 import {type CompiledLane, MACHINERY_EVENT, type OperatorEvent, type TaskState} from "./machine.ts";
+import {REVIEW_UI_STATE} from "./prove.ts";
 
 /**
  * Every recognised terminal token, grouped by the shell skill that owns its vocabulary — the
@@ -50,6 +51,12 @@ export const SHELL_VOCABULARIES = {
 	// group's own BLOCKED shape: no verdict landed and a human is owed the render, the manifest or
 	// the route. The three that re-spell the reviewer's agree with it, which is why flattening still
 	// reports `Flat`.
+	//
+	// `ROUTED-ELSEWHERE`'s `BLOCKED` here is its **floor**, not its whole reading: it is the one
+	// token {@link PROOF_CONDITIONAL_TERMINALS} seats a second event beside, and which of the two
+	// lands is the existing completion proof's answer rather than this table's. The park stays
+	// written here because a flat lookup has to answer for a token read anywhere, and the arm that
+	// advances a lane is the one that must be bought.
 	"ui-reviewer": {
 		PASS: "PASS",
 		FAIL: "FAIL",
@@ -66,6 +73,7 @@ export const SHELL_VOCABULARIES = {
 	machinery: {
 		"REPLAY-COLLIDED": "LAP",
 		"BASE-DRIFTED": "LAP",
+		"BASE-CONFLICTED": "LAP",
 		"QUEUE-EJECTED": "LAP",
 		"SEAT-DIRTY": "LAP",
 		// A shell the provider killed is machinery by the same test as the four above: nothing about
@@ -166,6 +174,75 @@ export const eventForToken = (raw: string): TokenResolution => {
 				reason: `"${raw}" is no shell's terminal token (known: ${KNOWN_TOKENS.join(", ")})`,
 			}
 		: {_tag: "Mapped", token, event};
+};
+
+/**
+ * One terminal whose event is not a constant: the token names two, and a proof picks.
+ *
+ * `leaf` is the cell the token has to be reported out of for the second reading to exist at all. It
+ * is part of the key rather than a check the caller makes, because the advanced event means
+ * something else out of every other cell — a `PASS` out of `review` walks a different arm, and an
+ * epic child's region holds no such cell at all, which is how the child deferral stays untouched.
+ */
+export interface ConditionalTerminal {
+	readonly leaf: string;
+	/** The event this terminal earns when the proof for it holds — never assumed, always proven. */
+	readonly advanced: OperatorEvent;
+	/** The event it takes otherwise, and the one {@link SHELL_VOCABULARIES} maps the token to flat. */
+	readonly parked: OperatorEvent;
+	/** Why the advanced arm exists, in the clause a diagnostic quotes. */
+	readonly earns: string;
+}
+
+/**
+ * The terminals a proof may advance, as data — one row today.
+ *
+ * `ROUTED-ELSEWHERE` out of `review:ui` is a *completed* review: the gate read the diff, found no
+ * rendered delta, and published a head-bound route saying it owes no verdict. `lane prove` has
+ * always read that route as satisfying `review-ui` ({@link foldNamespaces}'s `routed` arm, and
+ * `ship gate`'s), so a lane whose other required namespaces already hold binding verdicts is
+ * *finished* at the moment this terminal is reported — and folding it flat to `BLOCKED` parked it on
+ * a cause whose meaning ("another gate must run") the board itself contradicted. Six lanes in one
+ * day each cost a hand `UNBLOCKED` plus a re-report to say what the proof already said.
+ *
+ * **The row buys nothing on its own.** It says which event to *try*; `lane report` still runs the
+ * ordinary proof for it, and a missing, stale, unauthorized or unreadable route, an outstanding
+ * required review or a standing `FAIL` all leave that proof unearned — so the park below is what
+ * lands, exactly as it did before this table existed. Nothing here invents a `review-ui` verdict:
+ * the namespace stays `routed`, no marker is written, and the advanced `PASS` is the *task's* state
+ * moving, which is the only thing the route was ever short of.
+ */
+export const PROOF_CONDITIONAL_TERMINALS: Readonly<Record<string, ConditionalTerminal>> = {
+	"ROUTED-ELSEWHERE": {
+		leaf: REVIEW_UI_STATE,
+		advanced: "PASS",
+		parked: "BLOCKED",
+		earns:
+			"the published route satisfies review-ui and every other derived required namespace holds a verdict that still binds",
+	},
+};
+
+// The parked arm is written twice — once flat, once here — so it is checked rather than trusted: a
+// row that disagreed with the lookup would make the fallback a different park from the one every
+// caller reading `eventForToken` alone still gets.
+for (const [token, row] of Object.entries(PROOF_CONDITIONAL_TERMINALS)) {
+	if (TOKEN_EVENTS[token] !== row.parked) {
+		throw new Error(
+			`lane report: "${token}" maps to ${String(TOKEN_EVENTS[token])} flat but its conditional row parks on ${row.parked} — one token cannot hold two floors.`,
+		);
+	}
+}
+
+/**
+ * The conditional reading of this token at this leaf, or `null` for every other pairing.
+ *
+ * Both halves of the key are required, and the leaf is the half that keeps the widening narrow: the
+ * same token out of any other cell — and out of an epic child's region, which has no `review:ui`
+ * cell to report from — reads exactly as the flat table says.
+ */
+export const conditionalTerminal = (token: string, leaf: string): ConditionalTerminal | null => {
+	const row = PROOF_CONDITIONAL_TERMINALS[token.trim().toUpperCase()];
+	return row !== undefined && row.leaf === leaf ? row : null;
 };
 
 /**
@@ -366,18 +443,48 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
-	 * The rendered gate's `ROUTED-ELSEWHERE`: the diff raises no rendered delta, so the
-	 * verdict is `review`'s to give and never this gate's. The park is the route itself, which the
-	 * group's own mapping keeps as `BLOCKED` rather than a routing arm.
+	 * The rendered gate's `ROUTED-ELSEWHERE` **when the review it routes to is not finished**: the
+	 * diff raises no rendered delta, so the verdict is `review`'s to give and never this gate's, and
+	 * some namespace `review` owes has not answered yet.
 	 *
-	 * Naming-only: clearing it means dispatching the other gate, which is the operator's act and not
-	 * a condition a recipe can read back.
+	 * It is the terminal's floor rather than its whole reading. `ROUTED-ELSEWHERE` is
+	 * {@link PROOF_CONDITIONAL_TERMINALS}'s one row, so a route published at the current head beside
+	 * a complete set of binding verdicts earns a `PASS` and the lane walks to `ship` — this cause
+	 * lands only where that proof did not hold, which is the park standing correctly. Before that row
+	 * existed the park landed unconditionally, and a lane whose board read `gate satisfied` still
+	 * cost a human `UNBLOCKED` plus a re-report.
 	 *
-	 * Route `driver`: dispatching the other gate is the driver's own act.
+	 * Remedy `null` and route `driver` are both unchanged: dispatching the other gate is the driver's
+	 * own act, and no verb removes this cause by taking it. What the cause now buys is a
+	 * `KNOWN_PARKS` row (`../recipe/parks.ts`), because the completed shape *is* a condition a recipe
+	 * can read back — `ship gate`'s conjunction over `ship scope`'s required set, with the routed
+	 * namespace still routed — so the lanes already parked on it clear without spending a person.
 	 */
 	"no-rendered-delta": {
 		meaning:
 			"the diff raises no rendered delta, so the verdict is `review`'s to give and not the rendered gate's",
+		route: "driver",
+		remedy: null,
+	},
+	/**
+	 * `ship enqueue`'s pre-arm read answered a definite `mergeable_state: dirty` — the base moved
+	 * under the branch and the merge now conflicts. Nothing about the artifact was judged, so the
+	 * round it owes is not one the repair budget is bounding.
+	 *
+	 * Distinct from `head-behind-base`, which is a head merely *behind* its base: that one merges
+	 * clean and only needs moving. This one has a hunk two sides both edited, so it needs a builder.
+	 * The re-review is owed with it — a dirty base moves the merge-base blob every verdict's content
+	 * digest covers (`../review/content-binding.ts`), so every verdict on the PR is void — which is
+	 * why this cause routes the lap to `build` rather than back to `ship`.
+	 *
+	 * No remedy: rebasing a conflicted branch is a judgment about content, and a verb that "removed"
+	 * this cause would be making it.
+	 *
+	 * Route `driver`: a base that moved is machinery, and no product call is in it.
+	 */
+	"base-conflicted": {
+		meaning:
+			"the PR's base moved under it and the merge conflicts, so the head owes a rebase and the re-review that comes with it",
 		route: "driver",
 		remedy: null,
 	},
@@ -474,10 +581,29 @@ export type ParkCause = keyof typeof PARK_CAUSES;
 export const MACHINERY_CAUSES: Readonly<Record<string, ParkCause>> = {
 	"REPLAY-COLLIDED": "replay-conflict",
 	"BASE-DRIFTED": "head-behind-base",
+	"BASE-CONFLICTED": "base-conflicted",
 	"QUEUE-EJECTED": "queue-ejected",
 	"SEAT-DIRTY": "worktree-holds-branch",
 	"SHELL-DEAD": "spawn-dead",
 };
+
+/**
+ * The machinery causes a lap cell must **route**, rather than loop on — the set `applyEvent` refuses
+ * a lap for when the lane's own machine holds no `lap:<cause>` arm naming it.
+ *
+ * A lane keeps its own copy of `workflow.json`, written at `lane open` and never rewritten, so a
+ * lane on disk can hold a lap cell that predates a cause. Every other machinery cause survives that
+ * gracefully: an ejection or a dirty seat wants the stage run again, which is exactly what an
+ * unrouted lap cell does. `base-conflicted` does not — its whole point is that the round belongs to
+ * a different stage, so an old cell would fold it back into `ship`, where the next enqueue read
+ * refuses identically, until sixteen laps have gone and the lane parks having done nothing. Refusing
+ * it with the log untouched is what leaves the shipper a fallback to take.
+ *
+ * The epic tail's `ship:queued` cell carries no routes for the same reason it needs none:
+ * `base-conflicted` is `ship enqueue`'s `21`, which fires only from the `ship` stage, and a PR that
+ * leaves the queue reports `QUEUE-EJECTED` instead.
+ */
+export const ROUTED_MACHINERY_CAUSES: ReadonlySet<string> = new Set<ParkCause>(["base-conflicted"]);
 
 /** The cause a machinery terminal carries on its own, or `null` for every other token. */
 export const machineryCause = (token: string): ParkCause | null =>

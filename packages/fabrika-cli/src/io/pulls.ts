@@ -1,7 +1,7 @@
 /**
  * The pull-request surface the `review` verbs read and write: one PR's metadata, its changed-file
- * list, its diff bytes, the check runs at a commit, the invoking token's identity and repository
- * permission, and the comment edit an upsert needs.
+ * list, its diff bytes, the paths that changed between two commits, the check runs at a commit, the
+ * invoking token's identity and repository permission, and the comment edit an upsert needs.
  *
  * The `issues.ts` disciplines hold here — every list read paged, absent split from unreadable
  * through {@link Existence}, and a shape that is not what was asked for treated as a failure rather
@@ -15,6 +15,7 @@
 import {Effect} from "effect";
 import {
 	type Api,
+	attemptOf,
 	authed,
 	authedExistence,
 	existenceOf,
@@ -29,6 +30,25 @@ import {
 import {type Attempt, fail, ok, type Shell} from "./git.ts";
 import type {Existence} from "./issues.ts";
 import {isRecord} from "./json.ts";
+
+/**
+ * Whether a PR can merge into its base, as three values rather than a boolean.
+ *
+ * GitHub computes `mergeable` lazily, so the single-PR GET returns `null` with
+ * `mergeable_state: "unknown"` while the background job runs. That is the platform declining to
+ * answer, and a two-valued type has nowhere to put it but the clean arm — which is the whole
+ * defect: a conflicting PR then reads as one nobody has to fix. `ship`'s landing verbs poll the
+ * same fact through `../ship/mergeability.ts`; a caller that only *reports* the state takes the one
+ * read this record already carries.
+ */
+export type PullMergeability = "mergeable" | "conflicting" | "unknown";
+
+/** The single-PR GET's `mergeable` / `mergeable_state` pair, judged. A `null` is `unknown`. */
+const mergeabilityOf = (value: Record<string, unknown>): PullMergeability => {
+	const state = typeof value.mergeable_state === "string" ? value.mergeable_state : "";
+	if (typeof value.mergeable !== "boolean" || state === "" || state === "unknown") return "unknown";
+	return value.mergeable ? "mergeable" : "conflicting";
+};
 
 export interface PullRecord {
 	readonly number: number;
@@ -61,6 +81,8 @@ export interface PullRecord {
 	readonly assignees: ReadonlyArray<string>;
 	/** The platform's own last-activity stamp — one operand of the strand age. */
 	readonly updatedAt: string;
+	/** Whether the PR can merge into its base, with the platform's uncomputed read kept as `unknown`. */
+	readonly mergeability: PullMergeability;
 }
 
 const toPullRecord = (value: unknown): PullRecord | null => {
@@ -92,6 +114,7 @@ const toPullRecord = (value: unknown): PullRecord | null => {
 				)
 			: [],
 		updatedAt: typeof value.updated_at === "string" ? value.updated_at : "",
+		mergeability: mergeabilityOf(value),
 	};
 };
 
@@ -132,6 +155,90 @@ export const listPullFiles = (repo: string, pr: number): Shell<Attempt<ReadonlyA
 			}
 			return ok(files);
 		}),
+	);
+
+/**
+ * GitHub's own ceiling on a comparison's `files` array: "it includes up to 300 changed files for
+ * the entire comparison" ([REST, "Compare two
+ * commits"](https://docs.github.com/en/rest/commits/commits?apiVersion=2022-11-28#compare-two-commits)).
+ * The cap is over the whole comparison rather than per page, so paging past page one adds no file —
+ * it only drops the list, which the same paragraph says is served on page one alone.
+ */
+export const COMPARE_FILE_CAP = 300;
+
+/**
+ * How the two commits stand to each other, in the platform's own vocabulary
+ * ([REST, "Compare two
+ * commits"](https://docs.github.com/en/rest/commits/commits?apiVersion=2022-11-28#compare-two-commits)).
+ *
+ * `identical` and `ahead` are the two where `base` is an ancestor of `head`, and so the two where
+ * the served symmetric difference is also the branch range `base..head`.
+ */
+export type CompareStatus = "identical" | "ahead" | "behind" | "diverged";
+
+const COMPARE_STATUSES: ReadonlyArray<string> = ["identical", "ahead", "behind", "diverged"];
+
+/** A comparison's changed paths, beside the two facts that say what the list is a list of. */
+export interface CompareRead {
+	readonly files: ReadonlyArray<string>;
+	/**
+	 * Which range the served `files` actually describe.
+	 *
+	 * A caller asking for `base..head` gets that set only on `identical` or `ahead`; on `behind` or
+	 * `diverged` the same 200 carries the difference from the merge base instead, which can only be
+	 * a *subset* of what changed since `base`. Carrying the status is what lets that caller refuse
+	 * rather than read the narrower list as the wider one.
+	 */
+	readonly status: CompareStatus;
+	/**
+	 * True when the list reached {@link COMPARE_FILE_CAP}.
+	 *
+	 * The compare response declares no total, so a full list and a capped one are the same 300
+	 * entries and the caller cannot tell them apart. That is the whole reason this is a field rather
+	 * than a silent `length` check: a comparison of exactly 300 files reads as capped, which costs a
+	 * refusal nobody needed, and the alternative costs a derivation over unknown scope.
+	 */
+	readonly capped: boolean;
+}
+
+/**
+ * Every path that changed between two commits, with its completeness proof and its range proof.
+ *
+ * The platform serves a three-dot comparison — `base...head` is the symmetric difference from the
+ * merge base, not `git log base..head`. The two coincide only where `base` is an ancestor of
+ * `head`, which a branch is *not* guaranteed to be: a force-push leaves the abandoned head
+ * resolvable and diverged from the new one. So {@link CompareRead.status} rides beside the files,
+ * and a caller that meant `base..head` reads it before reading them.
+ */
+export const compareFiles = (
+	repo: string,
+	base: string,
+	head: string,
+): Shell<Attempt<CompareRead>> =>
+	authed((token) =>
+		restCall(token, {method: "GET", path: `repos/${repo}/compare/${base}...${head}`}).pipe(
+			Effect.map((outcome) =>
+				attemptOf(outcome, (body) => {
+					if (!isRecord(body) || !Array.isArray(body.files)) {
+						return fail("GitHub answered 200 but its output carries no comparison file list");
+					}
+					const files: string[] = [];
+					for (const value of body.files) {
+						if (!isRecord(value) || typeof value.filename !== "string") {
+							return fail("GitHub answered 200 but one comparison entry is not a changed file");
+						}
+						files.push(value.filename);
+					}
+					if (typeof body.status !== "string" || !COMPARE_STATUSES.includes(body.status)) {
+						return fail(
+							"GitHub answered 200 but its comparison declares no status, so which range its file list describes is unknown",
+						);
+					}
+					const status = body.status as CompareStatus;
+					return ok({files, status, capped: files.length >= COMPARE_FILE_CAP});
+				}),
+			),
+		),
 	);
 
 /** The unified diff bytes, served by the platform's diff media type. */

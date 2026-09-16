@@ -159,8 +159,8 @@ describe("planRepair — the bullet conversion (#6001)", () => {
 		expect(back._tag).toBe("Found");
 		if (back._tag !== "Found") return;
 		expect(back.value).toEqual([
-			{text: "The verb repairs one issue", checked: false},
-			{text: "The reader stays at level 3", checked: false},
+			{text: "The verb repairs one issue", checked: false, evidence: null},
+			{text: "The reader stays at level 3", checked: false, evidence: null},
 		]);
 		expect(back.value).toEqual(result.criteria);
 	});

@@ -87,7 +87,15 @@ Work wherever you were spawned; where that is, is the operator's call, not this 
 carries the claim's nonce, and this skill cuts no branch.
 
 Done when the claim answers `won`. **Read these codes off `build claim`, whose numbers above `11`
-are its own group's:** `15` is a proven loss (`BACKED-OFF`); `7` is a proven-absent or closed epic
+are its own group's:** `15` is a proven loss, and `BACKED-OFF` unless one arm opens it — where the
+winning marker's session is provably gone, the refusal prints the succession, and
+`fabrika build adopt $epic_number --session <its session id> --reason "<why>"` then
+`fabrika build release $epic_number --token <the token adopt prints>` clears the stranded claim, after
+which the `--purpose plan` claim above wins normally. **Provably gone is read, never inferred from
+silence**: `fabrika build claims stale` lists every claim standing past a horizon and calls no session
+dead, so the adopt is your judgment, attested on the board with your reason on it — post one you
+would defend, and `BACKED-OFF` otherwise. The route is withheld when the winner is a sibling lane of
+your own session, because `build adopt` refuses your own session. `7` is a proven-absent or closed epic
 (`EPIC-UNPLANNABLE`); `20` is a proven admission refusal on the scope axis (`EPIC-NOT-ADMITTED`) —
 report the axis, and do not route around it with an override. Exits `21` and `16` are not reachable
 at this step: a `plan` claim is bound by neither the audience axis nor the blockedness gate. Any
@@ -492,7 +500,9 @@ and every row below that seats one says so.
   id you aimed at is a `decision`, which is the founder's, so the answer you were about to record is
   not yours to record and the question stands open. Do not re-aim it at another verb — `grill rule`
   is the founder's too.
-- `BACKED-OFF` — `15` at the claim: held by another lane. Nothing read, written, or released.
+- `BACKED-OFF` — `15` at the claim: held by another lane, and no succession open to it. Nothing
+  read, written, or released. A `15` you adopted past is not this row — that lane went on and ends
+  wherever its run does.
 - `STOPPED` — everything the run cannot carry and no row above claims. Two kinds land here, and the
   `10` you cannot repair has always been the second: what leaves the run **UNKNOWN** — `3`, `11`, an
   unrepairable `4`/`5`/`6`/`25`, `13` from `build tree` (no `ledger` verb seats a `13`), a `15` after

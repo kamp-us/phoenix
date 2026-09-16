@@ -20,9 +20,17 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {upsertItem} from "../../ai-agent/core/index.ts";
+import {
+	foldEvent,
+	initialState,
+	promptItem,
+	refillTranscript,
+	remarkCutReplies,
+	upsertItem,
+	type WindowLimits,
+} from "../../ai-agent/core/index.ts";
 import {isRefusal, type TranscriptPage} from "../../ai-agent/history/index.ts";
-import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {ItemId, TranscriptItem} from "../../ai-agent/ports/index.ts";
 // `rows.ts` rather than the chat barrel: the barrel re-exports `.tsx`, which the node tsconfig's
 // file list does not carry, so importing it from here is a TS6307 on `pnpm typecheck`.
 import {mergeOlder} from "../../shell/chat/rows.ts";
@@ -289,8 +297,7 @@ describe("paging an agy window back from its own live tail", () => {
 	 * Criterion: a prepended page doubles no turn the live tail already holds. The four rows agy's
 	 * stream minted carry the tail's ids in `alias`, so the stitch drops the page's copies of them;
 	 * the prompts and the system notice are rows the stream never minted, and they are what the page
-	 * is *for*. (The operator's prompt is held as the core's own `local:` echo, which agy never
-	 * confirms because its `user_input` step carries no text — that double is #8961, not this seam.)
+	 * is *for* — bar one the window holds the core's own `local:` echo of, which the case below is.
 	 */
 	it("stamps the live id on every stored row, so a prepended page doubles no turn the tail holds", () => {
 		// What a window holds after the restart: the stopped child's rows, restored, then the resumed
@@ -320,6 +327,48 @@ describe("paging an agy window back from its own live tail", () => {
 			`${JOIN_CID}:line:8`,
 			...ids(tail),
 		]);
+	});
+
+	/**
+	 * The other half of the same stitch, and the one agy alone needs (#8961): the operator's own turn.
+	 *
+	 * agy's `user_input` step carries no `text_delta`, so its live tail mints no `user` row for a
+	 * prompt at all — the core's `local:` echo is the only copy the window holds, and it stays `local`
+	 * for the window's whole life. There is therefore no id on either side to join on, and
+	 * `claimsLocal`'s text join is the whole of the reconciliation. It can only fire on the text the
+	 * operator actually typed, which is what `promptText` in `transcript.ts` is for: against the
+	 * stored `<USER_REQUEST>` frame the budget never spent and the page prepended a second copy of the
+	 * turn, in agy's wire markup, above the echo.
+	 */
+	it("joins a paged prompt against the local echo agy never confirmed, rather than doubling it", () => {
+		// The window's tail as a desk that sent the third turn itself holds it: the restored rows of
+		// the stopped child, then the echo the core recorded on send, then the resumed child's own row.
+		const echo = promptItem({
+			text: "Reply with only the word AGAIN and run no tools. No paths, no links.",
+			key: "send-again",
+			timestamp: 1_760_000_000_000,
+		});
+		const tail = [
+			...liveTail(fixtures.liveJoinStreamLines),
+			echo,
+			...liveTail(fixtures.liveJoinResumedStreamLines),
+		];
+
+		const page = served(joinPage(null));
+		// The stored row for that turn carries the prompt as typed, which is the only thing the join
+		// has: unwrapped it equals the echo's text exactly, frame and metadata blocks gone.
+		const storedPrompt = page.items.find((item) => item.id === `${JOIN_CID}:line:7`);
+		expect(storedPrompt?.kind === "user" ? storedPrompt.text : null).toBe(echo.text);
+
+		const merged = mergeOlder(tail, page.items);
+		expect(ids(merged)).toEqual([
+			`${JOIN_CID}:line:0`,
+			`${JOIN_CID}:line:5`,
+			`${JOIN_CID}:line:8`,
+			...ids(tail),
+		]);
+		// One copy of the turn, and it is the echo's row: the page's copy is gone, not both.
+		expect(texts(merged).filter((text) => text === echo.text)).toEqual([echo.text]);
 	});
 
 	/**
@@ -377,5 +426,163 @@ describe("paging an agy window back from its own live tail", () => {
 		// holding under this very cursor, and page behind a boundary it has walked past.
 		expect(history.cursorAliases.get("cid:3")).toBe("cid:line:3");
 		expect(texts(served(pageBefore("cid", lines, [], "cid:3")).items)).toEqual(["q1", "a1"]);
+	});
+});
+
+/**
+ * The same seam read by the cut-reply record (#8985/#9046). A reply the operator stopped is a fact
+ * only this process holds — agy's log writes the cut reply as `status: "DONE"` — so the mark has to
+ * be re-applied to the store's rows when the window pages one back in. The record is filled from the
+ * *live* row, and the page answers in stored ids, which is the same two-space split every case above
+ * is about: matching on `id` alone named no row on a real desk and the cut turn paged back in
+ * reading `Worked for …`.
+ *
+ * Both sides are the shipped ones and neither is hand-numbered: the record comes out of `foldEvent`
+ * over the real resumed stream, and the page out of `planPageOverTranscript` over the real log.
+ */
+describe("the cut-reply record across that seam", () => {
+	/** The resumed child's reply, as the window's own live tail holds it. */
+	const liveReply = () => {
+		const reply = liveTail(fixtures.liveJoinResumedStreamLines).at(-1);
+		if (reply?.kind !== "assistant") throw new Error("the resumed capture mints no reply row");
+		return reply;
+	};
+
+	/** The record after the operator stops that reply, as `foldEvent` fills it. */
+	const record = (): ReadonlyArray<ItemId> => {
+		const open = {...initialState("/repo"), phase: "ready" as const, sessionId: JOIN_CID};
+		return foldEvent(
+			open,
+			{kind: "item", item: {...liveReply(), interrupted: true}},
+			{itemLimit: 1},
+		).cutReplies;
+	};
+
+	/** The page row the record's one id reaches, and the assistant rows it must leave alone. */
+	const split = (page: ReadonlyArray<TranscriptItem>) => {
+		const named = page.filter((item) => item.alias !== undefined && record().includes(item.alias));
+		const replies = page.filter((item) => item.kind === "assistant");
+		return {named, others: replies.filter((item) => !named.includes(item))};
+	};
+
+	it("names the live row the stop was observed on", () => {
+		expect(record()).toEqual([liveReply().id]);
+	});
+
+	// Why the id-only match could never fire: the two spaces are disjoint by construction, so the
+	// record's live id is not any page row's `id` — it is one page row's `alias`.
+	it("names an id no page row carries as its own, and exactly one row's alias", () => {
+		const page = served(joinPage(null)).items;
+		expect(page.filter((item) => record().includes(item.id))).toEqual([]);
+		const {named, others} = split(page);
+		expect(named.map((item) => item.kind)).toEqual(["assistant"]);
+		expect(named.map((item) => item.id)).not.toEqual([liveReply().id]);
+		// The negative case below is only a test if the log holds replies that were never cut.
+		expect(others.length).toBeGreaterThan(0);
+	});
+
+	it("marks the paged-in reply and leaves the store's finished replies bare", () => {
+		const page = served(joinPage(null)).items;
+		const {named, others} = split(page);
+		const marked = remarkCutReplies(page, record());
+		const cut = (id: string) => {
+			const row = marked.find((item) => item.id === id);
+			return row?.kind === "assistant" && row.interrupted === true;
+		};
+		expect(named.map((item) => cut(item.id))).toEqual([true]);
+		expect(others.map((item) => cut(item.id))).toEqual(others.map(() => false));
+	});
+});
+
+/**
+ * The resume's read of that same seam (#9061), and the third reader to meet it.
+ *
+ * `refillTranscript` rebases the tail this process is holding onto the store's whole history, and
+ * `heldAnchors` (`ai-agent/core/fold.ts`) decides which history rows that tail already covers. On
+ * `id` alone it answered "none" for every agy row, and `rebaseOnStore`'s empty-range arm then
+ * appended the tail behind the full history — a second copy of every turn the window was holding.
+ *
+ * Both sides are the shipped ones for the reason every case above gives: the tail is the real stream
+ * folded with the core's `upsertItem`, the history is `transcriptProjection` over the real log, so
+ * the stored rows are keyed `<cid>:line:<n>` against live `<cid>:<n>` rather than hand-collapsed into
+ * one space — which is the whole of what makes this a test.
+ */
+describe("the resume's held-range rebase across that seam", () => {
+	/** The turn agy never echoed: the core records it at the send and the checkpoint carries it. */
+	const echo = promptItem({
+		text: "Reply with only the word AGAIN and run no tools. No paths, no links.",
+		key: "send-again",
+		timestamp: 1_760_000_000_000,
+	});
+
+	/** What the window holds after the restart — the same tail the page/tail stitch is tested on. */
+	const heldTail = (): ReadonlyArray<TranscriptItem> => [
+		...liveTail(fixtures.liveJoinStreamLines),
+		echo,
+		...liveTail(fixtures.liveJoinResumedStreamLines),
+	];
+
+	const history = () => stored(JOIN_CID, fixtures.liveJoinLines, fixtures.liveJoinFullLines);
+
+	/**
+	 * Roomier than either side, let alone the held tail: both whole are 15 rows, so the duplicated
+	 * answer fits under this bound too and no pass below can be bought by `planTranscriptWindow`
+	 * trimming the second copy away.
+	 */
+	const roomy = {itemLimit: 50};
+
+	const refilled = (limits: WindowLimits) =>
+		refillTranscript(
+			{...initialState("/repo").transcript, items: heldTail()},
+			history().items,
+			limits,
+			[],
+		);
+
+	/** Each row under the one id both spaces name it by, so a doubled turn is a repeated entry. */
+	const turnsOf = (items: ReadonlyArray<TranscriptItem>): ReadonlyArray<string> => {
+		const aliases = history().cursorAliases;
+		return items.map((item) => aliases.get(item.id) ?? item.id);
+	};
+
+	it("splices the held tail into the range it covers, rather than behind the whole history", () => {
+		const out = refilled(roomy);
+
+		// The store's one row older than the range, then the range itself: each held row at the
+		// position it was recognised at, and the two rows the live tail never held — `line:5`, the
+		// second turn's prompt, and `line:8`, agy's system notice — back between them (#9208).
+		expect(ids(out.items)).toEqual([
+			`${JOIN_CID}:line:0`,
+			`${JOIN_CID}:2`,
+			`${JOIN_CID}:3`,
+			`${JOIN_CID}:4`,
+			`${JOIN_CID}:line:5`,
+			`${JOIN_CID}:6`,
+			echo.id,
+			`${JOIN_CID}:line:8`,
+			`${JOIN_CID}:9`,
+		]);
+		// The held rows keep the order they were held in, so no prompt lands below the reply it
+		// produced.
+		expect(ids(out.items).filter((id) => ids(heldTail()).includes(id))).toEqual(ids(heldTail()));
+
+		// The `localEchoes` arm is untouched: the unconfirmed prompt still joins on text, so the
+		// store's copy of that turn is the range's rather than a second row (#7978).
+		expect(texts(out.items).filter((text) => text === echo.text)).toEqual([echo.text]);
+	});
+
+	it("holds each turn once under a bound that admits both sides whole, so no trim hides one", () => {
+		const both = heldTail().length + history().items.length;
+		expect(both).toBeLessThan(roomy.itemLimit);
+
+		const out = refilled(roomy);
+		expect(out.omitted).toEqual({items: 0, bytes: 0, reason: "none"});
+		const turns = turnsOf(out.items);
+		expect(turns.filter((turn, index) => turns.indexOf(turn) !== index)).toEqual([]);
+
+		// And once is not zero: the two store-only rows inside the range are in that answer, so a
+		// bound roomy enough to hold both sides is not what is keeping them (#9208).
+		expect(turns).toContain(`${JOIN_CID}:line:5`);
+		expect(turns).toContain(`${JOIN_CID}:line:8`);
 	});
 });

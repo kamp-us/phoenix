@@ -24,7 +24,7 @@ import {
 } from "../../ai-agent/core/index.ts";
 import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";
 import {phases} from "../../ai-agent/core/state.ts";
-import {ItemId} from "../../ai-agent/ports/index.ts";
+import {ItemId, type TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {ProcessId} from "../../process/process.ts";
 import {
 	DISPATCHED_KIND,
@@ -882,6 +882,46 @@ describe("paging", () => {
 		expect(view().atOldest).toBe(false);
 	});
 
+	/**
+	 * Criterion 8 of #8985: the call site itself, not its two halves. `remarkCutReplies` has its own
+	 * unit cases and `chatRows` is tested over a hand-re-marked array, so deleting the window's own
+	 * call reddened nothing — and the page the window holds is the only copy of a cut reply once the
+	 * checkpoint has paged past it. The page is keyed the way a real agy page is, stored id with the
+	 * live id in `alias`, and the record names the live one (#9046).
+	 */
+	it("re-marks a cut reply the page brings back, reading it off the session's record", async () => {
+		const cid = "8377fd63-b158-49b9-b2c1-2d89ed9135ce";
+		const line = <Item extends TranscriptItem>(item: Item, ordinal: number): Item => ({
+			...item,
+			id: ItemId.make(`${cid}:line:${ordinal}`),
+			alias: ItemId.make(item.id),
+		});
+		const AT = 1_756_000_000_000;
+		const cutTurn = {
+			items: [
+				line(userItem(`${cid}:7`, "write the essay", AT), 7),
+				line(thinkingItem(`${cid}:8`, "weighing it", AT + 100), 8),
+				line(assistantItem(`${cid}:9`, "I was half way thr", AT + 2_000), 9),
+			],
+			hasMore: true,
+		};
+		const state = withTranscript(transcriptOf(4), {
+			cutReplies: [ItemId.make(`${cid}:9`)],
+		});
+		const {scrolls, answerPage} = await openWindow(state);
+		await readerScrollsToTop(scrolls);
+		await act(async () => {
+			await answerPage({
+				...state,
+				lastPage: cutTurn,
+				pageOutcome: {status: "success", page: cutTurn},
+			});
+		});
+
+		expect(await screen.findByText("You stopped after 2.0s")).toBeDefined();
+		expect(screen.queryByText("Worked for 2.0s")).toBeNull();
+	});
+
 	it("drops the head row once the backend says there is nothing older", async () => {
 		const {scrolls, view, answerPage} = await openWindow(withTranscript(transcriptOf(4)));
 		await readerScrollsToTop(scrolls);
@@ -897,6 +937,87 @@ describe("paging", () => {
 		await waitFor(() => expect(view().atOldest).toBe(true));
 		expect(screen.queryByRole("button", {name: "Load earlier messages"})).toBeNull();
 		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+	});
+
+	it("still latches on an empty page when the window holds the whole tail", async () => {
+		const empty = {items: [], hasMore: false};
+		const {scrolls, view, answerPage} = await openWindow(withTranscript(transcriptOf(4)));
+		await readerScrollsToTop(scrolls);
+		await act(async () => {
+			await answerPage(
+				withTranscript(transcriptOf(4), {
+					lastPage: empty,
+					pageOutcome: {status: "success", page: empty},
+				}),
+			);
+		});
+		await waitFor(() => expect(view().atOldest).toBe(true));
+		expect(screen.queryByRole("button", {name: "Load earlier messages"})).toBeNull();
+	});
+
+	// The filed shape of #9195: a live session answered a page `{items: [], hasMore: false}` while its
+	// own `transcript.omitted` still read 22 rows the tail bound had dropped. Latching on that retired
+	// the head row for the window's whole boot, with the rows demonstrably still in the store — a
+	// second window over the same process paged all 32 back in. The counts here are the filing's.
+	it("keeps the walk open when an empty page lands against a non-zero omission", async () => {
+		const omitted = {items: 22, bytes: 29_365, reason: "item-limit"} as const;
+		const trimmed = (overrides: Partial<AiAgentSessionState> = {}): AiAgentSessionState =>
+			withTranscript(transcriptOf(4), {
+				transcript: {items: transcriptOf(4), omitted},
+				...overrides,
+			});
+		const empty = {items: [], hasMore: false};
+		const {process, scrolls, view, answerPage} = await openWindow(trimmed(), {pageLimit: 25});
+		await readerScrollsToTop(scrolls);
+		await waitFor(() => expect(process.inbox().length).toBe(1));
+		await act(async () => {
+			await answerPage(trimmed({lastPage: empty, pageOutcome: {status: "success", page: empty}}));
+		});
+
+		// The head row is left idle rather than latched, spinning or errored: the window says nothing
+		// about an answer it cannot grade, and the affordance is the operator's to take again.
+		const older = await screen.findByRole("button", {name: "Load earlier messages"});
+		expect(view().atOldest).toBe(false);
+		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+		expect(screen.queryByRole("button", {name: "Retry loading earlier messages"})).toBeNull();
+		expect(await screen.findByText("22 omitted here")).toBeDefined();
+
+		await act(async () => {
+			fireEvent.click(older);
+		});
+		await waitFor(() => expect(process.inbox().length).toBe(2));
+		await act(async () => {
+			await answerPage(trimmed({lastPage: page, pageOutcome: {status: "success", page}}));
+		});
+		await waitFor(() => expect(view().cursor).toBe("p0"));
+		expect(await screen.findByText("older prompt")).toBeDefined();
+	});
+
+	// The slot of a window that had walked to the beginning of history before the desk stopped. The
+	// rows that walk produced are this window's React state and are gone, so a restored `atOldest`
+	// suppressed the one affordance that could fetch them and stranded the whole transcript before
+	// the live tail (#9047).
+	it("offers the head row to a window restored from a slot that says it reached the oldest page", async () => {
+		const {process, view, answerPage} = await openWindow(
+			withTranscript(transcriptOf(4)),
+			{pageLimit: 25},
+			{...initialChatView, pinned: false, scroll: 4213, cursor: "i0", atOldest: true},
+		);
+		const older = await screen.findByRole("button", {name: "Load earlier messages"});
+
+		await act(async () => {
+			fireEvent.click(older);
+		});
+		await waitFor(() => expect(process.inbox()).toEqual([{type: "page", before: "i0", limit: 25}]));
+		await act(async () => {
+			await answerPage(
+				withTranscript(transcriptOf(4), {lastPage: page, pageOutcome: {status: "success", page}}),
+			);
+		});
+		await waitFor(() => expect(view().cursor).toBe("p0"));
+		// The slot's own walk is re-derived from the rows this window now holds, not carried over.
+		expect(view().atOldest).toBe(false);
+		expect(await screen.findByText("older prompt")).toBeDefined();
 	});
 });
 

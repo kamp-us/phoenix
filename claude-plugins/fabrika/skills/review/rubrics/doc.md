@@ -32,7 +32,9 @@ Read the CI-at-head result; do not re-derive them.
   decision-record number in either spelling, a decision-corpus path, a hosted issue URL and a name
   the repo declared as its own all resolve nowhere else, and the docs fabrika ships are read
   elsewhere. Raising an allow-list ceiling to fit a new one is itself the finding — that floor only
-  shrinks.
+  shrinks. One reference is admitted and the guard already knows it: an `@ruling` tag naming the
+  hosted issue that settled a module's behaviour, under `packages/fabrika-cli/` only. That tag is
+  the citation form a docblock there owes its governing ruling, so it is never a finding.
 - **Prose craft.** Plain words, short sentences, nothing a reader must re-read to parse. The
   levers and the pruning tests live in the
   [`writing-for-agents`](../../writing-for-agents/SKILL.md) skill; apply it verbatim to the

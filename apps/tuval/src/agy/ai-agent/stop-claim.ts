@@ -30,8 +30,13 @@ export interface StopClaim {
 	 * one it did not.
 	 */
 	readonly heldBy: (handle: ChildProcessSpawner.ChildProcessHandle) => Effect.Effect<boolean>;
-	/** Give the claim back, for a signal the backend refused: one never delivered speaks for nothing. */
-	readonly release: Effect.Effect<void>;
+	/**
+	 * Give back this child's claim, for a signal the backend refused: one never delivered speaks
+	 * for nothing. Named to its child like the other two, and it clears only that child's claim: a
+	 * release for a child the stop no longer names is a no-op, not a theft of the claim a later child
+	 * holds.
+	 */
+	readonly release: (handle: ChildProcessSpawner.ChildProcessHandle) => Effect.Effect<void>;
 }
 
 export const makeStopClaim: Effect.Effect<StopClaim> = Effect.map(
@@ -40,6 +45,6 @@ export const makeStopClaim: Effect.Effect<StopClaim> = Effect.map(
 		claim: (handle) =>
 			Ref.modify(held, (current) => (current === handle ? [false, current] : [true, handle])),
 		heldBy: (handle) => Effect.map(Ref.get(held), (current) => current === handle),
-		release: Ref.set(held, null),
+		release: (handle) => Ref.update(held, (current) => (current === handle ? null : current)),
 	}),
 );

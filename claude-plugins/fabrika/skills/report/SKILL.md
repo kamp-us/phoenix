@@ -100,6 +100,29 @@ Use `--redact` when a machine-local path is genuinely part of the evidence — r
 incident is the case it exists for. It masks each path down to its class and says so; it never
 silently rewrites what you wrote.
 
+**A refusal from the harness rather than from the verb has one other answer: stage the body, never
+trim it to fit.** The fence above puts the whole body inside one command string, and a
+worktree-isolated shell's verifier grades that string as a unit: past a size, and on some content
+below any size, it refuses with a containment message that names neither. Read as a containment fault, that refusal costs the observation — the reporter
+deletes evidence until something lands, and a report cut to fit a shell reads downstream as a report
+that had nothing more to say. The three steps, the measured triggers and the one shape a bounded
+append still refuses are fixed for every group in
+[skill-conventions §4](../../docs/skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed);
+this group's allocator is:
+
+```bash
+fabrika report scratch --slug body
+```
+
+`--slug` names what the file holds — `body` for a filing, `note`, `amendment` — and the verb keys
+the directory on a fresh id per call, because a reporter holds no claim to key one on. So **use the
+literal path that one call printed**: a second call answers a different directory, and the path is
+not re-derivable. Write the body into it with bounded `cat >>` appends, then run the fence above
+with a literal input redirect in place of the heredoc — `fabrika report file --title "…"
+< <the path it printed>`. The bytes still arrive on stdin, so this is the same guarded path, not a
+second one: every refusal `report file` makes it still makes, the empty-body and bare-`@` guards
+included. The allocated path is machine-local, so a body quoting it reds at `5`.
+
 You are done here when the verb exits 0 and prints the number and URL.
 
 ## 4 — Add what the existing issue lacks — the branch where step 2 found it
@@ -115,14 +138,17 @@ EOF
 
 Done when the verb exits 0 and prints the comment id and URL. It runs the same guards as `file` over
 a comment body, and its section says which
-(`fabrika wire doc-section --heading "report note" < <skill-base>/contract.md`).
+(`fabrika wire doc-section --heading "report note" < <skill-base>/contract.md`). A refused heredoc
+stages exactly as step 3's does — `fabrika report scratch --slug note`, then
+`fabrika report note --issue 4312 < <the path it printed>`.
 
 **When the correction belongs in the body rather than under it, amend — never rewrite.** GitHub
 keeps no issue-body history, so a hand-rolled `gh api -X PATCH -f body=@file` that posts the path
 instead of the file destroys the body it was correcting. `fabrika report amend
 --issue <n>` appends your section under a separator and a dated heading it composes, leaves the
 prior body verbatim, and proves both halves on the read-back
-(`fabrika wire doc-section --heading "report amend" < <skill-base>/contract.md`).
+(`fabrika wire doc-section --heading "report amend" < <skill-base>/contract.md`). It reads stdin like
+its two siblings, so a refused heredoc stages the same way.
 
 ## 5 — Report and return
 

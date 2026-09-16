@@ -676,6 +676,85 @@ export const listComments = (
 		),
 	);
 
+/** One comment list, and the count the issue itself declared for it. */
+export interface CommentScan {
+	readonly comments: ReadonlyArray<CommentRecord>;
+	/** `comments` on the issue payload, read **after** the list so it can only be the later fact. */
+	readonly declared: number;
+	/** How many list reads it took to agree with `declared` — `1` when the first one did. */
+	readonly reads: number;
+}
+
+/** How many times {@link listCommentsReconciled} re-reads before it refuses. */
+const DEFAULT_SCAN_ATTEMPTS = 3;
+/** The first re-read's wait in milliseconds; attempt `k` waits `k` times this. */
+const DEFAULT_SCAN_DELAY_MS = 500;
+
+const positiveEnv = (name: string, fallback: number): number => {
+	const raw = process.env[name];
+	const parsed = raw === undefined ? Number.NaN : Number(raw);
+	return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
+/**
+ * Every comment on `issue`, reconciled against the count the issue declares for itself.
+ *
+ * The claim protocol resolves over this list, and a list short of what exists resolves `won` for a
+ * lane that has in fact lost: on 2026-09-05 a `triage claim` read one comment, did not see a marker
+ * that had been live for three minutes, and answered `won` — the read was stale, the rule over it
+ * was correct, and a whole triage pass was spent on somebody else's issue.
+ *
+ * GitHub documents no read-after-write guarantee for the REST API and no cache-bypass directive: its
+ * REST best-practices page offers only `etag`/`last-modified` conditional requests, whose answer is
+ * "unchanged since the value *you* saved", which proves nothing about a write another lane made
+ * ([GitHub, "Best practices for using the REST API", §Use conditional requests / §Make requests that
+ * can be cached](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api?apiVersion=2022-11-28)).
+ * So consistency is not requested here, it is **proven**: the issue payload's own `comments` field
+ * is the denominator, and a list shorter than it is a read that provably missed something. Verified
+ * live on 2026-09-10 against a real issue: the payload's `comments` and the comments endpoint's
+ * length agreed. The wider shape is
+ * [.patterns/github-read-completeness-proofs.md](../../../../.patterns/github-read-completeness-proofs.md).
+ *
+ * The list is read first and the count second, so the count is strictly the later fact and
+ * `length < declared` cannot be explained by a comment posted after the count was taken. A shortfall
+ * is re-read on a linear backoff, and a shortfall that survives every attempt is a
+ * {@link Attempt} failure — never a shorter list handed on, which is the fail-open shape the claim
+ * resolver cannot see through.
+ *
+ * `length > declared` is not fenced: a comment deleted between the two reads produces it, and a list
+ * carrying *extra* markers can only make the claim resolver more cautious. A payload carrying no
+ * `comments` field reads as `0` and fences nothing, which is the direction {@link IssueRecord}
+ * already states for that field — the proof is absent, so nothing is proven either way.
+ *
+ * Bounds are overridable with `FABRIKA_COMMENT_SCAN_ATTEMPTS` and `FABRIKA_COMMENT_SCAN_DELAY_MS`,
+ * which is how a test drives the retry without waiting on a real clock.
+ */
+export const listCommentsReconciled = (repo: string, issue: number): Shell<Attempt<CommentScan>> =>
+	Effect.gen(function* () {
+		const attempts = Math.max(
+			1,
+			Math.trunc(positiveEnv("FABRIKA_COMMENT_SCAN_ATTEMPTS", DEFAULT_SCAN_ATTEMPTS)),
+		);
+		const delayMs = positiveEnv("FABRIKA_COMMENT_SCAN_DELAY_MS", DEFAULT_SCAN_DELAY_MS);
+		let short = "";
+		for (let attempt = 1; attempt <= attempts; attempt++) {
+			const listed = yield* listComments(repo, issue);
+			if (listed._tag === "Failure") return listed;
+			const target = yield* getIssue(repo, issue);
+			if (target._tag === "Absent") return fail(`#${issue} is not in ${repo}`);
+			if (target._tag === "Unknown") return fail(target.reason);
+			const declared = target.value.comments;
+			if (listed.value.length >= declared) {
+				return ok({comments: listed.value, declared, reads: attempt});
+			}
+			short = `received ${listed.value.length} of ${declared} declared comment(s)`;
+			if (attempt < attempts) yield* Effect.sleep(delayMs * attempt);
+		}
+		return fail(
+			`${short} after ${attempts} read(s) — the comment list could not be made consistent with the count #${issue} declares for itself`,
+		);
+	});
+
 /** Delete one issue comment — how a claim is retracted. */
 export const deleteComment = (repo: string, id: number): Shell<Attempt<void>> =>
 	withToken((token) =>

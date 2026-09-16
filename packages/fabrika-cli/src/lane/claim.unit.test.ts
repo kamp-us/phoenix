@@ -51,4 +51,13 @@ describe("claimTarget", () => {
 		expect(claimTarget(key("epic-5492"))._tag).toBe("Inert");
 		expect(claimTarget(key("0"))._tag).toBe("Inert");
 	});
+
+	// `lane open`, `lane archive` and `lane settle` all read this key as issue 8012. A claim rule
+	// that called the same key nameless would leave 8012's thread unraced while they drove it.
+	it("races a quarantined key on the same issue every other lane verb reads off it", () => {
+		expect(claimTarget(key("8012.frozen-deadlock-20260905T194736"))).toEqual({
+			_tag: "Number",
+			number: 8012,
+		});
+	});
 });

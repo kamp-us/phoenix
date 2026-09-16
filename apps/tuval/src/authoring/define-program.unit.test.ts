@@ -1,16 +1,22 @@
 import {readFileSync} from "node:fs";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Option, Schema} from "effect";
+import {Effect, Layer, Option, Schema} from "effect";
 import {expect, expectTypeOf} from "vitest";
 import {SpawnedProcesses} from "../commands/core/process.ts";
+import {Checkpoints} from "../durability/Checkpoints.ts";
+import {memoryStores} from "../durability/stores.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import {Processes} from "../process/Processes.ts";
+import {ProcessTable} from "../process/ProcessTable.ts";
 import {type ProcessHandle, ProcessId} from "../process/process.ts";
 import {ProcessSelf} from "../process/self.ts";
 import {type AnyProgram, ProgramId} from "../registry/program.ts";
-import {type ArrivalEvent, defineProgram} from "./define-program.ts";
-import {emit, send, spawn, stop} from "./effect.ts";
+import {Registry} from "../registry/Registry.ts";
+import {ArgUnfilled, programArgs} from "./args.ts";
+import {type Answer, type ArrivalEvent, defineProgram} from "./define-program.ts";
+import {emit, type ProgramEffect, type Spawned, type Stopped, send, spawn, stop} from "./effect.ts";
 import {port} from "./port.ts";
+import {Program, ShapeMismatch, type ShapeSource} from "./shape.ts";
 
 const Count = Schema.Number;
 const Review = Schema.Struct({pr: Schema.Number, urgent: Schema.Boolean});
@@ -209,6 +215,7 @@ describe("authoring.defineProgram", () => {
 						sent.push([process, portName, payload]);
 						return {delivered: true, evicted: 0};
 					}),
+				adopt: () => Effect.die("this test adopts nothing"),
 				ask: () => Effect.die("this test asks nothing"),
 				answer: () => Effect.die("this test answers nothing"),
 				read: () => Effect.succeed(Option.none()),
@@ -237,7 +244,10 @@ describe("authoring.defineProgram", () => {
 		}),
 	);
 
-	it.effect("runs an authored `stop` through Processes and answers `stopped`", () =>
+	// `stopped` is no longer this handler's answer (#9227). The child's own end is the single producer
+	// of it, so the parent hears back on a later dispatch and hears back exactly once — which the
+	// real-kernel test at the bottom of this file is what proves.
+	it.effect("runs an authored `stop` through Processes and answers no event of its own", () =>
 		Effect.gen(function* () {
 			const child = ProcessId.make("process-child");
 			const halted: Array<ProcessId> = [];
@@ -254,9 +264,178 @@ describe("authoring.defineProgram", () => {
 				Effect.provideService(Processes, processes),
 			);
 			assert.deepStrictEqual(halted, [child]);
-			assert.deepStrictEqual(events, [{type: "stopped", process: child}]);
+			assert.deepStrictEqual(events, []);
 		}),
 	);
+});
+
+/**
+ * What a `spawn` on a program-valued arg reaches (#8762). The ref an author writes `spawn` against
+ * carries the arg's own service key, not a program id, so the claim under test is that the registry
+ * is asked for the program the *config* filled that arg with — and that the two other outcomes, an
+ * arg filled with nothing and an arg filled with a program the registry does not hold, refuse by
+ * name rather than starting something.
+ */
+const Prompt = Schema.Struct({pr: Schema.Number});
+const Verdict = Schema.Struct({verdict: Schema.String});
+const reviewerShape = Program.shape({in: {prompt: Prompt}, out: {result: Verdict}});
+const dispatcherArgs = programArgs("dispatcher", {reviewer: reviewerShape});
+
+/**
+ * The authored record, not the compiled row: a `ShapeSource` publishes its own port declarations
+ * and the row erases them to predicates, which is why a config cannot yet fill an arg with a
+ * shipped row (`./shape.ts`, #8887).
+ */
+const reviewerProgram = {
+	id: "arg-filled-reviewer",
+	ports: {prompt: port.in(Prompt), result: port.out(Verdict)},
+	init: (): Record<string, never> => ({}),
+	update: {prompt: (state: Record<string, never>) => [state, []] as const},
+};
+
+const reviewerRow = defineProgram(reviewerProgram);
+
+/** One cell whose whole answer is a spawn of the arg, registered with or without a fill. */
+const dispatcher = (fill?: {readonly reviewer: ShapeSource}) =>
+	defineProgram({
+		id: "dispatcher",
+		args: dispatcherArgs,
+		...(fill === undefined ? {} : {fill}),
+		init: (): Record<string, never> => ({}),
+		update: {
+			hatch: (state: Record<string, never>) => [
+				state,
+				[spawn(dispatcherArgs.reviewer, {on: {result: "reviewed"}})],
+			],
+		},
+	});
+
+/** A registry that holds both rows, so what the spawn asks for is answered or refused for real. */
+const kernel = (rows: ReadonlyArray<AnyProgram>) =>
+	SpawnedProcesses.layer({readTimeout: "1 second"}).pipe(
+		Layer.provideMerge(Processes.layer),
+		Layer.provideMerge(Layer.mergeAll(Registry.layer(rows), Checkpoints.layer(memoryStores()))),
+	);
+
+/** Spawn the dispatcher as a root and make it hatch. The process table is the answer. */
+const hatched = (rows: ReadonlyArray<AnyProgram>) =>
+	Effect.gen(function* () {
+		const spawner = yield* SpawnedProcesses;
+		const parent = yield* spawner.spawn(ProgramId.make("dispatcher"), Option.none());
+		const handle = Option.getOrThrow(yield* Processes.use((processes) => processes.handle(parent)));
+		yield* handle.dispatch({type: "hatch"});
+		const table = yield* ProcessTable.use((rows) => rows.list);
+		return table.filter((row) => row.id !== parent).map((row) => row.programId);
+	}).pipe(Effect.provide(kernel(rows)));
+
+describe("authoring.defineProgram spawning through a program-valued arg", () => {
+	it.effect("asks the registry for the program the config filled the arg with", () =>
+		Effect.gen(function* () {
+			const children = yield* hatched([dispatcher({reviewer: reviewerProgram}), reviewerRow]);
+
+			assert.deepStrictEqual(children, [ProgramId.make("arg-filled-reviewer")]);
+		}),
+	);
+
+	it.effect("answers `spawned` with that same resolved id, never the arg key", () =>
+		Effect.gen(function* () {
+			const asked: Array<ProgramId> = [];
+			const child = ProcessId.make("process-reviewer");
+			const events = yield* Effect.scoped(
+				runEffect(
+					dispatcher({reviewer: reviewerProgram}),
+					spawn(dispatcherArgs.reviewer, {on: {result: "reviewed"}}),
+				).pipe(
+					Effect.provideService(
+						SpawnedProcesses,
+						SpawnedProcesses.of({
+							spawn: (program) =>
+								Effect.sync(() => {
+									asked.push(program);
+									return child;
+								}),
+							send: () => Effect.die("this test sends nothing"),
+							adopt: () => Effect.die("this test adopts nothing"),
+							ask: () => Effect.die("this test asks nothing"),
+							answer: () => Effect.die("this test answers nothing"),
+							read: () => Effect.succeed(Option.none()),
+						}),
+					),
+					Effect.provideServiceEffect(
+						ProcessSelf,
+						Effect.map(Effect.scope, (scope) => ({
+							id: ProcessId.make("process-dispatcher"),
+							scope,
+							state: () => undefined,
+						})),
+					),
+				),
+			);
+
+			assert.deepStrictEqual(asked, [ProgramId.make("arg-filled-reviewer")]);
+			assert.deepStrictEqual(events, [
+				{type: "spawned", process: child, program: "arg-filled-reviewer"},
+			]);
+		}),
+	);
+
+	it.effect("refuses when the registration filled the arg with nothing", () =>
+		Effect.gen(function* () {
+			const refusal = yield* Effect.flip(
+				Effect.scoped(
+					runEffect(dispatcher(), spawn(dispatcherArgs.reviewer, {on: {result: "reviewed"}})).pipe(
+						Effect.provideService(
+							SpawnedProcesses,
+							SpawnedProcesses.of({
+								spawn: () => Effect.die("an unfilled arg names no program to spawn"),
+								send: () => Effect.die("this test sends nothing"),
+								adopt: () => Effect.die("this test adopts nothing"),
+								ask: () => Effect.die("this test asks nothing"),
+								answer: () => Effect.die("this test answers nothing"),
+								read: () => Effect.succeed(Option.none()),
+							}),
+						),
+						Effect.provideServiceEffect(
+							ProcessSelf,
+							Effect.map(Effect.scope, (scope) => ({
+								id: ProcessId.make("process-dispatcher"),
+								scope,
+								state: () => undefined,
+							})),
+						),
+					),
+				),
+			);
+
+			assert.instanceOf(refusal, ArgUnfilled);
+			assert.strictEqual((refusal as ArgUnfilled).arg, "tuval/arg/dispatcher/reviewer");
+		}),
+	);
+
+	it.effect("refuses at the registry, under the filled program's id, when nothing holds it", () =>
+		Effect.gen(function* () {
+			// The reviewer row is left out of the registry on purpose: the refusal names what the
+			// registry was actually asked for, which is the whole of what #8762 is about.
+			const refusal = yield* Effect.flip(hatched([dispatcher({reviewer: reviewerProgram})]));
+
+			const cause = (refusal as {readonly cause?: {readonly _tag?: string; program?: string}})
+				.cause;
+			assert.strictEqual(cause?._tag, "tuval/commands/UnknownProgram");
+			assert.strictEqual(cause?.program, "arg-filled-reviewer");
+		}),
+	);
+
+	it("refuses a fill that does not fit the declared shape, at definition time", () => {
+		expect(() => dispatcher({reviewer: {id: "mute", ports: {prompt: port.in(Prompt)}}})).toThrow(
+			ShapeMismatch,
+		);
+	});
+
+	it("leaves a literal program id alone, so a shipped program takes the same path", () => {
+		// No arg key, so nothing is resolved and the row keeps the shared handler record.
+		expect(counter.handlers).toBe(reviewerRow.handlers);
+		expect(spawn({programId: "counter", out: {}}).program).toBe("counter");
+	});
 });
 
 /**
@@ -278,4 +457,207 @@ describe("authoring.defineProgram field-compiler seam", () => {
 			expect(line).toMatch(/^\t[A-Za-z]+: .+,$/);
 		}
 	});
+});
+
+/**
+ * The child-exit edge through the real kernel (#9227). Everything above this point either drives a
+ * handler with a stub `SpawnedProcesses` or feeds an event by hand; what is under test here is that
+ * a `stopped` arrives in a spawner's inbox at all — so the programs below run on the same
+ * `SpawnedProcesses` + `Processes` layer the box boots, and the only thing the test does by hand is
+ * end the child.
+ *
+ * Both endings are checked, because #9227's change is that they became one path: a child ended from
+ * outside, and a child the parent itself stopped. The second is the one that must not double-count —
+ * `stopHandler` answering `stopped` *and* the child's exit delivering it would have been two events
+ * for one end, so `stops` is asserted exactly, not merely non-zero.
+ */
+const watcherArgs = programArgs("watcher", {reviewer: reviewerShape});
+
+interface WatcherState {
+	readonly child: ProcessId | null;
+	readonly ended: ProcessId | null;
+	readonly stops: number;
+}
+
+const watcher = defineProgram({
+	id: "watcher",
+	args: watcherArgs,
+	fill: {reviewer: reviewerProgram},
+	init: (): WatcherState => ({child: null, ended: null, stops: 0}),
+	update: {
+		hatch: (state: WatcherState) => [state, [spawn(watcherArgs.reviewer, {on: {result: "seen"}})]],
+		spawned: (state: WatcherState, event: Spawned) => [{...state, child: event.process}, []],
+		halt: (state: WatcherState) => [state, state.child === null ? [] : [stop(state.child)]],
+		stopped: (state: WatcherState, event: Stopped) => [
+			{...state, ended: event.process, stops: state.stops + 1},
+			[],
+		],
+	},
+});
+
+/**
+ * Wait for the forked delivery, then keep waiting a little after it lands. A second `stopped` would
+ * arrive on the same path as the first, so a test that stopped at the first one could not tell one
+ * event from two — the trailing settle is what makes the `stops` assertion mean something.
+ */
+const settle = (ready: () => boolean) =>
+	Effect.gen(function* () {
+		for (let attempt = 0; attempt < 100 && !ready(); attempt += 1) {
+			yield* Effect.sleep("5 millis");
+		}
+		yield* Effect.sleep("30 millis");
+	});
+
+/** Start the watcher as a root, make it hatch, and answer with its handle and its child's id. */
+const watching = Effect.gen(function* () {
+	const spawner = yield* SpawnedProcesses;
+	const parent = yield* spawner.spawn(ProgramId.make("watcher"), Option.none());
+	const handle = Option.getOrThrow(yield* Processes.use((processes) => processes.handle(parent)));
+	yield* handle.dispatch({type: "hatch"});
+	const child = (handle.getState() as WatcherState).child;
+	assert.isNotNull(child);
+	return {handle, child: child as ProcessId, read: () => handle.getState() as WatcherState};
+});
+
+describe("authoring.defineProgram hearing a child end, through the real kernel", () => {
+	it.live("hands the spawner a `stopped` for a child that ended on its own", () =>
+		Effect.gen(function* () {
+			const {child, read} = yield* watching;
+
+			// Ended from outside the parent: nothing it asked for, and the case that reached nobody
+			// before #9227. A crashing child leaves the table by this same finalizer.
+			yield* Processes.use((processes) => processes.stop(child));
+			yield* settle(() => read().ended !== null);
+
+			assert.strictEqual(read().ended, child);
+			assert.strictEqual(read().stops, 1);
+		}).pipe(Effect.provide(kernel([watcher, reviewerRow]))),
+	);
+
+	it.live("hands it one `stopped`, not two, for a child it stopped itself", () =>
+		Effect.gen(function* () {
+			const {handle, child, read} = yield* watching;
+
+			yield* handle.dispatch({type: "halt"});
+			yield* settle(() => read().ended !== null);
+
+			assert.strictEqual(read().ended, child);
+			assert.strictEqual(read().stops, 1);
+		}).pipe(Effect.provide(kernel([watcher, reviewerRow]))),
+	);
+});
+
+/**
+ * R12.1's other half (#9294): an effect the *author* named, answered from an authored `update` cell
+ * and run by a handler the row was spread with. The type half is `defineProgram`'s `X`; the runtime
+ * half is `{...row, handlers: {...row.handlers, run}}`, and this file's claim is that the two meet —
+ * the actor dispatches the Cmd to that handler by string and its follow-up Msg lands back in the
+ * process's own inbox, on the same `SpawnedProcesses` + `Processes` layer the box boots.
+ *
+ * The second test is the documented silence: `defineProgram` compiles before any spread exists, so
+ * it cannot refuse a named effect with no handler. A row that opts in and forgets the spread is
+ * skipped by the actor and keeps running, which is exactly what a hand-assembled row has always
+ * done for the same mistake.
+ */
+type Run = {readonly type: "run"; readonly command: string};
+type Ran = {readonly type: "ran"; readonly output: string};
+
+const run = (command: string): Run => ({type: "run", command});
+
+interface RunnerState {
+	readonly asked: string | null;
+	readonly output: string | null;
+}
+
+const runnerInit = (): RunnerState => ({asked: null, output: null});
+
+const runnerUpdate = {
+	go: (state: RunnerState): Answer<RunnerState, Run> => [{...state, asked: "echo"}, [run("echo")]],
+	ran: (state: RunnerState, event: Ran): Answer<RunnerState, Run> => [
+		{...state, output: event.output},
+		[],
+	],
+};
+
+/**
+ * `Run` is named only in a cell's answer, which is not a place inference reaches, so an opted-in
+ * program states the whole argument list once over an `update` declared beside the call.
+ */
+const runnerRow = (id: string) =>
+	defineProgram<
+		RunnerState,
+		Record<string, never>,
+		typeof runnerUpdate,
+		Record<string, never>,
+		unknown,
+		Run
+	>({id, init: runnerInit, update: runnerUpdate});
+
+const compiledRunner = runnerRow("runner");
+
+/** The compiled row, plus the one handler the layer does not write. The spread is the whole seam. */
+const runner: AnyProgram = {
+	...compiledRunner,
+	handlers: {
+		...compiledRunner.handlers,
+		run: (cmd: Run) => Effect.succeed([{type: "ran", output: `ran:${cmd.command}`} satisfies Ran]),
+	},
+};
+
+/** The same program with the spread left off: it names `run` and no handler answers it. */
+const unhandledRunner: AnyProgram = runnerRow("runner-bare");
+
+const running = (programId: string) =>
+	Effect.gen(function* () {
+		const spawner = yield* SpawnedProcesses;
+		const id = yield* spawner.spawn(ProgramId.make(programId), Option.none());
+		const handle = Option.getOrThrow(yield* Processes.use((processes) => processes.handle(id)));
+		return {handle, read: () => handle.getState() as RunnerState};
+	});
+
+describe("authoring.defineProgram answering an effect of the author's own", () => {
+	it("keeps the six kernel effects closed for a program that named none", () => {
+		const cell = (state: CounterState): Answer<CounterState> => [
+			state,
+			[
+				// @ts-expect-error a program naming no effect of its own answers the six and nothing
+				// else, so a typo is still refused at compile rather than skipped at runtime.
+				{type: "emitt", port: "announced", payload: 1},
+			],
+		];
+
+		expect(cell({count: 1})[0]).toEqual({count: 1});
+	});
+
+	it("widens the answer to exactly the effect a program did name", () => {
+		expectTypeOf<Answer<RunnerState, Run>[1]>().toEqualTypeOf<ReadonlyArray<ProgramEffect | Run>>();
+		expectTypeOf<Answer<RunnerState>[1]>().toEqualTypeOf<ReadonlyArray<ProgramEffect>>();
+	});
+
+	it.live("runs the handler the row was spread with and dispatches its follow-up", () =>
+		Effect.gen(function* () {
+			const {handle, read} = yield* running("runner");
+
+			yield* handle.dispatch({type: "go"});
+			yield* settle(() => read().output !== null);
+
+			assert.strictEqual(read().asked, "echo");
+			assert.strictEqual(read().output, "ran:echo");
+		}).pipe(Effect.provide(kernel([runner]))),
+	);
+
+	it.live("skips a named effect no handler answers, and leaves the process running", () =>
+		Effect.gen(function* () {
+			const {handle, read} = yield* running("runner-bare");
+
+			yield* handle.dispatch({type: "go"});
+			yield* settle(() => read().output !== null);
+			assert.strictEqual(read().output, null);
+
+			// Skipped, not crashed: the next event still lands on the same live process.
+			yield* handle.dispatch({type: "ran", output: "by hand"});
+			yield* settle(() => read().output !== null);
+			assert.strictEqual(read().output, "by hand");
+		}).pipe(Effect.provide(kernel([unhandledRunner]))),
+	);
 });

@@ -1,0 +1,58 @@
+{
+	"v": 2,
+	"kind": "measurement",
+	"recordId": "codex-response-1",
+	"source": { "host": "codex", "format": "token_usage_record", "version": "0.154.0" },
+	"work": { "repo": "example/project", "issue": 42, "run": "run-1", "attempt": "attempt-1" },
+	"agent": {
+		"session": "thread-1",
+		"nativeSession": "native-session-1",
+		"parent": { "kind": "root" },
+		"rootSession": "thread-1"
+	},
+	"response": "resp-1",
+	"turn": "turn-1",
+	"rootTurn": "turn-1",
+	"parentTurn": null,
+	"provider": "openai",
+	"model": "gpt-5.4",
+	"basis": { "kind": "response" },
+	"counters": [
+		{
+			"field": "input_tokens",
+			"category": "input",
+			"value": { "state": "measured", "tokens": 100 },
+			"meaning": { "kind": "additive" }
+		},
+		{
+			"field": "cached_input_tokens",
+			"category": "cacheRead",
+			"value": { "state": "measured", "tokens": 20 },
+			"meaning": { "kind": "subset", "of": "input_tokens" }
+		},
+		{
+			"field": "cache_write_input_tokens",
+			"category": "cacheWrite",
+			"value": { "state": "absent" },
+			"meaning": { "kind": "unknown" }
+		},
+		{
+			"field": "output_tokens",
+			"category": "output",
+			"value": { "state": "measured", "tokens": 10 },
+			"meaning": { "kind": "additive" }
+		},
+		{
+			"field": "reasoning_output_tokens",
+			"category": "reasoning",
+			"value": { "state": "measured", "tokens": 0 },
+			"meaning": { "kind": "subset", "of": "output_tokens" }
+		},
+		{
+			"field": "total_tokens",
+			"category": "total",
+			"value": { "state": "measured", "tokens": 110 },
+			"meaning": { "kind": "aggregate", "of": ["input_tokens", "output_tokens"] }
+		}
+	]
+}

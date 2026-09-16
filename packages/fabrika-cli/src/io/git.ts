@@ -237,10 +237,15 @@ export const fetchAndResolve = (base: string): Shell<Attempt<string>> =>
  *
  * Newline-separated rather than `-z`: a record base name is `NNNN-slug.md` by construction, so
  * there is no name a newline could split, and a plain line grammar keeps the fixtures readable.
+ *
+ * `--full-tree` because `ls-tree` otherwise limits its listing to the process's directory, and this
+ * read's empty answer is a *fact* to its callers — an existing directory holding nothing. Run from
+ * a subdirectory the unanchored form lists nothing at all, which the allocator would read as an
+ * empty corpus and hand back `0001`.
  */
 export const listDir = (sha: string, dir: string): Shell<Attempt<ReadonlyArray<string>>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("git", ["ls-tree", "--name-only", `${sha}:${dir}`]);
+		const r = yield* execCapture("git", ["ls-tree", "--full-tree", "--name-only", `${sha}:${dir}`]);
 		if (!r.ok) return fail(r.reason);
 		return ok(
 			r.stdout
@@ -340,10 +345,16 @@ export const diffRangeStatuses = (
 		return r.ok ? ok(parseNameStatus(r.stdout)) : fail(r.reason);
 	});
 
-/** Every tracked path at `sha`, recursively — how a fenced skill root is resolved without a checkout. */
+/**
+ * Every tracked path at `sha`, recursively — how a fenced skill root is resolved without a checkout.
+ *
+ * `--full-tree` because "every" is repository-wide: unanchored, `ls-tree` lists only the process's
+ * directory and names those paths relative to it, so a scan run from a package would both miss the
+ * rest of the tree and fail to match any repo-root path its caller compares against.
+ */
 export const listTreePaths = (sha: string): Shell<Attempt<ReadonlyArray<string>>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("git", ["ls-tree", "-r", "--name-only", "-z", sha]);
+		const r = yield* execCapture("git", ["ls-tree", "-r", "--full-tree", "--name-only", "-z", sha]);
 		return r.ok ? ok(r.stdout.split("\0").filter((p) => p !== "")) : fail(r.reason);
 	});
 

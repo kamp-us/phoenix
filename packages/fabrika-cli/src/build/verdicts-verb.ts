@@ -16,6 +16,12 @@
  * - **An unreadable page is `11`, never a shorter list.** `{"rows": []}` on exit 0 is a proven "no
  *   verdicts", readable against the scope line's counts.
  *
+ * - **Mergeability is folded beside the rows**, because a PR conflicting against its base is repair
+ *   work no gate emits a FAIL for: without the field, an all-PASS fold over a conflicting PR is the
+ *   proven-no-work answer the Repair section routes on, and the lane leaves the PR stranded.
+ *   The platform's uncomputed read stays `unknown` all the way out — folded as clean it rebuilds the
+ *   bug behind a field that looks like it fixed it.
+ *
  * - **`capReached` is the declared cap plus what the founder cleared, never a second constant.** A
  *   recorded clearance (`./clearances.ts`) buys the one round it names, so the field the Repair
  *   section tells a builder to trust stays the only budget number anyone reads.
@@ -29,6 +35,7 @@ import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {capNote, capReached} from "../cap-clearance.ts";
 import {getIssue, listComments} from "../io/issues.ts";
+import type {PullMergeability} from "../io/pulls.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
 import {headContentFor} from "../review/head-content.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -45,6 +52,17 @@ import {countRounds, roundsOn} from "./rounds.ts";
 import {openPull, resolveTargetRepo} from "./target.ts";
 
 const VERB = "build verdicts";
+
+/** The machine line the fold's mergeability gets, one per value — the fact is never left unsaid. */
+const mergeabilityNote = (pr: number, baseRef: string, state: PullMergeability): string => {
+	if (state === "conflicting") {
+		return `${VERB}: PR #${pr} is CONFLICTING against ${baseRef} — a base conflict is repair work no gate emits a FAIL for, so this fold is not a clean answer.`;
+	}
+	if (state === "unknown") {
+		return `${VERB}: PR #${pr}'s mergeability is UNKNOWN — GitHub had not computed it yet, and that is never "merges cleanly".`;
+	}
+	return `${VERB}: PR #${pr} merges cleanly into ${baseRef}.`;
+};
 
 /** The provenance tag on a reviewer-appended criterion: `<!-- ac:review pr:#<pr> round:<n> -->`. */
 const PROVENANCE_RE = /<!--\s*ac:review\s+pr:#(\d+)\s+round:(\d+)\s*-->/;
@@ -180,6 +198,7 @@ export const runVerdicts = (
 		return answer(
 			JSON.stringify({
 				head,
+				mergeability: target.pull.mergeability,
 				rows,
 				rounds,
 				capReached: capReached(rounds, granted),
@@ -188,6 +207,7 @@ export const runVerdicts = (
 			}),
 			[
 				`${VERB}: head ${head}; scanned ${listed.value.length} comment(s) and ${reviews.value.length} review(s) on #${pr}.`,
+				mergeabilityNote(pr, target.pull.baseRef, target.pull.mergeability),
 				`${VERB}: ${capNote(granted)}, from ${cleared.rows.length} marker(s).`,
 				...headContent.diagnostics,
 			],

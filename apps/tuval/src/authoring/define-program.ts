@@ -17,10 +17,21 @@
  * Everything the layer does not sugar is still reachable, because the row is a plain object:
  * `{...defineProgram({...}), restorable, checkpointWorthy}`. `configChanged` is one of those, and
  * deliberately so — `./resume.ts` says why the reload half stays a spread while `resume` does not.
+ *
+ * **The other half of R12.1 — an effect of the author's own — is the `X` generic (#9294).** The six
+ * kernel effects are what a program gets for free; a program that has real work to do names its own
+ * effect type as `defineProgram`'s last type argument, answers it from an `update` cell like any
+ * other, and supplies the handler that runs it by spreading the compiled row:
+ * `{...defineProgram(authored), handlers: {...row.handlers, run}}`. `X` defaults to `never`, so a
+ * program that names none is typed exactly as it was and a typo'd effect is still refused at
+ * compile. `handlers` is where the handler comes from — this compiler cannot see one added after
+ * the spread, so it refuses nothing at definition time; an effect the row has no handler for is
+ * skipped by the actor (`../host/actor.ts`), which is the same silence a hand-assembled row has
+ * always had for the same mistake.
  */
 
 import type {DepKeyedSub, Interpret} from "@demlik/tea";
-import {Effect, Option} from "effect";
+import {Context, Effect, Option, Result} from "effect";
 import type {
 	PortAnswersNothing,
 	PortRefused,
@@ -48,7 +59,13 @@ import type {
 	Receiver,
 } from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
-import {type AnyArgRefs, argKeys} from "./args.ts";
+import {
+	type AnyArgRefs,
+	type ArgUnfilled,
+	argContext,
+	argKeys,
+	resolveSpawnTarget,
+} from "./args.ts";
 import {
 	type CommandArgTypes,
 	type CommandHandlers,
@@ -64,7 +81,6 @@ import {
 	type SpawnEffect,
 	type StopEffect,
 	spawned,
-	stopped,
 } from "./effect.ts";
 import {compileTakesKeys, type KEY_EVENT, type KeyEvent} from "./keys.ts";
 import {
@@ -91,10 +107,18 @@ export interface AuthoredEvent {
 	readonly type: string;
 }
 
-/** What one `update` cell answers: the next state, and the effects it asks for. */
-export type Answer<S> = readonly [S, ReadonlyArray<ProgramEffect>];
+/**
+ * What one `update` cell answers: the next state, and the effects it asks for.
+ *
+ * `X` is the author's own effect type, and it defaults to `never` — so a program that names none
+ * answers the six kernel effects and nothing else, and a typo'd effect is still refused at compile
+ * (#9294). A program that opts in names its type once, on its `update` table's cells or on
+ * `defineProgram`, and supplies the handler for it by spreading the compiled row; the seam is
+ * written out on `defineProgram` below.
+ */
+export type Answer<S, X = never> = readonly [S, ReadonlyArray<ProgramEffect | X>];
 
-export type EventHandler<S, E> = (state: S, event: E) => Answer<S>;
+export type EventHandler<S, E, X = never> = (state: S, event: E) => Answer<S, X>;
 
 /** An in-port arrival as the author's `update` sees it: the port's name, its decoded payload. */
 export interface ArrivalEvent<Name extends string, Payload> {
@@ -134,12 +158,12 @@ export type ArrivingPortNames<D extends PortDecls> = {
  * event at `any` — including the port cells, which is exactly the inference this layer exists for.
  * Measured at this pin: under the intersection a port cell's `event` accepted a `string`.
  */
-export type UpdateTable<S, D extends PortDecls, U> = {
+export type UpdateTable<S, D extends PortDecls, U, X = never> = {
 	[K in keyof U | ArrivingPortNames<D>]: K extends typeof KEY_EVENT
-		? EventHandler<S, KeyEvent>
+		? EventHandler<S, KeyEvent, X>
 		: K extends ArrivingPortNames<D>
-			? EventHandler<S, ArrivalEventOf<D, K & keyof D & string>>
-			: EventHandler<S, any>;
+			? EventHandler<S, ArrivalEventOf<D, K & keyof D & string>, X>
+			: EventHandler<S, any, X>;
 };
 
 /** What a user writes. Nothing on it names Demlik, Effect, Scope or the row's seven generics. */
@@ -149,6 +173,7 @@ export interface AuthoredProgram<
 	U,
 	C extends CommandArgTypes = Record<string, never>,
 	Out = unknown,
+	X = never,
 > {
 	readonly id: string;
 	/** What a surface calls this program; absent falls through to `identity.program`. */
@@ -160,9 +185,24 @@ export interface AuthoredProgram<
 	 * compiled `init` answers the loaded state untouched whenever there is one.
 	 */
 	readonly init: () => S;
-	readonly update: U & UpdateTable<S, D, U>;
+	readonly update: U & UpdateTable<S, D, U, X>;
 	/** The args the config hands a process, as `programArgs` declared them (`./args.ts`). */
 	readonly args?: AnyArgRefs;
+	/**
+	 * What *this* registration hands those args — the config call's half of `args`. Every
+	 * program-valued value is checked against its declared shape here, at definition time, and a
+	 * mismatch refuses on the spot rather than at the process that would have spawned it; what
+	 * passes becomes the `Context` this row's handlers read an arg back through, which is how a
+	 * `spawn` on a shaped arg reaches the program the config chose (#8762).
+	 *
+	 * A row that states none still compiles — a program is registered once per fill, and a
+	 * registration with nothing to give says so by leaving this off. Its handlers then refuse a
+	 * spawn on an unfilled arg at the spawn (`ArgUnfilled`) rather than silently naming the key.
+	 *
+	 * Typed as a plain record: `args` has already erased the declarations its refs were built
+	 * from, so there is nothing on this record for the checker to hold a fill against (#8954).
+	 */
+	readonly fill?: Readonly<Record<string, unknown>>;
 	/**
 	 * The commands this program offers, compiled into the row's spells (`./commands.ts`). The key
 	 * is the command's own path and never carries a prefix: the group is the program id, and the
@@ -195,12 +235,14 @@ export interface AuthoredProgram<
 	readonly placement?: Placement;
 }
 
-export type AnyAuthoredProgram = AuthoredProgram<any, any, any, any>;
+export type AnyAuthoredProgram = AuthoredProgram<any, any, any, any, any, any>;
 
 /** What every field compiler is handed beside the authored record: the id and the compiled ports. */
 export interface CompileContext {
 	readonly id: ProgramId;
 	readonly ports: Readonly<Record<string, PortSchema>>;
+	/** What this registration filled its args with, as the row's handlers read them back (#8762). */
+	readonly args: Context.Context<never>;
 }
 
 /**
@@ -240,9 +282,10 @@ const arrivingPorts = (authored: AnyAuthoredProgram): ReadonlyArray<string> =>
 		.map(([name]) => name);
 
 /**
- * The six effect handlers, written once. Each answers the events its effect produces: `emit` and
- * `send` announce nothing back, `spawn` answers `spawned` and `stop` answers `stopped`. A command
- * reaches five of them; `emit` is an `update` cell's alone (ADR 0372).
+ * The six effect handlers, written once. Each answers the events its effect produces: `spawn`
+ * answers `spawned`, and `emit`, `send` and `stop` announce nothing back. A command reaches exactly
+ * one of them — `send`; the other five are an `update` cell's alone (ADR 0372, as the rulings on
+ * #8898 and #8858 amended it).
  */
 const emitHandler = (cmd: EmitEffect) =>
 	Effect.gen(function* () {
@@ -262,11 +305,17 @@ const spawnHandler = (cmd: SpawnEffect) =>
 	Effect.gen(function* () {
 		const processes = yield* SpawnedProcesses;
 		const self = yield* ProcessSelf;
+		// What the author wrote `spawn` against is a program id or a program-valued arg's own
+		// service key, and only the second needs answering: the key is read back through this
+		// handler's `R`, where the row's fill put the program the config chose, so the registry is
+		// only ever asked for a real id and both cases take this one line (#8762). The `spawned`
+		// event carries the same resolved id, so the author's `update` reads what actually started.
+		const program = yield* resolveSpawnTarget(cmd.program);
 		// The parent is stamped here, off the process this interpretation is running for, and is
 		// never something the `spawn` effect carries (#8757). `on` rides along as that same
 		// process's routing table, so a named child port arrives as this process's own event.
-		const child = yield* processes.spawn(ProgramId.make(cmd.program), Option.some(self.id), cmd.on);
-		return [spawned(child, cmd.program)];
+		const child = yield* processes.spawn(ProgramId.make(program), Option.some(self.id), cmd.on);
+		return [spawned(child, program)];
 	});
 
 const sendHandler = (cmd: SendEffect) =>
@@ -298,15 +347,31 @@ const replyHandler = (cmd: ReplyEffect) =>
 		return NO_EVENTS;
 	});
 
+/**
+ * End the named process, and answer nothing (#9227). `stopped` still arrives — it is delivered by
+ * the child's own exit, from the finalizer `SpawnedProcesses.spawn` hung on it
+ * (`../commands/core/process.ts`), which is now the single producer of that event.
+ *
+ * It used to be produced here as well, and two producers meant a child that ended by itself
+ * produced none at all: the answer to the parent's own `stop` was the only `stopped` an author could
+ * ever see, so an unsolicited exit was silently absorbed. Returning it here *and* delivering it would
+ * have made the parent-issued case two events for one child end. One producer, on the edge that
+ * actually happens, makes both of those unwritable rather than guarded against.
+ *
+ * The cost is that the event is no longer this fold's answer: it arrives as a later dispatch. An
+ * author reading `stopped` sees the same event for both endings and cannot tell which asked for it,
+ * which is the point — a `stop` a cell issued has already moved that cell's state.
+ */
 const stopHandler = (cmd: StopEffect) =>
 	Effect.gen(function* () {
 		const processes = yield* Processes;
 		yield* processes.stop(cmd.process);
-		return [stopped(cmd.process)];
+		return NO_EVENTS;
 	});
 
 /** Everything an authored program's effects can fail with, gathered off the services they run on. */
 export type EffectFailure =
+	| ArgUnfilled
 	| PayloadRejected
 	| PortNotWired
 	| UnknownProgram
@@ -331,19 +396,52 @@ const HANDLERS: HostHandlers<AuthoredEvent, ProgramEffect, EffectFailure, Effect
 };
 
 /**
- * What a compiled command needs — `EffectServices` without `ProcessPorts`, because a command may
- * not declare `emit` (ADR 0372) and `emitHandler` is the only reader of that service.
+ * What a compiled command needs: `SpawnedProcesses`, and that is the whole list. A command may
+ * declare only `send` (ADR 0372 as the rulings on #8898 and #8858 amended it), and `sendHandler` is
+ * the only handler it can reach — so the two services `Kernel` (`../boot.ts`) does not name,
+ * `ProcessPorts` (read by `emitHandler`) and `ProcessSelf` (read by `spawnHandler` and
+ * `askHandler`), are unreachable from a spell rather than merely unused by one.
+ *
+ * Written as an `Extract` off `EffectServices` rather than as the bare service, so it stays in
+ * lockstep with the spine's set instead of drifting from it.
  */
-export type CommandEffectServices = Exclude<EffectServices, ProcessPorts>;
+export type CommandEffectServices = Extract<EffectServices, SpawnedProcesses>;
 
-/** The same handlers minus `emit`, so no command's spell can reach a process out-port. */
+/**
+ * The one handler a command reaches. `compileCommands` adds `ProcessTable` to what the compiled
+ * spell requires, because resolving a bare port name to a process of the declaring program is a
+ * read of the live set (`./own-process.ts`); `Kernel` already names that service.
+ */
 const COMMAND_HANDLERS: CommandHandlers<EffectFailure, CommandEffectServices> = {
-	spawn: spawnHandler,
 	send: sendHandler,
-	ask: askHandler,
-	reply: replyHandler,
-	stop: stopHandler,
 };
+
+/**
+ * Put this row's filled args into what its handlers resolve. Merged onto the ambient context
+ * rather than replacing it, because the kernel seals a handler to the spawner's own services
+ * (`../process/Processes.ts`) and this runs inside that seal — a fill adds arg keys and takes
+ * nothing away.
+ *
+ * Every handler is bound, not only `spawn`: an arg is read through `R` and which handler reads
+ * which arg is the author's business. A row whose registration filled nothing keeps the shared
+ * record, so the common program compiles to the same handlers it did before args existed.
+ */
+type AnyHandlers = Readonly<Record<string, (cmd: never) => Effect.Effect<any, any, any>>>;
+
+const bindArgs = <H extends AnyHandlers>(handlers: H, args: Context.Context<never>): H =>
+	args.mapUnsafe.size === 0
+		? handlers
+		: (Object.fromEntries(
+				Object.entries(handlers as AnyHandlers).map(([type, run]) => [
+					type,
+					(cmd: never) =>
+						Effect.updateContext(run(cmd), (ambient: Context.Context<unknown>) =>
+							Context.merge(ambient, args),
+						),
+				]),
+				// One wrapper per key, each at the handler's own Cmd type; iterating the record erases
+				// that correspondence, which is what this cast buys back.
+			) as H);
 
 /** Demlik demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576). */
 const dead = (): Promise<void> => Promise.resolve();
@@ -403,6 +501,32 @@ const compileReceive = (
 		]),
 	);
 
+/**
+ * A command's spell runs its one effect on the same filled args an `update` cell's effects read, so
+ * it is bound the same way (#8762) — `send` reads no arg today, and binding the record rather than
+ * the handler that happens to need one keeps the two paths in lockstep.
+ *
+ * The program id goes in beside them: a bare port name in a command resolves against the live
+ * processes of the *declaring* program (`./own-process.ts`), which is a fact of the registration
+ * rather than of the call, so the compile site is the only place that knows it.
+ */
+const compileSpells = (authored: AnyAuthoredProgram, context: CompileContext) =>
+	compileCommands(context.id, authored.commands, bindArgs(COMMAND_HANDLERS, context.args));
+
+/**
+ * What this registration filled its args with. Refused here, at definition time, where the config
+ * that got it wrong is the only thing on the stack: `defineProgram` answers a plain row rather than
+ * an Effect, so a `ShapeMismatch` has no channel to fail on and `./commands.ts` refuses a malformed
+ * command name the same way. The error thrown is the `ShapeMismatch` itself, which names the arg,
+ * the program and the port that did not fit.
+ */
+const filledArgs = (authored: AnyAuthoredProgram): Context.Context<never> => {
+	if (authored.args === undefined || authored.fill === undefined) return Context.empty();
+	const filled = argContext(authored.args, authored.fill as never);
+	if (Result.isFailure(filled)) throw filled.failure;
+	return filled.success as Context.Context<never>;
+};
+
 const compileIdentity = (authored: AnyAuthoredProgram): DefinitionIdentity => ({
 	...defaultIdentity(authored.id),
 	...authored.identity,
@@ -418,9 +542,9 @@ export const FIELD_COMPILERS = {
 	core: (authored) => compileCore(authored),
 	ports: (_authored, context) => context.ports,
 	receive: (authored) => compileReceive(authored),
-	handlers: () => HANDLERS,
+	handlers: (_authored, context) => bindArgs(HANDLERS, context.args),
 	args: (authored) => (authored.args === undefined ? undefined : argKeys(authored.args)),
-	spells: (authored) => compileCommands(authored.commands, COMMAND_HANDLERS),
+	spells: (authored, context) => compileSpells(authored, context),
 	takesKeys: (authored) => compileTakesKeys(authored),
 	resume: (authored) => compileResume(authored),
 	renderer: (authored, context) => compileWindow(authored, context),
@@ -432,6 +556,19 @@ export const FIELD_COMPILERS = {
 /**
  * Compile one authored program into the registry row. The row is a plain object, so every field
  * this layer does not sugar is still reachable by spread.
+ *
+ * `X` — the author's own effect type — is the one type argument inference cannot reach: it is named
+ * only in a cell's *answer*, and `update`'s mapped table is not an inference site. A program that
+ * opts in therefore states the whole list once, over an `update` table declared beside the call:
+ *
+ * ```ts
+ * const update = {go: (s: State): Answer<State, Run> => [s, [run("ls")]]};
+ * const row = defineProgram<State, typeof ports, typeof update, Commands, unknown, Run>({…});
+ * const program = {...row, handlers: {...row.handlers, run: runHandler}};
+ * ```
+ *
+ * A program that names none writes none of that: every argument keeps its default, `X` is `never`,
+ * and the answer is the six kernel effects as before (#9294).
  */
 export const defineProgram = <
 	S,
@@ -439,13 +576,15 @@ export const defineProgram = <
 	U = unknown,
 	C extends CommandArgTypes = Record<string, never>,
 	Out = unknown,
+	X = never,
 >(
-	authored: AuthoredProgram<S, D, U, C, Out>,
+	authored: AuthoredProgram<S, D, U, C, Out, X>,
 ): AnyProgram => {
 	const id = ProgramId.make(authored.id);
 	const context: CompileContext = {
 		id,
 		ports: {...compilePorts(id, authored.ports ?? {}), ...selfReportPorts(authored)},
+		args: filledArgs(authored),
 	};
 	// The record above proved each field's type one key at a time; iterating it erases them, which
 	// is what the closing cast buys back.

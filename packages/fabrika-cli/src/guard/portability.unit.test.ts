@@ -55,6 +55,24 @@ describe("scanFile", () => {
 		).toEqual([]);
 	});
 
+	it("leaves an @ruling citation alone under packages/fabrika-cli, and still reads the line", () => {
+		const module = "packages/fabrika-cli/src/lane/report.ts";
+		const cite = "https://github.com/kamp-us/phoenix/issues/9141#issuecomment-5689590985";
+		expect(kinds(module, ` * @ruling ${cite}`, ["phoenix", "kamp-us"])).toEqual([]);
+		expect(kinds(module, ` * @ruling ${cite} — and see #4312 too.`, ["phoenix"])).toEqual([
+			"issue",
+		]);
+	});
+
+	it("admits the citation only where the ruling put it — a tag with no URL buys nothing", () => {
+		const module = "packages/fabrika-cli/src/lane/report.ts";
+		const cite = "https://github.com/kamp-us/phoenix/issues/9141";
+		expect(kinds(PLUGIN, ` * @ruling ${cite}`, ["phoenix"])).toEqual(["url", "repo-name"]);
+		expect(kinds(module, " * @ruling the thread where this was settled (#9141).")).toEqual([
+			"issue",
+		]);
+	});
+
 	it("scans none of its own files, so the guard may spell out what it forbids", () => {
 		expect(kinds("packages/fabrika-cli/src/guard/portability.ts", "ADR 0092 and #6037")).toEqual(
 			[],

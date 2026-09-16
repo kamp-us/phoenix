@@ -8,6 +8,11 @@
  * merge. The verb called by hand is never gated — a driver that types `lane refresh <epic>` means
  * it, and the key exists to decide whether the *automatic* calls happen at all.
  *
+ * Both arms are read out of the repository that OWNS the cwd
+ * ([`configRootOrRefuse`](../../lane/ground.ts)) rather than the cwd itself, because both gate a
+ * merge into the assembly branch that repository's lane ledger tracks — and `onDispatch` is read
+ * from a driver whose cwd is routinely a linked worktree.
+ *
  * **Both ship `off`, which is today's behaviour byte for byte.** Each is a new step on a path every
  * epic run walks, and a step that merges trunk into an assembly branch changes what the tail review
  * binds to and which tree a child builds in. So a repo turns each on for itself, and a repo that

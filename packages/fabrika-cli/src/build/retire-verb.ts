@@ -45,7 +45,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {
-	commitsPastBase,
+	commitsNoRefReaches,
 	pruneWorktrees,
 	removeWorktree,
 	salvageWorktree,
@@ -212,9 +212,6 @@ export const runRetire = (options: RetireOptions): Effect.Effect<VerbOutcome, ne
 			: answer(JSON.stringify(payload), notes);
 	});
 
-/** What a lane branch's commits are counted against, for the unclaimed arm. Every lane cuts off it. */
-const BASE = "origin/main";
-
 type Read =
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
 	| {readonly _tag: "Residue"; readonly residue: Residue};
@@ -238,19 +235,19 @@ const residue = (subject: Subject): Effect.Effect<Read, never, Deps> =>
 				),
 			};
 		}
-		const ahead = yield* commitsPastBase(subject.branch, BASE);
-		if (ahead._tag === "Failure") {
+		const stranded = yield* commitsNoRefReaches(subject.path);
+		if (stranded._tag === "Failure") {
 			return {
 				_tag: "Refused" as const,
 				outcome: refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: no board license covers ${subject.path}, and what ${subject.branch} carries past ${BASE} is UNKNOWN: ${ahead.reason} — nothing was removed.`,
+					`${VERB}: no board license covers ${subject.path}, and whether removing it would strand any commit is UNKNOWN: ${stranded.reason} — nothing was removed.`,
 				),
 			};
 		}
 		return {
 			_tag: "Residue" as const,
-			residue: {uncommitted: dirty.value, commitsPastBase: ahead.value, base: BASE},
+			residue: {uncommitted: dirty.value, strandedCommits: stranded.value},
 		};
 	});
 

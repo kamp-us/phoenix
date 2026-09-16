@@ -36,6 +36,7 @@ import {
 import {isRecord, parseJsonOrReason} from "../io/json.ts";
 import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {CLASS_LABELS} from "../labels.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
 import {DEFAULT_BOARD_VOCABULARY, FACET_VOCABULARY} from "../triage/facets.ts";
@@ -83,6 +84,7 @@ export const taxonomy = (board: BoardVocabulary): ReadonlyArray<LabelSpec> =>
 		...board.priorities,
 		...board.types.map(typeLabel),
 		...board.audiences.map(audienceLabel),
+		...CLASS_LABELS,
 	].map((name) => ({name, description: LABEL_DESCRIPTION, color: null}));
 
 /** The taxonomy a repo that declared no vocabulary gets — the shipped default. */

@@ -214,6 +214,17 @@ child from the plan ledger. The stdin
 grammar, the epic pitch's five fields and every exit the verb refuses on live in its section
 (`fabrika wire doc-section --heading "triage enrich" < <skill-base>/contract.md`).
 
+**Mark a criterion the diff cannot settle, here, where you mint it.** Some criteria are only
+checkable outside the diff's bytes — a desk verified by hand, a checkpoint written *before* the fix,
+a runtime observation — and a grader reading the sentence later cannot tell one of those from a
+criterion that was simply never met. So say it on the row: a trailing `[evidence: <source>]` naming
+where the proof lives, and `review` grades that row on the evidence it names rather than FAILing it
+for byte-absence. `enrich` counts the marked rows on stderr and refuses a drifted keyword or a
+marker naming no source on `15`, like any other block defect. **Mark sparingly**: a criterion a test
+could discharge is not one of these, and marking it moves a mechanical check onto a reviewer's word.
+The name, the grammar and what makes a usable source live in the verb's contract section
+(`fabrika wire doc-section --heading "The outside-diff evidence marker" < <skill-base>/contract.md`).
+
 **An ordering you state must already be an edge.** The native `blocked_by` graph is the one carrier
 of "do not start this yet", so a rewrite saying "Blocked. Do not start until #N" over a graph with
 no such edge ships an issue `build pick` admits and no lane can build — one such rewrite cost a
@@ -244,6 +255,18 @@ fabrika triage apply $issue_number --type bug --priority p2 --ready-for agent --
 A standing lane takes `--lane wayfinder:backlog` (or `axis:pipeline-hardening`) **instead of**
 `--home`, never both — a lane label is not a milestone number, and putting a milestone on a
 lane-exempt issue is banned outright.
+
+**Repeatable `--class <name>` says which shells the lane runs, and `ui` is the one that changes a
+route.** Pass `--class ui` when the deliverable is a rendered surface, so the lane boots into
+`build:ui` — and, on a single-issue lane, `review:ui` too. This stamp is the *only* producer of that
+routing before a head has graded a diff: `lane open` and `lane emit` read the `class:<name>` label
+and seed the lane document from it, and without it a rendered ticket builds its first round in a
+shell carrying none of the design law and reaches `build:ui` only after a `review-ui` FAIL. The
+vocabulary is closed — `code`, `doc`, `skill`, `ui` — and an off-set spelling refuses on `10` before
+any label is written. The four labels are minted from that same set by `status bootstrap
+label-taxonomy`; on a board missing one the stamp refuses on `7` rather than letting the API create
+it, and running that bootstrap is the fix, never a run with the flag dropped. Most tickets need no
+`--class`: text is what the plain shells already serve.
 
 **Repeatable `--blocked-by <n>` writes the prerequisites as native graph edges** — the only triage
 route to them, and where an ordering belongs. Pass one per issue this one waits on

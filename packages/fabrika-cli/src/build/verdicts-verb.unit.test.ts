@@ -196,6 +196,44 @@ describe("runVerdicts", () => {
 		);
 	});
 
+	/**
+	 * The three mergeability heads. A conflicting PR is repair work no gate emits a FAIL for, so an
+	 * all-PASS fold over one read as the Repair section's proven no-work answer and stranded the PR;
+	 * the platform's uncomputed read is its own third value, never the clean one.
+	 */
+	describe("mergeability", () => {
+		const PASS_NOW = `review-code: PASS @ ${HEAD} — merge-ready`;
+		const folded = (overrides: Record<string, unknown>) =>
+			run([
+				[PULL, pull({number: 4310, base: {ref: "main"}, ...overrides})],
+				[COMMENTS, comments({id: 1, body: PASS_NOW})],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
+
+		it("reads a mergeable PR as mergeable", async () => {
+			const out = await folded({mergeable: true, mergeable_state: "clean"});
+			expect(JSON.parse(out.stdout).mergeability).toBe("mergeable");
+			expect(out.stderr.join("\n")).toContain("build verdicts: PR #4310 merges cleanly into main.");
+		});
+
+		it("reads a conflicting PR as conflicting, and says so beside the PASS row", async () => {
+			const out = await folded({mergeable: false, mergeable_state: "dirty"});
+			const parsed = JSON.parse(out.stdout);
+			expect(parsed.mergeability).toBe("conflicting");
+			expect(parsed.rows[0].polarity).toBe("PASS");
+			expect(out.stderr.join("\n")).toContain(
+				"build verdicts: PR #4310 is CONFLICTING against main — a base conflict is repair work no gate emits a FAIL for, so this fold is not a clean answer.",
+			);
+		});
+
+		it("keeps a null mergeable UNKNOWN — never collapsed to a clean value", async () => {
+			const out = await folded({mergeable: null, mergeable_state: "unknown"});
+			expect(JSON.parse(out.stdout).mergeability).toBe("unknown");
+			expect(out.stderr.join("\n")).toContain("is UNKNOWN — GitHub had not computed it yet");
+		});
+	});
+
 	it("refuses a proven-absent PR on 7", async () => {
 		const out = await run([[PULL, NOT_FOUND]]);
 		expect(out.code).toBe(ZERO_SCOPE);

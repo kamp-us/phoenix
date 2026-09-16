@@ -10,7 +10,8 @@
  * `noErrors` gate as a pure derivation, never a machine event. Everything here returns a
  * discriminated union rather than throwing, so a verb's refusal is data it seats on an exit code.
  */
-import {applyCell, foldMsgs, NoCellError} from "@demlik/tea";
+import {acceptsOf, applyCell, foldMsgs, msgKeysOf, NoCellError} from "@demlik/tea";
+import {type Deferral, deferredTasks, resolveDeferrals} from "./deferral.ts";
 import {
 	AMENDED_EVENT,
 	BOARD_TERMINALS,
@@ -23,9 +24,11 @@ import {
 	isOperatorEvent,
 	LANDED_EVENT,
 	type LaneMsg,
+	MACHINERY_EVENT,
 	OPERATOR_EVENTS,
 	type TaskState,
 } from "./machine.ts";
+import {ROUTED_MACHINERY_CAUSES} from "./report.ts";
 
 /**
  * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
@@ -47,10 +50,21 @@ import {
  * PR, one naming none fell through a nominator that could not see the subject, and no timestamp on
  * the line distinguishes them.
  *
+ * `diagnosis` is the third payload of that kind and rides a `DONE` out of build: it says the
+ * terminal was proven off a diagnosis comment rather than a pull request, which is what the
+ * `done:diagnosis` guard routes on. Only `true` routes, so an absent field folds exactly as it
+ * always did, and every line written before the field existed still reaches `review`.
+ *
  * `deferred` is the fourth kind: not evidence and not a payload the fold reads, but the disclosure
  * that this `PASS` was proven over a set short the namespaces named — the routed `review-ui` an
  * epic child hands to its epic's tail. Without it a deferred `PASS` and a whole-set one are
  * the same line, and nothing in the ledger says a rendered verdict is still owed anywhere.
+ *
+ * `routed` is that disclosure's complement, and it rides the opposite answer: the namespaces this
+ * `PASS` was proven over on a head-bound **route** rather than a verdict — nobody owes one, because
+ * the rendered gate published a record saying this PR is not its to judge. `deferred` says a verdict
+ * is still owed somewhere; `routed` says none is owed at all. Without it the `PASS` a satisfied
+ * route earns is byte-identical to one a rendered gate passed.
  *
  * `tasks` is the sixth and rides one line only, an {@link AMENDED_EVENT}: the task set the
  * re-derived machine holds. It is the whole audit of a topology amendment — the log is append-only,
@@ -81,12 +95,37 @@ export interface LogEntry {
 	readonly round?: number;
 	readonly classes?: ReadonlyArray<string>;
 	readonly deferred?: ReadonlyArray<string>;
+	/**
+	 * The required namespaces this event's proof stood on a head-bound **route** for rather than on a
+	 * verdict — `deferred`'s complement, and disclosure rather than a payload.
+	 *
+	 * `deferred` says which namespace a later cell still owes; this says which one nobody owes a
+	 * verdict on at all, because a `routed-elsewhere` record at the head states this PR is not the
+	 * rendered gate's to judge. Without it the `PASS` that a satisfied route earns is byte-identical
+	 * to one a rendered gate actually passed, and a reader auditing how a ui-class lane reached
+	 * `ship` has to re-read the board to tell them apart.
+	 *
+	 * The fold reads it no more than it reads `deferred`: it is evidence on the line, never a payload
+	 * that moves a state.
+	 */
+	readonly routed?: ReadonlyArray<string>;
 	readonly waitGrant?: number;
 	readonly partial?: boolean;
 	readonly landed?: ReadonlyArray<number>;
+	readonly diagnosis?: boolean;
 	readonly corrects?: string;
 	/** The task set an {@link AMENDED_EVENT} left the lane's machine holding. */
 	readonly tasks?: ReadonlyArray<string>;
+	/**
+	 * The tasks this {@link AMENDED_EVENT} **defers** — the seventh payload, and the only one that
+	 * changes how the lines above it are read.
+	 *
+	 * `deferred` above is a different word for a different thing (the review namespaces a `PASS` was
+	 * short), so this one is spelled for the act rather than the state. Each row names the task
+	 * leaving the plan, the `at` bounding the history the deferral covers, and the reason — see
+	 * [`deferral.ts`](deferral.ts) for what makes a row resolvable.
+	 */
+	readonly defers?: ReadonlyArray<Deferral>;
 	/**
 	 * The board outcome a board-proven terminal stands on — the sixth kind, and evidence rather than
 	 * a payload the fold reads.
@@ -118,6 +157,30 @@ export interface LogEntry {
 	readonly assertedBy?: string;
 }
 
+/**
+ * Whether a `defers` payload is the shape {@link resolveDeferrals} can judge at all.
+ *
+ * Every field is load-bearing and none has a defaulting reading: a row with no `through` bounds
+ * nothing, and one with no `reason` records that a plan changed without recording why — the same
+ * silent-no-op class a roundless `CLEARED` is, and a parse defect for the same reason. A duplicate
+ * task inside one payload is caught here rather than at the resolve, because the two rows may agree
+ * and still say one plan change twice.
+ */
+const isDeferralList = (value: unknown): value is ReadonlyArray<Deferral> => {
+	if (!Array.isArray(value) || value.length === 0) return false;
+	const tasks = new Set<string>();
+	for (const row of value) {
+		if (typeof row !== "object" || row === null) return false;
+		const {task, through, reason} = row as {task?: unknown; through?: unknown; reason?: unknown};
+		if (typeof task !== "string" || task === "") return false;
+		if (typeof through !== "string" || through === "") return false;
+		if (typeof reason !== "string" || reason.trim() === "") return false;
+		if (tasks.has(task)) return false;
+		tasks.add(task);
+	}
+	return true;
+};
+
 export type ParseLogResult =
 	| {readonly _tag: "Parsed"; readonly entries: ReadonlyArray<LogEntry>}
 	| {readonly _tag: "Malformed"; readonly defects: ReadonlyArray<string>};
@@ -147,11 +210,14 @@ export const parseLog = (text: string): ParseLogResult => {
 			round?: unknown;
 			classes?: unknown;
 			deferred?: unknown;
+			routed?: unknown;
 			waitGrant?: unknown;
 			partial?: unknown;
 			landed?: unknown;
+			diagnosis?: unknown;
 			corrects?: unknown;
 			tasks?: unknown;
+			defers?: unknown;
 			outcome?: unknown;
 			sha?: unknown;
 			assertedBy?: unknown;
@@ -222,6 +288,21 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(`line ${index + 1} carries a \`deferred\` field that is not a list of names`);
 			continue;
 		}
+		// An empty `routed` names no routed namespace while reading as evidence that one was found —
+		// the same silent no-op an empty `landed` is, and a defect here for the same reason.
+		if (
+			record.routed !== undefined &&
+			!(
+				Array.isArray(record.routed) &&
+				record.routed.length > 0 &&
+				record.routed.every((name) => typeof name === "string" && name !== "")
+			)
+		) {
+			defects.push(
+				`line ${index + 1} carries a \`routed\` field that is not a non-empty list of names`,
+			);
+			continue;
+		}
 		// Only `true` is a routing fact; a `false` on the line says the merge closed, which is the
 		// absent field's own reading, so both spellings fold identically and neither is a defect.
 		if (record.partial !== undefined && typeof record.partial !== "boolean") {
@@ -241,6 +322,12 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(
 				`line ${index + 1} carries a \`landed\` field that is not a non-empty list of pull request numbers`,
 			);
+			continue;
+		}
+		// Only `true` routes, exactly as `partial` does: a `false` says this DONE stood on a pull
+		// request, which is the absent field's own reading, so both fold identically.
+		if (record.diagnosis !== undefined && typeof record.diagnosis !== "boolean") {
+			defects.push(`line ${index + 1} carries a non-boolean \`diagnosis\` field`);
 			continue;
 		}
 		// A correction that names no target line, or names one with nothing to put on it, supersedes
@@ -277,6 +364,18 @@ export const parseLog = (text: string): ParseLogResult => {
 		if (amended && record.tasks === undefined) {
 			defects.push(
 				`line ${index + 1} is an ${AMENDED_EVENT} event carrying no \`tasks\` — the task set the re-derived machine holds`,
+			);
+			continue;
+		}
+		if (record.defers !== undefined && !isDeferralList(record.defers)) {
+			defects.push(
+				`line ${index + 1} carries a \`defers\` field that is not a non-empty list of {task, through, reason} rows`,
+			);
+			continue;
+		}
+		if (!amended && record.defers !== undefined) {
+			defects.push(
+				`line ${index + 1} carries \`defers\` on a "${bareEvent(record.event)}" event — only an ${AMENDED_EVENT} defers a task out of the plan`,
 			);
 			continue;
 		}
@@ -356,11 +455,14 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.deferred === undefined
 				? {}
 				: {deferred: record.deferred as ReadonlyArray<string>}),
+			...(record.routed === undefined ? {} : {routed: record.routed as ReadonlyArray<string>}),
 			...(record.waitGrant === undefined ? {} : {waitGrant: record.waitGrant as number}),
 			...(record.partial === undefined ? {} : {partial: record.partial as boolean}),
 			...(record.landed === undefined ? {} : {landed: record.landed as ReadonlyArray<number>}),
+			...(record.diagnosis === undefined ? {} : {diagnosis: record.diagnosis as boolean}),
 			...(record.corrects === undefined ? {} : {corrects: record.corrects as string}),
 			...(record.tasks === undefined ? {} : {tasks: record.tasks as ReadonlyArray<string>}),
+			...(record.defers === undefined ? {} : {defers: record.defers as ReadonlyArray<Deferral>}),
 			...(record.outcome === undefined ? {} : {outcome: record.outcome as string}),
 			...(record.sha === undefined ? {} : {sha: record.sha as string}),
 			...(record.assertedBy === undefined ? {} : {assertedBy: record.assertedBy as string}),
@@ -445,11 +547,28 @@ const stateIn = (states: Readonly<Record<string, TaskState>>, taskId: string): T
  * it is a fact about the lane rather than about a task, so the id it carries names the lane's own
  * subject and nothing dispatches on it. Judging it against the task set would make the one line
  * recording a topology change the line that refuses to replay through the topology it recorded.
+ *
+ * A **deferred** task is the one other exemption, and it is narrow by construction: only the tasks
+ * an amendment's `defers` payload names, and only over the history that payload bounds. Everything
+ * else about a deferred task is refused rather than ignored — an unresolvable payload, and any line
+ * the bound does not cover, are defects on this same channel. `pending` carries the deferrals of an
+ * amendment not yet appended, which is the only way {@link judgeAmendment} can fold a log through
+ * the machine the amendment would write before writing it.
  */
-export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): FoldResult => {
+export const foldLog = (
+	lane: CompiledLane,
+	entries: ReadonlyArray<LogEntry>,
+	pending: ReadonlyArray<string> = [],
+): FoldResult => {
+	const resolvedDeferrals = resolveDeferrals(entries);
+	if (resolvedDeferrals._tag === "Undecidable") {
+		return {_tag: "Unreplayable", defects: resolvedDeferrals.defects};
+	}
+	const deferred = new Set([...deferredTasks(resolvedDeferrals.deferrals), ...pending]);
 	const defects: string[] = [];
 	for (const entry of entries) {
 		if (bareEvent(entry.event) === AMENDED_EVENT) continue;
+		if (deferred.has(entry.task)) continue;
 		if (lane.tasks[entry.task] === undefined) {
 			defects.push(`log names task "${entry.task}", which is not in this lane's machine`);
 		}
@@ -469,6 +588,8 @@ export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): F
 				...(entry.classes === undefined ? {} : {classes: entry.classes}),
 				...(entry.waitGrant === undefined ? {} : {waitGrant: entry.waitGrant}),
 				...(entry.partial === undefined ? {} : {partial: entry.partial}),
+				...(entry.diagnosis === undefined ? {} : {diagnosis: entry.diagnosis}),
+				...(entry.cause === undefined ? {} : {cause: entry.cause}),
 			}));
 		try {
 			states[taskId] = foldMsgs(task.machine, task.initial, msgs);
@@ -597,6 +718,16 @@ export const deriveStatus = (
 		if (settled !== undefined) {
 			return {stateValue: stateIn(states, settled).type, status: "done", context};
 		}
+		// Read for the same reason and never folded into `complete`: an investigation's `DONE` is
+		// proven off a diagnosis comment rather than a merge, so answering `complete` here would name
+		// a shipped lane's terminal over a lane that shipped nothing. Empty on every machine
+		// declaring no `done:diagnosis` arm, which is every one but the coder workflow's `build`.
+		const diagnosed = phase.tasks.find((taskId) =>
+			taskIn(lane, taskId).diagnosisFinals.has(stateIn(states, taskId).type),
+		);
+		if (diagnosed !== undefined) {
+			return {stateValue: stateIn(states, diagnosed).type, status: "done", context};
+		}
 		if (phase.tasks.some((taskId) => errors.includes(taskId))) {
 			return {stateValue: lane.terminals.tripped, status: "done", context};
 		}
@@ -615,6 +746,73 @@ export const deriveStatus = (
 };
 
 /**
+ * Whether this task's machine walks this event out of the leaf it stands in — and, where it does
+ * not, which of the three reasons that is.
+ *
+ * `null` from {@link nextLeaf} collapses all three, and a caller that routes on the collapsed answer
+ * cannot tell "I could not read the task" from "the machine has no such event" from "this leaf owes
+ * that event no cell". `lane prove` needs them apart: two of them are a *distinct answer to the
+ * caller's question* (the event is not walkable, so there is nothing here to prove and nothing to
+ * record), and the third is a read that failed.
+ *
+ * Both refusing arms are the machine's own reading rather than a list kept beside it.
+ * {@link Unknown} asks `msgKeysOf` whether any state of this task holds a cell for the name at all,
+ * which is what catches a namespaced `ISSUE.PASS` or a typo; {@link NoCell} asks `acceptsOf` what
+ * *this* leaf walks, which is what catches a `PASS` out of a `blocked` park that walks `UNBLOCKED`
+ * alone. A machine that renames its events or its states answers both off itself.
+ */
+export type Walk =
+	| {readonly _tag: "Walks"; readonly next: string}
+	/** The task or its folded state could not be read — nothing here answers the walk question. */
+	| {readonly _tag: "Unreadable"; readonly why: string}
+	/** No state of this task's machine holds a cell for the name — it is no event of this lane. */
+	| {readonly _tag: "Unknown"; readonly why: string}
+	/** The machine knows the event; the leaf the task stands in holds no cell for it. */
+	| {readonly _tag: "NoCell"; readonly why: string};
+
+const listed = (names: ReadonlyArray<string>): string =>
+	names.length === 0 ? "nothing" : [...names].sort().join("/");
+
+/** The walk question, asked of the compiled cell itself. See {@link Walk}. */
+export const walkOf = (
+	lane: CompiledLane,
+	states: Readonly<Record<string, TaskState>>,
+	taskId: string,
+	event: string,
+	classes: ReadonlyArray<string> | null,
+): Walk => {
+	const task = lane.tasks[taskId];
+	const from = states[taskId];
+	if (task === undefined || from === undefined) {
+		return {
+			_tag: "Unreadable",
+			why: `task "${taskId}" is not in this lane's machine, so nothing here says whether "${event}" is walkable`,
+		};
+	}
+	if (!msgKeysOf(task.machine).includes(event)) {
+		return {
+			_tag: "Unknown",
+			why: `"${event}" is not an event this lane's machine holds a cell for in any state — it walks ${listed(msgKeysOf(task.machine))}`,
+		};
+	}
+	try {
+		const [next] = applyCell<TaskState, LaneMsg, never>(task.machine, from, {
+			type: event,
+			...(classes === null ? {} : {classes}),
+		});
+		return {_tag: "Walks", next: next.type};
+	} catch (error) {
+		if (error instanceof NoCellError) {
+			return {
+				_tag: "NoCell",
+				why: `"${from.type}" holds no cell for "${event}" — it walks ${listed(acceptsOf(task.machine, from.type))} alone`,
+			};
+		}
+		throw error;
+	}
+};
+
+/**
  * The leaf this task would land in if this event were recorded now, asked of the compiled cell
  * itself — `null` where the machine holds no cell for it.
  *
@@ -624,8 +822,10 @@ export const deriveStatus = (
  * owes, while the same `PASS` on a machine with no such arm — a chore workflow, or a rendered head
  * whose reviewer relayed no class — lands in `ship` and owes the whole set here.
  *
- * It answers the machine's question only. Whether the event is *appendable* stays
- * {@link applyEvent}'s, which asks several more.
+ * It answers the machine's question only, and it answers it for the operator's events alone: the
+ * routing question is only ever asked about an event a caller may record. Whether the event is
+ * *appendable* stays {@link applyEvent}'s, which asks several more; which of the three refusals a
+ * `null` stands for is {@link walkOf}'s.
  */
 export const nextLeaf = (
 	lane: CompiledLane,
@@ -634,19 +834,9 @@ export const nextLeaf = (
 	event: string,
 	classes: ReadonlyArray<string> | null,
 ): string | null => {
-	const task = lane.tasks[taskId];
-	const from = states[taskId];
-	if (task === undefined || from === undefined || !isOperatorEvent(event)) return null;
-	try {
-		const [next] = applyCell<TaskState, LaneMsg, never>(task.machine, from, {
-			type: event,
-			...(classes === null ? {} : {classes}),
-		});
-		return next.type;
-	} catch (error) {
-		if (error instanceof NoCellError) return null;
-		throw error;
-	}
+	if (!isOperatorEvent(event)) return null;
+	const walk = walkOf(lane, states, taskId, event, classes);
+	return walk._tag === "Walks" ? walk.next : null;
 };
 
 export type TaskResolution =
@@ -679,6 +869,15 @@ export type ApplyResult =
 			readonly entry: LogEntry;
 			readonly previous: LaneStatus;
 			readonly current: LaneStatus;
+			/**
+			 * The task states this event lands on — the record {@link current} was derived from.
+			 *
+			 * Carried out so a caller applying a second event to the same lane can stand on the states
+			 * this one produced rather than on the pre-event ones. Without it the only way back to them
+			 * is replaying the whole log, and the caller that skips that replay silently previews every
+			 * later region out of a state an earlier event already left.
+			 */
+			readonly states: Readonly<Record<string, TaskState>>;
 	  }
 	| {
 			readonly _tag: "Refused";
@@ -719,6 +918,8 @@ export const applyEvent = (
 	classes: ReadonlyArray<string> | null = null,
 	waitGrant: number | null = null,
 	partial: boolean | null = null,
+	diagnosis: boolean | null = null,
+	cause: string | null = null,
 ): ApplyResult => {
 	if (!isOperatorEvent(event)) {
 		if (event === CLEARED_EVENT) {
@@ -767,6 +968,16 @@ export const applyEvent = (
 	}
 	const task = taskIn(lane, taskId);
 	const from = stateIn(states, taskId);
+	// A lane keeps its own copy of `workflow.json` from `lane open`, so a cell can predate a cause.
+	// An unrouted lap loops the stage, which is right for every cause but one — see
+	// `ROUTED_MACHINERY_CAUSES`.
+	if (event === MACHINERY_EVENT && cause !== null && ROUTED_MACHINERY_CAUSES.has(cause)) {
+		if (!(task.lapRoutes.get(from.type)?.has(cause) ?? false)) {
+			return refuseEvent(
+				`task "${taskId}" is in "${from.type}", whose machinery cell holds no arm for cause "${cause}" — this lane's machine was written before that cause existed and would loop the stage instead of folding it, so nothing was recorded`,
+			);
+		}
+	}
 	let next: TaskState;
 	try {
 		[next] = applyCell<TaskState, LaneMsg, never>(task.machine, from, {
@@ -774,6 +985,8 @@ export const applyEvent = (
 			...(classes === null ? {} : {classes}),
 			...(waitGrant === null ? {} : {waitGrant}),
 			...(partial === null ? {} : {partial}),
+			...(diagnosis === null ? {} : {diagnosis}),
+			...(cause === null ? {} : {cause}),
 		});
 	} catch (error) {
 		if (error instanceof NoCellError) {
@@ -800,7 +1013,7 @@ export const applyEvent = (
 		return {
 			_tag: "Refused",
 			kind: "unbudgeted-resume",
-			reason: `task "${taskId}" would resume from "${from.type}" into "${next.type}" at ${next.retries}/${next.maxRetries} retries — the state comes back and the repair budget does not, so every guarded route out of "${next.type}" falls straight back to "${from.type}". Record the cleared round first — \`build clear\` where a pull request carries the founder's grant, \`lane clear\` where the lane has none and the driver grants the round on its own diagnosis; the two may land in either order.${stale}`,
+			reason: `task "${taskId}" would resume from "${from.type}" into "${next.type}" at ${next.retries}/${next.maxRetries} retries — the state comes back and the repair budget does not, so every guarded route out of "${next.type}" falls straight back to "${from.type}". Record the cleared round first — \`lane clear\`, where the driver grants the round on its own diagnosis and the lane's pull request gets the same round in that one act, or \`build clear\` for a founder's bare PR-side grant; the grant and the resume may land in either order.${stale}`,
 		};
 	}
 	if (task.waitParks.get(next.type)?.has(from.type) === true && next.waits >= next.maxWaits) {
@@ -817,9 +1030,11 @@ export const applyEvent = (
 		...(classes === null ? {} : {classes}),
 		...(waitGrant === null ? {} : {waitGrant}),
 		...(partial === null ? {} : {partial}),
+		...(diagnosis === null ? {} : {diagnosis}),
 	};
-	const current = deriveStatus(lane, {...states, [taskId]: next});
-	return {_tag: "Applied", entry, previous, current};
+	const applied = {...states, [taskId]: next};
+	const current = deriveStatus(lane, applied);
+	return {_tag: "Applied", entry, previous, current, states: applied};
 };
 
 export type SettlementResult =
@@ -925,8 +1140,8 @@ export type ClearanceResult =
 /**
  * The entry a recorded clearance appends — the local half of the grant protocol, kept beside
  * {@link applyEvent} because both decide appendability from the same fold. Two verbs reach it, one
- * per seat: `build clear` where the grant is a founder's marker on a pull request, and `lane clear`
- * where the lane has no pull request to carry one.
+ * per seat: `lane clear`, the driver's, which appends this entry and posts the same round's marker
+ * on the lane's pull request when it has one, and `build clear`, the founder's bare PR-side grant.
  *
  * It validates far less than an operator event does, and deliberately: a grant moves no task, so
  * there is no cell to miss, no phase to be outside of, and no terminal to be past. A clearance may

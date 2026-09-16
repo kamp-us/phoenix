@@ -1,6 +1,7 @@
 /**
- * The board read [`shape.ts`](shape.ts)'s judgement needs: is this issue an epic, how many sub-issue
- * links does it carry, and does it hang under a parent?
+ * The board read [`shape.ts`](shape.ts)'s judgement needs — is this issue an epic, how many
+ * sub-issue links does it carry, and does it hang under a parent — plus the classes its labels
+ * declare, which `lane open` seeds into the placed document.
  *
  * The parent edge rides the `getIssue` call already made — `IssueRecord.parent` is populated from
  * the single read's own payload — so the third fact costs no further request. Epic wins the
@@ -26,10 +27,24 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {getIssue, resolveRepo} from "../io/issues.ts";
 import {listSubIssues} from "../plan/github.ts";
 import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
+import {classesFromLabels} from "./class-seed.ts";
 import type {Expectation} from "./shape.ts";
 
 export type ExpectationRead =
-	| {readonly _tag: "Read"; readonly expectation: Expectation}
+	| {
+			readonly _tag: "Read";
+			readonly expectation: Expectation;
+			/**
+			 * The `class:<name>` stems the issue's labels declare — the seed `lane open` writes into
+			 * `context.<task>.classes`.
+			 *
+			 * It rides this read rather than arriving as a second reader because the labels are already
+			 * in the payload {@link Expectation} is derived from, so the seed costs no further request.
+			 * Reported as read, including a spelling outside the closed set: judging it is
+			 * [`class-seed.ts`](class-seed.ts)'s, and a filter here would boot the lane unclassed.
+			 */
+			readonly classes: ReadonlyArray<string>;
+	  }
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
 export type ExpectationReader<R> = (issue: number) => Effect.Effect<ExpectationRead, never, R>;
@@ -68,11 +83,13 @@ export const expectationReader = (
 					reason: `cannot read #${issue}'s children: ${listed.reason}`,
 				};
 			}
+			const classes = classesFromLabels(record.value.labels);
 			const typed = record.value.labels.includes(EPIC_TYPE_LABEL);
 			if (typed || listed.value.length > 0) {
 				return {
 					_tag: "Read" as const,
 					expectation: {_tag: "Epic", children: listed.value.length} as const,
+					classes,
 				};
 			}
 			const {parent} = record.value;
@@ -85,6 +102,7 @@ export const expectationReader = (
 								_tag: "Child",
 								parent: parent._tag === "Parent" ? parent.number : null,
 							} as const),
+				classes,
 			};
 		});
 };

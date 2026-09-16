@@ -63,6 +63,25 @@ That is a route, not a verdict: it carries no polarity, it needs no captures, an
 it as `routed`. Then end **ROUTED-ELSEWHERE**. What you still never do is post a `review-ui` PASS —
 the namespace you did not judge is one you never *pass*, and the record says exactly that.
 
+**Where the route rests on a hand-verification instead of the diff being prose, pass the head it ran
+at** — `--verified-at <head>`, and the verb reads the range to `--sha` for you. An app that deploys
+to no preview is the case: there is no address to render, so a builder's desk run stands in for the
+render, and that evidence stands for the record's head only while no `ui`-class file changed in
+between. Exit `12` naming the files means the run is spent and a fresh one at `--sha` is owed before
+the route can post; exit `11` naming the ceiling, or naming the two heads as diverged, means the range is unread, never clear. Omit the
+flag where there is no hand-verification, and never derive the range by hand — a condition you check
+by eye is one the next gate checks differently.
+
+**The route also rests on the text gate's verdict, and the verb reads that for you.** Exit `20`
+means the `review-code` verdict in force at `--sha` is a **FAIL**: the record would assert a text
+PASS that is not there, and the polarity-free format leaves no later reader able to falsify it. That
+is not yours to route around — the text lane repairs, and you route at the head it passes. The same
+`20` covers an **absent** text verdict on a `--verified-at` route, because the exception's clause
+names both halves; a prose-only route with no text verdict posts, and the answer's `textReview`
+field says which of the two it rested on. The verdict is read before the `--verified-at` range, so a
+route that is both spent at `--verified-at` and standing-FAIL at `--sha` meets `20` rather than
+`12` — the text lane is the move to make first, and the desk run is re-run after it.
+
 Exit `7` covers four different facts, and only one of them is a clean end — **read the message
 before you pick a terminal.** `raises no ui class` means nothing required your namespace and there
 is nothing to route: end ROUTED-ELSEWHERE with no write. The other three — the PR proven absent
@@ -286,9 +305,19 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token CANT-SEE -
 ```
 
 `BLOCKED-NO-MANIFEST` reports `--cause no-design-manifest`, `ROUTED-ELSEWHERE` reports
-`--cause no-rendered-delta`. No recipe clears any of the three today, so each still routes to a
-human — the cause is what makes that route a gap somebody can write a row for rather than an
-anonymous dead end, and a cause is worth naming before any recipe consumes it. `ESCALATED` carries no cause:
+`--cause no-rendered-delta`. Two of the three still route to a human, and the cause is what makes
+that route a gap somebody can write a row for rather than an anonymous dead end.
+
+**`ROUTED-ELSEWHERE` is the one that may not park at all, and that is the verb's call rather than
+yours.** Your route is a *completed* review of a diff that renders nothing, and `lane prove` has
+always read it as satisfying `review-ui` — so when every other required namespace already holds a
+verdict binding this head, `lane report` records the `PASS` that finish earns and the lane walks to
+`ship`. It proves that before it records it, and it falls back to the park on anything short: an
+absent, stale, unauthorized or unreadable route, a review still outstanding, a standing `FAIL`. So
+report the terminal and the cause exactly as above either way, and read the answer's `current` for
+where the lane went — do not pre-judge which arm you are on, and never record a `review-ui` `PASS`
+to get there. Nothing about this changes what you post: the record stays a route with no polarity.
+`ESCALATED` carries no cause:
 its spelling is shared with the builder and reviewer shells, so a cause for it is a cross-shell
 change and not this gate's to make. The vocabulary is closed and lives in code
 ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts));

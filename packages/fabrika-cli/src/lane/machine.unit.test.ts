@@ -3,8 +3,10 @@ import {readGoldenFixture} from "../golden-fixture.ts";
 import {classifyPark, isPark} from "../recipe/parks.ts";
 import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
+import {seedClasses} from "./class-seed.ts";
 import {
 	choreWorkflow,
+	coderTemplateText,
 	coderWorkflow,
 	stateNode,
 	twoPhaseWorkflow,
@@ -39,11 +41,19 @@ const defined = <T>(value: T | undefined): T => {
 
 /**
  * One driven event: a bare name, or one carrying a payload its own line records — the waits it
- * grants, or whether the merge it reports left the issue open.
+ * grants, whether the merge it reports left the issue open, or whether the terminal it reports was
+ * proven off a diagnosis comment.
  */
 type Step =
 	| string
-	| {readonly event: string; readonly waitGrant?: number; readonly partial?: boolean};
+	| {
+			readonly event: string;
+			/** Overrides the run's `classes`, so a step past the first can carry its own set. */
+			readonly classes?: ReadonlyArray<string>;
+			readonly waitGrant?: number;
+			readonly partial?: boolean;
+			readonly diagnosis?: boolean;
+	  };
 
 /** Drive one task's events through `applyEvent`, answering with the leaf each one folded to. */
 const drive = (
@@ -60,16 +70,19 @@ const drive = (
 	};
 	const reached = events.map((step, index) => {
 		const event = typeof step === "string" ? step : step.event;
-		// Only the first event carries the classes, so these tests also prove they stand afterwards.
+		// Only the first event carries the classes unless a step names its own, so these tests also
+		// prove they stand afterwards.
+		const stepClasses = typeof step === "string" ? undefined : step.classes;
 		const applied = applyEvent(
 			lane,
 			statesOf(),
 			task,
 			event,
 			"2026-08-17T00:00:00.000Z",
-			index === 0 ? classes : null,
+			stepClasses ?? (index === 0 ? classes : null),
 			typeof step === "string" ? null : (step.waitGrant ?? null),
 			typeof step === "string" ? false : (step.partial ?? false),
+			typeof step === "string" ? null : (step.diagnosis ?? null),
 		);
 		if (applied._tag !== "Applied") throw new Error(`${task} ${event}: ${applied.reason}`);
 		log.push(applied.entry);
@@ -163,6 +176,12 @@ const defectsOf = (workflow: unknown): string => {
 	return result._tag === "Malformed" ? result.defects.join("\n") : "";
 };
 
+/** Reach one task's `context` entry, for a test to seed or corrupt a declaration in it. */
+const taskContext = (workflow: Record<string, unknown>, task: string): Record<string, unknown> =>
+	(
+		(workflow.machine as Record<string, unknown>).context as Record<string, Record<string, unknown>>
+	)[task] as Record<string, unknown>;
+
 /** Reach a fixture's machine-level `states` map, for a test to mutate one phase or terminal. */
 const machineStates = (
 	workflow: Record<string, unknown>,
@@ -200,9 +219,13 @@ describe("the compiler — structural recognition", () => {
 		expect([...defined(lane.tasks.issue).finals].sort()).toEqual([
 			CANCELLED_STATE,
 			LANDED_STATE,
+			"diagnosed",
 			"human:budget-spent",
 			"shipped",
 		]);
+		// The investigation terminal, named off the `done:diagnosis` arm that targets it — which is
+		// what `deriveStatus` reads to answer "diagnosed" instead of collapsing it into `complete`.
+		expect([...defined(lane.tasks.issue).diagnosisFinals]).toEqual(["diagnosed"]);
 		// The spent-budget leaf is a final that carries a door — in `errorFinals` so the phase folds
 		// and the lane trips loud, and in `openFinals` so the door stays walkable. Renaming it out of
 		// `frozen` changed which of those sets it is in not at all; what changed is that `isPark`
@@ -345,6 +368,28 @@ describe("the compiler — structural recognition", () => {
 		]);
 	});
 
+	// A `dirty` base is machinery, so it spends a lap rather than one of the repair rounds the
+	// retry budget bounds — and its round is a builder's, because only a builder moves a branch.
+	it("folds a base-conflicted lap at ship to build, spending a lap and no retry", () => {
+		const lane = compiled(coderWorkflow());
+
+		const conflicted = driven(
+			lane,
+			"issue",
+			["WIP", "DONE", "PASS", MACHINERY_EVENT],
+			"base-conflicted",
+		);
+		const drifted = driven(
+			lane,
+			"issue",
+			["WIP", "DONE", "PASS", MACHINERY_EVENT],
+			"head-behind-base",
+		);
+
+		expect(conflicted.state).toMatchObject({type: "build", retries: 0, laps: 1});
+		expect(drifted.state).toMatchObject({type: "ship", retries: 0, laps: 1});
+	});
+
 	it("routes a UI-class lane through build:ui and review:ui, and back to build:ui on a FAIL", () => {
 		const lane = compiled(coderWorkflow());
 
@@ -361,6 +406,38 @@ describe("the compiler — structural recognition", () => {
 			"review",
 			"ship",
 			"shipped",
+		]);
+	});
+
+	// The two below pin both halves of the ruling tagged beneath. Stickiness is the machine's and stays:
+	// the seed is how a rendered ticket reaches `build:ui` on its first build, where no head exists
+	// to derive anything from. What narrowed is the reading, not this table — once a head exists the
+	// classes come off its diff, so the relayed set replaces the seeded one and a text-only head
+	// walks to `ship`. The classless `PASS` below is the shape `lane prove` now refuses at the
+	// proof seam (`./prove-verb.ts`), which is where the head is in reach; the machine still routes
+	// it, because a guard that cannot read a diff must not pretend to.
+	// @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
+	it("routes a seeded UI lane's classless PASS into review:ui, with no class on any event line", () => {
+		const seed = seedClasses(coderTemplateText(), ["ui"]);
+		if (seed._tag !== "Seeded") throw new Error(`expected a seeded document, got ${seed._tag}`);
+		const lane = compiled(JSON.parse(seed.text));
+
+		expect(leaves(lane, "issue", ["WIP", "DONE", "PASS"])).toEqual([
+			"build:ui",
+			"review",
+			"review:ui",
+		]);
+	});
+
+	it("lets the PASS's own class set replace the standing one, so a text-only head walks to ship", () => {
+		const seed = seedClasses(coderTemplateText(), ["ui"]);
+		if (seed._tag !== "Seeded") throw new Error(`expected a seeded document, got ${seed._tag}`);
+		const lane = compiled(JSON.parse(seed.text));
+
+		expect(leaves(lane, "issue", ["WIP", "DONE", {event: "PASS", classes: ["code"]}])).toEqual([
+			"build:ui",
+			"review",
+			"ship",
 		]);
 	});
 
@@ -479,7 +556,29 @@ describe("the compiler — refusals", () => {
 		const workflow = twoPhaseWorkflow();
 		stateNode(workflow, "task_a", "checking").on["TASK_A.FAIL"] = [{target: "doing"}];
 
-		expect(defectsOf(workflow)).toContain("two-arm array");
+		expect(defectsOf(workflow)).toContain("two-arm pair");
+	});
+
+	it("refuses a lap:<cause> arm on an event that carries no cause", () => {
+		const workflow = twoPhaseWorkflow();
+		stateNode(workflow, "task_a", "checking").on["TASK_A.FAIL"] = [
+			{target: "doing", guard: "lap:base-conflicted"},
+			{target: "doing", guard: "retriesRemaining", actions: "incrementRetries"},
+			{target: "tripped"},
+		];
+
+		expect(defectsOf(workflow)).toContain("could never be taken");
+	});
+
+	it("refuses a lap:<cause> arm that names no target", () => {
+		const workflow = twoPhaseWorkflow();
+		stateNode(workflow, "task_a", "checking").on["TASK_A.LAP"] = [
+			{guard: "lap:base-conflicted"},
+			{target: "checking", guard: "lapsRemaining", actions: "incrementLaps"},
+			{target: "tripped"},
+		];
+
+		expect(defectsOf(workflow)).toContain("routes nowhere");
 	});
 
 	it("refuses a machine with no parallel phase, and one with no readable onDone pair", () => {
@@ -511,6 +610,28 @@ describe("the compiler — refusals", () => {
 		expect(defectsOf(workflow)).toContain('unknown machine-level state "compleet"');
 	});
 
+	it("refuses a guard spelled like a routing one that matches none of the three", () => {
+		const workflow = twoPhaseWorkflow();
+		stateNode(workflow, "task_a", "doing").on["TASK_A.DONE"] = [
+			{target: "checking", guard: "done:diagnosiss"},
+			{target: "doing"},
+		];
+
+		// Read as the budget guard it would compile, match nothing, spend a wait and land in the arm
+		// the routing exists to divert from — the silent fallthrough the namespace is there to stop.
+		expect(defectsOf(workflow)).toContain('guarded on "done:diagnosiss"');
+	});
+
+	it("leaves a bare guard word the budget guard it has always been", () => {
+		const workflow = twoPhaseWorkflow();
+		stateNode(workflow, "task_a", "doing").on["TASK_A.DONE"] = [
+			{target: "checking", guard: "retriesRemaining"},
+			{target: "doing"},
+		];
+
+		expect(compile(workflow)._tag).toBe("Compiled");
+	});
+
 	it("pins the coder template's compiled cell table", () => {
 		expect(cellTable(compiled(coderWorkflow()), "issue")).toEqual(
 			readGoldenFixture(import.meta.url, "./__fixtures__/coder.cells.golden.txt"),
@@ -535,6 +656,68 @@ describe("the compiler — refusals", () => {
 	it("refuses a document that is not machine-shaped at all", () => {
 		expect(defectsOf(null)).toContain("machine.states");
 		expect(defectsOf({})).toContain("machine.states");
+	});
+
+	it("refuses a seeded class outside the closed set, which would route as unclassed", () => {
+		const workflow = twoPhaseWorkflow();
+		taskContext(workflow, "task_a").classes = ["UI"];
+
+		expect(defectsOf(workflow)).toContain('context `classes` declares "UI"');
+	});
+
+	it("refuses a non-string class entry too — it is no more routable than a misspelling", () => {
+		const workflow = twoPhaseWorkflow();
+		taskContext(workflow, "task_a").classes = [7];
+
+		expect(defectsOf(workflow)).toContain("context `classes` declares 7");
+	});
+
+	it("reads a NON-ARRAY `classes` as silence: declaring nothing is not a defect", () => {
+		const workflow = twoPhaseWorkflow();
+		taskContext(workflow, "task_a").classes = "ui";
+
+		expect(defined(compiled(workflow).tasks.task_a).initial.classes).toEqual([]);
+	});
+});
+
+describe("`done:diagnosis` — an investigation's terminal skips the review it opened nothing for", () => {
+	const lane = () => compiled(coderWorkflow());
+
+	it("carries a diagnosis-proven DONE straight to `diagnosed`, never through `review`", () => {
+		expect(leaves(lane(), "issue", ["WIP", {event: "DONE", diagnosis: true}])).toEqual([
+			"build",
+			"diagnosed",
+		]);
+	});
+
+	// All three builder terminals report one DONE, so the fallthrough is what keeps a shipped build
+	// and an epic child on the route they have always taken.
+	it("leaves a PR-backed DONE — `SHIPPED-PR` — folding to `review`", () => {
+		expect(leaves(lane(), "issue", ["WIP", "DONE"])).toEqual(["build", "review"]);
+	});
+
+	it("leaves an epic child's DONE — `BUILT-NO-PR` — folding to `review` too", () => {
+		// The prover answers `diagnosis` off its no-PR arm alone, and a child's DONE is proven off the
+		// commits its range adds; the payload it carries here is the `false` that stands for both.
+		expect(leaves(lane(), "issue", ["WIP", {event: "DONE", diagnosis: false}])).toEqual([
+			"build",
+			"review",
+		]);
+	});
+
+	it("is a terminal the lane cannot walk out of — nothing follows a finished investigation", () => {
+		expect(() =>
+			leaves(lane(), "issue", ["WIP", {event: "DONE", diagnosis: true}, "PASS"]),
+		).toThrow(/diagnosed/);
+	});
+
+	it("spends neither budget reaching it", () => {
+		expect(drive(lane(), "issue", ["WIP", {event: "DONE", diagnosis: true}]).state).toMatchObject({
+			type: "diagnosed",
+			retries: 0,
+			waits: 0,
+			laps: 0,
+		});
 	});
 });
 
@@ -765,5 +948,72 @@ describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing", (
 
 		expect(classified._tag).toBe("Novel");
 		if (classified._tag === "Novel") expect(classified.reason).toContain("head-behind-base");
+	});
+});
+
+/**
+ * A `class:<name>` arm LEADING a budget pair — the third shape of the class spelling, and the one
+ * that lets a rendered repair round re-enter the rendered cell without taking the budget's place.
+ *
+ * The rows that matter are the split: the class picks the target, the counter decides whether a
+ * target is taken at all. Written as the two-arm form with the class on top, a spent task would loop
+ * in the rendered cell forever instead of reaching the fallthrough.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9147
+ */
+describe("`class:<name>` leading a budget pair — a route, not the cell", () => {
+	const routed = (): Record<string, unknown> => {
+		const workflow = twoPhaseWorkflow();
+		regionStates(workflow, "task_a")["doing:ui"] = {
+			on: {"TASK_A.DONE": "checking", "TASK_A.BLOCKED": "blocked"},
+		};
+		stateNode(workflow, "task_a", "checking").on["TASK_A.FAIL"] = [
+			{target: "doing:ui", guard: "class:ui"},
+			{target: "doing", guard: "retriesRemaining", actions: "incrementRetries"},
+			{target: "tripped"},
+		];
+		return workflow;
+	};
+
+	it("routes a classed FAIL to the class's own cell, and spends the retry doing it", () => {
+		const {state} = drive(compiled(routed()), "task_a", ["DONE", "FAIL"], ["ui"]);
+
+		expect(state.type).toBe("doing:ui");
+		expect(state.retries).toBe(1);
+	});
+
+	it("leaves an unclassed FAIL on the budget arm's own target", () => {
+		expect(leaves(compiled(routed()), "task_a", ["DONE", "FAIL"])).toEqual(["checking", "doing"]);
+	});
+
+	it("falls through to the park when the budget is spent, however the class routes", () => {
+		const spent = ["DONE", "FAIL", "DONE", "FAIL", "DONE", "FAIL"];
+
+		expect(leaves(compiled(routed()), "task_a", spent, ["ui"])).toEqual([
+			"checking",
+			"doing:ui",
+			"checking",
+			"doing:ui",
+			"checking",
+			"tripped",
+		]);
+	});
+
+	it("refuses a leading class arm that names no target", () => {
+		const workflow = routed();
+		stateNode(workflow, "task_a", "checking").on["TASK_A.FAIL"] = [
+			{guard: "class:ui"},
+			{target: "doing", guard: "retriesRemaining", actions: "incrementRetries"},
+			{target: "tripped"},
+		];
+
+		expect(defectsOf(workflow)).toContain("routes nowhere");
+	});
+
+	it("keeps the two-arm class form the cell it always was, spending nothing", () => {
+		const {state} = drive(compiled(coderWorkflow()), "issue", ["WIP"], ["ui"]);
+
+		expect(state.type).toBe("build:ui");
+		expect(state.retries).toBe(0);
 	});
 });

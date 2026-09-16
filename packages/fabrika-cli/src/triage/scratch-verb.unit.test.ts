@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import {fakeFs, fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {composeClaimToken} from "./claim.ts";
-import {COMMENTS, claimPage, EXPIRED, LIVE} from "./claim-fixtures.test-support.ts";
+import {COMMENTS, COUNTLESS, claimPage, EXPIRED, LIVE} from "./claim-fixtures.test-support.ts";
 import {CLAIM_NOT_HELD, OFF_VOCABULARY, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runScratch} from "./scratch-verb.ts";
 
@@ -37,7 +37,7 @@ const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options>
 	Effect.runPromise(
 		Effect.provide(
 			runScratch({...options, ...overrides}),
-			Layer.merge(fakeSeams(script).layer, fakeFs({}).layer),
+			Layer.merge(fakeSeams([...script, COUNTLESS]).layer, fakeFs({}).layer),
 		),
 	);
 
@@ -172,7 +172,10 @@ describe("runScratch", () => {
 				),
 		});
 		const out = await Effect.runPromise(
-			Effect.provide(runScratch(options), Layer.merge(fakeSeams(held(NONCE_A)).layer, unmakeable)),
+			Effect.provide(
+				runScratch(options),
+				Layer.merge(fakeSeams([...held(NONCE_A), COUNTLESS]).layer, unmakeable),
+			),
 		);
 		expect(out.code).toBe(FAILED);
 		expect(out.stdout).toBe("");

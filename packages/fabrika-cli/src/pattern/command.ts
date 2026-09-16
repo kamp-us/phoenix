@@ -87,7 +87,7 @@ const anchor = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether the dependency version a doc declares still matches."),
 	Command.withDescription(
-		'Whether the dependency version a doc declares still matches what the workspace pins, compared byte for byte with no semver interpretation. Prints `anchor <matched|moved|malformed|unpinned|unanchored|unborn> <declared> <moved> <unpinned> <malformed>` then one `pkg` line per declaration — every outcome at exit 0. A line that claims an anchor and does not parse is `malformed`, never absent. Exits 11 (the base could not be fetched, or the doc or manifest could not be read — every pin is UNKNOWN, never "unpinned"), 12 (no doc for the slug). Example: fabrika pattern anchor worker-queue-retry',
+		'Whether the dependency version a doc declares still matches what the workspace pins, compared byte for byte across default and named catalogs. A declared dependency with conflicting pins refuses at exit 11; unrelated conflicts do not block an answer. Prints `anchor <matched|moved|malformed|unpinned|unanchored|unborn> <declared> <moved> <unpinned> <malformed>` then one `pkg` line per declaration — every outcome at exit 0. A line that claims an anchor and does not parse is `malformed`, never absent. Exits 11 (the base could not be fetched, or the doc or manifest could not be read — every pin is UNKNOWN, never "unpinned"), 12 (no doc for the slug). Example: fabrika pattern anchor worker-queue-retry',
 	),
 );
 

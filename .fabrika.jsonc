@@ -32,6 +32,30 @@
 	// raising this line is the only way past.
 	"laneConcurrencyCap": 2,
 
+	// The four epic-run axes #8810 shipped, each defaulting to the pre-epic behaviour so an
+	// undeclaring repo saw no change (ADRs 0376/0377). Phoenix turns all four on, founder-ruled
+	// 2026-09-10 on #8936 (https://github.com/kamp-us/phoenix/issues/8936#issuecomment-5624531920):
+	// no precondition per key, no drain wait. `machineryLaps.onEmit` is read at emission, so lanes
+	// already on disk keep the old arithmetic until they finish and two rule sets run side by side
+	// until then — accepted in that ruling.
+	//
+	// `parkCause.driverRouted` is `refuse`, which is also its shipped default: the ruling declares
+	// the value rather than flipping it, so this repo cannot drift if the default ever moves.
+	"assemblyRefresh": {
+		"onReview": "on",
+		"onDispatch": "on"
+	},
+	"assemblyReplay": {
+		"onCollision": "on"
+	},
+	"machineryLaps": {
+		"onEmit": "on"
+	},
+	"parkCause": {
+		"uncaused": "refuse",
+		"driverRouted": "refuse"
+	},
+
 	// Who may declare a campaign or flip its lifecycle state (`fabrika campaign open` / `campaign
 	// state`). It narrows the repo's collaborator ACL and never replaces it: an entry here still
 	// needs `write` or above on the repo (ADR 0294). Founder-declared 2026-08-20 on #6811 — the

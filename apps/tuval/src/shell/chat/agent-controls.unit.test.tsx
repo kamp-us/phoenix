@@ -37,7 +37,7 @@ import {
 	withTranscript,
 } from "./chat.testing.ts";
 import {composerStateAnnouncement, subagentViewPlaceholder} from "./copy.ts";
-import {type ChatView, initialChatView} from "./view.ts";
+import {initialChatView} from "./view.ts";
 
 installDomShims();
 
@@ -613,8 +613,7 @@ describe("the composer's off state inside a subagent view", () => {
 		const process = await Effect.runPromise(
 			testProcess<AiAgentSessionState, AiAgentSessionMsg>(processId, session()),
 		);
-		const opened: ChatView = {...initialChatView, atOldest: true};
-		const host = await Effect.runPromise(process.window(WindowId.make("w1"), opened));
+		const host = await Effect.runPromise(process.window(WindowId.make("w1"), initialChatView));
 		const {container} = render(
 			chatWindow({scrollCommitMs: 0, scrollToFn: () => undefined, subagentList: true}).render(
 				host,

@@ -12,8 +12,12 @@
  * on the second, which is the whole reason both exist.
  */
 import type {CommitRange} from "../io/git.ts";
-import {type AcceptanceCriterion, readSpans} from "../wire/acceptance-criteria.ts";
-import {renderRange} from "../wire/range-verdict-marker.ts";
+import {
+	type AcceptanceCriterion,
+	readSpans,
+	withoutEvidenceMarker,
+} from "../wire/acceptance-criteria.ts";
+import {parseRange, renderRange} from "../wire/range-verdict-marker.ts";
 import type {HeadSha} from "../wire/verdict-marker.ts";
 
 /**
@@ -32,6 +36,57 @@ export const provenanceTag = (provenance: CriterionProvenance, round: number): s
 	provenance._tag === "Pull"
 		? `<!-- ac:review pr:#${provenance.pr} round:${round} -->`
 		: `<!-- ac:review range:${renderRange(provenance.range)} round:${round} -->`;
+
+/**
+ * The grammar {@link provenanceTag} writes, read back.
+ *
+ * It sits beside the writer rather than beside a reader because the tag has exactly one author: a
+ * reader that re-types the grammar is a second source that drifts the first time the writer gains a
+ * spelling. Both spellings are here for that reason — a `range:` row read by a `pr:#`-only regex is
+ * invisible, which is how an epic child's routed finding reads as no finding at all.
+ */
+const PROVENANCE_TAG = /<!--\s*ac:review\s+(?:pr:#(\d+)|range:(\S+?))\s+round:(\d+)\s*-->/i;
+
+/** One reviewer-routed row's provenance: what it was judged over, and on which round. */
+export interface RoutedRow {
+	readonly provenance: CriterionProvenance;
+	readonly round: number;
+}
+
+/** The provenance {@link criterionRow} wrote into `text`, or `null` when it carries no tag. */
+export const readProvenanceTag = (text: string): RoutedRow | null => {
+	const matched = PROVENANCE_TAG.exec(text);
+	if (matched === null) return null;
+	const round = Number.parseInt(matched[3] ?? "", 10);
+	if (!Number.isInteger(round)) return null;
+	if (matched[1] !== undefined) {
+		return {provenance: {_tag: "Pull", pr: Number.parseInt(matched[1], 10)}, round};
+	}
+	const range = parseRange(matched[2] ?? "");
+	return range === null ? null : {provenance: {_tag: "Ranged", range}, round};
+};
+
+/** `text` without the tag — what a refusal quotes, so the row reads as the reviewer wrote it. */
+export const withoutProvenanceTag = (text: string): string =>
+	text.replace(PROVENANCE_TAG, "").trim();
+
+/** Either side may be abbreviated, so two revisions match on whichever is the shorter prefix. */
+const sameRevision = (a: string, b: string): boolean => a.startsWith(b) || b.startsWith(a);
+
+/**
+ * Whether two provenances name one subject.
+ *
+ * The range ends are compared prefix-tolerantly, matching `review post`'s own upsert key: a caller
+ * that appended under `9f2c1ab` and posts under the full forty would otherwise read as two subjects,
+ * and the row it routed would be invisible to the round that routed it.
+ */
+export const sameSubject = (a: CriterionProvenance, b: CriterionProvenance): boolean =>
+	a._tag === "Pull" && b._tag === "Pull"
+		? a.pr === b.pr
+		: a._tag === "Ranged" &&
+			b._tag === "Ranged" &&
+			sameRevision(a.range.base, b.range.base) &&
+			sameRevision(a.range.tip, b.range.tip);
 
 /** How a refusal or an escalation names the subject in prose. */
 export const provenanceSubject = (provenance: CriterionProvenance): string =>
@@ -147,4 +202,7 @@ export const grewByOne = (
 		(criterion, index) =>
 			after[index]?.text === criterion.text && after[index]?.checked === criterion.checked,
 	) &&
-	(after[before.length]?.text ?? "").includes(added.trim());
+	// `added` is the caller's raw bytes and `after`'s text came back through the wire reader, which
+	// has already split any outside-diff evidence marker into its own field — so the comparand has
+	// to lose the marker too, or a row appended with one reads back as a row that was never written.
+	(after[before.length]?.text ?? "").includes(withoutEvidenceMarker(added.trim()).trim());

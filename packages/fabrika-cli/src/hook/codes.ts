@@ -93,6 +93,17 @@ export const WORKTREE_ADD_FAILED = 17;
  */
 export const DEPS_NOT_PROVISIONED = 18;
 
+/**
+ * A readable envelope arrived and the working tree its `cwd` belongs to could NOT be established.
+ *
+ * A guard that could not read its own ground has judged nothing, so this seat is a **fail-open**:
+ * every non-blocking exit shows stderr to the user and lets the tool call proceed, which is what the
+ * dispatch-failure policy asks of a defence that is absent. It is deliberately not `0` — a silent
+ * fail-open is the one thing that policy bans — and deliberately not
+ * {@link MALFORMED_ENVELOPE}: the envelope was fine and the filesystem underneath it was not.
+ */
+export const GROUND_UNKNOWN = 19;
+
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
 
@@ -117,6 +128,10 @@ export const HOOK_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{code: BASE_FETCH_FAILED, meaning: "the base ref could not be fetched — the base would be stale"},
 	{code: WORKTREE_ADD_FAILED, meaning: "`git worktree add` failed — no worktree exists"},
 	{code: DEPS_NOT_PROVISIONED, meaning: "the worktree was created and its deps were not installed"},
+	{
+		code: GROUND_UNKNOWN,
+		meaning: "the working tree the envelope's cwd belongs to could not be established",
+	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},
 ];

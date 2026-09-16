@@ -24,7 +24,6 @@ import {dirname} from "node:path";
 import {fileURLToPath} from "node:url";
 import {Layer} from "effect";
 import {type AiAgentProgram, aiAgentProgram} from "../ai-agent/program.ts";
-import {AI_AGENT_INSPECTOR_REF} from "../ai-agent/renderer-ref.ts";
 import type {TuvalAiAgent} from "../ai-agent/service/index.ts";
 import {KernelBridge} from "../ai-agent/tools/KernelBridge.ts";
 import type {SpellBridge} from "../commands/bridge/index.ts";
@@ -88,7 +87,6 @@ export const piSessionProgram = (
 			),
 		config: {cwd: options.cwd},
 		renderer: PI_CHAT_WINDOW_REF,
-		inspector: AI_AGENT_INSPECTOR_REF,
 		capabilities: [
 			{
 				family: "process-control",

@@ -58,6 +58,11 @@ import {
 const PULL = /GET .*\/repos\/o\/r\/pulls\/4321$/;
 const FILES = /GET .*\/repos\/o\/r\/pulls\/4321\/files\?/;
 const RUNS = /GET .*\/repos\/o\/r\/commits\/[0-9a-f]+\/check-runs/;
+/** The linked issue `review post`'s PASS fence reads before it composes anything. */
+const LINKED: Scripted = [
+	/GET .*\/repos\/o\/r\/issues\/4287$/,
+	{status: 200, body: issue().stdout},
+];
 const COMMENTS = /GET .*\/repos\/o\/r\/issues\/4321\/comments/;
 const CREATE = /POST .*\/repos\/o\/r\/issues\/4321\/comments/;
 const READBACK = /GET .*\/repos\/o\/r\/issues\/comments\/\d+/;
@@ -232,6 +237,7 @@ describe("the diff completeness proof", () => {
 	const script: ReadonlyArray<Scripted> = [
 		[PULL, served(pull({changedFiles: 7}))],
 		...binding(),
+		LINKED,
 		[DIFF_AT(), okOut(DIFF)],
 		[PATHS_AT(), paths("src/cart.ts", "README.md", "c.ts", "d.ts", "e.ts", "f.ts", "g.ts")],
 	];
@@ -273,6 +279,7 @@ describe("the commit binding on the read verbs", () => {
 	const diffScript: ReadonlyArray<Scripted> = [
 		[PULL, served(pull({changedFiles: 1}))],
 		...binding(),
+		LINKED,
 		[DIFF_AT(), okOut(DIFF)],
 		[PATHS_AT(), paths("src/cart.ts")],
 	];
@@ -298,6 +305,7 @@ describe("the commit binding on the read verbs", () => {
 	const scopeScript: ReadonlyArray<Scripted> = [
 		[PULL, served(pull({changedFiles: 1}))],
 		...binding(),
+		LINKED,
 		[PATHS_AT(), paths("src/cart.ts")],
 		[FILES, served(files("docs/moved.md"))],
 	];
@@ -344,6 +352,7 @@ diff --git a/README.md b/README.md
 	const deviationsScript: ReadonlyArray<Scripted> = [
 		[PULL, served(pull())],
 		...binding(),
+		LINKED,
 		[DIFF_AT(), okOut(SUPPRESSING_DIFF)],
 		[PATHS_AT(), paths("src/cart.ts", "README.md")],
 	];
@@ -386,10 +395,12 @@ diff --git a/README.md b/README.md
 		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "the table\n"}),
 		now: NOW,
 		supersede: false,
+		round: 1,
 	};
 	const postScript: ReadonlyArray<Scripted> = [
 		[PULL, served(pull({changedFiles: 1}))],
 		...binding(),
+		LINKED,
 		[PATHS_AT(), paths("src/cart.ts")],
 		[FILES, served(files("skills/deploy/SKILL.md"))],
 		[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -445,10 +456,12 @@ describe("the leak predicate over the assembled verdict", () => {
 		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: LEAKY}),
 		now: NOW,
 		supersede: false,
+		round: 1,
 	};
 	const script: ReadonlyArray<Scripted> = [
 		[PULL, served(pull())],
 		...binding(),
+		LINKED,
 		[PATHS_AT(), paths("src/cart.ts", "README.md")],
 		[FILES, served(files("skills/deploy/SKILL.md"))],
 		[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -503,10 +516,12 @@ describe("normalizeForReadback's trailing-newline step", () => {
 		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "the table\n"}),
 		now: NOW,
 		supersede: false,
+		round: 1,
 	};
 	const script: ReadonlyArray<Scripted> = [
 		[PULL, served(pull())],
 		...binding(),
+		LINKED,
 		[PATHS_AT(), paths("src/cart.ts", "README.md")],
 		[FILES, served(files("skills/deploy/SKILL.md"))],
 		[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -622,6 +637,7 @@ describe("the empty-read refusal on the changed-file list", () => {
 	const script: ReadonlyArray<Scripted> = [
 		[PULL, served(pull({changedFiles: 9}))],
 		...binding(),
+		LINKED,
 		[PATHS_AT(), paths()],
 	];
 

@@ -15,6 +15,14 @@
  * holds that lane, so there is no claim to evict; but with no board statement to lean on, the
  * evidence is `./reap.ts`'s rather than a board license's, and it is read the same way: a tree goes
  * only on positive proof that it carries nothing, and every other case holds.
+ *
+ * **What it counts as carried is what the removal would strand**, not what the branch is ahead by. A
+ * removal takes the checkout and leaves the branch, so a commit the tree's own lane branch reaches
+ * survives it by name and is nothing to lose; counting it held every salvaged tree forever, since
+ * committing the work the uncommitted clause named was what tripped the commit clause. Only an
+ * uncommitted path and a commit no ref of this clone reaches — a detached HEAD's orphans — die with
+ * the checkout, and those are what hold. The ruling above is about *proof*, and proof of carrying
+ * nothing is what this still demands.
  */
 
 import {type LaneBranch, laneNumber, nonceOf, parseLaneBranch} from "./lane.ts";
@@ -73,14 +81,12 @@ export type Verdict =
 /** A verdict a caller acts on — every arm but the one {@link classify} defers to the tree. */
 export type Seated = Exclude<Verdict, {readonly _tag: "Unclaimed"}>;
 
-/** What a subject tree and its branch carry — the evidence the unclaimed arm turns on. */
+/** What a subject tree would take with it — the evidence the unclaimed arm turns on. */
 export interface Residue {
 	/** Paths the tree holds uncommitted. */
 	readonly uncommitted: number;
-	/** Commits the branch carries that `base` does not. */
-	readonly commitsPastBase: number;
-	/** The base those commits were counted against, so a refusal can name it. */
-	readonly base: string;
+	/** Commits the tree's HEAD reaches that no branch, remote-tracking ref or tag reaches. */
+	readonly strandedCommits: number;
 }
 
 /**
@@ -128,26 +134,27 @@ export const classify = (
  * Seat an unclaimed subject on what it carries — the arm for a lane no claim holds.
  *
  * Everything short of both proofs holds, and each refusal names the count that blocked it, because
- * an operator's next move differs: uncommitted paths are committed or discarded in that tree, and
- * commits past the base are pushed or folded by whoever owns them. A tree carrying both is named for
- * both rather than for whichever was read first — there is no second read to discover the other one.
+ * an operator's next move differs: uncommitted paths are committed onto the tree's branch or
+ * discarded, and a stranded commit is given a name — a branch, a tag — before the checkout that is
+ * its only handle goes. A tree carrying both is named for both rather than for whichever was read
+ * first — there is no second read to discover the other one.
  */
 export const seatResidue = (subject: Subject, residue: Residue): Seated => {
 	const carried = [
 		...(residue.uncommitted > 0 ? [`${residue.uncommitted} uncommitted path(s)`] : []),
-		...(residue.commitsPastBase > 0
-			? [`${residue.commitsPastBase} commit(s) past ${residue.base}`]
+		...(residue.strandedCommits > 0
+			? [`${residue.strandedCommits} commit(s) no branch, remote-tracking ref or tag reaches`]
 			: []),
 	];
 	return carried.length === 0
 		? {
 				_tag: "Release",
 				license: "lane-unclaimed",
-				because: `no authorized claim marker on #${laneNumber(subject.lane)} carries this branch's lane nonce, so no lane holds it, and the tree carries nothing: it is clean and its branch is level with ${residue.base}`,
+				because: `no authorized claim marker on #${laneNumber(subject.lane)} carries this branch's lane nonce, so no lane holds it, and the tree carries nothing its removal would strand: it is clean, and every commit it reaches is named by a ref that outlives the checkout`,
 			}
 		: {
 				_tag: "Hold",
-				because: `no authorized claim marker on #${laneNumber(subject.lane)} carries this branch's lane nonce, and the tree carries ${carried.join(" and ")} — with no board license, only a tree carrying nothing may go`,
+				because: `no authorized claim marker on #${laneNumber(subject.lane)} carries this branch's lane nonce, and the tree carries ${carried.join(" and ")} — with no board license, only a tree whose removal would strand nothing may go`,
 			};
 };
 

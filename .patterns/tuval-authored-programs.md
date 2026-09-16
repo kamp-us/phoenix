@@ -100,19 +100,35 @@ send, not announce.
 example's `verdict` route reaching its reader after a restart, and a restored spawned child's emit
 refused with the port named.
 
-## Two gaps to know before you wire one
+## Wiring one into a config graph
 
-Both bite at the seams where authored programs meet each other, and both have workarounds that look
-like mistakes if you meet them cold:
+Two authored programs route to each other directly. `portKind` still derives each port's `kind`
+from the declaring program's id, so two authored ends never share one — and that no longer decides
+anything, because `ports/compile.ts` compiles a route on **payload fit** whenever both ends publish
+a schema, which every authored port does: `port.in`, `port.out` and `port.request` are each
+declared over an Effect `Schema`, and `compilePort` publishes it on the row. The relation is
+`payloadFits` — exact structural equality of the two canonicalised JSON Schema documents, the same
+relation that decides whether a program fills a `Program.shape` arg
+([ADR 0395](../.decisions/0395-a-graph-route-compiles-on-payload-fit-not-on-kind.md),
+[#8923](https://github.com/kamp-us/phoenix/issues/8923)).
+
+Kinds are compared only when one of the two ends publishes no schema — a hand-written registry row
+such as [`ai-agent/ports/ports.ts`](../apps/tuval/src/ai-agent/ports/ports.ts)'s three two-way kinds
+— and then they must be identical, exactly as before. Either way the refusal happens before boot:
+`IncompatibleRoute` names both ends and a `reason` saying which clause refused and why.
+
+[`authoring/reload/fixtures/reviewing-desk.ts`](../apps/tuval/src/authoring/reload/fixtures/reviewing-desk.ts)
+is the worked wiring — `desk.pr -> pr-review.pr` and `pr-review.verdict -> sink.verdict`, every end
+authored, no plain registry row standing in for one.
+
+## One gap to know before you wire one
+
+It bites at the seam where a shaped arg meets the registry, and its workaround looks like a mistake
+if you meet it cold:
 
 - **A shaped arg's `spawn` resolves the arg's own service key through the registry**, not a filled
   program id, so `spawn(args.reviewer, …)` only lands if something is registered under
   `tuval/arg/<program>/<arg>`. [#8762](https://github.com/kamp-us/phoenix/issues/8762) carries it.
-- **Two authored programs cannot be routed to each other in a config graph.** `portKind` derives a
-  port's `kind` from the declaring program's id, and `ports/compile.ts` compiles a route only when
-  both ends' kinds are identical, so an authored `a.out` can never reach an authored `b.in`. Until
-  [#8923](https://github.com/kamp-us/phoenix/issues/8923) lands, the other end is a plain registry
-  row hand-declaring the authored program's own kind.
 
 ## Testing one
 

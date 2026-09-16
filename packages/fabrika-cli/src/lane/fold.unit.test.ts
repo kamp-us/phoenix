@@ -18,6 +18,7 @@ import {
 	resolveTask,
 	standingCauses,
 	standingRationales,
+	walkOf,
 } from "./fold.ts";
 import {
 	CANCELLED_EVENT,
@@ -703,6 +704,46 @@ describe("nextLeaf — the arm an event would take, asked before it is recorded"
 	});
 });
 
+describe("walkOf — which of the three reasons a null nextLeaf stands for", () => {
+	const at = (steps: ReadonlyArray<readonly [string, string]>) => {
+		const compiled = lane(coderWorkflow());
+		return {compiled, states: statesOf(compiled, drive(compiled, steps))};
+	};
+
+	it("answers the leaf a walkable event lands in", () => {
+		const {compiled, states} = at([
+			["issue", "WIP"],
+			["issue", "DONE"],
+		]);
+
+		expect(walkOf(compiled, states, "issue", "PASS", ["ui"])).toMatchObject({
+			_tag: "Walks",
+			next: "review:ui",
+		});
+	});
+
+	it("separates an event no state of the machine holds a cell for from one this leaf lacks", () => {
+		const {compiled, states} = at([
+			["issue", "WIP"],
+			["issue", "BLOCKED"],
+		]);
+
+		// The ledger's own namespaced spelling and a typo are the same fact: no cell anywhere.
+		expect(walkOf(compiled, states, "issue", "ISSUE.PASS", null)._tag).toBe("Unknown");
+		expect(walkOf(compiled, states, "issue", "BANANA", null)._tag).toBe("Unknown");
+		// `PASS` is an event of this machine; the park is the leaf that owes it no cell.
+		const parked = walkOf(compiled, states, "issue", "PASS", null);
+		expect(parked._tag).toBe("NoCell");
+		expect(parked._tag === "NoCell" ? parked.why : "").toContain("UNBLOCKED");
+	});
+
+	it("keeps an unreadable task apart from both, so a caller never reads it as a refusal", () => {
+		const {compiled, states} = at([["issue", "WIP"]]);
+
+		expect(walkOf(compiled, states, "task_z", "PASS", null)._tag).toBe("Unreadable");
+	});
+});
+
 /**
  * `lane history` prints what `parseLog` returns, so a field the parser drops is a disclosure nobody
  * can read back — which is the whole job of `deferred`.
@@ -760,6 +801,57 @@ describe("the partial merge a ship DONE carries", () => {
 		expect(parseLog(line(`,"landed":[]`))).toMatchObject({_tag: "Malformed"});
 		expect(parseLog(line(`,"landed":["7329"]`))).toMatchObject({_tag: "Malformed"});
 		expect(parseLog(line(`,"landed":7329`))).toMatchObject({_tag: "Malformed"});
+	});
+});
+
+describe("the diagnosis a build DONE carries", () => {
+	const line = (fields: string) => `{"task":"issue","event":"ISSUE.DONE","at":"t"${fields}}\n`;
+
+	it("carries the flag back off the line, and refuses a shape that is not a boolean", () => {
+		expect(parseLog(line(`,"diagnosis":true`))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.DONE", at: "t", diagnosis: true}],
+		});
+		expect(parseLog(line(`,"diagnosis":"yes"`))).toMatchObject({_tag: "Malformed"});
+	});
+
+	it("leaves a PR-backed DONE's line without the field, folding to `review` as it always did", () => {
+		const compiled = lane(coderWorkflow());
+		const log = drive(compiled, [
+			["issue", "WIP"],
+			["issue", "DONE"],
+		]);
+
+		expect(log.at(-1)).not.toHaveProperty("diagnosis");
+		expect(statusOf(compiled, log)).toMatchObject({
+			stateValue: {pipeline: {issue: "review"}},
+			status: "active",
+		});
+	});
+
+	// The whole defect: this lane used to reach `review`, whose brief needs a PR an investigation
+	// never opens, and the only move left was a park that read as a fault.
+	it("names the diagnosis finish as itself, distinct from `complete` and from every park", () => {
+		const compiled = lane(coderWorkflow());
+		const states = statesOf(compiled, [entry("issue", "WIP")]);
+		const applied = applyEvent(
+			compiled,
+			states,
+			"issue",
+			"DONE",
+			"2026-08-16T00:00:00.000Z",
+			null,
+			null,
+			null,
+			true,
+		);
+		if (applied._tag !== "Applied") throw new Error(applied.reason);
+
+		expect(applied.entry).toMatchObject({diagnosis: true});
+		expect(statusOf(compiled, [entry("issue", "WIP"), applied.entry])).toMatchObject({
+			stateValue: "diagnosed",
+			status: "done",
+		});
 	});
 });
 
@@ -1324,5 +1416,114 @@ describe("the topology amendment — a line about the lane, not about a task", (
 
 		expect(applied).toMatchObject({_tag: "Refused"});
 		expect((applied as {reason: string}).reason).toContain("lane amend");
+	});
+});
+
+describe("a deferred task", () => {
+	const AT = "2026-09-10T12:00:00.000Z";
+	const EARLIER = "2026-09-09T12:00:00.000Z";
+	const REASON = "founder deferred it to a follow-up cycle";
+
+	/** The one-task coder machine, standing in for the machine an amendment has already written. */
+	const afterTheWrite = (): CompiledLane => lane(coderWorkflow());
+
+	const deferring = (task: string, through: string): LogEntry => ({
+		task: "epic_900",
+		event: "EPIC_900.AMENDED",
+		at: AT,
+		tasks: ["issue"],
+		defers: [{task, through, reason: REASON}],
+	});
+
+	it("folds cleanly once its task is gone from the machine — its lines are accounted for, not unknown", () => {
+		const folded = foldLog(afterTheWrite(), [
+			{task: "issue_3", event: "ISSUE_3.BLOCKED", at: EARLIER},
+			deferring("issue_3", EARLIER),
+		]);
+
+		expect(folded._tag).toBe("Folded");
+		expect(folded._tag === "Folded" && Object.keys(folded.states)).toEqual(["issue"]);
+	});
+
+	it("is still an unknown task when no amendment defers it", () => {
+		const folded = foldLog(afterTheWrite(), [
+			{task: "issue_3", event: "ISSUE_3.BLOCKED", at: EARLIER},
+		]);
+
+		expect(folded).toMatchObject({
+			_tag: "Unreplayable",
+			defects: ['log names task "issue_3", which is not in this lane\'s machine'],
+		});
+	});
+
+	it("refuses an unresolvable deferral rather than folding past it", () => {
+		const folded = foldLog(afterTheWrite(), [
+			{task: "issue_3", event: "ISSUE_3.BLOCKED", at: EARLIER},
+			deferring("issue_3", AT),
+		]);
+
+		expect(folded._tag).toBe("Unreplayable");
+	});
+
+	it("still folds through the OLD machine, which holds the task the amendment has not yet dropped", () => {
+		const folded = foldLog(afterTheWrite(), [
+			{task: "issue", event: "ISSUE.WIP", at: EARLIER},
+			deferring("issue", EARLIER),
+		]);
+
+		expect(folded._tag).toBe("Folded");
+		expect(folded._tag === "Folded" && folded.states.issue?.type).toBe("build");
+	});
+
+	it("refuses a `defers` row carrying no reason — a plan change nobody recorded a why for", () => {
+		const parsed = parseLog(
+			JSON.stringify({
+				task: "epic_900",
+				event: "EPIC_900.AMENDED",
+				at: AT,
+				tasks: ["issue"],
+				defers: [{task: "issue_3", through: EARLIER}],
+			}),
+		);
+
+		expect(parsed).toMatchObject({
+			_tag: "Malformed",
+			defects: [
+				"line 1 carries a `defers` field that is not a non-empty list of {task, through, reason} rows",
+			],
+		});
+	});
+
+	it("refuses `defers` on any event but an amendment", () => {
+		const parsed = parseLog(
+			JSON.stringify({
+				task: "issue",
+				event: "ISSUE.WIP",
+				at: AT,
+				defers: [{task: "issue_3", through: EARLIER, reason: REASON}],
+			}),
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
+		expect((parsed as {defects: ReadonlyArray<string>}).defects[0]).toContain(
+			"only an AMENDED defers a task out of the plan",
+		);
+	});
+
+	it("refuses one payload naming a task twice", () => {
+		const parsed = parseLog(
+			JSON.stringify({
+				task: "epic_900",
+				event: "EPIC_900.AMENDED",
+				at: AT,
+				tasks: ["issue"],
+				defers: [
+					{task: "issue_3", through: EARLIER, reason: REASON},
+					{task: "issue_3", through: EARLIER, reason: REASON},
+				],
+			}),
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
 	});
 });

@@ -1,12 +1,21 @@
 import {describe, expect, it} from "vitest";
 import {emitMachine} from "../lane/emit.ts";
-import {type Observed, restageBody} from "./restage.ts";
+import type {SubIssueLink} from "./github.ts";
+import {restageBody} from "./restage.ts";
 
-const open = (number: number): Observed => ({number, state: "open", stateReason: null});
-const closed = (number: number, stateReason: string | null): Observed => ({
+// `SubIssueLink` rather than `Observed`: these fixtures feed `emitMachine` too, which reads the
+// whole link, and `Observed` is the narrowing `restageBody` judges.
+const open = (number: number): SubIssueLink => ({
+	number,
+	state: "open",
+	stateReason: null,
+	classes: [],
+});
+const closed = (number: number, stateReason: string | null): SubIssueLink => ({
 	number,
 	state: "closed",
 	stateReason,
+	classes: [],
 });
 
 const body = (dependencies: string, options: {before?: string; after?: string} = {}): string =>

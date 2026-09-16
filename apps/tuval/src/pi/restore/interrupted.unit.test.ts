@@ -41,6 +41,8 @@ const cutMidReply: AiAgentSessionState = {
 		omitted: {items: 0, bytes: 0, reason: "none"},
 	},
 	interrupted: null,
+	// Nothing cut before this turn, so the record is empty and the restore is what fills it.
+	cutReplies: [],
 	interruption: null,
 	usage: {model: "faux/faux-1", turns: {"item-1": {inputTokens: 10, outputTokens: 4, cost: 0}}},
 	agentVersion: "0.42.0",

@@ -58,40 +58,49 @@ onlyBuiltDependencies:
 		expect(parseCatalog("catalog:\n  - acme-queue\n")._tag).toBe("Unparseable");
 	});
 
-	// The three unreadable shapes: each one parses as YAML, none of them is read, and answering
-	// `catalog: null` or an empty-string pin would be a confident wrong answer rather than a refusal.
-	it("refuses an inline flow map rather than reading it as no catalog at all", () => {
-		expect(parseCatalog("catalog: {acme-queue: 4.2.0}\n")).toMatchObject({
-			_tag: "Unparseable",
-			reason: expect.stringContaining("inline content"),
+	it("reads valid flow maps", () => {
+		expect(parseCatalog("catalog: {acme-queue: 4.2.0}\n")).toEqual({
+			_tag: "Ok",
+			catalog: {"acme-queue": "4.2.0"},
 		});
 	});
-
-	it("refuses a nested sub-map rather than pinning the key to an empty string", () => {
-		expect(parseCatalog("catalog:\n  acme-queue:\n    version: 4.2.0\n")).toMatchObject({
-			_tag: "Unparseable",
-			reason: expect.stringContaining("pins no version"),
-		});
+	it.each([
+		"catalog:\n  acme-queue:\n    version: 4.2.0\n",
+		"catalogs: []\n",
+		"catalogs:\n  legacy: null\n",
+		"catalog: {acme-queue: 42}\n",
+		"catalog: {acme-queue: ''}\n",
+		"catalog: {acme-queue: 4.2.0, acme-queue: 4.1.0}\n",
+		"catalog: {acme-queue: 4.2.0}\ncatalog: {}\n",
+		"catalog: {}\nbroken: [\n",
+		"[]\n",
+	])("refuses invalid manifest or catalog shape %s", (text) => {
+		expect(parseCatalog(text)._tag).toBe("Unparseable");
 	});
-
-	it("refuses an entry whose value is a flow collection", () => {
-		expect(parseCatalog("catalog:\n  acme-queue: {version: 4.2.0}\n")._tag).toBe("Unparseable");
-	});
-
-	it("refuses a named-catalog block rather than reading it as no catalog at all", () => {
-		expect(parseCatalog("catalogs:\n  default:\n    acme-queue: 4.2.0\n")).toMatchObject({
-			_tag: "Unparseable",
-			reason: expect.stringContaining("catalogs:"),
-		});
-	});
-
-	// Reading only the flat half of a manifest that also names catalogs would report `unpinned` for
-	// every package pinned through the named half — the same confident wrong answer, one level in.
-	it("refuses a manifest that carries both a flat catalog and a named-catalog block", () => {
+	it("reads named-only maps and equal duplicate pins", () => {
 		expect(
-			parseCatalog("catalog:\n  acme-queue: 4.2.0\n\ncatalogs:\n  legacy:\n    acme-queue: 3.0.0\n")
-				._tag,
-		).toBe("Unparseable");
+			parseCatalog("catalogs:\n  current: {acme-queue: 4.2.0}\n  other: {acme-queue: 4.2.0}\n"),
+		).toEqual({_tag: "Ok", catalog: {"acme-queue": "4.2.0"}});
+	});
+	it("reads default and unrelated named catalog pins", () => {
+		expect(
+			parseCatalog("catalog: {alchemy: 2.0.0-beta.59}\ncatalogs:\n  local: {fzf: 0.5.2}\n"),
+		).toEqual({_tag: "Ok", catalog: {alchemy: "2.0.0-beta.59", fzf: "0.5.2"}});
+	});
+	it("refuses only a declared dependency's conflicting pins", () => {
+		const text =
+			"catalog: {effect: 4.0.0-beta.92, alchemy: 2.0.0-beta.59}\ncatalogs:\n  local: {effect: 4.0.0-rc.112, fzf: 0.5.2}\n";
+		expect(
+			parseCatalog(text, ["> Derived from `effect@4.0.0-beta.92` — re-verify on pin bump."]),
+		).toMatchObject({
+			_tag: "Unparseable",
+			reason: expect.stringContaining(
+				"effect has conflicting catalog pins: 4.0.0-beta.92, 4.0.0-rc.112",
+			),
+		});
+		expect(
+			parseCatalog(text, ["> Derived from `alchemy@2.0.0-beta.59` — re-verify on pin bump."]),
+		).toEqual({_tag: "Ok", catalog: {alchemy: "2.0.0-beta.59", fzf: "0.5.2"}});
 	});
 });
 

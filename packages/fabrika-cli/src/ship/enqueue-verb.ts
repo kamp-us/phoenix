@@ -17,16 +17,31 @@
  * precondition stands between a `dirty` PR and a parked intent reported as a healthy `enqueued`.
  * `mergeable` is computed lazily, so `null` is routine and is **not an answer**: it is polled, and a
  * still-indefinite value is UNKNOWN and refuses on `11`. A read that could not produce a definite
- * answer must never resolve to one. A definite `mergeable: false` refuses on `16` instead of arming:
- * the conflict is already proven by the read the verb just performed, and arming on it spends an
- * enqueue round plus one of the lane's retries to rediscover it at reconcile.
+ * answer must never resolve to one. A definite `mergeable: false` refuses instead of arming: the
+ * conflict is already proven by the read the verb just performed, and arming on it spends an enqueue
+ * round plus one of the lane's retries to rediscover it at reconcile.
+ *
+ * **That refusal splits by cause, on two codes.** A `mergeable_state: dirty` is a fact about the
+ * *base* — it moved under the branch — and every other definite not-mergeable value is a fact about
+ * the head. The lane charges the two differently (`21` spends a machinery lap, `16` a repair round),
+ * so the split is a code rather than a state string a shipper would have to parse. What it does not
+ * change is that the repair round happens: a dirty base moves the merge-base blob every verdict's
+ * content digest covers (`../review/content-binding.ts`), so every verdict on the PR is void and
+ * the re-review is genuinely owed. This verb moves no branch — rebasing the head is the builder's,
+ * on a re-reviewed round.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {PRECONDITION_UNKNOWN, PROVEN_NOT_IN_STATE, STALE_HEAD, WRITE_UNKNOWN} from "./codes.ts";
+import {
+	BASE_CONFLICTED,
+	PRECONDITION_UNKNOWN,
+	PROVEN_NOT_IN_STATE,
+	STALE_HEAD,
+	WRITE_UNKNOWN,
+} from "./codes.ts";
 import {armAutoMerge, pullTimeline} from "./github.ts";
-import {readDefiniteMergeability} from "./mergeability.ts";
+import {isBaseConflict, readDefiniteMergeability} from "./mergeability.ts";
 import {queueStateOf} from "./queue.ts";
 import {badNumber, inspectedSha, prefixMatch, resolvePull, resolveTargetRepo} from "./target.ts";
 
@@ -81,6 +96,12 @@ export const runEnqueue = (
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: #${pr}'s mergeable_state is still indefinite after ${mergeability.polls} polls — mergeability is UNKNOWN, never green; nothing was armed.`,
+			);
+		}
+		if (isBaseConflict(mergeability.value)) {
+			return refuse(
+				BASE_CONFLICTED,
+				`${VERB}: #${pr}'s base moved under it and the merge conflicts (mergeable_state: dirty) — a definite read; nothing was armed. The re-review is owed: the moved base moves the merge-base blob every verdict's content digest covers, so route to repair against a rebased head.`,
 			);
 		}
 		if (!mergeability.value.mergeable) {

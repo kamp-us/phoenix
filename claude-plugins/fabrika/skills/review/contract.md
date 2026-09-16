@@ -135,6 +135,8 @@ prose copies are not the authority.
 | `15` | refused: the write is not provably the prior rows plus one — the append-only fence, whose causes carry distinct messages | — | — | — | — | — | — | — | ✓ |
 | `16` | refused: the enumeration is complete and **no gate inspected the bytes** — the rollup is not `red`, yet no workflow this repo authors produced a run at the head, so a `green` would report coverage that does not exist | — | — | — | ✓ | — | — | — | — |
 | `17` | refused: the write would retire a standing verdict of the **opposite polarity** at this head and `--supersede` was not passed — nothing written | — | — | — | — | — | — | ✓ | — |
+| `18` | refused: a `PASS` is the terminal of the round that appended an acceptance criterion tagged for that same subject and round — the row binds the next cycle, and a `PASS` has none, so the round owes a `FAIL`; nothing written | — | — | — | — | — | — | ✓ | — |
+| `19` | refused: a `PASS` whose linked contract marks a criterion's evidence as living outside the diff, and whose body names no evidence for it — a marked criterion is graded on the evidence it names, never on the diff alone, so a `PASS` citing none graded it on nothing; nothing written | — | — | — | — | — | — | ✓ | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb
@@ -515,12 +517,20 @@ fabrika review criteria 4287 [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line: `criteria\t<count>`. Then one line per criterion —
-`<checked|open>\t<text>` — the same line grammar `wire read --format acceptance-criteria`
-prints, because it **is** that read: the verb fetches the issue body and hands it to the
-registered format's `read` (`packages/fabrika-cli/src/wire/acceptance-criteria.ts`), importing
-the module. No second parser.
+`<checked|open>\t<text>`, with a third `\t<evidence source>` column on a criterion carrying the
+outside-diff evidence marker and none on one that does not — the same line grammar
+`wire read --format acceptance-criteria` prints, because it **is** that read: the verb fetches the
+issue body and hands it to the registered format's `read`
+(`packages/fabrika-cli/src/wire/acceptance-criteria.ts`), importing the module. No second parser.
 
-With `--json`: `{"outcome":"criteria","issue":<n>,"count":<n>,"criteria":[{"text":…,"checked":…}…]}`.
+With `--json`: `{"outcome":"criteria","issue":<n>,"count":<n>,"marked":<n>,"criteria":[{"text":…,"checked":…,"evidence":<source|null>}…]}`.
+
+**A marked criterion is one the diff's bytes cannot settle either way**, and the marker names where
+its proof lives — `[evidence: <source>]`, the grammar owned by the wire format and written at mint
+time by `triage enrich`. Every marked row is also counted and quoted on stderr, so a reviewer
+scanning diagnostics cannot miss that this contract has any. Grade each one on the evidence it
+names and name that evidence in the verdict body: `review post` refuses a `PASS` that does not
+(`19`).
 
 The count is never `0`: the wire format holds a conforming block's criteria as a non-empty
 array — a heading with zero checkbox rows reads `Malformed`, so "a gradeable contract with
@@ -563,6 +573,14 @@ $ fabrika review criteria 4287
 criteria	2
 open	the first retry delay equals `base`
 open	the retry guide documents the delay table
+
+$ fabrika review criteria 8900
+criteria	2
+open	the stored-id migration runs on load
+open	a desk checkpointed under the old shape comes back whole	hand-verification on a real desk
+review criteria: 1 of 2 criteria mark evidence outside the diff — grade each on the evidence it
+names, and name it in the verdict body:
+  - "a desk checkpointed under the old shape comes back whole" — evidence: hand-verification on a real desk
 ```
 
 **Grounding**
@@ -594,6 +612,17 @@ fabrika review ci 4321 [--sha <head>] [--wait] [--budget-seconds <n>] [--cadence
 | `--cadence-seconds` | integer | no | `30` | `--wait` only: sleep between polls |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
+
+**A `--wait` call must be invoked with a caller-side timeout above `--budget-seconds`.** The budget
+bounds the verb, not the process around it: a shell timeout below the budget kills the CLI mid-poll,
+no `settle` token is printed, and the caller has an `UNKNOWN` instead of an answer. In an agent shell
+that deadline is the Bash tool's `timeout`, whose ceiling is `600000` ms unless the environment sets
+`BASH_MAX_TIMEOUT_MS` above it — a larger request is silently clamped to the ceiling rather than
+refused, so no deadline past it can be asked for. That leaves the `600` default budget with no
+headroom on either side: pair `timeout: 600000` with `--budget-seconds 480` instead, which keeps the
+deadline strictly above the budget with room for the `gh` reads. A practical pairing, not a
+guaranteed CLI maximum, and a budget raised past the ceiling needs `BASH_MAX_TIMEOUT_MS` raised
+with it.
 
 **Output** — machine channel. Under `--wait`, a first line
 `settle\t<settled|budget-exhausted|head-moved|governance-owed|governance-stale>`; without it that
@@ -1046,13 +1075,30 @@ tier-m	removed-assertion	src/cart.test.ts:14	expect(renderTotal(10)).toBe("10.00
 **Invocation**
 
 ```
-fabrika review post 4321 --namespace review-code --polarity PASS --sha 03135b91 --clause "merge-ready" [--carrier marker|advisory] [--supersede] [--repo <owner/name>] [--json]
-fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "every criterion met" [--supersede] [--repo <owner/name>] [--json]
+fabrika review post 4321 --namespace review-code --polarity PASS --sha 03135b91 --round 1 --clause "merge-ready" [--carrier marker|advisory] [--supersede] [--repo <owner/name>] [--json]
+fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --round 1 --clause "every criterion met" [--supersede] [--repo <owner/name>] [--json]
 ```
 
 The verdict body arrives on **stdin only** — no `--body`, no `--body-file`, for the reason the
 sibling write verbs give: a path flag is how a machine-local path reaches a public surface while
 the poster reads success.
+
+**A body the harness will not carry in one command is staged and redirected in, which is this same
+path and not a second one.** A worktree-isolated shell's verifier judges the whole command string,
+so a heredoc carrying a long verdict is refused before the verb runs; the measured triggers and
+sizes have one home in
+[skill-conventions §4](../../docs/skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed).
+The caller allocates a file with `review scratch`, writes the body there in bounded appends naming
+the literal path, and runs this verb with a literal input redirect:
+
+```
+fabrika review post 4321 --namespace review-code --polarity FAIL --sha 03135b91 --clause "two findings" < /var/folders/kx/T/fabrika-review/s-9f2e/4321-8c9e018c5568/verdict-code
+```
+
+The bytes reach stdin unchanged, so every step and every refusal below applies exactly as it does to
+a heredoc — the empty-stdin `3`, the bare-`@` `6`, the leak scan's `5`, and the unconditional
+read-back's `9`. It buys relief from verifier command-size pressure and nothing else: it is not a
+second emit path, it does not let the verb read a path, and it adds no argument.
 
 **Inputs**
 
@@ -1067,6 +1113,7 @@ the poster reads success.
 | `--clause` | string | yes | — | the human clause; blank is not a clause |
 | `--carrier` | enum | no | `marker` | `marker` (first-line head- and content-bound marker) or `advisory` (§CP: advisory first line, `Reviewed-head: @ <sha>` in the body). `advisory` is a PASS path only, and is refused beside a range |
 | `--supersede` | boolean | no | `false` | acknowledge that this verdict retires a standing one of the **opposite** polarity at the same head, or ranged, over the same range; without it that post is the `17` refusal |
+| `--round` | integer | on a `PASS` | — | which review round this verdict ends — the same number `review append-criterion --round` was handed. Required on a `PASS`, because a `PASS` is the terminal an appended row cannot survive; ignored on a `FAIL`, which routes into a next cycle either way |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | markdown | yes | — | the verdict body below the first line: per-criterion table, findings, the §DEV row |
@@ -1147,6 +1194,22 @@ different fact that opens a second. The write path is
    carried variable instead of the live state re-ships the false-PASS class; the mismatch is the
    `9` refusal.
 
+**A `PASS` clears one more fence, between steps 2 and 3: the round that appended a criterion owes a
+`FAIL` (`18`).** A reviewer that finds an in-scope defect appends it as an acceptance criterion, and
+that row binds the **next** cycle — so a `PASS` on the round that appended it is the one terminal it
+cannot survive: the lane folds to `ship`, the PR merges, the issue auto-closes, and the row sits
+unread on a closed issue with nothing anywhere reading as wrong. That is why `--round` is required on
+a `PASS` and refused-absent on `10`. The read keys on the append's own
+`<!-- ac:review pr:#<n> round:<r> -->` tag, through the reader that sits beside the writer
+(`packages/fabrika-cli/src/review/append.ts`), so a `PASS` on a **later** round over a row an earlier
+one appended is untouched — that row standing unmet is what "binds the next cycle" means. The
+`range:` spelling reads on the same path, so a child's reviewer cannot pair an append with a `PASS`
+either. The issues read are every issue the PR body names, closing keywords and `Part of` alike,
+because a `--partial` PR's reviewer appends to the issue it is part of. **A read that could not be
+completed is `11`, never "no appended criterion"** — an unfetchable body and a malformed criteria
+block are both states a routed row may be sitting in unseen, while an *absent* block is the one
+proven negative, since `review append-criterion` refuses an issue carrying no conforming block.
+
 **Exit status**
 
 | Code | Trigger |
@@ -1157,10 +1220,12 @@ different fact that opens a second. The write path is
 | `7` | the PR is proven absent (404) or closed; ranged, the child issue is proven absent, is closed, or is a pull request |
 | `8` | the create/edit failed — UNKNOWN whether a comment landed |
 | `9` | the comment landed but the read-back does not yield this marker |
-| `10` | `--namespace` off the wire format's class or outside this PR's derived set — ranged, outside the set the range's changes derive; a bad `--polarity`; `--carrier advisory` with `--polarity FAIL`, or with a range; a lone `--base`/`--tip`; `--sha` beside a range; a range end that is not a revision; neither `--sha` nor a range |
-| `11` | a precondition read failed — the PR, the live head, or the commit binding / bound file list the class set is derived from; ranged, the issue, the comments, or the content `<base>..<tip>` changes |
+| `10` | `--namespace` off the wire format's class or outside this PR's derived set — ranged, outside the set the range's changes derive; a bad `--polarity`; `--carrier advisory` with `--polarity FAIL`, or with a range; a lone `--base`/`--tip`; `--sha` beside a range; a range end that is not a revision; neither `--sha` nor a range; a `PASS` with no `--round` |
+| `11` | a precondition read failed — the PR, the live head, the commit binding / bound file list the class set is derived from, or (on a `PASS`) a linked issue's body or its acceptance-criteria block; ranged, the issue, the comments, or the content `<base>..<tip>` changes |
 | `12` | the live head moved past `--sha` — re-review at the new head, never re-bind |
 | `17` | a standing verdict of the opposite polarity at this head — ranged, over this range — would be retired and `--supersede` was not passed; nothing written |
+| `18` | this round appended an acceptance criterion tagged for this same subject and round, and a `PASS` has no next cycle to carry it — the round owes a `FAIL`; nothing written |
+| `19` | a `PASS`, and a criterion on a linked issue's contract carries the outside-diff evidence marker whose source this body names nowhere — the round owes either the evidence or a `FAIL`; nothing written |
 
 **Errors**
 
@@ -1179,6 +1244,11 @@ different fact that opens a second. The write path is
 | `review post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; run \`fabrika review verdicts <n>\` before retrying.` | 8 | refusal |
 | `review post: posted, but the read-back does not yield this marker (<wire reason>) — the PR may carry a garbled verdict; inspect comment <id>.` | 9 | refusal |
 | `review post: a standing <PASS\|FAIL> for <ns> at <sha> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 17 | refusal |
+| `review post: --round is required on a PASS — a PASS ends the cycle, and the round is what says whether this one appended a criterion that would die with it.` | 10 | refusal |
+| `review post: round <r> appended <an acceptance criterion\|<k> acceptance criteria> to #<n> from <PR #<n>\|the range <base>..<tip>>:` + one `  - "<row>"` line each + `An appended row binds the NEXT cycle, and a PASS has none — the lane folds to ship, the PR merges, and #<n> closes with the row unread. This round owes --polarity FAIL. Nothing was posted.` | 18 | refusal |
+| `review post: cannot read #<n>, which would carry a criterion appended on <subject>'s round <r>: <reason> — whether this PASS strands one is UNKNOWN; nothing was posted.` | 11 | refusal |
+| `review post: on #<n>, <an acceptance criterion marks\|<k> acceptance criteria mark> evidence outside the diff and this body names none:` + one `  - "<criterion>" — evidence: <source>` line each + `A marked criterion is graded on the evidence it names, never on the diff alone — so name what each one rested on, or post --polarity FAIL naming the missing evidence. Nothing was posted.` | 19 | refusal |
+| `review post: cannot read #<n>, whose contract would mark criteria this verdict owes evidence for: <reason> — whether this PASS grades one on nothing is UNKNOWN; nothing was posted.` | 11 | refusal |
 
 Ranged, the same steps produce their own text — the target is an issue, the subject is the range:
 
@@ -1197,48 +1267,50 @@ Ranged, the same steps produce their own text — the target is an issue, the su
 | `review post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; re-read #<n>'s comments before retrying.` | 8 | refusal |
 | `review post: posted, but the read-back does not yield this marker (<wire reason>) — #<n> may carry a garbled verdict; inspect comment <id>.` | 9 | refusal |
 | `review post: a standing <PASS\|FAIL> for <ns> over <base>..<tip> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 17 | refusal |
+| `review post: round <r> appended <an acceptance criterion\|<k> acceptance criteria> to #<n> from the range <base>..<tip>:` + one `  - "<row>"` line each + `An appended row binds the NEXT cycle, and a PASS has none — the lane folds to ship, the PR merges, and #<n> closes with the row unread. This round owes --polarity FAIL. Nothing was posted.` | 18 | refusal |
+| `review post: cannot read #<n>, which would carry a criterion appended on the range <base>..<tip>'s round <r>: <reason> — whether this PASS strands one is UNKNOWN; nothing was posted.` | 11 | refusal |
 
-**Scope** — one PR: its live head (step 1), the bound commit's file list (step 2), its comments
-(steps 5–6), plus the caller's stdin. Steps 1, 2 and 5's reads failing is `11` — nothing written,
-outcome known-unwritten. Ranged, it is one issue and one range instead: the issue's state and
+**Scope** — one PR: its live head (step 1), the bound commit's file list (step 2), the bodies of the
+issues it names (the `PASS` fence), its comments (steps 5–6), plus the caller's stdin. Steps 1, 2
+and 5's reads failing is `11` — nothing written, outcome known-unwritten. Ranged, it is one issue and one range instead: the issue's state and
 comments, and what `<base>...<tip>` changes in this checkout — no PR is resolved, because there is
 none.
 
 **Examples**
 
 ```
-$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "guide matches shipped behavior" < verdict.md
+$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --round 1 --clause "guide matches shipped behavior" < verdict.md
 posted	review-doc	PASS	03135b91	2f1a9c4e0b7d	created	https://github.com/<owner>/<repo>/pull/4321#issuecomment-5154902211
 ```
 
 ```
-$ fabrika review post 4321 --namespace review-skill --polarity PASS --sha 03135b91 --clause "ok" < verdict.md
+$ fabrika review post 4321 --namespace review-skill --polarity PASS --sha 03135b91 --round 1 --clause "ok" < verdict.md
 review post: --namespace review-skill is not derived by #4321's diff (present: review-code, review-doc) — a gate never emits a namespace it did not judge.
 $ echo $?
 10
 ```
 
 ```
-$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "the correction landed" < verdict.md
+$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --round 2 --clause "the correction landed" < verdict.md
 review post: a standing FAIL for review-doc at 03135b91 would be superseded by this PASS — pass --supersede to retire it on the record. Nothing was posted.
 $ echo $?
 17
 ```
 
 ```
-$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "the correction landed" --supersede < verdict.md
+$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --round 2 --clause "the correction landed" --supersede < verdict.md
 posted	review-doc	PASS	03135b91	2f1a9c4e0b7d	superseded	https://github.com/<owner>/<repo>/pull/4321#issuecomment-5154902211
 ```
 
 Ranged, the fourth field is the range and the comment lands on the child issue:
 
 ```
-$ fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "every criterion met" < verdict.md
+$ fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --round 1 --clause "every criterion met" < verdict.md
 posted	review	PASS	9f2c1ab..03135b9	2f1a9c4e0b7d	created	https://github.com/<owner>/<repo>/issues/5830#issuecomment-5154902211
 ```
 
 ```
-$ fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "the findings are answered" < verdict.md
+$ fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --round 2 --clause "the findings are answered" < verdict.md
 review post: a standing FAIL for review over 9f2c1ab..03135b9 would be superseded by this PASS — pass --supersede to retire it on the record. Nothing was posted.
 $ echo $?
 17
@@ -1410,6 +1482,12 @@ fabrika review scratch 4321 --slug <leaf> --lane <lane-key> --sha <head>
 | `--slug` | string | yes | — | the file's leaf name: kebab-case, no path separators |
 | `--lane` | string | yes | — | the lane key from this reviewer's spawn brief |
 | `--sha` | string | yes | — | the head `review scope` bound, 7–40 hex |
+
+**Two things are staged here, on separate slugs.** A diff too large for one read is the original
+case; a **verdict body** too large for one command is the second, and it takes a slug naming its
+namespace — `verdict-code`, `verdict-doc`, `verdict-skill` — so one lane's several verdicts do not
+overwrite each other. Both are read by the shell, never by a verb: `review post` still takes its
+body on stdin, through a literal input redirect.
 
 **Output** — machine channel. One absolute path on stdout:
 `<temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>`. The directory is created if

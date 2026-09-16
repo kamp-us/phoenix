@@ -5,6 +5,7 @@ import {fakeFs} from "../fakes.test-support.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {
 	APPEND_UNKNOWN,
+	CLASS_UNRECOGNISED,
 	LANE_EXISTS,
 	LANE_IS_CHILD,
 	LANE_UNREADABLE,
@@ -25,14 +26,14 @@ const WORKFLOW = `${DIR}/workflow.json`;
 const TEMPLATE = "/pkg/src/lane/templates/coder.workflow.json";
 
 const reads = (read: ExpectationRead) => () => Effect.succeed(read);
-const childless = reads({_tag: "Read", expectation: {_tag: "Single"}});
+const childless = reads({_tag: "Read", expectation: {_tag: "Single"}, classes: []});
 
 const PARENT = 4304;
 const PARENT_DIR = `${ROOT}/${PARENT}`;
 const PARENT_WORKFLOW = `${PARENT_DIR}/workflow.json`;
 
 const childOf = (parent: number | null) =>
-	reads({_tag: "Read", expectation: {_tag: "Child", parent}});
+	reads({_tag: "Read", expectation: {_tag: "Child", parent}, classes: []});
 
 /**
  * The parent epic's lane as `lane emit` would have written it — the real emitter, so the task ids
@@ -42,7 +43,7 @@ const parentMachine = (...children: ReadonlyArray<number>): string => {
 	const emitted = emitMachine(
 		PARENT,
 		["## Dependencies", "", `- phase 1: ${children.map((n) => `#${n}`).join(", ")}`].join("\n"),
-		children.map((number) => ({number, state: "open" as const, stateReason: null})),
+		children.map((number) => ({number, state: "open" as const, stateReason: null, classes: []})),
 	);
 	if (emitted._tag !== "Emitted") throw new Error(`fixture did not emit: ${emitted._tag}`);
 	return emitted.text;
@@ -79,6 +80,30 @@ describe("lane open", () => {
 		expect(out.code).toBe(0);
 		expect(fs.written.get(WORKFLOW)).toBe(coderTemplateText());
 		expect(JSON.parse(out.stdout)).toMatchObject({answer: "opened", lane: "42"});
+	});
+
+	it("seeds the placed document's context from the issue's class label", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const classed = reads({_tag: "Read", expectation: {_tag: "Single"}, classes: ["ui"]});
+		const out = await run(fs, runOpen({...OPTIONS, expectation: classed}));
+
+		expect(out.code).toBe(0);
+		const placed = JSON.parse(fs.written.get(WORKFLOW) ?? "") as {
+			machine: {context: {issue: {classes: ReadonlyArray<string>}}};
+		};
+		expect(placed.machine.context.issue.classes).toEqual(["ui"]);
+		expect(JSON.parse(out.stdout)).toMatchObject({classes: ["ui"]});
+		expect(out.stderr.join("\n")).toContain("seeded class:ui");
+	});
+
+	it("refuses an off-set class label before placement, leaving the disk untouched", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const misspelt = reads({_tag: "Read", expectation: {_tag: "Single"}, classes: ["UI"]});
+		const out = await run(fs, runOpen({...OPTIONS, expectation: misspelt}));
+
+		expect(out.code).toBe(CLASS_UNRECOGNISED);
+		expect(fs.written.size).toBe(0);
+		expect(out.stderr.join("\n")).toContain("class:UI");
 	});
 
 	it("folds the freshly opened lane to its initial state through `lane status`", async () => {
@@ -171,7 +196,7 @@ describe("lane open", () => {
 			fs,
 			runOpen({
 				...OPTIONS,
-				expectation: reads({_tag: "Read", expectation: {_tag: "Epic", children: 3}}),
+				expectation: reads({_tag: "Read", expectation: {_tag: "Epic", children: 3}, classes: []}),
 			}),
 		);
 
@@ -187,7 +212,7 @@ describe("lane open", () => {
 			fs,
 			runOpen({
 				...OPTIONS,
-				expectation: reads({_tag: "Read", expectation: {_tag: "Epic", children: 0}}),
+				expectation: reads({_tag: "Read", expectation: {_tag: "Epic", children: 0}, classes: []}),
 			}),
 		);
 

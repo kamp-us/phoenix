@@ -2,6 +2,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import {
+	BASE_CONFLICTED,
 	PRECONDITION_UNKNOWN,
 	PROVEN_NOT_IN_STATE,
 	STALE_HEAD,
@@ -139,16 +140,32 @@ describe("runEnqueue", () => {
 		expect(scripted.seams.requests.some((line) => /graphql/.test(line))).toBe(false);
 	}, 20_000);
 
-	it("refuses on 16 when a definite read says dirty — the arm would park (#6902)", async () => {
+	// The two definite not-mergeable refusals are two codes because the lane charges them to two
+	// budgets: a moved base is machinery, everything else is the repair round retries bound.
+	it("refuses on 21 when a definite read says dirty — the base moved, not the head", async () => {
 		const scripted = both([
 			livePull(),
 			[MERGEABILITY, mergeability({mergeable: false, mergeableState: "dirty"})],
 		]);
 		const out = await scripted.outcome;
+		expect(out.code).toBe(BASE_CONFLICTED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"ship enqueue: #4321's base moved under it and the merge conflicts (mergeable_state: dirty) — a definite read; nothing was armed. The re-review is owed: the moved base moves the merge-base blob every verdict's content digest covers, so route to repair against a rebased head.",
+		);
+		expect(scripted.seams.requests.some((line) => /graphql/.test(line))).toBe(false);
+	});
+
+	it("refuses on 16 when a definite read is not mergeable for any other reason (#6902)", async () => {
+		const scripted = both([
+			livePull(),
+			[MERGEABILITY, mergeability({mergeable: false, mergeableState: "blocked"})],
+		]);
+		const out = await scripted.outcome;
 		expect(out.code).toBe(PROVEN_NOT_IN_STATE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"ship enqueue: #4321 is not mergeable (mergeable_state: dirty) — a definite read; nothing was armed.",
+			"ship enqueue: #4321 is not mergeable (mergeable_state: blocked) — a definite read; nothing was armed.",
 		);
 		expect(scripted.seams.requests.some((line) => /graphql/.test(line))).toBe(false);
 	});

@@ -49,4 +49,14 @@ describe("recipe unpark's repository-root help contract", () => {
 		expect(description).toContain("derive the default lanes root");
 		expect(description).toContain("unreadable repository identity is UNKNOWN at 11");
 	});
+
+	// The `parkCause` read is a second derivation off the owning repository, and it refuses on 11
+	// alone — a cwd in no repository reads the shipped declaration at itself. A description claiming
+	// 39 for it would send an operator to fix a root the read never touched.
+	it("names the owning-repository parkCause read and claims no exit it cannot produce", () => {
+		const description = leafNamed("unpark").description ?? "";
+
+		expect(description).toContain("read from the `.fabrika.jsonc` of the repository that OWNS");
+		expect(description).toContain("`parkCause` read ahead of it never exits here");
+	});
 });

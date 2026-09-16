@@ -17,21 +17,52 @@
  * landing prints `unknown` and costs the run nothing else, because the guard that matters sits on
  * the write — `ship merge` re-derives the same fact itself and refuses `11` where this printed
  * `unknown`, so a degraded read here can never license a landing.
+ *
+ * **This is also where a shipper proves it is not standing in the driver's checkout.** A spawn flag
+ * asking for `isolation: worktree` is a request, not a fact, and a shipper that ran in the driver's
+ * tree let that checkout's branch move under a mid-drive operator, which changed which build of
+ * these verbs the driver went on executing, with no signal. Every dispatched shipper run carries
+ * this read and nothing downstream proceeds without it, so seating the refusal here costs one
+ * `git rev-parse` and covers the whole group. `ship disarm --site preflight` runs earlier and
+ * deliberately does not carry it: clearing a stale merge intent is safe from any tree, and refusing
+ * there would cost the run the one act that protects it.
+ *
+ * **Which runs it binds is {@link ScopeCaller}, and the caller states it.** The refusal is about the
+ * shipper's seat, not about the derivation, so an in-process relay that stands on no lane branch and
+ * writes to no tree passes `relay` and skips the read entirely — see that type for why a default
+ * would be the wrong shape here.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {governedRootsOr, noUiSurfaces, uiSurfacesOr} from "../config/paths.ts";
 import {listPullFiles} from "../io/pulls.ts";
+import {standingInLinkedWorktree} from "../lane/assembly.ts";
 import {issueRefOf, partitionWithUi, renderIssueRef, shipNamespacesOf} from "../review/classes.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {readBoundary} from "./boundary.ts";
 import {classify} from "./codeowners.ts";
-import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, PRIMARY_CHECKOUT, ZERO_SCOPE} from "./codes.ts";
 import {readLanding} from "./landing.ts";
 import {badNumber, NULL_TOKEN, resolvePull, resolveTargetRepo, scannedLine} from "./target.ts";
 
 const VERB = "ship scope";
+
+/**
+ * Who is running this read, and so whether the main-working-tree refusal binds it.
+ *
+ * `shipper` is a dispatched shipper's own run — the `ship scope` command, where the spawn's
+ * `isolation: worktree` request is proven a fact or refused `33`.
+ *
+ * `relay` is an in-process caller that reads this derivation for its own answer, pushes nothing and
+ * stands on no lane branch: `recipe unpark`, which a driver runs from its own checkout on purpose.
+ * Binding it there would refuse the verb in the one tree it is meant to run in, and it would say so
+ * by telling a driver to respawn a shipper it never dispatched.
+ *
+ * Stated at every call site rather than defaulted, because the two seats are the whole question this
+ * field answers and a default is how a future caller inherits an answer nobody chose.
+ */
+export type ScopeCaller = "shipper" | "relay";
 
 export interface ScopeOptions {
 	readonly pr: number;
@@ -40,6 +71,8 @@ export interface ScopeOptions {
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** Whether this run is a shipper's own, and so whether the worktree refusal binds it. */
+	readonly caller: ScopeCaller;
 }
 
 /** `open` / `draft` / `merged` / `closed` — four lifecycle words over two REST fields. */
@@ -60,6 +93,22 @@ export const runScope = (
 		const {pr, json} = options;
 		const bad = badNumber(VERB, "a pull-request number", pr);
 		if (bad !== null) return bad;
+
+		if (options.caller === "shipper") {
+			const linked = yield* standingInLinkedWorktree;
+			if (linked._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot tell whether this tree is a linked worktree: ${linked.reason} — whether this shipper stands in the driver's checkout is UNKNOWN, and nothing was read.`,
+				);
+			}
+			if (!linked.value) {
+				return refuse(
+					PRIMARY_CHECKOUT,
+					`${VERB}: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with \`isolation: worktree\`. Nothing was read.`,
+				);
+			}
+		}
 
 		const governed = yield* governedRootsOr(
 			VERB,

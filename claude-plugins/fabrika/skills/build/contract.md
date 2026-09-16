@@ -80,6 +80,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build release` | retract this LANE's own claim | a guarded single write |
 | `build adopt` | record that a dead session's claim passes to the lane this marker names, which may then release it or carry on | a marker write with a read-back; *whether the session is really gone* is the driver's judgment |
 | `build claimants` | who holds the claim on one issue, asked by a caller holding no token | the same ownership fold `confirm` runs, reported instead of tested against a caller; *what to do about a stranded claim* stays with the driver |
+| `build claims stale` | which claim markers stand on the board past a horizon, asked by a caller holding no token | the same ownership fold, run over an index-narrowed candidate set and filtered on the marker's own posted instant; *whether a session is gone* stays with the driver |
 | `build issue` | the claimed issue's body + parsed acceptance criteria, through the content gate | fetch + parse via the wire module; *judging* the criteria stays in the skill |
 | `build branch` | cut (or resume) the lane's nonce branch off a freshly fetched base | fetch, derive, create — the nonce is a function of the claim token |
 | `build resume-child` | open an epic child's standing-`FAIL` repair lane: claim, confirm, clean tree, resume the branch, prove the armed lane — in that order | a fixed sequence of five verbs whose order is derivable from what each one needs; every refusal is the composed verb's own, and *fixing the FAIL* stays in the skill |
@@ -131,6 +132,15 @@ Every verb obeys these; stated once.
   message contract-wide is prefixed with the invoked verb's name**, stated once here.
 - **A non-zero exit is UNKNOWN** to the caller until the code is read. No verb prints a partial or
   permissive answer on a non-zero exit.
+- **A body-on-stdin verb is invoked with a heredoc or with a literal input redirect, and the two are
+  one interface.** `commit`, `deviations`, `pr`, `pr-body` and `note` read their body from stdin, so
+  a redirect from the path `build scratch` printed delivers the same bytes a heredoc would, and
+  every guard the verb makes still fires. The redirect is the route
+  [skill-conventions §4](../../docs/skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed)
+  prescribes when the harness refuses to carry the body inside the command string; the *shell* reads
+  the file, so no verb grows a path-valued body flag for it. `commit --message-file` is the one
+  path-valued argument in the group and predates that route: it takes a leaf of this lane's
+  `build scratch` directory and refuses any other path.
 - **One deviant on the channel rule, carved out here so the shared section stays true:**
   `build push` puts its entire report on stdout, single-stream, so that the last stdout line is
   always the verdict line — the ordering guarantee is the contract (see its block; the predecessor
@@ -1025,6 +1035,32 @@ which no later verb of this session accepts. Without one it resolves `Foreign` �
 runs under the nonce that run just minted, which no adopt names — so it retracts the marker it just
 posted and refuses on `15` too. Adopt, release, then claim.
 
+**An adopt whose claim marker is already gone is still this lane's comment, and `release` retracts
+it.** That state is reached by adopting a claim somebody released first, and it used to be a marker
+no verb could reach: the ownership read answered "unclaimed" the moment no claim marker survived, so
+`release` said there was nothing to retract while the succession comment stayed on the thread.
+The read now names it — an authorized adopt whose `by <token>` names the asking lane, with
+no claim beside it — and `release <n> --token <that token>` deletes that one comment and answers
+`{"answer":"released","number":n,"adopted":"<session>"}`. It reaches **only** the asking lane's own
+adopt, resolved off the `by <token>` exactly as a win is, so a sibling lane's succession is no more
+sweepable than its claim would be; every other lane reads the thread as unclaimed. `confirm` and the
+shared precondition refuse it on `15` and name that release, because an adoption is not a claim.
+
+**An adopt fences and confers only over a claim marker it postdates.** The fence that keeps one
+succession from answering `mine` to two lanes reads an adopt over the winning marker's session; a
+succession adopts a claim that already stands, so an adopt older than that marker adopted some earlier claim and says
+nothing about this one. Ordering is GitHub's `created_at` with the comment id breaking a same-second
+tie — the same order the marker lists sort in, and not a field a marker's author composes. Without
+the ordering read, one stray adopt naming a session fenced every marker that session would ever post
+on the number, and each fresh claim lost to it under a new nonce, which is the loop that made the
+sanctioned remedy non-terminating.
+
+The same order binds the conferral, which is the other arm of one read: the adopted session's lane
+meets the fence, the adopting lane meets the conferral, and both are answered over the same pair of
+comments. So an adopt older than the winning marker confers that marker no more than it fences it.
+Read on one arm alone, one authorized succession answers `mine` to both lanes over a single marker,
+and `release` under the adopting lane's token then deletes a marker the other lane holds.
+
 The session id arrives from the environment — `FABRIKA_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`,
 else `PI_SUBAGENT_PARENT_SESSION`; named in `--help` with its unset
 behavior: unset is a usage error, exit `1` — a claim without an identity is not a claim.
@@ -1154,12 +1190,16 @@ the pieces is what handed a builder an ordering decision it then got wrong.
 | `build claim: cannot read the comments on #<n>: <reason> — whether it already carries a graded build is UNKNOWN, never "no"; nothing was written.` | 11 | refusal |
 | `build claim: <n> comment(s) on #<n> reach for a verdict marker and are not readable range ones — <#id: why>; …. A verdict that cannot be read is UNKNOWN, never "no prior build"; repost or delete the comment(s), then claim again. Nothing was written.` | 11 | refusal |
 | `build claim: lost to <token> (posted <timestamp>, authorized).` | 15 | refusal |
+| `build claim: if that session is gone, adopt it first: fabrika build adopt <n> --session <the winner's session id> --reason <why>, then fabrika build release <n> --token <the token adopt prints>. "fabrika build claims stale" lists every claim standing past a horizon.` — beside the loss above, and only when the winner is another SESSION: `build adopt` refuses a `--session` naming this very session, so a sibling lane of this session is pointed at no route. `build release`'s foreign-claim refusal carries the same sentence under the same gate | 15 | note |
 | `build claim: the marker landed but the read-back does not match — the claim needs a human eye.` | 9 | refusal |
 | `build confirm: #<n> is held by <winning token>, not by <caller token>.` — with ` — another lane of this same session` appended when the two tokens share a session id | 15 | refusal |
 | `build confirm: --token "<value>" is not a claim token (build:<session-id>:<uuid>) — which lane is asking is not stated.` | 1 | usage error |
 | `build confirm: --token "<value>" carries session <a>, but this run is session <b> — a lane names itself, never another.` | 1 | usage error |
 | `build confirm: no claim exists on #<n> — nothing to confirm; run "fabrika build claim <n>" first.` | 15 | refusal |
+| `<verb>: #<n> carries this lane's adopt marker (comment <id>) and no claim — an adoption is not a claim; run "fabrika build release <n> --token <the adopt's token>" to retract it, then claim.` — `build confirm`'s own, and every mutating verb's shared precondition under its own name | 15 | refusal |
 | `build release: this lane holds no claim on #<n> — refusing to release another lane's.` | 15 | refusal |
+| `build release: no claim stood on #<n> — retracted this lane's stranded adopt marker (comment <id>) and nothing else.` — beside `{"answer":"released","number":n,"adopted":"<session>"}` at exit 0 | 0 | note |
+| `build release: the adopt marker (comment <id>) was not retracted: <reason> — whether #<n> still reads as adopted is UNKNOWN.` | 8 | refusal |
 | `build release: the retraction failed: <reason> — whether the claim is still held is UNKNOWN; run "fabrika build confirm <n> --token <caller token>".` | 8 | refusal |
 | `build adopt: --session names this very session — "fabrika build release <n>" already covers a claim this session holds; nothing was written.` | 1 | usage error |
 | `build adopt: --reason is empty — a succession is recorded or it is not one.` | 1 | usage error |
@@ -1397,6 +1437,125 @@ $ echo $?
 
 ---
 
+### `build claims stale`
+
+**The sweep `claimants` is the per-number half of.** `claimants` answers a number a caller already
+suspects; nothing answered which numbers to suspect, so a claim stranded by a session that never
+came back was discovered only when somebody happened to try that number and lost on `15`. One lane
+sat unplannable for three days that way. This asks the board.
+
+**It writes nothing and expires nothing**, and a row is not a finding that a session is dead. Age is
+the only signal a marker carries, and age alone proves nothing about a session — so the ban on TTLs,
+leases, steals and eviction-by-inference stands exactly where it was, and every stranded claim still
+leaves through `build adopt` then `build release`, which the answer names. The one place an age test
+may END a claim is the `spawn-dead` recipe row, which is not this verb.
+
+**Candidates come off the search index, and the horizon is what makes that sound.** The open board
+runs to hundreds of issues and reading every thread is hundreds of calls thrown away, so the index
+narrows to the issues whose comments carry a claim marker at all. An index lags by minutes; a
+reported marker has stood for the whole horizon, whose default is a day — so no lag can hide a row
+this verb would print. Every candidate is then read through the same ownership fold `claimants` and
+`lane stale --claims` resolve against, so the three cannot state different facts about one marker.
+A candidate whose thread carries no marker after all is counted and contributes nothing.
+
+**Only authorized markers are rows.** An unauthorized marker wins no race, so it strands nothing —
+counting it here would put a row in front of a driver with nothing behind it.
+
+**Invocation**
+
+```
+fabrika build claims stale [--older-than-minutes <n>] [--repo <owner/name>]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--older-than-minutes` | integer | no | `1440` (a day) | the horizon a marker must have stood past to be a row |
+| `--repo` | string | no | `$CLAUDE_PIPELINE_REPO`, else `$GITHUB_REPOSITORY`, else the `origin` remote | the target owner/name |
+
+**Output** — machine, one JSON object:
+
+```
+{"answer": "stranded" | "none", "now": "<ISO>",
+ "scanned": {"candidates": 41, "markers": 7, "olderThanMinutes": 1440},
+ "stranded": [{"issue": 7031, "title": "…", "commentId": 5385091206, "author": "…",
+               "createdAt": "<ISO>", "ageMinutes": 26919, "token": "…", "session": "…",
+               "holder": true, "adopted": false}]}
+```
+
+Oldest silence first, ties broken by issue then comment id — stable per run. `holder` says whether
+this is the marker every ownership question on that issue resolves against: a lane that raced writes
+more than one, and `build release` sweeps the whole stack, so a non-holder marker is reported and
+flagged rather than hidden or fused with the one that stands. `adopted` says an authorized adopt
+marker already names that session, which is how a reader tells a succession under way from a claim
+still stranded. An empty `stranded` array is a proven answer (`"none"` on exit `0`), never an
+absence: an unreadable anything lands on `11` instead.
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `11` | the index, a candidate's thread, an author's permission, or a marker's posted instant could not be read — the stranded set is UNKNOWN, never a short list |
+
+No other code is reachable. There is nothing to lose (`15` needs a caller identity, and this verb
+holds none), nothing to write (`8`, `9`), no single target to be absent (`7`), and no fence to
+refuse against (`20`, `21`, `30`, `31`, `32`, `16`) — the admission test governs what may *start*,
+and this starts nothing.
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `build claims stale: --older-than-minutes must be a non-negative whole number of minutes.` | 1 | usage error |
+| `build claims stale: cannot resolve a target repo — set CLAUDE_PIPELINE_REPO, or run inside a checkout whose origin remote resolves.` | 1 | usage error |
+| `build claims stale: cannot read the issues carrying a claim marker: <reason> — the stranded set is UNKNOWN, never a short list.` | 11 | refusal |
+| `build claims stale: cannot read the claim markers on #<n>: <reason> — the stranded set is UNKNOWN, never a short list.` | 11 | refusal |
+| `build claims stale: comment <id> on #<n> carries <token> and "<value>" is not an instant — its age is UNKNOWN, never inside the horizon.` | 11 | refusal |
+| `build claims stale: read <n> issue(s) the index says carry a claim marker; <m> authorized marker(s) on them.` | 0 | note |
+| `build claims stale: no authorized claim marker has stood unmoved for <n> minute(s).` — beside `{"answer":"none", …}` | 0 | note |
+| `build claims stale: <n> claim marker(s) standing past <m> minute(s): #<issue> <token> (<age>m), ….` | 0 | note |
+| `build claims stale: none of this is a finding that a session is gone. Where you judge one is, the succession is written: fabrika build adopt <n> --session <its session id> --reason "<why>", then fabrika build release <n> --token <the token adopt prints>. Nothing clears a claim on its own.` | 0 | note |
+| `build claims stale: every one of them is already adopted — the lane each adopt names releases it.` — this line replaces the one above when every row carries `"adopted": true` | 0 | note |
+
+**Scope** — the open board's claim markers, narrowed by the index and read in full per candidate,
+and nothing else. It reads no campaign declaration, no `blocked_by` edge and no label: the admission
+test governs starting work and this verb starts none. Closed issues are out of scope — a claim
+marker outliving a closed issue blocks nobody from claiming it.
+
+**Examples**
+
+One marker standing eighteen days, on a board the index narrowed from hundreds of open issues to 41:
+
+```
+$ fabrika build claims stale
+build claims stale: read 41 issue(s) the index says carry a claim marker; 7 authorized marker(s) on them.
+build claims stale: 1 claim marker(s) standing past 1440 minute(s): #9999991 build:s-dead:8774bb34-b02f-4d0c-92c6-b03e5acdef64 (26919m).
+build claims stale: none of this is a finding that a session is gone. Where you judge one is, the succession is written: fabrika build adopt <n> --session <its session id> --reason "<why>", then fabrika build release <n> --token <the token adopt prints>. Nothing clears a claim on its own.
+{"answer":"stranded","now":"2026-09-11T01:15:03Z","scanned":{"candidates":41,"markers":7,"olderThanMinutes":1440},"stranded":[{"issue":9999991,"title":"…","commentId":5385091206,"author":"agent","createdAt":"2026-08-23T08:35:53Z","ageMinutes":26919,"token":"build:s-dead:8774bb34-b02f-4d0c-92c6-b03e5acdef64","session":"s-dead","holder":true,"adopted":false}]}
+```
+
+A board where every claim is inside the horizon:
+
+```
+$ fabrika build claims stale --older-than-minutes 240
+build claims stale: no authorized claim marker has stood unmoved for 240 minute(s).
+{"answer":"none","now":"…","scanned":{"candidates":41,"markers":7,"olderThanMinutes":240},"stranded":[]}
+$ echo $?
+0
+```
+
+**Grounding**
+
+- Succession is written on the board; no TTL, no lease, no steal, no eviction from absence. A sweep
+  that cleared anything would be that eviction by another name.
+- The holder is the earliest authorized marker, one fold shared with `confirm` and `claimants`, so
+  three readers cannot answer three different winners for one issue.
+- A read that failed is UNKNOWN on `11`. A short list of stranded claims says an issue is free when
+  nobody looked at it, which is worse than no list at all.
+
+---
+
 ## `build issue`
 
 **Invocation**
@@ -1416,7 +1575,7 @@ fabrika build issue 4 [--repo <owner/name>]
 
 ```
 {"number": 4, "title": "...", "state": "open", "labels": ["type:bug", "p1", "status:triaged", "ready-for:agent"],
- "body": "...", "criteria": {"state": "found", "items": [{"text": "...", "checked": false}]}}
+ "body": "...", "criteria": {"state": "found", "items": [{"text": "...", "checked": false, "evidence": null}]}}
 ```
 
 `criteria` comes from the imported `acceptance-criteria` wire read and carries its three answers
@@ -1426,6 +1585,14 @@ distinction is the wire module's whole design; **this verb transports it and ref
 that is deliberate: the fence is the admission test's criteria axis at `build claim`, which refuses
 both negative answers on `32` before a lane opens. A read verb that refused would leave the
 operator repairing a body unable to print it. The body passes through the content gate.
+
+Each item's `evidence` is the criterion's outside-diff evidence source, or `null` where the row
+carries no marker — `null` is the proven absence of one, not "unknown". `text` stays the
+marker-stripped sentence, so a reader that only looks at `text` reads what it always read. On a
+contract with at least one marked row, stderr carries a line counting them and quoting each as
+`  - "<criterion>" — evidence: <source>`. That is the builder's cue: `review post` refuses a `PASS`
+whose body cites no evidence for a marked criterion (exit `19`), so the evidence belongs in the PR
+body the reviewer will read.
 
 **Exit status** (beyond the universal four)
 
@@ -1448,7 +1615,10 @@ versus exit `11`.
 
 ```
 $ fabrika build issue 4
-{"number":4,"title":"Editor loses focus after save","state":"open","labels":["type:bug","p1","status:triaged","ready-for:agent"],"body":"…","criteria":{"state":"found","items":[{"text":"focus stays in the editor after save","checked":false}]}}
+build issue: read #4 in owner/name; acceptance criteria found (2 row(s)).
+build issue: 1 of 2 criteria mark evidence outside the diff — write that evidence into the PR body, because the reviewer's PASS is refused unless it cites the source:
+  - "focus stays in the editor after save" — evidence: hand-verification at localhost:5173
+{"number":4,"title":"Editor loses focus after save","state":"open","labels":["type:bug","p1","status:triaged","ready-for:agent"],"body":"…","criteria":{"state":"found","items":[{"text":"focus stays in the editor after save","checked":false,"evidence":"hand-verification at localhost:5173"},{"text":"a test covers it","checked":false,"evidence":null}]}}
 ```
 
 **Grounding**
@@ -1457,6 +1627,8 @@ $ fabrika build issue 4
   single door and the open trust-posture decision lands in its content gate.
 - The wire module's `Absent` vs `Malformed` split — a drifted heading must never read as "no
   acceptance criteria", which is a gate grading a PR over nothing.
+- The builder is the party that produces outside-diff evidence, so dropping the marker here spent
+  the repair round `review post`'s `19` exists to save.
 
 ---
 
@@ -2915,7 +3087,7 @@ fabrika build verdicts --pr 8 [--repo <owner/name>]
 **Output** — machine. One JSON object:
 
 ```
-{"head": "03135b91", "rows": [
+{"head": "03135b91", "mergeability": "conflicting", "rows": [
    {"gate": "review-code", "polarity": "FAIL", "sha": "03135b91", "current": true,
     "commentId": 512001, "kind": "marker", "body": "review-code: FAIL @ 03135b91 — the debounce fix races the unmount; see inline notes."},
    {"gate": "native-review", "polarity": "CHANGES_REQUESTED", "sha": null, "current": null,
@@ -2934,6 +3106,15 @@ which is what keeps AC 3's one-door property over the repair path. `capReached` 
 `rounds >= <the cap>`, where the cap is the `CAP_ROUND` in `src/retry-budget.ts` — the package's one
 declared retry budget — raised to the round after the highest one the founder cleared through
 `build clear`; it is computed here so the cap is a field read, not a number remembered.)
+
+**`mergeability` is the fold's third value beside the rows: `mergeable`, `conflicting`, or
+`unknown`.** It is read off the same single-PR GET the head comes from — `mergeable` judged against
+`mergeable_state`, exactly as `ship`'s landing verbs judge it — and GitHub computes that field
+lazily, so a `null` read is `unknown` and never `mergeable`. It exists because a PR conflicting
+against its base is repair work no gate emits a FAIL for: the field is what keeps an all-PASS fold
+over a conflicting PR from reading as the proven no-work answer a repair lane routes on. Every value
+gets its own stderr line, and the `conflicting` one names the base ref. Who clears a conflict is not
+this verb's to say — it reports the state and routes nothing.
 
 **Cleared rounds.** `clearances` lists every `cap-cleared` marker on the PR, judged. A row is
 `honoured` only when four clauses hold: its author is in `.fabrika.jsonc`'s `capClearAuthors` set at
@@ -2979,14 +3160,16 @@ repair effort and burned the cap at twice the real rate. `frozenCriteria` lists
 review-appended acceptance-criterion rows dated at or past `CAP_ROUND`.
 
 **`{"rows": [], ...}` on exit 0 is a proven "no verdicts", readable against the scope line's
-comment/review counts. An unreadable page is `11` — never a shorter list.** All content passes
+comment/review counts — a proven answer about the gates, never about the PR's mergeability, which
+is its own field.** An unreadable page is `11` — never a shorter list. All content passes
 the content gate.
 
 **The child arm (`--issue`).** An epic child opens no PR, so the same fold is asked of the
 range-bound comments on the child issue — this is where a lane sent to repair by
 `build claim --resume` reads its findings, through a verb rather than a raw fetch. Each row names the
 `range` it was formed over instead of a `sha`/`current` pair, `kind` is `range-marker`, and there is
-no `head` and no `frozenCriteria`, because neither exists on this surface. A round is one graded
+no `head`, no `mergeability` and no `frozenCriteria`, because none of the three exists on this
+surface — a child opens no PR, so it has nothing to merge and nothing to conflict with. A round is one graded
 **tip** — the range analogue of one graded head, folded through the same counter — so two gates over
 one range are one round. `clearances` is always empty and stderr says why: a grant is recorded
 against a PR's base branch and a child has none, so a child at its cap escalates to the operator
@@ -3011,14 +3194,15 @@ it is named on stderr, never dropped.
 | `build verdicts: give either --pr <n> or --issue <n>, never both and never neither.` | 10 | usage error |
 | `build verdicts: #<n> is a pull request — its verdicts are head-bound; drop --issue and pass --pr.` | 7 | refusal |
 
-**Scope** — one PR: its head, all comments, all reviews. The stderr scope line names the head SHA
-and both counts, so an empty `rows` is auditable as "N comments read, none carried a marker".
+**Scope** — one PR: its head, its mergeability, all comments, all reviews. The stderr scope line
+names the head SHA and both counts, so an empty `rows` is auditable as "N comments read, none
+carried a marker", and the line under it names the mergeability whichever of the three it is.
 
 **Example**
 
 ```
 $ fabrika build verdicts --pr 8
-{"head":"03135b91","rows":[{"gate":"review-code","polarity":"FAIL","sha":"03135b91","current":true,"commentId":512001,"kind":"marker","body":"review-code: FAIL @ 03135b91 — the debounce fix races the unmount; see inline notes."}],"rounds":1,"capReached":false,"frozenCriteria":[]}
+{"head":"03135b91","mergeability":"mergeable","rows":[{"gate":"review-code","polarity":"FAIL","sha":"03135b91","current":true,"commentId":512001,"kind":"marker","body":"review-code: FAIL @ 03135b91 — the debounce fix races the unmount; see inline notes."}],"rounds":1,"capReached":false,"frozenCriteria":[]}
 ```
 
 **Grounding**
@@ -3032,6 +3216,9 @@ $ fabrika build verdicts --pr 8
 - A proven-empty fold and an unreadable fold sit on different codes.
 - A founder-cleared round had no representation either enforcement site could read, so it
   could only land as an edit outside the loop; `clearances` is that representation.
+- A conflicting PR folded as an all-PASS, `rounds: 0` answer while `mergeable` read `CONFLICTING` at
+  the same head, and the lane read that as nothing to do; `mergeability` is the fact the fold was
+  missing.
 
 ---
 

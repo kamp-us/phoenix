@@ -2,9 +2,91 @@
  * Shared lane fixtures: the committed coder and chore templates read verbatim (the golden-fixture
  * idiom), and a two-phase document in the /prd-to-tasks shape small enough for a test to mutate.
  */
+import {Effect} from "effect";
 import type {DriverRouted, ParkCauseSurface, Uncaused} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
+import {answer, type VerbOutcome} from "../verb.ts";
+import {LOCK_DIR_NAME} from "./append-lock.ts";
+import {type ProveOptions, proofLabelOf} from "./prove-verb.ts";
+
+/**
+ * A prover the test drives, standing in for `runProve` — it records what the verb asked it and
+ * answers what the test wants read. `proof: "not-required"` is the shape `lane prove` answers with
+ * at exit 0 for an event that claims no artifact, so the default lets an append through.
+ *
+ * Both appending verbs take their prover as a parameter so their unit tiers stay offline; this is
+ * the one stand-in, shared so the driver's path and the shell's are exercised against one fake.
+ */
+export const fakeProver = (
+	outcome: VerbOutcome = answer(JSON.stringify({proof: "not-required"})),
+	deferred: ReadonlyArray<string> = [],
+	partial: boolean | null = null,
+	landed: ReadonlyArray<number> = [],
+	diagnosis = false,
+	routed: ReadonlyArray<string> = [],
+) => {
+	const asked: ProveOptions[] = [];
+	return {
+		asked,
+		prove: (options: ProveOptions) =>
+			Effect.sync(() => {
+				asked.push(options);
+				// The label is read off the outcome by the prover's own reader, so a fixture cannot
+				// answer a label its stdout does not carry.
+				return {
+					...outcome,
+					deferred,
+					partial,
+					landed,
+					diagnosis,
+					routed,
+					proof: proofLabelOf(outcome),
+				};
+			}),
+	};
+};
+
+/**
+ * A prover that answers per event, for the one caller that asks about two.
+ *
+ * `lane report`'s conditional terminal tries the advanced event and falls through to the parked one,
+ * so a fake that answers the same thing twice cannot express the case the fall-through exists for:
+ * a `PASS` the board refuses beside a park it proves.
+ */
+export const fakeProverByEvent = (
+	answers: Readonly<Record<string, ProofFacts>>,
+	fallback: ProofFacts = {outcome: answer(JSON.stringify({proof: "not-required"}))},
+) => {
+	const asked: ProveOptions[] = [];
+	return {
+		asked,
+		prove: (options: ProveOptions) =>
+			Effect.sync(() => {
+				asked.push(options);
+				const facts = answers[options.event.toUpperCase()] ?? fallback;
+				return {
+					...facts.outcome,
+					deferred: facts.deferred ?? [],
+					partial: facts.partial ?? null,
+					landed: facts.landed ?? [],
+					diagnosis: facts.diagnosis ?? false,
+					routed: facts.routed ?? [],
+					proof: proofLabelOf(facts.outcome),
+				};
+			}),
+	};
+};
+
+/** What {@link fakeProverByEvent} answers for one event — every field but the outcome optional. */
+export interface ProofFacts {
+	readonly outcome: VerbOutcome;
+	readonly deferred?: ReadonlyArray<string>;
+	readonly partial?: boolean | null;
+	readonly landed?: ReadonlyArray<number>;
+	readonly diagnosis?: boolean;
+	readonly routed?: ReadonlyArray<string>;
+}
 
 /** A `parkCause` read at any arm, for a verb test that does not open a config file. */
 export const parkCauseRead = (
@@ -15,6 +97,16 @@ export const parkCauseRead = (
 	value: {uncaused, driverRouted},
 	note: `test fixture: parkCause.uncaused = ${uncaused}, parkCause.driverRouted = ${driverRouted}`,
 });
+
+/**
+ * The paths a verb wrote that are the lane's — what "nothing was written" means for a refusal.
+ *
+ * A verb that reaches its body has taken the append lock, and taking it stamps a holder inside the
+ * sidecar. That write is the lock's own bookkeeping and is gone again when the lock is released, so
+ * counting it would turn every refusal that got as far as the lock into one that wrote something.
+ */
+export const laneWrites = (written: ReadonlyMap<string, string>): ReadonlyArray<string> =>
+	[...written.keys()].filter((path) => !path.includes(`/${LOCK_DIR_NAME}/`));
 
 export const coderTemplateText = (): string =>
 	readGoldenFixture(import.meta.url, "./templates/coder.workflow.json");

@@ -5,6 +5,7 @@ import {issuePayload, NOT_FOUND, served} from "../build/fixtures.test-support.ts
 import {fakeFs, fakeHttp, fakeShell, type HttpReply} from "../fakes.test-support.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
 import {
+	CLASS_UNRECOGNISED,
 	LANE_ABSENT,
 	LANE_EXISTS,
 	LANE_UNREADABLE,
@@ -289,5 +290,51 @@ describe("lane emit — the machinery lap key", () => {
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(fs.written.size).toBe(0);
 		expect(out.stderr.join("\n")).toContain("machineryLaps");
+	});
+});
+
+/**
+ * The class refusal — the child half of the pre-placement guard `lane open` has on its own path.
+ *
+ * It is proven by what is NOT on disk: an off-set spelling placed here compiles `Malformed` on every
+ * later read, so it refuses every fold of the lane rather than this one boot.
+ */
+describe("lane emit — an off-set child class", () => {
+	const labelled = (labels: ReadonlyArray<string>): HttpReply => ({
+		status: 200,
+		body: JSON.stringify([
+			{
+				number: 4301,
+				state: "open",
+				state_reason: null,
+				labels: labels.map((name) => ({name})),
+			},
+			{number: 4302, state: "open", state_reason: null},
+			{number: 4303, state: "open", state_reason: null},
+		]),
+	});
+
+	it("refuses it before placement, names the child, and writes nothing", async () => {
+		const {out, fs} = await run([
+			[ISSUE, epic()],
+			[SUBS, labelled(["class:UI"])],
+		]);
+
+		expect(out.code).toBe(CLASS_UNRECOGNISED);
+		expect(out.stderr.join("\n")).toContain("#4301 class:UI");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("seeds an on-set child's class, and places build:ui without review:ui", async () => {
+		const {out, fs} = await run([
+			[ISSUE, epic()],
+			[SUBS, labelled(["class:ui"])],
+		]);
+
+		expect(out.code).toBe(0);
+		const written = fs.written.get(".fabrika/lanes/4300/workflow.json") ?? "";
+		expect(written).toContain('"classes"');
+		expect(written).toContain("build:ui");
+		expect(written).not.toContain("review:ui");
 	});
 });

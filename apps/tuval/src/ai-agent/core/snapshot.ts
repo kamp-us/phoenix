@@ -154,6 +154,9 @@ const isQueuedPrompt = (value: unknown): boolean =>
 
 const isQueued = (value: unknown): boolean => Array.isArray(value) && value.every(isQueuedPrompt);
 
+const isCutReplies = (value: unknown): boolean =>
+	Array.isArray(value) && value.every((id) => typeof id === "string");
+
 export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionState =>
 	Predicate.isObject(value) &&
 	typeof value.phase === "string" &&
@@ -163,6 +166,7 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	typeof value.cwd === "string" &&
 	isTranscript(value.transcript) &&
 	isNullOrString(value.interrupted) &&
+	isCutReplies(value.cutReplies) &&
 	isInterruption(value.interruption) &&
 	isUsage(value.usage) &&
 	isNullOrString(value.agentVersion) &&

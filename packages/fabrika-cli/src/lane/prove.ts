@@ -32,6 +32,7 @@ import {issueRefsIn} from "../build/commit-message.ts";
 import type {ParentedCommit} from "../io/git.ts";
 import type {PullScope} from "../io/pulls.ts";
 import {type IssueRefs, ROUTED_NAMESPACES} from "../review/classes.ts";
+import {rawKeyIssue} from "./key.ts";
 
 /** The branch grammar's own reader, re-exported so this module's callers take one derivation. */
 export {childLaneBranches} from "../build/lane.ts";
@@ -137,6 +138,12 @@ export type Claim =
  * a machine with no such arm (a `chore` workflow), or a `PASS` whose class flag never raised `ui`
  * and so walks straight to `ship`, defers nothing and stands on the whole derived set.
  *
+ * The deferral says which cell owes a namespace, never that one is owed: the head's own diff
+ * decides that, and `../lane/prove-verb.ts` refuses a routed `PASS` whose head derives nothing for
+ * the cell it routes into rather than spending a rendered round on a text-only fix.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
+ *
  * **A child's `PASS` defers the routed set unconditionally, and `next` decides nothing there.** A
  * child opens no PR and every verb that may post a {@link ROUTED_NAMESPACES} verdict resolves live
  * PR state, so that namespace is unpostable at child scope by construction — the same closed circle
@@ -190,8 +197,7 @@ export const claimOf = (
 export const issueOf = (taskId: string, lane: string): number | null => {
 	const region = /^(?:issue|epic)_(\d+)$/.exec(taskId);
 	if (region?.[1] !== undefined) return Number.parseInt(region[1], 10);
-	const key = lane.trim();
-	return /^\d+$/.test(key) ? Number.parseInt(key, 10) : null;
+	return rawKeyIssue(lane.trim());
 };
 
 /** One local branch, with the commits it adds over its own fork point already read off the tree. */
