@@ -58,6 +58,15 @@ cleared park, spawning a ui builder for a text-only lane.
   classes route it into a cell the head derives nothing for. The refusal names the relay as its
   remedy.
 
+**This narrows ADR [0320](0320-the-review-bar-splits-across-two-cells-and-the-machine-decides.md).** 0320 decides
+that out of `review` a routed namespace is the next cell's, and that "every other `review` `PASS`
+still stands on the whole set". That second sentence now has a refusal beside it: a deferred
+namespace must also be one this head derives, so a ui-stamped lane whose head is text-only no longer
+stands on the whole set and walks into `review:ui` — it refuses at exit `67`. The rest of 0320 is
+untouched: the deferral is still derived from the compiled arm rather than from a constant, and a
+`PASS` out of `review:ui` still stands on the whole derived set. 0320's frontmatter records this
+amendment.
+
 Hand-verification follows the same read. ADR
 [0391](0391-hand-verification-binds-ui-content.md) binds hand-verification to ui-file content, and
 that stays the guard for the other direction: a head with no ui file derives no `review-ui`

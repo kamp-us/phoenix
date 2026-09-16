@@ -45,22 +45,21 @@ are `review-ui`'s modality, its verbs are the only ones that may post that names
 its own refusals (a zero-`--surface` `render`, an evidence-required `post`). So do not judge it and
 do not emit it — and equally, do not read its absence from your verdicts as a gap in yours.
 
-**What a `routed` row costs you is one flag, not a different ending.** Carry the class it names on
-your terminal — `lane report … --class ui` — and the lane's machine takes its guarded arm from
-`review` into `review:ui`, which dispatches the rendered gate with nobody hand-spawning it. Relay
-the class the row printed; never derive one from your own reading of the diff. While no row existed,
-a reviewer read `class code` as the whole bar, PASSed bare, and the merge gate refused on a
-`review-ui` namespace nobody had been told to route — a wasted ship dispatch and a park per PR.
-
-**Relay every `class` row §1 printed, not the routed ones alone** — the head's diff decides what a
-review round owes, and the set you relay *replaces* the one the lane stood on. That is the ruling
-the decision record *The head's diff decides the classes a review round owes* transcribes, and
-`operate`'s driver reads the same rule at the `WIP` end of the lane. A ticket stamped
-`class:ui` at triage keeps that class over every later event until an event names a different set,
-so a reviewer who relays only the routed rows leaves a stale `ui` standing on a text-only head and
-the `PASS` walks into a rendered round the diff cannot fill. `review scope` refuses an empty diff,
-so there is always at least one row to relay. `lane prove` refuses that stale route at exit `67`
-rather than taking it, naming this relay as the remedy.
+**Relay every `class` row §1 printed, not the routed ones alone, and never a set you derived from
+your own reading of the diff.** Carry one flag per row on your terminal — `lane report … --class code
+--class ui` — and the ending is the same one either way. The head's diff decides what a review round
+owes, and the set you relay *replaces* the one the lane stood on. That is the ruling the decision
+record *The head's diff decides the classes a review round owes* transcribes, and `operate`'s driver
+reads the same rule at the `WIP` end of the lane. A relayed `ui` row is also the handoff: the lane's
+machine takes its guarded arm from `review` into `review:ui`, which dispatches the rendered gate with
+nobody hand-spawning it. Both halves of the relay have cost a lane before. While no row existed, a
+reviewer read `class code` as the whole bar, PASSed bare, and the merge gate refused on a `review-ui`
+namespace nobody had been told to route — a wasted ship dispatch and a park per PR. In the other
+direction, a ticket stamped `class:ui` at triage keeps that class over every later event until an
+event names a different set, so a reviewer who relays only the routed rows leaves a stale `ui`
+standing on a text-only head and the `PASS` walks into a rendered round the diff cannot fill; `lane
+prove` refuses that stale route at exit `67` rather than taking it, naming this relay as the remedy.
+`review scope` refuses an empty diff, so there is always at least one row to relay.
 
 **On an epic child that arm does not exist, and the flag still goes on.** A child's region carries
 no `review:ui` cell ([`emit.ts`](../../../../packages/fabrika-cli/src/lane/emit.ts)), so on a child
