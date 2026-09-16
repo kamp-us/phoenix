@@ -3170,7 +3170,10 @@ finding through the one door it already opens, and never off a comment id somebo
 spawn prompt. A row is `{round, commentId, body}`; the array is empty when the freeze turned nothing
 away, and stderr says so either way, because "nothing was escalated" and "this verb does not look"
 are different facts. A finding here is this repair's to fix and no later round's to grade: the
-freeze's whole point is that it entered no contract.
+freeze's whole point is that it entered no contract. **The fold carries no resolved state**: the
+selection is the tag's subject alone, and since no gate grades an escalation nothing ever retires
+one, so a finding an earlier round repaired is folded again identically. Judging a row against the
+tree is the reader's, which is why `build`'s Repair section instructs it.
 
 **`{"rows": [], ...}` on exit 0 is a proven "no verdicts", readable against the scope line's
 comment/review counts — a proven answer about the gates, never about the PR's mergeability, which

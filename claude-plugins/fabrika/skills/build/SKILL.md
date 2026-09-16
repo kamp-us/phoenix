@@ -591,6 +591,14 @@ fold carries each one's full text, so fix them exactly as you fix a FAIL row's �
 looking for them in the criteria, where they will never be. The freeze is deliberate: a finding here
 enters no contract and no later round grades it, so nothing here widens the spec.
 
+**The fold has no resolved state, so on any round after the first, read each escalation against the
+tree before you treat it as unfixed.** A row is selected by its tag naming this PR, and nothing
+marks it repaired — no gate grades it, so no PASS ever retires it — which means an escalation an
+earlier cleared round already fixed comes back in this round's fold reading exactly like a new one.
+Check the code before you change it: where the fix is already in, say so in your `build note`
+naming the round that landed it, and leave the tree alone. Re-fixing a settled finding is how a
+repair round spends its budget undoing work the PR already carries.
+
 **Read the fold's `mergeability` beside its rows, because no gate emits a FAIL for a conflict.**
 `conflicting` says the PR cannot merge into its base, and that is real repair work an all-PASS fold
 would otherwise let you read as nothing to do — so a fold with no rows is not a no-work answer over
@@ -667,7 +675,7 @@ naming each one addressed, then release with `fabrika build release <repair-pr> 
 `--drop-remote-commits`, which is for a rewrite you actually intend. The fold's `frozenCriteria`
 rows are the review-appended criteria past the freeze — note them, do not chase them. Its
 `escalatedFindings` rows are the opposite call: they never became criteria, and they are this
-round's work.
+round's work — each one you verify is still unfixed, because nothing retires a row from that fold.
 
 **When the whole fix is the PR body, the route is `fabrika build pr-body <pr>` and nothing else.**
 The recurring one is a FAIL reading `deviations malformed`: the head does not need to move, so a
