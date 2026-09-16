@@ -5,9 +5,9 @@
  * {@link readLocalFileSet} is the local three-dot read behind `review scope`, `governance scope`,
  * `governance guards` and `governance sweep`. {@link platformFileSet} is the same report for a
  * caller whose enumeration is GitHub's own `pulls/<n>/files` list: `ship scope`, `ship cp-approval`,
- * `ship gate`, `ship floor`, `ship release` and `heal-ci diagnose`. Two readers, one result type and
- * one place the two wordings live, so no caller hand-writes a third sentence about the same
- * disagreement.
+ * `ship gate`, `ship floor`, `ship release`, `heal-ci diagnose` and `review-ui route`. Two readers,
+ * one result type and one place the two wordings live, so no caller hand-writes a third sentence
+ * about the same disagreement.
  *
  * **The enumeration IS the file set, and GitHub's `changed_files` is a second opinion reported beside
  * it.** The two counts disagree for reasons that have nothing to do with a truncated read: git pairs
@@ -29,9 +29,11 @@
  * The first ruling named the two governance verbs. The second carried the identical retirement to
  * the three verbs on the enqueue and unstick paths, where the strand had moved rather than closed:
  * `ship gate`, `ship floor` and `heal-ci diagnose`, plus `governance sweep`'s fourth copy of the
- * same arm. Its third application reached the last three copies: `ship scope`, the first verb a
- * `ship` run makes, `ship cp-approval`, which gates the §CP discharge, and `ship release`, off the
- * merge path — so no verb in this package refuses on the declared count any more.
+ * same arm. Its third application reached the last three copies the `ship` group held: `ship scope`,
+ * the first verb a `ship` run makes, `ship cp-approval`, which gates the §CP discharge, and
+ * `ship release`, off the merge path. The sweep behind that one declared the job finished while
+ * `review-ui route` still carried the arm, and a fourth application retired that copy too — so no
+ * verb in this package refuses on the declared count any more.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9144#issuecomment-5687540528
  * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
@@ -97,12 +99,14 @@ export const platformDisagreementLine = (
 /**
  * The file set of a caller that enumerates through `pulls/<n>/files` rather than a git range.
  *
- * Every `ship` verb that enumerates changed files reads that list, as does `heal-ci diagnose`, and
- * each has a reason not to bind a head: the `ship` verbs are the merge authority and the CI job
- * relaying it, and `ship gate`'s
- * common path is asserted to touch git not at all — a merge gate that needs a fetch to answer is a
- * merge gate a checkout-less caller cannot run. `heal-ci sweep` loops this chain over every open PR
- * and ends the board on one refusal, so a fetch per PR would trade this strand for a heavier one.
+ * Every `ship` verb that enumerates changed files reads that list, as do `heal-ci diagnose` and
+ * `review-ui route`, and each has a reason not to bind a head: the `ship` verbs are the merge
+ * authority and the CI job relaying it, and `ship gate`'s common path is asserted to touch git not
+ * at all — a merge gate that needs a fetch to answer is a merge gate a checkout-less caller cannot
+ * run. `heal-ci sweep` loops this chain over every open PR and ends the board on one refusal, so a
+ * fetch per PR would trade this strand for a heavier one. `review-ui route` runs from wherever the
+ * reviewer posts from and has already refused unless the live head is the `--sha` its record binds,
+ * so the platform's list enumerates the tree it attests without fetching it.
  *
  * `listPullFiles` already proves its own pagination exhausted, so what is left to compare is the
  * enumeration against the pull-request record's `changed_files` — one platform read against another,
@@ -113,7 +117,8 @@ export const platformDisagreementLine = (
  * files and ends its Link chain normally there, so a truncated list reads as a complete one. It is
  * the one real truncation the retired count comparison used to catch by accident, and `capped` is
  * what catches it on purpose — each caller refuses on it, because a floor or a diagnosis derived
- * from a list the platform cut short is derived over scope nobody read.
+ * from a list the platform cut short — or a ui class, which such a list can only shrink — is derived
+ * over scope nobody read.
  */
 export const platformFileSet = <A>(
 	verb: string,

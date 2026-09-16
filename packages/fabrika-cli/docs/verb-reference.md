@@ -382,23 +382,26 @@ Four behaviours are worth knowing:
 - **The enumerated file set is the file set, and GitHub's `changed_files` never refuses one.**
   `review scope`, `governance scope`, `governance guards` and `governance sweep` take the set from
   `readLocalFileSet`'s local three-dot read; `ship scope`, `ship cp-approval`, `ship gate`,
-  `ship floor`, `ship release` and `heal-ci diagnose` take it from `platformFileSet` over
-  `pulls/<n>/files`, which is the same report for callers that must run
-  without a fetch — the merge gate's common path reads no git at all, and `heal-ci sweep` loops its
-  chain over every open PR. Either way a count disagreement prints as a line. GitHub computes
+  `ship floor`, `ship release`, `heal-ci diagnose` and `review-ui route` take it from
+  `platformFileSet` over `pulls/<n>/files`, which is the same report for callers that must run
+  without a fetch — the merge gate's common path reads no git at all, `heal-ci sweep` loops its
+  chain over every open PR, and `review-ui route` has already refused unless the live head is the
+  `--sha` its record binds. Either way a count disagreement prints as a line. GitHub computes
   `changed_files` against a base it cached at the last push, and nothing a caller can do invalidates
   the cache, so refusing on it stranded review rounds and then merges with no route out
   ([#9144](https://github.com/kamp-us/phoenix/issues/9144#issuecomment-5687540528),
   [#9322](https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377)). No verb refuses
   on that count any longer. What still
-  refuses is an **empty** read — `13` in `review scope`, `7` in the other nine — because a derivation
+  refuses is an **empty** read — `13` in `review scope`, `7` in the other ten — because a derivation
   over no files prints as a clean answer otherwise. So does a read short of a second enumeration of
   the *same range*, where a verb has one to compare: `governance scope`'s range mode, and
   `governance guards`' diff body against its status list. That is git against git; GitHub's count is
-  not. The six `platformFileSet` callers refuse on one more fact of their own: a list arriving at
-  the endpoint's 3000-file ceiling (`PULL_FILES_CAP`) is `13`, because GitHub stops serving files
-  there and ends the Link chain as a complete read ends, so the pagination proof passes over a list
-  it already cut short.
+  not. The seven `platformFileSet` callers refuse on one more fact of their own: a list arriving at
+  the endpoint's 3000-file ceiling (`PULL_FILES_CAP`) is `13` in the six under `ship` and `heal-ci`,
+  because GitHub stops serving files there and ends the Link chain as a complete read ends, so the
+  pagination proof passes over a list it already cut short. In `review-ui route` that seat is `11`:
+  the `review-ui` table spends `13` on `RENDER_CRASHED`, and the verb already answers `11` for its
+  other capped platform read, the `--verified-at` comparison.
 
 ## The `graduate` group
 
@@ -1082,7 +1085,7 @@ Judge a UI pull request over its preview deployment. Contract:
 | `review-ui render` | the named surfaces captured from a PR's preview deployment — a route, or a route plus a realized tier state (`/pano:auth` renders as the yazar test account, `/pano:auth-caylak` as the çaylak one), refusing on `11` unless the preview's own session read proves the shot came back signed in *and* at the tier the surface named. `--auth-secret-from <file>` names where the tier cookie's signing key comes from — the `BETTER_AUTH_SECRET` the preview worker deploys with, which is one repo-wide value rather than a per-stage one and is exported from the ci-credentials stack's alchemy state, its one readable copy; omitted, the ambient `$BETTER_AUTH_SECRET` stands in and is refused on `11` when it is empty or carries the `insecure_` placeholder, because a cookie signed with that is one the worker answers as a visitor. `--flag <key>=<on\|off>` forces a dark-shipped flag for the run, refusing on `10` unless every surface names a tier state and on `11` unless the preview's own evaluation says the key took. `--viewport <name>` picks the widths, over the closed set `desktop` (1280×800) and `mobile` (390×844), crossed with `--surface` and defaulting to `desktop` alone; a name outside the set or repeated is `10`, and a shot whose PNG width reads back as another width is `19` |
 | `review-ui post` | the `review-ui` verdict on stdin, appended into this namespace's one comment |
 | `review-ui note` | a typed blocker note when the surfaces cannot be seen |
-| `review-ui route` | a head-bound `routed-elsewhere` record: this PR renders nothing, so no verdict is owed. `--verified-at <head>` names the head a hand-verification standing in for the render ran at, and the route is refused on `12` when any file in the range to `--sha` raises the `ui` class — the evidence is spent — or on `11` when the range went unread — the comparison came back at GitHub's 300-file ceiling, or between two heads that have diverged, where the platform answers from their merge base instead. The `review-code` verdict in force at `--sha` is read too: a standing FAIL refuses on `20`, as does an absent verdict on a `--verified-at` route, because the record's clause asserts that PASS |
+| `review-ui route` | a head-bound `routed-elsewhere` record: this PR renders nothing, so no verdict is owed. The `ui` class is derived over the `pulls/<n>/files` enumeration through `platformFileSet`, so the declared `changed_files` prints as a disagreement line; an empty list refuses on `7` and one at the 3000-file ceiling on `11`, because neither leaves a `ui` count anybody read. `--verified-at <head>` names the head a hand-verification standing in for the render ran at, and the route is refused on `12` when any file in the range to `--sha` raises the `ui` class — the evidence is spent — or on `11` when the range went unread — the comparison came back at GitHub's 300-file ceiling, or between two heads that have diverged, where the platform answers from their merge base instead. The `review-code` verdict in force at `--sha` is read too: a standing FAIL refuses on `20`, as does an absent verdict on a `--verified-at` route, because the record's clause asserts that PASS |
 
 **Exit codes.** The shared table (with `4` a required file that does not parse or violates its
 schema), plus `12` the artifact is not the PR's current tree · `13` a surface threw an uncaught

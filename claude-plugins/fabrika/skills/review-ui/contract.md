@@ -799,9 +799,14 @@ any push voids it: a gate that owes no verdict still has to record that it owes 
 **The mechanism, in order.** Validate `--sha` and `--clause` (`10`). Read stdin (`3` on empty) —
 an unexplained route is an assertion nobody can check. Resolve the PR, open and non-empty
 (`7`/`11`). Refuse if the live head has moved past `--sha` (`12`): the record binds the tree whose
-diff was read, and is re-read rather than re-bound. Read the changed-file list; a truncated read is
-`11`, never a derivation, because truncation can only shrink the `ui` count and would refuse a PR
-the gate is meanwhile blocking. Refuse a diff that raises no `ui` class (`7`) — nothing required
+diff was read, and is re-read rather than re-bound. Read the changed-file list through
+`review/local-file-set.ts`'s `platformFileSet`: the enumeration is the file set, and the
+`changed_files` the pull-request record declares prints as a disagreement line rather than refusing,
+because that count is computed against a base cached at the last push and no caller can invalidate
+it. An **empty** list is `7` — the `ui` count would then be derived over a diff nobody read — and a
+list at GitHub's 3000-file ceiling is `11`, because that is the one truncation the enumeration
+cannot rule out on its own and it can only ever shrink the `ui` count. Refuse a diff that raises no
+`ui` class (`7`) — nothing required
 this namespace, so there is nothing to route; the predicate is `review/classes.ts`'s own
 `isUiSurface`, over the same declared `uiSurfaces` prefixes the gate raised the class from, never a
 second copy. Read the PR's comments and resolve the `review-code` verdict in force at `--sha`; a
@@ -859,11 +864,11 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `3` | stdin was read and held nothing |
 | `5` | the assembled comment carries a machine-local path |
 | `6` | the body is a bare `@` path reference |
-| `7` | the PR is proven absent (404), closed, has zero changed files, or its diff raises no `ui` class |
+| `7` | the PR is proven absent (404), closed, has zero changed files, is served an empty changed-file list, or its diff raises no `ui` class |
 | `8` | the create/edit failed — UNKNOWN whether the record landed |
 | `9` | the record landed but does not read back as sent |
 | `10` | `--sha` or `--verified-at` is not a head SHA, or `--clause` is blank |
-| `11` | a precondition read failed, the changed-file list came back truncated, or the `--verified-at` comparison came back at the 300-file ceiling or between two diverged heads — nothing was posted |
+| `11` | a precondition read failed, the changed-file list came back at GitHub's 3000-file ceiling, or the `--verified-at` comparison came back at the 300-file ceiling or between two diverged heads — nothing was posted |
 | `12` | the live head moved past `--sha` — the diff you read is gone; or a `ui`-class file changed between `--verified-at` and `--sha`, so the hand-verification is spent |
 | `20` | the `review-code` verdict in force at `--sha` is a FAIL, or a route resting on `--verified-at` has no `review-code` verdict binding that head |
 
@@ -876,13 +881,14 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `review-ui route: the body is a bare "@" path reference — the body never arrived. Send its bytes on stdin.` | 6 | refusal |
 | `review-ui route: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review-ui route: PR #<n> is closed — a route on a closed PR resolves nothing.` | 7 | refusal |
+| `review-ui route: GitHub served no changed files for #<n> against the <m> its own pull-request record declares — refusing to derive the ui class from a diff nobody read.` | 7 | refusal |
 | `review-ui route: #<n>'s diff raises no ui class, so ship gate requires no review-ui namespace — there is nothing to route.` | 7 | refusal |
 | `review-ui route: create/edit failed: <reason> — UNKNOWN whether the route landed; re-read the PR before retrying.` | 8 | refusal |
 | `review-ui route: posted, but the read-back does not yield this record (<why>) — inspect comment <id>.` | 9 | refusal |
 | `review-ui route: --sha "<value>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
 | `review-ui route: --clause is blank — a route with no stated reason records nothing a reader can check.` | 10 | refusal |
 | `review-ui route: --verified-at "<value>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
-| `review-ui route: received <m> of <n> changed files — refusing to derive the ui class from a truncated read.` | 11 | refusal |
+| `review-ui route: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a ui-class file could sit in the part the platform never served.` | 11 | refusal |
 | `review-ui route: the comparison over <verified>..<sha> came back at GitHub's 300-file ceiling — refusing to clear the hand-verification against a capped read.` | 11 | refusal |
 | `review-ui route: <verified> is <status> of <sha>, not an ancestor — the comparison answers from their merge base, so <verified>..<sha> was never read. Re-run the hand-verification at <sha>.` | 11 | refusal |
 | `review-ui route: cannot read <what> for #<n>: <reason> — nothing was posted.` | 11 | refusal |

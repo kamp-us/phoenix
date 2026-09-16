@@ -5,7 +5,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
-import {COMPARE_FILE_CAP} from "../io/pulls.ts";
+import {COMPARE_FILE_CAP, PULL_FILES_CAP} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {emitAdvisory, reviewedHeadLine} from "../review/advisory.ts";
 import {
@@ -164,13 +164,32 @@ describe("review-ui route", () => {
 		expect(outcome.stderr.join("\n")).toContain("raises no ui class");
 	});
 
-	it("refuses on 11 rather than deriving the class from a truncated file list", async () => {
+	// The record's count is computed against a base cached at the last push, so a shortfall against it
+	// is the platform disagreeing with itself. Reported, and the route lands.
+	it("reports the declared-count disagreement and routes anyway", async () => {
+		const {outcome} = await run([[PULL, pull({changed: 400})], ...happy().slice(1)]);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stderr.join("\n")).toContain("against the 400 its own pull-request record");
+	});
+
+	it("refuses on 7 when GitHub serves an empty changed-file list", async () => {
 		const {outcome} = await run([
-			[PULL, pull({changed: 400})],
-			[FILES, PROSE_UI],
+			[PULL, pull({changed: 2})],
+			[FILES, files()],
+		]);
+		expect(outcome.code).toBe(ZERO_SCOPE);
+		expect(outcome.stderr.join("\n")).toContain("served no changed files");
+	});
+
+	// The ceiling is the one truncation the enumeration cannot rule out on its own, and it can only
+	// ever shrink the ui count — so the zero-class refusal would fire on a PR the gate is raising.
+	it("refuses on 11 when the file list arrives at the platform's ceiling", async () => {
+		const {outcome} = await run([
+			[PULL, pull({changed: PULL_FILES_CAP})],
+			[FILES, files(...Array.from({length: PULL_FILES_CAP}, (_, i) => `packages/x/f${i}.ts`))],
 		]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
-		expect(outcome.stderr.join("\n")).toContain("truncated read");
+		expect(outcome.stderr.join("\n")).toContain(`${PULL_FILES_CAP}-file ceiling`);
 	});
 
 	it("refuses on 12 when the live head moved past --sha", async () => {
