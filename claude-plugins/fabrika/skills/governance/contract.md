@@ -1023,13 +1023,15 @@ passed), `in-flight` (the run had not completed, so it may still judge state old
 `unknown` (the state could not be read or the re-fire could not be proven — never read as
 a pass).
 
-**`no-run`'s line says which of two facts it is, and it never says "not installed".** The tag is one
-token and the head's own run count is what tells the two apart: a head carrying other runs and no
-floor one is a floor that did not fire for this head, while a head carrying **no run at all** is a
-list that proves nothing about the floor — the same answer the platform gives while it has not
-indexed that head's runs yet, and the line says so rather than offering an absent workflow. One
-message covering both cost a reader a whole hypothesis about the re-fire keying: the floor had run
-at that head minutes before, and the line said it was not installed.
+**`no-run`'s line states the read and offers no cause.** The tag is one token, and what the verb
+observed is that this head's run list carried no `governance-floor` entry — never why. The head's own
+run count rides the line because it says how much was read: a head carrying other runs narrows the
+empty filter to that one list, and a head carrying **no run at all** narrows nothing, since that is
+also the answer the platform gives while it has not indexed the head's runs yet. Both arms end by
+sending the reader back to re-read rather than treating the floor as absent. Concluding a cause here
+has been wrong twice over: the line once offered "not installed" over a repository whose floor had
+run at that head minutes before, and the head that incident was filed from listed 31 runs, so
+"the floor did not fire for this head" would have been false there too.
 
 **No advisory carrier.** `review post` takes `--carrier advisory` for §CP PRs, where a human approval
 is the gate. This verb has no such mode: §CP is not this namespace's question, the governance verdict

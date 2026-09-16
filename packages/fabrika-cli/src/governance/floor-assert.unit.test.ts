@@ -248,13 +248,15 @@ describe("floorLine says what the caller must do next", () => {
 		expect(floorLine("governance post", {_tag: "InFlight", run: FLOOR})).toContain("re-read");
 	});
 
-	// The one message covered both NoRun cases and offered "not installed in this repository" over a
-	// repository whose floor had run at that head minutes earlier, which is what sent a reader past
-	// `needsRefire` and into a hypothesis the source never held.
-	it("never claims the floor is uninstalled over a head that carries runs", () => {
+	// The head this ticket was filed from listed 31 runs while its floor run existed, so any line
+	// concluding a cause over a run-carrying head is false there. The count narrows the read; it
+	// never explains it.
+	it("states the empty filter over a head that carries runs, and concludes no cause", () => {
 		const line = floorLine("governance post", {_tag: "NoRun", runsAtHead: 30});
 		expect(line).toContain("30 run(s)");
-		expect(line).toContain("did not fire for this head");
+		expect(line).toContain("unproven");
+		expect(line).toContain("re-read");
+		expect(line).not.toContain("did not fire");
 		expect(line).not.toContain("not installed");
 		expect(floorToken({_tag: "NoRun", runsAtHead: 30})).toBe("no-run");
 	});

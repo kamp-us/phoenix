@@ -82,11 +82,13 @@ export type FloorAssertion =
 	 * No `governance-floor` run among the runs listed at this head.
 	 *
 	 * `runsAtHead` is how many runs of any name that list held, and it is carried because the tag
-	 * alone cannot say which of two different facts it is. A head carrying other runs and no floor
-	 * one is a floor that did not fire for this head; a head carrying **none** is a list that
-	 * proves nothing about the floor at all — the same answer GitHub returns while it has not yet
-	 * indexed a head's runs. The message that used to offer "the floor is not installed in this
-	 * repository" over both sent one reader down a hypothesis about the re-fire keying, which
+	 * alone cannot say how much the read saw. A head carrying other runs narrows the empty filter to
+	 * this one list; a head carrying **none** narrows nothing at all — that is the same answer GitHub
+	 * returns while it has not yet indexed a head's runs. Neither count says *why* the filter came
+	 * back empty, and the line must not either: at the head this ticket was filed from the list
+	 * answered 31 runs while the floor run existed, so a message concluding the floor never fired
+	 * would be false in exactly that case. The message that used to offer "the floor is not installed
+	 * in this repository" sent one reader down a hypothesis about the re-fire keying, which
 	 * `needsRefire` had never had.
 	 */
 	| {readonly _tag: "NoRun"; readonly runsAtHead: number}
@@ -198,7 +200,7 @@ export const floorLine = (verb: string, assertion: FloorAssertion): string => {
 		case "NoRun":
 			return assertion.runsAtHead === 0
 				? `${verb}: this head lists no workflow run at all, so whether ${FLOOR_WORKFLOW_NAME} ran here is unproven — re-read the head's runs before treating the floor as absent.`
-				: `${verb}: the ${assertion.runsAtHead} run(s) listed at this head carry no ${FLOOR_WORKFLOW_NAME} one — the floor did not fire for this head.`;
+				: `${verb}: the ${assertion.runsAtHead} run(s) listed at this head carry no ${FLOOR_WORKFLOW_NAME} one — that filtered answer is the only fact this read holds, and why it is empty is unproven; re-read the head's runs before treating the floor as absent.`;
 		case "Green":
 			return `${verb}: ${FLOOR_WORKFLOW_NAME} run ${assertion.run} already reads green at this head — nothing to re-fire.`;
 		case "InFlight":

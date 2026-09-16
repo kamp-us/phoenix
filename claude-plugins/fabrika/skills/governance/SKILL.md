@@ -223,9 +223,9 @@ itself, so the green is the job's own. What it re-fires on is the `governance fl
 check-run's state rather than the job's conclusion: the job succeeds whenever it
 *published* an answer, and a pending check-run beside a green job is exactly the "no verdict yet"
 state your post just cleared. Its last stderr line says which of `refired` / `restarting` / `green` /
-`in-flight` / `no-run` / `unknown` happened. A `no-run` line also says whether the head listed any
-runs at all: over a head carrying runs the floor simply did not fire for it, and over a head
-carrying none nothing about the floor is proven — re-read before acting on either.
+`in-flight` / `no-run` / `unknown` happened. A `no-run` line says the head's run list carried no
+floor run and how many runs it did carry, and it names no cause for that — re-read the head's runs
+before treating the floor as absent.
 
 **Done when** `post` prints `posted`, its read-back conformed, and you have read the floor line — an
 `in-flight` or `unknown` floor means the check may still red at this head, and clearing it is
