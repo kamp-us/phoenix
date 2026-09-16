@@ -35,7 +35,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {governedRootsOr} from "../config/paths.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {listPullFiles, permissionFor} from "../io/pulls.ts";
-import {readAdvisory} from "../review/advisory.ts";
+import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
 import {SHIP_NAMESPACES, touchesGovernanceRoot} from "../review/classes.ts";
 import {headContentFor} from "../review/head-content.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -146,9 +146,9 @@ const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
 		? null
 		: {
 				namespace: advisory.namespace,
-				// The advisory carrier is PASS-only. A `[FAIL]` row inside one is an invalid
-				// emission, caught below and reported — never read as a pass.
-				polarity: /\[FAIL\]/.test(comment.body) ? "FAIL" : "PASS",
+				// An invalid `[FAIL]` emission inside an advisory is caught below and reported —
+				// never read as a pass. The predicate is the carrier's own, shared by every reader.
+				polarity: advisoryPolarity(comment.body),
 				sha: advisory.sha,
 				// The §CP advisory withholds a content binding by design: the human-approval half of the
 				// binding question is answered where head-binding is ruled, not here. So an advisory

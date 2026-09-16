@@ -8,9 +8,16 @@
  *
  * **The reader is `review verdicts`'s, never a second one.** A claim is the `verdict-marker` first
  * line or the §CP advisory carrier, exactly the two carriers that sweep resolves; the in-force
- * ordering is `ship gate`'s own {@link inForce}, and currency is {@link bindToContent}'s. Three
- * copies of one rule is how a marker reads current to one gate and stale to the next — the failure
- * the hand-verification's own currency check was mechanized to stop.
+ * ordering is `ship gate`'s own {@link inForce}, currency is {@link bindToContent}'s, and the
+ * advisory's polarity is {@link advisoryPolarity}'s. Three copies of one rule is how a marker reads
+ * current to one gate and stale to the next — the failure the hand-verification's own currency check
+ * was mechanized to stop, and the polarity predicate reached it first: held in triplicate, a
+ * `[FAIL]` row inside an advisory cleared this route while `ship gate` refused on the same comment.
+ *
+ * The advisory is admitted here whatever the lane's control-plane state, which is `lane prove`'s
+ * rule rather than `ship gate`'s — that one reads the carrier only under `--cp`, gating on an
+ * approval this verb does not judge. Reading it unconditionally can only make the route stricter,
+ * since an advisory the §CP fence would have excluded is still a text claim about this head.
  *
  * What is **not** read here is the host's native review fold. `ship gate` folds an `APPROVED` or
  * `CHANGES_REQUESTED` review into `review-code` because it is the merge authority; this verb only
@@ -22,7 +29,7 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/9196#issuecomment-5688739893
  */
 import type {CommentRecord} from "../io/issues.ts";
-import {readAdvisory} from "../review/advisory.ts";
+import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
 import {inForce} from "../ship/gate-verb.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
 
@@ -68,8 +75,9 @@ export const textClaims = (comments: ReadonlyArray<CommentRecord>): ReadonlyArra
 		if (advisory === null || advisory.namespace !== TEXT_NAMESPACE) continue;
 		claims.push({
 			namespace: advisory.namespace,
-			// The advisory carrier is PASS-only; `review post` refuses a FAIL through it on `10`.
-			polarity: "PASS",
+			// The carrier's own predicate, the one `ship gate` and `lane prove` read: a `[FAIL]`
+			// row inside an advisory is an invalid emission, never the PASS this route rests on.
+			polarity: advisoryPolarity(comment.body),
 			sha: advisory.sha,
 			// It withholds a content binding by design, so it stays head-bound.
 			content: null,

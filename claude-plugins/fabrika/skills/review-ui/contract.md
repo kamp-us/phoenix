@@ -815,8 +815,11 @@ over a standing text FAIL and one over a PASS read identically — and the `rout
 carries no polarity for a later reader to tell them apart. The text PASS is a precondition, not
 commentary, and the verb reads it: it resolves the `review-code` verdict in force at `--sha` through
 `review verdicts`' own two carriers — the `verdict-marker` first line and the §CP advisory — ordered
-by `ship gate`'s `inForce` and judged current by the same `bindToContent`, so no two readers hold
-different rules. A standing FAIL refuses on `20`. An **absent** verdict refuses on `20` only where
+by `ship gate`'s `inForce`, judged current by the same `bindToContent`, and given the advisory's
+polarity by the one `advisoryPolarity` its sibling readers call, so no two readers hold different
+rules. That last one was a copy before it was shared, and the copy diverged: a `[FAIL]` row inside an
+advisory is an invalid emission, and it cleared this route while `ship gate` refused on the same
+comment. A standing FAIL refuses on `20`. An **absent** verdict refuses on `20` only where
 `--verified-at` is passed: that route asserts the conjunction, while a prose-only route asserts
 nothing about the text lane and says so on stderr instead of blocking. The host's native review fold
 is `ship gate`'s widening and is not read here — the merge gate still reads it, and this verb only

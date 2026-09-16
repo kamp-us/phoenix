@@ -382,6 +382,24 @@ describe("review-ui route", () => {
 			expect(outcome.code).toBe(0);
 			expect(JSON.parse(outcome.stdout)).toMatchObject({textReview: "pass"});
 		});
+
+		// `ship gate` and `lane prove` both read a `[FAIL]` row inside an advisory as a fail; a third
+		// reader that read it as a pass is how one comment cleared this route and refused at the gate.
+		it("reads a [FAIL] row inside an advisory as the FAIL its sibling readers read", async () => {
+			const {outcome, requests} = await run(
+				onHandVerification({
+					id: 4003,
+					user: {login: "owner"},
+					created_at: "2026-09-14T00:00:00Z",
+					updated_at: "2026-09-14T00:00:00Z",
+					body: `${emitAdvisory("review-code", "merge-ready")}\n${reviewedHeadLine(HEAD)}\n\n- [FAIL] review-code\n`,
+				}),
+				{verifiedAt: VERIFIED},
+			);
+			expect(outcome.code).toBe(TEXT_REVIEW_UNMET);
+			expect(outcome.stderr.join("\n")).toContain("review-code stands FAIL");
+			expect(requests.some((request) => CREATE.test(request) || PATCH.test(request))).toBe(false);
+		});
 	});
 
 	it("refuses on 9 when the read-back is not the record that was sent", async () => {
