@@ -17,6 +17,16 @@
  * this verb reads the target's live labels and refuses on {@link CRITERIA_REQUIRED} rather than
  * leaving the stamp standing over no contract, the same seat `triage apply` and `decision rule`
  * refuse the audience on.
+ *
+ * **This is where the outside-diff evidence marker is written.** A criterion the diff's bytes cannot
+ * settle either way carries a trailing `[evidence: <source>]`, and the choice belongs at mint time:
+ * the author knows the proof is a hand-verification or a pre-fix artifact, and the grader reading it
+ * back months later cannot infer that from the sentence. The grammar is the wire format's, so a
+ * drifted keyword or a marker naming no source refuses on {@link MALFORMED_CRITERIA} beside every
+ * other block defect, and the marked rows are counted on stderr so the write is visible to whoever
+ * ran it.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9200
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -165,6 +175,18 @@ export const runEnrich = (
 				MALFORMED_CRITERIA,
 				`triage enrich: ${surface.noun} composes an acceptance-criteria block the wire reader rejects — ${criteria.reason} (${criteria.evidence}). The grammar is owned by packages/fabrika-cli/src/wire/acceptance-criteria.ts; fix the block or drop it.`,
 			);
+		}
+
+		if (criteria._tag === "Found") {
+			const markedRows = criteria.value.filter((criterion) => criterion.evidence !== null);
+			if (markedRows.length > 0) {
+				diagnostics.push(
+					`triage enrich: ${markedRows.length} of ${criteria.value.length} criteria in ${surface.noun} mark evidence outside the diff — review grades each on the evidence it names, never on the diff alone:`,
+					...markedRows.map(
+						(criterion) => `  - "${criterion.text}" — evidence: ${criterion.evidence}`,
+					),
+				);
+			}
 		}
 
 		// `Absent` is allowed above because an issue with no criteria block is a fact. It stops

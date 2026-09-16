@@ -214,6 +214,17 @@ child from the plan ledger. The stdin
 grammar, the epic pitch's five fields and every exit the verb refuses on live in its section
 (`fabrika wire doc-section --heading "triage enrich" < <skill-base>/contract.md`).
 
+**Mark a criterion the diff cannot settle, here, where you mint it.** Some criteria are only
+checkable outside the diff's bytes — a desk verified by hand, a checkpoint written *before* the fix,
+a runtime observation — and a grader reading the sentence later cannot tell one of those from a
+criterion that was simply never met. So say it on the row: a trailing `[evidence: <source>]` naming
+where the proof lives, and `review` grades that row on the evidence it names rather than FAILing it
+for byte-absence. `enrich` counts the marked rows on stderr and refuses a drifted keyword or a
+marker naming no source on `15`, like any other block defect. **Mark sparingly**: a criterion a test
+could discharge is not one of these, and marking it moves a mechanical check onto a reviewer's word.
+The name, the grammar and what makes a usable source live in the verb's contract section
+(`fabrika wire doc-section --heading "The outside-diff evidence marker" < <skill-base>/contract.md`).
+
 **An ordering you state must already be an edge.** The native `blocked_by` graph is the one carrier
 of "do not start this yet", so a rewrite saying "Blocked. Do not start until #N" over a graph with
 no such edge ships an issue `build pick` admits and no lane can build — one such rewrite cost a

@@ -12,19 +12,26 @@ import {
 	type AcceptanceCriterion,
 	criterionText,
 	emit,
+	evidenceSource,
 	HEADING_TEXT,
 	parseFields,
 	read,
 	renderCriteria,
+	splitEvidence,
+	withoutEvidenceMarker,
 } from "./acceptance-criteria.ts";
 
 const body = (...lines: ReadonlyArray<string>): string => lines.join("\n");
 
-/** A criterion, through the smart constructor the brand leaves as the only way in. */
-const criterion = (text: string, checked: boolean): AcceptanceCriterion => {
+/** A criterion, through the smart constructors the brands leave as the only way in. */
+const criterion = (text: string, checked: boolean, evidence?: string): AcceptanceCriterion => {
 	const value = criterionText(text);
 	if (value === null) throw new Error(`"${text}" is not criterion text`);
-	return {text: value, checked};
+	const source = evidence === undefined ? null : evidenceSource(evidence);
+	if (evidence !== undefined && source === null) {
+		throw new Error(`"${evidence}" is not an evidence source`);
+	}
+	return {text: value, checked, evidence: source};
 };
 
 const found = (source: string): ReadonlyArray<AcceptanceCriterion> => {
@@ -510,5 +517,127 @@ describe("renderCriteria", () => {
 			"open\ta",
 			"checked\tb",
 		]);
+	});
+});
+
+describe("the outside-diff evidence marker", () => {
+	it("parses a marked criterion into text and source, and leaves the sentence clean", () => {
+		expect(
+			found(
+				body(
+					`### ${HEADING_TEXT}`,
+					"",
+					"- [ ] a desk checkpointed under the old shape comes back whole [evidence: the hand-verification in the PR body]",
+					"- [ ] the reader paints on first mount",
+				),
+			),
+		).toEqual([
+			criterion(
+				"a desk checkpointed under the old shape comes back whole",
+				false,
+				"the hand-verification in the PR body",
+			),
+			criterion("the reader paints on first mount", false),
+		]);
+	});
+
+	it("finds the marker on a criterion that wrapped onto a second line", () => {
+		expect(
+			found(
+				body(
+					`### ${HEADING_TEXT}`,
+					"",
+					"- [ ] a desk checkpointed under the old stored-id shape",
+					"  comes back whole [evidence: hand-verification on a real desk]",
+				),
+			),
+		).toEqual([
+			criterion(
+				"a desk checkpointed under the old stored-id shape comes back whole",
+				false,
+				"hand-verification on a real desk",
+			),
+		]);
+	});
+
+	it("keeps the marker ahead of a trailing HTML comment, which is machinery beside the row", () => {
+		const [row] = found(
+			body(
+				`### ${HEADING_TEXT}`,
+				"",
+				"- [ ] the old checkpoint loads [evidence: a pre-fix artifact] <!-- ac:review pr:#9193 round:1 -->",
+			),
+		);
+		expect(row?.evidence).toBe("a pre-fix artifact");
+		expect(row?.text).toBe("the old checkpoint loads <!-- ac:review pr:#9193 round:1 -->");
+	});
+
+	it("returns on a comment run built to make the reader backtrack, since an issue body is externally authored", () => {
+		const hostile = `<!--${"--><!--".repeat(30)}`;
+		const started = Date.now();
+		const split = splitEvidence(`the old checkpoint loads ${hostile}`);
+		const elapsed = Date.now() - started;
+		expect(split._tag).toBe("Split");
+		expect(elapsed).toBeLessThan(1_000);
+	});
+
+	it("is Malformed when the keyword drifted in case — a near miss is a defect, never prose", () => {
+		const result = read(
+			body(`### ${HEADING_TEXT}`, "", "- [ ] the old checkpoint loads [Evidence: a real desk]"),
+		);
+		expect(result._tag).toBe("Malformed");
+		if (result._tag !== "Malformed") return;
+		expect(result.reason).toContain("keyword has drifted");
+	});
+
+	it("is Malformed when the marker names no source", () => {
+		const result = read(
+			body(`### ${HEADING_TEXT}`, "", "- [ ] the old checkpoint loads [evidence:   ]"),
+		);
+		expect(result._tag).toBe("Malformed");
+		if (result._tag !== "Malformed") return;
+		expect(result.reason).toContain("names no source");
+	});
+
+	it("leaves a bracketed tail with another keyword as ordinary text", () => {
+		expect(
+			found(body(`### ${HEADING_TEXT}`, "", "- [ ] the table renders [see the design manifest]")),
+		).toEqual([criterion("the table renders [see the design manifest]", false)]);
+	});
+
+	it("round-trips a marked criterion through emit", () => {
+		const first = criterion("the old checkpoint loads", false, "hand-verification");
+		const second = criterion("the reader paints", true);
+		expect(read(emit([first, second]))).toEqual({_tag: "Found", value: [first, second]});
+	});
+
+	it("carries the source through parseFields and refuses an unusable marker there too", () => {
+		expect(parseFields("the old checkpoint loads [evidence: a real desk]\n")).toEqual({
+			_tag: "Fields",
+			criteria: [criterion("the old checkpoint loads", false, "a real desk")],
+		});
+		expect(parseFields("the old checkpoint loads [evidence:]\n")._tag).toBe("Unusable");
+	});
+
+	it("renders the source as a third column, and nothing extra for an unmarked row", () => {
+		expect(renderCriteria([criterion("a", false, "a real desk"), criterion("b", true)])).toEqual([
+			"open\ta\ta real desk",
+			"checked\tb",
+		]);
+	});
+
+	it("strips the marker from raw bytes a caller holds outside the reader", () => {
+		expect(withoutEvidenceMarker("the old checkpoint loads [evidence: a real desk]")).toBe(
+			"the old checkpoint loads",
+		);
+		expect(withoutEvidenceMarker("the reader paints")).toBe("the reader paints");
+	});
+
+	it("leaves an unusable marker in place rather than half-stripping it", () => {
+		expect(splitEvidence("the old checkpoint loads [evidence: ]")._tag).toBe("Unusable");
+		expect(withoutEvidenceMarker("the old checkpoint loads [evidence: ]")).toBe(
+			"the old checkpoint loads [evidence: ]",
+		);
+		expect(evidenceSource("  ")).toBeNull();
 	});
 });

@@ -12,7 +12,11 @@
  * on the second, which is the whole reason both exist.
  */
 import type {CommitRange} from "../io/git.ts";
-import {type AcceptanceCriterion, readSpans} from "../wire/acceptance-criteria.ts";
+import {
+	type AcceptanceCriterion,
+	readSpans,
+	withoutEvidenceMarker,
+} from "../wire/acceptance-criteria.ts";
 import {parseRange, renderRange} from "../wire/range-verdict-marker.ts";
 import type {HeadSha} from "../wire/verdict-marker.ts";
 
@@ -198,4 +202,7 @@ export const grewByOne = (
 		(criterion, index) =>
 			after[index]?.text === criterion.text && after[index]?.checked === criterion.checked,
 	) &&
-	(after[before.length]?.text ?? "").includes(added.trim());
+	// `added` is the caller's raw bytes and `after`'s text came back through the wire reader, which
+	// has already split any outside-diff evidence marker into its own field — so the comparand has
+	// to lose the marker too, or a row appended with one reads back as a row that was never written.
+	(after[before.length]?.text ?? "").includes(withoutEvidenceMarker(added.trim()).trim());

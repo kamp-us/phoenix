@@ -1541,6 +1541,58 @@ from the plan ledger, so demanding a block on an epic body would make every epic
 issue carrying no `ready-for:agent` label is untouched by this — a criteria-less rewrite there is
 still accepted, exactly as it was.
 
+### The outside-diff evidence marker
+
+**A criterion whose proof cannot live in the diff says so, and it says so at mint time.** The marker
+is a trailing `[evidence: <source>]` on the criterion's own line, and `<source>` names where the
+proof lives:
+
+```markdown
+### Acceptance criteria
+
+- [ ] the stored-id migration runs on load
+- [ ] a desk checkpointed under the old shape comes back whole [evidence: hand-verification on a real desk]
+```
+
+Six facts about the grammar, all of them the wire module's
+([`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts)),
+so the refusal quotes its reason rather than this page's:
+
+- The marker is the **last** thing on the criterion, after the sentence and after any wrap. A
+  trailing HTML comment is machinery beside the row and sits below the marker, not above it.
+- The keyword is `evidence`, lower case. A case drift (`[Evidence: …]`) is `Malformed` on `15`,
+  never silently left as prose — the same rule that makes a drifted heading a defect rather than a
+  fact.
+- A marker naming no source (`[evidence:]`) is `Malformed` on `15`. A marker that points at nothing
+  is the whole defect the field exists to catch.
+- A bracketed tail under any other keyword — `[see the design manifest]` — is ordinary criterion
+  text and is left alone.
+- The source is free prose, and a reviewer has to be able to **find** what it names: a section
+  heading in the PR body, an artifact, a comment URL. "it was tested" names nothing.
+- `emit` round-trips it, so a block read and rewritten keeps every marker it arrived with.
+
+**Mark it only when the diff genuinely cannot settle it** — a property of an artifact written
+*before* the fix, a rendered surface verified by hand, a runtime observation. A criterion a test
+could discharge is not a marked criterion; marking it moves a mechanical check onto a reviewer's
+word, which is the opposite of what this marker buys.
+
+**Why the choice sits here rather than in the gate.** The author knows the proof is a
+hand-verification; a grader reading the sentence months later cannot infer it, and before the marker
+existed it inferred the only thing it could — that an undischarged criterion is a `FAIL`. One
+adjudicated-clean PR drew three of those in a row on a single criterion of this shape, at
+temperature 0.0 over byte-identical input. `review` grades a marked criterion on the evidence it
+names and refuses a `PASS` naming none (`review post`'s `19`), so the marker is what makes that
+grading rule reachable at all.
+
+The verb counts the marked rows on stderr and quotes each one, so the write is visible to whoever
+ran it:
+
+```text
+triage enrich: 1 of 2 criteria in the rewrite mark evidence outside the diff — review grades each on
+the evidence it names, never on the diff alone:
+  - "a desk checkpointed under the old shape comes back whole" — evidence: hand-verification on a real desk
+```
+
 ### A stated ordering must be an edge, and `20` is the refusal
 
 The native `blocked_by` graph is the one carrier of "do not start this yet", so an ordering that
@@ -1593,7 +1645,7 @@ moves; a bypass costs a builder a claim on unstartable work.
 | `9` | the body was written but the read-back does not match |
 | `11` | the issue body could not be read, so there is no original to preserve — or its comments, the claim on them, its `blocked_by` edges, or a number a stated ordering names could not be read |
 | `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
-| `15` | the composed body's **authored region** carries an acceptance-criteria block the wire reader classifies `Malformed` |
+| `15` | the composed body's **authored region** carries an acceptance-criteria block the wire reader classifies `Malformed` — a drifted heading, a checkbox with no text, or an outside-diff evidence marker whose keyword drifted or which names no source |
 | `16` | the issue's live labels carry `ready-for:agent` and the composed body's **authored region** carries no acceptance-criteria block the wire reader answers `Found` on — never with `--epic` |
 | `20` | the composed body's **authored region** states an ordering the issue's live `blocked_by` graph carries no edge for |
 

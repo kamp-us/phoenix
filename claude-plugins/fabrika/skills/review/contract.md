@@ -136,6 +136,7 @@ prose copies are not the authority.
 | `16` | refused: the enumeration is complete and **no gate inspected the bytes** — the rollup is not `red`, yet no workflow this repo authors produced a run at the head, so a `green` would report coverage that does not exist | — | — | — | ✓ | — | — | — | — |
 | `17` | refused: the write would retire a standing verdict of the **opposite polarity** at this head and `--supersede` was not passed — nothing written | — | — | — | — | — | — | ✓ | — |
 | `18` | refused: a `PASS` is the terminal of the round that appended an acceptance criterion tagged for that same subject and round — the row binds the next cycle, and a `PASS` has none, so the round owes a `FAIL`; nothing written | — | — | — | — | — | — | ✓ | — |
+| `19` | refused: a `PASS` whose linked contract marks a criterion's evidence as living outside the diff, and whose body names no evidence for it — a marked criterion is graded on the evidence it names, never on the diff alone, so a `PASS` citing none graded it on nothing; nothing written | — | — | — | — | — | — | ✓ | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb
@@ -516,12 +517,20 @@ fabrika review criteria 4287 [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line: `criteria\t<count>`. Then one line per criterion —
-`<checked|open>\t<text>` — the same line grammar `wire read --format acceptance-criteria`
-prints, because it **is** that read: the verb fetches the issue body and hands it to the
-registered format's `read` (`packages/fabrika-cli/src/wire/acceptance-criteria.ts`), importing
-the module. No second parser.
+`<checked|open>\t<text>`, with a third `\t<evidence source>` column on a criterion carrying the
+outside-diff evidence marker and none on one that does not — the same line grammar
+`wire read --format acceptance-criteria` prints, because it **is** that read: the verb fetches the
+issue body and hands it to the registered format's `read`
+(`packages/fabrika-cli/src/wire/acceptance-criteria.ts`), importing the module. No second parser.
 
-With `--json`: `{"outcome":"criteria","issue":<n>,"count":<n>,"criteria":[{"text":…,"checked":…}…]}`.
+With `--json`: `{"outcome":"criteria","issue":<n>,"count":<n>,"marked":<n>,"criteria":[{"text":…,"checked":…,"evidence":<source|null>}…]}`.
+
+**A marked criterion is one the diff's bytes cannot settle either way**, and the marker names where
+its proof lives — `[evidence: <source>]`, the grammar owned by the wire format and written at mint
+time by `triage enrich`. Every marked row is also counted and quoted on stderr, so a reviewer
+scanning diagnostics cannot miss that this contract has any. Grade each one on the evidence it
+names and name that evidence in the verdict body: `review post` refuses a `PASS` that does not
+(`19`).
 
 The count is never `0`: the wire format holds a conforming block's criteria as a non-empty
 array — a heading with zero checkbox rows reads `Malformed`, so "a gradeable contract with
@@ -564,6 +573,14 @@ $ fabrika review criteria 4287
 criteria	2
 open	the first retry delay equals `base`
 open	the retry guide documents the delay table
+
+$ fabrika review criteria 8900
+criteria	2
+open	the stored-id migration runs on load
+open	a desk checkpointed under the old shape comes back whole	hand-verification on a real desk
+review criteria: 1 of 2 criteria mark evidence outside the diff — grade each on the evidence it
+names, and name it in the verdict body:
+  - "a desk checkpointed under the old shape comes back whole" — evidence: hand-verification on a real desk
 ```
 
 **Grounding**
@@ -1208,6 +1225,7 @@ proven negative, since `review append-criterion` refuses an issue carrying no co
 | `12` | the live head moved past `--sha` — re-review at the new head, never re-bind |
 | `17` | a standing verdict of the opposite polarity at this head — ranged, over this range — would be retired and `--supersede` was not passed; nothing written |
 | `18` | this round appended an acceptance criterion tagged for this same subject and round, and a `PASS` has no next cycle to carry it — the round owes a `FAIL`; nothing written |
+| `19` | a `PASS`, and a criterion on a linked issue's contract carries the outside-diff evidence marker whose source this body names nowhere — the round owes either the evidence or a `FAIL`; nothing written |
 
 **Errors**
 
@@ -1229,6 +1247,8 @@ proven negative, since `review append-criterion` refuses an issue carrying no co
 | `review post: --round is required on a PASS — a PASS ends the cycle, and the round is what says whether this one appended a criterion that would die with it.` | 10 | refusal |
 | `review post: round <r> appended <an acceptance criterion\|<k> acceptance criteria> to #<n> from <PR #<n>\|the range <base>..<tip>>:` + one `  - "<row>"` line each + `An appended row binds the NEXT cycle, and a PASS has none — the lane folds to ship, the PR merges, and #<n> closes with the row unread. This round owes --polarity FAIL. Nothing was posted.` | 18 | refusal |
 | `review post: cannot read #<n>, which would carry a criterion appended on <subject>'s round <r>: <reason> — whether this PASS strands one is UNKNOWN; nothing was posted.` | 11 | refusal |
+| `review post: on #<n>, <an acceptance criterion marks\|<k> acceptance criteria mark> evidence outside the diff and this body names none:` + one `  - "<criterion>" — evidence: <source>` line each + `A marked criterion is graded on the evidence it names, never on the diff alone — so name what each one rested on, or post --polarity FAIL naming the missing evidence. Nothing was posted.` | 19 | refusal |
+| `review post: cannot read #<n>, whose contract would mark criteria this verdict owes evidence for: <reason> — whether this PASS grades one on nothing is UNKNOWN; nothing was posted.` | 11 | refusal |
 
 Ranged, the same steps produce their own text — the target is an issue, the subject is the range:
 

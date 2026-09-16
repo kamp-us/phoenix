@@ -1011,11 +1011,11 @@ back. Contract:
 |---|---|
 | `review scope` | head SHA, linked issue, the code / doc / skill partition of the changed files, and the `self` / `harness` flags |
 | `review diff` | the diff bytes at the bound commit, with truncation refused rather than passed through |
-| `review criteria` | the linked issue's acceptance-criteria block, through the registered wire format |
+| `review criteria` | the linked issue's acceptance-criteria block, through the registered wire format, each criterion beside the outside-diff evidence marker it carries |
 | `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration; `--wait` bounds a `pending` one in-verb and prefixes `settle\t<settled\|budget-exhausted\|head-moved\|governance-owed\|governance-stale>` |
 | `review verdicts` | every verdict marker on the PR — standing and superseded alike — each with its `current` / `stale` / `unbindable` binding |
 | `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan |
-| `review post` | the single sanctioned verdict emit — compose, bind, append into one comment per namespace, read back; with `--base`/`--tip` the positional is the child issue and the marker binds the range instead of a head. A `PASS` also names its `--round`, and is refused when that round appended an acceptance criterion the `PASS` would bury |
+| `review post` | the single sanctioned verdict emit — compose, bind, append into one comment per namespace, read back; with `--base`/`--tip` the positional is the child issue and the marker binds the range instead of a head. A `PASS` also names its `--round`, and is refused when that round appended an acceptance criterion the `PASS` would bury, or when the contract marks a criterion's evidence as outside the diff and the body names none |
 | `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences, its provenance tag naming the `--pr` or, with `--base`/`--tip`, the range an epic child's round was judged over |
 | `review scratch` | the per-lane directory a reviewer's staged files go under — `<temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>` |
 
@@ -1299,7 +1299,7 @@ Take one intake-queue issue from arrival to triaged. Contract:
 | `triage provenance` | whether an issue was reported by an agent or a human |
 | `triage homes` | the assignable homes: open milestones and standing lanes |
 | `triage split` | one child of a bundled report, created exactly once |
-| `triage enrich` | an issue body replaced with the rewrite on stdin, refused when it states an unwired ordering or composes no criteria block over a `ready-for:agent` target |
+| `triage enrich` | an issue body replaced with the rewrite on stdin, refused when it states an unwired ordering, composes no criteria block over a `ready-for:agent` target, or carries a malformed outside-diff evidence marker |
 | `triage apply` | type, priority, audience, status, class, home and `--blocked-by` edges stamped as one owned-facet reconcile, read back — an epic's `ready-for:agent` excepted, which is `check-epic-plan`'s to write |
 | `triage park` | an issue demoted to needs-info with the questions on stdin |
 | `triage kill` | an agent-filed issue — or any issue folded into a survivor with `--duplicate-of` — closed not-planned, with a reason, carrying `closed-by-triage` and no triage status label |
