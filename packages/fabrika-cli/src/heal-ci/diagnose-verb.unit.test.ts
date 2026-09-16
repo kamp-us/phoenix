@@ -335,6 +335,33 @@ describe("runDiagnose refuses rather than guessing a class", () => {
 		expect(out.stderr.at(-1)).toContain('UNKNOWN, never "attended"');
 	});
 
+	// Both sides are GitHub's here, and the record's count is the stale one — it is computed against
+	// a base cached at the last push. This used to refuse at 13, on the verb an operator reaches for
+	// when a PR is already stuck.
+	it("reports a file list short of the declared count and still classifies (#9322)", async () => {
+		const out = await run(script([[PULL, reply(pull({changedFiles: 9, updatedAt: PUSHED}))]]));
+		expect(out.code).toBe(0);
+		expect(out.stderr.join("\n")).toContain(
+			"GitHub's file list for #4321 holds 2 paths against the 9 its own pull-request record declares",
+		);
+	});
+
+	// The empty list is the seat that survives the retirement: it raises no namespace and touches no
+	// governance root, so every classification downstream would read clean over a diff nobody read.
+	it("refuses an empty file list on 7 even where the record declares files (#9322)", async () => {
+		const out = await run(
+			script([
+				[PULL, reply(pull({changedFiles: 9, updatedAt: PUSHED}))],
+				[FILES, reply(files())],
+			]),
+		);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(
+			"PR #4321 has zero changed files — refusing to classify a stall over an empty diff",
+		);
+	});
+
 	it("refuses a short comment enumeration on 13", async () => {
 		const out = await run(
 			script([

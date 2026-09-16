@@ -29,6 +29,18 @@
  * gate recording that this PR's diff holds nothing its rubric is about, which `review-ui`
  * alone needed because its emit path cannot produce a verdict over zero rendered surfaces. See
  * {@link ROUTABLE} for why exactly one namespace may resolve that way.
+ *
+ * **The enumerated file list is the floor's file set, and `changed_files` no longer refuses.** This
+ * verb used to stop at `13` whenever the list came up short of that count, and the count is the
+ * stale side: GitHub computes it against a base it cached at the PR's last push, which nothing on
+ * the shipper's side can invalidate — so the refusal stranded the enqueue with no act available to
+ * clear it. {@link platformFileSet} carries the whole argument, including why this verb enumerates
+ * through the platform rather than a git range: the common path here is asserted to read no git at
+ * all, and a merge gate needing a fetch to answer is one a checkout-less caller cannot run. The
+ * disagreement leaves as a diagnostic line, and the zero-file refusal below is what keeps a
+ * conjunction over an unread diff from printing satisfied.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -38,6 +50,7 @@ import {listPullFiles, permissionFor} from "../io/pulls.ts";
 import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
 import {SHIP_NAMESPACES, touchesGovernanceRoot} from "../review/classes.ts";
 import {headContentFor} from "../review/head-content.ts";
+import {platformFileSet} from "../review/local-file-set.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
@@ -279,28 +292,34 @@ export const runGate = (
 		if (target._tag === "Refused") return target.outcome;
 		const pull = target.pull;
 
-		const listed = yield* listPullFiles(repo, pr);
-		if (listed._tag === "Failure") {
+		// The enumerated list IS the file set the floor is derived from, and the pull-request record's
+		// `changed_files` is reported beside it rather than refused on — `platformFileSet` carries why
+		// that count is not a floor, and why this verb reads it through the platform rather than git.
+		const listed = platformFileSet(
+			VERB,
+			`#${pr}`,
+			pull.changedFiles,
+			yield* listPullFiles(repo, pr),
+		);
+		if (listed._tag === "Unreadable") {
 			return refuse(PRECONDITION_UNKNOWN, unreadable("the changed-file list", listed.reason));
 		}
+		const changed = listed.set.files;
 		const diagnostics = [
-			scannedLine(VERB, listed.value.length, "changed file", `${pull.changedFiles} declared`),
+			scannedLine(VERB, changed.length, "changed file", `${pull.changedFiles} declared`),
 		];
-		if (listed.value.length < pull.changedFiles) {
-			return refuse(
-				INCOMPLETE_SCAN,
-				`${VERB}: received ${listed.value.length} of ${pull.changedFiles} changed files — refusing to derive the required floor from a truncated read.`,
-				diagnostics,
-			);
-		}
-		if (listed.value.length === 0) {
+		if (listed.set.disagreement !== null) diagnostics.push(listed.set.disagreement);
+		// Zero is the shortfall the enumeration alone establishes, and with the declared count no longer
+		// refusing it is the only seat left: an empty list raises no namespace and touches no governance
+		// root, so the conjunction would print satisfied over a diff nobody read.
+		if (changed.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
 				`${VERB}: PR #${pr} has zero changed files — a conjunction over an empty diff proves nothing.`,
 				diagnostics,
 			);
 		}
-		const {required, floored} = requiredWithFloor(requested, listed.value, governed.roots);
+		const {required, floored} = requiredWithFloor(requested, changed, governed.roots);
 		if (floored.length > 0) {
 			diagnostics.push(
 				`${VERB}: #${pr}'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.`,

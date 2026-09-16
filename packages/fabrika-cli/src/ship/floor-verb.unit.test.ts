@@ -9,12 +9,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, type Scripted, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {
-	GOVERNANCE_FLOOR_UNMET,
-	INCOMPLETE_SCAN,
-	PRECONDITION_UNKNOWN,
-	ZERO_SCOPE,
-} from "./codes.ts";
+import {GOVERNANCE_FLOOR_UNMET, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
 import {runFloor} from "./floor-verb.ts";
 
@@ -136,20 +131,31 @@ describe("runFloor", () => {
 		expect(out.stderr.join("\n")).toContain('never "n/a"');
 	});
 
-	it("refuses a short file list — a governance root could sit in the part nobody read", async () => {
+	// The declared count is GitHub's own, computed against a base cached at the last push, so a list
+	// short of it proved nothing about completeness. It used to refuse at 13 and red the floor check.
+	it("reports a short file list in `scanned` and answers the floor anyway (#9322)", async () => {
 		const out = await run([
 			[PULL, served(pull({changedFiles: 9}))],
 			[FILES, served(files("apps/site/src/a.ts"))],
 		]);
-		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`floor\tn/a\t${HEAD}`);
+		expect(out.stderr.join("\n")).toContain(
+			"GitHub's file list for #4321 holds 1 paths against the 9 its own pull-request record declares",
+		);
 	});
 
-	it("refuses a zero-file diff rather than answering n/a", async () => {
+	// The empty read is the seat that survives the retirement, driven by the list rather than the
+	// declared count: a zero can never render as a satisfied floor.
+	it("refuses an empty file list even where the record declares files (#9322)", async () => {
 		const out = await run([
-			[PULL, served(pull({changedFiles: 0}))],
+			[PULL, served(pull({changedFiles: 9}))],
 			[FILES, served(files())],
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stderr.join("\n")).toContain(
+			"ship floor: PR #4321 has zero changed files — whether it touches a governance root is unanswerable.",
+		);
 	});
 
 	it("emits the same two outcomes as JSON", async () => {
