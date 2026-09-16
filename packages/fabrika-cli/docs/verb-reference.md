@@ -95,7 +95,7 @@ Contract: [`skills/build/contract.md`](../../../claude-plugins/fabrika/skills/bu
 | `build claim` / `confirm` / `release` / `adopt` | the lane's claim on an issue: race it, explicitly select a repair PR's served issue, re-prove it, retract it, or take a dead session's |
 | `build claimants` | who holds an issue's claim, read by a caller holding none — no token, no write, no clearance |
 | `build claims stale` | which claim markers stand on the board past a horizon (default a day), oldest silence first — the sweep `claimants` is the per-number half of; it reads and reports, and clears nothing |
-| `build issue` | the claimed issue's body and its criteria — `found` / `absent` / `malformed`, all on exit 0 |
+| `build issue` | the claimed issue's body and its criteria — `found` / `absent` / `malformed`, all on exit 0, each row carrying its outside-diff evidence source or `null` |
 | `build branch` / `scratch` | the lane's branch off a fresh base it derives — `epic/<parent>` for an epic child, `origin/main` for a proven-standalone issue — fetched from a remote, named by commit in the answer, re-proved on a re-run, and its scratch directory |
 | `build resume-child` | an epic child's standing-`FAIL` repair lane, opened as one operation: claim, confirm, clean tree, resumed branch, armed proof — `--cites` carries a ruled `type:decision` child's founder ruling to the claim step |
 | `build commit` / `push` | the commit whose message is proven this lane's, and the push whose ref is proven moved |

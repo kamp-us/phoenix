@@ -176,6 +176,15 @@ fabrika build issue $issue_or_pr_number
 
 That is the issue body and its acceptance criteria, off the verb, never off memory.
 
+**A criterion whose `evidence` field is not `null` is telling you the diff cannot settle it, and
+that row's proof is yours to write.** The field names where the proof lives — a hand-verification,
+a pre-fix artifact, a runtime observation — and stderr quotes every marked row so you cannot miss
+one. Do that verification and write what you observed into the PR body, naming the source the
+criterion named: `review post` refuses a `PASS` whose verdict body cites no evidence for a marked
+criterion (exit `19`), so a row you left unevidenced costs the lane a repair round on a PR that is
+otherwise fine. An `evidence` of `null` is the proven absence of a marker, and that row is
+discharged by the diff exactly as it always was.
+
 **Neither `absent` nor `malformed` is a token you build past.** The verb's three tokens are
 three different facts, and only `found` is a contract: `absent` says no heading reaches for the
 block, `malformed` says one drifted, and in both cases nothing downstream can grade a PR — so

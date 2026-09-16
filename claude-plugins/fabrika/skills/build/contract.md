@@ -1575,7 +1575,7 @@ fabrika build issue 4 [--repo <owner/name>]
 
 ```
 {"number": 4, "title": "...", "state": "open", "labels": ["type:bug", "p1", "status:triaged", "ready-for:agent"],
- "body": "...", "criteria": {"state": "found", "items": [{"text": "...", "checked": false}]}}
+ "body": "...", "criteria": {"state": "found", "items": [{"text": "...", "checked": false, "evidence": null}]}}
 ```
 
 `criteria` comes from the imported `acceptance-criteria` wire read and carries its three answers
@@ -1585,6 +1585,14 @@ distinction is the wire module's whole design; **this verb transports it and ref
 that is deliberate: the fence is the admission test's criteria axis at `build claim`, which refuses
 both negative answers on `32` before a lane opens. A read verb that refused would leave the
 operator repairing a body unable to print it. The body passes through the content gate.
+
+Each item's `evidence` is the criterion's outside-diff evidence source, or `null` where the row
+carries no marker — `null` is the proven absence of one, not "unknown". `text` stays the
+marker-stripped sentence, so a reader that only looks at `text` reads what it always read. On a
+contract with at least one marked row, stderr carries a line counting them and quoting each as
+`  - "<criterion>" — evidence: <source>`. That is the builder's cue: `review post` refuses a `PASS`
+whose body cites no evidence for a marked criterion (exit `19`), so the evidence belongs in the PR
+body the reviewer will read.
 
 **Exit status** (beyond the universal four)
 
@@ -1607,7 +1615,10 @@ versus exit `11`.
 
 ```
 $ fabrika build issue 4
-{"number":4,"title":"Editor loses focus after save","state":"open","labels":["type:bug","p1","status:triaged","ready-for:agent"],"body":"…","criteria":{"state":"found","items":[{"text":"focus stays in the editor after save","checked":false}]}}
+build issue: read #4 in owner/name; acceptance criteria found (2 row(s)).
+build issue: 1 of 2 criteria mark evidence outside the diff — write that evidence into the PR body, because the reviewer's PASS is refused unless it cites the source:
+  - "focus stays in the editor after save" — evidence: hand-verification at localhost:5173
+{"number":4,"title":"Editor loses focus after save","state":"open","labels":["type:bug","p1","status:triaged","ready-for:agent"],"body":"…","criteria":{"state":"found","items":[{"text":"focus stays in the editor after save","checked":false,"evidence":"hand-verification at localhost:5173"},{"text":"a test covers it","checked":false,"evidence":null}]}}
 ```
 
 **Grounding**
@@ -1616,6 +1627,8 @@ $ fabrika build issue 4
   single door and the open trust-posture decision lands in its content gate.
 - The wire module's `Absent` vs `Malformed` split — a drifted heading must never read as "no
   acceptance criteria", which is a gate grading a PR over nothing.
+- The builder is the party that produces outside-diff evidence, so dropping the marker here spent
+  the repair round `review post`'s `19` exists to save.
 
 ---
 

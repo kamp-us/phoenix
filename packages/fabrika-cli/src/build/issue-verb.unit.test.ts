@@ -32,9 +32,40 @@ describe("runIssue", () => {
 		expect(parsed.labels).toEqual(["type:bug", "p1", "status:triaged"]);
 		expect(parsed.criteria.state).toBe("found");
 		expect(parsed.criteria.items).toEqual([
-			{text: "focus stays in the editor after save", checked: false},
-			{text: "a test covers it", checked: true},
+			{text: "focus stays in the editor after save", checked: false, evidence: null},
+			{text: "a test covers it", checked: true, evidence: null},
 		]);
+	});
+
+	/**
+	 * The builder is the party that has to produce outside-diff evidence, and `review post` refuses a
+	 * `PASS` that cites none of it. A row whose marker was stripped before the builder saw it reads
+	 * exactly like an ordinary one, so the lane spends a repair round producing what would have been
+	 * written the first time.
+	 */
+	it("carries a criterion's outside-diff evidence source, and `null` where the row carries none", async () => {
+		const out = await run([
+			[
+				ISSUE,
+				issue({
+					body: "### Acceptance criteria\n\n- [ ] the desk renders the lane row [evidence: hand-verification at localhost:5173]\n- [ ] a test covers the reducer\n",
+				}),
+			],
+		]);
+		expect(out.code).toBe(0);
+		const parsed = JSON.parse(out.stdout);
+		expect(parsed.criteria.items).toEqual([
+			{
+				text: "the desk renders the lane row",
+				checked: false,
+				evidence: "hand-verification at localhost:5173",
+			},
+			{text: "a test covers the reducer", checked: false, evidence: null},
+		]);
+		expect(out.stderr.join("\n")).toContain("1 of 2 criteria mark evidence outside the diff");
+		expect(out.stderr.join("\n")).toContain(
+			'  - "the desk renders the lane row" — evidence: hand-verification at localhost:5173',
+		);
 	});
 
 	it("reports a genuinely absent block as `absent`, on exit 0", async () => {
