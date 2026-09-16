@@ -375,7 +375,7 @@ const issue = leafCommand(
 ).pipe(
 	Command.withShortDescription("The claimed issue's body and acceptance criteria."),
 	Command.withDescription(
-		'The claimed issue\'s body and acceptance criteria, through the content gate. Prints one JSON object with number, title, state, labels, body and criteria; criteria.state is found | absent | malformed — three facts the imported wire read keeps apart, so a drifted heading never reads as "no acceptance criteria". Exits 7 (issue proven absent or closed), 11 (the issue could not be read — its content is UNKNOWN). Example: fabrika build issue 4312',
+		'The claimed issue\'s body and acceptance criteria, through the content gate. Prints one JSON object with number, title, state, labels, body and criteria; criteria.state is found | absent | malformed — three facts the imported wire read keeps apart, so a drifted heading never reads as "no acceptance criteria". Each criterion carries its outside-diff evidence source as evidence, or null where the row is unmarked, and a marked contract also prints a stderr line quoting those rows — the evidence belongs in the PR body, because review post refuses a PASS that cites none of it (19). Exits 7 (issue proven absent or closed), 11 (the issue could not be read — its content is UNKNOWN). Example: fabrika build issue 4312',
 	),
 );
 
