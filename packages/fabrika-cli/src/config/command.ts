@@ -14,7 +14,7 @@ import {discoverRepoRoot} from "../delegate/root.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {exists, readFile, writeFile} from "../io/fs.ts";
-import {CONFIG_SCHEMA_FILE} from "./json-schema.ts";
+import {CONFIG_SCHEMA_FILE, LOCAL_CONFIG_SCHEMA_FILE} from "./json-schema.ts";
 import {KEY_GROUPS} from "./registry.ts";
 import {runSchema, type SchemaRead, type SchemaRoot, type SchemaSave} from "./schema-verb.ts";
 
@@ -43,10 +43,13 @@ const schemaRoot: Effect.Effect<SchemaRoot, never, FileSystem.FileSystem | Path.
 	},
 );
 
-/** The committed schema as its caller found it — absent, read, or unreadable, kept apart. */
-const readSchemaFile = (root: string): Effect.Effect<SchemaRead, never, FileSystem.FileSystem> =>
+/** One committed schema as its caller found it — absent, read, or unreadable, kept apart. */
+const readSchemaFile = (
+	root: string,
+	file: string,
+): Effect.Effect<SchemaRead, never, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
-		const path = `${root}/${CONFIG_SCHEMA_FILE}`;
+		const path = `${root}/${file}`;
 		const probe = yield* Effect.result(exists(path));
 		if (Result.isFailure(probe)) return {_tag: "Failed", reason: probe.failure.reason};
 		if (!probe.success) return {_tag: "Absent"};
@@ -58,9 +61,10 @@ const readSchemaFile = (root: string): Effect.Effect<SchemaRead, never, FileSyst
 
 const saveSchemaFile = (
 	root: string,
+	file: string,
 	content: string,
 ): Effect.Effect<SchemaSave, never, FileSystem.FileSystem | Path.Path> =>
-	Effect.map(Effect.result(writeFile(`${root}/${CONFIG_SCHEMA_FILE}`, content)), (written) =>
+	Effect.map(Effect.result(writeFile(`${root}/${file}`, content)), (written) =>
 		Result.isFailure(written)
 			? ({_tag: "Failed", reason: written.failure.reason} satisfies SchemaSave)
 			: ({_tag: "Saved"} satisfies SchemaSave),
@@ -71,7 +75,7 @@ const schema = leafCommand(
 	{
 		write: Flag.boolean("write").pipe(
 			Flag.withDescription(
-				`render ${CONFIG_SCHEMA_FILE} from the registry again, instead of only reconciling it`,
+				`render ${CONFIG_SCHEMA_FILE} and ${LOCAL_CONFIG_SCHEMA_FILE} from the registry again, instead of only reconciling them`,
 			),
 		),
 		json: jsonFlag,
@@ -89,9 +93,11 @@ const schema = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription(`Reconcile ${CONFIG_SCHEMA_FILE} with the config-key registry.`),
+	Command.withShortDescription(
+		`Reconcile ${CONFIG_SCHEMA_FILE} and ${LOCAL_CONFIG_SCHEMA_FILE} with the config-key registry.`,
+	),
 	Command.withDescription(
-		`Reconcile the committed ${CONFIG_SCHEMA_FILE} with the JSON Schema assembled from the config-key fragments — and, with --write, render it from the registry rather than by hand, so an editor validates .fabrika.jsonc against it. Stdout is the single line \`schema\\t<agrees|written>\\t<keys>\`. Exits 4 (the committed file is stale or not committed — regenerate with --write), 6 (the repo root could not be resolved, or the file could not be read or written — UNKNOWN, never drift), 7 (a registered key carries no schema fragment, so the schema would be incomplete). Example: fabrika config schema --write`,
+		`Reconcile the two committed schema files with the JSON Schemas assembled from the config-key fragments — and, with --write, render them from the registry rather than by hand, so an editor validates .fabrika.jsonc and the gitignored .fabrika.local.jsonc against them. ${CONFIG_SCHEMA_FILE} covers the whole surface; ${LOCAL_CONFIG_SCHEMA_FILE} covers the machine-local subset, so an editor reds a key no machine may set locally where it is typed. Stdout is \`schema\\t<agrees|written>\\t<keys>\` followed by one \`file\\t<path>\\t<agrees|written>\\t<keys>\` line per document. Exits 4 (a committed file is stale or not committed — regenerate with --write), 6 (the repo root could not be resolved, or a file could not be read or written — UNKNOWN, never drift), 7 (a registered key carries no schema fragment, so the schema would be incomplete). Example: fabrika config schema --write`,
 	),
 );
 
@@ -101,9 +107,9 @@ export const configCommand = Command.make("config").pipe(
 		schema,
 	]),
 	Command.withShortDescription(
-		"Reconcile the shape of .fabrika.jsonc with the config-key registry.",
+		"Reconcile the shape of the config files with the config-key registry.",
 	),
 	Command.withDescription(
-		"Own the derived shape of .fabrika.jsonc — assemble the per-key JSON Schema fragments into the one document an editor validates the config file against, and keep the committed schema rendered from the registry",
+		"Own the derived shape of the config files — assemble the per-key JSON Schema fragments into the documents an editor validates .fabrika.jsonc and the machine-local .fabrika.local.jsonc against, and keep the committed schemas rendered from the registry",
 	),
 );

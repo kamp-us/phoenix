@@ -64,6 +64,13 @@ apps/web/tests/e2e/.auth
 # (`.fabrika/lanes/<n>/workflow.json` + `events.jsonl`, written by `fabrika lane`, #5673).
 /.fabrika/
 
+# The machine-local config layer (ADR 0398, #9341): the allow-listed keys one laptop declares,
+# layered over the tracked `.fabrika.jsonc`. `laneConcurrencyCap` is the whole allow-list, and a
+# key outside it refuses the load rather than being ignored. Its schema
+# (`.fabrika.local.schema.json`) IS committed — that document is derived from this repo's key
+# registry and is the same on every machine.
+/.fabrika.local.jsonc
+
 # pipeline-cli data dir: where the SessionStart install.sh drops the installed
 # @kampus/pipeline-cli (deps bundled) the guard hooks resolve (ADR 0103, #1003).
 # Per-machine, never committed — mirrors the plugin's ${CLAUDE_PLUGIN_DATA}.

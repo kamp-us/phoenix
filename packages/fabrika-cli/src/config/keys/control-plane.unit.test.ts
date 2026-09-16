@@ -21,6 +21,7 @@ describe(UNREADABLE_CODEOWNERS, () => {
 	it("takes the strict value a repo declares", () => {
 		expect(resolved('{"unreadableCodeowners": "refuse"}')).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: "refuse",
 		});
 	});
@@ -40,6 +41,6 @@ describe(`this repo's own ${CONFIG_PATH}`, () => {
 			fileURLToPath(new URL(`../../../../../${CONFIG_PATH}`, import.meta.url)),
 			"utf8",
 		);
-		expect(resolved(text)).toEqual({_tag: "Declared", value: "refuse"});
+		expect(resolved(text)).toEqual({_tag: "Declared", layer: "tracked", value: "refuse"});
 	});
 });

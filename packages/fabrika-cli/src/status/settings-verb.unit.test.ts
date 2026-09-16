@@ -7,14 +7,27 @@ import type {ConfigSource} from "../config/document.ts";
 import {CAP_CLEAR_AUTHORS} from "../config/keys/cap-clear-authors.ts";
 import {GOVERNED_ROOTS, SHIPPED_GOVERNED_ROOTS} from "../config/keys/governed-roots.ts";
 import {SURFACE_DISPOSITIONS, SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
+import type {ConfigLayers} from "../config/load.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {readNow} from "./fields.ts";
 import {runSettings, type SettingRow, settingRows, UNKNOWN_VALUE} from "./settings-verb.ts";
 
 const AS_OF = readNow("2026-08-18T00:00:00Z");
 
+/** The tracked file alone — the shape every case below that says nothing about a machine takes. */
+const tracked = (source: ConfigSource): ConfigLayers => ({
+	tracked: source,
+	local: {_tag: "Absent"},
+});
+
 const run = (source: ConfigSource, json = false, surfaces = false) =>
-	runSettings({source, rows: settingRows(source), asOf: AS_OF, json, surfaces});
+	runSettings({
+		layers: tracked(source),
+		rows: settingRows(tracked(source)),
+		asOf: AS_OF,
+		json,
+		surfaces,
+	});
 
 const rowFor = (rows: ReadonlyArray<SettingRow>, key: string): SettingRow => {
 	const found = rows.find((one) => one.key === key);
@@ -24,7 +37,7 @@ const rowFor = (rows: ReadonlyArray<SettingRow>, key: string): SettingRow => {
 
 describe("settingRows", () => {
 	it("resolves every key to its shipped default when the repo wrote no config", () => {
-		const rows = settingRows({_tag: "Absent"});
+		const rows = settingRows(tracked({_tag: "Absent"}));
 		expect(rows.length).toBeGreaterThan(0);
 		expect(rows.every((one) => one.provenance === "default")).toBe(true);
 		const roots = rowFor(rows, GOVERNED_ROOTS);
@@ -32,13 +45,15 @@ describe("settingRows", () => {
 	});
 
 	it("marks a key the repo wrote `declared` and leaves its siblings on the default", () => {
-		const rows = settingRows({
-			_tag: "Text",
-			text: `{
+		const rows = settingRows(
+			tracked({
+				_tag: "Text",
+				text: `{
 				// the roots this repo governs
 				"${GOVERNED_ROOTS}": ["docs/adr/", ".fabrika.jsonc"]
 			}`,
-		});
+			}),
+		);
 		const roots = rowFor(rows, GOVERNED_ROOTS);
 		expect(roots.provenance).toBe("declared");
 		expect(roots.provenance === "declared" && roots.value).toEqual(["docs/adr/", ".fabrika.jsonc"]);
@@ -46,22 +61,24 @@ describe("settingRows", () => {
 	});
 
 	it("renders every key unknown when the file exists and could not be read", () => {
-		const rows = settingRows({_tag: "Unreadable", reason: "EISDIR: illegal operation"});
+		const rows = settingRows(tracked({_tag: "Unreadable", reason: "EISDIR: illegal operation"}));
 		expect(rows.every((one) => one.provenance === "unknown")).toBe(true);
 		expect(rows.every((one) => one.detail.includes("EISDIR"))).toBe(true);
 	});
 
 	it("renders every key unknown when a load refusal names one of them", () => {
-		const rows = settingRows({_tag: "Text", text: `{"${GOVERNED_ROOTS}": ["docs/adr/"]}`});
+		const rows = settingRows(tracked({_tag: "Text", text: `{"${GOVERNED_ROOTS}": ["docs/adr/"]}`}));
 		expect(rows.every((one) => one.provenance === "unknown")).toBe(true);
 		expect(rows.every((one) => one.detail.includes("cannot un-govern itself"))).toBe(true);
 	});
 
 	it("prints a decoded value back in the spelling the file carries", () => {
-		const rows = settingRows({
-			_tag: "Text",
-			text: `{"${CAP_CLEAR_AUTHORS}": ["@octocat", "@acme/founders"]}`,
-		});
+		const rows = settingRows(
+			tracked({
+				_tag: "Text",
+				text: `{"${CAP_CLEAR_AUTHORS}": ["@octocat", "@acme/founders"]}`,
+			}),
+		);
 		const authors = rowFor(rows, CAP_CLEAR_AUTHORS);
 		expect(authors.provenance === "declared" && authors.value).toEqual([
 			"@octocat",
@@ -70,7 +87,7 @@ describe("settingRows", () => {
 	});
 
 	it("renders a declared value the surface refuses as unknown, not as the default", () => {
-		const rows = settingRows({_tag: "Text", text: `{"${GOVERNED_ROOTS}": "one root"}`});
+		const rows = settingRows(tracked({_tag: "Text", text: `{"${GOVERNED_ROOTS}": "one root"}`}));
 		const roots = rowFor(rows, GOVERNED_ROOTS);
 		expect(roots.provenance).toBe("unknown");
 		expect(roots).not.toHaveProperty("value");
@@ -83,7 +100,7 @@ describe("runSettings", () => {
 		expect(outcome.code).toBe(0);
 		const lines = outcome.stdout.trimEnd().split("\n");
 		expect(lines[0]).toMatch(/^settings\tresolved\t\d+\t0\t0\t2026-08-18T00:00:00Z$/);
-		expect(lines.length).toBe(settingRows({_tag: "Absent"}).length + 1);
+		expect(lines.length).toBe(settingRows(tracked({_tag: "Absent"})).length + 1);
 		for (const one of lines.slice(1)) expect(one).toMatch(/^setting\t\S+\tdefault\t/);
 	});
 
@@ -120,7 +137,7 @@ describe("runSettings", () => {
 
 	it("refuses zero scope rather than answering over an empty config surface", () => {
 		const outcome = runSettings({
-			source: {_tag: "Absent"},
+			layers: tracked({_tag: "Absent"}),
 			rows: [],
 			asOf: AS_OF,
 			json: false,

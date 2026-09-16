@@ -18,7 +18,7 @@ describe("the four resolution arms", () => {
 		const load = loadConfig({_tag: "Absent"});
 		expect(load._tag).toBe("Config");
 		if (load._tag !== "Config") return;
-		const resolved = group.resolve(load.state);
+		const resolved = group.resolve(load.documents);
 		expect(resolved._tag).toBe("Default");
 	});
 
@@ -26,14 +26,14 @@ describe("the four resolution arms", () => {
 		const load = fromText('{"somethingElse": 1}');
 		expect(load._tag).toBe("Config");
 		if (load._tag !== "Config") return;
-		expect(group.resolve(load.state)._tag).toBe("Default");
+		expect(group.resolve(load.documents)._tag).toBe("Default");
 	});
 
 	it.each(registered)("%s is UNKNOWN when the file exists and cannot be read", (_key, group) => {
 		const load = loadConfig({_tag: "Unreadable", reason: "EACCES"});
 		expect(load._tag).toBe("Config");
 		if (load._tag !== "Config") return;
-		const resolved = group.resolve(load.state);
+		const resolved = group.resolve(load.documents);
 		expect(resolved).toEqual({_tag: "Unknown", reason: "EACCES"});
 	});
 
@@ -41,7 +41,7 @@ describe("the four resolution arms", () => {
 		const load = fromText("[]");
 		expect(load._tag).toBe("Config");
 		if (load._tag !== "Config") return;
-		expect(group.resolve(load.state)).toEqual({
+		expect(group.resolve(load.documents)).toEqual({
 			_tag: "Malformed",
 			reason: `${CONFIG_PATH} is not a JSON object with comments`,
 		});
@@ -57,6 +57,7 @@ describe("declared values", () => {
 			declared('{"capClearAuthors": ["@ada", "@acme/control-plane"]}', capClearAuthorsKey),
 		).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: [
 				{_tag: "User", login: "ada"},
 				{_tag: "Team", org: "acme", team: "control-plane"},
@@ -74,7 +75,7 @@ describe("declared values", () => {
 	it("reads exempt paths trimmed, in declaration order", () => {
 		expect(
 			declared('{"docLeakExempt": [" /CLAUDE.md ", "/agents/triager.md"]}', docLeakExemptKey),
-		).toEqual({_tag: "Declared", value: ["/CLAUDE.md", "/agents/triager.md"]});
+		).toEqual({_tag: "Declared", layer: "tracked", value: ["/CLAUDE.md", "/agents/triager.md"]});
 	});
 
 	it("reads each validator with the files it opens", () => {
@@ -85,6 +86,7 @@ describe("declared values", () => {
 			),
 		).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: [{argv: ["node", "b.js"], reads: [".github/workflows/ci.yml"]}],
 		});
 	});
@@ -93,6 +95,7 @@ describe("declared values", () => {
 		expect(SHIPPED_GOVERNED_ROOTS).toContain(CONFIG_PATH);
 		expect(declared(`{"governedRoots": ["docs/", "${CONFIG_PATH}"]}`, governedRootsKey)).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: ["docs/", CONFIG_PATH],
 		});
 	});

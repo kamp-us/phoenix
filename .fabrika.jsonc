@@ -28,8 +28,10 @@
 	// How many issue lanes a driver may hold at once — the number the founder drove this weekend, now
 	// enforced at the boot instead of remembered (#8264). A seat is an active lane whose issue carries
 	// a live `lane claim`; an active lane nobody claims is idle and counts for nothing (#8484).
-	// `lane open` and `lane emit` refuse past it with nothing written; there is no override flag, so
-	// raising this line is the only way past.
+	// `lane open` and `lane emit` refuse past it with nothing written, and there is still no override
+	// flag and no environment escape. A machine whose cap differs declares its own number in the
+	// gitignored `.fabrika.local.jsonc` beside this file, which wins per key (ADR 0398, #9341) — this
+	// line is the repo's number, and never a place to park one laptop's.
 	"laneConcurrencyCap": 2,
 
 	// The four epic-run axes #8810 shipped, each defaulting to the pre-epic behaviour so an
