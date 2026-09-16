@@ -564,10 +564,13 @@ of this gate is proof-gated by the FAILs standing at the head.
 FAILs it read, and `FAIL` is the token that refusal points at. The verb refuses a token outside this vocabulary (exit `32`) rather than
 interpreting it, and it **proves a `PASS` before it records it** — read off the PR itself, exit `23`
 where a namespace holds no verdict still binding at the head. What it proves is what *this* cell
-owes, and your class flag is what decides that: a routed namespace is left to the `review:ui` cell
-only when the flag routes this very `PASS` into it, and out of `review:ui` the whole derived set must
-stand. Omit the flag on a rendered PR and the routed namespace is owed **here** — exit `23` naming
-it, with the flag as the remedy. The review bar splits across those two cells and the machine
+owes, and the classes standing at this event decide that — the set you relay, or the one already
+standing when you relay none: a routed namespace is left to the `review:ui` cell only when those
+classes route this very `PASS` into it, and out of `review:ui` the whole derived set must stand.
+Omit the flag and the standing set picks which refusal you meet. With nothing standing, the routed
+namespace is owed **here** — exit `23` naming it, with the flag as the remedy. With a stale `ui`
+standing over a text-only head, the arm is taken instead and the refusal is exit `67`, whose remedy
+is that same relay. The review bar splits across those two cells and the machine
 decides which one owes what; you relay the row, never the split. On an epic child the split is not
 the flag's: that `PASS` is proved against the range, and it defers the routed namespace whatever the
 flag says (§6).

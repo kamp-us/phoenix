@@ -1096,10 +1096,13 @@ merge regardless.
 
 **That split is the routing, so it never outlives it.** `prove` asks this lane's own machine which
 arm the event takes, with the classes the append will carry, and defers only into `review:ui` — so a
-lane whose machine has no such arm, and a rendered `PASS` whose class flag was never relayed, both
-owe the whole set at `review` and refuse there exactly as before: the review bar splits across the
-two cells and the machine decides where it falls. The remedy the refusal names is the class relay,
-and it is the reviewer's to make.
+lane whose machine has no such arm owes the whole set at `review` and refuses there exactly as
+before: the review bar splits across the two cells and the machine decides where it falls. A `PASS`
+whose class flag was never relayed leaves the standing set in force, and that set picks which of the
+two refusals it meets — with nothing standing it owes the whole set at `review` and refuses at exit
+`23` the same way, and with a stale `ui` standing over a text-only head the arm is taken and the
+refusal is exit `67`. The remedy either refusal names is the class relay, and it is the reviewer's
+to make.
 
 **An epic child is the one lane where that deferral is not routed at all — it is the child's shape.**
 A child opens no PR and no verb of this CLI posts `review-ui` at range scope, so its
