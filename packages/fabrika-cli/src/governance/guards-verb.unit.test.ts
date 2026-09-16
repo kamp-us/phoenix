@@ -309,16 +309,47 @@ describe("runGuards", () => {
 		expect(out.stderr.at(-1)).toContain('UNKNOWN, never "nothing moved"');
 	});
 
-	it("refuses a partial diff on 13 rather than scanning it", async () => {
+	it("refuses a diff short of git's own status list on 13 rather than scanning it", async () => {
 		const out = await run([
 			[PULL, served(pull({changedFiles: 4}))],
 			...binding(),
 			[DIFF_AT(), okOut(diffOf(SKILL, "-a", "+b"))],
+			[STATUS_AT(), statuses(["M", SKILL], ["M", "src/cart.ts"], ["M", "src/checkout.ts"])],
 		]);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`governance guards: the diff at ${HEAD} carries 1 of #4321's 4 declared files — refusing a partial anchor scan.`,
+			`governance guards: the diff at ${HEAD} carries 1 of the 3 files git reports for the same range ${BASE}...${HEAD} — both counts from git, so this diff is provably short; refusing a partial anchor scan.`,
+		);
+	});
+
+	it("refuses an empty local read on 7 rather than answering `no-anchors-in-reach` over nothing", async () => {
+		const out = await run([
+			[PULL, served(pull({changedFiles: 4}))],
+			...binding(),
+			[DIFF_AT(), okOut("")],
+			[STATUS_AT(), statuses()],
+		]);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			`governance guards: ${BASE}...${HEAD} changes no path — refusing to scan an empty file set.`,
+		);
+	});
+
+	it("scans the local set when GitHub declares more files, and prints the disagreement", async () => {
+		const out = await run([
+			[PULL, served(pull({changedFiles: 4}))],
+			...binding(),
+			[DIFF_AT(), okOut(diffOf(SKILL, "-a", "+b"))],
+			[STATUS_AT(), statuses(["M", SKILL])],
+			[SHOW_AT(HEAD, SKILL), okOut("b\n")],
+			[SHOW_AT(BASE, SKILL), okOut("a\n")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("guards\t");
+		expect(out.stderr).toContain(
+			"governance guards: git and GitHub disagree on #4321's file count (1 vs 4) — different merge base and different rename detection; reported, never refused on.",
 		);
 	});
 
