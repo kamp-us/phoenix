@@ -409,10 +409,14 @@ describe("the compiler — structural recognition", () => {
 		]);
 	});
 
-	// The two below pin the routing an investigation read as a surprise: a `ui` class standing over
-	// the task takes the `review` arm into `review:ui` however the head's own diff partitions,
-	// because the class is sticky and an absent `--class` on the `PASS` changes nothing. Neither is a
-	// fix — they fix the leaf so a later narrowing of the sticky rule has to state itself here.
+	// The two below pin both halves of the ruling tagged beneath. Stickiness is the machine's and stays:
+	// the seed is how a rendered ticket reaches `build:ui` on its first build, where no head exists
+	// to derive anything from. What narrowed is the reading, not this table — once a head exists the
+	// classes come off its diff, so the relayed set replaces the seeded one and a text-only head
+	// walks to `ship`. The classless `PASS` below is the shape `lane prove` now refuses at the
+	// proof seam (`./prove-verb.ts`), which is where the head is in reach; the machine still routes
+	// it, because a guard that cannot read a diff must not pretend to.
+	// @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
 	it("routes a seeded UI lane's classless PASS into review:ui, with no class on any event line", () => {
 		const seed = seedClasses(coderTemplateText(), ["ui"]);
 		if (seed._tag !== "Seeded") throw new Error(`expected a seeded document, got ${seed._tag}`);

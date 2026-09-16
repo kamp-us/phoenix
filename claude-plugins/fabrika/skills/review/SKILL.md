@@ -45,19 +45,28 @@ are `review-ui`'s modality, its verbs are the only ones that may post that names
 its own refusals (a zero-`--surface` `render`, an evidence-required `post`). So do not judge it and
 do not emit it — and equally, do not read its absence from your verdicts as a gap in yours.
 
-**What a `routed` row costs you is one flag, not a different ending.** Carry the class it names on
-your terminal — `lane report … --class ui` — and the lane's machine takes its guarded arm from
-`review` into `review:ui`, which dispatches the rendered gate with nobody hand-spawning it. Relay
-the class the row printed; never derive one from your own reading of the diff. While no row existed,
-a reviewer read `class code` as the whole bar, PASSed bare, and the merge gate refused on a
-`review-ui` namespace nobody had been told to route — a wasted ship dispatch and a park per PR.
+**Relay every `class` row §1 printed, not the routed ones alone, and never a set you derived from
+your own reading of the diff.** Carry one flag per row on your terminal — `lane report … --class code
+--class ui` — and the ending is the same one either way. The head's diff decides what a review round
+owes, and the set you relay *replaces* the one the lane stood on. That is the ruling the decision
+record *The head's diff decides the classes a review round owes* transcribes, and `operate`'s driver
+reads the same rule at the `WIP` end of the lane. A relayed `ui` row is also the handoff: the lane's
+machine takes its guarded arm from `review` into `review:ui`, which dispatches the rendered gate with
+nobody hand-spawning it. Both halves of the relay have cost a lane before. While no row existed, a
+reviewer read `class code` as the whole bar, PASSed bare, and the merge gate refused on a `review-ui`
+namespace nobody had been told to route — a wasted ship dispatch and a park per PR. In the other
+direction, a ticket stamped `class:ui` at triage keeps that class over every later event until an
+event names a different set, so a reviewer who relays only the routed rows leaves a stale `ui`
+standing on a text-only head and the `PASS` walks into a rendered round the diff cannot fill; `lane
+prove` refuses that stale route at exit `67` rather than taking it, naming this relay as the remedy.
+`review scope` refuses an empty diff, so there is always at least one row to relay.
 
 **On an epic child that arm does not exist, and the flag still goes on.** A child's region carries
 no `review:ui` cell ([`emit.ts`](../../../../packages/fabrika-cli/src/lane/emit.ts)), so on a child
 the class relays a fact rather than a route: `lane prove` hands `review-ui` to the epic's tail
-itself, whatever classes the event carries, and §6 says what you post in its place. Keep passing
-`--class ui` there anyway — it lands the `classes` field on the event line, and dropping it drops
-that record for nothing.
+itself, whatever classes the event carries, and §6 says what you post in its place. Keep relaying
+the head's rows there anyway — they land the `classes` field on the event line, and dropping them
+drops that record for nothing.
 
 `scope` also prints the head SHA, the issue reference (`fixes:<n>` / `part-of:<n>` / `-`), `self`,
 `harness`, and `governance\t<required|not-required>` — §6's trigger, and a different question from
@@ -524,17 +533,24 @@ has more than one — every epic run. The verb resolves a missing one only on a 
 otherwise refuses at exit `13` before it appends anything, so a report that omits it records
 nothing.
 
-**Add `--class ui` to that line only when §1 printed a `routed\treview-ui` row**, and never
-otherwise:
+**Carry one `--class` per `class` row §1 printed** — the whole derived set, so it replaces whatever
+the lane stood on:
 
 ```bash
-node <fabrika> lane report <lane> --root <root> --task <task> --token PASS --pr <pr-url> --class ui
+node <fabrika> lane report <lane> --root <root> --task <task> --token PASS --pr <pr-url> --class code
+node <fabrika> lane report <lane> --root <root> --task <task> --token PASS --pr <pr-url> --class code --class ui
 ```
 
-`--class` is repeatable and carries §1's `routed` rows and nothing else — relay what printed, never
-what you inferred. A spelling outside the closed set is refused at exit `38`, but the *right*
-spelling on a PR that raised no such row is not refused: it routes the lane into a rendered round its
-diff cannot fill.
+The second line is a rendered PR: `ui` is one of `scope`'s own `class` rows there, and it is the
+same row that printed `routed\treview-ui`, so relaying every row routes the lane into `review:ui`
+exactly when the head earns it. `--class` is repeatable and carries §1's `class` rows and nothing
+else — relay what printed, never what you inferred. A spelling outside the closed set is refused at
+exit `38`. Relaying no set at all is the failure this rule closes: omit the flag and the
+standing classes are *kept*, so a `ui` a reviewer never printed can route this `PASS` off a stamp
+the ticket booted with. A non-empty set is the opposite act — it replaces the standing classes
+outright, so every class you leave off it is cleared, which is what makes `--class code` on a
+text-only head retire a stale `ui` rather than sit beside it. `lane prove` refuses that at exit `67` with nothing appended, and the remedy on
+the refusal is this line with the head's rows on it.
 
 Two guards are yours before you record, one per polarity. Record a `FAIL` **only when every derived
 namespace holds a verdict that still binds at the head** — a `FAIL` beside an in-flight namespace is
@@ -548,10 +564,13 @@ of this gate is proof-gated by the FAILs standing at the head.
 FAILs it read, and `FAIL` is the token that refusal points at. The verb refuses a token outside this vocabulary (exit `32`) rather than
 interpreting it, and it **proves a `PASS` before it records it** — read off the PR itself, exit `23`
 where a namespace holds no verdict still binding at the head. What it proves is what *this* cell
-owes, and your class flag is what decides that: a routed namespace is left to the `review:ui` cell
-only when the flag routes this very `PASS` into it, and out of `review:ui` the whole derived set must
-stand. Omit the flag on a rendered PR and the routed namespace is owed **here** — exit `23` naming
-it, with the flag as the remedy. The review bar splits across those two cells and the machine
+owes, and the classes standing at this event decide that — the set you relay, or the one already
+standing when you relay none: a routed namespace is left to the `review:ui` cell only when those
+classes route this very `PASS` into it, and out of `review:ui` the whole derived set must stand.
+Omit the flag and the standing set picks which refusal you meet. With nothing standing, the routed
+namespace is owed **here** — exit `23` naming it, with the flag as the remedy. With a stale `ui`
+standing over a text-only head, the arm is taken instead and the refusal is exit `67`, whose remedy
+is that same relay. The review bar splits across those two cells and the machine
 decides which one owes what; you relay the row, never the split. On an epic child the split is not
 the flag's: that `PASS` is proved against the range, and it defers the routed namespace whatever the
 flag says (§6).

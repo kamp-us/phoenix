@@ -18,6 +18,7 @@ import {
 	PROOF_AMBIGUOUS,
 	PROOF_CONTRADICTED,
 	PROOF_IN_FLIGHT,
+	ROUTE_UNDERIVED,
 } from "./codes.ts";
 import {coderTemplateText, coderWorkflow} from "./fixtures.test-support.ts";
 import {proveDispatched, runProve} from "./prove-verb.ts";
@@ -506,6 +507,63 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 		]);
 
 		const out = await run(laneAt("review"), seams, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
+			{namespace: "review-code", state: "pass", commentId: 1},
+		]);
+		expect(JSON.parse(out.stdout).evidence.deferred).toEqual([]);
+	});
+
+	/**
+	 * The lane the ruling below is about: `triage apply --class ui` stamped the ticket, the boot
+	 * verb seeded it, the `WIP` relayed it — and the fix turned out text-only. The stamp is a fact
+	 * about the ticket and this head raises no rendered file, so the round it routes into is one no
+	 * changed file asks for.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
+	 */
+	const TEXT_ONLY = served([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]);
+
+	const uiStampedInReview = () =>
+		fakeFs({
+			files: {
+				...UI_CONFIG,
+				[WORKFLOW]: coderTemplateText(),
+				[LOG]: logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]) + DONE_LINE,
+			},
+		});
+
+	it("refuses a ui-stamped lane's PASS over a text-only head, rather than routing a rendered round", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, TEXT_ONLY],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await run(uiStampedInReview(), seams, "PASS");
+
+		expect(out.code).toBe(ROUTE_UNDERIVED);
+		expect(out.stderr.join("\n")).toContain("no file of this head asks for that round");
+		expect(out.stderr.join("\n")).toContain("review scope 4318");
+	});
+
+	/**
+	 * The same lane, the same head, with the classes the head raises relayed over the stamp — the
+	 * whole remedy the refusal above names. The `PASS` walks to `ship` and owes `review-code` alone.
+	 */
+	it("proves that same PASS once the head's own classes are relayed, owing review-code only", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, TEXT_ONLY],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await run(uiStampedInReview(), seams, "PASS", ["code"]);
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([

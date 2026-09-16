@@ -1062,18 +1062,29 @@ prints it; a single-task lane tolerates omission.)
 
 **`--class` is how a UI lane reaches its own shells.** The machine's `build:ui` and `review:ui`
 states are entered by a guarded arm reading the classes standing over the task, and those classes
-ride the event line the way `--cause` does. So a lane whose work is a rendered surface takes
-`--class ui` on the `WIP` you record before spawning the builder, and it stands from there — the
-`PASS` out of `review` routes to `review:ui` without you naming it again. **Relay it, never derive
-it**: the class is the lane's own fact, not your reading of the diff. At `WIP` there is
-no head to scope and no `ui` label to read, so the class you relay is the one the machine already
-carries — `lane status` prints the task's `classes` when any stand, seeded into the lane document by
-the boot verb off the issue's `class:<name>` label (`triage apply --class` is what stamps it) and
-carried forward by every event since. No `classes` key means unclassed: record the bare `WIP`, which
-is now the honest answer for an unclassed ticket rather than the answer every ticket got. Once
-a head exists, `ship scope` / `review scope` name the classes it raises — one derivation, printed by
-both, so they cannot disagree — and those are what you relay from then on. A spelling
-outside the closed set is refused at exit `38`, never routed.
+ride the event line the way `--cause` does.
+
+**A head decides the classes wherever one exists; the ticket's stamp decides only the first build.**
+That is the ruling the decision record *The head's diff decides the classes a review round owes*
+transcribes, and it splits the relay in two.
+
+- **No head yet** — the first `WIP` out of `queued`. There is no diff to scope, so relay the class
+  the machine already carries: `lane status` prints the task's `classes` when any stand, seeded into
+  the lane document by the boot verb off the issue's `class:<name>` label (`triage apply --class` is
+  what stamps it). That stamp is what routes a rendered ticket's first build to `build:ui`, and
+  nothing here narrows it. No `classes` key means unclassed: record the bare `WIP`.
+- **A head exists** — every later event, the `WIP` after a cleared park included. Relay the classes
+  that head raises: `ship scope` / `review scope` name them, one `class` row each, from one
+  derivation printed by both so they cannot disagree. Relay **every** row, because a non-empty set
+  replaces the standing one outright, so a row you leave off a passed set is cleared. Omitting the
+  flag entirely is the separate act that keeps what stands, and it belongs to the no-head arm above.
+
+**A stamp that outlives the head it no longer describes is the defect this closes.** A ticket
+stamped `class:ui` whose fix turns out text-only used to take the `PASS` out of `review` into
+`review:ui`, where the rendered gate refuses a diff with no rendered surface and the lane parks on
+you — one park per lane, for a round no changed file asked for. `lane prove` now refuses that route
+at exit `67` instead, with nothing appended, and the remedy on the refusal is the relay above. A
+spelling outside the closed set is refused at exit `38`, never routed.
 
 **The two review cells prove different halves, and that is what makes the ui arm walkable.** `lane
 prove` takes the `PASS` out of `review` against the namespaces that cell owes, leaving the routed
@@ -1085,10 +1096,13 @@ merge regardless.
 
 **That split is the routing, so it never outlives it.** `prove` asks this lane's own machine which
 arm the event takes, with the classes the append will carry, and defers only into `review:ui` — so a
-lane whose machine has no such arm, and a rendered `PASS` whose class flag was never relayed, both
-owe the whole set at `review` and refuse there exactly as before: the review bar splits across the
-two cells and the machine decides where it falls. The remedy the refusal names is the class relay,
-and it is the reviewer's to make.
+lane whose machine has no such arm owes the whole set at `review` and refuses there exactly as
+before: the review bar splits across the two cells and the machine decides where it falls. A `PASS`
+whose class flag was never relayed leaves the standing set in force, and that set picks which of the
+two refusals it meets — with nothing standing it owes the whole set at `review` and refuses at exit
+`23` the same way, and with a stale `ui` standing over a text-only head the arm is taken and the
+refusal is exit `67`. The remedy either refusal names is the class relay, and it is the reviewer's
+to make.
 
 **An epic child is the one lane where that deferral is not routed at all — it is the child's shape.**
 A child opens no PR and no verb of this CLI posts `review-ui` at range scope, so its
