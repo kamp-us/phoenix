@@ -329,6 +329,12 @@ fabrika build check --surface code
 
 Loop construct → check until green. `red` rows name the diagnostics; fix them here, in this tree.
 
+**Run the unit tests of the areas your diff touches, never the package's whole suite.** For a
+change under `packages/fabrika-cli` those areas are the `src/<area>` directories the diff changed — a
+diff in `src/build` and `src/lane` runs those two and nothing else. Several lanes build on one
+machine at once, so a lane that runs the full `fabrika-cli` suite spends every sibling's CPU
+re-proving code its diff never reached, and CI runs that suite against the merge ref anyway.
+
 **Every run also sweeps the shipped local-tree guards, whatever the surface**, so a guard that would
 red in CI reds here first. A passing member is named in the green's `ran` as `guard <name> <leaf>`; a
 failing one reds the whole run on `18` and the failing line names it — fix that guard's finding like
