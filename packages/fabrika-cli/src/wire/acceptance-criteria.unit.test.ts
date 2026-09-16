@@ -572,6 +572,15 @@ describe("the outside-diff evidence marker", () => {
 		expect(row?.text).toBe("the old checkpoint loads <!-- ac:review pr:#9193 round:1 -->");
 	});
 
+	it("returns on a comment run built to make the reader backtrack, since an issue body is externally authored", () => {
+		const hostile = `<!--${"--><!--".repeat(30)}`;
+		const started = Date.now();
+		const split = splitEvidence(`the old checkpoint loads ${hostile}`);
+		const elapsed = Date.now() - started;
+		expect(split._tag).toBe("Split");
+		expect(elapsed).toBeLessThan(1_000);
+	});
+
 	it("is Malformed when the keyword drifted in case — a near miss is a defect, never prose", () => {
 		const result = read(
 			body(`### ${HEADING_TEXT}`, "", "- [ ] the old checkpoint loads [Evidence: a real desk]"),

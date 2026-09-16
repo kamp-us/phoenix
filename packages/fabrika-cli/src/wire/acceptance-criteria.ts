@@ -93,8 +93,15 @@ export const EVIDENCE_KEYWORD = "evidence";
  * is set aside and restored above it. Stated generically rather than against `review`'s own
  * provenance tag: this module carries no knowledge of that tag (see the docblock), and a rule that
  * named it would be a second definition of it.
+ *
+ * The body is `(?:[^-]|-(?!->))*` rather than a lazy `[\s\S]*?` because this runs over criterion text
+ * that came out of an issue body, which is externally authored. Under the lazy form a `-` could be
+ * consumed either by the body or by a repetition's `-->`, so `"<!--" + "--><!--".repeat(n)` backtracks
+ * exponentially and the parser never returns — the one failure this module cannot report. Each
+ * alternative here matches exactly one character and the two sets are disjoint, so every byte is
+ * consumed one way only and the scan is linear.
  */
-const TRAILING_COMMENTS = /(?:\s*<!--[\s\S]*?-->)+\s*$/;
+const TRAILING_COMMENTS = /(?:\s*<!--(?:[^-]|-(?!->))*-->)+\s*$/;
 
 /** The marker as an author may write it — keyword captured as typed, so a case drift is visible. */
 const EVIDENCE_TAIL = /\[[ \t]*([A-Za-z]+)[ \t]*:([^\]]*)\][ \t]*$/;
