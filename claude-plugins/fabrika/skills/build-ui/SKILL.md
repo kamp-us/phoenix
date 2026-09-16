@@ -157,7 +157,9 @@ no config; when the Chrome tools are absent you use the default path and say not
 missing optional eye is not a deviation. **Chrome screenshots never substitute for `fabrika ui
 render` captures in evidence**: the verb's validation is what makes a capture a record.
 
-Validate the text layer like any code diff: `fabrika build check --surface code`.
+Validate the text layer like any code diff: `fabrika build check --surface code`. Its unit-test
+scope is [`build`](../build/SKILL.md)'s too — the areas your diff touches, never the package's whole
+suite.
 
 ## 4 — Ship with the evidence attached
 
