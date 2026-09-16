@@ -112,28 +112,30 @@ describe("turkishCollateSql — the SQL form of the same key", () => {
 		expect(above.match(/replace\(/g)).toHaveLength(TURKISH_ALPHABET.length);
 	});
 
-	it("binds exactly the fold table and the alphabet table — one declaration, two consumers", () => {
-		const {params} = rendered();
-		const mapping = TURKISH_ALPHABET.flatMap((letter, i) => [
-			letter,
-			String.fromCharCode("A".charCodeAt(0) + i),
-		]);
-		expect(params.slice(-mapping.length)).toEqual(mapping);
-		expect(params.slice(0, params.length - mapping.length)).toEqual([
-			"I",
-			"ı",
-			"İ",
-			"i",
-			"Ç",
-			"ç",
-			"Ğ",
-			"ğ",
-			"Ö",
-			"ö",
-			"Ş",
-			"ş",
-			"Ü",
-			"ü",
-		]);
+	it("inlines the fold table rather than binding it — D1 caps a statement at 100 parameters", () => {
+		// 36 nested `replace()` calls bound two parameters each, so ONE instance of this
+		// expression cost 72 — and the letter page embeds it four times over. Every letter read
+		// was rejected at the binding (#9267). The operands are this module's own compile-time
+		// tables, never user input, so they belong in the statement text.
+		expect(rendered().params).toEqual([]);
+	});
+
+	it("carries the whole mapping as literals — one declaration, two consumers", () => {
+		const {sql: text} = rendered();
+		for (const [i, letter] of TURKISH_ALPHABET.entries()) {
+			const key = String.fromCharCode("A".charCodeAt(0) + i);
+			expect(text).toContain(`, '${letter}', '${key}')`);
+		}
+		for (const [upper, lower] of [
+			["I", "ı"],
+			["İ", "i"],
+			["Ç", "ç"],
+			["Ğ", "ğ"],
+			["Ö", "ö"],
+			["Ş", "ş"],
+			["Ü", "ü"],
+		]) {
+			expect(text).toContain(`, '${upper}', '${lower}')`);
+		}
 	});
 });

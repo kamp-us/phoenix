@@ -93,9 +93,18 @@ export const sozlukLayer = (access: DrizzleAccess) =>
 
 export interface RenderedTermList {
 	readonly count: string;
+	readonly countParams: unknown[];
 	readonly page: string;
 	readonly pageParams: unknown[];
 }
+
+/**
+ * D1's documented ceiling on bound parameters in one statement
+ * (https://developers.cloudflare.com/d1/platform/limits/). A statement past it is rejected at
+ * the binding, which is why this is a unit-tier assertion and not a style note: the letter
+ * page's collation expression once bound 219 parameters and every letter read failed (#9267).
+ */
+export const D1_MAX_BOUND_PARAMS = 100;
 
 /** Render one call's `totalCount` and page SQL, lower-cased for matching. */
 export const runList = (opts: {
@@ -131,6 +140,7 @@ export const runList = (opts: {
 		assert.isDefined(page, "the page read rendered off the seam");
 		return {
 			count: count.sql.toLowerCase(),
+			countParams: count.params,
 			page: page.sql.toLowerCase(),
 			pageParams: page.params,
 		};

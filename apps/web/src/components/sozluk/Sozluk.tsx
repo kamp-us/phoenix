@@ -1,5 +1,6 @@
 import type * as React from "react";
 import {Link} from "react-router";
+import {TURKISH_ALPHABET} from "../../../worker/features/sozluk/turkish-alphabet";
 import {useT, useTPlural} from "../../i18n";
 import {sozlukLetterHref} from "../../lib/sozlukLetterHref";
 import {actorLabel} from "../moderation/actor-identity";
@@ -101,39 +102,6 @@ export function SozlukDefinitionList({defs}: {defs: DefinitionData[]}) {
 	);
 }
 
-/** The strip's letters, and the set a `/sozluk/harf/:letter` route value has to be one of. */
-export const ALPHABET = [
-	"a",
-	"b",
-	"c",
-	"ç",
-	"d",
-	"e",
-	"f",
-	"g",
-	"ğ",
-	"h",
-	"ı",
-	"i",
-	"j",
-	"k",
-	"l",
-	"m",
-	"n",
-	"o",
-	"ö",
-	"p",
-	"r",
-	"s",
-	"ş",
-	"t",
-	"u",
-	"ü",
-	"v",
-	"y",
-	"z",
-];
-
 // A letter's accessible name spells it out ("A harfi") — a bare "a" reads
 // ambiguously to a screen reader that spells single chars.
 export function SozlukAlphabet({
@@ -146,7 +114,7 @@ export function SozlukAlphabet({
 	const t = useT();
 	return (
 		<nav className="kp-sozluk-alphabet" aria-label={t("sozluk.alphabet.label")}>
-			{ALPHABET.map((l) => {
+			{TURKISH_ALPHABET.map((l) => {
 				const isEmpty = emptyLetters.includes(l);
 				const isActive = value === l;
 				const cls = [

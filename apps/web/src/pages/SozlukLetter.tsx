@@ -109,11 +109,23 @@ function LetterList({letter}: {letter: string}) {
 
 	return (
 		<>
+			{/* `loadNext` is the page's only evidence about the rest of the letter: while it is
+			    there the letter holds more terms than these, so the count is scoped to what was
+			    loaded. Gone, and the loaded rows are the letter's whole set — then the plain
+			    count is the letter's own. */}
 			<p className="kp-sozluk-letter__count">
-				{tp(items.length, {
-					one: "sozluk.letter.termCount.one",
-					other: "sozluk.letter.termCount.other",
-				})}
+				{tp(
+					items.length,
+					loadNext
+						? {
+								one: "sozluk.letter.termCountLoaded.one",
+								other: "sozluk.letter.termCountLoaded.other",
+							}
+						: {
+								one: "sozluk.letter.termCount.one",
+								other: "sozluk.letter.termCount.other",
+							},
+				)}
 			</p>
 			<div className="kp-sozluk-list">
 				{items.map(({node}) => (

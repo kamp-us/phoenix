@@ -41,8 +41,14 @@ export const sozluk = {
 	"sozluk.letter.crumbRoot": "sözlük",
 	"sozluk.letter.loading": "yükleniyor…",
 	"sozluk.letter.loadFailed": "harf sayfası yüklenemedi: {code}",
+	// Two count messages, because the page knows two different facts. With no next page the
+	// loaded rows ARE the letter's whole set, so the plain count is true; while a `daha fazla`
+	// button is still there, the letter holds more than the page has, so the copy says what it
+	// counted rather than claiming a total the page never read (#9267).
 	"sozluk.letter.termCount.one": "{count} terim",
 	"sozluk.letter.termCount.other": "{count} terim",
+	"sozluk.letter.termCountLoaded.one": "{count} terim yüklendi",
+	"sozluk.letter.termCountLoaded.other": "{count} terim yüklendi",
 	"sozluk.letter.empty": '"{letter}" harfiyle başlayan terim yok.',
 	"sozluk.letter.emptyHint": "ilk tanımı sen yazarak bu harfi açabilirsin.",
 	"sozluk.letter.loadMore": '"{letter}" harfinden daha fazla terim yükle',

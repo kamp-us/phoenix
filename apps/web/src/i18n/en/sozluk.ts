@@ -39,6 +39,8 @@ export const sozluk = {
 	"sozluk.letter.loadFailed": "the letter page could not be loaded: {code}",
 	"sozluk.letter.termCount.one": "{count} term",
 	"sozluk.letter.termCount.other": "{count} terms",
+	"sozluk.letter.termCountLoaded.one": "{count} term loaded",
+	"sozluk.letter.termCountLoaded.other": "{count} terms loaded",
 	"sozluk.letter.empty": 'no term starts with "{letter}".',
 	"sozluk.letter.emptyHint": "write the first entry and you open this letter.",
 	"sozluk.letter.loadMore": 'load more terms under "{letter}"',

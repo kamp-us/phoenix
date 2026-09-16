@@ -9,67 +9,28 @@
  *
  * The key is a pure function of the headword, so the cursor's key ({@link turkishCollationKey})
  * and the page's `ORDER BY` ({@link turkishCollateSql}) both derive from the ONE alphabet table
- * below — the same single-declaration rule `db/ordering.ts` holds for a keyset (ADR 0019). The
- * JS fold and the SQL fold must therefore stay step-identical, which is why the JS side folds
- * `A`-`Z` by hand rather than calling `toLocaleLowerCase("tr")`: that would also fold characters
- * SQLite's `lower()` leaves alone, and the cursor would then land off the page it cut.
+ * in `turkish-alphabet.ts` — the same single-declaration rule `db/ordering.ts` holds for a
+ * keyset (ADR 0019). The JS fold and the SQL fold must therefore stay step-identical, which is
+ * why the JS side folds `A`-`Z` by hand rather than calling `toLocaleLowerCase("tr")`: that
+ * would also fold characters SQLite's `lower()` leaves alone, and the cursor would then land off
+ * the page it cut.
  */
 
 import {type SQL, type SQLWrapper, sql} from "drizzle-orm";
+import {
+	foldTurkishChar,
+	TURKISH_ALPHABET,
+	turkishLetterIndex,
+	UPPERCASE_FOLD,
+} from "./turkish-alphabet.ts";
 
-/** The 29 letters of the Turkish alphabet, in order. */
-export const TURKISH_ALPHABET = [
-	"a",
-	"b",
-	"c",
-	"ç",
-	"d",
-	"e",
-	"f",
-	"g",
-	"ğ",
-	"h",
-	"ı",
-	"i",
-	"j",
-	"k",
-	"l",
-	"m",
-	"n",
-	"o",
-	"ö",
-	"p",
-	"r",
-	"s",
-	"ş",
-	"t",
-	"u",
-	"ü",
-	"v",
-	"y",
-	"z",
-] as const;
-
-export type TurkishLetter = (typeof TURKISH_ALPHABET)[number];
-
-const LETTERS: readonly string[] = TURKISH_ALPHABET;
-
-/**
- * The uppercase forms SQLite's ASCII `lower()` cannot fold, each paired with the letter it
- * belongs to. `I` → `ı` and `İ` → `i` are the Turkish pair: the dotless capital is the dotless
- * letter's, never `i`'s. Applied BEFORE `lower()` on the SQL side, or `I` would fold to `i`.
- */
-const UPPERCASE_FOLD: ReadonlyArray<readonly [string, TurkishLetter]> = [
-	["I", "ı"],
-	["İ", "i"],
-	["Ç", "ç"],
-	["Ğ", "ğ"],
-	["Ö", "ö"],
-	["Ş", "ş"],
-	["Ü", "ü"],
-];
-
-const UPPER_TO_LETTER = new Map<string, string>(UPPERCASE_FOLD);
+export {
+	foldTurkishChar,
+	isTurkishLetter,
+	TURKISH_ALPHABET,
+	type TurkishLetter,
+	turkishLetterOf,
+} from "./turkish-alphabet.ts";
 
 /**
  * The key alphabet starts at `A`, so the 29 letters land on `A`..`]` — 29 consecutive ASCII code
@@ -81,28 +42,12 @@ const KEY_ORIGIN = "A".charCodeAt(0);
 
 const keyChar = (index: number): string => String.fromCharCode(KEY_ORIGIN + index);
 
-/** The one fold both sides share: the seven Turkish capitals, then plain ASCII `A`-`Z`. */
-export function foldTurkishChar(char: string): string {
-	const paired = UPPER_TO_LETTER.get(char);
-	if (paired !== undefined) return paired;
-	return char >= "A" && char <= "Z" ? char.toLowerCase() : char;
-}
-
-/**
- * The alphabet letter a headword files under, or `null` when it starts with a digit, punctuation
- * or a letter outside the Turkish alphabet — those belong to no letter page.
- */
-export function turkishLetterOf(headword: string): TurkishLetter | null {
-	const folded = foldTurkishChar(headword.charAt(0));
-	return LETTERS.includes(folded) ? (folded as TurkishLetter) : null;
-}
-
 /** The sortable key for one headword. Compare two keys byte-wise and you get Turkish order. */
 export function turkishCollationKey(text: string): string {
 	let key = "";
 	for (const char of text) {
 		const folded = foldTurkishChar(char);
-		const index = LETTERS.indexOf(folded);
+		const index = turkishLetterIndex(folded);
 		key += index === -1 ? folded : keyChar(index);
 	}
 	return key;
@@ -123,20 +68,36 @@ export function compareTurkish(left: string, right: string): number {
 export function turkishLetterKeyRange(
 	letter: string,
 ): {readonly start: string; readonly end: string} | null {
-	const index = LETTERS.indexOf(foldTurkishChar(letter.charAt(0)));
+	const index = turkishLetterIndex(foldTurkishChar(letter.charAt(0)));
 	if (index === -1) return null;
 	return {start: keyChar(index), end: keyChar(index + 1)};
 }
+
+/**
+ * A SQL text literal for one character of the fold table.
+ *
+ * The fold is INLINED rather than bound, and that is load-bearing: D1 caps a statement at 100
+ * bound parameters, and the expression below nests 36 `replace()` calls, each of which would
+ * bind two. One instance costs 72 parameters, and the letter page embeds the expression in its
+ * `ORDER BY`, in both bounds of the letter range and inside the keyset predicate — 219 bound
+ * parameters on a first page and 366 on a cursor page, so D1 rejected every letter read and the
+ * page served neither rows nor an empty state (#9267).
+ *
+ * Inlining is safe because the operand is never user input: every character comes from this
+ * module's own compile-time alphabet table or from {@link keyChar}'s ASCII output. Quote-doubling
+ * keeps that safety a property of the function rather than of the table's current contents.
+ */
+const foldLiteral = (value: string): SQL => sql.raw(`'${value.replaceAll("'", "''")}'`);
 
 /** The SQL form of {@link turkishCollationKey}, step for step, over a text column. */
 export function turkishCollateSql(column: SQLWrapper): SQL<string> {
 	let expression = sql`${column}`;
 	for (const [upper, lower] of UPPERCASE_FOLD) {
-		expression = sql`replace(${expression}, ${upper}, ${lower})`;
+		expression = sql`replace(${expression}, ${foldLiteral(upper)}, ${foldLiteral(lower)})`;
 	}
 	expression = sql`lower(${expression})`;
-	LETTERS.forEach((letter, index) => {
-		expression = sql`replace(${expression}, ${letter}, ${keyChar(index)})`;
+	TURKISH_ALPHABET.forEach((letter, index) => {
+		expression = sql`replace(${expression}, ${foldLiteral(letter)}, ${foldLiteral(keyChar(index))})`;
 	});
 	return expression as SQL<string>;
 }

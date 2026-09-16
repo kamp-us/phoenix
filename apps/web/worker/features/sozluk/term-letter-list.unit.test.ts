@@ -11,7 +11,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
 import {Sozluk} from "./Sozluk.ts";
-import {runList, scriptedAccess, sozlukLayer} from "./term-list.testing.ts";
+import {D1_MAX_BOUND_PARAMS, runList, scriptedAccess, sozlukLayer} from "./term-list.testing.ts";
 import {turkishCollationKey, turkishLetterKeyRange} from "./turkish-collation.ts";
 
 const C_RANGE = turkishLetterKeyRange("c");
@@ -85,6 +85,31 @@ describe("Sozluk.listTermSummariesConnection — the letter index (#9267)", () =
 			// to an unfiltered `WHERE` would render `/sozluk/harf/q` as the whole index.
 			assert.strictEqual(builders.length + prepared.length, 0, "no read reached the database");
 		}),
+	);
+
+	it.effect(
+		"keeps both letter reads under D1's bound-parameter ceiling, first page and cursor",
+		() =>
+			Effect.gen(function* () {
+				// The failure this pins is not a slow query but a rejected one: D1 refuses a statement
+				// carrying more than 100 bound parameters, so the page served neither rows nor an empty
+				// state until the fold table was inlined. A cursor page is the worst case — it carries
+				// the keyset predicate's copy of the key expression on top of the range and the order.
+				const first = yield* runList({sort: "alphabetical", letter: "c"});
+				const resumed = yield* runList({sort: "alphabetical", letter: "c", after: "onceki-terim"});
+				for (const [name, params] of [
+					["masked count", first.countParams],
+					["first page", first.pageParams],
+					["cursor page", resumed.pageParams],
+					["cursor page count", resumed.countParams],
+				] as const) {
+					assert.isAtMost(
+						params.length,
+						D1_MAX_BOUND_PARAMS,
+						`the ${name} read binds ${params.length} parameters; D1 rejects past ${D1_MAX_BOUND_PARAMS}`,
+					);
+				}
+			}),
 	);
 
 	it.effect("leaves an unfiltered sort alone — no letter, no key expression", () =>
