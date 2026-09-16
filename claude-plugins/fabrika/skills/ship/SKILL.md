@@ -248,6 +248,13 @@ read definitely says not mergeable. GitHub happily arms a conflicted PR and park
 neither an unknown read nor a proven conflict is green. No refusal here is a stall and nothing was
 armed — on `11` say mergeability is unknown.
 
+**An `11` on mergeability is now a minute of re-reading, not six seconds of it, so read it as a
+fact.** GitHub computes `mergeable` in a background job the first read starts, and the verb re-reads
+on a backoff across `--mergeability-seconds` (default 60) before calling it UNKNOWN — so a
+conflicting PR surfaces as `21`, and an `11` means the platform genuinely had not finished. Do not
+widen that window yourself hunting for a conflict the verb would already have found; re-run once,
+and on a second `11` the state is unknown and the lane parks.
+
 **The definite refusal splits by cause, and the two route the same way and charge differently.** On
 `16` — not mergeable for a reason about the head — route to repair and report `ROUTED-REPAIR`, which
 spends a repair round. On `21` — `mergeable_state: dirty`, the base moved under the branch — route

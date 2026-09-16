@@ -23,6 +23,7 @@ import {runFloorBatch} from "./floor-batch.ts";
 import {floorRunner} from "./floor-check.ts";
 import {runGate} from "./gate-verb.ts";
 import {runMerge} from "./merge-verb.ts";
+import {MERGEABILITY_WINDOW_SECONDS} from "./mergeability.ts";
 import {runNote} from "./note-verb.ts";
 import {runNudge} from "./nudge-verb.ts";
 import {runReconcile} from "./reconcile-verb.ts";
@@ -49,6 +50,18 @@ const prArg = Argument.integer("pr").pipe(
 const shaFlag = Flag.string("sha").pipe(
 	Flag.withDescription(
 		"the head this answer binds to (7-40 lowercase hex); an empty or malformed value is a usage error, never a pattern matching every head",
+	),
+);
+
+/**
+ * The window the two landing verbs give GitHub's lazy `mergeable` job before calling it UNKNOWN.
+ *
+ * Shared because both verbs read through one poll loop, and two defaults would be two poll policies.
+ */
+const mergeabilitySecondsFlag = Flag.integer("mergeability-seconds").pipe(
+	Flag.withDefault(MERGEABILITY_WINDOW_SECONDS),
+	Flag.withDescription(
+		"how long an indefinite `mergeable` is re-read before it is called UNKNOWN (backoff, not a fixed cadence)",
 	),
 );
 
@@ -295,27 +308,57 @@ const resolve = leafCommand(
 
 const enqueue = leafCommand(
 	"enqueue",
-	{pr: prArg, sha: shaFlag, repo: repoFlag, json: jsonFlag},
-	Effect.fn(function* ({pr, sha, repo, json}) {
-		yield* emit(yield* runEnqueue({pr, sha, repo: Option.getOrNull(repo), json, env: process.env}));
+	{
+		pr: prArg,
+		sha: shaFlag,
+		mergeabilitySeconds: mergeabilitySecondsFlag,
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({pr, sha, mergeabilitySeconds, repo, json}) {
+		yield* emit(
+			yield* runEnqueue({
+				pr,
+				sha,
+				mergeabilitySeconds,
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("Arm the merge queue at a pinned head and prove it landed."),
 	Command.withDescription(
-		"Arm the merge queue's auto-merge at a pinned head and prove the arm landed. Prints `enqueued\\t<sha>\\t<queued|settling>` — `settling` is the normal race, not a failure. There is NO merge-method flag: the queue owns the method. `auto_merge: null` post-enqueue is expected and is never read as a jam. Before the arm, a DEFINITE and TRUE `mergeable` is asserted: `mergeable` is computed lazily so an indefinite value is polled, and if it is still indefinite it is UNKNOWN and refuses on 11; a definite `mergeable: false` refuses, and it refuses on two codes because the lane charges them to two budgets — 21 for a `mergeable_state: dirty`, which is the base having moved under the branch, and 16 for every other definite not-mergeable value, which is a fact about the head. Neither arms and neither moves a branch: rebasing the head, and the re-review a moved base owes because the digest every verdict binds covers the merge-base blob too (see src/review/content-binding.ts), are the builder's round. Exits 7 (PR proven absent, closed or already merged), 8 (the arm or its confirming read-back failed — whether an intent is parked is UNKNOWN, so run `fabrika ship disarm --site refuse` before stopping), 11 (the live head or the mergeability could not be read, or mergeability stayed indefinite — nothing was armed), 12 (the live head moved past --sha — refusing to arm a tree nobody verified), 16 (the PR is provably not mergeable for a reason other than a conflicted base — nothing was armed), 21 (the base moved under the branch and the merge conflicts — nothing was armed; report it as BASE-CONFLICTED, which spends a machinery lap rather than a repair round). Example: fabrika ship enqueue 4321 --sha 03135b91",
+		"Arm the merge queue's auto-merge at a pinned head and prove the arm landed. Prints `enqueued\\t<sha>\\t<queued|settling>` — `settling` is the normal race, not a failure. There is NO merge-method flag: the queue owns the method. `auto_merge: null` post-enqueue is expected and is never read as a jam. Before the arm, a DEFINITE and TRUE `mergeable` is asserted: `mergeable` is computed lazily so an indefinite value is re-read on a backoff across --mergeability-seconds (default 60), and if it is still indefinite it is UNKNOWN and refuses on 11; a definite `mergeable: false` refuses, and it refuses on two codes because the lane charges them to two budgets — 21 for a `mergeable_state: dirty`, which is the base having moved under the branch, and 16 for every other definite not-mergeable value, which is a fact about the head. Neither arms and neither moves a branch: rebasing the head, and the re-review a moved base owes because the digest every verdict binds covers the merge-base blob too (see src/review/content-binding.ts), are the builder's round. Exits 7 (PR proven absent, closed or already merged), 8 (the arm or its confirming read-back failed — whether an intent is parked is UNKNOWN, so run `fabrika ship disarm --site refuse` before stopping), 11 (the live head or the mergeability could not be read, or mergeability stayed indefinite — nothing was armed), 12 (the live head moved past --sha — refusing to arm a tree nobody verified), 16 (the PR is provably not mergeable for a reason other than a conflicted base — nothing was armed), 21 (the base moved under the branch and the merge conflicts — nothing was armed; report it as BASE-CONFLICTED, which spends a machinery lap rather than a repair round). Example: fabrika ship enqueue 4321 --sha 03135b91",
 	),
 );
 
 const merge = leafCommand(
 	"merge",
-	{pr: prArg, sha: shaFlag, repo: repoFlag, json: jsonFlag},
-	Effect.fn(function* ({pr, sha, repo, json}) {
-		yield* emit(yield* runMerge({pr, sha, repo: Option.getOrNull(repo), json, env: process.env}));
+	{
+		pr: prArg,
+		sha: shaFlag,
+		mergeabilitySeconds: mergeabilitySecondsFlag,
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({pr, sha, mergeabilitySeconds, repo, json}) {
+		yield* emit(
+			yield* runMerge({
+				pr,
+				sha,
+				mergeabilitySeconds,
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("Land a PR on a base no merge queue governs, proof read back."),
 	Command.withDescription(
-		"Land a pull request directly on a base branch NO merge queue governs, and prove the landing. Prints `merged\\t<merge-commit-sha>\\t<squash|merge|rebase>`. This is the second landing path, not a flag on the first: `ship enqueue` stays method-free. The method is READ off the repository's allow_squash_merge / allow_merge_commit / allow_rebase_merge, preferring squash because its subject is the `(#<pr>)` anchor `ship reconcile` proves a landing with; a repo permitting none refuses rather than guessing. A definite `mergeable_state` is asserted before the write and a definite `false` refuses. The merge call's own response is never the proof — `merged` plus the merge commit are read back off the PR after it. Exits 7 (PR proven absent, closed or already merged), 8 (the merge, or its confirming read-back, failed — whether it landed is UNKNOWN; re-read the PR), 9 (the read-back does not show it merged at a commit), 11 (the live head, the landing path or the mergeability could not be read, or mergeability stayed indefinite — nothing was merged), 12 (the live head moved past --sha), 16 (a merge queue governs the base — run `fabrika ship enqueue`; or the PR is provably not mergeable), 19 (the repository permits no merge method at all — a human enables one in the repository settings). Example: fabrika ship merge 4321 --sha 03135b91",
+		"Land a pull request directly on a base branch NO merge queue governs, and prove the landing. Prints `merged\\t<merge-commit-sha>\\t<squash|merge|rebase>`. This is the second landing path, not a flag on the first: `ship enqueue` stays method-free. The method is READ off the repository's allow_squash_merge / allow_merge_commit / allow_rebase_merge, preferring squash because its subject is the `(#<pr>)` anchor `ship reconcile` proves a landing with; a repo permitting none refuses rather than guessing. A definite `mergeable_state` is asserted before the write and a definite `false` refuses; `mergeable` is computed lazily, so an indefinite value is re-read on a backoff across --mergeability-seconds (default 60) and only a value still indefinite at the end of that window is UNKNOWN. The merge call's own response is never the proof — `merged` plus the merge commit are read back off the PR after it. Exits 7 (PR proven absent, closed or already merged), 8 (the merge, or its confirming read-back, failed — whether it landed is UNKNOWN; re-read the PR), 9 (the read-back does not show it merged at a commit), 11 (the live head, the landing path or the mergeability could not be read, or mergeability stayed indefinite — nothing was merged), 12 (the live head moved past --sha), 16 (a merge queue governs the base — run `fabrika ship enqueue`; or the PR is provably not mergeable), 19 (the repository permits no merge method at all — a human enables one in the repository settings). Example: fabrika ship merge 4321 --sha 03135b91",
 	),
 );
 
