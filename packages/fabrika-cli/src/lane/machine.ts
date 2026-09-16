@@ -8,14 +8,18 @@
  *   - An **array on an event** means guarded: `[taken-when-the-guard-holds, else-fallthrough]`, and
  *     the fallthrough target, when final, is the task's error final (`frozen`, `tripped`) — except
  *     under the three routing spellings below, whose fallthrough is the ordinary path and carries no
- *     error. The first arm's own spelling picks the guard, and only five kinds exist.
- *     {@link LAP_GUARD} is the one that may repeat and the one that comes first: zero or more
+ *     error. The first arm past any leading routes picks the guard, and only five kinds exist.
+ *     {@link LAP_GUARD} is one of the two that may repeat and the one that comes first: zero or more
  *     `lap:<cause>` arms may precede the budget pair on a {@link MACHINERY_EVENT}, each naming the
  *     target that lap's own cause folds to. It routes and nothing else — the lap is still spent, and
  *     a cause no arm names still loops on the budget pair — which is what lets one `LAP` cell send a
  *     ship-cell conflict to `build` while the machinery that only moved a head still self-targets.
  *     `class:<name>` reads the lane class the event carried (see {@link TaskState}) and spends
- *     nothing: it picks which shell serves the round, and picking is not repairing.
+ *     nothing: it picks which shell serves the round, and picking is not repairing. It is read two
+ *     ways, told apart by what follows it: alone above a single fallthrough it IS the cell, and
+ *     leading a budget pair it is a ROUTE like `lap:<cause>` — the budget still decides whether the
+ *     loop is taken, the class only decides which cell it re-enters. That second reading is what
+ *     sends a rendered child's FAIL back to `build:ui` while a spent one still parks.
  *     {@link PARTIAL_GUARD} reads whether the merge this event reports closed its issue, and spends
  *     nothing either: a `Part of #N` merge is real work landing, so the lane goes round again rather
  *     than folding to a terminal over an issue the board still calls buildable.
@@ -334,7 +338,8 @@ type Cell = (state: TaskState, msg: LaneMsg) => readonly [TaskState, readonly ne
 
 /**
  * The first guard spelling the compiler reads: `class:<name>` takes the arm when `<name>` stands
- * over the task. Anything the two routing spellings do not match — `retriesRemaining`, a per-task
+ * over the task — as the whole cell here, or as a leading route ({@link classRoutesOf}) when a
+ * budget pair follows it. Anything the two routing spellings do not match — `retriesRemaining`, a per-task
  * spelling, a name nobody defined — is the budget guard, whose counter the event's polarity picks,
  * which is what keeps every document written before this shape existed compiling byte-for-byte the
  * same.
@@ -403,6 +408,35 @@ const lapRoutesOf = (
 		});
 	}
 	return routes;
+};
+
+/**
+ * A `class:<name>` arm read as a leading ROUTE rather than as the whole cell — the shape that lets
+ * one guarded event pick its loop target on the class while the budget pair still decides whether
+ * the loop is taken at all.
+ *
+ * Read only where the arms after it are exactly the two-arm budget pair, which is what keeps the
+ * older two-arm form ({@link classGuardOf}'s own cell, spending nothing) reading as it always did:
+ * there the class arm's remainder is one arm, not two.
+ *
+ * Repeats like {@link LAP_GUARD} and for the same reason — a state may route one class one way and
+ * another another — and the first arm whose name stands over the task wins.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9147
+ */
+const classRoutesOf = (
+	transition: ReadonlyArray<unknown>,
+): ReadonlyArray<{readonly name: string; readonly target: string | undefined}> => {
+	const candidates: Array<{name: string; target: string | undefined}> = [];
+	for (const arm of transition) {
+		const name = classGuardOf(arm);
+		if (name === undefined) break;
+		candidates.push({
+			name,
+			target: isRecord(arm) && typeof arm.target === "string" ? arm.target : undefined,
+		});
+	}
+	return transition.length - candidates.length === 2 ? candidates : [];
 };
 
 /** The four routing spellings, for the refusal below to name — every other guard is the budget. */
@@ -543,21 +577,25 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 					);
 					continue;
 				}
-				const budgetArms = transition.slice(routes.length);
+				const classRoutes = classRoutesOf(transition.slice(routes.length));
+				const budgetArms = transition.slice(routes.length + classRoutes.length);
 				const targets = budgetArms.map((arm) =>
 					isRecord(arm) && typeof arm.target === "string" ? arm.target : undefined,
 				);
 				const [taken, fallthrough] = targets;
 				if (budgetArms.length !== 2 || taken === undefined || fallthrough === undefined) {
 					defects.push(
-						`task "${taskId}": guarded "${eventName}" must end in a two-arm pair of \`{target}\` — [loop-while-budget-remains, else-fallthrough], optionally preceded by "lap:<cause>" routes`,
+						`task "${taskId}": guarded "${eventName}" must end in a two-arm pair of \`{target}\` — [loop-while-budget-remains, else-fallthrough], optionally preceded by "lap:<cause>" or "class:<name>" routes`,
 					);
 					continue;
 				}
-				const routeTargets = routes.map((route) => route.target);
+				const routeTargets = [
+					...routes.map((route) => route.target),
+					...classRoutes.map((route) => route.target),
+				];
 				if (routeTargets.some((target) => target === undefined)) {
 					defects.push(
-						`task "${taskId}": a "lap:<cause>" arm on "${eventName}" carries no \`target\` — a route that names no state routes nowhere`,
+						`task "${taskId}": a "lap:<cause>" or "class:<name>" arm on "${eventName}" carries no \`target\` — a route that names no state routes nowhere`,
 					);
 					continue;
 				}
@@ -566,7 +604,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 						defects.push(`task "${taskId}": "${eventName}" targets unknown state "${target}"`);
 					}
 				}
-				const laneClass = classGuardOf(transition[0]);
+				const laneClass = classRoutes.length > 0 ? undefined : classGuardOf(transition[0]);
 				if (laneClass !== undefined) {
 					cells[msg] = (s, m) => {
 						const c = withPayload(s, m);
@@ -598,7 +636,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 					};
 					continue;
 				}
-				const misspelled = routingSpelling(transition[0]);
+				const misspelled = routingSpelling(budgetArms[0]);
 				if (misspelled !== undefined) {
 					defects.push(
 						`task "${taskId}": "${eventName}" is guarded on "${misspelled}", which is namespaced like a routing guard and matches none of them (${ROUTING_GUARDS.join("/")}) — it would compile as the budget guard, match nothing and fold this event down the arm the routing exists to divert it from`,
@@ -618,11 +656,21 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 					parks.add(fallthrough);
 					waitParks.set(stateName, parks);
 				}
+				// The class routes pick WHICH cell the loop re-enters and never whether it loops: the
+				// budget arm below still spends the counter and its fallthrough still parks. That split
+				// is the whole of a classed child's repair round — a `class:<name>` arm standing alone in
+				// the taken position would hold the only guard the cell has, and a spent child would
+				// re-enter the rendered builder forever instead of parking.
+				const classTargets = classRoutes.map(
+					(route) => [route.name, route.target as string] as const,
+				);
+				const loopTarget = (state: TaskState): string =>
+					classTargets.find(([name]) => state.classes.includes(name))?.[1] ?? taken;
 				if (msg === "FAIL") {
 					cells[msg] = (s, m) => {
 						const c = withPayload(s, m);
 						return c.retries < c.maxRetries
-							? [{...c, type: taken, retries: c.retries + 1, was: c.type}, []]
+							? [{...c, type: loopTarget(c), retries: c.retries + 1, was: c.type}, []]
 							: [{...c, type: fallthrough, was: c.type}, []];
 					};
 				} else if (msg === MACHINERY_EVENT) {
@@ -631,7 +679,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 					const routed = new Map(routes.map((route) => [route.cause, route.target as string]));
 					cells[msg] = (s, m) => {
 						const c = withPayload(s, m);
-						const loop = (m.cause === undefined ? undefined : routed.get(m.cause)) ?? taken;
+						const loop = (m.cause === undefined ? undefined : routed.get(m.cause)) ?? loopTarget(c);
 						return c.laps < c.maxLaps
 							? [{...c, type: loop, laps: c.laps + 1, was: c.type}, []]
 							: [{...c, type: fallthrough, was: c.type}, []];
@@ -640,7 +688,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 					cells[msg] = (s, m) => {
 						const c = withPayload(s, m);
 						return c.waits < c.maxWaits
-							? [{...c, type: taken, waits: c.waits + 1, was: c.type}, []]
+							? [{...c, type: loopTarget(c), waits: c.waits + 1, was: c.type}, []]
 							: [{...c, type: fallthrough, was: c.type}, []];
 					};
 				}
