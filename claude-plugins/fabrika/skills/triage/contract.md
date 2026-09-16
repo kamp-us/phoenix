@@ -1839,10 +1839,13 @@ design law loaded, and reached `build:ui` only after a `review-ui` FAIL.
 The direction is a founder ruling: **triage writes the class, and the lane reads it at open.** The
 plan-ledger alternative was not taken.
 
-**The vocabulary is closed in code, not declared on the board.** It is `SHIP_CLASS_NAMES` — the same
-partition `review scope` and `ship scope` derive a diff's classes from — so a repo cannot declare a
-class no gate can ever raise. That is the one asymmetry against the other five facets, whose values
-come off `boardVocabulary`. An off-set spelling refuses on **`10`** with the known set printed,
+**The vocabulary is closed in code, and the labels are minted from it.** It is `SHIP_CLASS_NAMES` —
+the same partition `review scope` and `ship scope` derive a diff's classes from — so a repo cannot
+declare a class no gate can ever raise. That is the one asymmetry against the other five facets,
+whose values come off `boardVocabulary`. The four `class:*` labels are still labels a board has to
+carry: `status bootstrap label-taxonomy` creates them from that same closed set, and until a repo has
+run it this flag refuses on **`7`** for every value, because the verb will not write a label the API
+would have to create. An off-set spelling refuses on **`10`** with the known set printed,
 before any label is written, because a `class:UI` label matches no `class:<name>` arm: the lane
 routes as unclassed and says nothing, which is the same silent miss `lane report --class` refuses at
 its own exit `38`.

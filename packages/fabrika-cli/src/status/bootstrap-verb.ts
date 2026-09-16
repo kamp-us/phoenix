@@ -19,13 +19,7 @@
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {
-	audienceLabel,
-	type BoardVocabulary,
-	classLabel,
-	statusList,
-	typeLabel,
-} from "../config/board.ts";
+import {audienceLabel, type BoardVocabulary, statusList, typeLabel} from "../config/board.ts";
 import {CONFIG_PATH, type ConfigSource} from "../config/document.ts";
 import {loadConfig} from "../config/load.ts";
 import {type Read, readRoadmapFile} from "../config/paths.ts";
@@ -42,9 +36,10 @@ import {
 import {isRecord, parseJsonOrReason} from "../io/json.ts";
 import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {CLASS_LABELS} from "../labels.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
-import {CLASSES, DEFAULT_BOARD_VOCABULARY, FACET_VOCABULARY} from "../triage/facets.ts";
+import {DEFAULT_BOARD_VOCABULARY, FACET_VOCABULARY} from "../triage/facets.ts";
 import {parseRoadmap, ROADMAP_FILE} from "../triage/roadmap.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -89,7 +84,7 @@ export const taxonomy = (board: BoardVocabulary): ReadonlyArray<LabelSpec> =>
 		...board.priorities,
 		...board.types.map(typeLabel),
 		...board.audiences.map(audienceLabel),
-		...CLASSES.map(classLabel),
+		...CLASS_LABELS,
 	].map((name) => ({name, description: LABEL_DESCRIPTION, color: null}));
 
 /** The taxonomy a repo that declared no vocabulary gets — the shipped default. */
