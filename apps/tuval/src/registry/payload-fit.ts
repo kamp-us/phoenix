@@ -31,12 +31,40 @@ import type {PortPayloadSchema} from "./program.ts";
 const inlineNames = {referencePolicy: () => undefined} as const;
 
 /**
- * `required` is a set, so the order the author declared their struct's fields in is not part of the
- * payload. Every other array in a JSON Schema is positional (`prefixItems`, `anyOf` branches), and
- * sorting one of those would call two different payloads the same.
+ * The JSON Schema keywords whose array value is a set, so the order an author wrote them in is not
+ * part of the payload. Read off the generator at the pin `apps/tuval` resolves —
+ * `effect@4.0.0-rc.112`, `src/internal/schema/toJsonSchemaDocument.ts` — which emits exactly these
+ * arrays: `required` for a struct's non-optional keys, `anyOf` and `oneOf` for a union in either
+ * mode, `allOf` for refinements and intersections, and `enum` for a literal and for the collapse of
+ * a single-type union into one multi-value `enum` (`compactEnums`). A value matches `anyOf` if any
+ * member does, `oneOf` if exactly one does, `allOf` if every one does, and `enum` if it is one of
+ * the listed values — none of those readings consults position.
+ *
+ * `prefixItems` is the one array the generator emits that is left out, and it is the exception on
+ * purpose: it holds a tuple's elements by index, so `[String, Number]` and `[Number, String]` are
+ * different payloads and sorting them would call them the same (#8769).
  */
+const unorderedKeywords: ReadonlySet<string> = new Set([
+	"required",
+	"anyOf",
+	"oneOf",
+	"allOf",
+	"enum",
+]);
+
+/**
+ * A set-valued array in its one canonical order. The sort key is each element's own canonical form
+ * rather than its source position, so a union of unions canonicalises from the inside out instead
+ * of reintroducing the same positional comparison one level down.
+ */
+const asSet = (elements: ReadonlyArray<unknown>): ReadonlyArray<unknown> =>
+	elements
+		.map((element) => [stable(element), element] as const)
+		.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+		.map(([, element]) => element);
+
 const unordered = (key: string, value: unknown): unknown =>
-	key === "required" && Array.isArray(value) ? [...(value as ReadonlyArray<string>)].sort() : value;
+	unorderedKeywords.has(key) && Array.isArray(value) ? asSet(value) : value;
 
 const stable = (value: unknown): string => {
 	if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;

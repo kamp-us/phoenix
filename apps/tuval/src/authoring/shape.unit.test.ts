@@ -176,6 +176,77 @@ describe("authoring.fitsShape", () => {
 });
 
 /**
+ * A JSON Schema keyword whose array value is a set accepts the same payloads however its members
+ * are ordered, so two packages that wrote one union — or one literal set, or one refinement pair —
+ * in different orders describe one payload and have to fit (#8769).
+ */
+describe("authoring.payloadFits over set-valued schema keywords", () => {
+	it("fits a union written in either member order", () => {
+		expect(
+			payloadFits(
+				Schema.Union([Schema.String, Schema.Number]),
+				Schema.Union([Schema.Number, Schema.String]),
+			),
+		).toBe(true);
+	});
+
+	it("fits a literal set written in either order", () => {
+		// Both sides collapse to one multi-value `enum`, whose member order is the author's source
+		// order — the case the generator's `compactEnums` produces.
+		expect(payloadFits(Schema.Literals(["a", "b"]), Schema.Literals(["b", "a"]))).toBe(true);
+	});
+
+	it("fits a refinement pair composed in opposite orders", () => {
+		// Two checks writing different keywords merge flat into one object, so key sorting alone
+		// already fits them.
+		expect(
+			payloadFits(
+				Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8)),
+				Schema.String.check(Schema.isMaxLength(8), Schema.isMinLength(1)),
+			),
+		).toBe(true);
+		// Checks writing one keyword collide: the generator keeps the first inline and pushes the rest
+		// into `allOf`, so reordering those two is only a fit once `allOf` is read as a set.
+		expect(
+			payloadFits(
+				Schema.String.check(Schema.isPattern(/^a/), Schema.isEndsWith("z"), Schema.isIncludes("m")),
+				Schema.String.check(Schema.isPattern(/^a/), Schema.isIncludes("m"), Schema.isEndsWith("z")),
+			),
+		).toBe(true);
+	});
+
+	it("fits a union of unions with both levels reordered", () => {
+		const inner = Schema.Union([Schema.String, Schema.Number]);
+		const innerReordered = Schema.Union([Schema.Number, Schema.String]);
+		const other = Schema.Union([Schema.Boolean, Schema.Null]);
+		const otherReordered = Schema.Union([Schema.Null, Schema.Boolean]);
+		expect(
+			payloadFits(Schema.Union([inner, other]), Schema.Union([otherReordered, innerReordered])),
+		).toBe(true);
+	});
+
+	it("still refuses two unions over different members", () => {
+		expect(
+			payloadFits(
+				Schema.Union([Schema.String, Schema.Number]),
+				Schema.Union([Schema.String, Schema.Boolean]),
+			),
+		).toBe(false);
+	});
+
+	it("keeps a tuple positional, so two element orders are two payloads", () => {
+		// `prefixItems` is the one array the generator emits by index rather than as a set; sorting it
+		// would call these two the same.
+		expect(
+			payloadFits(
+				Schema.Tuple([Schema.String, Schema.Number]),
+				Schema.Tuple([Schema.Number, Schema.String]),
+			),
+		).toBe(false);
+	});
+});
+
+/**
  * What a config actually holds: a compiled registry row, not a record of declarations. Its ports
  * carry the kernel's predicate, and the schema `compilePort` publishes beside it is what a shape
  * can be compared with at all (#8887).
