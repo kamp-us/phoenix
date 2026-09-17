@@ -25,9 +25,7 @@ import {assert} from "@effect/vitest";
 import {Cause, Effect, Exit, type FileSystem, Option, type Scope} from "effect";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {type Booted, boot, projectDir} from "../../boot.ts";
-import {SpawnedProcesses} from "../../commands/core/process.ts";
 import {Processes} from "../../process/Processes.ts";
-import {ProcessTable} from "../../process/ProcessTable.ts";
 import {type ProcessHandle, ProcessId} from "../../process/process.ts";
 import {
 	DESK_NODE,
@@ -93,56 +91,17 @@ const nodes = (booted: Booted) =>
 	}).pipe(Effect.provideContext(booted.kernel));
 
 /**
- * The half `pr-review` does not compose for itself: once the example spawned the reviewer, something
- * has to ask *the reviewer* for a verdict, and the reviewer declares no command of its own. The
- * kernel's own `send` is what an operator would use. (The example's own command reaches its own
- * program's `pr` port since #8898; that is a different port on a different process.)
- *
- * The newest reviewer, not the first: the second boot restores the child of the boot before it, and
- * a restored spawned child holds un-wired ports. The send is retried rather than taken once, because
- * a spawn lands in the process table before the spell service is holding it, and the state check
- * that got us here settles before either.
+ * One whole review, and the example composes all of it: the desk emits onto `pr`, the example
+ * spawns the reviewer, its own `spawned` cell puts the prompt on the child's `prompt` port (#8888),
+ * and the verdict comes back. Nothing outside this program asks the reviewer anything — the prompt
+ * used to be sent from here with the kernel's own `send`, because the example had no cell for the
+ * `spawned` answer and so had no moment at which it knew the child's id.
  */
-const asked = new Set<string>();
-
-const askTheReviewer = (booted: Booted) =>
-	Effect.gen(function* () {
-		const rows = yield* ProcessTable.use((table) => table.list);
-		const child = rows.findLast((row) => row.programId === REVIEWER_PROGRAM && !asked.has(row.id));
-		if (child === undefined) return false;
-		const sent = yield* SpawnedProcesses.use((processes) =>
-			// A `PromptPayload`, because that is what the port takes now that the example's shape is
-			// declared over the real agent payloads (#8887): the kernel's `accepts` refuses anything
-			// else at the send, which is where this used to hand it a bare line.
-			processes.send(child.id, "prompt", {
-				text: `review #${child.id}`,
-				key: child.id,
-				timestamp: 0,
-			}),
-		).pipe(
-			Effect.as(true),
-			Effect.catchCause(() => Effect.succeed(false)),
-		);
-		if (sent) asked.add(child.id);
-		return sent;
-	}).pipe(Effect.provideContext(booted.kernel));
-
-const askUntilItLands = (booted: Booted) =>
-	Effect.gen(function* () {
-		for (let attempt = 0; attempt < 500; attempt += 1) {
-			if (yield* askTheReviewer(booted)) return;
-			yield* Effect.sleep("10 millis");
-		}
-		assert.fail("the example's `pr` arrival never left a reviewer this test could ask");
-	});
-
-/** One whole review: the desk emits onto `pr`, the reviewer is asked, the verdict comes back. */
-const review = (booted: Booted, desk: ProcessHandle, target: ProcessHandle, pr: number) =>
+const review = (desk: ProcessHandle, target: ProcessHandle, pr: number) =>
 	Effect.gen(function* () {
 		const seen = () => stateOf<ReviewState>(target);
 		yield* desk.dispatch({type: "say", pr});
 		yield* until(`the pull request to reach the example`, () => seen().pr === pr, seen);
-		yield* askUntilItLands(booted);
 		yield* until("the reviewer's verdict to come back", () => seen().verdict === VERDICT, seen);
 	});
 
@@ -164,7 +123,7 @@ const runFirstBoot = (
 	Effect.gen(function* () {
 		const booted = yield* boot({global: configModule, project});
 		const {desk, review: target, sink} = yield* nodes(booted);
-		yield* review(booted, desk, target, FIRST_PR);
+		yield* review(desk, target, FIRST_PR);
 		const beforeReload = stateOf<ReviewState>(target);
 
 		declare(declaration, {reviewing: RELOADED_PR, resumeEmits: false});
@@ -206,7 +165,6 @@ const runFromTheCheckpoint = (
 			() => stateOf<ReviewState>(target).pr === SECOND_BOOT_PR,
 			() => stateOf<ReviewState>(target),
 		);
-		yield* askUntilItLands(booted);
 		yield* until(
 			"the restored example's `verdict` route to reach the sink",
 			() =>
