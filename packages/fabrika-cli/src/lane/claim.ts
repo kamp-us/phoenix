@@ -17,7 +17,7 @@
  */
 
 import {type ClaimGrammar, claimGrammar} from "../build/claim.ts";
-import {CHORE_PREFIX, type LaneKey, resolveKeyIssue} from "./key.ts";
+import {CHORE_PREFIX, type LaneKey, parseKey, resolveKeyIssue} from "./key.ts";
 
 /** The driver's namespace. Separate from the builder's by construction — see the module note. */
 export const LANE_CLAIM: ClaimGrammar = claimGrammar("lane-claim", "lane");
@@ -51,5 +51,25 @@ export const claimTarget = (key: LaneKey): ClaimTarget => {
 		: {
 				_tag: "Inert",
 				why: `"${key.lane}" carries no leading board number, so there is no thread to race a claim on`,
+			};
+};
+
+/**
+ * The same target from a raw directory name — the seat count's reader, which holds entries read off
+ * a lanes root rather than keys an operator addressed.
+ *
+ * It parses instead of casting, so a padded directory races the issue it drives and a name no key
+ * could spell is `Inert` rather than a guess at a number. `Inert` is what the caller reads as
+ * "nobody can be holding this", which is exactly true of a name with no thread behind it.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8853
+ */
+export const rawClaimTarget = (raw: string): ClaimTarget => {
+	const parsed = parseKey(raw);
+	return parsed._tag === "Key"
+		? claimTarget(parsed.key)
+		: {
+				_tag: "Inert",
+				why: `"${raw}" is not a lane key — ${parsed.reason} — so there is no thread to race a claim on`,
 			};
 };

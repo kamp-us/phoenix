@@ -695,6 +695,14 @@ verb is a fresh process that re-folds the whole log through a
 [@demlik/tea](https://github.com/kamp-us/demlik) Transitions machine. No resident process, no
 snapshot. Lane state is local and never committed.
 
+**The key is read once, in one place, and every verb here takes the answer.** A key is one
+directory leaf — an issue number, or `chore:<name>` — so a separator or a traversal is refused at
+`21` before a path is joined or a board read is sent, and a padded number is canonicalized on read:
+`05673`, `0005673` and `5673` name one board issue, one claim target and one directory. A safe
+non-board leaf (`epic-5492`, `0`) keeps its own local identity and stays unclaimable, because no
+board thread stands behind it
+([#8853](https://github.com/kamp-us/phoenix/issues/8853)).
+
 | Verb | Answers |
 |---|---|
 | `lane status` | the derived state: compound `stateValue`, active/done, per-task context, tripped tasks. A lane whose task reached the coder machine's `diagnosed` final answers that leaf as its own `stateValue` rather than the workflow's `complete` — an investigation ended on a diagnosis, and `complete` is the shipped lane's word |

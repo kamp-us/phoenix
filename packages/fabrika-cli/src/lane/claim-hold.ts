@@ -14,7 +14,7 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {readClaimants} from "../build/claim.ts";
 import {resolveRepo} from "../io/issues.ts";
-import {claimTarget, LANE_CLAIM} from "./claim.ts";
+import {LANE_CLAIM, rawClaimTarget} from "./claim.ts";
 
 export type ClaimHold =
 	| {readonly _tag: "Claimed"; readonly token: string}
@@ -37,7 +37,7 @@ export const claimHoldReader = (
 	let resolved: string | null = null;
 	return (lane) =>
 		Effect.gen(function* () {
-			const target = claimTarget({_tag: "Issue", lane});
+			const target = rawClaimTarget(lane);
 			if (target._tag === "Inert") return {_tag: "Unclaimed" as const};
 			if (resolved === null) {
 				const attempt = yield* resolveRepo(repo, env);
