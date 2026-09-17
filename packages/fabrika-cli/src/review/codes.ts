@@ -9,7 +9,7 @@
  * checked-in `/report` contract already sits behind its own binary on `7` and `11`, which is
  * why the shipped package is the authority and no prose copy is.
  *
- * **`12`-`19` are this group's private band, and are deliberately not cleared against sibling
+ * **`12`-`20` are this group's private band, and are deliberately not cleared against sibling
  * groups.** `triage` seats `12`/`13` on its own two refusals; that is two namespaces, not one
  * collision, because the `3`+ band carries no cross-group uniqueness obligation — see rule 3 of
  * `../../../../claude-plugins/fabrika/docs/cli-interface-convention.md`, which also names the one
@@ -117,6 +117,20 @@ export const APPENDED_THIS_ROUND = 18;
  * @ruling https://github.com/kamp-us/phoenix/issues/9200
  */
 export const UNNAMED_EVIDENCE = 19;
+
+/**
+ * Refused: the range's tip is not reachable in this worktree, so the tree cannot be seated on it.
+ *
+ * Its own seat rather than {@link ZERO_SCOPE} or {@link PRECONDITION_UNKNOWN}, because it is neither
+ * of those facts: the range exists, every read succeeded, and what is missing is the commit itself —
+ * a child's build branch is local and unpushed, so a worktree cut fresh from the driver's checkout
+ * carries none of it. Folding it into `7` would say the subject is absent, and folding it into `11`
+ * would say a read failed; both leave a caller free to grade in place, which is the one outcome this
+ * code exists to refuse.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8893
+ */
+export const UNREACHABLE_TIP = 20;
 
 /** The unallocated code — see the gap note at the top of this file. */
 export const DELIBERATE_GAP = 4;
