@@ -307,7 +307,8 @@ what a builder needs beyond them is here.
 
 Allocate with the fence above, giving `--slug` the body's own name — `commit-message`,
 `deviations`, `pr-body`, `note` — so one lane's four bodies do not overwrite each other, and none of
-them lands on the `notes` slug. The returned path is a directory. Put the body in a leaf file
+them lands on the `notes` slug. Treat the returned path as the staging directory: first run
+`mkdir -p <allocated-directory>` with that literal absolute path. Put the body in a leaf file
 named `body.md` inside it. Write that file's absolute path literally in each bounded
 `cat >> <allocated-directory>/body.md` append and in the verb's input redirect:
 `fabrika build pr $issue_or_pr_number < <allocated-directory>/body.md`.
@@ -436,10 +437,11 @@ you carry them. Read what stands first, and build this round's section out of it
 fabrika build scratch <n> --slug deviations --token <claim-token>
 ```
 
-Use a file named `body.md` inside the returned directory, with that absolute path written
-literally in each command:
+Create the returned directory and use a file named `body.md` inside it, with the absolute paths
+written literally in each command:
 
 ```bash
+mkdir -p <allocated-directory>
 fabrika build deviations <n> --token <claim-token> --standing > <allocated-directory>/body.md
 ```
 
