@@ -52,6 +52,32 @@ export const claimPage = (
 /** The default every existing test gets: the issue carries no claim marker at all. */
 export const UNCLAIMED: Scripted = [COMMENTS, {status: 200, body: "[]"}];
 
+/** The issue read whose `comments` field is the denominator `listCommentsReconciled` divides by. */
+export const ISSUE_READ = /GET .*\/issues\/\d+$/;
+
+/**
+ * The issue payload behind the reconciled comment read, declaring `count` comments.
+ *
+ * `declaring()` with no argument omits the field entirely, which reads back as `0` and fences
+ * nothing — the shape every test that says nothing about counts wants, since a list is never short
+ * of zero.
+ */
+export const declaring = (count?: number): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: 4312,
+		title: "t",
+		body: "b",
+		state: "open",
+		labels: [],
+		html_url: "https://example.test/issues/4312",
+		...(count === undefined ? {} : {comments: count}),
+	}),
+});
+
+/** The countless issue read appended behind every script, so no test must know the read happens. */
+export const COUNTLESS: Scripted = [ISSUE_READ, declaring()];
+
 /** Both seams off one script, with the unclaimed comments page appended as the last resort. */
 export type GuardedSeams = ReturnType<typeof fakeSeams>;
 
@@ -59,10 +85,12 @@ export type GuardedSeams = ReturnType<typeof fakeSeams>;
  * Both seams scripted on `script`, with the unclaimed comments page appended as the last resort.
  *
  * Appended rather than prepended so a test that scripts its own comments page still wins: the fakes
- * resolve each call by the first pattern that matches.
+ * resolve each call by the first pattern that matches. {@link COUNTLESS} rides along for the same
+ * reason — the claim read reconciles its list against the issue's own count, and a test that has
+ * nothing to say about counts should not have to script that read.
  */
 export const guardedShell = (script: ReadonlyArray<Scripted>): GuardedSeams =>
-	fakeSeams([...script, UNCLAIMED]);
+	fakeSeams([...script, UNCLAIMED, COUNTLESS]);
 
 /** The directory a triage verb under test is standing in. Its config is the one the load reads. */
 export const CWD = "/repo";

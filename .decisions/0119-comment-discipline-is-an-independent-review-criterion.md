@@ -108,3 +108,11 @@ design; the gate carries that judgment, not a number.
   fight the KEEP carve-out. *(4) #1348's placement (a)* — author self-check as the sole
   enforcement — is **superseded** by this ADR: its premise ("self-correctable, the gate need
   not adjudicate") is falsified by #1380/#1378.
+
+> Amendment 2026-09-15: the decision stands — the independent reviewer judges comment discipline
+> against the `deslop-comments` rubric. One carve-out is added to what that rubric's COLLAPSE and
+> REHOME verdicts may ask for: under `packages/fabrika-cli/`, the pointer is an `@ruling` tag naming
+> the ruling issue rather than an ADR number or a decision-corpus path, because `portability-guard`
+> reds both of those spellings in the trees fabrika ships
+> ([ADR 0394](0394-a-fabrika-cli-docblock-cites-its-ruling-issue.md)). Everywhere else the ADR
+> pointer is unchanged.

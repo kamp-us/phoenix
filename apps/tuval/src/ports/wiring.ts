@@ -22,8 +22,13 @@ export interface Wiring {
 		from: PortRef,
 		payload: unknown,
 	) => Effect.Effect<ReadonlyArray<Delivery>, PayloadRejected | PortNotWired>;
-	/** The queue behind an in-port, for the process that owns the node to take from. */
-	readonly inbox: (at: PortRef) => Effect.Effect<Queue.Dequeue<unknown>, PortNotWired>;
+	/**
+	 * The queue behind an in-port. The process that owns the node takes from it, and `process send`
+	 * offers to it: a graph node's in-port is a route's target and a spell's target at once, so the
+	 * whole queue is handed over rather than the take half (#8944). Narrowing it back to a `Dequeue`
+	 * would mean a second queue for the spell, which is two halves of one port.
+	 */
+	readonly inbox: (at: PortRef) => Effect.Effect<Queue.Queue<unknown>, PortNotWired>;
 }
 
 const key = ({node, port}: PortRef) => `${node}\u0000${port}`;

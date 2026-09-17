@@ -8,6 +8,7 @@
  * declares an anchor I could not parse"*, which is true and actionable — the same discipline
  * `./drift.ts` applies to an unresolved path.
  */
+import {isMap, isScalar, parseDocument} from "yaml";
 import {ANCHOR_DECLARATION, ANCHOR_PREFIX, splitAnchorToken} from "./doc.ts";
 
 export type DeclarationState = "matched" | "moved" | "unpinned" | "malformed";
@@ -37,76 +38,85 @@ export const declarationLinesIn = (text: string): ReadonlyArray<string> =>
 
 export type CatalogRead =
 	| {readonly _tag: "Ok"; readonly catalog: Readonly<Record<string, string>> | null}
-	/** The reader could not comprehend the manifest's catalog — UNKNOWN, never a pin and never `null`. */
 	| {readonly _tag: "Unparseable"; readonly reason: string};
 
-/** Enough of an offending line to find it, on one line and clamped. */
-const lineEcho = (line: string): string =>
-	line
-		.trim()
-		.replace(/[\t\n\r]+/g, " ")
-		.slice(0, 80);
-
-/**
- * The manifest's top-level `catalog:` map, as a block map of scalar pins.
- *
- * `catalog: null` is the **degrade** path, not a failure: a repo that pins nothing centrally is a
- * fact about that repo, so every declaration reports `unpinned` at exit `0`. Every other shape this
- * reader cannot comprehend — a flow map (`catalog: {…}`), a nested sub-map under a key, a
- * named-catalog `catalogs:` block — is UNKNOWN, **not** the degrade path: it is a map that is there
- * and was not read, so answering `unpinned` would be a confident wrong answer where the caller
- * deserves a refusal. The `7`/`11` split, applied to a file: a missing key is a verdict, a
- * document this reader could not read is a verdict about nothing.
- */
-export const parseCatalog = (text: string): CatalogRead => {
-	const lines = text.split("\n");
-	for (const [at, line] of lines.entries()) {
-		if (/^[ ]*\t/.test(line)) {
-			return {_tag: "Unparseable", reason: `line ${at + 1} indents with a tab, which YAML forbids`};
-		}
-	}
-	const named = lines.findIndex((line) => /^catalogs:/.test(line));
-	if (named !== -1) {
+/** Read all catalog maps; only a declared dependency's conflicting pins prevent its answer. */
+export const parseCatalog = (
+	text: string,
+	declarations: ReadonlyArray<string> = [],
+): CatalogRead => {
+	const doc = parseDocument(text, {strict: true});
+	if (doc.errors.length > 0) {
 		return {
 			_tag: "Unparseable",
-			reason: `line ${named + 1} opens a named-catalog "catalogs:" block, which this reader does not interpret`,
+			reason: doc.errors.map((error) => error.message.split("\n")[0]).join("; "),
 		};
 	}
-	const start = lines.findIndex((line) => /^catalog:/.test(line));
-	if (start === -1) return {_tag: "Ok", catalog: null};
-	const header = lines[start] ?? "";
-	if (!/^catalog:\s*(#.*)?$/.test(header)) {
-		return {
-			_tag: "Unparseable",
-			reason: `line ${start + 1} carries "catalog:" with inline content (\`${lineEcho(header)}\`), which this reader does not interpret`,
-		};
+	if (!isMap(doc.contents))
+		return {_tag: "Unparseable", reason: "workspace manifest must be a map"};
+	const pins = new Map<string, Set<string>>();
+	const readMap = (value: unknown, name: string): string | null => {
+		if (!isMap(value)) return `${name} must be a map of package names to string pins`;
+		for (const pair of value.items) {
+			if (!isScalar(pair.key) || typeof pair.key.value !== "string" || pair.key.value === "") {
+				return `${name} contains a non-string or empty package name`;
+			}
+			if (
+				!isScalar(pair.value) ||
+				typeof pair.value.value !== "string" ||
+				pair.value.value.trim() === ""
+			) {
+				return `${name}.${pair.key.value} pins no version string`;
+			}
+			const versions = pins.get(pair.key.value) ?? new Set<string>();
+			versions.add(pair.value.value);
+			pins.set(pair.key.value, versions);
+		}
+		return null;
+	};
+	const hasDefault = doc.contents.has("catalog");
+	const hasNamed = doc.contents.has("catalogs");
+	if (hasDefault) {
+		const reason = readMap(doc.contents.get("catalog", true), "catalog");
+		if (reason !== null) return {_tag: "Unparseable", reason};
 	}
-
-	const catalog: Record<string, string> = {};
-	for (let at = start + 1; at < lines.length; at += 1) {
-		const line = lines[at] ?? "";
-		if (line.trim() === "" || /^\s*#/.test(line)) continue;
-		if (!/^\s/.test(line)) break;
-		const m = /^\s+(.+?)\s*:\s*(.*?)\s*$/.exec(line);
-		if (m?.[1] === undefined || m[2] === undefined) {
+	if (hasNamed) {
+		const named = doc.contents.get("catalogs", true);
+		if (!isMap(named))
+			return {_tag: "Unparseable", reason: "catalogs must be a map of named catalogs"};
+		for (const pair of named.items) {
+			if (!isScalar(pair.key) || typeof pair.key.value !== "string" || pair.key.value === "") {
+				return {
+					_tag: "Unparseable",
+					reason: "catalogs contains a non-string or empty catalog name",
+				};
+			}
+			const reason = readMap(pair.value, `catalogs.${pair.key.value}`);
+			if (reason !== null) return {_tag: "Unparseable", reason};
+		}
+	}
+	for (const line of declarations) {
+		const token = ANCHOR_DECLARATION.exec(line)?.[1];
+		const split = token === undefined ? null : splitAnchorToken(token);
+		if (split === null) continue;
+		const versions = pins.get(split.pkg);
+		if (versions !== undefined && versions.size > 1) {
 			return {
 				_tag: "Unparseable",
-				reason: `line ${at + 1} sits under catalog: and is not a key/value pair`,
+				reason:
+					split.pkg +
+					" has conflicting catalog pins: " +
+					[...versions].join(", ") +
+					"; a dependency declaration needs one distinct pin",
 			};
 		}
-		const version = m[2].replace(/^['"]|['"]$/g, "");
-		// An empty value heads a nested sub-map, whose children then land as sibling keys; a `{`/`[`
-		// value is a flow collection. Either way the key's pin is not this line, and storing "" would
-		// compare unequal to every declared version and report `moved` against a pin nobody wrote.
-		if (version === "" || version.startsWith("{") || version.startsWith("[")) {
-			return {
-				_tag: "Unparseable",
-				reason: `line ${at + 1} sits under catalog: and pins no version (\`${lineEcho(line)}\`)`,
-			};
-		}
-		catalog[m[1].replace(/^['"]|['"]$/g, "")] = version;
 	}
-	return {_tag: "Ok", catalog};
+	const catalog = Object.fromEntries(
+		[...pins].flatMap(([pkg, versions]) =>
+			versions.size === 1 ? [...versions].map((version) => [pkg, version]) : [],
+		),
+	);
+	return {_tag: "Ok", catalog: hasDefault || hasNamed ? catalog : null};
 };
 
 /**

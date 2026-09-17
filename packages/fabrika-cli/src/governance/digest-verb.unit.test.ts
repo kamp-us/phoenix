@@ -17,7 +17,7 @@ const RESOLVE = [
 ] as const;
 const SHALLOW = [/^git rev-parse --is-shallow-repository$/, okOut("false\n")] as const;
 const TREE = [
-	new RegExp(`^git ls-tree -r --name-only -z ${BASE_SHA}$`),
+	new RegExp(`^git ls-tree -r --full-tree --name-only -z ${BASE_SHA}$`),
 	okOut(`${PATH}\0.decisions/0238-fabrika-reimplements-v1.md\0src/cart.ts\0`),
 ] as const;
 const LOG = [

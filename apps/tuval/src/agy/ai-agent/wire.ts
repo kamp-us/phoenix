@@ -34,7 +34,14 @@ import {Predicate} from "effect";
 import {isJsonValue, type JsonValue} from "../../ai-agent/ports/index.ts";
 
 /**
- * The release every shape below was captured from. There is no version field on the wire.
+ * The **supported floor**: the oldest release this module's reader is known to read, and the release
+ * every shape below was captured from. There is no version field on the wire.
+ *
+ * A floor rather than the one tolerated release — the founder ruled it on
+ * [#9191](https://github.com/kamp-us/phoenix/issues/9191#issuecomment-5673883768), and
+ * `../preflight.ts` enforces it by running `agy --version` before a session opens. Below it the
+ * launch is refused; at or above it the launch proceeds and the version read is announced, because a
+ * later release is unverified here rather than unsupported.
  *
  * It stays at `1.1.27` deliberately. The v1.2.0 `error_message` reading above is one step type on one
  * machine, not a re-census, and moving this constant would restate the whole module's capture as a

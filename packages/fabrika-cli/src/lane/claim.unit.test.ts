@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {BUILD_CLAIM, composeMarker, readMarkerToken} from "../build/claim.ts";
-import {claimTarget, LANE_CLAIM} from "./claim.ts";
+import {claimTarget, LANE_CLAIM, rawClaimTarget} from "./claim.ts";
 import {parseKey} from "./key.ts";
 
 const key = (raw: string) => {
@@ -50,5 +50,28 @@ describe("claimTarget", () => {
 	it("is inert on a key that is not a board number, rather than racing on a guess", () => {
 		expect(claimTarget(key("epic-5492"))._tag).toBe("Inert");
 		expect(claimTarget(key("0"))._tag).toBe("Inert");
+	});
+
+	// `lane open`, `lane archive` and `lane settle` all read this key as issue 8012. A claim rule
+	// that called the same key nameless would leave 8012's thread unraced while they drove it.
+	it("races a quarantined key on the same issue every other lane verb reads off it", () => {
+		expect(claimTarget(key("8012.frozen-deadlock-20260905T194736"))).toEqual({
+			_tag: "Number",
+			number: 8012,
+		});
+	});
+});
+
+/** The seat count reads directory names, not addressed keys — the same identity either way. */
+describe("rawClaimTarget", () => {
+	it("races a padded directory name on the issue it drives", () => {
+		expect(rawClaimTarget("05673")).toEqual({_tag: "Number", number: 5673});
+		expect(rawClaimTarget("5673")).toEqual({_tag: "Number", number: 5673});
+	});
+
+	it("is inert on a name no key could spell, rather than guessing a number out of it", () => {
+		expect(rawClaimTarget("../chores/park-sweep")._tag).toBe("Inert");
+		expect(rawClaimTarget("epic-5492")._tag).toBe("Inert");
+		expect(rawClaimTarget("0")._tag).toBe("Inert");
 	});
 });

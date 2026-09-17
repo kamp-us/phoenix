@@ -19,7 +19,14 @@ import {
 } from "../../ai-agent-fixtures/transcripts.ts";
 import {Mode, type ModelRef, type TranscriptItem, type TranscriptPayload} from "../ports/index.ts";
 import {INTERRUPT_ERROR, PROMPT_ERROR, START_ERROR} from "./failures.ts";
-import {foldEvent, foldItem, upsertItem, type WindowLimits} from "./fold.ts";
+import {
+	foldEvent,
+	foldItem,
+	promptItem,
+	refillTranscript,
+	upsertItem,
+	type WindowLimits,
+} from "./fold.ts";
 import type {SendOutcome} from "./sends.ts";
 import {type AiAgentSessionState, initialState} from "./state.ts";
 
@@ -476,5 +483,62 @@ describe("folding a session's end over its catalogs", () => {
 		expect(idle.thinking.available).toEqual(["low", "medium", "high"]);
 		expect(idle.modes.available).toHaveLength(2);
 		expect(idle.commands).toHaveLength(1);
+	});
+});
+
+/**
+ * The resume's rebase, on the one-id-space shape (#9208). The two-space one is measured against a
+ * real capture in `agy/ai-agent/paging-from-live.unit.test.ts`; what is proven here is the ordering
+ * rule both shapes share — a store row inside the covered range that the tail never held keeps the
+ * store's own place, and a held row the store has no copy of keeps the place the tail held it at.
+ */
+describe("refilling a resumed session's tail over the store's history", () => {
+	const history: ReadonlyArray<TranscriptItem> = [
+		userItem("h0", "q1"),
+		assistantItem("h1", "a1"),
+		userItem("h2", "q2"),
+		assistantItem("h3", "a2"),
+		systemItem("h4", "notice"),
+	];
+
+	/** What the window holds: two rows the store has, then the turn it cut and never wrote down. */
+	const held: ReadonlyArray<TranscriptItem> = [
+		assistantItem("h1", "a1"),
+		assistantItem("h3", "a2"),
+		promptItem({text: "q3", key: "send-q3", timestamp: 1}),
+		assistantItem("cut", "writing", 1, true),
+	];
+
+	const refilled = () =>
+		refillTranscript({items: held, omitted: empty.omitted}, history, {itemLimit: 50}, []);
+
+	it("keeps the store's own row inside the covered range, in the store's order", () => {
+		expect(refilled().items.map((item) => item.id)).toEqual([
+			"h0",
+			"h1",
+			"h2",
+			"h3",
+			"local:send-q3",
+			"cut",
+			"h4",
+		]);
+	});
+
+	it("leaves the rows only the tail holds above the replies they produced", () => {
+		const items = refilled().items;
+		const at = (id: string) => items.findIndex((item) => item.id === id);
+		expect(at("local:send-q3")).toBeLessThan(at("cut"));
+		expect(at("h3")).toBeLessThan(at("local:send-q3"));
+	});
+
+	it("puts the whole tail behind a history it is recognised in nowhere", () => {
+		const stranger = [userItem("s0", "other")];
+		const out = refillTranscript(
+			{items: held, omitted: empty.omitted},
+			stranger,
+			{itemLimit: 50},
+			[],
+		);
+		expect(out.items.map((item) => item.id)).toEqual(["s0", ...held.map((item) => item.id)]);
 	});
 });

@@ -44,7 +44,7 @@ export const statuses = (...rows: ReadonlyArray<StatusRow>): ExecResult =>
 
 /** The recursive tree read this group resolves a skill root and root presence from. */
 export const TREE_AT = (sha: string = HEAD): RegExp =>
-	new RegExp(`^git ls-tree -r --name-only -z ${sha}$`);
+	new RegExp(`^git ls-tree -r --full-tree --name-only -z ${sha}$`);
 
 export const treeOf = (...paths: ReadonlyArray<string>): ExecResult =>
 	okOut(paths.map((path) => `${path}\0`).join(""));

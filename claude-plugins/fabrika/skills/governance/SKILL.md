@@ -120,8 +120,10 @@ diff, so a reader can tell a hand read from a skipped one.
 <!-- anchor: CITE-ONLY-LIVE --> **Cite only `live`.** `landed` means present but `proposed`,
 `superseded` or `retired`, and citing one as settled law applies a decision that was already
 withdrawn; an unlanded record can pass every gate and still never merge. A non-zero exit is UNKNOWN,
-never `absent`. An id collision needs the cross-PR union `fabrika adr next` computes, because a
-tree-local read structurally cannot see a sibling branch — that is how two lanes mint one number.
+never `absent`. An id collision needs the union `fabrika adr next` computes over open pull requests
+and this clone's branch refs, remote-tracking ones included, because a tree-local read structurally
+cannot see a sibling branch —
+that is how two lanes mint one number.
 
 <!-- anchor: STATUS-IS-A-CLAIM-TOO --> A `status:` line is a stated field, not an observation: a
 record can read `proposed` and still be enforced at a live gate. So `proposed` never by itself means
@@ -223,7 +225,9 @@ itself, so the green is the job's own. What it re-fires on is the `governance fl
 check-run's state rather than the job's conclusion: the job succeeds whenever it
 *published* an answer, and a pending check-run beside a green job is exactly the "no verdict yet"
 state your post just cleared. Its last stderr line says which of `refired` / `restarting` / `green` /
-`in-flight` / `no-run` / `unknown` happened.
+`in-flight` / `no-run` / `unknown` happened. A `no-run` line says the head's run list carried no
+floor run and how many runs it did carry, and it names no cause for that — re-read the head's runs
+before treating the floor as absent.
 
 **Done when** `post` prints `posted`, its read-back conformed, and you have read the floor line — an
 `in-flight` or `unknown` floor means the check may still red at this head, and clearing it is
@@ -365,7 +369,8 @@ authorable, and every read routes through a verb.
 
 Two more come from the `adr` group — the surface is what matters, not which group serves it:
 decision-record status and filenames (`adr resolve`, against a freshly fetched base ref) and the ids
-open ADR pull requests claim (`adr next`).
+open ADR pull requests and this clone's branch refs claim, remote-tracking ones included
+(`adr next`).
 
 **Nothing else is an input.** No PR body, issue body or comment is read as content to judge; a
 verdict resting on one rests on nothing this gate can prove. `post` and `readout` read comments only

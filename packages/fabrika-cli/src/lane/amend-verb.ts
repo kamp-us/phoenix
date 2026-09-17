@@ -20,10 +20,19 @@
  * The lap axis is read off the lane's OWN machine rather than off `.fabrika.jsonc`: an amendment
  * changes the topology and nothing else, so a repo that flipped `machineryLaps.onEmit` since the
  * emission must not have that flip land here as a side effect of adding a child.
+ *
+ * **`--defer` is the one route out of a mid-flight descope**, and it changes nothing about the rule
+ * above except who has to say the word. Without it a task carrying history that the new topology
+ * places nowhere still refuses at `61`. With it the amendment names that task, the bound of the
+ * history the naming covers, and the reason, all on the line it was already appending — so the
+ * ledger goes on accounting for every entry the dropped task recorded, which is what the `61`
+ * refusal was protecting. The child's issue is not touched here: `ledger defer` unlinks it and
+ * leaves it open, and that separation is the same one that keeps this verb reconciling nothing.
  */
 import {Effect, FileSystem, Path, Result} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {readClaimants} from "../build/claim.ts";
 import {badNumber, openIssue, resolveTargetRepo} from "../build/target.ts";
 import {appendText, readFile, writeFile} from "../io/fs.ts";
 import {listSubIssues} from "../plan/github.ts";
@@ -35,15 +44,17 @@ import {
 	AMEND_UNREPLAYABLE,
 	APPEND_UNKNOWN,
 	CONCURRENT_WRITE,
+	DEFERRAL_REFUSED,
 	LANE_UNREADABLE,
 	TOPOLOGY_ABSENT,
 	TOPOLOGY_CYCLE,
 	TOPOLOGY_FOREIGN,
 	TOPOLOGY_MALFORMED,
 } from "./codes.ts";
-import {type EmitResult, emitMachine} from "./emit.ts";
+import type {Deferral} from "./deferral.ts";
+import {type EmitResult, emitMachine, taskIdChild} from "./emit.ts";
 import type {LogEntry} from "./fold.ts";
-import {AMENDED_EVENT, type CompiledLane, compileText} from "./machine.ts";
+import {AMENDED_EVENT, bareEvent, type CompiledLane, compileText} from "./machine.ts";
 import {sameMachine} from "./migrate.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {type LaneRef, loadLane, WORKFLOW_FILE} from "./store.ts";
@@ -57,7 +68,46 @@ export interface AmendOptions extends LaneRef {
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** The `at` the appended amendment carries. */
 	readonly now: string;
+	/**
+	 * The task ids this amendment defers out of the plan — empty on an ordinary amendment, which
+	 * keeps refusing every historied drop exactly as it did.
+	 */
+	readonly defer: ReadonlyArray<string>;
+	/** Why they are deferred; recorded verbatim on each deferral row. Required alongside `defer`. */
+	readonly deferReason: string | null;
+	/**
+	 * Whether a live `build` claim on a deferred child is proven absent — a caller-passed reader, so
+	 * the ownership rule is testable with no board at all.
+	 */
+	readonly ownership: OwnershipReader;
 }
+
+/** What a deferred child's own issue says about who is working it right now. */
+export type Ownership =
+	| {readonly _tag: "Idle"}
+	| {readonly _tag: "Held"; readonly token: string}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+export type OwnershipReader = (
+	repo: string,
+	child: number,
+) => Effect.Effect<Ownership, never, ChildProcessSpawner.ChildProcessSpawner>;
+
+/**
+ * The live reader: the earliest authorized `build-claim:` marker on the child's own issue, or none.
+ *
+ * `Unknown` is a refusal rather than an absence for the reason every ownership question in this CLI
+ * splits three ways — reading an unreadable thread as "nobody is working it" is how a deferral
+ * detaches a builder mid-flight.
+ */
+export const claimOwnership: OwnershipReader = (repo, child) =>
+	Effect.gen(function* () {
+		const read = yield* readClaimants(repo, child);
+		if (read._tag === "Unknown") return {_tag: "Unknown" as const, reason: read.reason};
+		return read.holder === null
+			? {_tag: "Idle" as const}
+			: {_tag: "Held" as const, token: read.holder.token};
+	});
 
 /**
  * Whether this lane's machine carries the machinery lap arms, read off the compiled regions.
@@ -115,10 +165,38 @@ export const amendmentEntry = (
 	epic: number,
 	at: string,
 	tasks: ReadonlyArray<string>,
+	defers: ReadonlyArray<Deferral> = [],
 ): LogEntry => {
 	const task = `epic_${epic}`;
-	return {task, event: `${task.toUpperCase()}.${AMENDED_EVENT}`, at, tasks};
+	return {
+		task,
+		event: `${task.toUpperCase()}.${AMENDED_EVENT}`,
+		at,
+		tasks,
+		...(defers.length === 0 ? {} : {defers}),
+	};
 };
+
+/**
+ * The deferral rows this run will record — each bounded at the deferred task's last recorded entry.
+ *
+ * The bound is derived here rather than taken from the caller: an operator cannot be asked to type a
+ * timestamp that has to match a log line exactly, and a bound the verb reads off the log is the one
+ * bound that is true at the moment of the append. The re-judge under the lock re-derives it, so a
+ * line landing between the two reads moves the bound rather than slipping past it.
+ */
+const deferralRows = (
+	entries: ReadonlyArray<LogEntry>,
+	defer: ReadonlyArray<string>,
+	reason: string,
+): ReadonlyArray<Deferral> =>
+	defer.flatMap((task) => {
+		const recorded = entries.filter(
+			(entry) => entry.task === task && bareEvent(entry.event) !== AMENDED_EVENT,
+		);
+		const last = recorded[recorded.length - 1];
+		return last === undefined ? [] : [{task, through: last.at, reason}];
+	});
 
 export const runAmend = (
 	options: AmendOptions,
@@ -135,6 +213,29 @@ export const runAmend = (
 		const path = yield* Path.Path;
 		const bad = badNumber(VERB, "an issue number", options.epic);
 		if (bad !== null) return bad;
+
+		// Before any read: a deferral with no reason records that a plan changed and not why, and a
+		// reason deferring nothing names no plan change at all. Neither is a state to carry further.
+		const reason = options.deferReason;
+		if (options.defer.length > 0 && (reason === null || reason.trim() === "")) {
+			return refuse(
+				DEFERRAL_REFUSED,
+				`${VERB}: --defer names ${options.defer.join(", ")} and no --defer-reason says why — nothing was written.`,
+			);
+		}
+		if (options.defer.length === 0 && reason !== null) {
+			return refuse(
+				DEFERRAL_REFUSED,
+				`${VERB}: --defer-reason was given and --defer names no task — nothing was written.`,
+			);
+		}
+		const duplicated = options.defer.filter((task, index) => options.defer.indexOf(task) !== index);
+		if (duplicated.length > 0) {
+			return refuse(
+				DEFERRAL_REFUSED,
+				`${VERB}: --defer names ${[...new Set(duplicated)].join(", ")} more than once — nothing was written.`,
+			);
+		}
 
 		const loaded = yield* loadLane(options);
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
@@ -196,7 +297,14 @@ export const runAmend = (
 			);
 		}
 
-		const judged = judgeAmendment(loaded.lane, candidate.lane, loaded.entries);
+		const judged = judgeAmendment(loaded.lane, candidate.lane, loaded.entries, options.defer);
+		if (judged._tag === "DeferralRefused") {
+			return refuse(
+				DEFERRAL_REFUSED,
+				`${VERB}: refused (nothing written): a --defer does not describe this lane.`,
+				judged.reasons.map((row) => `${VERB}: ${row}`),
+			);
+		}
 		if (judged._tag === "Unreplayable") {
 			return replayRefusal(VERB, loaded.logPath, {
 				_tag: "Unreplayable",
@@ -216,12 +324,37 @@ export const runAmend = (
 		if (judged._tag === "Unreachable") {
 			return refuse(
 				AMEND_UNREPLAYABLE,
-				`${VERB}: refused (nothing written): the re-derived machine cannot carry this lane's recorded history.`,
+				`${VERB}: refused (nothing written): the re-derived machine cannot carry this lane's recorded history. Let the task reach a leaf the amendment can carry, amend a different part of the topology, or — when the plan change is an authorized descope — name it with --defer <task> --defer-reason "<why>".`,
 				judged.reasons.map((reason) => `${VERB}: ${reason}`),
 			);
 		}
 
-		const entry = amendmentEntry(options.epic, options.now, judged.tasks);
+		// Last precondition, and after the judgement so a deferral that was never going to be admitted
+		// spends no board read: a child a builder is holding right now is one this verb detaches
+		// mid-flight, and an ownership nobody can read is not an absence to act on.
+		for (const task of judged.deferred) {
+			const child = taskIdChild(task);
+			if (child === null) {
+				return refuse(
+					DEFERRAL_REFUSED,
+					`${VERB}: refused (nothing written): task "${task}" names no child issue, so no worker's ownership of it can be proven.`,
+				);
+			}
+			const owner = yield* options.ownership(resolved.repo, child);
+			if (owner._tag === "Unknown") {
+				return refuse(
+					LANE_UNREADABLE,
+					`${VERB}: cannot read who holds #${child}'s build claim: ${owner.reason} — UNKNOWN, and nothing was written.`,
+				);
+			}
+			if (owner._tag === "Held") {
+				return refuse(
+					DEFERRAL_REFUSED,
+					`${VERB}: refused (nothing written): #${child} is held by ${owner.token}, so a worker is still on it — release that claim, then re-run.`,
+				);
+			}
+		}
+
 		return yield* withLedgerLock(
 			{fs, path, dir: loaded.dir, verb: VERB},
 			Effect.gen(function* () {
@@ -235,7 +368,7 @@ export const runAmend = (
 						`${VERB}: ${loaded.logPath} became unreadable before the append — nothing was written.`,
 					);
 				}
-				const again = judgeAmendment(fresh.lane, candidate.lane, fresh.entries);
+				const again = judgeAmendment(fresh.lane, candidate.lane, fresh.entries, options.defer);
 				if (again._tag !== "Amendable") {
 					return refuse(
 						AMEND_UNREPLAYABLE,
@@ -245,8 +378,17 @@ export const runAmend = (
 				// The record lands before the machine it records, so a half-applied amendment leaves a
 				// log the old machine still replays (this line reaches no machine) rather than a machine
 				// nothing accounts for. Re-running then re-judges and completes it.
+				// Re-derived under the lock for the same reason the judgement is: a line appended between
+				// the two reads moves the bound, and a bound taken from the earlier read would leave that
+				// line uncovered — the exact shape `resolveDeferrals` refuses on every later fold.
+				const fresher = amendmentEntry(
+					options.epic,
+					options.now,
+					again.tasks,
+					deferralRows(fresh.entries, again.deferred, reason ?? ""),
+				);
 				const appended = yield* Effect.result(
-					appendText(fresh.logPath, `${JSON.stringify(entry)}\n`),
+					appendText(fresh.logPath, `${JSON.stringify(fresher)}\n`),
 				);
 				if (Result.isFailure(appended)) {
 					return refuse(
@@ -270,13 +412,14 @@ export const runAmend = (
 						tasks: again.tasks,
 						added: again.added,
 						dropped: again.dropped,
+						deferred: fresher.defers ?? [],
 						phases: emitted.phases,
 						children: emitted.children,
 						bytes: new TextEncoder().encode(emitted.text).length,
 					}),
 					[
 						`${VERB}: read #${options.epic} and ${listed.value.length} sub-issue link(s) from ${resolved.repo}.`,
-						`${VERB}: appended ${entry.event} at ${fresh.logPath} — no recorded line was rewritten.`,
+						`${VERB}: appended ${fresher.event} at ${fresh.logPath} — no recorded line was rewritten.`,
 					],
 				);
 			}),

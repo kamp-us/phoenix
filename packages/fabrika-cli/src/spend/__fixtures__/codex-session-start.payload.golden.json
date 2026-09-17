@@ -1,0 +1,9 @@
+{
+	"session_id": "codex-captured-session",
+	"transcript_path": "/fixture/native.jsonl",
+	"cwd": "/fixture/project",
+	"hook_event_name": "SessionStart",
+	"model": "gpt-6-astra",
+	"permission_mode": "bypassPermissions",
+	"source": "startup"
+}

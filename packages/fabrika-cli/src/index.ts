@@ -24,5 +24,7 @@ export * as Exec from "./io/exec.ts";
 export * as Fs from "./io/fs.ts";
 export * as Git from "./io/git.ts";
 export * as GitHub from "./io/github.ts";
+export * as UsageLedger from "./spend/usage-ledger.ts";
+export * as UsageRecords from "./spend/usage-record.ts";
 export * as Verb from "./verb.ts";
 export {VERSION} from "./version.ts";

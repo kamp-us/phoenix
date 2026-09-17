@@ -17,21 +17,68 @@
  * landing prints `unknown` and costs the run nothing else, because the guard that matters sits on
  * the write — `ship merge` re-derives the same fact itself and refuses `11` where this printed
  * `unknown`, so a degraded read here can never license a landing.
+ *
+ * **This is also where a shipper proves it is not standing in the driver's checkout.** A spawn flag
+ * asking for `isolation: worktree` is a request, not a fact, and a shipper that ran in the driver's
+ * tree let that checkout's branch move under a mid-drive operator, which changed which build of
+ * these verbs the driver went on executing, with no signal. Every dispatched shipper run carries
+ * this read and nothing downstream proceeds without it, so seating the refusal here costs one
+ * `git rev-parse` and covers the whole group. `ship disarm --site preflight` runs earlier and
+ * deliberately does not carry it: clearing a stale merge intent is safe from any tree, and refusing
+ * there would cost the run the one act that protects it.
+ *
+ * **Which runs it binds is {@link ScopeCaller}, and the caller states it.** The refusal is about the
+ * shipper's seat, not about the derivation, so an in-process relay that stands on no lane branch and
+ * writes to no tree passes `relay` and skips the read entirely — see that type for why a default
+ * would be the wrong shape here.
+ *
+ * **The partition is taken over the enumerated file list, not over GitHub's `changed_files`.** A list
+ * short of that declared count used to refuse at `13`, and this is the first verb a `ship` run makes,
+ * so the refusal stranded the whole merge path before it started. The count is the stale side —
+ * GitHub computes it against a base cached at the PR's last push, which nothing on the shipper's
+ * side can invalidate. {@link platformFileSet} owns that argument; the disagreement leaves as a
+ * `scanned` line, and the zero-file refusal below is what keeps a partition over an unread diff from
+ * printing.
+ *
+ * **The `13` this verb keeps for that list is the endpoint's own ceiling, not a count comparison.**
+ * `pulls/<n>/files` serves at most 3000 files (`PULL_FILES_CAP`) and ends its Link chain normally
+ * there, so the pagination proof passes over a list GitHub already truncated — and a class, a
+ * namespace or a §CP path could sit in the part it never served.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {governedRootsOr, noUiSurfaces, uiSurfacesOr} from "../config/paths.ts";
 import {listPullFiles} from "../io/pulls.ts";
+import {standingInLinkedWorktree} from "../lane/assembly.ts";
 import {issueRefOf, partitionWithUi, renderIssueRef, shipNamespacesOf} from "../review/classes.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {readBoundary} from "./boundary.ts";
 import {classify} from "./codeowners.ts";
-import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, PRIMARY_CHECKOUT, ZERO_SCOPE} from "./codes.ts";
 import {readLanding} from "./landing.ts";
 import {badNumber, NULL_TOKEN, resolvePull, resolveTargetRepo, scannedLine} from "./target.ts";
 
 const VERB = "ship scope";
+
+/**
+ * Who is running this read, and so whether the main-working-tree refusal binds it.
+ *
+ * `shipper` is a dispatched shipper's own run — the `ship scope` command, where the spawn's
+ * `isolation: worktree` request is proven a fact or refused `33`.
+ *
+ * `relay` is an in-process caller that reads this derivation for its own answer, pushes nothing and
+ * stands on no lane branch: `recipe unpark`, which a driver runs from its own checkout on purpose.
+ * Binding it there would refuse the verb in the one tree it is meant to run in, and it would say so
+ * by telling a driver to respawn a shipper it never dispatched.
+ *
+ * Stated at every call site rather than defaulted, because the two seats are the whole question this
+ * field answers and a default is how a future caller inherits an answer nobody chose.
+ */
+export type ScopeCaller = "shipper" | "relay";
 
 export interface ScopeOptions {
 	readonly pr: number;
@@ -40,6 +87,8 @@ export interface ScopeOptions {
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** Whether this run is a shipper's own, and so whether the worktree refusal binds it. */
+	readonly caller: ScopeCaller;
 }
 
 /** `open` / `draft` / `merged` / `closed` — four lifecycle words over two REST fields. */
@@ -60,6 +109,22 @@ export const runScope = (
 		const {pr, json} = options;
 		const bad = badNumber(VERB, "a pull-request number", pr);
 		if (bad !== null) return bad;
+
+		if (options.caller === "shipper") {
+			const linked = yield* standingInLinkedWorktree;
+			if (linked._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot tell whether this tree is a linked worktree: ${linked.reason} — whether this shipper stands in the driver's checkout is UNKNOWN, and nothing was read.`,
+				);
+			}
+			if (!linked.value) {
+				return refuse(
+					PRIMARY_CHECKOUT,
+					`${VERB}: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with \`isolation: worktree\`. Nothing was read.`,
+				);
+			}
+		}
 
 		const governed = yield* governedRootsOr(
 			VERB,
@@ -86,31 +151,48 @@ export const runScope = (
 		if (target._tag === "Refused") return target.outcome;
 		const pull = target.pull;
 
-		const listed = yield* listPullFiles(repo, pr);
-		if (listed._tag === "Failure") {
+		// The enumerated list IS the file set this verb partitions, and the pull-request record's
+		// `changed_files` is reported beside it rather than refused on — `platformFileSet` carries why.
+		const listed = platformFileSet(
+			VERB,
+			`#${pr}`,
+			pull.changedFiles,
+			yield* listPullFiles(repo, pr),
+		);
+		if (listed._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot read the changed-file list for #${pr}: ${listed.reason} — the scope is UNKNOWN.`,
 			);
 		}
-		const files = listed.value;
+		const files = listed.set.files;
 		const diagnostics = [
 			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared`),
+			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
 			surfaces.prefixes.length === 0
 				? noUiSurfaces(VERB)
 				: `${VERB}: ui derived over ${surfaces.prefixes.length} prefix(es) — ${surfaces.note}.`,
 		];
-		if (files.length < pull.changedFiles) {
-			return refuse(
-				INCOMPLETE_SCAN,
-				`${VERB}: file list shows ${files.length} of ${pull.changedFiles} declared files — refusing to partition a truncated read.`,
-				diagnostics,
-			);
-		}
+		// Zero is the shortfall the enumeration alone establishes, and with the declared count no longer
+		// refusing it is the whole floor: an empty list partitions into no class and derives no
+		// namespace, so the vacuous-conjunction refusal below would fire for the wrong reason.
 		if (files.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
 				`${VERB}: PR #${pr} has zero changed files — nothing to ship.`,
+				diagnostics,
+			);
+		}
+		// The ceiling is the one truncation the enumeration cannot rule out on its own: the endpoint
+		// stops serving files there and ends its Link chain as a complete read ends.
+		if (listed.set.capped) {
+			return refuse(
+				INCOMPLETE_SCAN,
+				platformCapLine(
+					VERB,
+					`#${pr}`,
+					"a class, a namespace or a §CP path could sit in the part the platform never served.",
+				),
 				diagnostics,
 			);
 		}

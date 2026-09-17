@@ -3,23 +3,30 @@ import {describe, expect, it} from "vitest";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {fakeFs} from "../fakes.test-support.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {answer, refuse} from "../verb.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
 import {
 	CAUSE_UNRECOGNISED,
+	EVENT_REFUSED,
 	LANE_ABSENT,
 	LANE_UNREADABLE,
 	PARK_UNCAUSED,
 	PROOF_ABSENT,
 	PROOF_CONTRADICTED,
+	PROOF_IN_FLIGHT,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
 	WAIT_TOO_SOON,
 } from "./codes.ts";
-import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
+import {
+	coderTemplateText,
+	fakeProver,
+	fakeProverByEvent,
+	laneWrites,
+	parkCauseRead,
+} from "./fixtures.test-support.ts";
 import {runHistory} from "./history-verb.ts";
-import type {ProveOptions} from "./prove-verb.ts";
-import {PARK_CAUSE_TOKENS, SHELL_VOCABULARIES} from "./report.ts";
+import {PARK_CAUSE_TOKENS, PROOF_CONDITIONAL_TERMINALS, SHELL_VOCABULARIES} from "./report.ts";
 import {runReport} from "./report-verb.ts";
 
 const ROOT = ".fabrika/lanes";
@@ -39,28 +46,6 @@ const LOG_AT: Readonly<Record<"build" | "review" | "review:ui" | "ship", string>
 	ship: logLine("WIP") + logLine("DONE") + logLine("PASS"),
 };
 
-/**
- * A prover the test drives, standing in for `runProve` — it records what the verb asked it and
- * answers what the test wants read. `proof: "not-required"` is the shape `lane prove` answers with
- * at exit 0 for an event that claims no artifact.
- */
-const fakeProver = (
-	outcome: VerbOutcome = answer(JSON.stringify({proof: "not-required"})),
-	deferred: ReadonlyArray<string> = [],
-	partial: boolean | null = null,
-	landed: ReadonlyArray<number> = [],
-) => {
-	const asked: ProveOptions[] = [];
-	return {
-		asked,
-		prove: (options: ProveOptions) =>
-			Effect.sync(() => {
-				asked.push(options);
-				return {...outcome, deferred, partial, landed};
-			}),
-	};
-};
-
 const run = (
 	fs: ReturnType<typeof fakeFs>,
 	token: string,
@@ -71,7 +56,7 @@ const run = (
 		cause?: string | null;
 		parkCause?: Read<ParkCauseSurface>;
 		classes?: ReadonlyArray<string>;
-		prover?: ReturnType<typeof fakeProver>;
+		prover?: ReturnType<typeof fakeProver> | ReturnType<typeof fakeProverByEvent>;
 	} = {},
 ) =>
 	Effect.runPromise(
@@ -103,6 +88,22 @@ const laneAt = (log: string) => fakeFs({files: {[WORKFLOW]: coderTemplateText(),
 const appendedLine = (fs: ReturnType<typeof fakeFs>): string =>
 	fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "";
 
+/** A board that refuses the advanced `PASS` and lets the park through — the fall-through shape. */
+const unearned = (why = "unproven — #99 has no verdict that still binds in review-code (absent)") =>
+	fakeProverByEvent({
+		PASS: {outcome: refuse(PROOF_IN_FLIGHT, `fabrika lane prove: ${why}`)},
+		BLOCKED: {outcome: answer(JSON.stringify({proof: "uncontradicted"}))},
+	});
+
+/** A board that proves the advanced `PASS` on a route — the completed-review shape. */
+const earned = () =>
+	fakeProverByEvent({
+		PASS: {
+			outcome: answer(JSON.stringify({proof: "proven"})),
+			routed: ["review-ui"],
+		},
+	});
+
 describe("lane report — every shell terminal token maps to one operator event", () => {
 	const stateFor: Readonly<Record<keyof typeof SHELL_VOCABULARIES, keyof typeof LOG_AT>> = {
 		builder: "build",
@@ -117,7 +118,14 @@ describe("lane report — every shell terminal token maps to one operator event"
 			it(`${shell} ${token} records ${event}`, async () => {
 				const fs = laneAt(LOG_AT[stateFor[shell as keyof typeof SHELL_VOCABULARIES]]);
 
-				const out = await run(fs, token);
+				// The flat table is a floor for the one conditional token, so the run that proves the
+				// floor is the one whose advanced arm the board refuses. Its earned arm has its own
+				// describe block below.
+				const out = await run(
+					fs,
+					token,
+					PROOF_CONDITIONAL_TERMINALS[token] === undefined ? {} : {prover: unearned()},
+				);
 				expect(out.code).toBe(0);
 				expect(JSON.parse(out.stdout)).toMatchObject({
 					token,
@@ -435,6 +443,51 @@ describe("lane report — the deferral a proven PASS discloses", () => {
 });
 
 /**
+ * An investigation's `SUCCESS-NO-PR` used to drive its lane into `review`, whose brief needs an open
+ * PR the lane never opened — so `lane brief` refused at 20 and the only move left was a park that
+ * read as a fault. All three builder terminals report one `DONE`, so the prover's answer is the
+ * whole difference, and these are the three lines that say which way each one routes.
+ */
+describe("lane report — the diagnosis a finished investigation discloses", () => {
+	it("records the prover's diagnosis and lands the lane in `diagnosed`, never in `review`", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const prover = fakeProver(
+			answer(JSON.stringify({proof: "proven", evidence: {kind: "diagnosis", commentId: 900}})),
+			[],
+			null,
+			[],
+			true,
+		);
+
+		const out = await run(fs, "SUCCESS-NO-PR", {comment: "https://x/#issuecomment-900", prover});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.DONE", diagnosis: true});
+		expect(JSON.parse(out.stdout)).toMatchObject({current: "diagnosed", diagnosis: true});
+	});
+
+	it("leaves a `SHIPPED-PR` on the route it always took, carrying no `diagnosis` at all", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "SHIPPED-PR", {pr: "https://x/pull/1"});
+
+		expect(out.code).toBe(0);
+		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "diagnosis")).toBe(false);
+		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "review"}}});
+	});
+
+	it("leaves an epic child's `BUILT-NO-PR` folding to `review` too", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "BUILT-NO-PR");
+
+		expect(out.code).toBe(0);
+		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "diagnosis")).toBe(false);
+		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "review"}}});
+	});
+});
+
+/**
  * A merged `Part of #N` PR used to drive its lane to `complete` exactly as a closing merge
  * did, because nothing between the nominator and the ledger carried the difference.
  */
@@ -559,6 +612,54 @@ describe("lane report — a machinery terminal lands its own cause", () => {
 		expect(JSON.parse(appendedLine(fs))).toMatchObject({cause: "assembly-conflict"});
 	});
 
+	// A conflicted base is the one machinery cause at `ship` whose round is a builder's: the head owes
+	// a rebase, and the re-review that comes with it. Every other lap out of `ship` still
+	// re-dispatches the shipper, which is what the `lap:<cause>` arm buys over one flat target.
+	it("routes a BASE-CONFLICTED lap to build and leaves BASE-DRIFTED where it lands today", async () => {
+		const conflicted = laneAt(LOG_AT.ship);
+		const drifted = laneAt(LOG_AT.ship);
+
+		const toBuild = await run(conflicted, "BASE-CONFLICTED");
+		const toShip = await run(drifted, "BASE-DRIFTED");
+
+		expect(toBuild.code).toBe(0);
+		expect(JSON.parse(toBuild.stdout)).toMatchObject({
+			event: "ISSUE.LAP",
+			cause: "base-conflicted",
+			current: {pipeline: {issue: "build"}},
+		});
+		expect(toShip.code).toBe(0);
+		expect(JSON.parse(toShip.stdout)).toMatchObject({
+			cause: "head-behind-base",
+			current: {pipeline: {issue: "ship"}},
+		});
+	});
+
+	// The lane's `workflow.json` is copied in at `lane open`, so a lane opened before the route
+	// existed holds a `ship` lap cell that would swallow this cause and loop the shipper. Refusing it
+	// with the log untouched is what leaves the shipper its `ROUTED-REPAIR` fallback.
+	it("refuses BASE-CONFLICTED at 12 on a lane whose machine predates the route", async () => {
+		interface Region {
+			readonly states: Record<string, Region & {on?: Record<string, unknown>}>;
+		}
+		const stale = JSON.parse(coderTemplateText()) as {machine: Region};
+		const shipCell = stale.machine.states.pipeline?.states.issue?.states.ship?.on;
+		if (shipCell === undefined) throw new Error("the coder template holds no ship cell");
+		// Drop the leading `lap:base-conflicted` route, leaving the plain budget pair every lane
+		// carried before it.
+		shipCell["ISSUE.LAP"] = (shipCell["ISSUE.LAP"] as ReadonlyArray<unknown>).slice(1);
+		const fs = fakeFs({
+			files: {[WORKFLOW]: JSON.stringify(stale), [LOG]: LOG_AT.ship},
+		});
+
+		const out = await run(fs, "BASE-CONFLICTED");
+
+		expect(out.code).toBe(EVENT_REFUSED);
+		expect(out.stderr.join("\n")).toContain("log unappended");
+		expect(out.stderr.join("\n")).toContain('no arm for cause "base-conflicted"');
+		expect(fs.written.size).toBe(0);
+	});
+
 	it("tells an integrate-sourced failure from a review-sourced one on the recorded line", async () => {
 		const machinery = laneAt(LOG_AT.ship);
 		const content = laneAt(LOG_AT.review);
@@ -594,7 +695,7 @@ describe("lane report — a queue wait is floored on elapsed time, not on driver
 		expect(out.stderr.at(-1)).toContain("log unappended");
 		expect(out.stderr.at(-1)).toContain("390s are still to run");
 		expect(out.stderr.at(-1)).toContain("The wait is intact");
-		expect(fs.written.size).toBe(0);
+		expect(laneWrites(fs.written)).toEqual([]);
 	});
 
 	it("records a re-fold past the floor, spending the wait", async () => {
@@ -646,6 +747,128 @@ describe("lane report — a queue wait is floored on elapsed time, not on driver
 
 		expect(out.code).toBe(WAIT_TOO_SOON);
 		expect(out.stderr.at(-1)).toContain("UNKNOWN");
-		expect(fs.written.size).toBe(0);
+		expect(laneWrites(fs.written)).toEqual([]);
+	});
+});
+
+/**
+ * A `ROUTED-ELSEWHERE` is the rendered gate saying it owes this diff no verdict, and `lane prove`
+ * has always read that route as satisfying `review-ui`. Folding the terminal flat to `BLOCKED`
+ * anyway parked lanes whose board already read `gate satisfied`, and each one cost a hand
+ * `UNBLOCKED` plus a re-report to say what the proof had already said — six of them on one day.
+ *
+ * These join the three things that case needs read together: the terminal reported, the proof the
+ * verb actually ran for it, and the task state the ledger lands in. The positive arm is the observed
+ * shape; the negatives are every way a route can fail to be a finished review.
+ */
+describe("lane report — a satisfied UI route advances the task it used to strand", () => {
+	it("records PASS and lands the task in `ship` when the completion proof holds", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+		const prover = earned();
+
+		const out = await run(fs, "ROUTED-ELSEWHERE", {prover, cause: "no-rendered-delta"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			token: "ROUTED-ELSEWHERE",
+			previous: {pipeline: {issue: "review:ui"}},
+			event: "ISSUE.PASS",
+			current: {pipeline: {issue: "ship"}},
+		});
+		// The proof it ran is the ordinary one for the event it recorded — nothing bespoke, and no
+		// weaker bar asked for.
+		expect(prover.asked.map((asked) => asked.event)).toEqual(["PASS"]);
+	});
+
+	it("records the route on the line, so a proven PASS is never mistaken for a rendered verdict", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+
+		const out = await run(fs, "ROUTED-ELSEWHERE", {prover: earned()});
+
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.PASS",
+			routed: ["review-ui"],
+		});
+		expect(JSON.parse(out.stdout).routed).toEqual(["review-ui"]);
+	});
+
+	it("drops the park's cause from the advanced line rather than refusing the caller for passing one", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+
+		const out = await run(fs, "ROUTED-ELSEWHERE", {
+			prover: earned(),
+			cause: "no-rendered-delta",
+		});
+
+		expect(out.code).toBe(0);
+		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "cause")).toBe(false);
+		expect(Object.hasOwn(JSON.parse(out.stdout), "cause")).toBe(false);
+	});
+
+	it("parks with its cause when a required review has not answered", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+		const prover = unearned();
+
+		const out = await run(fs, "ROUTED-ELSEWHERE", {prover, cause: "no-rendered-delta"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			current: {pipeline: {issue: "blocked"}},
+			cause: "no-rendered-delta",
+		});
+		// The advance was tried and the park was proven — two reads, in that order.
+		expect(prover.asked.map((asked) => asked.event)).toEqual(["PASS", "BLOCKED"]);
+	});
+
+	it("parks when the route is stale, absent or unauthorized — the prover's own refusal decides", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+
+		const out = await run(fs, "ROUTED-ELSEWHERE", {
+			prover: unearned("unproven — #99 has no verdict that still binds in review-ui (stale)"),
+			cause: "no-rendered-delta",
+		});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			current: {pipeline: {issue: "blocked"}},
+		});
+		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "routed")).toBe(false);
+	});
+
+	it("refuses outright on a standing FAIL — neither arm is recordable", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+		const contradicted = refuse(
+			PROOF_CONTRADICTED,
+			"fabrika lane prove: unproven — #99 holds a FAIL that still binds in review-code",
+		);
+		const prover = fakeProverByEvent({
+			PASS: {outcome: contradicted},
+			BLOCKED: {outcome: contradicted},
+		});
+
+		const out = await run(fs, "ROUTED-ELSEWHERE", {prover, cause: "no-rendered-delta"});
+
+		expect(out.code).toBe(PROOF_CONTRADICTED);
+		expect(fs.written.has(LOG)).toBe(false);
+	});
+
+	it("reads flat out of any other cell — the leaf is half the key", async () => {
+		const fs = laneAt(LOG_AT.review);
+		const prover = fakeProverByEvent({
+			PASS: {outcome: answer(JSON.stringify({proof: "proven"}))},
+			BLOCKED: {outcome: answer(JSON.stringify({proof: "uncontradicted"}))},
+		});
+
+		const out = await run(fs, "ROUTED-ELSEWHERE", {prover, cause: "no-rendered-delta"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			current: {pipeline: {issue: "blocked"}},
+		});
+		// No advance was even tried: `review` is not this row's leaf, so the token is flat there.
+		expect(prover.asked.map((asked) => asked.event)).toEqual(["BLOCKED"]);
 	});
 });

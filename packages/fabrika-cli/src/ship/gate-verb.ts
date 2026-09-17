@@ -29,15 +29,34 @@
  * gate recording that this PR's diff holds nothing its rubric is about, which `review-ui`
  * alone needed because its emit path cannot produce a verdict over zero rendered surfaces. See
  * {@link ROUTABLE} for why exactly one namespace may resolve that way.
+ *
+ * **The enumerated file list is the floor's file set, and `changed_files` no longer refuses.** This
+ * verb used to stop at `13` whenever the list came up short of that count, and the count is the
+ * stale side: GitHub computes it against a base it cached at the PR's last push, which nothing on
+ * the shipper's side can invalidate — so the refusal stranded the enqueue with no act available to
+ * clear it. {@link platformFileSet} carries the whole argument, including why this verb enumerates
+ * through the platform rather than a git range: the common path here is asserted to read no git at
+ * all, and a merge gate needing a fetch to answer is one a checkout-less caller cannot run. The
+ * disagreement leaves as a diagnostic line, and the zero-file refusal below is what keeps a
+ * conjunction over an unread diff from printing satisfied.
+ *
+ * **The `13` this verb keeps for that list is the endpoint's own ceiling, not a count comparison.**
+ * `pulls/<n>/files` serves at most 3000 files (`PULL_FILES_CAP`) and ends its Link chain normally
+ * there, so the pagination proof passes over a list GitHub already truncated. That is a proven
+ * partial read rather than two counts disagreeing, and a floor raised from it would be raised over
+ * scope nobody saw.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {governedRootsOr} from "../config/paths.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {listPullFiles, permissionFor} from "../io/pulls.ts";
-import {readAdvisory} from "../review/advisory.ts";
+import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
 import {SHIP_NAMESPACES, touchesGovernanceRoot} from "../review/classes.ts";
 import {headContentFor} from "../review/head-content.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
@@ -146,9 +165,9 @@ const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
 		? null
 		: {
 				namespace: advisory.namespace,
-				// The advisory carrier is PASS-only. A `[FAIL]` row inside one is an invalid
-				// emission, caught below and reported — never read as a pass.
-				polarity: /\[FAIL\]/.test(comment.body) ? "FAIL" : "PASS",
+				// An invalid `[FAIL]` emission inside an advisory is caught below and reported —
+				// never read as a pass. The predicate is the carrier's own, shared by every reader.
+				polarity: advisoryPolarity(comment.body),
 				sha: advisory.sha,
 				// The §CP advisory withholds a content binding by design: the human-approval half of the
 				// binding question is answered where head-binding is ruled, not here. So an advisory
@@ -188,9 +207,14 @@ export const requiredWithFloor = (
  * The in-force verdict for one namespace: head-bound candidates first, then newest write stamp.
  *
  * Exported so the ordering is testable without a PR: the two rules interact, and "head-bound
- * outranks recency" is only checkable against a stale-but-newer counterexample.
+ * outranks recency" is only checkable against a stale-but-newer counterexample. It is generic in the
+ * claim so a caller carrying a narrower one — `review-ui route`'s two-polarity text claim — gets its
+ * own type back and needs no cast to read a field this module does not know about.
  */
-export const inForce = (candidates: ReadonlyArray<Candidate>, sha: string): Candidate | null => {
+export const inForce = <T extends Candidate>(
+	candidates: ReadonlyArray<T>,
+	sha: string,
+): T | null => {
 	const ordered = [...candidates].sort((a, b) => {
 		const aBound = prefixMatch(a.sha, sha) ? 1 : 0;
 		const bBound = prefixMatch(b.sha, sha) ? 1 : 0;
@@ -274,28 +298,47 @@ export const runGate = (
 		if (target._tag === "Refused") return target.outcome;
 		const pull = target.pull;
 
-		const listed = yield* listPullFiles(repo, pr);
-		if (listed._tag === "Failure") {
+		// The enumerated list IS the file set the floor is derived from, and the pull-request record's
+		// `changed_files` is reported beside it rather than refused on — `platformFileSet` carries why
+		// that count is not a floor, and why this verb reads it through the platform rather than git.
+		const listed = platformFileSet(
+			VERB,
+			`#${pr}`,
+			pull.changedFiles,
+			yield* listPullFiles(repo, pr),
+		);
+		if (listed._tag === "Unreadable") {
 			return refuse(PRECONDITION_UNKNOWN, unreadable("the changed-file list", listed.reason));
 		}
+		const changed = listed.set.files;
 		const diagnostics = [
-			scannedLine(VERB, listed.value.length, "changed file", `${pull.changedFiles} declared`),
+			scannedLine(VERB, changed.length, "changed file", `${pull.changedFiles} declared`),
 		];
-		if (listed.value.length < pull.changedFiles) {
-			return refuse(
-				INCOMPLETE_SCAN,
-				`${VERB}: received ${listed.value.length} of ${pull.changedFiles} changed files — refusing to derive the required floor from a truncated read.`,
-				diagnostics,
-			);
-		}
-		if (listed.value.length === 0) {
+		if (listed.set.disagreement !== null) diagnostics.push(listed.set.disagreement);
+		// Zero is the shortfall the enumeration alone establishes, and with the declared count no longer
+		// refusing it is the only seat left: an empty list raises no namespace and touches no governance
+		// root, so the conjunction would print satisfied over a diff nobody read.
+		if (changed.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
 				`${VERB}: PR #${pr} has zero changed files — a conjunction over an empty diff proves nothing.`,
 				diagnostics,
 			);
 		}
-		const {required, floored} = requiredWithFloor(requested, listed.value, governed.roots);
+		// The ceiling is the one truncation the enumeration cannot rule out on its own: the endpoint
+		// stops serving files there and ends its Link chain as a complete read ends.
+		if (listed.set.capped) {
+			return refuse(
+				INCOMPLETE_SCAN,
+				platformCapLine(
+					VERB,
+					`#${pr}`,
+					"refusing to derive the required floor from a capped read.",
+				),
+				diagnostics,
+			);
+		}
+		const {required, floored} = requiredWithFloor(requested, changed, governed.roots);
 		if (floored.length > 0) {
 			diagnostics.push(
 				`${VERB}: #${pr}'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.`,

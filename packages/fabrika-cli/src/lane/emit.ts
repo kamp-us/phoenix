@@ -15,7 +15,8 @@
  * **One epic run is one branch and one PR**. A child's region is the local loop only —
  * `queued → build → review → integrate`, the integrate step merging the child's range into the epic
  * branch — and the merge to `main` lives once, in the tail phase's single epic-level region
- * (`review → ship → shipped`, plus the `build` repair cell a failed tail review retries into). The
+ * (`review → ship → shipped`, plus the `build` repair cell a failed tail review retries into and the
+ * `review:ui` cell a rendered run's tail routes through on its way to `ship`). The
  * tail is a *phase* rather than a bare state because `machine.ts` reads the workflow's two terminals
  * off the last phase's `onDone` pair; shaped this way the compiler needs no change at all.
  *
@@ -27,9 +28,16 @@
  * terminate.
  *
  * The machinery lap axis rides one boolean, off by default (`machineryLaps.onEmit`): on, each task
- * seeds a lap counter and the collision and queue states take a `LAP` arm; off, every byte is what
- * it was before the axis existed. The machine is fixed at emission, so the flag reaches no lane
- * already on disk.
+ * seeds a lap counter and every state a machinery failure can strike takes a `LAP` arm — the
+ * collision and queue cells, and every state that dispatches a shell (see {@link lapArm}); off,
+ * every byte is what it was before the axis existed. The machine is fixed at emission, so the flag
+ * reaches no lane already on disk.
+ *
+ * The class axis rides each child's own `classes`, off the `sub_issues` payload's labels: a classed
+ * child seeds `context.<task>.classes` and takes the class-guarded arms, an unclassed one is the
+ * bytes it always was ([`class-seed.ts`](class-seed.ts) carries why that seed matters). Same
+ * fixed-at-emission rule — a class stamped after the emit reaches this machine only through an
+ * event.
  */
 import {findCycle, readDeclared} from "../ledger/topology-doc.ts";
 import type {SubIssueLink} from "../plan/github.ts";
@@ -70,16 +78,76 @@ const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
 };
 
 /**
- * The machinery arm, whose two targets are the whole of the lap axis in a document: go round again
- * while laps remain, else park on `human:machinery-stall`.
+ * The rendered-surface class and the guard spelling that routes on it — the same two strings the
+ * committed coder template carries, so a child region and a single-issue lane read one grammar.
+ *
+ * A child carrying the class gets the `build:ui` construction cell and the guarded arms into it —
+ * the `queued` `WIP` and both FAIL arms; a child carrying none is emitted byte-for-byte as it was
+ * before this axis existed.
+ *
+ * **No CHILD region emits the rendered REVIEW cell**, on the decision record that rules an epic
+ * child's rendered review the tail's by construction. A child opens no pull request, so a
+ * `review:ui` cell it entered could produce nothing: `wire/lane-brief.ts` maps the state to
+ * `ui-reviewer` with no child arm, and `prove.ts`'s `claimOf` gates its `PASS` on `&& !child`.
+ *
+ * The creditor that record names does emit it — see {@link epicRegion}. The guard spelling is the
+ * one thing the two cells share: a child's routes it to a BUILDER, the tail's to a reviewer.
+ */
+const UI_CLASS = "ui";
+const UI_GUARD = `class:${UI_CLASS}`;
+
+/**
+ * The machinery arm: go round again while laps remain, else park on `human:machinery-stall`, with
+ * any `lap:<cause>` routes ahead of the pair for the causes that do not fold back where the rest do.
  *
  * The park is a plain state with an `UNBLOCKED` door rather than a final, because a spent lap is not
  * a verdict against the work — nothing about the artifact is wrong, the pipeline failed to carry it
  * — so freezing the task would tell a reader the opposite of what happened.
+ *
+ * **Every state `wire/lane-brief.ts`'s `SHELL_STATES` names takes one of these arms, and its target
+ * is that same state.** `SHELL-DEAD` maps to `LAP`, so a state that dispatches a shell the provider
+ * can kill and carries no `LAP` arm refuses the driver's report at `lane report` exit `12` with the
+ * log unappended — the lane then sits until a person moves it. Self-targeting is what the death
+ * asks for: the work is untouched and the shell is gone, so the answer is to dispatch it again.
+ * The non-shell cells aim elsewhere on purpose — `integrate`'s at `review`, because a replayed
+ * range is content no verdict has read.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8891
  */
-const lapArm = (target: string): ReadonlyArray<Record<string, unknown>> => [
+const lapArm = (
+	target: string,
+	routes: Readonly<Record<string, string>> = {},
+): ReadonlyArray<Record<string, unknown>> => [
+	...Object.entries(routes).map(([cause, to]) => ({target: to, guard: `lap:${cause}`})),
 	{target, guard: "lapsRemaining", actions: "incrementLaps"},
 	{target: "human:machinery-stall"},
+];
+
+/**
+ * `ship enqueue` read a definite `mergeable_state: dirty`, so the tail's head owes a rebase and the
+ * re-review that comes with it — a builder's round, not a re-dispatch of the shipper that just
+ * refused. Every other lap reaching `ship` self-targets, exactly as it did before this route existed.
+ */
+const SHIP_LAP_ROUTES: Readonly<Record<string, string>> = {"base-conflicted": "build"};
+
+/**
+ * A child's repair arm: go round again while retries remain, else park on `human:budget-spent`, with
+ * a rendered child's round re-entering `build:ui` instead of `build`.
+ *
+ * The class arm is a leading ROUTE rather than the taken arm — `machine.ts` reads it as one because
+ * a budget pair follows it — so the guard that decides whether the round happens at all is still the
+ * retry budget. Written as a two-arm array with the class in the taken position, a spent rendered
+ * child would re-enter the builder forever rather than park, which is the constraint that left this
+ * arm unclassed when the seed first landed.
+ *
+ * An unclassed child emits the pair alone, byte-for-byte what it was before the class axis existed.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9147
+ */
+const repairArm = (ui: boolean): ReadonlyArray<Record<string, unknown>> => [
+	...(ui ? [{target: "build:ui", guard: UI_GUARD}] : []),
+	{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+	{target: "human:budget-spent"},
 ];
 
 /**
@@ -91,8 +159,8 @@ const lapArm = (target: string): ReadonlyArray<Record<string, unknown>> => [
  *
  * `integrate` is the merge of the reviewed range into the epic branch, and it is a *state* so that a
  * collision between two children resolves inside the run: its `FAIL` — a textual conflict, or a
- * failed post-merge check, which is the semantic collision — re-enters `build` under the same
- * guarded-FAIL retry array `review` uses, and exhausts into `human:budget-spent` — a park with an
+ * failed post-merge check, which is the semantic collision — re-enters the construction cell under
+ * the same guarded-FAIL retry array `review` uses, and exhausts into `human:budget-spent` — a park with an
  * `UNBLOCKED` door back to the state it left, spent retries held. No route from it reaches a
  * merge queue, and none reaches `landed` without passing back through `review`: post-resolution
  * content is not what the range verdict judged, so the verdict is re-proven before the landing
@@ -121,50 +189,80 @@ const lapArm = (target: string): ReadonlyArray<Record<string, unknown>> => [
  * is the SAME shape — a `final` carrying an `UNBLOCKED` door, so the phase folds and the lane trips
  * loud — under a name `recipe/parks.ts` can see. `isPark` matches `blocked` and `human:*` and
  * matched `frozen` never, so a child at its cap parked where every recipe answered `NotParked`.
+ *
+ * A `ui`-classed child carries one more state — `build:ui` — and the guarded `queued.WIP` arm into
+ * it, so its first construction pass runs in the rendered shell. Without that pair the class seed
+ * reached an emitted child and turned nothing, the half of this axis a folded report named from the
+ * other end. Its repair rounds run there too: both FAIL arms are {@link repairArm}, which leads the
+ * retry pair with the class route, so a rendered child's every round is served by the rendered
+ * shell and a spent one still parks at `human:budget-spent`. The template's `review:ui` cell has no
+ * counterpart here, for the reason {@link UI_CLASS} carries — a child's rendered review is the
+ * tail's, and the class on these arms picks the BUILDER, never a reviewer.
  */
 const region = (
 	ns: string,
 	initial: "queued" | "landed" | "frozen",
 	machinery: boolean,
-): Record<string, unknown> => ({
-	initial,
-	states: {
-		queued: {on: {[`${ns}.WIP`]: "build", [`${ns}.BLOCKED`]: "blocked"}},
-		build: {on: {[`${ns}.DONE`]: "review", [`${ns}.BLOCKED`]: "blocked"}},
-		review: {
-			on: {
-				[`${ns}.PASS`]: "integrate",
-				[`${ns}.BLOCKED`]: "blocked",
-				[`${ns}.FAIL`]: [
-					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
-					{target: "human:budget-spent"},
-				],
+	classes: ReadonlyArray<string>,
+): Record<string, unknown> => {
+	const ui = classes.includes(UI_CLASS);
+	return {
+		initial,
+		states: {
+			queued: {
+				on: {
+					[`${ns}.WIP`]: ui ? [{target: "build:ui", guard: UI_GUARD}, {target: "build"}] : "build",
+					[`${ns}.BLOCKED`]: "blocked",
+				},
 			},
-		},
-		integrate: {
-			on: {
-				[`${ns}.DONE`]: "landed",
-				[`${ns}.WIP`]: [
-					{target: "review", guard: "waitsRemaining", actions: "incrementWaits"},
-					{target: "human:replay-stall"},
-				],
-				[`${ns}.BLOCKED`]: "blocked",
-				[`${ns}.FAIL`]: [
-					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
-					{target: "human:budget-spent"},
-				],
-				...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
+			build: {
+				on: {
+					[`${ns}.DONE`]: "review",
+					[`${ns}.BLOCKED`]: "blocked",
+					...(machinery ? {[`${ns}.LAP`]: lapArm("build")} : {}),
+				},
 			},
+			...(ui
+				? {
+						"build:ui": {
+							on: {
+								[`${ns}.DONE`]: "review",
+								[`${ns}.BLOCKED`]: "blocked",
+								...(machinery ? {[`${ns}.LAP`]: lapArm("build:ui")} : {}),
+							},
+						},
+					}
+				: {}),
+			review: {
+				on: {
+					[`${ns}.PASS`]: "integrate",
+					[`${ns}.BLOCKED`]: "blocked",
+					[`${ns}.FAIL`]: repairArm(ui),
+					...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
+				},
+			},
+			integrate: {
+				on: {
+					[`${ns}.DONE`]: "landed",
+					[`${ns}.WIP`]: [
+						{target: "review", guard: "waitsRemaining", actions: "incrementWaits"},
+						{target: "human:replay-stall"},
+					],
+					[`${ns}.BLOCKED`]: "blocked",
+					[`${ns}.FAIL`]: repairArm(ui),
+					...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
+				},
+			},
+			blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+			"human:replay-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+			"human:budget-spent": {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
+			...(machinery ? {"human:machinery-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}}} : {}),
+			hist: {type: "history"},
+			landed: {type: "final"},
+			frozen: {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		},
-		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
-		"human:replay-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
-		"human:budget-spent": {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
-		...(machinery ? {"human:machinery-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}}} : {}),
-		hist: {type: "history"},
-		landed: {type: "final"},
-		frozen: {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
-	},
-});
+	};
+};
 
 /**
  * The epic's own region — the tail phase's single task: review the one PR, then merge it once, with
@@ -192,12 +290,46 @@ const region = (
  * anyway (the 2026-08-20 amendment to the epic-machine decision record). The fallthrough is the same `human:budget-spent` a
  * child's is: an epic review that spent its budget is a park its driver resumes, not the end of the
  * run, and one leaf for one fact means one route to read it by.
+ *
+ * `review:ui` is the tail's second review cell, and the tail is the ONE region of this machine that
+ * carries it. Every child hands its rendered namespace on unconditionally, so the whole run's
+ * `review-ui` debt arrives here; with no cell to route into, `prove.ts` left the tail owing the set
+ * at `review`, refused every `PASS` at exit 23, and the lane could neither ship nor park honestly —
+ * `review` is an active state, so no stale sweep ever saw it. The cell is emitted unconditionally
+ * rather than on a class, because the tail's context seeds none: the tail is emitted before any
+ * child has classed anything, and the class reaches it only as the `classes` a reviewer relays on
+ * `lane report --class ui`. A tail whose run renders nothing never raises the guard, walks
+ * `review → ship` on the bytes it always walked, and derives no namespace for the cell to owe.
+ *
+ * Its `FAIL` retries into `build` — the tail's one repair cell — and not into a `build:ui` of its
+ * own. A tail repair round is briefed on the assembly branch beside the run's PR, and
+ * `wire/lane-brief.ts` admits that pair for `build` alone; a rendered repair is the mixed builder's
+ * per-file law over that same branch, which needs no second cell here.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8937
  */
 const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => ({
 	initial: "review",
 	states: {
-		build: {on: {[`${ns}.DONE`]: "review", [`${ns}.BLOCKED`]: "blocked"}},
+		build: {
+			on: {
+				[`${ns}.DONE`]: "review",
+				[`${ns}.BLOCKED`]: "blocked",
+				...(machinery ? {[`${ns}.LAP`]: lapArm("build")} : {}),
+			},
+		},
 		review: {
+			on: {
+				[`${ns}.PASS`]: [{target: "review:ui", guard: UI_GUARD}, {target: "ship"}],
+				[`${ns}.BLOCKED`]: "blocked",
+				[`${ns}.FAIL`]: [
+					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+					{target: "human:budget-spent"},
+				],
+				...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
+			},
+		},
+		"review:ui": {
 			on: {
 				[`${ns}.PASS`]: "ship",
 				[`${ns}.BLOCKED`]: "blocked",
@@ -205,6 +337,7 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 					{target: "human:budget-spent"},
 				],
+				...(machinery ? {[`${ns}.LAP`]: lapArm("review:ui")} : {}),
 			},
 		},
 		ship: {
@@ -216,7 +349,7 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
 					{target: "human:budget-spent"},
 				],
-				...(machinery ? {[`${ns}.LAP`]: lapArm("ship")} : {}),
+				...(machinery ? {[`${ns}.LAP`]: lapArm("ship", SHIP_LAP_ROUTES)} : {}),
 			},
 		},
 		"ship:queued": {
@@ -252,14 +385,38 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 export const childTaskId = (child: number): string => `issue_${child}`;
 
 /**
- * One task's seeded context. The lap pair is appended rather than interleaved, so an emission with
- * the axis off is the object it always was — key order included, which is what makes the byte
- * comparison a test can hold.
+ * The child number a task id names, or `null` where the id is not a child's.
+ *
+ * The epic tail's `epic_<n>` and any hand-written id answer `null` rather than a plausible number,
+ * which is what keeps a caller that has to reach the board — `lane amend --defer`, asking whether a
+ * live worker owns the child — from reading an ownership answer about the wrong issue.
  */
-const taskContext = (machinery: boolean): Record<string, unknown> =>
-	machinery
-		? {retries: 0, maxRetries: RETRY_BUDGET, laps: 0, maxLaps: MACHINERY_LAP_BUDGET}
-		: {retries: 0, maxRetries: RETRY_BUDGET};
+export const taskIdChild = (task: string): number | null => {
+	const matched = /^issue_(\d+)$/.exec(task);
+	const digits = matched?.[1];
+	if (digits === undefined) return null;
+	const parsed = Number(digits);
+	return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
+/**
+ * One task's seeded context. The lap pair and the classes are appended rather than interleaved, so
+ * an emission with the axis off and no class is the object it always was — key order included, which
+ * is what makes the byte comparison a test can hold.
+ *
+ * An unclassed task carries no `classes` key at all rather than an empty array, for that same
+ * reason: `machine.ts` reads a missing declaration and an empty one identically, so the key would
+ * buy nothing and cost every existing emission's bytes.
+ */
+const taskContext = (
+	machinery: boolean,
+	classes: ReadonlyArray<string> = [],
+): Record<string, unknown> => ({
+	retries: 0,
+	maxRetries: RETRY_BUDGET,
+	...(machinery ? {laps: 0, maxLaps: MACHINERY_LAP_BUDGET} : {}),
+	...(classes.length === 0 ? {} : {classes: [...classes]}),
+});
 
 /** The tail phase's name and its one task id. Neither can collide with a `phase<N>`/`issue_<n>`. */
 const EPIC_PHASE = "epic";
@@ -295,6 +452,8 @@ export const emitMachine = (
 	if (children.length === 0) return {_tag: "NoTopology"};
 
 	const initials = new Map(children.map((link) => [link.number, initialFor(link)]));
+	const classes = new Map(children.map((link) => [link.number, link.classes]));
+	const classesOf = (child: number): ReadonlyArray<string> => classes.get(child) ?? [];
 	const declared = readDeclared(body, new Set(initials.keys()), axes.dropForeign === true);
 	if (declared._tag === "Absent") return {_tag: "NoTopology"};
 	if (declared._tag !== "Declared") return declared;
@@ -321,14 +480,16 @@ export const emitMachine = (
 	const states: Record<string, unknown> = {};
 	for (const [index, phase] of order.entries()) {
 		const members = ascending(phases.get(phase) ?? []);
-		for (const child of members) context[childTaskId(child)] = taskContext(machinery);
+		for (const child of members) {
+			context[childTaskId(child)] = taskContext(machinery, classesOf(child));
+		}
 		const next = order[index + 1];
 		states[phaseName(phase)] = {
 			type: "parallel",
 			states: Object.fromEntries(
 				members.map((child) => [
 					childTaskId(child),
-					region(childTaskId(child).toUpperCase(), initialOf(child), machinery),
+					region(childTaskId(child).toUpperCase(), initialOf(child), machinery, classesOf(child)),
 				]),
 			),
 			onDone: [

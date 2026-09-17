@@ -58,6 +58,7 @@ import {
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {applyBoardTerminal, foldLog, resolveTask, type SettlementEvidence} from "./fold.ts";
+import type {KeyIssue} from "./key.ts";
 import {CANCELLED_EVENT} from "./machine.ts";
 import {type Nomination, nominatePulls} from "./nominate.ts";
 import type {PullFact} from "./prove.ts";
@@ -179,8 +180,8 @@ export const boardReaders = (
 };
 
 export interface SettleOptions<R = never> extends LaneRef {
-	/** The issue this lane drives, or `null` for a key that names none. */
-	readonly issue: number | null;
+	/** The issue this lane drives, or which of the two ways its key names none. */
+	readonly issue: KeyIssue;
 	/** The task the terminal addresses; `null` resolves only on a single-task lane. */
 	readonly task: string | null;
 	/** The lane-claim token, when this caller is the driver holding the lane; `null` otherwise. */
@@ -203,155 +204,178 @@ export const runSettle = <R = never>(
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
 		const path = yield* Path.Path;
-		return yield* withLedgerLock(
-			{fs, path, dir: path.join(options.root, options.lane), verb: VERB},
-			Effect.gen(function* () {
-				const {issue} = options;
-				if (issue === null) {
-					return refuse(
-						ISSUE_UNRESOLVED,
-						`${VERB}: "${options.lane}" names no issue, and settling a lane stands on that issue's own closure — a chore lane can never satisfy it. Nothing was appended.`,
-					);
-				}
-				const loaded = yield* loadLane(options);
-				if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
-				const task = resolveTask(loaded.lane, options.task);
-				if (task._tag === "Unresolved") {
-					return refuse(TASK_UNKNOWN, `${VERB}: ${task.reason}`);
-				}
-				const fold = foldLog(loaded.lane, loaded.entries);
-				if (fold._tag !== "Folded") return replayRefusal(VERB, loaded.logPath, fold);
 
-				// The offline gate first: whether there is anything here to settle is a fact about the fold
-				// alone, so a lane already carrying a terminal never costs a board read. Which terminal it
-				// would take is the board's, and both take the same route through the machine.
-				const at = yield* Effect.sync(() => new Date().toISOString());
-				const dry = applyBoardTerminal(
-					loaded.lane,
-					fold.states,
-					task.taskId,
-					CANCELLED_EVENT,
-					{outcome: "not_planned"},
-					at,
+		// Judge here, outside the lock, then re-derive under it — the shape `lane transition` and
+		// `lane reconcile` already take, and load-bearing for the lock itself rather than for cost
+		// alone: `append-lock.ts`'s stale horizon presumes every holder does local IO only, and this
+		// verb's board reads are paginated HTTP bounded by a per-exchange timeout an order of
+		// magnitude past that horizon. A holder awaiting one under the lock would be read as crashed
+		// and have its live lock stolen, which is the silent double-append the lock exists to refuse.
+		const loaded = yield* loadLane(options);
+		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
+		if (options.issue._tag !== "Issue") {
+			return refuse(
+				ISSUE_UNRESOLVED,
+				options.issue._tag === "Chore"
+					? `${VERB}: "${options.lane}" is a chore lane, and settling a lane stands on an issue's own closure — a lane with no issue can never satisfy it. Nothing was appended.`
+					: `${VERB}: "${options.lane}" carries no leading issue number, so there is no issue whose closure could settle it — this is not a chore lane, so what is wrong is the directory name. A quarantined lane is named "<issue>.<suffix>" precisely so it keeps naming its issue. Nothing was appended.`,
+			);
+		}
+		const issue = options.issue.number;
+		const task = resolveTask(loaded.lane, options.task);
+		if (task._tag === "Unresolved") {
+			return refuse(TASK_UNKNOWN, `${VERB}: ${task.reason}`);
+		}
+		const fold = foldLog(loaded.lane, loaded.entries);
+		if (fold._tag !== "Folded") return replayRefusal(VERB, loaded.logPath, fold);
+
+		// The offline gate first: whether there is anything here to settle is a fact about the fold
+		// alone, so a lane already carrying a terminal never costs a board read. Which terminal it
+		// would take is the board's, and both take the same route through the machine.
+		const at = yield* Effect.sync(() => new Date().toISOString());
+		const dry = applyBoardTerminal(
+			loaded.lane,
+			fold.states,
+			task.taskId,
+			CANCELLED_EVENT,
+			{outcome: "not_planned"},
+			at,
+		);
+		if (dry._tag === "Refused") {
+			return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${dry.reason}.`);
+		}
+
+		const read = yield* options.closure(issue);
+		if (read._tag === "Unknown") {
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot establish how #${issue} closed: ${read.reason} — UNKNOWN, and the log is unappended.`,
+			);
+		}
+		if (read.state === "open") {
+			return refuse(
+				ISSUE_LIVE,
+				`${VERB}: #${issue} is open, so this lane is live work — drive it, or close the issue first. Nothing was appended.`,
+			);
+		}
+		// Read only on the arm that needs them: a cancellation stands on the closure alone, and
+		// the named pull request is read only where a caller named one.
+		let facts: ReadonlyArray<PullFact> | null = null;
+		let asserted: AssertedPull | null = null;
+		if (read.reason === "completed") {
+			const nominated = yield* options.pulls(issue);
+			if (nominated._tag === "Unreadable") {
+				return refuse(
+					LANE_UNREADABLE,
+					`${VERB}: cannot read ${nominated.what}: ${nominated.reason} — what landed for #${issue} is UNKNOWN, and the log is unappended.`,
 				);
-				if (dry._tag === "Refused") {
-					return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${dry.reason}.`);
-				}
-
-				const read = yield* options.closure(issue);
-				if (read._tag === "Unknown") {
+			}
+			facts = nominated.pulls;
+			if (options.landedBy !== null) {
+				const named = yield* options.asserted(options.landedBy);
+				if (named._tag === "Unknown") {
 					return refuse(
 						LANE_UNREADABLE,
-						`${VERB}: cannot establish how #${issue} closed: ${read.reason} — UNKNOWN, and the log is unappended.`,
+						`${VERB}: cannot establish whether #${options.landedBy} merged: ${named.reason} — UNKNOWN, and the log is unappended.`,
 					);
 				}
-				if (read.state === "open") {
-					return refuse(
-						ISSUE_LIVE,
-						`${VERB}: #${issue} is open, so this lane is live work — drive it, or close the issue first. Nothing was appended.`,
-					);
-				}
-				// Read only on the arm that needs them: a cancellation stands on the closure alone, and
-				// the named pull request is read only where a caller named one.
-				let facts: ReadonlyArray<PullFact> | null = null;
-				let asserted: AssertedPull | null = null;
-				if (read.reason === "completed") {
-					const nominated = yield* options.pulls(issue);
-					if (nominated._tag === "Unreadable") {
-						return refuse(
-							LANE_UNREADABLE,
-							`${VERB}: cannot read ${nominated.what}: ${nominated.reason} — what landed for #${issue} is UNKNOWN, and the log is unappended.`,
-						);
-					}
-					facts = nominated.pulls;
-					if (options.landedBy !== null) {
-						const named = yield* options.asserted(options.landedBy);
-						if (named._tag === "Unknown") {
-							return refuse(
-								LANE_UNREADABLE,
-								`${VERB}: cannot establish whether #${options.landedBy} merged: ${named.reason} — UNKNOWN, and the log is unappended.`,
-							);
-						}
-						asserted = named;
-					}
-				}
-				const entitled = entitlement(issue, read.state, read.reason, facts, asserted);
-				if (entitled._tag === "Unknown") {
-					return refuse(
-						LANE_UNREADABLE,
-						`${VERB}: ${entitled.reason} — UNKNOWN, and the log is unappended.`,
-					);
-				}
-				if (entitled._tag === "AssertedAbsent") {
-					return refuse(
-						PROOF_ABSENT,
-						`${VERB}: --landed-by names #${entitled.pr}, which is not a pull request on this repository — an asserted landing supplies the link a body lacks and never the merge itself. Nothing was appended.`,
-					);
-				}
-				if (entitled._tag === "AssertedUnmerged") {
-					return refuse(
-						PROOF_IN_FLIGHT,
-						`${VERB}: --landed-by names #${entitled.pr}, which the board reads "${entitled.state}" and not merged — there is no landing to record until it merges. Nothing was appended.`,
-					);
-				}
-				if (entitled._tag === "Live") {
-					return refuse(
-						ISSUE_LIVE,
-						`${VERB}: #${issue} is open, so this lane is live work — drive it, or close the issue first. Nothing was appended.`,
-					);
-				}
+				asserted = named;
+			}
+		}
+		const entitled = entitlement(issue, read.state, read.reason, facts, asserted);
+		if (entitled._tag === "Unknown") {
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: ${entitled.reason} — UNKNOWN, and the log is unappended.`,
+			);
+		}
+		if (entitled._tag === "AssertedAbsent") {
+			return refuse(
+				PROOF_ABSENT,
+				`${VERB}: --landed-by names #${entitled.pr}, which is not a pull request on this repository — an asserted landing supplies the link a body lacks and never the merge itself. Nothing was appended.`,
+			);
+		}
+		if (entitled._tag === "AssertedUnmerged") {
+			return refuse(
+				PROOF_IN_FLIGHT,
+				`${VERB}: --landed-by names #${entitled.pr}, which the board reads "${entitled.state}" and not merged — there is no landing to record until it merges. Nothing was appended.`,
+			);
+		}
+		if (entitled._tag === "Live") {
+			return refuse(
+				ISSUE_LIVE,
+				`${VERB}: #${issue} is open, so this lane is live work — drive it, or close the issue first. Nothing was appended.`,
+			);
+		}
 
-				const claimed = yield* options.claims(issue);
-				if (claimed._tag === "Unknown") {
-					return refuse(
-						LANE_UNREADABLE,
-						`${VERB}: cannot establish whether #${issue} carries a live lane claim: ${claimed.reason} — UNKNOWN, never "unclaimed", and the log is unappended.`,
-					);
-				}
-				const holder = claimed.holder;
-				if (holder !== null && holder.token !== options.token) {
-					return refuse(
-						CLAIM_NOT_MINE,
-						`${VERB}: #${issue} carries the live lane claim ${holder.token} — a lane another session is driving is not one to end underneath it. Pass --token ${holder.token} if that driver is you, or clear the seat through \`fabrika lane adopt ${options.lane}\` then \`fabrika lane release\`. Nothing was appended.`,
-					);
-				}
+		const claimed = yield* options.claims(issue);
+		if (claimed._tag === "Unknown") {
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot establish whether #${issue} carries a live lane claim: ${claimed.reason} — UNKNOWN, never "unclaimed", and the log is unappended.`,
+			);
+		}
+		const holder = claimed.holder;
+		if (holder !== null && holder.token !== options.token) {
+			return refuse(
+				CLAIM_NOT_MINE,
+				`${VERB}: #${issue} carries the live lane claim ${holder.token} — a lane another session is driving is not one to end underneath it. Pass --token ${holder.token} if that driver is you, or clear the seat through \`fabrika lane adopt ${options.lane}\` then \`fabrika lane release\`. Nothing was appended.`,
+			);
+		}
 
-				let evidence: SettlementEvidence = {outcome: entitled.outcome};
-				if (entitled._tag === "Landed") {
-					const first = entitled.landed[0];
-					// An asserted landing was read in full a moment ago, so its merge commit is already
-					// in hand; a body-proven one names PRs the nomination read carries no sha for.
-					const sha =
-						entitled.assertedBy !== undefined && asserted !== null && asserted._tag === "Merged"
-							? asserted.sha
-							: first === undefined
-								? null
-								: yield* options.sha(first);
-					evidence = {
-						outcome: entitled.outcome,
-						landed: entitled.landed,
-						...(sha === null ? {} : {sha}),
-						...(entitled.assertedBy === undefined ? {} : {assertedBy: entitled.assertedBy}),
-					};
+		let evidence: SettlementEvidence = {outcome: entitled.outcome};
+		if (entitled._tag === "Landed") {
+			const first = entitled.landed[0];
+			// An asserted landing was read in full a moment ago, so its merge commit is already
+			// in hand; a body-proven one names PRs the nomination read carries no sha for.
+			const sha =
+				entitled.assertedBy !== undefined && asserted !== null && asserted._tag === "Merged"
+					? asserted.sha
+					: first === undefined
+						? null
+						: yield* options.sha(first);
+			evidence = {
+				outcome: entitled.outcome,
+				landed: entitled.landed,
+				...(sha === null ? {} : {sha}),
+				...(entitled.assertedBy === undefined ? {} : {assertedBy: entitled.assertedBy}),
+			};
+		}
+
+		return yield* withLedgerLock(
+			{fs, path, dir: loaded.dir, verb: VERB},
+			Effect.gen(function* () {
+				// Re-load and re-derive under the lock: between the judgement above and this append a
+				// concurrent writer may have moved the lane, and a terminal validated against a fold
+				// that no longer stands is the corruption the lock exists to refuse.
+				const fresh = yield* loadLane(options);
+				if (fresh._tag !== "Loaded") return loadRefusal(VERB, fresh);
+				const freshTask = resolveTask(fresh.lane, options.task);
+				if (freshTask._tag === "Unresolved") {
+					return refuse(TASK_UNKNOWN, `${VERB}: ${freshTask.reason}`);
 				}
+				const freshFold = foldLog(fresh.lane, fresh.entries);
+				if (freshFold._tag !== "Folded") return replayRefusal(VERB, fresh.logPath, freshFold);
+
+				const now = yield* Effect.sync(() => new Date().toISOString());
 				const applied = applyBoardTerminal(
-					loaded.lane,
-					fold.states,
-					task.taskId,
+					fresh.lane,
+					freshFold.states,
+					freshTask.taskId,
 					entitled.event,
 					evidence,
-					at,
+					now,
 				);
 				if (applied._tag === "Refused") {
 					return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${applied.reason}.`);
 				}
 				const wrote = yield* Effect.result(
-					appendText(loaded.logPath, `${JSON.stringify(applied.entry)}\n`),
+					appendText(fresh.logPath, `${JSON.stringify(applied.entry)}\n`),
 				);
 				if (Result.isFailure(wrote)) {
 					return refuse(
 						APPEND_UNKNOWN,
-						`${VERB}: the append to ${loaded.logPath} did not land: ${wrote.failure.reason} — the terminal is NOT recorded.`,
+						`${VERB}: the append to ${fresh.logPath} did not land: ${wrote.failure.reason} — the terminal is NOT recorded.`,
 					);
 				}
 				return answer(
@@ -363,7 +387,7 @@ export const runSettle = <R = never>(
 							previous: applied.previous.stateValue,
 							event: applied.entry.event,
 							current: applied.current.stateValue,
-							taskAffected: task.taskId,
+							taskAffected: freshTask.taskId,
 							outcome: entitled.outcome,
 							...(evidence.landed === undefined ? {} : {landed: evidence.landed}),
 							...(evidence.sha === undefined ? {} : {sha: evidence.sha}),
@@ -373,7 +397,7 @@ export const runSettle = <R = never>(
 						2,
 					),
 					[
-						`${VERB}: appended ${applied.entry.event} to ${loaded.logPath}; #${issue} is closed as ${entitled.outcome}${
+						`${VERB}: appended ${applied.entry.event} to ${fresh.logPath}; #${issue} is closed as ${entitled.outcome}${
 							evidence.landed === undefined
 								? ""
 								: ` over ${evidence.landed.map((pr) => `#${pr}`).join(", ")}`

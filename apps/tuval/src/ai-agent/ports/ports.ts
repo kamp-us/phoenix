@@ -2,7 +2,9 @@
  * The six ports that make a process a Tuval AI agent, plus the two generic ones it fills like any
  * other program. Each declares one nominal kind, one payload predicate and one queue bound (#7512,
  * #7371); a program spreads the direction it plays into its own `ports` record and the kernel's
- * `compile` refuses a route between two different kinds before any process exists.
+ * `compile` refuses a route whose two ends do not agree before any process exists — by kind for
+ * the three two-way kinds below, which publish no payload schema, and by payload fit for the ones
+ * that do (ADR 0395).
  *
  * `title` and `status` are not of this interface: they are the kernel's own `title@1`/`status@1`
  * (`../../process/self-report.ts`), which any program may declare and which say nothing about what
@@ -14,15 +16,28 @@
  * on a port — a window that queues a thousand prompts behind a stuck agent is the failure #7371
  * closed.
  *
+ * Each one-way port also publishes the Effect `Schema` its predicate was written from
+ * (`./payloads.ts`). Nothing in the kernel routes on it — the predicate still does — but a
+ * predicate cannot be compared with another predicate, and a `Program.shape` check in a config
+ * file compares payloads (#8887). Publishing it is what lets a shipped row here fill a shaped arg:
+ * `codexSession`'s `prompt` and `result` are the two ports `authoring/example/pr-review.ts` names.
+ * The three two-way kinds carry a tagged union per end and have no schema yet, so a shape naming
+ * one of them is still refused — by name, for publishing no payload schema, which is the refusal
+ * `authoring/shape.ts` spells.
+ *
  * A kernel `ports` record holds one direction per key, so a program playing both ends of a
  * two-way port (`transcript-page`, `permission`, `mode`) names each end locally — the kind is what
- * `compile` matches, not the key, so `pageRequest`/`pageReply` on one node route to their mirror
- * on the other and a cross-kind route still refuses. Each of those ends declares only its own
- * direction's predicate, so the kernel refuses a wrong-direction payload at the send (#8235).
+ * `compile` matches for those three, not the key, because they publish no payload schema for it to
+ * read instead; so `pageRequest`/`pageReply` on one node route to their mirror on the other and a
+ * cross-kind route still refuses. The one-way kinds are matched on the schema they publish, which
+ * is one object shared by both ends, so their routes are the routes they always were (ADR 0395).
+ * Each of those ends declares only its own direction's predicate, so the kernel refuses a
+ * wrong-direction payload at the send (#8235).
  */
 
+import {Schema} from "effect";
 import {statusPort, titlePort} from "../../process/self-report.ts";
-import type {InPort, OutPort, PortBound} from "../../registry/program.ts";
+import type {InPort, OutPort, PortBound, PortPayloadSchema} from "../../registry/program.ts";
 import {
 	isModePayload,
 	isModeSet,
@@ -43,11 +58,14 @@ import {
 	type PermissionPayload,
 	type PermissionPendingSet,
 	type PromptPayload,
+	PromptPayloadSchema,
 	type TranscriptPagePayload,
 	type TranscriptPageReply,
 	type TranscriptPageRequest,
 	type TranscriptPayload,
+	TranscriptPayloadSchema,
 	type TurnResult,
+	TurnResultSchema,
 } from "./payloads.ts";
 
 /**
@@ -59,6 +77,13 @@ export interface PortEnd<P> {
 	readonly kind: string;
 	readonly bound: PortBound;
 	readonly is: (payload: unknown) => payload is P;
+	/**
+	 * The payload schema this end publishes on the row it lands in, beside the predicate the kernel
+	 * routes on. It is what a `Program.shape` check reads, because two predicates cannot be compared
+	 * and two schemas can (#8887). Absent on an end whose payload has no schema written for it yet —
+	 * such a port is refused by name rather than passed, which is the refusal `shape.ts` spells.
+	 */
+	readonly schema?: PortPayloadSchema;
 	readonly inbound: (bound?: PortBound) => InPort<P>;
 	readonly outbound: () => OutPort<P>;
 }
@@ -91,12 +116,25 @@ const end = <P>(
 	kind: string,
 	bound: PortBound,
 	is: (payload: unknown) => payload is P,
+	schema?: PortPayloadSchema,
 ): PortEnd<P> => ({
 	kind,
 	bound,
 	is,
-	inbound: (override = bound) => ({kind, direction: "in", accepts: is, bound: override}),
-	outbound: () => ({kind, direction: "out", accepts: is}),
+	...(schema === undefined ? {} : {schema}),
+	inbound: (override = bound) => ({
+		kind,
+		direction: "in",
+		accepts: is,
+		bound: override,
+		...(schema === undefined ? {} : {schema}),
+	}),
+	outbound: () => ({
+		kind,
+		direction: "out",
+		accepts: is,
+		...(schema === undefined ? {} : {schema}),
+	}),
 });
 
 const definePort = <P>(
@@ -104,7 +142,8 @@ const definePort = <P>(
 	kind: string,
 	bound: PortBound,
 	is: (payload: unknown) => payload is P,
-): AgentPort<P> => ({name, ...end(kind, bound, is)});
+	schema?: PortPayloadSchema,
+): AgentPort<P> => ({name, ...end(kind, bound, is, schema)});
 
 const defineTwoWayPort = <P, Ends extends Readonly<Record<string, P>>>(
 	name: string,
@@ -138,6 +177,7 @@ export const transcript = definePort(
 	"tuval/ai-agent/transcript@1",
 	snapshot,
 	isTranscriptPayload,
+	TranscriptPayloadSchema,
 );
 
 export const transcriptPage = defineTwoWayPort<
@@ -148,7 +188,13 @@ export const transcriptPage = defineTwoWayPort<
 	page: isTranscriptPageReply,
 });
 
-export const prompt = definePort("prompt", "tuval/ai-agent/prompt@1", request, isPromptPayload);
+export const prompt = definePort(
+	"prompt",
+	"tuval/ai-agent/prompt@1",
+	request,
+	isPromptPayload,
+	PromptPayloadSchema,
+);
 
 export const permission = defineTwoWayPort<
 	PermissionPayload,
@@ -174,12 +220,18 @@ export const mode = defineTwoWayPort<ModePayload, {set: ModeSet; state: ModeStat
  * is also what makes the kernel's `read` answer the *last* finished turn (`../../commands/core/
  * process.ts` keeps one value per out-port).
  */
-export const result = definePort("result", "tuval/ai-agent/result@1", snapshot, isTurnResult);
+export const result = definePort(
+	"result",
+	"tuval/ai-agent/result@1",
+	snapshot,
+	isTurnResult,
+	TurnResultSchema,
+);
 
 /** The kernel's generic out-port, in this file's shape, so `agentPorts` is one list to walk. */
 const generic = <P>(name: string, port: OutPort<P>, bound: PortBound): AgentPort<P> => ({
 	name,
-	...end(port.kind, bound, port.accepts),
+	...end(port.kind, bound, port.accepts, Schema.String),
 });
 
 /** `program · model · cwd`, re-said whenever one of the three changes (R3.1/R4.1 on #8715). */

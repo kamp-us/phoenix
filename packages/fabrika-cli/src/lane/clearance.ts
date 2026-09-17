@@ -5,7 +5,9 @@
  * (`../build/clearances.ts`), and this is the local half: the lane's guard reads
  * `retries < maxRetries` off the fold, so a lane that never heard about the grant freezes the same
  * repair `build verdicts` says still has budget. Appending a `<TASK>.CLEARED` event is what keeps
- * the two readers on one derivation (`../cap-clearance.ts`).
+ * the two readers on one derivation (`../cap-clearance.ts`). Both verbs write both halves —
+ * `build clear` posts the marker and bumps the lane, `lane clear` appends here and posts the marker
+ * through `./pr-grant.ts` — so neither seat leaves one reader holding budget the other refuses.
  *
  * Where the lane has no pull request — an epic child, a chore lane — there is no board half at all,
  * and this log line is the whole grant. `lane clear` is the verb for that seat, and the `rationale`

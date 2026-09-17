@@ -58,7 +58,19 @@ export type LoadedLane =
 	| {readonly _tag: "Unreadable"; readonly path: string; readonly reason: string}
 	| {readonly _tag: "Malformed"; readonly path: string; readonly defects: ReadonlyArray<string>};
 
-/** Read and compile one lane. Every outcome is proven; nothing resolves to a plausible default. */
+/**
+ * Read and compile one lane. Every outcome is proven; nothing resolves to a plausible default.
+ *
+ * **Absent and unreadable are split by the read's own failure, never by a second look.** Each read
+ * here is one sample of a path another process may be racing to create, so asking `exists()` after
+ * a failed `readFile` asks about a different instant: a reader whose read honestly answered
+ * `NotFound` could get `true` back from the probe and report a lane it had proven fresh as UNKNOWN
+ * (exit `11`). The read already carries the answer in `ReadFailed.notFound`, and one sample cannot
+ * contradict itself. {@link probeLane} and {@link placeMachine} keep their `exists()` because it is
+ * their only sample — they contradict no prior read.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9315
+ */
 export const loadLane = (
 	ref: LaneRef,
 ): Effect.Effect<LoadedLane, never, FileSystem.FileSystem | Path.Path> =>
@@ -70,8 +82,7 @@ export const loadLane = (
 
 		const workflowText = yield* Effect.result(readFile(workflowPath));
 		if (Result.isFailure(workflowText)) {
-			const probe = yield* Effect.result(exists(workflowPath));
-			if (Result.isFailure(probe) || probe.success) {
+			if (!workflowText.failure.notFound) {
 				return {
 					_tag: "Unreadable",
 					path: workflowPath,
@@ -88,8 +99,7 @@ export const loadLane = (
 
 		const logText = yield* Effect.result(readFile(logPath));
 		if (Result.isFailure(logText)) {
-			const probe = yield* Effect.result(exists(logPath));
-			if (Result.isFailure(probe) || probe.success) {
+			if (!logText.failure.notFound) {
 				return {_tag: "Unreadable", path: logPath, reason: logText.failure.reason} as const;
 			}
 			return {_tag: "Loaded", lane: compiled.lane, entries: [], dir, logPath} as const;

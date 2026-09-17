@@ -6,12 +6,28 @@
  * `--add-dir` silently relocates the workspace, and a launch carrying
  * `--dangerously-skip-permissions` would be the posture ADR 0362 rejects. So they are pinned as a
  * whole array rather than probed one containment at a time.
+ *
+ * `--effort` is pinned the same way and for the same reason, from the other side: agy bakes effort
+ * into the model id, so a launch carrying the flag could only fail to start (#9254).
  */
 
 import {describe, expect, it} from "vitest";
-import {AGY_EFFORTS, AGY_MODELS, AGY_MODES, AGY_SETTINGS_FILE, AGY_VERSION} from "../config.ts";
+import {AGY_MODELS, AGY_MODES, AGY_SETTINGS_FILE, AGY_VERSION} from "../config.ts";
+import {agyVersionVerdict} from "../preflight.ts";
 import {commandArgv, promptLine, sessionArgv} from "./launch.ts";
 import {transcriptLogDir} from "./transcript.ts";
+
+/**
+ * Every shape `LaunchOptions` has, which is what "on any combination of options" means for the two
+ * absences below: no field is optional-and-untried, so neither flag can be reached by a branch this
+ * list misses.
+ */
+const everyArgv: ReadonlyArray<ReadonlyArray<string>> = [
+	sessionArgv({cwd: "/repo"}),
+	sessionArgv({cwd: "/repo", resume: "c-1", model: "claude-sonnet-4-6", mode: "plan"}),
+	sessionArgv({cwd: "/repo", mode: "accept-edits"}),
+	sessionArgv({cwd: "/repo", model: "gemini-3.1-pro-high"}),
+];
 
 describe("the session argv", () => {
 	it("is the whole launch, sandboxed and scoped to the workspace", () => {
@@ -25,26 +41,22 @@ describe("the session argv", () => {
 	});
 
 	it("never composes the blanket-bypass flag, on any combination of options", () => {
-		const every = [
-			sessionArgv({cwd: "/repo"}),
-			sessionArgv({cwd: "/repo", resume: "c-1", model: "m", mode: "plan", effort: "high"}),
-			sessionArgv({cwd: "/repo", mode: "accept-edits"}),
-		];
-		expect(every.map((argv) => argv.join(" ")).join("\n")).not.toContain(
+		expect(everyArgv.map((argv) => argv.join(" ")).join("\n")).not.toContain(
 			"--dangerously-skip-permissions",
 		);
 	});
 
-	it("carries the three switchable settings Go-style, before the sandbox pair", () => {
-		expect(
-			sessionArgv({cwd: "/repo", model: "claude-sonnet-4-6", mode: "plan", effort: "low"}),
-		).toEqual([
+	it("never composes --effort, on any combination of options", () => {
+		expect(everyArgv.map((argv) => argv.join(" ")).join("\n")).not.toContain("--effort");
+	});
+
+	it("carries the two switchable settings Go-style, before the sandbox pair", () => {
+		expect(sessionArgv({cwd: "/repo", model: "claude-sonnet-4-6", mode: "plan"})).toEqual([
 			"--input-format=stream-json",
 			"--output-format=stream-json",
 			"--print=",
 			"--model=claude-sonnet-4-6",
 			"--mode=plan",
-			"--effort=low",
 			"--sandbox",
 			"--add-dir=/repo",
 		]);
@@ -103,16 +115,16 @@ describe("the composed turn", () => {
 });
 
 describe("the launch surface's constants", () => {
-	it("pins one agy version for the whole module", () => {
-		expect(AGY_VERSION).toBe("1.1.27");
+	it("names one supported floor for the whole module, in a shape a launch can compare against", () => {
+		// A floor, not the one tolerated release (#9191): the assertion is that this reads as a
+		// release `../preflight.ts` can order a running binary against, not that it reads `1.1.27`.
+		// Pinning the literal is what made the code assert a fact the desk had already left behind.
+		expect(AGY_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+		expect(agyVersionVerdict(AGY_VERSION)).toEqual({kind: "supported", version: AGY_VERSION});
 	});
 
 	it("offers the two modes agy's own --help names, and no third", () => {
 		expect([...AGY_MODES]).toEqual(["accept-edits", "plan"]);
-	});
-
-	it("offers the three efforts /effort reports, and none of ThinkingLevel's other four", () => {
-		expect([...AGY_EFFORTS]).toEqual(["low", "medium", "high"]);
 	});
 
 	it("names every catalog row with an id and a label", () => {

@@ -4,8 +4,10 @@ import {describe, expect, it} from "vitest";
 import {classifyPark, KNOWN_PARKS} from "../recipe/parks.ts";
 import {EPIC_RULES} from "../wire/lane-brief.ts";
 import {MACHINERY_EVENT} from "./machine.ts";
+import {REVIEW_UI_STATE} from "./prove.ts";
 import {
 	causeForEvent,
+	conditionalTerminal,
 	eventForToken,
 	flattenVocabularies,
 	MACHINERY_CAUSES,
@@ -13,6 +15,7 @@ import {
 	PARK_CAUSE_TOKENS,
 	PARK_CAUSES,
 	type ParkCause,
+	PROOF_CONDITIONAL_TERMINALS,
 	rationaleForEvent,
 	remedyForCause,
 	routeForCause,
@@ -50,6 +53,19 @@ describe("the builder's no-PR terminals", () => {
 		const named = /ends on `([A-Z][A-Z-]+)`/.exec(EPIC_RULES);
 		expect(named?.[1]).toBe("BUILT-NO-PR");
 		expect(eventForToken(named?.[1] ?? "")).toMatchObject({event: "DONE"});
+	});
+
+	// The three builder terminals are indistinguishable here on purpose, and this is the line that
+	// says so: nothing in this map can route an investigation past the review a `SHIPPED-PR` owes.
+	// What tells them apart is `lane prove`'s answer, which the machine's `done:diagnosis` arm reads.
+	it("maps all three of SHIPPED-PR, SUCCESS-NO-PR and BUILT-NO-PR to the one DONE", () => {
+		expect(
+			["SHIPPED-PR", "SUCCESS-NO-PR", "BUILT-NO-PR"].map((token) => eventForToken(token)),
+		).toEqual([
+			{_tag: "Mapped", token: "SHIPPED-PR", event: "DONE"},
+			{_tag: "Mapped", token: "SUCCESS-NO-PR", event: "DONE"},
+			{_tag: "Mapped", token: "BUILT-NO-PR", event: "DONE"},
+		]);
 	});
 });
 
@@ -173,6 +189,8 @@ describe("the UI reviewer's vocabulary against the skill that owns it", () => {
 			event: "BLOCKED",
 		});
 		expect(eventForToken("BLOCKED-NO-MANIFEST")).toMatchObject({event: "BLOCKED"});
+		// `ROUTED-ELSEWHERE`'s park is its floor, and the flat lookup still reads it — a caller that
+		// asks the token alone gets the arm that has to be bought, never the one that advances a lane.
 		expect(eventForToken("ROUTED-ELSEWHERE")).toMatchObject({event: "BLOCKED"});
 	});
 
@@ -205,15 +223,24 @@ describe("the rendered gate's three parks name a cause instead of landing bare",
 		expect(causeForEvent(cause, "DONE", false)).toMatchObject({_tag: "Rejected"});
 	});
 
-	// A cause is payable on naming alone. No `KNOWN_PARKS` row covers any of the three, so
-	// the sweep still routes them to a human — it now says which gap it routed on.
-	it.each(RENDERED_PARKS)("is Novel naming %2$s, not the anonymous reason", (_token, cause) => {
+	// A cause is payable on naming alone, and a row is bought separately. Two of the three have no
+	// row and route to a human — naming the gap they routed on rather than the anonymous reason.
+	it.each([
+		["CANT-SEE", "no-preview-render"],
+		["BLOCKED-NO-MANIFEST", "no-design-manifest"],
+	] as const)("is Novel naming %2$s, not the anonymous reason", (_token, cause) => {
 		const parked = classifyPark("blocked", cause);
 
 		expect(parked._tag).toBe("Novel");
 		if (parked._tag !== "Novel") return;
 		expect(parked.reason).toContain(cause);
 		expect(parked.reason).not.toContain("records the event and not its cause");
+	});
+
+	// The third bought its row: a route whose review has finished is a condition a recipe can read
+	// back, which is what a row costs.
+	it("is Known for no-rendered-delta, the one of the three with a proving read", () => {
+		expect(classifyPark("blocked", "no-rendered-delta")._tag).toBe("Known");
 	});
 });
 
@@ -422,5 +449,42 @@ describe("a machinery lap's cause", () => {
 		expect(causeForEvent("something-went-wrong", MACHINERY_EVENT, false)).toMatchObject({
 			_tag: "Rejected",
 		});
+	});
+});
+
+/**
+ * The one token that names two events. Its key is the token AND the leaf, and the leaf half is what
+ * keeps the widening narrow — a `PASS` out of any other cell walks a different arm, and an epic
+ * child's region holds no `review:ui` cell at all, so that deferral is untouched by construction.
+ */
+describe("the terminal whose event a proof picks", () => {
+	it("reads ROUTED-ELSEWHERE out of review:ui as a PASS the proof may earn", () => {
+		expect(conditionalTerminal("ROUTED-ELSEWHERE", REVIEW_UI_STATE)).toMatchObject({
+			advanced: "PASS",
+			parked: "BLOCKED",
+		});
+	});
+
+	it("folds the token's spelling, exactly as the flat lookup does", () => {
+		expect(conditionalTerminal("routed-elsewhere", REVIEW_UI_STATE)).not.toBeNull();
+	});
+
+	it("is null out of every other cell, so the flat reading stands there", () => {
+		expect(conditionalTerminal("ROUTED-ELSEWHERE", "review")).toBeNull();
+		expect(conditionalTerminal("ROUTED-ELSEWHERE", "ship")).toBeNull();
+		expect(conditionalTerminal("ROUTED-ELSEWHERE", "blocked")).toBeNull();
+	});
+
+	it("is null for every other terminal, at that cell and anywhere else", () => {
+		expect(conditionalTerminal("CANT-SEE", REVIEW_UI_STATE)).toBeNull();
+		expect(conditionalTerminal("BLOCKED-NO-MANIFEST", REVIEW_UI_STATE)).toBeNull();
+		expect(conditionalTerminal("FAIL", REVIEW_UI_STATE)).toBeNull();
+	});
+
+	// Written twice — once flat, once as the row's fallback — so it is checked rather than trusted.
+	it("parks on the same event the flat lookup maps the token to", () => {
+		for (const [token, row] of Object.entries(PROOF_CONDITIONAL_TERMINALS)) {
+			expect(eventForToken(token)).toMatchObject({event: row.parked});
+		}
 	});
 });

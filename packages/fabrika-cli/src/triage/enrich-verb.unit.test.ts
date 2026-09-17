@@ -5,6 +5,7 @@ import type {StdinRead} from "../io/stdin.ts";
 import {
 	COMMENTS,
 	claimPage,
+	declaring,
 	EXPIRED,
 	type GuardedSeams,
 	guardedShell,
@@ -490,6 +491,8 @@ describe("runEnrich — refusals", () => {
 	it("refuses on 9 when the read-back itself fails", async () => {
 		const outcome = await runScripted([
 			[once(READ), issue(ORIGINAL)],
+			// the guard's reconciled comment read takes its denominator off a second issue read
+			[once(READ), declaring()],
 			[PATCH, ACCEPTED],
 			[READ, UNREADABLE],
 		]);

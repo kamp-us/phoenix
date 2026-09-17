@@ -224,27 +224,21 @@ describe("a subagent's rows in the agent window", () => {
 			{subagentList: true},
 			{
 				...initialChatView,
-				atOldest: true,
 				unfolded: ["agent", "inner"],
 			},
 		);
 		expect(screen.queryByText("done")).toBeNull();
 		expect(document.querySelector('[data-nested="true"]')).toBeNull();
-		expect(transcriptIds()).toEqual(["user", "tool", "tool"]);
+		// A mounted window holds no walk however its slot was written (`./view.ts`, #9047), so the
+		// head row offering one leads every list of rows a mount renders.
+		expect(transcriptIds()).toEqual(["older", "user", "tool", "tool"]);
 		rendered.unmount();
 	});
 
 	// Q2: the head grows nothing in this PR. A finished worker's spawning call is the plain tool row
 	// it always was — no elapsed, no token readout, and no fold, because it heads no rows now.
 	it("leave the spawning call a plain tool row with no fold and no readout", async () => {
-		const {rendered} = await openWindow(
-			state("finished"),
-			{subagentList: true},
-			{
-				...initialChatView,
-				atOldest: true,
-			},
-		);
+		const {rendered} = await openWindow(state("finished"), {subagentList: true}, initialChatView);
 		expect(screen.queryByRole("button", {name: /nested calls?$/})).toBeNull();
 		expect(screen.queryByText(/elapsed/)).toBeNull();
 		expect(screen.queryByText(/tokens/)).toBeNull();
@@ -257,7 +251,6 @@ describe("a subagent's rows in the agent window", () => {
 			{subagentList: false},
 			{
 				...initialChatView,
-				atOldest: true,
 				unfolded: ["agent", "inner"],
 			},
 		);

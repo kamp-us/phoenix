@@ -32,7 +32,7 @@ import {lockedRefusal, withLedgerLock} from "./append-lock.ts";
 import type {ClosureReader} from "./closure.ts";
 import {APPEND_UNKNOWN, LANE_UNREADABLE} from "./codes.ts";
 import {deriveStatus, foldLog, type LogEntry, standingCauses} from "./fold.ts";
-import {CHORE_PREFIX} from "./key.ts";
+import {CHORE_PREFIX, rawKeyIssue} from "./key.ts";
 import {compileText} from "./machine.ts";
 import {graftContext} from "./migrate.ts";
 import {correctionEntry, declaresClosureGuard, findMisroute} from "./reconcile.ts";
@@ -104,10 +104,7 @@ interface LaneRow {
 const keyOf = (root: string, name: string): string =>
 	root.endsWith(DEFAULT_CHORES_ROOT) ? `${CHORE_PREFIX}${name}` : name;
 
-const issueOf = (root: string, name: string): number | null => {
-	if (root.endsWith(DEFAULT_CHORES_ROOT) || !/^\d+$/.test(name)) return null;
-	return Number(name);
-};
+const issueOf = (root: string, name: string): number | null => rawKeyIssue(keyOf(root, name));
 
 /** The lane's folded state as one printable value, so a row shows the move it would make. */
 const foldedValue = (

@@ -23,6 +23,21 @@
  * `./floor-check.ts` seats the same answer on a check-run. Splitting them is what lets the
  * check-run mode distinguish "not judged yet" from "judged wrong" without a second derivation of
  * the floor to disagree with this one.
+ *
+ * **Whether the floor binds is read off the enumerated file list, not off GitHub's `changed_files`.**
+ * A list short of that declared count used to refuse at `13` on the grounds that a governance root
+ * could sit in the part nobody read. The count is the stale side — GitHub computes it against a base
+ * cached at the PR's last push — so the refusal blocked the merge with no act available to clear it.
+ * {@link platformFileSet} owns that argument; the disagreement leaves as a `scanned` line, and the
+ * empty-list refusal below is what keeps `not-required` from being answered over a diff nobody read.
+ *
+ * **The `13` this verb now keeps is the endpoint's own ceiling, not a count comparison.**
+ * `pulls/<n>/files` serves at most 3000 files (`PULL_FILES_CAP`) and ends its Link chain normally
+ * there, so the pagination proof passes over a list GitHub already truncated — and a governance
+ * root could sit in the part it never served. Unlike the retired arm, this one rests on a fact
+ * about the read itself rather than on a count computed against a base cached elsewhere.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -30,6 +45,7 @@ import {governedRootsOr} from "../config/paths.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {listPullFiles} from "../io/pulls.ts";
 import {touchesGovernanceRoot} from "../review/classes.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	GOVERNANCE_FLOOR_UNMET,
@@ -153,8 +169,17 @@ export const resolveFloor = (
 		if (target._tag === "Refused") return unresolved(target.outcome);
 		const pull = target.pull;
 
-		const listed = yield* listPullFiles(repo, pr);
-		if (listed._tag === "Failure") {
+		// The enumerated list IS the file set, and the pull-request record's `changed_files` is reported
+		// beside it rather than refused on. The read stays the platform's rather than a git range
+		// because `runGate` below derives the same floor off that list: two readers over two file sets
+		// is the drift a single `platformFileSet` call on each side designs out.
+		const listed = platformFileSet(
+			VERB,
+			`#${pr}`,
+			pull.changedFiles,
+			yield* listPullFiles(repo, pr),
+		);
+		if (listed._tag === "Unreadable") {
 			return unresolved(
 				refuse(
 					PRECONDITION_UNKNOWN,
@@ -162,19 +187,15 @@ export const resolveFloor = (
 				),
 			);
 		}
+		const changed = listed.set.files;
 		const scanned = [
-			scannedLine(VERB, listed.value.length, "changed file", `${pull.changedFiles} declared`),
+			scannedLine(VERB, changed.length, "changed file", `${pull.changedFiles} declared`),
+			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
 		];
-		if (listed.value.length < pull.changedFiles) {
-			return unresolved(
-				refuse(
-					INCOMPLETE_SCAN,
-					`${VERB}: received ${listed.value.length} of ${pull.changedFiles} changed files — a governance root could sit in the part nobody read.`,
-					scanned,
-				),
-			);
-		}
-		if (listed.value.length === 0) {
+		// Zero is the shortfall the enumeration alone establishes, and with the declared count no longer
+		// refusing it is the whole floor: an empty list would answer `not-required` over a diff nobody
+		// looked at.
+		if (changed.length === 0) {
 			return unresolved(
 				refuse(
 					ZERO_SCOPE,
@@ -183,13 +204,28 @@ export const resolveFloor = (
 				),
 			);
 		}
+		// The ceiling is the one truncation the enumeration cannot rule out on its own: the endpoint
+		// stops serving files there and ends its Link chain as a complete read ends.
+		if (listed.set.capped) {
+			return unresolved(
+				refuse(
+					INCOMPLETE_SCAN,
+					platformCapLine(
+						VERB,
+						`#${pr}`,
+						"a governance root could sit in the part the platform never served.",
+					),
+					scanned,
+				),
+			);
+		}
 
-		if (!touchesGovernanceRoot(listed.value, governed.roots)) {
+		if (!touchesGovernanceRoot(changed, governed.roots)) {
 			const clear = `${VERB}: #${pr}'s diff touches no governance root, so the floor does not bind — this is an answer about the diff, not a discharged verdict.`;
 			return {
 				_tag: "Unbound",
 				sha: bound,
-				scanned: listed.value.length,
+				scanned: changed.length,
 				stderr: [...scanned, clear],
 			};
 		}
@@ -223,7 +259,7 @@ export const resolveFloor = (
 				),
 			);
 		}
-		return {_tag: "Bound", state, sha: bound, scanned: listed.value.length, stderr: relayed};
+		return {_tag: "Bound", state, sha: bound, scanned: changed.length, stderr: relayed};
 	});
 
 /** Why a blocking state blocks, in the words the person reading the check needs. */

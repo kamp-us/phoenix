@@ -415,13 +415,14 @@ export const GRANT_REFUSED = 47;
 export const LANE_IS_CHILD = 48;
 
 /**
- * A verb whose whole entitlement is a closed issue was pointed at a lane whose issue is still open
- * on the board — `lane archive`, or `lane settle`.
+ * `lane settle` was pointed at a lane whose issue is still open on the board.
  *
- * An archive moves a lane out of every sweep, so the closed issue is half of what makes that safe:
- * a live lane put beyond `reconcile` and `migrate` is work nothing watches any more. Settling ends the
- * lane outright, and an open issue's closure has said nothing yet. Its own seat because the remedy
- * on both is to drive the lane, not to fix the record.
+ * Settling records the terminal a closed issue owes, and an open issue's closure has said nothing
+ * yet. Its own seat because the remedy is to drive the lane, not to fix the record.
+ *
+ * `lane archive` used to answer here too, on a closed-issue gate since retired: a lane whose log
+ * will never replay is one nobody can drive whatever its issue says, and refusing the archive left a
+ * bricked ledger holding a cap seat with no route out at all.
  */
 export const ISSUE_LIVE = 49;
 
@@ -603,3 +604,67 @@ export const TOPOLOGY_MALFORMED = 62;
  * a recorded round grant.
  */
 export const PRIOR_LANE = 63;
+
+/**
+ * A named deferral does not describe this lane — refused with nothing written.
+ *
+ * Its own seat rather than {@link AMEND_UNREPLAYABLE}'s, and the split is what makes either code
+ * actionable. `61` says the LOG cannot survive the amendment, and its remedy is to change the
+ * topology or wait for the task to reach a leaf. This one says the DEFERRAL is wrong — the task is
+ * not this lane's, or the topology still places it, or it carries no history to defer, or a live
+ * worker still holds the child — and every one of those is repaired by changing the flag or the
+ * board, never by changing the plan. Seating them together would send an operator whose `--defer`
+ * had a typo to re-plan the epic.
+ */
+export const DEFERRAL_REFUSED = 64;
+
+/**
+ * The lanes root a verb was handed sits inside a linked worktree, whose ledger is a copy of the
+ * owning repository's rather than the ledger itself — refused with nothing read and nothing
+ * appended.
+ *
+ * Its own seat rather than {@link NOT_A_REPO}'s, whose remedy is to move or pass `--root`: here the
+ * root is a real directory in a real checkout and passing it again changes nothing. Rather than
+ * {@link LANE_ABSENT}'s above all, and that is the whole point — the copy is usually *present*, so
+ * the fold succeeds and answers from a ledger frozen at whatever moment the copy was written. On
+ * lane 8810 that read a `tripped` lane with a `frozen` task off a copy the live ledger had already
+ * moved past, refused a legal terminal, and spent a granted repair round with no record of it. A
+ * plausible wrong fold is worse than any refusal, because no reader downstream can tell it from a
+ * right one.
+ */
+export const ROOT_NOT_OWNED = 65;
+
+/**
+ * `lane clear`'s PR-side grant would be posted by an account that cannot make one: outside
+ * `.fabrika.jsonc`'s grant-author set at the pull request's base ref, or below `write+` at GitHub's
+ * live ACL. Nothing is posted and the log is unappended.
+ *
+ * The ruling that gave a driver the PR-side seat moved the founder *document* off that grant and
+ * never the ACL: the marker `lane clear` posts is honoured through `../build/clearances.ts`'s same
+ * four clauses, so an account failing one of them posts a marker that grants nothing. Refusing the
+ * whole act is the point — a lane-side round recorded beside a void PR-side marker is exactly the
+ * half-seat the ruling closed.
+ *
+ * Its own seat rather than {@link GRANT_REFUSED}'s: that one says the budget is not spent yet and is
+ * answered by waiting, while this one says this account may not clear it and is answered by
+ * `build clear` from an account that may.
+ */
+export const GRANT_UNAUTHORIZED = 66;
+
+/**
+ * The classes standing over a task route this event into a cell the head's own diff owes nothing —
+ * refused with nothing proven and nothing appended.
+ *
+ * A class is a fact about a ticket while no head exists and a fact about the head once one does,
+ * and the two come apart the moment a `class:ui` ticket's fix turns out text-only: the standing set
+ * still takes the `PASS` out of `review` into `review:ui`, the rendered gate refuses a diff with no
+ * rendered surface, and the lane parks on a person for a round no changed file asked for.
+ *
+ * Its own seat rather than {@link PROOF_IN_FLIGHT}'s, because the remedies are opposite. `23` says
+ * a namespace this head derives holds no binding verdict yet, and is answered by producing one.
+ * This says the head derives no such namespace at all, and is answered by relaying the classes the
+ * head raises — `review scope` prints them, one `class` row each.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
+ */
+export const ROUTE_UNDERIVED = 67;

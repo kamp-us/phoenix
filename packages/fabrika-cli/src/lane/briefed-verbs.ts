@@ -80,9 +80,21 @@ export const carriedVerbs = (
 		const missing: BriefedLaneVerb[] = [];
 		for (const verb of BRIEFED_LANE_VERBS) {
 			const file = modulePath(path, entrypoint, verb);
-			const listed = yield* execCapture("git", ["ls-tree", "--name-only", sha, "--", file]);
-			// `ls-tree` exits 0 whether or not the path is in the tree, so an empty answer is a PROVEN
-			// absence and a non-zero exit is the read itself failing — the two must not collapse.
+			const listed = yield* execCapture("git", [
+				"ls-tree",
+				"--full-tree",
+				"--name-only",
+				sha,
+				"--",
+				file,
+			]);
+			// `--full-tree` is what leaves only two cases here: git resolves a bare pathspec against the
+			// process's directory, so run from `packages/fabrika-cli` this read asked the tree about
+			// `packages/fabrika-cli/packages/fabrika-cli/…` and got back the same empty answer a real
+			// absence gives. Anchored to the repository root, that third case cannot arise, and
+			// `ls-tree` still exits 0 whether or not the path is in the tree — so an empty answer is a
+			// PROVEN absence and a non-zero exit is the read itself failing, and the two must not
+			// collapse.
 			if (!listed.ok) {
 				return {
 					_tag: "Unreadable",

@@ -1,7 +1,7 @@
 ---
 id: 0325
 title: A killed operator seat's lane claim passes to its successor by a board-attested lane adopt
-status: accepted
+status: amended-in-part by [0389](0389-a-bricked-lane-is-archived-while-its-issue-is-open.md)
 date: 2026-08-21
 tags: [fabrika, pipeline-hardening]
 ---
@@ -88,3 +88,43 @@ same-session adopt reaches only the lanes of a session the caller is already run
   not taken here.
 - A successor who adopts a seat it should not have is visible on the issue with its reason, which the
   hand-read token never was.
+
+## Amendment — 2026-09-15 ([#7778](https://github.com/kamp-us/phoenix/issues/7778)): an adopt marker is always reachable, and it fences and confers only over what it postdates
+
+This record says `lane release` "retracts both comments" and that `lane claim` "wins normally after".
+Neither held from every state, so the sanctioned remedy this record names did not terminate. Two
+readings move; the protocol above — one marker, no TTL, no lease, no steal — is untouched.
+
+**A stranded adopt is retractable by the driver that wrote it.** The ownership read answered
+`Unclaimed` the moment no `lane-claim:` marker survived, *before* it looked at any adopt marker, so
+an adopt whose claim was already released became a comment no verb could reach: `release` said
+"no lane claim exists on #N — nothing to retract" while the adopt stayed on the thread. That read now
+names the state — an authorized adopt whose `by <token>` names the asking driver, with no claim
+beside it — and `release <lane> --token <that token>` retracts that one comment. It reaches only the
+asking driver's own adopt, resolved off the `by <token>` exactly as an ordinary win is, so the
+prohibition on retracting another driver's marker is unchanged.
+
+**An adopt fences and confers only over a claim marker posted after it.** The fence that keeps one
+succession from answering `Mine` to two drivers read every adopt over the winning marker's session,
+whatever their order. A succession adopts a claim that already stands, so an adopt *older* than the
+winning marker adopted some earlier claim and says nothing about this one. Ordering is GitHub's `created_at` with
+the comment id breaking a same-second tie — the order the marker lists already sort in, and not a
+field a marker's author composes.
+
+The rule binds both directions of the same read, because the ownership answer has two arms over one
+pair of comments: the fence, which the adopted session's own lane meets, and the conferral, which the
+adopting lane meets. An adopt older than the winning marker adopted an earlier claim, so it neither
+fences that marker nor confers it — and a rule stated on one arm alone is no rule, since the two
+lanes then answer `Mine` over a single marker and `release` under the heir's token deletes a marker
+the other lane holds. One order, read the same way by both arms, is what keeps one succession
+answering `Mine` to exactly one lane.
+
+Without that second reading the first does not finish the job. `lane adopt` admits this run's own
+session, which is the departure §"The one departure" above takes deliberately, and a stray
+self-session adopt therefore fenced *every* marker that session would ever post on the number: each
+fresh claim lost to it under a new nonce, and the remedy this record prints on the `31` — adopt,
+release, claim — minted another marker each pass. The reported loop ended only with
+`gh api -X DELETE`, the hand-composed move this record's own ruling rejected.
+
+What is not amended: an adopt still proves no seat dead, the guards are still the poster's repository
+permission and the recorded reason, and a same-session adopt is still admitted.

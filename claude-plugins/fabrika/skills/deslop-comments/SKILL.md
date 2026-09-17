@@ -55,6 +55,16 @@ doc, shrunk to one pointer line naming the record or the doc it points at.
 ADR with `/adr` or the pattern doc with `/write-pattern`, then replace the docblock with a pointer
 to it. Unhomed knowledge deleted in a cleanup is gone from the repo entirely.
 
+Both of those verdicts ask for a pointer, and **inside fabrika's own source tree
+(`packages/fabrika-cli/`) that pointer has one spelling only**: an `@ruling` tag naming the hosted
+issue that settled the behaviour, `@ruling https://…/issues/<n>`. `portability-guard` reds a
+decision-record number and a decision-corpus path in that tree — fabrika installs into repositories
+where neither resolves — and it admits the tag's own span and nothing else, so prose sharing the line
+is scanned as usual and a tag with no URL buys nothing. Shipped skill text under
+`claude-plugins/fabrika/` gets no such tag: its reader is the adopter's agent, so a docblock's *why*
+stays a self-contained sentence there. Everywhere else, the pointer names the record as it always
+did.
+
 **KEEP** — a local invariant stated at its enforcement site; a workaround plus the constraint that
 forces it; a `biome-ignore` / `@ts-expect-error` rationale; a guard that looks wrong and is
 deliberate, which someone will otherwise "fix"; a gotcha the code cannot express.

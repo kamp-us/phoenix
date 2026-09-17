@@ -16,6 +16,7 @@ import type {AgentEvent, AgentFailure, Phase} from "../events.ts";
 import {isRefusal, localEchoes, planTranscriptWindow} from "../history/index.ts";
 import {
 	ItemId,
+	itemIds,
 	type PendingPermission,
 	type PermissionProgress,
 	type TranscriptItem,
@@ -29,6 +30,8 @@ import {
 	type AiAgentSessionState,
 	closeOfferedCatalogs,
 	emptyOmission,
+	noteCutReply,
+	remarkCutReplies,
 	settleTurn,
 	type UsageLedger,
 } from "./state.ts";
@@ -100,6 +103,22 @@ const reanchored = (state: AiAgentSessionState, item: TranscriptItem): ItemId | 
 		: state.interrupted;
 };
 
+/**
+ * The cut-reply record after one item folded: a layer's marked reply is named in it from here on.
+ *
+ * Every backend marks the cut reply on the row itself — agy off the terminal `result`'s
+ * `error: "interrupted"` (`../../agy/ai-agent/mapper.ts`), the Claude layer off `aborted`, Pi off an
+ * `aborted` status, Codex off an `interrupted` turn — so this one arm catches all four, and a fifth
+ * needs nothing added here. The record is what survives the tail the row does not (#8985).
+ */
+const cutRepliesAfter = (
+	state: AiAgentSessionState,
+	item: TranscriptItem,
+): AiAgentSessionState["cutReplies"] =>
+	item.kind === "assistant" && item.interrupted === true
+		? noteCutReply(state.cutReplies, item.id)
+		: state.cutReplies;
+
 const addOmission = (carried: WindowOmission, dropped: WindowOmission): WindowOmission => ({
 	items: carried.items + dropped.items,
 	bytes: carried.bytes + dropped.bytes,
@@ -117,32 +136,58 @@ export const foldItem = (
 		: {items: planned.items, omitted: addOmission(transcript.omitted, planned.omitted)};
 };
 
-/** Which rows of the store's history this process is already holding a copy of, by their index. */
-const heldPositions = (
+/**
+ * Which held row each row of the store's history is a copy of, as a pair of indices.
+ *
+ * The pairing rather than a bare set of covered positions, because the splice below needs to put
+ * each held row back *where* it was recognised: a set says only that the range is covered, and
+ * everything inside it then has to be substituted wholesale or not at all (#9208).
+ */
+const heldAnchors = (
 	held: ReadonlyArray<TranscriptItem>,
 	history: ReadonlyArray<TranscriptItem>,
-): ReadonlySet<number> => {
+): ReadonlyMap<number, number> => {
 	// The operator's own turns join on text, not on id: the core records one at the send under a
 	// `local:<key>` id no backend ever sees (#7978), and a layer that echoes no `user` item never
 	// clears it — so an id-only join would read every unechoed prompt as a row the store lacks.
 	const echoes = localEchoes(history, held);
-	const ids = new Set(held.map((item) => item.id));
-	return new Set(
-		history.flatMap((item, index) => (echoes.has(index) || ids.has(item.id) ? [index] : [])),
-	);
+	const heldAt = new Map<TranscriptItem, number>(held.map((item, index) => [item, index]));
+	// Every other row joins on identity, and identity is both of a row's ids: a backend keying its
+	// live tail and its history reads in two spaces states the join in `alias` (#8032). On `id`
+	// alone this map met nothing agy's store returned, which left the range empty and sent the whole
+	// tail to the end of the history as a second copy of itself (#9061).
+	const byId = new Map<string, number>();
+	held.forEach((item, index) => {
+		for (const id of itemIds(item)) if (!byId.has(id)) byId.set(id, index);
+	});
+	const anchors = new Map<number, number>();
+	history.forEach((item, index) => {
+		const echo = echoes.get(index);
+		const at =
+			echo === undefined ? itemIds(item).flatMap((id) => byId.get(id) ?? [])[0] : heldAt.get(echo);
+		if (at !== undefined) anchors.set(index, at);
+	});
+	return anchors;
 };
 
 /**
- * The store's history with the tail this process is holding spliced back in whole.
+ * The store's history with the tail this process is holding spliced back into the range it covers.
  *
- * **The held tail wins over the range it covers**, rather than each of its rows being merged in one
- * at a time. Two things live in that tail and in no store: the operator's turns, recorded locally
- * at the send, and the half-written reply the restart cut, which the backend never finished writing
- * down. Merged row by row they land at the end — every prompt of the session below the replies it
- * produced — so the range is what is substituted, and what the store adds is what sits outside it.
- * Inside the range, our copy is also the one the restore marked `interrupted` (`./state.ts`) and the
- * operator has already read that way; a row that genuinely moved while the transport was down
- * arrives on the event stream and upserts over this (#8374).
+ * **The held tail wins over the rows it is recognised at**, and only over those: each held row lands
+ * at the store position it was recognised at, and a store row inside the range that the tail never
+ * held stays where the store put it, between the held rows around it. Substituting the whole range
+ * instead dropped every such row — on a backend that streams no live row for a prompt or a system
+ * notice, the operator's own earlier questions (#9208).
+ *
+ * Two things live in that tail and in no store: the operator's turns, recorded locally at the send,
+ * and the half-written reply the restart cut, which the backend never finished writing down. Neither
+ * is recognised anywhere, so neither anchors: they travel with the held row they were held beside,
+ * which is what keeps every prompt above the reply it produced — merged by store order they would
+ * have none and land at the end. Where a held row is recognised, our copy is also the one the restore
+ * marked `interrupted` (`./state.ts`) and the operator has already read that way; a row that
+ * genuinely moved while the transport was down arrives on the event stream and upserts over this
+ * (#8374). Outside the range there is no held copy to win, so a cut reply the window dropped is
+ * re-marked by the caller instead (`refillTranscript`).
  *
  * A tail with nothing in the store at all is the whole store's junior, so it goes behind it.
  */
@@ -151,14 +196,24 @@ const rebaseOnStore = (
 	history: ReadonlyArray<TranscriptItem>,
 ): ReadonlyArray<TranscriptItem> => {
 	if (held.length === 0) return history;
-	const positions = heldPositions(held, history);
-	const covered = [...positions].sort((left, right) => left - right);
-	const first = covered[0];
-	const last = covered[covered.length - 1];
-	if (first === undefined || last === undefined) return [...history, ...held];
+	const anchors = heldAnchors(held, history);
+	if (anchors.size === 0) return [...history, ...held];
+	const first = [...anchors.keys()].reduce((left, right) => (right < left ? right : left));
+	const anchorOf = new Map<number, number>();
+	for (const [position, at] of anchors) if (!anchorOf.has(at)) anchorOf.set(at, position);
 	const outside = (from: number, to: number): ReadonlyArray<TranscriptItem> =>
-		history.slice(from, to).filter((_, offset) => !positions.has(from + offset));
-	return [...outside(0, first), ...held, ...outside(last + 1, history.length)];
+		history.slice(from, to).filter((_, offset) => !anchors.has(from + offset));
+	const spliced: Array<TranscriptItem> = [];
+	let cursor = first;
+	held.forEach((item, at) => {
+		const anchor = anchorOf.get(at);
+		if (anchor !== undefined) {
+			spliced.push(...outside(cursor, anchor));
+			cursor = Math.max(cursor, anchor + 1);
+		}
+		spliced.push(item);
+	});
+	return [...outside(0, first), ...spliced, ...outside(cursor, history.length)];
 };
 
 /**
@@ -173,13 +228,21 @@ const rebaseOnStore = (
  * The omission is replaced, not added to: it describes the window that was just planned, and the
  * count the stale tail carried was about a window that no longer exists. A refused plan leaves the
  * tail as it was, the same answer `foldItem` gives.
+ *
+ * `cut` is why this takes a fourth operand. `rebaseOnStore` holds the marked copy of a cut reply the
+ * tail still carries, and that reaches held rows alone — a row the window dropped comes back here as
+ * the store's bare copy, which says the model finished a reply the operator stopped. The record
+ * outlives the window (`./state.ts`), so the mark is re-applied to whatever the store returned
+ * (#8985). Pass `state.cutReplies`; an empty record is a no-op, never a silently unmarked row.
  */
 export const refillTranscript = (
 	transcript: TranscriptPayload,
 	history: ReadonlyArray<TranscriptItem>,
 	limits: WindowLimits,
+	cut: ReadonlyArray<ItemId>,
 ): TranscriptPayload => {
-	const planned = planTranscriptWindow(rebaseOnStore(transcript.items, history), limits);
+	const rebased = remarkCutReplies(rebaseOnStore(transcript.items, history), cut);
+	const planned = planTranscriptWindow(rebased, limits);
 	return isRefusal(planned) ? transcript : {items: planned.items, omitted: planned.omitted};
 };
 
@@ -357,6 +420,7 @@ export const foldEvent = (
 			return {
 				...state,
 				interrupted: reanchored(state, event.item),
+				cutReplies: cutRepliesAfter(state, event.item),
 				transcript: foldItem(state.transcript, event.item, limits),
 			};
 		// The phase line is also where a send in flight learns it crossed, and it takes two events
@@ -445,7 +509,8 @@ export const foldEvent = (
 		// the machine's own `settleQueue` admits its head off the `ready`, so nothing an operator
 		// wrote is dropped by the reset.
 		//
-		// Everything cleared belongs to the conversation that ended: its tail, its cut-turn marker,
+		// Everything cleared belongs to the conversation that ended: its tail, its cut-turn marker and
+		// the record of every reply it cut — ids in a store no page of this conversation will read —
 		// the abort still outstanding over it, its permission cards — which no answer can reach any
 		// more — its subagent rows and the page read off it. The usage ledger stays: the reset does
 		// not un-spend what this session already spent.
@@ -456,6 +521,7 @@ export const foldEvent = (
 				sessionId: event.sessionId,
 				transcript: {items: [], omitted: emptyOmission},
 				interrupted: null,
+				cutReplies: [],
 				interruption: null,
 				permissions: {},
 				subagents: {},

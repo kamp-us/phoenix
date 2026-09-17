@@ -144,6 +144,7 @@ For operational packages, workflow steps, hooks and Fabrika. Read the owning pac
 | [liveness-probe-outcomes.md](./liveness-probe-outcomes.md) | Node tooling / CI | Writing or reviewing a probe of an external surface's health, or deciding a can't-run polarity ([ADR 0250](../.decisions/0250-fabrika-hook-cannot-run-fails-open.md), [#3411](https://github.com/kamp-us/phoenix/issues/3411)) |
 | [crabbox-run-evidence.md](./crabbox-run-evidence.md) | Node tooling / CI | Touching the run-evidence producer/adapter/manifest, or a gate that reads the bundle |
 | [effect-process-cli-shell.md](./effect-process-cli-shell.md) | Node tooling / CI | Calling an external CLI from Effect code; Fabrika GitHub calls use its HTTP client |
+| [github-read-completeness-proofs.md](./github-read-completeness-proofs.md) | Node tooling / CI | Adding a Fabrika GitHub list read, or seating a verdict on one whose answer changes if the list is short ([#8067](https://github.com/kamp-us/phoenix/issues/8067)) |
 | [effect-rpc.md](./effect-rpc.md) | Node tooling / CI | Defining an RPC catalog or standing up an RPC server/client over a socket transport ([#3058](https://github.com/kamp-us/phoenix/issues/3058)) |
 | [fabrika-config-key-groups.md](./fabrika-config-key-groups.md) | Node tooling / CI | Adding or changing a `.fabrika.jsonc` key, or reading one from a fabrika verb (epic [#5631](https://github.com/kamp-us/phoenix/issues/5631)) |
 | [dependency-patch-behavior-pins.md](./dependency-patch-behavior-pins.md) | Node tooling / CI | Adding/bumping/removing a `pnpm patch`, writing a behavior pin, or touching the `patch-guard` tool |
@@ -156,6 +157,7 @@ For operational packages, workflow steps, hooks and Fabrika. Read the owning pac
 | [fabrika-hook-records.md](./fabrika-hook-records.md) | Node tooling / CI | Asking why a fabrika hook is (or is not) declared here, or what guarantee a retired v1 hook took with it |
 | [fabrika-verb-shape.md](./fabrika-verb-shape.md) | Node tooling / CI | Adding or changing a fabrika verb, or writing a test that substitutes its services |
 | [pi-project-package-install.md](./pi-project-package-install.md) | Node tooling / CI | Editing `.pi/settings.json`, or diagnosing a pi child that failed during its project-package refresh |
+| [serialized-usage-ledger.md](./serialized-usage-ledger.md) | Usage-ledger identity comparison, serialized appends, sync, read-back and recovery | Changing the spend recorder or adding a host recording callback |
 
 ## Tuval
 
@@ -175,6 +177,7 @@ For `apps/tuval`. Its local integration tests use real sessions and sockets, not
 | [tuval-detached-child-tail.md](./tuval-detached-child-tail.md) | apps/tuval | A Tuval AI-agent layer whose subagent rows come from a child process rather than the session stream |
 | [tuval-program-row-effects.md](./tuval-program-row-effects.md) | apps/tuval | Writing a Tuval program row, or giving one a service, a resource or an out-port emission ([#7603](https://github.com/kamp-us/phoenix/issues/7603)) |
 | [tuval-history-cursor-join.md](./tuval-history-cursor-join.md) | apps/tuval | A Tuval AI-agent layer whose history read keys rows differently from its live stream, or a `cursor-not-found` on `Load earlier messages` |
+| [tuval-session-only-facts.md](./tuval-session-only-facts.md) | apps/tuval | A Tuval transcript row carrying a mark this process knows and the backend's store does not, or a row that renders differently once it has been paged out and back |
 | [tuval-authored-programs.md](./tuval-authored-programs.md) | apps/tuval | Writing or reviewing an authored Tuval program, giving one a `resume` or a `configChanged`, or wiring one into a config graph ([#8735](https://github.com/kamp-us/phoenix/issues/8735)) |
 | [window-renderer-admission.md](./window-renderer-admission.md) | apps/tuval | Adding a renderer to a page's table, giving a program a window, or touching `apps/tuval/src/page/readable-state.tsx` or `apps/tuval/src/shell/ui/WindowView.tsx` ([#8157](https://github.com/kamp-us/phoenix/issues/8157)) |
 | [node-listener-total-boundary.md](./node-listener-total-boundary.md) | apps/tuval | Registering a listener that reads a value an unauthenticated client controls, or touching the Pi server's `upgrade`/`message` boundary ([#7567](https://github.com/kamp-us/phoenix/issues/7567)) |

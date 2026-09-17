@@ -220,17 +220,30 @@ describe("runScope", () => {
 		);
 	});
 
-	it("refuses a short changed-file read on 13, distinct from 11 and 7", async () => {
+	it("derives from the local read when GitHub declares more files, and prints the disagreement", async () => {
 		const out = await run([
 			[PULL, served(pull({changedFiles: 9}))],
 			...binding(),
-			[STATUS_AT(), statuses(["M", "src/cart.ts"])],
+			[STATUS_AT(), statuses(["M", "claude-plugins/fabrika/skills/review/SKILL.md"])],
+			[TREE_AT(), treeOf(...FULL_TREE)],
 		]);
-		expect(out.code).toBe(INCOMPLETE_SCAN);
-		expect(out.code).not.toBe(PRECONDITION_UNKNOWN);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("governance\trequired");
+		expect(out.stderr).toContain(
+			"governance scope: git and GitHub disagree on #4321's file count (1 vs 9) — different merge base and different rename detection; reported, never refused on.",
+		);
+	});
+
+	it("refuses an empty local read on 7 — never `not-required`, whatever GitHub declares", async () => {
+		const out = await run([
+			[PULL, served(pull({changedFiles: 9}))],
+			...binding(),
+			[STATUS_AT(), statuses()],
+		]);
+		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-2)).toBe(
-			`governance scope: ${HEAD} carries 1 of the 9 files #4321 declares — refusing to derive from a short read.`,
+			`governance scope: ${BASE}...${HEAD} changes no path — refusing to derive over an empty diff.`,
 		);
 	});
 

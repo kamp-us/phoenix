@@ -214,6 +214,11 @@ of any kind can make a variable-rooted invocation usable at an agent's top-level
   below is how the command comes to resolve.
 - **Examples in `--help` and in a contract spec are held to the same rule.** An example an agent
   cannot paste verbatim is not an example.
+- **A verb whose body arrives on stdin never grows a path-valued body flag**, whatever command-size
+  pressure the caller reports. The caller stages the body under its group's scratch path and
+  redirects a literal `< <path>` into the verb — the route
+  [skill-conventions §4](skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed)
+  fixes — so the bytes still arrive on stdin and the verb reads no path it could post.
 - A verb never requires an env var to *locate* itself. Configuration may still arrive by env
   (a session id, a target repo), and each such variable is named in `--help` with its default and
   what happens when it is unset.

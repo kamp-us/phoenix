@@ -14,7 +14,7 @@
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {isKebabSlug} from "../build/lane.ts";
-import {listComments, resolveRepo} from "../io/issues.ts";
+import {listCommentsReconciled, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	DEFAULT_TTL_MINUTES,
@@ -98,17 +98,17 @@ export const runScratch = (
 		}
 		const repo = repoAttempt.value;
 
-		const comments = yield* listComments(repo, issue);
+		const comments = yield* listCommentsReconciled(repo, issue);
 		if (comments._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot read #${issue}'s comments in ${repo}: ${comments.reason} — the claim on it is UNKNOWN, so no path was allocated.`,
 			);
 		}
-		const scope = scannedLine(VERB, repo, comments.value.length, "comment");
+		const scope = scannedLine(VERB, repo, comments.value.comments.length, "comment");
 
 		const resolution = resolveClaim({
-			markers: markersOf(comments.value),
+			markers: markersOf(comments.value.comments),
 			caller,
 			now: options.now().getTime(),
 			ttlMinutes: DEFAULT_TTL_MINUTES,

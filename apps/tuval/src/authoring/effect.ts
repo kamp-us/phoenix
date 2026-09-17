@@ -42,9 +42,24 @@ export interface SpawnEffect<Out extends string = string, Event extends string =
 	readonly on: ChildRouting<Out, Event>;
 }
 
-export interface SendEffect {
+/**
+ * Where a `send` lands. A `PortAddress` is another process's port, named in full. A bare string is
+ * an in-port of the **declaring program's own** process, and it is a command's form alone (ADR
+ * 0372, amended for #8898): an `update` cell already runs under a process and reaches its own
+ * out-ports with `emit`, while a command runs under a `Scope` whose `process` is the *caller's*.
+ * Which process of the declaring program a bare name lands on is resolved at the call
+ * (`./own-process.ts`) and is never carried by the effect.
+ */
+export type SendTarget = PortAddress | string;
+
+/**
+ * One payload, one target. The parameter is what keeps the bare form out of an `update` cell: it
+ * defaults to the addressed form, so `send("pr", pr)` — a `SendEffect<"pr">` — is assignable to a
+ * command's answer and to nothing an `update` cell may return.
+ */
+export interface SendEffect<To extends SendTarget = PortAddress> {
 	readonly type: "send";
-	readonly to: PortAddress;
+	readonly to: To;
 	readonly payload: unknown;
 }
 
@@ -85,6 +100,13 @@ export type ProgramEffect =
 	| EmitEffect
 	| StopEffect;
 
+/**
+ * Every effect either authoring surface may ask for: an `update` cell's six, plus the one extra
+ * shape a `commands` cell has — a `send` at a bare port of its own program (`./commands.ts`).
+ * Written for the helpers that hold both, `./test-program.ts` above all; neither surface takes it.
+ */
+export type AnyEffect = ProgramEffect | SendEffect<SendTarget>;
+
 /** Start a process of `program`, routing the child's out-ports back into my own events. */
 export const spawn = <Out extends string, Event extends string>(
 	program: Spawnable<Out>,
@@ -95,8 +117,15 @@ export const spawn = <Out extends string, Event extends string>(
 	on: options?.on ?? {},
 });
 
-/** Put a payload on another process's in-port. */
-export const send = (to: PortAddress, payload: unknown): SendEffect => ({
+/**
+ * Put a payload on an in-port: another process's, addressed in full, or — from a `commands` cell —
+ * one of the declaring program's own, named by the port alone (`SendTarget`).
+ *
+ * Generic rather than overloaded so the target type survives to the answer: `send("pr", pr)` is a
+ * `SendEffect<"pr">`, which an `update` cell's `ReadonlyArray<ProgramEffect>` refuses at the line
+ * that wrote it.
+ */
+export const send = <To extends SendTarget>(to: To, payload: unknown): SendEffect<To> => ({
 	type: "send",
 	to,
 	payload,
@@ -122,7 +151,7 @@ export const emit = <Port extends string>(port: Port, payload: unknown): EmitEff
 	payload,
 });
 
-/** End a process I started. */
+/** End a process I started. It answers nothing; the `stopped` below is what arrives when it ends. */
 export const stop = (process: ProcessId): StopEffect => ({type: "stop", process});
 
 /** The event a `spawn` answers with: the new process, and which program it runs. */
@@ -132,7 +161,13 @@ export interface Spawned {
 	readonly program: string;
 }
 
-/** The event a `stop` answers with, and the one a child's own end arrives as. */
+/**
+ * A child of this process has ended — whether this process stopped it or it ended on its own. One
+ * event per child end, produced in one place: the finalizer `SpawnedProcesses.spawn` hangs on the
+ * child's Scope (`../commands/core/process.ts`, #9227). Because `stop` answers nothing, a cell that
+ * issued one hears back here like any other ending, on a later dispatch rather than as its own
+ * fold's answer — so an author's `stopped` cell never has to tell the two endings apart.
+ */
 export interface Stopped {
 	readonly type: "stopped";
 	readonly process: ProcessId;

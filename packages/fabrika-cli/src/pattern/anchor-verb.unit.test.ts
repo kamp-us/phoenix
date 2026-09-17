@@ -17,8 +17,8 @@ const shell = (overrides: Script = [], slug = "worker-queue-retry") =>
 		[/^git remote$/, okOut("origin\n")],
 		[/^git fetch/, okOut("")],
 		[/^git rev-parse/, okOut(`${SHA}\n`)],
-		[/^git ls-tree --name-only \w+ -- \S+\.md$/, okOut(`${DIR}/${slug}.md\n`)],
-		[/^git ls-tree --name-only \w+ -- \S+\.yaml$/, okOut(`${MANIFEST}\n`)],
+		[/^git ls-tree --full-tree --name-only \w+ -- \S+\.md$/, okOut(`${DIR}/${slug}.md\n`)],
+		[/^git ls-tree --full-tree --name-only \w+ -- \S+\.yaml$/, okOut(`${MANIFEST}\n`)],
 		[/^git show \w+:\S+\.yaml$/, okOut(FIXTURE_MANIFEST)],
 		[/^git show \w+:\S+plain-doc\.md$/, okOut(PLAIN_DOC)],
 		[/^git show \w+:/, okOut(ANCHORED_DOC)],
@@ -105,38 +105,69 @@ describe("runAnchor", () => {
 	it("refuses a manifest that does not parse as YAML", async () => {
 		const out = await run([[/^git show \w+:\S+\.yaml$/, okOut("catalog:\n\tacme-queue: 4.2.0\n")]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stderr.at(-1)).toContain("indents with a tab");
+		expect(out.stderr.at(-1)).toContain("Tabs");
 	});
 
-	// The three unreadable catalog shapes, at the exit code a caller actually reads. Each parses as
-	// YAML and each carries a catalog the reader does not comprehend, so the verb refuses instead of
-	// answering — and in particular never claims the manifest "carries no catalog: map".
 	const manifest = (yaml: string): Script => [[/^git show \w+:\S+\.yaml$/, okOut(yaml)]];
 
-	it("refuses an inline flow map instead of answering `unpinned`", async () => {
-		const out = await run(manifest("catalog: {acme-queue: 4.2.0}\n"));
-		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).not.toContain("carries no catalog: map");
+	it("reads flow and named-only maps through the command", async () => {
+		for (const text of [
+			"catalog: {acme-queue: 4.2.0}\n",
+			"catalogs:\n  current: {acme-queue: 4.2.0}\n",
+		]) {
+			const out = await run(manifest(text));
+			expect(out.code).toBe(0);
+			expect(out.stdout).toContain("pkg\tacme-queue\t4.1.0\t4.2.0\tmoved");
+		}
 	});
-
-	it("refuses a nested sub-map instead of answering `moved` against an empty pin", async () => {
+	it("refuses a nested sub-map instead of answering moved", async () => {
 		const out = await run(manifest("catalog:\n  acme-queue:\n    version: 4.2.0\n"));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("pins no version");
 	});
-
-	it("refuses a named-catalog block instead of reading it as no catalog at all", async () => {
-		const out = await run(manifest("catalogs:\n  default:\n    acme-queue: 4.2.0\n"));
-		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).not.toContain("carries no catalog: map");
+	it("resolves unique pins despite unrelated conflicts in the current workspace shape", async () => {
+		const text =
+			"catalog: {acme-queue: 4.1.0, effect: 4.0.0-beta.92}\ncatalogs:\n  local: {effect: 4.0.0-rc.112, fzf: 0.5.2}\n";
+		const out = await run(manifest(text));
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("pkg\tacme-queue\t4.1.0\t4.1.0\tmatched");
+		const plain = await run(manifest(text), {slug: "plain-doc"});
+		expect(plain.code).toBe(0);
+		expect(plain.stdout).toBe("anchor\tunanchored\t0\t0\t0\t0\n");
 	});
-
+	it("accepts equal pins but refuses conflicting declared pins", async () => {
+		expect.assertions(5);
+		for (const version of ["4.1.0", "4.2.0"]) {
+			const out = await run(
+				manifest(`catalog: {acme-queue: 4.1.0}\ncatalogs:\n  legacy: {acme-queue: ${version}}\n`),
+			);
+			if (version === "4.1.0") {
+				expect(out.code).toBe(0);
+				expect(out.stdout).toContain("pkg\tacme-queue\t4.1.0\t4.1.0\tmatched");
+			} else {
+				expect(out.code).toBe(PRECONDITION_UNKNOWN);
+				expect(out.stdout).toBe("");
+				expect(out.stderr.at(-1)).toContain(
+					"acme-queue has conflicting catalog pins: 4.1.0, 4.2.0",
+				);
+			}
+		}
+	});
+	it("keeps malformed declarations and invalid manifests distinct from unanchored", async () => {
+		const malformed = await run([
+			...manifest("catalogs: {local: {acme-queue: 4.1.0}}\n"),
+			[/^git show \w+:\S+\.md$/, okOut("> Derived from broken\n")],
+		]);
+		expect(malformed.code).toBe(0);
+		expect(malformed.stdout).toContain("anchor\tmalformed\t1\t0\t0\t1");
+		const invalid = await run(manifest("catalogs: []\n"), {slug: "plain-doc"});
+		expect(invalid.code).toBe(PRECONDITION_UNKNOWN);
+		expect(invalid.stdout).toBe("");
+	});
 	// The degrade path: a repo that pins nothing centrally is a fact about that repo, not a failure.
 	it("degrades to `unpinned` at exit 0 when the manifest is absent, and says so on stderr", async () => {
-		const out = await run([[/^git ls-tree --name-only \w+ -- \S+\.yaml$/, okOut("")]]);
+		const out = await run([[/^git ls-tree --full-tree --name-only \w+ -- \S+\.yaml$/, okOut("")]]);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe("anchor\tunpinned\t2\t0\t2\t0");
 		expect(out.stderr.join("\n")).toContain("is absent at");
@@ -146,13 +177,13 @@ describe("runAnchor", () => {
 		const out = await run([[/^git show \w+:\S+\.yaml$/, okOut("packages:\n  - packages/*\n")]]);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe("anchor\tunpinned\t2\t0\t2\t0");
-		expect(out.stderr.join("\n")).toContain("carries no catalog: map");
+		expect(out.stderr.join("\n")).toContain("carries no catalog: or catalogs: map");
 	});
 
 	// `unborn` mirrors `pattern drift` deliberately: one tree state must not produce two verdicts.
 	it("answers `unborn` for a doc in the working tree and absent at the base", async () => {
 		const out = await run(
-			[[/^git ls-tree --name-only \w+ -- \S+\.md$/, okOut("")]],
+			[[/^git ls-tree --full-tree --name-only \w+ -- \S+\.md$/, okOut("")]],
 			{},
 			{
 				[`${DIR}/worker-queue-retry.md`]: "# New\n",
@@ -163,7 +194,7 @@ describe("runAnchor", () => {
 	});
 
 	it("refuses a slug with no doc anywhere on the same code pattern drift uses", async () => {
-		const out = await run([[/^git ls-tree --name-only \w+ -- \S+\.md$/, okOut("")]], {
+		const out = await run([[/^git ls-tree --full-tree --name-only \w+ -- \S+\.md$/, okOut("")]], {
 			slug: "no-such-doc",
 		});
 		expect(out.code).toBe(DOC_ABSENT);

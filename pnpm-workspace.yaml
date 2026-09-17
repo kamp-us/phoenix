@@ -173,9 +173,10 @@ onlyBuiltDependencies:
 # Local patches (policy: patch deps locally, don't depend on an upstream/fork
 # release — ADR 0038). Re-key each on that dep's next version bump.
 #
-# alchemy — beta.77 retains three local behaviors (ADR 0038):
+# alchemy — beta.77 retains four local behaviors (ADR 0038):
 # - Flagship updates preserve dashboard-owned serving settings (ADR 0106).
 # - Test.make hooks honor Vitest's configured hookTimeout.
+# - Precreated workers return an uncacheable 503 until deployment completes.
 # - D1 reads the mixed flat/directory migration tree and refuses recorded-file drift;
 #   explicit adopt re-keys only hash-proven renames (ADR 0309).
 # Native Worker cache configuration and Windows stack imports need no patch now.

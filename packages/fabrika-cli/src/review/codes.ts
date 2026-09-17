@@ -9,7 +9,7 @@
  * checked-in `/report` contract already sits behind its own binary on `7` and `11`, which is
  * why the shipped package is the authority and no prose copy is.
  *
- * **`12`-`17` are this group's private band, and are deliberately not cleared against sibling
+ * **`12`-`20` are this group's private band, and are deliberately not cleared against sibling
  * groups.** `triage` seats `12`/`13` on its own two refusals; that is two namespaces, not one
  * collision, because the `3`+ band carries no cross-group uniqueness obligation — see rule 3 of
  * `../../../../claude-plugins/fabrika/docs/cli-interface-convention.md`, which also names the one
@@ -91,6 +91,46 @@ export const NO_GATE_COVERAGE = 16;
  * history to recover it from. Nothing is written on this refusal.
  */
 export const SUPERSEDES_VERDICT = 17;
+
+/**
+ * Refused: this `PASS` is the terminal of a round that appended an acceptance criterion tagged for
+ * that same subject and that same round.
+ *
+ * Its own seat rather than {@link OFF_VOCABULARY}, because nothing about the arguments is off any
+ * vocabulary — every flag is well-formed and the verdict is one token away from legal. What it costs
+ * is the finding: an appended row binds the *next* cycle, and a `PASS` has no next cycle. The lane
+ * folds to `ship`, the PR merges, the issue auto-closes, and the row the reviewer correctly raised
+ * sits unread on a closed issue. Nothing is written on this refusal.
+ */
+export const APPENDED_THIS_ROUND = 18;
+
+/**
+ * Refused: this `PASS` is the terminal of a contract that marks a criterion whose evidence lives
+ * outside the diff, and the verdict body names no evidence for it.
+ *
+ * Its own seat rather than {@link OFF_VOCABULARY}, because nothing about the arguments is off any
+ * vocabulary — every flag is well-formed and the body is one paragraph away from legal. What it
+ * costs is the grading: a marked criterion is graded on the evidence it names, so a `PASS` that
+ * cites none has graded it on nothing and left a merge record that reads as though it had. Nothing
+ * is written on this refusal.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9200
+ */
+export const UNNAMED_EVIDENCE = 19;
+
+/**
+ * Refused: the range's tip is not reachable in this worktree, so the tree cannot be seated on it.
+ *
+ * Its own seat rather than {@link ZERO_SCOPE} or {@link PRECONDITION_UNKNOWN}, because it is neither
+ * of those facts: the range exists, every read succeeded, and what is missing is the commit itself —
+ * a child's build branch is local and unpushed, so a worktree cut fresh from the driver's checkout
+ * carries none of it. Folding it into `7` would say the subject is absent, and folding it into `11`
+ * would say a read failed; both leave a caller free to grade in place, which is the one outcome this
+ * code exists to refuse.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8893
+ */
+export const UNREACHABLE_TIP = 20;
 
 /** The unallocated code — see the gap note at the top of this file. */
 export const DELIBERATE_GAP = 4;

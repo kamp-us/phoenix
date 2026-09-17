@@ -11,14 +11,36 @@
  * discrimination rides the `E` channel — a caller cannot reach the value without deciding what to do
  * with the failure, where a `null` sentinel could simply go untested.
  */
-import {Effect, FileSystem, Path} from "effect";
+import {Effect, FileSystem, Path, type PlatformError} from "effect";
 import * as Schema from "effect/Schema";
 
 /** A path could not be read — never conflated with a path that was read and held nothing. */
 export class ReadFailed extends Schema.TaggedError<ReadFailed>()("fabrika-cli/ReadFailed", {
 	path: Schema.String,
 	reason: Schema.String,
+	/**
+	 * Whether this read itself proved the path absent — the platform's `NotFound`, carried as a
+	 * field so a caller decides absence off the sample it already took.
+	 *
+	 * The alternative a caller is left with otherwise is a second `exists()` at a later instant,
+	 * which another process racing to create the path can answer differently from the read — the
+	 * false "unreadable" the ruling below names. Reading it out of {@link ReadFailed.reason}'s text
+	 * would be a guess about a message format nothing pins.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/9315
+	 */
+	notFound: Schema.Boolean,
 }) {}
+
+/** Lower one platform read failure, keeping its normalized `NotFound` tag as {@link ReadFailed.notFound}. */
+const readFailed =
+	(path: string) =>
+	(cause: PlatformError.PlatformError): ReadFailed =>
+		new ReadFailed({
+			path,
+			reason: cause.message,
+			notFound: cause.reason._tag === "NotFound",
+		});
 
 /** A write did not land. The caller refuses; it never reports the path as written. */
 export class WriteFailed extends Schema.TaggedError<WriteFailed>()("fabrika-cli/WriteFailed", {
@@ -35,18 +57,14 @@ export const readDir = (
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
 		return yield* fs.readDirectory(path);
-	}).pipe(
-		Effect.catchTag("PlatformError", (cause) => new ReadFailed({path, reason: cause.message})),
-	);
+	}).pipe(Effect.catchTag("PlatformError", readFailed(path)));
 
 /** The file's UTF-8 text. A file that could not be read FAILS; it never resolves to `""`. */
 export const readFile = (path: string): Effect.Effect<string, ReadFailed, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
 		return yield* fs.readFileString(path);
-	}).pipe(
-		Effect.catchTag("PlatformError", (cause) => new ReadFailed({path, reason: cause.message})),
-	);
+	}).pipe(Effect.catchTag("PlatformError", readFailed(path)));
 
 /**
  * Whether `path` exists.
@@ -59,9 +77,7 @@ export const exists = (path: string): Effect.Effect<boolean, ReadFailed, FileSys
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
 		return yield* fs.exists(path);
-	}).pipe(
-		Effect.catchTag("PlatformError", (cause) => new ReadFailed({path, reason: cause.message})),
-	);
+	}).pipe(Effect.catchTag("PlatformError", readFailed(path)));
 
 /**
  * Whether `path` is a directory.
@@ -77,9 +93,7 @@ export const isDirectory = (
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
 		return (yield* fs.stat(path)).type === "Directory";
-	}).pipe(
-		Effect.catchTag("PlatformError", (cause) => new ReadFailed({path, reason: cause.message})),
-	);
+	}).pipe(Effect.catchTag("PlatformError", readFailed(path)));
 
 /**
  * Append `text` to `path`, creating the file and its parent directory when they are absent.
@@ -127,9 +141,7 @@ export const realPath = (path: string): Effect.Effect<string, ReadFailed, FileSy
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
 		return yield* fs.realPath(path);
-	}).pipe(
-		Effect.catchTag("PlatformError", (cause) => new ReadFailed({path, reason: cause.message})),
-	);
+	}).pipe(Effect.catchTag("PlatformError", readFailed(path)));
 
 /** Create `path` and any missing parent. Already-present is success, not an error. */
 export const makeDirectory = (

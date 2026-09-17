@@ -47,7 +47,7 @@ flowchart TD
 		camp_fabrika_everywhere["fabrika everywhere"]:::done
 		camp_ge_it_product_push["Geçit product push"]:::active
 		camp_lane_integrity["Lane integrity"]:::active
-		camp_epic_lanes["Epic lanes"]:::active
+		camp_epic_lanes["Epic lanes"]:::done
 		camp_di_taxis_readme_passes["Diátaxis README passes"]:::done
 		camp_tuval["Tuval"]:::done
 		camp_tuval_first_slice["Tuval first slice"]:::done
@@ -115,7 +115,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | fabrika everywhere | #47 | done |
 | Geçit product push | #24 | active |
 | Lane integrity | #48 | active |
-| Epic lanes | #49 | active |
+| Epic lanes | #49 | done |
 | Diátaxis README passes | #50 | done |
 | Tuval | #51 | done |
 | Tuval first slice | #52 | done |

@@ -8,6 +8,11 @@
  *
  * The kernel latches the newest line a process emits on each, whatever spawn path it came up
  * through (`Processes.ts`), so a reader asks the process table and never the wiring.
+ *
+ * The latch is runtime memory and nothing persists it, so a restored process starts with neither
+ * line. `seedSelfReport` is the other write into it: at spawn the kernel asks the row what its
+ * loaded state derives and records that, because a restored process emits nothing until some later
+ * transition moves a line — which for a stable title is never (#8812).
  */
 
 import {type Context, Effect, Option} from "effect";
@@ -42,6 +47,41 @@ const declaresOutPort = (row: AnyProgram, port: SelfReportPort): boolean =>
 	row.ports[port]?.direction === "out";
 
 /**
+ * The line this row would latch for one port, or none — the whole admission test, written once so
+ * the two writers into the latch cannot disagree about what it holds. A port outside the two, a
+ * payload that is not a line, and a port the row does not declare out are all outside the contract.
+ */
+const latchable = (
+	row: AnyProgram,
+	port: string,
+	payload: unknown,
+): Option.Option<readonly [SelfReportPort, string]> =>
+	(port === TITLE_PORT || port === STATUS_PORT) && isLine(payload) && declaresOutPort(row, port)
+		? Option.some([port, payload] as const)
+		: Option.none();
+
+/**
+ * What a restored process would otherwise never say: the lines its row derives off the state it
+ * booted on, recorded into the latch at spawn (#8812).
+ *
+ * Read off `AnyProgram.derivedLines`, so a row that derives none is a no-op here. It runs on every
+ * spawn rather than on restores alone: a fresh boot's `init` emits the same lines off the same
+ * state, so this restates them rather than contradicting them, and the kernel is spared a
+ * fresh-versus-restored flag it has no other use for.
+ */
+export const seedSelfReport = (
+	row: AnyProgram,
+	state: unknown,
+	record: (port: SelfReportPort, line: string) => void,
+): void => {
+	if (row.derivedLines === undefined) return;
+	for (const [port, line] of Object.entries(row.derivedLines(state))) {
+		const latched = latchable(row, port, line);
+		if (Option.isSome(latched)) record(latched.value[0], latched.value[1]);
+	}
+};
+
+/**
  * `ports` again, recording every `title@1`/`status@1` line on its way past.
  *
  * Recorded before delivery and independent of it: the latch is what the process said about itself,
@@ -57,13 +97,8 @@ export const latching = (
 	ProcessPorts.of({
 		emit: (port, payload) =>
 			Effect.suspend(() => {
-				if (
-					(port === TITLE_PORT || port === STATUS_PORT) &&
-					isLine(payload) &&
-					declaresOutPort(row, port)
-				) {
-					record(port, payload);
-				}
+				const latched = latchable(row, port, payload);
+				if (Option.isSome(latched)) record(latched.value[0], latched.value[1]);
 				return ports.emit(port, payload);
 			}),
 	});

@@ -209,7 +209,7 @@ const testAccount = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Provision the review-ui test accounts + their sessions on a per-PR preview D1, one per tier whose token is set ($PREVIEW_TEST_SESSION_TOKEN for yazar, $PREVIEW_TEST_CAYLAK_SESSION_TOKEN for çaylak), optionally placing the çaylak at a point on the promotion path with --caylak-standing — idempotent, refuses any database Cloudflare does not name as a per-PR preview, and prints the tiers provisioned plus any left unseeded",
+		"Provision the review-ui test accounts + their sessions and profile rows on a per-PR preview D1, one per tier whose token is set ($PREVIEW_TEST_SESSION_TOKEN for yazar, $PREVIEW_TEST_CAYLAK_SESSION_TOKEN for çaylak), optionally placing the çaylak at a point on the promotion path with --caylak-standing — idempotent, refuses any database Cloudflare does not name as a per-PR preview, and prints the tiers provisioned plus any left unseeded",
 	),
 );
 

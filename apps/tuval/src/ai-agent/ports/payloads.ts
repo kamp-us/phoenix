@@ -14,7 +14,20 @@ import {
 	isTranscriptItems,
 	type JsonValue,
 	type TranscriptItem,
+	TranscriptItemSchema,
 } from "./transcript-item.ts";
+
+/**
+ * A payload as a row may publish it beside its predicate: no service requirements and an encoded
+ * form equal to the decoded one, because the `accepts` the kernel routes on is `Schema.is` of
+ * exactly this (`../../registry/program.ts`, `PortPayloadSchema`).
+ *
+ * The schemas below exist so a shipped row's ports can be read structurally by a `Program.shape`
+ * check (#8887). They describe the payload and nothing else; the predicates beside them stay the
+ * routing check, and where a predicate enforces more than a shape — a byte bound — it is the
+ * predicate that is authoritative, never this.
+ */
+type PayloadSchema<T> = Schema.Codec<T, T, never, unknown>;
 
 /** What a window bound left out, and why. `none` is the whole tail, nothing dropped. */
 export interface WindowOmission {
@@ -45,6 +58,17 @@ export interface TranscriptPayload {
 export const isTranscriptPayload = (value: unknown): value is TranscriptPayload =>
 	Predicate.isObject(value) && isTranscriptItems(value.items) && isWindowOmission(value.omitted);
 
+export const WindowOmissionSchema = Schema.Struct({
+	items: Schema.Number,
+	bytes: Schema.Number,
+	reason: Schema.Literals(["none", "item-limit", "byte-limit"]),
+});
+
+export const TranscriptPayloadSchema = Schema.Struct({
+	items: Schema.Array(TranscriptItemSchema),
+	omitted: WindowOmissionSchema,
+});
+
 /**
  * `result` — one finished turn, as whatever consumes an agent's answer reads it (R19.3 on #8715).
  *
@@ -68,6 +92,13 @@ export const isTurnResult = (value: unknown): value is TurnResult =>
 	typeof value.text === "string" &&
 	isTranscriptItems(value.items) &&
 	typeof value.ok === "boolean";
+
+/** What `result` publishes, so a shape naming a reviewer's answer can be compared with it (#8887). */
+export const TurnResultSchema = Schema.Struct({
+	text: Schema.String,
+	items: Schema.Array(TranscriptItemSchema),
+	ok: Schema.Boolean,
+});
 
 /**
  * `transcript-page` — a request for older history and the page that answers it. `before` is the
@@ -142,6 +173,13 @@ export const isPromptPayload = (value: unknown): value is PromptPayload =>
 	typeof value.text === "string" &&
 	typeof value.key === "string" &&
 	Number.isFinite(value.timestamp);
+
+/** What `prompt` publishes, so a shape naming what it sends a reviewer can be compared with it. */
+export const PromptPayloadSchema: PayloadSchema<PromptPayload> = Schema.Struct({
+	text: Schema.String,
+	key: Schema.String,
+	timestamp: Schema.Number,
+});
 
 /** One card the window renders while the program waits for an answer. */
 export interface PermissionRequest {

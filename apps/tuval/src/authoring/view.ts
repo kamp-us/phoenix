@@ -12,6 +12,12 @@
  * nothing to publish — emitting it anyway would spend a wire message per event to restate a value
  * every reader already holds.
  *
+ * **A restored process publishes nothing at all, so it does not go through a port.** Demlik refuses
+ * Cmds from a rehydrating `init` and the diff above stays silent on an unmoved line, which between
+ * them left a restored stable title unreadable (#8812). `compileDerivedLines` answers the third
+ * seam instead: the kernel asks the row what its loaded state derives and seeds the latch directly
+ * (`../process/self-report.ts`), so the restore costs no wire message and the diff keeps its job.
+ *
  * **The window bridge is a function of state, because a host publishes state as a stream.** A
  * `WindowHost` carries `readProcess` and no synchronous read (`../shell/window/host.ts`), and this
  * layer is on the kernel's React-free lens, so it cannot subscribe on the author's behalf. The
@@ -115,6 +121,22 @@ export const initialSelfReport = (
 	state: unknown,
 ): ReadonlyArray<ProgramEffect> =>
 	derivations(authored).map(([port, line]) => emit(port, line(state)));
+
+/**
+ * Every derived line as a function of state, keyed by its port — what the kernel seeds a restored
+ * process's self-report latch from (#8812), and the only publisher that path reaches.
+ *
+ * `undefined` for a program deriving neither line, which leaves the row field off entirely: such a
+ * program is never asked for a line and pays nothing on the restore path.
+ */
+export const compileDerivedLines = (
+	authored: AnyAuthoredProgram,
+): ((state: unknown) => Readonly<Record<string, string>>) | undefined => {
+	const derived = derivations(authored);
+	if (derived.length === 0) return undefined;
+	return (state: unknown) =>
+		Object.fromEntries(derived.map(([port, line]) => [port, line(state)] as const));
+};
 
 const movedLines = (
 	derived: ReadonlyArray<Derivation>,

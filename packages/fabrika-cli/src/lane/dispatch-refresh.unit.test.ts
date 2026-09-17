@@ -9,7 +9,7 @@ import type {EntrypointRead} from "../delegate/entrypoint.ts";
 import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {MERGE_CONFLICT, NO_SHELL} from "./codes.ts";
+import {LANE_UNREADABLE, MERGE_CONFLICT, NO_SHELL} from "./codes.ts";
 import {type DispatchOptions, runDispatch} from "./dispatch-verb.ts";
 import {emitMachine} from "./emit.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
@@ -53,7 +53,7 @@ const upToMerge = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 
 const emitted = () => {
 	const machine = emitMachine(EPIC, `## Dependencies\n\n- phase 1: #${CHILD}\n`, [
-		{number: CHILD, state: "open", stateReason: null},
+		{number: CHILD, state: "open", stateReason: null, classes: []},
 	]);
 	if (machine._tag !== "Emitted") throw new Error(`the epic fixture did not emit: ${machine._tag}`);
 	return machine.text;
@@ -119,6 +119,52 @@ const run = (
 	).then((outcome) => ({outcome, calls: shell.calls, reached}));
 };
 
+const PRIMARY = "/primary";
+
+/**
+ * `/repo` as a linked worktree of `/primary`, each checkout carrying its own tracked `.fabrika.jsonc`
+ * — the shape a driver dispatches from on every epic run. A `null` primary leaves the worktree's
+ * pointer naming a repository that is not there, so the owner is UNKNOWN rather than absent.
+ */
+const straddled = (primary: string | null, worktree: string) =>
+	fakeFs({
+		directories: primary === null ? [] : [`${PRIMARY}/.git`],
+		files: {
+			...laneFiles(worktree),
+			[`${CWD}/.git`]: `gitdir: ${PRIMARY}/.git/worktrees/wt`,
+			...(primary === null
+				? {}
+				: {
+						[`${PRIMARY}/.git/worktrees/wt/commondir`]: "../..",
+						[`${PRIMARY}/.fabrika.jsonc`]: primary,
+					}),
+		},
+	});
+
+/** The same run as {@link run}, with the arm the gate resolved recorded beside the shell's calls. */
+const runStraddled = (
+	primary: string | null,
+	worktree: string,
+	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+) => {
+	const shell = fakeShell(script);
+	const arms: Array<RefreshOptions["assemblyRefresh"]> = [];
+	return Effect.runPromise(
+		Effect.provide(
+			runDispatch(
+				options,
+				() => Effect.succeed(refuse(NO_SHELL, "stopped at the brief")),
+				() => Effect.succeed(answer("unused")),
+				(refreshOptions) => {
+					arms.push(refreshOptions.assemblyRefresh);
+					return runRefresh(refreshOptions);
+				},
+			),
+			Layer.merge(shell.layer, straddled(primary, worktree).layer),
+		),
+	).then((outcome) => ({outcome, calls: shell.calls, arms}));
+};
+
 describe("the pre-dispatch assembly refresh", () => {
 	it("merges the trunk into the assembly branch before the brief is emitted", async () => {
 		const {outcome, calls, reached} = await run('{"assemblyRefresh":{"onDispatch":"on"}}', [
@@ -153,6 +199,42 @@ describe("the pre-dispatch assembly refresh", () => {
 		expect(outcome.stderr.join("\n")).toContain(REFRESH_PARK_CAUSE);
 		expect(reached).toEqual(["refresh"]);
 		expect(calls.some((call) => call.includes("worktree add"))).toBe(false);
+	});
+
+	it("reads its arm off the repository that owns the cwd, not the worktree standing in it", async () => {
+		const {outcome, calls, arms} = await runStraddled(
+			'{"assemblyRefresh":{"onDispatch":"on"}}',
+			'{"assemblyRefresh":{"onDispatch":"off"}}',
+			[...upToMerge(), [MERGE, okOut("")], [HEAD, okOut(AFTER)]],
+		);
+
+		expect(arms).toMatchObject([{_tag: "Value", value: {onDispatch: "on"}}]);
+		expect(calls).toContain(`git -C ${SEAT} merge --no-edit --no-ff ${TIP}`);
+		expect(outcome.code).toBe(NO_SHELL);
+	});
+
+	it("declines where the owning repository declines, whatever the worktree's own copy says", async () => {
+		const {outcome, calls, arms} = await runStraddled(
+			'{"assemblyRefresh":{"onDispatch":"off"}}',
+			'{"assemblyRefresh":{"onDispatch":"on"}}',
+			[],
+		);
+
+		expect(arms).toMatchObject([{_tag: "Value", value: {onDispatch: "off"}}]);
+		expect(calls).toEqual([]);
+		expect(outcome.code).toBe(NO_SHELL);
+	});
+
+	it("refuses when the owning repository cannot be read, rather than falling back to the cwd", async () => {
+		const {outcome, calls, arms} = await runStraddled(
+			null,
+			'{"assemblyRefresh":{"onDispatch":"on"}}',
+			[],
+		);
+
+		expect(arms).toEqual([]);
+		expect(calls).toEqual([]);
+		expect(outcome.code).toBe(LANE_UNREADABLE);
 	});
 
 	it("refreshes nothing on a single-issue lane, which owns no assembly branch", async () => {

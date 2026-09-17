@@ -23,7 +23,7 @@ import {exists, readDir} from "../io/fs.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_UNREADABLE} from "./codes.ts";
 import {deriveStatus, foldLog, type LaneStatus} from "./fold.ts";
-import {CHORE_PREFIX} from "./key.ts";
+import {CHORE_PREFIX, rawKeyIssue} from "./key.ts";
 import {DISPATCH_BUDGET} from "./shell-budget.ts";
 import {type Judgement, judge, lastMoved, type Verdict} from "./stale.ts";
 import {DEFAULT_CHORES_ROOT, loadLane} from "./store.ts";
@@ -178,19 +178,10 @@ const byAge = (left: LaneRow, right: LaneRow): number => {
 	return left.key.localeCompare(right.key);
 };
 
-/**
- * The issue a lane key names, or `null` when it names none.
- *
- * A chore lane is keyed `chore:<name>` and drives no issue, so there is no thread to pair it with —
- * and a claim is a fact about an issue, never about a lane directory.
- */
-const issueOf = (key: string): number | null =>
-	/^[0-9]+$/.test(key) ? Number.parseInt(key, 10) : null;
-
 /** The row plus what the board says about its issue — a terminal lane and a chore lane are skipped. */
 const pair = <R>(row: LaneRow, read: ClaimReader<R>): Effect.Effect<LaneRow, never, R> =>
 	Effect.gen(function* () {
-		const issue = issueOf(row.key);
+		const issue = rawKeyIssue(row.key);
 		if (issue === null || row.verdict === "terminal") return row;
 		const claimants = yield* read(issue);
 		if (claimants._tag === "Unknown") {

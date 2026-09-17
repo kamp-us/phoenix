@@ -4,6 +4,7 @@ import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-supp
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
+import {readEscalationTag} from "./append.ts";
 import {runAppendCriterion} from "./append-criterion-verb.ts";
 import {
 	ACL_DENIED,
@@ -242,6 +243,32 @@ describe("runAppendCriterion", () => {
 		expect(out.stdout).toBe(`escalated-frozen\t4287\t${CAP_ROUND}\n`);
 		expect(shell.requests.some((request) => PATCH.test(request))).toBe(false);
 		expect(shell.requests.some((request) => COMMENT.test(request))).toBe(true);
+	});
+
+	/**
+	 * The tag is the whole reason the escalation has a reader: `build verdicts` finds the comment by
+	 * it, so a repair round past the freeze reads the finding without a driver naming the comment id
+	 * in a spawn prompt.
+	 */
+	it("tags the escalation comment with the subject and round a later fold reads it by", async () => {
+		const shell = fakeSeams([
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[ISSUE, served(issue())],
+			[COMMENT, {status: 201, body: JSON.stringify({id: 1, html_url: "https://example.test/c/1"})}],
+		]);
+		await Effect.runPromise(
+			Effect.provide(runAppendCriterion({...options, round: CAP_ROUND}), shell.layer),
+		);
+		const escalation = String(
+			JSON.parse(shell.bodies[shell.requests.findIndex((request) => COMMENT.test(request))] ?? "{}")
+				.body ?? "",
+		);
+		expect(readEscalationTag(escalation)).toEqual({
+			provenance: {_tag: "Pull", pr: 4321},
+			round: CAP_ROUND,
+		});
+		expect(escalation).toContain("A human is asked only once the round budget is spent.");
 	});
 
 	it("reports a failed escalation comment as 8, naming which write it was", async () => {

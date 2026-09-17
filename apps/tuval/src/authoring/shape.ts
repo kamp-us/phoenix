@@ -9,10 +9,17 @@
  * nor the name a package gave its schema decides it: two packages that each wrote
  * `Schema.Struct({pr: Schema.Number})` fit each other whatever their own npm versions say, and
  * whatever either called it.
+ *
+ * The candidate a config actually holds is a shipped registry row — `claudeSession({…})`, not a
+ * record of `port.in(…)` declarations — so both forms are read as a shape here (#8887). A row
+ * built by `defineProgram` publishes each port's schema beside the predicate it routes on
+ * (`./port.ts`), and that is what makes it comparable at all.
  */
 
 import {Result, Schema} from "effect";
-import type {AnyPortDecl, PortCodec, PortDecls} from "./port.ts";
+import {payloadFits} from "../registry/payload-fit.ts";
+import type {PortSchema} from "../registry/program.ts";
+import type {AnyPortDecl, PortCodec} from "./port.ts";
 
 /** One side of a shape: port name to the payload schema that port carries. */
 export type PortSignatures = Readonly<Record<string, PortCodec<any>>>;
@@ -73,32 +80,50 @@ export class ShapeMismatch extends Schema.TaggedError<ShapeMismatch>()(
 }
 
 /**
- * What a config may hand a program-valued arg: anything publishing its own port declarations,
- * which is exactly what an author writes (`AuthoredProgram`). The compiled row is not that — it
- * erases each port's schema down to a payload predicate, and a predicate cannot be compared with
- * another predicate.
+ * One port of a source, either way a program can publish one: the declaration an author wrote, or
+ * the compiled record a registry row carries. Both are read here, because what a config actually
+ * has in hand is a shipped row — `claudeSession({…})` answers compiled ports, not declarations
+ * (#8887).
+ */
+export type ShapePort = AnyPortDecl | PortSchema;
+
+/**
+ * What a config may hand a program-valued arg: anything publishing its ports, in either form. A
+ * compiled port carries a `Schema.is` predicate, which cannot be compared with another predicate;
+ * what makes it readable here is the schema `compilePort` keeps beside it (`./port.ts`). A port
+ * published without one — a hand-written row's — is invisible to the check and is refused by name
+ * rather than passed (#8887).
  */
 export interface ShapeSource {
 	readonly id: string;
-	readonly ports?: PortDecls;
+	readonly ports?: Readonly<Record<string, ShapePort>>;
 }
 
-/** The in-side schema of a declared port, or `undefined` for a port that does not take one. */
-const inSignature = (decl: AnyPortDecl): PortCodec<any> | undefined =>
-	decl.direction === "in" ? decl.schema : decl.direction === "request" ? decl.input : undefined;
+/** A compiled port is the one with the kernel's predicate on it; a declaration has no `accepts`. */
+const isCompiled = (port: ShapePort): port is PortSchema => "accepts" in port;
 
-const outSignature = (decl: AnyPortDecl): PortCodec<any> | undefined =>
-	decl.direction === "out" ? decl.schema : undefined;
+/** The in-side schema of a port, or `undefined` for one that does not offer a comparable payload. */
+const inSignature = (port: ShapePort): PortCodec<any> | undefined => {
+	if (isCompiled(port)) return port.direction === "in" ? port.schema : undefined;
+	return port.direction === "in"
+		? port.schema
+		: port.direction === "request"
+			? port.input
+			: undefined;
+};
+
+const outSignature = (port: ShapePort): PortCodec<any> | undefined => {
+	if (isCompiled(port)) return port.direction === "out" ? port.schema : undefined;
+	return port.direction === "out" ? port.schema : undefined;
+};
 
 /** The port signatures a source publishes, read as a shape so a fit is one shape against another. */
 export const shapeOf = (source: ShapeSource): AnyProgramShape => {
-	const entries = Object.entries(source.ports ?? {}) as ReadonlyArray<
-		readonly [string, AnyPortDecl]
-	>;
-	const side = (read: (decl: AnyPortDecl) => PortCodec<any> | undefined): PortSignatures =>
+	const entries = Object.entries(source.ports ?? {}) as ReadonlyArray<readonly [string, ShapePort]>;
+	const side = (read: (port: ShapePort) => PortCodec<any> | undefined): PortSignatures =>
 		Object.fromEntries(
-			entries.flatMap(([name, decl]) => {
-				const signature = read(decl);
+			entries.flatMap(([name, port]) => {
+				const signature = read(port);
 				return signature === undefined ? [] : [[name, signature] as const];
 			}),
 		);
@@ -106,43 +131,11 @@ export const shapeOf = (source: ShapeSource): AnyProgramShape => {
 };
 
 /**
- * The generator's default reference policy is `({identifier}) => identifier`, which emits any schema
- * carrying an `identifier` annotation as a `$ref` into `$defs` keyed by that name — so the name its
- * package chose would land in the compared string and two identical payloads named differently would
- * not fit. Naming a schema is the ordinary Effect idiom, so that is the common case, not the rare
- * one. Returning `undefined` inlines every named schema instead. A recursive payload still needs a
- * `$def` to point at and gets a synthetic name derived from its own structure, not from the author's
- * annotation, so two recursive payloads of the same shape still compare equal.
+ * Payload fit is `../registry/payload-fit.ts`'s, re-exported here because a shape check is where it
+ * was first spelled and `shape.unit.test.ts` still reads it from this module. It moved because a
+ * graph route now asks the same question (ADR 0395, #8923) and the two must not answer differently.
  */
-const inlineNames = {referencePolicy: () => undefined} as const;
-
-/**
- * A schema's payload as a comparable string: its JSON Schema, with every object's keys sorted, so
- * two structurally identical payloads compare equal however their authors ordered the fields.
- */
-const canonical = (schema: PortCodec<any>): string =>
-	stable(Schema.toJsonSchemaDocument(schema, inlineNames));
-
-const stable = (value: unknown): string => {
-	if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
-	if (typeof value === "object" && value !== null) {
-		const keys = Object.keys(value as Record<string, unknown>).sort();
-		return `{${keys.map((key) => `${JSON.stringify(key)}:${stable(unordered(key, (value as Record<string, unknown>)[key]))}`).join(",")}}`;
-	}
-	return JSON.stringify(value) ?? "null";
-};
-
-/**
- * `required` is a set, so the order the author declared their struct's fields in is not part of the
- * payload. Every other array in a JSON Schema is positional (`prefixItems`, `anyOf` branches), and
- * sorting one of those would call two different payloads the same.
- */
-const unordered = (key: string, value: unknown): unknown =>
-	key === "required" && Array.isArray(value) ? [...(value as ReadonlyArray<string>)].sort() : value;
-
-/** Do two ports carry the same payload? Structural, over the schemas — no version is read. */
-export const payloadFits = (declared: PortCodec<any>, offered: PortCodec<any>): boolean =>
-	canonical(declared) === canonical(offered);
+export {payloadFits};
 
 interface FitContext {
 	readonly arg: string;
@@ -154,16 +147,22 @@ const fitSide = (
 	offered: AnyProgramShape,
 	side: ShapeSide,
 	context: FitContext,
+	published: ReadonlySet<string>,
 ): ShapeMismatch | undefined => {
 	const own = side === "in" ? offered.in : offered.out;
 	const other = side === "in" ? offered.out : offered.in;
 	for (const [port, signature] of Object.entries(declared)) {
 		const candidate = own[port];
 		if (candidate === undefined) {
+			// A port the source publishes yet neither side of its shape holds is one with no schema
+			// behind it, and saying "no such port" about a port that is right there would send the
+			// author looking for a typo instead of at the row (#8887).
 			const reason =
-				other[port] === undefined
-					? `the program declares no ${side}-port named "${port}"`
-					: `the program declares "${port}" on its ${side === "in" ? "out" : "in"} side`;
+				other[port] !== undefined
+					? `the program declares "${port}" on its ${side === "in" ? "out" : "in"} side`
+					: published.has(port)
+						? `the program declares "${port}" but publishes no payload schema for it, so nothing can be compared with it (#8887)`
+						: `the program declares no ${side}-port named "${port}"`;
 			return new ShapeMismatch({...context, port, side, reason});
 		}
 		if (!payloadFits(signature, candidate)) {
@@ -189,8 +188,9 @@ export const fitsShape = (
 	context: FitContext,
 ): Result.Result<ShapeSource, ShapeMismatch> => {
 	const offered = shapeOf(source);
+	const published = new Set(Object.keys(source.ports ?? {}));
 	const mismatch =
-		fitSide(shapeDecl.in, offered, "in", context) ??
-		fitSide(shapeDecl.out, offered, "out", context);
+		fitSide(shapeDecl.in, offered, "in", context, published) ??
+		fitSide(shapeDecl.out, offered, "out", context, published);
 	return mismatch === undefined ? Result.succeed(source) : Result.fail(mismatch);
 };

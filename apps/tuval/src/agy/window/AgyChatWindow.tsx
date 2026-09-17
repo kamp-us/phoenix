@@ -45,14 +45,32 @@ const tokens = new Intl.NumberFormat("en-US");
 const NO_MODEL_YET = "no model yet";
 
 /**
- * The model, the cumulative cost and the token counts of this session.
+ * The agy release, the model, the cumulative cost and the token counts of this session.
  *
  * Every number carries visible text beside it, because a bare number names nothing to a screen
  * reader (`.patterns/manti-accessibility.md`); the group's own label is what a reader jumps to.
+ *
+ * The release is `state.agentVersion` — what the launch precondition read out of `agy --version`
+ * (`../preflight.ts`) — and it is here as well as on the desk inspector's `Version` row because the
+ * founder ruled that every hand-verification and bug report should carry the version without
+ * opening a second window (#9191). It renders nothing at all before a session has announced one:
+ * an absent version is a session that has not started, not a version to name.
  */
-export function UsageLine({usage}: {readonly usage: UsageTotals}): ReactElement {
+export function UsageLine({
+	usage,
+	agentVersion,
+}: {
+	readonly usage: UsageTotals;
+	readonly agentVersion: string | null;
+}): ReactElement {
 	return (
 		<MetaRow className="tuval-agy-usage" role="group" aria-label="Session usage">
+			{agentVersion === null ? null : (
+				<>
+					<span className="tuval-agy-usage-version">agy {agentVersion}</span>
+					<MetaRow.Dot />
+				</>
+			)}
 			<span className="tuval-agy-usage-model">{usage.model ?? NO_MODEL_YET}</span>
 			<MetaRow.Dot />
 			<span>{money.format(usage.cost)}</span>
@@ -70,7 +88,12 @@ export function UsageLine({usage}: {readonly usage: UsageTotals}): ReactElement 
  * the shared window under agy's name.
  */
 export const agyChatWindow = (options: ChatWindowOptions = {}): ChatWindowRenderer =>
-	chatWindow({...options, extras: (state) => <UsageLine usage={usageTotals(state.usage)} />});
+	chatWindow({
+		...options,
+		extras: (state) => (
+			<UsageLine usage={usageTotals(state.usage)} agentVersion={state.agentVersion} />
+		),
+	});
 
 /** The renderer `AGY_CHAT_WINDOW_REF` names, at its defaults: what a page's renderer table binds. */
 export const AgyChatWindow: ChatWindowRenderer = agyChatWindow();

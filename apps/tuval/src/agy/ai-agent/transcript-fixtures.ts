@@ -61,6 +61,19 @@ export const multiCallFullLines = capture("multi-call-transcript_full.jsonl");
 /** The conversation the capture above was driven as. Its own `step_index` values, not `CID`'s. */
 export const multiCallConversationId = "c25acb51-24fc-45a1-a152-4859e934a53d";
 
+/**
+ * The same capture with its **first** outcome dropped — the leading-gap shape.
+ *
+ * Derived from the two files above by removing the `GENERIC` at `step_index` 2, which is the outcome
+ * of the batch's *first* call, and nothing else: the two-call `PLANNER_RESPONSE` at step 1 and the
+ * second call's outcome at step 3 are the real captured lines. It is what a batch agy answered out of
+ * order looks like, and the shape run-position pairing read as "the run's first member is call 0's"
+ * — handing call 0 the `two.txt` output it never asked for (#8912). The `_full` counterpart drops the
+ * same line, because the two files align by position and carry the same `step_index` sequence.
+ */
+export const multiCallLeadingGapLines = capture("multi-call-leading-gap.jsonl");
+export const multiCallLeadingGapFullLines = capture("multi-call-leading-gap_full.jsonl");
+
 /** The reply. A `PLANNER_RESPONSE` carries `content`, `tool_calls`, or both. */
 export const assistantReply =
 	'{"step_index":3,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-09-03T04:18:01Z","content":"The workspace holds a **README.md** and a **src/** directory."}';

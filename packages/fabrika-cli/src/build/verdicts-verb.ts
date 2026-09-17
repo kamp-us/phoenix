@@ -16,20 +16,37 @@
  * - **An unreadable page is `11`, never a shorter list.** `{"rows": []}` on exit 0 is a proven "no
  *   verdicts", readable against the scope line's counts.
  *
+ * - **Mergeability is folded beside the rows**, because a PR conflicting against its base is repair
+ *   work no gate emits a FAIL for: without the field, an all-PASS fold over a conflicting PR is the
+ *   proven-no-work answer the Repair section routes on, and the lane leaves the PR stranded.
+ *   The platform's uncomputed read stays `unknown` all the way out — folded as clean it rebuilds the
+ *   bug behind a field that looks like it fixed it.
+ *
  * - **`capReached` is the declared cap plus what the founder cleared, never a second constant.** A
  *   recorded clearance (`./clearances.ts`) buys the one round it names, so the field the Repair
  *   section tells a builder to trust stays the only budget number anyone reads.
  *
+ * - **`escalatedFindings` is the reader fence 3's escalation comment never had.** A finding raised
+ *   at or past the acceptance-criteria freeze becomes a tagged comment and no criterion
+ *   (`../review/append-criterion-verb.ts`), so a repair round dispatched past the freeze read a
+ *   contract that did not contain the round it was there to repair — and only a driver hand-writing
+ *   the comment id into a spawn prompt connected the two ends. Folded here, the round reads
+ *   it through the one door it already opens.
+ *
  * Every row's `body` is the finding's full text through the content gate — the repair loop consumes
  * findings from here and never raw-fetches a comment, which is what keeps the one-door property over
- * the repair path.
+ * the repair path. `escalatedFindings` carries its comment's body the same way, for the same reason.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9058#issuecomment-5625309255
  */
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {capNote, capReached} from "../cap-clearance.ts";
 import {getIssue, listComments} from "../io/issues.ts";
+import type {PullMergeability} from "../io/pulls.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
+import {type RoutedRow, readEscalationTag} from "../review/append.ts";
 import {headContentFor} from "../review/head-content.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
@@ -46,8 +63,30 @@ import {openPull, resolveTargetRepo} from "./target.ts";
 
 const VERB = "build verdicts";
 
+/** The machine line the fold's mergeability gets, one per value — the fact is never left unsaid. */
+const mergeabilityNote = (pr: number, baseRef: string, state: PullMergeability): string => {
+	if (state === "conflicting") {
+		return `${VERB}: PR #${pr} is CONFLICTING against ${baseRef} — a base conflict is repair work no gate emits a FAIL for, so this fold is not a clean answer.`;
+	}
+	if (state === "unknown") {
+		return `${VERB}: PR #${pr}'s mergeability is UNKNOWN — GitHub had not computed it yet, and that is never "merges cleanly".`;
+	}
+	return `${VERB}: PR #${pr} merges cleanly into ${baseRef}.`;
+};
+
 /** The provenance tag on a reviewer-appended criterion: `<!-- ac:review pr:#<pr> round:<n> -->`. */
 const PROVENANCE_RE = /<!--\s*ac:review\s+pr:#(\d+)\s+round:(\d+)\s*-->/;
+
+/**
+ * The machine line the escalated findings get — one per fold, whichever way it came out.
+ *
+ * It is said even at zero, because "no finding was turned away" and "this verb does not look" are
+ * different facts, and the second one is what the fold used to print.
+ */
+const escalatedNote = (rows: ReadonlyArray<{readonly round: number}>): string =>
+	rows.length === 0
+		? `${VERB}: no finding was escalated past the acceptance-criteria freeze.`
+		: `${VERB}: ${rows.length} finding(s) escalated past the freeze, from round(s) ${rows.map((row) => row.round).join(", ")} — they are findings of this repair, and no later round grades them.`;
 
 export interface VerdictsOptions {
 	readonly pr: number;
@@ -168,11 +207,11 @@ export const runVerdicts = (
 				`${VERB}: cannot read the recorded cap clearances: ${cleared.reason} — whether the budget is spent is UNKNOWN, never "capped".`,
 			);
 		}
-		const frozen = yield* frozenCriteria(repo, pr, target.pull.body);
-		if (frozen._tag === "Unknown") {
+		const linked = yield* linkedFindings(repo, pr, target.pull.body);
+		if (linked._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the linked issue's acceptance criteria: ${frozen.reason} — the verdict state is UNKNOWN, never "none".`,
+				`${VERB}: cannot read the linked issue's acceptance criteria and escalated findings: ${linked.reason} — the verdict state is UNKNOWN, never "none".`,
 			);
 		}
 
@@ -180,14 +219,18 @@ export const runVerdicts = (
 		return answer(
 			JSON.stringify({
 				head,
+				mergeability: target.pull.mergeability,
 				rows,
 				rounds,
 				capReached: capReached(rounds, granted),
 				clearances: cleared.rows,
-				frozenCriteria: frozen.rows,
+				frozenCriteria: linked.frozen,
+				escalatedFindings: linked.escalated,
 			}),
 			[
 				`${VERB}: head ${head}; scanned ${listed.value.length} comment(s) and ${reviews.value.length} review(s) on #${pr}.`,
+				mergeabilityNote(pr, target.pull.baseRef, target.pull.mergeability),
+				escalatedNote(linked.escalated),
 				`${VERB}: ${capNote(granted)}, from ${cleared.rows.length} marker(s).`,
 				...headContent.diagnostics,
 			],
@@ -202,6 +245,10 @@ export const runVerdicts = (
  * than a raw fetch. The rows carry the range each verdict was formed over instead of a head,
  * and a round is one graded tip — the range analogue of one graded head, folded through the same
  * `countRounds`.
+ *
+ * **It folds escalated findings too**, off the same comment page the verdicts come from: a child's
+ * reviewer hits the identical freeze, and the comment it escalates to lands on this issue. Every
+ * escalation here was raised over this child's own range, so there is no subject to select on.
  *
  * **It reports no clearance, and says so.** A cap clearance is recorded against a PR's base branch
  * (`./clearances.ts`), and a child has no PR — so the budget here is the declared cap, unmodified,
@@ -270,10 +317,20 @@ export const runChildVerdicts = (
 					: [];
 			}),
 		);
+		// Every escalation on a child issue was raised over that child's own range, so the subject
+		// filter the PR arm needs has nothing to select here.
+		const escalated = escalatedFrom(listed.value, () => true);
 		return answer(
-			JSON.stringify({rows, rounds, capReached: capReached(rounds, []), clearances: []}),
+			JSON.stringify({
+				rows,
+				rounds,
+				capReached: capReached(rounds, []),
+				clearances: [],
+				escalatedFindings: escalated,
+			}),
 			[
 				`${VERB}: scanned ${listed.value.length} comment(s) on #${issue}; ${rows.length} standing range verdict(s), ${rounds} graded range(s).`,
+				escalatedNote(escalated),
 				`${VERB}: ${capNote([])} — a clearance is recorded against a PR's base branch, and a child has no PR, so this budget takes none.`,
 				...read.malformed.map(
 					(reason) =>
@@ -283,39 +340,87 @@ export const runChildVerdicts = (
 		);
 	});
 
-type Frozen =
-	| {readonly _tag: "Rows"; readonly rows: ReadonlyArray<{text: string; appendedRound: number}>}
+/** One finding fence 3 turned away, folded from the tagged escalation comment that carries it. */
+interface EscalatedFinding {
+	readonly round: number;
+	readonly commentId: number;
+	readonly body: string;
+}
+
+type Linked =
+	| {
+			readonly _tag: "Rows";
+			readonly frozen: ReadonlyArray<{text: string; appendedRound: number}>;
+			readonly escalated: ReadonlyArray<EscalatedFinding>;
+	  }
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
+/** The escalation comments on `comments` this subject's round produced, oldest first. */
+const escalatedFrom = (
+	comments: ReadonlyArray<{readonly id: number; readonly body: string}>,
+	mine: (routed: RoutedRow) => boolean,
+): ReadonlyArray<EscalatedFinding> => {
+	const rows: EscalatedFinding[] = [];
+	for (const comment of comments) {
+		const tag = readEscalationTag(comment.body);
+		if (tag === null || !mine(tag)) continue;
+		rows.push({
+			round: tag.round,
+			commentId: comment.id,
+			body: contentOf(gate("comment-body", `comment ${comment.id}`, comment.body)),
+		});
+	}
+	return rows;
+};
+
 /**
- * The reviewer-appended criteria on this PR's linked issue that landed at or past the freeze round.
+ * The two things this PR's linked issue carries about the freeze: the criteria that landed at or
+ * past it, and the findings it turned away.
  *
- * The provenance tag every such criterion carries is what makes them findable at all — the round is
- * written into the row, so the freeze is a property of the artifact rather than of a session's
- * memory. A PR with no closing keyword links no issue and freezes nothing, which is an answer.
+ * Both are read off one fetch of that issue, because they are two halves of one question — what the
+ * contract says about the rounds past the freeze. The tag each artifact carries is what makes it
+ * findable at all: the round is written into the row and into the comment, so the freeze is a
+ * property of the artifact rather than of a session's memory. A PR with no closing keyword links no
+ * issue and freezes nothing, which is an answer.
+ *
+ * The escalated half is the reader fence 3's comment never had. Without it a repair round past the
+ * freeze read a criteria block that did not contain the round it was dispatched to repair, and only
+ * a driver hand-writing the comment id into the spawn prompt connected the two ends.
  */
-const frozenCriteria = (
+const linkedFindings = (
 	repo: string,
 	pr: number,
 	body: string,
-): Effect.Effect<Frozen, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<Linked, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
+		const empty = {_tag: "Rows" as const, frozen: [], escalated: []};
 		const issue = closingTargets(proseOf(body))[0];
-		if (issue === undefined) return {_tag: "Rows" as const, rows: []};
+		if (issue === undefined) return empty;
 		const found = yield* getIssue(repo, issue);
 		if (found._tag === "Unknown") return {_tag: "Unknown" as const, reason: found.reason};
-		if (found._tag === "Absent") return {_tag: "Rows" as const, rows: []};
+		if (found._tag === "Absent") return empty;
+		const comments = yield* listComments(repo, issue);
+		if (comments._tag === "Failure") {
+			return {_tag: "Unknown" as const, reason: comments.reason};
+		}
+		const escalated = escalatedFrom(
+			comments.value,
+			(routed) => routed.provenance._tag === "Pull" && routed.provenance.pr === pr,
+		);
 		const read = readCriteria(contentOf(gate("issue-body", `#${issue}`, found.value.body)));
-		if (read._tag !== "Found") return {_tag: "Rows" as const, rows: []};
-		const rows: {text: string; appendedRound: number}[] = [];
+		if (read._tag !== "Found") return {_tag: "Rows" as const, frozen: [], escalated};
+		const frozen: {text: string; appendedRound: number}[] = [];
 		for (const criterion of read.value) {
 			const tag = PROVENANCE_RE.exec(criterion.text);
 			if (tag?.[1] === undefined || tag[2] === undefined) continue;
 			if (Number.parseInt(tag[1], 10) !== pr) continue;
 			const round = Number.parseInt(tag[2], 10);
 			if (round >= CAP_ROUND) {
-				rows.push({text: criterion.text.replace(PROVENANCE_RE, "").trim(), appendedRound: round});
+				frozen.push({
+					text: criterion.text.replace(PROVENANCE_RE, "").trim(),
+					appendedRound: round,
+				});
 			}
 		}
-		return {_tag: "Rows" as const, rows};
+		return {_tag: "Rows" as const, frozen, escalated};
 	});

@@ -10,6 +10,7 @@ import {
 	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {PULL_FILES_CAP} from "../io/pulls.ts";
 import {SHIPPED_GOVERNED_ROOTS} from "../review/classes.ts";
 import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
@@ -406,21 +407,53 @@ describe("runGate", () => {
 		expect(out.code).toBe(ZERO_SCOPE);
 	});
 
-	it("refuses a truncated changed-file read on 13 — the floor may not rest on it", async () => {
+	// The declared count is computed against a base GitHub cached at the last push, so a list short of
+	// it is a stale second opinion rather than a truncated read. It used to refuse at 13 and strand
+	// the enqueue with no act available to clear it.
+	it("reports a file list short of the declared count and still gates (#9322)", async () => {
 		const out = await run([
-			[PULL, served(pull({changedFiles: 9}))],
-			[FILES, served(files("claude-plugins/fabrika/skills/ship/SKILL.md"))],
+			[PULL, served(pull({changedFiles: 9, comments: 1}))],
+			[COMMENTS, commentsServed({id: 1, body: marker("review-code", "PASS", HEAD)})],
+			[ACL, permission("write")],
+			[FILES, served(files("apps/site/src/a.ts"))],
 		]);
-		expect(out.code).toBe(INCOMPLETE_SCAN);
-		expect(out.stdout).toBe("");
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`gate\tsatisfied\t${HEAD}`);
+		expect(out.stderr.join("\n")).toContain(
+			"GitHub's file list for #4321 holds 1 paths against the 9 its own pull-request record declares",
+		);
 	});
 
-	it("refuses a zero-file diff on 7 — a conjunction over an empty diff proves nothing", async () => {
+	// The empty read is the seat that survives the retirement, and it is driven by the list rather
+	// than the declared count: a zero can never render as a satisfied conjunction.
+	it("refuses an empty file list on 7 even where the record declares files (#9322)", async () => {
 		const out = await run([
-			[PULL, served(pull({changedFiles: 0}))],
+			[PULL, served(pull({changedFiles: 9}))],
 			[FILES, served(files())],
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain(
+			"ship gate: PR #4321 has zero changed files — a conjunction over an empty diff proves nothing.",
+		);
+	});
+
+	// The ceiling is the truncation pagination cannot catch: GitHub stops serving files at 3000 and
+	// ends the Link chain there exactly as a complete read ends. The retired count arm caught this
+	// case by accident; `capped` catches it on purpose.
+	it("refuses a file list at the 3000-file ceiling on 13 (#9322)", async () => {
+		const out = await run([
+			[PULL, served(pull({changedFiles: PULL_FILES_CAP}))],
+			[
+				FILES,
+				served(files(...Array.from({length: PULL_FILES_CAP}, (_, i) => `apps/site/src/f${i}.ts`))),
+			],
+		]);
+		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain(
+			"ship gate: GitHub's file list for #4321 came back at its 3000-file ceiling, so the list is provably partial — refusing to derive the required floor from a capped read.",
+		);
 	});
 });
 

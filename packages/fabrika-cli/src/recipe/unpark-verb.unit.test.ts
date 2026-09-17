@@ -59,6 +59,7 @@ import {
 	PARKED_BLOCKED,
 	PARKED_ON_CAMPAIGN,
 	PARKED_ON_CI_RED,
+	PARKED_ON_ROUTED_UI,
 	PARKED_ON_SPAWN,
 	PARKED_ON_WORKTREE,
 	parkedBlockedOn,
@@ -82,7 +83,7 @@ const PRUNE = /^git worktree prune$/;
 const REMOVE = /^git worktree remove /;
 const STATUS = /^git -C \S+ status --porcelain$/;
 const SELF = /^git rev-parse --path-format=absolute/;
-const REVLIST = /^git rev-list --count /;
+const REVLIST = /^git -C \S+ rev-list --count HEAD --not --branches --remotes --tags$/;
 const LANE_ISSUE = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}$`);
 const LANE_COMMENTS = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}/comments`);
 const REMOTES = /^git remote$/;
@@ -400,6 +401,132 @@ describe("recipe unpark — a red-CI park clears once the head reads green again
 	});
 });
 
+/**
+ * The declaration `review-ui` is derived over — without it `uiSurfaces` is the shipped empty list
+ * and no routed namespace is ever required, which is no ground for a test about one.
+ */
+const UI_CONFIG = {
+	[`${CWD}/.fabrika.jsonc`]: JSON.stringify({
+		uiSurfaces: [
+			{name: "web", prefix: "apps/site/src/", mount: "/", command: "pnpm dev --port {{port}}"},
+		],
+	}),
+};
+
+const laneWithUi = (log: string) =>
+	fakeFs({files: {[WORKFLOW]: laneTemplate(), [LOG]: log, ...UI_CONFIG}});
+
+/** The routed-UI park's target half: a diff under the declared prefix, so `review-ui` derives. */
+const ROUTED_TARGET: ReadonlyArray<Scripted> = [
+	[CLOSERS, reply(closingPulls(4321))],
+	[PULL, reply(pull({comments: 2}))],
+	[FILES, reply(files("apps/site/src/routes/page.tsx", "README.md"))],
+	[OWNERS, {status: 200, body: CODEOWNERS}],
+];
+
+/** `review-code` and `review-doc` judged at `sha`, `review-ui` routed there. */
+const routedAt = (sha: string, uiSha: string = sha): ReadonlyArray<Scripted> => [
+	[
+		PR_COMMENTS,
+		reply(
+			comments(
+				{id: 1, body: marker("review-code", "PASS", sha)},
+				{id: 2, body: marker("review-doc", "PASS", sha)},
+				{
+					id: 3,
+					body: `routed-elsewhere: review-ui @ ${uiSha} — nothing under apps/site/src renders differently`,
+				},
+			),
+		),
+	],
+	[REVIEWS, reviewPage()],
+	[ACL, permission("write")],
+];
+
+/**
+ * `lane report` now advances a satisfied route rather than parking it, so no new lane lands here —
+ * but the lanes stranded before that reading existed are still stranded, and a ledger clears nothing
+ * by itself. These are the reads that clear them without spending a person, and the reads that keep
+ * a park whose route is *not* a finished review exactly where it is.
+ */
+describe("recipe unpark — a routed-UI park clears once the review it routed to has finished", () => {
+	it("clears when the gate is satisfied at the live head and the route still stands there", async () => {
+		const fs = laneWithUi(PARKED_ON_ROUTED_UI);
+
+		const out = await run(fs, ROUTED_TARGET, [...routedAt(HEAD)]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "route-satisfied",
+			// The lane walks back into the cell the terminal was reported from, not past it.
+			current: "review:ui",
+		});
+		// The mechanism names the route it read back, not only that a gate said yes.
+		expect(JSON.parse(out.stdout).mechanism).toContain("review-ui routed");
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it("is PARK_HOLDS while a required namespace has not answered at the head", async () => {
+		const fs = laneWithUi(PARKED_ON_ROUTED_UI);
+
+		const out = await run(fs, ROUTED_TARGET, [
+			[
+				PR_COMMENTS,
+				reply(
+					comments(
+						{id: 1, body: marker("review-code", "PASS", HEAD)},
+						{
+							id: 3,
+							body: `routed-elsewhere: review-ui @ ${HEAD} — nothing under apps/site/src renders differently`,
+						},
+					),
+				),
+			],
+			[REVIEWS, reviewPage()],
+			[ACL, permission("write")],
+		]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/reads "blocked"/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PARK_HOLDS when the route was attested at a head the branch has moved past", async () => {
+		const fs = laneWithUi(PARKED_ON_ROUTED_UI);
+
+		const out = await run(fs, ROUTED_TARGET, [...routedAt(HEAD, OTHER_HEAD)]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(fs.written.size).toBe(0);
+	});
+
+	// `satisfied` alone is also true of a PR whose rendered gate came back and judged it. That is a
+	// different park cleared by a different act, so the row reads the route as well as the gate.
+	it("is PARK_HOLDS when the gate is satisfied but nothing reads routed any more", async () => {
+		const fs = laneWithUi(PARKED_ON_ROUTED_UI);
+
+		const out = await run(fs, ROUTED_TARGET, [
+			[
+				PR_COMMENTS,
+				reply(
+					comments(
+						{id: 1, body: marker("review-code", "PASS", HEAD)},
+						{id: 2, body: marker("review-doc", "PASS", HEAD)},
+						{id: 3, body: marker("review-ui", "PASS", HEAD)},
+					),
+				),
+			],
+			[REVIEWS, reviewPage()],
+			[ACL, permission("write")],
+		]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/not the route this park was recorded about/);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
 describe("recipe unpark — a BLOCKED park clears on its cause", () => {
 	it("clears the worktree-holds-branch park once no working tree holds the branch", async () => {
 		const fs = lane(PARKED_ON_WORKTREE);
@@ -430,8 +557,8 @@ describe("recipe unpark — a BLOCKED park clears on its cause", () => {
 				[PRUNE, okOut("")],
 				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
 				[STATUS, okOut("")],
-				// Unbuilt commits on the branch: no board license covers this tree, and the
-				// unclaimed-lane arm refuses one carrying work, so the park still holds.
+				// Commits no ref of this clone reaches: no board license covers this tree, and the
+				// unclaimed-lane arm refuses one whose removal would strand work, so the park holds.
 				[REVLIST, okOut("2\n")],
 			],
 			[

@@ -10,7 +10,13 @@ import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import {describe, expect, it} from "vitest";
-import {audienceLabel, type BoardVocabulary, statusList, typeLabel} from "../config/board.ts";
+import {
+	audienceLabel,
+	type BoardVocabulary,
+	classLabel,
+	statusList,
+	typeLabel,
+} from "../config/board.ts";
 import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
 import * as report from "../exit-codes.ts";
 import {fakeFs, fakeHttp, fakeSeams, fakeShell, type HttpReply} from "../fakes.test-support.ts";
@@ -23,6 +29,7 @@ import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import {
 	AUDIENCES,
+	CLASSES,
 	PRIORITIES,
 	parkedFacets,
 	STANDING_LANES,
@@ -1240,7 +1247,7 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 				PRIORITIES.flatMap((priority) =>
 					AUDIENCES.flatMap((readyFor) =>
 						[null, ...STANDING_LANES].map((lane) =>
-							triagedFacets({type, priority, readyFor, lane}),
+							triagedFacets({type, priority, readyFor, lane, classes: []}),
 						),
 					),
 				),
@@ -1271,18 +1278,19 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 		expect(names.has(AWAITING_RELEASE)).toBe(true);
 	});
 
-	it("carries sixteen labels, each named once", () => {
-		expect(TAXONOMY).toHaveLength(16);
+	it("carries twenty labels, each named once", () => {
+		expect(TAXONOMY).toHaveLength(20);
 		expect(names.size).toBe(TAXONOMY.length);
 	});
 
-	it("equals the set computed off the four facet lists, in order", () => {
+	it("equals the set computed off the four board lists plus the closed class set, in order", () => {
 		expect(TAXONOMY).toEqual(
 			[
 				...statusList(DEFAULT_STATUS_NAMES),
 				...PRIORITIES,
 				...TYPES.map(typeLabel),
 				...AUDIENCES.map(audienceLabel),
+				...CLASSES.map(classLabel),
 			].map((name) => ({name, description: LABEL_DESCRIPTION, color: null})),
 		);
 	});
@@ -1313,6 +1321,10 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 			"sev1",
 			"type:defect",
 			"ready-for:human",
+			"class:code",
+			"class:doc",
+			"class:skill",
+			"class:ui",
 		]);
 	});
 });

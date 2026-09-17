@@ -2,9 +2,12 @@ import {Schema} from "effect";
 import {ProcessId} from "../process/process.ts";
 
 /**
- * A snapshot exists for the process but was written under another definition — a different
- * program version, or a different program altogether. Refused, never migrated and never
- * fresh-booted over (#7467, #7514): the process stays absent until a person decides.
+ * A snapshot exists for the process but was written under a definition this one cannot reach — a
+ * different program altogether, or a version the row declares no walk to the current one from
+ * (`./migrations.ts`). Refused and never fresh-booted over (#7467, #7514): the process stays absent
+ * until a person decides. A version the row does cover is migrated instead and never arrives here
+ * (the founder ruling on #8907:
+ * https://github.com/kamp-us/phoenix/issues/8907#issuecomment-5625300780).
  */
 export class SnapshotRefused extends Schema.TaggedError<SnapshotRefused>()(
 	"tuval/durability/SnapshotRefused",

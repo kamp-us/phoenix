@@ -45,7 +45,21 @@ const livePull = (shape: PullShape = {}): Scripted => [once(PULL), served(pull(s
 /** The mergeability poll, which reads the same endpoint one request later. */
 const mergeabilityRead = (shape: PullShape = {}): Scripted => [once(PULL), served(pull(shape))];
 
-const options = {pr: 4321, sha: HEAD, repo: null, json: false, env: ENV};
+/**
+ * The shipped mergeability window is 60s of real backoff, so every test scripts a short one.
+ *
+ * 4s is two waits of 2s, which is the smallest window that still exercises the re-read loop.
+ */
+const MERGEABILITY_SECONDS = 4;
+
+const options = {
+	pr: 4321,
+	sha: HEAD,
+	mergeabilitySeconds: MERGEABILITY_SECONDS,
+	repo: null,
+	json: false,
+	env: ENV,
+};
 
 const land = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
 	const seams = fakeSeams(script);
@@ -138,8 +152,25 @@ describe("runMerge", () => {
 		]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toBe(
-			"ship merge: #4321's mergeable_state is still indefinite after 3 polls — mergeability is UNKNOWN, never green; nothing was merged.",
+			"ship merge: #4321's mergeable_state is still indefinite after 2 polls over 4s — mergeability is UNKNOWN, never green; nothing was merged.",
 		);
+		expect(withoutWrite(calls)).toBe(true);
+	}, 20_000);
+
+	// `ship merge` shares one poll loop with `ship enqueue`, so it inherits the widened window — the
+	// conflict arrives on a re-read of the same endpoint, not from a differently shaped read.
+	// @ruling https://github.com/kamp-us/phoenix/issues/9032
+	it("re-reads past an indefinite value and lands the conflict the later read carries", async () => {
+		const {outcome, calls} = await land([
+			livePull(),
+			UNQUEUED,
+			[REPO, repositoryServed()],
+			[once(PULL), served(pull({mergeable: null, mergeableState: "unknown"}))],
+			[PULL, served(pull({mergeable: false, mergeableState: "dirty"}))],
+		]);
+		expect(outcome.code).toBe(PROVEN_NOT_IN_STATE);
+		expect(outcome.stderr.at(-1)).toContain("mergeable_state: dirty");
+		expect(outcome.stderr.at(-1)).not.toContain("indefinite");
 		expect(withoutWrite(calls)).toBe(true);
 	}, 20_000);
 
