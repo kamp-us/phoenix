@@ -434,8 +434,8 @@ pnpm add @kampus/tuval-worktree
 There are no runtime dependencies at all — `node:child_process`, `node:net`, `node:fs/promises` and
 `node:path` are the whole of what provisioning needs. Everything else is a peer.
 
-`@kampus/tuval` is **private and not published to npm**. This package now lives in the same
-worktree as Tuval does, so the dependency is a plain worktree one —
+`@kampus/tuval` is **private and not published to npm**. This package now lives in the same pnpm
+workspace as Tuval does, so the dependency is a plain workspace one —
 `"@kampus/tuval": "workspace:*"` — and pnpm resolves it to `apps/tuval` in this repo with no path
 link and no second checkout anywhere. It becomes a real version range the day Tuval ships to a
 registry; nothing in the source changes with it, because the source already imports only through
@@ -466,7 +466,7 @@ Tuval's whole reachable source tree enters this program and is checked under *th
 `apps/tuval/tsconfig.json`'s, restated, and a consumer that picked its own would be told about
 `findLast`, `Element` and the MCP SDK's optional props in code it does not own.
 
-**`vitest.config.ts`: `resolve.dedupe: ["effect", "@demlik/tea"]`.** One worktree and one
+**`vitest.config.ts`: `resolve.dedupe: ["effect", "@demlik/tea"]`.** One pnpm workspace and one
 root `catalog:` pin already give the suite a single `effect`, so this line is belt and braces here
 rather than the load-bearing fix it was when Tuval was reached by path at an outside checkout — two
 instances meant a `Schema` built by one was a stranger to a decoder from the other, and a spell's
