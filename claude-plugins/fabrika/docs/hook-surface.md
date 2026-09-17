@@ -18,7 +18,10 @@ Both rules are checked as **data**, not by eye: [`../../../packages/fabrika-cli/
 The plugin declares the envelope check, the Bash worktree guard and the [Claude usage collector](claude-usage.md). An adopting repo may declare a worktree provider on its own, in
 its `.claude/settings.json` — `fabrika hook worktree-create` on `WorktreeCreate` — for the reason
 [below](#worktreecreate--a-provider-hook-left-undeclared): that event is safe where the toolchain is
-guaranteed and unsafe where it is not, so it lives where the guarantee holds and never here. Both
+guaranteed and unsafe where it is not, so it lives where the guarantee holds and never here. It may
+declare `fabrika hook plugin-sync` on `SessionStart` for the reason
+[below](#sessionstart-plugin-sync--a-checkout-move-left-to-the-repo) — that verb moves a checkout,
+and which checkout is a fact only the adopting repo knows. Both
 documents are read by the same
 [`declaration.ts`](../../../packages/fabrika-cli/src/hook/declaration.ts) and judged against the same
 two rules; what differs is which events each may carry.
@@ -80,6 +83,19 @@ WorktreeCreate hook failed: hook is configured but did not run (workspace not tr
 A machine with no fabrika install would therefore lose `--worktree` entirely, which is the inverse of the fail-open ruling below. **Left undeclared on this surface, and that refusal is unchanged.**
 
 > **The event may be declared elsewhere, and the distinction is the whole reason it can be.** Everything above binds a *plugin* declaration, which travels to every adopting repo — that is what makes the no-fail-open exposure unbounded. A repo's own `.claude/settings.json` travels nowhere, and a checkout of that repo without fabrika is already broken, so the same event carries a bounded cost there: it may declare `fabrika hook worktree-create` with a long timeout, which provisions a worktree the package manager's install would otherwise leave dep-less. Rule 5 binds that command exactly as it binds one here, and [`declaration.ts`](../../../packages/fabrika-cli/src/hook/declaration.ts) reads both documents — so the golden test asserts, per document, that no `Worktree*` event ever appears on **this** surface. That assertion is the refusal above, with teeth.
+
+<a id="sessionstart-plugin-sync--a-checkout-move-left-to-the-repo"></a>
+#### `SessionStart` / `plugin-sync` — a checkout move left to the repo
+
+The event is declared here already, for `fabrika hook check`. What is left to the repo is the **verb**, and the distinction is the same one the `WorktreeCreate` note above draws: the surface is not the risk, the mutation is.
+
+A `skills:` preload is not read live out of a plugin directory. Where a marketplace's source is a **directory**, the harness copies that tree into its own plugin cache under a name keyed by the commit the directory sat at, records that commit as the install's `gitCommitSha`, and renders every spawned shell's preload out of the copy. So the text an agent runs is only ever as current as the commit the source directory's primary worktree was checked out at when the harness last copied it — and a landed skill change is invisible to every shell spawned before that, silently, because preloaded text names no version and a shell has no way to tell it is running retired guidance.
+
+`fabrika hook plugin-sync` closes the half a repository owns: it fast-forwards the source directory's primary worktree to `origin/<default>` at session start, so the step is the harness's rather than a person's to remember. It takes a fast-forward and nothing else, and it reports — never drives — the other half, which is the harness's own `autoUpdate` re-copy.
+
+**It stays off this surface because it writes to a checkout.** A plugin declaration travels to every adopting repo, and which checkout a marketplace is registered against is a fact only the adopting repo knows; a plugin that moved a branch in every repo installing it would be making a mutation nobody asked for, in trees it cannot see. So the verb is fabrika's, portable, and names no repository, and the declaration is the repo's — exactly the split `WorktreeCreate` already uses. Rule 5 binds the command there as it binds one here, and [`declaration.ts`](../../../packages/fabrika-cli/src/hook/declaration.ts) reads both documents.
+
+**Its failure is fail-open by construction.** `SessionStart` has no blocking code at all ([the harness exit-code contract](#the-harness-exit-code-contract)), so every refusal this verb makes shows its stderr and the session starts regardless — which is the polarity a verb that advances a checkout must have: a checkout it may not touch is an ordinary state, and stopping a session over one would be the inverse of the ruled behaviour.
 
 #### `WorktreeRemove` — the teardown counterpart, also a provider, left undeclared
 
