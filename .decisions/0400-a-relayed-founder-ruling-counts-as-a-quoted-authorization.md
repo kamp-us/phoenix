@@ -1,12 +1,12 @@
 ---
-id: 0399
+id: 0400
 title: A relayed founder ruling counts, posted as a quoted authorization by decision rule
 status: accepted
 date: 2026-09-16
 tags: [fabrika, decision, governance, pipeline-hardening]
 ---
 
-# 0399 — A relayed founder ruling counts, posted as a quoted authorization by `decision rule`
+# 0400 — A relayed founder ruling counts, posted as a quoted authorization by `decision rule`
 
 **What this decides:** `decision rule` takes `grill rule`'s `--authorization <file>` beside its
 `--cites <url>`. A ruling the founder gave in conversation is recorded by posting his words verbatim
@@ -32,6 +32,13 @@ required rather than inferred, posted as a dated verbatim comment beside the mar
 date check, a bare-`@` refusal and a machine-local-path refusal. So the two verbs disagreed about one
 governance question and only one of them had an answer written down.
 
+[ADR 0300](0300-a-cited-ruling-makes-a-decision-buildable.md) is the standing law on this seam. It
+opened `type:decision` issues to an agent lane whenever a founder ruling is recorded on the issue,
+and it wrote the recording down as *"the comment exists on the board before the claim, written by a
+human, and the builder's whole judgement is reading it."* That clause is the round-trip: with only
+`--cites`, the founder typing the comment **is** the fence, so 0300 bought one agent lane and left
+one founder write standing in front of it.
+
 The founder ruled it on [#8857](https://github.com/kamp-us/phoenix/issues/8857), verbatim *"rec
 (yes)"*:
 [the ruling comment](https://github.com/kamp-us/phoenix/issues/8857#issuecomment-5625302485). This
@@ -46,6 +53,14 @@ record transcribes it; the choice is not the author's.
   and both verbs judge through it. The shape is reused, not redesigned, so the two cannot drift about
   what a quoted authority has to survive. `build clear` still carries its own copy of the same five
   clauses; folding it in is follow-up work, not this decision.
+- **ADR 0300's "written by a human" clause is amended to "posted by a control-plane account".**
+  [0300](0300-a-cited-ruling-makes-a-decision-buildable.md) made a recorded ruling comment the fence
+  and described that comment as one a human wrote. Under `--authorization` the words are still the
+  founder's and the account posting them is still a roster account the verb checked before it wrote,
+  so what the clause was protecting holds and its wording does not. Everything else 0300 binds
+  survives untouched: a citable ruling comment exists on the issue before the claim, the refusal is
+  the default branch with no such comment, the builder cites rather than judging the question
+  settled, it transcribes only what the ruling says, and the URL lands inside the artifact.
 - **Exactly one flag names the ruling.** `--cites <url>` when the ruling is already a comment on the
   issue, `--authorization <file>` when it was given in conversation. Neither, or both, is exit `1` at
   the adapter: a verb that picked between two authorities would be the one deciding which comment a

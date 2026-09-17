@@ -80,10 +80,11 @@ citation does not lift, so the issue still has to carry `ready-for:agent`. Two t
 triage, when it first reads a decision that already carries a ruling comment — its
 [`--ready-for` routing](../triage/SKILL.md) owns that call, not this skill — and
 `fabrika decision rule <n>`, which a control-plane human runs on a decision that is already parked —
-`--cites <url>` when the ruling is already a comment, `--authorization <file>` when he gave it in
-conversation and the file quotes him verbatim. On `ready-for:human` the claim is exit `21` and step 2's rule holds unchanged: end
-the run naming the code, and name that verb as the way back in — a control-plane human runs it, never
-you, and never an override on your own authority, however good the citation.
+`--cites <url>` over a comment that is already there, `--authorization <file>` over a ruling given in
+conversation, from a file quoting it verbatim and dated. On `ready-for:human` the claim is exit `21`
+and step 2's rule holds unchanged: end the run naming the code, and name that verb as the way back
+in — a control-plane human runs it, never you, and never an override on your own authority, however
+good the citation.
 
 **Composition — what holds when `build-ui` is loaded beside this skill.** A shell's `skills:` list is
 its capability set, so a shell preloading both carries both construction laws and a mixed-deliverable

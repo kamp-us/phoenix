@@ -306,8 +306,7 @@ second surface (ADR 0289; #5842, consolidated into epic #5843).
 that never posted points at nothing; the file is judged by the same check `grill rule` runs — dated,
 no bare `@` path, no machine-local path — and posted verbatim, never summarized. The ACL does not
 move with it: the invoking account is still the one that has to be on the roster, and what a quoted
-authorization buys is that a ruling given in conversation costs the founder no comment to type
-(#8857).
+authorization buys is that a ruling given in conversation costs the founder no comment to type.
 
 `rule` derives the digest itself; there is no `--digest`, because a ruling whose scope its caller
 supplies attests whatever the caller pleased. Both verbs resolve the `@kamp-us/control-plane` roster
