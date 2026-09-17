@@ -229,8 +229,9 @@ pointer's shape and its target; whether that comment rules anything is the reade
 stated as such. `type:epic` has no arm — its deliverable is a ledger no citation turns into a pull
 request, and the remedy is `--purpose plan` or `--purpose gate`. The arm opens the type axis and
 nothing else: the issue still has to carry `ready-for:agent`, which triage stamps at intake and
-`fabrika decision rule <n> --cites <url>` stamps afterwards, so a `ready-for:human` decision with a
-perfect citation is still `21` until one of them has run.
+`fabrika decision rule <n>` stamps afterwards, under either `--cites <url>` or
+`--authorization <file>`, so a `ready-for:human` decision with a perfect citation is still `21`
+until one of them has run.
 
 **The inputs, and where each is read.**
 

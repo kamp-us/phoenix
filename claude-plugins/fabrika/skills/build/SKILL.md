@@ -79,10 +79,12 @@ citation, and a gap the ruling left open goes back to the founder rather than ge
 citation does not lift, so the issue still has to carry `ready-for:agent`. Two things stamp it:
 triage, when it first reads a decision that already carries a ruling comment — its
 [`--ready-for` routing](../triage/SKILL.md) owns that call, not this skill — and
-`fabrika decision rule <n> --cites <url>`, which a control-plane human runs on a decision that is
-already parked. On `ready-for:human` the claim is exit `21` and step 2's rule holds unchanged: end
-the run naming the code, and name that verb as the way back in — a control-plane human runs it, never
-you, and never an override on your own authority, however good the citation.
+`fabrika decision rule <n>`, which a control-plane human runs on a decision that is already parked —
+`--cites <url>` over a comment that is already there, `--authorization <file>` over a ruling given in
+conversation, from a file quoting it verbatim and dated. On `ready-for:human` the claim is exit `21`
+and step 2's rule holds unchanged: end the run naming the code, and name that verb as the way back
+in — a control-plane human runs it, never you, and never an override on your own authority, however
+good the citation.
 
 **Composition — what holds when `build-ui` is loaded beside this skill.** A shell's `skills:` list is
 its capability set, so a shell preloading both carries both construction laws and a mixed-deliverable
@@ -146,8 +148,8 @@ overridable, and the remedy is on the refusal line.** An epic goes to `--purpose
 and the verb can prove no more than that, so citing a comment that does not rule anything is a lie
 the tool cannot catch and you must not tell. Passing `--cites` on a decision whose audience is still
 `ready-for:human` lands on `21`, because the citation opens the type axis and nothing else — the
-route back in is `fabrika decision rule <n> --cites <url>`, run by a control-plane human, as step 1
-says.
+route back in is `fabrika decision rule <n> --cites <url>` — or `--authorization <file>` over a
+ruling given in conversation — run by a control-plane human, as step 1 says.
 
 Exit `32` (no acceptance criteria) is the fourth refusal, and it is the one you are most likely to
 meet: the verb reads the issue's body itself, so a body with no readable `### Acceptance criteria`

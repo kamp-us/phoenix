@@ -1,7 +1,7 @@
 ---
 id: 0300
 title: A recorded founder ruling makes a decision issue buildable as transcription, never as judgement
-status: accepted
+status: amended-in-part by [0400](0400-a-relayed-founder-ruling-counts-as-a-quoted-authorization.md)
 date: 2026-08-19
 tags: [fabrika, pipeline, decisions, agents]
 ---
