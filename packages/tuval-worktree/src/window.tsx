@@ -10,17 +10,17 @@
  */
 
 /**
- * The workspaces, as a window: one row per provisioned set, with the four declared inputs resolved
+ * The worktrees, as a window: one row per provisioned set, with the four declared inputs resolved
  * — path, branch, port, what the agent is doing — and a Close on each.
  *
  * **Why a window when there is already a tile.** The tile holds two lines and there are up to eight
- * workspaces. The whole value of this program is seeing, at once, that `feature-x` is on `:5174`
+ * worktrees. The whole value of this program is seeing, at once, that `feature-x` is on `:5174`
  * and `bugfix` is on `:5175` and neither is about to trip over the other; one line cannot say that
  * and a list can.
  *
  * **What this module may import.** `@kampus/tuval/window` (the browser-safe door, whose own closure
  * reaches no `node:` builtin), `react`, and this package's kernel-free `./state.ts`. It must not
- * reach `./workspace.ts`: that file imports `@kampus/tuval/authoring` (and `node:path`), and the
+ * reach `./worktree.ts`: that file imports `@kampus/tuval/authoring` (and `node:path`), and the
  * page loads this module in a browser tab.
  *
  * **Open and Close are dispatches, not spell calls.** `WindowHost` carries `readProcess`,
@@ -35,24 +35,24 @@ import {Effect, Fiber, Stream} from "effect";
 import type {CSSProperties, ReactElement} from "react";
 import {useCallback, useEffect, useState} from "react";
 import type {
-	WorkspaceCommandEvent,
-	WorkspaceRowView,
-	WorkspaceState,
-	WorkspaceWindowView,
+	WorktreeCommandEvent,
+	WorktreeRowView,
+	WorktreeState,
+	WorktreeWindowView,
 } from "./state.ts";
-import {closeEvent, discardEvent, openEvent, workspaceView} from "./state.ts";
+import {closeEvent, discardEvent, openEvent, worktreeView} from "./state.ts";
 
 /** The predicate the page admits this renderer's state through (ADR 0358). */
-export {isWorkspaceState as admits} from "./state.ts";
+export {isWorktreeState as admits} from "./state.ts";
 
-type Host = WindowHost<WorkspaceState, WorkspaceCommandEvent>;
+type Host = WindowHost<WorktreeState, WorktreeCommandEvent>;
 
 /**
  * This process's public state, live. The stream never fails and ends on `ProcessGone`, so there is
  * no error arm: `null` is "nothing yet", and a gone process simply stops updating.
  */
-const useWorkspaceState = (host: Host): WorkspaceState | null => {
-	const [state, setState] = useState<WorkspaceState | null>(null);
+const useWorktreeState = (host: Host): WorktreeState | null => {
+	const [state, setState] = useState<WorktreeState | null>(null);
 	const read = host.readProcess;
 	useEffect(() => {
 		const fiber = Effect.runFork(
@@ -126,7 +126,7 @@ function Row({
 	onClose,
 	onDiscard,
 }: {
-	readonly row: WorkspaceRowView;
+	readonly row: WorktreeRowView;
 	readonly onClose: (name: string) => void;
 	readonly onDiscard: (name: string) => void;
 }): ReactElement {
@@ -138,7 +138,7 @@ function Row({
 				<span>{row.status}</span>
 				<span style={styles.hint}>{row.agent}</span>
 				{/*
-				 * Close never forces. It sends the same arrival `:workspace close` does, so git is asked
+				 * Close never forces. It sends the same arrival `:worktree close` does, so git is asked
 				 * without `--force` and a worktree holding uncommitted work refuses — the refusal lands on
 				 * this row's detail rather than the work landing nowhere.
 				 */}
@@ -168,7 +168,7 @@ function Rows({
 	onClose,
 	onDiscard,
 }: {
-	readonly view: WorkspaceWindowView;
+	readonly view: WorktreeWindowView;
 	readonly onClose: (name: string) => void;
 	readonly onDiscard: (name: string) => void;
 }): ReactElement {
@@ -183,7 +183,7 @@ function Rows({
 }
 
 /** The `open`s this program would not take, spelled out. Nothing drawn when there are none. */
-function Refusals({view}: {readonly view: WorkspaceWindowView}): ReactElement | null {
+function Refusals({view}: {readonly view: WorktreeWindowView}): ReactElement | null {
 	if (view.refusals.length === 0) return null;
 	return (
 		<section style={styles.notice} aria-label="refused opens">
@@ -198,7 +198,7 @@ function Refusals({view}: {readonly view: WorkspaceWindowView}): ReactElement | 
 }
 
 /** Turn results that belonged to no row, and the one line saying why they could not. */
-function Unattributed({view}: {readonly view: WorkspaceWindowView}): ReactElement | null {
+function Unattributed({view}: {readonly view: WorktreeWindowView}): ReactElement | null {
 	if (view.unattributed.length === 0) return null;
 	return (
 		<section style={styles.notice} aria-label="unattributed results">
@@ -212,11 +212,11 @@ function Unattributed({view}: {readonly view: WorkspaceWindowView}): ReactElemen
 }
 
 /**
- * The window over one live workspace program. Everything it draws comes from `workspaceView`, which
+ * The window over one live worktree program. Everything it draws comes from `worktreeView`, which
  * is pure and tested on its own; this component decides nothing but where the lines go.
  */
-function WorkspaceWindow({host}: {readonly host: Host}): ReactElement {
-	const state = useWorkspaceState(host);
+function WorktreeWindow({host}: {readonly host: Host}): ReactElement {
+	const state = useWorktreeState(host);
 	const [name, setName] = useState("");
 	const open = useCallback(() => {
 		const wanted = name.trim();
@@ -241,12 +241,12 @@ function WorkspaceWindow({host}: {readonly host: Host}): ReactElement {
 
 	if (state === null) {
 		return (
-			<output style={styles.empty}>Waiting for the first state from this workspace program.</output>
+			<output style={styles.empty}>Waiting for the first state from this worktree program.</output>
 		);
 	}
-	const view = workspaceView(state);
+	const view = worktreeView(state);
 	return (
-		<section style={styles.root} aria-label={`workspaces of ${view.repoName}`}>
+		<section style={styles.root} aria-label={`worktrees of ${view.repoName}`}>
 			<header style={styles.header}>
 				<span style={styles.repo}>{view.repoName}</span>
 				<span style={styles.status}>{view.status}</span>
@@ -259,7 +259,7 @@ function WorkspaceWindow({host}: {readonly host: Host}): ReactElement {
 					type="text"
 					value={name}
 					placeholder="feature-x"
-					aria-label="new workspace name"
+					aria-label="new worktree name"
 					onChange={(change) => setName(change.target.value)}
 					onKeyDown={(key) => {
 						if (key.key === "Enter") open();
@@ -271,7 +271,7 @@ function WorkspaceWindow({host}: {readonly host: Host}): ReactElement {
 				<span style={styles.hint}>
 					{view.busy
 						? "Something is in flight — one provision at a time."
-						: "same as :workspace open <name>"}
+						: "same as :worktree open <name>"}
 				</span>
 			</div>
 			<Refusals view={view} />
@@ -286,4 +286,4 @@ function WorkspaceWindow({host}: {readonly host: Host}): ReactElement {
  * being a hand-written `{kind, render}`, so the page's kind check (`module`, not `host-native`) is
  * satisfied by construction and not by a literal that could drift.
  */
-export default windowRenderer("module", (host: Host) => <WorkspaceWindow host={host} />);
+export default windowRenderer("module", (host: Host) => <WorktreeWindow host={host} />);

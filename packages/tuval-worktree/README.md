@@ -1,4 +1,4 @@
-# @kampus/tuval-workspace
+# @kampus/tuval-worktree
 
 Isolation for [Tuval](https://github.com/kamp-us/phoenix/tree/main/apps/tuval): give it a name and
 it provisions a disposable set — a git worktree cut from a base ref, a TCP port nothing else holds,
@@ -18,14 +18,14 @@ Two agents on one repository collide, and they collide four times:
 
 Conductor, Claude Squad and Cursor Mission Control each hand you the worktree and stop there. The
 port, the env file and the database are left to you — which is to say, left to collide. This package
-is the argument that all four are one thing: **declared inputs, resolved together per workspace,
+is the argument that all four are one thing: **declared inputs, resolved together per worktree,
 disposed of together.** nix-shell's idea, pointed at agents rather than at builds.
 
 ## Usage
 
 ```ts
 // ~/.tuval/tuval.config.ts
-import {workspace} from "@kampus/tuval-workspace";
+import {worktree} from "@kampus/tuval-worktree";
 import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
 
 const REPO = "/code/my-app";
@@ -34,7 +34,7 @@ const scope = {workspace: WorkspaceId.make("default"), client: ClientId.make("tu
 export default {
   version: 1,
   programs: [
-    workspace({
+    worktree({
       repo: REPO,
       base: "origin/main",
       port: {from: 5170, to: 5199},
@@ -44,19 +44,19 @@ export default {
       job: claudeSession({cwd: REPO, scope}),
     }),
   ],
-  graph: {nodes: [{id: "workspace", program: "workspace", on: []}]},
+  graph: {nodes: [{id: "worktree", program: "worktree", on: []}]},
 } satisfies TuvalConfigInput;
 ```
 
 Then, on the desk:
 
 ```
-:workspace open feature-x
-:workspace close feature-x      # never loses work — a dirty worktree refuses
-:workspace discard feature-x    # the one spell that forces, and loses uncommitted work
+:worktree open feature-x
+:worktree close feature-x      # never loses work — a dirty worktree refuses
+:worktree discard feature-x    # the one spell that forces, and loses uncommitted work
 ```
 
-`open` cuts `.workspaces/feature-x` on branch `can/feature-x` from `origin/main`, probes 5170
+`open` cuts `.worktrees/feature-x` on branch `can/feature-x` from `origin/main`, probes 5170
 upwards for a free port, copies `.env.example` into the worktree with `PORT=` rewritten, runs the
 three setup commands inside it, and starts the agent. `close` stops the agent, runs `dropdb`,
 removes the worktree, and frees the record.
@@ -64,16 +64,16 @@ removes the worktree, and frees the record.
 | Field | What it is |
 |---|---|
 | `repo` | The repository worktrees are cut from, absolute. The one field with no default. |
-| `id` | What this program is called: its program id, its graph node id, and the first word of both spells (`:lane open`). Defaults to `"workspace"` — name it when a config holds more than one. |
-| `base` | The ref a new workspace's branch starts at. `origin/main`. |
-| `root` | Where worktrees go. A relative path is resolved against `repo`. `.workspaces`. |
-| `branchPrefix` | What a workspace's branch is called: this, then the name. `can/`. |
+| `id` | What this program is called: its program id, its graph node id, and the first word of both spells (`:lane open`). Defaults to `"worktree"` — name it when a config holds more than one. |
+| `base` | The ref a new worktree's branch starts at. `origin/main`. |
+| `root` | Where worktrees go. A relative path is resolved against `repo`. `.worktrees`. |
+| `branchPrefix` | What a worktree's branch is called: this, then the name. `can/`. |
 | `port` | `{from, to}`, probed upwards for the first port nothing holds. `{from: 5170, to: 5199}`. |
 | `env` | `{template, portKey, vars?, file?}`, or `false` for a repository with no env file to copy. Defaults to `{template: ".env.example", portKey: "PORT"}`. |
 | `setup` | Command lines run inside a fresh worktree, in order, after the `.env` is written. |
-| `teardown` | Command lines run inside a workspace before it is removed, in order. |
+| `teardown` | Command lines run inside a worktree before it is removed, in order. |
 | `brief` | Extra sentences appended to the where-you-are preface every agent is sent. |
-| `job` | The program to start inside a workspace — any row whose ports fit `jobShape` (`prompt` in, `result` out). Optional: a workspace program with no `job` only provisions. |
+| `job` | The program to start inside a worktree — any row whose ports fit `jobShape` (`prompt` in, `result` out). Optional: a worktree program with no `job` only provisions. |
 | `now` | Optional clock, so a test states the time instead of reading one. |
 | `runner` | The machine. Injected so a test never touches git, a port or the disk. |
 
@@ -84,9 +84,9 @@ line, every `teardown` line, and every value under `env.vars`:
 
 | | |
 |---|---|
-| `$NAME` | what you called the workspace — `feature-x` |
+| `$NAME` | what you called the worktree — `feature-x` |
 | `$PORT` | the port the probe found — `5174` |
-| `$WORKTREE` | the worktree, absolute — `/repo/.workspaces/feature-x` |
+| `$WORKTREE` | the worktree, absolute — `/repo/.worktrees/feature-x` |
 | `$BRANCH` | the branch it is on — `can/feature-x` |
 
 `${NAME}` works too. Anything this package does not own — `$HOME`, `$PATH`, `$NAMESPACE`, `$$` — is
@@ -105,7 +105,7 @@ step needs the one before it: the `.env` is written *into* the worktree, the por
 `.env`, and `setup` runs *in* the worktree with `$PORT` already resolved.
 
 A provision that fails stops at that step, names it, and **keeps the half-built worktree** — the
-record goes to `failed` holding its path, because the path is how `:workspace close <name>` takes it
+record goes to `failed` holding its path, because the path is how `:worktree close <name>` takes it
 away and the output is the only evidence of what went wrong.
 
 Teardown is the same rule read backwards: a teardown command that fails **refuses the removal**. A
@@ -114,7 +114,7 @@ top of that deletes the only thing that knows which database it was. Fix the com
 
 ### Close never loses work; `discard` says that it does
 
-`:workspace close <name>` stops the agent inside the workspace, waits for that session's ending,
+`:worktree close <name>` stops the agent inside the worktree, waits for that session's ending,
 then runs `git worktree remove <path>` — **without `--force`**. A worktree
 holding uncommitted or untracked work makes git refuse, and that refusal comes back exactly like a
 failed teardown command's: the record stays, as `failed`, holding git's own sentence, so the tile
@@ -124,7 +124,7 @@ close and has no forcing variant.
 There is one way to throw work away, and it is a spell of its own:
 
 ```
-:workspace discard feature-x
+:worktree discard feature-x
 ```
 
 `discard` is the only path in this package that passes `--force`. It is a separate command rather
@@ -147,8 +147,8 @@ still prints a bare token. They cover the two shapes a secret takes in build out
 
 ## What a refusal looks like, and the one thing it never is
 
-Silence. Four things make `:workspace open <name>` refuse — a name a branch and a directory cannot
-both be called, a name already held, the bound on live workspaces, and a job already in flight — and
+Silence. Four things make `:worktree open <name>` refuse — a name a branch and a directory cannot
+both be called, a name already held, the bound on live worktrees, and a job already in flight — and
 every one of them is written down on state, spelled out in the window and named in the tile's second
 line (`… · refused bugfix: busy`). The list is bounded at five, so it is a window on the last few
 refusals rather than a log. A refusal that moved no state was a button that did nothing, and
@@ -156,11 +156,11 @@ refusals rather than a log. A refusal that moved no state was a button that did 
 
 ## Two agents, and the reply that carries no sender
 
-A turn result is attributed to a workspace **only when exactly one agent is running.** Tuval's
+A turn result is attributed to a worktree **only when exactly one agent is running.** Tuval's
 `Reply` is `{type, payload}` and carries no process id
 (`apps/tuval/src/authoring/effect.ts:179-182`), so with two agents up there is nothing in the event
 that says which one answered — and the honest answer to that is not a guess. With more than one
-running (or with none), the result goes to an `unattributed` list that belongs to no workspace, the
+running (or with none), the result goes to an `unattributed` list that belongs to no worktree, the
 status line says how many are there, and the window shows them with the reason.
 
 This is the sibling of the cwd gap below, read from the other end: a spawn cannot carry a cwd *to*
@@ -192,9 +192,9 @@ What the kernel says, read at the current checkout:
   system.
 
 **So v1 ships the fallback, named as one.** The session runs on whatever cwd your config gave
-`claudeSession`, and the workspace reaches it **in words** — the prompt it is sent is prefixed with:
+`claudeSession`, and the worktree reaches it **in words** — the prompt it is sent is prefixed with:
 
-> You are working in `/repo/.workspaces/feature-x` on branch `can/feature-x`; dev port 5174. Start
+> You are working in `/repo/.worktrees/feature-x` on branch `can/feature-x`; dev port 5174. Start
 > by changing into that directory — it is a git worktree of its own and it is not where this session
 > started.
 
@@ -204,8 +204,8 @@ real and unaffected: the worktree exists, the port is held, the `.env` is writte
 database is made and dropped. When #9287 is answered, the preface stops being load-bearing and the
 only change here is one `spawn` call.
 
-A workspace program with no `job` at all is a first-class shape, and is what to use if the words
-bother you: `:workspace open feature-x` provisions everything and hands you a path to open a session
+A worktree program with no `job` at all is a first-class shape, and is what to use if the words
+bother you: `:worktree open feature-x` provisions everything and hands you a path to open a session
 in yourself.
 
 ## Personas
@@ -217,33 +217,33 @@ claims is what the config actually issues, and no git, docker, nix or psql ever 
 | | For | Isolation declared |
 |---|---|---|
 | [`solo-laptop`](./examples/solo-laptop.tuval.config.ts) | one person, two agents, one laptop | worktree + free port + `.env` with `PORT` rewritten |
-| [`web-app-postgres`](./examples/web-app-postgres.tuval.config.ts) | a web app on a local Postgres | the above, plus a `DATABASE_URL` per workspace and a scratch database created and dropped |
-| [`docker-compose`](./examples/docker-compose.tuval.config.ts) | a stack that comes up as a compose project | a compose project named for the workspace, `up -d --wait` / `down -v`, published port from `.env` |
+| [`web-app-postgres`](./examples/web-app-postgres.tuval.config.ts) | a web app on a local Postgres | the above, plus a `DATABASE_URL` per worktree and a scratch database created and dropped |
+| [`docker-compose`](./examples/docker-compose.tuval.config.ts) | a stack that comes up as a compose project | a compose project named for the worktree, `up -d --wait` / `down -v`, published port from `.env` |
 | [`nix`](./examples/nix.tuval.config.ts) | a flake-based repository | worktree + port, **no env step** (`env: false`), dev shell warmed in setup, `nix develop -c` in the brief |
-| [`fabrika-lane`](./examples/fabrika-lane.tuval.config.ts) | two fabrika builders on one machine | a workspace per lane: name is the issue number, branch `build/<issue>`, frozen install |
+| [`fabrika-lane`](./examples/fabrika-lane.tuval.config.ts) | two fabrika builders on one machine | a worktree per lane: name is the issue number, branch `build/<issue>`, frozen install |
 
 ## The board tile and the window
 
-The tile reads `workspace · my-app` with `2 open · feature-x :5174 running` under it — or
+The tile reads `worktree · my-app` with `2 open · feature-x :5174 running` under it — or
 `1 open · provisioning bugfix` while something is in flight. The window is the list the tile cannot
 be:
 
 ```
 my-app
 2 open · feature-x :5174 running · refused bugfix-2: duplicate
-origin/main → /code/my-app/.workspaces
+origin/main → /code/my-app/.worktrees
 
-[ feature-x ]  [ Open ]   same as :workspace open <name>
+[ feature-x ]  [ Open ]   same as :worktree open <name>
 
 Refused
-bugfix-2 — a workspace of that name is already held
+bugfix-2 — a worktree of that name is already held
 
 feature-x  :5174  open     running   [Close]      [Discard (loses work)]
-  can/feature-x · /code/my-app/.workspaces/feature-x
+  can/feature-x · /code/my-app/.worktrees/feature-x
   rewrote three call sites; tests green
 
 bugfix     :5175  failed   failed    [Close]      [Discard (loses work)]
-  can/bugfix · /code/my-app/.workspaces/bugfix
+  can/bugfix · /code/my-app/.worktrees/bugfix
   remove: fatal: '…/bugfix' contains modified or untracked files, use --force to delete it
 ```
 
@@ -257,7 +257,7 @@ concurrent `git worktree add` on one repository is not a thing to do and two con
 would hand out the same port twice.
 
 **How the window gets to the browser.** The row carries
-`renderer: {kind: "module", ref: "@kampus/tuval-workspace/window"}` and the desk's page imports
+`renderer: {kind: "module", ref: "@kampus/tuval-worktree/window"}` and the desk's page imports
 that specifier itself at boot
 ([ADR 0359](https://github.com/kamp-us/phoenix/blob/main/.decisions/0359-tuval-window-renderer-is-a-module-specifier.md)).
 The other route — an authored `window` field on `defineProgram` — does not work for a package: it
@@ -266,7 +266,7 @@ seats the renderer in a map inside the *kernel* process, which the browser tab c
 
 **What that asks of your config, and it is not nothing.** The page resolves the specifier from the
 config module that declared the row, not from the app (phoenix #8262). So
-`@kampus/tuval-workspace` has to resolve from beside your `tuval.config.ts` — `pnpm add` it in
+`@kampus/tuval-worktree` has to resolve from beside your `tuval.config.ts` — `pnpm add` it in
 `~/.tuval/`, or link it there — and this package has to have been **built**, because `./window`
 points at `dist/window.js`. A specifier that resolves from neither there nor the page root refuses
 the page at boot, naming the specifier and your config. The kernel is unaffected either way — the
@@ -290,6 +290,20 @@ A restart cuts whatever was in flight in half, so `resume` reconciles three thin
 The four env fields (`repo`, `repoName`, `root`, `base`) are re-seeded from the config on every
 restore, because the config is the authority on them and a checkpoint never is.
 
+## Upgrading from the previous name
+
+This package, its program id and its spells were all called something else before; the rename is
+[kamp-us/phoenix#9426](https://github.com/kamp-us/phoenix/issues/9426). **A checkpoint written
+under the previous id is not migrated.** The kernel keys a checkpoint by program id, so the desk
+restores nothing into the renamed row: it comes up empty, and the first `:worktree open` writes a
+fresh row as if the program were new.
+
+Nothing on disk is touched either. The trees the previous id cut, their branches, the ports they
+held and the scratch databases their `setup` made are all left exactly where they are — including
+under the old default `root`, which was named for the old id. Point `root` at that path if you want
+the old location kept, or close the old trees out by hand before you upgrade; this package will not
+find them for you.
+
 ## How it relates to Tuval
 
 This is a Tuval **program**, built on `defineProgram` out of `@kampus/tuval/authoring`. Everything
@@ -303,7 +317,7 @@ imports no agent implementation, and which program fills it is your config's cal
 
 Provisioning is an **effect this program named and a handler it wrote**, for the reason any real
 work is: an `update` cell is pure and synchronous, and `git worktree add` is neither. A cell answers
-a `workspace.provision` carrying the whole plan, the actor hands that value to the handler the row
+a `worktree.provision` carrying the whole plan, the actor hands that value to the handler the row
 was spread with, and the answer arrives as an ordinary dispatched event.
 
 ### The provisioning itself is an Effect program
@@ -341,30 +355,30 @@ widens `Answer<State, X>` to the effects this program's cells may answer:
 
 ```ts
 export interface Provision {
-	readonly type: "workspace.provision";
+	readonly type: "worktree.provision";
 	readonly plan: ProvisionPlan;
 }
 
-export type WorkspaceEffect = Provision | Teardown | Reconcile;
+export type WorktreeEffect = Provision | Teardown | Reconcile;
 ```
 
-The runtime half is the spread, in `workspace(…)`:
+The runtime half is the spread, in `worktree(…)`:
 
 ```ts
 return {
 	...row,
-	handlers: {...row.handlers, ...workspaceHandlers(settled)},
-	renderer: WORKSPACE_WINDOW_REF,
+	handlers: {...row.handlers, ...worktreeHandlers(settled)},
+	renderer: WORKTREE_WINDOW_REF,
 };
 ```
 
 A handler is `(effect) => Effect<ReadonlyArray<Msg>>` — its follow-ups as a *list*, one entry or
 none, never a bare Msg — and the actor dispatches every entry back into this same process's inbox,
-where the `update` cell of that name takes it. So `open` answers a `workspace.provision`, the
+where the `update` cell of that name takes it. So `open` answers a `worktree.provision`, the
 handler runs `src/provision.ts` over its plan, and `provisioned` or `provisionFailed` lands on the
 reducer exactly as before. The reducer never moved: it was pure TEA before and it is pure TEA now.
 
-**Three effects, not two.** `workspace.provision`, `workspace.teardown` and `workspace.reconcile`.
+**Three effects, not two.** `worktree.provision`, `worktree.teardown` and `worktree.reconcile`.
 The third is a disk read rather than a write, but it belongs on this side of the seam with the
 other two: it happens *once, in answer to an event* (`restored`), rather than standing open
 observing anything, which is the thing a Sub is for.
@@ -385,9 +399,9 @@ that knows which `Runner` this row was configured with, and it is what lets a te
 
 **The one unenforced joint.** `defineProgram` returns before any spread exists, so it cannot refuse
 an effect the row has no handler for; the actor skips such an effect silently and the process keeps
-running — a workspace that is never provisioned and no error anywhere. That is why the three keys
-are written out once, in `workspaceHandlers`, rather than inline at the two call sites, and why
-`src/workspace.unit.test.ts` asserts the compiled row's `handlers` holds all three plus the six the
+running — a worktree that is never provisioned and no error anywhere. That is why the three keys
+are written out once, in `worktreeHandlers`, rather than inline at the two call sites, and why
+`src/worktree.unit.test.ts` asserts the compiled row's `handlers` holds all three plus the six the
 kernel wrote. It is the only place that check can be made.
 
 **A close is two effects in two folds, and that is not an accident.** A removal under a live session
@@ -395,11 +409,11 @@ is a session writing into a directory being deleted, so the `stop` has to come f
 `[stop(agent), teardownEffect(…)]` is not "first", it is "and only if the first one worked". The
 actor runs a cell's effects serially and a failing handler short-circuits the rest
 (`apps/tuval/src/host/actor.ts`), and `Processes.stop` fails `ProcessNotFound` on a process already
-gone. So an agent that crashed a moment before its `stopped` landed would cancel its own workspace's
+gone. So an agent that crashed a moment before its `stopped` landed would cancel its own worktree's
 removal, leave `pending` set, and get every later spell refused "busy" until restart.
 
 The `close` cell therefore answers *only* the `stop` when an agent is up, and the `stopped` cell —
-which receives the ending, matched by process id so a second workspace's session ending cannot fire
+which receives the ending, matched by process id so a second worktree's session ending cannot fire
 this one's teardown — answers the removal. `stopped` is produced once per child end whether this
 program asked for it or the agent simply died (kamp-us/phoenix#9229), so the crash and the orderly
 stop arrive at the same place. With no agent up there is nothing to wait for and the removal is
@@ -414,14 +428,14 @@ decide what to *do* any more.
 ## Install, and the honest dependency
 
 ```bash
-pnpm add @kampus/tuval-workspace
+pnpm add @kampus/tuval-worktree
 ```
 
 There are no runtime dependencies at all — `node:child_process`, `node:net`, `node:fs/promises` and
 `node:path` are the whole of what provisioning needs. Everything else is a peer.
 
 `@kampus/tuval` is **private and not published to npm**. This package now lives in the same
-workspace as Tuval does, so the dependency is a plain workspace one —
+worktree as Tuval does, so the dependency is a plain worktree one —
 `"@kampus/tuval": "workspace:*"` — and pnpm resolves it to `apps/tuval` in this repo with no path
 link and no second checkout anywhere. It becomes a real version range the day Tuval ships to a
 registry; nothing in the source changes with it, because the source already imports only through
@@ -432,7 +446,7 @@ the published doors (#8943, #9250):
   the types around them (`ArgRefs`, `Spawnable`, `PortSchema`)
 - `@kampus/tuval/window` — `windowRenderer` and `WindowHost`, the browser-safe half. `src/window.tsx`
   is the only file that touches it, and `src/state.ts` is the kernel-free leaf both halves share so
-  a browser never has a path to `src/workspace.ts`
+  a browser never has a path to `src/worktree.ts`
 - `@kampus/tuval/ai-agent/ports` — `PromptPayloadSchema`, `TurnResultSchema`: the agent *interface*,
   which pulls in no agent
 - `@kampus/tuval/sessions` — `claudeSession`/`codexSession`, the branded `ClientId`/`WorkspaceId`,
@@ -452,7 +466,7 @@ Tuval's whole reachable source tree enters this program and is checked under *th
 `apps/tuval/tsconfig.json`'s, restated, and a consumer that picked its own would be told about
 `findLast`, `Element` and the MCP SDK's optional props in code it does not own.
 
-**`vitest.config.ts`: `resolve.dedupe: ["effect", "@demlik/tea"]`.** One workspace and one
+**`vitest.config.ts`: `resolve.dedupe: ["effect", "@demlik/tea"]`.** One worktree and one
 root `catalog:` pin already give the suite a single `effect`, so this line is belt and braces here
 rather than the load-bearing fix it was when Tuval was reached by path at an outside checkout — two
 instances meant a `Schema` built by one was a stranger to a decoder from the other, and a spell's
@@ -464,7 +478,7 @@ npm beside an unhoisted Tuval, that failure comes back, and it costs nothing now
 Tuval runs local program code with **full trust and no sandbox, ever**. This package is one step
 past that: your `setup` and `teardown` are command *lines*, run through a shell with your user's
 authority, in a directory this program created. `createdb`, `docker compose down -v` and
-`:workspace discard`'s `git worktree remove --force` all do exactly what they say. Read them as you
+`:worktree discard`'s `git worktree remove --force` all do exactly what they say. Read them as you
 would read a crontab,
 because that is what they are — and remember that the agent that then works in that directory is an
 unattended session with whatever access you gave it.

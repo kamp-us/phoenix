@@ -2,7 +2,7 @@
  * The one string the kernel half and the browser half have to agree on, in the one file both may
  * import.
  *
- * `./workspace.ts` puts this on the row and never sees React; `./window.tsx` is what the string
+ * `./worktree.ts` puts this on the row and never sees React; `./window.tsx` is what the string
  * names and never sees the kernel. A `kind: "module"` reference is a *module specifier* the desk's
  * page imports at boot (ADR 0359 in kamp-us/phoenix), so the string is this package's own
  * `./window` entry point — which is why it is a constant here rather than something a config
@@ -24,11 +24,11 @@ export interface RendererRef {
 
 /**
  * Where a desk finds this program's window. The page resolves this specifier **from the config
- * module that declared the row** (#8262), not from the app — so `@kampus/tuval-workspace` has to
+ * module that declared the row** (#8262), not from the app — so `@kampus/tuval-worktree` has to
  * be installed beside `tuval.config.ts`, and a specifier that resolves from neither there nor the
  * page root refuses the page at boot naming this string.
  */
-export const WORKSPACE_WINDOW_REF: RendererRef = {
+export const WORKTREE_WINDOW_REF: RendererRef = {
 	kind: "module",
-	ref: "@kampus/tuval-workspace/window",
+	ref: "@kampus/tuval-worktree/window",
 };

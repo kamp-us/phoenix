@@ -15,8 +15,8 @@
  *
  * **Nothing here spends a token or touches a repository.** The rows are planned, so four processes
  * come up with the desk, but each one is a thing that waits: the cron for 03:00, the shell for a
- * prompt, the notifier for a message, the workspace for an `open`. `workspace` provisions on the
- * command and never at init (`packages/tuval-workspace/src/workspace.ts`, the `open` cell), which is
+ * prompt, the notifier for a message, the worktree for an `open`. `worktree` provisions on the
+ * command and never at init (`packages/tuval-worktree/src/worktree.ts`, the `open` cell), which is
  * why it can be planned here at all.
  */
 
@@ -26,7 +26,7 @@ import type {TuvalConfigInput} from "@kampus/tuval/sessions";
 import {cron} from "@kampus/tuval-cron";
 import {notify} from "@kampus/tuval-notify";
 import {shell} from "@kampus/tuval-shell";
-import {workspace} from "@kampus/tuval-workspace";
+import {worktree} from "@kampus/tuval-worktree";
 
 /**
  * This checkout, read off this file's own location so the config carries no machine's path.
@@ -62,7 +62,7 @@ export const nightlyFetch = cron({
 export const desk = notify({id: "desk", target: {kind: "stdout"}});
 
 /** A worktree per review, provisioned on `:reviews open` and never before it. */
-export const reviews = workspace({
+export const reviews = worktree({
 	id: "reviews",
 	repo,
 	root: reviewsRoot,

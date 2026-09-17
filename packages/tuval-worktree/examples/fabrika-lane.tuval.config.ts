@@ -6,7 +6,7 @@
  */
 
 import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
-import {workspace} from "@kampus/tuval-workspace";
+import {worktree} from "@kampus/tuval-worktree";
 
 const REPO = "/code/phoenix";
 
@@ -29,7 +29,7 @@ export const options = {
 	brief: "You are a fabrika builder. Work the issue this lane is named for.",
 } as const;
 
-export const lanes = workspace({
+export const lanes = worktree({
 	...options,
 	job: claudeSession({cwd: REPO, scope}),
 });

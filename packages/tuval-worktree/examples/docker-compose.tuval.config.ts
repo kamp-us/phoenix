@@ -2,11 +2,11 @@
  * For a stack that comes up as a compose project, where two agents on one project name fight over
  * the same containers, volumes and published ports. Isolation declared: a worktree, a free port
  * written into `.env` as `APP_PORT` (which is what `docker-compose.yml` publishes on), and a
- * compose project named for the workspace — brought up in setup, and `down -v` in teardown.
+ * compose project named for the worktree — brought up in setup, and `down -v` in teardown.
  */
 
 import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
-import {workspace} from "@kampus/tuval-workspace";
+import {worktree} from "@kampus/tuval-worktree";
 
 const REPO = "/code/my-stack";
 
@@ -26,13 +26,13 @@ export const options = {
 	teardown: ["docker compose -p $NAME down -v"],
 } as const;
 
-export const workspaces = workspace({
+export const worktrees = worktree({
 	...options,
 	job: claudeSession({cwd: REPO, scope}),
 });
 
 export default {
 	version: 1,
-	programs: [workspaces],
-	graph: {nodes: [{id: "workspace", program: workspaces.id, on: []}]},
+	programs: [worktrees],
+	graph: {nodes: [{id: "worktree", program: worktrees.id, on: []}]},
 } satisfies TuvalConfigInput;

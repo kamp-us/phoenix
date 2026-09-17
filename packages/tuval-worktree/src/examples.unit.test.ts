@@ -9,8 +9,8 @@
  * app_$NAME` and whose config says something else fails a case below.
  *
  * **The plan is derived, never restated.** `planFor` below goes through `settle` → `freshRecord` →
- * `openPlan`/`closePlan`, which is the exact chain `workspace.ts`'s cells go through on their way
- * to a `workspace.provision`. An earlier version of this file rebuilt the path, the branch and the
+ * `openPlan`/`closePlan`, which is the exact chain `worktree.ts`'s cells go through on their way
+ * to a `worktree.provision`. An earlier version of this file rebuilt the path, the branch and the
  * env plan by hand; that is a suite that keeps passing while the program's own derivation drifts
  * under it — which is the one failure a persona suite exists to catch.
  */
@@ -19,7 +19,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import dockerConfig, {
 	options as dockerOptions,
-	workspaces as dockerRow,
+	worktrees as dockerRow,
 } from "../examples/docker-compose.tuval.config.ts";
 import fabrikaConfig, {
 	options as fabrikaOptions,
@@ -27,15 +27,15 @@ import fabrikaConfig, {
 } from "../examples/fabrika-lane.tuval.config.ts";
 import nixConfig, {
 	options as nixOptions,
-	workspaces as nixRow,
+	worktrees as nixRow,
 } from "../examples/nix.tuval.config.ts";
 import soloConfig, {
 	options as soloOptions,
-	workspaces as soloRow,
+	worktrees as soloRow,
 } from "../examples/solo-laptop.tuval.config.ts";
 import postgresConfig, {
 	options as postgresOptions,
-	workspaces as postgresRow,
+	worktrees as postgresRow,
 } from "../examples/web-app-postgres.tuval.config.ts";
 import {fakeRunner} from "./fake-runner.ts";
 import {
@@ -47,7 +47,7 @@ import {
 	teardown,
 } from "./provision.ts";
 import type {Runner} from "./runner.ts";
-import {closePlan, freshRecord, openPlan, settle, type WorkspaceFill} from "./workspace.ts";
+import {closePlan, freshRecord, openPlan, settle, type WorktreeFill} from "./worktree.ts";
 
 const TEMPLATE = "PORT=3000\nAPI_KEY=\n";
 
@@ -59,14 +59,14 @@ const drive = <A>(runner: Runner, program: Effect.Effect<A, never, Machine>): Pr
  * What `:… open <name>` would provision for this example — through the program's own derivation,
  * so a change to `settle` or `freshRecord` moves these cases rather than slipping past them.
  */
-const planFor = (options: WorkspaceFill, name = "feature-x"): ProvisionPlan => {
+const planFor = (options: WorktreeFill, name = "feature-x"): ProvisionPlan => {
 	const settled = settle(options);
 	return openPlan(settled, freshRecord(settled, name), []);
 };
 
 /** And what `:… close <name>` would tear down, by the same route. */
 const teardownFor = (
-	options: WorkspaceFill,
+	options: WorktreeFill,
 	name = "feature-x",
 	port: number | null = 5170,
 ): TeardownPlan => {
@@ -75,11 +75,11 @@ const teardownFor = (
 };
 
 describe("the personas are read through the program's own derivation", () => {
-	it("resolves the worktree, the branch and the env step the way `workspace(…)` does", () => {
+	it("resolves the worktree, the branch and the env step the way `worktree(…)` does", () => {
 		expect(planFor(soloOptions)).toEqual({
 			name: "feature-x",
 			repo: "/code/my-app",
-			path: "/code/my-app/.workspaces/feature-x",
+			path: "/code/my-app/.worktrees/feature-x",
 			branch: "can/feature-x",
 			base: "origin/main",
 			ports: {from: 5170, to: 5199},
@@ -97,9 +97,9 @@ describe("the personas are read through the program's own derivation", () => {
 
 describe("solo-laptop: a worktree, a free port, an .env — and nothing else", () => {
 	it("is one program under the id the graph node names", () => {
-		expect(soloRow.id).toBe("workspace");
-		expect(soloRow.label).toBe("workspace (claude-session)");
-		expect(soloConfig.graph.nodes).toEqual([{id: "workspace", program: "workspace", on: []}]);
+		expect(soloRow.id).toBe("worktree");
+		expect(soloRow.label).toBe("worktree (claude-session)");
+		expect(soloConfig.graph.nodes).toEqual([{id: "worktree", program: "worktree", on: []}]);
 	});
 
 	it("runs no setup and no teardown at all, which is the persona", async () => {
@@ -109,17 +109,17 @@ describe("solo-laptop: a worktree, a free port, an .env — and nothing else", (
 		const outcome = await drive(runner, provision(planFor(soloOptions)));
 		expect(outcome).toEqual({ok: true, port: 5170});
 		expect(runner.commands()).toEqual([
-			"git worktree add -b can/feature-x /code/my-app/.workspaces/feature-x origin/main",
+			"git worktree add -b can/feature-x /code/my-app/.worktrees/feature-x origin/main",
 		]);
-		expect(runner.written.get("/code/my-app/.workspaces/feature-x/.env")).toBe(
+		expect(runner.written.get("/code/my-app/.worktrees/feature-x/.env")).toBe(
 			"PORT=5170\nAPI_KEY=\n",
 		);
 	});
 });
 
-describe("web-app-postgres: a scratch database per workspace", () => {
+describe("web-app-postgres: a scratch database per worktree", () => {
 	it("is one program under the id the graph node names", () => {
-		expect(postgresRow.id).toBe("workspace");
+		expect(postgresRow.id).toBe("worktree");
 		expect(postgresConfig.programs).toHaveLength(1);
 	});
 
@@ -129,19 +129,19 @@ describe("web-app-postgres: a scratch database per workspace", () => {
 		});
 		await drive(runner, provision(planFor(postgresOptions)));
 		expect(runner.commands()).toEqual([
-			"git worktree add -b can/feature-x /code/my-app/.workspaces/feature-x origin/main",
+			"git worktree add -b can/feature-x /code/my-app/.worktrees/feature-x origin/main",
 			"createdb app_feature-x",
 			"pnpm install",
 			"pnpm db:migrate",
 		]);
 	});
 
-	it("writes a DATABASE_URL that is this workspace's alone", async () => {
+	it("writes a DATABASE_URL that is this worktree's alone", async () => {
 		const runner = fakeRunner({
 			files: {"/code/my-app/.env.example": TEMPLATE},
 		});
 		await drive(runner, provision(planFor(postgresOptions)));
-		expect(runner.written.get("/code/my-app/.workspaces/feature-x/.env")).toBe(
+		expect(runner.written.get("/code/my-app/.worktrees/feature-x/.env")).toBe(
 			"PORT=5170\nAPI_KEY=\nDATABASE_URL=postgres://localhost:5432/app_feature-x\n",
 		);
 	});
@@ -151,38 +151,38 @@ describe("web-app-postgres: a scratch database per workspace", () => {
 		await drive(runner, teardown(teardownFor(postgresOptions)));
 		expect(runner.commands()).toEqual([
 			"dropdb --if-exists app_feature-x",
-			"git worktree remove /code/my-app/.workspaces/feature-x",
+			"git worktree remove /code/my-app/.worktrees/feature-x",
 		]);
 	});
 });
 
-describe("docker-compose: a compose project per workspace", () => {
+describe("docker-compose: a compose project per worktree", () => {
 	it("is one program under the id the graph node names", () => {
-		expect(dockerRow.id).toBe("workspace");
+		expect(dockerRow.id).toBe("worktree");
 		expect(dockerConfig.version).toBe(1);
 	});
 
-	it("brings up a project named for the workspace, and takes it down with its volumes", async () => {
+	it("brings up a project named for the worktree, and takes it down with its volumes", async () => {
 		const runner = fakeRunner({
 			files: {"/code/my-stack/.env.example": "APP_PORT=3000\n"},
 		});
 		await drive(runner, provision(planFor(dockerOptions)));
 		expect(runner.commands()).toContain("docker compose -p feature-x up -d --wait");
 		// The published port lands in `.env`, which is where compose reads `${APP_PORT}` from.
-		expect(runner.written.get("/code/my-stack/.workspaces/feature-x/.env")).toBe("APP_PORT=5170\n");
+		expect(runner.written.get("/code/my-stack/.worktrees/feature-x/.env")).toBe("APP_PORT=5170\n");
 
 		const closing = fakeRunner();
 		await drive(closing, teardown(teardownFor(dockerOptions)));
 		expect(closing.commands()).toEqual([
 			"docker compose -p feature-x down -v",
-			"git worktree remove /code/my-stack/.workspaces/feature-x",
+			"git worktree remove /code/my-stack/.worktrees/feature-x",
 		]);
 	});
 });
 
 describe("nix: the flake is the environment, so there is no env step", () => {
 	it("is one program under the id the graph node names", () => {
-		expect(nixRow.id).toBe("workspace");
+		expect(nixRow.id).toBe("worktree");
 		expect(nixConfig.programs).toHaveLength(1);
 	});
 
@@ -203,7 +203,7 @@ describe("nix: the flake is the environment, so there is no env step", () => {
 	});
 });
 
-describe("fabrika-lane: a workspace per lane, named for the issue", () => {
+describe("fabrika-lane: a worktree per lane, named for the issue", () => {
 	it("is one program under the id the graph node names, which is `lane`", () => {
 		expect(fabrikaRow.id).toBe("lane");
 		expect(fabrikaConfig.graph.nodes).toEqual([{id: "lane", program: "lane", on: []}]);
@@ -251,7 +251,7 @@ describe("every persona, together", () => {
 			expect(config.graph.nodes.map((node) => node.program)).toEqual([row.id]);
 			expect(row.renderer).toEqual({
 				kind: "module",
-				ref: "@kampus/tuval-workspace/window",
+				ref: "@kampus/tuval-worktree/window",
 			});
 		}
 	});
