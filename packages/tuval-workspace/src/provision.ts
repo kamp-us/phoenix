@@ -61,9 +61,17 @@ export const machineLayer = (runner: Runner): Layer.Layer<Machine> =>
  * implementation — `./runner.ts`'s `WriteResult` docblock is the contract that every method is
  * total — so it exists to give the defect a name in a stack trace rather than a case to handle.
  */
-class RunnerRejected extends Schema.TaggedError<RunnerRejected>()("RunnerRejected", {
-	cause: Schema.String,
-}) {}
+export class RunnerRejected extends Schema.TaggedError<RunnerRejected>()("RunnerRejected", {
+	/**
+	 * The rejection itself, not its rendering: a stack, a tag, a `cause` chain all survive on it,
+	 * and the one time this defect is read is the one time those matter. `message` renders it.
+	 */
+	cause: Schema.Defect(),
+}) {
+	override get message(): string {
+		return String(this.cause);
+	}
+}
 
 /**
  * One `Runner` call, as an Effect. A `Runner` never throws by contract, so this never fails: the
@@ -74,7 +82,7 @@ const ask = <A>(call: (runner: Runner) => Promise<A>): Effect.Effect<A, never, M
 	Machine.use((runner) =>
 		Effect.tryPromise({
 			try: () => call(runner),
-			catch: (cause) => new RunnerRejected({cause: String(cause)}),
+			catch: (cause) => new RunnerRejected({cause}),
 		}).pipe(Effect.orDie),
 	);
 

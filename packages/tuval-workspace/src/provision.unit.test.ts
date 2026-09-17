@@ -6,7 +6,7 @@
  * exists fails on a machine and passes in a reviewer's head.
  */
 
-import {Effect} from "effect";
+import {Cause, Effect, Exit} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeRunner} from "./fake-runner.ts";
 import {
@@ -16,6 +16,7 @@ import {
 	type ProvisionPlan,
 	pickPort,
 	provision,
+	RunnerRejected,
 	reconcile,
 	rewriteEnv,
 	safeDetail,
@@ -484,5 +485,25 @@ describe("reconcile", () => {
 		const runner = fakeRunner();
 		await drive(runner, reconcile([{name: "a", path: "/repo/.workspaces/a"}]));
 		expect(runner.calls.every((call) => call.kind === "exists")).toBe(true);
+	});
+});
+
+describe("a Runner that rejects", () => {
+	// A `Runner` never rejects by contract, so a rejection is a defect, not a failure. What the
+	// defect carries is the rejection itself: the stack, the tag and any cause chain a diagnosis
+	// reads, with `message` rendering it the way the string used to.
+	it("dies with the rejection object intact and the same message", async () => {
+		const thrown = new Error("boom");
+		const runner: Runner = {...fakeRunner(), exec: () => Promise.reject(thrown)};
+		const exit = await Effect.runPromiseExit(
+			Effect.provide(provision(plan()), machineLayer(runner)),
+		);
+		expect(Exit.isFailure(exit)).toBe(true);
+		if (!Exit.isFailure(exit)) return;
+		const defect = Cause.squash(exit.cause);
+		expect(defect).toBeInstanceOf(RunnerRejected);
+		if (!(defect instanceof RunnerRejected)) return;
+		expect(defect.cause).toBe(thrown);
+		expect(defect.message).toBe(String(thrown));
 	});
 });
