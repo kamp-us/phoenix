@@ -1,0 +1,29 @@
+{
+	"name": "@kampus/tuval-boot-proof",
+	"version": "0.0.0",
+	"description": "The epic's own proof: one Tuval config naming all four @kampus/tuval-* programs by package name",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/tuval-boot-proof"
+	},
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
+		"lint": "biome check .tuval"
+	},
+	"devDependencies": {
+		"@demlik/tea": "catalog:",
+		"@effect/tsgo": "catalog:",
+		"@kampus/tuval": "workspace:*",
+		"@kampus/tuval-cron": "workspace:*",
+		"@kampus/tuval-notify": "workspace:*",
+		"@kampus/tuval-shell": "workspace:*",
+		"@kampus/tuval-workspace": "workspace:*",
+		"@types/node": "catalog:",
+		"effect": "catalog:tuval",
+		"typescript": "catalog:"
+	}
+}

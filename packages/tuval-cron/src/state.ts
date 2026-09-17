@@ -6,8 +6,8 @@
  * `./window.tsx` runs in a browser tab, where the kernel's `node:crypto` chain is not a thing that
  * can load. The window needs the state's shape, the predicate over it and the lines drawn from it —
  * and needs none of the program. So those live here and the browser never has a path to `cron.ts`.
- * This is the split `@cansirin/tuval-calc` drew between its `state.ts` and its `window/`, for the
- * same reason.
+ * This is the split `tuval-calc` (in cansirin/monorepo) drew between its `state.ts` and its
+ * `window/`, for the same reason.
  *
  * **The one import is a type and stays one.** `ProcessId` is Tuval's type-only brand — a plain
  * string at runtime — and `import type` under `verbatimModuleSyntax` emits nothing, so the built

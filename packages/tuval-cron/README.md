@@ -132,7 +132,7 @@ graph: {
 ```
 
 The consumer that route is written for is
-[`@cansirin/tuval-notify`](https://github.com/cansirin/monorepo/tree/main/packages/tuval-notify),
+[`@kampus/tuval-notify`](../tuval-notify),
 whose `message` in-port is the other half of it. Cron's half is here and done; the route itself
 still does not run, because wiring one program's out-port to another program's in-port across two
 config rows is phoenix [#8923](https://github.com/kamp-us/phoenix/issues/8923), open. Until it
