@@ -595,3 +595,150 @@ export const pullsForBranch = (
 			return ok(out);
 		}),
 	);
+
+/**
+ * One open pull request sitting on a base branch: exactly what judging its staleness and moving it
+ * needs, which is the number to address and the head to compare and to guard the write with.
+ */
+export interface BasePull {
+	readonly number: number;
+	readonly headSha: string;
+}
+
+/**
+ * Every OPEN pull request whose base ref is `base`, paged.
+ *
+ * The mirror of {@link pullsForBranch}, which asks the other question: that one takes a head and
+ * reads any state, because "what pull request does this work sit on" is often about a closed one.
+ * This one takes a base and reads open only — a closed pull request schedules nothing and a merged
+ * one has nothing left to run, so widening the state would hand a caller rows it must drop again.
+ */
+export const openPullsForBase = (
+	repo: string,
+	base: string,
+): Shell<Attempt<ReadonlyArray<BasePull>>> =>
+	authed((token) =>
+		Effect.gen(function* () {
+			const page = yield* pagedWithLinkProof(
+				token,
+				`repos/${repo}/pulls?state=open&base=${encodeURIComponent(base)}`,
+			);
+			if (page._tag === "Failure") return page;
+			if (!page.value.exhausted) {
+				return fail(`the open pull request list for base \`${base}\` was not read to its end`);
+			}
+			const out: BasePull[] = [];
+			for (const value of page.value.entries) {
+				const headNode = isRecord(value) ? value.head : null;
+				const sha = isRecord(headNode) && typeof headNode.sha === "string" ? headNode.sha : null;
+				if (!isRecord(value) || typeof value.number !== "number" || sha === null) {
+					return fail("GitHub answered 200 but one entry is not a pull request");
+				}
+				out.push({number: value.number, headSha: sha});
+			}
+			return ok(out);
+		}),
+	);
+
+/** How a head stands to a base right now, in the platform's vocabulary and its own count. */
+export interface BaseStanding {
+	readonly status: CompareStatus;
+	/** Commits the base holds and the head does not — what makes the head's last CI run stale. */
+	readonly behindBy: number;
+}
+
+/**
+ * Where a pull request's head stands against its base, with no file list in the answer.
+ *
+ * Separate from {@link compareFiles} because it asks a different question and pays a different
+ * price: a staleness read wants the envelope's `status` and `behind_by` and nothing else, so it
+ * takes `per_page=1` rather than walking up to {@link COMPARE_FILE_CAP} entries per pull request.
+ * Both fields sit on the envelope and do not page, so the narrowed page changes no answer here.
+ *
+ * The pull request record's own `base.sha` cannot serve: the platform freezes it at the commit the
+ * PR was opened against, so a PR whose base has since moved a hundred commits still reads its
+ * original sha there. This comparison is the read that answers against the base as it stands now.
+ */
+export const compareStanding = (
+	repo: string,
+	base: string,
+	head: string,
+): Shell<Attempt<BaseStanding>> =>
+	authed((token) =>
+		restCall(token, {
+			method: "GET",
+			path: `repos/${repo}/compare/${base}...${head}?per_page=1`,
+		}).pipe(
+			Effect.map((outcome) =>
+				attemptOf(outcome, (body) => {
+					if (!isRecord(body)) {
+						return fail("GitHub answered 200 but its output is not a comparison");
+					}
+					if (typeof body.status !== "string" || !COMPARE_STATUSES.includes(body.status)) {
+						return fail(
+							"GitHub answered 200 but its comparison declares no status, so where the head stands against the base is unknown",
+						);
+					}
+					if (typeof body.behind_by !== "number") {
+						return fail(
+							"GitHub answered 200 but its comparison declares no behind_by, so how far the head trails the base is unknown",
+						);
+					}
+					return ok({status: body.status as CompareStatus, behindBy: body.behind_by});
+				}),
+			),
+		),
+	);
+
+/**
+ * What the platform did with a branch-update request: accepted it, declined it, or never answered.
+ *
+ * `Accepted` is the documented 202 and it is not a landing — the endpoint serves "Updating pull
+ * request branch." and performs the merge asynchronously, so a caller proves the merge by watching
+ * the head move, never by reading this tag. `Declined` is the 422 the endpoint documents for every
+ * validation failure it has: a conflict and a stale `expected_head_sha` share that one status and
+ * the page names no field that tells them apart, so the reason travels verbatim and the split is
+ * the caller's to prove by re-reading the head ([REST, "Update a pull request
+ * branch"](https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#update-a-pull-request-branch)).
+ */
+export type BranchUpdate =
+	| {readonly _tag: "Accepted"}
+	| {readonly _tag: "Declined"; readonly reason: string}
+	| {readonly _tag: "Unreadable"; readonly reason: string};
+
+/**
+ * Merge a pull request's base into its head branch through the platform's own update endpoint.
+ *
+ * `expectedHeadSha` is the concurrency guard that endpoint documents: the update is refused rather
+ * than applied when the head is no longer the commit the caller read. Passing it keeps the write
+ * addressed to the pull request the caller judged stale, instead of to whatever landed since.
+ */
+export const updatePullBranch = (
+	repo: string,
+	pr: number,
+	expectedHeadSha: string,
+): Shell<BranchUpdate> =>
+	Effect.map(
+		authed((token) =>
+			Effect.map(
+				restCall(token, {
+					method: "PUT",
+					path: `repos/${repo}/pulls/${pr}/update-branch`,
+					body: {expected_head_sha: expectedHeadSha},
+				}),
+				(outcome): Attempt<BranchUpdate> => {
+					if (outcome._tag === "Unreachable") {
+						return ok({_tag: "Unreadable", reason: outcome.reason});
+					}
+					if (outcome.status === 202) return ok({_tag: "Accepted"});
+					return ok(
+						outcome.status === 422
+							? {_tag: "Declined", reason: refusalText(outcome)}
+							: {_tag: "Unreadable", reason: refusalText(outcome)},
+					);
+				},
+			),
+		),
+		(attempt): BranchUpdate =>
+			attempt._tag === "Failure" ? {_tag: "Unreadable", reason: attempt.reason} : attempt.value,
+	);

@@ -595,6 +595,36 @@ drifted back into the driver's checkout is caught at the one step every publicat
 rather than after the fact. The remedy is never a flag: place the run's worktree with
 `lane assembly` and push from there.
 
+**A push of the assembly branch leaves every open child PR on it reporting checks over the old
+base, so retrigger them in the same breath.** GitHub rebuilds `refs/pull/<n>/merge` when a base
+moves — a merge ref fetched over a PR whose head had not been pushed for eleven days carried that
+morning's trunk tip as its first parent — but it emits no `pull_request` event for a base push:
+the event fires on `opened`, `synchronize` and `reopened`, and a base push is none of them. So
+nothing schedules a run, and the red the child inherited from the base you just fixed stays on the
+PR until something moves its head:
+
+```bash
+node packages/fabrika-cli/src/bin.ts lane retrigger $lane_key
+```
+
+It sweeps every OPEN pull request based on `epic/<n>` and moves the head of each one that is behind
+the branch, through GitHub's own branch update — a merge of the base into the head branch, which is
+a `synchronize`, so the run is scheduled against a merge ref computed now. It is safe to run after
+every push: a child whose head already carries the base tip is read, reported `current` and never
+written to, so a second call schedules nothing. `RETRIGGER-VERDICT: NONE` says no open PR sits on
+the branch at all, which is the ordinary answer under this shape — the run opens one PR and its
+children open none — and it costs one board read.
+
+**Never close and reopen a PR to force this.** A reopen does rebuild the merge ref, and it also
+tears the PR's preview stage down mid-deploy — which is the reason it is forbidden rather than
+merely discouraged, and `lane retrigger`'s own reference row carries the report that fallout was
+filed under. It raced the rebuild the one time it was used, so the guard re-ran against the stale
+base anyway and took two rounds. Re-running the workflow is no route either: a re-run replays the original event's
+`GITHUB_SHA` and `GITHUB_REF`, which is the stale merge commit — the very red you are clearing.
+Exit `42` is a child the assembly branch does not merge into, and that is a repair round on that
+child rather than anything to retry here; exit `8` says an update was accepted and the head had not
+moved inside its window, so re-read before writing again.
+
 **The first of those pushes also opens the run's one PR**, as a draft — a draft carries the CI
 signal and the board's view of the run without inviting a review the machine has not asked for.
 Open it yourself; no shell owns this branch. Its body carries three

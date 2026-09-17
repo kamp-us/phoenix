@@ -73,6 +73,7 @@ import {DEFAULT_TRUNK_REF, runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
 import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
 import {runReport} from "./report-verb.ts";
+import {runRetrigger} from "./retrigger-verb.ts";
 import {runSeats} from "./seats-verb.ts";
 import {boardReaders, runSettle} from "./settle-verb.ts";
 import {BUILD_CLAIM_BUDGET_MINUTES, DISPATCH_BUDGET, SHELL_BUDGETS} from "./shell-budget.ts";
@@ -852,6 +853,31 @@ const refresh = leafCommand(
 	),
 );
 
+const retrigger = leafCommand(
+	"retrigger",
+	{
+		epic: Argument.integer("epic").pipe(
+			Argument.withDescription("the epic issue whose run owns the assembly branch"),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name the sweep reads against (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({epic, repo}) {
+		yield* emit(yield* runRetrigger({epic, repo: Option.getOrNull(repo), env: process.env}));
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Schedule fresh checks on the children an assembly push left stale.",
+	),
+	Command.withDescription(
+		"Schedule a fresh CI run on every OPEN pull request based on an epic run's assembly branch — `epic/<n>`, derived from the epic number and never taken from the caller — after `lane push` moved that branch. GitHub recomputes `refs/pull/<n>/merge` when a base moves, but emits no pull_request event for a base push (the event fires on opened, synchronize and reopened), so nothing schedules a run and every child keeps reporting checks over the tree its base had before the push. A workflow re-run cannot serve: it replays the original event's GITHUB_SHA and GITHUB_REF, which is the stale merge commit. Close/reopen is forbidden — it tears the pull request's preview stage down mid-deploy. So the head is moved instead, through GitHub's own `PUT /pulls/{n}/update-branch`, which merges the base into the head branch and is a synchronize: a run is scheduled against a merge ref computed now, nothing is closed, nothing is force-pushed and no commit is rewritten. Idempotent by construction: a child whose head already contains the base tip is read, reported `current` and never written to, so a second call right after a first writes nothing. The staleness read is the platform's own comparison against the base as it stands, never the pull request's frozen `base.sha`. Each write carries `expected_head_sha`, so it is refused rather than misaddressed when a sibling moved the head first. Nothing is pushed, no working tree is touched and no lane log is written. On exit 0 the last stdout line is `RETRIGGER-VERDICT: RETRIGGERED`, `RETRIGGER-VERDICT: CURRENT` (children exist and all already carried the base) or `RETRIGGER-VERDICT: NONE` (no open pull request is based on the branch), and the lines above it are one row per child: `#<pr> current`, or `#<pr> <head before> -> <head after>`. Exits 8 (an update was accepted and the head did not move inside its 60s window, or a read-back after a write failed — a merge may still be in flight, so re-read before writing again), 11 (the pull request list or a comparison could not be read before anything was written — UNKNOWN, never an empty sweep), 42 (the assembly branch does not merge into one or more of the head branches, so those children need a repair round before their checks can run at all). Example: fabrika lane retrigger 8716",
+	),
+);
+
 const pushLane = leafCommand(
 	"push",
 	{
@@ -1579,6 +1605,7 @@ export const laneCommand = Command.make("lane").pipe(
 		integrate,
 		refresh,
 		pushLane,
+		retrigger,
 		stale,
 		seats,
 		migrate,
