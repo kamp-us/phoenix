@@ -12,6 +12,8 @@
 import {randomUUID} from "node:crypto";
 import {Context, Effect} from "effect";
 import {SessionOpening} from "../../ai-agent/opening.ts";
+import {CallingWindow} from "../../commands/scope.ts";
+import {WindowId as CallWindowId} from "../../commands/spell.ts";
 import {NodeId} from "../../ports/graph.ts";
 import {ProcessPorts, unwired} from "../../ports/ProcessPorts.ts";
 import {Processes} from "../../process/Processes.ts";
@@ -96,14 +98,20 @@ const open = Effect.fn("Tuval.Picker.open")(function* (
 	// process: an emit fails `PortNotWired` naming this child, where before the handler seal (#7972)
 	// a row declaring `ProcessPorts` silently emitted out of the shell's.
 	const opened = Context.add(inherited, ProcessPorts, unwired(NodeId.make(id)));
-	// The one thing added rather than inherited. An open carrying a session is the first send on a
+	// The window this open is for, which is the one fact only this handler holds: a row's own scope
+	// is written down inside `boot`, before any window exists, so a program that calls the kernel
+	// gets its window here or nowhere (#8758). The kernel re-resolves the caller's process from it,
+	// so without it every `spawn` an agent row's tools issue lands as a root. Added to every open,
+	// not only an agent row's: the window a process was opened into is not an agent fact.
+	const shown = Context.add(opened, CallingWindow, {window: CallWindowId.make(windowId)});
+	// The other thing added rather than inherited. An open carrying a session is the first send on a
 	// row the operator picked out of the session list, and the child has to come up resuming that
 	// session instead of booting a second one beside it (epic #8070, ruling 2). The agent row's
 	// `aiAgent.boot` handler is the only reader (`../../ai-agent/handlers/index.ts`).
 	const services =
 		session === undefined
-			? opened
-			: Context.add(opened, SessionOpening, {cwd: session.cwd, resume: session.resume});
+			? shown
+			: Context.add(shown, SessionOpening, {cwd: session.cwd, resume: session.resume});
 	const spawned = yield* Effect.result(
 		processes.spawn(programId, {id, parent: options.shellProcessId, services}),
 	);

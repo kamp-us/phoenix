@@ -8,11 +8,13 @@
  * window on it and the executor re-resolves the process through `WindowIndex` (#7617 R2.2) — so a
  * spawn is parented by the index and by nothing else.
  *
- * `boot` now builds a live index over the running desk (`shellWindowIndexKernel`, #7894), so a
- * process this proof reached through a real desk window would resolve there. This module still
- * stands its own up over the kernel's own registry — the real `SpellExecutor` over the real
- * `Registry`, `Processes` and `SpawnedProcesses` — because it has no desk: it names the window and
- * the process directly, which is the one thing a proof with no shell row cannot read off state.
+ * `boot` builds a live index over the running desk (`shellWindowIndexKernel`, #7894) and the
+ * picker hands each process the window it was opened into (`CallingWindow`, #8758), so a row opened
+ * through a real desk resolves there. This module still stands its own up over the kernel's own
+ * registry — the real `SpellExecutor` over the real `Registry`, `Processes` and `SpawnedProcesses`
+ * — because it has no desk: it names the window and the process directly, which is the one thing a
+ * proof with no shell row cannot read off state. Naming the window in the `scope` it builds the
+ * bridge with is how it does that, and a `CallingWindow` would override it, so it adds none.
  *
  * Two things below look like ceremony and are not. The contexts are merged one step at a time
  * rather than composed with `Layer.provide`, because the booted kernel already carries a

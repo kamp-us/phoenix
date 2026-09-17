@@ -7,6 +7,8 @@
 import {type Cmd, defineMachine} from "@demlik/tea";
 import {Context, Effect, Exit, Layer, Option, PubSub, type Scope, Stream} from "effect";
 import {SessionOpening} from "../../ai-agent/opening.ts";
+import {CallingWindow} from "../../commands/scope.ts";
+import type {WindowId as CallWindowId} from "../../commands/spell.ts";
 import {ProcessNotFound} from "../../process/errors.ts";
 import {Processes, type SpawnOptions} from "../../process/Processes.ts";
 import {ProcessTable} from "../../process/ProcessTable.ts";
@@ -70,6 +72,12 @@ export interface SpawnCall {
 	 * success from the outside (epic #8070, ruling 2).
 	 */
 	readonly session: {readonly cwd: string; readonly resume: string} | undefined;
+	/**
+	 * The window the child was told it was opened into, read back out of the same context. Recorded
+	 * for the reason `session` is: a window that never reaches the child leaves every kernel call
+	 * the child makes parented by nobody, and nothing on this side of the spawn shows it (#8758).
+	 */
+	readonly window: CallWindowId | undefined;
 }
 
 export interface PickerHarness {
@@ -134,11 +142,16 @@ export const pickerHarness = (
 					spawnOptions === undefined
 						? Option.none()
 						: Context.getOption(spawnOptions.services, SessionOpening);
+				const shown =
+					spawnOptions === undefined
+						? Option.none()
+						: Context.getOption(spawnOptions.services, CallingWindow);
 				calls.push({
 					programId,
 					parent: spawnOptions?.parent,
 					spawned: id,
 					session: Option.getOrUndefined(opening),
+					window: Option.getOrUndefined(Option.map(shown, (held) => held.window)),
 				});
 				const handle: ProcessHandle = {
 					id,
