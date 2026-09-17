@@ -1158,12 +1158,20 @@ rollup would be `green`, the head's workflow runs are read against the active in
 `src/review/gate-coverage.ts` — the same module `review ci` refuses on, so the two gates cannot
 drift a second copy of the rule. A workflow the repo checks in is addressed by its file path
 (`.github/workflows/…`); one the platform provides on the repo's behalf is addressed
-`dynamic/<provider>/<name>`, and that prefix is the whole discriminator: no expected job names, and
-never `review ci`'s informational *name* denylist, which answers a different question. A head where
-the repo declares at least one workflow of its own and **none** of them produced a run refuses on
+`dynamic/<provider>/<name>`, and that prefix is one of two discriminators: no expected job names, and
+never `review ci`'s informational *name* denylist, which answers a different question. The second is
+the run's own provenance — a run counts only where it carries this commit and its event is one
+GitHub runs against the head. `pull_request_target` is the one that is not: it carries the pull
+request's head and checks out the base, so `.github/workflows/pr-cleanup.yml` is repo-authored, sits
+at the head, and inspected none of it. No other event is filtered, so `ci.yml`'s trusted
+`workflow_dispatch` release path counts as any `pull_request` run does. The `--sha` operand is
+resolved to its full object name first, because the Actions run list filters `head_sha` as an exact
+string and an abbreviation there returns no runs at all; an operand that resolves to no full commit
+is `11`, never the `20`. A head where the repo declares at least one workflow of its own and **none**
+of them inspected it refuses on
 `20` — `ship` is the merge authority, so "no gate inspected these bytes" must not read as "every
 gate passed". Otherwise the coverage is stated on the notes channel: `ship checks: <k> of <m>
-workflow(s) <repo> authors produced a run at <sha>.`, or, for a repo that authors no workflow at
+workflow(s) <repo> authors inspected <head>.`, or, for a repo that authors no workflow at
 all, `ship checks: <repo> authors no workflow of its own — …`. The floor sits on `green` alone: a
 `red` head already routes to `heal-ci` by name, and a `pending` head is one this group waits on
 rather than lands.
@@ -1209,7 +1217,7 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `7` | the PR or the `--sha` commit is proven absent; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
 | `11` | the check-run read, the workflow read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
 | `13` | entries received < declared `total_count` — never read as "no red checks" |
-| `20` | every check at the head passed and **no workflow the repo authors produced a run there** — no gate inspected these bytes, so `green` is UNKNOWN, never merged |
+| `20` | every check at the head passed and **no workflow the repo authors inspected it** — every repo-authored run here carries another commit or ran against another ref, so `green` is UNKNOWN, never merged |
 
 **Errors**
 
@@ -1223,8 +1231,9 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `ship checks: cannot enumerate <what> at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
 | `ship checks: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration.` | 13 | refusal |
 | `ship checks: the live head is <live>, you are enumerating <sha> — the head moved.` | 0 | notice |
-| `ship checks: none of the <m> workflow(s) <repo> authors produced a run at <sha> — the <k> check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.` | 20 | refusal |
-| `ship checks: <k> of <m> workflow(s) <repo> authors produced a run at <sha>.` | 0 | notice |
+| `ship checks: none of the <m> workflow(s) <repo> authors inspected <head> — the <k> check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.` | 20 | refusal |
+| `ship checks: cannot judge gate coverage at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
+| `ship checks: <k> of <m> workflow(s) <repo> authors inspected <head>.` | 0 | notice |
 | `ship checks: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
 
 **Scope** — the check runs and workflow inventory at one commit, paginated,
@@ -1261,8 +1270,8 @@ facts	workflows:0	runs:0
 ```
 
 ```
-$ fabrika ship checks 4324 --sha 5b1c0d72   # every check passed; only CodeQL's own workflow ran
-ship checks: none of the 12 workflow(s) acme/repo authors produced a run at 5b1c0d72 — the 2 check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.
+$ fabrika ship checks 4324 --sha 5b1c0d72   # every check passed; only the base-context cleanup ran
+ship checks: none of the 12 workflow(s) acme/repo authors inspected 5b1c0d7240e8c1a97be3f5d206c8a1394ef70b25 — the 2 check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.
 $ echo $?
 20
 ```

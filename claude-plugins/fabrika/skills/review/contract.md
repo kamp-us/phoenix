@@ -689,8 +689,17 @@ A complete, all-green enumeration that came from no workflow this repo authors i
 — not `green`, not `pending`. The set of gates is the **live workflow inventory**: a workflow
 checked into the repo is addressed by its file path (`.github/workflows/ci.yml`), one the platform
 provides on the repo's behalf by a synthetic `dynamic/<provider>/<name>`, and coverage is the
-intersection of the first with the workflows that actually produced a run at this head. No job
-names, no expected set — nothing here knows what a gate is called. A repo that authors no workflow
+intersection of the first with the workflows that produced a **head-inspecting** run here. No job
+names, no expected set — nothing here knows what a gate is called. Head-inspecting is read off each
+run's own provenance rather than its path: the run has to carry this commit, and its event has to be
+one GitHub runs against the head. `pull_request_target` is the one that is not — it carries the pull
+request's head and checks out the base, so `.github/workflows/pr-cleanup.yml` is repo-authored, sits
+at the head, and inspected none of it. No other event is filtered: `ci.yml`'s trusted
+`workflow_dispatch` path for Release-PR head inspection counts exactly as a `pull_request` run does.
+The `--sha` operand is resolved to the commit's full object name before this read, because the
+Actions run list filters `head_sha` as an exact string — an abbreviation there returns no runs at
+all. An operand that cannot be resolved to one is `11`, never the `16`: "no gate inspected these
+bytes" is a fact about the repository, and an unresolved operand is a fact about the call. A repo that authors no workflow
 of its own has no gate to have missed, and says so on stderr at exit `0`. The read is skipped over a
 `red` rollup, which is already the answer a caller must act on; `green` and `pending` are the two
 words that read as "nothing to do here", and both are wrong over bytes no gate inspected.
@@ -748,7 +757,7 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | `7` | the PR or the `--sha` is proven absent — no commit to enumerate; **or zero check runs are declared at the commit** — a vacuous green is a fail-open and is refused; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
 | `11` | the check-run read, the workflow-inventory read, the runs-at-head read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green` |
 | `13` | entries received < declared `total_count` — the enumeration is provably incomplete and is never read as "no red checks" |
-| `16` | the rollup is not `red` and **no workflow this repo authors produced a run at the head** — the enumeration is complete, no gate inspected the bytes, and the CI state is UNKNOWN, never `green` |
+| `16` | the rollup is not `red` and **no workflow this repo authors inspected the head** — the enumeration is complete, every repo-authored run here carries another commit or ran against another ref, and the CI state is UNKNOWN, never `green` |
 
 **Errors**
 
@@ -763,15 +772,17 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | `review ci: cannot read \`ci\` from the repo config (<reason>) — whether <repo> produces CI is UNKNOWN, never green.` | 11 | refusal |
 | `review ci: <repo> declares \`ci.noProducer: degrade\` and has zero workflows — no producer, so there is nothing to roll up.` | 0 | notice |
 | `review ci: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration (#3999).` | 13 | refusal |
-| `review ci: none of the <g> workflow(s) <repo> authors produced a run at <sha> — the <n> check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green (#6522).` | 16 | refusal |
+| `review ci: none of the <g> workflow(s) <repo> authors inspected <head> — the <n> check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected these bytes: the CI state is UNKNOWN, never green.` | 16 | refusal |
 | `review ci: cannot enumerate the workflow inventory of <repo>: <reason> — which gates exist is UNKNOWN, never green.` | 11 | refusal |
 | `review ci: cannot enumerate the workflow runs at <sha>: <reason> — which gates ran is UNKNOWN, never green.` | 11 | refusal |
-| `review ci: <c> of <g> workflow(s) <repo> authors produced a run at <sha>.` | 0 | notice |
+| `review ci: cannot judge gate coverage at <sha>: <reason> — which gates inspected these bytes is UNKNOWN, never green.` | 11 | refusal |
+| `review ci: <c> of <g> workflow(s) <repo> authors inspected <head>.` | 0 | notice |
 | `review ci: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
 | `review ci: the live head is <live>, you are enumerating at <sha> — the head moved; a verdict still binds only what was inspected.` | 0 | notice |
 
 **Scope** — the check runs at one commit, paginated, count-verified against `total_count`, and the
-workflows that produced a run there, against the repo's live inventory.
+workflow runs carrying that commit — each judged by its path, event and head — against the repo's
+live inventory.
 
 **Examples**
 

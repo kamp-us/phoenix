@@ -1095,7 +1095,7 @@ back. Contract:
 | `review scope` | head SHA, linked issue, the code / doc / skill partition of the changed files, and the `self` / `harness` flags |
 | `review diff` | the diff bytes at the bound commit, with truncation refused rather than passed through |
 | `review criteria` | the linked issue's acceptance-criteria block, through the registered wire format, each criterion beside the outside-diff evidence marker it carries |
-| `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration; `--wait` bounds a `pending` one in-verb and prefixes `settle\t<settled\|budget-exhausted\|head-moved\|governance-owed\|governance-stale>` |
+| `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration, with a gate-coverage floor that counts a repo-authored run only where it carries the resolved head and its event opened that head; `--wait` bounds a `pending` one in-verb and prefixes `settle\t<settled\|budget-exhausted\|head-moved\|governance-owed\|governance-stale>` |
 | `review verdicts` | every verdict marker on the PR — standing and superseded alike — each with its `current` / `stale` / `unbindable` binding |
 | `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan |
 | `review post` | the single sanctioned verdict emit — compose, bind, append into one comment per namespace, read back; with `--base`/`--tip` the positional is the child issue and the marker binds the range instead of a head. A `PASS` also names its `--round`, and is refused when that round appended an acceptance criterion the `PASS` would bury, or when the contract marks a criterion's evidence as outside the diff and the body names none |
@@ -1162,7 +1162,7 @@ record it. Contract:
 | `ship cp-approval` | the ADR 0175 cardinality discharge — `discharge` / `stop` / `n/a`, from head-bound signals only, over the enumerated changed-file list |
 | `ship gate` | the verdict conjunction over every required namespace |
 | `ship floor` | whether a governance-root diff carries its head-bound `governance` verdict |
-| `ship checks` | the head CI rollup, with the running-vs-wedged split, the zero-checkset facts, and the gate-coverage floor under `green` |
+| `ship checks` | the head CI rollup, with the running-vs-wedged split, the zero-checkset facts, and the gate-coverage floor under `green` — coverage counts a repo-authored run only where it carries the resolved head and its event opened that head, so a base-context `pull_request_target` run gates nothing |
 | `ship evidence` | the SHA-bound run-evidence bundle as `present` / `pending` / `failed` / `absent` / `unknown`, with the manifest's checks collapsed to a status tally |
 | `ship threads` | every unresolved review thread, both pagination layers count-proved |
 | `ship resolve` | the sanctioned thread-resolution write, refusing any thread not positively bot-classed |
