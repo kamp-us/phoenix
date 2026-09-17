@@ -48,7 +48,7 @@ export const morningBrief = cron({
  * never on the program's state.
  */
 export const phone = notify({
-	target: {kind: "ntfy", topic: "can-tuval", title: "Morning brief"},
+	target: {kind: "ntfy", topic: "example-topic-9f3a", title: "Morning brief"},
 });
 
 /**

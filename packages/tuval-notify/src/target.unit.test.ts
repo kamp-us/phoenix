@@ -122,10 +122,14 @@ describe("a webhook target", () => {
 describe("an ntfy target", () => {
 	it("POSTs the text itself to `<server>/<topic>`, with ntfy.sh as the default server", async () => {
 		const {calls, fetch} = spy(OK);
-		await attemptDelivery({kind: "ntfy", topic: "can-tuval"}, message("five lines"), io(fetch));
+		await attemptDelivery(
+			{kind: "ntfy", topic: "example-topic-9f3a"},
+			message("five lines"),
+			io(fetch),
+		);
 		expect(calls).toEqual([
 			{
-				url: "https://ntfy.sh/can-tuval",
+				url: "https://ntfy.sh/example-topic-9f3a",
 				method: "POST",
 				headers: {"content-type": "text/plain; charset=utf-8"},
 				// The body is the message, not JSON around it. That is ntfy's whole protocol.

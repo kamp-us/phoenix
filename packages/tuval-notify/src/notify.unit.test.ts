@@ -70,7 +70,7 @@ const SEVEN = new Date(2026, 8, 10, 7, 0, 12).getTime();
 /** The credential a real config would hold, and the string every secrecy case greps for. */
 const SECRET_URL = "https://discord.test/api/webhooks/42/s3cr3t-token";
 
-const NTFY: NotifyTarget = {kind: "ntfy", topic: "can-tuval"};
+const NTFY: NotifyTarget = {kind: "ntfy", topic: "example-topic-9f3a"};
 
 /**
  * What arrives on `message`: an AI-agent `TurnResult`, which is the port's schema exactly. A helper
@@ -260,7 +260,7 @@ describe("notify, delivering", () => {
 		);
 		expect(calls).toEqual([
 			{
-				url: "https://ntfy.sh/can-tuval",
+				url: "https://ntfy.sh/example-topic-9f3a",
 				method: "POST",
 				headers: {"content-type": "text/plain; charset=utf-8"},
 				body: "five lines",
@@ -546,8 +546,8 @@ describe("no secret is ever written down", () => {
 	});
 
 	it("keeps the ntfy topic out of state, because a topic is a read *and* write credential", () => {
-		const run = driven(program({target: {kind: "ntfy", topic: "can-tuval"}}));
-		expect(JSON.stringify(run.state)).not.toContain("can-tuval");
+		const run = driven(program({target: {kind: "ntfy", topic: "example-topic-9f3a"}}));
+		expect(JSON.stringify(run.state)).not.toContain("example-topic-9f3a");
 	});
 });
 
