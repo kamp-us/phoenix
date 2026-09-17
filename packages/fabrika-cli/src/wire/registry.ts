@@ -425,7 +425,7 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				},
 				{
 					shape: "an epic lane's child review — the range it judges, and no PR anywhere",
-					artifact: `## Task\nlane: 2\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue_3\nstate: review\nshell: reviewer\n## Ground\nissue: https://forge.example/o/r/issues/3\nepic: https://forge.example/o/r/issues/2\nbranch: epic/2\nrange: 58ad239e2f8b41c0d7a6935ee1c204ab5d3f9017..81c1f160c9a24e5b0f7d3821ab6c94ef0d52a7b3\n## Rules\n${laneBrief.RULES}\n${laneBrief.EPIC_RULES}\n`,
+					artifact: `## Task\nlane: 2\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue_3\nstate: review\nshell: reviewer\n## Ground\nissue: https://forge.example/o/r/issues/3\nepic: https://forge.example/o/r/issues/2\nbranch: epic/2\nrange: 58ad239e2f8b41c0d7a6935ee1c204ab5d3f9017..81c1f160c9a24e5b0f7d3821ab6c94ef0d52a7b3\n## Rules\n${laneBrief.RULES}\n${laneBrief.EPIC_RULES}\n${laneBrief.EPIC_RANGE_RULES}\n`,
 					values: [
 						"issue_3",
 						"review",
