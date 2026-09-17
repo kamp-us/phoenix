@@ -27,7 +27,7 @@
  */
 
 import features from "virtual:tuval/features";
-import {Effect, Fiber, Stream} from "effect";
+import {Effect, Fiber} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useRef, useState} from "react";
 import {AGY_CHAT_WINDOW_REF, agyChatWindow} from "../agy/window/index.ts";
@@ -51,7 +51,8 @@ import type {AnyInspectorRenderer} from "../shell/desk/index.ts";
 import type {PageAttachment} from "../shell/transport/browser.ts";
 import type {WindowHost} from "../shell/window/index.ts";
 import {windowRenderer} from "../shell/window/index.ts";
-import {Pending, type ReadableRenderer, readsState} from "./readable-state.tsx";
+import {authoredPageRenderers} from "./authored-windows.tsx";
+import {Pending, type ReadableRenderer, readsState, useProcessState} from "./readable-state.tsx";
 import {
 	reading,
 	readSessionList,
@@ -67,30 +68,6 @@ import {
 	readSessionTranscript,
 	sessionTranscriptCall,
 } from "./session-transcript.ts";
-
-/**
- * One process's public state, live. The stream never fails and ends on `ProcessGone`, so the hook
- * needs no error arm: `null` means "nothing yet", and a gone process simply stops updating.
- *
- * There is no cast here any more. The host arrives typed at the program's own state because the
- * table below binds every renderer to that program's predicate (`./readable-state.tsx`), and the
- * renderer is mounted only over a state the predicate admitted (#8157).
- */
-const useProcessState = <S,>(host: WindowHost<S>): S | null => {
-	const [state, setState] = useState<S | null>(null);
-	const read = host.readProcess;
-	useEffect(() => {
-		const fiber = Effect.runFork(
-			Stream.runForEach(read, (view) =>
-				Effect.sync(() => {
-					if (view._tag === "Live") setState(view.state);
-				}),
-			),
-		);
-		return () => void Effect.runFork(Fiber.interrupt(fiber));
-	}, [read]);
-	return state;
-};
 
 function CounterRenderer({host}: {readonly host: WindowHost<CounterState>}): ReactElement {
 	const state = useProcessState(host);
@@ -311,6 +288,11 @@ export const pageRenderers = (
 	const piWindow = piChatWindow(options);
 	const agyWindow = agyChatWindow(options);
 	return {
+		// Read here rather than held as a constant, so a table rebuilt after a hot reload carries the
+		// window the author just re-compiled (`./authored-windows.tsx`). The page's own entries are
+		// written below them: a reference this module names is this module's, and an authored program
+		// cannot take it by choosing an id whose derived reference collides.
+		...authoredPageRenderers(),
 		"tuval/demo/counter": readsState(
 			isCounterState,
 			windowRenderer("host-native", (host: WindowHost<CounterState>) => (
