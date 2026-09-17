@@ -14,7 +14,16 @@ import {type AnyProgram, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {ArgUnfilled, programArgs} from "./args.ts";
 import {type Answer, type ArrivalEvent, defineProgram, program} from "./define-program.ts";
-import {emit, type ProgramEffect, type Spawned, type Stopped, send, spawn, stop} from "./effect.ts";
+import {
+	emit,
+	type ProgramEffect,
+	type Spawned,
+	type Stopped,
+	send,
+	spawn,
+	stop,
+	stopped,
+} from "./effect.ts";
 import {port} from "./port.ts";
 import {Program, ShapeMismatch, type ShapeSource} from "./shape.ts";
 
@@ -740,5 +749,44 @@ describe("authoring.program types a program held in a binding", () => {
 		});
 
 		expect(held.id).toBe("held-wrong-event");
+	});
+
+	it("refuses a field the record does not carry, as `defineProgram({...})` refuses one", () => {
+		const held = program({
+			id: "held-typo",
+			ports: {ticks: port.in(Count)},
+			init: (): CounterState => ({count: 0}),
+			update: {ticks: (state, event) => [{count: state.count + event.payload}, []]},
+			// @ts-expect-error `A` is an inference site for the literal itself, so every field the
+			// author wrote is a known property of the target and TypeScript's own excess-property
+			// check cannot fire. `NoStrayFields` is what replaces it: a key `AuthoredProgram` does
+			// not declare is typed `never`, so a misspelled `title` is refused at the field.
+			titel: (state: CounterState) => `held (${state.count})`,
+		});
+
+		expect(held.id).toBe("held-typo");
+	});
+
+	it("types the two answer events the layer owns, so neither cell names its own", () => {
+		const held = program({
+			id: "held-answers",
+			init: (): CounterState => ({count: 0}),
+			update: {
+				spawned: (state, event) => {
+					expectTypeOf(event).toEqualTypeOf<Spawned>();
+					expectTypeOf(event).not.toBeAny();
+					return [state, [send({process: event.process, port: "prompt"}, event.program)]];
+				},
+				stopped: (state, event) => {
+					expectTypeOf(event).toEqualTypeOf<Stopped>();
+					expectTypeOf(event).not.toBeAny();
+					return [{count: state.count + 1}, []];
+				},
+			},
+		});
+
+		expect(held.update.stopped({count: 1}, stopped(ProcessId.make("proc-x")))[0]).toEqual({
+			count: 2,
+		});
 	});
 });

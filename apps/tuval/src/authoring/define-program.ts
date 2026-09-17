@@ -79,7 +79,9 @@ import {
 	type ReplyEffect,
 	type SendEffect,
 	type SpawnEffect,
+	type Spawned,
 	type StopEffect,
+	type Stopped,
 	spawned,
 } from "./effect.ts";
 import {compileTakesKeys, type KEY_EVENT, type KeyEvent} from "./keys.ts";
@@ -157,13 +159,27 @@ export type ArrivingPortNames<D extends PortDecls> = {
  * because an intersection whose other half is an index signature contextually types every cell's
  * event at `any` — including the port cells, which is exactly the inference this layer exists for.
  * Measured at this pin: under the intersection a port cell's `event` accepted a `string`.
+ *
+ * **`spawned` and `stopped` are typed here for the same reason `key` is (#8825).** Both are this
+ * layer's own events, not the author's: their names are fixed literals on `Spawned` and `Stopped`
+ * (`./effect.ts`) and the kernel is the only thing that ever dispatches them, so the cell's event
+ * is knowable without the author restating it. A `Reply` cell is the one answer event that stays
+ * the author's to declare, because its name comes from the `on`/`reply` they wrote at the
+ * `spawn`/`ask` and nothing here can read it back.
+ *
+ * Like `key`, a layer-owned name wins the cell's type over a port declaring it — #8771 tracks
+ * refusing that collision outright rather than resolving it by precedence.
  */
 export type UpdateTable<S, D extends PortDecls, U, X = never> = {
 	[K in keyof U | ArrivingPortNames<D>]: K extends typeof KEY_EVENT
 		? EventHandler<S, KeyEvent, X>
-		: K extends ArrivingPortNames<D>
-			? EventHandler<S, ArrivalEventOf<D, K & keyof D & string>, X>
-			: EventHandler<S, any, X>;
+		: K extends Spawned["type"]
+			? EventHandler<S, Spawned, X>
+			: K extends Stopped["type"]
+				? EventHandler<S, Stopped, X>
+				: K extends ArrivingPortNames<D>
+					? EventHandler<S, ArrivalEventOf<D, K & keyof D & string>, X>
+					: EventHandler<S, any, X>;
 };
 
 /** What a user writes. Nothing on it names Demlik, Effect, Scope or the row's seven generics. */
@@ -238,6 +254,15 @@ export interface AuthoredProgram<
 export type AnyAuthoredProgram = AuthoredProgram<any, any, any, any, any, any>;
 
 /**
+ * Every key of `A` that `T` does not declare, typed `never` — what an authored record is checked
+ * against once `A` has made TypeScript's own excess-property check unreachable (`program` below
+ * says why, #8825).
+ */
+export type NoStrayFields<A, T> = {
+	[K in Exclude<keyof A, keyof T>]: never;
+};
+
+/**
  * `program({...})` — hold an authored program in a binding and keep every type this layer infers
  * (#8825).
  *
@@ -260,12 +285,10 @@ export type AnyAuthoredProgram = AuthoredProgram<any, any, any, any, any, any>;
  * binding un-typed and bought a second shape on every compiled row for it.
  *
  * **The name is one word on purpose, and it sits one capital letter from `Program.shape`**
- * (`./shape.ts`) in the barrel's import list. That is close, and it was still the right trade: the
- * worked example's line budget (`./example/pr-review.ts`, #8716 R11.1) is a ruled number, and a
- * longer name pushes its single import line past the formatter's width, which costs the example
- * eight wrapped lines and breaks the ceiling. The two read differently at every use anyway —
+ * (`./shape.ts`) in the barrel's import list. The two read differently at every use —
  * `Program.shape({...})` declares the ports a program is *named by*, `program({...})` holds the
- * program itself.
+ * program itself — and the length is what the worked example's ruled line budget could afford
+ * (`./example/pr-review.ts` carries that reasoning, beside the budget it defends).
  *
  * **`A` is why the answer is the literal the author wrote and not the interface.** Every field this
  * layer does not require is optional on `AuthoredProgram`, so answering that interface flat would
@@ -276,6 +299,14 @@ export type AnyAuthoredProgram = AuthoredProgram<any, any, any, any, any, any>;
  * literal's own shape and carries the present fields through. A plain `A extends AuthoredProgram<…>`
  * does not work — measured at this pin, constraint-only inference leaves `S`, `D` and `U` on their
  * defaults, and every cell is an implicit `any` again.
+ *
+ * **`A` disables TypeScript's excess-property check, so `NoStrayFields` replaces it.** Inferring
+ * `A` from the literal makes every field the author wrote a known property of the target, and an
+ * excess-property check only fires against a property the target does not declare — so without the
+ * third member a misspelled `titel`, `stat` or `windw` was accepted here and silently dropped at
+ * the compiled row, while the same literal written straight into `defineProgram({...})` was refused
+ * with TS2561. `NoStrayFields` types every key of `A` that `AuthoredProgram` does not declare as
+ * `never`, which refuses it at the field that carries it.
  *
  * `X` — the author's own effect type — is no more inferrable here than at `defineProgram`, and for
  * the same reason (#9294): it is named only in a cell's answer, and `update`'s mapped table is not
@@ -290,7 +321,9 @@ export const program = <
 	X = never,
 	A = unknown,
 >(
-	authored: A & AuthoredProgram<S, D, U, C, Out, X>,
+	authored: A &
+		AuthoredProgram<S, D, U, C, Out, X> &
+		NoStrayFields<A, AuthoredProgram<S, D, U, C, Out, X>>,
 ): A & AuthoredProgram<S, D, U, C, Out, X> => authored;
 
 /** What every field compiler is handed beside the authored record: the id and the compiled ports. */

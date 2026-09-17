@@ -26,8 +26,15 @@
  * **`program({...})` is why no cell here states a type the layer already knows (#8825).** The
  * record has to live in a binding — this module exports it so a test can drive it, and `prReview`
  * below compiles it — and a `const` contextually types nothing, so every cell used to carry its own
- * `State`, its own event and its own `Answer<State>`. The two cells that still name an event name
- * one no port declares, which is the program's own vocabulary rather than an annotation.
+ * `State`, its own event and its own `Answer<State>`. The one cell that still names an event is
+ * `result`: a `Reply`'s name is chosen by the `spawn` above it, so it is the author's to declare
+ * and nothing in the layer can read it back. `spawned` is not — it is the layer's own event with a
+ * fixed name, and `UpdateTable` types it like `key`.
+ *
+ * That call's one-word name is this budget's doing. A longer one pushes the single import line
+ * below past the formatter's width, which costs eight wrapped lines and breaks the ceiling
+ * `pr-review.unit.test.ts` asserts — so the name was picked here, against this number, and
+ * `program`'s own docblock points back to this paragraph rather than restating it.
  *
  * The one command is `send("pr", pr)`: a bare port name, which means an in-port of *this* program's
  * own process, looked up against this program's live processes at the call (`../own-process.ts`).
@@ -48,7 +55,7 @@
 
 import {Schema} from "effect";
 import {PromptPayloadSchema, TurnResultSchema} from "../../ai-agent/ports/index.ts";
-import type {Reply, ShapeSource, Spawned} from "../index.ts";
+import type {Reply, ShapeSource} from "../index.ts";
 import {defineProgram, emit, Program, port, program, programArgs, send, spawn} from "../index.ts";
 
 const agent = Program.shape({in: {prompt: PromptPayloadSchema}, out: {result: TurnResultSchema}});
@@ -62,7 +69,7 @@ export const prReviewProgram = program({
 	init: (): State => ({pr: null, verdict: null}),
 	update: {
 		pr: (s, e) => [{...s, pr: e.payload}, [spawn(args.reviewer, {on: {result: "result"}})]],
-		spawned: (s, e: Spawned) => [
+		spawned: (s, e) => [
 			s,
 			[send({process: e.process, port: "prompt"}, prompt(`review PR #${s.pr}`, e.process))],
 		],

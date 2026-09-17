@@ -12,8 +12,6 @@ import {
 	ask,
 	emit,
 	type Reply,
-	type Spawned,
-	type Stopped,
 	send,
 	spawn,
 	spawned,
@@ -48,9 +46,11 @@ const CALLEE = ProcessId.make("proc-callee");
  * what an author holds — the config compiles it, this file drives it — and `program` is what
  * contextually types it there (#8825), so no cell states its own state type or its `Answer` return.
  *
- * The three answer-event cells still name their event, and that is a declaration rather than an
- * annotation: an event of the program's own is not declared anywhere else, and `ProgramEvent`
- * (`./view.ts`) reads the cell's own parameter to know what `.event()` will take.
+ * The one cell that still names its event is `result`, and that is a declaration rather than an
+ * annotation: a `Reply`'s name is chosen at the `spawn` that asked for it, so nothing in the layer
+ * can read it back, and `ProgramEvent` (`./view.ts`) reads the cell's own parameter to know what
+ * `.event()` will take. `spawned` and `stopped` need no such line — their names are fixed on this
+ * layer's own types and `UpdateTable` carries them, like `key`.
  */
 const prReview = program({
 	id: "pr-review",
@@ -67,7 +67,7 @@ const prReview = program({
 			[spawn(args.reviewer, {on: {result: "result"}})],
 		],
 		check: (state, event) => [state, [emit("verdict", {pr: event.payload, ok: true})]],
-		spawned: (state, event: Spawned) => [
+		spawned: (state, event) => [
 			{...state, reviewer: event.process},
 			[send({process: event.process, port: "prompt"}, "review it")],
 		],
@@ -75,7 +75,7 @@ const prReview = program({
 			{...state, verdicts: state.verdicts + (event.payload.ok ? 1 : 0)},
 			[emit("verdict", event.payload)],
 		],
-		stopped: (state, _event: Stopped) => [{...state, reviewer: null}, []],
+		stopped: (state) => [{...state, reviewer: null}, []],
 		close: (state) => [state, state.reviewer === null ? [] : [stop(state.reviewer)]],
 		key: (state, event) => [{...state, pressed: event.key}, []],
 		recheck: (state) => [state, [ask({process: CALLEE, port: "check"}, 8733, {reply: "result"})]],
