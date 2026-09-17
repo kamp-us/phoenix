@@ -218,6 +218,18 @@ const decodeSurfaces = (raw: unknown): Decoded<ReadonlyArray<UiSurface>> => {
 		: {_tag: "Malformed", reason: listed};
 };
 
+/**
+ * The deployable app a row's pages belong to: the leading segment of its `name`.
+ *
+ * A row's `name` is the app's own name only for the app's own row — `web-lab` is a surface of `web`
+ * and `desk-chat` one of `desk`, while a preview announcement names the app. The derivation is
+ * stated here once, because assuming the equality is what let one app's surface be shot at another's
+ * preview and recorded as a capture of the 404 that came back.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8796
+ */
+export const previewAppOf = (surface: UiSurface): string => surface.name.split("-")[0] as string;
+
 /** The repo-relative source roots the declared surfaces cover, deduplicated in declaration order. */
 export const prefixesOf = (surfaces: ReadonlyArray<UiSurface>): ReadonlyArray<string> => [
 	...new Set(surfaces.map((surface) => surface.prefix)),

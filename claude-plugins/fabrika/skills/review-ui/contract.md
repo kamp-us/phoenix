@@ -264,7 +264,7 @@ fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/
 | `--surface` | string, repeatable | yes (≥1) | — | a surface id: a route (`/feed`), or a route plus a realized tier state (`/feed:auth`, `/feed:auth-caylak`); zero operands is `1` — no tool guesses surfaces from a diff |
 | `--viewport` | string, repeatable | no | `desktop` alone | a viewport to shoot every `--surface` at, over the closed set `desktop` (1280×800) and `mobile` (390×844); crossed with `--surface`, so two of each is four captures. A name outside the set, or one passed twice, is `10` |
 | `--flag` | string, repeatable | no | every flag at its default | force one flag for this run: `<key>=on` or `<key>=off`; anything else, or a key forced twice, is `10` |
-| `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve |
+| `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve. Whichever app is resolved, a `--surface` whose own `uiSurfaces` row belongs to an app this preview did not announce is `11` — omitting the flag routes around no fence |
 | `--auth-secret-from` | string | no | the ambient `$BETTER_AUTH_SECRET` | a file holding the `BETTER_AUTH_SECRET` the preview worker deploys with — one repo-wide value, exported from the ci-credentials stack's alchemy state, its one readable copy; a file that cannot be read is `11`, and so is a resolved value that is empty or carries the `insecure_` placeholder |
 | `--repo` | string | no | resolved | the repository |
 
@@ -352,7 +352,14 @@ still refuses every `:state`.
 `11`). Resolve the preview comment for `--app` (paginated sweep; anchor absent → `16`, anchor
 present but unparseable → `11`). **Bind the preview to the head**: the comment's deployed SHA
 must equal the live head — a preview that lags the push is `12`, because pixels of an old tree
-bound to a new SHA are the stale-verdict class at the capture seam. **Resolve the tier signing
+bound to a new SHA are the stale-verdict class at the capture seam. **Fence the app axis**: every
+surface resolves to its owning `uiSurfaces` row by longest claiming mount and that row to its app —
+the leading segment of the row's `name`, so `web-lab` is `web`'s and `desk-chat` is `desk`'s — and
+a surface whose app is not among the ones this preview announced is `11` before a browser launches,
+naming every such surface. One origin is resolved for the run, so shooting a foreign surface at it
+returns that app's not-found page: a clean PNG the outcome typing would record as `captured`. A
+surface no declared row claims is shot as before — which app serves it is a question the list does
+not answer either way. **Resolve the tier signing
 secret** — the file `--auth-secret-from` names, else the ambient variable — and refuse on `11`
 before a browser launches when it cannot be read, is empty, or carries the `insecure_` placeholder.
 The refusal names the source it read and the route out, and the route differs by source: with no
@@ -387,7 +394,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
 | `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; or `--flag` was passed beside an anonymous surface |
-| `11` | the PR/head/comment read failed; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, or while `--auth-secret-from` names a file that could not be read; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; or a forced flag evaluated at its default anyway |
+| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, or while `--auth-secret-from` names a file that could not be read; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; or a forced flag evaluated at its default anyway |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -417,6 +424,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: --out "<value>" is not a kebab-case set name.` | 10 | refusal |
 | `review-ui render: cannot read <what> for #<n>: <reason> — the render is UNKNOWN.` | 11 | refusal |
 | `review-ui render: the preview comment names apps <list> — pass --app to pick one.` | 11 | refusal |
+| `review-ui render: --surface "<id>" is served by app "<app>" (row "<row>"), which this preview does not announce — it announces <list>; the shot would come back as an announced app's not-found page.` | 11 | refusal |
 | `review-ui render: the preview comment carries the anchor but no parseable URL + SHA for app "<app>" — a malformed announcement is unreadable, not absent.` | 11 | refusal |
 | `review-ui render: the preview deploys <deployed-sha7>, the live head is <head7> — stale preview; pixels of an old tree must not bind a new head (#4808's class).` | 12 | refusal |
 | `review-ui render: surface "<id>" at <viewport> threw during render: <first page error> — the render is red; a broken page is not composition to judge.` | 13 | refusal |

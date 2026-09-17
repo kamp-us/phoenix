@@ -1,6 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {signSessionToken} from "../capture/auth.ts";
+import type {UiSurface} from "../config/keys/ui-surfaces.ts";
 import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {
 	INVALID_CAPTURE,
@@ -75,6 +76,22 @@ const legOf =
 				rendered(request.surface, request.outDir, request.viewport.label, request.viewport.width),
 		);
 
+const row = (name: string, mount: string): UiSurface => ({
+	name,
+	prefix: `apps/${name.split("-")[0]}/src/`,
+	command: "pnpm dev --port {{port}}",
+	mount,
+	basePath: null,
+	readyPath: "/",
+});
+
+/** Two apps over one namespace, with web's catch-all mount declared ahead of the deeper desk one. */
+const ROWS: ReadonlyArray<UiSurface> = [
+	row("web", "/"),
+	row("web-lab", "/lab"),
+	row("desk-board", "/desk/board"),
+];
+
 const options = {
 	pr: 4321,
 	out: "judged",
@@ -82,6 +99,7 @@ const options = {
 	viewports: [] as readonly string[],
 	flags: [] as readonly string[],
 	app: null,
+	surfaceRows: ROWS,
 	authSecretFrom: null as string | null,
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
@@ -582,6 +600,56 @@ describe("runRender", () => {
 		expect(outcome.stderr.at(-1)).toContain(
 			'surface "/pano" at mobile was asked for at 390px and its bytes read back 1280px wide',
 		);
+	});
+
+	// The bug this fence closes: every surface is shot at the one announced origin, so a foreign
+	// surface came back as web's 404 — a valid PNG the outcome typing recorded as `captured`.
+	it("refuses a surface whose app the preview does not announce on 11, before any shot", async () => {
+		const shot: string[] = [];
+		const {outcome, written} = await run(happy(), {
+			surfaces: ["/desk/board"],
+			render: (request) => {
+				shot.push(request.surface);
+				return Effect.succeed(rendered(request.surface, "/tmp"));
+			},
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(written.size).toBe(0);
+		expect(shot).toEqual([]);
+		expect(outcome.stderr.at(-1)).toContain(
+			'--surface "/desk/board" is served by app "desk" (row "desk-board"), which this preview does not announce — it announces web',
+		);
+	});
+
+	it("resolves the surface by longest claiming mount, so /lab stays web's and captures", async () => {
+		const {outcome} = await run(happy(), {surfaces: ["/lab"]});
+		expect(outcome.code).toBe(0);
+		expect(parseManifest(outcome.stdout)).toMatchObject({
+			value: {captures: [{surface: "/lab"}]},
+		});
+	});
+
+	it("refuses the whole set rather than capturing the announced half of a mixed one", async () => {
+		const shot: string[] = [];
+		const {outcome, written} = await run(happy(), {
+			surfaces: ["/pano", "/desk/board:auth"],
+			render: (request) => {
+				shot.push(request.surface);
+				return Effect.succeed(rendered(request.surface, "/tmp"));
+			},
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(shot).toEqual([]);
+		expect(written.size).toBe(0);
+		// The tier state rides the surface id, so the fence reads the route half of it and fires on the
+		// one foreign surface rather than on the announced one beside it.
+		expect(outcome.stderr.at(-1)).toContain('--surface "/desk/board:auth" is served by app "desk"');
+	});
+
+	it("fences nothing when the repo declares no surfaces — the list answers for no surface", async () => {
+		const {outcome} = await run(happy(), {surfaceRows: []});
+		expect(outcome.code).toBe(0);
 	});
 
 	it("keeps a render that never became answerable UNKNOWN (11), not a bad render", async () => {
