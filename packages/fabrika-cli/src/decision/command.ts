@@ -10,12 +10,53 @@
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  */
 
-import {Effect, Option} from "effect";
+import {Effect, type FileSystem, Option, Result} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import type {AuthorizationDocument} from "../authorization.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
-import {runRule} from "./rule-verb.ts";
+import {readFile} from "../io/fs.ts";
+import {FAILED, refuse} from "../verb.ts";
+import {type RulingSource, runRule} from "./rule-verb.ts";
 import {runRuling} from "./ruling-verb.ts";
+
+/**
+ * Read the quoted authorization the verb was pointed at, as a value.
+ *
+ * The read happens here rather than in the verb so a verb stays a pure function of its dependencies:
+ * a test hands it the bytes, and a failed read is a value the verb branches on rather than an
+ * exception it has to catch.
+ */
+const document = (
+	path: string,
+): Effect.Effect<AuthorizationDocument, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const read = yield* Effect.result(readFile(path));
+		return Result.isFailure(read)
+			? ({_tag: "Failed", reason: read.failure.reason} satisfies AuthorizationDocument)
+			: ({_tag: "Text", text: read.success} satisfies AuthorizationDocument);
+	});
+
+/**
+ * Which of the two shapes the invocation gave, refusing both and neither at the flags.
+ *
+ * The verb takes one `RulingSource`, so an invocation that names both authorities or none has to be
+ * refused here — passing an ambiguity down would make the verb pick, and picking is how a ruling
+ * comes to cite a comment nobody meant.
+ */
+const rulingSource = (
+	cites: Option.Option<string>,
+	authorization: Option.Option<string>,
+): RulingSource<FileSystem.FileSystem> | null => {
+	const citedUrl = Option.getOrNull(cites);
+	const path = Option.getOrNull(authorization);
+	if (citedUrl !== null && path !== null) return null;
+	if (citedUrl !== null) return {_tag: "Cited", cites: citedUrl};
+	if (path !== null) {
+		return {_tag: "Quoted", authorizationPath: path, authorization: document(path)};
+	}
+	return null;
+};
 
 const repoFlag = Flag.string("repo").pipe(
 	Flag.optional,
@@ -33,17 +74,34 @@ const rule = leafCommand(
 	{
 		number: issueArg,
 		cites: Flag.string("cites").pipe(
+			Flag.optional,
 			Flag.withDescription(
-				"the issue-comment URL the ruling is written in, checked against this repository and this issue and carried in the marker so a builder reads the ruling rather than inferring it",
+				"the issue-comment URL the ruling is already written in, checked against this repository and this issue and carried in the marker so a builder reads the ruling rather than inferring it",
+			),
+		),
+		authorization: Flag.string("authorization").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"instead of --cites: a file quoting the founder's ruling verbatim, carrying an ISO-8601 date; posted as a comment on the issue and cited by the marker, never summarized",
 			),
 		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({number, cites, repo}) {
+	Effect.fn(function* ({number, cites, authorization, repo}) {
+		const ruling = rulingSource(cites, authorization);
+		if (ruling === null) {
+			yield* emit(
+				refuse(
+					FAILED,
+					"decision rule: pass exactly one of --cites <url> (the ruling is already a comment) or --authorization <file> (it was given in conversation); nothing was written.",
+				),
+			);
+			return;
+		}
 		yield* emit(
 			yield* runRule({
 				number,
-				cites,
+				ruling,
 				repo: Option.getOrNull(repo),
 				env: process.env,
 				now: () => new Date(),
@@ -55,7 +113,7 @@ const rule = leafCommand(
 		"Record a founder ruling on a decision and hand it to the agent lane.",
 	),
 	Command.withDescription(
-		'Record a control-plane human\'s ruling on one type:decision issue: post a decision-ruled marker bound to a digest this verb derives itself over the issue body, read it back, and ONLY THEN flip the audience from ready-for:human to ready-for:agent, reported from a re-read rather than asserted. Prints {"answer":"ruled","issue":n,"digest":"…","ruling":"…","by":"…","at":"…","comment":n,"audience":"ready-for:agent","observed":[…]}. The marker is unconditional and the flip is not: a body carrying no readable ### Acceptance criteria block keeps its marker and stays on ready-for:human, because ready-for:agent promises a builder can grade it cold. Exits 1 (--cites is not an issue-comment URL for this repository and issue), 4 (the marker stands but the body carries no readable acceptance-criteria block, so the audience was not flipped — author or repair it with fabrika triage enrich/repair-criteria and re-run), 7 (the issue is absent, is a pull request, is not a type:decision, the cited comment is not on it, or ready-for:agent is absent from the repository taxonomy), 8 (a write failed, or the issue could not be re-read — UNKNOWN), 9 (the marker or the audience does not read back), 11 (the roster, the comments or the invoking account could not be read — authority is UNKNOWN, never granted), 20 (proven: the invoking account is off the control-plane roster, or that roster names nobody). Example: fabrika decision rule 9412 --cites https://github.com/<owner>/<repo>/issues/9412#issuecomment-3512345',
+		'Record a control-plane human\'s ruling on one type:decision issue: post a decision-ruled marker bound to a digest this verb derives itself over the issue body, read it back, and ONLY THEN flip the audience from ready-for:human to ready-for:agent, reported from a re-read rather than asserted. Exactly one flag names the ruling: --cites <url> when it is already a comment on the issue, or --authorization <file> when the founder gave it in conversation — that file is posted verbatim as a dated comment FIRST and the marker cites it, which is grill rule\'s shape, so a ruling he already made costs him no comment to type. Prints {"answer":"ruled","issue":n,"digest":"…","ruling":"…","by":"…","at":"…","comment":n,"audience":"ready-for:agent","observed":[…]}. The marker is unconditional and the flip is not: a body carrying no readable ### Acceptance criteria block keeps its marker and stays on ready-for:human, because ready-for:agent promises a builder can grade it cold. Exits 1 (neither flag or both given, --cites is not an issue-comment URL for this repository and issue, or --authorization could not be read), 4 (the marker stands but the body carries no readable acceptance-criteria block, so the audience was not flipped — author or repair it with fabrika triage enrich/repair-criteria and re-run), 5 (the quoted authorization carries a machine-local path), 6 (it is a bare @ path reference), 7 (the issue is absent, is a pull request, is not a type:decision, the cited comment is not on it, or ready-for:agent is absent from the repository taxonomy), 8 (a write failed, or the issue could not be re-read — UNKNOWN), 9 (the marker or the audience does not read back), 11 (the roster, the comments or the invoking account could not be read — authority is UNKNOWN, never granted), 20 (proven: the invoking account is off the control-plane roster, or that roster names nobody), 21 (the quoted authorization is empty or carries no ISO-8601 date). Example: fabrika decision rule 9412 --authorization ruling.md',
 	),
 );
 
