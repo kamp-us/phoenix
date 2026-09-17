@@ -176,7 +176,11 @@ The verb captures the PR's **preview deployment** at the inspected head — neve
 the PR's code run on your machine. Every surface returns a proven outcome — captured, crashed
 (13), unreachable (14), invalid capture (15) — and two run-level refusals precede the per-surface
 loop: stale preview (12 — wait for the preview to catch up and re-render; unrepairable this
-session is CANT-SEE) and no preview at all (16 — CANT-SEE). **A crashed
+session is CANT-SEE) and no preview at all (16 — CANT-SEE). A third refuses the operands themselves:
+a `--surface` whose app this preview never announced is `11`, because one origin is resolved for the
+run and shooting a foreign surface at it returns that app's not-found page as a clean capture. A
+product that never deploys has no preview to name, so that refusal is the CANT-SEE route for it, not
+a flag to work around. **A crashed
 surface is FAIL ground** — a screenshot of a broken page is not composition to judge. An
 **unreachable** surface forks on disclosure: named in the PR's Deviations with its reason
 (`fabrika review deviations $pr_number`) → judge what you can see and record the gap; undisclosed → a
