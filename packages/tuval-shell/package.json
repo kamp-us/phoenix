@@ -1,53 +1,53 @@
 {
-  "name": "@kampus/tuval-shell",
-  "version": "0.1.0",
-  "description": "A shell job for Tuval — takes a prompt, runs it as a command, answers with the output",
-  "license": "MIT",
-  "author": "Can Sirin <mail@csirin.com>",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/kamp-us/phoenix.git",
-    "directory": "packages/tuval-shell"
-  },
-  "type": "module",
-  "private": false,
-  "publishConfig": {
-    "access": "public"
-  },
-  "exports": {
-    ".": {
-      "development": "./src/index.ts",
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
-    "./package.json": "./package.json"
-  },
-  "files": [
-    "dist",
-    "src",
-    "README.md"
-  ],
-  "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
-    "lint": "biome check src .tuval",
-    "prepublishOnly": "pnpm build"
-  },
-  "peerDependencies": {
-    "@demlik/tea": "catalog:",
-    "@kampus/tuval": "workspace:*",
-    "effect": "catalog:tuval"
-  },
-  "devDependencies": {
-    "@demlik/tea": "catalog:",
-    "@effect/tsgo": "catalog:",
-    "@kampus/tuval": "workspace:*",
-    "@kampus/tuval-cron": "workspace:*",
-    "@types/node": "catalog:",
-    "effect": "catalog:tuval",
-    "typescript": "catalog:",
-    "vitest": "catalog:"
-  }
+	"name": "@kampus/tuval-shell",
+	"version": "0.1.0",
+	"description": "A shell job for Tuval — takes a prompt, runs it as a command, answers with the output",
+	"license": "MIT",
+	"author": "Can Sirin <mail@csirin.com>",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/tuval-shell"
+	},
+	"type": "module",
+	"private": false,
+	"publishConfig": {
+		"access": "public"
+	},
+	"exports": {
+		".": {
+			"development": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"src",
+		"README.md"
+	],
+	"scripts": {
+		"build": "rm -rf dist && tsc -p tsconfig.build.json",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
+		"lint": "biome check src .tuval",
+		"prepublishOnly": "pnpm build"
+	},
+	"peerDependencies": {
+		"@demlik/tea": "catalog:",
+		"@kampus/tuval": "workspace:*",
+		"effect": "catalog:tuval"
+	},
+	"devDependencies": {
+		"@demlik/tea": "catalog:",
+		"@effect/tsgo": "catalog:",
+		"@kampus/tuval": "workspace:*",
+		"@kampus/tuval-cron": "workspace:*",
+		"@types/node": "catalog:",
+		"effect": "catalog:tuval",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	}
 }

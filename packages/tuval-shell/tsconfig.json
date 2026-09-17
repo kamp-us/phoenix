@@ -1,54 +1,54 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    // ES2023 + DOM, and `exactOptionalPropertyTypes` off, because `@kampus/tuval` is consumed as
-    // **raw TypeScript**: its `exports` map points at `src/*.ts` and it ships no `.d.ts`, so its
-    // whole reachable source tree enters this program and is checked under *these* options.
-    // `skipLibCheck` covers declaration files and does nothing for source. These three lines are
-    // therefore not this package's taste — they are `apps/tuval/tsconfig.json`'s, restated. They
-    // come back to this package's own preference the day `@kampus/tuval` publishes declarations.
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "exactOptionalPropertyTypes": false,
-    "module": "ES2022",
-    "moduleResolution": "Bundler",
-    // `@kampus/tuval-cron` is a `workspace:*` dependency read by name, and the entry that points its
-    // name at source rather than at an unbuilt `dist` is the `development` condition on its
-    // `exports` map (#9378 R1.1). Under `Bundler` resolution tsc applies no condition beyond
-    // `import`/`types` unless it is named here, so without this line both importers resolve to
-    // `dist/index.d.ts`, which does not exist until cron is built — TS2307, from a dependency that
-    // is present. Vitest and Vite apply `development` themselves, which is why only tsc needs it.
-    "customConditions": ["development"],
-    "noEmit": true,
-    // Relative imports carry an explicit .ts extension, because Tuval loads a config — and through
-    // it this package — with `node` under native type-stripping and no bundler; an extensionless
-    // specifier is ERR_MODULE_NOT_FOUND there. Tuval's own source does the same for the same reason.
-    "allowImportingTsExtensions": true,
-    "isolatedModules": true,
-    "verbatimModuleSyntax": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "strict": true,
-    "noUnusedLocals": true,
-    "skipLibCheck": true,
-    "types": ["node"],
-    // The fixture config and the composition test import this package by name, the way a user's
-    // config does. The mapping points that name at the same `src/index.ts` the published `exports`
-    // map points at through `dist`, so neither needs a build to type-check and neither reaches past
-    // the front door. `@kampus/tuval-cron` gets no entry here: it is a `workspace:*` dependency, and
-    // its own `development` export condition already resolves the name to its source entry.
-    "paths": {
-      "@kampus/tuval-shell": ["./src/index.ts"]
-    },
-    // This package keeps its own standalone lens rather than extending the repo root's, because
-    // three of the options above are `apps/tuval`'s restated and the root's are not compatible with
-    // them. The one thing it has to take from the root anyway is this plugin entry: it is what
-    // seats the Effect language service over the project, and `effect-tsgo diagnostics` reads its
-    // file set from that seating — without it the run reports `Checked 0 files out of N` and exits
-    // clean, which is a green that read nothing.
-    "plugins": [{ "name": "@effect/language-service", "includeSuggestionsInTsc": false }]
-  },
-  // `.tuval/` is the consumer fixture: a real user config, type-checked here so the README's usage
-  // cannot drift from what actually compiles.
-  "include": ["src", ".tuval"],
-  "exclude": ["node_modules", "dist"]
+	"compilerOptions": {
+		"target": "ES2022",
+		// ES2023 + DOM, and `exactOptionalPropertyTypes` off, because `@kampus/tuval` is consumed as
+		// **raw TypeScript**: its `exports` map points at `src/*.ts` and it ships no `.d.ts`, so its
+		// whole reachable source tree enters this program and is checked under *these* options.
+		// `skipLibCheck` covers declaration files and does nothing for source. These three lines are
+		// therefore not this package's taste — they are `apps/tuval/tsconfig.json`'s, restated. They
+		// come back to this package's own preference the day `@kampus/tuval` publishes declarations.
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"exactOptionalPropertyTypes": false,
+		"module": "ES2022",
+		"moduleResolution": "Bundler",
+		// `@kampus/tuval-cron` is a `workspace:*` dependency read by name, and the entry that points its
+		// name at source rather than at an unbuilt `dist` is the `development` condition on its
+		// `exports` map (#9378 R1.1). Under `Bundler` resolution tsc applies no condition beyond
+		// `import`/`types` unless it is named here, so without this line both importers resolve to
+		// `dist/index.d.ts`, which does not exist until cron is built — TS2307, from a dependency that
+		// is present. Vitest and Vite apply `development` themselves, which is why only tsc needs it.
+		"customConditions": ["development"],
+		"noEmit": true,
+		// Relative imports carry an explicit .ts extension, because Tuval loads a config — and through
+		// it this package — with `node` under native type-stripping and no bundler; an extensionless
+		// specifier is ERR_MODULE_NOT_FOUND there. Tuval's own source does the same for the same reason.
+		"allowImportingTsExtensions": true,
+		"isolatedModules": true,
+		"verbatimModuleSyntax": true,
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"skipLibCheck": true,
+		"types": ["node"],
+		// The fixture config and the composition test import this package by name, the way a user's
+		// config does. The mapping points that name at the same `src/index.ts` the published `exports`
+		// map points at through `dist`, so neither needs a build to type-check and neither reaches past
+		// the front door. `@kampus/tuval-cron` gets no entry here: it is a `workspace:*` dependency, and
+		// its own `development` export condition already resolves the name to its source entry.
+		"paths": {
+			"@kampus/tuval-shell": ["./src/index.ts"]
+		},
+		// This package keeps its own standalone lens rather than extending the repo root's, because
+		// three of the options above are `apps/tuval`'s restated and the root's are not compatible with
+		// them. The one thing it has to take from the root anyway is this plugin entry: it is what
+		// seats the Effect language service over the project, and `effect-tsgo diagnostics` reads its
+		// file set from that seating — without it the run reports `Checked 0 files out of N` and exits
+		// clean, which is a green that read nothing.
+		"plugins": [{ "name": "@effect/language-service", "includeSuggestionsInTsc": false }]
+	},
+	// `.tuval/` is the consumer fixture: a real user config, type-checked here so the README's usage
+	// cannot drift from what actually compiles.
+	"include": ["src", ".tuval"],
+	"exclude": ["node_modules", "dist"]
 }

@@ -41,8 +41,8 @@
  * under its single-permit semaphore is what kamp-us/phoenix#9297 is about.
  */
 
-import { Context, Effect } from "effect";
-import { type Finished, type ShellCommand, startCommand } from "./run.ts";
+import {Context, Effect} from "effect";
+import {type Finished, type ShellCommand, startCommand} from "./run.ts";
 
 /**
  * The effect's tag, and therefore the key its handler takes on the row. Namespaced because the
@@ -56,11 +56,11 @@ export const RUN = "shell/run" as const;
  * so a cell that answers one has read a clock, opened nothing and held no handle.
  */
 export interface Run extends ShellCommand {
-  readonly type: typeof RUN;
+	readonly type: typeof RUN;
 }
 
 /** The constructor a cell writes: `run({key, command, cwd, shell, timeoutMs, env})`. */
-export const run = (command: ShellCommand): Run => ({ type: RUN, ...command });
+export const run = (command: ShellCommand): Run => ({type: RUN, ...command});
 
 /** The one event the handler answers with: the run, over. `./shell.ts`'s `finished` cell reads it. */
 export type RunEvents = ReadonlyArray<Finished>;
@@ -70,10 +70,10 @@ export type RunEvents = ReadonlyArray<Finished>;
  * resolve when it is over. Interrupting the Effect abandons the run.
  */
 export class ShellRunner extends Context.Service<
-  ShellRunner,
-  {
-    readonly start: (command: ShellCommand) => Effect.Effect<Finished>;
-  }
+	ShellRunner,
+	{
+		readonly start: (command: ShellCommand) => Effect.Effect<Finished>;
+	}
 >()("@kampus/tuval-shell/ShellRunner") {}
 
 /**
@@ -81,25 +81,24 @@ export class ShellRunner extends Context.Service<
  * report happens once by `startCommand`'s own rule, so the `resume` below is called once.
  */
 const spawnChild = (command: ShellCommand): Effect.Effect<Finished> =>
-  Effect.callback<Finished>((resume) => {
-    const abandon = startCommand(command, (finished) =>
-      resume(Effect.succeed(finished)),
-    );
-    return Effect.sync(abandon);
-  });
+	Effect.callback<Finished>((resume) => {
+		const abandon = startCommand(command, (finished) => resume(Effect.succeed(finished)));
+		return Effect.sync(abandon);
+	});
 
 /** The runner a shipped `shell(...)` uses: a detached process group, group-killed on a timeout. */
-export const ShellRunnerLive: Context.Context<ShellRunner> =
-  ShellRunner.context({ start: spawnChild });
+export const ShellRunnerLive: Context.Context<ShellRunner> = ShellRunner.context({
+	start: spawnChild,
+});
 
 /** What a run that died before it could report says: a failed run, no exit code, the reason as its output. */
 const died = (command: ShellCommand, cause: unknown): Finished => ({
-  type: "finished",
-  key: command.key,
-  code: null,
-  output: `${cause instanceof Error ? cause.message : String(cause)}\n`,
-  timedOut: false,
-  durationMs: 0,
+	type: "finished",
+	key: command.key,
+	code: null,
+	output: `${cause instanceof Error ? cause.message : String(cause)}\n`,
+	timedOut: false,
+	durationMs: 0,
 });
 
 /**
@@ -115,13 +114,11 @@ const died = (command: ShellCommand, cause: unknown): Finished => ({
  * see the note on the handler always answering at the top of this file. An interruption is not a
  * defect and is deliberately not caught — an abandoned run is one nobody is waiting for.
  */
-export const runHandler = (
-  services: Context.Context<ShellRunner> = ShellRunnerLive,
-) => {
-  const runner = Context.get(services, ShellRunner);
-  return (effect: Run): Effect.Effect<RunEvents> =>
-    Effect.suspend(() => runner.start(effect)).pipe(
-      Effect.catchDefect((defect) => Effect.succeed(died(effect, defect))),
-      Effect.map((finished) => [finished]),
-    );
+export const runHandler = (services: Context.Context<ShellRunner> = ShellRunnerLive) => {
+	const runner = Context.get(services, ShellRunner);
+	return (effect: Run): Effect.Effect<RunEvents> =>
+		Effect.suspend(() => runner.start(effect)).pipe(
+			Effect.catchDefect((defect) => Effect.succeed(died(effect, defect))),
+			Effect.map((finished) => [finished]),
+		);
 };

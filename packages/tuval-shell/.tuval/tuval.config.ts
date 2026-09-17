@@ -12,20 +12,20 @@
  * `jobShape` is about ports and never about what is behind them.
  */
 
-import { cron } from "@kampus/tuval-cron";
-import { shell } from "@kampus/tuval-shell";
-import type { TuvalConfigInput } from "@kampus/tuval/sessions";
+import type {TuvalConfigInput} from "@kampus/tuval/sessions";
+import {cron} from "@kampus/tuval-cron";
+import {shell} from "@kampus/tuval-shell";
 
 /** Nightly, at 03:00 local: fetch every remote, and say on the tile how it went. */
 export const nightlyFetch = cron({
-  id: "nightly-fetch",
-  schedule: "0 3 * * *",
-  prompt: "git -C ~/phoenix fetch --all",
-  job: shell({ cwd: "/tmp", timeoutMs: 2 * 60 * 1000 }),
+	id: "nightly-fetch",
+	schedule: "0 3 * * *",
+	prompt: "git -C ~/phoenix fetch --all",
+	job: shell({cwd: "/tmp", timeoutMs: 2 * 60 * 1000}),
 });
 
 export default {
-  version: 1,
-  programs: [nightlyFetch],
-  graph: { nodes: [{ id: "nightly-fetch", program: nightlyFetch.id, on: [] }] },
+	version: 1,
+	programs: [nightlyFetch],
+	graph: {nodes: [{id: "nightly-fetch", program: nightlyFetch.id, on: []}]},
 } satisfies TuvalConfigInput;
