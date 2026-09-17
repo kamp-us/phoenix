@@ -58,7 +58,7 @@ Record one architecture decision, from id to citations. Contract:
 
 | Verb | Answers |
 |---|---|
-| `adr next` | the next unused id — `max(fetched merged set ∪ open-PR claims) + 1` |
+| `adr next` | the next unused id — `max(fetched merged set ∪ open-PR claims ∪ this clone's branch claims) + 1` |
 | `adr new` | scaffolds `.decisions/NNNN-slug.md` from the canonical template |
 | `adr mint` | `next` and `new` in one call — allocates the id and writes the record with no gap |
 | `adr resolve` | each id's real filename and state: `live` / `landed` / `in-flight` / `absent` |
@@ -71,14 +71,18 @@ Record one architecture decision, from id to citations. Contract:
 `status:` line · `15` the rewrite would touch a line other than `status:`, aborted before writing ·
 `16` already superseded · `17` `--base` unfetchable · `18` open PRs unenumerable · `19` a record
 filename with no readable id · `20` two records claim one id · `21` the `origin` remote could not
-be read. `5` is a vacated seat and must not be reused.
+be read · `23` this clone's branch refs could not be walked. `5` is a vacated seat and must not be
+reused.
 
-Three behaviours are worth knowing:
+Four behaviours are worth knowing:
 
 - **`--base` is fetched before it is read.** A stale local ref is the defect class this closes.
+- **A branch with no pull request claims its id too.** Worktrees of one clone share one ref store,
+  so an epic child's committed record is in `next`'s union before any pull request exists. Without
+  it, two parallel children of one epic are handed one id by default rather than by race.
 - **`mint` exists because an id read in one call is stale by the next.** It is still not a
-  reservation — no id is visible to another lane until its pull request opens — so keep the
-  re-check before you push.
+  reservation — no id is visible to a lane in *another clone* until its pull request opens — so keep
+  the re-check before you push.
 - **`live` and `landed` are different answers.** `landed` means present on the base ref but
   `proposed`, `superseded` or `retired`. Citing one as settled law is what the split prevents.
 

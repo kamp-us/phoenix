@@ -90,9 +90,11 @@ const next = leafCommand(
 		yield* emit(yield* runNext({dir: corpus.dir, base, repo: Option.getOrNull(repo), json}));
 	}),
 ).pipe(
-	Command.withShortDescription("The next unused ADR id, merged set and open-PR claims folded."),
+	Command.withShortDescription(
+		"The next unused ADR id, merged set, open-PR claims and branch claims folded.",
+	),
 	Command.withDescription(
-		"The next unused ADR id — max(fetched merged set ∪ open-PR claims) + 1. Prints `0240`; --json adds mergedMax/inFlight/baseSha. An empty-and-readable --dir is a fresh corpus and answers 0001. Exits 11 (--dir unreadable), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 21 (origin remote unresolvable). Example: fabrika adr next",
+		"The next unused ADR id — max(fetched merged set ∪ open-PR claims ∪ branch claims) + 1, where a branch claim is an id on a branch ref of this clone the base does not carry, which is how an epic child's unpublished mint is visible to its siblings. Prints `0240`; --json adds mergedMax/inFlight/branchClaims/baseSha. An empty-and-readable --dir is a fresh corpus and answers 0001. Exits 11 (--dir unreadable), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 21 (origin remote unresolvable), 23 (branch refs unwalkable). Two lanes in two clones still collide; this does not claim otherwise. Example: fabrika adr next",
 	),
 );
 
@@ -188,7 +190,7 @@ const mint = leafCommand(
 ).pipe(
 	Command.withShortDescription("Allocate the next ADR id and scaffold its record in one call."),
 	Command.withDescription(
-		"Allocate the next unused ADR id and scaffold its record in one invocation — `adr next` then `adr new` with no gap for another lane's mint to land in. Prints the path written; --json adds id/mergedMax/inFlight/baseSha. Exits 11 (--dir unreadable), 12 (path exists — never overwritten), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 21 (origin remote unresolvable); a bad slug is a usage error and exits 1. Example: fabrika adr mint only-landed-adrs-may-be-cited",
+		"Allocate the next unused ADR id and scaffold its record in one invocation — `adr next` then `adr new` with no gap for another lane's mint to land in. Prints the path written; --json adds id/mergedMax/inFlight/branchClaims/baseSha. Exits 11 (--dir unreadable), 12 (path exists — never overwritten), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 21 (origin remote unresolvable), 23 (branch refs unwalkable); a bad slug is a usage error and exits 1. Example: fabrika adr mint only-landed-adrs-may-be-cited",
 	),
 );
 
