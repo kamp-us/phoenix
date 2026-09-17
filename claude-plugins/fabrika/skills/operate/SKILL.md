@@ -87,6 +87,27 @@ the claim refuses at `51` and leaves you holding a marker for a lane that never 
 whole shape this read replaces. Exit `11` is UNKNOWN: the cap or the root did not read, so how full
 the pipeline is went unanswered rather than answering free — end `STOPPED` naming the code.
 
+**The number the cap reads is the repository's, and a machine whose own is different declares it
+in `.fabrika.local.jsonc`.** That file sits beside the tracked `.fabrika.jsonc` at the repository
+root, is gitignored, and wins per key — so one laptop's seat count stops living in a tracked file
+every driving worktree then carries as modified for a whole run, which `lane integrate`'s dirty-seat
+guard refuses at exit `45`. Write the one key and nothing else:
+
+```jsonc
+{
+	"$schema": "./.fabrika.local.schema.json",
+	"laneConcurrencyCap": 10
+}
+```
+
+`laneConcurrencyCap` is the whole allow-list, and a local file naming any other key **refuses the
+whole config load** rather than being ignored, so every verb of that run stops. **Never hand-edit
+the tracked `.fabrika.jsonc` to raise a cap** — that line is the repo's number, and a blanket
+stage-all in a driver worktree lands one laptop's on the default branch for everybody. Nothing about
+the cap itself softens: there is still no override flag, no environment variable, and a booting lane
+cannot argue past the number it reads. `status settings` names the file each value came from, so a
+stale local file is readable rather than invisible.
+
 **The cap counts issue lanes, so a `chore:<name>` drive is never the one turned away.** A chore
 lane lives under a root of its own that nothing counts, and this read is over the issue-lane root.
 Run it anyway on a chore key — it costs one listing and tells you what the pipeline is carrying —

@@ -168,3 +168,23 @@ keys only, and a key it may not carry refuses the whole load.**
 ## Records
 
 no vocabulary impact
+
+## Amendment — 2026-09-16: the control-plane key's declared name
+
+The permanently-ineligible authority list in §5, and the `.fabrika.jsonc` key inventory in the
+Context above it, both name a key `controlPlane`. **No key of that name is declared.** The key the
+config registry carries is `unreadableCodeowners`, in
+`packages/fabrika-cli/src/config/keys/control-plane.ts` and registered as `unreadableCodeownersKey`
+in `packages/fabrika-cli/src/config/registry.ts` — the module file kept its older name while the key
+itself was renamed. Read both mentions of `controlPlane` in the accepted text above as
+`unreadableCodeowners`.
+
+**The ban lands on the same key group either way, so nothing was mis-ruled.** `unreadableCodeowners`
+decides what happens when CODEOWNERS cannot be read, which is a key naming who may act on the class
+§5's first bullet bars; and rule 3 already makes every key not carrying `machineLocal` ineligible,
+so the key was barred by the allow-list before the name was checked. What the correction buys is
+that a reader matching this record's list against the registry finds every name in it.
+
+Recorded here as a dated amendment rather than a rewrite of the accepted text, by the change that
+implements this record ([#9341](https://github.com/kamp-us/phoenix/issues/9341), folding in
+[#9347](https://github.com/kamp-us/phoenix/issues/9347)).

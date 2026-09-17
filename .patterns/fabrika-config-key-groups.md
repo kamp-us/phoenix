@@ -1,6 +1,7 @@
 # fabrika config key groups
 
-How `.fabrika.jsonc` is read: one load, one parse, one module per key, one registry line.
+How `.fabrika.jsonc` and the gitignored `.fabrika.local.jsonc` beside it are read: one load, one
+parse, one module per key, one registry line.
 
 Lives in [`packages/fabrika-cli/src/config/`](../packages/fabrika-cli/src/config/). Repo-specific
 values that used to be TypeScript literals become keys here, so an adopting repo is a data file
@@ -11,16 +12,17 @@ rather than a branch in fabrika's source (ADR 0273, epic
 
 | File | What it holds |
 |---|---|
-| `document.ts` | `CONFIG_PATH`, the comment stripper, and `readDocument` — the only place the bytes are parsed |
-| `key-group.ts` | `KeyGroup<A>`, the four-arm `Resolution<A>`, `resolveKey`, and `register` |
-| `keys/<key>.ts` | One key group: its key name, its shipped default, its decoder |
+| `document.ts` | `CONFIG_PATH`, `LOCAL_CONFIG_PATH`, `ConfigLayer`/`layerPath`, the comment stripper, and `readDocument` — the only place either file's bytes are parsed |
+| `key-group.ts` | `KeyGroup<A>`, the four-arm `Resolution<A>` (its `Declared` arm carries the layer), `resolveKey` over both layers, and `register` |
+| `keys/<key>.ts` | One key group: its key name, its shipped default, its decoder, and whether a machine may set it locally |
 | `registry.ts` | One `register(...)` line per key group |
-| `json-schema.ts` | `assembleSchema` — joins every registered key's `jsonSchema` fragment into the one draft-07 document an editor validates `.fabrika.jsonc` against |
-| `schema-verb.ts` / `command.ts` / `codes.ts` | The `config schema` verb group — reconciles the committed `.fabrika.schema.json` with the assembled document, or renders it with `--write` |
-| `load.ts` | `loadConfig(source)` → a document every key resolves against, or a refusal; `resolveAll` for a reader over the whole registry |
-| `source.ts` | `readConfigSource(dir)` — opens the file off a directory and reports which of the three arms it found |
+| `machine-local.ts` | `machineLocalKeys` — the allow-list read back off the registry — and `ineligibleLocalKeys`, the refusal a local file naming any other key raises |
+| `json-schema.ts` | `assembleSchema` and `assembleLocalSchema` — joins the registry's `jsonSchema` fragments into the draft-07 document an editor validates `.fabrika.jsonc` against, and the narrowed one it validates `.fabrika.local.jsonc` against |
+| `schema-verb.ts` / `command.ts` / `codes.ts` | The `config schema` verb group — reconciles both committed schema files with their assembled documents, or renders them with `--write` |
+| `load.ts` | The two doors: `loadConfig(source)` over the tracked file alone, `loadLayeredConfig(layers)` over both. Either answers documents every key resolves against, or a refusal; `resolveAll` for a reader over the whole registry |
+| `source.ts` | `readConfigSource(dir)` / `readLocalConfigSource(dir)` — opens a file off a directory and reports which of the three arms it found — and `readConfigLayers(dir)` for both |
 | `entries.ts` | The shared decoders every list key builds on — one place a list's element shape is read |
-| `working-root.ts` | `loadRepoConfig(cwd)` — the working-tree opener, for a verb running against the checkout it stands in |
+| `working-root.ts` | `loadRepoConfig(cwd)` — the working-tree opener, for a verb running against the checkout it stands in, and the only reader of the local layer |
 | `unusable.ts` | `unusableReason(load)` — the one reason no value of this config may be used, which is what a gate keys on instead of the refusal arm |
 | `containment.ts` | The triage-facet containment invariant, checked over declared data |
 | `board.ts` | The board vocabulary's shape (`BoardVocabulary`, `StatusNames`) and how a facet's delete authority is composed from it — pure, so `triage/facets.ts` can build the shipped default off it |
@@ -34,15 +36,17 @@ same ref as the artifact it governs, through the same reader, so the two cannot 
 `capClearAuthors` is the live instance: `build/clearances.ts` opens the bytes with `readFileAtRef`
 at the base ref and hands them through `repo-config.ts` into `loadConfig`.
 
-Whoever opens the file says which of three things it found — `Absent`, `Text`, `Unreadable` — and
-hands that to `loadConfig`. A key module never sees a file, only the parsed record.
+Whoever opens a file says which of three things it found — `Absent`, `Text`, `Unreadable` — and
+hands that to a load: `loadConfig` for the tracked file alone, `loadLayeredConfig` for both layers
+of a working tree. A key module never sees a file, only the parsed records.
 
 ## The four arms
 
 Every key resolves to exactly one, and they stay apart in the type:
 
-- **`Default`** — no file, or no key. The key's shipped default.
-- **`Declared`** — the repo declared it and it decoded.
+- **`Default`** — no file, or no key in either layer. The key's shipped default.
+- **`Declared`** — a layer declared it and it decoded. The arm carries which one, `local` or
+  `tracked`, so a readout can name the file to open rather than leaving an operator to guess.
 - **`Malformed`** — the value is present and refused **whole**, naming what was rejected. Never a
   skipped entry: a typo'd entry silently dropped is a declaration the operator believes is
   configured and is not.
@@ -58,8 +62,11 @@ silently disables a gate.
    `shippedDefault`.
 2. Add one `register(yourKey)` line to `registry.ts`.
 3. Add a `render` **only if** the decoded shape is not the shape a repo writes (see below).
-4. Add a `jsonSchema` fragment describing a declared value's shape (see below). Then regenerate the
-   committed schema with `fabrika config schema --write` — CI reds if you skip it.
+4. Add a `jsonSchema` fragment describing a declared value's shape (see below). Then regenerate both
+   committed schemas with `fabrika config schema --write` — CI reds if you skip it.
+5. Leave `machineLocal` off unless one machine may set this key in `.fabrika.local.jsonc` (see
+   below). Absent is the answer for every shipped key but `laneConcurrencyCap`, and absent is the
+   safe answer — an omitted field bars the key rather than admitting it.
 
 Nothing else is touched. That is the point — concurrent slices each add a key without serializing
 on one growing reader.
@@ -136,6 +143,47 @@ repo root **above** `cwd` first: a config read only at the top level would resol
 defaults for every run from a subdirectory, which is a silent widening nothing reports. Take the
 `cwd` as an option off `command.ts` (`cwd: process.cwd()`) rather than reading it in the verb, so a
 unit test can point the load at a scripted filesystem.
+
+`loadRepoConfig` is also the only reader of the machine-local layer, because that file exists nowhere
+but a working tree.
+
+## The machine-local layer
+
+A machine may declare a key in a gitignored `.fabrika.local.jsonc` beside the tracked file, so a
+laptop whose value differs from the repo's stops carrying a modified tracked file through every run
+(ADR [0398](../.decisions/0398-machine-local-config-layer.md)). Five rules hold.
+
+**Precedence is per key, and a local value replaces the tracked one whole.** `resolveKey` is
+`resolveLocal(...) ?? resolveTracked(...)`: local, then tracked, then the shipped default, with no
+merge step anywhere on the path. A key the local file does not declare resolves off the tracked
+layer untouched.
+
+**Eligibility is a field on the key group, not a list.** `machineLocal: true` on a `KeyGroup`,
+carried through `register`, and `machineLocalKeys` reads the allow-list back off the registry.
+`laneConcurrencyCap` is the whole shipped set — a seat count is a property of the laptop holding the
+seats. A key naming who may act, a key naming a gate's scope or its exemptions, and a key naming a
+command fabrika spawns are permanently barred: a local layer over one of those is an untracked,
+invisible way to weaken a gate.
+
+**An ineligible key refuses the whole load rather than being ignored.** `ineligibleLocalKeys` runs
+first in `loadDocuments`, names every offending key and the settable set, and every key then resolves
+`Malformed` off that refusal. An operator left believing a value is in force that is not is the
+failure the refusal exists for, and a silently dropped key in an untracked file is a change nothing
+in review could read.
+
+**An unreadable or non-object local file is UNKNOWN for every key, never a fall-through.**
+`resolveLocal` returns `null` — the fall to the tracked layer — only for an absent file and for a
+record that does not name the key. A file that could not be read proves nothing about what the
+machine declared, so reading the tracked value under it would be the same green as a machine that
+declared nothing.
+
+**No ref-based read grows a local arm.** `loadConfig` takes one source and resolves `local: Absent`
+by construction, so `build/clearances.ts` and every other `readFileAtRef` caller sees the tracked
+file alone. There is no local file at a ref, it cannot be fetched at one, and it must never reach a
+gate's verdict.
+
+`readKey`'s note names the layer a value came from, and `status settings` reports it per key, so a
+reader debugging a number is sent to the file that set it.
 
 ## A gate refuses on a config that never decoded
 
@@ -241,6 +289,11 @@ fragment beside its `decode`, and `config/json-schema.ts`'s `assembleSchema` joi
 fragments into one draft-07 document. `.fabrika.jsonc` opens with a `$schema` pointer at the committed
 `.fabrika.schema.json`, and an editor reds a misspelled key or a wrong-typed value while you type.
 
+`assembleLocalSchema` assembles the second document, `.fabrika.local.schema.json`, off the same
+fragments narrowed to `machineLocalKeys` — so an editor reds a key no machine may set locally where
+it is typed, rather than at the load refusal a run later. The completeness check below still runs
+over the whole registry, so a narrowed document cannot green a gap in the tracked file's schema.
+
 Three things hold.
 
 **The fragment is single-sourced beside the decoder.** It describes the *declared* value's shape —
@@ -253,13 +306,14 @@ type but required in practice: `assembleSchema` names any registered key that ca
 emits nothing, because a schema missing a key's subtree greens a typo under it — the exact gap the
 schema exists to close. `json-schema.unit.test.ts` asserts the real registry is complete.
 
-**The committed file is generated, and CI keeps it honest.** `config schema` compares the committed
-`.fabrika.schema.json` to the freshly assembled document — by content, not bytes, so the repo's
-formatter may reformat it freely, though the key order is the generator's — and reds drift (exit 4).
-`--write` renders it. What runs that check on a PR is `config/schema.cli.test.ts`, which spawns the
-no-flag verb at the repo root; it rides the `packages unit tests` job, whose path filter lists both
-`packages/**` and `.fabrika.schema.json`, so neither side of the pair can be edited without the job
-firing. A root the verb could not locate exits `6` (UNKNOWN), never `4` — an unlocatable file is not
-a file that disagrees. The verb mirrors `wire index`, the sibling generated-file reconcile, and is
-unaligned from the exit-code base as `wire` is (`exit-code-alignment.ts`). The file is excluded from
-biome (`biome.jsonc`), so a regenerate leaves the committed output stable.
+**Both committed files are generated, and CI keeps them honest.** `config schema` compares each
+committed document — `.fabrika.schema.json` and `.fabrika.local.schema.json` — to the freshly
+assembled one, by content, not bytes, so the repo's formatter may reformat it freely, though the key
+order is the generator's — and reds drift (exit 4). `--write` renders them. What runs that check on a
+PR is `config/schema.cli.test.ts`, which spawns the no-flag verb at the repo root; it rides the
+`packages unit tests` job, whose path filter lists `packages/**` and both schema files, so no side of
+that set can be edited without the job firing. A root the verb could not locate exits `6` (UNKNOWN),
+never `4` — an unlocatable file is not a file that disagrees. The verb mirrors `wire index`, the
+sibling generated-file reconcile, and is unaligned from the exit-code base as `wire` is
+(`exit-code-alignment.ts`). Both files are excluded from biome (`biome.jsonc`), so a regenerate
+leaves the committed output stable.

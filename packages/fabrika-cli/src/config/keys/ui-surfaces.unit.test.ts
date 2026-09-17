@@ -53,7 +53,7 @@ describe("the shipped default", () => {
 	});
 
 	it("admits a declared empty list — no rendered gate is a declaration, not a malformity", () => {
-		expect(declared([])).toMatchObject({_tag: "Declared", value: []});
+		expect(declared([])).toMatchObject({_tag: "Declared", layer: "tracked", value: []});
 	});
 
 	it("defaults the capture settings a repo declares none of", () => {
@@ -143,6 +143,7 @@ describe("a declared uiCapture", () => {
 	it("carries a declared storageState through", () => {
 		expect(capture({storageState: ".fabrika/design-session.json"})).toMatchObject({
 			_tag: "Declared",
+			layer: "tracked",
 			value: {storageState: ".fabrika/design-session.json"},
 		});
 	});
@@ -152,6 +153,7 @@ describe("a declared uiCapture", () => {
 			capture({viewport: {width: 390, height: 844}, evidenceStore: "https://depo/x"}),
 		).toMatchObject({
 			_tag: "Declared",
+			layer: "tracked",
 			value: {viewport: {width: 390, height: 844}, evidenceStore: "https://depo/x"},
 		});
 	});
@@ -159,6 +161,7 @@ describe("a declared uiCapture", () => {
 	it("reads an explicit null evidenceStore as no store", () => {
 		expect(capture({evidenceStore: null})).toMatchObject({
 			_tag: "Declared",
+			layer: "tracked",
 			value: {evidenceStore: null},
 		});
 	});

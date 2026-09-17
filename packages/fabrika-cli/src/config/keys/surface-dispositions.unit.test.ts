@@ -39,6 +39,7 @@ describe("what a partial declaration leaves alone", () => {
 		const resolved = declared('{"surfaceDispositions": {"design-manifest": "degrade"}}');
 		expect(resolved).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: {...SHIPPED_SURFACE_DISPOSITIONS, "design-manifest": "degrade"},
 		});
 	});
