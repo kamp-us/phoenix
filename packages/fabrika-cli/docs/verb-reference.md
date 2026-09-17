@@ -297,8 +297,16 @@ second surface (ADR 0289; #5842, consolidated into epic #5843).
 
 | Verb | Answers |
 |---|---|
-| `decision rule <n> --cites <url>` | records the ruling and flips the audience — **only after** the marker reads back |
+| `decision rule <n> --cites <url>` | records a ruling already comment-shaped on the issue and flips the audience — **only after** the marker reads back |
+| `decision rule <n> --authorization <file>` | posts the founder's dated words verbatim, cites that comment in the marker, then flips the same way |
 | `decision ruling <n>` | whether the issue carries a `current`, `stale` or `absent` ruling |
+
+`rule` takes exactly one of `--cites` and `--authorization`, and neither or both is exit `1`. Under
+`--authorization` the quote lands **first** and the marker second, because a marker citing a comment
+that never posted points at nothing; the file is judged by the same check `grill rule` runs — dated,
+no bare `@` path, no machine-local path — and posted verbatim, never summarized. The ACL does not
+move with it: the invoking account is still the one that has to be on the roster, and what a quoted
+authorization buys is that a ruling given in conversation costs the founder no comment to type.
 
 `rule` derives the digest itself; there is no `--digest`, because a ruling whose scope its caller
 supplies attests whatever the caller pleased. Both verbs resolve the `@kamp-us/control-plane` roster
@@ -306,9 +314,10 @@ through the same `ship/codeowners.ts` path the merge gate uses: the write gates 
 account, and the read gates on the marker's author, because posting those bytes takes nothing but the
 ability to comment. `ruling`'s three states all exit `0` — a missing ruling is the answer.
 
-**Exit codes.** The shared table's `7` / `8` / `9` / `11`, plus one of its own: `20` the invoking
-account is off the control-plane roster, or that roster names nobody. A roster that could not be read
-is `11`, never "unauthorized" and never "authorized" (#4223).
+**Exit codes.** The shared table's `5` / `6` / `7` / `8` / `9` / `11`, plus two of its own: `20` the
+invoking account is off the control-plane roster, or that roster names nobody, and `21` the quoted
+authorization is empty or carries no ISO-8601 date. A roster that could not be read is `11`, never
+"unauthorized" and never "authorized" (#4223).
 
 ## The `glossary` group
 
@@ -694,6 +703,14 @@ The lane ledger the operator loop drives. A lane is a directory —
 verb is a fresh process that re-folds the whole log through a
 [@demlik/tea](https://github.com/kamp-us/demlik) Transitions machine. No resident process, no
 snapshot. Lane state is local and never committed.
+
+**The key is read once, in one place, and every verb here takes the answer.** A key is one
+directory leaf — an issue number, or `chore:<name>` — so a separator or a traversal is refused at
+`21` before a path is joined or a board read is sent, and a padded number is canonicalized on read:
+`05673`, `0005673` and `5673` name one board issue, one claim target and one directory. A safe
+non-board leaf (`epic-5492`, `0`) keeps its own local identity and stays unclaimable, because no
+board thread stands behind it
+([#8853](https://github.com/kamp-us/phoenix/issues/8853)).
 
 | Verb | Answers |
 |---|---|

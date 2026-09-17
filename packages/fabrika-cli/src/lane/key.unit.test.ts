@@ -1,5 +1,6 @@
 /** The lane key — which kind an argument names, where it lands, and the names it refuses. */
 import {describe, expect, it} from "vitest";
+import {claimTarget} from "./claim.ts";
 import {
 	CHORE_NAME_LIMIT,
 	keyIssue,
@@ -7,6 +8,7 @@ import {
 	parseKey,
 	rawKeyIssue,
 	resolveKeyIssue,
+	resolveRawIssue,
 	templateFile,
 } from "./key.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "./store.ts";
@@ -117,5 +119,74 @@ describe("which of the two ways a key names no issue", () => {
 		expect(resolveKeyIssue(key("chore:park-sweep"))).toEqual({_tag: "Chore"});
 		expect(resolveKeyIssue(key("frozen-deadlock"))).toEqual({_tag: "Unnumbered"});
 		expect(resolveKeyIssue(key("8012abc"))).toEqual({_tag: "Unnumbered"});
+	});
+});
+
+/**
+ * One board issue, three spellings — the split this key reader exists to close. `05673` and `5673`
+ * named different directories and only one of them carried a claim target, so a driver could hold
+ * the claimable identity while another drove the padded one.
+ */
+describe("a padded issue number is one identity, not several", () => {
+	const SPELLINGS = ["5673", "05673", "0005673"];
+
+	it("gives every spelling the same canonical directory leaf under either root", () => {
+		for (const raw of SPELLINGS) {
+			expect(laneRef(key(raw), null)).toEqual({root: DEFAULT_LANES_ROOT, lane: "5673"});
+			expect(laneRef(key(raw), "/tmp/lanes")).toEqual({root: "/tmp/lanes", lane: "5673"});
+		}
+	});
+
+	it("addresses the same board issue and the same claim target from every spelling", () => {
+		for (const raw of SPELLINGS) {
+			expect(keyIssue(key(raw))).toBe(5673);
+			expect(claimTarget(key(raw))).toEqual({_tag: "Number", number: 5673});
+		}
+	});
+
+	it("agrees across every padding the reader accepts, not just the three above", () => {
+		for (let zeros = 0; zeros <= 6; zeros += 1) {
+			const spelled = key(`${"0".repeat(zeros)}5673`);
+
+			expect(laneRef(spelled, null).lane).toBe("5673");
+			expect(keyIssue(spelled)).toBe(5673);
+			expect(claimTarget(spelled)).toEqual({_tag: "Number", number: 5673});
+		}
+	});
+
+	it("trims only the leading number, leaving a quarantine suffix byte-identical", () => {
+		expect(laneRef(key("05673.frozen-deadlock-20260905T194736"), null).lane).toBe(
+			"5673.frozen-deadlock-20260905T194736",
+		);
+		expect(keyIssue(key("05673.frozen-deadlock-20260905T194736"))).toBe(5673);
+	});
+
+	it("canonicalizes a directory name a sweep read off a root the same way", () => {
+		expect(resolveRawIssue("05673")).toEqual({_tag: "Issue", number: 5673});
+		expect(rawKeyIssue("0005673")).toBe(5673);
+		expect(resolveRawIssue("../chores/park-sweep")).toEqual({_tag: "Unnumbered"});
+	});
+});
+
+describe("an issue key is one directory leaf", () => {
+	it("refuses a separator or a traversal before any path is joined", () => {
+		for (const raw of ["../chores/park-sweep", "a/b", "..", ".", "./5673", "5673/", "\\etc"]) {
+			expect(parseKey(raw)._tag).toBe("Malformed");
+		}
+		expect(reasonFor("../chores/park-sweep")).toContain("directory leaf");
+	});
+
+	it("keeps chore addressing and the chore refusals it already had", () => {
+		expect(key("chore:park-sweep")).toEqual({_tag: "Chore", name: "park-sweep"});
+		expect(parseKey("chore:../../etc")._tag).toBe("Malformed");
+		expect(reasonFor("chore:Park-Sweep")).toContain("lowercase kebab");
+	});
+
+	it("keeps a safe non-board key local rather than promoting it to a board issue", () => {
+		for (const raw of ["epic-5492", "0", "frozen-deadlock"]) {
+			expect(laneRef(key(raw), null).lane).toBe(raw);
+			expect(keyIssue(key(raw))).toBeNull();
+			expect(claimTarget(key(raw))._tag).toBe("Inert");
+		}
 	});
 });

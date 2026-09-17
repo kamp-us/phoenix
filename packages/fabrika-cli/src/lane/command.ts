@@ -25,6 +25,7 @@ import {localBranches} from "../io/git.ts";
 import {readStdin} from "../io/stdin.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {admitBoardKey, admitKey} from "./admission.ts";
 import {claimOwnership, runAmend} from "./amend-verb.ts";
 import {closedReader} from "./archive-move.ts";
 import {runArchiveSweep} from "./archive-sweep-verb.ts";
@@ -90,7 +91,7 @@ import {DEFAULT_VIEW_PORT, listeningAt, runView} from "./view-verb.ts";
 
 const laneArgument = Argument.string("lane").pipe(
 	Argument.withDescription(
-		"the lane key — the issue number the lane drives, or `chore:<name>` for a chore lane. A directory name carrying a dot-separated suffix after the number (`8012.frozen-deadlock-<stamp>`) still names issue 8012, so a quarantined lane is addressable by every verb here",
+		"the lane key — the issue number the lane drives, or `chore:<name>` for a chore lane. A key is one directory leaf: a separator or a traversal is refused at 21 before any path is joined or any board read is sent. A padded number is canonicalized on read, so `05673` and `5673` name one lane, one claim target and one directory. A directory name carrying a dot-separated suffix after the number (`8012.frozen-deadlock-<stamp>`) still names issue 8012, so a quarantined lane is addressable by every verb here",
 	),
 );
 
@@ -101,49 +102,20 @@ const rootFlag = Flag.string("root").pipe(
 	),
 );
 
-/**
- * Resolve the `lane` argument to a key and its directory, or refuse it — the one step every keyed
- * verb shares, so a malformed key is caught before any verb reads or writes anything, and the ground
- * under the resolved root is proven before either. An explicit `--root` wins; otherwise the root is
- * derived off the repository the cwd belongs to, so a linked worktree reads the same ledger
- * as the primary checkout instead of proving the lane absent against its own empty one.
- */
+/** Seat the shared key admission at this process's cwd — the adapter's one job here. */
 const onKey = <R>(
 	verb: string,
 	raw: string,
 	root: Option.Option<string>,
 	run: (key: LaneKey, ref: LaneRef) => Effect.Effect<VerbOutcome, never, R>,
-): Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path> => {
-	const parsed = parseKey(raw);
-	if (parsed._tag === "Malformed") return Effect.succeed(keyRefusal(parsed));
-	if (Option.isSome(root)) {
-		const ref = laneRef(parsed.key, root.value);
-		return onGround(verb, [ref.root], process.cwd(), () => run(parsed.key, ref));
-	}
-	return Effect.gen(function* () {
-		const path = yield* Path.Path;
-		const ground = yield* deriveRepoRoot(process.cwd());
-		if (ground._tag !== "Derived") {
-			return repoGroundRefusal(`fabrika lane ${verb}`, ground);
-		}
-		const ref = laneRef(parsed.key, path.join(ground.repoRoot, defaultRoot(parsed.key)));
-		return yield* onGround(verb, [ref.root], process.cwd(), () => run(parsed.key, ref));
-	});
-};
+): Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path> =>
+	admitKey(verb, raw, Option.getOrNull(root), process.cwd(), run);
 
-/**
- * Resolve the `lane` argument for a verb whose ground is the **board**, not the disk — `claim` and
- * `release`, which race a marker on the issue a lane drives and read no lanes root at all. They take
- * the key alone rather than a ref, so neither can reach a root the cwd would decide, and neither owes
- * the repo probe {@link onGround} makes.
- */
+/** The same admission for a board-ground verb, which reaches no root at all. */
 const onBoardKey = <R>(
 	raw: string,
 	run: (key: LaneKey) => Effect.Effect<VerbOutcome, never, R>,
-): Effect.Effect<VerbOutcome, never, R> => {
-	const parsed = parseKey(raw);
-	return parsed._tag === "Malformed" ? Effect.succeed(keyRefusal(parsed)) : run(parsed.key);
-};
+): Effect.Effect<VerbOutcome, never, R> => admitBoardKey(raw, run);
 
 const dispatch = leafCommand(
 	"dispatch",
