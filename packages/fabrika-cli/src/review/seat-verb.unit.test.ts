@@ -16,11 +16,14 @@ const BASE = "99b145346624d50b12c93309c9f566cce40cc8f2";
 /** Where an unseated reviewer stands: neither end of the range — the shape the incident had. */
 const ELSEWHERE = "cb5e76a3f2b1c4d5e6f708192a3b4c5d6e7f8091";
 const BRANCH = "build/8820-seat-the-tree-9f2e1a4b";
+/** A prior attempt's branch left beside the live one — what a clone that retried the child holds. */
+const STALE = "build/8820-seat-the-tree-1a2b3c4d";
 
 const BRANCHES = /^git for-each-ref/;
 const HEAD = () => once(/^git rev-parse --verify --quiet HEAD\^/);
 const RESOLVE_TIP = new RegExp(`^git rev-parse --verify --quiet ${TIP}\\^`);
 const RESOLVE_BRANCH = new RegExp(`^git rev-parse --verify --quiet ${BRANCH}\\^`);
+const RESOLVE_STALE = new RegExp(`^git rev-parse --verify --quiet ${STALE}\\^`);
 const MERGE_BASE = /^git merge-base /;
 const SWITCH = /^git switch --detach /;
 
@@ -128,6 +131,60 @@ describe("runSeat — the unreachable tip", () => {
 		const out = await run(shell);
 		expect(out.code).toBe(UNREACHABLE_TIP);
 		expect(shellSaid(out.stderr)).toContain(BRANCH);
+		expect(shell.calls.some((line) => SWITCH.test(line))).toBe(false);
+	});
+});
+
+describe("runSeat — a candidate nobody could read, beside one that carries the tip", () => {
+	/** The live branch first, a prior attempt's leftover second — the order the ref listing gives. */
+	const twoCandidates = (staleRows: ReadonlyArray<Row>): FakeShell =>
+		fakeShell([
+			[HEAD(), okOut(`${ELSEWHERE}\n`)],
+			[HEAD(), okOut(`${TIP}\n`)],
+			[BRANCHES, okOut(`main\n${BRANCH}\n${STALE}\n`)],
+			[RESOLVE_TIP, okOut(`${TIP}\n`)],
+			[RESOLVE_BRANCH, okOut(`${TIP}\n`)],
+			...staleRows,
+			[MERGE_BASE, okOut(`${TIP}\n`)],
+			[SWITCH, okOut("")],
+		]);
+
+	it("seats anyway when a later candidate's ref will not resolve", async () => {
+		const shell = twoCandidates([[RESOLVE_STALE, errOut("bad revision")]]);
+		const out = await run(shell);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(`seated\t${TIP}\t${BRANCH}\tchecked-out\n`);
+		expect(shell.calls).toContain(`git switch --detach ${TIP}`);
+	});
+
+	it("seats anyway when a later candidate's containment read fails", async () => {
+		const shell = twoCandidates([
+			[RESOLVE_STALE, okOut(`${ELSEWHERE}\n`)],
+			[new RegExp(`^git merge-base ${ELSEWHERE} `), errOut("bad object")],
+		]);
+		const out = await run(shell);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(`seated\t${TIP}\t${BRANCH}\tchecked-out\n`);
+	});
+
+	it("names the unread candidate on stderr rather than burying it", async () => {
+		const out = await run(twoCandidates([[RESOLVE_STALE, errOut("bad revision")]]));
+		expect(shellSaid(out.stderr)).toContain(STALE);
+		expect(shellSaid(out.stderr)).toContain("The seat was proven without them.");
+	});
+
+	it("still refuses at 11 when no candidate carried the tip and one went unread", async () => {
+		const shell = fakeShell([
+			[BRANCHES, okOut(`main\n${BRANCH}\n${STALE}\n`)],
+			[RESOLVE_TIP, okOut(`${TIP}\n`)],
+			[RESOLVE_BRANCH, okOut(`${ELSEWHERE}\n`)],
+			[new RegExp(`^git merge-base ${ELSEWHERE} `), okOut(`${BASE}\n`)],
+			[RESOLVE_STALE, errOut("bad revision")],
+		]);
+		const out = await run(shell);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(shellSaid(out.stderr)).toContain(STALE);
+		expect(shellSaid(out.stderr)).toContain("UNKNOWN");
 		expect(shell.calls.some((line) => SWITCH.test(line))).toBe(false);
 	});
 });

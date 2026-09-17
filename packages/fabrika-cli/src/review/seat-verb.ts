@@ -18,6 +18,13 @@
  * {@link UNREACHABLE_TIP} rather than on the UNKNOWN seat, and the refusal names the range and the
  * ref it could not resolve.
  *
+ * **A candidate branch nobody could read decides nothing once another has proven the tip.** Once one
+ * lane branch carries it, the seat is determined — the commit is what the tree goes on, and the
+ * branch name is only reported — so a later candidate's unreadable ref or containment read is
+ * carried as a per-candidate note instead of refusing the whole verb. It becomes
+ * {@link PRECONDITION_UNKNOWN} only where no candidate carried the tip and an unread one could have,
+ * which is the one shape where the answer actually turns on it.
+ *
  * **The seat is detached, and a re-run is not a second checkout.** The reviewer commits nothing, so
  * moving or switching a branch would be a mutation nobody asked for; and a tree already standing on
  * the tip is already seated, which the verb answers by reading HEAD rather than by checking out
@@ -102,22 +109,24 @@ export const runSeat = (
 		}
 
 		const carrying: string[] = [];
+		// A candidate that cannot be read is a fact about that candidate, never about the seat. It is
+		// kept here and spent at the end, because only an empty `carrying` makes it decide anything:
+		// reading it as "not carried" would turn an unreadable object database into a proven absence,
+		// and refusing on it while another candidate has already proven the tip would turn a
+		// determined seat into a park on a human.
+		const unreadable: string[] = [];
 		for (const branch of candidates) {
 			const branchTip = yield* resolveCommit(branch);
 			if (branchTip._tag === "Failure") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot resolve "${branch}": ${branchTip.reason} — whether it carries ${range}'s tip is UNKNOWN, so nothing was checked out.`,
-				);
+				unreadable.push(`cannot resolve "${branch}": ${branchTip.reason}`);
+				continue;
 			}
 			const shared = yield* mergeBase(branchTip.value, tipCommit.value);
-			// A read that failed says nothing about containment, and reading it as "not carried" would
-			// turn an unreadable object database into a proven absence — the fail-open direction.
 			if (shared._tag === "Failure") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot tell whether "${branch}" carries ${tipCommit.value}: ${shared.reason} — nothing was checked out.`,
+				unreadable.push(
+					`cannot tell whether "${branch}" carries ${tipCommit.value}: ${shared.reason}`,
 				);
+				continue;
 			}
 			if (shared.value === tipCommit.value) carrying.push(branch);
 		}
@@ -125,6 +134,12 @@ export const runSeat = (
 		// and the commit is what the tree is put on. The name is reported, never chosen from.
 		const branch = carrying.at(0);
 		if (branch === undefined) {
+			if (unreadable.length > 0) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: no readable lane branch of #${issue} carries ${range}'s tip and ${unreadable.length} could not be read — ${unreadable.join("; ")} — so whether the tip is here is UNKNOWN and nothing was checked out.`,
+				);
+			}
 			return refuse(
 				UNREACHABLE_TIP,
 				`${VERB}: ${range}'s tip is in this tree's object database, but no lane branch of #${issue} reaches it — ${candidates.join(", ")} carry other commits. The range this shell was briefed on is not the range these branches hold, so nothing was checked out.`,
@@ -133,6 +148,11 @@ export const runSeat = (
 		const notes = [
 			`${VERB}: ${range} is carried by ${carrying.join(", ")}; seating this tree at ${tipCommit.value}.`,
 		];
+		if (unreadable.length > 0) {
+			notes.push(
+				`${VERB}: ${unreadable.length} other candidate branch(es) could not be read — ${unreadable.join("; ")}. The seat was proven without them.`,
+			);
+		}
 
 		const before = yield* headCommit;
 		if (before._tag === "Failure") {

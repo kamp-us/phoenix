@@ -62,8 +62,13 @@ the same tracked debt the sibling contracts carry.)
   the working tree are the child review's by design and the child's branch is local to the tree that
   built it. It cuts no worktree of its own — so the `/tmp` collision and the fixed-name scratch file
   both stay unconstructible — and it never checks out a pull request's head, which is the surface the
-  self-review hole lives on. What it does put on disk is the child's range as its own run built it;
-  the `self` fence is what governs reading that, exactly as it governs the diff bytes today.
+  self-review hole lives on. What it does put on disk is the child's range as its own run built it,
+  and **no `self` fence governs that read** — `self` is computed by `review scope`, which resolves a
+  pull request's head and has no range form, so an epic child's review never derives that flag at
+  all. What holds instead is narrower and mechanical: a checkout mid-run auto-loads no instruction
+  file, and the shell judges by the rubric text its spawn preloaded, so moving the tree cannot change
+  which rules the reviewer applies. That is the whole control on this path; it is not the `self`
+  fence, and a later narrowing may not cite one here.
 - **A dead-link / decision-index / skill-frontmatter checker.** The repo's own CI jobs already
   gate each. The rubrics state the expectation; the verdict stays where it is enforced.
 - **A control-plane classifier.** `cp-classify` routes §CP membership and CODEOWNERS enforces it
@@ -1600,6 +1605,13 @@ that grades in place. Several carrying branches is not ambiguity about the seat:
 same commit, and the commit is what the tree is put on, so all of them are reported and the first is
 named.
 
+**A candidate nobody could read decides nothing once another has carried the tip.** A clone that has
+run more than one attempt at a child carries stale `build/<n>-…` refs beside the live one, so a
+candidate whose ref or containment read fails is ordinary rather than exotic. Each such failure is
+kept as a fact about that candidate and reported on stderr beside the seat; it becomes the `11`
+refusal only where no candidate carried the tip and an unread one could have. Refusing the whole verb
+on it while the seat was already proven would turn a determined answer into a park on a human.
+
 **The seat is detached, and a re-run is not a second checkout.** A reviewer commits nothing, so
 switching or moving a branch would be a mutation nobody asked for. A tree already standing on the
 tip is answered by reading the commit rather than by checking out again, and the answer says which
@@ -1620,7 +1632,7 @@ stderr. `--json` answers
 | `8` | the checkout itself failed — where this tree stands is UNKNOWN |
 | `9` | the checkout reported success and the commit reads back as another — nothing here is seated |
 | `10` | a lone `--base`/`--tip`, neither given, or an end that is not a revision |
-| `11` | a git read failed — the branch list, a branch's tip, containment, or the commit read-back; nothing was checked out |
+| `11` | a git read the answer turns on failed — the branch list, this tree's HEAD, the read-back, or every candidate that could have carried the tip; nothing was checked out |
 | `20` | the tip is not reachable here: no lane branch of this child is in this clone, the tip resolves to no object, or no lane branch of this child reaches it |
 
 **Errors**
@@ -1635,7 +1647,10 @@ stderr. `--json` answers
 | `review seat: cannot resolve <tip> to a commit — the tip of <base>..<tip>; <branches> carry #<n>'s commits and this tree holds no object for that tip. …` | 20 | refusal |
 | `review seat: <base>..<tip>'s tip is in this tree's object database, but no lane branch of #<n> reaches it — <branches> carry other commits. …` | 20 | refusal |
 | `review seat: cannot read this tree's local branches: <reason> — whether <base>..<tip>'s tip is here is UNKNOWN, so nothing was checked out.` | 11 | refusal |
-| `review seat: cannot tell whether "<branch>" carries <tip>: <reason> — nothing was checked out.` | 11 | refusal |
+| `review seat: no readable lane branch of #<n> carries <base>..<tip>'s tip and <k> could not be read — cannot resolve "<branch>": <reason>; cannot tell whether "<branch>" carries <tip>: <reason> — so whether the tip is here is UNKNOWN and nothing was checked out.` | 11 | refusal |
+| `review seat: cannot read this tree's HEAD: <reason> — where it stands is UNKNOWN, so nothing was checked out.` | 11 | refusal |
+| `review seat: cannot read this tree's HEAD back: <reason> — whether the seat took is UNKNOWN.` | 11 | refusal |
+| `review seat: <k> other candidate branch(es) could not be read — <per-candidate reasons>. The seat was proven without them.` | 0 | notice |
 | `review seat: \`git switch --detach <tip>\` failed: <reason> — this tree stood on <commit> when the checkout was attempted and where it stands now is UNKNOWN. …` | 8 | refusal |
 | `review seat: the checkout reported success and HEAD reads <other>, not <tip> — this tree is not seated on <base>..<tip> …` | 9 | refusal |
 

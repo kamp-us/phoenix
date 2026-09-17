@@ -158,10 +158,11 @@ for its whole first pass, caught it itself, and retracted two posted verdicts; n
 catch.
 
 ```bash
-fabrika review seat $child_issue --base 9f2c1ab --tip 03135b9
+fabrika review seat 8820 --base 9f2c1ab --tip 03135b9
 ```
 
-The pair is your brief's own `range`, typed out as it printed — never a range you re-resolved here.
+The positional is your brief's child issue and the pair is that brief's own `range`, all three typed
+out as they printed — never a number or a range you re-resolved here.
 The verb checks the tree out at the tip, detached, and reads the commit back off git, so the answer's
 second field is where you provably stand: `checked-out` on the first run, `already-seated` on a
 re-run, which is not a second checkout. **Exit `20` is a stop, not a note**: the tip is not reachable
@@ -393,7 +394,7 @@ route this step names is open on a child exactly as it is on a PR — a finding 
 in the verdict body instead enters no cycle.
 
 ```bash
-fabrika review append-criterion $child_issue --base 9f2c1ab --tip 03135b9 --round 1 <<'EOF'
+fabrika review append-criterion 8820 --base 9f2c1ab --tip 03135b9 --round 1 <<'EOF'
 a regression test covers the widened union
 EOF
 ```
