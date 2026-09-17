@@ -60,6 +60,62 @@ describe("the lane store under a name key", () => {
 		const fs = fakeFs({files: {[WORKFLOW]: choreTemplateText()}, unreadable: [WORKFLOW]});
 		const loaded = await Effect.runPromise(Effect.provide(loadLane(ref()), fs.layer));
 
-		expect(loaded._tag).toBe("Unreadable");
+		expect(loaded).toMatchObject({_tag: "Unreadable", path: WORKFLOW});
+		if (loaded._tag !== "Unreadable") return;
+		expect(loaded.reason).toContain("PermissionDenied");
+	});
+});
+
+/**
+ * The split between absence and UNKNOWN is the read's own failure, so a probe that CONTRADICTS the
+ * read is what a test has to script: a filesystem whose `exists` says the path is there, or cannot
+ * answer at all, while the read said `NotFound`. Under a second sample both of these were
+ * `Unreadable` — the false exit `11` a racing writer earned.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9315
+ */
+describe("the lane store's absent-versus-unreadable split", () => {
+	it("proves the workflow absent off its own NotFound while the path reads present", async () => {
+		const fs = fakeFs({files: {}, directories: [WORKFLOW]});
+		const loaded = await Effect.runPromise(Effect.provide(loadLane(ref()), fs.layer));
+
+		expect(loaded).toEqual({_tag: "Absent", dir: DIR});
+	});
+
+	it("proves the workflow absent off its own NotFound while the path cannot be probed", async () => {
+		const fs = fakeFs({files: {}, unprobeable: [WORKFLOW]});
+		const loaded = await Effect.runPromise(Effect.provide(loadLane(ref()), fs.layer));
+
+		expect(loaded).toEqual({_tag: "Absent", dir: DIR});
+	});
+
+	it("loads an event-less lane off the log's own NotFound while the log reads present", async () => {
+		const fs = fakeFs({files: {[WORKFLOW]: choreTemplateText()}, directories: [LOG]});
+		const loaded = await Effect.runPromise(Effect.provide(loadLane(ref()), fs.layer));
+
+		expect(loaded._tag).toBe("Loaded");
+		if (loaded._tag !== "Loaded") return;
+		expect(loaded.entries).toEqual([]);
+	});
+
+	it("loads an event-less lane off the log's own NotFound while the log cannot be probed", async () => {
+		const fs = fakeFs({files: {[WORKFLOW]: choreTemplateText()}, unprobeable: [LOG]});
+		const loaded = await Effect.runPromise(Effect.provide(loadLane(ref()), fs.layer));
+
+		expect(loaded._tag).toBe("Loaded");
+		if (loaded._tag !== "Loaded") return;
+		expect(loaded.entries).toEqual([]);
+	});
+
+	it("keeps a log that failed for any other reason UNKNOWN, carrying that reason", async () => {
+		const fs = fakeFs({
+			files: {[WORKFLOW]: choreTemplateText(), [LOG]: ""},
+			unreadable: [LOG],
+		});
+		const loaded = await Effect.runPromise(Effect.provide(loadLane(ref()), fs.layer));
+
+		expect(loaded).toMatchObject({_tag: "Unreadable", path: LOG});
+		if (loaded._tag !== "Unreadable") return;
+		expect(loaded.reason).toContain("PermissionDenied");
 	});
 });

@@ -3,6 +3,12 @@ import {Cause, Effect, Exit, Layer, Schema} from "effect";
 import {ProcessId} from "../process/process.ts";
 import {CallId, type SpellPath} from "../protocol/ids.ts";
 import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../protocol/messages.ts";
+import {
+	decodeServerFrame,
+	encodeFrame,
+	SPELL_REPLY_KIND,
+	spellReplyFrame,
+} from "../shell/transport/wire.ts";
 import {SpellFailed} from "./errors.ts";
 import {SpellExecutor} from "./executor.ts";
 import {SpellRegistry} from "./registry.ts";
@@ -91,7 +97,20 @@ const lie: AnySpell = {
 	capabilities: [],
 };
 
-const spells: ReadonlyArray<AnySpell> = [close, refuse, swear, mutter, hush, lie];
+/**
+ * A spell that returns nothing — the shape `compileCommands` gives every authored spell
+ * (`../authoring/commands.ts`), and therefore the shape the desk actually runs most often (#9365).
+ */
+const vanish = defineSpell({
+	path: ["window", "vanish"],
+	describe: "Complete and return nothing.",
+	params: Schema.Struct({}),
+	result: Schema.Void,
+	execute: () => Effect.void,
+	capabilities: [],
+});
+
+const spells: ReadonlyArray<AnySpell> = [close, refuse, swear, mutter, hush, lie, vanish];
 
 const layer = SpellExecutor.layer.pipe(
 	Layer.provide(Layer.mergeAll(SpellRegistry.scripted(spells), WindowIndex.scripted(placements))),
@@ -244,6 +263,26 @@ describe("SpellExecutor", () => {
 		Effect.gen(function* () {
 			const reply = yield* execute(call({path: ["window", "hush"], args: {}}));
 			assert.strictEqual(failure(reply).message, "the call failed with test/Silent");
+		}),
+	);
+
+	it.effect("answers a Void spell with a reply the page's wire decodes, result and all", () =>
+		Effect.gen(function* () {
+			const reply = yield* execute(call({path: ["window", "vanish"], args: {}}));
+			assert.strictEqual(reply.ok, true);
+			assert.strictEqual(reply.ok ? reply.result : "not-ok", undefined);
+
+			// The whole trip the desk takes: the executor's reply, through JSON, back out on the page.
+			// A required `result` refused this frame, and the command line sat at "Running…" (#9365).
+			const decoded = decodeServerFrame(encodeFrame(spellReplyFrame(reply)));
+			assert.strictEqual(decoded._tag, "Frame");
+			const frame = decoded._tag === "Frame" ? decoded.frame : undefined;
+			assert.strictEqual(frame?.kind, SPELL_REPLY_KIND);
+			const back = frame?.kind === SPELL_REPLY_KIND ? frame.reply : undefined;
+			assert.strictEqual(back?.ok, true);
+			// Absent, not `null`: the page reads absent as "completed, returned nothing".
+			assert.strictEqual(back !== undefined && "result" in back, false);
+			assert.strictEqual(back?.ok === true ? back.result : "not-ok", undefined);
 		}),
 	);
 

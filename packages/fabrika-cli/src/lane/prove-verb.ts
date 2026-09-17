@@ -23,24 +23,42 @@
  * candidates. The four are the artifact-independent vocabulary, so the range arms allocate no new
  * seat — what a caller must do about "the artifact is not there" does not change with its kind.
  *
+ * **At exit 0 there are three answers, and a driver routes on which one came back.** `proven` says
+ * the artifact is there. `not-required` says the machine walks this event out of this leaf and the
+ * event claims nothing a read could falsify — record it. `not-walkable` says the machine would not
+ * walk it at all: an event name no state of this lane's machine holds a cell for (the ledger's own
+ * namespaced `ISSUE.PASS` is the one a driver reaches for) or a recognised event this leaf owes no
+ * cell (a `PASS` out of a `blocked` park, which walks `UNBLOCKED` alone). The third used to answer
+ * `not-required` too, so a driver who ran the read before the `UNBLOCKED` that reopens the lane got
+ * a green that had checked nothing — and the two readings shared one exit code, with the difference
+ * living only in a stdout field. The walk question is the machine's own ({@link walkOf}), so a lane
+ * whose workflow renames its events or its states answers it off itself.
+ *
  * Both verdict arms answer with the namespaces they subtracted from this cell's bar
  * ({@link ProofOutcome}), because the caller records that on the event line: which cell still owes
  * the rendered verdict is not re-derivable from a bare `PASS`.
+ *
+ * The outcome also names which of the three answers it gave ({@link ProofLabel}), because an exit of
+ * `0` here is two different facts: `proven` is the artifact saying so, and `not-required` is nothing
+ * having been claimed. A caller that may act only on the first — `lane recover`, which records the
+ * event a killed shell owed — would otherwise have to re-parse this verb's own stdout to tell them
+ * apart, so the label is derived here, once, in the module that writes those bytes.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
 import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
 import {getIssue, listComments} from "../io/issues.ts";
+import {isRecord, parseJson} from "../io/json.ts";
 import {getPullRequest, listPullFiles} from "../io/pulls.ts";
-import {readAdvisory} from "../review/advisory.ts";
+import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
 import {partitionWithUi, ROUTED_NAMESPACES, shipNamespacesOf} from "../review/classes.ts";
 import {bindRange, contentDigestAt, rangeContentAt} from "../review/content-binding.ts";
 import {bindHead} from "../review/head.ts";
 import {CODEOWNERS_PATH, readBoundary} from "../ship/boundary.ts";
 import {classify} from "../ship/codeowners.ts";
 import {ROUTABLE} from "../ship/gate-verb.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
 import {readNamespaced as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
@@ -51,9 +69,10 @@ import {
 	PROOF_AMBIGUOUS,
 	PROOF_CONTRADICTED,
 	PROOF_IN_FLIGHT,
+	ROUTE_UNDERIVED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
-import {foldLog, nextLeaf, resolveTask} from "./fold.ts";
+import {foldLog, resolveTask, walkOf} from "./fold.ts";
 import {nominatePulls} from "./nominate.ts";
 import {
 	claimOf,
@@ -95,7 +114,9 @@ export interface ProveOptions extends LaneRef {
 	 * The lane classes the caller is about to record, exactly as `lane report` validated them —
 	 * `null` leaves the classes already standing alone, the fold's own rule. They are an
 	 * input here because they pick the arm the event takes, and the arm picks which cell owes the
-	 * routed namespace.
+	 * routed namespace. That is also why `null` is not free once a head exists: the standing set is
+	 * the ticket's, and an arm it picks that the head derives nothing for refuses at
+	 * {@link ROUTE_UNDERIVED}.
 	 */
 	readonly classes: ReadonlyArray<string> | null;
 	/**
@@ -145,6 +166,21 @@ const unreadable = (what: string, reason: string): VerbOutcome =>
  */
 export interface ProofOutcome extends VerbOutcome {
 	readonly deferred: ReadonlyArray<string>;
+	/**
+	 * The required namespaces this proof stood on a **route** for rather than a verdict — empty on
+	 * every proof that read no head and on every head whose namespaces were all judged.
+	 *
+	 * It rides the outcome for `deferred`'s reason and answers the question `deferred` cannot: a
+	 * `PASS` proven over a namespace nobody judged, because a head-bound `routed-elsewhere` record
+	 * says the PR owes it no verdict, is a different fact from one proven over a namespace that
+	 * passed. `lane report` records it on the event line, so a reader can tell the two apart later
+	 * without re-reading the board — which is exactly what the hand-recorded `PASS` lines that
+	 * cleared this park by hand could not say (see {@link ROUTED_NAMESPACES}).
+	 *
+	 * It is never a polarity. A routed namespace holds no verdict at either sign, and nothing here
+	 * or downstream promotes one into a `PASS` marker.
+	 */
+	readonly routed: ReadonlyArray<string>;
 	readonly partial: boolean | null;
 	readonly landed: ReadonlyArray<number>;
 	/**
@@ -156,11 +192,46 @@ export interface ProofOutcome extends VerbOutcome {
 	 * no-PR arm alone, so nothing a spawn reports can route a lane past its review.
 	 */
 	readonly diagnosis: boolean;
+	/**
+	 * Which of the three answers this verb gave, as a value rather than as bytes a caller re-parses —
+	 * `null` on every refusal, where the code is the answer and stdout is empty by construction.
+	 *
+	 * An exit of `0` is two different facts here and a caller acting on the proof has to tell them
+	 * apart: `proven` says the artifact says so, `not-required` says nothing was claimed and the
+	 * event may simply be recorded, and `uncontradicted` says a negative claim met no contradiction.
+	 * `lane recover` records only on the first, so collapsing them would have it append a `DONE` out
+	 * of a cell that asserts nothing. The label is derived here, in the module that writes that
+	 * stdout, so no other module has to know the shape of this verb's answer.
+	 */
+	readonly proof: ProofLabel | null;
 }
+
+/** The three shapes this verb's stdout takes at exit 0. */
+export type ProofLabel = "proven" | "not-required" | "uncontradicted";
+
+const LABELS: ReadonlyArray<ProofLabel> = ["proven", "not-required", "uncontradicted"];
+
+/**
+ * The label off this verb's own answer.
+ *
+ * `null` on a refusal and on any answer whose shape this reader does not recognise — never a guess.
+ * A caller that may only act on `proven` then reads an unrecognised answer as "not that", which is
+ * the conservative arm: the worst an unreadable label costs is a lane left where it was.
+ */
+export const proofLabelOf = (outcome: VerbOutcome): ProofLabel | null => {
+	if (outcome.code !== ANSWER) return null;
+	const parsed = parseJson(outcome.stdout);
+	if (!isRecord(parsed)) return null;
+	const raw = parsed.proof;
+	return typeof raw === "string" && (LABELS as ReadonlyArray<string>).includes(raw)
+		? (raw as ProofLabel)
+		: null;
+};
 
 /** What one arm answers with before {@link runProve} normalises each absent field, once, for all. */
 type ProofAnswer = VerbOutcome & {
 	readonly deferred?: ReadonlyArray<string>;
+	readonly routed?: ReadonlyArray<string>;
 	readonly partial?: boolean;
 	readonly landed?: ReadonlyArray<number>;
 	readonly diagnosis?: boolean;
@@ -186,9 +257,11 @@ export const runProve = (
 	Effect.map(prove(options), (outcome) => ({
 		...outcome,
 		deferred: outcome.deferred ?? [],
+		routed: outcome.routed ?? [],
 		partial: outcome.partial ?? null,
 		landed: outcome.landed ?? [],
 		diagnosis: outcome.diagnosis ?? false,
+		proof: proofLabelOf(outcome),
 	}));
 
 /**
@@ -216,7 +289,17 @@ const prove = (
 		const leaf = fold.states[taskId]?.type ?? "";
 		const event = options.event.toUpperCase();
 		const role = roleOf(taskId, epicOf(Object.keys(loaded.lane.tasks)));
-		const routing = nextLeaf(loaded.lane, fold.states, taskId, event, options.classes);
+		// Asked before the claim, because a claim derived from a leaf the event cannot leave is a
+		// claim about a world this event will never reach. `not-required` says "the machine walks this
+		// and it owes no artifact"; an unwalkable event owes the caller the other answer.
+		const walk = walkOf(loaded.lane, fold.states, taskId, event, options.classes);
+		if (walk._tag === "Unknown" || walk._tag === "NoCell") {
+			return answer(
+				JSON.stringify({proof: "not-walkable", event, task: taskId, state: leaf}, null, 2),
+				[`${VERB}: ${walk.why} — nothing here proves it, and the machine will refuse it.`],
+			);
+		}
+		const routing = walk._tag === "Walks" ? walk.next : null;
 		const claim = claimOf(event, leaf, role, routing);
 		if (claim._tag === "None") {
 			if (event === "DONE" && role._tag !== "Child" && SHIP_STATES.includes(leaf)) {
@@ -605,6 +688,14 @@ const proveNoPull = (
  * had not reached; demanding it of a `PASS` that walks to `ship` is the floor, and it still stands.
  * `ship gate` re-derives the full set at the merge either way.
  *
+ * **A deferral this head derives nothing for is refused rather than taken.** The head decides which
+ * classes a review round owes, so once one exists the standing set has to come from it; a `ui`
+ * stamp that outlived a text-only fix routes the `PASS` into a rendered round the diff cannot fill,
+ * and the rendered gate then parks the lane on a person. That read comes back `Underived`, and the
+ * remedy on the refusal is the relay.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
+ *
  * On a control-plane PR the reviewer's PASS arrives through the §CP advisory carrier by design —
  * no first-line marker, the head in the body — so a marker-only read would row it
  * `absent` and hold the lane at `PROOF_IN_FLIGHT` forever. The advisory is read exactly as
@@ -648,6 +739,12 @@ const readNamespaceRows = (
 		const derived = shipNamespacesOf(partitionWithUi(files.value, roots, uiPrefixes));
 		const deferred = derived.filter((namespace) => defers.includes(namespace));
 		const required = derived.filter((namespace) => !defers.includes(namespace));
+
+		// The head is what decides the round, so a deferral this head derives nothing for is not a
+		// deferral at all — it is the boot-time class still routing after a head exists to replace it.
+		if (defers.length > 0 && deferred.length === 0) {
+			return {_tag: "Underived" as const, head, defers, derived};
+		}
 
 		const commented = yield* listComments(repo, pr);
 		if (commented._tag === "Failure") {
@@ -704,9 +801,9 @@ const readNamespaceRows = (
 				advisories.push({
 					claim: {
 						namespace: advisory.namespace,
-						// The advisory carrier is PASS-only; a [FAIL] row inside one is an
-						// invalid emission — treated as fail below, never read as a pass.
-						polarity: /\[FAIL\]/.test(comment.body) ? "FAIL" : "PASS",
+						// An invalid [FAIL] emission inside an advisory is treated as fail below,
+						// never read as a pass — the carrier's own predicate, one copy.
+						polarity: advisoryPolarity(comment.body),
 						commentId: comment.id,
 						sha: advisory.sha,
 						// The advisory withholds a content binding by design — head-bound only.
@@ -819,7 +916,17 @@ type HeadRead =
 			readonly notes: ReadonlyArray<string>;
 	  }
 	| {readonly _tag: "Unread"; readonly what: string; readonly reason: string}
-	| {readonly _tag: "Gone"; readonly what: string};
+	| {readonly _tag: "Gone"; readonly what: string}
+	/**
+	 * The event routes into a cell this head owes nothing — the standing class is the ticket's, not
+	 * the head's. `derived` is what the head actually raises, so the refusal can name the relay.
+	 */
+	| {
+			readonly _tag: "Underived";
+			readonly head: string;
+			readonly defers: ReadonlyArray<string>;
+			readonly derived: ReadonlyArray<string>;
+	  };
 
 const proveVerdicts = (
 	repo: string,
@@ -838,8 +945,24 @@ const proveVerdicts = (
 		if (read._tag === "Gone") {
 			return {...seat({_tag: "Absent", what: read.what}, diagnostics), deferred: []};
 		}
+		if (read._tag === "Underived") {
+			return {
+				...refuse(
+					ROUTE_UNDERIVED,
+					`${VERB}: the classes standing over "${taskId}" route this ${event} into the cell that owes ${read.defers.join(", ")}, and #${pr} at ${read.head} derives ${read.derived.join(", ")} — no file of this head asks for that round.`,
+					[
+						...diagnostics,
+						`${VERB}: relay the classes this head raises instead of the ones the ticket booted with — \`review scope ${pr}\` prints one \`class\` row each, and \`lane report … --class <name>\` replaces the standing set.`,
+					],
+				),
+				deferred: [],
+			};
+		}
 		const proof = foldNamespaces(read.rows, `#${pr}`);
 		if (proof._tag !== "Proven") return {...seat(proof, read.notes), deferred: []};
+		// Read off the rows the fold just accepted rather than off the required set: only a row the
+		// proof actually stood on is evidence, and a namespace that merely *could* be routed is not.
+		const routed = read.rows.filter((row) => row.state === "routed").map((row) => row.namespace);
 		return {
 			...answer(
 				JSON.stringify(
@@ -854,6 +977,7 @@ const proveVerdicts = (
 							head: read.head,
 							namespaces: read.rows,
 							deferred: read.deferred,
+							...(routed.length === 0 ? {} : {routed}),
 						},
 					},
 					null,
@@ -862,6 +986,7 @@ const proveVerdicts = (
 				read.notes,
 			),
 			deferred: read.deferred,
+			routed,
 		};
 	});
 
@@ -895,7 +1020,8 @@ const proveParkUncontradicted = (
 		if (read._tag !== "Rows") {
 			return uncontradicted(event, taskId, issue, pr, [
 				...diagnostics,
-				`${VERB}: ${read._tag === "Unread" ? `cannot read ${read.what}: ${read.reason}` : read.what} — a park is refused only by a FAIL that still binds, so an unread board leaves it recordable.`,
+				// A park defers nothing, so `Underived` is unreachable here and reads as an unread board.
+				`${VERB}: ${read._tag === "Unread" ? `cannot read ${read.what}: ${read.reason}` : read._tag === "Gone" ? read.what : "the head's derived set did not settle"} — a park is refused only by a FAIL that still binds, so an unread board leaves it recordable.`,
 			]);
 		}
 		const proof = foldPark(read.rows, `#${pr}`);

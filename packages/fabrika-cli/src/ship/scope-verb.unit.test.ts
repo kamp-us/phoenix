@@ -8,17 +8,20 @@ import {
 	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {PULL_FILES_CAP} from "../io/pulls.ts";
+import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, PRIMARY_CHECKOUT, ZERO_SCOPE} from "./codes.ts";
 import {
 	branchRules,
 	CODEOWNERS,
 	ENV,
 	files,
 	HEAD,
+	LINKED_ISSUE,
+	LINKED_WORKTREE,
 	pull,
 	repositoryServed,
 } from "./fixtures.test-support.ts";
-import {runScope} from "./scope-verb.ts";
+import {runScope, type ScopeOptions} from "./scope-verb.ts";
 
 const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4321$/;
 const FILES = /^GET \S+\/repos\/o\/r\/pulls\/4321\/files\?/;
@@ -36,7 +39,16 @@ const raw = (body: string): HttpReply => ({status: 200, body});
 const NOT_FOUND: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
 const BAD_GATEWAY: HttpReply = {status: 502, body: '{"message":"Bad gateway"}'};
 
-const options = {pr: 4321, repo: null, json: false, cwd: "/repo", env: ENV};
+const options: ScopeOptions = {
+	pr: 4321,
+	repo: null,
+	json: false,
+	cwd: "/repo",
+	env: ENV,
+	caller: "shipper",
+};
+
+const REV_PARSE = /^git rev-parse/;
 
 const run = (
 	script: ReadonlyArray<Scripted>,
@@ -47,7 +59,7 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			runScope({...options, ...overrides}),
-			Layer.merge(fakeSeams([...script, ...extra]).layer, config),
+			Layer.merge(fakeSeams([...script, ...extra, LINKED_WORKTREE]).layer, config),
 		),
 	);
 
@@ -248,26 +260,52 @@ describe("runScope", () => {
 		expect(out.stdout).toBe("");
 	});
 
-	it("refuses zero changed files on 7", async () => {
+	// The declared count is GitHub's own, computed against a base cached at the last push, so a list
+	// short of it proved nothing about completeness. It used to refuse at 13 — and this is the first
+	// verb a `ship` run makes, so the whole merge path stranded before it started.
+	it("reports a file list short of the declared count and still partitions it (#9322)", async () => {
 		const out = await run([
-			[PULL, served(pull({changedFiles: 0}))],
+			[PULL, served(pull({changedFiles: 9}))],
+			[FILES, served(files("README.md"))],
+			[OWNERS, raw(CODEOWNERS)],
+			[RULES, served(branchRules())],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\topen\tfixes:${LINKED_ISSUE}`);
+		expect(out.stderr.join("\n")).toContain(
+			"GitHub's file list for #4321 holds 1 paths against the 9 its own pull-request record declares",
+		);
+	});
+
+	// The empty read is the seat that survives the retirement, and it is driven by the list rather
+	// than the declared count: a zero can never render as a clean partition.
+	it("refuses an empty file list on 7 even where the record declares files (#9322)", async () => {
+		const out = await run([
+			[PULL, served(pull({changedFiles: 9}))],
 			[FILES, served(files())],
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
 			"ship scope: PR #4321 has zero changed files — nothing to ship.",
 		);
 	});
 
-	it("refuses a truncated file list on 13 rather than partitioning it", async () => {
+	// The ceiling is the truncation pagination cannot catch: GitHub stops serving files at 3000 and
+	// ends the Link chain there exactly as a complete read ends. The retired count arm caught this
+	// case by accident; `capped` catches it on purpose.
+	it("refuses a file list at the 3000-file ceiling on 13 (#9322)", async () => {
 		const out = await run([
-			[PULL, served(pull({changedFiles: 9}))],
-			[FILES, served(files("README.md"))],
+			[PULL, served(pull({changedFiles: PULL_FILES_CAP}))],
+			[
+				FILES,
+				served(files(...Array.from({length: PULL_FILES_CAP}, (_, i) => `apps/site/src/f${i}.ts`))),
+			],
 		]);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"ship scope: file list shows 1 of 9 declared files — refusing to partition a truncated read.",
+			"ship scope: GitHub's file list for #4321 came back at its 3000-file ceiling, so the list is provably partial — a class, a namespace or a §CP path could sit in the part the platform never served.",
 		);
 	});
 
@@ -275,5 +313,66 @@ describe("runScope", () => {
 		const out = await run([[PULL, NOT_FOUND]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe("ship scope: PR #4321 not found in o/r.");
+	});
+
+	describe("the checkout this run stands in", () => {
+		it("refuses the main working tree on 33, before the PR is read", async () => {
+			const seams = fakeSeams([
+				[REV_PARSE, {ok: true, stdout: "/repo/.git\n/repo/.git\n", reason: ""}],
+				[PULL, served(pull())],
+			]);
+			const out = await Effect.runPromise(
+				Effect.provide(runScope(options), Layer.merge(seams.layer, unconfigured)),
+			);
+			expect(out.code).toBe(PRIMARY_CHECKOUT);
+			expect(out.stdout).toBe("");
+			expect(out.stderr.at(-1)).toBe(
+				"ship scope: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. Nothing was read.",
+			);
+			expect(seams.requests).toEqual([]);
+		});
+
+		it("passes a linked worktree through to the normal scope answer", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull())],
+					[FILES, served(files("apps/site/worker/cart.ts", "README.md"))],
+					[OWNERS, raw(CODEOWNERS)],
+					[RULES, served(branchRules("pull_request"))],
+				],
+				{},
+				[[REPO, repositoryServed()]],
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\topen\tfixes:4287`);
+		});
+
+		it("refuses an unreadable worktree fact on 11 with nothing proven", async () => {
+			const out = await run([
+				[REV_PARSE, {ok: false, stdout: "", reason: "fatal: not a git repository"}],
+				[PULL, served(pull())],
+			]);
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stdout).toBe("");
+			expect(out.stderr.at(-1)).toBe(
+				"ship scope: cannot tell whether this tree is a linked worktree: fatal: not a git repository — whether this shipper stands in the driver's checkout is UNKNOWN, and nothing was read.",
+			);
+		});
+
+		it("answers a `relay` caller from the main working tree — the seat is the shipper's, not the derivation's", async () => {
+			const out = await run(
+				[
+					[REV_PARSE, {ok: true, stdout: "/repo/.git\n/repo/.git\n", reason: ""}],
+					[PULL, served(pull())],
+					[FILES, served(files("apps/site/worker/cart.ts", "README.md"))],
+					[OWNERS, raw(CODEOWNERS)],
+					[RULES, served(branchRules("pull_request"))],
+				],
+				{caller: "relay"},
+				[[REPO, repositoryServed()]],
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\topen\tfixes:4287`);
+		});
 	});
 });

@@ -57,7 +57,10 @@ export interface ViewOptions {
 	readonly root: string;
 	readonly port: number;
 	/**
-	 * The repo's declared `parkCause`, read off `.fabrika.jsonc` by the adapter.
+	 * The repo's declared `parkCause`, read by the adapter off the `.fabrika.jsonc` of the repository
+	 * that OWNS the cwd — never the cwd's own copy. The rule is weighed against the shared lane ledger,
+	 * which a linked worktree and its primary checkout derive alike, so the worktree's tracked copy
+	 * would govern a log it does not own.
 	 *
 	 * The viewer relays whatever event the browser sends, `BLOCKED` among them, so the rule binds
 	 * this door exactly as it binds the CLI's — a park recorded from a button is still a park.
@@ -65,7 +68,11 @@ export interface ViewOptions {
 	readonly parkCause: Read<ParkCauseSurface>;
 	/** The target repo the proof reads against, resolved exactly as `lane prove` resolves it. */
 	readonly repo: string | null;
-	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in, not the ledger root. */
+	/**
+	 * The checkout this run stands in, handed to the proof — not the ledger root, and not where
+	 * `.fabrika.jsonc` is read: {@link parkCause} above is resolved off the repository that OWNS this
+	 * path, so a linked worktree is judged by the primary checkout's declaration.
+	 */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }

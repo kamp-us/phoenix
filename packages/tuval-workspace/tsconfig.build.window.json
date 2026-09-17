@@ -1,0 +1,15 @@
+{
+	// The window's emit lens — the React half. Extends the window's own lens, so the renderer keeps
+	// its DOM lib and `jsx: "react-jsx"` while the kernel row stays React-free. Both halves emit into
+	// the one `dist/`, mirroring `src/` exactly, so `./window` resolves to `dist/window.js`.
+	"extends": "./tsconfig.window.json",
+	"compilerOptions": {
+		"noEmit": false,
+		"rewriteRelativeImportExtensions": true,
+		"rootDir": "src",
+		"outDir": "dist",
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": false
+	}
+}

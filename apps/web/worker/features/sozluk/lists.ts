@@ -17,15 +17,22 @@ import {toTerm} from "./shapers.ts";
 import type {TermSummaryRow} from "./term-fields.ts";
 import {TermView} from "./views.ts";
 
-const toListSort = (value: string | undefined): ListSort =>
-	value === "popular" ? "popular" : "recent";
+const toListSort = (value: string | undefined): ListSort => {
+	if (value === "popular") return "popular";
+	if (value === "alphabetical") return "alphabetical";
+	return "recent";
+};
 
 const pageArgs = {
 	first: Schema.optional(Schema.Number),
 	after: Schema.optional(Schema.String),
 };
 
-const TermsArgs = Schema.Struct({sort: Schema.optional(Schema.String), ...pageArgs});
+const TermsArgs = Schema.Struct({
+	sort: Schema.optional(Schema.String),
+	letter: Schema.optional(Schema.String),
+	...pageArgs,
+});
 const TermPageArgs = Schema.Struct(pageArgs);
 
 const LANDING_TERMS_DEFAULT = 5;
@@ -36,7 +43,7 @@ const toTermConnection = (page: KeysetPage<TermSummaryRow>) =>
 
 const listTerms = (
 	sort: ListSort,
-	args: {first?: number | undefined; after?: string | undefined},
+	args: {first?: number | undefined; after?: string | undefined; letter?: string | undefined},
 ) =>
 	Effect.gen(function* () {
 		const sozluk = yield* Sozluk;
@@ -47,11 +54,14 @@ const listTerms = (
 			sandboxViewer,
 			...(args.first !== undefined ? {first: args.first} : {}),
 			...(args.after !== undefined ? {after: args.after} : {}),
+			...(args.letter !== undefined ? {letter: args.letter} : {}),
 		});
 		return toTermConnection(page);
 	});
 
 export const lists = {
+	// The letter index's list: `sort: "alphabetical"` + `letter` is one Turkish alphabet letter's
+	// whole set, keyset-paged like any other (#9267).
 	terms: Fate.list(
 		{args: TermsArgs, type: TermView},
 		Effect.fn("terms")(function* ({args}) {

@@ -4,15 +4,13 @@
  * read before it had written the file the read names.
  */
 
-import {argKey} from "../../args.ts";
-
 export const FIXTURE_VAR = "TUVAL_AUTHORING_FIXTURE";
 export const REVIEW_NODE = "review";
 export const DESK_NODE = "desk";
 export const SINK_NODE = "sink";
 export const REVIEW_PROGRAM = "pr-review";
-/** The reviewer's registered id: the arg's own service key, which is what a shaped spawn resolves. */
-export const REVIEWER_PROGRAM = argKey(REVIEW_PROGRAM, "reviewer");
+/** The reviewer's own registered id — what the example's registration fills its `reviewer` arg with. */
+export const REVIEWER_PROGRAM = "reviewer";
 export const VERDICT = "ship it";
 
 /** One generation of the fixture: the pull request it names, and whether a restored reviewer speaks. */

@@ -2,15 +2,16 @@
  * The gated move one lane takes when its log will never replay — the whole of `lane archive`'s
  * decision, with none of its wording.
  *
- * Split out of the verb because two callers now make it: `lane archive <lane>`, which turns one
- * outcome into one refusal, and `lane archive --sweep`, which turns many into rows. A sweep that
- * re-derived the gates would be a second judgement of the same question, free to drift from the
- * single-lane one — and the drift that matters here moves a live lane out of every sweep's sight.
+ * `lane archive --sweep` is the one caller. The named single-lane route is
+ * [`archive-verb.ts`](archive-verb.ts)'s own judgement and no longer comes through here: the
+ * decision that retired its closed-issue gate gave it a claim retraction the sweep does not make, so
+ * the two answer different questions and sharing one module would state a gate the named route does
+ * not run.
  *
- * Every arm below is a PROVEN fact about one lane, never a message: the verb composes the prose, so
+ * Every arm below is a PROVEN fact about one lane, never a message: the caller composes the prose, so
  * the sweep is not stuck parsing a refusal to find out what happened. The order of the two gates is
- * a cost decision kept from the verb: the replay judgement is local and free, the closure read is
- * one request, so a replaying lane is refused before the board is ever asked.
+ * a cost decision: the replay judgement is local and free, the closure read is one request, so a
+ * replaying lane is refused before the board is ever asked.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

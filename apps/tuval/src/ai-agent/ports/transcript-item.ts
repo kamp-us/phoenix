@@ -176,6 +176,25 @@ export const newestBackendItemId = (items: ReadonlyArray<TranscriptItem>): ItemI
  */
 export const isNestedItem = (item: TranscriptItem): boolean => item.parentId !== undefined;
 
+/**
+ * Every string one row is known by: its own id, and the `alias` its backend gave it for the other
+ * id space when it keys its live tail and its history reads differently (#8032).
+ */
+export const itemIds = (item: TranscriptItem): ReadonlyArray<ItemId> =>
+	item.alias === undefined ? [item.id] : [item.id, item.alias];
+
+/**
+ * Whether `named` reaches this row under *either* of its ids — the identity join every reader that
+ * meets a live row and a stored one performs, in one place rather than a copy per seam.
+ *
+ * Hand-rolled per caller it was written as an `id`-only test twice, and both times the join silently
+ * matched nothing on a two-id-space backend: the cut-reply mark named no paged row (#9046) and the
+ * resume's held range recognised no history row, which appended a second copy of the whole tail
+ * (#9061).
+ */
+export const isNamedItem = (named: ReadonlySet<string>, item: TranscriptItem): boolean =>
+	itemIds(item).some((id) => named.has(id));
+
 /** One tool result may spend this many bytes of the window; the rest is omission metadata. */
 export const TOOL_RESULT_BYTE_LIMIT = 8_000;
 
@@ -282,3 +301,81 @@ export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
 
 export const isTranscriptItems = (value: unknown): value is ReadonlyArray<TranscriptItem> =>
 	Array.isArray(value) && value.every(isTranscriptItem);
+
+/**
+ * The same union as an Effect `Schema`, so a row built from these ports can publish what each port
+ * carries and a `Program.shape` check can read it structurally (#8887). A predicate cannot be
+ * compared with another predicate; a schema canonicalised through `Schema.toJsonSchemaDocument`
+ * can, and that is the whole of why this exists.
+ *
+ * The predicates above are still what the kernel routes on, and this is deliberately *not* a second
+ * implementation of them: `isToolResult` also enforces `TOOL_RESULT_BYTE_LIMIT`, a bound no JSON
+ * Schema expresses, so the schema is the shape and the predicate is the shape plus that bound.
+ * `transcript-item.unit.test.ts` pins that the two agree on every item kind.
+ *
+ * `ItemId`'s brand is dropped here on purpose: a port schema's encoded form must equal its decoded
+ * form (`PortCodec` in `../../authoring/port.ts`), which a branded string is not, and an id is a
+ * string on the wire either way.
+ */
+export const JsonValueSchema: Schema.Codec<JsonValue, JsonValue, never, unknown> = Schema.suspend(
+	(): Schema.Codec<JsonValue, JsonValue, never, unknown> =>
+		Schema.Union([
+			Schema.Null,
+			Schema.Boolean,
+			Schema.Number,
+			Schema.String,
+			Schema.Array(JsonValueSchema),
+			Schema.Record(Schema.String, JsonValueSchema),
+		]),
+);
+
+export const ToolResultSchema = Schema.Struct({
+	text: Schema.String,
+	omitted: Schema.Struct({bytes: Schema.Number}),
+});
+
+/** Every kind carries these four; `parentId` and `alias` are absent on a row with one identity. */
+const itemBase = {
+	id: Schema.String,
+	timestamp: Schema.Number,
+	parentId: Schema.optionalKey(Schema.String),
+	alias: Schema.optionalKey(Schema.String),
+};
+
+export const TranscriptItemSchema = Schema.Union([
+	Schema.Struct({
+		...itemBase,
+		kind: Schema.Literal("user"),
+		text: Schema.String,
+		local: Schema.optionalKey(Schema.Boolean),
+	}),
+	Schema.Struct({
+		...itemBase,
+		kind: Schema.Literal("assistant"),
+		text: Schema.String,
+		interrupted: Schema.optionalKey(Schema.Boolean),
+		partial: Schema.optionalKey(Schema.Boolean),
+	}),
+	Schema.Struct({
+		...itemBase,
+		kind: Schema.Literal("thinking"),
+		text: Schema.String,
+		partial: Schema.optionalKey(Schema.Boolean),
+	}),
+	Schema.Struct({...itemBase, kind: Schema.Literal("compaction"), text: Schema.String}),
+	Schema.Struct({
+		...itemBase,
+		kind: Schema.Literal("system"),
+		text: Schema.String,
+		detail: Schema.optionalKey(Schema.String),
+		subagent: Schema.optionalKey(Schema.String),
+	}),
+	Schema.Struct({
+		...itemBase,
+		kind: Schema.Literal("tool"),
+		name: Schema.String,
+		input: JsonValueSchema,
+		result: ToolResultSchema,
+		status: Schema.Literals(["running", "ok", "error"]),
+	}),
+]);

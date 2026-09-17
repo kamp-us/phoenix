@@ -5,7 +5,7 @@
  * that carries them, and this pins that it does.
  *
  * Two rows, two carriers, and the distinction is the whole test. The reply keeps its own
- * `interrupted: true` — `../core/state.ts`'s `markInterrupted` writes it — and the *prompt* carries
+ * `interrupted: true` — `../core/state.ts`'s `remarkCutReplies` writes it — and the *prompt* carries
  * the mark and the Resend, because `state.interrupted` is the resend anchor and `ChatWindow` renders
  * both off it (#8699). Both are checkpointed fields, so a restore that drops either reds here.
  *

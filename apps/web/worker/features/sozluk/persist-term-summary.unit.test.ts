@@ -146,11 +146,28 @@ describe("persistTermSummary — the recomputeTermSummary → term_record row-wr
 				const p = upsert.params;
 				assert.include(p, SLUG, "slug column");
 				assert.include(p, TITLE, "title column");
-				assert.include(p, "k", "first_letter is the lowercased slug head");
+				assert.include(p, "k", "first_letter is the headword's Turkish letter");
 				assert.include(p, 2, "definition_count is the live-slice length");
 				assert.include(p, 17, "total_score is the summed scores");
 				assert.include(p, "the winning excerpt", "excerpt is the top definition's excerpt");
 				assert.include(p, "top-def", "top_definition_id is rows[0]");
 			}),
+	);
+
+	// The insert half always carried the right value; the conflict half did not name the
+	// column at all, so an EXISTING row kept whatever letter it was first written with. That
+	// is what made `reconcileCaches` a no-op for every pre-#9331 row — it re-derives the
+	// summary and upserts it, and the upsert dropped this one column on the floor.
+	it.effect("the conflict half updates first_letter, so an existing row's letter converges", () =>
+		Effect.gen(function* () {
+			const batched = yield* renderUpsert();
+			const upsert = batched[0];
+			if (!upsert) return yield* Effect.die(new Error("no term_record statement was captured"));
+			assert.match(
+				upsert.sql,
+				/on conflict.*"first_letter" = excluded\.first_letter/s,
+				"the ON CONFLICT set carries first_letter",
+			);
+		}),
 	);
 });

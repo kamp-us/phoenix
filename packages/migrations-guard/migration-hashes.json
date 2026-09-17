@@ -36,6 +36,7 @@
 		"0033_caylak_visibility_preference": "140d5b441061820dfea18f2ec849f25d467ae0a09046895557493a83bae062a5",
 		"0034_user_activity_day": "b6c952e28b35661fdc4cbdb19d254d35dec04df0df40c634a5f1ee12daf897b9",
 		"0035_cohort_week_rollup": "c30fd9406f498d6ea0f8ae2fa70996b6b9fd3cb46859966e4772f459ce1ff136",
-		"20260820113338_v7_baseline": "1c8acad69a9ae7a80e576d8df3f11bf460706e5b6143b2dceef9de3af4d80ebb"
+		"20260820113338_v7_baseline": "1c8acad69a9ae7a80e576d8df3f11bf460706e5b6143b2dceef9de3af4d80ebb",
+		"20260916220056_drop_term_record_letter_index": "7aade7e631cb0b908f3a35a91d0a87d6b4bb96ad24ffbb6c522e19cc7b0c0c68"
 	}
 }

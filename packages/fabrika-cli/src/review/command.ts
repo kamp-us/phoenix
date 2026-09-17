@@ -24,6 +24,7 @@ import {runDiff} from "./diff-verb.ts";
 import {runPost} from "./post-verb.ts";
 import {runScope} from "./scope-verb.ts";
 import {runScratch} from "./scratch-verb.ts";
+import {runSeat} from "./seat-verb.ts";
 import {runVerdicts} from "./verdicts-verb.ts";
 
 /**
@@ -117,7 +118,7 @@ const criteria = leafCommand(
 ).pipe(
 	Command.withShortDescription("Read an issue's acceptance-criteria block."),
 	Command.withDescription(
-		"Read an issue's acceptance-criteria block through the registered `acceptance-criteria` wire format — no second parser. First stdout line is `criteria\\t<count>`, then one `<checked|open>\\t<text>` line per criterion. A closed issue is read anyway, with a notice on stderr. Exits 7 (issue absent, or the block is proven absent or malformed — the two are distinguished on stderr, never invented around), 11 (the issue could not be read — whether a block exists is UNKNOWN). Example: fabrika review criteria 4287",
+		"Read an issue's acceptance-criteria block through the registered `acceptance-criteria` wire format — no second parser. First stdout line is `criteria\\t<count>`, then one `<checked|open>\\t<text>` line per criterion, with a third `\\t<evidence source>` column on a criterion carrying the outside-diff evidence marker `[evidence: <source>]` and none on one that does not; the marked rows are also counted and quoted on stderr. A closed issue is read anyway, with a notice on stderr. Exits 7 (issue absent, or the block is proven absent or malformed — the two are distinguished on stderr, never invented around), 11 (the issue could not be read — whether a block exists is UNKNOWN). Example: fabrika review criteria 4287",
 	),
 );
 
@@ -256,6 +257,12 @@ const post = leafCommand(
 				"acknowledge that this verdict retires a standing one of the OPPOSITE polarity at the same head, or ranged, over the same range; without it that post is refused at 17",
 			),
 		),
+		round: Flag.integer("round").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"which review round this verdict ends — the same number `review append-criterion --round` was handed; required on a PASS, where a criterion this round appended is refused at 18",
+			),
+		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
@@ -269,6 +276,7 @@ const post = leafCommand(
 		base,
 		tip,
 		supersede,
+		round,
 		repo,
 		json,
 	}) {
@@ -283,6 +291,7 @@ const post = leafCommand(
 				base: Option.getOrNull(base),
 				tip: Option.getOrNull(tip),
 				supersede,
+				round: Option.getOrNull(round),
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -294,7 +303,7 @@ const post = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the verdict on stdin as this namespace's one comment."),
 	Command.withDescription(
-		'Post the verdict on STDIN as ONE comment for this namespace — re-resolve the live head, recompute the class set at the bound commit, compose the first line through the `verdict-marker` wire format, leak-scan the assembled comment, APPEND into this head\'s own comment, and read it back from live state. The prior verdict is never replaced: it survives verbatim under a dated `## Superseded verdict` heading below the fence, while the fresh verdict takes the first line, so every marker reader resolves the newest one. With --base and --tip the verdict is RANGE-scoped instead: the positional names the child issue, the class set is recomputed over what `<base>...<tip>` changed in this checkout, the first line goes through the `range-verdict-marker` format `lane prove` reads, and the answer\'s third field is `<base>..<tip>`; --sha and --carrier advisory are refused in this mode. That path appends the same way, keyed on the range rather than a head. Prints `posted\\t<namespace>\\t<polarity>\\t<sha|base..tip>\\t<content>\\t<created|superseded>\\t<comment-url>`, where `<content>` is the content digest the verdict binds. Exits 3 (empty stdin — an empty verdict reads as UNGATED), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed; or, ranged, the issue is absent, closed, or a pull request), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (namespace the diff or range did not derive, bad polarity, advisory with FAIL or with a range, a lone --base/--tip, or --sha beside a range), 11 (a precondition read failed, or the commit could not be bound — nothing was posted), 12 (the live head moved past --sha — re-review, never re-bind), 17 (a standing verdict of the OPPOSITE polarity at this head — ranged, over this range — would be retired and --supersede was not passed; nothing posted). Examples: fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "guide matches shipped behavior" < verdict.md; fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "every criterion met" < verdict.md',
+		'Post the verdict on STDIN as ONE comment for this namespace — re-resolve the live head, recompute the class set at the bound commit, compose the first line through the `verdict-marker` wire format, leak-scan the assembled comment, APPEND into this head\'s own comment, and read it back from live state. The prior verdict is never replaced: it survives verbatim under a dated `## Superseded verdict` heading below the fence, while the fresh verdict takes the first line, so every marker reader resolves the newest one. With --base and --tip the verdict is RANGE-scoped instead: the positional names the child issue, the class set is recomputed over what `<base>...<tip>` changed in this checkout, the first line goes through the `range-verdict-marker` format `lane prove` reads, and the answer\'s third field is `<base>..<tip>`; --sha and --carrier advisory are refused in this mode. That path appends the same way, keyed on the range rather than a head. Prints `posted\\t<namespace>\\t<polarity>\\t<sha|base..tip>\\t<content>\\t<created|superseded>\\t<comment-url>`, where `<content>` is the content digest the verdict binds. Exits 3 (empty stdin — an empty verdict reads as UNGATED), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed; or, ranged, the issue is absent, closed, or a pull request), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (namespace the diff or range did not derive, bad polarity, advisory with FAIL or with a range, a lone --base/--tip, or --sha beside a range), 11 (a precondition read failed, or the commit could not be bound — nothing was posted), 12 (the live head moved past --sha — re-review, never re-bind), 17 (a standing verdict of the OPPOSITE polarity at this head — ranged, over this range — would be retired and --supersede was not passed; nothing posted), 18 (this round appended an acceptance criterion tagged for this same subject and round, and a PASS has no next cycle to carry it — the round owes a FAIL; nothing posted), 19 (a PASS whose linked contract marks a criterion\'s evidence as outside the diff and whose body names no evidence for it — a marked criterion is graded on the evidence it names, so name it or post FAIL; nothing posted). A PASS also requires --round and refuses at 10 without it, and the criteria block it then reads being unreadable or malformed is 11, never "no appended criterion". Examples: fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --round 1 --clause "guide matches shipped behavior" < verdict.md; fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --round 1 --clause "every criterion met" < verdict.md',
 	),
 );
 
@@ -347,7 +356,7 @@ const appendCriterion = leafCommand(
 ).pipe(
 	Command.withShortDescription("Append one reviewer-authored acceptance criterion."),
 	Command.withDescription(
-		"Append one reviewer-authored acceptance criterion from STDIN under four fences — ACL-gated fail-closed, append-only, provenance-tagged, frozen at the declared cap round. The round's subject is a PR (`--pr`) or, on an epic child that has none, the commit range it was judged over (`--base`/`--tip`); the two never combine, and the provenance tag names whichever was given — `pr:#<n>` or `range:<base>..<tip>`, the same spelling `lane prove` reads. Every fence runs identically on both. Prints `appended\\t<issue>\\t<rows-after>`, or `escalated-frozen\\t<issue>\\t<round>` at the freeze; both are proven answers at exit 0. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (issue absent or closed, or no conforming acceptance-criteria block), 8 (the PATCH or the escalation comment failed — UNKNOWN), 9 (read-back does not show the prior rows plus this one), 10 (no subject named, both named, a lone --base/--tip, or an end that is not a revision), 11 (a precondition read failed), 14 (token below write or the ACL lookup failed), 15 (the write is not provably the prior rows plus one — the append-only fence). Examples: printf 'a regression test covers qty > 1' | fabrika review append-criterion 4287 --pr 4321 --round 1; printf 'a regression test covers qty > 1' | fabrika review append-criterion 6095 --base 9f2c1ab --tip 03135b9 --round 1",
+		"Append one reviewer-authored acceptance criterion from STDIN under four fences — ACL-gated fail-closed, append-only, provenance-tagged, frozen at the declared cap round. The round's subject is a PR (`--pr`) or, on an epic child that has none, the commit range it was judged over (`--base`/`--tip`); the two never combine, and the provenance tag names whichever was given — `pr:#<n>` or `range:<base>..<tip>`, the same spelling `lane prove` reads. Every fence runs identically on both. Prints `appended\\t<issue>\\t<rows-after>`, or `escalated-frozen\\t<issue>\\t<round>` at the freeze; both are proven answers at exit 0. The escalation comment carries an `ac:escalated` tag naming the same subject and round, which is what `build verdicts` folds it into `escalatedFindings` by — the finding stays out of the contract and still reaches the next repair round. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (issue absent or closed, or no conforming acceptance-criteria block), 8 (the PATCH or the escalation comment failed — UNKNOWN), 9 (read-back does not show the prior rows plus this one), 10 (no subject named, both named, a lone --base/--tip, or an end that is not a revision), 11 (a precondition read failed), 14 (token below write or the ACL lookup failed), 15 (the write is not provably the prior rows plus one — the append-only fence). Examples: printf 'a regression test covers qty > 1' | fabrika review append-criterion 4287 --pr 4321 --round 1; printf 'a regression test covers qty > 1' | fabrika review append-criterion 6095 --base 9f2c1ab --tip 03135b9 --round 1",
 	),
 );
 
@@ -381,6 +390,39 @@ const scratch = leafCommand(
 	),
 );
 
+const seat = leafCommand(
+	"seat",
+	{
+		issue: Argument.integer("issue").pipe(
+			Argument.withDescription("the epic child whose range this shell was briefed on"),
+		),
+		base: Flag.string("base").pipe(
+			Flag.optional,
+			Flag.withDescription("the range's base revision, exactly as the brief's `range` prints it"),
+		),
+		tip: Flag.string("tip").pipe(
+			Flag.optional,
+			Flag.withDescription("the range's tip revision — the commit this tree is seated at"),
+		),
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({issue, base, tip, json}) {
+		yield* emit(
+			yield* runSeat({
+				issue,
+				base: Option.getOrNull(base),
+				tip: Option.getOrNull(tip),
+				json,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Seat this worktree at an epic child's range tip, or refuse."),
+	Command.withDescription(
+		"Check this worktree out at the tip of an epic child's `--base`/`--tip` range, so every fence that reads the working tree — tsc, biome, vitest, the guards — reads the tree the verdict names. A child's build branch is local and unpushed, so a reviewer worktree cut fresh from the driver's checkout does not carry the range at all. The tip must be reachable here AND carried by a branch this clone's own grammar says was cut for this child; neither read falls back to grading in place. The seat is detached, because a reviewer commits nothing, and a tree already standing on the tip is answered by reading HEAD rather than by a second checkout. Stdout is `seated\\t<head>\\t<branch>\\t<checked-out|already-seated>`, with the carriers and the read-back HEAD on stderr. Exits 1 (the positional is not an issue number), 10 (a lone --base/--tip, neither given, or an end that is not a revision), 11 (a git read the answer turns on failed — the branch list, this tree's HEAD, the read-back, or every candidate that could have carried the tip; a candidate nobody could read is only reported once another branch has proven the seat), 8 (the checkout itself failed — the tree's position is UNKNOWN), 9 (the checkout reported success and HEAD reads another commit), 20 (no lane branch of this child is in this clone, the tip resolves to no object here, or no lane branch of this child reaches it — the range was built in a tree this one cannot see). Example: fabrika review seat 8820 --base 99b1453 --tip 4011b1d",
+	),
+);
+
 export const reviewCommand = Command.make("review").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
@@ -393,9 +435,10 @@ export const reviewCommand = Command.make("review").pipe(
 		post,
 		appendCriterion,
 		scratch,
+		seat,
 	]),
 	Command.withShortDescription("Read what a text review needs off one pull request."),
 	Command.withDescription(
-		"Read everything a text review needs off one pull request — scope, diff, criteria, CI, verdicts, deviations — allocate the per-lane scratch path its staged reads go under, and emit the verdict or a reviewer-authored criterion through the one sanctioned write path",
+		"Read everything a text review needs off one pull request — scope, diff, criteria, CI, verdicts, deviations — allocate the per-lane scratch path its staged reads go under, seat an epic child's reviewer at the range tip it judges, and emit the verdict or a reviewer-authored criterion through the one sanctioned write path",
 	),
 );

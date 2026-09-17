@@ -1,0 +1,11 @@
+-- Drop `term_record_letter` (#9331). The letter page filters AND orders by one collation-key
+-- expression over `title` (#9267), which no index over the stored `first_letter` column can
+-- serve, so the index was unreachable by any correct letter read.
+--
+-- Hand-trimmed before the first commit. `drizzle-kit generate` diffs against the newest
+-- snapshot in the chain, which is `20260820113338_v7_baseline` — `0034_user_activity_day` and
+-- `0035_cohort_week_rollup` sort ahead of it, so their tables read as missing and the generated
+-- body led with two `CREATE TABLE`s that would replay against every database those two already
+-- built. `snapshot.json` beside this file is as the tool wrote it and describes both tables, so
+-- the chain is correct from here on.
+DROP INDEX IF EXISTS `term_record_letter`;

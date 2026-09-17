@@ -14,7 +14,7 @@ evidence each token rests on are one lookup away, its section named by the verb'
 `fabrika wire doc-section --heading "heal-ci diagnose" < <skill-base>/contract.md`, and likewise
 for each of the other verbs.
 
-You answer one question: **why is this pull request not moving?** Red CI is one answer of ten.
+You answer one question: **why is this pull request not moving?** Red CI is one answer of eleven.
 
 The failure that matters is **mistaking "not failing" for "attended"**. A PR that is green,
 unclaimed and ungated is stranded exactly as hard as a red one — it just has nobody to notice.
@@ -54,6 +54,7 @@ this skill runs until you hold one. Then take exactly the row your token names:
 | `attended` | end the run | something is acting — an owner inside the dwell, a live queue entry, an armed intent, or CI still running |
 | `not-open` | end the run | draft, closed or merged: a draft is its author's to finish, a merged one already went |
 | `wedged` | step 5 | a gating check queued that never started |
+| `conflicted` | step 7 | it conflicts with its base, so no merge ref exists and no required context can run |
 | `check-surface` | step 5 | a required context no run produces — it cannot go green whoever attends it |
 | `red` | step 3 | a gating check failed |
 | `linkage-refused` | step 6 | correct PR; the merge seam refuses its issue-reference grammar |
@@ -103,6 +104,7 @@ over one strand write the same word. The lookup is total over every class that g
 | `gated-unshipped` | **ship** | every namespace passes and nothing is armed |
 | `claim-stale` | **author** when the claim holder is this PR's author, **human** when anyone else | the holder is who stopped |
 | `linkage-refused` | **author** when nobody holds it, **build** when a lane does | step 6's two arms, picked by the holder |
+| `conflicted` | **build** | step 7 — the rebase is a repair round on a branch, and every PR here is agent-authored |
 | `wedged` · `check-surface` | **human** | step 5 — the cancel lever and a required-context change are an operator's |
 | `blocked-human` | **human** | step 6 — correctly waiting on a person |
 | `red` | **nobody** | step 3 routes a red off its log signature, and the class alone carries none |
@@ -194,6 +196,10 @@ operator's, and a bounded run cannot supervise the retry it would trigger.
 If `surface` answers `unprobeable` it could not read the protection surface at all. That is a fact
 about your permissions, not about the repository — say so, and never report the PR surface-clean.
 
+**A surface with *every* required context absent is the one reading to distrust here**, and
+`diagnose` has already told you which of the two it is: a conflicted PR produces no merge ref and
+therefore no run for anything, which is `conflicted` at step 7 and not a settings gap at all.
+
 ## 6 — When the PR is correct and the seam refuses it
 
 **`linkage-refused`** — the PR is right and the shipper will decline it on grammar. A revert
@@ -219,6 +225,25 @@ having moved, and the park stands. Run it when you work the row rather than rout
 stall self-heals on the next scheduled pass — a queue dwell is a wait, not a park. `sweep` itself
 still writes nothing on its own authority — the verb is yours to run on the row you are working,
 never the sweep's to run over the board.
+
+## 7 — When the base moved out from under it
+
+**`conflicted`** — the merge of this head into its base conflicts. GitHub builds no
+`refs/pull/<n>/merge` for a conflicted PR, so no `pull_request` workflow ever fires and **every**
+required context sits absent. That looks exactly like `check-surface` from the check surface alone,
+and the two want opposite repairs: one is a repository-settings change with an operator's name on
+it, this one is a rebase. The arm above `check-surface` is what keeps a conflicted PR out of the
+operator's queue.
+
+Name it and stop — the terminal is `ROUTED — build`. **You never rebase, merge or push**: this
+skill owns no branch and checks out nothing (§CAPABILITIES), and a rebase is a repair round on the
+branch, which is `build`'s. Post the class with `fabrika heal-ci note` exactly as §2 does and end.
+
+`diagnose` reads this fact through `ship`'s own mergeability poll, so the two verbs never disagree
+about one PR. GitHub computes `mergeable` lazily, so a first read routinely answers "not computed
+yet": that is re-read across `--mergeability-seconds` and, still indefinite at the end of it,
+**skips the arm with a stderr notice rather than firing it**. An indefinite read is not a conflict,
+and reporting one would send a healthy PR to a rebase nobody owes.
 
 ## Sweep — the scheduled surface
 

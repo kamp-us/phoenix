@@ -101,7 +101,11 @@ failures come back and they are not the same thing:
   and it must be loud.
 
 A program playing both ends of a two-way port kind names each end locally (`pageRequest` /
-`pageReply`); `compile` matches on the kind, not the key. Each end declares only its own
+`pageReply`); `compile` matches those on the kind, not the key, because the three two-way ai-agent
+kinds publish no payload schema for it to compare instead. A port that does publish one — every
+authored port, and the one-way ai-agent ports — routes on payload fit rather than on the kind
+([ADR 0395](../.decisions/0395-a-graph-route-compiles-on-payload-fit-not-on-kind.md)). Each end
+declares only its own
 direction's predicate — `transcriptPage.ends.request.inbound()`, `transcriptPage.ends.page.outbound()`
 — so the kind stays one kind for routing while the wrong direction is refused where it arrives.
 

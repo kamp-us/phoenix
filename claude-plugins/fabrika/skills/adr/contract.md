@@ -33,7 +33,7 @@ them anyway.
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `adr next` | the next unused ADR id, against a fetched base ref unioned with open ADR PRs | fetch, parse ids, take the max, add one — no judgment anywhere in it |
+| `adr next` | the next unused ADR id, against a fetched base ref unioned with open ADR PRs and the claims on this clone's branch refs, remote-tracking ones included | fetch, parse ids, take the max, add one — no judgment anywhere in it |
 | `adr new` | scaffold `NNNN-slug.md` under the record directory from the canonical template | the file's *shape* is fixed text with substitutions; only its content is judgment |
 | `adr mint` | allocate the next id and scaffold its record in one invocation | both halves are already derived; fusing them removes a window rather than adding judgment |
 | `adr resolve` | resolve an id to its real filename and state against a fetched base ref | a lookup with a defined answer; whether the result may be cited stays in the skill |
@@ -116,8 +116,8 @@ fabrika adr next [--dir <path>] [--base <ref>] [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the full allocation record instead of the bare id |
 
 **Output** — one line, the zero-padded four-digit id, newline-terminated. With `--json`, one object
-with keys `id`, `mergedMax`, `inFlight` (array of ids, ascending), `baseRef`, `baseSha`. There is no
-empty answer: see Scope.
+with keys `id`, `mergedMax`, `inFlight` (array of ids, ascending), `branchClaims` (array of ids,
+ascending), `baseRef`, `baseSha`. There is no empty answer: see Scope.
 
 **The id is the maximum of the union, plus one — never the first free number in it.** A gap below
 the maximum is a number some pull request claimed and never merged, and re-issuing it points every
@@ -136,6 +136,7 @@ first-free would answer `9238`.
 | `18` | the open pull requests could not be enumerated, so the in-flight set is UNKNOWN |
 | `19` | a record under `--dir` has a filename with no readable id |
 | `21` | `--repo` was not given and the `origin` remote could not be read, so the in-flight set is UNKNOWN |
+| `23` | this clone's branch refs could not be walked, so the branch-claim set is UNKNOWN |
 
 **Errors**
 
@@ -147,13 +148,20 @@ first-free would answer `9238`.
 | `adr next: cannot read <dir> at <ref>: <reason> — the merged set is UNKNOWN, never "0 records".` | 11 | refusal |
 | `adr next: <dir> holds a record with an unparseable id: <name>` | 19 | refusal |
 | `adr next: cannot resolve --repo from the origin remote: <reason> — the in-flight set is UNKNOWN.` | 21 | refusal |
+| `adr next: cannot walk this clone's branch refs against <sha>: <reason> — the ids claimed on unpublished branches are UNKNOWN, never "nothing claimed".` | 23 | refusal |
 
 **Scope** — every `NNNN-slug.md` under `--dir` **as of the fetched `--base`**, plus every open pull
-request in `--repo` that *adds* an `NNNN-*.md` file under that same directory. The scope line goes
-to stderr on every run, naming the base SHA, the record count and the in-flight count, so a caller
-can audit which half produced the answer.
+request in `--repo` that *adds* an `NNNN-*.md` file under that same directory, plus every
+`NNNN-*.md` under that directory on a branch ref **this clone carries** that the fetched base does
+not — local branches and fetched remote-tracking ones alike, since the walk passes
+`--branches --remotes`. So a branch pushed from another clone is in the set as soon as this one has
+fetched it, which is the ordinary reason an id jumps further than the base and the open pull
+requests explain; an unpushed branch in another clone is still invisible, and that is the residual
+the mint section names.
+The scope line goes to stderr on every run, naming the base SHA, the record count, the in-flight
+count and the branch-claim count, so a caller can audit which third produced the answer.
 
-The two halves fail differently, and the difference is load-bearing:
+The three sets fail differently, and the difference is load-bearing:
 
 - **An empty merged set is a fact, and the answer is `0001`.** The read itself proves the directory:
   the merged set is read as `git ls-tree <base-sha>:<dir>`, which fails outright when `<dir>` is not
@@ -164,6 +172,17 @@ The two halves fail differently, and the difference is load-bearing:
   state. An in-flight set that could not be read is exit `18` and prints nothing on stdout, because a
   caller that reads an empty set as "nothing reserved" silently falls back to the on-disk id, which
   is exactly the collision this verb removes.
+- **An empty branch-claim set is a fact — but only on exit 0.** No branch carrying an unpublished
+  record is a normal state. A ref walk that failed is exit `23`, on the in-flight half's precedent:
+  a caller reading it as "nothing claimed" is back to handing two sibling lanes one id.
+
+**The branch-claim set is a claim set, never a corpus.** A branch may carry anything under the
+record directory, so a name no id parses out of is skipped rather than refused — `index.md` on an
+abandoned branch is not a malformed record, and refusing over it would make a live repo unmintable.
+The strict reading (`19`) stays on the base ref, where the corpus of record is. The walk counts every
+record path a branch *touches*, not only the ones it adds: a `--diff-filter` would have to decide
+what a renumbering rename is, and a modified or deleted record's id is on the base ref already, so
+counting it cannot raise a maximum the merged set does not hold.
 
 **Examples**
 
@@ -174,11 +193,20 @@ $ fabrika adr next
 
 ```
 $ fabrika adr next --json
-{"id":"9240","mergedMax":"9236","inFlight":["9237","9239"],"baseRef":"origin/main","baseSha":"49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82"}
+{"id":"9240","mergedMax":"9236","inFlight":["9237","9239"],"branchClaims":[],"baseRef":"origin/main","baseSha":"49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82"}
+```
+
+A sibling lane minted `9240` on a branch — in this clone, or in another clone that has pushed it and
+this one has fetched — and opened no pull request. The merged set and the in-flight set both read
+`9240` as free; the branch half is what does not:
+
+```
+$ fabrika adr next --json
+{"id":"9241","mergedMax":"9236","inFlight":["9237","9239"],"branchClaims":["9240"],"baseRef":"origin/main","baseSha":"49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82"}
 ```
 
 An adopting repo whose record directory exists and holds no records — the merged set is empty, and
-no open pull request claims an id, so `max(∅ ∪ ∅) + 1` is the first id:
+no open pull request or branch claims an id, so `max(∅ ∪ ∅ ∪ ∅) + 1` is the first id:
 
 ```
 $ fabrika adr next
@@ -197,6 +225,13 @@ $ echo $?
 - **Two lanes minting one id, both pull requests green, is the collision this verb exists for.** It
   has happened repeatedly, and fetching the base ref before reading it closes the stale-local-tree
   half of it.
+- **A branch is a reservation too, and leaving it out had a default-case victim.** An epic child
+  builds in its own worktree on a local branch, opens no pull request, and folds into the assembly
+  branch at the tail — so for the whole life of a phase its mint was invisible to the merged set and
+  the in-flight set alike, and two parallel children were each told the same id was free. That is
+  not a race that sometimes fires: parallel children are the normal shape of a phase, and it landed
+  twice. Worktrees of one clone share `refs/heads`, so reading the branch refs is what makes a
+  sibling's commit visible the moment it exists.
 - **The in-flight reservation lock.** An open pull request that *adds* an `NNNN-*.md` record **is**
   the reservation for `NNNN`, so the in-flight set joins the merged one. The allocation over that
   union is `max(union) + 1`, never the first integer free in it: a gap below the maximum is a number
@@ -208,7 +243,8 @@ $ echo $?
   and a repo adopting fabrika has an empty corpus by definition — refusing there leaves its first
   record unmintable on the one documented path.
 - **The residual race is real and this verb does not close it.** Two authors between the same pair of
-  invocations still collide. A repo's own duplicate-id check reds the second-to-merge pull request in
+  invocations still collide, and so do two lanes in two *different* clones, whose branches never
+  reach one ref store. A repo's own duplicate-id check reds the second-to-merge pull request in
   CI, and the skill's step 6 re-check catches it for the caller's own id before the pull request
   opens. A verb that claimed to close it would be lying; state the residual in `--help`.
 - **A proven refusal never shares an exit code with a failure to invoke** — a caller cannot tell the
@@ -333,11 +369,11 @@ fabrika adr mint only-landed-adrs-may-be-cited [--dir <path>] [--base <ref>] [--
 `--date`, `--title` and `--tags`. There is no `<id>`: allocating it is the point.
 
 **Output** — one line, the path written, newline-terminated. With `--json`, one object with keys
-`path`, `id`, `slug`, `mergedMax`, `inFlight`, `baseRef`, `baseSha`.
+`path`, `id`, `slug`, `mergedMax`, `inFlight`, `branchClaims`, `baseRef`, `baseSha`.
 
-**Exit status** — every code `adr next` can reach (`11`, `17`, `18`, `19`, `21`), plus `adr new`'s
-`12`, plus `1` for a `<slug>` that is not kebab-case. Refusal messages are `adr next`'s and
-`adr new`'s verbatim under an `adr mint:` prefix.
+**Exit status** — every code `adr next` can reach (`11`, `17`, `18`, `19`, `21`, `23`), plus
+`adr new`'s `12`, plus `1` for a `<slug>` that is not kebab-case. Refusal messages are `adr next`'s
+and `adr new`'s verbatim under an `adr mint:` prefix.
 
 **Order is the contract: allocate, then write.** A refused allocation writes nothing, so a run that
 could not read the merged or in-flight set leaves the tree exactly as it found it. The scope line
@@ -353,8 +389,10 @@ for one of them to become an answer.
 **Why it exists.** `adr next` then `adr new` leaves the author's whole drafting turn between reading
 an id and writing it, and an id read then is stale by the time it lands: that gap has put one id on
 two pull requests and cost a dismissed approval. **It is not a reservation and must never be
-described as one** — no id is visible to another lane until its pull request opens, so the
-mint-to-open window survives, and nothing downstream closes it. A repo's own duplicate-id check
+described as one** — the commit is visible through the branch-claim set to another lane of
+*this clone*, and to a lane in another clone once that branch is pushed and fetched, but an
+unpushed branch in another clone is seen only when the pull request opens, so the mint-to-open window
+survives across clones and nothing downstream closes it. A repo's own duplicate-id check
 reading the merge queue's batched ref *reports* a duplicate there, but a job that is not a
 branch-protection-required context does not hold the batch, so it merges and the lane that opened
 second renumbers on the default branch afterwards. `adr next`
@@ -364,7 +402,7 @@ and `adr new` stay callable on their own for the cases that genuinely need the i
 
 ```
 $ fabrika adr mint only-landed-adrs-may-be-cited
-adr mint: scanned docs/decisions at 49a2290…, 236 decision records; 3 id(s) in flight across the open pull requests of o/r.
+adr mint: scanned docs/decisions at 49a2290…, 236 decision records; 3 id(s) in flight across the open pull requests of o/r; 0 id(s) claimed on branch refs with no pull request.
 docs/decisions/9240-only-landed-adrs-may-be-cited.md
 ```
 
@@ -425,6 +463,12 @@ parse identically and a caller never has to branch on the count.
 **All four states are answers, and each is a positive token.** `absent` on exit 0 means *proven
 absent against a current tree*: the fetch succeeded, the records were read, the open pull requests
 were enumerated, and no one holds this id. It is never what a failed read prints.
+
+**Its scope is the two published sets, not `adr next`'s three.** This verb answers where a record
+*is* — a file on the base ref, or a pull request adding one — and a commit on somebody's branch is
+neither, so a branch claim has no state here to be. The consequence is worth naming: `absent` does
+not say a sibling worktree has not already minted this id, only that nothing published holds it.
+`adr next` is where that third set is read.
 
 **Exit status**
 

@@ -41,16 +41,22 @@ of your session hold live markers. With it, a sibling's claim is refused and you
 same re-read refuses a closed target on `7`. Neither refusal is overridable, and a comment read that
 fails is `11` — never a pass.
 
-**Every working file you write goes where this prints, and nowhere else:**
+**Every working file you write is one this verb printed, and nowhere else:**
 
 ```bash
 fabrika triage scratch $issue_number --slug authored --token <claim-token>
 ```
 
-The token's nonce is what keys that directory to your lane. A fan-out shares one session
-scratchpad, so a file named by convention — `authored.md` — is overwritten by a sibling lane
-silently, and the body you then post is another issue's. The path it prints is machine-local and
-must never reach a posted artifact; the writing verbs red on it (`5`).
+**That prints one file, and its name is the `--slug` you passed.** The parent directory is created
+for you and the leaf is not, so write the path exactly as printed — there is nothing to `mkdir`, and
+appending to it (`<printed>/body.md`) fails with `no such file or directory` because the leaf is a
+file, not a folder. **A second working file is a second `scratch` call with a different slug**,
+`--slug notes` beside `--slug authored`.
+
+The token's nonce is what keys those paths to your lane. A fan-out shares one session scratchpad, so
+a slug picked by convention — `authored` — names the same leaf in every lane, and without the nonce
+a sibling's write lands on yours silently and the body you then post is another issue's. The path is
+machine-local and must never reach a posted artifact; the writing verbs red on it (`5`).
 
 ## 2 — Read the issue, then read the code it is about
 
@@ -214,6 +220,17 @@ child from the plan ledger. The stdin
 grammar, the epic pitch's five fields and every exit the verb refuses on live in its section
 (`fabrika wire doc-section --heading "triage enrich" < <skill-base>/contract.md`).
 
+**Mark a criterion the diff cannot settle, here, where you mint it.** Some criteria are only
+checkable outside the diff's bytes — a desk verified by hand, a checkpoint written *before* the fix,
+a runtime observation — and a grader reading the sentence later cannot tell one of those from a
+criterion that was simply never met. So say it on the row: a trailing `[evidence: <source>]` naming
+where the proof lives, and `review` grades that row on the evidence it names rather than FAILing it
+for byte-absence. `enrich` counts the marked rows on stderr and refuses a drifted keyword or a
+marker naming no source on `15`, like any other block defect. **Mark sparingly**: a criterion a test
+could discharge is not one of these, and marking it moves a mechanical check onto a reviewer's word.
+The name, the grammar and what makes a usable source live in the verb's contract section
+(`fabrika wire doc-section --heading "The outside-diff evidence marker" < <skill-base>/contract.md`).
+
 **An ordering you state must already be an edge.** The native `blocked_by` graph is the one carrier
 of "do not start this yet", so a rewrite saying "Blocked. Do not start until #N" over a graph with
 no such edge ships an issue `build pick` admits and no lane can build — one such rewrite cost a
@@ -252,7 +269,10 @@ routing before a head has graded a diff: `lane open` and `lane emit` read the `c
 and seed the lane document from it, and without it a rendered ticket builds its first round in a
 shell carrying none of the design law and reaches `build:ui` only after a `review-ui` FAIL. The
 vocabulary is closed — `code`, `doc`, `skill`, `ui` — and an off-set spelling refuses on `10` before
-any label is written. Most tickets need no `--class`: text is what the plain shells already serve.
+any label is written. The four labels are minted from that same set by `status bootstrap
+label-taxonomy`; on a board missing one the stamp refuses on `7` rather than letting the API create
+it, and running that bootstrap is the fix, never a run with the flag dropped. Most tickets need no
+`--class`: text is what the plain shells already serve.
 
 **Repeatable `--blocked-by <n>` writes the prerequisites as native graph edges** — the only triage
 route to them, and where an ordering belongs. Pass one per issue this one waits on
@@ -287,8 +307,9 @@ another human round-trip. No such comment, and the default above stands: `human`
 comment rather than judging the question settled yourself, and a ruling that left a gap open is
 still a judgment, so it stays `human`. An issue already parked on `human` needs no triage re-run to
 come back:
-`fabrika decision rule <n> --cites <url>` is how a control-plane human records the ruling and flips
-the audience, and its contract is that verb's `--help`, not this page.
+`fabrika decision rule <n>` is how a control-plane human records the ruling and flips the audience —
+`--cites <url>` over a comment that is already there, `--authorization <file>` over a ruling given in
+conversation — and its contract is that verb's `--help`, not this page.
 
 **`--ready-for agent` requires a criteria block on every type but `epic`.** The verb reads the live
 body through the same wire reader every grader downstream reads, and refuses on `16` — writing no

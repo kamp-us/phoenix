@@ -12,6 +12,8 @@ tags: [tuval, ai-agent, agy, permissions, sandbox]
 
 **This record's decision, and the `step_type` / `result` census it rests on, are scoped to `agy` v1.1.27 on macOS.** Later-version measurements are each named for the version they were taken against where they land — inline in a correction, as the `SIGINT` and `result.usage` re-measurements at v1.1.28 are, or in a section of their own, as `error_message` at v1.2.0 is — rather than folded back into that pin, under the rule `## Grounding` states. The pin is load-bearing rather than decorative: the stream `agy` emits carries no protocol version and no schema version field of any kind, so a consumer has nothing to negotiate against and nothing that would tell it the shape changed. `result.denied_actions` was added one release before the spike that produced this record, which is how fast the surface moves. A reader on a later version is holding a partly-unverified document — what a named section measured against their version holds there, and the rest is unverified rather than stale.
 
+**v1.1.27 is the supported floor, not the one supported release.** The founder ruled it on [#9191](https://github.com/kamp-us/phoenix/issues/9191#issuecomment-5673883768) after every hand-verification in that batch ran on a newer binary and passed: `apps/tuval/src/agy/preflight.ts` now runs `agy --version` before a session opens, refuses below this pin with the floor and the version read named, and announces what it read so every hand-verification and bug report carries it. That changes what the pin *supports* and nothing about what it *measures* — the rule `## Grounding` states is untouched, so a claim in this record still holds only for the version it was measured against, and a reader above the floor is still holding a partly-unverified document.
+
 ## Context
 
 Tuval ships two `TuvalAiAgent` backends today, `apps/tuval/src/pi/` and `apps/tuval/src/claude/`. [#8162](https://github.com/kamp-us/phoenix/issues/8162) adds `agy` (the Antigravity CLI) as a third, and the permission question had to be settled before that adapter could be written, because `agy` cannot be driven the way the other two are.
@@ -84,11 +86,54 @@ This is about the *terminal event*, and it is a different proposition from the o
 
 **`AGY_VERSION` stays at `1.1.27`.** The constant names the release the whole `wire.ts` module was captured from, and one step type read on one later machine is not a re-census — moving it would restate the v1.1.27 capture as a v1.2.0 one, which is the laundering this record's own rule forbids. It moves when the module is captured again, and `src/agy/ai-agent/launch.unit.test.ts` moves with it.
 
+## A later-version reading: `--effort` at v1.2.3
+
+**This section is scoped to v1.2.3 and changes nothing above.** Per the grounding rule below, a measurement against a later version is named as such rather than written back onto the pin, so every v1.1.27 claim — the sandbox census, the four easy-to-mistake behaviours, the `step_type` set — stands exactly as it reads.
+
+**v1.2.3 bakes reasoning effort into the model id, so `--effort` is no longer an independent axis.** The flag is accepted only when it repeats the suffix already in `--model`, and refused outright for a model whose id carries none. Both refusals are verbatim as measured:
+
+```
+$ agy --model gemini-3.1-pro-high --effort low --print='reply ok'
+error: invalid model selection (--model "gemini-3.1-pro-high" --effort "low"): --model gemini-3.1-pro-high conflicts with --effort=low
+
+$ agy --model claude-sonnet-4-6 --effort high --print='reply ok'
+error: invalid model selection (--model "claude-sonnet-4-6" --effort "high"): --effort is not supported for model "claude-sonnet-4-6"
+```
+
+**`agy --print='/effort' --output-format=json` still answers `{"adjustable":true,"current":"high","available":["low","medium","high"]}`.** That is the v1.1.27 read the adapter's three-level catalog was built from, and it is the reason the drift was invisible: the CLI's own report of the axis outlived the flag's acceptance of it. A catalog read off that answer offers three levels of which at most one can launch, and on a Claude-family row none can.
+
+**So the adapter drops the axis rather than deriving one.** The agy row publishes the resolved-empty thinking offer — `{current: null, available: []}`, which the composer already reads as `none offered` with the control disabled — refuses every `ThinkingLevel` with an empty `available`, and composes `--effort` on no launch path ([#9254](https://github.com/kamp-us/phoenix/issues/9254)). The family-grouping alternative, parsing the id suffix and composing a model id from a level, was considered and ruled out by the founder: it reads structure out of a naming convention agy does not declare, and the `(High)` / `(Medium)` / `(Low)` rows of the model catalog already give a window every level agy can actually be launched at.
+
+**`AGY_VERSION` stays at `1.1.27`.** The constant names the release the whole `wire.ts` module was captured from, and this change re-captures no wire shape — it removes a launch flag and a catalog, neither of which is a wire reading.
+
+## A later-version reading: the `write_file` allow-rule at v1.2.3
+
+**This section is scoped to v1.2.3 and changes nothing above.** Per the grounding rule below, a measurement against a later version is named as such rather than written back onto the pin, so every v1.1.27 claim — the sandbox census, the four easy-to-mistake behaviours, the `step_type` set — stands exactly as it reads.
+
+**v1.2.3 soft-denies every `write_file` this record's posture does not allow-list, and the denial does not lift on a retry.** Under `toolPermission: proceed-in-sandbox` plus `--sandbox --add-dir=<repo>`, reads and sandboxed commands are still auto-approved, but a write with no matching rule under `permissions.allow` is denied on the first attempt and on every retry in the same conversation. Headless runs print a stderr notice naming the rule, verbatim as measured:
+
+```
+a tool required the "write_file" permission that headless mode cannot prompt for, so it was auto-denied. Add an allow-rule under permissions.allow in settings.json (e.g. write_file(<target>))
+```
+
+The agy log says the same thing on each such run, in two lines:
+
+```
+CLI settings initialized: permissions=<nil>, toolPermission=proceed-in-sandbox
+soft-denying tool confirmation "WriteToFile"
+```
+
+**The remedy is `"permissions": {"allow": ["write_file(*)"]}` in the settings file plus a fresh session.** agy reads settings once at launch, so a running child keeps denying after the file is edited; only the next launch reads `permissions=&{Allow:[write_file(*)] ...}`. The fail-closed property this record measured survives the rule: `rm -rf .git` stayed blocked by the sandbox and the escalation was denied.
+
+**So the v1.1.27 reading "the first write to a new path is denied and succeeds on retry" does not hold at 1.2.3.** That claim stands above as the v1.1.27 measurement it is; on 1.2.3 the retry is denied identically, so the denial is a settings fact rather than a profile that widens. The row's preflight therefore reads the allow-rule beside `toolPermission` and refuses `start` with the rule in the message ([#9240](https://github.com/kamp-us/phoenix/issues/9240)), and the session note the adapter opens with names the rule instead of promising a retry.
+
+**`AGY_VERSION` stays at `1.1.27`.** The constant names the release the whole `wire.ts` module was captured from, and this change re-captures no wire shape — it reads one more key out of a settings file and rewrites one system row.
+
 ## Grounding
 
 Per [CLAUDE.md](../CLAUDE.md)'s rule that a decision-driving claim about a dependency's behaviour is verified against the authoritative source rather than asserted, every behavioural claim above traces to one of two things: a live run of `agy` v1.1.27 on macOS during the spike recorded on [#8162](https://github.com/kamp-us/phoenix/issues/8162), or a `strings` extraction from that binary (the `INTERRUPTED` status is the one claim from the latter). Where a claim contradicts the vendor's documentation, the measurement wins and the contradiction is named as such.
 
-Two claims were re-measured after a hand-verification run of the adapter contradicted them, and both corrections above carry their own evidence: the `SIGINT` terminal event (a scratch desk against v1.1.27, plus a direct probe against v1.1.28) and the `result.usage` census (a three-turn stream-json session against v1.1.28, the third turn on a resumed child). A measurement against a *later* version is named as such rather than written back onto the pinned one; where the two agree, as they do on the interrupt string, the agreement is the point. The `error_message` section is that rule applied again, one minor further on: twelve drives of a v1.2.0 binary, the captured lines committed verbatim as `src/agy/ai-agent/fixtures.ts`'s `errorMessageStep` / `resultContentFiltered`, and the v1.1.27 census left standing.
+Two claims were re-measured after a hand-verification run of the adapter contradicted them, and both corrections above carry their own evidence: the `SIGINT` terminal event (a scratch desk against v1.1.27, plus a direct probe against v1.1.28) and the `result.usage` census (a three-turn stream-json session against v1.1.28, the third turn on a resumed child). A measurement against a *later* version is named as such rather than written back onto the pinned one; where the two agree, as they do on the interrupt string, the agreement is the point. The `error_message` section is that rule applied again, one minor further on: twelve drives of a v1.2.0 binary, the captured lines committed verbatim as `src/agy/ai-agent/fixtures.ts`'s `errorMessageStep` / `resultContentFiltered`, and the v1.1.27 census left standing. The `--effort` section is the same rule two minors further on: a five-row `--model` / `--effort` matrix driven against a v1.2.3 binary, its two refusal strings quoted as printed, and the v1.1.27 `/effort` answer recorded beside them rather than replaced by them. The `write_file` allow-rule section is that rule once more on the same minor: a bare-CLI reproduction 4/4 plus a two-turn `--input-format stream-json` session against a v1.2.3 binary, both `result`s carrying `denied_actions: [{"action":"write_file"}]`, agy's stderr notice and its two settings log lines quoted as printed, and the v1.1.27 denied-then-succeeds-on-retry claim left standing as the v1.1.27 measurement it is.
 
 Every vendor path in this record is written relative to `$HOME` and resolved at runtime. No absolute machine-local path appears, so the document stays true on a machine other than the one the spike ran on.
 

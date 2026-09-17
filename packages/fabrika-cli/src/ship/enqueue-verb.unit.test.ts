@@ -53,7 +53,22 @@ const timeline = (...rows: ReadonlyArray<{event: string; at: string}>): HttpRepl
 	body: JSON.stringify(rows.map((row) => ({event: row.event, created_at: row.at}))),
 });
 
-const options = {pr: 4321, sha: HEAD, repo: null, json: false, env: ENV};
+/**
+ * The shipped mergeability window is 60s of real backoff, so every test scripts a short one.
+ *
+ * 4s is two waits of 2s, which is the smallest window that still exercises the re-read loop — a
+ * window of 0 would prove only that one read happened.
+ */
+const MERGEABILITY_SECONDS = 4;
+
+const options = {
+	pr: 4321,
+	sha: HEAD,
+	mergeabilitySeconds: MERGEABILITY_SECONDS,
+	repo: null,
+	json: false,
+	env: ENV,
+};
 
 const both = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
 	const seams = fakeSeams(script);
@@ -135,8 +150,25 @@ describe("runEnqueue", () => {
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"ship enqueue: #4321's mergeable_state is still indefinite after 3 polls — mergeability is UNKNOWN, never green; nothing was armed.",
+			"ship enqueue: #4321's mergeable_state is still indefinite after 2 polls over 4s — mergeability is UNKNOWN, never green; nothing was armed.",
 		);
+		expect(scripted.seams.requests.some((line) => /graphql/.test(line))).toBe(false);
+	}, 20_000);
+
+	// The window, not the read path, is what left a conflicted PR refusing as UNKNOWN. GitHub computes
+	// `mergeable` in a background job the first read only STARTS, so the conflict arrives on a later
+	// read of the same endpoint — and before this, three polls 2s apart gave it 6s.
+	// @ruling https://github.com/kamp-us/phoenix/issues/9032
+	it("re-reads past an indefinite value and lands the conflict the later read carries", async () => {
+		const scripted = both([
+			livePull(),
+			[once(MERGEABILITY), mergeability({mergeable: null, mergeableState: "unknown"})],
+			[MERGEABILITY, mergeability({mergeable: false, mergeableState: "dirty"})],
+		]);
+		const out = await scripted.outcome;
+		expect(out.code).toBe(BASE_CONFLICTED);
+		expect(out.stderr.at(-1)).toContain("mergeable_state: dirty");
+		expect(out.stderr.at(-1)).not.toContain("indefinite");
 		expect(scripted.seams.requests.some((line) => /graphql/.test(line))).toBe(false);
 	}, 20_000);
 

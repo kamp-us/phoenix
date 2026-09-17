@@ -21,6 +21,7 @@ const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4310$/;
 const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4310\/comments/;
 const REVIEWS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4310\/reviews/;
 const ISSUE = /^GET \S+\/repos\/o\/r\/issues\/4312$/;
+const ISSUE_COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4312\/comments/;
 
 const FAIL_NOW = `review-code: FAIL @ ${HEAD} — the debounce fix races the unmount`;
 const failAt = (sha: string) => `review-code: FAIL @ ${sha} — the debounce fix races the unmount`;
@@ -49,6 +50,7 @@ describe("runVerdicts", () => {
 			[PULL, PR],
 			[COMMENTS, comments({id: 1, body: PASS_STALE}, {id: 2, body: FAIL_NOW})],
 			[REVIEWS, NO_REVIEWS],
+			[ISSUE_COMMENTS, served([])],
 			[ISSUE, issue()],
 		]);
 		expect(out.code).toBe(0);
@@ -65,6 +67,7 @@ describe("runVerdicts", () => {
 			[PULL, PR],
 			[COMMENTS, comments({id: 1, body: PASS_STALE})],
 			[REVIEWS, NO_REVIEWS],
+			[ISSUE_COMMENTS, served([])],
 			[ISSUE, issue()],
 		]);
 		const parsed = JSON.parse(out.stdout);
@@ -77,6 +80,7 @@ describe("runVerdicts", () => {
 			[PULL, PR],
 			[COMMENTS, served([])],
 			[REVIEWS, served([{id: 98001, state: "CHANGES_REQUESTED", body: "the debounce races"}])],
+			[ISSUE_COMMENTS, served([])],
 			[ISSUE, issue()],
 		]);
 		const parsed = JSON.parse(out.stdout);
@@ -108,6 +112,7 @@ describe("runVerdicts", () => {
 				),
 			],
 			[REVIEWS, NO_REVIEWS],
+			[ISSUE_COMMENTS, served([])],
 			[ISSUE, issue()],
 		]);
 		const parsed = JSON.parse(out.stdout);
@@ -148,6 +153,7 @@ describe("runVerdicts", () => {
 				),
 			],
 			[REVIEWS, NO_REVIEWS],
+			[ISSUE_COMMENTS, served([])],
 			[ISSUE, issue()],
 		]);
 		const parsed = JSON.parse(out.stdout);
@@ -160,6 +166,7 @@ describe("runVerdicts", () => {
 			[PULL, PR],
 			[COMMENTS, served([])],
 			[REVIEWS, NO_REVIEWS],
+			[ISSUE_COMMENTS, served([])],
 			[
 				ISSUE,
 				issue({
@@ -179,11 +186,70 @@ describe("runVerdicts", () => {
 		]);
 	});
 
+	/**
+	 * Fence 3 of `review append-criterion` posts the finding and appends no row, so the tagged
+	 * comment is the only carrier — folding it here is what gives a repair round past the freeze the
+	 * finding on record, with no driver naming a comment id in a spawn prompt.
+	 */
+	it("folds the escalation comments this PR's rounds raised, by their tag", async () => {
+		const out = await run([
+			[PULL, PR],
+			[COMMENTS, served([])],
+			[REVIEWS, NO_REVIEWS],
+			[
+				ISSUE_COMMENTS,
+				comments(
+					{
+						id: 9001,
+						body: `the counters are off by one\n\n<!-- ac:escalated pr:#4310 round:${CAP_ROUND} -->`,
+					},
+					{id: 9002, body: "<!-- ac:escalated pr:#4999 round:5 --> another PR's finding"},
+					{id: 9003, body: "a plain comment"},
+				),
+			],
+			[ISSUE, issue()],
+		]);
+		expect(out.code).toBe(0);
+		const parsed = JSON.parse(out.stdout);
+		expect(parsed.escalatedFindings).toHaveLength(1);
+		expect(parsed.escalatedFindings[0]).toMatchObject({round: CAP_ROUND, commentId: 9001});
+		expect(parsed.escalatedFindings[0].body).toContain("the counters are off by one");
+		expect(out.stderr.join("\n")).toContain("1 finding(s) escalated past the freeze");
+	});
+
+	it("says the escalated fold is empty rather than leaving it unsaid", async () => {
+		const out = await run([
+			[PULL, PR],
+			[COMMENTS, served([])],
+			[REVIEWS, NO_REVIEWS],
+			[ISSUE_COMMENTS, served([])],
+			[ISSUE, issue()],
+		]);
+		expect(JSON.parse(out.stdout).escalatedFindings).toEqual([]);
+		expect(out.stderr.join("\n")).toContain(
+			"no finding was escalated past the acceptance-criteria freeze",
+		);
+	});
+
+	it("refuses an unreadable linked-issue comment page on 11 — never an empty escalated fold", async () => {
+		const out = await run([
+			[PULL, PR],
+			[COMMENTS, served([])],
+			[REVIEWS, NO_REVIEWS],
+			[ISSUE_COMMENTS, GATEWAY],
+			[ISSUE, issue()],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("acceptance criteria and escalated findings");
+	});
+
 	it("prints an empty fold as a proven answer on exit 0, with the counts on stderr", async () => {
 		const out = await run([
 			[PULL, PR],
 			[COMMENTS, comments({id: 1, body: "just a normal comment"})],
 			[REVIEWS, NO_REVIEWS],
+			[ISSUE_COMMENTS, served([])],
 			[ISSUE, issue()],
 		]);
 		expect(out.code).toBe(0);
@@ -208,6 +274,7 @@ describe("runVerdicts", () => {
 				[PULL, pull({number: 4310, base: {ref: "main"}, ...overrides})],
 				[COMMENTS, comments({id: 1, body: PASS_NOW})],
 				[REVIEWS, NO_REVIEWS],
+				[ISSUE_COMMENTS, served([])],
 				[ISSUE, issue()],
 			]);
 
@@ -255,19 +322,21 @@ describe("runVerdicts", () => {
 			[PULL, PR],
 			[COMMENTS, served([])],
 			[REVIEWS, GATEWAY],
+			[ISSUE_COMMENTS, served([])],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
-	it("paginates both list reads", async () => {
+	it("paginates every list read — the PR's comments, its reviews, and the linked issue's", async () => {
 		const seams = fakeSeams([
 			[PULL, PR],
 			[COMMENTS, served([])],
 			[REVIEWS, NO_REVIEWS],
+			[ISSUE_COMMENTS, served([])],
 			[ISSUE, issue()],
 		]);
 		await Effect.runPromise(Effect.provide(runVerdicts(options), seams.layer));
-		expect(seams.requests.filter((line) => line.includes("per_page=100")).length).toBe(2);
+		expect(seams.requests.filter((line) => line.includes("per_page=100")).length).toBe(3);
 	});
 	describe("the founder's cleared rounds", () => {
 		const CONFIG = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
@@ -317,6 +386,7 @@ describe("runVerdicts", () => {
 				[PULL, PR_ON_MAIN],
 				[COMMENTS, comments(...CAPPED)],
 				[REVIEWS, NO_REVIEWS],
+				[ISSUE_COMMENTS, served([])],
 				[ISSUE, issue()],
 			]);
 			const parsed = JSON.parse(out.stdout);
@@ -331,6 +401,7 @@ describe("runVerdicts", () => {
 				[CONFIG, CONFIGURED],
 				[PERMISSION, WRITES],
 				[REVIEWS, NO_REVIEWS],
+				[ISSUE_COMMENTS, served([])],
 				[ISSUE, issue()],
 			]);
 			const parsed = JSON.parse(out.stdout);
@@ -353,6 +424,7 @@ describe("runVerdicts", () => {
 				[CONFIG, CONFIGURED],
 				[PERMISSION, WRITES],
 				[REVIEWS, NO_REVIEWS],
+				[ISSUE_COMMENTS, served([])],
 				[ISSUE, issue()],
 			]);
 			const parsed = JSON.parse(out.stdout);
@@ -389,6 +461,7 @@ describe("runVerdicts", () => {
 				[CONFIG, CONFIGURED],
 				[PERMISSION, WRITES],
 				[REVIEWS, NO_REVIEWS],
+				[ISSUE_COMMENTS, served([])],
 				[ISSUE, issue()],
 			]);
 			const parsed = JSON.parse(out.stdout);
@@ -406,6 +479,7 @@ describe("runVerdicts", () => {
 				[CONFIG, CONFIGURED],
 				[PERMISSION, served({permission: "read"})],
 				[REVIEWS, NO_REVIEWS],
+				[ISSUE_COMMENTS, served([])],
 				[ISSUE, issue()],
 			]);
 			const parsed = JSON.parse(out.stdout);
@@ -421,6 +495,7 @@ describe("runVerdicts", () => {
 				[CONFIG, CONFIGURED],
 				[PERMISSION, GATEWAY],
 				[REVIEWS, NO_REVIEWS],
+				[ISSUE_COMMENTS, served([])],
 				[ISSUE, issue()],
 			]);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -441,6 +516,7 @@ describe("runVerdicts", () => {
 				],
 				[CONFIG, CONFIGURED],
 				[REVIEWS, NO_REVIEWS],
+				[ISSUE_COMMENTS, served([])],
 				[ISSUE, issue()],
 			]);
 			const parsed = JSON.parse(out.stdout);
@@ -455,6 +531,7 @@ describe("runVerdicts", () => {
 				[COMMENTS, comments(...CAPPED, ...GRANT)],
 				[CONFIG, GATEWAY],
 				[REVIEWS, NO_REVIEWS],
+				[ISSUE_COMMENTS, served([])],
 				[ISSUE, issue()],
 			]);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -519,6 +596,26 @@ describe("runChildVerdicts", () => {
 			],
 		]);
 		expect(JSON.parse(out.stdout).rounds).toBe(2);
+	});
+
+	it("folds the child's own escalated findings — a child's reviewer hits the same freeze", async () => {
+		const out = await runChild([
+			[ISSUE, issue()],
+			[
+				CHILD_COMMENTS,
+				comments(
+					{id: 8801, body: range("FAIL")},
+					{
+						id: 8802,
+						body: `the union widened\n\n<!-- ac:escalated range:${BASE}..${TIP} round:${CAP_ROUND} -->`,
+					},
+				),
+			],
+		]);
+		const parsed = JSON.parse(out.stdout);
+		expect(parsed.escalatedFindings).toHaveLength(1);
+		expect(parsed.escalatedFindings[0]).toMatchObject({round: CAP_ROUND, commentId: 8802});
+		expect(parsed.escalatedFindings[0].body).toContain("the union widened");
 	});
 
 	it("reports no clearance and says why — a grant is recorded against a base branch", async () => {

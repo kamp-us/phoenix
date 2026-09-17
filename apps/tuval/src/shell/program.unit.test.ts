@@ -14,7 +14,7 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer, Option, Result} from "effect";
+import {Context, Effect, Layer, Option, Result, Schema} from "effect";
 import {afterAll} from "vitest";
 import {boot, projectDir} from "../boot.ts";
 import {reboundTable} from "../config-fixtures/shell-rebound-keys.ts";
@@ -34,6 +34,7 @@ import {showsInAWindow} from "./picker/entries.ts";
 import {
 	SHELL_VERSION,
 	shellId,
+	shellMigrations,
 	shellNode,
 	shellPrefixTable,
 	shellProgram,
@@ -73,6 +74,9 @@ afterAll(() => {
  * every case states the same budget rather than each guessing its own.
  */
 const BUDGET_MS = 20_000;
+
+/** The test tier's own failure for a store write, so no rejection lands as an untyped defect. */
+class StoreWrite extends Schema.TaggedError<StoreWrite>()("StoreWrite", {cause: Schema.Defect()}) {}
 
 const row = (): AnyProgram => shellProgram({effects: unwiredShellEffects});
 
@@ -230,6 +234,57 @@ describe("the shell as a program row", () => {
 			assert.deepStrictEqual(
 				corrupt.map(([name, snapshot]) => `${name}: ${shellStateOf(snapshot)}`),
 				corrupt.map(([name]) => `${name}: null`),
+			);
+		},
+		BUDGET_MS,
+	);
+
+	it.effect(
+		"brings a 1.1.0 desk back through the row's own step, with every window and no hand edit",
+		() => {
+			const stores = memoryStores();
+			return Effect.gen(function* () {
+				const before = yield* dispatched(
+					{type: "window.split", orientation: "horizontal"},
+					{type: "window.bind", processId: "counter"},
+					{type: "workspace.create"},
+				).pipe(Effect.provide(kernel([row()], stores)), Effect.scoped);
+
+				// The same desk as 1.1.0 wrote it: before `boardOpen` was a field (#8876).
+				const {boardOpen: _added, ...desk} = before.desk;
+				yield* Effect.tryPromise({
+					try: () =>
+						stores.snapshot(shellProcess).save({
+							programId: shellId,
+							version: "1.1.0",
+							state: {...before, desk},
+						}),
+					catch: (cause) => new StoreWrite({cause}),
+				});
+
+				const after = yield* dispatched().pipe(
+					Effect.provide(kernel([row()], stores)),
+					Effect.scoped,
+				);
+				assert.deepStrictEqual(after, before);
+				assert.strictEqual(Object.keys(after.workspaces).length, 2);
+				assert.isFalse(after.desk.boardOpen);
+			});
+		},
+		BUDGET_MS,
+	);
+
+	it(
+		"declines bytes its step cannot read rather than handing the core a half-migrated desk",
+		() => {
+			const step = shellMigrations["1.1.0"]!;
+			assert.strictEqual(step.to, SHELL_VERSION);
+			assert.deepStrictEqual(step.migrate({workspaces: {}}), Option.none());
+			assert.deepStrictEqual(step.migrate("not a desk"), Option.none());
+			// A desk that already answered the field keeps its own answer.
+			assert.deepStrictEqual(
+				step.migrate({desk: {inspectorOpen: true, boardOpen: true}}),
+				Option.some({desk: {inspectorOpen: true, boardOpen: true}}),
 			);
 		},
 		BUDGET_MS,

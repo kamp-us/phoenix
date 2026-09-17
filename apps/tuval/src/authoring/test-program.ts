@@ -31,7 +31,7 @@ import type {
 	AuthoredProgram,
 	RequestArrivalEvent,
 } from "./define-program.ts";
-import type {ProgramEffect} from "./effect.ts";
+import type {AnyEffect} from "./effect.ts";
 import {KEY_EVENT, type KeyEvent} from "./keys.ts";
 import type {AnyPortDecl, PortCodec, PortDecls} from "./port.ts";
 import {initialSelfReport, type ProgramEvent, withSelfReport} from "./view.ts";
@@ -43,8 +43,12 @@ import {initialSelfReport, type ProgramEvent, withSelfReport} from "./view.ts";
  */
 export interface ProgramRun<S, D extends PortDecls, U, C extends CommandArgTypes> {
 	readonly state: S;
-	/** What the last step asked for. The initial run carries the derived lines a fresh process publishes. */
-	readonly effects: ReadonlyArray<ProgramEffect>;
+	/**
+	 * What the last step asked for. The initial run carries the derived lines a fresh process
+	 * publishes. `AnyEffect` rather than `ProgramEffect` because `call` answers a command's effects,
+	 * and a command's `send` may name a bare port of its own program (`./commands.ts`).
+	 */
+	readonly effects: ReadonlyArray<AnyEffect>;
 	/** A payload on one of this program's arriving ports, decoded through that port's schema. */
 	readonly send: (port: ArrivingPortNames<D>, payload: unknown) => ProgramRun<S, D, U, C>;
 	/**
@@ -97,8 +101,8 @@ const decodeArrival = (port: string, decl: AnyPortDecl, payload: unknown): unkno
 };
 
 /** A command's `run` answers one effect or a list of them; a run always reads a list. */
-const asked = (answer: CommandAnswer): ReadonlyArray<ProgramEffect> =>
-	Array.isArray(answer) ? answer : [answer as ProgramEffect];
+const asked = (answer: CommandAnswer): ReadonlyArray<AnyEffect> =>
+	Array.isArray(answer) ? answer : [answer as AnyEffect];
 
 /**
  * Drive one authored program. It takes the authored record rather than the compiled row, because
@@ -117,7 +121,7 @@ export const testProgram = <
 	const program = authored as AnyAuthoredProgram;
 	const cells = withSelfReport(program, program.update) as Readonly<Record<string, Cell>>;
 
-	const at = (state: S, effects: ReadonlyArray<ProgramEffect>): ProgramRun<S, D, U, C> => {
+	const at = (state: S, effects: ReadonlyArray<AnyEffect>): ProgramRun<S, D, U, C> => {
 		const step = (event: AuthoredEvent): ProgramRun<S, D, U, C> => {
 			const cell = cells[event.type];
 			if (cell === undefined) {

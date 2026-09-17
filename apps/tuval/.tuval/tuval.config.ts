@@ -3,9 +3,9 @@
 // is a `Program` (src/registry/program.ts); the eight in the box today are the shell (#7558), the
 // demo counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the
 // agy chat session (#8184), the codex chat session (#8600) and the AI-agent session list (#8102).
-// The ninth is the worked `pr-review` example (#8734), and it is the only row behind a flag —
-// `prReviewExample` in the `features` block below, default-off, so a desk booted today carries the
-// eight. Flip that line and restart the desk to get the ninth.
+// One more row sits behind a flag in the `features` block below, default-off, so a desk booted
+// today carries the eight: the worked `pr-review` example (#8734) behind `prReviewExample`. Flip
+// that line and restart the desk to get the row, its graph node and its spells.
 // The shape is `TuvalConfigInput` (src/config.ts), version 1.
 //
 // The shell is registered here and nowhere else — it is a program row like any other, so dropping
@@ -98,5 +98,7 @@ export default {
 		sessionListProgram(),
 	],
 	features,
-	graph: {nodes: [shellGraphNode, ...demoGraph.nodes]},
+	graph: {
+		nodes: [shellGraphNode, ...demoGraph.nodes],
+	},
 } satisfies TuvalConfigInput;

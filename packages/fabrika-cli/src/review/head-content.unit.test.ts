@@ -57,6 +57,7 @@ const verdictsSaysCurrent = async (markerBody: string, raw: ExecResult): Promise
 					build.comments({id: 1, body: markerBody}),
 				],
 				[new RegExp(`^GET \\S+/repos/o/r/pulls/${PR}/reviews`), build.served([])],
+				[/^GET \S+\/repos\/o\/r\/issues\/4312\/comments/, build.served([])],
 				[/^GET \S+\/repos\/o\/r\/issues\/4312$/, build.issue()],
 				...gitFor(PR, build.HEAD, raw),
 			]).layer,
@@ -164,6 +165,7 @@ describe("build verdicts and ship gate resolve one marker's staleness identicall
 				build.comments({id: 1, body: MARKER(build.HEAD, DIGEST)}),
 			],
 			[/^GET \S+\/repos\/o\/r\/pulls\/4310\/reviews/, build.served([])],
+			[/^GET \S+\/repos\/o\/r\/issues\/4312\/comments/, build.served([])],
 			[/^GET \S+\/repos\/o\/r\/issues\/4312$/, build.issue()],
 		]);
 		const out = await Effect.runPromise(

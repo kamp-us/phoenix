@@ -3,8 +3,10 @@ import {readGoldenFixture} from "../golden-fixture.ts";
 import {classifyPark, isPark} from "../recipe/parks.ts";
 import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
+import {seedClasses} from "./class-seed.ts";
 import {
 	choreWorkflow,
+	coderTemplateText,
 	coderWorkflow,
 	stateNode,
 	twoPhaseWorkflow,
@@ -46,6 +48,8 @@ type Step =
 	| string
 	| {
 			readonly event: string;
+			/** Overrides the run's `classes`, so a step past the first can carry its own set. */
+			readonly classes?: ReadonlyArray<string>;
 			readonly waitGrant?: number;
 			readonly partial?: boolean;
 			readonly diagnosis?: boolean;
@@ -66,14 +70,16 @@ const drive = (
 	};
 	const reached = events.map((step, index) => {
 		const event = typeof step === "string" ? step : step.event;
-		// Only the first event carries the classes, so these tests also prove they stand afterwards.
+		// Only the first event carries the classes unless a step names its own, so these tests also
+		// prove they stand afterwards.
+		const stepClasses = typeof step === "string" ? undefined : step.classes;
 		const applied = applyEvent(
 			lane,
 			statesOf(),
 			task,
 			event,
 			"2026-08-17T00:00:00.000Z",
-			index === 0 ? classes : null,
+			stepClasses ?? (index === 0 ? classes : null),
 			typeof step === "string" ? null : (step.waitGrant ?? null),
 			typeof step === "string" ? false : (step.partial ?? false),
 			typeof step === "string" ? null : (step.diagnosis ?? null),
@@ -400,6 +406,38 @@ describe("the compiler — structural recognition", () => {
 			"review",
 			"ship",
 			"shipped",
+		]);
+	});
+
+	// The two below pin both halves of the ruling tagged beneath. Stickiness is the machine's and stays:
+	// the seed is how a rendered ticket reaches `build:ui` on its first build, where no head exists
+	// to derive anything from. What narrowed is the reading, not this table — once a head exists the
+	// classes come off its diff, so the relayed set replaces the seeded one and a text-only head
+	// walks to `ship`. The classless `PASS` below is the shape `lane prove` now refuses at the
+	// proof seam (`./prove-verb.ts`), which is where the head is in reach; the machine still routes
+	// it, because a guard that cannot read a diff must not pretend to.
+	// @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
+	it("routes a seeded UI lane's classless PASS into review:ui, with no class on any event line", () => {
+		const seed = seedClasses(coderTemplateText(), ["ui"]);
+		if (seed._tag !== "Seeded") throw new Error(`expected a seeded document, got ${seed._tag}`);
+		const lane = compiled(JSON.parse(seed.text));
+
+		expect(leaves(lane, "issue", ["WIP", "DONE", "PASS"])).toEqual([
+			"build:ui",
+			"review",
+			"review:ui",
+		]);
+	});
+
+	it("lets the PASS's own class set replace the standing one, so a text-only head walks to ship", () => {
+		const seed = seedClasses(coderTemplateText(), ["ui"]);
+		if (seed._tag !== "Seeded") throw new Error(`expected a seeded document, got ${seed._tag}`);
+		const lane = compiled(JSON.parse(seed.text));
+
+		expect(leaves(lane, "issue", ["WIP", "DONE", {event: "PASS", classes: ["code"]}])).toEqual([
+			"build:ui",
+			"review",
+			"ship",
 		]);
 	});
 
@@ -910,5 +948,72 @@ describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing", (
 
 		expect(classified._tag).toBe("Novel");
 		if (classified._tag === "Novel") expect(classified.reason).toContain("head-behind-base");
+	});
+});
+
+/**
+ * A `class:<name>` arm LEADING a budget pair — the third shape of the class spelling, and the one
+ * that lets a rendered repair round re-enter the rendered cell without taking the budget's place.
+ *
+ * The rows that matter are the split: the class picks the target, the counter decides whether a
+ * target is taken at all. Written as the two-arm form with the class on top, a spent task would loop
+ * in the rendered cell forever instead of reaching the fallthrough.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9147
+ */
+describe("`class:<name>` leading a budget pair — a route, not the cell", () => {
+	const routed = (): Record<string, unknown> => {
+		const workflow = twoPhaseWorkflow();
+		regionStates(workflow, "task_a")["doing:ui"] = {
+			on: {"TASK_A.DONE": "checking", "TASK_A.BLOCKED": "blocked"},
+		};
+		stateNode(workflow, "task_a", "checking").on["TASK_A.FAIL"] = [
+			{target: "doing:ui", guard: "class:ui"},
+			{target: "doing", guard: "retriesRemaining", actions: "incrementRetries"},
+			{target: "tripped"},
+		];
+		return workflow;
+	};
+
+	it("routes a classed FAIL to the class's own cell, and spends the retry doing it", () => {
+		const {state} = drive(compiled(routed()), "task_a", ["DONE", "FAIL"], ["ui"]);
+
+		expect(state.type).toBe("doing:ui");
+		expect(state.retries).toBe(1);
+	});
+
+	it("leaves an unclassed FAIL on the budget arm's own target", () => {
+		expect(leaves(compiled(routed()), "task_a", ["DONE", "FAIL"])).toEqual(["checking", "doing"]);
+	});
+
+	it("falls through to the park when the budget is spent, however the class routes", () => {
+		const spent = ["DONE", "FAIL", "DONE", "FAIL", "DONE", "FAIL"];
+
+		expect(leaves(compiled(routed()), "task_a", spent, ["ui"])).toEqual([
+			"checking",
+			"doing:ui",
+			"checking",
+			"doing:ui",
+			"checking",
+			"tripped",
+		]);
+	});
+
+	it("refuses a leading class arm that names no target", () => {
+		const workflow = routed();
+		stateNode(workflow, "task_a", "checking").on["TASK_A.FAIL"] = [
+			{guard: "class:ui"},
+			{target: "doing", guard: "retriesRemaining", actions: "incrementRetries"},
+			{target: "tripped"},
+		];
+
+		expect(defectsOf(workflow)).toContain("routes nowhere");
+	});
+
+	it("keeps the two-arm class form the cell it always was, spending nothing", () => {
+		const {state} = drive(compiled(coderWorkflow()), "issue", ["WIP"], ["ui"]);
+
+		expect(state.type).toBe("build:ui");
+		expect(state.retries).toBe(0);
 	});
 });

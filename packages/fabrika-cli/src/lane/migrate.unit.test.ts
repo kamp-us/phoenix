@@ -2,7 +2,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
-import {MIGRATION_UNSAFE, SHAPE_MISMATCH} from "./codes.ts";
+import {LANE_ABSENT, MIGRATION_UNSAFE, SHAPE_MISMATCH} from "./codes.ts";
 import type {ExpectationReader} from "./expectation.ts";
 import {choreTemplateText, coderTemplateText} from "./fixtures.test-support.ts";
 import type {LogEntry} from "./fold.ts";
@@ -130,6 +130,8 @@ describe("lane migrate", () => {
 		files: Record<string, string | null>,
 		options: {
 			check?: boolean;
+			lane?: string;
+			roots?: ReadonlyArray<string>;
 			dirs?: Record<string, ReadonlyArray<string> | null>;
 			templatePaths?: ReadonlyArray<string>;
 			expectations?: ExpectationReader<never> | null;
@@ -138,13 +140,17 @@ describe("lane migrate", () => {
 		const fs = fakeFs({
 			files: {[TEMPLATE]: coderTemplateText(), [CHORE_TEMPLATE]: choreTemplateText(), ...files},
 			dirs: options.dirs ?? {[ROOT]: ["42", "43"]},
-			directories: [ROOT],
+			directories: options.roots ?? [ROOT],
 		});
 		return Effect.runPromise(
 			Effect.provide(
 				runMigrate({
-					roots: [{root: ROOT, templatePaths: options.templatePaths ?? [TEMPLATE]}],
+					roots: (options.roots ?? [ROOT]).map((root) => ({
+						root,
+						templatePaths: options.templatePaths ?? [TEMPLATE],
+					})),
 					check: options.check ?? false,
+					lane: options.lane ?? null,
 					expectations: options.expectations ?? null,
 				}),
 				fs.layer,
@@ -365,5 +371,123 @@ describe("lane migrate", () => {
 
 		expect(outcome.code).toBe(0);
 		expect(asked).toEqual([]);
+	});
+
+	describe("narrowed to one lane key", () => {
+		const stale = (dir: string): Record<string, string> => ({
+			[`${dir}/workflow.json`]: preWaitCellTemplate(),
+			[`${dir}/events.jsonl`]: logText("WIP", "DONE"),
+		});
+
+		it("judges and writes the named lane and reads no other entry under the root", async () => {
+			const {outcome, written} = await sweep(
+				{...stale(`${ROOT}/42`), ...stale(`${ROOT}/43`)},
+				{lane: "42"},
+			);
+
+			expect(outcome.code).toBe(0);
+			const answer = JSON.parse(outcome.stdout);
+			expect(answer.summary).toMatchObject({migrated: 1, stale: 0, current: 0});
+			expect(answer.lanes.map((row: {key: string}) => row.key)).toEqual(["42"]);
+			expect(answer.scanned).toEqual([{root: ROOT, present: true, lanes: 1}]);
+			expect([...written.keys()]).toEqual([`${ROOT}/42/workflow.json`]);
+		});
+
+		it("asks the board only about the lane it was narrowed to", async () => {
+			const asked: number[] = [];
+			const expectations: ExpectationReader<never> = (issue) => {
+				asked.push(issue);
+				return Effect.succeed({_tag: "Read", expectation: {_tag: "Single"}, classes: []});
+			};
+
+			await sweep({...stale(`${ROOT}/42`), ...stale(`${ROOT}/43`)}, {lane: "43", expectations});
+
+			expect(asked).toEqual([43]);
+		});
+
+		it("addresses a chore root's entry by the `chore:` key a caller types", async () => {
+			const CHORES = ".fabrika/chores";
+
+			const {outcome, written} = await sweep(
+				{
+					[`${CHORES}/park-sweep/workflow.json`]: choreTemplateText(),
+					...stale(`${ROOT}/42`),
+				},
+				{
+					lane: "chore:park-sweep",
+					roots: [ROOT, CHORES],
+					dirs: {[ROOT]: ["42"], [CHORES]: ["park-sweep"]},
+					templatePaths: [TEMPLATE, CHORE_TEMPLATE],
+				},
+			);
+
+			expect(outcome.code).toBe(0);
+			expect(JSON.parse(outcome.stdout).lanes).toMatchObject([
+				{key: "chore:park-sweep", root: CHORES, verdict: "current"},
+			]);
+			expect(written.size).toBe(0);
+		});
+
+		it("withholds the write under --check and still names the one lane as stale", async () => {
+			const {outcome, written} = await sweep(
+				{...stale(`${ROOT}/42`), ...stale(`${ROOT}/43`)},
+				{lane: "42", check: true},
+			);
+
+			expect(outcome.code).toBe(0);
+			expect(JSON.parse(outcome.stdout).summary).toMatchObject({stale: 1, migrated: 0});
+			expect(written.size).toBe(0);
+		});
+
+		it("refuses a key naming no lane rather than reporting a clean sweep of zero", async () => {
+			const {outcome, written} = await sweep({...stale(`${ROOT}/42`)}, {lane: "99"});
+
+			expect(outcome.code).toBe(LANE_ABSENT);
+			expect(outcome.stdout).toBe("");
+			expect(outcome.stderr.join("\n")).toContain("no lane keyed 99");
+			expect(written.size).toBe(0);
+		});
+
+		it("refuses a chore key typed as a bare directory name, which addresses nothing", async () => {
+			const CHORES = ".fabrika/chores";
+
+			const {outcome} = await sweep(
+				{[`${CHORES}/park-sweep/workflow.json`]: choreTemplateText()},
+				{
+					lane: "park-sweep",
+					roots: [CHORES],
+					dirs: {[CHORES]: ["park-sweep"]},
+					templatePaths: [CHORE_TEMPLATE],
+				},
+			);
+
+			expect(outcome.code).toBe(LANE_ABSENT);
+		});
+
+		it("leaves the narrowed lane alone when its own log will not take the template", async () => {
+			const drifting = JSON.parse(coderTemplateText());
+			drifting.machine.states.pipeline.states.issue.states.ship.on["ISSUE.WIP"] = "blocked";
+
+			const {outcome, written} = await sweep(
+				{
+					[`${ROOT}/42/workflow.json`]: JSON.stringify(drifting, null, "\t"),
+					[`${ROOT}/42/events.jsonl`]: logText("WIP", "DONE", "PASS", "WIP"),
+					...stale(`${ROOT}/43`),
+				},
+				{lane: "42"},
+			);
+
+			expect(outcome.code).toBe(MIGRATION_UNSAFE);
+			expect(outcome.stderr.join("\n")).toContain("different state");
+			expect(written.size).toBe(0);
+		});
+
+		it("sweeps both entries and says nothing about narrowing when no key is given", async () => {
+			const {outcome, written} = await sweep({...stale(`${ROOT}/42`), ...stale(`${ROOT}/43`)});
+
+			expect(JSON.parse(outcome.stdout).summary).toMatchObject({migrated: 2});
+			expect(written.size).toBe(2);
+			expect(outcome.stderr.join("\n")).not.toContain("narrowed");
+		});
 	});
 });

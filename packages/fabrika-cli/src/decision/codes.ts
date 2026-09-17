@@ -1,11 +1,14 @@
 /**
  * Exit allocations for `decision`; caller semantics are in `./command.ts` help.
- * Shared meanings import `../exit-codes.ts`. Unused shared codes stay unallocated: this group
- * accepts no stdin or arbitrary body text, and its marker URL grammar admits no local path.
+ * Shared meanings import `../exit-codes.ts`; unused shared codes stay unallocated.
+ * Quoted authorization reaches the shared redaction checks, unlike marker-only input.
+ * @ruling https://github.com/kamp-us/phoenix/issues/8857#issuecomment-5625302485
  */
 
 import {
 	BAD_SECTIONS as SHARED_BAD_SECTIONS,
+	BARE_AT_PATH as SHARED_BARE_AT_PATH,
+	LEAKED_PATH as SHARED_LEAKED_PATH,
 	NO_TARGET as SHARED_NO_TARGET,
 	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
@@ -21,6 +24,9 @@ import {
  * promise with none of the same proof manufactures a lane that parks at `build claim` exit 32.
  */
 export const CRITERIA_REQUIRED = SHARED_BAD_SECTIONS;
+
+export const LEAKED_PATH = SHARED_LEAKED_PATH;
+export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 
 export const NO_TARGET = SHARED_NO_TARGET;
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
@@ -38,3 +44,14 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
  * plan, which no `decision` verb can produce, and vice versa.
  */
 export const RULING_UNAUTHORIZED = 20;
+
+/**
+ * Proven: `--authorization` is empty, or carries no ISO-8601 date — a ruling recorded under it would
+ * be void.
+ *
+ * `grill`'s seat for the same fact is `15`, and this group cannot import it: `12`-`19` there are
+ * facts about a grilling session's questions, which no `decision` verb proves, so aligning on the
+ * numeral would seat this group's table against another group's private band rather than the base's.
+ * The check both verbs run is the shared one (`../authorization.ts`); only the numbering is local.
+ */
+export const AUTHORIZATION_ABSENT = 21;

@@ -5,8 +5,8 @@
  * produce different answers on the same PR, which is exactly the drift a prose taxonomy invites. It
  * is pure so the whole taxonomy is testable without a repository.
  *
- * The chain has two phases, and the split is what makes totality provable. Arms 1-6 are
- * attention-independent: they name states that block the PR no matter who is watching. Arms 7-10 are
+ * The chain has two phases, and the split is what makes totality provable. Arms 1-7 are
+ * attention-independent: they name states that block the PR no matter who is watching. Arms 8-11 are
  * the attendance phase, reached only once the PR is otherwise able to proceed, so the only remaining
  * question is whether anybody is moving it.
  */
@@ -18,6 +18,7 @@ export const STALL_TOKENS = [
 	"claim-stale",
 	"red",
 	"check-surface",
+	"conflicted",
 	"linkage-refused",
 	"blocked-human",
 	"wedged",
@@ -26,7 +27,7 @@ export const STALL_TOKENS = [
 
 export type StallToken = (typeof STALL_TOKENS)[number];
 
-/** Whether a caller-supplied string is one of the ten — the closed-vocabulary guard on `--class`. */
+/** Whether a caller-supplied string is one of the eleven — the closed-vocabulary guard on `--class`. */
 export const isStallToken = (value: string): value is StallToken =>
 	(STALL_TOKENS as ReadonlyArray<string>).includes(value);
 
@@ -35,7 +36,15 @@ export type CiToken = "green" | "red" | "pending" | "wedged" | "no-runs" | "none
 export interface StallFacts {
 	readonly open: boolean;
 	readonly wedged: boolean;
-	/** `null` when the protection surface is unprobeable — arm 3 is then skipped, never passed. */
+	/**
+	 * Whether the merge of this head into its base conflicts.
+	 *
+	 * `null` is the platform's own indefinite read — `mergeable` is computed lazily, so an uncomputed
+	 * value is not a clean merge and not a conflict. Arm 3 is then skipped, never passed: reading
+	 * indefinite as conflicted would route a healthy PR to a rebase nobody owes.
+	 */
+	readonly conflicted: boolean | null;
+	/** `null` when the protection surface is unprobeable — arm 4 is then skipped, never passed. */
 	readonly surfaceGap: boolean | null;
 	readonly ci: CiToken;
 	readonly linkageRefused: boolean;
@@ -57,12 +66,12 @@ export type StaleReason = "inactivity" | "ground-drift" | "unreadable-activity";
 
 export interface StallVerdict {
 	readonly token: StallToken;
-	/** Why arm 8 fired, for the stderr notice — `null` on every other arm. */
+	/** Why arm 9 fired, for the stderr notice — `null` on every other arm. */
 	readonly staleReason: StaleReason | null;
 }
 
 /**
- * Arm 7's whole test: **any positive signal of motion**.
+ * Arm 8's whole test: **any positive signal of motion**.
  *
  * CI running at this head *is* the PR moving, which is why `pending` belongs here and not below —
  * ranking a strand class above `attended` would report a PR whose author pushed two minutes ago as
@@ -75,7 +84,7 @@ const attended = (facts: StallFacts): boolean =>
 	(facts.ownerIdleMinutes !== null && facts.ownerIdleMinutes <= facts.dwellMinutes);
 
 /**
- * Which of arm 8's three signals proved the claim stale.
+ * Which of arm 9's three signals proved the claim stale.
  *
  * An unreadable activity stamp is neither provably live nor provably old, and reading unknown as
  * stale is the fail-safe direction: a false strand costs one look, a false `attended` is the
@@ -93,12 +102,16 @@ export const classifyStall = (facts: StallFacts): StallVerdict => {
 
 	if (!facts.open) return plain("not-open");
 	if (facts.wedged) return plain("wedged");
+	// Above the surface arm because a conflicted PR has no merge ref for any required context to run
+	// against, so every one of them reads absent and the surface arm would report a settings gap that
+	// is not there. The repair is a rebase, and no check-surface finding reaches it.
+	if (facts.conflicted === true) return plain("conflicted");
 	if (facts.surfaceGap === true) return plain("check-surface");
 	if (facts.ci === "red") return plain("red");
 	if (facts.linkageRefused) return plain("linkage-refused");
 	if (facts.humanBlocked) return plain("blocked-human");
 	if (attended(facts)) return plain("attended");
-	// Arm 8 is the whole owner-exists complement of arm 7, not a subset of it: an owner whose activity
+	// Arm 9 is the whole owner-exists complement of arm 8, not a subset of it: an owner whose activity
 	// stamp is unreadable is neither provably live nor provably old and must still land somewhere.
 	if (facts.hasOwner) return {token: "claim-stale", staleReason: staleReasonOf(facts)};
 	return plain(facts.gatesSatisfied ? "gated-unshipped" : "ungated");

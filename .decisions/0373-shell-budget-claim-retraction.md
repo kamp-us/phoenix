@@ -1,7 +1,7 @@
 ---
 id: 0373
 title: A shell's claim ends a fifth way — retracted on a budget-proved death, inside the park its driver already recorded
-status: accepted
+status: amended-in-part by [0392](0392-a-swept-residue-conjunction-records-the-spawn-dead-park.md)
 date: 2026-09-10
 tags: [fabrika, pipeline-hardening, claim]
 ---

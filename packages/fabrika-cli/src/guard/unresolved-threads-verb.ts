@@ -10,6 +10,14 @@
  * - The verdict body is the newest `review-code:` marker whose author holds write+ on the repo.
  *   Without that gate a forged `review-code: PASS … path:line` from anyone with a
  *   keyboard would account for the very thread it is hiding.
+ * - Those comments come from `listCommentsReconciled`, the sanctioned reader, and not from
+ *   `listComments` compared against a count of the caller's own. The count has to be the **later**
+ *   fact for a shortfall to prove anything: reading it first makes every comment written between
+ *   the two reads look like a page that never arrived, which is how this guard came to red a pull
+ *   request with nothing wrong on it. The reader lists
+ *   first, counts second, and re-reads a shortfall on a bounded backoff — the shape
+ *   [.patterns/github-read-completeness-proofs.md](../../../../.patterns/github-read-completeness-proofs.md)
+ *   rules for a read whose answer depends on somebody else's recent write.
  *
  * **An unreadable ACL drops the marker rather than refusing the run.** That is the opposite of
  * `ship gate`, and deliberately: there, a dropped verdict reads as `absent` and the gate must not
@@ -20,7 +28,7 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {type CommentRecord, listComments, resolveRepo} from "../io/issues.ts";
+import {type CommentRecord, listCommentsReconciled, resolveRepo} from "../io/issues.ts";
 import {getPullRequest, permissionFor} from "../io/pulls.ts";
 import {listReviewThreads} from "../ship/github.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -113,20 +121,21 @@ const gather = (
 			);
 		}
 
-		const commented = yield* listComments(repo, pr);
+		// A shortfall that survives the reader's own re-reads lands here as a failure, so its reason
+		// carries the `received <k> of <m>` line and the guard stays UNKNOWN on a comment channel it
+		// could not read whole — the review-code verdict may be in the part that never arrived.
+		const commented = yield* listCommentsReconciled(repo, pr);
 		if (commented._tag === "Failure") {
 			return unreadable(`#${pr}'s comments`, commented.reason);
-		}
-		if (commented.value.length < found.value.comments) {
-			return unknown(
-				`${VERB}: received ${commented.value.length} of ${found.value.comments} comments on #${pr} — the review-code verdict may be in the part that never arrived, so the verdict is UNKNOWN.`,
-			);
 		}
 
 		// Zero live threads is answered before the ACL sweep: with nothing to account for, no verdict
 		// body can change the outcome, and probing collaborator permissions would be pure cost.
 		if (threads.every((thread) => thread.isResolved)) return judge({threads, verdictBody: null});
-		return judge({threads, verdictBody: yield* latestVerdictBody(repo, commented.value)});
+		return judge({
+			threads,
+			verdictBody: yield* latestVerdictBody(repo, commented.value.comments),
+		});
 	});
 
 export const runUnresolvedThreadsGuard = (

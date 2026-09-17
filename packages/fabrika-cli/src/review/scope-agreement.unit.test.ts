@@ -15,6 +15,7 @@ import {
 	branchRules,
 	CODEOWNERS,
 	ENV,
+	LINKED_WORKTREE,
 	repositoryServed,
 	files as shipFiles,
 	pull as shipPull,
@@ -67,10 +68,21 @@ const reviewScope = (...changed: ReadonlyArray<string>) =>
 		),
 	);
 
+/**
+ * `caller: "shipper"` with the worktree read scripted, because that is the run whose answer the
+ * review side has to agree with — a `relay` seat would compare against a read no shipper performs.
+ */
 const shipScope = (...changed: ReadonlyArray<string>) =>
 	Effect.runPromise(
 		Effect.provide(
-			runShipScope({pr: 4321, repo: null, json: false, cwd: "/repo", env: ENV}),
+			runShipScope({
+				pr: 4321,
+				repo: null,
+				json: false,
+				cwd: "/repo",
+				env: ENV,
+				caller: "shipper",
+			}),
 			Layer.merge(
 				fakeSeams([
 					[PULL, served(shipPull({changedFiles: changed.length}))],
@@ -78,6 +90,7 @@ const shipScope = (...changed: ReadonlyArray<string>) =>
 					[OWNERS, {status: 200, body: CODEOWNERS}],
 					[RULES, served(branchRules("pull_request"))],
 					[REPO, repositoryServed()],
+					LINKED_WORKTREE,
 				] as ReadonlyArray<Scripted>).layer,
 				uiConfigured,
 			),

@@ -9,6 +9,7 @@ import {EMPTY_REACTION_AGGREGATE} from "../reaction/Reaction.ts";
 import type {DefinitionRow} from "./definition-fields.ts";
 import type {TermPage} from "./Sozluk.ts";
 import type {TermSummaryRow} from "./term-fields.ts";
+import {storedFirstLetter} from "./turkish-alphabet.ts";
 import type {Definition, Term} from "./views.ts";
 
 export type {DefinitionRow};
@@ -31,8 +32,9 @@ export const toTerm = (r: TermSummaryRow): Term => ({
 });
 
 // Shared by the read resolver and the delete-refresh so they can't drift. The detail page has
-// no `excerpt`, derives `firstLetter` from title/slug, and uses `totalDefinitions` for both
-// counts; `lastActivityAt` mirrors `lastEdit`.
+// no `excerpt` and uses `totalDefinitions` for both counts; `lastActivityAt` mirrors `lastEdit`.
+// `firstLetter` is re-derived rather than selected, so it goes through the one fold the stored
+// column goes through — a private fold here is how this shaper disagreed with the column (#9331).
 export const toTermFromPage = (page: TermPage): Term =>
 	toTerm({
 		id: page.slug,
@@ -43,7 +45,7 @@ export const toTermFromPage = (page: TermPage): Term =>
 		excerpt: null,
 		firstAt: page.firstAt,
 		lastEdit: page.lastEdit,
-		firstLetter: (page.title?.[0] ?? page.slug.charAt(0) ?? "").toLowerCase(),
+		firstLetter: storedFirstLetter(page.title ?? page.slug),
 		definitionCount: page.totalDefinitions,
 		lastActivityAt: page.lastEdit,
 	});

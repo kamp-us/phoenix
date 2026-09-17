@@ -2,7 +2,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs, fakeSeams, okOut, record, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {binding, HEAD, pull, SHOW_AT, STATUS_AT, statuses} from "./fixtures.test-support.ts";
 import {runSweep} from "./sweep-verb.ts";
 
@@ -150,17 +150,36 @@ describe("runSweep in --record mode", () => {
 		expect(out.stderr.at(-1)).toContain("carries no decision record 0240");
 	});
 
-	it("refuses a short changed-file read on 13", async () => {
+	// GitHub computes the declared count against a base it cached at the last push, so a local read
+	// short of it is a stale second opinion, not a truncated range. It used to refuse at 13.
+	it("reports a local read short of the declared count and ranks anyway (#9322)", async () => {
 		const out = await run(
 			[
 				[PULL, served(pull({changedFiles: 9}))],
 				...binding(),
 				[STATUS_AT(), statuses(["A", SUBJECT_PATH])],
+				[
+					SHOW_AT(HEAD, SUBJECT_PATH),
+					okOut(record("0240", "proposed", "Only landed ADRs may be cited.")),
+				],
 			],
 			{pr: 4321, record: "0240"},
 		);
-		expect(out.code).toBe(INCOMPLETE_SCAN);
-		expect(out.stderr.at(-1)).toContain("refusing to prove 0240 is in this PR from a short read");
+		expect(out.code).toBe(0);
+		expect(out.stderr.join("\n")).toContain(
+			"governance sweep: git and GitHub disagree on #4321's file count (1 vs 9)",
+		);
+	});
+
+	// The empty range is the seat that survives the retirement: without it an unread range reports
+	// "carries no decision record" — a refusal about the subject, not about the read.
+	it("refuses an empty local range on 7 even where the record declares files (#9322)", async () => {
+		const out = await run(
+			[[PULL, served(pull({changedFiles: 9}))], ...binding(), [STATUS_AT(), statuses()]],
+			{pr: 4321, record: "0240"},
+		);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stderr.at(-1)).toContain("changes no path — refusing to sweep over an empty diff");
 	});
 
 	it("refuses an absent PR on 7", async () => {

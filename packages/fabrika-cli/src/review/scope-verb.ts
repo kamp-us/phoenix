@@ -26,7 +26,9 @@
  *
  * Empty is the whole of it. This path list IS the scope, so no second count of the same range exists
  * to call it short against, and GitHub's `changed_files` is not one: a disagreement with it is
- * reported and never refused on — the reason is at the check below.
+ * reported and never refused on. That read is {@link readLocalFileSet}, shared with
+ * `governance scope` and `governance guards` so the three cannot state different facts about one
+ * disagreement; its docblock carries why.
  *
  * The file list is read at the **bound commit** (`head.ts`), and the head this verb prints is that
  * same commit. The namespace set is documented as both floor and ceiling, so a list drawn from a
@@ -48,6 +50,7 @@ import {
 } from "./classes.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {bindHead, boundLine} from "./head.ts";
+import {readLocalFileSet} from "./local-file-set.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 
 const VERB = "review scope";
@@ -106,18 +109,24 @@ export const runScope = (
 		if (bound._tag === "Refused") return bound.outcome;
 		const head = bound.head;
 
-		const listed = yield* diffRangePaths(head.mergeBase, head.sha);
-		if (listed._tag === "Failure") {
+		// This list IS the scope, so there is no second local count to prove it against — and
+		// GitHub's `changed_files` is not one, which is why `readLocalFileSet` reports that
+		// disagreement instead of refusing on it. The short read git alone establishes — an empty
+		// list — still refuses, below.
+		const listed = yield* readLocalFileSet(
+			VERB,
+			`#${pr}`,
+			{base: head.mergeBase, tip: head.sha},
+			pull.changedFiles,
+			diffRangePaths,
+		);
+		if (listed._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot read the changed files of #${pr} at ${head.sha}: ${listed.reason} — the scope is UNKNOWN.`,
 			);
 		}
-		// This list IS the scope, so there is no second local count to prove it against — and
-		// GitHub's `changed_files` is not one: a rename git pairs into a single `--name-only` path
-		// while GitHub counts two files, so it is reported below and never refused on. The
-		// short read git alone establishes — an empty list — still refuses.
-		const files = listed.value;
+		const files = listed.set.files;
 		const diagnostics = [
 			boundLine(VERB, head),
 			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared by GitHub`),
@@ -126,11 +135,7 @@ export const runScope = (
 				? noUiSurfaces(VERB)
 				: `${VERB}: ui derived over ${surfaces.prefixes.length} prefix(es) — ${surfaces.note}.`,
 		];
-		if (files.length !== pull.changedFiles) {
-			diagnostics.push(
-				`${VERB}: git and GitHub disagree on #${pr}'s file count (${files.length} vs ${pull.changedFiles}) — different merge base and different rename detection; reported, never refused on.`,
-			);
-		}
+		if (listed.set.disagreement !== null) diagnostics.push(listed.set.disagreement);
 		if (files.length === 0) {
 			return refuse(
 				INCOMPLETE_SCAN,

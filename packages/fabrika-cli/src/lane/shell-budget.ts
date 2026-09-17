@@ -2,9 +2,11 @@
  * How long one shell may hold a lane before the shell driving it is judged dead.
  *
  * **There is no heartbeat, and that is the ruling rather than an omission.** The claim protocol
- * otherwise bans ending a claim on age, and the one caller that may read these numbers against a
- * claim marker is the `spawn-dead` unpark row; a verb that merely reads a claim never retracts one.
- * A spawned shell writes
+ * otherwise bans ending a claim on age, and two callers may read these numbers against a claim
+ * marker: the `spawn-dead` unpark row, which retracts on the proof, and `lane recover --spawns`,
+ * which may only record the park that row then clears. The ban that still stands whole is the one on
+ * a reader **retracting**: no verb outside the unpark row ends a claim on these numbers, however it
+ * reads them. A spawned shell writes
  * nothing between its claim and its terminal, so liveness is not observable at all: the only instant
  * on disk is the one the work began at. What is left to judge against is a budget — how long this
  * kind of work takes when it is going well — and silence past that budget is the death.

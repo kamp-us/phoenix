@@ -420,7 +420,17 @@ describe("emitMachine", () => {
 				build: {on: {"EPIC_4300.DONE": "review", "EPIC_4300.BLOCKED": "blocked"}},
 				review: {
 					on: {
+						"EPIC_4300.PASS": [{target: "review:ui", guard: "class:ui"}, {target: "ship"}],
+						"EPIC_4300.FAIL": [
+							{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+							{target: "human:budget-spent"},
+						],
+					},
+				},
+				"review:ui": {
+					on: {
 						"EPIC_4300.PASS": "ship",
+						"EPIC_4300.BLOCKED": "blocked",
 						"EPIC_4300.FAIL": [
 							{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 							{target: "human:budget-spent"},
@@ -890,9 +900,10 @@ describe("emitMachine — the machinery lap axis", () => {
 			laps: 0,
 		});
 		// The pre-axis machine holds no lap-guarded cell at all, so nothing can spend the counter and
-		// its status carries none to read — the whole containment, in two assertions.
+		// its status carries none to read — the whole containment, in two assertions. The axis-on
+		// count is three: `build`, `review` and `integrate`.
 		expect(lapStatesOf(before, "issue_4301")).toBe(0);
-		expect(lapStatesOf(after, "issue_4301")).toBe(1);
+		expect(lapStatesOf(after, "issue_4301")).toBe(3);
 	});
 });
 
@@ -954,6 +965,96 @@ describe("emitMachine — the class axis", () => {
 		expect(statesOf(lane, log).issue_4301?.type).toBe("integrate");
 	});
 
+	it("leads BOTH of the classed child's FAIL arms with the class route, budget pair behind it", () => {
+		const classed = regionOf(classedText(), "issue_4301") as {
+			states: Record<string, {on: Record<string, unknown>}>;
+		};
+		const arm = [
+			{target: "build:ui", guard: "class:ui"},
+			{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+			{target: "human:budget-spent"},
+		];
+
+		expect(classed.states.review?.on["ISSUE_4301.FAIL"]).toEqual(arm);
+		expect(classed.states.integrate?.on["ISSUE_4301.FAIL"]).toEqual(arm);
+	});
+
+	it("retries a classed child's review FAIL in build:ui, and its integrate FAIL there too", () => {
+		const lane = laneOf(classedText());
+		const reviewFailed = driveLog(lane, [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "FAIL"],
+		]);
+		const integrateFailed = driveLog(lane, [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+			["issue_4301", "FAIL"],
+		]);
+
+		expect(statesOf(lane, reviewFailed).issue_4301?.type).toBe("build:ui");
+		expect(statesOf(lane, integrateFailed).issue_4301?.type).toBe("build:ui");
+	});
+
+	// The constraint that left these arms unclassed when the seed landed: the class has to pick the
+	// cell without taking the budget's place, or a spent rendered child loops instead of parking.
+	it("parks the classed child at human:budget-spent once its retries are spent, on either arm", () => {
+		const lane = laneOf(classedText());
+		/** One spent round: the round's own verdict, then the repair's `DONE` back into review. */
+		const reviewRound: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "FAIL"],
+			["issue_4301", "DONE"],
+		];
+		const integrateRound: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "PASS"],
+			["issue_4301", "FAIL"],
+			["issue_4301", "DONE"],
+		];
+		const entered: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+		];
+		const spentAtReview = [
+			...entered,
+			...Array.from({length: RETRY_BUDGET}, () => reviewRound).flat(),
+			["issue_4301", "FAIL"] as const,
+		];
+		const spentAtIntegrate = [
+			...entered,
+			...Array.from({length: RETRY_BUDGET}, () => integrateRound).flat(),
+			["issue_4301", "PASS"] as const,
+			["issue_4301", "FAIL"] as const,
+		];
+
+		expect(statesOf(lane, driveLog(lane, spentAtReview)).issue_4301?.type).toBe(
+			"human:budget-spent",
+		);
+		expect(statesOf(lane, driveLog(lane, spentAtIntegrate)).issue_4301?.type).toBe(
+			"human:budget-spent",
+		);
+	});
+
+	it("leaves an UNCLASSED sibling's two FAIL arms the plain budget pair they always were", () => {
+		const plain = regionOf(classedText(), "issue_4302") as {
+			states: Record<string, {on: Record<string, unknown>}>;
+		};
+		const arm = [
+			{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+			{target: "human:budget-spent"},
+		];
+		const lane = laneOf(classedText());
+		const failed = driveLog(lane, [
+			["issue_4302", "WIP"],
+			["issue_4302", "DONE"],
+			["issue_4302", "FAIL"],
+		]);
+
+		expect(plain.states.review?.on["ISSUE_4302.FAIL"]).toEqual(arm);
+		expect(plain.states.integrate?.on["ISSUE_4302.FAIL"]).toEqual(arm);
+		expect(statesOf(lane, failed).issue_4302?.type).toBe("build");
+	});
+
 	it("still lands the classed child through integrate — the ui arm adds a shell, not a leg", () => {
 		const lane = laneOf(classedText());
 		const log = driveLog(lane, [
@@ -964,5 +1065,131 @@ describe("emitMachine — the class axis", () => {
 		]);
 
 		expect(statesOf(lane, log).issue_4301?.type).toBe("landed");
+	});
+});
+
+/**
+ * The tail's rendered review cell — the creditor side of the axis the class describe above covers
+ * on the child side.
+ *
+ * An epic child hands its `review-ui` on unconditionally, so the whole run's rendered debt arrives
+ * at the tail. With no cell to route into, the tail owed the namespace at `review`, `lane prove`
+ * refused every tail `PASS` at exit 23, and the lane could not park honestly either: `review` is an
+ * active state, so no stale sweep ever saw it.
+ *
+ * The cell is emitted for every epic rather than on a class, because the tail's context seeds none —
+ * a tail is emitted before any child has classed anything, and the class reaches it only as the
+ * `classes` a reviewer relays on the event.
+ */
+describe("emitMachine — the tail's rendered review cell", () => {
+	const TAIL = "epic_4300";
+	const tailLane = (machinery = false): CompiledLane =>
+		laneOf(emitted(emitMachine(4300, body(), CHILDREN, {machinery})));
+
+	type ClassedStep = readonly [string, string, ReadonlyArray<string>?];
+
+	/** {@link driveLog}, with the classes a reviewer relays riding each step that names them. */
+	const driveClassed = (
+		compiled: CompiledLane,
+		steps: ReadonlyArray<ClassedStep>,
+	): ReadonlyArray<LogEntry> => {
+		const log: LogEntry[] = [];
+		for (const [task, event, classes] of steps) {
+			const applied = applyEvent(
+				compiled,
+				statesOf(compiled, log),
+				task,
+				event,
+				AT,
+				classes ?? null,
+			);
+			if (applied._tag !== "Applied") throw new Error(`${task} ${event}: ${applied.reason}`);
+			log.push(applied.entry);
+		}
+		return log;
+	};
+
+	/** The leaf the tail stands in after every child has landed and these steps have run. */
+	const leafAfter = (
+		compiled: CompiledLane,
+		steps: ReadonlyArray<ClassedStep>,
+	): string | undefined =>
+		statesOf(compiled, driveClassed(compiled, [...LAND_ALL, ...steps]))[TAIL]?.type;
+
+	const tailRegion = (machinery: boolean): Record<string, {on: Record<string, unknown>}> =>
+		(
+			regionOf(emitted(emitMachine(4300, body(), CHILDREN, {machinery})), TAIL) as {
+				states: Record<string, {on: Record<string, unknown>}>;
+			}
+		).states;
+
+	it("routes a tail PASS relaying the ui class into review:ui, and its own PASS on to ship", () => {
+		const compiled = tailLane();
+
+		expect(leafAfter(compiled, [[TAIL, "PASS", ["ui"]]])).toBe("review:ui");
+		expect(
+			leafAfter(compiled, [
+				[TAIL, "PASS", ["ui"]],
+				[TAIL, "PASS"],
+			]),
+		).toBe("ship");
+	});
+
+	it("walks an unclassed tail straight from review to ship, the leg it always walked", () => {
+		expect(leafAfter(tailLane(), [[TAIL, "PASS"]])).toBe("ship");
+	});
+
+	it("parks a tail review:ui BLOCKED on the tail's own blocked cell", () => {
+		expect(
+			leafAfter(tailLane(), [
+				[TAIL, "PASS", ["ui"]],
+				[TAIL, "BLOCKED"],
+			]),
+		).toBe("blocked");
+	});
+
+	// The tail has one repair cell, and a rendered FAIL is a repair over the same assembly branch a
+	// text FAIL is. `wire/lane-brief.ts` pairs that branch with the run's PR for `build` alone.
+	it("retries a tail review:ui FAIL into the tail's build cell, and exhausts into the park", () => {
+		const compiled = tailLane();
+		const round: ReadonlyArray<ClassedStep> = [
+			[TAIL, "FAIL"],
+			[TAIL, "DONE"],
+			[TAIL, "PASS", ["ui"]],
+		];
+		const spent = Array.from({length: RETRY_BUDGET}, () => round).flat();
+
+		expect(
+			leafAfter(compiled, [
+				[TAIL, "PASS", ["ui"]],
+				[TAIL, "FAIL"],
+			]),
+		).toBe("build");
+		expect(leafAfter(compiled, [[TAIL, "PASS", ["ui"]], ...spent, [TAIL, "FAIL"]])).toBe(
+			"human:budget-spent",
+		);
+	});
+
+	it("takes the tail review:ui LAP under machinery, and holds no LAP arm without it", () => {
+		expect(tailRegion(false)["review:ui"]?.on).not.toHaveProperty("EPIC_4300.LAP");
+		expect(tailRegion(true)["review:ui"]?.on["EPIC_4300.LAP"]).toEqual([
+			{target: "review:ui", guard: "lapsRemaining", actions: "incrementLaps"},
+			{target: "human:machinery-stall"},
+		]);
+		expect(
+			leafAfter(tailLane(true), [
+				[TAIL, "PASS", ["ui"]],
+				[TAIL, "LAP"],
+			]),
+		).toBe("review:ui");
+	});
+
+	it("leaves no child region a review:ui cell — a child's rendered review is this one", () => {
+		const text = emitted(emitMachine(4300, body(), [open(4301, ["ui"]), open(4302), open(4303)]));
+		const cells = (task: string): ReadonlyArray<string> =>
+			Object.keys((regionOf(text, task) as {states: Record<string, unknown>}).states);
+
+		expect(cells("issue_4301")).not.toContain("review:ui");
+		expect(cells(TAIL)).toContain("review:ui");
 	});
 });

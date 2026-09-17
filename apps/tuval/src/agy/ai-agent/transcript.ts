@@ -23,8 +23,11 @@
  *   exactly as many `GENERIC` lines as they carry calls, and on all 21 of those whose calls name
  *   distinct file paths the k-th `GENERIC` echoes the k-th call's path — 21 of 21 identity, no
  *   permutation. A capture driven against v1.1.28 for this issue reproduces it in the small:
- *   `fixtures/multi-call-transcript.jsonl`. Attribution is therefore by **position**, and there is
- *   no batch-level outcome to render.
+ *   `fixtures/multi-call-transcript.jsonl`. Attribution is therefore by each `GENERIC`'s **step
+ *   distance** from the call line — the outcome at step `S + 1 + k` is call `k`'s — and there is no
+ *   batch-level outcome to render. Distance rather than position in the run, because the run is not
+ *   dense: a batch missing one call's outcome leaves that slot empty, and pairing by position would
+ *   shift every later outcome onto the call before it (#8912).
  * - **`step_index` orders the file; the file's own order does not.** The results of a batch routinely
  *   land *before* their own call line on disk — in the v1.1.28 capture the planner line sits at file
  *   position 2 while its first call's result sits at position 1 — so pairing by file adjacency pairs
@@ -118,6 +121,33 @@ const liveStepId = (conversationId: string, stepIndex: number): string =>
 /** The live tail's id for a reply only the terminal `result` carried (`resultEvents` in `mapper.ts`). */
 const liveResponseId = (conversationId: string): string => `${conversationId}:response`;
 
+/**
+ * The id this reader minted for a **tool** row before `line:` was added to it (#8968) — the
+ * two-segment `cid:<ordinal>:<index>` shape, derived from the current id by deleting the segment
+ * rather than by restating how a tool row numbers itself.
+ *
+ * A cursor in the old shape is what a desk checkpointed before #8968 can hand back, and the row it
+ * named is still on disk under a new id, so resolving it is a page where refusing it is a dead
+ * history (#8900, criterion 11).
+ *
+ * **Only that shape**, and the tail is the whole reason (#8900, criterion 12). A non-tool row's
+ * pre-#8968 id was `cid:<ordinal>` — the live tail's own key shape — so registering it would put the
+ * two id spaces back in one namespace, which is what `line:` exists to prevent. Both directions then
+ * end in a silently wrong boundary: a live `cid:<n>` the projection minted no row for (an in-flight
+ * call, whose `GENERIC` is not yet on disk) would resolve onto whatever line sits at ordinal `n`
+ * instead of refusing, and a legacy cursor meaning *ordinal* `n` would page from whichever row the
+ * walk already keyed `cid:<n>`, since `step_index` is neither unique nor monotonic and equals the
+ * ordinal only on a log written in step order. `cid:<ord>:<idx>` is unshadowable by construction:
+ * `mapper.ts` mints `cid:<step>` and `cid:response`, never a second segment. So a bare single-segment
+ * legacy id is not registered at all, and where no live key claims it the cursor keeps refusing.
+ */
+const legacyToolStoredId = (conversationId: string, stored: string): string | undefined => {
+	const prefix = `${conversationId}:line:`;
+	if (!stored.startsWith(prefix)) return undefined;
+	const rest = stored.slice(prefix.length);
+	return /^\d+:\d+$/.test(rest) ? `${conversationId}:${rest}` : undefined;
+};
+
 /** A line and where in the file it sat: the ordinal is the item's stable identity and its tiebreak. */
 interface Located {
 	readonly ordinal: number;
@@ -180,6 +210,32 @@ const restore = (line: AgyTranscriptLine, full: AgyTranscriptLine | undefined): 
 
 const marked = (text: string, clipped: boolean): string => (clipped ? text + CLIPPED_MARK : text);
 
+/**
+ * agy's framing of the operator's turn, and where the operator's own words sit inside it.
+ *
+ * A `USER_EXPLICIT`/`USER_INPUT` line's `content` is never the prompt as typed: it is a
+ * `<USER_REQUEST>` block carrying the prompt, followed by an `<ADDITIONAL_METADATA>` block, and on
+ * a turn that changed a setting a `<USER_SETTINGS_CHANGE>` one too. The blocks after the request
+ * are dropped by construction — only the request's own body is read.
+ */
+const USER_REQUEST = /^<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/;
+
+/**
+ * The operator's turn as he typed it, out of the frame agy stored it in.
+ *
+ * Two things turn on unwrapping it (#8961). The row reads as his own words rather than as agy's
+ * wire framing of them; and its text becomes the text the core's still-`local` echo carries, which
+ * is the only join available to a backend whose live tail mints no `user` row at all — agy's
+ * `user_input` step carries no `text_delta`, so `claimsLocal` (`shell/chat/rows.ts`) joining on
+ * text is what keeps a paged turn from rendering a second time above the echo.
+ *
+ * Only agy's own two padding newlines are taken off the body, never a general trim: what the
+ * operator typed inside the block is his, whitespace included, and the join is against that exact
+ * text. A line carrying no `<USER_REQUEST>` block passes through unchanged — the set of blocks agy
+ * may write is not closed, so the absence of the one this reads is the only thing judged here.
+ */
+const promptText = (content: string): string => USER_REQUEST.exec(content)?.[1] ?? content;
+
 /** An item and the two numbers that order it: `step_index` first, file position to break the tie. */
 interface Placed {
 	readonly item: TranscriptItem;
@@ -203,15 +259,16 @@ interface CallOutcome {
 /**
  * One `PLANNER_RESPONSE`'s calls → their rows, each carrying its own outcome.
  *
- * agy writes one `GENERIC` per call in call order (see the module note), so the k-th outcome is the
- * k-th call's and position is the pairing. A call agy has written no outcome for keeps `running`
- * with an empty result rather than borrowing a neighbour's.
+ * `outcomes` is a slot per call, not the run of lines agy wrote: the caller has already decided which
+ * call each `GENERIC` belongs to by its step distance, so slot `k` is call `k`'s or nothing at all. A
+ * call agy has written no outcome for keeps `running` with an empty result rather than borrowing a
+ * neighbour's.
  */
 const toolItemsOf = (
 	id: string,
 	timestamp: number,
 	calls: ReadonlyArray<AgyToolCall>,
-	outcomes: ReadonlyArray<CallOutcome>,
+	outcomes: ReadonlyArray<CallOutcome | undefined>,
 	callsClipped: boolean,
 ): ReadonlyArray<TranscriptItem> =>
 	calls.map((call, index) => {
@@ -265,6 +322,12 @@ export interface TranscriptProjection {
  *   kept as a *fallback* onto the batch's first row rather than as the identity.
  * - **A reply also answers to `` `${conversation_id}:response` ``**, the id `resultEvents` mints for a
  *   turn no `agent_response` delta carried.
+ * - **A tool row also answers to the id this reader minted for it before #8968**
+ *   (`legacyToolStoredId`), so a cursor out of a desk checkpointed under that shape pages instead of
+ *   refusing. Only the two-segment `cid:<ord>:<idx>` shape, never the bare `cid:<ord>` a non-tool row
+ *   carried: that one is the live tail's own key shape, and registering it would re-overlap the two
+ *   spaces `line:` exists to keep disjoint. Not measured against agy — it is this repo's own history,
+ *   read off the shape the module carried at `7ec91481`.
  *
  * A step entry is first-occurrence-wins, which is Claude's precedent (`claude/history/items.ts`) and
  * the tie-break `step_index` needs: it is neither unique nor monotonic (the census in the module
@@ -343,7 +406,7 @@ export const transcriptProjection = (
 
 		if (line.source === "USER_EXPLICIT" && line.type === "USER_INPUT") {
 			join(ownLiveId, id);
-			push(here, userItem(id, timestamp, marked(content, clipped.has("content"))));
+			push(here, userItem(id, timestamp, marked(promptText(content), clipped.has("content"))));
 			return;
 		}
 
@@ -354,21 +417,31 @@ export const transcriptProjection = (
 				push(here, assistantItem(id, timestamp, marked(content, clipped.has("content"))));
 			}
 			if (calls === undefined || calls.length === 0) return;
-			// One `GENERIC` per call, taken in step order and consumed here so none also renders as a
-			// row of its own. The run stops at the first line that is not one: a batch agy is still
-			// working through has written fewer than it will.
-			const outcomes: Array<CallOutcome> = [];
-			for (let step = position + 1; step < order.length && outcomes.length < calls.length; step++) {
+			// Each `GENERIC` is claimed by the call its *step distance* names — the one at `S + 1 + k` fills
+			// slot `k` — and consumed so none also renders as a row of its own. Three guards and why each is
+			// the shape it is (#8912): a distance past the batch's `N` slots ends the walk, because `order`
+			// is sorted by `step_index` and distance is therefore non-decreasing from here; a distance
+			// *below* them is skipped and ends nothing, because `step_index` repeats (the module note), and
+			// that same non-uniqueness is why this stays a walk rather than a lookup keyed on `S + 1 + k`; a
+			// slot already filled keeps its first claimant, as every other step key in this fold does.
+			const outcomes: Array<CallOutcome | undefined> = Array.from(
+				{length: calls.length},
+				() => undefined,
+			);
+			for (let step = position + 1; step < order.length; step++) {
 				const entry = order[step];
 				if (entry === undefined) break;
 				if (entry.line.source !== "MODEL" || entry.line.type !== "GENERIC") break;
+				const slot = entry.line.step_index - line.step_index - 1;
+				if (slot >= calls.length) break;
+				if (slot < 0 || outcomes[slot] !== undefined) continue;
 				const read = restore(entry.line, counterpartOf(full, byStep, entry.ordinal, entry.line));
-				outcomes.push({
+				outcomes[slot] = {
 					text: read.line.content ?? "",
 					status: read.line.status,
 					clipped: read.clipped.has("content"),
 					stepIndex: read.line.step_index,
-				});
+				};
 				consumed.add(entry.ordinal);
 			}
 			const tools = toolItemsOf(id, timestamp, calls, outcomes, clipped.has("tool_calls"));
@@ -393,6 +466,14 @@ export const transcriptProjection = (
 		join(ownLiveId, id);
 		push(here, systemItem(id, timestamp, marked(unrecognisedText(line), clipped.has("content"))));
 	});
+
+	// The pre-#8968 shape of a tool row's stored id, and nothing else — `legacyToolStoredId` holds why
+	// the bare single-segment shape stays out of this map. Last rather than inside the walk so a key the
+	// live namespace did claim keeps the live meaning.
+	for (const {item} of placed) {
+		const legacy = legacyToolStoredId(conversationId, item.id);
+		if (legacy !== undefined) resolvesTo(legacy, item.id);
+	}
 
 	// The fold already walks this order, but a batch's rows are all pushed from their call line's
 	// `step_index`, so this is what keeps them together rather than interleaved with their outcomes'.

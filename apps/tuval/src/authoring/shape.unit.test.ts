@@ -1,5 +1,12 @@
 import {Result, Schema} from "effect";
 import {describe, expect, it} from "vitest";
+import {PromptPayloadSchema, TurnResultSchema} from "../ai-agent/ports/payloads.ts";
+import {
+	prompt as agentPrompt,
+	result as agentResult,
+	transcriptPage,
+} from "../ai-agent/ports/ports.ts";
+import {defineProgram} from "./define-program.ts";
 import {port} from "./port.ts";
 import {
 	fitsShape,
@@ -165,5 +172,132 @@ describe("authoring.fitsShape", () => {
 		const failure = Result.isFailure(fit) ? fit.failure : undefined;
 		expect(failure?.port).toBe("prompt");
 		expect(failure?.message).toContain('declares "prompt" on its out side');
+	});
+});
+
+/**
+ * What a config actually holds: a compiled registry row, not a record of declarations. Its ports
+ * carry the kernel's predicate, and the schema `compilePort` publishes beside it is what a shape
+ * can be compared with at all (#8887).
+ */
+const shippedReviewer = defineProgram({
+	id: "shipped-reviewer",
+	ports: {
+		prompt: port.in(Prompt),
+		result: port.out(Verdict),
+		// More than the shape asked for, on a shipped row this time.
+		cancel: port.in(Schema.String),
+	},
+	init: (): {readonly seen: number} => ({seen: 0}),
+	update: {
+		prompt: (state: {readonly seen: number}) => [{seen: state.seen + 1}, []],
+		cancel: (state: {readonly seen: number}) => [state, []],
+	},
+});
+
+const shipped = {arg: "reviewer", program: shippedReviewer.id};
+
+describe("authoring.shapeOf on a compiled row", () => {
+	it("reads a shipped row's ports, each on the side the row declares it", () => {
+		const offered = shapeOf(shippedReviewer);
+		expect(Object.keys(offered.in).sort()).toEqual(["cancel", "prompt"]);
+		expect(Object.keys(offered.out)).toEqual(["result"]);
+	});
+
+	it("reads a compiled request port on the in side, by its input schema", () => {
+		const asker = defineProgram({
+			id: "shipped-asker",
+			ports: {ask: port.request(Prompt, Verdict)},
+			init: (): number => 0,
+			update: {ask: (state: number) => [state, []]},
+		});
+		const offered = shapeOf(asker);
+		expect(Object.keys(offered.in)).toEqual(["ask"]);
+		expect(Object.keys(offered.out)).toEqual([]);
+		const ask = offered.in.ask;
+		if (ask === undefined) throw new Error('no in-side signature for "ask"');
+		expect(payloadFits(Prompt, ask)).toBe(true);
+	});
+
+	it("accepts a shipped row whose ports fit the declared shape", () => {
+		expect(Result.isSuccess(fitsShape(reviewer, shippedReviewer, shipped))).toBe(true);
+	});
+
+	it("refuses a shipped row missing a declared port, naming the port and the side", () => {
+		const mute = defineProgram({
+			id: "shipped-mute",
+			ports: {prompt: port.in(Prompt)},
+			init: (): number => 0,
+			update: {prompt: (state: number) => [state, []]},
+		});
+		const fit = fitsShape(reviewer, mute, shipped);
+		const failure = Result.isFailure(fit) ? fit.failure : undefined;
+		expect(failure).toBeInstanceOf(ShapeMismatch);
+		expect(failure?.port).toBe("result");
+		expect(failure?.side).toBe("out");
+		expect(failure?.message).toContain('declares no out-port named "result"');
+	});
+
+	it("refuses a shipped row whose port carries a different payload", () => {
+		const typo = defineProgram({
+			id: "shipped-typo",
+			ports: {prompt: port.in(Schema.Struct({pr: Schema.String})), result: port.out(Verdict)},
+			init: (): number => 0,
+			update: {prompt: (state: number) => [state, []]},
+		});
+		const fit = fitsShape(reviewer, typo, shipped);
+		const failure = Result.isFailure(fit) ? fit.failure : undefined;
+		expect(failure?.port).toBe("prompt");
+		expect(failure?.side).toBe("in");
+		expect(failure?.message).toContain("carries a different payload");
+	});
+
+	it("accepts a hand-written row, whose ports now publish their schemas (#8887)", () => {
+		// The two records `claudeSession` and `codexSession` actually publish under these names —
+		// `ai-agent/ports/ports.ts`, not a fixture — so this is the check a config runs on a shipped
+		// row. They are hand-written rows: a predicate, and now the schema that predicate was written
+		// from beside it, which is the only thing a shape can be compared with.
+		const handWritten: ShapeSource = {
+			id: "claude-session",
+			ports: {prompt: agentPrompt.inbound(), result: agentResult.outbound()},
+		};
+		const agent = Program.shape({
+			in: {prompt: PromptPayloadSchema},
+			out: {result: TurnResultSchema},
+		});
+		const fit = fitsShape(agent, handWritten, {arg: "reviewer", program: "claude-session"});
+		expect(Result.isSuccess(fit)).toBe(true);
+	});
+
+	it("is structural, not referential: an independently written payload of the same shape fits", () => {
+		// The point of the case above is not that both sides reached for the same constant. A caller
+		// that spells the payload out itself, naming nothing the port's own package named, fits the
+		// same row — which is what makes this a structural check and not an identity one (R13.1).
+		const restated = Schema.Struct({
+			text: Schema.String,
+			key: Schema.String,
+			timestamp: Schema.Number,
+		});
+		const agent = Program.shape({in: {prompt: restated}, out: {}});
+		const row: ShapeSource = {id: "claude-session", ports: {prompt: agentPrompt.inbound()}};
+		expect(
+			Result.isSuccess(fitsShape(agent, row, {arg: "reviewer", program: "claude-session"})),
+		).toBe(true);
+	});
+
+	it("refuses a port that still publishes no schema, rather than saying it does not exist", () => {
+		// `transcript-page` is one of the three two-way kinds, whose ends carry a tagged union and no
+		// schema yet: a shape naming one is refused for the reason that is true (#8887).
+		const paged = Program.shape({in: {pageRequest: Schema.String}, out: {}});
+		const row: ShapeSource = {
+			id: "claude-session",
+			ports: {pageRequest: transcriptPage.ends.request.inbound()},
+		};
+		const fit = fitsShape(paged, row, {arg: "reviewer", program: "claude-session"});
+		const failure = Result.isFailure(fit) ? fit.failure : undefined;
+		expect(failure).toBeInstanceOf(ShapeMismatch);
+		expect(failure?.port).toBe("pageRequest");
+		expect(failure?.side).toBe("in");
+		expect(failure?.message).toContain("publishes no payload schema");
 	});
 });

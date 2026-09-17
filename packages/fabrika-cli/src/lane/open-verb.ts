@@ -188,7 +188,7 @@ export const runOpen = <R = never>(
 					const pulls = read.pulls.map((pull) => `#${pull}`).join(", ");
 					return refuse(
 						PRIOR_LANE,
-						`${VERB}: #${issue} already had a lane — the board hangs ${read.pulls.length === 1 ? "pull request" : "pull requests"} ${pulls} off it, which only a driven lane opens, and the ledger that drove them is not under ${options.root}. A ledger is a lane's whole state and it is gitignored, so booting a second one restores the first one's spent repair budget with nothing recording that a round was granted. Drive the pull request that is already there; a spent budget comes back only through a granted round recorded on the board — \`build clear ${read.pulls[0]}\` on the lane's pull request, or \`lane clear\` on a lane that has none — never a retire and re-open. Nothing was written.`,
+						`${VERB}: #${issue} already had a lane — the board hangs ${read.pulls.length === 1 ? "pull request" : "pull requests"} ${pulls} off it, which only a driven lane opens, and the ledger that drove them is not under ${options.root}. A ledger is a lane's whole state and it is gitignored, so booting a second one restores the first one's spent repair budget with nothing recording that a round was granted. Drive the pull request that is already there; a spent budget comes back only through a granted round recorded on the board — \`lane clear\`, which grants the lane's round and its pull request's together, or \`build clear ${read.pulls[0]}\` for a founder's bare PR-side grant — never a retire and re-open. Nothing was written.`,
 					);
 				}
 			}

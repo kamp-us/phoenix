@@ -132,6 +132,15 @@ Every verb obeys these; stated once.
   message contract-wide is prefixed with the invoked verb's name**, stated once here.
 - **A non-zero exit is UNKNOWN** to the caller until the code is read. No verb prints a partial or
   permissive answer on a non-zero exit.
+- **A body-on-stdin verb is invoked with a heredoc or with a literal input redirect, and the two are
+  one interface.** `commit`, `deviations`, `pr`, `pr-body` and `note` read their body from stdin, so
+  a redirect from the path `build scratch` printed delivers the same bytes a heredoc would, and
+  every guard the verb makes still fires. The redirect is the route
+  [skill-conventions §4](../../docs/skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed)
+  prescribes when the harness refuses to carry the body inside the command string; the *shell* reads
+  the file, so no verb grows a path-valued body flag for it. `commit --message-file` is the one
+  path-valued argument in the group and predates that route: it takes a leaf of this lane's
+  `build scratch` directory and refuses any other path.
 - **One deviant on the channel rule, carved out here so the shared section stays true:**
   `build push` puts its entire report on stdout, single-stream, so that the last stdout line is
   always the verdict line — the ordering guarantee is the contract (see its block; the predecessor
@@ -220,8 +229,9 @@ pointer's shape and its target; whether that comment rules anything is the reade
 stated as such. `type:epic` has no arm — its deliverable is a ledger no citation turns into a pull
 request, and the remedy is `--purpose plan` or `--purpose gate`. The arm opens the type axis and
 nothing else: the issue still has to carry `ready-for:agent`, which triage stamps at intake and
-`fabrika decision rule <n> --cites <url>` stamps afterwards, so a `ready-for:human` decision with a
-perfect citation is still `21` until one of them has run.
+`fabrika decision rule <n>` stamps afterwards, under either `--cites <url>` or
+`--authorization <file>`, so a `ready-for:human` decision with a perfect citation is still `21`
+until one of them has run.
 
 **The inputs, and where each is read.**
 
@@ -1026,6 +1036,32 @@ which no later verb of this session accepts. Without one it resolves `Foreign` �
 runs under the nonce that run just minted, which no adopt names — so it retracts the marker it just
 posted and refuses on `15` too. Adopt, release, then claim.
 
+**An adopt whose claim marker is already gone is still this lane's comment, and `release` retracts
+it.** That state is reached by adopting a claim somebody released first, and it used to be a marker
+no verb could reach: the ownership read answered "unclaimed" the moment no claim marker survived, so
+`release` said there was nothing to retract while the succession comment stayed on the thread.
+The read now names it — an authorized adopt whose `by <token>` names the asking lane, with
+no claim beside it — and `release <n> --token <that token>` deletes that one comment and answers
+`{"answer":"released","number":n,"adopted":"<session>"}`. It reaches **only** the asking lane's own
+adopt, resolved off the `by <token>` exactly as a win is, so a sibling lane's succession is no more
+sweepable than its claim would be; every other lane reads the thread as unclaimed. `confirm` and the
+shared precondition refuse it on `15` and name that release, because an adoption is not a claim.
+
+**An adopt fences and confers only over a claim marker it postdates.** The fence that keeps one
+succession from answering `mine` to two lanes reads an adopt over the winning marker's session; a
+succession adopts a claim that already stands, so an adopt older than that marker adopted some earlier claim and says
+nothing about this one. Ordering is GitHub's `created_at` with the comment id breaking a same-second
+tie — the same order the marker lists sort in, and not a field a marker's author composes. Without
+the ordering read, one stray adopt naming a session fenced every marker that session would ever post
+on the number, and each fresh claim lost to it under a new nonce, which is the loop that made the
+sanctioned remedy non-terminating.
+
+The same order binds the conferral, which is the other arm of one read: the adopted session's lane
+meets the fence, the adopting lane meets the conferral, and both are answered over the same pair of
+comments. So an adopt older than the winning marker confers that marker no more than it fences it.
+Read on one arm alone, one authorized succession answers `mine` to both lanes over a single marker,
+and `release` under the adopting lane's token then deletes a marker the other lane holds.
+
 The session id arrives from the environment — `FABRIKA_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`,
 else `PI_SUBAGENT_PARENT_SESSION`; named in `--help` with its unset
 behavior: unset is a usage error, exit `1` — a claim without an identity is not a claim.
@@ -1161,7 +1197,10 @@ the pieces is what handed a builder an ordering decision it then got wrong.
 | `build confirm: --token "<value>" is not a claim token (build:<session-id>:<uuid>) — which lane is asking is not stated.` | 1 | usage error |
 | `build confirm: --token "<value>" carries session <a>, but this run is session <b> — a lane names itself, never another.` | 1 | usage error |
 | `build confirm: no claim exists on #<n> — nothing to confirm; run "fabrika build claim <n>" first.` | 15 | refusal |
+| `<verb>: #<n> carries this lane's adopt marker (comment <id>) and no claim — an adoption is not a claim; run "fabrika build release <n> --token <the adopt's token>" to retract it, then claim.` — `build confirm`'s own, and every mutating verb's shared precondition under its own name | 15 | refusal |
 | `build release: this lane holds no claim on #<n> — refusing to release another lane's.` | 15 | refusal |
+| `build release: no claim stood on #<n> — retracted this lane's stranded adopt marker (comment <id>) and nothing else.` — beside `{"answer":"released","number":n,"adopted":"<session>"}` at exit 0 | 0 | note |
+| `build release: the adopt marker (comment <id>) was not retracted: <reason> — whether #<n> still reads as adopted is UNKNOWN.` | 8 | refusal |
 | `build release: the retraction failed: <reason> — whether the claim is still held is UNKNOWN; run "fabrika build confirm <n> --token <caller token>".` | 8 | refusal |
 | `build adopt: --session names this very session — "fabrika build release <n>" already covers a claim this session holds; nothing was written.` | 1 | usage error |
 | `build adopt: --reason is empty — a succession is recorded or it is not one.` | 1 | usage error |
@@ -1537,7 +1576,7 @@ fabrika build issue 4 [--repo <owner/name>]
 
 ```
 {"number": 4, "title": "...", "state": "open", "labels": ["type:bug", "p1", "status:triaged", "ready-for:agent"],
- "body": "...", "criteria": {"state": "found", "items": [{"text": "...", "checked": false}]}}
+ "body": "...", "criteria": {"state": "found", "items": [{"text": "...", "checked": false, "evidence": null}]}}
 ```
 
 `criteria` comes from the imported `acceptance-criteria` wire read and carries its three answers
@@ -1547,6 +1586,14 @@ distinction is the wire module's whole design; **this verb transports it and ref
 that is deliberate: the fence is the admission test's criteria axis at `build claim`, which refuses
 both negative answers on `32` before a lane opens. A read verb that refused would leave the
 operator repairing a body unable to print it. The body passes through the content gate.
+
+Each item's `evidence` is the criterion's outside-diff evidence source, or `null` where the row
+carries no marker — `null` is the proven absence of one, not "unknown". `text` stays the
+marker-stripped sentence, so a reader that only looks at `text` reads what it always read. On a
+contract with at least one marked row, stderr carries a line counting them and quoting each as
+`  - "<criterion>" — evidence: <source>`. That is the builder's cue: `review post` refuses a `PASS`
+whose body cites no evidence for a marked criterion (exit `19`), so the evidence belongs in the PR
+body the reviewer will read.
 
 **Exit status** (beyond the universal four)
 
@@ -1569,7 +1616,10 @@ versus exit `11`.
 
 ```
 $ fabrika build issue 4
-{"number":4,"title":"Editor loses focus after save","state":"open","labels":["type:bug","p1","status:triaged","ready-for:agent"],"body":"…","criteria":{"state":"found","items":[{"text":"focus stays in the editor after save","checked":false}]}}
+build issue: read #4 in owner/name; acceptance criteria found (2 row(s)).
+build issue: 1 of 2 criteria mark evidence outside the diff — write that evidence into the PR body, because the reviewer's PASS is refused unless it cites the source:
+  - "focus stays in the editor after save" — evidence: hand-verification at localhost:5173
+{"number":4,"title":"Editor loses focus after save","state":"open","labels":["type:bug","p1","status:triaged","ready-for:agent"],"body":"…","criteria":{"state":"found","items":[{"text":"focus stays in the editor after save","checked":false,"evidence":"hand-verification at localhost:5173"},{"text":"a test covers it","checked":false,"evidence":null}]}}
 ```
 
 **Grounding**
@@ -1578,6 +1628,8 @@ $ fabrika build issue 4
   single door and the open trust-posture decision lands in its content gate.
 - The wire module's `Absent` vs `Malformed` split — a drifted heading must never read as "no
   acceptance criteria", which is a gate grading a PR over nothing.
+- The builder is the party that produces outside-diff evidence, so dropping the marker here spent
+  the repair round `review post`'s `19` exists to save.
 
 ---
 
@@ -3045,7 +3097,9 @@ fabrika build verdicts --pr 8 [--repo <owner/name>]
  "rounds": 2, "capReached": false,
  "clearances": [{"round": 4, "at": "2026-08-18T07:16:03Z", "by": "usirin", "commentId": 512400,
                  "authorization": 512399, "honoured": true}],
- "frozenCriteria": [{"text": "add an e2e for the empty-list case", "appendedRound": 4}]}
+ "frozenCriteria": [{"text": "add an e2e for the empty-list case", "appendedRound": 4}],
+ "escalatedFindings": [{"round": 5, "commentId": 520880,
+                        "body": "review append-criterion: a finding from this PR's round 5 was NOT appended — …"}]}
 ```
 
 (`frozenCriteria` rows carry `text` and `appendedRound`; the array is empty when nothing was
@@ -3108,6 +3162,20 @@ and the clusters are added to the head count. Counting by wall clock instead rea
 repair effort and burned the cap at twice the real rate. `frozenCriteria` lists
 review-appended acceptance-criterion rows dated at or past `CAP_ROUND`.
 
+**`escalatedFindings` is the freeze's other half: the findings that never became rows.** At or past
+the freeze `review append-criterion` posts the finding as a comment on the linked issue and appends
+nothing, tagging that comment `<!-- ac:escalated pr:#<pr> round:<n> -->`. This fold reads those tags
+off the same issue the criteria come from, keeps the ones naming this PR, and carries each comment's
+full body through the content gate exactly as a verdict row does — so the repair loop reads the
+finding through the one door it already opens, and never off a comment id somebody typed into a
+spawn prompt. A row is `{round, commentId, body}`; the array is empty when the freeze turned nothing
+away, and stderr says so either way, because "nothing was escalated" and "this verb does not look"
+are different facts. A finding here is this repair's to fix and no later round's to grade: the
+freeze's whole point is that it entered no contract. **The fold carries no resolved state**: the
+selection is the tag's subject alone, and since no gate grades an escalation nothing ever retires
+one, so a finding an earlier round repaired is folded again identically. Judging a row against the
+tree is the reader's, which is why `build`'s Repair section instructs it.
+
 **`{"rows": [], ...}` on exit 0 is a proven "no verdicts", readable against the scope line's
 comment/review counts — a proven answer about the gates, never about the PR's mergeability, which
 is its own field.** An unreadable page is `11` — never a shorter list. All content passes
@@ -3123,7 +3191,10 @@ surface — a child opens no PR, so it has nothing to merge and nothing to confl
 one range are one round. `clearances` is always empty and stderr says why: a grant is recorded
 against a PR's base branch and a child has none, so a child at its cap escalates to the operator
 rather than reading a grant with nowhere to live. A comment reaching for the range format and missing
-it is named on stderr, never dropped.
+it is named on stderr, never dropped. **`escalatedFindings` is folded here too**, off that same
+comment page: a child's reviewer hits the identical freeze and its escalation lands on the child
+issue. Every escalation there was raised over that child's own range, so this arm selects on no
+subject and folds all of them.
 
 **Exit status** (beyond the universal four)
 
@@ -3131,7 +3202,7 @@ it is named on stderr, never dropped.
 |---|---|
 | `7` | the PR is proven absent or closed; or `--issue`'s number is proven absent, or is a pull request |
 | `10` | neither `--pr` nor `--issue` was given, or both were |
-| `11` | the head, any comment page, any review page, or the grant-author set could not be read — the fold is UNKNOWN, never partial |
+| `11` | the head, any comment page, any review page, the linked issue's own comment page, or the grant-author set could not be read — the fold is UNKNOWN, never partial |
 
 **Errors**
 
@@ -3140,10 +3211,12 @@ it is named on stderr, never dropped.
 | `build verdicts: PR #<n> is proven absent or closed.` | 7 | refusal |
 | `build verdicts: cannot read <what> (page <k>): <reason> — the verdict state is UNKNOWN, never "none".` | 11 | refusal |
 | `build verdicts: cannot read the recorded cap clearances: <reason> — whether the budget is spent is UNKNOWN, never "capped".` | 11 | refusal |
+| `build verdicts: cannot read the linked issue's acceptance criteria and escalated findings: <reason> — the verdict state is UNKNOWN, never "none".` | 11 | refusal |
 | `build verdicts: give either --pr <n> or --issue <n>, never both and never neither.` | 10 | usage error |
 | `build verdicts: #<n> is a pull request — its verdicts are head-bound; drop --issue and pass --pr.` | 7 | refusal |
 
-**Scope** — one PR: its head, its mergeability, all comments, all reviews. The stderr scope line
+**Scope** — one PR: its head, its mergeability, all comments, all reviews, and the linked issue's
+body and all its comments. The stderr scope line
 names the head SHA and both counts, so an empty `rows` is auditable as "N comments read, none
 carried a marker", and the line under it names the mergeability whichever of the three it is.
 
@@ -3151,7 +3224,7 @@ carried a marker", and the line under it names the mergeability whichever of the
 
 ```
 $ fabrika build verdicts --pr 8
-{"head":"03135b91","mergeability":"mergeable","rows":[{"gate":"review-code","polarity":"FAIL","sha":"03135b91","current":true,"commentId":512001,"kind":"marker","body":"review-code: FAIL @ 03135b91 — the debounce fix races the unmount; see inline notes."}],"rounds":1,"capReached":false,"frozenCriteria":[]}
+{"head":"03135b91","mergeability":"mergeable","rows":[{"gate":"review-code","polarity":"FAIL","sha":"03135b91","current":true,"commentId":512001,"kind":"marker","body":"review-code: FAIL @ 03135b91 — the debounce fix races the unmount; see inline notes."}],"rounds":1,"capReached":false,"frozenCriteria":[],"escalatedFindings":[]}
 ```
 
 **Grounding**
@@ -3162,6 +3235,9 @@ $ fabrika build verdicts --pr 8
 - Whether a native `CHANGES_REQUESTED` with no marker drives a repair is an open decision, so those
   rows are reported as their own kind and never coerced; the ruling lands as a change to the
   *skill's* routing, not to this verb.
+- A finding raised past the acceptance-criteria freeze had no reader: the escalation comment was
+  printed for nobody, and one lane's round-5 finding reached its repair builder only because the
+  driver typed the comment id into the spawn prompt by hand. `escalatedFindings` is that reader.
 - A proven-empty fold and an unreadable fold sit on different codes.
 - A founder-cleared round had no representation either enforcement site could read, so it
   could only land as an edit outside the loop; `clearances` is that representation.

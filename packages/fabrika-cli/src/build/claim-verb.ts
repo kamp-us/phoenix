@@ -647,9 +647,10 @@ export const runClaim = (
 						`${CLAIM}: if that session is gone, adopt it first: fabrika build adopt ${number} --session ${ownership.marker.session} --reason <why>, then fabrika build release ${number} --token <the token adopt prints>. "fabrika build claims stale" lists every claim standing past a horizon.`,
 					]
 				: [];
-		// Anything holding a winning marker that is not this run's is a loss, whatever resolved it —
-		// `Unclaimed` is the only remaining tag, and it means this run's OWN marker is the unauthorized one.
-		return ownership._tag !== "Unclaimed"
+		// Anything holding a winning marker that is not this run's is a loss, whatever resolved it. The
+		// tags that carry none — `Unclaimed`, and `AdoptOnly` for a stranded succession of this lane's —
+		// mean this run's OWN marker is the unauthorized one, since nothing else could have displaced it.
+		return ownership._tag === "Foreign" || ownership._tag === "Mine"
 			? refuse(
 					CLAIM_NOT_MINE,
 					`${CLAIM}: lost to ${ownership.marker.token} (posted ${ownership.marker.createdAt}, authorized).`,
@@ -692,6 +693,12 @@ export const runConfirm = (
 				return refuse(
 					CLAIM_NOT_MINE,
 					`${CONFIRM}: no claim exists on #${number} — nothing to confirm; run "fabrika build claim ${number}" first.`,
+					notes,
+				);
+			case "AdoptOnly":
+				return refuse(
+					CLAIM_NOT_MINE,
+					`${CONFIRM}: #${number} carries this lane's adopt marker (comment ${ownership.adopt.commentId}) and no claim — an adoption is not a claim; run "fabrika build release ${number} --token ${ownership.adopt.token}" to retract it, then claim.`,
 					notes,
 				);
 			case "Foreign":
@@ -752,6 +759,22 @@ export const runRelease = (
 				`${RELEASE}: cannot read the claim markers on #${number}: ${ownership.reason} — ownership is UNKNOWN, never "unclaimed".`,
 				notes,
 			);
+		}
+		if (ownership._tag === "AdoptOnly") {
+			// The claim this adopt was written for is gone, and the adopt outlives nothing — so the
+			// release that would have taken it with the claim takes it alone. Only this lane's own adopt
+			// reaches here, resolved off the marker's `by <token>`, so no other lane's succession moves.
+			const cleared = yield* deleteComment(repo, ownership.adopt.commentId);
+			return cleared._tag === "Failure"
+				? refuse(
+						WRITE_UNKNOWN,
+						`${RELEASE}: the adopt marker (comment ${ownership.adopt.commentId}) was not retracted: ${cleared.reason} — whether #${number} still reads as adopted is UNKNOWN.`,
+						notes,
+					)
+				: answer(JSON.stringify({answer: "released", number, adopted: ownership.adopt.adopted}), [
+						...notes,
+						`${RELEASE}: no claim stood on #${number} — retracted this lane's stranded adopt marker (comment ${ownership.adopt.commentId}) and nothing else.`,
+					]);
 		}
 		if (ownership._tag !== "Mine") {
 			return refuse(

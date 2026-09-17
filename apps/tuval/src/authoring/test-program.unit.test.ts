@@ -6,21 +6,18 @@ import {expect, expectTypeOf} from "vitest";
 import {ProcessId} from "../process/process.ts";
 import {STATUS_PORT, TITLE_PORT} from "../process/self-report.ts";
 import {fillArgs, programArgs} from "./args.ts";
-import type {Answer, ArrivalEvent} from "./define-program.ts";
+import {program} from "./define-program.ts";
 import {
+	type AnyEffect,
 	ask,
 	emit,
-	type ProgramEffect,
 	type Reply,
-	type Spawned,
-	type Stopped,
 	send,
 	spawn,
 	spawned,
 	stop,
 	stopped,
 } from "./effect.ts";
-import type {KeyEvent} from "./keys.ts";
 import {port} from "./port.ts";
 import {Program} from "./shape.ts";
 import {testProgram} from "./test-program.ts";
@@ -45,10 +42,17 @@ const CALLEE = ProcessId.make("proc-callee");
 
 /**
  * One program covering the whole vocabulary: three port kinds, all five effects, the four answer
- * events, a `key` cell, a command and both derived lines. Each cell states its own event type,
- * because a standalone record is not contextually typed by anything.
+ * events, a `key` cell, a command and both derived lines. It is held in a `const` because that is
+ * what an author holds — the config compiles it, this file drives it — and `program` is what
+ * contextually types it there (#8825), so no cell states its own state type or its `Answer` return.
+ *
+ * The one cell that still names its event is `result`, and that is a declaration rather than an
+ * annotation: a `Reply`'s name is chosen at the `spawn` that asked for it, so nothing in the layer
+ * can read it back, and `ProgramEvent` (`./view.ts`) reads the cell's own parameter to know what
+ * `.event()` will take. `spawned` and `stopped` need no such line — their names are fixed on this
+ * layer's own types and `UpdateTable` carries them, like `key`.
  */
-const prReview = {
+const prReview = program({
 	id: "pr-review",
 	ports: {
 		pr: port.in(Pr),
@@ -58,41 +62,36 @@ const prReview = {
 	args,
 	init: (): State => ({queue: [], reviewer: null, verdicts: 0, pressed: ""}),
 	update: {
-		pr: (state: State, event: ArrivalEvent<"pr", number>): Answer<State> => [
+		pr: (state, event) => [
 			{...state, queue: [...state.queue, event.payload]},
 			[spawn(args.reviewer, {on: {result: "result"}})],
 		],
-		check: (state: State, event: ArrivalEvent<"check", number>): Answer<State> => [
-			state,
-			[emit("verdict", {pr: event.payload, ok: true})],
-		],
-		spawned: (state: State, event: Spawned): Answer<State> => [
+		check: (state, event) => [state, [emit("verdict", {pr: event.payload, ok: true})]],
+		spawned: (state, event) => [
 			{...state, reviewer: event.process},
 			[send({process: event.process, port: "prompt"}, "review it")],
 		],
-		result: (
-			state: State,
-			event: Reply<"result", {readonly pr: number; readonly ok: boolean}>,
-		): Answer<State> => [
+		result: (state, event: Reply<"result", {readonly pr: number; readonly ok: boolean}>) => [
 			{...state, verdicts: state.verdicts + (event.payload.ok ? 1 : 0)},
 			[emit("verdict", event.payload)],
 		],
-		stopped: (state: State, _event: Stopped): Answer<State> => [{...state, reviewer: null}, []],
-		close: (state: State): Answer<State> => [
-			state,
-			state.reviewer === null ? [] : [stop(state.reviewer)],
-		],
-		key: (state: State, event: KeyEvent): Answer<State> => [{...state, pressed: event.key}, []],
+		stopped: (state) => [{...state, reviewer: null}, []],
+		close: (state) => [state, state.reviewer === null ? [] : [stop(state.reviewer)]],
+		key: (state, event) => [{...state, pressed: event.key}, []],
+		recheck: (state) => [state, [ask({process: CALLEE, port: "check"}, 8733, {reply: "result"})]],
 	},
 	commands: {
 		review: {
 			args: Pr,
-			run: (pr: number) => ask({process: CALLEE, port: "check"}, pr, {reply: "result"}),
+			// A bare port name: an in-port of this program's own process (#8898). It is the only
+			// target shape a command has beside the addressed one, and `send` is the only effect it
+			// may ask for at all — so the `ask` this cell used to write now lives in `recheck` below.
+			run: (pr: number) => send("pr", pr),
 		},
 	},
-	title: (state: State) => `pr-review (${state.queue.length})`,
-	status: (state: State) => (state.reviewer === null ? "idle" : "reviewing"),
-};
+	title: (state) => `pr-review (${state.queue.length})`,
+	status: (state) => (state.reviewer === null ? "idle" : "reviewing"),
+});
 
 describe("authoring.testProgram", () => {
 	it("starts on `init` and publishes the derived lines a fresh process would", () => {
@@ -156,7 +155,7 @@ describe("authoring.testProgram", () => {
 		});
 
 		it("ask", () => {
-			const run = testProgram(prReview).call("review", 8733);
+			const run = testProgram(prReview).event({type: "recheck"});
 			expect(run.effects).toEqual([ask({process: CALLEE, port: "check"}, 8733, {reply: "result"})]);
 		});
 
@@ -195,7 +194,7 @@ describe("authoring.testProgram", () => {
 
 		it("an `ask` reply, arriving as that `ask`'s own `reply` event", () => {
 			const run = testProgram(prReview)
-				.call("review", 8733)
+				.event({type: "recheck"})
 				.event({type: "result", payload: {pr: 8733, ok: false}});
 			expect(run.state.verdicts).toBe(0);
 			expect(run.effects).toContainEqual(emit("verdict", {pr: 8733, ok: false}));
@@ -217,7 +216,7 @@ describe("authoring.testProgram", () => {
 		const start = testProgram(prReview).send("pr", 1);
 		const run = start.call("review", 8733);
 		expect(run.state).toEqual(start.state);
-		expect(run.effects).toEqual([ask({process: CALLEE, port: "check"}, 8733, {reply: "result"})]);
+		expect(run.effects).toEqual([send("pr", 8733)]);
 	});
 
 	it("refuses a command the program does not declare, and args its schema rejects", () => {
@@ -244,7 +243,7 @@ describe("authoring.testProgram", () => {
 	it("infers the state and effect types from the program, never `unknown`", () => {
 		const run = testProgram(prReview).send("pr", 1);
 		expectTypeOf(run.state).toEqualTypeOf<State>();
-		expectTypeOf(run.effects).toEqualTypeOf<ReadonlyArray<ProgramEffect>>();
+		expectTypeOf(run.effects).toEqualTypeOf<ReadonlyArray<AnyEffect>>();
 		expectTypeOf(run.state.queue).toEqualTypeOf<ReadonlyArray<number>>();
 	});
 });

@@ -31,6 +31,7 @@ import {
 import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
 import {type Existence, unknown} from "../io/issues.ts";
 import {isRecord} from "../io/json.ts";
+import {isBaseConflict, readDefiniteMergeability} from "../ship/mergeability.ts";
 
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
 
@@ -334,3 +335,45 @@ export const commitPushedAt = (repo: string, sha: string): Shell<Attempt<string>
 			return at === "" ? fail("GitHub answered 200 but named no commit date") : ok(at);
 		}),
 	);
+
+/**
+ * Whether the merge of a PR's head into its base conflicts, as four values rather than a boolean.
+ *
+ * `Indefinite` is the one that earns the type. GitHub computes `mergeable` lazily, so the first read
+ * of a pull request routinely answers `null` with `mergeable_state: "unknown"` — the platform
+ * declining to answer, which is neither a clean merge nor a conflict. Folding it into `Clear` is the
+ * false green; folding it into `Conflicted` routes a healthy PR to a rebase nobody owes.
+ */
+export type ConflictRead =
+	/** Proven: `mergeable_state` is `dirty`, so the merge of this head into its base conflicts. */
+	| {readonly _tag: "Conflicted"}
+	/** A definite read that is not a base conflict — `clean`, `blocked` and `behind` all land here. */
+	| {readonly _tag: "Clear"}
+	/** The lazy job had not landed inside the window. How many seconds it was given. */
+	| {readonly _tag: "Indefinite"; readonly seconds: number}
+	| {readonly _tag: "Unreadable"; readonly reason: string};
+
+/**
+ * The base-conflict fact `diagnose`'s conflict arm runs on.
+ *
+ * The read and its poll policy are `../ship/mergeability.ts`'s, not this group's: `ship enqueue` and
+ * `ship merge` assert the same precondition through one loop, and a second implementation here would
+ * be a second window over the same lazy job, answering `dirty` on one verb and `UNKNOWN` on another
+ * for one pull request.
+ *
+ * `../io/pulls.ts`'s `PullRecord.mergeability` is **not** that fact and cannot stand in for it: it
+ * collapses every definite not-mergeable value to `conflicting`, so a `blocked` PR — one merely
+ * waiting on its required checks — reads there exactly like a conflicted one.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9012
+ */
+export const readBaseConflict = (
+	repo: string,
+	pr: number,
+	windowSeconds: number,
+): Shell<ConflictRead> =>
+	Effect.map(readDefiniteMergeability(repo, pr, windowSeconds), (read): ConflictRead => {
+		if (read._tag === "Unreadable") return {_tag: "Unreadable", reason: read.reason};
+		if (read._tag === "Indefinite") return {_tag: "Indefinite", seconds: read.seconds};
+		return isBaseConflict(read.value) ? {_tag: "Conflicted"} : {_tag: "Clear"};
+	});
