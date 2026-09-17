@@ -315,9 +315,7 @@ named `body.md` inside it. Write that file's absolute path literally in each bou
 The bytes arrive on stdin exactly
 as the heredoc would have delivered them, so each verb makes every refusal it always makes — the commit's
 read-back, the `## Deviations` shape, the leak scan — and the allocated path is machine-local, so a
-body quoting it reds at `5`. `build commit`'s `--message-file` names that same `body.md` leaf
-with its literal absolute path and is equally sanctioned; it refuses any path that is not a leaf of this lane's scratch
-directory.
+body quoting it reds at `5`. Send staged commit messages through the same stdin redirect.
 
 Then validate **in this tree** — a green borrowed from another checkout is the false green this verb
 exists to refuse. Hand it the surface you named in step 3; it
@@ -366,9 +364,7 @@ fix(build): one line saying what changed (#<n>)
 EOF
 ```
 
-Send the message on stdin. The alternative is a leaf under `fabrika build scratch`; any other path is
-refused, because a path outside the allocator has no per-lane key — that is how a lane commits a
-stale message belonging to another lane, with nothing failing anywhere. Exit `9`
+Send the message on stdin, using the staged file redirect above when needed. Exit `9`
 means the commit exists and carries a message you did not write: amend it and re-run, do not push.
 Exit `4` means your message names an issue this lane holds no claim on — a related reference belongs
 in the PR body, not the merge record.
