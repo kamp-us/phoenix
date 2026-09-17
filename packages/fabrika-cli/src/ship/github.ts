@@ -438,6 +438,15 @@ export interface WorkflowRun {
 	readonly completedAt: string | null;
 	/** The workflow this run came from, as {@link listWorkflowPaths} addresses it. */
 	readonly path: string;
+	/**
+	 * The event that created the run, and the head it was created for.
+	 *
+	 * Both are gate coverage's (`../review/gate-coverage.ts`) and neither is optional: a run whose
+	 * provenance the platform did not spell out cannot establish which bytes it opened, and the
+	 * lenient reading of that is the false green this pair exists to refuse.
+	 */
+	readonly event: string;
+	readonly headSha: string;
 	/** The workflow's own id — what makes two runs at one head runs of the *same* workflow. */
 	readonly workflowId: number;
 	/**
@@ -449,7 +458,17 @@ export interface WorkflowRun {
 	readonly checkSuiteId: number | null;
 }
 
-/** The runs at exactly this head — `head_sha` match only, never a name or a date heuristic. */
+/**
+ * The runs at exactly this head — `head_sha` match only, never a name or a date heuristic.
+ *
+ * **`head_sha` is an exact string filter on this endpoint, not a commit-ish the API resolves**, so
+ * an abbreviated `sha` returns `total_count: 0` where the full object name returns every run. The
+ * check-run endpoint resolves abbreviations, which is how one caller could read a complete check
+ * set and an empty run set at one commit and conclude no gate had run. Callers pass the resolved
+ * full object name.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8362
+ */
 export const listRunsAtHead = (
 	repo: string,
 	sha: string,
@@ -468,6 +487,12 @@ export const listRunsAtHead = (
 					) {
 						return fail("GitHub answered 200 but one entry is not a workflow run");
 					}
+					// Gate coverage is decided from these two, so an entry that names neither is unreadable
+					// rather than lenient: a run counted without them is a gate nobody can say inspected
+					// the head.
+					if (typeof value.event !== "string" || typeof value.head_sha !== "string") {
+						return fail("GitHub answered 200 but one workflow run names no event or head commit");
+					}
 					runs.push({
 						id: value.id,
 						name: str(value.name),
@@ -475,6 +500,8 @@ export const listRunsAtHead = (
 						conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
 						completedAt: typeof value.completed_at === "string" ? value.completed_at : null,
 						path: str(value.path),
+						event: value.event,
+						headSha: value.head_sha,
 						workflowId: value.workflow_id,
 						checkSuiteId: typeof value.check_suite_id === "number" ? value.check_suite_id : null,
 					});

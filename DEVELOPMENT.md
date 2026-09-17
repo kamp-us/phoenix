@@ -13,17 +13,17 @@ pnpm typecheck    # tsc, then effect-tsgo diagnostics --strict, across project r
 pnpm deploy       # vite build + alchemy deploy (use --stage <name> for isolation)
 ```
 
-`alchemy dev` runs the worker locally in `workerd`, but the resources it binds — D1, the live Durable Object — are **real** Cloudflare resources in your personal dev stage. There is no offline emulator (ADR [0032](./.decisions/0032-alchemy-beta45-and-dev-model.md)).
+`alchemy dev` runs the worker and its Durable Objects locally. D1 stays remote in your personal dev stage: the shared `PhoenixDb` declaration explicitly uses `Alchemy.remote()`. Alchemy beta.77 has local resource providers, but Phoenix does not use the local D1 provider. Cloudflare credentials are still required. The live D1 provider can apply pending migrations during dev reconciliation. Alchemy now defaults deploy/destroy to `live_<user>` and dev to `dev_<user>`; use explicit `--stage` when targeting an existing stage.
 
 ## Stack
 
 | Layer | Choice | What it does for phoenix |
 |---|---|---|
-| Infra + runtime | [alchemy](https://alchemy.run) `2.0.0-beta.45` | One Effect program declares the worker, its bindings, and the Durable Object. No `wrangler.jsonc`. |
-| Effect system | `effect@4.0.0-beta.74` | Backend control flow, services, layers, errors, tracing. |
+| Infra + runtime | [alchemy](https://alchemy.run) `2.0.0-beta.77` | One Effect program declares the worker, its bindings, and the Durable Object. No `wrangler.jsonc`. |
+| Effect system | `effect@4.0.0-rc.112` | Backend control flow, services, layers, errors, tracing. |
 | Data protocol | [fate](https://github.com/usirin/fate) | `/fate` for data views, `/fate/live` for live views over SSE. Server types are the schema — no codegen artifact between server and client. |
 | HTTP | `effect/unstable/http` | `HttpApiBuilder` for typed JSON groups, imperative `HttpRouter` for raw-Request and SSE routes. No Hono, no GraphQL. |
-| Auth | `@alchemy.run/better-auth` | BetterAuth on D1 (magic-link + bearer + email/password) via a forked `CloudflareD1` Layer. Session secret comes from the `BETTER_AUTH_SECRET` binding — no default, fails closed if it is missing. |
+| Auth | `better-auth` | BetterAuth on the shared D1 binding (magic-link + bearer + email/password) via Phoenix’s local `BetterAuth` service. Session secret comes from the `BETTER_AUTH_SECRET` binding — no default, fails closed if it is missing. |
 | DB | Drizzle on D1 | `Drizzle` is a worker-level singleton; feature code calls its `run`/`batch` capability methods. |
 | Live state | `LiveDO` on `state.storage` KV | One Durable Object fans out SSE. State is KV — subscriber rows + a per-connection counter. No DO SQL, no DO migrations. |
 | Frontend | React 19 + Vite 8 + react-fate | Components declare views; one batched `useRequest` per screen; declarative mutations; live views over SSE. |

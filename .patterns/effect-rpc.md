@@ -1,18 +1,19 @@
 # Effect RPC (`effect/unstable/rpc`)
 
 How to define a typed message catalog and stand up a client/server over it with
-effect's `effect/unstable/rpc` at phoenix's pin. This doc is the Effect-API surface
+effect's `effect/unstable/rpc` at the earlier beta pin described below. This doc is the Effect-API surface
 (catalog → server → client) and the **transport-pluggability seam** — why a message
 substrate on this surface needs no hand-rolled `*-protocol` package.
 
 **No in-repo instance today.** The one system built on this surface — the v1 crew's peer
 message plane — was removed with the crew (ADR [0279](../.decisions/0279-v1-crew-retired-in-full.md)),
-so every snippet below is grounded in the **module source at the pin** rather than in a
-phoenix call site. Read it as the API contract, and re-ground against the pin before
+so these snippets came from dependency source rather than a
+phoenix call site. Re-ground against the current pin before
 leaning on it; the illustrative catalog is a two-message sketch, not shipped code.
 
-phoenix pins `effect@4.0.0-beta.92` (the `effect:` catalog entry in `pnpm-workspace.yaml`).
-The RPC surface lives in the **unstable** namespace, so its shape is pinned to that beta —
+These unused examples were written against `effect@4.0.0-beta.92`; they have not been
+revalidated against the shared rc pin in [`pnpm-workspace.yaml`](../pnpm-workspace.yaml).
+The RPC API lives in the **unstable** namespace —
 ground every claim below against the module source at the pin (`Effect-TS/effect`
 `packages/effect/src/unstable/rpc/{Rpc,RpcGroup,RpcServer,RpcClient,RpcSerialization}.ts`,
 mirrored by the installed dist), not intuition. `LLMS.md` documents the cluster-entity RPC

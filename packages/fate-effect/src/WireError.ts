@@ -6,16 +6,16 @@
  * it —
  *
  * ```ts
- * class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
+ * class BodyRequired extends Schema.TaggedError<BodyRequired>()(
  *   "sozluk/BodyRequired",
  *   {message: Schema.String},
  *   {[FateWireCode]: "BODY_REQUIRED"},
  * ) {}
  * ```
  *
- * Annotations are the documented effect extension point: effect-smol
+ * Annotations are the documented effect extension point: Effect-TS/effect
  * `Schema.ts` › `Annotations` namespace ("Defining your own annotations"). A
- * `Schema.TaggedErrorClass`'s annotations land on the class's static
+ * `Schema.TaggedError`'s annotations land on the class's static
  * `ast.annotations`, so the codec reads them off `instance.constructor` with
  * structural guards — no registry lookup, no type assertion.
  *

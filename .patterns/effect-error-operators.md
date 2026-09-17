@@ -1,6 +1,8 @@
 # Effect error operators
 
-How to catch, inspect, and recover from errors in Effect. Covers `Effect.catchTag`, `Effect.catchTags`, `Effect.catchAll`, `Effect.exit`, and the `Exit` / `Cause` types. Read [effect-errors.md](./effect-errors.md) for the *modeling* side (tagged errors, where they live); this doc is the *handling* side.
+How to catch, inspect, and recover from errors in Effect. Covers `Effect.catchTag`, `Effect.catchTags`, `Effect.catch`, `Effect.exit`, and the `Exit` / `Cause` types. Read [effect-errors.md](./effect-errors.md) for the *modeling* side (tagged errors, where they live); this doc is the *handling* side.
+
+Names below are checked against [Effect rc.112 error handling](https://unpkg.com/effect@4.0.0-rc.112/src/Effect.ts). A working defect-recovery example is [cold-start-retry.ts](../apps/web/worker/features/fate-live/cold-start-retry.ts).
 
 ## When to catch
 
@@ -52,11 +54,11 @@ yield* operation.pipe(
 
 Cleaner than chained `catchTag`s when handling several at once. Each handler is type-narrowed to its tag.
 
-## `Effect.catchAll` — last resort
+## `Effect.catch` — last resort
 
 ```ts
 yield* riskyOperation.pipe(
-  Effect.catchAll((err) => {
+  Effect.catch((err) => {
     // err is the entire E channel union
     return Effect.logError("Operation failed", err).pipe(
       Effect.andThen(Effect.succeed(defaultValue)),
@@ -65,9 +67,9 @@ yield* riskyOperation.pipe(
 );
 ```
 
-`Effect.catchAll` removes *every* error from the channel. Use sparingly — it hides specificity. Prefer `catchTag`/`catchTags` so future error additions force you to update handlers explicitly.
+`Effect.catch` removes *every* error from the channel. Use sparingly — it hides specificity. Prefer `catchTag`/`catchTags` so future error additions force you to update handlers explicitly.
 
-Defects (uncaught throws that bypass the `E` channel) are *not* caught by `catchAll`. Use `Effect.catchAllCause` for that — but if you're catching defects in product code, something's wrong.
+Defects (uncaught throws that bypass the `E` channel) are *not* caught by `catch`. Use `Effect.catchCause` to inspect the full cause, or `Effect.catchDefect` for a known defect that can be recovered safely. The cold-start retry above handles a documented runtime failure this way.
 
 ## `Effect.exit` — convert failure to a value
 
@@ -149,7 +151,7 @@ What this does:
 
 ## Anti-patterns
 
-- **`Effect.catchAll` to convert errors into a generic "operation failed" string.** You've thrown away the diagnostic value. Use `catchTags` to handle the cases you know, let the rest propagate.
+- **`Effect.catch` to convert errors into a generic "operation failed" string.** You've thrown away the diagnostic value. Use `catchTags` to handle the cases you know, let the rest propagate.
 - **Catching `DrizzleError` inside a feature method.** Drizzle errors indicate infrastructure failure. Hiding them produces silent corruption. Let them propagate; `encodeWireError` maps the un-annotated failure to `INTERNAL_SERVER_ERROR` at the boundary.
 - **Throwing inside an `Effect.gen` to "fail fast."** Use `return yield* new MyError({})` instead. Throws become defects, which TS can't reason about.
 - **Using `Effect.exit` everywhere just to be safe.** Most code should propagate failures naturally. Reach for `exit` only at boundaries (the fate interpreter, tests asserting on failures).

@@ -166,7 +166,8 @@ declared `ci.noProducer: "degrade"` for itself: disarm, note that the head carri
 stop. It is not `pending` and no nudge reaches it — nothing will ever start. `budget-exhausted` → disarm, note,
 stop. `head-moved` → start over at step 1; every answer so far was about a tree that is gone.
 Exit `20` prints no rollup at all: every check at the head passed and no workflow this repo authors
-produced a run there, so nothing gated the bytes you would merge. Disarm, note that the head carries
+inspected it — every repo-authored run there carries another commit or opened another ref — so
+nothing gated the bytes you would merge. Disarm, note that the head carries
 no gate coverage, stop — it is a dropped trigger a human owns, not a `green` with a caveat and not a
 `no-runs` a nudge reaches.
 **You never re-run, re-trigger, or locally reproduce a check** — CI's verdict is CI's. Each terminal's

@@ -68,10 +68,13 @@ interface ClaudeSessionBase {
  * config module names the `scope` its tool calls carry and gets the real thing.
  *
  * `scope` is all the kernel arm needs, and that is the point: a scope is four plain ids, which is
- * exactly what a config module evaluated before the kernel exists can write down. Naming no
- * `window` makes a tool `spawn` a **root** process rather than a child of the Claude one — the
- * kernel resolves a parent from the caller's window through `WindowIndex`, and no shell owns one
- * yet ([#7894](https://github.com/kamp-us/phoenix/issues/7894)).
+ * exactly what a config module evaluated before the kernel exists can write down. It names no
+ * `window` and does not have to: the kernel resolves a tool `spawn`'s parent from the caller's
+ * window through `WindowIndex`, and that window reaches the bridge from the running session —
+ * `../shell/picker/open.ts` hands the process the window it was opened into as `CallingWindow`,
+ * and `KernelBridge.live` reads it over this scope
+ * ([#8758](https://github.com/kamp-us/phoenix/issues/8758)). A row spawned through some other path
+ * gets none, and its tool `spawn` starts a **root** process as it always did.
  */
 export type ClaudeSessionProgramOptions =
 	| (ClaudeSessionBase & {readonly scope: SpellScope; readonly layer?: undefined})

@@ -257,6 +257,8 @@ function ComposedComposer() {
 						<AgentChatInput.PrimaryActions />
 					</div>
 				</Form>
+
+				<AgentChatInput.Error />
 			</AgentChatInput.Surface>
 
 			<AgentChatInput.Inspector />
@@ -324,12 +326,24 @@ async function settleComposer(): Promise<void> {
 }
 
 /**
- * Drives the three parts that render nothing at rest: `Inspector` has no activity to list until
- * the harness pushes one and stays folded until the disclosure is opened; `ExtensionDialog` is
- * `null` until a request is outstanding. Without this the parity comparison reads empty against
- * empty and proves nothing about them (#8711).
+ * Drives the three parts that render nothing at rest: `Error` holds the last failure and is `null`
+ * until one lands, so a non-image file through the attach input puts one there; `Inspector` has no
+ * activity to list until the harness pushes one and stays folded until the disclosure is opened;
+ * `ExtensionDialog` is `null` until a request is outstanding. Without this the parity comparison
+ * reads empty against empty and proves nothing about them (#8711, #8773).
+ *
+ * Those three are all of them: every other `AgentChatInput.*` part paints something at rest. The
+ * empty branches left — `PrimaryActions`'s stop control, `Field`'s attachment strip,
+ * `Inspector`'s harness widget — are states of a part the comparison already reads, not parts of
+ * their own, so a composed tree cannot omit one the way it omitted `Error`.
  */
 async function driveComposerParts(push: (event: PiEvent) => void): Promise<void> {
+	const attach = document.querySelector<HTMLInputElement>('input[type="file"]');
+	if (!attach) throw new Error("no attach input rendered");
+	fireEvent.change(attach, {
+		target: {files: [new File(["ne resim ne de bir şey"], "notlar.txt", {type: "text/plain"})]},
+	});
+	await screen.findByText(defaultDesignTranslate("admin.agent.error.imagesOnly"));
 	act(() => {
 		push({type: "tool_execution_start", toolName: "Read"});
 		push({
@@ -699,6 +713,7 @@ describe("AgentChatInput", () => {
 			expect(expected).toContain('class="kp-agent-chat"');
 			expect(expected).toContain('aria-label="Agent chat input"');
 			expect(expected).toContain("Pi Read kullanıyor.");
+			expect(expected).toContain(defaultDesignTranslate("admin.agent.error.imagesOnly"));
 			expect(expected).toContain("Hangi dala geçelim?");
 			plain.unmount();
 

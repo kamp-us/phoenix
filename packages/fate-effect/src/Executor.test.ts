@@ -74,7 +74,7 @@ const makeContext = (
  * #2736 idiom) requires a `catch` mapping to a tagged error; `orDie` then keeps the
  * handler's error channel `never` (the query declares no errors).
  */
-class BarrierRejected extends Schema.TaggedErrorClass<BarrierRejected>()("test/BarrierRejected", {
+class BarrierRejected extends Schema.TaggedError<BarrierRejected>()("test/BarrierRejected", {
 	cause: Schema.Unknown,
 }) {}
 

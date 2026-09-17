@@ -148,24 +148,30 @@ export const workflows = (
 		}),
 	);
 
+/** One Actions run as a fixture declares it — `null` on a provenance field omits it entirely. */
+export interface RunRow {
+	readonly id: number;
+	readonly workflowId?: number;
+	readonly checkSuiteId?: number | null;
+	readonly status?: string;
+	readonly conclusion?: string | null;
+	/** Which workflow produced the run — one of the gate-coverage read's three inputs. */
+	readonly path?: string;
+	/** What created the run, and which commit it carries — the other two. */
+	readonly event?: string | null;
+	readonly headSha?: string | null;
+}
+
 /**
  * The Actions run list at one head: the declared total, and the rows a caller cares to enumerate.
  *
  * The total and the rows are separate arguments because they answer separate questions — the
  * `no-runs` discriminator reads only the first, supersession only the second.
+ *
+ * A row defaults to the provenance that covers a gate — a `pull_request` run at {@link HEAD} — so a
+ * coverage case states the turn it makes, and `null` omits the field rather than emptying it.
  */
-export const runsTotal = (
-	total: number,
-	rows: ReadonlyArray<{
-		id: number;
-		workflowId?: number;
-		checkSuiteId?: number | null;
-		status?: string;
-		conclusion?: string | null;
-		/** Which workflow produced the run — the gate-coverage read's only input. */
-		path?: string;
-	}> = [],
-): ExecResult =>
+export const runsTotal = (total: number, rows: ReadonlyArray<RunRow> = []): ExecResult =>
 	okOut(
 		JSON.stringify({
 			total_count: total,
@@ -178,6 +184,8 @@ export const runsTotal = (
 				status: row.status ?? "completed",
 				conclusion: row.conclusion === undefined ? "success" : row.conclusion,
 				completed_at: "2026-08-08T00:00:00Z",
+				...(row.event === null ? {} : {event: row.event ?? "pull_request"}),
+				...(row.headSha === null ? {} : {head_sha: row.headSha ?? HEAD}),
 			})),
 		}),
 	);

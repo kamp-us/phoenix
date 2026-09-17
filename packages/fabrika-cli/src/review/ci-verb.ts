@@ -5,7 +5,10 @@
  * question because one sentence was omitted. This verb is that read made structural, and its
  * refusals are what keep it honest — zero declared runs is a vacuous green, an enumeration short
  * of `total_count` is never read as "no red checks", and a complete enumeration that no gate of
- * this repo produced is not green either (`gate-coverage.ts`).
+ * this repo produced is not green either (`gate-coverage.ts`). That last read is over each run's own
+ * provenance — the head it carries and the event that made it — because a workflow path says which
+ * file ran and never which bytes it opened: a repo-authored `pull_request_target` run sits at the
+ * head and checks out the base.
  *
  * `checks` is a status tally, not a row per run: it is an evidence-array — the review
  * skill acts on `rollup` and no skill iterates the rows — and a repo with 34 workflows paid ~20 rows
@@ -165,7 +168,13 @@ export const runCi = (
 
 		const asked = options.sha?.trim() ?? "";
 		const diagnostics: string[] = [];
+		// `sha` is what the caller asked and what every answer is spelled with; `head` is that same
+		// commit's full object name. They differ only on an abbreviated `--sha`, and the split is the
+		// whole fix for it: the Actions run list filters `head_sha` as an exact string, so an
+		// abbreviation there reads as zero runs, while a historical inspection must stay historical
+		// rather than be silently re-bound to the live head.
 		let sha = live;
+		let head = live;
 		if (asked !== "") {
 			const at = yield* commitExists(repo, asked);
 			if (at._tag === "Absent") {
@@ -178,6 +187,7 @@ export const runCi = (
 				);
 			}
 			sha = asked;
+			head = at.value;
 			// A read at a moved-past head is a fact worth seeing, not a refusal: the `12` stale seat
 			// belongs to `review post`, the write seam.
 			if (!prefixMatch(live, asked)) {
@@ -262,7 +272,7 @@ export const runCi = (
 				// The one red that is also asked: a floor concluded `failure` on a stale verdict is the
 				// reader's own to clear, and only the workflow runs say the row came from this repo's floor
 				// job. The cheap predicate above gates the read, so an ordinary red still pays nothing.
-				const atHead = yield* listRunsAtHead(repo, sha);
+				const atHead = yield* listRunsAtHead(repo, head);
 				if (atHead._tag === "Failure") {
 					return done(
 						refuse(
@@ -290,7 +300,7 @@ export const runCi = (
 						),
 					);
 				}
-				const atHead = yield* listRunsAtHead(repo, sha);
+				const atHead = yield* listRunsAtHead(repo, head);
 				if (atHead._tag === "Failure") {
 					return done(
 						refuse(
@@ -300,17 +310,25 @@ export const runCi = (
 						),
 					);
 				}
-				const coverage = gateCoverageOf(
-					inventory.value,
-					atHead.value.runs.map((run) => run.path),
-				);
+				const coverage = gateCoverageOf(inventory.value, atHead.value.runs, head);
+				if (coverage._tag === "Unreadable") {
+					// Never the `16`: that code says the repository's gates were silent, and an operand
+					// this verb could not resolve is a fact about the call instead.
+					return done(
+						refuse(
+							PRECONDITION_UNKNOWN,
+							`${VERB}: cannot judge gate coverage at ${sha}: ${coverage.reason} — which gates inspected these bytes is UNKNOWN, never green.`,
+							notes,
+						),
+					);
+				}
 				if (coverage._tag === "Uncovered") {
 					// The `16` refusal is why `--wait` may not simply loop on "not green": a head no gate of
 					// this repo ran at has nothing coming, so waiting out the budget would answer nothing.
 					return done(
 						refuse(
 							NO_GATE_COVERAGE,
-							`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha} — the ${runs.length} check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green.`,
+							`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors inspected ${head} — the ${runs.length} check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected these bytes: the CI state is UNKNOWN, never green.`,
 							notes,
 						),
 					);
@@ -322,7 +340,7 @@ export const runCi = (
 				} else {
 					gates = {declared: coverage.declared, covered: coverage.covered};
 					notes.push(
-						`${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha}.`,
+						`${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors inspected ${head}.`,
 					);
 				}
 				owedGovernance = governanceOwed(runs, atHead.value.runs);

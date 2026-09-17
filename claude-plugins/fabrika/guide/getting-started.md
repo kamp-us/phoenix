@@ -252,4 +252,4 @@ Where to go next:
 - [`delegation.md`](delegation.md) — which copy of `fabrika` served a command, and what each refusal
   means.
 - [`../../../packages/fabrika-cli/docs/verb-reference.md`](../../../packages/fabrika-cli/docs/verb-reference.md)
-  — every verb, its flags and its exit codes.
+  — group overviews; follow each group's help route for verbs, flags and exit meanings.

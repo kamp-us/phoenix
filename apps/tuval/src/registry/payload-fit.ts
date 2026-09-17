@@ -31,12 +31,53 @@ import type {PortPayloadSchema} from "./program.ts";
 const inlineNames = {referencePolicy: () => undefined} as const;
 
 /**
- * `required` is a set, so the order the author declared their struct's fields in is not part of the
- * payload. Every other array in a JSON Schema is positional (`prefixItems`, `anyOf` branches), and
- * sorting one of those would call two different payloads the same.
+ * The JSON Schema keywords whose array value is a set, so the order an author wrote them in is not
+ * part of the payload. Read off the generator at the pin `apps/tuval` resolves —
+ * `effect@4.0.0-rc.112`, `src/internal/schema/toJsonSchemaDocument.ts`. These five are every array
+ * it emits whose members a keyword combines: `required` for a struct's non-optional keys, `anyOf`
+ * and `oneOf` for a union in either mode, `allOf` for refinements and intersections, and `enum` for
+ * a literal and for the collapse of a single-type union into one multi-value `enum`
+ * (`compactEnums`). A value matches `anyOf` if any member does, `oneOf` if exactly one does,
+ * `allOf` if every one does, and `enum` if it is one of the listed values — none of those readings
+ * consults position.
+ *
+ * The generator emits two more arrays, and each is left out for its own reason.
+ *
+ * `prefixItems` holds a tuple's elements by index, so `[String, Number]` and `[Number, String]` are
+ * different payloads and sorting them would call them the same (#8769).
+ *
+ * `examples` is an annotation rather than a combinator, and every annotation already binds here as
+ * the author wrote it: fit is exact equality over the whole canonical document, so two ports whose
+ * `title` or `description` differ do not fit today. Sorting `examples` alone would make one
+ * annotation order-free while its neighbours stay literal. The cost of leaving it is real and stays
+ * open: two ports declaring the same payload with their `examples` written in different orders are
+ * still refused with a `ShapeMismatch` (#9432). What settles that is a decision about whether
+ * annotations belong in the compared document at all, not another entry in this set.
+ *
+ * `default` and `contentSchema` carry arbitrary JSON, so either can itself be an array. That array
+ * is the annotated value's own data and its order is the author's, never a keyword's set.
  */
+const unorderedKeywords: ReadonlySet<string> = new Set([
+	"required",
+	"anyOf",
+	"oneOf",
+	"allOf",
+	"enum",
+]);
+
+/**
+ * A set-valued array in its one canonical order. The sort key is each element's own canonical form
+ * rather than its source position, so a union of unions canonicalises from the inside out instead
+ * of reintroducing the same positional comparison one level down.
+ */
+const asSet = (elements: ReadonlyArray<unknown>): ReadonlyArray<unknown> =>
+	elements
+		.map((element) => [stable(element), element] as const)
+		.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+		.map(([, element]) => element);
+
 const unordered = (key: string, value: unknown): unknown =>
-	key === "required" && Array.isArray(value) ? [...(value as ReadonlyArray<string>)].sort() : value;
+	unorderedKeywords.has(key) && Array.isArray(value) ? asSet(value) : value;
 
 const stable = (value: unknown): string => {
 	if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;

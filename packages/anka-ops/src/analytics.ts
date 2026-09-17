@@ -18,7 +18,7 @@ import type {ReportRow} from "./report.ts";
 const accountId = Config.string("CLOUDFLARE_ACCOUNT_ID");
 
 /** Every AE-read failure collapses here, so `NodeRuntime.runMain` renders a reason, not a stack. */
-export class AnalyticsReadError extends Schema.TaggedErrorClass<AnalyticsReadError>()(
+export class AnalyticsReadError extends Schema.TaggedError<AnalyticsReadError>()(
 	"@kampus/anka-ops/AnalyticsReadError",
 	{reason: Schema.String},
 ) {

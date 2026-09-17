@@ -101,7 +101,7 @@ export const credentialSources: Effect.Effect<CredentialSources, never, Keychain
 );
 
 /** The pasted credentials failed the pre-persist validating read. Nothing was stored. */
-export class CredentialValidationFailed extends Schema.TaggedErrorClass<CredentialValidationFailed>()(
+export class CredentialValidationFailed extends Schema.TaggedError<CredentialValidationFailed>()(
 	"@kampus/cf-credentials/CredentialValidationFailed",
 	{
 		reason: Schema.String,

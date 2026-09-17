@@ -105,49 +105,81 @@ fabrika decisions next-id [--dir <path>]
 |---|---|---|---|---|
 | `--dir` | string | no | `.decisions` | the directory of `NNNN-slug.md` decision records to scan |
 
-**Output** — machine channel. One line, the zero-padded four-digit id, newline-terminated. There is
-no empty answer: see Scope.
+**Output** — machine channel. Parse each valid filename's four decimal digits, take the maximum,
+add one and pad to four digits. Emit that id followed by a newline. File contents and directory
+iteration order do not affect the result. There is no empty answer. An id above `9999` is refused.
+On success, stderr reports `decisions: scanned <dir>, <count> decision records`.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
 | `0` | the id was produced on stdout |
-| `1` | usage error (unknown flag), or the directory could not be read |
-| `3` | the directory was read and held zero `NNNN-slug.md` files — a refusal, see Scope |
+| `1` | usage error, such as an unknown flag or a missing `--dir` value |
+| `3` | the directory was read and held zero candidate files |
+| `4` | a candidate filename does not satisfy the record grammar |
+| `5` | the directory or an entry's file type could not be read |
+| `6` | the greatest parsed id is `9999`, so no four-digit successor exists |
+
+Every refusal leaves stdout empty. Filesystem errors take precedence over content judgments;
+malformed names take precedence over id derivation. If several names are malformed, report the
+lexicographically first name by Unicode code point.
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `decisions: cannot read <dir>: <reason>` | 1 | refusal |
+| `decisions: unknown flag: <flag>` | 1 | usage error |
+| `decisions: --dir requires a value` | 1 | usage error |
+| `decisions: unexpected operand: <value>` | 1 | usage error |
+| `decisions: cannot read <path>: <reason>` | 5 | refusal; reason is the filesystem error code |
 | `decisions: scanned <dir>, 0 decision records — refusing to answer` | 3 | refusal |
-| `decisions: <dir> holds a record with an unparseable id: <name>` | 1 | refusal |
+| `decisions: <dir> holds a record with an unparseable id: <name>` | 4 | refusal |
+| `decisions: <dir> has no four-digit id after 9999` | 6 | refusal |
 
-**Scope** — every file in `--dir` matching `NNNN-slug.md`. Zero matches is a **failed read, not an
-answer**: this repo always has decision records, so an empty scan means the wrong directory or a
-broken read, and answering `0001` would silently propose an id that collides with an existing record.
-The scope line goes to stderr, because this verb's answer channel is machine.
+**Scope** — regular files immediately inside `--dir` whose names end in `.md`; no recursion or
+symlink traversal. Each candidate must match `[0-9]{4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md` in full.
+Other entries are ignored. A candidate such as `draft-choice.md` is malformed, not silently absent.
+Zero candidates is a proven empty scan and refuses: this example assumes an existing decision
+corpus, so answering `0001` could conceal a wrong directory. This supplies an id; it does not judge
+the records' contents. The scope diagnostic belongs on stderr beside the machine answer.
 
 **Examples**
 
-```
-$ fabrika decisions next-id
+Hold these input directories fixed. Every listed file is a readable regular file with empty
+contents, every directory is readable, and no other entries exist. `example-missing` does not exist
+and the filesystem reports `ENOENT` for it.
+
+| Directory | Files |
+|---|---|
+| `example-decisions` | `0001-first.md`, `0232-second.md` |
+| `example-empty` | none |
+| `example-malformed` | `draft-choice.md` |
+| `example-full` | `9999-last.md` |
+
+```text
+$ fabrika decisions next-id --dir example-decisions
 0233
 ```
 
-```
-$ fabrika decisions next-id --dir /nonexistent
-decisions: cannot read /nonexistent: ENOENT
-$ echo $?
-1
-```
+That invocation exits `0`; stdout is `0233` plus a newline and stderr is
+`decisions: scanned example-decisions, 2 decision records` plus a newline. The maximum is 232,
+so the successor is 233, regardless of enumeration order.
+
+Each invocation below has empty stdout and the named stderr line plus a newline:
+
+| Invocation | Exit | Stderr |
+|---|---|---|
+| `fabrika decisions next-id --dir example-empty` | 3 | `decisions: scanned example-empty, 0 decision records — refusing to answer` |
+| `fabrika decisions next-id --dir example-malformed` | 4 | `decisions: example-malformed holds a record with an unparseable id: draft-choice.md` |
+| `fabrika decisions next-id --dir example-missing` | 5 | `decisions: cannot read example-missing: ENOENT` |
+| `fabrika decisions next-id --dir example-full` | 6 | `decisions: example-full has no four-digit id after 9999` |
 
 **Grounding**
 
-- Zero scope reds: a judging verb that scanned nothing refuses rather than answering `0001`, because
-  an empty scan and a correct answer are indistinguishable to the caller otherwise.
-- The proven refusal sits on `3`, never on `1` or `127`, so a caller can tell a proven empty scan
-  from a verb that never ran.
+- Zero scope refuses rather than answering `0001`, because an empty scan cannot establish the
+  next id in an existing corpus.
+- Proven refusals use `3` and above; usage failures use `1`. An unreadable directory has its own
+  code and is never evidence of an empty directory.
 - Serialized authoring: concurrent id derivation races, so a caller that mints records in parallel
   pre-assigns ids rather than calling this verb twice.

@@ -431,11 +431,18 @@ before yours disclosed — still true of the range a reviewer grades — leave w
 you carry them. Read what stands first, and build this round's section out of it:
 
 ```bash
-fabrika build deviations <n> --token <claim-token> --standing > round.md
+fabrika build scratch <n> --slug deviations --token <claim-token>
+```
+
+Use a file named `round.md` inside the returned directory, with that absolute path written
+literally in each command:
+
+```bash
+fabrika build deviations <n> --token <claim-token> --standing > <allocated-directory>/round.md
 ```
 
 That prints the standing `## Deviations` section, or nothing when yours is the first round. Edit
-`round.md`: keep every entry still true, add this round's, and **retire an entry by restating it
+that allocated file: keep every entry still true, add this round's, and **retire an entry by restating it
 with a `Disposition` that says what became of it** — `corrected — the revert in <sha> removes it`,
 never by deleting the bullet. Entries match on `Said`, so revise `Did`, `Why` and `Disposition`
 freely. Send the result on stdin as above; a section that drops a standing entry is exit `35`,

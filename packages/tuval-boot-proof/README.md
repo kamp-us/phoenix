@@ -9,7 +9,7 @@ compile by `pnpm typecheck` and booted by hand when someone wants to see it run.
 ## Why it is a package
 
 The config imports `@kampus/tuval-cron`, `@kampus/tuval-shell`, `@kampus/tuval-notify` and
-`@kampus/tuval-workspace` **by name**. Node resolves a bare specifier from the importing module's
+`@kampus/tuval-worktree` **by name**. Node resolves a bare specifier from the importing module's
 own location, so the file has to sit somewhere all four are installed. Nowhere in this repo was:
 `apps/tuval` depends on none of them (that is the point of the epic), and each of the four has only
 its own siblings. A workspace member that declares all four is the smallest thing that makes the

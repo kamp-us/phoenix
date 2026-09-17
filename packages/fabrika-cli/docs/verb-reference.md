@@ -140,6 +140,8 @@ Drive a workflow from its local event log. Each command replays the log; lane st
 uncommitted. Use `lane --help` for command details and the
 [operator skill](../../../claude-plugins/fabrika/skills/operate/SKILL.md) for the driving loop.
 [Codex dispatch](./codex-dispatch.md) documents running a task in its dedicated worktree.
+The close/reopen deployment failure behind `lane retrigger` is recorded in
+[the incident report](https://github.com/kamp-us/phoenix/issues/8881).
 
 A template can also be inspected without opening a live issue lane:
 

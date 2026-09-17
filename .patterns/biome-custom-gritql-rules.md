@@ -106,7 +106,7 @@ hold, not a comparison.
 ```grit
 register_diagnostic(
 	span = $expr,
-	message = "Type assertions are forbidden — decode at boundaries with Schema.decodeUnknown."
+	message = "Type assertions are forbidden — decode at boundaries with Schema.decodeUnknownEffect."
 )
 ```
 
@@ -129,7 +129,7 @@ The path is relative to the config file. The plugin runs as part of `biome check
 
 The rule phoenix actually ships. `as unknown as T` (double-cast) and `as any` blind the
 TypeScript compiler — they assert a shape the compiler can no longer verify. At a trust
-boundary phoenix decodes with `Schema.decodeUnknown` instead (see
+boundary phoenix decodes with `Schema.decodeUnknownEffect` instead (see
 [effect-schema-validation.md](./effect-schema-validation.md)); everywhere else the value
 should just be typed properly.
 
@@ -264,7 +264,7 @@ diagnostic goes away.
 
 ## See also
 
-- [effect-schema-validation.md](./effect-schema-validation.md) — `Schema.decodeUnknown`,
+- [effect-schema-validation.md](./effect-schema-validation.md) — `Schema.decodeUnknownEffect`,
   the boundary-decode the `as unknown as` ban points people toward
 - `biome.jsonc` — the `"plugins"` array and the `overrides` scoping block
 - `biome-plugins/no-type-assertions.grit` — the live rule

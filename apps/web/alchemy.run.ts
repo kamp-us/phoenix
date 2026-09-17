@@ -6,7 +6,7 @@
  *
  * Lives in the `@kampus/web` package (next to the worker it deploys) because
  * pnpm isolates `node_modules` — `alchemy`/`effect` resolve from here, not the
- * repo root. Paths in the worker's resource declarations (`migrationsDir`,
+ * repo root. Paths in the worker's resource declarations (`migrations`,
  * `assets`) are relative to this directory, the alchemy CLI's working dir.
  *
  * Yielding the `Phoenix` worker Tag deploys the worker; the worker's own init
@@ -19,11 +19,9 @@
  *
  * State selection follows ADR 0031 (local-first dev): `Alchemy.localState()` is
  * a file-based store needing only `FileSystem`/`Path` — no credentials, no
- * network. That is the *store* only: the resources it tracks are still
- * reconciled against the Cloudflare API, so `alchemy dev` needs
- * `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` and there is no offline
- * emulator (ADR 0032). A real `alchemy deploy` uses the Cloudflare-hosted store
- * for reproducible shared state.
+ * network. PhoenixDb explicitly stays remote via Alchemy.remote(), so dev still needs
+ * Cloudflare credentials; the worker and its Durable Objects use local providers.
+ * A real deploy uses the Cloudflare-hosted store for reproducible shared state.
  *
  * The store is selected from the **dev-vs-deploy** signal, not `CI` (see
  * `resolveStateMode` in `worker/env.ts`): `CI` is set for BOTH the deploy workflow
@@ -38,6 +36,7 @@
 import * as Alchemy from "alchemy";
 import {RuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Output from "alchemy/Output";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import {PhoenixDb} from "./worker/db/resources.ts";
@@ -185,7 +184,9 @@ export default Alchemy.Stack(
 		// subdomains were dropped (un-provisioned TLS broke integration, #983).
 		return {
 			url: worker.url,
-			domains: worker.domains,
+			domains: worker.domain.pipe(
+				Output.map((domain) => (domain ? [domain.name, ...domain.aliases] : [])),
+			),
 			databaseId: db.databaseId,
 			accountId: db.accountId,
 		};

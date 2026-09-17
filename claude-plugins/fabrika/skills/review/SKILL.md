@@ -279,11 +279,13 @@ fabrika review ci $pr_number --sha 03135b91 --wait --budget-seconds 480
 ```
 
 **Its `green` now carries gate coverage, and the absence of coverage is its own answer.** A head
-where the checks all passed but no workflow this repo authors ever ran is refused on `16`, never
-reported as `green` or `pending` — the enumeration was complete and not one gate inspected the
+where the checks all passed but no workflow this repo authors ever inspected is refused on `16`,
+never reported as `green` or `pending` — the enumeration was complete and not one gate inspected the
 bytes, which reads as safety while carrying none. The ordinary way in is a branch gone
 conflicted: GitHub stops making `pull_request` runs while a platform-provided check keeps
-reporting on its own trigger. Treat that `16` as a blocked read, not a verdict — the head needs
+reporting on its own trigger, and so does the repo's own `pull_request_target` cleanup workflow,
+which carries the head having checked out the base. A repo-authored workflow path is not the test;
+the run's head and event are. Treat that `16` as a blocked read, not a verdict — the head needs
 runs before anything can be judged on it, so end the class on `UNKNOWN — the artifact could not
 be read`, naming the `16`, rather than grading around it.
 

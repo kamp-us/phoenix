@@ -11,7 +11,7 @@ import * as Schema from "effect/Schema";
 import {assert} from "vitest";
 import type {DrizzleAccessOrDie, DrizzleDb} from "../../db/Drizzle.ts";
 
-class RunRejected extends Schema.TaggedErrorClass<RunRejected>()("test/RunRejected", {
+class RunRejected extends Schema.TaggedError<RunRejected>()("test/RunRejected", {
 	cause: Schema.Unknown,
 }) {}
 

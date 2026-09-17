@@ -27,7 +27,7 @@ import {
 import {discoverRepoRoot, originOf} from "./root.ts";
 
 /** The running copy's own root could not be canonicalized — fatal, never a fallback. */
-export class RealPathFailed extends Schema.TaggedErrorClass<RealPathFailed>()(
+export class RealPathFailed extends Schema.TaggedError<RealPathFailed>()(
 	"fabrika-cli/RealPathFailed",
 	{path: Schema.String, reason: Schema.String},
 ) {}

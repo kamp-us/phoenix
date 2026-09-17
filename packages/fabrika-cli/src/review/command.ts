@@ -41,6 +41,7 @@ const repoFlag = Flag.string("repo").pipe(
 );
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
@@ -133,6 +134,7 @@ const ci = leafCommand(
 			),
 		),
 		wait: Flag.boolean("wait").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"poll a `pending` head until CI concludes or the budget expires, instead of answering with this moment's read",
 			),
@@ -168,7 +170,7 @@ const ci = leafCommand(
 		"Roll up a head's check runs, fail-closed; --wait waits out a pending.",
 	),
 	Command.withDescription(
-		'Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. First stdout line is `ci\\t<sha>\\t<rollup>`, then `run\\t<count>` and one `check\\t<status>\\t<count>` line per status present — a status tally, with the failing and still-running runs named on stderr. An empty enumeration asks whether the repo produces CI at all: with zero workflows it refuses, unless `.fabrika.jsonc` declares `ci.noProducer: "degrade"`, which rolls up `no-producer` — never green. A rollup that is not red then asks which gates ran: with at least one run from a workflow this repo authors, the covered-of-declared count is on stderr (and `gates` under `--json`); with none it refuses on 16; a repo that authors no workflow of its own has no gate to have missed and says so on stderr at exit 0. `--wait` turns a `pending` read into a bounded in-verb wait — the verb owns the loop, never the caller (claude-plugins/fabrika/docs/skill-conventions.md §14) — and prepends `settle\\t<settled|budget-exhausted|head-moved|governance-owed|governance-stale>` to the answer (`settle` under `--json`, null without `--wait`). It polls ONLY a `pending`; every refusal and the `no-producer` answer return on the first read. `budget-exhausted` still prints `pending` — the wait ran out and CI did not conclude; `head-moved` says the PR left the head this answer binds; `governance-owed` says the only unfinished check is `governance floor at head` with its `governance-floor` run already completed, so the verdict the caller itself owes is what is missing — it returns at once, while a floor whose run is still in flight is waited on unchanged; `governance-stale` is the same floor on a `red` rollup, where it is the only FAILING check and its published verdict is `stale` — the caller re-posts and re-reads, and a floor that is `unresolved` or a real `fail`, or any other failing check beside it, stays a plain `red`. Exits 7 (PR or --sha proven absent, zero check runs declared, or zero workflows), 11 (the enumeration, the workflow inventory, the workflow runs at the head, or `.fabrika.jsonc` could not be read — CI state is UNKNOWN, never green), 13 (received fewer runs than declared), 16 (the enumeration is complete, but no workflow this repo authors produced a run at the head — neither green nor pending). Example: fabrika review ci 4321 --sha 03135b91',
+		'Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. First stdout line is `ci\\t<sha>\\t<rollup>`, then `run\\t<count>` and one `check\\t<status>\\t<count>` line per status present — a status tally, with the failing and still-running runs named on stderr. An empty enumeration asks whether the repo produces CI at all: with zero workflows it refuses, unless `.fabrika.jsonc` declares `ci.noProducer: "degrade"`, which rolls up `no-producer` — never green. A rollup that is not red then asks which gates inspected these bytes: a run counts only where its workflow is one this repo authors, it carries the resolved head, and its event opened that head — so a base-context `pull_request_target` run gates nothing while an exact-head `workflow_dispatch` one does. `--sha` is resolved to its full object name first, because the Actions run list filters `head_sha` as an exact string, so an abbreviated operand and its full form judge the same. With at least one such run the covered-of-declared count is on stderr (and `gates` under `--json`); with none it refuses on 16; a repo that authors no workflow of its own has no gate to have missed and says so on stderr at exit 0. `--wait` turns a `pending` read into a bounded in-verb wait — the verb owns the loop, never the caller (claude-plugins/fabrika/docs/skill-conventions.md §14) — and prepends `settle\\t<settled|budget-exhausted|head-moved|governance-owed|governance-stale>` to the answer (`settle` under `--json`, null without `--wait`). It polls ONLY a `pending`; every refusal and the `no-producer` answer return on the first read. `budget-exhausted` still prints `pending` — the wait ran out and CI did not conclude; `head-moved` says the PR left the head this answer binds; `governance-owed` says the only unfinished check is `governance floor at head` with its `governance-floor` run already completed, so the verdict the caller itself owes is what is missing — it returns at once, while a floor whose run is still in flight is waited on unchanged; `governance-stale` is the same floor on a `red` rollup, where it is the only FAILING check and its published verdict is `stale` — the caller re-posts and re-reads, and a floor that is `unresolved` or a real `fail`, or any other failing check beside it, stays a plain `red`. Exits 7 (PR or --sha proven absent, zero check runs declared, or zero workflows), 11 (the enumeration, the workflow inventory, the workflow runs at the head, or `.fabrika.jsonc` could not be read — CI state is UNKNOWN, never green), 13 (received fewer runs than declared), 16 (the enumeration is complete, but no workflow this repo authors inspected the head — neither green nor pending; an operand resolving to no full commit is 11 instead). Example: fabrika review ci 4321 --sha 03135b91',
 	),
 );
 
@@ -253,6 +255,7 @@ const post = leafCommand(
 			Flag.withDescription("the range's tip revision — the other half of --base"),
 		),
 		supersede: Flag.boolean("supersede").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"acknowledge that this verdict retires a standing one of the OPPOSITE polarity at the same head, or ranged, over the same range; without it that post is refused at 17",
 			),

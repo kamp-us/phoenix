@@ -14,7 +14,7 @@ Effect ships three you'll actually use:
 | `Layer.effect(Tag)(Effect)` | Service is built inside an Effect that may yield other services. Most common case in phoenix. |
 | `Layer.effectContext(Effect)` | One Effect provides multiple services. Rare — only when you genuinely need to bind several tags from one construction (e.g. `@effect/sql-d1` binds `D1Client` + `SqlClient` together). |
 
-There's `Layer.scoped` too, for services with finalizers (DB connections that need closing, file handles, etc.). Phoenix doesn't need it — the D1 binding is owned by Cloudflare, no cleanup required.
+`Layer.effect` also handles scoped acquisition: build the service with `Effect.acquireRelease` inside it. Its signature removes `Scope` from the required services ([rc.112 Layer source](https://unpkg.com/effect@4.0.0-rc.112/src/Layer.ts), `effect`). Phoenix's D1 binding is owned by Cloudflare and needs no cleanup.
 
 ## Composing layers — `mergeAll` and `provide`
 
@@ -65,7 +65,7 @@ The canonical examples — all in `apps/web/worker/`:
 - `makeFateLayer` in `features/fate/layers.ts` — composes `Drizzle`, the feature services, and `Pasaport` into the worker-level data plane. (This one is NOT a `(deps) => Layer` factory: it's a **zero-arg layer constant** whose `R` declares the two seams `Database | BetterAuth`, discharged once when the runtime is built — see the note below.)
 - `makeAppLive(opts)` in `http/app.ts` — the top-level router Layer over its sub-layers (fate, live, better-auth).
 
-This shape has ecosystem precedent: `@effect/sql-d1` exposes its driver as `layer(config)` (a function returning a Layer), and `@alchemy.run/better-auth`'s `AuthProviderLayer<Config>()(name, body)` is a factory that returns a Layer parameterized over the provider's config.
+This shape has ecosystem precedent: `@effect/sql-d1` exposes its driver as `layer(config)`, a function returning a Layer.
 
 ### Why a factory, not a `Context.Service` wrapper
 
@@ -79,11 +79,11 @@ The temptation is to define `class FateLayer extends Context.Service<FateLayer, 
 
 The factory shape is for **pure composition over already-resolved values**. A `Context.Service` Layer (with `Layer.effect(...)`) is the right call when the Layer is genuinely doing scoped work:
 
-- **Async or fallible construction** — building the service requires a `yield*` of an effect that can fail (e.g. `BetterAuthLive` resolving `Random` + `Cloudflare.D1.QueryDatabase`).
-- **Scoped resources** — a service that needs `Layer.scoped` for finalizers (connection pools, file handles).
+- **Async or fallible construction** — building the service requires a `yield*` of an effect that can fail (e.g. `BetterAuthLive` resolving the shared `Database` and secret binding).
+- **Scoped resources** — a service built with `Layer.effect` and `Effect.acquireRelease` for finalizers (connection pools, file handles).
 - **A real domain shape** — the service has methods (`Pasaport.validateSession`, `Drizzle.run`), not just a composed Layer.
 
-The single rule: **if the construction is `Layer.merge` / `Layer.provide` over plain values, write a factory.** If it's `Layer.effect`/`Layer.scoped` over an Effect, write a `Context.Service` and `Layer.effect(Tag)(...)` it.
+The single rule: **if the construction is `Layer.merge` / `Layer.provide` over plain values, write a factory.** If it's `Layer.effect` over an Effect, write a `Context.Service` and `Layer.effect(Tag)(...)` it.
 
 ### Related idioms — single-discharge wiring
 

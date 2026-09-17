@@ -1052,9 +1052,10 @@ split. The evidence is a comment on [#7625](https://github.com/kamp-us/phoenix/i
 the SDK and CLI versions the start log printed, and whether the resumed CLI re-asked for a tool call
 left unanswered.
 
-Two seams the scripted variant has to stand up for itself, both because no shell owns them yet.
+Two seams the scripted variant has to stand up for itself, both because it serves no desk.
 `kernel-tools.ts` builds a `WindowIndex` so a tool `spawn` is parented by the Claude process — the
-kernel resolves a parent from the caller's window and `boot` leaves that index empty (#7894). And
+kernel resolves a parent from the caller's window, which under a real desk is the one the picker
+handed the process at the open (`CallingWindow`, #8758) and here is named directly. And
 `late.ts` hands the real variant's config module a `SpellBridge` that does not exist when the loader
 evaluates it (#7958). Both are the proof's own scaffolding; neither writes anything under `src/ai-agent/` or
 changes what a row is.

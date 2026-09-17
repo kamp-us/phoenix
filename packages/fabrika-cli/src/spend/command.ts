@@ -29,6 +29,7 @@ const read = leafCommand(
 			Flag.withDescription("read versioned usage records from this ledger; emits JSON"),
 		),
 		json: Flag.boolean("json").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("emit the answer as JSON on stdout instead of the line grammar"),
 		),
 	},
@@ -84,6 +85,7 @@ const rollup = leafCommand(
 			),
 		),
 		json: Flag.boolean("json").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("emit the same answer as JSON on stdout instead of the line grammar"),
 		),
 	},

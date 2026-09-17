@@ -62,9 +62,9 @@ subcommands and exit codes inline.
   `fabrika adr resolve 0164 0023` still absorbs both ids, because a variadic argument consumes its
   operands before the catch-all sees them.
 - **The residual caveat: a global flag placed *before* the group name ends the path guard's walk.**
-  `fabrika --log-level info triage --help` exits `0` with root help even though `triage` names no
-  group. The walk stops at the first `-`-prefixed token because a later bare token may be that
-  flag's value (`--log-level debug`), and reading a value as a subcommand would refuse a valid
+  `fabrika --log-level info no-such-group --help` exits `0` with root help even though
+  `no-such-group` is not registered. The walk stops at the first `-`-prefixed token because a later
+  bare token may be that flag's value (`--log-level debug`), and reading a value as a subcommand would refuse a valid
   invocation — a miss is the fail-safe direction for a guard whose only output is a refusal. This
   stays a documented residual rather than a code fix: telling a flag's value from a subcommand needs
   the parser's own per-flag arity, which the published `effect` types do not expose, so a
@@ -297,8 +297,7 @@ list of things to call.
 
 ## Enforcement
 
-There is no mechanical conformance guard yet, and that absence is deliberate: a repo-wide guard over
-zero verbs has zero scope and reds on itself, per rule 4. Enforcement lives as per-verb tests in
-each verb package, plus the data checks named above (`exit-code-alignment.unit.test.ts`,
-`short-description.unit.test.ts`). Until a repo-wide guard exists, this page is what a reviewer
-holds a verb to.
+Per-verb tests check behavior. The shared data checks
+`exit-code-alignment.unit.test.ts` and `short-description.unit.test.ts` check code allocation and
+registered descriptions. They do not prove every rule on this page; reviewers check the remaining
+interface requirements against the verb and its contract.

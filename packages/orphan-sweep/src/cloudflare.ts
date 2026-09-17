@@ -11,7 +11,7 @@ import {type CfResource, FLAGSHIP_APP_NAME_PREFIX} from "./orphan-sweep.ts";
 
 const CF_API = "https://api.cloudflare.com/client/v4";
 
-export class CfCommandError extends Schema.TaggedErrorClass<CfCommandError>()(
+export class CfCommandError extends Schema.TaggedError<CfCommandError>()(
 	"@kampus/orphan-sweep/CfCommandError",
 	{
 		args: Schema.Array(Schema.String),
@@ -20,7 +20,7 @@ export class CfCommandError extends Schema.TaggedErrorClass<CfCommandError>()(
 	},
 ) {}
 
-export class CfParseError extends Schema.TaggedErrorClass<CfParseError>()(
+export class CfParseError extends Schema.TaggedError<CfParseError>()(
 	"@kampus/orphan-sweep/CfParseError",
 	{
 		args: Schema.Array(Schema.String),
@@ -29,7 +29,7 @@ export class CfParseError extends Schema.TaggedErrorClass<CfParseError>()(
 ) {}
 
 /** The CF API replied `success: false` (a typed application error inside a 200). */
-export class CfApiError extends Schema.TaggedErrorClass<CfApiError>()(
+export class CfApiError extends Schema.TaggedError<CfApiError>()(
 	"@kampus/orphan-sweep/CfApiError",
 	{
 		endpoint: Schema.String,
@@ -42,7 +42,7 @@ export class CfApiError extends Schema.TaggedErrorClass<CfApiError>()(
  * opaque empty `CfCommandError` `curl -f` produced (#1506). No argv is captured, so there is
  * nothing to redact.
  */
-export class CfHttpError extends Schema.TaggedErrorClass<CfHttpError>()(
+export class CfHttpError extends Schema.TaggedError<CfHttpError>()(
 	"@kampus/orphan-sweep/CfHttpError",
 	{
 		endpoint: Schema.String,
@@ -52,7 +52,7 @@ export class CfHttpError extends Schema.TaggedErrorClass<CfHttpError>()(
 	},
 ) {}
 
-export class CfCredentialsError extends Schema.TaggedErrorClass<CfCredentialsError>()(
+export class CfCredentialsError extends Schema.TaggedError<CfCredentialsError>()(
 	"@kampus/orphan-sweep/CfCredentialsError",
 	{
 		message: Schema.String,
@@ -183,10 +183,10 @@ const isRetryableCfHttp = (error: unknown): boolean =>
 	error instanceof CfHttpError && error.retryable;
 
 // `jittered` spreads the per-app retries so the fan-out doesn't synchronize into a second
-// rate-limit spike. `Schedule.both(exponential, recurs(N))` as capped backoff is grounded in
-// effect-smol `LLMS.md` §"Working with Schedules" (`ai-docs/src/06_schedule/10_schedules.ts`).
+// rate-limit spike. `Schedule.max([exponential, recurs(N)])` as capped backoff is grounded in
+// Effect-TS/effect `LLMS.md` §"Working with Schedules" (`ai-docs/src/06_schedule/10_schedules.ts`).
 const cfRetrySchedule = Schedule.jittered(
-	Schedule.both(Schedule.exponential("500 millis"), Schedule.recurs(5)),
+	Schedule.max([Schedule.exponential("500 millis"), Schedule.recurs(5)]),
 );
 
 // `allow`ed statuses (e.g. a 404 on an idempotent delete) fold to success.

@@ -21,9 +21,9 @@
 		"@kampus/tuval-cron": "workspace:*",
 		"@kampus/tuval-notify": "workspace:*",
 		"@kampus/tuval-shell": "workspace:*",
-		"@kampus/tuval-workspace": "workspace:*",
+		"@kampus/tuval-worktree": "workspace:*",
 		"@types/node": "catalog:",
-		"effect": "catalog:tuval",
+		"effect": "catalog:",
 		"typescript": "catalog:"
 	}
 }
