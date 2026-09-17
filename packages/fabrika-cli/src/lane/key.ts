@@ -7,10 +7,19 @@
  * decides the directory and the boot template, nothing else.
  *
  * The kind travels **in the argument** (`5673` vs `chore:park-sweep`) rather than in a flag beside
- * it, so a key that names one kind while the root names the other cannot be expressed. A chore name
- * is checked against one shape before it ever reaches a path join: it is a directory name, so
+ * it, so a key that names one kind while the root names the other cannot be expressed. Both kinds
+ * are checked against one shape before either reaches a path join: a key is a directory name, so
  * anything carrying a separator, a traversal, or shell-significant bytes is refused as malformed
  * rather than resolved into a path nobody meant.
+ *
+ * **Reading a key is also the one place it is canonicalized**, which is what keeps the board, the
+ * claim and the directory naming one lane. `05673` and `5673` are one issue to GitHub and were two
+ * lanes here: they named different directories, and only the unpadded spelling carried a claim
+ * target, so a driver could hold one identity while another drove the other. A padded leading
+ * number is trimmed here, once, so every consumer downstream reads the same leaf — there is no
+ * second reader left to disagree.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8853
  */
 import {
 	DEFAULT_ARCHIVED_LANES_ROOT,
@@ -28,8 +37,19 @@ const CHORE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** Long enough for a descriptive chore name, short enough to stay a legible directory. */
 export const CHORE_NAME_LIMIT = 64;
 
+/**
+ * An issue lane's directory leaf, already canonical.
+ *
+ * The brand is the invariant: only {@link parseKey} mints one, so a consumer cannot hand-build an
+ * `Issue` key out of a raw string and skip the canonicalization every other consumer applied. A
+ * caller holding a raw name — a sweep reading directory entries off a root — goes through
+ * {@link resolveRawIssue} instead, which parses it like any other key.
+ */
+declare const CANONICAL: unique symbol;
+export type CanonicalLeaf = string & {readonly [CANONICAL]: true};
+
 export type LaneKey =
-	| {readonly _tag: "Issue"; readonly lane: string}
+	| {readonly _tag: "Issue"; readonly lane: CanonicalLeaf}
 	| {readonly _tag: "Chore"; readonly name: string};
 
 export type KeyResult =
@@ -38,12 +58,44 @@ export type KeyResult =
 
 const malformed = (raw: string, reason: string): KeyResult => ({_tag: "Malformed", raw, reason});
 
+/**
+ * What an issue key may spell: one directory leaf, opening on an alphanumeric.
+ *
+ * A separator, a traversal, a leading dot or a shell-significant byte is refused rather than joined
+ * beneath a root — `../chores/park-sweep` parsed as an issue key and resolved into the chore lanes
+ * directory, which is a lane addressing another kind's ledger.
+ */
+const ISSUE_LEAF = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/** The leading run of digits, when the whole leading segment is one. */
+const PADDED = /^0+(?=[0-9])/;
+
+/**
+ * Trim a padded leading number, leaving every other leaf byte-identical.
+ *
+ * Only the segment before the first dot is a number to canonicalize: the rest is the quarantine
+ * convention's suffix (`<issue>.frozen-deadlock-<stamp>`), which is a name and not a number. A leaf
+ * whose leading segment is not all digits — `epic-5492`, `frozen-deadlock` — is its own canonical
+ * form, so a local lane keeps the identity it was opened under.
+ */
+const canonicalLeaf = (leaf: string): CanonicalLeaf => {
+	const dot = leaf.indexOf(".");
+	const head = dot === -1 ? leaf : leaf.slice(0, dot);
+	if (!/^[0-9]+$/.test(head)) return leaf as CanonicalLeaf;
+	const trimmed = head.replace(PADDED, "");
+	return (dot === -1 ? trimmed : trimmed + leaf.slice(dot)) as CanonicalLeaf;
+};
+
 /** Read one `lane` argument as a key. Total: every string is a key or a named refusal. */
 export const parseKey = (raw: string): KeyResult => {
 	if (!raw.startsWith(CHORE_PREFIX)) {
-		return raw === ""
-			? malformed(raw, "a lane key is empty")
-			: {_tag: "Key", key: {_tag: "Issue", lane: raw}};
+		if (raw === "") return malformed(raw, "a lane key is empty");
+		return ISSUE_LEAF.test(raw)
+			? {_tag: "Key", key: {_tag: "Issue", lane: canonicalLeaf(raw)}}
+			: malformed(
+					raw,
+					`an issue key is one directory leaf (${ISSUE_LEAF.source}) — a separator, a traversal or a leading dot is refused before any path is joined`,
+				);
 	}
 	const name = raw.slice(CHORE_PREFIX.length);
 	if (name.length > CHORE_NAME_LIMIT) {
@@ -90,7 +142,8 @@ export const templateFile = (kind: LaneKey["_tag"]): string =>
  *
  * The separator is required rather than optional: `8012abc` names no issue, and resolving it to
  * 8012 would send a board read at an issue this directory does not drive. The leading digit is
- * non-zero because `#0` is not a board number, so a `0` key names no thread to read or to race on.
+ * non-zero because `#0` is not a board number, so a `0` key names no thread to read or to race on —
+ * and a padded spelling never reaches here, because {@link parseKey} trimmed it already.
  */
 const ISSUE_SEGMENT = /^([1-9][0-9]*)(?:\.[^/]+)?$/;
 
@@ -127,8 +180,21 @@ export const keyIssue = (key: LaneKey): number | null => {
 	return resolved._tag === "Issue" ? resolved.number : null;
 };
 
-/** The same resolution from a raw key, for a sweep reading directory names off a root. */
-export const rawKeyIssue = (raw: string): number | null => {
+/**
+ * The same resolution from a raw name, for a sweep reading directory entries off a root.
+ *
+ * It parses rather than casting, so a swept directory is judged by the one admission every
+ * addressed key goes through: a padded leaf reads as the issue it drives, and a name no key could
+ * spell is `Unnumbered` — the sweep's own "names no issue" row — instead of a board read at a
+ * number nobody addressed.
+ */
+export const resolveRawIssue = (raw: string): KeyIssue => {
 	const parsed = parseKey(raw);
-	return parsed._tag === "Key" ? keyIssue(parsed.key) : null;
+	return parsed._tag === "Key" ? resolveKeyIssue(parsed.key) : {_tag: "Unnumbered"};
+};
+
+/** The same resolution from a raw key, for a caller the two no-issue arms read the same to. */
+export const rawKeyIssue = (raw: string): number | null => {
+	const resolved = resolveRawIssue(raw);
+	return resolved._tag === "Issue" ? resolved.number : null;
 };
