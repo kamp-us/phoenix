@@ -28,9 +28,10 @@
  * terminate.
  *
  * The machinery lap axis rides one boolean, off by default (`machineryLaps.onEmit`): on, each task
- * seeds a lap counter and the collision and queue states take a `LAP` arm; off, every byte is what
- * it was before the axis existed. The machine is fixed at emission, so the flag reaches no lane
- * already on disk.
+ * seeds a lap counter and every state a machinery failure can strike takes a `LAP` arm — the
+ * collision and queue cells, and every state that dispatches a shell (see {@link lapArm}); off,
+ * every byte is what it was before the axis existed. The machine is fixed at emission, so the flag
+ * reaches no lane already on disk.
  *
  * The class axis rides each child's own `classes`, off the `sub_issues` payload's labels: a classed
  * child seeds `context.<task>.classes` and takes the class-guarded arms, an unclassed one is the
@@ -102,6 +103,16 @@ const UI_GUARD = `class:${UI_CLASS}`;
  * The park is a plain state with an `UNBLOCKED` door rather than a final, because a spent lap is not
  * a verdict against the work — nothing about the artifact is wrong, the pipeline failed to carry it
  * — so freezing the task would tell a reader the opposite of what happened.
+ *
+ * **Every state `wire/lane-brief.ts`'s `SHELL_STATES` names takes one of these arms, and its target
+ * is that same state.** `SHELL-DEAD` maps to `LAP`, so a state that dispatches a shell the provider
+ * can kill and carries no `LAP` arm refuses the driver's report at `lane report` exit `12` with the
+ * log unappended — the lane then sits until a person moves it. Self-targeting is what the death
+ * asks for: the work is untouched and the shell is gone, so the answer is to dispatch it again.
+ * The non-shell cells aim elsewhere on purpose — `integrate`'s at `review`, because a replayed
+ * range is content no verdict has read.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8891
  */
 const lapArm = (
 	target: string,
@@ -204,13 +215,30 @@ const region = (
 					[`${ns}.BLOCKED`]: "blocked",
 				},
 			},
-			build: {on: {[`${ns}.DONE`]: "review", [`${ns}.BLOCKED`]: "blocked"}},
-			...(ui ? {"build:ui": {on: {[`${ns}.DONE`]: "review", [`${ns}.BLOCKED`]: "blocked"}}} : {}),
+			build: {
+				on: {
+					[`${ns}.DONE`]: "review",
+					[`${ns}.BLOCKED`]: "blocked",
+					...(machinery ? {[`${ns}.LAP`]: lapArm("build")} : {}),
+				},
+			},
+			...(ui
+				? {
+						"build:ui": {
+							on: {
+								[`${ns}.DONE`]: "review",
+								[`${ns}.BLOCKED`]: "blocked",
+								...(machinery ? {[`${ns}.LAP`]: lapArm("build:ui")} : {}),
+							},
+						},
+					}
+				: {}),
 			review: {
 				on: {
 					[`${ns}.PASS`]: "integrate",
 					[`${ns}.BLOCKED`]: "blocked",
 					[`${ns}.FAIL`]: repairArm(ui),
+					...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
 				},
 			},
 			integrate: {
@@ -283,7 +311,13 @@ const region = (
 const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => ({
 	initial: "review",
 	states: {
-		build: {on: {[`${ns}.DONE`]: "review", [`${ns}.BLOCKED`]: "blocked"}},
+		build: {
+			on: {
+				[`${ns}.DONE`]: "review",
+				[`${ns}.BLOCKED`]: "blocked",
+				...(machinery ? {[`${ns}.LAP`]: lapArm("build")} : {}),
+			},
+		},
 		review: {
 			on: {
 				[`${ns}.PASS`]: [{target: "review:ui", guard: UI_GUARD}, {target: "ship"}],
@@ -292,6 +326,7 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 					{target: "human:budget-spent"},
 				],
+				...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
 			},
 		},
 		"review:ui": {
