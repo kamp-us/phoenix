@@ -1,0 +1,67 @@
+{
+	"name": "@kampus/tuval-cron",
+	"version": "0.1.0",
+	"description": "A scheduler for Tuval — wake on a timer, start an AI-agent session, say on the board tile how it went",
+	"license": "MIT",
+	"author": "Can Sirin <mail@csirin.com>",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/tuval-cron"
+	},
+	"type": "module",
+	"private": false,
+	"publishConfig": {
+		"access": "public"
+	},
+	"exports": {
+		".": {
+			"development": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./window": {
+			"types": "./dist/window.d.ts",
+			"default": "./dist/window.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"src",
+		"README.md"
+	],
+	"scripts": {
+		"build": "rm -rf dist && tsc -p tsconfig.build.json && tsc -p tsconfig.build.window.json",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict && tsc -p tsconfig.window.json && effect-tsgo diagnostics --project tsconfig.window.json --strict",
+		"lint": "biome check src .tuval",
+		"prepublishOnly": "pnpm build"
+	},
+	"dependencies": {
+		"cron-parser": "catalog:"
+	},
+	"peerDependencies": {
+		"@demlik/tea": "catalog:",
+		"@kampus/tuval": "workspace:*",
+		"effect": "catalog:",
+		"react": "catalog:"
+	},
+	"devDependencies": {
+		"@demlik/tea": "catalog:",
+		"@effect/tsgo": "catalog:",
+		"@kampus/tuval": "workspace:*",
+		"@types/node": "catalog:",
+		"@types/react": "catalog:",
+		"effect": "catalog:",
+		"react": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"peerDependenciesMeta": {
+		"react": {
+			"optional": true
+		}
+	}
+}

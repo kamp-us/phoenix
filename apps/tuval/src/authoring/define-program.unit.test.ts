@@ -13,8 +13,17 @@ import {ProcessSelf} from "../process/self.ts";
 import {type AnyProgram, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {ArgUnfilled, programArgs} from "./args.ts";
-import {type Answer, type ArrivalEvent, defineProgram} from "./define-program.ts";
-import {emit, type ProgramEffect, type Spawned, type Stopped, send, spawn, stop} from "./effect.ts";
+import {type Answer, type ArrivalEvent, defineProgram, program} from "./define-program.ts";
+import {
+	emit,
+	type ProgramEffect,
+	type Spawned,
+	type Stopped,
+	send,
+	spawn,
+	stop,
+	stopped,
+} from "./effect.ts";
 import {port} from "./port.ts";
 import {Program, ShapeMismatch, type ShapeSource} from "./shape.ts";
 
@@ -660,4 +669,124 @@ describe("authoring.defineProgram answering an effect of the author's own", () =
 			assert.strictEqual(read().output, "by hand");
 		}).pipe(Effect.provide(kernel([unhandledRunner]))),
 	);
+});
+
+/**
+ * The inference test above runs at a call site, which is where TypeScript contextually types an
+ * object literal. These run at a binding, which is where an author actually keeps the record — the
+ * config compiles it, a test drives it — and where nothing typed it before `program` (#8825).
+ */
+describe("authoring.program types a program held in a binding", () => {
+	it("infers each cell's state, its arriving event and its `Answer` return", () => {
+		const held = program({
+			id: "held",
+			ports: {ticks: port.in(Count), review: port.request(Review, Count)},
+			init: (): CounterState => ({count: 0}),
+			update: {
+				ticks: (state, event) => {
+					expectTypeOf(state).toEqualTypeOf<CounterState>();
+					expectTypeOf(state).not.toBeAny();
+					expectTypeOf(event).toEqualTypeOf<ArrivalEvent<"ticks", number>>();
+					expectTypeOf(event).not.toBeAny();
+					return [{count: state.count + event.payload}, []];
+				},
+				review: (state, event) => {
+					expectTypeOf(event.payload).toEqualTypeOf<{
+						readonly pr: number;
+						readonly urgent: boolean;
+					}>();
+					return [state, []];
+				},
+			},
+			title: (state) => `held (${state.count})`,
+		});
+
+		// The fields the author wrote read back as written rather than as possibly-`undefined`,
+		// which is what the `A` half of the signature buys.
+		expect(held.ports.ticks.direction).toBe("in");
+		expect(held.title({count: 2})).toBe("held (2)");
+		expect(held.update.ticks({count: 1}, {type: "ticks", payload: 2})[0]).toEqual({count: 3});
+	});
+
+	it("is the same record `defineProgram` takes, so the author keeps one binding", () => {
+		const held = program({
+			id: "held-compiled",
+			ports: {ticks: port.in(Count)},
+			init: (): CounterState => ({count: 0}),
+			update: {ticks: (state, event) => [{count: state.count + event.payload}, []]},
+		});
+		const row = defineProgram(held);
+		expect(row.id).toBe("held-compiled");
+		expect(Object.keys(row.receive ?? {})).toEqual(["ticks"]);
+		expect(row.core.init(null, undefined)).toEqual([{count: 0}, []]);
+	});
+
+	it("restores the inference without loosening it: a cell answering no `Answer<S>` is refused", () => {
+		const held = program({
+			id: "held-wrong-answer",
+			ports: {ticks: port.in(Count)},
+			init: (): CounterState => ({count: 0}),
+			update: {
+				// @ts-expect-error a cell answers the next state *and* the effects it asks for, and a
+				// bare state is not that tuple — the refusal the hand-written `Answer<S>` used to give.
+				ticks: (state) => state,
+			},
+		});
+
+		expect(held.id).toBe("held-wrong-answer");
+	});
+
+	it("restores the inference without loosening it: a field the port does not carry is refused", () => {
+		const held = program({
+			id: "held-wrong-event",
+			ports: {ticks: port.in(Count)},
+			init: (): CounterState => ({count: 0}),
+			update: {
+				// @ts-expect-error `ticks` carries a number, so its arrival has a `payload` and no
+				// `urgent` — an inferred event is checked exactly as an annotated one was.
+				ticks: (state, event) => [{count: state.count + (event.urgent ? 1 : 0)}, []],
+			},
+		});
+
+		expect(held.id).toBe("held-wrong-event");
+	});
+
+	it("refuses a field the record does not carry, as `defineProgram({...})` refuses one", () => {
+		const held = program({
+			id: "held-typo",
+			ports: {ticks: port.in(Count)},
+			init: (): CounterState => ({count: 0}),
+			update: {ticks: (state, event) => [{count: state.count + event.payload}, []]},
+			// @ts-expect-error `A` is an inference site for the literal itself, so every field the
+			// author wrote is a known property of the target and TypeScript's own excess-property
+			// check cannot fire. `NoStrayFields` is what replaces it: a key `AuthoredProgram` does
+			// not declare is typed `never`, so a misspelled `title` is refused at the field.
+			titel: (state: CounterState) => `held (${state.count})`,
+		});
+
+		expect(held.id).toBe("held-typo");
+	});
+
+	it("types the two answer events the layer owns, so neither cell names its own", () => {
+		const held = program({
+			id: "held-answers",
+			init: (): CounterState => ({count: 0}),
+			update: {
+				spawned: (state, event) => {
+					expectTypeOf(event).toEqualTypeOf<Spawned>();
+					expectTypeOf(event).not.toBeAny();
+					return [state, [send({process: event.process, port: "prompt"}, event.program)]];
+				},
+				stopped: (state, event) => {
+					expectTypeOf(event).toEqualTypeOf<Stopped>();
+					expectTypeOf(event).not.toBeAny();
+					return [{count: state.count + 1}, []];
+				},
+			},
+		});
+
+		expect(held.update.stopped({count: 1}, stopped(ProcessId.make("proc-x")))[0]).toEqual({
+			count: 2,
+		});
+	});
 });
