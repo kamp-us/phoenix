@@ -307,13 +307,15 @@ what a builder needs beyond them is here.
 
 Allocate with the fence above, giving `--slug` the body's own name — `commit-message`,
 `deviations`, `pr-body`, `note` — so one lane's four bodies do not overwrite each other, and none of
-them lands on the `notes` slug. Write the body in with bounded `cat >>` appends, then run the verb
-with a literal input redirect in place of the heredoc:
-`fabrika build pr $issue_or_pr_number < <the path it printed>`. The bytes arrive on stdin exactly
+them lands on the `notes` slug. The returned path is a directory. Put the body in a leaf file
+named `body.md` inside it. Write that file's absolute path literally in each bounded
+`cat >> <allocated-directory>/body.md` append and in the verb's input redirect:
+`fabrika build pr $issue_or_pr_number < <allocated-directory>/body.md`.
+The bytes arrive on stdin exactly
 as the heredoc would have delivered them, so each verb makes every refusal it always makes — the commit's
 read-back, the `## Deviations` shape, the leak scan — and the allocated path is machine-local, so a
-body quoting it reds at `5`. `build commit`'s `--message-file` is the same file reached the other
-way and is equally sanctioned; it refuses any path that is not a leaf of this lane's scratch
+body quoting it reds at `5`. `build commit`'s `--message-file` names that same `body.md` leaf
+with its literal absolute path and is equally sanctioned; it refuses any path that is not a leaf of this lane's scratch
 directory.
 
 Then validate **in this tree** — a green borrowed from another checkout is the false green this verb
@@ -434,11 +436,11 @@ you carry them. Read what stands first, and build this round's section out of it
 fabrika build scratch <n> --slug deviations --token <claim-token>
 ```
 
-Use a file named `round.md` inside the returned directory, with that absolute path written
+Use a file named `body.md` inside the returned directory, with that absolute path written
 literally in each command:
 
 ```bash
-fabrika build deviations <n> --token <claim-token> --standing > <allocated-directory>/round.md
+fabrika build deviations <n> --token <claim-token> --standing > <allocated-directory>/body.md
 ```
 
 That prints the standing `## Deviations` section, or nothing when yours is the first round. Edit
