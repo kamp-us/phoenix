@@ -61,6 +61,8 @@ const options = {
 	dwellMinutes: 45,
 	wedgeDwellMinutes: 20,
 	driftCommits: 10,
+	// One read per PR: the backoff window is `ship`'s and is proved there, not re-spent per fixture.
+	mergeabilitySeconds: 0,
 	repo: null,
 	json: false,
 	cwd: "/repo",

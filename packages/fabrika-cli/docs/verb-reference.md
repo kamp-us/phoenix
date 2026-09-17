@@ -568,13 +568,20 @@ read completed and its scope is provably incomplete · `14` proven not in the st
 on · `15` the run's logs are proven expired or purged · `16` the rerun provably landed and its
 durable marker could not be written. `4` is a deliberate gap.
 
-Six behaviours are worth knowing:
+Seven behaviours are worth knowing:
 
 - **Every classification is an exit-`0` answer**, `red` and `wedged` and `not-open` included. A
   non-zero exit means the verb could not produce an answer at all.
-- **The chain is ordered, and the order is the contract.** `check-surface` fires above `red`
-  because a required context no run produces cannot be healed by a log classifier, and `attended`
-  sits above every strand class because a PR whose author pushed two minutes ago is not abandoned.
+- **The chain is ordered, and the order is the contract.** `conflicted` fires above `check-surface`
+  because a PR that conflicts with its base has no merge ref for any required context to run
+  against, so every one of them reads absent for that reason and not a settings gap;
+  `check-surface` fires above `red` because a required context no run produces cannot be healed by
+  a log classifier; and `attended` sits above every strand class because a PR whose author pushed
+  two minutes ago is not abandoned.
+- **An indefinite mergeability is not a conflict.** GitHub computes `mergeable` lazily, so a first
+  read routinely says "not computed yet". It is re-read across `--mergeability-seconds` — `ship`'s
+  own poll loop, so the two groups never answer differently about one PR — and a value still
+  indefinite at the end of that window skips the `conflicted` arm rather than firing it.
 - **`unprobeable` is not `no-requirements`.** The branch-protection endpoint answers `404` both
   when a branch is unprotected and when the token cannot see it, so `no-requirements` also needs a
   successful rules read that returned nothing.
