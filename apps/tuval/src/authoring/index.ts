@@ -26,7 +26,8 @@
  * what `Spawned`/`Stopped` carry, and it is exported as a *value* because `ProcessId.make` is the
  * only way to name one; `TITLE_PORT` / `STATUS_PORT` are the two generic self-report ports a
  * program emits its derived lines on, which is a string an author would otherwise have to guess.
- * The first outside consumer (`@cansirin/tuval-cron`, which lives in its own repo) found each of
+ * The first outside consumer (`@kampus/tuval-cron`, which lives in this repo at
+ * `packages/tuval-cron` and reaches this package only through its published doors) found each of
  * these by failing to compile without it.
  *
  * **The whole `ArgRefs` chain is public for the same reason, and it is not optional.** The type

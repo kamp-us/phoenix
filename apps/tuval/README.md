@@ -289,12 +289,14 @@ on `./window` makes that import safe.)
 `src/authoring/public-surface.unit.test.ts` is the other proof: it reaches the API through the
 specifiers above and nothing else, writes a program, and fills its shaped arg with a shipped row.
 
-The first consumer outside this repo is `@cansirin/tuval-cron`, a scheduler program written on
+The first consumer outside this package is `@kampus/tuval-cron`, a scheduler program written on
 `@kampus/tuval/authoring` and installed into a desk by naming its row in a config. It used to ship
 in-tree under `apps/tuval/src/cron/`; once the doors above existed there was no reason for a
-product feature to live in the kernel's repo, so it moved out and this package kept only the
-kernel behaviours it drove (#8955, #8959, #9221, #9229, #9230, #9250) and the tests that prove
-them.
+product feature to live in the kernel, so it moved out to `packages/tuval-cron` (#9408) and this
+package kept only the kernel behaviours it drove (#8955, #8959, #9221, #9229, #9230, #9250) and the
+tests that prove them. It is a sibling package rather than another repo now, and it is still an
+outside consumer in the sense this door cares about: it reaches this package through the published
+specifiers above and never by relative path.
 
 ## Spells
 
