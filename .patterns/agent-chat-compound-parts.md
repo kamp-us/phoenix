@@ -57,8 +57,10 @@ container rather than inside it. Before #8711 the comparison read the
 `[data-testid="agent-chat-input"]` Card's `innerHTML`, which left `Frame`, `Inspector` and
 `ExtensionDialog` outside it entirely.
 
-Two of those three render nothing at rest, so the test drives them: it pushes a
-`tool_execution_start` event for `Inspector` to list, opens its disclosure, and raises an
-`extension_ui_request` for `ExtensionDialog`, then asserts each part's markup is in the compared
-string. Adding a part that renders only in some state means driving that state here too —
-a part that is `null` on both sides compares equal and is not covered.
+Three parts render nothing at rest, so the test drives them: it sends a non-image file through the
+attach input so `Error` has a failure to paint, pushes a `tool_execution_start` event for
+`Inspector` to list, opens its disclosure, and raises an `extension_ui_request` for
+`ExtensionDialog`, then asserts each part's markup is in the compared string. Adding a part that
+renders only in some state means driving that state here too — a part that is `null` on both sides
+compares equal and is not covered, which is how the composed tree went on omitting `Error`
+entirely (#8773).
