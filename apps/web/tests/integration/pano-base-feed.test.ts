@@ -10,6 +10,7 @@
  * returns exactly this file's seeded set on the shared D1.
  */
 import {beforeAll, describe, expect, it} from "vitest";
+import {BASE_FEED_CACHE_TTL_SECONDS} from "../../worker/features/pano/feed-cache.ts";
 import {sharedStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
 
@@ -34,12 +35,12 @@ let author: {userId: string; cookie: string};
 let viewer: {userId: string; cookie: string};
 const seeded: string[] = [];
 
-async function seedPost(title: string): Promise<string> {
+async function seedPost(title: string, host = FEED_HOST): Promise<string> {
 	const r = await h.fate(
 		{
 			kind: "mutation",
 			name: "post.submit",
-			input: {title, url: `https://${FEED_HOST}/${title}`, tags: [{kind: "tartışma"}]},
+			input: {title, url: `https://${host}/${title}`, tags: [{kind: "tartışma"}]},
 			select: ["id"],
 		},
 		{cookie: author.cookie},
@@ -141,12 +142,42 @@ describe("pano base feed — the per-viewer posts feed is a separate surface (#2
 	});
 });
 
-describe("pano base feed — edge-cache headers (#2324, ADR 0170)", () => {
-	it("stamps Cache-Control + Cache-Tag: pano-feed on the served base feed", async () => {
-		const res = await getBaseFeed(`sort=new&host=${FEED_HOST}&first=50`);
-		expect(res.status).toBe(200);
-		// The TTL backstop + the purge tag the fanned-mutation seam targets (AC#1).
-		expect(res.headers.get("cache-control")).toContain("s-maxage=");
-		expect(res.headers.get("cache-tag")).toBe("pano-feed");
+describe("pano base feed — edge caching (#2324, ADR 0170)", () => {
+	it("serves cache hits and bounds post-write staleness by the TTL backstop", async () => {
+		const host = `${NS}-cache.example.com`;
+		const query = `sort=new&host=${host}&first=50`;
+		await expect
+			.poll(
+				async () => {
+					const response = await getBaseFeed(query);
+					expect(response.status).toBe(200);
+					expect(response.headers.get("cache-control")).toContain("s-maxage=30");
+					// Cloudflare consumes Cache-Tag; the handler's unit test checks its emission.
+					expect(response.headers.get("cache-tag")).toBeNull();
+					expect(((await response.json()) as Connection<BaseNode>).items).toEqual([]);
+					return response.headers.get("cf-cache-status");
+				},
+				{timeout: 5_000, interval: 100},
+			)
+			.toBe("HIT");
+
+		const id = await seedPost(`${NS}-cache-added`, host);
+		// Purge is best-effort. This shared stage does not expose whether Cloudflare accepted it.
+		// The unchanged 30s TTL bounds staleness even when purge fails; 5s covers HTTP/poll overhead.
+		await expect
+			.poll(
+				async () => {
+					const response = await getBaseFeed(query);
+					expect(response.status).toBe(200);
+					const feed = (await response.json()) as Connection<BaseNode>;
+					return {
+						ids: feed.items.map(({node}) => node.id),
+						cacheStatus: response.headers.get("cf-cache-status"),
+						age: response.headers.get("age"),
+					};
+				},
+				{timeout: BASE_FEED_CACHE_TTL_SECONDS * 1_000 + 5_000, interval: 500},
+			)
+			.toMatchObject({ids: expect.arrayContaining([id])});
 	});
 });

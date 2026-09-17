@@ -6,6 +6,7 @@ import {
 	LIST_VIOLATION,
 	portTokens,
 	prefixesOf,
+	previewAppOf,
 	UI_CAPTURE,
 	UI_SURFACES,
 	type UiSurface,
@@ -224,5 +225,25 @@ describe("port tokens", () => {
 		expect(fillPorts("vite --port {{port}} --x {{port:worker}}", new Map([["", 5173]]))).toBe(
 			"vite --port 5173 --x {{port:worker}}",
 		);
+	});
+});
+
+describe("previewAppOf", () => {
+	const row = (name: string): UiSurface => ({
+		name,
+		prefix: "apps/x/src/",
+		command: "pnpm dev --port {{port}}",
+		mount: "/x",
+		basePath: null,
+		readyPath: "/",
+	});
+
+	it.each([
+		["web", "web"],
+		["web-lab", "web"],
+		["desk-chat", "desk"],
+		["desk-pi-window", "desk"],
+	])("reads %s as a surface of app %s", (name, app) => {
+		expect(previewAppOf(row(name))).toBe(app);
 	});
 });

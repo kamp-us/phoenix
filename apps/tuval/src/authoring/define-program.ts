@@ -79,7 +79,9 @@ import {
 	type ReplyEffect,
 	type SendEffect,
 	type SpawnEffect,
+	type Spawned,
 	type StopEffect,
+	type Stopped,
 	spawned,
 } from "./effect.ts";
 import {compileTakesKeys, type KEY_EVENT, type KeyEvent} from "./keys.ts";
@@ -94,6 +96,7 @@ import {
 import {type AuthoredResume, compileResume} from "./resume.ts";
 import {
 	type AuthoredWindow,
+	compileDerivedLines,
 	compileWindow,
 	type DerivedLine,
 	initialSelfReport,
@@ -157,13 +160,27 @@ export type ArrivingPortNames<D extends PortDecls> = {
  * because an intersection whose other half is an index signature contextually types every cell's
  * event at `any` — including the port cells, which is exactly the inference this layer exists for.
  * Measured at this pin: under the intersection a port cell's `event` accepted a `string`.
+ *
+ * **`spawned` and `stopped` are typed here for the same reason `key` is (#8825).** Both are this
+ * layer's own events, not the author's: their names are fixed literals on `Spawned` and `Stopped`
+ * (`./effect.ts`) and the kernel is the only thing that ever dispatches them, so the cell's event
+ * is knowable without the author restating it. A `Reply` cell is the one answer event that stays
+ * the author's to declare, because its name comes from the `on`/`reply` they wrote at the
+ * `spawn`/`ask` and nothing here can read it back.
+ *
+ * Like `key`, a layer-owned name wins the cell's type over a port declaring it — #8771 tracks
+ * refusing that collision outright rather than resolving it by precedence.
  */
 export type UpdateTable<S, D extends PortDecls, U, X = never> = {
 	[K in keyof U | ArrivingPortNames<D>]: K extends typeof KEY_EVENT
 		? EventHandler<S, KeyEvent, X>
-		: K extends ArrivingPortNames<D>
-			? EventHandler<S, ArrivalEventOf<D, K & keyof D & string>, X>
-			: EventHandler<S, any, X>;
+		: K extends Spawned["type"]
+			? EventHandler<S, Spawned, X>
+			: K extends Stopped["type"]
+				? EventHandler<S, Stopped, X>
+				: K extends ArrivingPortNames<D>
+					? EventHandler<S, ArrivalEventOf<D, K & keyof D & string>, X>
+					: EventHandler<S, any, X>;
 };
 
 /** What a user writes. Nothing on it names Demlik, Effect, Scope or the row's seven generics. */
@@ -236,6 +253,79 @@ export interface AuthoredProgram<
 }
 
 export type AnyAuthoredProgram = AuthoredProgram<any, any, any, any, any, any>;
+
+/**
+ * Every key of `A` that `T` does not declare, typed `never` — what an authored record is checked
+ * against once `A` has made TypeScript's own excess-property check unreachable (`program` below
+ * says why, #8825).
+ */
+export type NoStrayFields<A, T> = {
+	[K in Exclude<keyof A, keyof T>]: never;
+};
+
+/**
+ * `program({...})` — hold an authored program in a binding and keep every type this layer infers
+ * (#8825).
+ *
+ * TypeScript contextually types an object literal from what it is passed to, and a `const` passes
+ * it to nothing. So the record an author has to keep — the config compiles it with `defineProgram`,
+ * a test drives it with `testProgram` — lost the whole of R12.1 at the binding: each `update`
+ * cell's `(state, event)` became an implicit `any` under `strict`, and each cell's returned array
+ * widened to `T[]` instead of fitting the `Answer<S>` tuple. The author's only fix was writing
+ * `pr: (state: State, event: ArrivalEvent<"pr", number>): Answer<State> => [...]` on every cell.
+ *
+ * This is the call site that was missing. It runs nothing and changes nothing — it answers its
+ * argument — so the parameter's type is the entire mechanism: `AuthoredProgram<S, D, U, C, Out, X>`
+ * is what contextually types the literal, and the same generics that make `defineProgram` infer a
+ * cell's event from the port that feeds it make this infer it too.
+ *
+ * **It was picked over widening `defineProgram`'s row to carry its authored record beside it**
+ * because the row is not where the inference dies. An author who spreads the record — the worked
+ * example's `{...prReviewProgram, fill, label}` (`./example/pr-review.ts`) — still holds the
+ * literal in a `const` no matter what `defineProgram` answers, so a wider row would have left that
+ * binding un-typed and bought a second shape on every compiled row for it.
+ *
+ * **The name is one word on purpose, and it sits one capital letter from `Program.shape`**
+ * (`./shape.ts`) in the barrel's import list. The two read differently at every use —
+ * `Program.shape({...})` declares the ports a program is *named by*, `program({...})` holds the
+ * program itself — and the length is what the worked example's ruled line budget could afford
+ * (`./example/pr-review.ts` carries that reasoning, beside the budget it defends).
+ *
+ * **`A` is why the answer is the literal the author wrote and not the interface.** Every field this
+ * layer does not require is optional on `AuthoredProgram`, so answering that interface flat would
+ * hand back a `ports`, `commands` and `title` that are all possibly-`undefined` — a binding worse
+ * to read than the one it replaces. Taking the argument as `A & AuthoredProgram<…>` infers both
+ * halves from the one literal: the intersection's second member is the inference site for `S`, `D`,
+ * `U`, `C`, `Out` and the contextual type the cells are written against, while `A` captures the
+ * literal's own shape and carries the present fields through. A plain `A extends AuthoredProgram<…>`
+ * does not work — measured at this pin, constraint-only inference leaves `S`, `D` and `U` on their
+ * defaults, and every cell is an implicit `any` again.
+ *
+ * **`A` disables TypeScript's excess-property check, so `NoStrayFields` replaces it.** Inferring
+ * `A` from the literal makes every field the author wrote a known property of the target, and an
+ * excess-property check only fires against a property the target does not declare — so without the
+ * third member a misspelled `titel`, `stat` or `windw` was accepted here and silently dropped at
+ * the compiled row, while the same literal written straight into `defineProgram({...})` was refused
+ * with TS2561. `NoStrayFields` types every key of `A` that `AuthoredProgram` does not declare as
+ * `never`, which refuses it at the field that carries it.
+ *
+ * `X` — the author's own effect type — is no more inferrable here than at `defineProgram`, and for
+ * the same reason (#9294): it is named only in a cell's answer, and `update`'s mapped table is not
+ * an inference site. A program that opts in states its arguments once, here instead of there.
+ */
+export const program = <
+	S,
+	D extends PortDecls = Record<string, never>,
+	U = unknown,
+	C extends CommandArgTypes = Record<string, never>,
+	Out = unknown,
+	X = never,
+	A = unknown,
+>(
+	authored: A &
+		AuthoredProgram<S, D, U, C, Out, X> &
+		NoStrayFields<A, AuthoredProgram<S, D, U, C, Out, X>>,
+): A & AuthoredProgram<S, D, U, C, Out, X> => authored;
 
 /** What every field compiler is handed beside the authored record: the id and the compiled ports. */
 export interface CompileContext {
@@ -456,9 +546,13 @@ const INTERPRET: Interpret<AuthoredEvent, ProgramEffect, unknown> = {
 };
 
 const compileCore = (authored: AnyAuthoredProgram): ProgramCore<any, any, any, any, any> => ({
-	// A loaded state is answered untouched and with no Cmds, which is Demlik's rehydrate contract —
-	// so a fresh boot is the only place a derived line may be published from `init` (`./view.ts`),
-	// and a restored process republishes on its first transition instead.
+	// A loaded state is answered untouched and with no Cmds, which is Demlik's rehydrate contract
+	// (`@demlik/tea` 0.12, `Machine.init`: "when `loaded !== null`, init MUST return `[loaded, []]`").
+	// So a fresh boot is the only place a derived line is published from `init` (`./view.ts`), and a
+	// restored process publishes none: the kernel seeds its self-report latch off the loaded state
+	// instead, through the row's `derivedLines` (#8812). It does not republish on its first
+	// transition — that transition emits only if it moves the line, which for a stable title is
+	// never.
 	init: (loaded: unknown) => {
 		if (loaded !== null && loaded !== undefined) return [loaded, NO_EFFECTS];
 		const initial = authored.init();
@@ -547,6 +641,7 @@ export const FIELD_COMPILERS = {
 	spells: (authored, context) => compileSpells(authored, context),
 	takesKeys: (authored) => compileTakesKeys(authored),
 	resume: (authored) => compileResume(authored),
+	derivedLines: (authored) => compileDerivedLines(authored),
 	renderer: (authored, context) => compileWindow(authored, context),
 	capabilities: (authored) => authored.capabilities ?? NO_CAPABILITIES,
 	identity: (authored) => compileIdentity(authored),

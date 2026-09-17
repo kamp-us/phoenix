@@ -88,6 +88,17 @@ const render = leafCommand(
 		repo: repoFlag,
 	},
 	Effect.fn(function* ({pr, out, surface, viewport, flag, app, authSecretFrom, repo}) {
+		// The reviewer's own checked-out tree, never the PR head — the same read `route` takes, and
+		// for the same reason: the declaration is the repo's, not the branch's.
+		const surfaces = yield* uiSurfacesOr(
+			"review-ui render",
+			process.cwd(),
+			"which app serves each --surface is UNKNOWN; nothing was rendered.",
+		);
+		if (surfaces._tag === "Refused") {
+			yield* emit(refuse(PRECONDITION_UNKNOWN, surfaces.message));
+			return;
+		}
 		yield* emit(
 			yield* runRender({
 				pr,
@@ -96,6 +107,7 @@ const render = leafCommand(
 				viewports: viewport,
 				flags: flag,
 				app: Option.getOrNull(app),
+				surfaceRows: surfaces.surfaces,
 				authSecretFrom: Option.getOrNull(authSecretFrom),
 				repo: Option.getOrNull(repo),
 				env: process.env,
@@ -107,7 +119,7 @@ const render = leafCommand(
 ).pipe(
 	Command.withShortDescription("Capture the named surfaces from a PR's preview deployment."),
 	Command.withDescription(
-		"Capture the named surfaces from a PR's announced preview deployment at the inspected head, one validated PNG per surface per viewport, and write the set manifest. Prints one JSON object: the set, the PR, the head, the preview URL, and one capture record per shot (surface, viewport, path, dimensions, sha256, page errors); every shot's outcome is enumerated on stderr. --viewport is crossed with --surface, so two of each is four captures whose file names carry the viewport label. A tier-naming surface signs its cookie with the BETTER_AUTH_SECRET the preview worker deploys with — one repo-wide value, read from the file --auth-secret-from names (exported from the ci-credentials stack's alchemy state, its one readable copy) or, absent that flag, from the ambient variable — which is refused rather than signed with when it is empty or carries the insecure_ placeholder. Full success is the only exit 0. Exits 1 (zero --surface operands), 7 (PR absent or closed), 10 (--out is not kebab-case, a --surface names a :state nothing renders — the realized set is auth, auth-caylak, a --viewport names a viewport outside the closed set desktop, mobile or is passed twice, a --flag operand is not a <key>=<on|off> pair, or --flag was passed with an anonymous surface), 11 (a read failed, the preview comment is malformed or names several apps, a capture's validity is undeterminable, a tier-naming surface was requested with that tier's session token unset, with the resolved signing secret empty or carrying the insecure_ placeholder, or with --auth-secret-from naming a file that could not be read, a tier-naming surface's session proof did not come back signed in or came back at another tier, or a forced flag evaluated at its default anyway), 12 (the preview deploys a head that is not the PR's live head — stale preview), 13 (a surface threw during render), 14 (a surface is unreachable), 15 (a capture is invalid), 16 (no preview-deploy comment — the CANT-SEE route), 19 (a capture's PNG width read back from its own bytes is not the requested viewport's width). Example: fabrika review-ui render --pr 4321 --out judged --surface /pano --viewport desktop --viewport mobile",
+		"Capture the named surfaces from a PR's announced preview deployment at the inspected head, one validated PNG per surface per viewport, and write the set manifest. Prints one JSON object: the set, the PR, the head, the preview URL, and one capture record per shot (surface, viewport, path, dimensions, sha256, page errors); every shot's outcome is enumerated on stderr. --viewport is crossed with --surface, so two of each is four captures whose file names carry the viewport label. A tier-naming surface signs its cookie with the BETTER_AUTH_SECRET the preview worker deploys with — one repo-wide value, read from the file --auth-secret-from names (exported from the ci-credentials stack's alchemy state, its one readable copy) or, absent that flag, from the ambient variable — which is refused rather than signed with when it is empty or carries the insecure_ placeholder. Full success is the only exit 0. Exits 1 (zero --surface operands), 7 (PR absent or closed), 10 (--out is not kebab-case, a --surface names a :state nothing renders — the realized set is auth, auth-caylak, a --viewport names a viewport outside the closed set desktop, mobile or is passed twice, a --flag operand is not a <key>=<on|off> pair, or --flag was passed with an anonymous surface), 11 (a read failed, the declared uiSurfaces are unreadable, the preview comment is malformed or names several apps, a --surface is served by an app this preview does not announce, a capture's validity is undeterminable, a tier-naming surface was requested with that tier's session token unset, with the resolved signing secret empty or carrying the insecure_ placeholder, or with --auth-secret-from naming a file that could not be read, a tier-naming surface's session proof did not come back signed in or came back at another tier, or a forced flag evaluated at its default anyway), 12 (the preview deploys a head that is not the PR's live head — stale preview), 13 (a surface threw during render), 14 (a surface is unreachable), 15 (a capture is invalid), 16 (no preview-deploy comment — the CANT-SEE route), 19 (a capture's PNG width read back from its own bytes is not the requested viewport's width). Example: fabrika review-ui render --pr 4321 --out judged --surface /pano --viewport desktop --viewport mobile",
 	),
 );
 
@@ -136,6 +148,7 @@ const post = leafCommand(
 			),
 		),
 		supersede: Flag.boolean("supersede").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"acknowledge that this verdict retires a standing one of the OPPOSITE polarity at the same head; without it that post is refused at 18",
 			),

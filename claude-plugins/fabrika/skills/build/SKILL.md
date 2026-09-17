@@ -79,10 +79,12 @@ citation, and a gap the ruling left open goes back to the founder rather than ge
 citation does not lift, so the issue still has to carry `ready-for:agent`. Two things stamp it:
 triage, when it first reads a decision that already carries a ruling comment — its
 [`--ready-for` routing](../triage/SKILL.md) owns that call, not this skill — and
-`fabrika decision rule <n> --cites <url>`, which a control-plane human runs on a decision that is
-already parked. On `ready-for:human` the claim is exit `21` and step 2's rule holds unchanged: end
-the run naming the code, and name that verb as the way back in — a control-plane human runs it, never
-you, and never an override on your own authority, however good the citation.
+`fabrika decision rule <n>`, which a control-plane human runs on a decision that is already parked —
+`--cites <url>` over a comment that is already there, `--authorization <file>` over a ruling given in
+conversation, from a file quoting it verbatim and dated. On `ready-for:human` the claim is exit `21`
+and step 2's rule holds unchanged: end the run naming the code, and name that verb as the way back
+in — a control-plane human runs it, never you, and never an override on your own authority, however
+good the citation.
 
 **Composition — what holds when `build-ui` is loaded beside this skill.** A shell's `skills:` list is
 its capability set, so a shell preloading both carries both construction laws and a mixed-deliverable
@@ -146,8 +148,8 @@ overridable, and the remedy is on the refusal line.** An epic goes to `--purpose
 and the verb can prove no more than that, so citing a comment that does not rule anything is a lie
 the tool cannot catch and you must not tell. Passing `--cites` on a decision whose audience is still
 `ready-for:human` lands on `21`, because the citation opens the type axis and nothing else — the
-route back in is `fabrika decision rule <n> --cites <url>`, run by a control-plane human, as step 1
-says.
+route back in is `fabrika decision rule <n> --cites <url>` — or `--authorization <file>` over a
+ruling given in conversation — run by a control-plane human, as step 1 says.
 
 Exit `32` (no acceptance criteria) is the fourth refusal, and it is the one you are most likely to
 meet: the verb reads the issue's body itself, so a body with no readable `### Acceptance criteria`
@@ -584,6 +586,21 @@ The fold is the only entry: paginated, current-head, per-gate — polarity visib
 included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer **about the
 gates**, but an UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**.
 
+**Read `escalatedFindings` beside the rows: those are findings too, and they are not in the
+contract.** Past the acceptance-criteria freeze a reviewer may no longer append, so its finding lands
+as a tagged comment on the issue and the criteria block you read at step 3 does not contain it. The
+fold carries each one's full text, so fix them exactly as you fix a FAIL row's — and do not go
+looking for them in the criteria, where they will never be. The freeze is deliberate: a finding here
+enters no contract and no later round grades it, so nothing here widens the spec.
+
+**The fold has no resolved state, so on any round after the first, read each escalation against the
+tree before you treat it as unfixed.** A row is selected by its tag naming this PR, and nothing
+marks it repaired — no gate grades it, so no PASS ever retires it — which means an escalation an
+earlier cleared round already fixed comes back in this round's fold reading exactly like a new one.
+Check the code before you change it: where the fix is already in, say so in your `build note`
+naming the round that landed it, and leave the tree alone. Re-fixing a settled finding is how a
+repair round spends its budget undoing work the PR already carries.
+
 **Read the fold's `mergeability` beside its rows, because no gate emits a FAIL for a conflict.**
 `conflicting` says the PR cannot merge into its base, and that is real repair work an all-PASS fold
 would otherwise let you read as nothing to do — so a fold with no rows is not a no-work answer over
@@ -658,7 +675,9 @@ naming each one addressed, then release with `fabrika build release <repair-pr> 
 <claim-token>`. Exit `23` on that push means your head **drops commits the PR already published** —
 `build branch --resume` again so you rebuild on the published head, never
 `--drop-remote-commits`, which is for a rewrite you actually intend. The fold's `frozenCriteria`
-rows are the review-appended criteria past the freeze — note them, do not chase them.
+rows are the review-appended criteria past the freeze — note them, do not chase them. Its
+`escalatedFindings` rows are the opposite call: they never became criteria, and they are this
+round's work — each one you verify is still unfixed, because nothing retires a row from that fold.
 
 **When the whole fix is the PR body, the route is `fabrika build pr-body <pr>` and nothing else.**
 The recurring one is a FAIL reading `deviations malformed`: the head does not need to move, so a

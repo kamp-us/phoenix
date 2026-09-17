@@ -439,6 +439,19 @@ const decodeWith =
 		return undecodable("malformed-payload");
 	};
 
+/**
+ * The `kind` a frame text claims, for a log line about a frame that did not decode. Never a decision:
+ * the claim is unverified by definition — the frame was refused — so it only ever names what was
+ * refused, and `unknown` covers a text that is not JSON or carries no kind at all.
+ */
+export const frameKind = (text: string): string => {
+	const parsed = parse(text);
+	if (!parsed.ok || !Predicate.isObject(parsed.value) || typeof parsed.value.kind !== "string") {
+		return "unknown";
+	}
+	return parsed.value.kind;
+};
+
 export const decodeClientFrame: (text: string) => Decoded<ClientFrame> = decodeWith<ClientFrame>(
 	new Set([ATTACH_KIND, DETACH_KIND, DISPATCH_KIND, SPELL_CALL_KIND]),
 	[

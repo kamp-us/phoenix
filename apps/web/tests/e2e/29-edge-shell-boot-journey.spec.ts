@@ -1,5 +1,10 @@
 import {expect, type Page, test} from "@playwright/test";
 import {signUpViaApi} from "./_helpers/auth";
+import {
+	classifyEdgeBootAttempt,
+	EDGE_BOOT_RETRY_DELAY_MS,
+	formatEdgeBootFailure,
+} from "./_helpers/edge-boot-policy";
 
 /**
  * The first-paint contract for the edge-resolved shell (ADR 0179, epic #2926). Its containment
@@ -114,19 +119,23 @@ async function routeBoot(page: Page, boot: SeedBoot | null): Promise<() => numbe
  * Retried because the never-hang guard (ADR 0179 §4) degrades to an untransformed asset when the
  * boot reads exceed their 1s bound — transient, and a one-shot read would turn it into a red.
  * A null `user` after the attempts is thrown, never returned: it would make the spec vacuous.
+ *
+ * Attempts are separated by {@link EDGE_BOOT_RETRY_DELAY_MS} so each read is an independent sample:
+ * back-to-back `GET`s all land inside the one degraded window and observe a single fact three times.
+ * Which mode each attempt hit is carried into the thrown message rather than overwritten, so a red
+ * says whether this is the spec's wait or a real edge degradation
+ * ({@link classifyEdgeBootAttempt}).
  */
 async function edgeBootUser(page: Page, attempts = 3): Promise<SeedBoot> {
-	let last = "the shell document carried no window.__BOOT__ — the never-hang guard degraded";
-	for (let attempt = 0; attempt < attempts; attempt++) {
+	const reasons: string[] = [];
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		if (attempt > 1) await page.waitForTimeout(EDGE_BOOT_RETRY_DELAY_MS);
 		const html = await (await page.request.get("/")).text();
-		const injected = /window\.__BOOT__\s*=\s*(\{[\s\S]*?\})\s*<\/script>/i.exec(html);
-		if (injected) {
-			const {user} = JSON.parse(injected[1]) as {user: SeedBoot | null};
-			if (user) return user;
-			last = "the edge resolved __BOOT__.user as null — the sign-up session did not reach it";
-		}
+		const seen = classifyEdgeBootAttempt(attempt, html);
+		if (seen.outcome === "resolved") return seen.user;
+		reasons.push(seen.reason);
 	}
-	throw new Error(`edgeBootUser: ${last} (${attempts} attempts)`);
+	throw new Error(formatEdgeBootFailure(reasons));
 }
 
 /**

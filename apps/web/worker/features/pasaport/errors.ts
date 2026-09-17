@@ -6,19 +6,19 @@
 import {FateWireCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
 
-export class UsernameInvalidFormat extends Schema.TaggedErrorClass<UsernameInvalidFormat>()(
+export class UsernameInvalidFormat extends Schema.TaggedError<UsernameInvalidFormat>()(
 	"pasaport/UsernameInvalidFormat",
 	{message: Schema.String},
 	{[FateWireCode]: "INVALID_FORMAT"},
 ) {}
 
-export class UsernameTooShort extends Schema.TaggedErrorClass<UsernameTooShort>()(
+export class UsernameTooShort extends Schema.TaggedError<UsernameTooShort>()(
 	"pasaport/UsernameTooShort",
 	{message: Schema.String},
 	{[FateWireCode]: "TOO_SHORT"},
 ) {}
 
-export class UsernameTooLong extends Schema.TaggedErrorClass<UsernameTooLong>()(
+export class UsernameTooLong extends Schema.TaggedError<UsernameTooLong>()(
 	"pasaport/UsernameTooLong",
 	{message: Schema.String},
 	{[FateWireCode]: "TOO_LONG"},
@@ -32,7 +32,7 @@ export const UsernameInvalidErrors = [
 
 export type UsernameInvalid = InstanceType<(typeof UsernameInvalidErrors)[number]>;
 
-export class UsernameTaken extends Schema.TaggedErrorClass<UsernameTaken>()(
+export class UsernameTaken extends Schema.TaggedError<UsernameTaken>()(
 	"pasaport/UsernameTaken",
 	{
 		message: Schema.String,
@@ -41,7 +41,7 @@ export class UsernameTaken extends Schema.TaggedErrorClass<UsernameTaken>()(
 ) {}
 
 // Username is immutable once set; re-setting fails with this.
-export class UsernameAlreadySet extends Schema.TaggedErrorClass<UsernameAlreadySet>()(
+export class UsernameAlreadySet extends Schema.TaggedError<UsernameAlreadySet>()(
 	"pasaport/UsernameAlreadySet",
 	{
 		message: Schema.String,
@@ -49,7 +49,7 @@ export class UsernameAlreadySet extends Schema.TaggedErrorClass<UsernameAlreadyS
 	{[FateWireCode]: "ALREADY_SET"},
 ) {}
 
-export class UserNotFound extends Schema.TaggedErrorClass<UserNotFound>()(
+export class UserNotFound extends Schema.TaggedError<UserNotFound>()(
 	"pasaport/UserNotFound",
 	{
 		message: Schema.String,
@@ -59,7 +59,7 @@ export class UserNotFound extends Schema.TaggedErrorClass<UserNotFound>()(
 
 // The server-authoritative floor against a blank submit; the SPA's `required` input is
 // not trusted to prevent a byline-blanking write.
-export class DisplayNameEmpty extends Schema.TaggedErrorClass<DisplayNameEmpty>()(
+export class DisplayNameEmpty extends Schema.TaggedError<DisplayNameEmpty>()(
 	"pasaport/DisplayNameEmpty",
 	{
 		message: Schema.String,
@@ -69,7 +69,7 @@ export class DisplayNameEmpty extends Schema.TaggedErrorClass<DisplayNameEmpty>(
 
 // A ban MUST carry a reason — the audit record is meaningless without one — so the
 // server rejects a blank submit even though the admin UI marks the field required.
-export class BanReasonRequired extends Schema.TaggedErrorClass<BanReasonRequired>()(
+export class BanReasonRequired extends Schema.TaggedError<BanReasonRequired>()(
 	"pasaport/BanReasonRequired",
 	{
 		message: Schema.String,
@@ -79,7 +79,7 @@ export class BanReasonRequired extends Schema.TaggedErrorClass<BanReasonRequired
 
 // A manual failing-mark MUST carry a reason — it is the audit note for why the address
 // was marked out-of-band. The matching `clear` carries none and has no such floor.
-export class EmailFailingReasonRequired extends Schema.TaggedErrorClass<EmailFailingReasonRequired>()(
+export class EmailFailingReasonRequired extends Schema.TaggedError<EmailFailingReasonRequired>()(
 	"pasaport/EmailFailingReasonRequired",
 	{
 		message: Schema.String,

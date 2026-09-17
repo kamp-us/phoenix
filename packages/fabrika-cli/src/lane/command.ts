@@ -25,6 +25,7 @@ import {localBranches} from "../io/git.ts";
 import {readStdin} from "../io/stdin.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {admitBoardKey, admitKey} from "./admission.ts";
 import {claimOwnership, runAmend} from "./amend-verb.ts";
 import {closedReader} from "./archive-move.ts";
 import {runArchiveSweep} from "./archive-sweep-verb.ts";
@@ -73,6 +74,7 @@ import {DEFAULT_TRUNK_REF, runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
 import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
 import {runReport} from "./report-verb.ts";
+import {runRetrigger} from "./retrigger-verb.ts";
 import {runSeats} from "./seats-verb.ts";
 import {boardReaders, runSettle} from "./settle-verb.ts";
 import {BUILD_CLAIM_BUDGET_MINUTES, DISPATCH_BUDGET, SHELL_BUDGETS} from "./shell-budget.ts";
@@ -89,7 +91,7 @@ import {DEFAULT_VIEW_PORT, listeningAt, runView} from "./view-verb.ts";
 
 const laneArgument = Argument.string("lane").pipe(
 	Argument.withDescription(
-		"the lane key — the issue number the lane drives, or `chore:<name>` for a chore lane. A directory name carrying a dot-separated suffix after the number (`8012.frozen-deadlock-<stamp>`) still names issue 8012, so a quarantined lane is addressable by every verb here",
+		"the lane key — the issue number the lane drives, or `chore:<name>` for a chore lane. A key is one directory leaf: a separator or a traversal is refused at 21 before any path is joined or any board read is sent. A padded number is canonicalized on read, so `05673` and `5673` name one lane, one claim target and one directory. A directory name carrying a dot-separated suffix after the number (`8012.frozen-deadlock-<stamp>`) still names issue 8012, so a quarantined lane is addressable by every verb here",
 	),
 );
 
@@ -100,49 +102,20 @@ const rootFlag = Flag.string("root").pipe(
 	),
 );
 
-/**
- * Resolve the `lane` argument to a key and its directory, or refuse it — the one step every keyed
- * verb shares, so a malformed key is caught before any verb reads or writes anything, and the ground
- * under the resolved root is proven before either. An explicit `--root` wins; otherwise the root is
- * derived off the repository the cwd belongs to, so a linked worktree reads the same ledger
- * as the primary checkout instead of proving the lane absent against its own empty one.
- */
+/** Seat the shared key admission at this process's cwd — the adapter's one job here. */
 const onKey = <R>(
 	verb: string,
 	raw: string,
 	root: Option.Option<string>,
 	run: (key: LaneKey, ref: LaneRef) => Effect.Effect<VerbOutcome, never, R>,
-): Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path> => {
-	const parsed = parseKey(raw);
-	if (parsed._tag === "Malformed") return Effect.succeed(keyRefusal(parsed));
-	if (Option.isSome(root)) {
-		const ref = laneRef(parsed.key, root.value);
-		return onGround(verb, [ref.root], process.cwd(), () => run(parsed.key, ref));
-	}
-	return Effect.gen(function* () {
-		const path = yield* Path.Path;
-		const ground = yield* deriveRepoRoot(process.cwd());
-		if (ground._tag !== "Derived") {
-			return repoGroundRefusal(`fabrika lane ${verb}`, ground);
-		}
-		const ref = laneRef(parsed.key, path.join(ground.repoRoot, defaultRoot(parsed.key)));
-		return yield* onGround(verb, [ref.root], process.cwd(), () => run(parsed.key, ref));
-	});
-};
+): Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path> =>
+	admitKey(verb, raw, Option.getOrNull(root), process.cwd(), run);
 
-/**
- * Resolve the `lane` argument for a verb whose ground is the **board**, not the disk — `claim` and
- * `release`, which race a marker on the issue a lane drives and read no lanes root at all. They take
- * the key alone rather than a ref, so neither can reach a root the cwd would decide, and neither owes
- * the repo probe {@link onGround} makes.
- */
+/** The same admission for a board-ground verb, which reaches no root at all. */
 const onBoardKey = <R>(
 	raw: string,
 	run: (key: LaneKey) => Effect.Effect<VerbOutcome, never, R>,
-): Effect.Effect<VerbOutcome, never, R> => {
-	const parsed = parseKey(raw);
-	return parsed._tag === "Malformed" ? Effect.succeed(keyRefusal(parsed)) : run(parsed.key);
-};
+): Effect.Effect<VerbOutcome, never, R> => admitBoardKey(raw, run);
 
 const dispatch = leafCommand(
 	"dispatch",
@@ -560,6 +533,7 @@ const emitLane = leafCommand(
 		),
 		root: rootFlag,
 		children: Flag.boolean("children").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"start from the board's live sub-issue list: drop every topology ref it does not name instead of refusing at 16",
 			),
@@ -678,6 +652,7 @@ const assembly = leafCommand(
 			Argument.withDescription("the epic issue whose run owns the assembly worktree"),
 		),
 		remove: Flag.boolean("remove").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("remove the run's assembly worktree instead of placing it"),
 		),
 		root: rootFlag,
@@ -807,6 +782,7 @@ const refresh = leafCommand(
 			),
 		),
 		onReview: Flag.boolean("on-review").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"this is the automatic call on the tail's way into review, so `assemblyRefresh.onReview` gates it — under the shipped `off` it declines and merges nothing. A hand call omits this and is never gated. The other automatic call, `assemblyRefresh.onDispatch`, is made by `lane dispatch` itself and is never typed.",
 			),
@@ -849,6 +825,31 @@ const refresh = leafCommand(
 	),
 	Command.withDescription(
 		"Merge the trunk into the epic run's assembly worktree — `epic/<n>` at the path `lane assembly` placed, both derived from the epic number and never taken from the caller — so the tail's review binds to a head the merge queue can take. Nothing else in this package touches trunk after the first cut: `lane assembly` cuts off origin/HEAD once and a resume fetches only to judge whether the branch is already landed, merging nothing, so the branch drifts behind trunk with nothing to notice and `lane push` names \"fetch and re-merge\" as the remedy for its exit 29 without any verb performing it. The order is the verb: refuse a dirty seat, `git fetch origin`, resolve --base to a commit, answer CURRENT when the branch already carries it, else `git merge --no-ff` and re-read HEAD. A clean merge is silent and parks nothing; a conflict aborts, resets through ORIG_HEAD and PROVES the reset by re-reading HEAD, and the refusal names `--cause assembly-conflict` as the park to record. A reset that will not take is exit 8, never the clean conflict refusal. Two callers reach the verb automatically and each is gated by its own `assemblyRefresh` arm: --on-review, typed by the driver on the tail's way into review (`onReview`), whose arm is read from the `.fabrika.jsonc` of the repository that owns the cwd rather than the cwd's own, and the pre-dispatch call `lane dispatch` makes itself before it cuts a child's worktree off the branch (`onDispatch`), which is never typed and whose arm still reads the cwd's own copy. Both ship off. Nothing is pushed and no lane log is written — publishing the refreshed head is `lane push`'s and recording the park is the driver's. On exit 0 the last stdout line is `REFRESH-VERDICT: MERGED`, `REFRESH-VERDICT: CURRENT`, or `REFRESH-VERDICT: DECLINED` under a gated automatic call whose arm reads off, and the line above it the head (a DECLINED prints no head, because nothing was read). Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (the restore or a head read-back did not land, or the merge reported success and the head did not move — UNKNOWN, so nothing may be recorded), 11 (the working trees, the head, the seat's cleanliness or the fetch could not be read — UNKNOWN, never green), 21 (`assemblyRefresh` is malformed in .fabrika.jsonc — whether this repo refreshes its assembly branch is UNKNOWN), 22 (--base names no commit after the fetch), 33 (`epic/<n>` is checked out in the main working tree), 41 (no working tree holds `epic/<n>` — place it with `lane assembly`), 45 (the assembly worktree already held modified tracked files, so nothing was fetched or merged; clean the seat and refresh again), 42 (the trunk conflicts with the assembly branch; the merge was aborted and the branch was proven back at its pre-merge head), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root). Examples: fabrika lane refresh 8810 · fabrika lane refresh 8810 --on-review",
+	),
+);
+
+const retrigger = leafCommand(
+	"retrigger",
+	{
+		epic: Argument.integer("epic").pipe(
+			Argument.withDescription("the epic issue whose run owns the assembly branch"),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name the sweep reads against (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({epic, repo}) {
+		yield* emit(yield* runRetrigger({epic, repo: Option.getOrNull(repo), env: process.env}));
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Schedule fresh checks on the children an assembly push left stale.",
+	),
+	Command.withDescription(
+		"Schedule a fresh CI run on every OPEN pull request based on an epic run's assembly branch — `epic/<n>`, derived from the epic number and never taken from the caller — after `lane push` moved that branch. GitHub recomputes `refs/pull/<n>/merge` when a base moves, but emits no pull_request event for a base push (the event fires on opened, synchronize and reopened), so nothing schedules a run and every child keeps reporting checks over the tree its base had before the push. A workflow re-run cannot serve: it replays the original event's GITHUB_SHA and GITHUB_REF, which is the stale merge commit. Close/reopen is forbidden — it tears the pull request's preview stage down mid-deploy. So the head is moved instead, through GitHub's own `PUT /pulls/{n}/update-branch`, which merges the base into the head branch and is a synchronize: a run is scheduled against a merge ref computed now, nothing is closed, nothing is force-pushed and no commit is rewritten. Idempotent by construction: a child whose head already contains the base tip is read, reported `current` and never written to, so a second call right after a first writes nothing. The staleness read is the platform's own comparison against the base as it stands, never the pull request's frozen `base.sha`. Each write carries `expected_head_sha`, so it is refused rather than misaddressed when a sibling moved the head first. Nothing is pushed, no working tree is touched and no lane log is written. On exit 0 the last stdout line is `RETRIGGER-VERDICT: RETRIGGERED`, `RETRIGGER-VERDICT: CURRENT` (children exist and all already carried the base) or `RETRIGGER-VERDICT: NONE` (no open pull request is based on the branch), and the lines above it are one row per child: `#<pr> current`, or `#<pr> <commits behind> behind, <head before> -> <head after>`. Exits 8 (an update was accepted and the head did not move inside its 60s window, or a read failed after this sweep had already moved a child's head — a merge may still be in flight, so re-read before writing again), 11 (the pull request list or a comparison could not be read and this sweep had written to no child — UNKNOWN over an untouched sweep, never an empty one), 42 (the assembly branch does not merge into one or more of the head branches, so those children need a repair round before their checks can run at all). Example: fabrika lane retrigger 8716",
 	),
 );
 
@@ -1045,6 +1046,7 @@ const stale = leafCommand(
 			),
 		),
 		claims: Flag.boolean("claims").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"additionally read the board and pair each non-terminal lane with the claim standing on its issue — the one thing here that makes a network call (default: false)",
 			),
@@ -1146,6 +1148,7 @@ const migrate = leafCommand(
 		lane: Argument.optional(laneArgument),
 		root: rootFlag,
 		check: Flag.boolean("check").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("judge the swept lanes and report, writing nothing"),
 		),
 		repo: Flag.string("repo").pipe(
@@ -1207,6 +1210,7 @@ const archive = leafCommand(
 	{
 		lane: Argument.optional(laneArgument),
 		sweep: Flag.boolean("sweep").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"walk the lanes root and archive EVERY lane both gates already clear, reporting one row per lane examined. Takes no lane argument — a key and this flag together name two different jobs",
 			),
@@ -1374,6 +1378,7 @@ const reconcile = leafCommand(
 	{
 		root: rootFlag,
 		check: Flag.boolean("check").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("judge every lane and report, appending nothing"),
 		),
 		repo: Flag.string("repo").pipe(
@@ -1433,9 +1438,11 @@ const recover = leafCommand(
 	{
 		root: rootFlag,
 		check: Flag.boolean("check").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("judge every lane and report what would be appended, appending nothing"),
 		),
 		spawns: Flag.boolean("spawns").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				`also park every lane whose builder is provably gone: a build claim standing past the ${SHELL_BUDGETS.build.minutes}-minute build budget, no lane branch in this clone, and nothing on the surface that lane's role publishes to — an open PR linking the issue on a single lane or an epic tail, the lane branch itself on an epic child, which opens no PR. Recorded as BLOCKED --cause spawn-dead. It retracts nothing here; the spawn-dead unpark row ends the claim on the same proof, one verb later and with no human between the two. Costs board reads per lane standing in build or build:ui, which is why it is opt-in`,
 			),
@@ -1579,6 +1586,7 @@ export const laneCommand = Command.make("lane").pipe(
 		integrate,
 		refresh,
 		pushLane,
+		retrigger,
 		stale,
 		seats,
 		migrate,

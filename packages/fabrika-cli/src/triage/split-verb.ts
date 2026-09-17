@@ -132,7 +132,7 @@ export const readbackMismatch = (
 };
 
 /**
- * The verb, as one `Effect.fn` generator rather than a function returning `Effect.gen` — effect-smol
+ * The verb, as one `Effect.fn` generator rather than a function returning `Effect.gen` — Effect-TS/effect
  * `LLMS.md` §"Using Effect.fn" ("Avoid creating functions that return an Effect.gen").
  */
 export const runSplit = Effect.fn(function* (options: SplitOptions) {

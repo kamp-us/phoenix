@@ -146,6 +146,35 @@ the verb. There are two, and only one of them is a defect:
 
 ## 3 — Judge each class by its rubric
 
+<!-- anchor: AN-EPIC-CHILD-SEATS-ITS-TREE-FIRST --> **On an epic child, seat your worktree at the
+range tip before you run anything that reads the working tree.** A child's build branch is local and
+unpushed by design — one epic run is one branch and one PR at the tail — so a reviewer worktree cut
+fresh from the driver's checkout stands on the assembly branch, or on whatever that checkout last
+held, and the range's tip commit is not in your tree at all. Every fence that reads files — a
+typecheck, a formatter, a test run, the guard below — then reads a tree your verdict never names, and
+the range verdict records base, tip and a content digest, never which tree the commands ran in, so a
+wrong verdict is indistinguishable afterwards from a right one. One reviewer stood on a third commit
+for its whole first pass, caught it itself, and retracted two posted verdicts; nothing forced that
+catch.
+
+```bash
+fabrika review seat 8820 --base 9f2c1ab --tip 03135b9
+```
+
+The positional is your brief's child issue and the pair is that brief's own `range`, all three typed
+out as they printed — never a number or a range you re-resolved here.
+The verb checks the tree out at the tip, detached, and reads the commit back off git, so the answer's
+second field is where you provably stand: `checked-out` on the first run, `already-seated` on a
+re-run, which is not a second checkout. **Exit `20` is a stop, not a note**: the tip is not reachable
+in this clone — no lane branch of the child, no object for that tip, or no lane branch that reaches
+it — and the range was built in a tree this one cannot see, so there is nothing here to grade. Report
+it and end; grading in place is the one thing the verb exists to refuse. `8`, `9` and `11` are
+UNKNOWN in the same way: where the tree stands was not proven, so nothing below this line has run on
+a tree you can name.
+
+The object-database reads further down are unaffected either way — `git show <rev>:<path>` reads a
+commit, not the working tree, so it is right before the seat and after it.
+
 ```bash
 fabrika review diff $pr_number --sha 03135b91
 ```
@@ -351,6 +380,13 @@ a regression test covers qty > 1
 EOF
 ```
 
+**At the freeze the verb appends nothing, and the finding is still on record.** Hand it `--round`
+and read its answer: `escalated-frozen` means the acceptance-criteria fence is frozen at the cap, so
+your finding went out as a tagged comment on the issue instead of into the contract. That is a
+landed route, not a dropped one — `build verdicts` folds that comment into the next repair round's
+findings, so the round reads it. State the finding in your verdict body as well, and route no human:
+the escalation is machinery, and a person is reached only where the round budget itself is spent.
+
 **On an epic child, name the range instead of a PR.** There is no PR mid-run (§6), so the subject
 is the same `--base`/`--tip` pair your verdict was posted over, the positional is the child issue,
 and the tag reads `range:<base>..<tip>` rather than `pr:#<n>`. Every fence runs unchanged, so the
@@ -358,7 +394,7 @@ route this step names is open on a child exactly as it is on a PR — a finding 
 in the verdict body instead enters no cycle.
 
 ```bash
-fabrika review append-criterion $child_issue --base 9f2c1ab --tip 03135b9 --round 1 <<'EOF'
+fabrika review append-criterion 8820 --base 9f2c1ab --tip 03135b9 --round 1 <<'EOF'
 a regression test covers the widened union
 EOF
 ```

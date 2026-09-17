@@ -1,4 +1,4 @@
-// @patch-pin: effect@4.0.0-beta.92
+// @patch-pin: effect@4.0.0-rc.112
 /**
  * The end-to-end half of the excess-operand guard: the **exit status** a caller actually reads.
  *

@@ -20,7 +20,17 @@ import {
 import type {CommentRecord} from "../io/issues.ts";
 
 export type PreviewResolution =
-	| {readonly _tag: "Resolved"; readonly value: PreviewAnnouncement}
+	/**
+	 * `apps` is every app the announcement carries a block for, not only the chosen one: a caller
+	 * that shoots a surface has to know which apps this preview deployed at all, because a surface
+	 * belonging to an app nobody deployed would otherwise be shot at the chosen app's origin and come
+	 * back as its not-found page.
+	 */
+	| {
+			readonly _tag: "Resolved";
+			readonly value: PreviewAnnouncement;
+			readonly apps: readonly string[];
+	  }
 	/** Proven: no comment carries the preview anchor at all. */
 	| {readonly _tag: "NoPreview"}
 	/** The announcement names several apps and the caller picked none. */
@@ -58,7 +68,7 @@ export const resolvePreview = (
 	if (app === null && apps.length > 1) return {_tag: "Ambiguous", apps};
 	const chosen = app ?? (apps[0] as string);
 	const read = readPreviewAnnouncement(announcement.body, chosen);
-	if (read._tag === "Announced") return {_tag: "Resolved", value: read.value};
+	if (read._tag === "Announced") return {_tag: "Resolved", value: read.value, apps};
 	if (read._tag === "Malformed") return {_tag: "Malformed", reason: read.reason};
 	return {
 		_tag: "Malformed",

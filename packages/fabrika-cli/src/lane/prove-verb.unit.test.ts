@@ -1671,6 +1671,44 @@ describe("lane prove — the epic tail keeps the PR arms", () => {
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-ui (absent)");
 	});
+
+	/**
+	 * The tail's own split, and the other half of the deferral above. The emitted tail now carries
+	 * `review:ui` behind a `class:ui` arm, so a tail PASS relaying that class routes into it and
+	 * hands the rendered namespace to the cell that will prove it — the same read a single-issue
+	 * lane has always taken, reached by the one lane shape that could not take it. Without the cell
+	 * the whole `review-ui` set piled onto `review`, every tail PASS refused at exit 23, and the run
+	 * could not park honestly either, because `review` is an active state no stale sweep reads.
+	 */
+	it("defers the tail's review-ui into review:ui when the PASS relays the ui class", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull({body: "Fixes #4300\n\n## Deviations\nNone.\n"})],
+			[FILES, served([{filename: "apps/site/src/routes/page.tsx"}])],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runProve({
+					root: ROOT,
+					lane: "4300",
+					event: "PASS",
+					task: "epic_4300",
+					classes: ["ui"],
+					pr: null,
+					repo: null,
+					cwd: "/repo",
+					env: {CLAUDE_PIPELINE_REPO: "o/r"},
+				}),
+				Layer.mergeAll(epicLaneAt("tail").layer, seams.layer),
+			),
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence).toMatchObject({deferred: ["review-ui"]});
+	});
 });
 
 /**

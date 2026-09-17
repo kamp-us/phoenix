@@ -44,14 +44,23 @@ export const SpellFailure = Schema.Struct({
 });
 export type SpellFailure = typeof SpellFailure.Type;
 
-// The reply is flat, and the union is what keeps `ok` and its payload together: a reply carrying
-// both a result and an error is not a member of either class, so it cannot be built or decoded.
+// The reply is flat, and `ok` is the discriminant that picks the arm: a decode reads `ok`, admits
+// that arm's fields, and drops everything else. So a frame that arrives carrying both a result and
+// an error cannot come out of the decode carrying both — whichever `ok` names is the whole reply,
+// and neither class can be built with the other's payload.
 export class SpellReplyOk extends Schema.Class<SpellReplyOk>("SpellReplyOk")({
 	type: Schema.Literal("spell.reply"),
 	version: Version,
 	id: CallId,
 	ok: Schema.Literal(true),
-	result: Schema.Unknown,
+	/**
+	 * Optional because JSON cannot carry `undefined`: an authored spell's `result` is `Schema.Void`
+	 * (`../authoring/commands.ts`), so `succeeded` builds the reply with `result: undefined` and
+	 * `JSON.stringify` drops the key. A required key refused every one of those replies, and the
+	 * command line waited at "Running…" forever (#9365). Absent and `undefined` mean the same thing
+	 * here: a spell that completed and returned nothing.
+	 */
+	result: Schema.optionalKey(Schema.Unknown),
 }) {}
 
 export class SpellReplyError extends Schema.Class<SpellReplyError>("SpellReplyError")({

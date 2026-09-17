@@ -100,3 +100,15 @@ export const ORIGIN_REPO_UNRESOLVABLE = 21;
  * not an empty directory, and "read and empty" is already an answer rather than a refusal.
  */
 export const CORPUS_DECLINED = 22;
+
+/**
+ * The branch refs could not be walked, so the ids claimed on unpublished branches are UNKNOWN.
+ *
+ * Its own seat rather than {@link DIR_UNREADABLE}'s or {@link IN_FLIGHT_UNKNOWN}'s, on both of their
+ * stated reasons: this reads a third thing — this clone's branch refs — and its remedy is local
+ * git, where `18`'s is GitHub and `11`'s is the record directory. A caller routing a failed ref walk
+ * to any of those three would retry the wrong read.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8901
+ */
+export const BRANCH_CLAIMS_UNKNOWN = 23;

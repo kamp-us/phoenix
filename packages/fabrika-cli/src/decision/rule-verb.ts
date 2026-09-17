@@ -25,10 +25,31 @@
  * acceptance-criteria block still earns its marker — the founder's judgement is the durable thing —
  * but not the audience, because `ready-for:agent` promises a builder can grade the issue cold and a
  * criteria-less one only parks the lane at `build claim` exit 32.
+ *
+ * **Two shapes name the ruling, and exactly one is given.** `--cites` names a comment that is
+ * already on the issue; `--authorization` hands over a file quoting the founder's words, which this
+ * verb posts verbatim and then cites — `grill rule`'s shape, through the same check in
+ * `../authorization.ts`, so a ruling given in conversation costs the founder no comment to type. The
+ * two write orders mirror each other: under `--authorization` the quote lands FIRST and the marker
+ * second, because an interrupted run that wrote the marker first would leave it pointing at a
+ * comment that does not exist, while the reverse leaves a dated quote nothing honours.
+ *
+ * **What the authorization shape changes about the authority, and what it does not.** The account
+ * invoking this verb still has to be on the control-plane roster, and the comment it posts is that
+ * account's; nothing is loosened at the ACL. What moves is who types the words: an agent relaying a
+ * founder ruling verbatim is recording it, not making it, and no machine can tell a truthful relay
+ * from a fabricated one. That is the same limit `grill rule` states, taken knowingly.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8857#issuecomment-5625302485
  */
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {
+	type AuthorizationDocument,
+	authorizationBody,
+	readAuthorization,
+} from "../authorization.ts";
 import {parseCitation} from "../build/scope-admission.ts";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
 import {
@@ -55,12 +76,16 @@ import {
 	emit,
 	markedIssue,
 	RULING_GRAMMAR,
+	type RulingUrl,
 	rulingUrl,
 	scopeDigest,
 } from "../wire/decision-ruling.ts";
 import {stampOf} from "../wire/grill-marker.ts";
 import {
+	AUTHORIZATION_ABSENT,
+	BARE_AT_PATH,
 	CRITERIA_REQUIRED,
+	LEAKED_PATH,
 	NO_TARGET,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
@@ -71,6 +96,47 @@ import {bodyDigest} from "./digest.ts";
 import {requireDecision} from "./ruling.ts";
 
 const VERB = "decision rule";
+
+/** The seats this group gives the shared authorization check's three proven refusals. */
+const AUTHORIZATION_CODES = {
+	absent: AUTHORIZATION_ABSENT,
+	bareAt: BARE_AT_PATH,
+	leaked: LEAKED_PATH,
+};
+
+/**
+ * A comment's URL in the one grammar the marker reads, composed from the ids rather than taken off
+ * the create call's `html_url` echo — the marker's own read checks this shape, so composing it here
+ * is what makes the write and the read agree without a second parser.
+ */
+const commentUrl = (repo: string, issue: number, id: number): string =>
+	`https://github.com/${repo}/issues/${issue}#issuecomment-${id}`;
+
+type CitedRuling =
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {readonly _tag: "Cited"; readonly url: RulingUrl; readonly commentId: number};
+
+/** The `--cites` shape's two reads: the citation grammar, and the brand the marker's field needs. */
+const citedRuling = (cites: string, repo: string, issue: number): CitedRuling => {
+	const read = parseCitation(cites, repo, issue);
+	if (read._tag === "Malformed") {
+		return {
+			_tag: "Refused",
+			outcome: refuse(FAILED, `${VERB}: --cites ${read.reason}; nothing was written.`),
+		};
+	}
+	const url = rulingUrl(cites);
+	if (url === null || read.citation._tag !== "Cited") {
+		return {
+			_tag: "Refused",
+			outcome: refuse(
+				FAILED,
+				`${VERB}: --cites "${cites}" is not an issue-comment URL — the grammar is ${RULING_GRAMMAR}; nothing was written.`,
+			),
+		};
+	}
+	return {_tag: "Cited", url, commentId: read.citation.commentId};
+};
 
 /**
  * The label writes this run owes. The audience's answer holds only over a body a builder could grade
@@ -92,18 +158,34 @@ const skippedFlip = (
 		? `${VERB}: the ruling marker stands, but #${issue} carries no acceptance-criteria block — ${criteria.reason}. ready-for:agent promises a builder can pick it up cold, so the audience was not flipped: author the block with \`fabrika triage enrich ${issue}\` and re-run.`
 		: `${VERB}: the ruling marker stands, but #${issue}'s acceptance-criteria block is malformed — ${criteria.reason} (${criteria.evidence}). The audience was not flipped: repair a level drift with \`fabrika triage repair-criteria ${issue}\`, anything else with \`fabrika triage enrich ${issue}\`, then re-run.`;
 
-export interface RuleOptions {
+/**
+ * Where the founder's words are, in the one place that says which of the two they are.
+ *
+ * A union rather than two optional fields: "both given" and "neither given" are not states this verb
+ * has an answer for, and the adapter refuses them at the flags rather than passing an ambiguity down.
+ */
+export type RulingSource<R = never> =
+	/** A comment already on the issue, as an issue-comment URL. */
+	| {readonly _tag: "Cited"; readonly cites: string}
+	/** A file quoting the founder verbatim, which this verb posts and then cites. */
+	| {
+			readonly _tag: "Quoted";
+			/** The `--authorization` path, carried for the refusal messages only. */
+			readonly authorizationPath: string;
+			readonly authorization: Effect.Effect<AuthorizationDocument, never, R>;
+	  };
+
+export interface RuleOptions<R = never> {
 	readonly number: number;
-	/** The comment the ruling is written in, as an issue-comment URL. */
-	readonly cites: string;
+	readonly ruling: RulingSource<R>;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly now: () => Date;
 }
 
-export const runRule = (
-	options: RuleOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+export const runRule = <R = never>(
+	options: RuleOptions<R>,
+): Effect.Effect<VerbOutcome, never, R | ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "an issue number", options.number);
 		if (bad !== null) return bad;
@@ -112,35 +194,42 @@ export const runRule = (
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
 
-		const cited = parseCitation(options.cites, repo, options.number);
-		if (cited._tag === "Malformed") {
-			return refuse(FAILED, `${VERB}: --cites ${cited.reason}; nothing was written.`);
-		}
-		const citation = cited.citation;
-		const url = rulingUrl(options.cites);
-		if (url === null || citation._tag !== "Cited") {
-			return refuse(
-				FAILED,
-				`${VERB}: --cites "${options.cites}" is not an issue-comment URL — the grammar is ${RULING_GRAMMAR}; nothing was written.`,
-			);
-		}
+		const source = options.ruling;
+		const cited = source._tag === "Cited" ? citedRuling(source.cites, repo, options.number) : null;
+		if (cited?._tag === "Refused") return cited.outcome;
+		const quote =
+			source._tag === "Quoted"
+				? readAuthorization(
+						VERB,
+						"ruling",
+						source.authorizationPath,
+						yield* source.authorization,
+						AUTHORIZATION_CODES,
+					)
+				: null;
+		if (quote?._tag === "Refused") return quote.outcome;
 
 		const target = yield* requireDecision(VERB, repo, options.number);
 		if (target._tag === "Refused") return target.outcome;
 
-		const listed = yield* listComments(repo, options.number);
-		if (listed._tag === "Failure") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the comments on #${options.number}: ${listed.reason} — whether the cited ruling is recorded there is UNKNOWN. Nothing was written.`,
-			);
-		}
-		const ruling = listed.value.find((comment) => comment.id === citation.commentId);
-		if (ruling === undefined) {
-			return refuse(
-				NO_TARGET,
-				`${VERB}: comment ${citation.commentId} is not on #${options.number} — a ruling has to be recorded on the issue it rules.`,
-			);
+		// Only the cited shape has a comment to locate: the quoted one posts its own, below.
+		let citedNote: string | null = null;
+		if (cited !== null) {
+			const listed = yield* listComments(repo, options.number);
+			if (listed._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read the comments on #${options.number}: ${listed.reason} — whether the cited ruling is recorded there is UNKNOWN. Nothing was written.`,
+				);
+			}
+			const ruling = listed.value.find((comment) => comment.id === cited.commentId);
+			if (ruling === undefined) {
+				return refuse(
+					NO_TARGET,
+					`${VERB}: comment ${cited.commentId} is not on #${options.number} — a ruling has to be recorded on the issue it rules.`,
+				);
+			}
+			citedNote = `${VERB}: read ${listed.value.length} comment(s) on #${options.number}; the cited ruling is ${ruling.author}'s.`;
 		}
 
 		const viewer = yield* viewerLogin;
@@ -160,7 +249,8 @@ export const runRule = (
 		}
 		const notes = [
 			`${VERB}: ${roster.logins.size} control-plane account(s) from ${roster.owners.join(", ") || "no owner"} at ${roster.ref}.`,
-			`${VERB}: read ${listed.value.length} comment(s) on #${options.number}; the cited ruling is ${ruling.author}'s.`,
+			citedNote ??
+				`${VERB}: the ruling is quoted verbatim and posts as ${viewer.value}'s comment on #${options.number} — the marker binds the text, and no machine can prove the quote truthful.`,
 		];
 		if (roster.logins.size === 0) {
 			return refuse(
@@ -209,6 +299,33 @@ export const runRule = (
 					notes,
 				);
 			}
+		}
+
+		let url = cited?.url ?? null;
+		if (quote !== null && quote._tag === "Quoted") {
+			const authorization = yield* createComment(
+				repo,
+				options.number,
+				authorizationBody(quote.text),
+			);
+			if (authorization._tag === "Failure") {
+				return refuse(
+					WRITE_UNKNOWN,
+					`${VERB}: the authorization write failed: ${authorization.reason} — it may or may not have landed and no marker was written, so nothing rules #${options.number}. Re-read the issue before retrying.`,
+					notes,
+				);
+			}
+			url = rulingUrl(commentUrl(repo, options.number, authorization.value.id));
+			notes.push(
+				`${VERB}: the quoted authorization landed as comment ${authorization.value.id}; the marker cites it.`,
+			);
+		}
+		if (url === null) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: the ruling comment does not brand as ${RULING_GRAMMAR} — the marker cannot cite it.`,
+				notes,
+			);
 		}
 
 		const body = emit({issue, digest, ruling: url, at});

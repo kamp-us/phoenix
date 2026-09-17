@@ -30,6 +30,7 @@ Named because a spec that leaves the substrate open makes the implementer guess.
 | `review post` | the single sanctioned verdict emit: compose through the `verdict-marker` wire format, bind to the inspected head at post time, post one comment per namespace at that head, read it back | marker composition, head re-resolution, leak scan and read-back are a protocol; the polarity and clause are judgment |
 | `review append-criterion` | append one reviewer-authored acceptance criterion to the linked issue under the four fences (append-only · ACL-gated fail-closed · frozen at `src/retry-budget.ts`'s `CAP_ROUND`), with a provenance tag naming the PR or, on an epic child, the range | the fences and the diff-guarded append are mechanical; whether a finding is in-scope is judgment |
 | `review scratch` | the per-lane directory this reviewer's staged files go under, allocated fail-closed | deriving a namespace no second lane resolves to, and refusing when it cannot be derived, is mechanical; what to stage there is judgment |
+| `review seat` | this worktree checked out at an epic child's range tip, read back off git, or a refusal naming the range it cannot reach | resolving the child's local branch, proving it carries the tip and checking out is mechanical; what the seated tree then says is judgment |
 
 ### Considered and deliberately not derived
 
@@ -54,6 +55,20 @@ the same tracked debt the sibling contracts carry.)
   (`git diff <base>...<head>`), which writes objects and no working tree. Nothing is checked out,
   so no head instruction file is ever on disk to be loaded — a diff that adds a worktree or a
   checkout is still the wrong fix and should be red at review.
+
+  **`review seat` is the one checkout this group performs, and it is narrower than the posture it
+  looks like it reverses.** It executes nothing and judges nothing: it moves the reviewer's *own*
+  worktree onto the commit its verdict already names, on an epic child, where the fences that read
+  the working tree are the child review's by design and the child's branch is local to the tree that
+  built it. It cuts no worktree of its own — so the `/tmp` collision and the fixed-name scratch file
+  both stay unconstructible — and it never checks out a pull request's head, which is the surface the
+  self-review hole lives on. What it does put on disk is the child's range as its own run built it,
+  and **no `self` fence governs that read** — `self` is computed by `review scope`, which resolves a
+  pull request's head and has no range form, so an epic child's review never derives that flag at
+  all. What holds instead is narrower and mechanical: a checkout mid-run auto-loads no instruction
+  file, and the shell judges by the rubric text its spawn preloaded, so moving the tree cannot change
+  which rules the reviewer applies. That is the whole control on this path; it is not the `self`
+  fence, and a later narrowing may not cite one here.
 - **A dead-link / decision-index / skill-frontmatter checker.** The repo's own CI jobs already
   gate each. The rubrics state the expectation; the verdict stays where it is enforced.
 - **A control-plane classifier.** `cp-classify` routes §CP membership and CODEOWNERS enforces it
@@ -1371,8 +1386,16 @@ tag names.
 
 **Output** — machine channel. One line: `appended\t<issue>\t<row-count-after>`, or
 `escalated-frozen\t<issue>\t<round>` when `--round` is at or past `CAP_ROUND` — the escalation comment landed and the
-AC did **not** (fence 4: append-rate stays bounded by fix-rate; a finding raised at the freeze
-routes to a human). Both are proven answers at exit 0, discriminated by the token.
+AC did **not** (fence 3: append-rate stays bounded by fix-rate, so the finding enters no contract).
+Both are proven answers at exit 0, discriminated by the token.
+
+**The escalation comment is machine-readable, and that is what keeps the token honest.** It carries
+`<!-- ac:escalated pr:#<pr> round:<n> -->` — the same grammar the provenance tag is written under,
+in `src/review/append.ts` — and `build verdicts` folds every such comment on the issue into its
+`escalatedFindings`. So the next repair round reads the finding through the verb it already opens,
+rather than through a comment id a driver typed into a spawn prompt. The prose beside the
+tag says the same thing to a human reading the issue: the finding is on record, the round after this
+one repairs it, and a human is asked only once the round budget is spent.
 
 With `--json`: `{"outcome":…,"issue":…,"rows":…,"round":…,"acl":"write+"}`.
 
@@ -1390,7 +1413,8 @@ With `--json`: `{"outcome":…,"issue":…,"rows":…,"round":…,"acl":"write+"
    spans several lines and its text appears on none of them, so matching text against lines found
    no anchor and refused every append on such a body.
 3. **Frozen at the repair budget's round K**, read from `src/retry-budget.ts`'s `CAP_ROUND`: a `--round` at
-   or past it posts the escalation comment instead of appending.
+   or past it posts the tagged escalation comment instead of appending. The finding is not thereby
+   lost — it is on record and folded by `build verdicts` — it is only kept out of the contract.
 4. **In-scope-only is the caller's** (the trace-to-stated-goal test is judgment); the provenance
    tag is what makes a routed row auditable after the fact.
 
@@ -1435,7 +1459,7 @@ The row enters the **next** review cycle's conjunctive verdict; the verb does no
 | `review append-criterion: read-back does not show the prior rows plus this one — inspect #<n>.` | 9 | refusal |
 
 **Scope** — one issue body (through the registered AC format), the invoking token's ACL, and on
-the frozen path one comment write. The read-back re-reads the block through the same format and
+the frozen path one tagged comment write. The read-back re-reads the block through the same format and
 compares row-by-row.
 
 **Examples**
@@ -1463,6 +1487,10 @@ appended	6095	7
   difference between a fence and a fence description.
 - **Authority comes from the ACL check**; a below-write author or a failed lookup skips the
   append entirely, fail-closed.
+- **The escalation the freeze forces had no reader.** Fence 3's comment was printed for nobody, so a
+  repair round dispatched past the freeze read a contract missing the round it was sent to repair,
+  and only a driver hand-writing the comment id into a spawn prompt connected the two ends. The tag
+  is what `build verdicts` folds it by.
 
 ---
 
@@ -1543,6 +1571,124 @@ $ echo $?
 - **The alternative was rejected.** Having `review diff` verify staged bytes on re-read re-derives
   *detection* where the namespace makes the collision unconstructible, which is the route both
   prior fixes took.
+
+---
+
+## `review seat`
+
+**Invocation**
+
+```
+fabrika review seat 8820 --base <base> --tip <tip>
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the epic child whose range this shell was briefed on |
+| `--base` | string | yes | — | the range's base revision, as the brief's `range` prints it |
+| `--tip` | string | yes | — | the range's tip revision — the commit this tree is seated at |
+| `--json` | boolean | no | `false` | the full result object instead of the line grammar |
+
+**Why the tree is the wrong tree by default.** One epic run is one branch and one pull request at
+the tail, so a child's build branch is local and unpushed. A reviewer worktree cut fresh from the
+driver's checkout stands on the assembly branch — or on whatever that checkout last held — and the
+range's tip is not in it. Every fence that reads the working tree then reads a tree the verdict
+never names, and the `range-verdict-marker` binds base, tip and a content digest, never which tree
+the commands ran in, so a wrong verdict is indistinguishable afterwards from a right one.
+
+**It seats or it refuses.** Two facts have to hold: the tip resolves to a commit here, and a branch
+this clone's own lane grammar says was cut for this child reaches it. Neither is a read that failed,
+so both refuse on `20` rather than on the UNKNOWN seat, and a refusal is a stop — there is no arm
+that grades in place. Several carrying branches is not ambiguity about the seat: each reaches the
+same commit, and the commit is what the tree is put on, so all of them are reported and the first is
+named.
+
+**A candidate nobody could read decides nothing once another has carried the tip.** A clone that has
+run more than one attempt at a child carries stale `build/<n>-…` refs beside the live one, so a
+candidate whose ref or containment read fails is ordinary rather than exotic. Each such failure is
+kept as a fact about that candidate and reported on stderr beside the seat; it becomes the `11`
+refusal only where no candidate carried the tip and an unread one could have. Refusing the whole verb
+on it while the seat was already proven would turn a determined answer into a park on a human.
+
+**The seat is detached, and a re-run is not a second checkout.** A reviewer commits nothing, so
+switching or moving a branch would be a mutation nobody asked for. A tree already standing on the
+tip is answered by reading the commit rather than by checking out again, and the answer says which
+happened. It is `git switch --detach`, not `git checkout --force`: a tree carrying uncommitted work
+is left exactly as it stands and the refusal is reported rather than the work destroyed.
+
+**Output** — machine channel. One stdout line:
+`seated\t<commit>\t<branch>\t<checked-out|already-seated>`, where `<commit>` is read back off git
+*after* the checkout — never the operand echoed. The carrying branches and the read-back are on
+stderr. `--json` answers
+`{answer, issue, base, tip, head, branch, carriers, action}`.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `1` | the positional is not an issue number |
+| `8` | the checkout itself failed — where this tree stands is UNKNOWN |
+| `9` | the checkout reported success and the commit reads back as another — nothing here is seated |
+| `10` | a lone `--base`/`--tip`, neither given, or an end that is not a revision |
+| `11` | a git read the answer turns on failed — the branch list, this tree's HEAD, the read-back, or every candidate that could have carried the tip; nothing was checked out |
+| `20` | the tip is not reachable here: no lane branch of this child is in this clone, the tip resolves to no object, or no lane branch of this child reaches it |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review seat: <n> is not an issue number.` | 1 | refusal |
+| `review seat: --base and --tip are required — the range out of this shell's brief is the subject, and there is no PR here to resolve one from.` | 10 | refusal |
+| `review seat: --base and --tip come together — a range has two ends.` | 10 | refusal |
+| `review seat: --<end> "<v>" is not a revision — expected 7–40 lowercase hex characters.` | 10 | refusal |
+| `review seat: no branch of this clone was cut for #<n> — "build/<n>-<slug>-<nonce>" resolves to nothing, so <base>..<tip> was built somewhere this worktree cannot see. …` | 20 | refusal |
+| `review seat: cannot resolve <tip> to a commit — the tip of <base>..<tip>; <branches> carry #<n>'s commits and this tree holds no object for that tip. …` | 20 | refusal |
+| `review seat: <base>..<tip>'s tip is in this tree's object database, but no lane branch of #<n> reaches it — <branches> carry other commits. …` | 20 | refusal |
+| `review seat: cannot read this tree's local branches: <reason> — whether <base>..<tip>'s tip is here is UNKNOWN, so nothing was checked out.` | 11 | refusal |
+| `review seat: no readable lane branch of #<n> carries <base>..<tip>'s tip and <k> could not be read — cannot resolve "<branch>": <reason>; cannot tell whether "<branch>" carries <tip>: <reason> — so whether the tip is here is UNKNOWN and nothing was checked out.` | 11 | refusal |
+| `review seat: cannot read this tree's HEAD: <reason> — where it stands is UNKNOWN, so nothing was checked out.` | 11 | refusal |
+| `review seat: cannot read this tree's HEAD back: <reason> — whether the seat took is UNKNOWN.` | 11 | refusal |
+| `review seat: <k> other candidate branch(es) could not be read — <per-candidate reasons>. The seat was proven without them.` | 0 | notice |
+| `review seat: \`git switch --detach <tip>\` failed: <reason> — this tree stood on <commit> when the checkout was attempted and where it stands now is UNKNOWN. …` | 8 | refusal |
+| `review seat: the checkout reported success and HEAD reads <other>, not <tip> — this tree is not seated on <base>..<tip> …` | 9 | refusal |
+
+**Scope** — one worktree, moved. It reads this clone's refs and object database, checks out one
+commit, and reads the result back. No network call, no board state, no write to any artifact.
+
+**Examples**
+
+```
+$ fabrika review seat 8820 --base 99b1453 --tip 4011b1d
+seated	4011b1d8238aaf1d71de8704bedb1aa1dd98fda9	build/8820-seat-the-tree-9f2e1a4b	checked-out
+
+$ fabrika review seat 8820 --base 99b1453 --tip 4011b1d
+seated	4011b1d8238aaf1d71de8704bedb1aa1dd98fda9	build/8820-seat-the-tree-9f2e1a4b	already-seated
+
+$ fabrika review seat <child> --base 99b1453 --tip 4011b1d
+review seat: no branch of this clone was cut for #<child> — "build/<child>-<slug>-<nonce>" resolves
+to nothing, so 99b1453..4011b1d was built somewhere this worktree cannot see.
+$ echo $?
+20
+```
+
+**Grounding**
+
+- **A reviewer graded a tree that was neither end of its range.** On one epic run the brief's range
+  was `<base>..<tip>` and the reviewer's shell stood on a third commit, so its first typecheck,
+  formatter, test and guard runs all read the pre-range tree. It noticed on its own, retracted both
+  posted verdicts and re-graded those rows UNKNOWN. Nothing in the machinery forced that catch, and
+  a less careful shell posts the verdict: a false PASS reaches the assembly merge and then the tail
+  PR, a false FAIL spends one of the child's three repair rounds, and neither is visible afterwards.
+- **A brief sentence was the alternative, and it is advice a shell can skip silently** — which is
+  the exact failure mode here. The brief rule ships too, as the human-readable half: the byte-fixed
+  `EPIC_RANGE_RULES` on a range-carrying child brief names this verb and its refusal, so a shell
+  reading only its brief learns the rule. The verb is what makes it provable.
+- **The tip alone was not enough.** Seating on any commit that happens to resolve would put the tree
+  on a revision nothing ties to this child, so the branch this clone's lane grammar names is read
+  first and the tip has to be on one — the same `childLaneBranches` nomination `lane prove` and
+  `lane brief` read, never a second filter.
 
 ---
 

@@ -1,8 +1,9 @@
 /**
- * The example's own tests, and the two that guard what makes it an example: its length, and the
- * packages it does not import. Both read the module's source text, because neither fact survives
- * compilation — a thirty-line program that grew to ninety still typechecks, and a cross-package
- * import is invisible in the compiled row.
+ * The example's own tests, and the three that guard what makes it an example: its length, the door
+ * it reaches the authoring layer through, and the packages it does not import. All three read the
+ * module's source text, because none of the three facts survives compilation — a thirty-line
+ * program that grew to ninety still typechecks, and neither an abandoned barrel nor a cross-package
+ * import is visible in the compiled row.
  */
 
 import {readFileSync} from "node:fs";
@@ -11,6 +12,7 @@ import {describe, it} from "@effect/vitest";
 import {Effect, Layer, Option, Schema, Stream} from "effect";
 import {expect} from "vitest";
 import config from "../../../.tuval/tuval.config.ts";
+import {isPromptPayload} from "../../ai-agent/ports/index.ts";
 import {codexSession} from "../../codex/program.ts";
 import {SpawnedProcesses} from "../../commands/core/process.ts";
 import {buildRegistry, lookupRow} from "../../commands/registry.ts";
@@ -19,7 +21,7 @@ import {ProcessTable} from "../../process/ProcessTable.ts";
 import {ProcessId} from "../../process/process.ts";
 import {noSelfReport} from "../../process/self-report.ts";
 import {type AnyProgram, ProgramId, programLabel} from "../../registry/program.ts";
-import {emit, send, spawn} from "../effect.ts";
+import {emit, send, spawn, spawned} from "../effect.ts";
 import {port} from "../port.ts";
 import {ShapeMismatch} from "../shape.ts";
 import {testProgram} from "../test-program.ts";
@@ -42,11 +44,26 @@ const codexReviewer = codexSession({
 });
 
 describe("authoring.example.pr-review is short enough to copy", () => {
-	it("fits the thirty-line bar with five lines of slack (#8716 R11.1)", () => {
+	it("sits inside the ceiling the epic set, and the ceiling has not moved (#8716 R11.1)", () => {
 		// Leading and trailing blanks belong to the docblock's own spacing and the file's final
 		// newline, so the count is the written body between them.
+		//
+		// The example is at the ceiling now rather than five under it: the `spawned` cell #8888 asked
+		// for costs four lines, and the founder ruled that the room comes from importing the
+		// authoring layer through its barrel rather than from a wider number. So the next line the
+		// example wants is the finding the epic asked for — the API still costs too much per
+		// program — and this number is not the thing to change.
 		const written = body.join("\n").trim().split("\n");
 		expect(written.length).toBeLessThanOrEqual(35);
+	});
+
+	it("reaches the authoring layer through the one door a third-party program uses (#8943)", () => {
+		// Six relative modules collapsed to one specifier is what paid for the `spawned` cell, so a
+		// later edit that reaches back past the barrel takes the room away again.
+		const specifiers = [...source.matchAll(/from "(\.\.\/[^"]+)"/g)].map((match) => match[1] ?? "");
+		expect(
+			specifiers.filter((from) => from.startsWith("../") && !from.startsWith("../../")),
+		).toEqual(["../index.ts", "../index.ts"]);
 	});
 
 	it("imports no program package, so no reviewer's SDK rides along", () => {
@@ -93,6 +110,25 @@ describe("authoring.example.pr-review, driven with testProgram", () => {
 		expect(run.effects).toContainEqual(
 			spawn(prReviewProgram.args.reviewer, {on: {result: "result"}}),
 		);
+	});
+
+	it("prompts the reviewer the moment the spawn answers, on the port the shape declares", () => {
+		const child = ProcessId.make("proc-reviewer");
+		const run = testProgram(prReviewProgram).send("pr", 8690).event(spawned(child, "reviewer"));
+		expect(run.effects).toHaveLength(1);
+		const [asked] = run.effects;
+		if (asked?.type !== "send") throw new Error("the `spawned` cell asked for no send");
+		expect(asked.to).toEqual({process: child, port: "prompt"});
+		// The child's own id is the idempotency key, so a redelivered send is dropped by the session
+		// rather than reviewed twice.
+		expect(asked.payload).toEqual({
+			text: "review PR #8690",
+			key: child,
+			timestamp: expect.any(Number),
+		});
+		// The port takes a stamped turn and not a line: `accepts` refuses anything else at the send
+		// (#8887), which no assertion on the text alone would catch.
+		expect(isPromptPayload(asked.payload)).toBe(true);
 	});
 
 	it("announces on `verdict` when the reviewer's routed `result` comes back", () => {

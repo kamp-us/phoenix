@@ -77,6 +77,7 @@ const take = leafCommand(
 		nonce: nonceFlag,
 		base: baseFlag,
 		declareUnreachable: Flag.boolean("declare-unreachable").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"seal the pack even though the work is unreachable, recording the unreachability in the proven half as a stated loss",
 			),

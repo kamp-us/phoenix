@@ -78,6 +78,7 @@ const tree = leafCommand(
 	"tree",
 	{
 		requireClean: Flag.boolean("require-clean").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"additionally refuse a tree with any uncommitted change — the lane-open posture (default: false)",
 			),
@@ -196,6 +197,7 @@ const claim = leafCommand(
 			),
 		),
 		resume: Flag.boolean("resume").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"take the repair lane of an epic child that already carries a standing range FAIL, rather than building it fresh; refused on a child holding no such FAIL, exactly as its absence is refused on one that does",
 			),
@@ -345,6 +347,7 @@ const reap = leafCommand(
 	"reap",
 	{
 		execute: Flag.boolean("execute").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"actually remove the trees classified REMOVE (default: false — print the classification and mutate nothing)",
 			),
@@ -403,6 +406,7 @@ const branch = leafCommand(
 			),
 		),
 		resumeLane: Flag.boolean("resume-lane").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"child-repair mode: take over the local branch a prior lane built <number> on, re-keyed to this claim's nonce; for an epic child, which opens no PR — takes no --slug and is exclusive with --resume",
 			),
@@ -567,11 +571,13 @@ const push = leafCommand(
 	"push",
 	{
 		forceWithLease: Flag.boolean("force-with-lease").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"permit a non-fast-forward update of this lane's own branch — repair resubmission only (default: false)",
 			),
 		),
 		dropRemoteCommits: Flag.boolean("drop-remote-commits").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"publish a head that does NOT contain the published remote head, dropping its commits — a deliberate history rewrite (default: false)",
 			),
@@ -600,6 +606,7 @@ const pr = leafCommand(
 	{
 		number: issueArg,
 		partial: Flag.boolean("partial").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				'the acceptance criteria are not all met: the body must say "Part of #<n>", not "Fixes #<n>" (default: false)',
 			),
@@ -631,6 +638,7 @@ const prBody = leafCommand(
 			Argument.withDescription("the open pull request whose body is replaced"),
 		),
 		partial: Flag.boolean("partial").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				'the acceptance criteria are not all met: the body must say "Part of #<n>", not "Fixes #<n>" (default: false)',
 			),
@@ -690,6 +698,7 @@ const deviations = leafCommand(
 		),
 		token: tokenFlag,
 		standing: Flag.boolean("standing").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"print the standing disclosure and write nothing — the entries this round carries forward (default: false)",
 			),
@@ -755,7 +764,7 @@ const verdicts = leafCommand(
 ).pipe(
 	Command.withShortDescription("The latest gate verdict per namespace at a PR's live head."),
 	Command.withDescription(
-		'The paginated, per-gate verdict fold on a PR: every comment and every review, the latest marker per gate namespace judged against the live head through bindToContent — head equality first, then the marker\'s content: digest, so a rebase that changed no content keeps its verdicts and this verb cannot disagree with ship gate; a digest that could not be derived is Unbindable and reports current:false. Native reviews are their OWN row kind (never coerced), the per-head FAIL round count, capReached, and the criteria frozen at or past the declared cap round. Prints one JSON object with head, mergeability, rows, rounds, capReached and frozenCriteria; {"rows":[]} on exit 0 is a proven "no verdicts" about the gates, readable against the scope line. mergeability is mergeable / conflicting / unknown, read off the same single-PR GET as the head, with GitHub\'s lazily computed null kept as unknown and never as clean: a PR conflicting against its base is repair work no gate emits a FAIL for, so an all-PASS fold over one is not a no-work answer. A stale marker prints as stale, never dropped. --issue <n> folds an epic child instead, whose verdicts are range-bound comments on the issue because a child opens no PR: each row names the range it was formed over rather than a head, a round is one graded tip, and clearances are empty with the reason on stderr — a clearance is recorded against a PR\'s base branch, and a child has none. Exits 7 (PR or issue proven absent or closed, or --issue names a PR), 10 (neither or both of --pr and --issue), 11 (the head, any comment page or any review page could not be read — UNKNOWN, never "none"). Example: fabrika build verdicts --pr 4310',
+		'The paginated, per-gate verdict fold on a PR: every comment and every review, the latest marker per gate namespace judged against the live head through bindToContent — head equality first, then the marker\'s content: digest, so a rebase that changed no content keeps its verdicts and this verb cannot disagree with ship gate; a digest that could not be derived is Unbindable and reports current:false. Native reviews are their OWN row kind (never coerced), the per-head FAIL round count, capReached, the criteria frozen at or past the declared cap round, and the findings the freeze turned away entirely — escalatedFindings folds the tagged escalation comments review append-criterion posts on the linked issue when it may no longer append, each {round, commentId, body} with the body through the content gate, so a repair round past the freeze reads the finding through this verb instead of a comment id in a spawn prompt. The child arm folds the child issue\'s own escalations the same way. Prints one JSON object with head, mergeability, rows, rounds, capReached, frozenCriteria and escalatedFindings; {"rows":[]} on exit 0 is a proven "no verdicts" about the gates, readable against the scope line. mergeability is mergeable / conflicting / unknown, read off the same single-PR GET as the head, with GitHub\'s lazily computed null kept as unknown and never as clean: a PR conflicting against its base is repair work no gate emits a FAIL for, so an all-PASS fold over one is not a no-work answer. A stale marker prints as stale, never dropped. --issue <n> folds an epic child instead, whose verdicts are range-bound comments on the issue because a child opens no PR: each row names the range it was formed over rather than a head, a round is one graded tip, and clearances are empty with the reason on stderr — a clearance is recorded against a PR\'s base branch, and a child has none. Exits 7 (PR or issue proven absent or closed, or --issue names a PR), 10 (neither or both of --pr and --issue), 11 (the head, any comment page, any review page or the linked issue\'s comment page could not be read — UNKNOWN, never "none"). Example: fabrika build verdicts --pr 4310',
 	),
 );
 

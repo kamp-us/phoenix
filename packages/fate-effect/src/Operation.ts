@@ -25,7 +25,7 @@ export type DefinitionTypeName<D> = D extends {readonly type: infer T}
 		: undefined;
 
 /** Annotated with the wire code fate's own schema validation emits, so `encodeWireError` needs no registry edit. */
-export class InputValidationError extends Schema.TaggedErrorClass<InputValidationError>()(
+export class InputValidationError extends Schema.TaggedError<InputValidationError>()(
 	"fate-effect/InputValidationError",
 	{message: Schema.String},
 	{[FateWireCode]: "VALIDATION_ERROR"},
@@ -241,7 +241,7 @@ export function list<Item>(
  * that asymmetry is intrinsic, not an omission (investigated #1366):
  *
  *  - `E extends DefinitionErrors<D>` works because `error:` is a `Schema.Top`,
- *    whose decoded instance type is recoverable as `S["Type"]` (effect-smol
+ *    whose decoded instance type is recoverable as `S["Type"]` (Effect-TS/effect
  *    `Schema.ts` `Top`, the `readonly "Type"` member) — an identity projection
  *    ({@link DefinitionErrors}). `type:` is a {@link TypeRef} (a wire type-NAME
  *    ref, or a bare string), carrying no decoded-instance surface to project `A`

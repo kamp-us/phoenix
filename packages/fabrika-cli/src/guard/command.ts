@@ -598,6 +598,7 @@ const designTokenCheck = leafCommand(
 	{
 		root: rootFlag,
 		"write-baseline": Flag.boolean("write-baseline").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("re-snapshot the raw-px ceilings from this tree instead of judging it"),
 		),
 	},

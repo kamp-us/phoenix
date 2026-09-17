@@ -10,7 +10,11 @@
  *    the PATCH is sent (`./append.ts`).
  * 3. **Frozen at round K**, read from `../retry-budget.ts`'s `CAP_ROUND` — at or past
  *    the freeze the verb posts the escalation comment and appends nothing. Append-rate stays
- *    bounded by fix-rate; a finding raised at the freeze routes to a human.
+ *    bounded by fix-rate: the finding never becomes a graded criterion. It is not thereby lost —
+ *    the comment carries `./append.ts`'s escalation tag, and `build verdicts` folds it into the
+ *    next repair round's findings, so the round reads it without a driver hand-writing a pointer
+ *    into a spawn prompt. A human is reached only where the round budget is spent, which is
+ *    the repair loop's own escalation and not this fence's.
  * 4. **In-scope-only is the caller's** — the trace-to-stated-goal test is judgment. What this verb
  *    contributes is the provenance tag, which is what makes a routed row auditable afterwards.
  *
@@ -21,6 +25,8 @@
  * has no pull request mid-run, so `--base`/`--tip` name what the round was judged over exactly as
  * they do for `review post`; all four fences run on that form unchanged, and the only
  * thing that differs is what the provenance tag can name (`./append.ts`).
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9058#issuecomment-5625309255
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -34,6 +40,7 @@ import {
 	appendOnly,
 	type CriterionProvenance,
 	criterionRow,
+	escalationTag,
 	grewByOne,
 	insertAfterLastCriterion,
 	provenanceSubject,
@@ -184,12 +191,13 @@ export const runAppendCriterion = (
 		const before = block.value;
 
 		// Fence 3 — frozen at the cap round. The escalation lands and the AC does not; both are exit-0
-		// answers, discriminated by the stdout token.
+		// answers, discriminated by the stdout token. The tag is what a later round finds the comment
+		// by: the prose around it is for the human who opens the issue, and no reader parses it.
 		if (round >= CAP_ROUND) {
 			const escalated = yield* createComment(
 				repo,
 				issue,
-				`review append-criterion: a finding from ${provenanceSubject(provenance)}'s round ${round} was NOT appended — the acceptance-criteria fence is frozen at round ${CAP_ROUND}. Routing it to a human instead.\n\n${authored.text}`,
+				`review append-criterion: a finding from ${provenanceSubject(provenance)}'s round ${round} was NOT appended — the acceptance-criteria fence is frozen at round ${CAP_ROUND}, so it never became a graded criterion. It is on record here: \`build verdicts\` folds it into the next repair round's findings, so that round repairs it without becoming answerable for it. A human is asked only once the round budget is spent.\n\n${authored.text}\n\n${escalationTag(provenance, round)}`,
 			);
 			if (escalated._tag === "Failure") {
 				return refuse(

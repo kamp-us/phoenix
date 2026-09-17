@@ -5,9 +5,11 @@ import {
 	appendOnly,
 	type CriterionProvenance,
 	criterionRow,
+	escalationTag,
 	grewByOne,
 	insertAfterLastCriterion,
 	provenanceTag,
+	readEscalationTag,
 	readProvenanceTag,
 	sameSubject,
 	withoutProvenanceTag,
@@ -233,5 +235,21 @@ describe("readProvenanceTag", () => {
 		expect(withoutProvenanceTag(`a regression test ${provenanceTag(pull, 1)}`)).toBe(
 			"a regression test",
 		);
+	});
+
+	/**
+	 * The escalation tag is the same round trip over the other kind, and the two kinds do not read
+	 * each other: a finding folded as a landed criterion, or a landed criterion folded as a finding
+	 * the freeze turned away, would each be a false account of the contract.
+	 */
+	it("reads the escalation tag back over every subject, and never as a provenance one", () => {
+		for (const provenance of [pull, ranged]) {
+			const escalation = `the counters are off by one\n\n${escalationTag(provenance, 4)}`;
+			const routed = readEscalationTag(escalation);
+			expect(routed?.round).toBe(4);
+			expect(routed === null ? null : sameSubject(routed.provenance, provenance)).toBe(true);
+			expect(readProvenanceTag(escalation)).toBeNull();
+			expect(readEscalationTag(criterionRow("a regression test", provenance, 4))).toBeNull();
+		}
 	});
 });

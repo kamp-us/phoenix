@@ -1,4 +1,4 @@
-// @patch-pin: alchemy@2.0.0-beta.59
+// @patch-pin: alchemy@2.0.0-beta.77
 /**
  * Regression pin for the alchemy `Test.make` hook-timeout patch (#3168, ADR 0038).
  *
@@ -18,9 +18,12 @@
  * default a plain hook does, and specifically must NOT be the 120000 clamp — while an
  * explicit `{timeout}` override still threads through unchanged.
  */
+import {mkdtempSync, rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
 import * as Test from "alchemy/Test/Vitest";
 import {Effect, Layer} from "effect";
-import {describe, expect, it, beforeAll as vitestBeforeAll} from "vitest";
+import {afterAll, describe, expect, it, vi, beforeAll as vitestBeforeAll} from "vitest";
 import {getCurrentSuite, getHooks} from "vitest/suite";
 
 // `@vitest/runner` stashes each hook's resolved timeout on the registered hook fn under
@@ -40,6 +43,12 @@ const resolvedTimeoutOfLastBeforeAll = (): number | undefined => {
 };
 
 const CLAMP = 120_000;
+const profileDir = mkdtempSync(join(tmpdir(), "alchemy-hook-timeout-"));
+vi.stubEnv("ALCHEMY_HOME", profileDir);
+afterAll(() => {
+	vi.unstubAllEnvs();
+	rmSync(profileDir, {recursive: true, force: true});
+});
 
 // Hooks are registered at collection time (outside any `it`), then asserted inside the
 // tests below. `Test.make({providers: Layer.empty})` needs no cloud wiring here — the

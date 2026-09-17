@@ -35,6 +35,8 @@ export interface SweepOptions {
 	readonly dwellMinutes: number;
 	readonly wedgeDwellMinutes: number;
 	readonly driftCommits: number;
+	/** Passed through to each classification: the lazy `mergeable` job's re-read window. */
+	readonly mergeabilitySeconds: number;
 	readonly repo: string | null;
 	readonly json: boolean;
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */

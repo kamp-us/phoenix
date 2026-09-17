@@ -70,12 +70,9 @@ const WARM_POLL_MS = 2_000;
 // defect), then swallow it via `Effect.catchCause` since warmup is a non-fatal optimization. The
 // deploy gates (`awaitWorkerReady` / `awaitAuthRouteReady`) instead re-`orDie` their already-typed
 // throws unchanged, so they keep the named-defect diagnostic (#3146) — see each below.
-class ProbeError extends Schema.TaggedErrorClass<ProbeError>()(
-	"@kampus/web/integration/ProbeError",
-	{
-		cause: Schema.Defect(),
-	},
-) {}
+class ProbeError extends Schema.TaggedError<ProbeError>()("@kampus/web/integration/ProbeError", {
+	cause: Schema.Defect(),
+}) {}
 
 /**
  * A warm probe's readiness budget lapsed without the probe ever going ready.
@@ -335,10 +332,10 @@ export const warmFateRead = (
  */
 export const deployTransientRetry = Effect.retry({
 	while: isTransientDeployError,
-	schedule: Schedule.exponential("1 second").pipe(
-		Schedule.either(Schedule.spaced("10 seconds")),
-		Schedule.both(Schedule.recurs(10)),
-	),
+	schedule: Schedule.max([
+		Schedule.min([Schedule.exponential("1 second"), Schedule.spaced("10 seconds")]),
+		Schedule.recurs(10),
+	]),
 });
 
 /**
@@ -371,7 +368,37 @@ export const awaitWorkerReady = (
 			// per-file `deadlineMs` sized below the hook ceiling — it fires BEFORE the `beforeAll`
 			// guillotine rather than surfacing as the opaque "Hook timed out in 120000ms" (#3146).
 			if (!(await healthReady(res))) {
-				throw new WorkerNotReadyError(url, `last status ${res.status}`);
+				// Non-200 bodies were never consumed by healthReady; do not start that read after expiry.
+				const body =
+					res.status === 200
+						? await res
+								.clone()
+								.text()
+								.catch(() => null)
+						: null;
+				const text = body?.trim() ?? "";
+				const bodyKind =
+					res.status !== 200
+						? "not-read"
+						: body === null
+							? "unreadable"
+							: text === ""
+								? "empty"
+								: text === "Alchemy worker is being deployed..."
+									? "alchemy-deployment-placeholder"
+									: /^(?:<!doctype html|<html)/i.test(text)
+										? "html"
+										: /^[{[]/.test(text)
+											? "json-like"
+											: "text";
+				const detail = JSON.stringify({
+					contentType: res.headers.get("content-type")?.slice(0, 80) ?? null,
+					cacheStatus: res.headers.get("cf-cache-status")?.slice(0, 80) ?? null,
+					age: res.headers.get("age")?.slice(0, 80) ?? null,
+					bodyKind,
+					bodyLength: body?.length ?? null,
+				});
+				throw new WorkerNotReadyError(url, `last status ${res.status}; ${detail}`);
 			}
 		},
 		// Object notation (#2736 no-effect-promise); `orDie` reproduces the retired `Effect.promise`

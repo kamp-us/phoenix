@@ -220,6 +220,76 @@ describe("durability", () => {
 	);
 
 	it.effect(
+		"a snapshot the row declares a step from is migrated back in, keeping the state it had",
+		() => {
+			const stores = memoryStores();
+			const probe = probeOf();
+			const migrated: AnyProgram = {
+				...counterProgram(probe, stores, "2.0.0"),
+				migrations: {
+					"1.0.0": {to: "2.0.0", migrate: (raw) => Option.some({...(raw as State), acks: 0})},
+				},
+			};
+			return Effect.gen(function* () {
+				yield* Effect.gen(function* () {
+					const processes = yield* Processes;
+					const handle = yield* processes.spawn(counter, {services: Context.empty()});
+					yield* handle.dispatch({type: "tick"});
+				}).pipe(Effect.provide(kernel([counterProgram(probe, stores)], stores)));
+
+				yield* Effect.gen(function* () {
+					const table = yield* ProcessTable;
+					const restored = yield* restore(Context.empty());
+					assert.strictEqual(restored.length, 1);
+					// The count the 1.0.0 desk had, and the field 2.0.0 added, with no hand edit between.
+					assert.deepStrictEqual(restored[0]!.getState(), {count: 1, acks: 0});
+					assert.strictEqual((yield* table.list).length, 1);
+				}).pipe(Effect.provide(kernel([migrated], stores)));
+			});
+		},
+	);
+
+	it.effect(
+		"a version the row's steps do not reach is still refused, and still fresh-boots nothing",
+		() => {
+			const stores = memoryStores();
+			const probe = probeOf();
+			// A chain left behind by a later bump: it reaches 2.0.0, and the program is now 3.0.0.
+			const stale: AnyProgram = {
+				...counterProgram(probe, stores, "3.0.0"),
+				migrations: {
+					"1.0.0": {to: "2.0.0", migrate: (raw) => Option.some({...(raw as State), acks: 0})},
+				},
+			};
+			return Effect.gen(function* () {
+				const id = yield* Effect.gen(function* () {
+					const processes = yield* Processes;
+					const handle = yield* processes.spawn(counter, {services: Context.empty()});
+					yield* handle.dispatch({type: "tick"});
+					return handle.id;
+				}).pipe(Effect.provide(kernel([counterProgram(probe, stores)], stores)));
+
+				yield* Effect.gen(function* () {
+					const table = yield* ProcessTable;
+					const refused = yield* restore(Context.empty()).pipe(Effect.flip);
+					assert.instanceOf(refused, SnapshotRefused);
+					assert.deepStrictEqual(refused.found, {programId: "counter", version: "1.0.0"});
+					assert.deepStrictEqual(refused.expected, {programId: "counter", version: "3.0.0"});
+					assert.deepStrictEqual(yield* table.list, []);
+				}).pipe(Effect.provide(kernel([stale], stores)));
+
+				// The bytes the walk could not finish are the bytes still on disk.
+				const snapshot = parseSnapshot(yield* io(() => stores.snapshot(id).load()));
+				assert.deepStrictEqual(snapshot, {
+					programId: "counter",
+					version: "1.0.0",
+					state: {count: 1, acks: 1},
+				});
+			});
+		},
+	);
+
+	it.effect(
 		"bytes on disk that are not a snapshot are refused the same way, not booted over",
 		() => {
 			const id = ProcessId.make("garbage");

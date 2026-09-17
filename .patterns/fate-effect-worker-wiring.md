@@ -162,11 +162,11 @@ Three properties are load-bearing:
   exactly as it was, so tests and the long-lived `/fate/live` connection go on resolving fresh
   instead of holding a viewer across SSE frames.
 - **The default must be stateless.** `Context.Reference` caches its default value on the key
-  (effect-smol `Context.ts`), so a stateful one is an isolate-level cache serving one request's
+  (Effect-TS/effect `Context.ts`), so a stateful one is an isolate-level cache serving one request's
   answer to another.
 - **`Effect.cached` is the single-flight part.** It guards one latch, so K sibling fibers
   arriving together produce one read and K-1 awaits; a plain check-then-compute lets all K miss
-  (effect-smol `internal/effect.ts`, `cachedInvalidateWithTTL`). It is lazy — building the memo
+  (Effect-TS/effect `internal/effect.ts`, `cachedInvalidateWithTTL`). It is lazy — building the memo
   reads nothing.
 
 Only memoize what is stable for the request. Batch operations already run with no ordering

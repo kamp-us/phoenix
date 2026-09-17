@@ -24,6 +24,7 @@ import {runDiff} from "./diff-verb.ts";
 import {runPost} from "./post-verb.ts";
 import {runScope} from "./scope-verb.ts";
 import {runScratch} from "./scratch-verb.ts";
+import {runSeat} from "./seat-verb.ts";
 import {runVerdicts} from "./verdicts-verb.ts";
 
 /**
@@ -40,6 +41,7 @@ const repoFlag = Flag.string("repo").pipe(
 );
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
@@ -132,6 +134,7 @@ const ci = leafCommand(
 			),
 		),
 		wait: Flag.boolean("wait").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"poll a `pending` head until CI concludes or the budget expires, instead of answering with this moment's read",
 			),
@@ -252,6 +255,7 @@ const post = leafCommand(
 			Flag.withDescription("the range's tip revision — the other half of --base"),
 		),
 		supersede: Flag.boolean("supersede").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"acknowledge that this verdict retires a standing one of the OPPOSITE polarity at the same head, or ranged, over the same range; without it that post is refused at 17",
 			),
@@ -355,7 +359,7 @@ const appendCriterion = leafCommand(
 ).pipe(
 	Command.withShortDescription("Append one reviewer-authored acceptance criterion."),
 	Command.withDescription(
-		"Append one reviewer-authored acceptance criterion from STDIN under four fences — ACL-gated fail-closed, append-only, provenance-tagged, frozen at the declared cap round. The round's subject is a PR (`--pr`) or, on an epic child that has none, the commit range it was judged over (`--base`/`--tip`); the two never combine, and the provenance tag names whichever was given — `pr:#<n>` or `range:<base>..<tip>`, the same spelling `lane prove` reads. Every fence runs identically on both. Prints `appended\\t<issue>\\t<rows-after>`, or `escalated-frozen\\t<issue>\\t<round>` at the freeze; both are proven answers at exit 0. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (issue absent or closed, or no conforming acceptance-criteria block), 8 (the PATCH or the escalation comment failed — UNKNOWN), 9 (read-back does not show the prior rows plus this one), 10 (no subject named, both named, a lone --base/--tip, or an end that is not a revision), 11 (a precondition read failed), 14 (token below write or the ACL lookup failed), 15 (the write is not provably the prior rows plus one — the append-only fence). Examples: printf 'a regression test covers qty > 1' | fabrika review append-criterion 4287 --pr 4321 --round 1; printf 'a regression test covers qty > 1' | fabrika review append-criterion 6095 --base 9f2c1ab --tip 03135b9 --round 1",
+		"Append one reviewer-authored acceptance criterion from STDIN under four fences — ACL-gated fail-closed, append-only, provenance-tagged, frozen at the declared cap round. The round's subject is a PR (`--pr`) or, on an epic child that has none, the commit range it was judged over (`--base`/`--tip`); the two never combine, and the provenance tag names whichever was given — `pr:#<n>` or `range:<base>..<tip>`, the same spelling `lane prove` reads. Every fence runs identically on both. Prints `appended\\t<issue>\\t<rows-after>`, or `escalated-frozen\\t<issue>\\t<round>` at the freeze; both are proven answers at exit 0. The escalation comment carries an `ac:escalated` tag naming the same subject and round, which is what `build verdicts` folds it into `escalatedFindings` by — the finding stays out of the contract and still reaches the next repair round. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (issue absent or closed, or no conforming acceptance-criteria block), 8 (the PATCH or the escalation comment failed — UNKNOWN), 9 (read-back does not show the prior rows plus this one), 10 (no subject named, both named, a lone --base/--tip, or an end that is not a revision), 11 (a precondition read failed), 14 (token below write or the ACL lookup failed), 15 (the write is not provably the prior rows plus one — the append-only fence). Examples: printf 'a regression test covers qty > 1' | fabrika review append-criterion 4287 --pr 4321 --round 1; printf 'a regression test covers qty > 1' | fabrika review append-criterion 6095 --base 9f2c1ab --tip 03135b9 --round 1",
 	),
 );
 
@@ -389,6 +393,39 @@ const scratch = leafCommand(
 	),
 );
 
+const seat = leafCommand(
+	"seat",
+	{
+		issue: Argument.integer("issue").pipe(
+			Argument.withDescription("the epic child whose range this shell was briefed on"),
+		),
+		base: Flag.string("base").pipe(
+			Flag.optional,
+			Flag.withDescription("the range's base revision, exactly as the brief's `range` prints it"),
+		),
+		tip: Flag.string("tip").pipe(
+			Flag.optional,
+			Flag.withDescription("the range's tip revision — the commit this tree is seated at"),
+		),
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({issue, base, tip, json}) {
+		yield* emit(
+			yield* runSeat({
+				issue,
+				base: Option.getOrNull(base),
+				tip: Option.getOrNull(tip),
+				json,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Seat this worktree at an epic child's range tip, or refuse."),
+	Command.withDescription(
+		"Check this worktree out at the tip of an epic child's `--base`/`--tip` range, so every fence that reads the working tree — tsc, biome, vitest, the guards — reads the tree the verdict names. A child's build branch is local and unpushed, so a reviewer worktree cut fresh from the driver's checkout does not carry the range at all. The tip must be reachable here AND carried by a branch this clone's own grammar says was cut for this child; neither read falls back to grading in place. The seat is detached, because a reviewer commits nothing, and a tree already standing on the tip is answered by reading HEAD rather than by a second checkout. Stdout is `seated\\t<head>\\t<branch>\\t<checked-out|already-seated>`, with the carriers and the read-back HEAD on stderr. Exits 1 (the positional is not an issue number), 10 (a lone --base/--tip, neither given, or an end that is not a revision), 11 (a git read the answer turns on failed — the branch list, this tree's HEAD, the read-back, or every candidate that could have carried the tip; a candidate nobody could read is only reported once another branch has proven the seat), 8 (the checkout itself failed — the tree's position is UNKNOWN), 9 (the checkout reported success and HEAD reads another commit), 20 (no lane branch of this child is in this clone, the tip resolves to no object here, or no lane branch of this child reaches it — the range was built in a tree this one cannot see). Example: fabrika review seat 8820 --base 99b1453 --tip 4011b1d",
+	),
+);
+
 export const reviewCommand = Command.make("review").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
@@ -401,9 +438,10 @@ export const reviewCommand = Command.make("review").pipe(
 		post,
 		appendCriterion,
 		scratch,
+		seat,
 	]),
 	Command.withShortDescription("Read what a text review needs off one pull request."),
 	Command.withDescription(
-		"Read everything a text review needs off one pull request — scope, diff, criteria, CI, verdicts, deviations — allocate the per-lane scratch path its staged reads go under, and emit the verdict or a reviewer-authored criterion through the one sanctioned write path",
+		"Read everything a text review needs off one pull request — scope, diff, criteria, CI, verdicts, deviations — allocate the per-lane scratch path its staged reads go under, seat an epic child's reviewer at the range tip it judges, and emit the verdict or a reviewer-authored criterion through the one sanctioned write path",
 	),
 );

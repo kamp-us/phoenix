@@ -15,8 +15,9 @@ import {dispatchResume} from "./resume.ts";
 
 /**
  * Boot's restore: spawn every checkpointed process back, in manifest order, at its saved id
- * and parent link. Each spawn opens its checkpoint, so a snapshot under another definition
- * fails the restore right there — loudly, with nothing fresh-booted in its place (#7467).
+ * and parent link. Each spawn opens its checkpoint, so a snapshot under a definition the row
+ * declares no walk to (`./migrations.ts`) fails the restore right there — loudly, with nothing
+ * fresh-booted in its place (#7467).
  * An entry already live — a planned process the launcher spawned back at its own id
  * (`src/launch/`) — is already restored, so it is left alone.
  *

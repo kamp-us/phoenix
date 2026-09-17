@@ -4,9 +4,11 @@
  * `adr next` then `adr new` is two calls with an author's whole drafting turn between them, and an
  * id read in the first call is stale by the second: that check-to-mint gap is what puts one id on
  * two pull requests and costs a dismissed approval. Fusing the pair does not make allocation
- * atomic across lanes — nothing local can, since an id only becomes visible to the in-flight set
- * when its pull request opens — but it removes the one window an author controls, leaving only the
- * mint-to-open window. A duplicate-reporting job over the batched merge ref does not close that one
+ * atomic across lanes — nothing local can — but it removes the one window an author controls,
+ * leaving only the mint-to-open window. That window is now narrower than it reads here: a mint
+ * committed on a branch of *this* clone is visible to every sibling worktree's next allocation
+ * before any pull request opens (`branch-claims.ts`), so what survives is two lanes in two clones.
+ * A duplicate-reporting job over the batched merge ref does not close that one
  * either while it is not a required context: the batch merges anyway and the lane that opened
  * second renumbers on the default branch.
  *
@@ -66,6 +68,7 @@ export const runMint = (
 						slug,
 						mergedMax: allocation.mergedMax,
 						inFlight: allocation.inFlight,
+						branchClaims: allocation.branchClaims,
 						baseRef: base,
 						baseSha,
 					})

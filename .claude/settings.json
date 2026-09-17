@@ -4,6 +4,17 @@
 		"kampus-pipeline@kampus": false
 	},
 	"hooks": {
+		"SessionStart": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "fabrika hook plugin-sync",
+						"timeout": 120
+					}
+				]
+			}
+		],
 		"WorktreeCreate": [
 			{
 				"hooks": [

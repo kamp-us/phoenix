@@ -30,6 +30,7 @@ import {runRead} from "./read-verb.ts";
 import {registeredFormats, registeredKeys} from "./registry.ts";
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
@@ -168,6 +169,7 @@ const index = leafCommand(
 	"index",
 	{
 		write: Flag.boolean("write").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"render the doc's generated region from the registry again, instead of only reporting on it",
 			),

@@ -26,7 +26,7 @@ import {exists, readDir} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {type ArchiveOutcome, archiveLane, type ClosedReader} from "./archive-move.ts";
 import {APPEND_UNKNOWN, LANE_UNREADABLE, MARKER_READBACK} from "./codes.ts";
-import {resolveKeyIssue} from "./key.ts";
+import {resolveRawIssue} from "./key.ts";
 
 const VERB = "fabrika lane archive --sweep";
 
@@ -208,7 +208,7 @@ export const runArchiveSweep = <R = never>(
 				ref: {root: options.root, lane: name},
 				archivedRoot: options.archivedRoot,
 				templatePaths: options.templatePaths,
-				issue: resolveKeyIssue({_tag: "Issue", lane: name}),
+				issue: resolveRawIssue(name),
 				closed: options.closed,
 			});
 			lanes.push(rowOf(name, outcome));

@@ -3,9 +3,12 @@
  * its actor boots, and the host does the rest — Demlik's save-before-effects ordering runs over
  * the `Store` this hands back (`commit` in `../host/actor.ts`), so there is no second
  * persistence path. `open` is an acquire/release under the process Scope: acquire loads the
- * snapshot, refuses one written under another definition, records the process in the manifest
- * and takes the hold; release drops the hold. A refusal fails the spawn — the process is never
- * fresh-booted over its own snapshot (#7467).
+ * snapshot, migrates one written under an older version of the same program where the row declares
+ * that step and refuses one it cannot reach the current version from, records the process in the
+ * manifest and takes the hold; release drops the hold. A refusal fails the spawn — the process is
+ * never fresh-booted over its own snapshot (#7467, and the founder ruling on #8907:
+ * https://github.com/kamp-us/phoenix/issues/8907#issuecomment-5625300780, which admitted the
+ * migration and moved nothing else).
  *
  * A snapshot the program itself cannot restore (`CheckpointTarget.restorable`) is not refused
  * here — the program boots on its own refusal — but the store is sealed against writing, so
@@ -17,8 +20,9 @@ import type {Store} from "@demlik/tea";
 import {Context, Effect, Layer, Option, type Scope} from "effect";
 import {StoreError} from "../host/errors.ts";
 import type {ProcessId} from "../process/process.ts";
-import type {ProgramId} from "../registry/program.ts";
+import type {Migrations, ProgramId} from "../registry/program.ts";
 import {CheckpointHeld, ManifestMalformed, SnapshotMalformed, SnapshotRefused} from "./errors.ts";
+import {migrateState} from "./migrations.ts";
 import {
 	emptyManifest,
 	type Manifest,
@@ -33,8 +37,17 @@ export interface CheckpointTarget {
 	readonly id: ProcessId;
 	readonly programId: ProgramId;
 	readonly parentId: Option.Option<ProcessId>;
-	/** The program's current definition version; a snapshot under any other is refused. */
+	/**
+	 * The program's current definition version. A snapshot under any other reaches this one through
+	 * the row's own `migrations` or is refused.
+	 */
 	readonly version: string;
+	/**
+	 * The program's declared walk from an older version to `version` (`Program.migrations`), keyed by
+	 * the version on disk. Absent means every other version is refused, which is the answer for a
+	 * program that has never changed its state shape.
+	 */
+	readonly migrations?: Migrations;
 	/**
 	 * The program's own read of a raw checkpoint (`Program.restorable`). A snapshot it answers
 	 * `false` for seals this store: nothing is written over those bytes for the process's life.
@@ -117,14 +130,23 @@ const makeService = (stores: CheckpointStores): Checkpoints["Service"] => {
 		if (raw === null) return null;
 		const snapshot = parseSnapshot(raw);
 		if (snapshot === null) return yield* new SnapshotMalformed({processId: target.id});
-		if (snapshot.programId !== target.programId || snapshot.version !== target.version) {
-			return yield* new SnapshotRefused({
-				processId: target.id,
-				expected: {programId: target.programId, version: target.version},
-				found: {programId: snapshot.programId, version: snapshot.version},
-			});
-		}
-		return snapshot;
+		const refuse = new SnapshotRefused({
+			processId: target.id,
+			expected: {programId: target.programId, version: target.version},
+			found: {programId: snapshot.programId, version: snapshot.version},
+		});
+		// Another program altogether is refused before any walk: a migration is declared against this
+		// program's own past versions, and nothing makes one program's state another's.
+		if (snapshot.programId !== target.programId) return yield* refuse;
+		if (snapshot.version === target.version) return snapshot;
+		const migrated = migrateState(
+			target.migrations,
+			snapshot.version,
+			target.version,
+			snapshot.state,
+		);
+		if (Option.isNone(migrated)) return yield* refuse;
+		return {programId: target.programId, version: target.version, state: migrated.value};
 	});
 
 	const acquire = Effect.fn("Tuval.Checkpoints.acquire")(function* (target: CheckpointTarget) {

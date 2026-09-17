@@ -41,6 +41,10 @@ export const laneFor = (token: StallToken, facts: LaneFacts): LaneToken => {
 		// holder is what picks between them, so this stays a lookup rather than becoming a choice.
 		case "linkage-refused":
 			return facts.ownerLogin === null ? "author" : "build";
+		// §7: the repair is a rebase, which is a repair round on a branch — `build`'s, not a person's.
+		// Every PR on this board is agent-authored, so `author` would name a lane that does not exist.
+		case "conflicted":
+			return "build";
 		// §5: the cancel-and-rerun lever and a required-context change are both an operator's.
 		case "wedged":
 		case "check-surface":

@@ -140,7 +140,7 @@ const BACKEND_EFFECT_SURFACE: ReadonlyArray<{
 			"Record",
 			"String",
 			"Struct",
-			"TaggedErrorClass",
+			"TaggedError",
 			"Union",
 			"Unknown",
 			"decodeUnknownEffect",
@@ -191,7 +191,7 @@ const BACKEND_EFFECT_SURFACE: ReadonlyArray<{
 	{
 		module: "effect/Schedule",
 		namespace: Schedule,
-		symbols: ["both", "exponential", "recurs", "while"],
+		symbols: ["max", "min", "exponential", "recurs", "while"],
 	},
 	{
 		module: "effect/Queue",

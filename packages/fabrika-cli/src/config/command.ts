@@ -19,6 +19,7 @@ import {KEY_GROUPS} from "./registry.ts";
 import {runSchema, type SchemaRead, type SchemaRoot, type SchemaSave} from "./schema-verb.ts";
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
@@ -74,6 +75,7 @@ const schema = leafCommand(
 	"schema",
 	{
 		write: Flag.boolean("write").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				`render ${CONFIG_SCHEMA_FILE} and ${LOCAL_CONFIG_SCHEMA_FILE} from the registry again, instead of only reconciling them`,
 			),

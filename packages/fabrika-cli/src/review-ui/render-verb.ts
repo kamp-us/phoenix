@@ -22,6 +22,14 @@
  * comes back at a different tier than the surface named. Each produces a perfectly valid PNG of a
  * page nobody asked for, which no byte check can tell from the real thing.
  *
+ * The **app** a surface belongs to is fenced on the same shape. One preview origin is resolved for
+ * the run, so a surface whose `uiSurfaces` row belongs to another app is shot at that origin and
+ * comes back as its not-found page: a clean PNG recorded as `captured`. Each surface resolves to its
+ * owning row by longest claiming mount and that row to its app, and an app this preview did not
+ * announce refuses on `11` before a browser launches, naming every such surface.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8796
+ *
  * `--auth-secret-from <file>` names where the tier cookie's signing key comes from: the
  * `BETTER_AUTH_SECRET` the preview worker deploys with, which is one repo-wide value rather than a
  * per-stage one — `infra/ci-credentials/github.ts` mints it into the ci-credentials stack's alchemy
@@ -71,12 +79,15 @@ import {
 	isRealizedState,
 	provesSession,
 	REALIZED_STATES,
+	routeOf,
 	stateOf,
 	tierOf,
 } from "../capture/states.ts";
+import {previewAppOf, type UiSurface} from "../config/keys/ui-surfaces.ts";
 import {readFile, writeFile} from "../io/fs.ts";
 import {listComments} from "../io/issues.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
+import {appForSurface} from "../ui/surfaces.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	INVALID_CAPTURE,
@@ -144,6 +155,11 @@ export interface RenderOptions {
 	/** Raw `--flag` operands, each a `<key>=<on|off>` pair. Empty ⇒ every flag at its default. */
 	readonly flags: readonly string[];
 	readonly app: string | null;
+	/**
+	 * The repo's declared `uiSurfaces` rows, read off the checkout this verb runs in — what says
+	 * which app owns each `--surface`. An empty list answers that for no surface, so it fences none.
+	 */
+	readonly surfaceRows: ReadonlyArray<UiSurface>;
 	/**
 	 * A file holding the `BETTER_AUTH_SECRET` the preview worker deploys with, exported from the
 	 * ci-credentials stack's alchemy state — one repo-wide value, not a per-stage one.
@@ -408,6 +424,28 @@ export const runRender = (
 				`${VERB}: the preview deploys ${shortSha(announced.deployedSha)}, the live head is ${shortSha(head)} — stale preview; pixels of an old tree must not bind a new head.`,
 				[scanned],
 			);
+		}
+
+		// The app axis, fenced here the way the tier and flag axes are fenced above: every surface is
+		// shot at the one origin this preview announced, so a surface whose own `uiSurfaces` row
+		// belongs to an app the announcement never carried comes back as the announced app's
+		// not-found page — a valid PNG the outcome typing below records as `captured`, which is the
+		// one word a gate reads as coverage held. A surface no declared row claims is left to the
+		// shot: which app serves it is a question this list does not answer either way.
+		const foreign = options.surfaces.flatMap((surface) => {
+			const row = appForSurface(options.surfaceRows, routeOf(surface));
+			if (row === null) return [];
+			const app = previewAppOf(row);
+			return preview.apps.includes(app) ? [] : [{surface, row, app}];
+		});
+		const firstForeign = foreign[0];
+		if (firstForeign !== undefined) {
+			const foreignLine = (entry: (typeof foreign)[number]): string =>
+				`${VERB}: --surface "${entry.surface}" is served by app "${entry.app}" (row "${entry.row.name}"), which this preview does not announce — it announces ${preview.apps.join(", ")}; the shot would come back as an announced app's not-found page.`;
+			return refuse(PRECONDITION_UNKNOWN, foreignLine(firstForeign), [
+				scanned,
+				...foreign.map(foreignLine),
+			]);
 		}
 
 		// A tier-naming surface rendered without that tier's credentials would come back as the

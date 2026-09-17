@@ -229,8 +229,9 @@ pointer's shape and its target; whether that comment rules anything is the reade
 stated as such. `type:epic` has no arm — its deliverable is a ledger no citation turns into a pull
 request, and the remedy is `--purpose plan` or `--purpose gate`. The arm opens the type axis and
 nothing else: the issue still has to carry `ready-for:agent`, which triage stamps at intake and
-`fabrika decision rule <n> --cites <url>` stamps afterwards, so a `ready-for:human` decision with a
-perfect citation is still `21` until one of them has run.
+`fabrika decision rule <n>` stamps afterwards, under either `--cites <url>` or
+`--authorization <file>`, so a `ready-for:human` decision with a perfect citation is still `21`
+until one of them has run.
 
 **The inputs, and where each is read.**
 
@@ -3096,7 +3097,9 @@ fabrika build verdicts --pr 8 [--repo <owner/name>]
  "rounds": 2, "capReached": false,
  "clearances": [{"round": 4, "at": "2026-08-18T07:16:03Z", "by": "usirin", "commentId": 512400,
                  "authorization": 512399, "honoured": true}],
- "frozenCriteria": [{"text": "add an e2e for the empty-list case", "appendedRound": 4}]}
+ "frozenCriteria": [{"text": "add an e2e for the empty-list case", "appendedRound": 4}],
+ "escalatedFindings": [{"round": 5, "commentId": 520880,
+                        "body": "review append-criterion: a finding from this PR's round 5 was NOT appended — …"}]}
 ```
 
 (`frozenCriteria` rows carry `text` and `appendedRound`; the array is empty when nothing was
@@ -3159,6 +3162,20 @@ and the clusters are added to the head count. Counting by wall clock instead rea
 repair effort and burned the cap at twice the real rate. `frozenCriteria` lists
 review-appended acceptance-criterion rows dated at or past `CAP_ROUND`.
 
+**`escalatedFindings` is the freeze's other half: the findings that never became rows.** At or past
+the freeze `review append-criterion` posts the finding as a comment on the linked issue and appends
+nothing, tagging that comment `<!-- ac:escalated pr:#<pr> round:<n> -->`. This fold reads those tags
+off the same issue the criteria come from, keeps the ones naming this PR, and carries each comment's
+full body through the content gate exactly as a verdict row does — so the repair loop reads the
+finding through the one door it already opens, and never off a comment id somebody typed into a
+spawn prompt. A row is `{round, commentId, body}`; the array is empty when the freeze turned nothing
+away, and stderr says so either way, because "nothing was escalated" and "this verb does not look"
+are different facts. A finding here is this repair's to fix and no later round's to grade: the
+freeze's whole point is that it entered no contract. **The fold carries no resolved state**: the
+selection is the tag's subject alone, and since no gate grades an escalation nothing ever retires
+one, so a finding an earlier round repaired is folded again identically. Judging a row against the
+tree is the reader's, which is why `build`'s Repair section instructs it.
+
 **`{"rows": [], ...}` on exit 0 is a proven "no verdicts", readable against the scope line's
 comment/review counts — a proven answer about the gates, never about the PR's mergeability, which
 is its own field.** An unreadable page is `11` — never a shorter list. All content passes
@@ -3174,7 +3191,10 @@ surface — a child opens no PR, so it has nothing to merge and nothing to confl
 one range are one round. `clearances` is always empty and stderr says why: a grant is recorded
 against a PR's base branch and a child has none, so a child at its cap escalates to the operator
 rather than reading a grant with nowhere to live. A comment reaching for the range format and missing
-it is named on stderr, never dropped.
+it is named on stderr, never dropped. **`escalatedFindings` is folded here too**, off that same
+comment page: a child's reviewer hits the identical freeze and its escalation lands on the child
+issue. Every escalation there was raised over that child's own range, so this arm selects on no
+subject and folds all of them.
 
 **Exit status** (beyond the universal four)
 
@@ -3182,7 +3202,7 @@ it is named on stderr, never dropped.
 |---|---|
 | `7` | the PR is proven absent or closed; or `--issue`'s number is proven absent, or is a pull request |
 | `10` | neither `--pr` nor `--issue` was given, or both were |
-| `11` | the head, any comment page, any review page, or the grant-author set could not be read — the fold is UNKNOWN, never partial |
+| `11` | the head, any comment page, any review page, the linked issue's own comment page, or the grant-author set could not be read — the fold is UNKNOWN, never partial |
 
 **Errors**
 
@@ -3191,10 +3211,12 @@ it is named on stderr, never dropped.
 | `build verdicts: PR #<n> is proven absent or closed.` | 7 | refusal |
 | `build verdicts: cannot read <what> (page <k>): <reason> — the verdict state is UNKNOWN, never "none".` | 11 | refusal |
 | `build verdicts: cannot read the recorded cap clearances: <reason> — whether the budget is spent is UNKNOWN, never "capped".` | 11 | refusal |
+| `build verdicts: cannot read the linked issue's acceptance criteria and escalated findings: <reason> — the verdict state is UNKNOWN, never "none".` | 11 | refusal |
 | `build verdicts: give either --pr <n> or --issue <n>, never both and never neither.` | 10 | usage error |
 | `build verdicts: #<n> is a pull request — its verdicts are head-bound; drop --issue and pass --pr.` | 7 | refusal |
 
-**Scope** — one PR: its head, its mergeability, all comments, all reviews. The stderr scope line
+**Scope** — one PR: its head, its mergeability, all comments, all reviews, and the linked issue's
+body and all its comments. The stderr scope line
 names the head SHA and both counts, so an empty `rows` is auditable as "N comments read, none
 carried a marker", and the line under it names the mergeability whichever of the three it is.
 
@@ -3202,7 +3224,7 @@ carried a marker", and the line under it names the mergeability whichever of the
 
 ```
 $ fabrika build verdicts --pr 8
-{"head":"03135b91","mergeability":"mergeable","rows":[{"gate":"review-code","polarity":"FAIL","sha":"03135b91","current":true,"commentId":512001,"kind":"marker","body":"review-code: FAIL @ 03135b91 — the debounce fix races the unmount; see inline notes."}],"rounds":1,"capReached":false,"frozenCriteria":[]}
+{"head":"03135b91","mergeability":"mergeable","rows":[{"gate":"review-code","polarity":"FAIL","sha":"03135b91","current":true,"commentId":512001,"kind":"marker","body":"review-code: FAIL @ 03135b91 — the debounce fix races the unmount; see inline notes."}],"rounds":1,"capReached":false,"frozenCriteria":[],"escalatedFindings":[]}
 ```
 
 **Grounding**
@@ -3213,6 +3235,9 @@ $ fabrika build verdicts --pr 8
 - Whether a native `CHANGES_REQUESTED` with no marker drives a repair is an open decision, so those
   rows are reported as their own kind and never coerced; the ruling lands as a change to the
   *skill's* routing, not to this verb.
+- A finding raised past the acceptance-criteria freeze had no reader: the escalation comment was
+  printed for nobody, and one lane's round-5 finding reached its repair builder only because the
+  driver typed the comment id into the spawn prompt by hand. `escalatedFindings` is that reader.
 - A proven-empty fold and an unreadable fold sit on different codes.
 - A founder-cleared round had no representation either enforcement site could read, so it
   could only land as an edit outside the loop; `clearances` is that representation.

@@ -6,7 +6,7 @@
  * plain `Layer.provide` does NOT discharge — they must be discharged with
  * `HttpRouter.provideRequest` (ADR 0029).
  */
-import type * as BetterAuth from "@alchemy.run/better-auth";
+
 import type {FateServer} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import * as Layer from "effect/Layer";
@@ -14,6 +14,8 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import type {WorkerFateServices} from "../features/fate/layers.ts";
 import type {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import type {Flagship} from "../features/flagship/Flagship.ts";
+import type * as BetterAuth from "../features/pasaport/BetterAuth.ts";
+import {CachePolicyLive} from "./cache-policy.ts";
 import {healthApiLayer} from "./health.ts";
 import {rawWorkerRouteLayers} from "./worker-routes.ts";
 
@@ -51,5 +53,5 @@ export const makeAppLive = (options: {
 		),
 	);
 
-	return Layer.mergeAll(typedJson, rawRoutes);
+	return Layer.mergeAll(typedJson, rawRoutes, CachePolicyLive);
 };
