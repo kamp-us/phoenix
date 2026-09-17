@@ -453,7 +453,7 @@ Tuval's whole reachable source tree enters this program and is checked under *th
 `findLast`, `Element` and the MCP SDK's optional props in code it does not own.
 
 **`vitest.config.ts`: `resolve.dedupe: ["effect", "@demlik/tea"]`.** One workspace and one
-`catalog:tuval` pin already give the suite a single `effect`, so this line is belt and braces here
+root `catalog:` pin already give the suite a single `effect`, so this line is belt and braces here
 rather than the load-bearing fix it was when Tuval was reached by path at an outside checkout — two
 instances meant a `Schema` built by one was a stranger to a decoder from the other, and a spell's
 args decoded to `Symbol()` instead of `{}`. It stays because the day this package is consumed from

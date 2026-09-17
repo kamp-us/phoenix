@@ -11,7 +11,7 @@ export default defineConfig({
 			"@kampus/tuval-cron": fileURLToPath(new URL("./src/index.ts", import.meta.url)),
 		},
 		// One `effect`, said out loud. `@kampus/tuval` is a workspace dependency on the same
-		// `catalog:tuval` pin this package holds, so the suite already gets one instance — this line is
+		// root `catalog:` pin this package holds, so the suite already gets one instance — this line is
 		// belt and braces here. It stays because it stops being that the moment this package is
 		// consumed from npm beside a Tuval that is not hoisted with it: two instances mean a `Schema`
 		// built by one is a stranger to a decoder from the other, which is how `:cron run`'s args

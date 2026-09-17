@@ -183,3 +183,13 @@ it is the founder-named justification for full-validation-per-request over cheap
   cohesiveness principle is its first-paint expression.
 - **ADR [0075](0075-issueless-doc-pr-merge-seam.md)** — this ADR is conversation-authored under 0075's
   exemption (no report → triage intake ticket).
+
+## Amendments
+
+- **[#8934](https://github.com/kamp-us/phoenix/pull/8934) — correct the no-cache mechanism (2026-09-10).**
+  Section 2's requirement that every request resolves fresh shell state stands.
+  Its instruction to omit `Cache-Control` does not implement that requirement:
+  Workers Cache applies a two-hour default TTL to headerless HTTP 200 responses.
+  The shell route now returns `Cache-Control: private, no-store`, removes inherited
+  CDN cache directives and `Expires`, and applies the same policy to its fallback HTML.
+  Source: [Cloudflare Workers Cache configuration](https://developers.cloudflare.com/workers/cache/configuration/).

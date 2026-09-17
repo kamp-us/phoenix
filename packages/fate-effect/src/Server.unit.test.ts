@@ -26,26 +26,26 @@ export class NoteView extends FateDataView<NoteRow>()("Note")({
 	body: true,
 }) {}
 
-class NoteNotFound extends Schema.TaggedErrorClass<NoteNotFound>()(
+class NoteNotFound extends Schema.TaggedError<NoteNotFound>()(
 	"test/NoteNotFound",
 	{message: Schema.String},
 	{[FateWireCode]: "NOTE_NOT_FOUND"},
 ) {}
 
-class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
+class BodyRequired extends Schema.TaggedError<BodyRequired>()(
 	"test/BodyRequired",
 	{message: Schema.String},
 	{[FateWireCode]: "BODY_REQUIRED"},
 ) {}
 
-class RateLimited extends Schema.TaggedErrorClass<RateLimited>()(
+class RateLimited extends Schema.TaggedError<RateLimited>()(
 	"test/RateLimited",
 	{message: Schema.String},
 	{[FateWireCode]: "RATE_LIMITED"},
 ) {}
 
 /** Un-annotated: declarable, but carries no wire code to collect. */
-class Unannotated extends Schema.TaggedErrorClass<Unannotated>()("test/Unannotated", {
+class Unannotated extends Schema.TaggedError<Unannotated>()("test/Unannotated", {
 	message: Schema.String,
 }) {}
 

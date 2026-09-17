@@ -26,11 +26,28 @@ const runBridge = (handle: (request: Request) => Promise<Response>) =>
 	);
 
 describe("authBridgeFetch", () => {
-	it("passes a handler response straight through", async () => {
+	it("preserves the handler body and prevents caching anonymous sessions", async () => {
 		const response = await runBridge(async () => new Response('{"ok":true}', {status: 200}));
 
 		expect(response.status).toBe(200);
+		expect(response.headers.get("cache-control")).toBe("private, no-store");
 		expect(await response.text()).toBe('{"ok":true}');
+	});
+
+	it("overrides a handler cache policy while preserving the session cookie", async () => {
+		const response = await runBridge(
+			async () =>
+				new Response("null", {
+					headers: {
+						"cache-control": "public, max-age=3600",
+						"cloudflare-cdn-cache-control": "public, max-age=3600",
+						"set-cookie": "session=fixture; HttpOnly",
+					},
+				}),
+		);
+		expect(response.headers.get("cache-control")).toBe("private, no-store");
+		expect(response.headers.has("cloudflare-cdn-cache-control")).toBe(false);
+		expect(response.headers.get("set-cookie")).toBe("session=fixture; HttpOnly");
 	});
 
 	it("answers a rejection with a discriminable status and a non-empty body", async () => {
@@ -40,6 +57,7 @@ describe("authBridgeFetch", () => {
 		const body = await response.text();
 
 		expect(response.status).toBe(AUTH_BRIDGE_UNAVAILABLE_STATUS);
+		expect(response.headers.get("cache-control")).toBe("private, no-store");
 		expect(body).not.toBe("");
 		expect(JSON.parse(body).code).toBe(AUTH_BRIDGE_UNAVAILABLE_CODE);
 	});

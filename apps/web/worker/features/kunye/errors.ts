@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema";
  * An assigned-authority (ReBAC) check failed. `UNAUTHORIZED` so the denial is
  * indistinguishable from the anonymous case (ADR 0098 §2's invisible denial).
  */
-export class Denied extends Schema.TaggedErrorClass<Denied>()(
+export class Denied extends Schema.TaggedError<Denied>()(
 	"kunye/Denied",
 	{message: Schema.String},
 	{[FateWireCode]: "UNAUTHORIZED"},
@@ -20,7 +20,7 @@ export class Denied extends Schema.TaggedErrorClass<Denied>()(
  * An earned-ladder (Level) check failed. `FORBIDDEN`, carrying the `need`ed rank so the
  * public ladder stays a visible progression.
  */
-export class RequiresLevel extends Schema.TaggedErrorClass<RequiresLevel>()(
+export class RequiresLevel extends Schema.TaggedError<RequiresLevel>()(
 	"kunye/RequiresLevel",
 	{message: Schema.String, need: Schema.String},
 	{[FateWireCode]: "FORBIDDEN"},
@@ -30,7 +30,7 @@ export class RequiresLevel extends Schema.TaggedErrorClass<RequiresLevel>()(
  * The concurrent-vouch cap is reached. Not an authority denial — the actor IS a yazar,
  * the act is rate-limited — so it carries its own code and the `cap` for the copy.
  */
-export class VouchLimitReached extends Schema.TaggedErrorClass<VouchLimitReached>()(
+export class VouchLimitReached extends Schema.TaggedError<VouchLimitReached>()(
 	"kunye/VouchLimitReached",
 	{message: Schema.String, cap: Schema.Number},
 	{[FateWireCode]: "VOUCH_LIMIT_REACHED"},
@@ -42,7 +42,7 @@ export class VouchLimitReached extends Schema.TaggedErrorClass<VouchLimitReached
  * the ladder — so it carries its OWN code plus `need`/`have` for the copy. Visible, never
  * the invisible {@link Denied}: a downvoted poster deserves a reason, not a silent no-op.
  */
-export class InsufficientKarma extends Schema.TaggedErrorClass<InsufficientKarma>()(
+export class InsufficientKarma extends Schema.TaggedError<InsufficientKarma>()(
 	"kunye/InsufficientKarma",
 	{message: Schema.String, need: Schema.Number, have: Schema.Number},
 	{[FateWireCode]: "INSUFFICIENT_KARMA"},

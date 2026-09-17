@@ -53,8 +53,7 @@ const phoenixD1Stack = (stage: string) =>
 		{providers: Cloudflare.providers(), state: Cloudflare.state()},
 		Effect.gen(function* () {
 			const db = yield* Cloudflare.D1.Database("phoenix_db", {
-				migrationsDir: MIGRATIONS_DIR,
-				migrationsTable: "drizzle_migrations",
+				migrations: {dir: MIGRATIONS_DIR, table: "drizzle_migrations"},
 			});
 			return {databaseId: db.databaseId, accountId: db.accountId};
 		}),

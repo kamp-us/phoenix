@@ -23,7 +23,7 @@
 		"@kampus/tuval-shell": "workspace:*",
 		"@kampus/tuval-workspace": "workspace:*",
 		"@types/node": "catalog:",
-		"effect": "catalog:tuval",
+		"effect": "catalog:",
 		"typescript": "catalog:"
 	}
 }

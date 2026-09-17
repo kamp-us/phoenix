@@ -157,7 +157,7 @@ const recordingPublisher = () => {
 	return {recorded, scheduled, layer};
 };
 
-class DrainRejected extends Schema.TaggedErrorClass<DrainRejected>()("test/DrainRejected", {
+class DrainRejected extends Schema.TaggedError<DrainRejected>()("test/DrainRejected", {
 	cause: Schema.Unknown,
 }) {}
 

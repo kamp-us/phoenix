@@ -3,7 +3,7 @@
  * .patterns/alchemy-worker.md). The body runs in two phases: init binds resources
  * once per isolate; runtime returns the `fetch` handler.
  */
-import * as BetterAuth from "@alchemy.run/better-auth";
+
 import {wrapRequestHandler} from "@sentry/cloudflare";
 import {RuntimeContext, Stage} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -32,6 +32,7 @@ import {Flagship, FlagshipLive} from "./features/flagship/Flagship.ts";
 import {Flagship as FlagshipResource} from "./features/flagship/resources.ts";
 import {subscribeCohortRollup} from "./features/funnel/cohort-rollup-cron.ts";
 import {subscribeHotScoreDecay} from "./features/pano/hot-score-decay-cron.ts";
+import * as BetterAuth from "./features/pasaport/BetterAuth.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
 import {EmailDeliveryLogLive} from "./features/pasaport/email-delivery-log.ts";
 import {EmailSenderLive} from "./features/pasaport/email-sender.ts";
@@ -44,7 +45,7 @@ import {workerOptions} from "./lib/sentry.ts";
 import {captureUnhandled} from "./lib/sentry-capture.ts";
 import {SentryEffectLive} from "./lib/sentry-effect.ts";
 
-class RequestHandlerError extends Schema.TaggedErrorClass<RequestHandlerError>()(
+class RequestHandlerError extends Schema.TaggedError<RequestHandlerError>()(
 	"web/RequestHandlerError",
 	{cause: Schema.Defect()},
 ) {}
@@ -102,8 +103,7 @@ const phoenixProps =
 				headSamplingRate: 1,
 				logs: {enabled: true, invocationLogs: true},
 			},
-			// Inert on its own — Workers Caching caches a GET/HEAD response ONLY when the
-			// worker stamps `Cache-Control` (ADR 0170).
+			// CachePolicyLive excludes responses without an explicit cache policy (ADR 0170).
 			cache: {enabled: true},
 		};
 
@@ -258,7 +258,12 @@ export default Phoenix.make(
 						const webResponse = yield* Effect.tryPromise({
 							try: () =>
 								wrapRequestHandler(
-									{options: workerOptions(value), request, context, captureErrors: true},
+									{
+										options: workerOptions(value),
+										request,
+										context: context.raw,
+										captureErrors: true,
+									},
 									() =>
 										Effect.runPromise(
 											toWebResponse(request, captured).pipe(Effect.provide(requestContext)),

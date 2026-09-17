@@ -21,7 +21,7 @@ core plus a thin Node bin the CI step runs without `pnpm install`:
 - **`src/bin.ts`** — the IO shell ci.yml runs. It walks
   `apps/web/tests/integration/` and `apps/web/tests/e2e/`, computes the
   test-import closure from the real imports it finds, reads
-  `CHANGED_FILES` / `LOCKFILE_DIFF` from the environment, classifies, prints what
+  the files named by `CHANGED_FILES_FILE` / `LOCKFILE_DIFF_FILE`, classifies, prints what
   it scanned plus the verdict reason, and emits `worker_relevant=true|false` to
   `$GITHUB_OUTPUT`. Exits 0 always — a classifier, not a gate.
 - **`src/index.ts`** — the public barrel re-exporting the core above.
@@ -75,9 +75,10 @@ no freshness gate over itself — the drift-guard question lives with #2627.
 
 ## How to use it
 
-In CI (the only production consumer), the `changes` job's classify step exports
-`CHANGED_FILES` and `LOCKFILE_DIFF` into the environment and runs the bin with no
-install:
+In CI (the only production consumer), the `changes` job writes changed paths and
+the lockfile diff to temporary files. It passes only their paths in
+`CHANGED_FILES_FILE` and `LOCKFILE_DIFF_FILE`, so a large dependency upgrade does
+not exceed the operating system's process-environment limit. It runs with no install:
 
 ```bash
 node packages/worker-relevance/src/bin.ts
@@ -106,11 +107,14 @@ const result = classify({
 
 ## Reference
 
-Environment variables the bin reads (via `inputFromEnv`; all optional — absent
-inputs are empty):
+The bin accepts either both input-file variables or the legacy inline values.
+File inputs take precedence. An incomplete pair or unreadable file runs the worker
+checks; it never treats a failed read as an empty diff.
 
 | Variable | Content |
 | --- | --- |
+| `CHANGED_FILES_FILE` | Path to the changed-path list; paired with `LOCKFILE_DIFF_FILE` |
+| `LOCKFILE_DIFF_FILE` | Path to the lockfile unified diff |
 | `CHANGED_FILES` | Changed paths, base...head, repo-root-relative, newline/NUL-separated |
 | `LOCKFILE_DIFF` | `git diff base...head -- pnpm-lock.yaml`; consulted only when the lockfile changed |
 | `TEST_IMPORTED_PACKAGES` | Pre-computed test-import closure override; normally unset — the bin computes it by scanning the test trees |
@@ -121,7 +125,7 @@ Fail-safe rules (each row is `relevant` unless provably otherwise):
 | --- | --- |
 | Any changed path outside `packages/<irrelevant>/` | `relevant` |
 | Lockfile hunk outside an irrelevant package's `importers:` block, or an unreadable diff | `relevant` |
-| Test-tree scan throws | `relevant` (bin short-circuits before classifying) |
+| Input-file read or test-tree scan throws | `relevant` (bin short-circuits before classifying) |
 | Whole diff confined to irrelevant packages and their lockfile importer blocks | `irrelevant` |
 
 Public exports: `classify`, `parseChangedFiles`, `parseTestImportedPackages`,

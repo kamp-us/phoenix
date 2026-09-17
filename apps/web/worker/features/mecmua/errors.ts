@@ -11,20 +11,20 @@ import * as Schema from "effect/Schema";
  * Dark-ship containment (ADR 0083): both write mutations fail this with the flag off, so
  * the write path is unreachable even if a client bypasses the UI.
  */
-export class MecmuaDisabled extends Schema.TaggedErrorClass<MecmuaDisabled>()(
+export class MecmuaDisabled extends Schema.TaggedError<MecmuaDisabled>()(
 	"mecmua/MecmuaDisabled",
 	{message: Schema.String},
 	{[FateWireCode]: "MECMUA_DISABLED"},
 ) {}
 
 /** The draft doesn't exist, or isn't the caller's own — the ownership-scoped miss. */
-export class MecmuaPostNotFound extends Schema.TaggedErrorClass<MecmuaPostNotFound>()(
+export class MecmuaPostNotFound extends Schema.TaggedError<MecmuaPostNotFound>()(
 	"mecmua/MecmuaPostNotFound",
 	{message: Schema.String},
 	{[FateWireCode]: "MECMUA_POST_NOT_FOUND"},
 ) {}
 
-export class MecmuaTitleRequired extends Schema.TaggedErrorClass<MecmuaTitleRequired>()(
+export class MecmuaTitleRequired extends Schema.TaggedError<MecmuaTitleRequired>()(
 	"mecmua/MecmuaTitleRequired",
 	{message: Schema.String},
 	{[FateWireCode]: "TITLE_REQUIRED"},

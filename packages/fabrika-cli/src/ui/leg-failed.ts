@@ -7,7 +7,7 @@
  */
 import * as Schema from "effect/Schema";
 
-export class LegFailed extends Schema.TaggedErrorClass<LegFailed>()("fabrika-cli/ui/LegFailed", {
+export class LegFailed extends Schema.TaggedError<LegFailed>()("fabrika-cli/ui/LegFailed", {
 	reason: Schema.String,
 }) {}
 

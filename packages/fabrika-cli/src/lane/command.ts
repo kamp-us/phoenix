@@ -533,6 +533,7 @@ const emitLane = leafCommand(
 		),
 		root: rootFlag,
 		children: Flag.boolean("children").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"start from the board's live sub-issue list: drop every topology ref it does not name instead of refusing at 16",
 			),
@@ -651,6 +652,7 @@ const assembly = leafCommand(
 			Argument.withDescription("the epic issue whose run owns the assembly worktree"),
 		),
 		remove: Flag.boolean("remove").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("remove the run's assembly worktree instead of placing it"),
 		),
 		root: rootFlag,
@@ -780,6 +782,7 @@ const refresh = leafCommand(
 			),
 		),
 		onReview: Flag.boolean("on-review").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"this is the automatic call on the tail's way into review, so `assemblyRefresh.onReview` gates it — under the shipped `off` it declines and merges nothing. A hand call omits this and is never gated. The other automatic call, `assemblyRefresh.onDispatch`, is made by `lane dispatch` itself and is never typed.",
 			),
@@ -1043,6 +1046,7 @@ const stale = leafCommand(
 			),
 		),
 		claims: Flag.boolean("claims").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"additionally read the board and pair each non-terminal lane with the claim standing on its issue — the one thing here that makes a network call (default: false)",
 			),
@@ -1144,6 +1148,7 @@ const migrate = leafCommand(
 		lane: Argument.optional(laneArgument),
 		root: rootFlag,
 		check: Flag.boolean("check").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("judge the swept lanes and report, writing nothing"),
 		),
 		repo: Flag.string("repo").pipe(
@@ -1205,6 +1210,7 @@ const archive = leafCommand(
 	{
 		lane: Argument.optional(laneArgument),
 		sweep: Flag.boolean("sweep").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"walk the lanes root and archive EVERY lane both gates already clear, reporting one row per lane examined. Takes no lane argument — a key and this flag together name two different jobs",
 			),
@@ -1372,6 +1378,7 @@ const reconcile = leafCommand(
 	{
 		root: rootFlag,
 		check: Flag.boolean("check").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("judge every lane and report, appending nothing"),
 		),
 		repo: Flag.string("repo").pipe(
@@ -1431,9 +1438,11 @@ const recover = leafCommand(
 	{
 		root: rootFlag,
 		check: Flag.boolean("check").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("judge every lane and report what would be appended, appending nothing"),
 		),
 		spawns: Flag.boolean("spawns").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				`also park every lane whose builder is provably gone: a build claim standing past the ${SHELL_BUDGETS.build.minutes}-minute build budget, no lane branch in this clone, and nothing on the surface that lane's role publishes to — an open PR linking the issue on a single lane or an epic tail, the lane branch itself on an epic child, which opens no PR. Recorded as BLOCKED --cause spawn-dead. It retracts nothing here; the spawn-dead unpark row ends the claim on the same proof, one verb later and with no human between the two. Costs board reads per lane standing in build or build:ui, which is why it is opt-in`,
 			),

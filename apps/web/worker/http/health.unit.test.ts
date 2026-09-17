@@ -12,6 +12,7 @@ import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {describe, expect, it} from "vitest";
 import {Flagship} from "../features/flagship/Flagship.ts";
+import {CachePolicyLive} from "./cache-policy.ts";
 import {healthApiLayer} from "./health.ts";
 
 type ProbeRead = Effect.Effect<boolean, CfFlagship.FlagshipError>;
@@ -52,10 +53,13 @@ const stubFlagship = (probe: ProbeRead): Layer.Layer<Flagship> =>
  */
 const healthHandler = (probe: ProbeRead) =>
 	HttpRouter.toWebHandler(
-		healthApiLayer.pipe(
-			HttpRouter.provideRequest(
-				Layer.mergeAll(stubFlagship(probe), Layer.succeed(RuntimeContext)(runtimeContext)),
+		Layer.mergeAll(
+			healthApiLayer.pipe(
+				HttpRouter.provideRequest(
+					Layer.mergeAll(stubFlagship(probe), Layer.succeed(RuntimeContext)(runtimeContext)),
+				),
 			),
+			CachePolicyLive,
 		),
 		{disableLogger: true},
 	);
@@ -68,6 +72,7 @@ describe("/api/health readiness contract (ADR 0156)", () => {
 		try {
 			const res = await handler(GET);
 			expect(res.status).toBe(200);
+			expect(res.headers.get("cache-control")).toBe("private, no-store");
 			const body = (await res.json()) as {status: string; flagshipReachable: boolean};
 			expect(body.status).toBe("ok");
 			expect(body.flagshipReachable).toBe(true);
@@ -84,6 +89,7 @@ describe("/api/health readiness contract (ADR 0156)", () => {
 			const res = await handler(GET);
 			// 503 (not-ready-but-alive), NOT the pre-ADR-0156 orDie→500 defect.
 			expect(res.status).toBe(503);
+			expect(res.headers.get("cache-control")).toBe("private, no-store");
 			const body = (await res.json()) as {status: string; flagshipReachable: boolean};
 			expect(body.status).toBe("degraded");
 			expect(body.flagshipReachable).toBe(false);

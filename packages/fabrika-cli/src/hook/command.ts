@@ -21,6 +21,7 @@ import {runPreBash} from "./pre-bash-verb.ts";
 import {type CliEntry, runWorktreeCreate} from "./worktree-create-verb.ts";
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
@@ -96,6 +97,7 @@ const worktreeCreate = leafCommand(
 	"worktree-create",
 	{
 		dryRun: Flag.boolean("dry-run").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("print the path this would create, and create nothing"),
 		),
 	},
@@ -120,6 +122,7 @@ const pluginSync = leafCommand(
 	"plugin-sync",
 	{
 		dryRun: Flag.boolean("dry-run").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("report what this would advance, and move nothing"),
 		),
 	},

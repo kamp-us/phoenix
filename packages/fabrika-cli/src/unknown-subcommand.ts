@@ -27,7 +27,7 @@
 export interface CommandNode {
 	readonly name: string;
 	readonly alias: string | undefined;
-	readonly hidden: boolean;
+	readonly unlisted: boolean;
 	readonly subcommands: ReadonlyArray<{readonly commands: ReadonlyArray<CommandNode>}>;
 }
 
@@ -57,10 +57,10 @@ const subcommandIndex = (node: CommandNode): ReadonlyMap<string, CommandNode> =>
 	return index;
 };
 
-/** What a node offers: hidden subcommands are withheld so a typo cannot reveal one (same parser). */
+/** What a node offers: unlisted subcommands are withheld so a typo cannot reveal one (same parser). */
 const offered = (node: CommandNode): ReadonlyArray<string> =>
 	node.subcommands.flatMap((group) =>
-		group.commands.filter((sub) => !sub.hidden).map((sub) => sub.name),
+		group.commands.filter((sub) => !sub.unlisted).map((sub) => sub.name),
 	);
 
 /**

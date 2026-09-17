@@ -29,7 +29,7 @@ export type DrizzleDb = ReturnType<typeof drizzle<typeof relations>>;
 export type FtsSyncDb = Pick<DrizzleDb, "delete" | "insert">;
 
 /** The `cause` is preserved for logs but never reaches the user. */
-export class DrizzleError extends Schema.TaggedErrorClass<DrizzleError>()("@kampus/Drizzle/Error", {
+export class DrizzleError extends Schema.TaggedError<DrizzleError>()("@kampus/Drizzle/Error", {
 	cause: Schema.Defect(),
 }) {}
 

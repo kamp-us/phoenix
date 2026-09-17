@@ -42,7 +42,7 @@
 	"peerDependencies": {
 		"@demlik/tea": "catalog:",
 		"@kampus/tuval": "workspace:*",
-		"effect": "catalog:tuval",
+		"effect": "catalog:",
 		"react": "catalog:"
 	},
 	"devDependencies": {
@@ -51,7 +51,7 @@
 		"@kampus/tuval": "workspace:*",
 		"@types/node": "catalog:",
 		"@types/react": "catalog:",
-		"effect": "catalog:tuval",
+		"effect": "catalog:",
 		"react": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"

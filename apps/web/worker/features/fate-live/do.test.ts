@@ -114,6 +114,7 @@ const entityFrame: DeliverFrame = {kind: "next", id: "", event: {data: {score: 7
 async function reader(response: HttpServerResponse.HttpServerResponse) {
 	const web = HttpServerResponse.toWeb(response);
 	expect(web.headers.get("content-type")).toContain("text/event-stream");
+	expect(web.headers.get("cache-control")).toBe("private, no-store");
 	const r = web.body!.getReader();
 	const decoder = new TextDecoder();
 	let buffer = "";

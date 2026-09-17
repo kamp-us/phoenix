@@ -83,13 +83,13 @@ export const SozlukDbLive = Layer.sync(SozlukDb, () => ({
 	definitions: [],
 }));
 
-export class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
+export class BodyRequired extends Schema.TaggedError<BodyRequired>()(
 	"test/BodyRequired",
 	{message: Schema.String},
 	{[FateWireCode]: "BODY_REQUIRED"},
 ) {}
 
-export class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
+export class DefinitionNotFound extends Schema.TaggedError<DefinitionNotFound>()(
 	"test/DefinitionNotFound",
 	{message: Schema.String},
 	{[FateWireCode]: "VOTE_TARGET_NOT_FOUND"},
