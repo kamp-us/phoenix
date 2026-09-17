@@ -5,6 +5,7 @@ import {classifyStall, type StallFacts, strandAgeMinutes} from "./stall.ts";
 const QUIET: StallFacts = {
 	open: true,
 	wedged: false,
+	conflicted: false,
 	surfaceGap: false,
 	ci: "green",
 	linkageRefused: false,
@@ -27,7 +28,27 @@ describe("the chain is ordered, and the order is the contract", () => {
 	});
 
 	it("takes wedged above every other blocking state", () => {
-		expect(token({wedged: true, surfaceGap: true, ci: "red"})).toBe("wedged");
+		expect(token({wedged: true, conflicted: true, surfaceGap: true, ci: "red"})).toBe("wedged");
+	});
+
+	// A conflicted PR has no `refs/pull/<n>/merge`, so every required context reads absent and the
+	// surface arm would name a repository-settings gap that is not there. The repair is a rebase, and
+	// no check-surface finding reaches it.
+	it("reports conflicted above check-surface, whose absent contexts the conflict explains", () => {
+		expect(token({conflicted: true, surfaceGap: true, ci: "red"})).toBe("conflicted");
+	});
+
+	it("still takes not-open above a conflict, and wedged above it", () => {
+		expect(token({open: false, conflicted: true})).toBe("not-open");
+		expect(token({wedged: true, conflicted: true})).toBe("wedged");
+	});
+
+	// `mergeable` is computed lazily, so the platform declining to answer is neither a clean merge nor
+	// a conflict: the arm is skipped and the chain reads on, exactly as it did before this arm existed.
+	it("skips the conflict arm on an indefinite read, never fires it", () => {
+		expect(token({conflicted: null, surfaceGap: true, ci: "red"})).toBe("check-surface");
+		expect(token({conflicted: null, ci: "red"})).toBe("red");
+		expect(token({conflicted: null})).toBe("gated-unshipped");
 	});
 
 	it("reports check-surface above red — the gap is the cause the log repair cannot reach", () => {
@@ -43,7 +64,7 @@ describe("the chain is ordered, and the order is the contract", () => {
 	});
 });
 
-describe("arm 7 takes any positive signal of motion", () => {
+describe("arm 8 takes any positive signal of motion", () => {
 	it.each([
 		["a live queue entry", {queued: true}],
 		["an armed merge intent", {mergeIntentArmed: true}],
@@ -54,7 +75,7 @@ describe("arm 7 takes any positive signal of motion", () => {
 	});
 });
 
-describe("arm 8 is the whole owner-exists complement of arm 7", () => {
+describe("arm 9 is the whole owner-exists complement of arm 8", () => {
 	it("fires on inactivity past the dwell", () => {
 		const verdict = classifyStall({...QUIET, hasOwner: true, ownerIdleMinutes: 200});
 		expect(verdict.token).toBe("claim-stale");
@@ -78,7 +99,7 @@ describe("arm 8 is the whole owner-exists complement of arm 7", () => {
 	});
 });
 
-describe("arms 9 and 10 partition the unowned remainder", () => {
+describe("arms 10 and 11 partition the unowned remainder", () => {
 	it("reads a satisfied gate with nobody shipping it as gated-unshipped", () => {
 		expect(token({gatesSatisfied: true})).toBe("gated-unshipped");
 	});

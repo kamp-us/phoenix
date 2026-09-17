@@ -25,7 +25,7 @@ GitHub access is `gh api` REST throughout, per
 **this group takes no GraphQL carve and no porcelain carve.** Every read specified below has a
 REST form, because the one read that does not — review-thread **resolution** state, whose
 `isResolved` lives only on GraphQL `reviewThreads` — is specified out of this group's scope rather
-than carved for (see the out-of-scope entry below and arm 6 of `diagnose`). `ship`'s two carves
+than carved for (see the out-of-scope entry below and arm 7 of `diagnose`). `ship`'s two carves
 (review-thread resolution; auto-merge arming) therefore stay `ship`'s. Named because a spec that
 leaves the substrate open makes the implementer guess.
 
@@ -72,6 +72,9 @@ the same tracked debt the sibling contracts carry.)
 - **A check-surface *repair* verb** (arm, rename or disarm a required context). That is a
   repository-settings mutation with a human's name on it, and arming a required check wrong has cost
   a whole wedged merge queue. `surface` diagnoses and stops.
+- **A conflict-clearing verb** (rebase, merge the base in, force-push). `diagnose` classifies a
+  conflicted PR as `conflicted` and arrows it at `build`, and that is the whole move: clearing the
+  conflict is a branch mutation, and this group owns no branch and checks out nothing.
 - **A dispatch or adoption verb.** A detector converts a strand into claimable work; an engine
   never free-scan-adopts, so no verb here assigns, claims, or spawns a lane and `sweep` writes
   nothing at all.
@@ -91,7 +94,7 @@ the same tracked debt the sibling contracts carry.)
 - **Detecting a PR blocked *solely* by an unresolved human review thread.** Resolution state is
   GraphQL-only (`reviewThreads.isResolved`; REST `pulls/{n}/comments` carries no resolved flag), so
   reading it would need this group's own GraphQL carve. The ruling was to narrow the axis and keep
-  the no-carve substrate. `diagnose` arm 6 therefore fires on REST-derivable human blocks
+  the no-carve substrate. `diagnose` arm 7 therefore fires on REST-derivable human blocks
   only — a live `CHANGES_REQUESTED` review at the head, or a control-plane diff with no approval at
   the head — and a PR whose *only* block is an open human thread reads as some other class. The door
   stays open: if a real stranded PR is ever blocked solely that way, the narrow read-only
@@ -370,7 +373,7 @@ text, and requesting a rerun. Both are specified from scratch below.
 **Invocation**
 
 ```
-fabrika heal-ci diagnose 9412 [--sha 03135b91] [--dwell-minutes 45] [--wedge-dwell-minutes 20] [--drift-commits 10] [--repo <owner/name>] [--json]
+fabrika heal-ci diagnose 9412 [--sha 03135b91] [--dwell-minutes 45] [--wedge-dwell-minutes 20] [--drift-commits 10] [--mergeability-seconds 60] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -382,13 +385,15 @@ fabrika heal-ci diagnose 9412 [--sha 03135b91] [--dwell-minutes 45] [--wedge-dwe
 | `--dwell-minutes` | integer | no | `45` | how long a claimed PR may go without activity before it reads `claim-stale` |
 | `--wedge-dwell-minutes` | integer | no | `20` | how long a queued-never-started check dwells before it reads `wedged` |
 | `--drift-commits` | integer | no | `10` | how far a claimed head may sit behind its base before the claim reads stale on ground drift |
+| `--mergeability-seconds` | integer | no | `60` | how long an indefinite `mergeable` is re-read before the conflict arm is skipped; `0` reads once and never re-reads |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line:
 `stall\t<token>\t<head-sha>\t<age-minutes>` where `<token>` is exactly one of `attended`,
-`ungated`, `gated-unshipped`, `claim-stale`, `red`, `check-surface`, `linkage-refused`,
-`blocked-human`, `wedged`, `not-open`, and `<age-minutes>` is the strand age (see below). Then one
+`ungated`, `gated-unshipped`, `claim-stale`, `red`, `check-surface`, `conflicted`,
+`linkage-refused`, `blocked-human`, `wedged`, `not-open`, and `<age-minutes>` is the strand age (see
+below). Then one
 line per evidence fact, in this fixed order, each present always:
 
 ```
@@ -418,9 +423,9 @@ number the sweep orders on, so it is derived here once rather than in two places
 the contract — two implementers walking it in a different order produce different answers on the
 same PR, which is exactly the drift a prose taxonomy invites.
 
-The chain has two phases, and the split is what makes totality provable. **Arms 1–6 are
+The chain has two phases, and the split is what makes totality provable. **Arms 1–7 are
 attention-independent**: they name states that block the PR no matter who is watching, so they are
-tested before anyone asks whether somebody is on it. **Arms 7–10 are the attendance phase**: the
+tested before anyone asks whether somebody is on it. **Arms 8–11 are the attendance phase**: the
 PR is open and otherwise able to proceed, so the only remaining question is whether anybody is
 moving it.
 
@@ -428,49 +433,71 @@ moving it.
 |---|---|---|
 | 1 | `not-open` | the PR's state is `draft`, `closed` or `merged`. An answer, not a refusal |
 | 2 | `wedged` | ≥1 **gating** check run is `queued` with a null `started_at` past `--wedge-dwell-minutes` (`isStalled`, plus the dwell) |
-| 3 | `check-surface` | ≥1 declared required status context has **no producing run** at this head, or ≥1 gating run answers no declared requirement — `surface`'s exact predicate, shared as one module so the two verbs cannot disagree |
-| 4 | `red` | the gating rollup at the head is `red` (`rollupOf` over `listShipCheckRuns`, informational contexts excluded first) |
-| 5 | `linkage-refused` | the diff derives ≥1 namespace whose merge seam requires a linked issue, the body carries neither `Fixes #N` nor `Part of #N`, **and** it carries some other reference form |
-| 6 | `blocked-human` | ≥1 non-`Bot` reviewer's latest decisive review at this head is `CHANGES_REQUESTED`, or the diff touches a control-plane path and no approval stands at this head. REST-derivable signals only — the unresolved-thread axis is out of scope, above |
-| 7 | `attended` | **any positive signal of motion**: an owner whose last activity is inside `--dwell-minutes`, a live merge-queue entry, an armed merge intent, or a gating rollup of `pending` — CI running at this head *is* the PR moving |
-| 8 | `claim-stale` | an owner signal exists and arm 7 did not fire — the claim is there and nothing shows it live. The stderr notice names which of the three proved it: activity older than `--dwell-minutes`, a head more than `--drift-commits` behind the base (`behindBase`), or an activity timestamp that could not be read at all |
-| 9 | `gated-unshipped` | no owner signal, and every required namespace is filled at this head (`inForce`) — an in-force `pass` verdict, or for `review-ui` alone a head-bound `routed-elsewhere` record saying the gate owes this PR no verdict |
-| 10 | `ungated` | no owner signal, and ≥1 required namespace holds neither at this head |
+| 3 | `conflicted` | the merge of this head into its base conflicts — `mergeable_state` is `dirty` on a definite read. An **indefinite** read skips this arm rather than firing it |
+| 4 | `check-surface` | ≥1 declared required status context has **no producing run** at this head, or ≥1 gating run answers no declared requirement — `surface`'s exact predicate, shared as one module so the two verbs cannot disagree |
+| 5 | `red` | the gating rollup at the head is `red` (`rollupOf` over `listShipCheckRuns`, informational contexts excluded first) |
+| 6 | `linkage-refused` | the diff derives ≥1 namespace whose merge seam requires a linked issue, the body carries neither `Fixes #N` nor `Part of #N`, **and** it carries some other reference form |
+| 7 | `blocked-human` | ≥1 non-`Bot` reviewer's latest decisive review at this head is `CHANGES_REQUESTED`, or the diff touches a control-plane path and no approval stands at this head. REST-derivable signals only — the unresolved-thread axis is out of scope, above |
+| 8 | `attended` | **any positive signal of motion**: an owner whose last activity is inside `--dwell-minutes`, a live merge-queue entry, an armed merge intent, or a gating rollup of `pending` — CI running at this head *is* the PR moving |
+| 9 | `claim-stale` | an owner signal exists and arm 8 did not fire — the claim is there and nothing shows it live. The stderr notice names which of the three proved it: activity older than `--dwell-minutes`, a head more than `--drift-commits` behind the base (`behindBase`), or an activity timestamp that could not be read at all |
+| 10 | `gated-unshipped` | no owner signal, and every required namespace is filled at this head (`inForce`) — an in-force `pass` verdict, or for `review-ui` alone a head-bound `routed-elsewhere` record saying the gate owes this PR no verdict |
+| 11 | `ungated` | no owner signal, and ≥1 required namespace holds neither at this head |
 
-**Arm 3 fires above arm 4 deliberately.** A required context that no run produces cannot be healed
+**Arm 3 fires above arm 4 deliberately, and it is what keeps arm 4 honest.** GitHub builds no
+`refs/pull/<n>/merge` for a conflicted PR, so no `pull_request` workflow ever fires and **every**
+required context reads absent — which is arm 4's exact predicate. Classified there, a conflicted PR
+becomes a repository-settings escalation with an operator's name on it, and the repair it actually
+needs is a rebase. Arm 3 is therefore read **before** the surface is consulted at all, and it is the
+one arm whose fact comes from the pull request rather than from the check surface.
+
+**An indefinite mergeability skips arm 3; it never fires it.** GitHub computes `mergeable` lazily,
+so the first read of a pull request routinely answers `null` with `mergeable_state: "unknown"`. That
+is the platform declining to answer: it is re-read across `--mergeability-seconds` through `ship`'s
+own poll loop — one implementation, so the two verbs never answer differently about one PR — and a
+value still indefinite at the end of that window **skips the arm** with a stderr notice, exactly as
+an unprobeable surface skips arm 4. Reading indefinite as conflicted would route a healthy PR to a
+rebase nobody owes.
+
+**The read is made only where arm 1 has not already taken the PR.** GitHub computes `mergeable` for
+open pull requests, so a closed, merged or draft one stays indefinite however long it is polled: a
+live run spent the whole 60-second window on a closed PR for a fact the chain then never consulted,
+and a sweep pays that again for every PR that closed between its list read and its classification.
+Arm 3 is skipped there on a fact nobody read, which is the same skip an indefinite value takes.
+
+**Arm 4 fires above arm 5 deliberately.** A required context that no run produces cannot be healed
 by anything a red-log classifier does, so a PR carrying both a config gap and a failing test is
 reported `check-surface` first: the gap is the cause the other repair cannot reach. Where the
-protection surface is `unprobeable` (see `surface`), arm 3 is **skipped** with a stderr notice
-naming the skip, and the chain continues at arm 4 — a permission the token lacks must never read
+protection surface is `unprobeable` (see `surface`), arm 4 is **skipped** with a stderr notice
+naming the skip, and the chain continues at arm 5 — a permission the token lacks must never read
 as a surface that is clean.
 
-**Arm 7 sits above arms 8–10, not below them.** An actively-worked PR is not stranded, and ranking
+**Arm 8 sits above arms 9–11, not below them.** An actively-worked PR is not stranded, and ranking
 any strand class above `attended` would report a PR whose author pushed two minutes ago as
-abandoned. `pending` belongs in arm 7 for the same reason: a run in flight is motion, not a stall.
+abandoned. `pending` belongs in arm 8 for the same reason: a run in flight is motion, not a stall.
 
-**Totality, proved over all ten arms.** Reaching arm 7 means the PR is open, not wedged,
-surface-complete-or-skipped, not red, linkage-clean and human-unblocked, so its rollup is one of
-`green`, `pending`, `no-runs` or `none`. Arm 7 takes every case carrying any positive signal —
-`pending` included. What remains has no positive signal, and arms 8–10 partition it exhaustively on one Boolean:
-**an owner signal either exists or it does not.** Where it exists, arm 8 takes it unconditionally —
-arm 8 is the whole owner-exists complement of arm 7, not a subset of it, which matters because an
+**Totality, proved over all eleven arms.** Reaching arm 8 means the PR is open, not wedged, not
+conflicted-or-skipped, surface-complete-or-skipped, not red, linkage-clean and human-unblocked, so its rollup is one of
+`green`, `pending`, `no-runs` or `none`. Arm 8 takes every case carrying any positive signal —
+`pending` included. What remains has no positive signal, and arms 9–11 partition it exhaustively on one Boolean:
+**an owner signal either exists or it does not.** Where it exists, arm 9 takes it unconditionally —
+arm 9 is the whole owner-exists complement of arm 8, not a subset of it, which matters because an
 owner whose activity timestamp is *unreadable* is neither provably live nor provably old and must
 still land somewhere. Reading unknown as stale is the fail-safe direction: a false strand costs one
 look, a false `attended` is the incident. Where no owner signal exists, the required-namespace set
-either holds an in-force verdict for every member (arm 9) or fails to for at least one (arm 10). A PR with **zero** required namespaces satisfies arm 9 vacuously and reads
+either holds an in-force verdict for every member (arm 10) or fails to for at least one (arm 11). A PR with **zero** required namespaces satisfies arm 10 vacuously and reads
 `gated-unshipped` with `gates none-required` — correctly, since nothing gates it and nobody is
 shipping it. No input reaches the end of the chain unclassified.
 
 **Attendedness is never keyed on the linked issue's existence or state.** A stranded PR carried a
 closing reference to a triaged, prioritised, milestoned and *assigned* issue and stranded exactly
-like one with no board row at all. `link` is printed as a fact and consumed only by arm 5.
+like one with no board row at all. `link` is printed as a fact and consumed only by arm 6.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404), `--sha` names no commit on this PR, or the enumerated changed-file list is empty |
-| `11` | the PR, its comments, its check runs, its verdicts, its timeline or its base could not be read — the stall class is UNKNOWN, never `attended` |
+| `11` | the PR, its mergeability, its comments, its check runs, its verdicts, its timeline or its base could not be read — the stall class is UNKNOWN, never `attended` |
 | `13` | the comment, check-run or timeline enumeration is provably short of its declared count, the timeline read never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
@@ -486,17 +513,20 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 | `heal-ci diagnose: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — refusing to classify a stall over a diff the platform cut short.` | 13 | refusal |
 | `heal-ci diagnose: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
 | `heal-ci diagnose: the live head is <live>, you are diagnosing <sha> — the head moved.` | 0 | notice |
+| `heal-ci diagnose: #<n> conflicts with <base> — no merge ref exists, so every required context reads absent for that reason and not a surface gap.` | 0 | notice |
+| `heal-ci diagnose: GitHub had not computed #<n>'s mergeability after <k>s — the conflict axis is INDEFINITE, so the conflict arm is skipped, never passed.` | 0 | notice |
 | `heal-ci diagnose: claim-stale fired on <inactivity\|ground-drift> — last activity <ts>, behind base <k>.` | 0 | notice |
 
-**Scope** — one PR's metadata, changed files, comments, check runs, workflow runs, reviews and
-timeline, each paginated to exhaustion, plus its base branch's declared required contexts. Every one
+**Scope** — one PR's metadata, mergeability, changed files, comments, check runs, workflow runs,
+reviews and timeline, each paginated to exhaustion, plus its base branch's declared required
+contexts. Every one
 of those but the changed-file list is also count-checked: GitHub computes the pull-request record's
 `changed_files` against a base it cached at the last push, so the file list is taken as the file set
 and the disagreement is reported. An **empty** list still refuses — this is the verb an operator
 reaches for when a PR is stuck, which is the worst place to keep a refusal a stuck PR can trigger.
 So does a list at GitHub's own 3000-file ceiling: the endpoint stops serving files there and ends
 its Link chain normally, so exhaustion cannot tell that read from a complete one.
-Review *threads* are not read: arm 6 is REST-only, per the out-of-scope entry above. The predicate
+Review *threads* are not read: arm 7 is REST-only, per the out-of-scope entry above. The predicate
 chain is total over what was read; a read that could not complete is `11`, never a class.
 
 **Examples**
@@ -564,6 +594,7 @@ fabrika heal-ci sweep [--min-age-minutes 30] [--limit 200] [--include-attended] 
 | `--dwell-minutes` | integer | no | `45` | passed through to each classification |
 | `--wedge-dwell-minutes` | integer | no | `20` | passed through to each classification |
 | `--drift-commits` | integer | no | `10` | passed through to each classification |
+| `--mergeability-seconds` | integer | no | `60` | passed through to each classification; `0` reads mergeability once and never re-reads |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -601,8 +632,9 @@ dropped from the emitted rows and from the `stalled` count, but **stays in `scan
 read genuinely covered it — and a stderr notice names it. Counting it as stalled would report a
 merged PR as a strand; dropping it from `scanned` would quietly shrink the scope the answer rests on.
 
-**The sweep's own cost is bounded, and it says so.** Each PR costs `diagnose`'s full read set, so a
-200-PR board is a four-figure number of REST calls — against the very rate limit this group's own
+**The sweep's own cost is bounded, and it says so.** Each PR costs `diagnose`'s full read set — plus,
+where GitHub has not computed that PR's mergeability yet, up to `--mergeability-seconds` of re-reads
+waiting on the lazy job — so a 200-PR board is a four-figure number of REST calls — against the very rate limit this group's own
 taxonomy classifies as a transient. The verb reads the rate-limit headers as it goes and, on
 exhaustion, **refuses `11` naming the reset time with nothing partial emitted**: a sweep that
 silently covered 60 of 200 PRs and printed a stalled count would be the truncated-scope answer this
@@ -1189,7 +1221,7 @@ machine-local path reaches a public surface while the poster reads success.
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number |
-| `--class` | string | yes | — | the stall class this note records — one of `heal-ci diagnose`'s ten tokens, the key's middle field |
+| `--class` | string | yes | — | the stall class this note records — one of `heal-ci diagnose`'s eleven tokens, the key's middle field |
 | `--sha` | string | yes | — | the head the classification was taken at, as a **full 40-hex** sha |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
@@ -1233,7 +1265,7 @@ somebody just diagnosed. The verb says so on stderr and records at the head it w
 | `7` | the PR is proven absent (404) |
 | `8` | the comment create, or its confirming re-read, failed — UNKNOWN whether it landed |
 | `9` | the comment landed but the read-back does not match |
-| `10` | `--class` is off the ten-token stall vocabulary |
+| `10` | `--class` is off the eleven-token stall vocabulary |
 | `11` | the PR, or its comment history, could not be read — nothing was posted |
 | `13` | the comment enumeration is short of the PR's declared count — nothing was posted |
 | `14` | refused: this key is already recorded on the PR — nothing was written |
@@ -1249,7 +1281,7 @@ somebody just diagnosed. The verb says so on stderr and records at the head it w
 | `heal-ci note: PR #<n> not found in <repo>.` | 7 | refusal |
 | `heal-ci note: create failed: <reason> — UNKNOWN whether the note landed; re-read before retrying.` | 8 | refusal |
 | `heal-ci note: the read-back does not match — inspect comment <id>.` | 9 | refusal |
-| `heal-ci note: --class <value> is not a stall class (known: <the ten tokens>).` | 10 | refusal |
+| `heal-ci note: --class <value> is not a stall class (known: <the eleven tokens>).` | 10 | refusal |
 | `heal-ci note: cannot read PR #<n>: <reason> — nothing was posted.` | 11 | refusal |
 | `heal-ci note: cannot read #<n>'s comments: <reason> — suppression state is UNKNOWN, so nothing was posted.` | 11 | refusal |
 | `heal-ci note: received <k> of <n> declared comments — refusing to post over a truncated suppression read.` | 13 | refusal |

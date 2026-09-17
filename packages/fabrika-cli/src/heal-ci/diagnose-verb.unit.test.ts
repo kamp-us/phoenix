@@ -73,6 +73,9 @@ const options = {
 	dwellMinutes: 45,
 	wedgeDwellMinutes: 20,
 	driftCommits: 10,
+	// Zero, so the fixtures answer in one read: the backoff window is `ship`'s, proved in
+	// `../ship/mergeability.unit.test.ts`, and re-spending it here would buy a minute of sleeping.
+	mergeabilitySeconds: 0,
 	repo: null,
 	json: false,
 	cwd: "/repo",
@@ -236,6 +239,29 @@ describe("runDiagnose answers", () => {
 		expect(out.stdout.split("\n")[0]).toBe(`stall\tcheck-surface\t${HEAD}\t35`);
 	});
 
+	it("reports conflicted above check-surface — no merge ref is why the contexts are absent", async () => {
+		const out = await run(
+			script([
+				[PULL, reply(pull({mergeable: false, mergeableState: "dirty", updatedAt: PUSHED}))],
+				[RULES, rules("ci-required", "code-scanning/codeql")],
+			]),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`stall\tconflicted\t${HEAD}\t35`);
+		expect(out.stderr.join("\n")).toContain("conflicts with main");
+	});
+
+	it("skips the conflict arm on an indefinite mergeability, leaving the class it had", async () => {
+		const out = await run(
+			script([
+				[PULL, reply(pull({mergeable: null, mergeableState: "unknown", updatedAt: PUSHED}))],
+				[RULES, rules("ci-required", "code-scanning/codeql")],
+			]),
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`stall\tcheck-surface\t${HEAD}\t35`);
+		expect(out.stderr.join("\n")).toContain("INDEFINITE");
+	});
+
 	it("skips the surface arm on an unprobeable protection surface rather than passing it", async () => {
 		const out = await run(
 			script([
@@ -250,7 +276,7 @@ describe("runDiagnose answers", () => {
 		expect(out.stderr.join("\n")).toContain("UNPROBEABLE");
 	});
 
-	it("declares arm 6's unimplemented half on stderr rather than letting the class read whole", async () => {
+	it("declares arm 7's unimplemented half on stderr rather than letting the class read whole", async () => {
 		const out = await run(script([[PULL, reply(pull({assignees: ["usirin"]}))]]));
 		expect(out.code).toBe(0);
 		expect(out.stderr.join("\n")).toContain("UNIMPLEMENTED");

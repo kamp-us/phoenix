@@ -28,6 +28,15 @@ describe("the arrow SKILL.md §2 assigns each class", () => {
 		expect(laneFor("blocked-human", NOBODY)).toBe("human");
 	});
 
+	// The filer suggested `author`. Every PR on this board is agent-authored and the rebase is a
+	// repair round, so `build` is the lane that exists to take it — and it is never `human`, which is
+	// the false operator escalation this class was minted to end.
+	it("sends conflicted to build, whatever holds the PR", () => {
+		expect(laneFor("conflicted", NOBODY)).toBe("build");
+		expect(laneFor("conflicted", HOLDER)).toBe("build");
+		expect(laneFor("conflicted", SELF)).toBe("build");
+	});
+
 	it("answers nobody on red, whose lane the class alone cannot name", () => {
 		expect(laneFor("red", NOBODY)).toBe("nobody");
 	});
