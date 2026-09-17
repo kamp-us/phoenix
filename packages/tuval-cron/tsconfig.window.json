@@ -1,0 +1,15 @@
+{
+  // The window's own lens. Tuval splits its tsconfigs the same way and for the same reason: the
+  // kernel row must stay free of React, and the renderer must stay free of the kernel. One lens
+  // over both would let an import cross that line without anything noticing — the kernel lens
+  // below excludes `src/window.tsx`, and this one includes nothing but the window and the two
+  // leaves it may reach.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["node", "react"]
+  },
+  "include": ["src/window.tsx", "src/state.ts", "src/renderer-ref.ts"],
+  "exclude": ["node_modules", "dist"]
+}

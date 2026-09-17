@@ -1,0 +1,24 @@
+{
+  // The emit lens. Same strictness as `tsconfig.json`, which it extends; the only job here is
+  // turning that lens into real JS on disk. `rewriteRelativeImportExtensions` turns the explicit
+  // `.ts` specifiers the source carries into `.js` in the emit, so the published files resolve
+  // under plain `node` — which refuses to strip types for anything under node_modules.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": false
+  },
+  "include": ["src"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".tuval",
+    "src/window.tsx",
+    "src/**/*.test.ts"
+  ]
+}
