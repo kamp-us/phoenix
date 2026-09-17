@@ -199,8 +199,8 @@ export class WorktreeFailed extends Schema.TaggedError<WorktreeFailed>()("Worktr
 
 /** Every port in the declared range is spoken for, by the OS or by this program. */
 export class NoFreePort extends Schema.TaggedError<NoFreePort>()("NoFreePort", {
-	from: Schema.Finite,
-	to: Schema.Finite,
+	from: Schema.Number,
+	to: Schema.Number,
 }) {}
 
 /** The env template is not where the config said it was. */
