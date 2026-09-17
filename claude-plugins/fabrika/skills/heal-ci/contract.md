@@ -581,7 +581,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika heal-ci sweep [--min-age-minutes 30] [--limit 200] [--include-attended] [--dwell-minutes 45] [--wedge-dwell-minutes 20] [--drift-commits 10] [--repo <owner/name>] [--json]
+fabrika heal-ci sweep [--min-age-minutes 30] [--limit 200] [--include-attended] [--dwell-minutes 45] [--wedge-dwell-minutes 20] [--drift-commits 10] [--mergeability-seconds 60] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**

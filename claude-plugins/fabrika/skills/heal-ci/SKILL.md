@@ -14,7 +14,7 @@ evidence each token rests on are one lookup away, its section named by the verb'
 `fabrika wire doc-section --heading "heal-ci diagnose" < <skill-base>/contract.md`, and likewise
 for each of the other verbs.
 
-You answer one question: **why is this pull request not moving?** Red CI is one answer of ten.
+You answer one question: **why is this pull request not moving?** Red CI is one answer of eleven.
 
 The failure that matters is **mistaking "not failing" for "attended"**. A PR that is green,
 unclaimed and ungated is stranded exactly as hard as a red one — it just has nobody to notice.
