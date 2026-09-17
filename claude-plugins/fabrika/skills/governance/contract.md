@@ -1019,9 +1019,19 @@ stderr line and the `--json` `floor` field. The six: `refired` (a new attempt ex
 (the re-fired run is queued or running again under its own id with the new attempt number not yet
 published — wait and re-read that run, never escalate it), `green` (the run at this head already
 passed), `in-flight` (the run had not completed, so it may still judge state older than this verdict
-— re-read the check), `no-run` (no floor run at this head: not installed in this repository, or not
-fired yet), `unknown` (the state could not be read or the re-fire could not be proven — never read as
+— re-read the check), `no-run` (the runs listed at this head carry no `governance-floor` one),
+`unknown` (the state could not be read or the re-fire could not be proven — never read as
 a pass).
+
+**`no-run`'s line states the read and offers no cause.** The tag is one token, and what the verb
+observed is that this head's run list carried no `governance-floor` entry — never why. The head's own
+run count rides the line because it says how much was read: a head carrying other runs narrows the
+empty filter to that one list, and a head carrying **no run at all** narrows nothing, since that is
+also the answer the platform gives while it has not indexed the head's runs yet. Both arms end by
+sending the reader back to re-read rather than treating the floor as absent. Concluding a cause here
+has been wrong twice over: the line once offered "not installed" over a repository whose floor had
+run at that head minutes before, and the head that incident was filed from listed 31 runs, so
+"the floor did not fire for this head" would have been false there too.
 
 **No advisory carrier.** `review post` takes `--carrier advisory` for §CP PRs, where a human approval
 is the gate. This verb has no such mode: §CP is not this namespace's question, the governance verdict

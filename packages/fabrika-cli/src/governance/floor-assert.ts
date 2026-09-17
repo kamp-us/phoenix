@@ -21,6 +21,8 @@
  * The run IO is imported from the two homes that already serve it — `../ship/github.ts` for the runs
  * at a head, `../heal-ci/github.ts` for one run and the rerun request. A third copy of either is how
  * two groups come to disagree about what the platform returns.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9034
  */
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -76,8 +78,20 @@ export const needsRefire = (jobConclusion: string | null, check: ShipCheckRun | 
 		: check.status !== "completed" || check.conclusion !== "success";
 
 export type FloorAssertion =
-	/** No floor run at this head: the workflow is not installed here, or it has not fired yet. */
-	| {readonly _tag: "NoRun"}
+	/**
+	 * No `governance-floor` run among the runs listed at this head.
+	 *
+	 * `runsAtHead` is how many runs of any name that list held, and it is carried because the tag
+	 * alone cannot say how much the read saw. A head carrying other runs narrows the empty filter to
+	 * this one list; a head carrying **none** narrows nothing at all — that is the same answer GitHub
+	 * returns while it has not yet indexed a head's runs. Neither count says *why* the filter came
+	 * back empty, and the line must not either: at the head this ticket was filed from the list
+	 * answered 31 runs while the floor run existed, so a message concluding the floor never fired
+	 * would be false in exactly that case. The message that used to offer "the floor is not installed
+	 * in this repository" sent one reader down a hypothesis about the re-fire keying, which
+	 * `needsRefire` had never had.
+	 */
+	| {readonly _tag: "NoRun"; readonly runsAtHead: number}
 	/** The run at this head already concluded green — the check reflects the gate's state. */
 	| {readonly _tag: "Green"; readonly run: number}
 	/** The run is still going, so it may yet judge state older than the verdict just written. */
@@ -121,7 +135,7 @@ export const assertFloorAt = (
 			);
 		}
 		const floors = listed.value.runs.filter((run) => run.name === FLOOR_WORKFLOW_NAME);
-		if (floors.length === 0) return {_tag: "NoRun"};
+		if (floors.length === 0) return {_tag: "NoRun", runsAtHead: listed.value.runs.length};
 		// The newest run at this head, by id. A head can carry several — a re-created PR, a retriggered
 		// workflow — and the check the PR shows is the last one.
 		const latest = floors.reduce((held, run) => (run.id > held.id ? run : held));
@@ -184,7 +198,9 @@ export const floorToken = (assertion: FloorAssertion): string => {
 export const floorLine = (verb: string, assertion: FloorAssertion): string => {
 	switch (assertion._tag) {
 		case "NoRun":
-			return `${verb}: no ${FLOOR_WORKFLOW_NAME} run at this head — the floor is not installed in this repository, or it has not fired yet.`;
+			return assertion.runsAtHead === 0
+				? `${verb}: this head lists no workflow run at all, so whether ${FLOOR_WORKFLOW_NAME} ran here is unproven — re-read the head's runs before treating the floor as absent.`
+				: `${verb}: the ${assertion.runsAtHead} run(s) listed at this head carry no ${FLOOR_WORKFLOW_NAME} one — that filtered answer is the only fact this read holds, and why it is empty is unproven; re-read the head's runs before treating the floor as absent.`;
 		case "Green":
 			return `${verb}: ${FLOOR_WORKFLOW_NAME} run ${assertion.run} already reads green at this head — nothing to re-fire.`;
 		case "InFlight":
