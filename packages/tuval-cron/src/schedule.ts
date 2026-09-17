@@ -17,7 +17,7 @@
  * leading seconds field is accepted, because the parser accepts one, but nothing here asks for it.
  */
 
-import { CronExpressionParser } from "cron-parser";
+import {CronExpressionParser} from "cron-parser";
 
 /**
  * A parsed expression, reduced to the one question the timer asks it: what is the first fire
@@ -25,10 +25,10 @@ import { CronExpressionParser } from "cron-parser";
  * the function so the Sub never re-parses.
  */
 export interface Schedule {
-  /** The expression as written, which is the dep key and the fallback title. */
-  readonly expression: string;
-  /** The first fire strictly after `after` (epoch ms, local time). */
-  readonly next: (after: number) => number;
+	/** The expression as written, which is the dep key and the fallback title. */
+	readonly expression: string;
+	/** The first fire strictly after `after` (epoch ms, local time). */
+	readonly next: (after: number) => number;
 }
 
 /**
@@ -38,27 +38,27 @@ export interface Schedule {
  * more about `0 99 * * *` than any wrapper of ours would.
  */
 export const parseSchedule = (expression: string): Schedule => {
-  let parsed: ReturnType<typeof CronExpressionParser.parse>;
-  try {
-    parsed = CronExpressionParser.parse(expression);
-  } catch (cause) {
-    throw new Error(
-      `cron: \`schedule\` is not a cron expression: ${expression} — ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-    );
-  }
-  return {
-    expression,
-    // `reset(date)` re-aims the one parsed expression at an instant and `next()` steps strictly
-    // forward from it, so every later question is a walk over fields already parsed. Mutating a
-    // captured object is safe here because the only caller is a single-threaded timer that asks,
-    // reads, and is done before the next turn of the loop.
-    next: (after: number): number => {
-      parsed.reset(new Date(after));
-      return parsed.next().getTime();
-    },
-  };
+	let parsed: ReturnType<typeof CronExpressionParser.parse>;
+	try {
+		parsed = CronExpressionParser.parse(expression);
+	} catch (cause) {
+		throw new Error(
+			`cron: \`schedule\` is not a cron expression: ${expression} — ${
+				cause instanceof Error ? cause.message : String(cause)
+			}`,
+		);
+	}
+	return {
+		expression,
+		// `reset(date)` re-aims the one parsed expression at an instant and `next()` steps strictly
+		// forward from it, so every later question is a walk over fields already parsed. Mutating a
+		// captured object is safe here because the only caller is a single-threaded timer that asks,
+		// reads, and is done before the next turn of the loop.
+		next: (after: number): number => {
+			parsed.reset(new Date(after));
+			return parsed.next().getTime();
+		},
+	};
 };
 
 /** What `setTimeout` can actually hold. Anything longer wraps to a fire that is immediate. */
@@ -87,48 +87,48 @@ const MAX_DELAY = 2_147_483_647;
  * for four years instead of once.
  */
 export const armSchedule = (
-  schedule: Schedule,
-  now: () => number,
-  tick: () => void,
+	schedule: Schedule,
+	now: () => number,
+	tick: () => void,
 ): (() => void) => {
-  let handle: ReturnType<typeof setTimeout> | undefined;
-  let live = true;
+	let handle: ReturnType<typeof setTimeout> | undefined;
+	let live = true;
 
-  const holdUntil = (at: number): void => {
-    if (!live) return;
-    const delay = at - now();
-    if (delay > MAX_DELAY) {
-      handle = setTimeout(() => holdUntil(at), MAX_DELAY);
-      return;
-    }
-    handle = setTimeout(
-      () => {
-        if (!live) return;
-        // The re-arm is in a `finally`, so a `tick` that throws cannot stop the clock: the next
-        // fire is already armed by the time the error leaves this callback, and it leaves it
-        // unswallowed — uncaught out of a timer callback, exactly where the `setInterval` half
-        // puts a throwing dispatch, and that half keeps firing too.
-        try {
-          tick();
-        } finally {
-          aimAfter(Math.max(at, now()));
-        }
-      },
-      Math.max(0, delay),
-    );
-  };
+	const holdUntil = (at: number): void => {
+		if (!live) return;
+		const delay = at - now();
+		if (delay > MAX_DELAY) {
+			handle = setTimeout(() => holdUntil(at), MAX_DELAY);
+			return;
+		}
+		handle = setTimeout(
+			() => {
+				if (!live) return;
+				// The re-arm is in a `finally`, so a `tick` that throws cannot stop the clock: the next
+				// fire is already armed by the time the error leaves this callback, and it leaves it
+				// unswallowed — uncaught out of a timer callback, exactly where the `setInterval` half
+				// puts a throwing dispatch, and that half keeps firing too.
+				try {
+					tick();
+				} finally {
+					aimAfter(Math.max(at, now()));
+				}
+			},
+			Math.max(0, delay),
+		);
+	};
 
-  const aimAfter = (after: number): void => {
-    if (!live) return;
-    holdUntil(schedule.next(after));
-  };
+	const aimAfter = (after: number): void => {
+		if (!live) return;
+		holdUntil(schedule.next(after));
+	};
 
-  aimAfter(now());
+	aimAfter(now());
 
-  return () => {
-    live = false;
-    if (handle !== undefined) clearTimeout(handle);
-  };
+	return () => {
+		live = false;
+		if (handle !== undefined) clearTimeout(handle);
+	};
 };
 
 /**
@@ -136,8 +136,8 @@ export const armSchedule = (
  * else. A tile has one line; a wrong humanization costs more than an honest `0 9 * * 1-5`.
  */
 export const humanize = (expression: string): string => {
-  const daily = /^(\d{1,2}) (\d{1,2}) \* \* \*$/.exec(expression.trim());
-  if (daily === null) return expression;
-  const [, minute, hour] = daily;
-  return `daily ${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
+	const daily = /^(\d{1,2}) (\d{1,2}) \* \* \*$/.exec(expression.trim());
+	if (daily === null) return expression;
+	const [, minute, hour] = daily;
+	return `daily ${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
 };

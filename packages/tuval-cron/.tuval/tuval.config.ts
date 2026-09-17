@@ -13,25 +13,20 @@
  * checked against the real config schema here rather than only when a desk boots it.
  */
 
-import { cron } from "@kampus/tuval-cron";
-import {
-  ClientId,
-  claudeSession,
-  type TuvalConfigInput,
-  WorkspaceId,
-} from "@kampus/tuval/sessions";
+import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
+import {cron} from "@kampus/tuval-cron";
 
 /** One workspace, one client — the two branded ids `claudeSession` will not build a row without. */
 const scope = {
-  workspace: WorkspaceId.make("default"),
-  client: ClientId.make("tuval-desk"),
+	workspace: WorkspaceId.make("default"),
+	client: ClientId.make("tuval-desk"),
 };
 
 export const standup = cron({
-  everyMs: 10 * 60 * 1000,
-  prompt:
-    "Using the gh CLI, summarize what changed on this repo in the last 24 hours. Five lines max.",
-  job: claudeSession({ cwd: "/tmp/tuval-cron-fixture", scope }),
+	everyMs: 10 * 60 * 1000,
+	prompt:
+		"Using the gh CLI, summarize what changed on this repo in the last 24 hours. Five lines max.",
+	job: claudeSession({cwd: "/tmp/tuval-cron-fixture", scope}),
 });
 
 /**
@@ -40,19 +35,19 @@ export const standup = cron({
  * — where an unnamed second row would collide with `standup` on all three.
  */
 export const eveningSummary = cron({
-  id: "evening-summary",
-  schedule: "0 18 * * *",
-  prompt: "What is still open on this repo? Three lines max.",
-  job: claudeSession({ cwd: "/tmp/tuval-cron-fixture", scope }),
+	id: "evening-summary",
+	schedule: "0 18 * * *",
+	prompt: "What is still open on this repo? Three lines max.",
+	job: claudeSession({cwd: "/tmp/tuval-cron-fixture", scope}),
 });
 
 export default {
-  version: 1,
-  programs: [standup, eveningSummary],
-  graph: {
-    nodes: [
-      { id: "cron", program: standup.id, on: [] },
-      { id: "evening-summary", program: eveningSummary.id, on: [] },
-    ],
-  },
+	version: 1,
+	programs: [standup, eveningSummary],
+	graph: {
+		nodes: [
+			{id: "cron", program: standup.id, on: []},
+			{id: "evening-summary", program: eveningSummary.id, on: []},
+		],
+	},
 } satisfies TuvalConfigInput;
