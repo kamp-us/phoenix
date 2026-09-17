@@ -15,14 +15,18 @@
  * A `green` is served only over bytes a gate of this repo's own inspected: the coverage read is
  * `../review/gate-coverage.ts`, the same module `review ci` refuses on, and a head where every
  * repo-authored workflow was silent refuses on {@link NO_GATE_COVERAGE} rather than printing the
- * word this group merges on.
+ * word this group merges on. Silent means no run that opened *this* head: a repo-authored
+ * `pull_request_target` run carries the head and checks out the base, so the run's own event and
+ * head are what that module judges, never its workflow path alone.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8362
  */
 import {Clock, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {producerFor, resolveCi} from "../config/ci-producer.ts";
 import {reasonHistogram} from "../evidence.ts";
 import {commitExists} from "../io/pulls.ts";
-import {gateCoverageOf} from "../review/gate-coverage.ts";
+import {gateCoverageOf, type RunProvenance} from "../review/gate-coverage.ts";
 import {isFailing, isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -89,8 +93,13 @@ export interface Sample {
 	 */
 	readonly workflows: ReadonlyArray<string>;
 	readonly runCount: number;
-	/** The workflows that produced a run at this head — gate coverage's right operand. */
-	readonly ranAtHead: ReadonlyArray<string>;
+	/**
+	 * The runs at this head with the provenance coverage judges them by — its right operand.
+	 *
+	 * Rows rather than the paths it used to be: a path says which workflow file ran, and the event
+	 * and head beside it are what say the job opened these bytes rather than the base ref.
+	 */
+	readonly ranAtHead: ReadonlyArray<RunProvenance>;
 	/** The suites a newer run of their own workflow replaced at this head — see `./supersession.ts`. */
 	readonly superseded: ReadonlySet<number>;
 }
@@ -152,6 +161,11 @@ export const runChecks = (
 		if (at._tag === "Unknown") {
 			return refuse(PRECONDITION_UNKNOWN, unreadable("the commit", at.reason));
 		}
+		// `bound` is what the caller asked and what every answer is spelled with; `head` is that
+		// commit's full object name. The Actions run list filters `head_sha` as an exact string, so an
+		// abbreviated `--sha` there reads as zero runs — a coverage answer the two must never differ on
+		// (`../review/gate-coverage.ts`).
+		const head = at.value;
 
 		const diagnostics: string[] = [];
 		if (!prefixMatch(target.pull.headSha, bound)) {
@@ -188,7 +202,7 @@ export const runChecks = (
 			}
 			// Enumerated rather than counted: `total_count` is still the `no-runs` discriminator, and
 			// the rows beside it are the only place supersession can be read from.
-			const atHead = yield* listRunsAtHead(repo, bound);
+			const atHead = yield* listRunsAtHead(repo, head);
 			if (atHead._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
@@ -200,7 +214,7 @@ export const runChecks = (
 				runs: latestPerContext(runs),
 				workflows: workflows.value,
 				runCount: atHead.value.declared,
-				ranAtHead: atHead.value.runs.map((run) => run.path),
+				ranAtHead: atHead.value.runs,
 				superseded: supersededSuites(atHead.value.runs),
 			} satisfies Sample;
 		});
@@ -288,13 +302,25 @@ export const runChecks = (
 			| {readonly _tag: "Ungated"; readonly outcome: VerbOutcome}
 			| {readonly _tag: "Judged"; readonly notes: ReadonlyArray<string>} => {
 			if (rollup !== "green") return {_tag: "Judged", notes: []};
-			const coverage = gateCoverageOf(read.workflows, read.ranAtHead);
+			const coverage = gateCoverageOf(read.workflows, read.ranAtHead, head);
+			if (coverage._tag === "Unreadable") {
+				// Never the coverage refusal: that code says the repository's gates were silent, and an
+				// operand this verb could not resolve is a fact about the call instead.
+				return {
+					_tag: "Ungated",
+					outcome: refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot judge gate coverage at ${bound}: ${coverage.reason} — CI state is UNKNOWN, never green.`,
+						diagnostics,
+					),
+				};
+			}
 			if (coverage._tag === "Uncovered") {
 				return {
 					_tag: "Ungated",
 					outcome: refuse(
 						NO_GATE_COVERAGE,
-						`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors produced a run at ${bound} — the ${read.runs.length} check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.`,
+						`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors inspected ${head} — the ${read.runs.length} check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.`,
 						diagnostics,
 					),
 				};
@@ -304,7 +330,7 @@ export const runChecks = (
 				notes: [
 					coverage._tag === "NoGates"
 						? `${VERB}: ${repo} authors no workflow of its own — every run at ${bound} is platform-provided, so there is no gate coverage to judge.`
-						: `${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors produced a run at ${bound}.`,
+						: `${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors inspected ${head}.`,
 				],
 			};
 		};

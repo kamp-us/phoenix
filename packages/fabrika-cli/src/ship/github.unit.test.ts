@@ -141,8 +141,21 @@ describe("the envelope proof", () => {
 				json({
 					total_count: 2,
 					workflow_runs: [
-						{id: 11, workflow_id: 7, check_suite_id: 91, status: "completed"},
-						{id: 12, workflow_id: 7, status: "in_progress"},
+						{
+							id: 11,
+							workflow_id: 7,
+							check_suite_id: 91,
+							status: "completed",
+							event: "pull_request",
+							head_sha: "abc",
+						},
+						{
+							id: 12,
+							workflow_id: 7,
+							status: "in_progress",
+							event: "pull_request",
+							head_sha: "abc",
+						},
 					],
 				}),
 			],
@@ -160,6 +173,17 @@ describe("the envelope proof", () => {
 		]);
 		const read = await run(listRunsAtHead("o/r", "abc"), http);
 		expect(reason(read)).toContain("not a workflow run");
+	});
+
+	it("refuses a workflow run naming no event or head — coverage is decided from both", async () => {
+		const http = fakeHttp([
+			[
+				/actions\/runs\?head_sha=/,
+				json({total_count: 1, workflow_runs: [{id: 11, workflow_id: 7, head_sha: "abc"}]}),
+			],
+		]);
+		const read = await run(listRunsAtHead("o/r", "abc"), http);
+		expect(reason(read)).toContain("names no event or head commit");
 	});
 
 	it("refuses an envelope that declares no total_count rather than inventing one", async () => {

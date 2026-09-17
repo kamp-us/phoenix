@@ -43,6 +43,8 @@ const runsAt = (
 			...row,
 			workflow_id: row.id,
 			check_suite_id: row.id,
+			event: "pull_request",
+			head_sha: HEAD,
 			conclusion: conclusion ?? "success",
 			completed_at: completedAt === undefined ? new Date().toISOString() : completedAt,
 		})),
