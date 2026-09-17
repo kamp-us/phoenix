@@ -105,8 +105,9 @@ export interface Started {
  * The app from rows and a graph, built into the caller's Scope. The graph is compiled over the
  * registry before any process exists, so a bad route refuses here with nothing spawned and
  * nothing written; the wiring opens next and the kernel after it, so a stop takes the processes
- * down — pumps included — before their queues close. A snapshot under another definition
- * refuses the boot at its spawn, with nothing fresh-booted (#7467, #7514).
+ * down — pumps included — before their queues close. A snapshot under a definition the program's
+ * own `migrations` do not reach refuses the boot at its spawn, with nothing fresh-booted
+ * (#7467, #7514).
  */
 export const start = Effect.fn("Tuval.start")(function* ({
 	programs,

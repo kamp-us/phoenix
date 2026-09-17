@@ -5,7 +5,7 @@
  */
 
 import type {Cmd, Machine, Sub} from "@demlik/tea";
-import {type Effect, Schema, type Scope} from "effect";
+import {type Effect, type Option, Schema, type Scope} from "effect";
 // Type-only, so the commands slice's runtime dependency on this file stays one-directional.
 import type {AnySpell} from "../commands/spell.ts";
 import type {SubFailurePolicy} from "../sub-failure.ts";
@@ -243,6 +243,17 @@ export interface Program<
 	 */
 	readonly restorable?: (raw: unknown) => boolean;
 	/**
+	 * How a snapshot written under an older version of this program becomes one this version can
+	 * restore, keyed by the version it was written under (#8907). An added field is then an ordinary
+	 * bump: the shell's 1.1.0 step fills `desk.boardOpen` from `initialDesk`, so a desk saved before
+	 * the field comes back with every window it had.
+	 *
+	 * A row that declares none, or whose steps do not reach this version from the one on disk, keeps
+	 * the old answer whole — the snapshot is refused, the process stays absent until a person
+	 * decides, and nothing is fresh-booted over it (`../durability/Checkpoints.ts`, #7467).
+	 */
+	readonly migrations?: Migrations;
+	/**
 	 * Whether a state of this program is worth a checkpoint. The host asks it at every save site,
 	 * and `false` writes nothing — so a program streaming a reply answers `false` for every
 	 * mid-turn state, pays no disk for the burst, and the state that ends the turn is the flush
@@ -282,6 +293,23 @@ export interface Program<
 	readonly identity: DefinitionIdentity;
 	readonly placement: Placement;
 }
+
+/**
+ * One step of a snapshot's walk from the version it was written under to the one the program is
+ * now: what that version becomes, and the version the answer is written under. `none` declines the
+ * bytes — a shape this step did not expect is refused rather than handed on half-migrated.
+ *
+ * `to` is on the step because the chain is checked and not asserted (`../durability/migrations.ts`):
+ * a step left behind by a later bump no longer reaches the current version, so its snapshot is
+ * refused instead of arriving under a version nothing wrote it as.
+ */
+export interface Migration {
+	readonly to: string;
+	readonly migrate: (raw: unknown) => Option.Option<unknown>;
+}
+
+/** The steps a program declares, keyed by the version each one migrates *from*. */
+export type Migrations = Readonly<Record<string, Migration>>;
 
 /**
  * A row with its private types erased: what the registry stores and resolves, since one registry
