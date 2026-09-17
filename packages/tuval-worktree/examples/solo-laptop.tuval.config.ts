@@ -5,7 +5,7 @@
  */
 
 import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
-import {workspace} from "@kampus/tuval-workspace";
+import {worktree} from "@kampus/tuval-worktree";
 
 const REPO = "/code/my-app";
 
@@ -17,18 +17,18 @@ const scope = {
 export const options = {
 	repo: REPO,
 	base: "origin/main",
-	root: ".workspaces",
+	root: ".worktrees",
 	port: {from: 5170, to: 5199},
 	env: {template: ".env.example", portKey: "PORT"},
 } as const;
 
-export const workspaces = workspace({
+export const worktrees = worktree({
 	...options,
 	job: claudeSession({cwd: REPO, scope}),
 });
 
 export default {
 	version: 1,
-	programs: [workspaces],
-	graph: {nodes: [{id: "workspace", program: workspaces.id, on: []}]},
+	programs: [worktrees],
+	graph: {nodes: [{id: "worktree", program: worktrees.id, on: []}]},
 } satisfies TuvalConfigInput;

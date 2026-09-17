@@ -19,7 +19,7 @@
  * `Effect.acquireRelease`, and its release on a failed scope writes the path down as *kept* rather
  * than removing it. That is deliberate and is the documented rule: rolling back would delete the
  * one piece of evidence about what went wrong, and a half-built tree is still removable by
- * `:workspace close <name>` when a person asks. The `kept` path on a failed outcome is that rule,
+ * `:worktree close <name>` when a person asks. The `kept` path on a failed outcome is that rule,
  * as a value a test can assert on instead of a paragraph.
  *
  * **The machine is a service.** Everything that touches git, a socket or the disk goes through
@@ -30,7 +30,7 @@
  * **Nothing in this module knows where it is run from, and that is the point.** `provision`,
  * `teardown` and `reconcile` are values: an `Effect` requiring `Machine`, answering with an
  * outcome, dispatching nothing. That is the shape an effect handler takes, and that is where they
- * are run from — `./workspace.ts` spreads one handler per entry point onto its compiled row
+ * are run from — `./worktree.ts` spreads one handler per entry point onto its compiled row
  * (kamp-us/phoenix#8716 R12.1, shipped as #9295) and provides the `Machine` layer there.
  */
 
@@ -45,9 +45,7 @@ import {nodeRunner, type Runner} from "./runner.ts";
  * same five Promise-returning methods a consumer already implements — so the injection point stays
  * one interface and this class is only how the program reaches it.
  */
-export class Machine extends Context.Service<Machine, Runner>()(
-	"@kampus/tuval-workspace/Machine",
-) {}
+export class Machine extends Context.Service<Machine, Runner>()("@kampus/tuval-worktree/Machine") {}
 
 /** The real machine. What a desk runs under. */
 export const MachineLive: Layer.Layer<Machine> = Layer.sync(Machine, nodeRunner);
@@ -99,7 +97,7 @@ const ask = <A>(call: (runner: Runner) => Promise<A>): Effect.Effect<A, never, M
  * more — `$$` is left alone for the shell, where it is the process id.
  */
 export interface Vars {
-	/** What the person called the workspace. */
+	/** What the person called the worktree. */
 	readonly NAME: string;
 	/** The port the probe found, as a string. */
 	readonly PORT: string;
@@ -162,7 +160,7 @@ export const safeDetail = (text: string): string => {
 /**
  * The env file, rewritten. Every assignment either replaces the first uncommented line that sets
  * that key or is appended at the end; nothing else in the template moves, so the comments a person
- * wrote in `.env.example` survive into every workspace's `.env`.
+ * wrote in `.env.example` survive into every worktree's `.env`.
  *
  * A commented-out `# PORT=3000` is left commented and the real assignment is appended below it —
  * uncommenting someone's example line is a guess, and appending is not.
@@ -308,7 +306,7 @@ export type ProvisionOutcome =
 /**
  * The first port in the range that nothing else holds. `taken` is checked before the probe because
  * a port this program handed out two seconds ago may not be bound *yet* — the dev server inside
- * that workspace has not started — and the OS would happily offer it again.
+ * that worktree has not started — and the OS would happily offer it again.
  */
 export const pickPort = (
 	range: {readonly from: number; readonly to: number},
@@ -522,7 +520,7 @@ export const teardown = (plan: TeardownPlan): Effect.Effect<TeardownOutcome, nev
 	);
 
 /**
- * Which recorded workspaces are not on disk any more. Read-only by construction — the caller marks
+ * Which recorded worktrees are not on disk any more. Read-only by construction — the caller marks
  * them `gone`, and nobody deletes anything: a record whose directory a person removed by hand is
  * the last evidence that the directory was ever supposed to be there.
  */

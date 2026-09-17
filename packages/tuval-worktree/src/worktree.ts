@@ -1,15 +1,15 @@
 /**
- * `workspace` — a program that hands each agent its own everything: a git worktree cut from a base
+ * `worktree` — a program that hands each agent its own everything: a git worktree cut from a base
  * ref, a TCP port nothing else holds, an `.env` written from your template with that port in it,
  * and whatever setup command builds the rest (a scratch database, a compose project, a warmed nix
- * shell). One tile, one line per workspace, and `:workspace close <name>` puts all of it back.
+ * shell). One tile, one line per worktree, and `:worktree close <name>` puts all of it back.
  *
  * **The problem, stated once.** Two agents on one repository collide. Same worktree, so one
  * rebases under the other; same dev port, so the second server will not start; same `.env`, so a
  * changed variable is a changed variable for both; same local database, so one agent's migration
  * is the other's broken fixture. Conductor, Claude Squad and Cursor Mission Control each give you
  * the worktree and stop there — the port, the env file and the database are left to you, which is
- * to say left to collide. Declaring all four together, resolving them per workspace and disposing
+ * to say left to collide. Declaring all four together, resolving them per worktree and disposing
  * of them together is the whole idea: nix-shell's argument, applied to agents.
  *
  * **Declared inputs, resolved once, in one order.** `./provision.ts` owns the order — worktree,
@@ -45,7 +45,7 @@
  * nothing an authored program can reach. Filed as kamp-us/phoenix#9287.
  *
  * So the session this program starts runs on the cwd your config gave `claudeSession`, and the
- * workspace's path reaches it **in words**: the prompt is prefixed with "You are working in
+ * worktree's path reaches it **in words**: the prompt is prefixed with "You are working in
  * `<path>` on branch `<branch>`; dev port `<port>`." That is a sentence, not an invariant — an
  * agent that ignores it is not refused by anything — and it is named as the fallback it is, here
  * and in the README, rather than dressed up as isolation. Everything below the session is real:
@@ -86,7 +86,7 @@ import {
 	type TeardownStage,
 	teardown,
 } from "./provision.ts";
-import {WORKSPACE_WINDOW_REF} from "./renderer-ref.ts";
+import {WORKTREE_WINDOW_REF} from "./renderer-ref.ts";
 import {nodeRunner, type Runner} from "./runner.ts";
 import {
 	byName,
@@ -99,13 +99,13 @@ import {
 	statusLine,
 	takenPorts,
 	unowned,
-	type WorkspaceRecord,
-	type WorkspaceState,
+	type WorktreeRecord,
+	type WorktreeState,
 	without,
 	withRecord,
 } from "./state.ts";
 
-/** What workspace asks of the agent it starts: take a prompt, announce a finished turn. */
+/** What worktree asks of the agent it starts: take a prompt, announce a finished turn. */
 export const jobShape = Program.shape({
 	in: {prompt: PromptPayloadSchema},
 	out: {result: TurnResultSchema},
@@ -114,26 +114,26 @@ export const jobShape = Program.shape({
 /**
  * The declared args, named. `programArgs`' return type is `ArgRefs`, which the authoring door
  * publishes together with the `ArgRef`/`ProgramArgRef`/`Spawnable` chain under it — so the
- * declaration emit for `workspaceProgram` can write this type down through the door rather than
+ * declaration emit for `worktreeProgram` can write this type down through the door rather than
  * through a `node_modules` path it would refuse (TS2742).
  */
-export type WorkspaceArgs = ArgRefs<string, {readonly job: typeof jobShape}>;
+export type WorktreeArgs = ArgRefs<string, {readonly job: typeof jobShape}>;
 
 /**
- * One workspace program's args, keyed on *that* program's id. Keyed rather than shared because an
- * arg's service key is `tuval/arg/<program>/<name>`: two workspace rows over one key would read one
+ * One worktree program's args, keyed on *that* program's id. Keyed rather than shared because an
+ * arg's service key is `tuval/arg/<program>/<name>`: two worktree rows over one key would read one
  * another's `job` fill, and the second config line would quietly decide what the first one runs.
  */
-const argsFor = (id: string): WorkspaceArgs => programArgs(id, {job: jobShape});
+const argsFor = (id: string): WorktreeArgs => programArgs(id, {job: jobShape});
 
-/** The id a workspace program takes when a config does not name one. */
-export const DEFAULT_ID = "workspace";
+/** The id a worktree program takes when a config does not name one. */
+export const DEFAULT_ID = "worktree";
 
-/** The branch prefix a workspace's branch takes when a config does not name one. */
+/** The branch prefix a worktree's branch takes when a config does not name one. */
 export const DEFAULT_BRANCH_PREFIX = "can/";
 
 /** Where worktrees go, relative to the repository, when a config does not say. */
-export const DEFAULT_ROOT = ".workspaces";
+export const DEFAULT_ROOT = ".worktrees";
 
 /** The base ref a new branch starts at, when a config does not say. */
 export const DEFAULT_BASE = "origin/main";
@@ -151,14 +151,14 @@ export const DEFAULT_ENV = {
  * The id, checked. Tuval's `ProgramId` is a type-only brand — a plain string at runtime, and not
  * published through the authoring door — so there is no validator to borrow and this is the whole
  * of the refusal: an id must be a non-empty word with no whitespace in it, because it is also a
- * graph node id and the first token of a spell (`:workspace open`), and `:my workspace open`
- * addresses nothing. Refused at `workspace(...)`, where the config is being written.
+ * graph node id and the first token of a spell (`:worktree open`), and `:my worktree open`
+ * addresses nothing. Refused at `worktree(...)`, where the config is being written.
  */
 const checkedId = (id: string | undefined): string => {
 	if (id === undefined) return DEFAULT_ID;
 	if (id.trim() === "" || /\s/.test(id)) {
 		throw new Error(
-			`workspace: \`id\` must be a non-empty word with no spaces — it is the program id, the graph node id and the spell (\`:${id} open\`): ${JSON.stringify(id)}`,
+			`worktree: \`id\` must be a non-empty word with no spaces — it is the program id, the graph node id and the spell (\`:${id} open\`): ${JSON.stringify(id)}`,
 		);
 	}
 	return id;
@@ -174,7 +174,7 @@ export interface EnvOptions {
 
 	/**
 	 * Anything else to write, with `$NAME`/`$PORT`/`$WORKTREE`/`$BRANCH` resolved first. This is where a
-	 * `DATABASE_URL` that embeds the workspace's name goes.
+	 * `DATABASE_URL` that embeds the worktree's name goes.
 	 */
 	readonly vars?: Readonly<Record<string, string>>;
 
@@ -183,20 +183,20 @@ export interface EnvOptions {
 }
 
 /** What a config writes. Everything but `repo` has a default, and every default is named above. */
-export interface WorkspaceOptions {
+export interface WorktreeOptions {
 	/** What this program is called: its program id, its graph node id, and its two spells. */
 	readonly id?: string;
 
 	/** The repository worktrees are cut from, absolute. The one field with no default. */
 	readonly repo: string;
 
-	/** The ref a new workspace's branch starts at. `origin/main` by default. */
+	/** The ref a new worktree's branch starts at. `origin/main` by default. */
 	readonly base?: string;
 
-	/** Where worktrees go. Relative paths are resolved against `repo`. `.workspaces` by default. */
+	/** Where worktrees go. Relative paths are resolved against `repo`. `.worktrees` by default. */
 	readonly root?: string;
 
-	/** What a workspace's branch is called: this, then the name. `can/` by default. */
+	/** What a worktree's branch is called: this, then the name. `can/` by default. */
 	readonly branchPrefix?: string;
 
 	/** The range probed for a free port. */
@@ -208,7 +208,7 @@ export interface WorkspaceOptions {
 	/** Commands run inside a fresh worktree, in order, with the four variables resolved. */
 	readonly setup?: ReadonlyArray<string>;
 
-	/** Commands run inside a workspace before it is removed, in order, same variables. */
+	/** Commands run inside a worktree before it is removed, in order, same variables. */
 	readonly teardown?: ReadonlyArray<string>;
 
 	/** Extra sentences appended to the where-you-are preface every agent is sent. */
@@ -221,13 +221,13 @@ export interface WorkspaceOptions {
 	readonly runner?: Runner;
 }
 
-/** The row, as a config writes it. `job` is optional: a workspace with none only provisions. */
-export type WorkspaceFill = WorkspaceOptions & {
+/** The row, as a config writes it. `job` is optional: a worktree with none only provisions. */
+export type WorktreeFill = WorktreeOptions & {
 	readonly job?: ShapeSource;
 };
 
 /**
- * The options with every default applied — one reading, made once at `workspace(...)`.
+ * The options with every default applied — one reading, made once at `worktree(...)`.
  *
  * Exported, together with `settle`, `freshRecord`, `openPlan` and `closePlan` below, because the
  * examples' suite drives the five personas through *this* derivation rather than restating it. A
@@ -255,16 +255,16 @@ export interface Settled {
 	readonly hasJob: boolean;
 }
 
-export const settle = (options: WorkspaceFill): Settled => {
+export const settle = (options: WorktreeFill): Settled => {
 	if (options.repo.trim() === "") {
 		throw new Error(
-			"workspace: `repo` is the repository worktrees are cut from; it cannot be empty",
+			"worktree: `repo` is the repository worktrees are cut from; it cannot be empty",
 		);
 	}
 	const range = options.port ?? DEFAULT_PORTS;
 	if (range.from > range.to) {
 		throw new Error(
-			`workspace: \`port\` must run upwards — got {from: ${range.from}, to: ${range.to}}`,
+			`worktree: \`port\` must run upwards — got {from: ${range.from}, to: ${range.to}}`,
 		);
 	}
 	const env = options.env;
@@ -298,7 +298,7 @@ export const settle = (options: WorkspaceFill): Settled => {
 /**
  * What `:<id> open <name> [brief]` puts on the `open` in-port. Two fields in declaration order,
  * because that order *is* the positional order of a spell's parameters — `name` first, so
- * `:workspace open feature-x` is the whole of the common call.
+ * `:worktree open feature-x` is the whole of the common call.
  */
 export const OpenRequest = Schema.Struct({
 	name: Schema.String,
@@ -323,7 +323,7 @@ export const DiscardRequest = Schema.Struct({
  * effect type this program answers — is not an inference site (kamp-us/phoenix#9295), so the whole
  * type-argument list has to be stated at `defineProgram` and every earlier argument with it.
  */
-export type WorkspaceCommands = {
+export type WorktreeCommands = {
 	readonly open: typeof OpenRequest.Type;
 	readonly close: typeof CloseRequest.Type;
 	readonly discard: typeof DiscardRequest.Type;
@@ -331,8 +331,8 @@ export type WorkspaceCommands = {
 
 // -- The derivation, shared by the program and its tests ---------------------
 
-/** A workspace, before anything has been provisioned into it. */
-export const freshRecord = (settled: Settled, name: string): WorkspaceRecord => ({
+/** A worktree, before anything has been provisioned into it. */
+export const freshRecord = (settled: Settled, name: string): WorktreeRecord => ({
 	name,
 	path: join(settled.root, name),
 	branch: `${settled.branchPrefix}${name}`,
@@ -346,7 +346,7 @@ export const freshRecord = (settled: Settled, name: string): WorkspaceRecord => 
 /** What one `open` asks of `./provision.ts`, derived from the settled config and the record. */
 export const openPlan = (
 	settled: Settled,
-	record: WorkspaceRecord,
+	record: WorktreeRecord,
 	taken: ReadonlyArray<number>,
 ): ProvisionPlan => ({
 	name: record.name,
@@ -362,13 +362,13 @@ export const openPlan = (
 
 /**
  * What one `close` asks of `./provision.ts`. `force` is a parameter rather than a config field
- * because it is a per-call decision: the same workspace closes safely under `:<id> close` and
+ * because it is a per-call decision: the same worktree closes safely under `:<id> close` and
  * forcibly under `:<id> discard`, and nothing in a config should be able to make the first one
  * behave like the second.
  */
 export const closePlan = (
 	settled: Settled,
-	record: WorkspaceRecord,
+	record: WorktreeRecord,
 	force: boolean,
 ): TeardownPlan => ({
 	name: record.name,
@@ -415,7 +415,7 @@ interface Reconciled extends AuthoredEvent {
 }
 
 /** The whole vocabulary a handler speaks back, named so a test can build one without guessing. */
-export type WorkspaceEvent = Provisioned | ProvisionFailed | Closed | CloseFailed | Reconciled;
+export type WorktreeEvent = Provisioned | ProvisionFailed | Closed | CloseFailed | Reconciled;
 
 // -- The effects this program named, which is R12.1's seam -------------------
 
@@ -435,23 +435,23 @@ export type WorkspaceEvent = Provisioned | ProvisionFailed | Closed | CloseFaile
  * that used to answer `null` for a vanished record does not exist any more.
  */
 export interface Provision {
-	readonly type: "workspace.provision";
+	readonly type: "worktree.provision";
 	readonly plan: ProvisionPlan;
 }
 
-/** One workspace put back: teardown commands, then the removal, forced only by `discard`. */
+/** One worktree put back: teardown commands, then the removal, forced only by `discard`. */
 export interface Teardown {
-	readonly type: "workspace.teardown";
+	readonly type: "worktree.teardown";
 	readonly plan: TeardownPlan;
 }
 
 /**
- * Every recorded workspace, checked against disk. A read, but a read of the world — it belongs on
+ * Every recorded worktree, checked against disk. A read, but a read of the world — it belongs on
  * this side of the seam with the other two rather than in a Sub, because it happens once in answer
  * to an event (`restored`) rather than standing open observing anything.
  */
 export interface Reconcile {
-	readonly type: "workspace.reconcile";
+	readonly type: "worktree.reconcile";
 	readonly records: ReadonlyArray<{
 		readonly name: string;
 		readonly path: string;
@@ -459,20 +459,20 @@ export interface Reconcile {
 }
 
 /** `defineProgram`'s sixth type argument, and the key set the spread handlers answer. */
-export type WorkspaceEffect = Provision | Teardown | Reconcile;
+export type WorktreeEffect = Provision | Teardown | Reconcile;
 
 export const provisionEffect = (plan: ProvisionPlan): Provision => ({
-	type: "workspace.provision",
+	type: "worktree.provision",
 	plan,
 });
 
 export const teardownEffect = (plan: TeardownPlan): Teardown => ({
-	type: "workspace.teardown",
+	type: "worktree.teardown",
 	plan,
 });
 
 export const reconcileEffect = (records: Reconcile["records"]): Reconcile => ({
-	type: "workspace.reconcile",
+	type: "worktree.reconcile",
 	records,
 });
 
@@ -482,17 +482,17 @@ export const reconcileEffect = (records: Reconcile["records"]): Reconcile => ({
  * process cwd this program could not set is told, in the one channel it does have, where its work
  * actually lives.
  */
-export const preface = (record: WorkspaceRecord, brief: string): string => {
+export const preface = (record: WorktreeRecord, brief: string): string => {
 	const port = record.port === null ? "no dev port" : `dev port ${record.port}`;
 	const head = `You are working in ${record.path} on branch ${record.branch}; ${port}. Start by changing into that directory — it is a git worktree of its own and it is not where this session started.`;
 	return brief.trim() === "" ? head : `${head}\n\n${brief.trim()}`;
 };
 
 /**
- * Start the agent inside a provisioned workspace, or ask for nothing because the config filled no
+ * Start the agent inside a provisioned worktree, or ask for nothing because the config filled no
  * `job`. Written once because one place decides it and the `provisioned` cell is that place.
  */
-const startAgent = (settled: Settled, args: WorkspaceArgs): ReadonlyArray<SpawnEffect> =>
+const startAgent = (settled: Settled, args: WorktreeArgs): ReadonlyArray<SpawnEffect> =>
 	settled.hasJob ? [spawn(args.job, {on: {result: "result"}})] : [];
 
 /**
@@ -514,19 +514,19 @@ const startAgent = (settled: Settled, args: WorkspaceArgs): ReadonlyArray<SpawnE
  * Exported for the reason `settle` and `openPlan` are: a suite that drives the whole chain — cell,
  * plan, machine, handler, reducer — catches a break that no half's own suite can see.
  */
-export const workspaceHandlers = (
+export const worktreeHandlers = (
 	settled: Settled,
-): HostHandlers<WorkspaceEvent, WorkspaceEffect, never, never> => {
+): HostHandlers<WorktreeEvent, WorktreeEffect, never, never> => {
 	const onMachine = <A>(
 		program: Effect.Effect<A, never, Machine>,
 	): Effect.Effect<A, never, never> => Effect.provide(program, machineLayer(settled.runner));
 
 	return {
-		"workspace.provision": (effect) =>
+		"worktree.provision": (effect) =>
 			onMachine(
 				Effect.map(
 					provision(effect.plan),
-					(outcome): ReadonlyArray<WorkspaceEvent> => [
+					(outcome): ReadonlyArray<WorktreeEvent> => [
 						outcome.ok
 							? {
 									type: "provisioned",
@@ -543,11 +543,11 @@ export const workspaceHandlers = (
 				),
 			),
 
-		"workspace.teardown": (effect) =>
+		"worktree.teardown": (effect) =>
 			onMachine(
 				Effect.map(
 					teardown(effect.plan),
-					(outcome): ReadonlyArray<WorkspaceEvent> => [
+					(outcome): ReadonlyArray<WorktreeEvent> => [
 						outcome.ok
 							? {type: "closed", name: effect.plan.name}
 							: {
@@ -560,11 +560,11 @@ export const workspaceHandlers = (
 				),
 			),
 
-		"workspace.reconcile": (effect) =>
+		"worktree.reconcile": (effect) =>
 			onMachine(
 				Effect.map(
 					reconcile(effect.records),
-					(missing): ReadonlyArray<WorkspaceEvent> => [{type: "reconciled", missing}],
+					(missing): ReadonlyArray<WorktreeEvent> => [{type: "reconciled", missing}],
 				),
 			),
 	};
@@ -573,20 +573,20 @@ export const workspaceHandlers = (
 /**
  * The authored record, over one settled reading of the options. A function rather than a constant
  * because every default above was the config's to state — and it takes the `Settled` rather than
- * the raw options so that `workspace(…)` below reads the config **once**: the handlers and the
+ * the raw options so that `worktree(…)` below reads the config **once**: the handlers and the
  * program have to be built over the same `Runner`, and a second `settle` of options that named
  * none would mint a second `nodeRunner()`.
  */
-export const authoredWorkspace = (settled: Settled) => {
+export const authoredWorktree = (settled: Settled) => {
 	const args = argsFor(settled.id);
 	const {id, now} = settled;
 
 	/** One refused `open`, written onto state. The four arms of the `open` cell agree here. */
 	const refuse = (
-		state: WorkspaceState,
+		state: WorktreeState,
 		name: string,
 		reason: RefusalReason,
-	): Answer<WorkspaceState> => [
+	): Answer<WorktreeState> => [
 		{
 			...state,
 			refusals: refused(state.refusals, {name, reason, at: now()}),
@@ -600,10 +600,10 @@ export const authoredWorkspace = (settled: Settled) => {
 	 * uncommitted work away.
 	 */
 	const closing = (
-		state: WorkspaceState,
+		state: WorktreeState,
 		name: string,
 		force: boolean,
-	): Answer<WorkspaceState, WorkspaceEffect> => {
+	): Answer<WorktreeState, WorktreeEffect> => {
 		const record = byName(state, name);
 		if (record === undefined) return [state, []];
 		if (state.pending !== null) return [state, []];
@@ -620,7 +620,7 @@ export const authoredWorkspace = (settled: Settled) => {
 					force,
 					stopping: agent,
 				},
-				workspaces: withRecord(state.workspaces, name, (one) => ({
+				worktrees: withRecord(state.worktrees, name, (one) => ({
 					...one,
 					status: "closing",
 					agent: null,
@@ -663,12 +663,12 @@ export const authoredWorkspace = (settled: Settled) => {
 		 * thing, this process's public state, and "which repository am I looking at" is the first line
 		 * a person opening this wants.
 		 */
-		init: (): WorkspaceState => ({
+		init: (): WorktreeState => ({
 			repo: settled.repo,
 			repoName: settled.repoName,
 			root: settled.root,
 			base: settled.base,
-			workspaces: [],
+			worktrees: [],
 			pending: null,
 			seq: 0,
 			spawningFor: null,
@@ -677,7 +677,7 @@ export const authoredWorkspace = (settled: Settled) => {
 		}),
 		update: {
 			/**
-			 * Somebody asked for a workspace. Four refusals before anything is written down, and each one
+			 * Somebody asked for a worktree. Four refusals before anything is written down, and each one
 			 * is a thing that would otherwise be discovered by `git` at a point where the person has
 			 * stopped watching: a name a branch cannot be called, a name already held, a bound reached,
 			 * and a job already in flight.
@@ -685,19 +685,19 @@ export const authoredWorkspace = (settled: Settled) => {
 			 * **Every one of them is written down.** A refusal that moved no state was a button that did
 			 * nothing and a spell that answered nothing — "the tile already says `3 open`" is an
 			 * inference, not an answer, and asks the person to work out which of four reasons applied.
-			 * The list is bounded at `REFUSAL_LIMIT` for the reason the workspace list is bounded at
+			 * The list is bounded at `REFUSAL_LIMIT` for the reason the worktree list is bounded at
 			 * `LIMIT`, so it is a window on the last few refusals rather than a log.
 			 */
 			open: (
-				state: WorkspaceState,
+				state: WorktreeState,
 				event: {readonly payload: typeof OpenRequest.Type},
-			): Answer<WorkspaceState, WorkspaceEffect> => {
+			): Answer<WorktreeState, WorktreeEffect> => {
 				const name = event.payload.name.trim();
 				if (!NAME_PATTERN.test(name)) return refuse(state, name, "name");
 				if (byName(state, name) !== undefined) {
 					return refuse(state, name, "duplicate");
 				}
-				if (state.workspaces.filter(isLive).length >= LIMIT) {
+				if (state.worktrees.filter(isLive).length >= LIMIT) {
 					return refuse(state, name, "limit");
 				}
 				if (state.pending !== null) return refuse(state, name, "busy");
@@ -705,7 +705,7 @@ export const authoredWorkspace = (settled: Settled) => {
 				return [
 					{
 						...state,
-						workspaces: recorded(state.workspaces, record),
+						worktrees: recorded(state.worktrees, record),
 						seq: state.seq + 1,
 						pending: {
 							kind: "open",
@@ -726,7 +726,7 @@ export const authoredWorkspace = (settled: Settled) => {
 			 * here rather than at `open`, because an agent told to work in a directory that does not
 			 * exist yet is an agent that will make one.
 			 */
-			provisioned: (state: WorkspaceState, event: Provisioned): Answer<WorkspaceState> => {
+			provisioned: (state: WorktreeState, event: Provisioned): Answer<WorktreeState> => {
 				// The brief is read off `pending` here and nowhere else: this is the last cell in which the
 				// job that carried it is still on state.
 				const queued = state.pending;
@@ -736,7 +736,7 @@ export const authoredWorkspace = (settled: Settled) => {
 						...state,
 						pending: null,
 						spawningFor: settled.hasJob ? {name: event.name, brief} : null,
-						workspaces: withRecord(state.workspaces, event.name, (record) => ({
+						worktrees: withRecord(state.worktrees, event.name, (record) => ({
 							...record,
 							status: "open",
 							port: event.port,
@@ -752,11 +752,11 @@ export const authoredWorkspace = (settled: Settled) => {
 			 * the half-built worktree, which is the only way `:<id> close <name>` can take it away — and
 			 * it names the step, because "setup" and "worktree" are two very different mornings.
 			 */
-			provisionFailed: (state: WorkspaceState, event: ProvisionFailed): Answer<WorkspaceState> => [
+			provisionFailed: (state: WorktreeState, event: ProvisionFailed): Answer<WorktreeState> => [
 				{
 					...state,
 					pending: null,
-					workspaces: withRecord(state.workspaces, event.name, (record) => ({
+					worktrees: withRecord(state.worktrees, event.name, (record) => ({
 						...record,
 						status: "failed",
 						detail: `${event.step}: ${event.detail}`,
@@ -766,7 +766,7 @@ export const authoredWorkspace = (settled: Settled) => {
 			],
 
 			/** The agent is up. Record it, and tell it where it is — which is phoenix#9287's fallback. */
-			spawned: (state: WorkspaceState, event: Spawned): Answer<WorkspaceState> => {
+			spawned: (state: WorktreeState, event: Spawned): Answer<WorktreeState> => {
 				const spawning = state.spawningFor;
 				const record = spawning === null ? undefined : byName(state, spawning.name);
 				if (record === undefined || spawning === null) {
@@ -777,7 +777,7 @@ export const authoredWorkspace = (settled: Settled) => {
 					{
 						...state,
 						spawningFor: null,
-						workspaces: withRecord(state.workspaces, record.name, (one) => ({
+						worktrees: withRecord(state.worktrees, record.name, (one) => ({
 							...one,
 							agent: event.process,
 						})),
@@ -801,25 +801,22 @@ export const authoredWorkspace = (settled: Settled) => {
 			/**
 			 * The agent finished a turn. Its first line goes on the record, because that is the one thing
 			 * a tile can hold about what the agent is doing — and the session is left up, unlike cron's.
-			 * A workspace is a place to work, not one question: the session outliving its turn is the
+			 * A worktree is a place to work, not one question: the session outliving its turn is the
 			 * point, and what ends it is `:<id> close <name>`.
 			 *
 			 * **Whose turn, though.** Tuval's `Reply` is `{type, payload}` and carries no process id
 			 * (`apps/tuval/src/authoring/effect.ts:179-182`), so with two agents up there is nothing in
 			 * this event that says which one answered. This cell therefore attributes a result **only
 			 * when exactly one agent is running**, where "the one running agent" is a fact rather than a
-			 * guess. With two up — or with none — the result goes to `unattributed`, off every workspace,
+			 * guess. With two up — or with none — the result goes to `unattributed`, off every worktree,
 			 * and the status line says how many are there.
 			 *
 			 * That is a consequence of the same gap as phoenix#9287, read from the other end: a spawn
 			 * cannot carry a cwd *to* a child, and a reply cannot carry a sender *from* one. When the
 			 * kernel names the sender this cell becomes a lookup and `unattributed` stops existing.
 			 */
-			result: (
-				state: WorkspaceState,
-				event: Reply<"result", TurnResult>,
-			): Answer<WorkspaceState> => {
-				const running = state.workspaces.filter((one) => one.agent !== null);
+			result: (state: WorktreeState, event: Reply<"result", TurnResult>): Answer<WorktreeState> => {
+				const running = state.worktrees.filter((one) => one.agent !== null);
 				const only = running.length === 1 ? running[0] : undefined;
 				if (only === undefined) {
 					return [
@@ -836,7 +833,7 @@ export const authoredWorkspace = (settled: Settled) => {
 				return [
 					{
 						...state,
-						workspaces: withRecord(state.workspaces, only.name, (one) => ({
+						worktrees: withRecord(state.worktrees, only.name, (one) => ({
 							...one,
 							detail: firstLine(event.payload.text),
 						})),
@@ -846,7 +843,7 @@ export const authoredWorkspace = (settled: Settled) => {
 			},
 
 			/**
-			 * Somebody asked to put a workspace back, **without losing anything**. The agent is stopped
+			 * Somebody asked to put a worktree back, **without losing anything**. The agent is stopped
 			 * first, here, rather than left to the teardown commands: a removal under a live session is a
 			 * session writing into a directory that is being deleted. The removal itself asks git with no
 			 * `--force`, so a worktree holding uncommitted work refuses and says so.
@@ -855,10 +852,9 @@ export const authoredWorkspace = (settled: Settled) => {
 			 * effects is the bug rather than the shorthand.
 			 */
 			close: (
-				state: WorkspaceState,
+				state: WorktreeState,
 				event: {readonly payload: typeof CloseRequest.Type},
-			): Answer<WorkspaceState, WorkspaceEffect> =>
-				closing(state, event.payload.name.trim(), false),
+			): Answer<WorktreeState, WorktreeEffect> => closing(state, event.payload.name.trim(), false),
 
 			/**
 			 * The same thing, forcibly — `git worktree remove --force`, which throws uncommitted work
@@ -867,16 +863,16 @@ export const authoredWorkspace = (settled: Settled) => {
 			 * close that tries harder. This is the **only** path in this package that passes `--force`.
 			 */
 			discard: (
-				state: WorkspaceState,
+				state: WorktreeState,
 				event: {readonly payload: typeof DiscardRequest.Type},
-			): Answer<WorkspaceState, WorkspaceEffect> => closing(state, event.payload.name.trim(), true),
+			): Answer<WorktreeState, WorktreeEffect> => closing(state, event.payload.name.trim(), true),
 
 			/** Teardown ran and the worktree is gone. So is the record — there is nothing left to name. */
-			closed: (state: WorkspaceState, event: Closed): Answer<WorkspaceState> => [
+			closed: (state: WorktreeState, event: Closed): Answer<WorktreeState> => [
 				{
 					...state,
 					pending: null,
-					workspaces: without(state.workspaces, event.name),
+					worktrees: without(state.worktrees, event.name),
 				},
 				[],
 			],
@@ -892,16 +888,16 @@ export const authoredWorkspace = (settled: Settled) => {
 			 *    `:<id> discard <name>` is the way through, and it is the only thing that forces.
 			 *
 			 * Either way the record comes back as `failed` — `failed` and not `open`, because the
-			 * teardown commands may have already run and calling a half-torn-down workspace open would
+			 * teardown commands may have already run and calling a half-torn-down worktree open would
 			 * be the lie this whole cell exists to avoid. It keeps its path and its branch, so a second
 			 * `:<id> close <name>` retries the whole sequence once the tree is committed or the command
 			 * is fixed.
 			 */
-			closeFailed: (state: WorkspaceState, event: CloseFailed): Answer<WorkspaceState> => [
+			closeFailed: (state: WorktreeState, event: CloseFailed): Answer<WorktreeState> => [
 				{
 					...state,
 					pending: null,
-					workspaces: withRecord(state.workspaces, event.name, (record) => ({
+					worktrees: withRecord(state.worktrees, event.name, (record) => ({
 						...record,
 						status: "failed",
 						detail: `${event.stage}: ${event.detail}`,
@@ -917,16 +913,16 @@ export const authoredWorkspace = (settled: Settled) => {
 			 * **If it was, this is where the removal is asked for.** `closing` answered a `stop` and
 			 * nothing else, because the two could not go in one list (see there); this is the other half.
 			 * The ending is matched by process id rather than by "a close is pending", because with up to
-			 * `LIMIT` agents running a second workspace's session ending while this one is closing would
+			 * `LIMIT` agents running a second worktree's session ending while this one is closing would
 			 * otherwise fire a teardown under a live agent — the exact thing the two-step exists to stop.
 			 * `stopped` is produced once per child end whether this program asked or the agent simply
 			 * died (phoenix#9229), so a crash and an orderly stop both arrive here.
 			 *
-			 * **Otherwise** whichever workspace held it loses its agent and nothing else moves, because a
-			 * workspace without a session is still a workspace: the worktree, the port and the database
+			 * **Otherwise** whichever worktree held it loses its agent and nothing else moves, because a
+			 * worktree without a session is still provisioned: the tree, the port and the database
 			 * are all still there and still this program's to dispose of.
 			 */
-			stopped: (state: WorkspaceState, event: Stopped): Answer<WorkspaceState, WorkspaceEffect> => {
+			stopped: (state: WorktreeState, event: Stopped): Answer<WorktreeState, WorktreeEffect> => {
 				const job = state.pending;
 				if (job !== null && job.kind === "close" && job.stopping === event.process) {
 					const closing = byName(state, job.name);
@@ -936,12 +932,12 @@ export const authoredWorkspace = (settled: Settled) => {
 						? [state, []]
 						: [state, [teardownEffect(closePlan(settled, closing, job.force))]];
 				}
-				const record = state.workspaces.find((one) => one.agent === event.process);
+				const record = state.worktrees.find((one) => one.agent === event.process);
 				if (record === undefined) return [state, []];
 				return [
 					{
 						...state,
-						workspaces: withRecord(state.workspaces, record.name, (one) => ({
+						worktrees: withRecord(state.worktrees, record.name, (one) => ({
 							...one,
 							agent: null,
 						})),
@@ -964,7 +960,7 @@ export const authoredWorkspace = (settled: Settled) => {
 			 *  - **A `pending` job died with the process.** Whatever it was is written down as failed;
 			 *    `provisioning` that nothing is provisioning is a tile that lies.
 			 *  - **A directory may not be there.** Somebody removed a worktree by hand between boots. The
-			 *    check is a disk read, so this cell answers a `workspace.reconcile` effect over the
+			 *    check is a disk read, so this cell answers a `worktree.reconcile` effect over the
 			 *    records it just settled and the handler reads the disk.
 			 *
 			 * The four env fields are re-seeded from the config on the way through, because the config is
@@ -972,9 +968,9 @@ export const authoredWorkspace = (settled: Settled) => {
 			 * otherwise be pinned by the old checkpoint for ever.
 			 */
 			restored: (
-				state: WorkspaceState,
+				state: WorktreeState,
 				_event: AuthoredEvent,
-			): Answer<WorkspaceState, WorkspaceEffect> => {
+			): Answer<WorktreeState, WorktreeEffect> => {
 				const env = {
 					repo: settled.repo,
 					repoName: settled.repoName,
@@ -982,7 +978,7 @@ export const authoredWorkspace = (settled: Settled) => {
 					base: settled.base,
 				};
 				const interrupted = state.pending;
-				const workspaces = state.workspaces.map((record) => ({
+				const worktrees = state.worktrees.map((record) => ({
 					...record,
 					agent: null,
 					...(record.name === interruptedName(interrupted) ||
@@ -998,14 +994,14 @@ export const authoredWorkspace = (settled: Settled) => {
 					{
 						...state,
 						...env,
-						workspaces,
+						worktrees,
 						spawningFor: null,
 						seq: state.seq + 1,
 						pending: {kind: "reconcile", seq: state.seq + 1},
 					},
 					[
 						reconcileEffect(
-							workspaces.map((record) => ({
+							worktrees.map((record) => ({
 								name: record.name,
 								path: record.path,
 							})),
@@ -1015,15 +1011,15 @@ export const authoredWorkspace = (settled: Settled) => {
 			},
 
 			/**
-			 * The disk answered. A workspace whose directory is not there is recorded as `gone` — kept,
+			 * The disk answered. A worktree whose directory is not there is recorded as `gone` — kept,
 			 * never deleted, because the record is now the only evidence that the directory was ever
 			 * supposed to exist, and it still names the branch somebody will want to look for.
 			 */
-			reconciled: (state: WorkspaceState, event: Reconciled): Answer<WorkspaceState> => [
+			reconciled: (state: WorktreeState, event: Reconciled): Answer<WorktreeState> => [
 				{
 					...state,
 					pending: null,
-					workspaces: state.workspaces.map((record) =>
+					worktrees: state.worktrees.map((record) =>
 						event.missing.includes(record.name)
 							? {...record, status: "gone" as const, agent: null}
 							: record,
@@ -1034,23 +1030,23 @@ export const authoredWorkspace = (settled: Settled) => {
 		},
 
 		/**
-		 * The one door a restarted workspace program has back into the world: a restored process starts
+		 * The one door a restarted worktree program has back into the world: a restored process starts
 		 * on its loaded state with no Cmds, so without this neither the interrupted job above nor the
 		 * disk check beside it is ever reconciled. Every restore is sent one `restored`, whatever the
 		 * checkpoint holds — the four env fields belong to the config and have to be re-read on every
 		 * boot, and an empty checkpoint simply takes the cheap half of that cell.
 		 */
-		resume: (_state: WorkspaceState) => [{type: "restored" as const}],
+		resume: (_state: WorktreeState) => [{type: "restored" as const}],
 		commands: {
 			/**
-			 * `:<id> open <name> [brief]` — provision one workspace and, if the config filled a `job`,
+			 * `:<id> open <name> [brief]` — provision one worktree and, if the config filled a `job`,
 			 * start an agent in it. A bare `send` and nothing else: a command may ask for no other effect
 			 * (ADR 0372 as #8898 amended it), so the call resolves to this program's own live process,
 			 * the payload lands on the `open` port, and the cell that owns it decides.
 			 */
 			open: {
 				args: OpenRequest,
-				describe: "provision a workspace and start an agent in it",
+				describe: "provision a worktree and start an agent in it",
 				run: (request: typeof OpenRequest.Type) => send("open", request),
 			},
 
@@ -1061,7 +1057,7 @@ export const authoredWorkspace = (settled: Settled) => {
 			 */
 			close: {
 				args: CloseRequest,
-				describe: "tear a workspace down and remove its worktree",
+				describe: "tear the worktree down and remove it",
 				run: (request: typeof CloseRequest.Type) => send("close", request),
 			},
 
@@ -1071,11 +1067,11 @@ export const authoredWorkspace = (settled: Settled) => {
 			 */
 			discard: {
 				args: DiscardRequest,
-				describe: "tear a workspace down and force-remove its worktree — uncommitted work is lost",
+				describe: "tear the worktree down and force-remove it — uncommitted work is lost",
 				run: (request: typeof DiscardRequest.Type) => send("discard", request),
 			},
 		},
-		title: (_state: WorkspaceState): string => `${id} · ${settled.repoName}`,
+		title: (_state: WorktreeState): string => `${id} · ${settled.repoName}`,
 
 		/**
 		 * The tile's second line, drawn by `./state.ts` so the window draws the same sentence from the
@@ -1086,22 +1082,22 @@ export const authoredWorkspace = (settled: Settled) => {
 };
 
 /**
- * The authored record over raw options — the door every test and every caller but `workspace(…)`
+ * The authored record over raw options — the door every test and every caller but `worktree(…)`
  * below comes through.
  */
-export const workspaceProgram = (options: WorkspaceFill) => authoredWorkspace(settle(options));
+export const worktreeProgram = (options: WorktreeFill) => authoredWorktree(settle(options));
 
-const interruptedName = (pending: WorkspaceState["pending"]): string | null =>
+const interruptedName = (pending: WorktreeState["pending"]): string | null =>
 	pending === null || pending.kind === "reconcile" ? null : pending.name;
 
 const firstLine = (text: string): string => (text.split("\n")[0] ?? "").trim();
 
 /**
- * The row, as a config writes it: `workspace({repo, setup, teardown, job})`.
+ * The row, as a config writes it: `worktree({repo, setup, teardown, job})`.
  *
  * The `job` goes onto the row's `fill` — the config call's half of `args` — so the `spawn` in
  * `provisioned` resolves the arg's service key back to the program this row was built with, rather
- * than asking the registry for `tuval/arg/workspace/job` and being told no such program exists. A
+ * than asking the registry for `tuval/arg/worktree/job` and being told no such program exists. A
  * `job` that does not fit `jobShape` is refused here, at definition, by `defineProgram` itself.
  *
  * With no `job` the row declares no args at all: `defineProgram` fills every declared arg, and a
@@ -1112,21 +1108,21 @@ const firstLine = (text: string): string => (text.split("\n")[0] ?? "").trim();
  * and from nowhere else, because the compiler returns before any spread exists and so refuses
  * nothing (kamp-us/phoenix#9295). An effect with no handler is skipped silently by the actor — the
  * one unenforced joint in this chain, and the reason the three keys are written out once, in
- * `workspaceHandlers`, rather than inline.
+ * `worktreeHandlers`, rather than inline.
  */
-export const workspace = (fill: WorkspaceFill): AnyProgram => {
+export const worktree = (fill: WorktreeFill): AnyProgram => {
 	const settled = settle(fill);
-	const authored = authoredWorkspace(settled);
+	const authored = authoredWorktree(settled);
 	const job = fill.job;
 	const row =
 		job === undefined
 			? defineProgram<
-					WorkspaceState,
+					WorktreeState,
 					(typeof authored)["ports"],
 					(typeof authored)["update"],
-					WorkspaceCommands,
+					WorktreeCommands,
 					unknown,
-					WorkspaceEffect
+					WorktreeEffect
 				>({
 					id: authored.id,
 					ports: authored.ports,
@@ -1139,12 +1135,12 @@ export const workspace = (fill: WorkspaceFill): AnyProgram => {
 					label: `${authored.id} (${basename(fill.repo)})`,
 				})
 			: defineProgram<
-					WorkspaceState,
+					WorktreeState,
 					(typeof authored)["ports"],
 					(typeof authored)["update"],
-					WorkspaceCommands,
+					WorktreeCommands,
 					unknown,
-					WorkspaceEffect
+					WorktreeEffect
 				>({
 					...authored,
 					fill: {job},
@@ -1154,7 +1150,7 @@ export const workspace = (fill: WorkspaceFill): AnyProgram => {
 		...row,
 
 		/** The three the kernel does not write, over the `Runner` this row was configured with. */
-		handlers: {...row.handlers, ...workspaceHandlers(settled)},
+		handlers: {...row.handlers, ...worktreeHandlers(settled)},
 
 		/**
 		 * The window, named rather than declared. `defineProgram` compiles an authored `window` field
@@ -1163,6 +1159,6 @@ export const workspace = (fill: WorkspaceFill): AnyProgram => {
 		 * #8811, open). A `kind: "module"` reference is the route that does cross: the page loads the
 		 * specifier itself at boot (ADR 0359).
 		 */
-		renderer: WORKSPACE_WINDOW_REF,
+		renderer: WORKTREE_WINDOW_REF,
 	};
 };

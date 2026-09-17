@@ -36,7 +36,7 @@ const drive = <A>(runner: Runner, program: Effect.Effect<A, never, Machine>): Pr
 const plan = (over: Partial<ProvisionPlan> = {}): ProvisionPlan => ({
 	name: "feature-x",
 	repo: "/repo",
-	path: "/repo/.workspaces/feature-x",
+	path: "/repo/.worktrees/feature-x",
 	branch: "can/feature-x",
 	base: "origin/main",
 	ports: {from: 5170, to: 5175},
@@ -72,7 +72,7 @@ describe("open, step by step", () => {
 		await drive(runner, provision(plan()));
 		expect(runner.calls[0]).toEqual({
 			kind: "exec",
-			command: "git worktree add -b can/feature-x /repo/.workspaces/feature-x origin/main",
+			command: "git worktree add -b can/feature-x /repo/.worktrees/feature-x origin/main",
 			cwd: "/repo",
 		});
 	});
@@ -87,12 +87,12 @@ describe("open, step by step", () => {
 			{
 				kind: "exec",
 				command: "pnpm install",
-				cwd: "/repo/.workspaces/feature-x",
+				cwd: "/repo/.worktrees/feature-x",
 			},
 			{
 				kind: "exec",
 				command: "pnpm db:migrate",
-				cwd: "/repo/.workspaces/feature-x",
+				cwd: "/repo/.worktrees/feature-x",
 			},
 		]);
 	});
@@ -108,8 +108,8 @@ describe("open, step by step", () => {
 			step: "setup",
 			detail: "pnpm install: ERR_PNPM_LOCKFILE",
 			// The compensation records rather than deletes: the half-built tree is kept, named, and is
-			// what `:workspace close <name>` later removes.
-			kept: "/repo/.workspaces/feature-x",
+			// what `:worktree close <name>` later removes.
+			kept: "/repo/.worktrees/feature-x",
 		});
 		// And the step after it never ran, which is the half a "first failure wins" claim is about.
 		expect(runner.commands()).not.toContain("pnpm build");
@@ -118,7 +118,7 @@ describe("open, step by step", () => {
 	it("names the worktree step when git refuses, and touches nothing else", async () => {
 		const runner = fakeRunner({
 			failing: {
-				"git worktree add -b can/feature-x /repo/.workspaces/feature-x origin/main":
+				"git worktree add -b can/feature-x /repo/.worktrees/feature-x origin/main":
 					"fatal: 'can/feature-x' already exists",
 			},
 		});
@@ -140,7 +140,7 @@ describe("open, step by step", () => {
 			ok: false,
 			step: "env",
 			detail: "no env template at .env.example",
-			kept: "/repo/.workspaces/feature-x",
+			kept: "/repo/.worktrees/feature-x",
 		});
 	});
 
@@ -148,19 +148,19 @@ describe("open, step by step", () => {
 		const runner = fakeRunner({
 			files: {"/repo/.env.example": TEMPLATE},
 			unwritable: {
-				"/repo/.workspaces/feature-x/.env": "EROFS: read-only file system",
+				"/repo/.worktrees/feature-x/.env": "EROFS: read-only file system",
 			},
 		});
 		const outcome = await drive(runner, provision(plan()));
 		expect(outcome).toEqual({
 			ok: false,
 			step: "env",
-			detail: "could not write /repo/.workspaces/feature-x/.env: EROFS: read-only file system",
-			kept: "/repo/.workspaces/feature-x",
+			detail: "could not write /repo/.worktrees/feature-x/.env: EROFS: read-only file system",
+			kept: "/repo/.worktrees/feature-x",
 		});
 		// And `setup` never ran: a refused write short-circuits the rest by construction.
 		expect(runner.commands()).toEqual([
-			"git worktree add -b can/feature-x /repo/.workspaces/feature-x origin/main",
+			"git worktree add -b can/feature-x /repo/.worktrees/feature-x origin/main",
 		]);
 	});
 
@@ -180,7 +180,7 @@ describe("the port probe", () => {
 	});
 
 	it("skips a port this program already handed out without asking the OS at all", async () => {
-		// The OS would say yes: the dev server inside that workspace has not started yet. Which is
+		// The OS would say yes: the dev server inside that worktree has not started yet. Which is
 		// exactly the race the `taken` list exists to close, so the probe is never even reached.
 		const runner = fakeRunner();
 		expect(await drive(runner, pickPort({from: 5170, to: 5175}, [5170, 5171]))).toBe(5172);
@@ -199,7 +199,7 @@ describe("the port probe", () => {
 			ok: false,
 			step: "port",
 			detail: "no free port in 5170-5171",
-			kept: "/repo/.workspaces/feature-x",
+			kept: "/repo/.worktrees/feature-x",
 		});
 	});
 });
@@ -228,7 +228,7 @@ describe("the env file", () => {
 	it("is written into the worktree, never into the repository", async () => {
 		const runner = fakeRunner({files: {"/repo/.env.example": TEMPLATE}});
 		await drive(runner, provision(plan()));
-		expect([...runner.written.keys()]).toEqual(["/repo/.workspaces/feature-x/.env"]);
+		expect([...runner.written.keys()]).toEqual(["/repo/.worktrees/feature-x/.env"]);
 	});
 
 	it("resolves $NAME and $PORT in a declared var before writing it", async () => {
@@ -249,7 +249,7 @@ describe("the env file", () => {
 				}),
 			),
 		);
-		expect(runner.written.get("/repo/.workspaces/feature-x/.env")).toBe(
+		expect(runner.written.get("/repo/.worktrees/feature-x/.env")).toBe(
 			"# the app\nPORT=5170\nAPI_KEY=\nDATABASE_URL=postgres://localhost:5432/app_feature-x\nPUBLIC_URL=http://localhost:5170\n",
 		);
 	});
@@ -259,7 +259,7 @@ describe("the four substitutions", () => {
 	const vars = {
 		NAME: "feature-x",
 		PORT: "5174",
-		WORKTREE: "/repo/.workspaces/feature-x",
+		WORKTREE: "/repo/.worktrees/feature-x",
 		BRANCH: "can/feature-x",
 	};
 
@@ -268,7 +268,7 @@ describe("the four substitutions", () => {
 		// biome-ignore lint/suspicious/noTemplateCurlyInString: the braced form is the thing under test
 		const braced = "serve --port ${PORT}";
 		expect(substitute(braced, vars)).toBe("serve --port 5174");
-		expect(substitute("cd $WORKTREE", vars)).toBe("cd /repo/.workspaces/feature-x");
+		expect(substitute("cd $WORKTREE", vars)).toBe("cd /repo/.worktrees/feature-x");
 		expect(substitute("git push -u origin $BRANCH", vars)).toBe("git push -u origin can/feature-x");
 	});
 
@@ -278,10 +278,10 @@ describe("the four substitutions", () => {
 
 	it("leaves $PATH alone, because the worktree is $WORKTREE and PATH is the shell's", () => {
 		// The whole reason for the rename. `PATH=$PATH:./bin` is a thing people write in a setup line,
-		// and while `$PATH` meant the worktree it silently became `PATH=/repo/.workspaces/x:./bin` —
+		// and while `$PATH` meant the worktree it silently became `PATH=/repo/.worktrees/x:./bin` —
 		// a corrupted search path, with no `$PATH` ever reaching the shell to expand.
 		expect(substitute("PATH=$PATH:./bin pnpm build", vars)).toBe("PATH=$PATH:./bin pnpm build");
-		expect(substitute("echo $WORKTREE", vars)).toBe("echo /repo/.workspaces/feature-x");
+		expect(substitute("echo $WORKTREE", vars)).toBe("echo /repo/.worktrees/feature-x");
 	});
 
 	it("leaves $$ for the shell too, now that nothing here needs escaping", () => {
@@ -301,7 +301,7 @@ describe("close", () => {
 	const closing = {
 		name: "feature-x",
 		repo: "/repo",
-		path: "/repo/.workspaces/feature-x",
+		path: "/repo/.worktrees/feature-x",
 		branch: "can/feature-x",
 		port: 5174,
 		force: false,
@@ -321,16 +321,16 @@ describe("close", () => {
 			{
 				kind: "exec",
 				command: "dropdb --if-exists app_feature-x",
-				cwd: "/repo/.workspaces/feature-x",
+				cwd: "/repo/.worktrees/feature-x",
 			},
 			{
 				kind: "exec",
 				command: "docker compose -p feature-x down -v",
-				cwd: "/repo/.workspaces/feature-x",
+				cwd: "/repo/.worktrees/feature-x",
 			},
 			{
 				kind: "exec",
-				command: "git worktree remove /repo/.workspaces/feature-x",
+				command: "git worktree remove /repo/.worktrees/feature-x",
 				cwd: "/repo",
 			},
 		]);
@@ -359,13 +359,13 @@ describe("close", () => {
 	it("removes with no teardown commands at all, which is most configs", async () => {
 		const runner = fakeRunner();
 		expect(await drive(runner, teardown({...closing, commands: []}))).toEqual({ok: true});
-		expect(runner.commands()).toEqual(["git worktree remove /repo/.workspaces/feature-x"]);
+		expect(runner.commands()).toEqual(["git worktree remove /repo/.worktrees/feature-x"]);
 	});
 
 	it("reports a removal git refused, so the record does not silently vanish", async () => {
 		const runner = fakeRunner({
 			failing: {
-				"git worktree remove /repo/.workspaces/feature-x": "fatal: not a working tree",
+				"git worktree remove /repo/.worktrees/feature-x": "fatal: not a working tree",
 			},
 		});
 		expect(await drive(runner, teardown({...closing, commands: []}))).toEqual({
@@ -380,23 +380,23 @@ describe("the removal, and the work it will not throw away", () => {
 	const closing = {
 		name: "feature-x",
 		repo: "/repo",
-		path: "/repo/.workspaces/feature-x",
+		path: "/repo/.worktrees/feature-x",
 		branch: "can/feature-x",
 		port: 5174,
 		commands: [],
 	};
 
 	const DIRTY =
-		"fatal: '/repo/.workspaces/feature-x' contains modified or untracked files, use --force to delete it";
+		"fatal: '/repo/.worktrees/feature-x' contains modified or untracked files, use --force to delete it";
 
 	it("asks git without --force, so a dirty worktree is refused rather than deleted", async () => {
 		const runner = fakeRunner({
-			failing: {"git worktree remove /repo/.workspaces/feature-x": DIRTY},
+			failing: {"git worktree remove /repo/.worktrees/feature-x": DIRTY},
 		});
 		const outcome = await drive(runner, teardown({...closing, force: false}));
 		// Git's own words, so the record can say why rather than only "close failed".
 		expect(outcome).toEqual({ok: false, stage: "remove", detail: DIRTY});
-		expect(runner.commands()).toEqual(["git worktree remove /repo/.workspaces/feature-x"]);
+		expect(runner.commands()).toEqual(["git worktree remove /repo/.worktrees/feature-x"]);
 	});
 
 	it("passes --force only when the plan asked for it, which only `discard` does", async () => {
@@ -404,7 +404,7 @@ describe("the removal, and the work it will not throw away", () => {
 		expect(await drive(runner, teardown({...closing, force: true}))).toEqual({
 			ok: true,
 		});
-		expect(runner.commands()).toEqual(["git worktree remove /repo/.workspaces/feature-x --force"]);
+		expect(runner.commands()).toEqual(["git worktree remove /repo/.worktrees/feature-x --force"]);
 	});
 
 	it("still refuses the removal outright when a teardown command failed, forced or not", async () => {
@@ -462,20 +462,20 @@ describe("a failing command's output, before it is checkpointed", () => {
 			ok: false,
 			step: "setup",
 			detail: "pnpm install: npm ERR! 401 https://***:***@registry.example.com/ (NPM_TOKEN=***)",
-			kept: "/repo/.workspaces/feature-x",
+			kept: "/repo/.worktrees/feature-x",
 		});
 	});
 });
 
 describe("reconcile", () => {
-	it("names the recorded workspaces whose directory is not there", async () => {
-		const runner = fakeRunner({dirs: ["/repo/.workspaces/kept"]});
+	it("names the recorded worktrees whose directory is not there", async () => {
+		const runner = fakeRunner({dirs: ["/repo/.worktrees/kept"]});
 		expect(
 			await drive(
 				runner,
 				reconcile([
-					{name: "kept", path: "/repo/.workspaces/kept"},
-					{name: "removed", path: "/repo/.workspaces/removed"},
+					{name: "kept", path: "/repo/.worktrees/kept"},
+					{name: "removed", path: "/repo/.worktrees/removed"},
 				]),
 			),
 		).toEqual(["removed"]);
@@ -483,7 +483,7 @@ describe("reconcile", () => {
 
 	it("asks only, and never removes anything", async () => {
 		const runner = fakeRunner();
-		await drive(runner, reconcile([{name: "a", path: "/repo/.workspaces/a"}]));
+		await drive(runner, reconcile([{name: "a", path: "/repo/.worktrees/a"}]));
 		expect(runner.calls.every((call) => call.kind === "exists")).toBe(true);
 	});
 });

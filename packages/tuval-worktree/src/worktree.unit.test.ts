@@ -1,10 +1,10 @@
 /**
- * `workspace`, driven with `testProgram` — no kernel, no desk, no git.
+ * `worktree`, driven with `testProgram` — no kernel, no desk, no git.
  *
  * What this file pins is the machine: what a name may be, what may happen while something is in
  * flight, what a tile says about it, and **which effect each cell answers** — because an effect is
  * now the whole of how this program asks for work, and a cell that answers the wrong one is a
- * workspace that never gets provisioned. The handlers are driven here too, over the recording fake:
+ * worktree that never gets provisioned. The handlers are driven here too, over the recording fake:
  * `./provision.ts` has its own suite, so what is asserted below is the join — the effect a cell
  * answered, handed to the handler that takes it, and the events it answers fed back into `update`.
  *
@@ -33,14 +33,14 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import config, {desk, reviews} from "../.tuval/tuval.config.ts";
 import {fakeRunner} from "./fake-runner.ts";
-import {WORKSPACE_WINDOW_REF} from "./renderer-ref.ts";
+import {WORKTREE_WINDOW_REF} from "./renderer-ref.ts";
 import {
 	closeEvent,
 	discardEvent,
 	LIMIT,
 	REFUSAL_LIMIT,
 	UNATTRIBUTED_LIMIT,
-	type WorkspaceState,
+	type WorktreeState,
 } from "./state.ts";
 import {
 	closePlan,
@@ -50,17 +50,17 @@ import {
 	provisionEffect,
 	settle,
 	teardownEffect,
-	type WorkspaceEffect,
-	type WorkspaceEvent,
-	workspace,
-	workspaceHandlers,
-	workspaceProgram,
-} from "./workspace.ts";
+	type WorktreeEffect,
+	type WorktreeEvent,
+	worktree,
+	worktreeHandlers,
+	worktreeProgram,
+} from "./worktree.ts";
 
 const SEVEN = new Date(2026, 8, 10, 7, 0, 12).getTime();
 
 /** The authored record this file drives, named so the cast below can narrow one field of it. */
-type Authored = ReturnType<typeof workspaceProgram>;
+type Authored = ReturnType<typeof worktreeProgram>;
 
 /**
  * The same record with its `update` narrowed back to the six kernel effects.
@@ -78,7 +78,7 @@ type Drivable = Omit<Authored, "update"> & {
 	readonly update: {
 		[K in keyof Authored["update"]]: (
 			...args: Parameters<Authored["update"][K]>
-		) => Answer<WorkspaceState>;
+		) => Answer<WorktreeState>;
 	};
 };
 
@@ -91,17 +91,17 @@ const asked = (run: {
 }): ReadonlyArray<{readonly type: string}> => run.effects as ReadonlyArray<{readonly type: string}>;
 
 /** The one effect of a given tag a run asked for, or a failure that names what it asked for. */
-const only = <T extends WorkspaceEffect["type"]>(
+const only = <T extends WorktreeEffect["type"]>(
 	run: {readonly effects: ReadonlyArray<unknown>},
 	type: T,
-): Extract<WorkspaceEffect, {readonly type: T}> => {
+): Extract<WorktreeEffect, {readonly type: T}> => {
 	const found = asked(run).filter((effect) => effect.type === type);
 	if (found.length !== 1) {
 		throw new Error(
 			`expected one ${type}, got ${JSON.stringify(asked(run).map((one) => one.type))}`,
 		);
 	}
-	return found[0] as Extract<WorkspaceEffect, {readonly type: T}>;
+	return found[0] as Extract<WorktreeEffect, {readonly type: T}>;
 };
 
 const options = {
@@ -114,8 +114,8 @@ const agent = ProcessId.make("proc-agent");
 /** A second agent, for the cases where "which one answered" is the thing under test. */
 const other = ProcessId.make("proc-other");
 
-/** The shaped arg a workspace program spawns through — the `Spawnable` half of the shape. */
-const jobRef = workspaceProgram({...options, job: {} as ShapeSource}).args.job;
+/** The shaped arg a worktree program spawns through — the `Spawnable` half of the shape. */
+const jobRef = worktreeProgram({...options, job: {} as ShapeSource}).args.job;
 
 const turn = (text: string, ok: boolean): TurnResult => ({
 	text,
@@ -138,17 +138,17 @@ const session = (): AnyProgram =>
 const portsOf = (row: AnyProgram): Readonly<Record<string, PortSchema>> => row.ports;
 
 /** A program with a job filled, which is the one that spawns. */
-const withJob = () => workspaceProgram({...options, job: session() as ShapeSource});
+const withJob = () => worktreeProgram({...options, job: session() as ShapeSource});
 
-describe("a workspace program says what it is before anything has happened", () => {
+describe("a worktree program says what it is before anything has happened", () => {
 	it("publishes the repository it serves and an empty board", () => {
-		const run = drive(workspaceProgram(options));
+		const run = drive(worktreeProgram(options));
 		expect(run.state).toEqual({
 			repo: "/repo",
 			repoName: "repo",
-			root: "/repo/.workspaces",
+			root: "/repo/.worktrees",
 			base: "origin/main",
-			workspaces: [],
+			worktrees: [],
 			pending: null,
 			seq: 0,
 			spawningFor: null,
@@ -156,14 +156,14 @@ describe("a workspace program says what it is before anything has happened", () 
 			unattributed: [],
 		});
 		expect(run.effects).toEqual([
-			emit(TITLE_PORT, "workspace · repo"),
+			emit(TITLE_PORT, "worktree · repo"),
 			emit(STATUS_PORT, "0 open · nothing open"),
 		]);
 	});
 
 	it("takes the declared inputs it was given over its defaults", () => {
 		const run = drive(
-			workspaceProgram({
+			worktreeProgram({
 				...options,
 				id: "lane",
 				repo: "/code/phoenix",
@@ -178,27 +178,27 @@ describe("a workspace program says what it is before anything has happened", () 
 	});
 
 	it("refuses an id that is not a word, at the config call rather than at boot", () => {
-		expect(() => workspaceProgram({...options, id: ""})).toThrow(/non-empty word/);
-		expect(() => workspaceProgram({...options, id: "my workspace"})).toThrow(/no spaces/);
+		expect(() => worktreeProgram({...options, id: ""})).toThrow(/non-empty word/);
+		expect(() => worktreeProgram({...options, id: "my worktree"})).toThrow(/no spaces/);
 	});
 
 	it("refuses an empty repo and a backwards port range where they are written", () => {
-		expect(() => workspaceProgram({...options, repo: "  "})).toThrow(/cannot be empty/);
-		expect(() => workspaceProgram({...options, port: {from: 5199, to: 5170}})).toThrow(
+		expect(() => worktreeProgram({...options, repo: "  "})).toThrow(/cannot be empty/);
+		expect(() => worktreeProgram({...options, port: {from: 5199, to: 5170}})).toThrow(
 			/must run upwards/,
 		);
 	});
 });
 
 describe("open", () => {
-	const opened = () => drive(workspaceProgram(options)).send("open", {name: "feature-x"});
+	const opened = () => drive(worktreeProgram(options)).send("open", {name: "feature-x"});
 
-	it("records the workspace and queues the provision, in that order and in one step", () => {
+	it("records the worktree and queues the provision, in that order and in one step", () => {
 		const run = opened();
-		expect(run.state.workspaces).toEqual([
+		expect(run.state.worktrees).toEqual([
 			{
 				name: "feature-x",
-				path: "/repo/.workspaces/feature-x",
+				path: "/repo/.worktrees/feature-x",
 				branch: "can/feature-x",
 				port: null,
 				status: "provisioning",
@@ -217,25 +217,25 @@ describe("open", () => {
 		expect(run.effects.filter((effect) => effect.type === "spawn")).toEqual([]);
 	});
 
-	it("answers one `workspace.provision`, carrying the plan it derived on the spot", () => {
+	it("answers one `worktree.provision`, carrying the plan it derived on the spot", () => {
 		const run = opened();
 		const settled = settle(options);
-		expect(only(run, "workspace.provision")).toEqual(
+		expect(only(run, "worktree.provision")).toEqual(
 			provisionEffect(openPlan(settled, freshRecord(settled, "feature-x"), [])),
 		);
 	});
 
 	it("names the ports it has already handed out, so a probe cannot hand one out twice", () => {
-		const run = drive(workspaceProgram(options))
+		const run = drive(worktreeProgram(options))
 			.send("open", {name: "feature-x"})
 			.event({type: "provisioned", name: "feature-x", port: 5174})
 			.send("open", {name: "bugfix"});
-		expect(only(run, "workspace.provision").plan.taken).toEqual([5174]);
+		expect(only(run, "worktree.provision").plan.taken).toEqual([5174]);
 	});
 
 	it("asks for nothing at all when it refuses, beyond writing the refusal down", () => {
 		const refusal = opened().send("open", {name: "feature-x"});
-		expect(asked(refusal).map((effect) => effect.type)).not.toContain("workspace.provision");
+		expect(asked(refusal).map((effect) => effect.type)).not.toContain("worktree.provision");
 	});
 
 	it("says on the tile what it is doing, by name", () => {
@@ -243,27 +243,27 @@ describe("open", () => {
 	});
 
 	it("carries the branch prefix the config chose", () => {
-		const run = drive(workspaceProgram({...options, branchPrefix: "build/"})).send("open", {
+		const run = drive(worktreeProgram({...options, branchPrefix: "build/"})).send("open", {
 			name: "9287",
 		});
-		expect(run.state.workspaces[0]?.branch).toBe("build/9287");
-		expect(run.state.workspaces[0]?.path).toBe("/repo/.workspaces/9287");
+		expect(run.state.worktrees[0]?.branch).toBe("build/9287");
+		expect(run.state.worktrees[0]?.path).toBe("/repo/.worktrees/9287");
 	});
 
 	it("refuses a second open of a name it already holds, and says so", () => {
 		const first = opened();
 		const again = first.send("open", {name: "feature-x"});
-		expect(again.state.workspaces).toEqual(first.state.workspaces);
+		expect(again.state.worktrees).toEqual(first.state.worktrees);
 		expect(again.state.pending).toEqual(first.state.pending);
 		expect(again.state.refusals).toEqual([{name: "feature-x", reason: "duplicate", at: SEVEN}]);
 	});
 
 	it("refuses a name a branch and a directory cannot both be called, and says so", () => {
-		const run = drive(workspaceProgram(options))
+		const run = drive(worktreeProgram(options))
 			.send("open", {name: "../escape"})
 			.send("open", {name: "with space"})
 			.send("open", {name: ""});
-		expect(run.state.workspaces).toEqual([]);
+		expect(run.state.worktrees).toEqual([]);
 		expect(run.state.pending).toBeNull();
 		expect(run.state.refusals.map((one) => one.reason)).toEqual(["name", "name", "name"]);
 		// Newest first, so the tile says the one that just happened.
@@ -276,7 +276,7 @@ describe("open", () => {
 	it("refuses a second open while one is still provisioning, and says so", () => {
 		const busy = opened();
 		const second = busy.send("open", {name: "bugfix"});
-		expect(second.state.workspaces).toHaveLength(1);
+		expect(second.state.worktrees).toHaveLength(1);
 		expect(second.state.pending).toMatchObject({name: "feature-x"});
 		expect(second.state.refusals).toEqual([{name: "bugfix", reason: "busy", at: SEVEN}]);
 		expect(second.effects).toContainEqual(
@@ -285,18 +285,18 @@ describe("open", () => {
 	});
 
 	it("refuses past the bound, because each of these is a whole checkout, and says so", () => {
-		let run = drive(workspaceProgram(options));
+		let run = drive(worktreeProgram(options));
 		for (let index = 0; index < LIMIT + 2; index += 1) {
 			run = run
 				.send("open", {name: `w${index}`})
 				.event({type: "provisioned", name: `w${index}`, port: 5170 + index});
 		}
-		expect(run.state.workspaces).toHaveLength(LIMIT);
+		expect(run.state.worktrees).toHaveLength(LIMIT);
 		expect(run.state.refusals.map((one) => one.reason)).toEqual(["limit", "limit"]);
 	});
 
 	it("bounds the refusals it keeps, so the list is a window and not a log", () => {
-		let run = drive(workspaceProgram(options));
+		let run = drive(worktreeProgram(options));
 		for (let index = 0; index < REFUSAL_LIMIT + 3; index += 1) {
 			run = run.send("open", {name: "with space"});
 		}
@@ -310,9 +310,9 @@ describe("provisioned, and the agent inside", () => {
 			.send("open", {name: "feature-x", brief: "Fix the flaky test."})
 			.event({type: "provisioned", name: "feature-x", port: 5174});
 
-	it("records the port the probe found and opens the workspace", () => {
+	it("records the port the probe found and opens the worktree", () => {
 		const run = ready();
-		expect(run.state.workspaces[0]).toMatchObject({
+		expect(run.state.worktrees[0]).toMatchObject({
 			name: "feature-x",
 			port: 5174,
 			status: "open",
@@ -334,7 +334,7 @@ describe("provisioned, and the agent inside", () => {
 	});
 
 	it("asks for no agent at all when the config filled no job", () => {
-		const run = drive(workspaceProgram(options))
+		const run = drive(worktreeProgram(options))
 			.send("open", {name: "feature-x"})
 			.event({type: "provisioned", name: "feature-x", port: 5174});
 		expect(run.effects.filter((effect) => effect.type === "spawn")).toEqual([]);
@@ -352,8 +352,8 @@ describe("provisioned, and the agent inside", () => {
 			type: "send",
 			to: {process: agent, port: "prompt"},
 			payload: {
-				text: "You are working in /repo/.workspaces/feature-x on branch can/feature-x; dev port 5174. Start by changing into that directory — it is a git worktree of its own and it is not where this session started.\n\nFix the flaky test.",
-				key: `workspace-feature-x-${SEVEN}`,
+				text: "You are working in /repo/.worktrees/feature-x on branch can/feature-x; dev port 5174. Start by changing into that directory — it is a git worktree of its own and it is not where this session started.\n\nFix the flaky test.",
+				key: `worktree-feature-x-${SEVEN}`,
 				timestamp: SEVEN,
 			},
 		});
@@ -361,12 +361,12 @@ describe("provisioned, and the agent inside", () => {
 		expect(portsOf(session()).prompt?.accepts((sent as {readonly payload: unknown}).payload)).toBe(
 			true,
 		);
-		expect(run.state.workspaces[0]?.agent).toBe(agent);
+		expect(run.state.worktrees[0]?.agent).toBe(agent);
 	});
 
 	it("puts the config's standing brief before the one the spell carried", () => {
 		const run = drive(
-			workspaceProgram({
+			worktreeProgram({
 				...options,
 				brief: "Run everything through `nix develop -c`.",
 				job: session() as ShapeSource,
@@ -383,18 +383,18 @@ describe("provisioned, and the agent inside", () => {
 		);
 	});
 
-	it("attributes a turn to the one workspace whose agent is up", () => {
+	it("attributes a turn to the one worktree whose agent is up", () => {
 		const answered = ready()
 			.event({type: "spawned", process: agent, program: "claude-session"})
 			.event({type: "result", payload: turn("done, two files", true)});
-		expect(answered.state.workspaces[0]?.detail).toBe("done, two files");
+		expect(answered.state.worktrees[0]?.detail).toBe("done, two files");
 		expect(answered.state.unattributed).toEqual([]);
 	});
 
 	it("attributes nothing when two agents are up, because a reply carries no sender", () => {
 		// phoenix#9287's sibling gap: `Reply` is `{type, payload}` (authoring/effect.ts:179-182), so
 		// with B answering there is nothing in the event that distinguishes it from A. The old code
-		// took the first workspace holding an agent, which put B's reply on A's row.
+		// took the first worktree holding an agent, which put B's reply on A's row.
 		const two = drive(withJob())
 			.send("open", {name: "feature-x"})
 			.event({type: "provisioned", name: "feature-x", port: 5174})
@@ -403,7 +403,7 @@ describe("provisioned, and the agent inside", () => {
 			.event({type: "provisioned", name: "bugfix", port: 5175})
 			.event({type: "spawned", process: other, program: "claude-session"})
 			.event({type: "result", payload: turn("B is done\nrest", true)});
-		expect(two.state.workspaces.map((one) => one.detail)).toEqual([null, null]);
+		expect(two.state.worktrees.map((one) => one.detail)).toEqual([null, null]);
 		expect(two.state.unattributed).toEqual([{text: "B is done", at: SEVEN}]);
 		expect(two.effects).toContainEqual(
 			emit(STATUS_PORT, "2 open · bugfix :5175 running · 1 unattributed"),
@@ -411,7 +411,7 @@ describe("provisioned, and the agent inside", () => {
 	});
 
 	it("keeps a reply that arrived with no agent up at all, rather than dropping it", () => {
-		const none = drive(workspaceProgram(options))
+		const none = drive(worktreeProgram(options))
 			.send("open", {name: "feature-x"})
 			.event({type: "provisioned", name: "feature-x", port: 5174})
 			.event({type: "result", payload: turn("from nowhere", true)});
@@ -442,25 +442,25 @@ describe("provisioned, and the agent inside", () => {
 			type: "result",
 			payload: turn("done, two files\nand the rest", true),
 		});
-		// Unlike cron, nothing stops the session: a workspace is a place to work, not one question —
+		// Unlike cron, nothing stops the session: a worktree is a place to work, not one question —
 		// and the tile does not move either, because "running" is still the true sentence.
 		expect(answered.effects).toEqual([]);
-		expect(answered.state.workspaces[0]?.detail).toBe("done, two files");
-		expect(answered.state.workspaces[0]?.agent).toBe(agent);
+		expect(answered.state.worktrees[0]?.detail).toBe("done, two files");
+		expect(answered.state.worktrees[0]?.agent).toBe(agent);
 	});
 
-	it("frees the agent when it ends, and leaves the workspace standing", () => {
+	it("frees the agent when it ends, and leaves the worktree standing", () => {
 		const run = ready()
 			.event({type: "spawned", process: agent, program: "claude-session"})
 			.event({type: "stopped", process: agent});
-		expect(run.state.workspaces[0]?.agent).toBeNull();
-		expect(run.state.workspaces[0]?.status).toBe("open");
+		expect(run.state.worktrees[0]?.agent).toBeNull();
+		expect(run.state.worktrees[0]?.status).toBe("open");
 	});
 });
 
 describe("a provision that stopped", () => {
 	const failed = () =>
-		drive(workspaceProgram(options)).send("open", {name: "feature-x"}).event({
+		drive(worktreeProgram(options)).send("open", {name: "feature-x"}).event({
 			type: "provisionFailed",
 			name: "feature-x",
 			step: "setup",
@@ -469,11 +469,11 @@ describe("a provision that stopped", () => {
 
 	it("keeps the record, because the half-built worktree still has to be removable", () => {
 		const run = failed();
-		expect(run.state.workspaces[0]).toMatchObject({
+		expect(run.state.worktrees[0]).toMatchObject({
 			name: "feature-x",
 			status: "failed",
 			detail: "setup: pnpm install: ERR_PNPM_LOCKFILE",
-			path: "/repo/.workspaces/feature-x",
+			path: "/repo/.worktrees/feature-x",
 		});
 		expect(run.state.pending).toBeNull();
 	});
@@ -494,25 +494,25 @@ describe("the seam — the compiled row and the handlers spread onto it", () => 
 	/**
 	 * The one thing `defineProgram` cannot check. It returns before any spread exists, so a program
 	 * that names an effect and forgets its handler compiles clean and the actor then skips that
-	 * effect *silently* (kamp-us/phoenix#9295) — a workspace that is never provisioned and no error
+	 * effect *silently* (kamp-us/phoenix#9295) — a worktree that is never provisioned and no error
 	 * anywhere. This case is that check, moved to where one can be made.
 	 */
 	it("answers every effect this program names, and keeps the six the kernel wrote", () => {
-		const keys = Object.keys(workspace({...options}).handlers);
+		const keys = Object.keys(worktree({...options}).handlers);
 		expect(keys).toEqual(
-			expect.arrayContaining(["workspace.provision", "workspace.teardown", "workspace.reconcile"]),
+			expect.arrayContaining(["worktree.provision", "worktree.teardown", "worktree.reconcile"]),
 		);
 		// The spread adds; it must never replace. A row that lost `spawn` could not start an agent.
 		expect(keys).toEqual(expect.arrayContaining(["emit", "spawn", "send", "ask", "reply", "stop"]));
 	});
 
 	it("answers them on the row with a job filled too, which is the other branch", () => {
-		const keys = Object.keys(workspace({...options, job: session() as ShapeSource}).handlers);
+		const keys = Object.keys(worktree({...options, job: session() as ShapeSource}).handlers);
 		expect(keys).toEqual(
 			expect.arrayContaining([
-				"workspace.provision",
-				"workspace.teardown",
-				"workspace.reconcile",
+				"worktree.provision",
+				"worktree.teardown",
+				"worktree.reconcile",
 				"spawn",
 			]),
 		);
@@ -520,7 +520,7 @@ describe("the seam — the compiled row and the handlers spread onto it", () => 
 
 	it("runs those handlers over the `Runner` the row was configured with", async () => {
 		const runner = fakeRunner();
-		const row = workspace({...options, runner});
+		const row = worktree({...options, runner});
 		const effect = teardownEffect(
 			closePlan(
 				settle({...options, runner}),
@@ -528,9 +528,9 @@ describe("the seam — the compiled row and the handlers spread onto it", () => 
 				false,
 			),
 		);
-		await Effect.runPromise(row.handlers["workspace.teardown"](effect) as Effect.Effect<unknown>);
+		await Effect.runPromise(row.handlers["worktree.teardown"](effect) as Effect.Effect<unknown>);
 		// The fake, not the machine: `machineLayer(settled.runner)` is provided inside the handler.
-		expect(runner.commands()).toEqual(["git worktree remove /repo/.workspaces/feature-x"]);
+		expect(runner.commands()).toEqual(["git worktree remove /repo/.worktrees/feature-x"]);
 	});
 });
 
@@ -538,9 +538,9 @@ describe("the effect a cell answered, run by the handler that takes it", () => {
 	/** What the actor does: look the handler up by `type`, hand it the effect, dispatch every event. */
 	const perform = async (
 		settledOptions: typeof options,
-		effect: WorkspaceEffect,
-	): Promise<ReadonlyArray<WorkspaceEvent>> => {
-		const handlers = workspaceHandlers(settle(settledOptions));
+		effect: WorktreeEffect,
+	): Promise<ReadonlyArray<WorktreeEvent>> => {
+		const handlers = worktreeHandlers(settle(settledOptions));
 		return await Effect.runPromise(handlers[effect.type](effect as never));
 	};
 
@@ -549,22 +549,22 @@ describe("the effect a cell answered, run by the handler that takes it", () => {
 			files: {"/repo/.env.example": "PORT=3000\n"},
 		});
 		const withRunner = {...options, runner};
-		const queued = drive(workspaceProgram(withRunner)).send("open", {
+		const queued = drive(worktreeProgram(withRunner)).send("open", {
 			name: "feature-x",
 		});
 
-		const events = await perform(withRunner, only(queued, "workspace.provision"));
+		const events = await perform(withRunner, only(queued, "worktree.provision"));
 		expect(events).toEqual([{type: "provisioned", name: "feature-x", port: 5170}]);
 
 		// The worktree, the probe and the `.env` — the order *is* the contract (`./provision.ts`).
 		expect(runner.commands()).toEqual([
-			"git worktree add -b can/feature-x /repo/.workspaces/feature-x origin/main",
+			"git worktree add -b can/feature-x /repo/.worktrees/feature-x origin/main",
 		]);
-		expect(runner.written.get("/repo/.workspaces/feature-x/.env")).toBe("PORT=5170\n");
+		expect(runner.written.get("/repo/.worktrees/feature-x/.env")).toBe("PORT=5170\n");
 
 		// And the event reaches `update`, which is what makes it a round trip rather than a call.
 		const run = events.reduce((step, event) => step.event(event), queued);
-		expect(run.state.workspaces[0]).toMatchObject({
+		expect(run.state.worktrees[0]).toMatchObject({
 			status: "open",
 			port: 5170,
 		});
@@ -574,29 +574,29 @@ describe("the effect a cell answered, run by the handler that takes it", () => {
 	it("tears down the plan the `close` cell derived, with no `--force` anywhere", async () => {
 		const runner = fakeRunner();
 		const withRunner = {...options, runner};
-		const closed = drive(workspaceProgram(withRunner))
+		const closed = drive(worktreeProgram(withRunner))
 			.send("open", {name: "feature-x"})
 			.event({type: "provisioned", name: "feature-x", port: 5174})
 			.send("close", {name: "feature-x"});
 
-		const events = await perform(withRunner, only(closed, "workspace.teardown"));
+		const events = await perform(withRunner, only(closed, "worktree.teardown"));
 		expect(events).toEqual([{type: "closed", name: "feature-x"}]);
-		expect(runner.commands()).toEqual(["git worktree remove /repo/.workspaces/feature-x"]);
+		expect(runner.commands()).toEqual(["git worktree remove /repo/.worktrees/feature-x"]);
 
 		const run = events.reduce((step, event) => step.event(event), closed);
-		expect(run.state.workspaces).toEqual([]);
+		expect(run.state.worktrees).toEqual([]);
 	});
 
 	it("is the only thing that forces, and only under `discard`", async () => {
 		const runner = fakeRunner();
 		const withRunner = {...options, runner};
-		const discarded = drive(workspaceProgram(withRunner))
+		const discarded = drive(worktreeProgram(withRunner))
 			.send("open", {name: "feature-x"})
 			.event({type: "provisioned", name: "feature-x", port: 5174})
 			.send("discard", {name: "feature-x"});
 
-		await perform(withRunner, only(discarded, "workspace.teardown"));
-		expect(runner.commands()).toEqual(["git worktree remove /repo/.workspaces/feature-x --force"]);
+		await perform(withRunner, only(discarded, "worktree.teardown"));
+		expect(runner.commands()).toEqual(["git worktree remove /repo/.worktrees/feature-x --force"]);
 	});
 });
 
@@ -615,18 +615,18 @@ describe("a refused write, through the whole chain", () => {
 	const runner = fakeRunner({
 		files: {"/repo/.env.example": "PORT=3000\n"},
 		unwritable: {
-			"/repo/.workspaces/feature-x/.env": "EROFS: read-only file system",
+			"/repo/.worktrees/feature-x/.env": "EROFS: read-only file system",
 		},
 	});
 	const withRunner = {...options, runner};
 
 	const answered = async () => {
-		const queued = drive(workspaceProgram(withRunner)).send("open", {
+		const queued = drive(worktreeProgram(withRunner)).send("open", {
 			name: "feature-x",
 		});
-		const handlers = workspaceHandlers(settle(withRunner));
+		const handlers = worktreeHandlers(settle(withRunner));
 		const events = await Effect.runPromise(
-			handlers["workspace.provision"](only(queued, "workspace.provision")),
+			handlers["worktree.provision"](only(queued, "worktree.provision")),
 		);
 		if (events.length === 0) throw new Error("the handler said nothing");
 		return events.reduce((step, event) => step.event(event), queued);
@@ -634,10 +634,10 @@ describe("a refused write, through the whole chain", () => {
 
 	it("records the failure at the env step rather than going quiet", async () => {
 		const run = await answered();
-		expect(run.state.workspaces[0]).toMatchObject({
+		expect(run.state.worktrees[0]).toMatchObject({
 			name: "feature-x",
 			status: "failed",
-			detail: "env: could not write /repo/.workspaces/feature-x/.env: EROFS: read-only file system",
+			detail: "env: could not write /repo/.worktrees/feature-x/.env: EROFS: read-only file system",
 		});
 	});
 
@@ -663,7 +663,7 @@ describe("close", () => {
 	it("stops the agent first, and asks for nothing else until that ending lands", () => {
 		const run = open().send("close", {name: "feature-x"});
 		expect(run.effects).toContainEqual(stop(agent));
-		expect(run.state.workspaces[0]).toMatchObject({
+		expect(run.state.worktrees[0]).toMatchObject({
 			status: "closing",
 			agent: null,
 		});
@@ -676,18 +676,18 @@ describe("close", () => {
 		});
 		// The removal is *not* in this list. `[stop, teardown]` would make the removal conditional on
 		// the stop having worked, and `Processes.stop` fails `ProcessNotFound` on a process already
-		// gone — see `closing` in `./workspace.ts`.
-		expect(asked(run).map((effect) => effect.type)).not.toContain("workspace.teardown");
+		// gone — see `closing` in `./worktree.ts`.
+		expect(asked(run).map((effect) => effect.type)).not.toContain("worktree.teardown");
 	});
 
-	it("answers one `workspace.teardown` when the ending lands, with a plan that does not force", () => {
+	it("answers one `worktree.teardown` when the ending lands, with a plan that does not force", () => {
 		const run = open().send("close", {name: "feature-x"}).event({type: "stopped", process: agent});
 		const settled = settle(options);
 		const record = {...freshRecord(settled, "feature-x"), port: 5174};
-		expect(only(run, "workspace.teardown")).toEqual(
+		expect(only(run, "worktree.teardown")).toEqual(
 			teardownEffect(closePlan(settled, record, false)),
 		);
-		expect(only(run, "workspace.teardown").plan.force).toBe(false);
+		expect(only(run, "worktree.teardown").plan.force).toBe(false);
 	});
 
 	/**
@@ -701,7 +701,7 @@ describe("close", () => {
 	it("still removes the worktree when the agent was already gone", async () => {
 		const runner = fakeRunner();
 		const withRunner = {...options, runner};
-		const gone = drive(workspaceProgram({...withRunner, job: session() as ShapeSource}))
+		const gone = drive(worktreeProgram({...withRunner, job: session() as ShapeSource}))
 			.send("open", {name: "feature-x"})
 			.event({type: "provisioned", name: "feature-x", port: 5174})
 			.event({type: "spawned", process: agent, program: "claude-session"})
@@ -710,15 +710,15 @@ describe("close", () => {
 
 		// No `stop` is asked for, so there is nothing in front of the removal that can refuse.
 		expect(asked(gone).map((effect) => effect.type)).not.toContain("stop");
-		const effect = only(gone, "workspace.teardown");
+		const effect = only(gone, "worktree.teardown");
 
 		const events = await Effect.runPromise(
-			workspaceHandlers(settle(withRunner))["workspace.teardown"](effect),
+			worktreeHandlers(settle(withRunner))["worktree.teardown"](effect),
 		);
-		expect(runner.commands()).toEqual(["git worktree remove /repo/.workspaces/feature-x"]);
+		expect(runner.commands()).toEqual(["git worktree remove /repo/.worktrees/feature-x"]);
 
 		const run = events.reduce((step, event) => step.event(event), gone);
-		expect(run.state.workspaces).toEqual([]);
+		expect(run.state.worktrees).toEqual([]);
 		expect(run.state.pending).toBeNull();
 		// And the program is not wedged: the next open is taken rather than refused "busy".
 		expect(run.send("open", {name: "bugfix"}).state.refusals).toEqual([]);
@@ -730,9 +730,9 @@ describe("close", () => {
 			.event({type: "provisioned", name: "feature-x", port: 5174})
 			.event({type: "spawned", process: agent, program: "claude-session"})
 			.send("close", {name: "feature-x"})
-			// `other` belongs to no workspace here; what matters is that it is not the one being awaited.
+			// `other` belongs to no worktree here; what matters is that it is not the one being awaited.
 			.event({type: "stopped", process: other});
-		expect(asked(two).map((effect) => effect.type)).not.toContain("workspace.teardown");
+		expect(asked(two).map((effect) => effect.type)).not.toContain("worktree.teardown");
 		expect(two.event({type: "stopped", process: agent}).effects).toContainEqual(
 			teardownEffect(
 				closePlan(
@@ -748,7 +748,7 @@ describe("close", () => {
 		const run = open()
 			.send("close", {name: "feature-x"})
 			.event({type: "closed", name: "feature-x"});
-		expect(run.state.workspaces).toEqual([]);
+		expect(run.state.worktrees).toEqual([]);
 		expect(run.state.pending).toBeNull();
 		expect(run.effects).toContainEqual(emit(STATUS_PORT, "0 open · nothing open"));
 	});
@@ -760,27 +760,27 @@ describe("close", () => {
 			stage: "teardown",
 			detail: "dropdb --if-exists app_feature-x: database is being accessed",
 		});
-		expect(run.state.workspaces[0]).toMatchObject({
+		expect(run.state.worktrees[0]).toMatchObject({
 			status: "failed",
 			detail: "teardown: dropdb --if-exists app_feature-x: database is being accessed",
 		});
 	});
 
-	it("keeps the workspace when git refuses to remove a dirty worktree, with git's own reason", () => {
+	it("keeps the worktree when git refuses to remove a dirty worktree, with git's own reason", () => {
 		// The SEV2 this cell exists for: one click used to reach `git worktree remove --force` and
 		// uncommitted work went with it. Now the removal is refused, and the refusal is on the record.
 		const dirty =
-			"fatal: '/repo/.workspaces/feature-x' contains modified or untracked files, use --force to delete it";
+			"fatal: '/repo/.worktrees/feature-x' contains modified or untracked files, use --force to delete it";
 		const run = open().send("close", {name: "feature-x"}).event({
 			type: "closeFailed",
 			name: "feature-x",
 			stage: "remove",
 			detail: dirty,
 		});
-		expect(run.state.workspaces).toHaveLength(1);
-		expect(run.state.workspaces[0]).toMatchObject({
+		expect(run.state.worktrees).toHaveLength(1);
+		expect(run.state.worktrees[0]).toMatchObject({
 			name: "feature-x",
-			path: "/repo/.workspaces/feature-x",
+			path: "/repo/.worktrees/feature-x",
 			branch: "can/feature-x",
 			status: "failed",
 			detail: `remove: ${dirty}`,
@@ -806,7 +806,7 @@ describe("close", () => {
 	});
 
 	it("refuses a close while something is already in flight", () => {
-		const provisioning = drive(workspaceProgram(options)).send("open", {
+		const provisioning = drive(worktreeProgram(options)).send("open", {
 			name: "feature-x",
 		});
 		const asked = provisioning.send("close", {name: "feature-x"});
@@ -831,7 +831,7 @@ describe("discard, which is the only thing that forces", () => {
 			stopping: agent,
 		});
 		expect(run.effects).toContainEqual(stop(agent));
-		expect(run.state.workspaces[0]).toMatchObject({
+		expect(run.state.worktrees[0]).toMatchObject({
 			status: "closing",
 			agent: null,
 		});
@@ -841,11 +841,11 @@ describe("discard, which is the only thing that forces", () => {
 		const run = open()
 			.send("discard", {name: "feature-x"})
 			.event({type: "closed", name: "feature-x"});
-		expect(run.state.workspaces).toEqual([]);
+		expect(run.state.worktrees).toEqual([]);
 	});
 
 	it("is a spell of its own, named for what it costs", () => {
-		const row = workspace({...options, job: session() as ShapeSource});
+		const row = worktree({...options, job: session() as ShapeSource});
 		expect(row.spells?.map((spell) => spell.path)).toEqual(
 			expect.arrayContaining([["open"], ["close"], ["discard"]]),
 		);
@@ -859,7 +859,7 @@ describe("discard, which is the only thing that forces", () => {
 	});
 });
 
-describe("a workspace program restarted", () => {
+describe("a worktree program restarted", () => {
 	/** The checkpoint a Ctrl-C mid-provision leaves behind. */
 	const interrupted = () =>
 		drive(withJob())
@@ -876,13 +876,13 @@ describe("a workspace program restarted", () => {
 	it("asks to reconcile on every restore, holding a job or not", () => {
 		expect(withJob().resume(interrupted().state)).toEqual([{type: "restored"}]);
 		expect(
-			workspace({...options, job: session() as ShapeSource}).resume?.(interrupted().state),
+			worktree({...options, job: session() as ShapeSource}).resume?.(interrupted().state),
 		).toEqual([{type: "restored"}]);
 	});
 
 	it("writes the interrupted job down as failed and queues the disk check", () => {
 		const run = restarted();
-		const bugfix = run.state.workspaces.find((one) => one.name === "bugfix");
+		const bugfix = run.state.worktrees.find((one) => one.name === "bugfix");
 		expect(bugfix).toMatchObject({
 			status: "failed",
 			detail: "interrupted by restart",
@@ -890,20 +890,20 @@ describe("a workspace program restarted", () => {
 		expect(run.state.pending).toEqual({kind: "reconcile", seq: 3});
 	});
 
-	it("answers one `workspace.reconcile`, naming every record it just settled", async () => {
+	it("answers one `worktree.reconcile`, naming every record it just settled", async () => {
 		const run = restarted();
-		const effect = only(run, "workspace.reconcile");
+		const effect = only(run, "worktree.reconcile");
 		expect(effect.records).toEqual(
-			run.state.workspaces.map((one) => ({name: one.name, path: one.path})),
+			run.state.worktrees.map((one) => ({name: one.name, path: one.path})),
 		);
 
 		// And the handler reads exactly those paths, over the machine this row was built with.
-		const runner = fakeRunner({dirs: ["/repo/.workspaces/feature-x"]});
+		const runner = fakeRunner({dirs: ["/repo/.worktrees/feature-x"]});
 		const events = await Effect.runPromise(
-			workspaceHandlers(settle({...options, runner}))["workspace.reconcile"](effect),
+			worktreeHandlers(settle({...options, runner}))["worktree.reconcile"](effect),
 		);
 		expect(events).toEqual([{type: "reconciled", missing: ["bugfix"]}]);
-		expect(events.reduce((step, event) => step.event(event), run).state.workspaces).toContainEqual(
+		expect(events.reduce((step, event) => step.event(event), run).state.worktrees).toContainEqual(
 			expect.objectContaining({name: "bugfix", status: "gone"}),
 		);
 	});
@@ -913,43 +913,43 @@ describe("a workspace program restarted", () => {
 		// of a process the manifest did not restore fails `ProcessNotFound` out of the resume dispatch,
 		// which the kernel catches nowhere — that would fail *boot* in exactly this case.
 		const run = restarted();
-		expect(run.state.workspaces.every((one) => one.agent === null)).toBe(true);
+		expect(run.state.worktrees.every((one) => one.agent === null)).toBe(true);
 		expect(run.effects.map((effect) => effect.type)).not.toContain("stop");
 		expect(run.effects.map((effect) => effect.type)).not.toContain("send");
 	});
 
-	it("records a workspace whose directory somebody removed as `gone`, and keeps it", () => {
+	it("records a worktree whose directory somebody removed as `gone`, and keeps it", () => {
 		const run = restarted().event({
 			type: "reconciled",
 			missing: ["feature-x"],
 		});
-		const feature = run.state.workspaces.find((one) => one.name === "feature-x");
+		const feature = run.state.worktrees.find((one) => one.name === "feature-x");
 		expect(feature?.status).toBe("gone");
 		// Kept, never deleted: the record is now the only evidence the directory was supposed to exist,
 		// and it still names the branch somebody will want to look for.
-		expect(feature?.path).toBe("/repo/.workspaces/feature-x");
+		expect(feature?.path).toBe("/repo/.worktrees/feature-x");
 		expect(feature?.branch).toBe("can/feature-x");
 		expect(run.state.pending).toBeNull();
 	});
 
-	it("leaves a workspace whose directory is still there exactly where it was", () => {
+	it("leaves a worktree whose directory is still there exactly where it was", () => {
 		const run = restarted().event({type: "reconciled", missing: []});
-		expect(run.state.workspaces.find((one) => one.name === "feature-x")?.status).toBe("open");
+		expect(run.state.worktrees.find((one) => one.name === "feature-x")?.status).toBe("open");
 	});
 
 	it("re-reads the four env fields off the config, so a checkpoint cannot pin a stale repo", () => {
-		const stale: WorkspaceState = {
+		const stale: WorktreeState = {
 			...interrupted().state,
 			repo: "/old",
 			repoName: "old",
-			root: "/old/.workspaces",
+			root: "/old/.worktrees",
 			base: "origin/master",
 		};
-		const moved = workspaceProgram({...options, repo: "/code/phoenix"});
+		const moved = worktreeProgram({...options, repo: "/code/phoenix"});
 		const [back] = moved.update.restored(stale, {type: "restored"});
 		expect(back.repo).toBe("/code/phoenix");
 		expect(back.repoName).toBe("phoenix");
-		expect(back.root).toBe("/code/phoenix/.workspaces");
+		expect(back.root).toBe("/code/phoenix/.worktrees");
 		expect(back.base).toBe("origin/main");
 	});
 
@@ -958,34 +958,34 @@ describe("a workspace program restarted", () => {
 		const again = withJob()
 			.resume(reconciled.state)
 			.reduce((run, event) => run.event(event), reconciled);
-		expect(again.state.workspaces.map((one) => one.status)).toEqual(
-			reconciled.state.workspaces.map((one) => one.status),
+		expect(again.state.worktrees.map((one) => one.status)).toEqual(
+			reconciled.state.worktrees.map((one) => one.status),
 		);
 	});
 });
 
 describe("the two spells", () => {
 	it("`open` sends to its own program's `open` port and asks for nothing else", () => {
-		const run = drive(workspaceProgram(options)).call("open", {name: "feature-x"}, scope);
+		const run = drive(worktreeProgram(options)).call("open", {name: "feature-x"}, scope);
 		// A bare port name, which is what makes the call land on *this* program's live process rather
 		// than mint a parentless child of its own.
 		expect(run.effects).toEqual([send("open", {name: "feature-x"})]);
 	});
 
 	it("`close` does the same, with the one argument it takes", () => {
-		const run = drive(workspaceProgram(options)).call("close", {name: "feature-x"}, scope);
+		const run = drive(worktreeProgram(options)).call("close", {name: "feature-x"}, scope);
 		expect(run.effects).toEqual([send("close", {name: "feature-x"})]);
 	});
 
-	it("registers both under the program id, which is what `:workspace open` resolves", () => {
-		const row = workspace({...options, job: session() as ShapeSource});
+	it("registers both under the program id, which is what `:worktree open` resolves", () => {
+		const row = worktree({...options, job: session() as ShapeSource});
 		expect(row.spells?.map((spell) => spell.path)).toEqual(
 			expect.arrayContaining([["open"], ["close"]]),
 		);
 	});
 
 	it("declares `name` before `brief`, which is what makes it the first positional argument", () => {
-		const ports = portsOf(workspace({...options}));
+		const ports = portsOf(worktree({...options}));
 		expect(ports.open?.accepts({name: "feature-x"})).toBe(true);
 		expect(ports.open?.accepts({name: "feature-x", brief: "go"})).toBe(true);
 		expect(ports.close?.accepts({name: "feature-x"})).toBe(true);
@@ -995,7 +995,7 @@ describe("the two spells", () => {
 describe("the preface, which is phoenix#9287's fallback and is named as one", () => {
 	const record = {
 		name: "feature-x",
-		path: "/repo/.workspaces/feature-x",
+		path: "/repo/.worktrees/feature-x",
 		branch: "can/feature-x",
 		port: 5174,
 		status: "open" as const,
@@ -1006,7 +1006,7 @@ describe("the preface, which is phoenix#9287's fallback and is named as one", ()
 
 	it("names the path, the branch and the port, and says to change into the directory", () => {
 		expect(preface(record, "")).toBe(
-			"You are working in /repo/.workspaces/feature-x on branch can/feature-x; dev port 5174. Start by changing into that directory — it is a git worktree of its own and it is not where this session started.",
+			"You are working in /repo/.worktrees/feature-x on branch can/feature-x; dev port 5174. Start by changing into that directory — it is a git worktree of its own and it is not where this session started.",
 		);
 	});
 
@@ -1026,10 +1026,10 @@ describe("the job shape against a real session row", () => {
 
 	it("is fitted by the live row itself, which is why no wrapper stands here", () => {
 		// `shapeOf` and `fillArgs` are not public, so the fit is asserted where a consumer meets it:
-		// `workspace(…)` runs the fill inside `defineProgram` and throws on a job that does not fit.
-		expect(() => workspace({...options, job: session() as ShapeSource})).not.toThrow();
+		// `worktree(…)` runs the fill inside `defineProgram` and throws on a job that does not fit.
+		expect(() => worktree({...options, job: session() as ShapeSource})).not.toThrow();
 		expect(() =>
-			workspace({
+			worktree({
 				...options,
 				job: {id: "not-a-job", ports: {}} as ShapeSource,
 			}),
@@ -1039,28 +1039,28 @@ describe("the job shape against a real session row", () => {
 				in: {prompt: PromptPayloadSchema},
 				out: {result: TurnResultSchema},
 			}),
-		).toEqual(workspaceProgram({...options}).args.job.shape);
+		).toEqual(worktreeProgram({...options}).args.job.shape);
 	});
 
 	it("puts the job on the row's fill, so a spawn on the arg resolves to the session", () => {
-		const row = workspace({...options, job: session() as ShapeSource});
-		expect(row.args).toEqual({job: "tuval/arg/workspace/job"});
-		expect(row.label).toBe("workspace (claude-session)");
+		const row = worktree({...options, job: session() as ShapeSource});
+		expect(row.args).toEqual({job: "tuval/arg/worktree/job"});
+		expect(row.label).toBe("worktree (claude-session)");
 	});
 
 	it("declares no args at all with no job, so nothing is left unfilled at config load", () => {
-		const row = workspace({...options});
+		const row = worktree({...options});
 		expect(row.args).toBeUndefined();
-		expect(row.label).toBe("workspace (repo)");
+		expect(row.label).toBe("worktree (repo)");
 	});
 
 	it("keys each row's job fill under its own id, so two never read one another's", () => {
-		const one = workspace({
+		const one = worktree({
 			...options,
 			id: "lane",
 			job: session() as ShapeSource,
 		});
-		const two = workspace({
+		const two = worktree({
 			...options,
 			id: "reviews",
 			job: session() as ShapeSource,
@@ -1072,39 +1072,39 @@ describe("the job shape against a real session row", () => {
 
 describe("the window", () => {
 	it("names a module renderer on the row, which is the only kind a page can load", () => {
-		const row = workspace({...options, job: session() as ShapeSource});
+		const row = worktree({...options, job: session() as ShapeSource});
 		expect(row.renderer).toEqual({
 			kind: "module",
-			ref: "@kampus/tuval-workspace/window",
+			ref: "@kampus/tuval-worktree/window",
 		});
-		expect(row.renderer).toBe(WORKSPACE_WINDOW_REF);
+		expect(row.renderer).toBe(WORKTREE_WINDOW_REF);
 	});
 
-	it("gives every workspace program the same specifier, because one module answers them all", () => {
-		expect(workspace({...options, id: "lane"}).renderer).toEqual(
-			workspace({...options, id: "reviews"}).renderer,
+	it("gives every worktree program the same specifier, because one module answers them all", () => {
+		expect(worktree({...options, id: "lane"}).renderer).toEqual(
+			worktree({...options, id: "reviews"}).renderer,
 		);
 	});
 });
 
 /**
  * The consumer path, end to end and from outside: the fixture `.tuval/tuval.config.ts` beside this
- * package builds its rows through `@kampus/tuval-workspace`'s own entry and
+ * package builds its rows through `@kampus/tuval-worktree`'s own entry and
  * `@kampus/tuval/sessions`, exactly as a user's config does. Nothing here boots a desk, spends a
  * token or touches git — the fixture's runner refuses everything.
  */
 describe("a user's `.tuval/tuval.config.ts`", () => {
-	it("builds a workspace row through the package's entry, with the id the graph node names", () => {
-		expect(desk.id).toBe("workspace");
-		expect(desk.label).toBe("workspace (claude-session)");
-		expect(config.graph.nodes.map((node) => node.program)).toContain("workspace");
+	it("builds a worktree row through the package's entry, with the id the graph node names", () => {
+		expect(desk.id).toBe("worktree");
+		expect(desk.label).toBe("worktree (claude-session)");
+		expect(config.graph.nodes.map((node) => node.program)).toContain("worktree");
 	});
 
 	it("carries a second, named row beside it — one that only provisions", () => {
 		expect(reviews.id).toBe("reviews");
-		expect(reviews.label).toBe("reviews (tuval-workspace-fixture)");
+		expect(reviews.label).toBe("reviews (tuval-worktree-fixture)");
 		expect(reviews.args).toBeUndefined();
-		expect(config.programs.map((row) => row.id)).toEqual(["workspace", "reviews"]);
+		expect(config.programs.map((row) => row.id)).toEqual(["worktree", "reviews"]);
 	});
 
 	it("carries the two in-ports the spells land on, and the two tile ports", () => {

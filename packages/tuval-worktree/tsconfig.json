@@ -30,7 +30,7 @@
 		// that name at the same `src/index.ts` the published `exports` map points at through `dist`,
 		// so the fixture needs no build to type-check and still reaches nothing but the public entry.
 		"paths": {
-			"@kampus/tuval-workspace": ["./src/index.ts"]
+			"@kampus/tuval-worktree": ["./src/index.ts"]
 		},
 		// This package keeps its own standalone lens rather than extending the repo root's, because
 		// three of the options above are `apps/tuval`'s restated and the root's are not compatible with
@@ -42,7 +42,7 @@
 	},
 	// `src/window.tsx` is not here: it is React, it is browser-only, and it has its own lens
 	// (`tsconfig.window.json`). Excluding it from this one is what keeps the kernel row free of React
-	// — an accidental `import ... from "./window.tsx"` in `workspace.ts` fails to compile here.
+	// — an accidental `import ... from "./window.tsx"` in `worktree.ts` fails to compile here.
 	// `.tuval/` is the consumer fixture: a real user config, type-checked here so the README's usage
 	// cannot drift from what actually compiles.
 	// `examples/` is the persona gallery: five complete user configs, each `satisfies

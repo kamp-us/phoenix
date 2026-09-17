@@ -8,9 +8,9 @@ export default defineConfig({
 		// `exports` map reaches through `dist` — so the suite runs without a build step and still
 		// reaches nothing but the entry.
 		alias: {
-			"@kampus/tuval-workspace": fileURLToPath(new URL("./src/index.ts", import.meta.url)),
+			"@kampus/tuval-worktree": fileURLToPath(new URL("./src/index.ts", import.meta.url)),
 		},
-		// One `effect`, said out loud. `@kampus/tuval` is a workspace dependency on the same
+		// One `effect`, said out loud. `@kampus/tuval` is a `"workspace:*"` dependency on the same
 		// root `catalog:` pin this package holds, so the suite already gets one instance — this line is
 		// belt and braces here. It stays because it stops being that the moment this package is
 		// consumed from npm beside a Tuval that is not hoisted with it: two instances mean a `Schema`

@@ -6,7 +6,7 @@
  */
 
 import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
-import {workspace} from "@kampus/tuval-workspace";
+import {worktree} from "@kampus/tuval-worktree";
 
 const REPO = "/code/my-flake";
 
@@ -27,13 +27,13 @@ export const options = {
 		"Run every command through `nix develop -c <command>` — the dev shell is this repository's environment and nothing is on PATH without it. Your dev server's port is the one named above; pass it explicitly rather than taking a default.",
 } as const;
 
-export const workspaces = workspace({
+export const worktrees = worktree({
 	...options,
 	job: claudeSession({cwd: REPO, scope}),
 });
 
 export default {
 	version: 1,
-	programs: [workspaces],
-	graph: {nodes: [{id: "workspace", program: workspaces.id, on: []}]},
+	programs: [worktrees],
+	graph: {nodes: [{id: "worktree", program: worktrees.id, on: []}]},
 } satisfies TuvalConfigInput;

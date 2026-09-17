@@ -1,11 +1,11 @@
 /**
- * `@kampus/tuval-workspace` — the front door. One row factory and the types a config annotates it
- * with; `workspaceProgram` and the constants beside it are here because the test drives the
+ * `@kampus/tuval-worktree` — the front door. One row factory and the types a config annotates it
+ * with; `worktreeProgram` and the constants beside it are here because the test drives the
  * authored record directly, and because a consumer that wants a default (the port range, the
  * branch prefix) should read the one this program uses rather than restate it.
  *
  * `Runner` and `nodeRunner` are public because the injection is the point: a consumer's own test,
- * not only this package's, should be able to drive a workspace program without touching git.
+ * not only this package's, should be able to drive a worktree program without touching git.
  */
 
 export {
@@ -48,7 +48,7 @@ export {
 export {
 	type RendererKind,
 	type RendererRef,
-	WORKSPACE_WINDOW_REF,
+	WORKTREE_WINDOW_REF,
 } from "./renderer-ref.ts";
 
 export {
@@ -63,7 +63,7 @@ export {
 	closeEvent,
 	discardEvent,
 	isLive,
-	isWorkspaceState,
+	isWorktreeState,
 	LIMIT,
 	NAME_PATTERN,
 	openEvent,
@@ -78,16 +78,16 @@ export {
 	UNATTRIBUTED_LIMIT,
 	type UnattributedResult,
 	type UnattributedView,
-	type WorkspaceCommandEvent,
-	type WorkspaceRecord,
-	type WorkspaceRowView,
-	type WorkspaceState,
-	type WorkspaceStatus,
-	type WorkspaceWindowView,
-	workspaceView,
+	type WorktreeCommandEvent,
+	type WorktreeRecord,
+	type WorktreeRowView,
+	type WorktreeState,
+	type WorktreeStatus,
+	type WorktreeWindowView,
+	worktreeView,
 } from "./state.ts";
 export {
-	authoredWorkspace,
+	authoredWorktree,
 	CloseRequest,
 	closePlan,
 	DEFAULT_BASE,
@@ -111,13 +111,13 @@ export {
 	settle,
 	type Teardown,
 	teardownEffect,
-	type WorkspaceArgs,
-	type WorkspaceCommands,
-	type WorkspaceEffect,
-	type WorkspaceEvent,
-	type WorkspaceFill,
-	type WorkspaceOptions,
-	workspace,
-	workspaceHandlers,
-	workspaceProgram,
-} from "./workspace.ts";
+	type WorktreeArgs,
+	type WorktreeCommands,
+	type WorktreeEffect,
+	type WorktreeEvent,
+	type WorktreeFill,
+	type WorktreeOptions,
+	worktree,
+	worktreeHandlers,
+	worktreeProgram,
+} from "./worktree.ts";
