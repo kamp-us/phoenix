@@ -108,8 +108,10 @@ after one window fails:
   sibling rendered, the failed window's title and frame in place, and the status line alive.
 - `apps/tuval/src/page/authored-windows.unit.test.tsx` — an authored `window` is seated under the
   reference its own row declares, the page's table resolves that reference, and re-compiling the
-  program replaces the one seat. Flip-verify by dropping the merge in `renderers.tsx`: the
-  resolution falls back to `unknown-ref`.
+  program replaces the one seat. It also checks the namespace the merge rests on: `pageRenderers`
+  writes `pageOwnRenderers`'s keys after the authored ones, so a page key ending in
+  `AUTHORED_WINDOW_SUFFIX` would shadow an authored seat in silence. Flip-verify by dropping the
+  merge in `renderers.tsx`: the resolution falls back to `unknown-ref`.
 
 Flip-verify both: drop the predicate check and the stale-shape test fails with the original
 `Cannot read properties of undefined (reading 'status')`; drop the per-window boundary and the

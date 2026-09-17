@@ -14,14 +14,14 @@ import {act, cleanup, render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import {afterEach, describe, expect, it} from "vitest";
 import {defineProgram} from "../authoring/index.ts";
-import {authoredWindowRef} from "../authoring/view.ts";
+import {AUTHORED_WINDOW_SUFFIX, authoredWindowRef} from "../authoring/view.ts";
 import {ProcessId} from "../process/process.ts";
 import type {RendererRef} from "../registry/program.ts";
 import {testProcess} from "../shell/window/fixtures.ts";
 import {type AnyWindowHost, resolverFromTable, WindowId} from "../shell/window/index.ts";
 import {authoredPageRenderers} from "./authored-windows.tsx";
 import type {ReadableRenderer} from "./readable-state.tsx";
-import {pageRenderers} from "./renderers.tsx";
+import {pageOwnRenderers, pageRenderers} from "./renderers.tsx";
 
 interface CounterState {
 	readonly count: number;
@@ -99,6 +99,37 @@ describe("an authored window on the page", () => {
 		// The walk the desk runs, over the table the page really builds. Before #8811 this answered
 		// `unknown-ref`, which is the unresolved-reference placeholder the author was shown.
 		expect(resolverFromTable(table)(declared as RendererRef)._tag).toBe("Resolved");
+	});
+});
+
+describe("the namespace the page's merge rests on", () => {
+	const ownKeys = Object.keys(
+		pageOwnRenderers(
+			() => Effect.never,
+			() => undefined,
+		),
+	);
+
+	it("keeps the page's own keys clear of the segment every authored reference ends with", () => {
+		// The page writes its keys after the authored ones, so a page key of an authored reference's
+		// shape would shadow that seat with no error and mount a page renderer over the author's host
+		// — which reads to the author exactly like the bug #8811 closed. The shape is the invariant;
+		// the intersection below is only what it buys at today's key sets.
+		expect(ownKeys.filter((key) => key.endsWith(AUTHORED_WINDOW_SUFFIX))).toEqual([]);
+	});
+
+	it("leaves every authored seat standing in the merged table", () => {
+		const authored = Object.keys(authoredPageRenderers());
+		expect(authored.length).toBeGreaterThan(0);
+		expect(authored.filter((key) => ownKeys.includes(key))).toEqual([]);
+
+		const table = pageRenderers(
+			() => Effect.never,
+			() => undefined,
+		);
+		// An authored entry admits any state and a page entry refuses a state it cannot read, so a
+		// shadowed seat answers `false` here even though the key is present either way.
+		for (const ref of authored) expect(table[ref]?.admits({})).toBe(true);
 	});
 });
 

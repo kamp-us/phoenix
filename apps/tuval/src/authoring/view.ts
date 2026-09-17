@@ -151,10 +151,18 @@ export const withSelfReport = <U>(authored: AnyAuthoredProgram, update: U): U =>
 
 const WINDOW_KIND: RendererKind = "host-native";
 
+/**
+ * The final segment every authored reference ends with, and the page's half of a namespace split.
+ * `pageRenderers` writes its own keys after the authored ones, so a page key ending here would
+ * shadow an authored seat in silence (`../page/renderers.tsx`). It is named rather than inlined so
+ * the page side can check its own keys against it instead of restating the shape.
+ */
+export const AUTHORED_WINDOW_SUFFIX = "/window";
+
 /** The reference an authored window takes. Derived from the program id, so no author writes one. */
 export const authoredWindowRef = (id: ProgramId): RendererRef => ({
 	kind: WINDOW_KIND,
-	ref: `${id}/window`,
+	ref: `${id}${AUTHORED_WINDOW_SUFFIX}`,
 });
 
 /**
