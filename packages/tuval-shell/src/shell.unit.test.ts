@@ -39,13 +39,13 @@ const options: ShellOptions = {cwd: "/Users/can/phoenix"};
 /** The authored record under `testProgram`. See the file header for the one cast. */
 const drive = (over: ShellOptions = options) =>
 	testProgram(
-		// biome-ignore lint/plugin: the cast is `testProgram`'s signature, not this program's — `defineProgram` grew `X` in #9294 and `testProgram` did not, so an `update` answering `Answer<S, Run>` does not fit a helper still saying `Answer<S>`. The target types are this program's own, exported for exactly this.
+		// biome-ignore lint/plugin: the cast is `testProgram`'s signature, not this program's — `defineProgram` grew `X` in #9294 and `testProgram` did not, so an `update` answering `Answer<S, Run>` does not fit a helper still saying `Answer<S>`. The target types are this program's own, exported for exactly this. Removed by kamp-us/phoenix#9296, which threads `X` through `testProgram`.
 		shellProgram(over) as unknown as AuthoredProgram<ShellState, ShellPorts, ShellUpdate>,
 	);
 
 /** The runs a step asked for. A step that asked for none answers `[]`. */
 const runsIn = (effects: ReadonlyArray<{type: string}>): ReadonlyArray<Run> =>
-	// biome-ignore lint/plugin: `testProgram` reports effects as the erased `{type: string}` shape, so narrowing the RUN ones back to this program's own `Run` is what the filter above already proved. No decode exists for a value the kernel never serialised.
+	// biome-ignore lint/plugin: `testProgram` reports effects as the erased `{type: string}` shape, so narrowing the RUN ones back to this program's own `Run` is what the filter above already proved. No decode exists for a value the kernel never serialised. Removed by kamp-us/phoenix#9296, which types the run's effects `ReadonlyArray<ProgramEffect | X>`.
 	effects.filter((effect) => effect.type === RUN) as unknown as ReadonlyArray<Run>;
 
 /** The run a step asked for, or `undefined` when it asked for none. */

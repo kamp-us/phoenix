@@ -23,7 +23,7 @@
  * what it was asked to send and answers a stated `Attempt`. A test then runs the *real* handler.
  */
 
-import {Context, Effect, Layer} from "effect";
+import {Context, Effect, Layer, Schema} from "effect";
 import {
 	type Attempt,
 	attemptDelivery,
@@ -88,21 +88,29 @@ export class Transport extends Context.Service<
 >()("@kampus/tuval-notify/Transport") {}
 
 /**
+ * `attemptDelivery` rejected instead of answering an `Attempt`, which it cannot do — it catches its
+ * own rejections, and an `ok: false` is a value there rather than a thrown cause. It carries no
+ * fields on purpose: the cause it would hold is a `fetch` failure against the target URL, and that
+ * URL is the credential this package never writes down.
+ */
+class DeliveryRejected extends Schema.TaggedError<DeliveryRejected>()("DeliveryRejected", {}) {}
+
+/**
  * The real one: the config's target, the config's `fetch` and `write`, and `target.ts`'s
- * `attemptDelivery` — which never throws, so this never fails. `Effect.promise` and not
- * `tryPromise` for exactly that reason: a refused DNS lookup is already an `ok: false` by the time
- * it reaches here, and a second error channel would only invite somebody to log the cause.
+ * `attemptDelivery` — which never throws, so this never fails. A refused DNS lookup is already an
+ * `ok: false` by the time it reaches here, so the rejection branch below is `orDie` rather than a
+ * second error channel somebody would be invited to log the cause of.
  */
 export const liveTransport = (
 	target: NotifyTarget,
 	io: {readonly fetch: Fetch; readonly write: Write},
 ): Layer.Layer<Transport> =>
 	Layer.succeed(Transport, {
-		// `attemptDelivery` catches its own rejections and answers an `Attempt` — an `ok: false` is a
-		// value here, never a thrown cause — so there is no rejection for `tryPromise` to type, and a
-		// second error channel would only invite logging a cause carrying the target URL.
-		// biome-ignore lint/plugin: the promise cannot reject; the docblock above says why at length.
-		send: (out: Outgoing) => Effect.promise(() => attemptDelivery(target, out, io)),
+		send: (out: Outgoing) =>
+			Effect.tryPromise({
+				try: () => attemptDelivery(target, out, io),
+				catch: () => new DeliveryRejected({}),
+			}).pipe(Effect.orDie),
 	});
 
 /** A fake transport: what it was asked to send, and the answer it was told to give. */

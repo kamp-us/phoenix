@@ -233,7 +233,7 @@ describe("the predicate the page admits this renderer through", () => {
  */
 describe("a history this version cannot read", () => {
 	/** What a checkpoint written before the log existed holds: a verdict, a clock, no message. */
-	// biome-ignore lint/plugin: the cast IS the subject — proving `isDelivery` refuses the text-less record an older checkpoint holds means building one the current type already refuses.
+	// biome-ignore lint/plugin: the cast IS the subject — proving `isDelivery` refuses the text-less record an older checkpoint holds means building one the current type already refuses. Permanent: the old shape has no current type to build it from.
 	const beforeText = {
 		ok: true,
 		status: 200,

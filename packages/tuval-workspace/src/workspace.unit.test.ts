@@ -70,7 +70,9 @@ type Authored = ReturnType<typeof workspaceProgram>;
  * program that answers an effect of its own therefore does not fit its signature, though the run
  * itself is entirely agnostic: it puts whatever a cell answered into `effects` and reads none of
  * it. This is that gap, in one place. Every other type survives the cast, so `.send`'s port names,
- * `.event`'s events and `run.state` stay checked.
+ * `.event`'s events and `run.state` stay checked. Filed upstream as kamp-us/phoenix
+ * [#9296](https://github.com/kamp-us/phoenix/issues/9296) — the day `testProgram` takes `X`, this
+ * alias and the cast below go with it.
  */
 type Drivable = Omit<Authored, "update"> & {
 	readonly update: {
@@ -80,7 +82,7 @@ type Drivable = Omit<Authored, "update"> & {
 	};
 };
 
-// biome-ignore lint/plugin: the cast IS the bridge — `testProgram` takes the kernel's own `Program` shape and `Drivable` above is this suite's narrower re-statement of the half it drives; these are function values, so there is no wire to decode at.
+// biome-ignore lint/plugin: the cast IS the bridge — `testProgram` takes the kernel's own `Program` shape and `Drivable` above is this suite's narrower re-statement of the half it drives; these are function values, so there is no wire to decode at. Removed by kamp-us/phoenix#9296, which the docblock above names.
 const drive = (program: Authored) => testProgram(program as unknown as Drivable);
 
 /** A run's effects as tagged data, which is how the actor reads them when it dispatches one. */

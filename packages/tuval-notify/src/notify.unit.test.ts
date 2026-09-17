@@ -580,7 +580,7 @@ describe("notify, restarted", () => {
 			outbox: EMPTY_OUTBOX,
 			// Two shapes in one history: what a desk wrote yesterday, and what it writes now.
 			deliveries: [
-				// biome-ignore lint/plugin: the cast IS the subject — this is what a checkpoint written before `text` existed holds, and the test is that `restored` drops it.
+				// biome-ignore lint/plugin: the cast IS the subject — this is what a checkpoint written before `text` existed holds, and the test is that `restored` drops it. Permanent: the old shape has no current type to build it from.
 				{ok: true, status: 204, at: SEVEN} as unknown as Delivery,
 				{text: "the desk is up", ok: true, status: 200, at: SEVEN - 1},
 			],

@@ -28,11 +28,12 @@ import type {ShellState} from "./state.ts";
 /**
  * The authored record under `testProgram`. The cast is `testProgram`'s signature and not this
  * program's — it predates `defineProgram`'s `X` (#9294) — and `shell.unit.test.ts` says so at
- * length.
+ * length. It goes with kamp-us/phoenix
+ * [#9296](https://github.com/kamp-us/phoenix/issues/9296).
  */
 const drive = (options: ShellOptions) =>
 	testProgram(
-		// biome-ignore lint/plugin: the cast is `testProgram`'s signature, not this program's — `defineProgram` grew `X` in #9294 and `testProgram` did not, so an `update` answering `Answer<S, Run>` does not fit a helper still saying `Answer<S>`. The target types are this program's own, exported for exactly this.
+		// biome-ignore lint/plugin: the cast is `testProgram`'s signature, not this program's — `defineProgram` grew `X` in #9294 and `testProgram` did not, so an `update` answering `Answer<S, Run>` does not fit a helper still saying `Answer<S>`. The target types are this program's own, exported for exactly this. Removed by kamp-us/phoenix#9296, which threads `X` through `testProgram`.
 		shellProgram(options) as unknown as AuthoredProgram<ShellState, ShellPorts, ShellUpdate>,
 	);
 
