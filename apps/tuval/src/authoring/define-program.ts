@@ -237,6 +237,62 @@ export interface AuthoredProgram<
 
 export type AnyAuthoredProgram = AuthoredProgram<any, any, any, any, any, any>;
 
+/**
+ * `program({...})` — hold an authored program in a binding and keep every type this layer infers
+ * (#8825).
+ *
+ * TypeScript contextually types an object literal from what it is passed to, and a `const` passes
+ * it to nothing. So the record an author has to keep — the config compiles it with `defineProgram`,
+ * a test drives it with `testProgram` — lost the whole of R12.1 at the binding: each `update`
+ * cell's `(state, event)` became an implicit `any` under `strict`, and each cell's returned array
+ * widened to `T[]` instead of fitting the `Answer<S>` tuple. The author's only fix was writing
+ * `pr: (state: State, event: ArrivalEvent<"pr", number>): Answer<State> => [...]` on every cell.
+ *
+ * This is the call site that was missing. It runs nothing and changes nothing — it answers its
+ * argument — so the parameter's type is the entire mechanism: `AuthoredProgram<S, D, U, C, Out, X>`
+ * is what contextually types the literal, and the same generics that make `defineProgram` infer a
+ * cell's event from the port that feeds it make this infer it too.
+ *
+ * **It was picked over widening `defineProgram`'s row to carry its authored record beside it**
+ * because the row is not where the inference dies. An author who spreads the record — the worked
+ * example's `{...prReviewProgram, fill, label}` (`./example/pr-review.ts`) — still holds the
+ * literal in a `const` no matter what `defineProgram` answers, so a wider row would have left that
+ * binding un-typed and bought a second shape on every compiled row for it.
+ *
+ * **The name is one word on purpose, and it sits one capital letter from `Program.shape`**
+ * (`./shape.ts`) in the barrel's import list. That is close, and it was still the right trade: the
+ * worked example's line budget (`./example/pr-review.ts`, #8716 R11.1) is a ruled number, and a
+ * longer name pushes its single import line past the formatter's width, which costs the example
+ * eight wrapped lines and breaks the ceiling. The two read differently at every use anyway —
+ * `Program.shape({...})` declares the ports a program is *named by*, `program({...})` holds the
+ * program itself.
+ *
+ * **`A` is why the answer is the literal the author wrote and not the interface.** Every field this
+ * layer does not require is optional on `AuthoredProgram`, so answering that interface flat would
+ * hand back a `ports`, `commands` and `title` that are all possibly-`undefined` — a binding worse
+ * to read than the one it replaces. Taking the argument as `A & AuthoredProgram<…>` infers both
+ * halves from the one literal: the intersection's second member is the inference site for `S`, `D`,
+ * `U`, `C`, `Out` and the contextual type the cells are written against, while `A` captures the
+ * literal's own shape and carries the present fields through. A plain `A extends AuthoredProgram<…>`
+ * does not work — measured at this pin, constraint-only inference leaves `S`, `D` and `U` on their
+ * defaults, and every cell is an implicit `any` again.
+ *
+ * `X` — the author's own effect type — is no more inferrable here than at `defineProgram`, and for
+ * the same reason (#9294): it is named only in a cell's answer, and `update`'s mapped table is not
+ * an inference site. A program that opts in states its arguments once, here instead of there.
+ */
+export const program = <
+	S,
+	D extends PortDecls = Record<string, never>,
+	U = unknown,
+	C extends CommandArgTypes = Record<string, never>,
+	Out = unknown,
+	X = never,
+	A = unknown,
+>(
+	authored: A & AuthoredProgram<S, D, U, C, Out, X>,
+): A & AuthoredProgram<S, D, U, C, Out, X> => authored;
+
 /** What every field compiler is handed beside the authored record: the id and the compiled ports. */
 export interface CompileContext {
 	readonly id: ProgramId;

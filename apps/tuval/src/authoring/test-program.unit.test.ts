@@ -6,7 +6,7 @@ import {expect, expectTypeOf} from "vitest";
 import {ProcessId} from "../process/process.ts";
 import {STATUS_PORT, TITLE_PORT} from "../process/self-report.ts";
 import {fillArgs, programArgs} from "./args.ts";
-import type {Answer, ArrivalEvent} from "./define-program.ts";
+import {program} from "./define-program.ts";
 import {
 	type AnyEffect,
 	ask,
@@ -20,7 +20,6 @@ import {
 	stop,
 	stopped,
 } from "./effect.ts";
-import type {KeyEvent} from "./keys.ts";
 import {port} from "./port.ts";
 import {Program} from "./shape.ts";
 import {testProgram} from "./test-program.ts";
@@ -45,10 +44,15 @@ const CALLEE = ProcessId.make("proc-callee");
 
 /**
  * One program covering the whole vocabulary: three port kinds, all five effects, the four answer
- * events, a `key` cell, a command and both derived lines. Each cell states its own event type,
- * because a standalone record is not contextually typed by anything.
+ * events, a `key` cell, a command and both derived lines. It is held in a `const` because that is
+ * what an author holds — the config compiles it, this file drives it — and `program` is what
+ * contextually types it there (#8825), so no cell states its own state type or its `Answer` return.
+ *
+ * The three answer-event cells still name their event, and that is a declaration rather than an
+ * annotation: an event of the program's own is not declared anywhere else, and `ProgramEvent`
+ * (`./view.ts`) reads the cell's own parameter to know what `.event()` will take.
  */
-const prReview = {
+const prReview = program({
 	id: "pr-review",
 	ports: {
 		pr: port.in(Pr),
@@ -58,35 +62,23 @@ const prReview = {
 	args,
 	init: (): State => ({queue: [], reviewer: null, verdicts: 0, pressed: ""}),
 	update: {
-		pr: (state: State, event: ArrivalEvent<"pr", number>): Answer<State> => [
+		pr: (state, event) => [
 			{...state, queue: [...state.queue, event.payload]},
 			[spawn(args.reviewer, {on: {result: "result"}})],
 		],
-		check: (state: State, event: ArrivalEvent<"check", number>): Answer<State> => [
-			state,
-			[emit("verdict", {pr: event.payload, ok: true})],
-		],
-		spawned: (state: State, event: Spawned): Answer<State> => [
+		check: (state, event) => [state, [emit("verdict", {pr: event.payload, ok: true})]],
+		spawned: (state, event: Spawned) => [
 			{...state, reviewer: event.process},
 			[send({process: event.process, port: "prompt"}, "review it")],
 		],
-		result: (
-			state: State,
-			event: Reply<"result", {readonly pr: number; readonly ok: boolean}>,
-		): Answer<State> => [
+		result: (state, event: Reply<"result", {readonly pr: number; readonly ok: boolean}>) => [
 			{...state, verdicts: state.verdicts + (event.payload.ok ? 1 : 0)},
 			[emit("verdict", event.payload)],
 		],
-		stopped: (state: State, _event: Stopped): Answer<State> => [{...state, reviewer: null}, []],
-		close: (state: State): Answer<State> => [
-			state,
-			state.reviewer === null ? [] : [stop(state.reviewer)],
-		],
-		key: (state: State, event: KeyEvent): Answer<State> => [{...state, pressed: event.key}, []],
-		recheck: (state: State): Answer<State> => [
-			state,
-			[ask({process: CALLEE, port: "check"}, 8733, {reply: "result"})],
-		],
+		stopped: (state, _event: Stopped) => [{...state, reviewer: null}, []],
+		close: (state) => [state, state.reviewer === null ? [] : [stop(state.reviewer)]],
+		key: (state, event) => [{...state, pressed: event.key}, []],
+		recheck: (state) => [state, [ask({process: CALLEE, port: "check"}, 8733, {reply: "result"})]],
 	},
 	commands: {
 		review: {
@@ -97,9 +89,9 @@ const prReview = {
 			run: (pr: number) => send("pr", pr),
 		},
 	},
-	title: (state: State) => `pr-review (${state.queue.length})`,
-	status: (state: State) => (state.reviewer === null ? "idle" : "reviewing"),
-};
+	title: (state) => `pr-review (${state.queue.length})`,
+	status: (state) => (state.reviewer === null ? "idle" : "reviewing"),
+});
 
 describe("authoring.testProgram", () => {
 	it("starts on `init` and publishes the derived lines a fresh process would", () => {
