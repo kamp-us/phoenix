@@ -1278,8 +1278,10 @@ names it. A cause outside the set is exit `35` with the log unappended, as it is
 **The cell has to be there, and on an epic lane one key decides whether it is.**
 `.fabrika.jsonc`'s `machineryLaps.onEmit` ships `off` and is read by `lane emit` alone. An epic
 machine emitted under `off` holds no `LAP` cell at all; one emitted under `on` holds it in each
-child region's `integrate` and in the tail's `review:ui`, `ship` and `ship:queued` — not in `build`,
-not in `review`. A single-issue lane is a different document: it boots from the committed coder template
+child region's `build`, `review` and `integrate` — plus a rendered child's `build:ui` — and in the
+tail's `build`, `review`, `review:ui`, `ship` and `ship:queued`. Every state that dispatches a shell
+carries it on both sides of that list, so a `SHELL-DEAD` is recordable wherever a shell was
+dispatched. A single-issue lane is a different document: it boots from the committed coder template
 ([`coder.workflow.json`](../../../../packages/fabrika-cli/src/lane/templates/coder.workflow.json)),
 which the key does not gate and which carries the cell in `build`, `build:ui`, `review`,
 `review:ui`, `ship` and `ship:queued`. So a machinery token recorded where the task's state holds no

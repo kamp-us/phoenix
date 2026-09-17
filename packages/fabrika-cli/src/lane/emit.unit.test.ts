@@ -900,9 +900,10 @@ describe("emitMachine — the machinery lap axis", () => {
 			laps: 0,
 		});
 		// The pre-axis machine holds no lap-guarded cell at all, so nothing can spend the counter and
-		// its status carries none to read — the whole containment, in two assertions.
+		// its status carries none to read — the whole containment, in two assertions. The axis-on
+		// count is three: `build`, `review` and `integrate`.
 		expect(lapStatesOf(before, "issue_4301")).toBe(0);
-		expect(lapStatesOf(after, "issue_4301")).toBe(1);
+		expect(lapStatesOf(after, "issue_4301")).toBe(3);
 	});
 });
 
