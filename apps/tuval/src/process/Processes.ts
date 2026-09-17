@@ -35,6 +35,7 @@ import {
 	noSelfReport,
 	type SelfReport,
 	type SelfReportPort,
+	seedSelfReport,
 	TITLE_PORT,
 } from "./self-report.ts";
 
@@ -313,6 +314,12 @@ function makeServices() {
 				Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))),
 			);
 			readState = actor.getState;
+			// The latch only ever records what this process emitted, and a restored one emits nothing:
+			// a rehydrating `init` may answer no Cmds and the authored `update` publishes a derived
+			// line only on the transition that moves it, so a stable title would read back as absent
+			// forever (#8812). Seeding it off the state the actor actually booted on covers both arms
+			// at once — a fresh boot's `init` derives the same lines from that same state.
+			seedSelfReport(program, actor.getState(), record);
 			yield* Scope.addFinalizer(
 				scope,
 				Effect.sync(() => {

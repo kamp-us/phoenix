@@ -94,6 +94,7 @@ import {
 import {type AuthoredResume, compileResume} from "./resume.ts";
 import {
 	type AuthoredWindow,
+	compileDerivedLines,
 	compileWindow,
 	type DerivedLine,
 	initialSelfReport,
@@ -456,9 +457,13 @@ const INTERPRET: Interpret<AuthoredEvent, ProgramEffect, unknown> = {
 };
 
 const compileCore = (authored: AnyAuthoredProgram): ProgramCore<any, any, any, any, any> => ({
-	// A loaded state is answered untouched and with no Cmds, which is Demlik's rehydrate contract —
-	// so a fresh boot is the only place a derived line may be published from `init` (`./view.ts`),
-	// and a restored process republishes on its first transition instead.
+	// A loaded state is answered untouched and with no Cmds, which is Demlik's rehydrate contract
+	// (`@demlik/tea` 0.12, `Machine.init`: "when `loaded !== null`, init MUST return `[loaded, []]`").
+	// So a fresh boot is the only place a derived line is published from `init` (`./view.ts`), and a
+	// restored process publishes none: the kernel seeds its self-report latch off the loaded state
+	// instead, through the row's `derivedLines` (#8812). It does not republish on its first
+	// transition — that transition emits only if it moves the line, which for a stable title is
+	// never.
 	init: (loaded: unknown) => {
 		if (loaded !== null && loaded !== undefined) return [loaded, NO_EFFECTS];
 		const initial = authored.init();
@@ -547,6 +552,7 @@ export const FIELD_COMPILERS = {
 	spells: (authored, context) => compileSpells(authored, context),
 	takesKeys: (authored) => compileTakesKeys(authored),
 	resume: (authored) => compileResume(authored),
+	derivedLines: (authored) => compileDerivedLines(authored),
 	renderer: (authored, context) => compileWindow(authored, context),
 	capabilities: (authored) => authored.capabilities ?? NO_CAPABILITIES,
 	identity: (authored) => compileIdentity(authored),

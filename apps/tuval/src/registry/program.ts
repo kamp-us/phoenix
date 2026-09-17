@@ -219,6 +219,20 @@ export interface Program<
 	 */
 	readonly resume?: (state: S) => ReadonlyArray<M>;
 	/**
+	 * The lines this program derives off its own state, keyed by the out-port each is published on —
+	 * `title@1` and `status@1` today (`src/process/self-report.ts`).
+	 *
+	 * The kernel seeds a process's self-report latch from this at spawn, which is the only publisher
+	 * a restored process reaches (#8812). The latch is per-process runtime memory, a rehydrating
+	 * `init` may emit no Cmds, and the authored `update` publishes a line only on the transition
+	 * that moves it — so without this a restored process whose title is stable reads back as having
+	 * none, however long it runs.
+	 *
+	 * Pure and total, and asked once per spawn. A row that derives no line omits the field and pays
+	 * nothing on either path.
+	 */
+	readonly derivedLines?: (state: S) => Readonly<Record<string, string>>;
+	/**
 	 * What the kernel dispatches into every live process of this program when the config is re-read
 	 * and this row's replacement carries different settings (#7509 ruling 3).
 	 *
