@@ -58,7 +58,7 @@ Record one architecture decision, from id to citations. Contract:
 
 | Verb | Answers |
 |---|---|
-| `adr next` | the next unused id — `max(fetched merged set ∪ open-PR claims ∪ this clone's branch claims) + 1` |
+| `adr next` | the next unused id — `max(fetched merged set ∪ open-PR claims ∪ this clone's branch claims) + 1`, where a branch claim is an id on any ref under `--branches`/`--remotes` |
 | `adr new` | scaffolds `.decisions/NNNN-slug.md` from the canonical template |
 | `adr mint` | `next` and `new` in one call — allocates the id and writes the record with no gap |
 | `adr resolve` | each id's real filename and state: `live` / `landed` / `in-flight` / `absent` |
@@ -79,7 +79,9 @@ Four behaviours are worth knowing:
 - **`--base` is fetched before it is read.** A stale local ref is the defect class this closes.
 - **A branch with no pull request claims its id too.** Worktrees of one clone share one ref store,
   so an epic child's committed record is in `next`'s union before any pull request exists. Without
-  it, two parallel children of one epic are handed one id by default rather than by race.
+  it, two parallel children of one epic are handed one id by default rather than by race. The walk
+  reads remote-tracking refs as well as local ones, so a pushed branch in another clone counts here
+  once this clone has fetched it — which is why the id can jump past anything the base carries.
 - **`mint` exists because an id read in one call is stale by the next.** It is still not a
   reservation — no id is visible to a lane in *another clone* until its pull request opens — so keep
   the re-check before you push.

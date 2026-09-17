@@ -6,8 +6,8 @@
  * to quietly become an answer, and an allocator that answers over a half-read set mints a duplicate.
  * The caller supplies its own verb name so a refusal names the command the operator actually ran.
  *
- * Three sets, read in cost order: the base ref, then this clone's branch refs, then GitHub's open
- * pull requests. The branch walk is what sees an epic child's mint before any pull request exists
+ * Three sets, read in cost order: the base ref, then this clone's branch refs (local and
+ * remote-tracking alike), then GitHub's open pull requests. The branch walk is what sees an epic child's mint before any pull request exists
  * (`branch-claims.ts`).
  */
 import {Effect} from "effect";

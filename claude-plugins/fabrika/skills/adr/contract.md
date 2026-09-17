@@ -33,7 +33,7 @@ them anyway.
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `adr next` | the next unused ADR id, against a fetched base ref unioned with open ADR PRs and this clone's branch claims | fetch, parse ids, take the max, add one — no judgment anywhere in it |
+| `adr next` | the next unused ADR id, against a fetched base ref unioned with open ADR PRs and the claims on this clone's branch refs, remote-tracking ones included | fetch, parse ids, take the max, add one — no judgment anywhere in it |
 | `adr new` | scaffold `NNNN-slug.md` under the record directory from the canonical template | the file's *shape* is fixed text with substitutions; only its content is judgment |
 | `adr mint` | allocate the next id and scaffold its record in one invocation | both halves are already derived; fusing them removes a window rather than adding judgment |
 | `adr resolve` | resolve an id to its real filename and state against a fetched base ref | a lookup with a defined answer; whether the result may be cited stays in the skill |
@@ -152,7 +152,12 @@ first-free would answer `9238`.
 
 **Scope** — every `NNNN-slug.md` under `--dir` **as of the fetched `--base`**, plus every open pull
 request in `--repo` that *adds* an `NNNN-*.md` file under that same directory, plus every
-`NNNN-*.md` under that directory on a branch ref of **this clone** the fetched base does not carry.
+`NNNN-*.md` under that directory on a branch ref **this clone carries** that the fetched base does
+not — local branches and fetched remote-tracking ones alike, since the walk passes
+`--branches --remotes`. So a branch pushed from another clone is in the set as soon as this one has
+fetched it, which is the ordinary reason an id jumps further than the base and the open pull
+requests explain; an unpushed branch in another clone is still invisible, and that is the residual
+the mint section names.
 The scope line goes to stderr on every run, naming the base SHA, the record count, the in-flight
 count and the branch-claim count, so a caller can audit which third produced the answer.
 
@@ -191,8 +196,9 @@ $ fabrika adr next --json
 {"id":"9240","mergedMax":"9236","inFlight":["9237","9239"],"branchClaims":[],"baseRef":"origin/main","baseSha":"49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82"}
 ```
 
-A sibling lane in this clone minted `9240` on its own branch and opened no pull request. The merged
-set and the in-flight set both read `9240` as free; the branch half is what does not:
+A sibling lane minted `9240` on a branch — in this clone, or in another clone that has pushed it and
+this one has fetched — and opened no pull request. The merged set and the in-flight set both read
+`9240` as free; the branch half is what does not:
 
 ```
 $ fabrika adr next --json
@@ -383,8 +389,9 @@ for one of them to become an answer.
 **Why it exists.** `adr next` then `adr new` leaves the author's whole drafting turn between reading
 an id and writing it, and an id read then is stale by the time it lands: that gap has put one id on
 two pull requests and cost a dismissed approval. **It is not a reservation and must never be
-described as one** — the commit is visible to another lane of *this clone* through the branch-claim
-set, and to a lane in any other clone only when the pull request opens, so the mint-to-open window
+described as one** — the commit is visible through the branch-claim set to another lane of
+*this clone*, and to a lane in another clone once that branch is pushed and fetched, but an
+unpushed branch in another clone is seen only when the pull request opens, so the mint-to-open window
 survives across clones and nothing downstream closes it. A repo's own duplicate-id check
 reading the merge queue's batched ref *reports* a duplicate there, but a job that is not a
 branch-protection-required context does not hold the batch, so it merges and the lane that opened

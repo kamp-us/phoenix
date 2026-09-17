@@ -62,7 +62,8 @@ same tracked debt the sibling contracts carry.)
   directly. A `governance resolve` would be a wrapper whose only behaviour is relaying an upstream
   answer, and a wrapper whose whole behaviour is relaying is not a verb.
 - **An ADR-number-collision verb.** `fabrika adr next` already unions the merged set with the ids
-  open ADR PRs claim and the ids this clone's own branches carry — the cross-PR and cross-worktree
+  open ADR PRs claim and the ids this clone's branch refs carry, remote-tracking ones included — the
+  cross-PR and cross-worktree
   read a tree-local guard structurally cannot make. The skill invokes it; this group adds nothing.
 - **A dead-link or ADR-index checker.** A repo that arms a link checker and a corpus-index
   validator gates each already. Note what they do **not** cover, because it is this skill's job and

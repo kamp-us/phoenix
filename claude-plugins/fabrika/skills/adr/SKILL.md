@@ -17,8 +17,9 @@ fabrika adr mint only-landed-adrs-may-be-cited
 ```
 
 One call allocates the id and scaffolds the record, and that is why it is one call: it unions the
-freshly fetched merged set with the ids open ADR PRs already claim and the ids this clone's own
-branches carry, so a checkout one id behind origin cannot mint a duplicate — **and an id you
+freshly fetched merged set with the ids open ADR PRs already claim and the ids this clone's branch
+refs carry, remote-tracking ones included, so a checkout one id behind origin cannot mint a
+duplicate — **and an id you
 allocate now and write later is already stale**, which is how one id has landed on two pull requests
 at once. The slug is kebab-case, at most 5 words; it prints the path written. How the union is
 computed, and the exact bytes it scaffolds, are the verb's section
@@ -27,8 +28,9 @@ computed, and the exact bytes it scaffolds, are the verb's section
 **A sibling worktree's unpublished mint counts.** An epic child commits its record to a local branch
 and opens no pull request, and worktrees of one clone share one ref store, so that id is in the union
 from the moment it is committed. Two children of one epic were each handed `0373` before this read
-existed. It does not reach across clones: two lanes in two checkouts still collide, and step 6 is
-where you find out.
+existed. The walk reads remote-tracking refs too, so a branch another clone has pushed counts here
+once this one has fetched it. What it does not reach is a branch that is still unpushed elsewhere:
+those two lanes collide, and step 6 is where you find out.
 
 **A non-zero exit is UNKNOWN, never "nothing reserved."** Re-run it. Falling back to the highest id
 on disk mints the same number from two lanes at once.
@@ -49,8 +51,9 @@ nothing to read and nothing to write into, and that is a settled fact no retry c
 scaffolds against an id you name (`fabrika wire doc-section --heading "adr next" < <skill-base>/contract.md`,
 then `--heading "adr new"`). Reach for the pair only when you genuinely need the id before the
 file — the gap between them is the race, so do not re-open it out of habit. Whichever route, the
-minted file is not a reservation: nothing outside this clone sees the id until the pull request
-opens, and step 6 is where you find out whether someone got there first.
+minted file is not a reservation: another clone sees the id only once you push the branch it sits
+on, or once the pull request opens, and step 6 is where you find out whether someone got there
+first.
 
 ## 2 — Write the decision
 

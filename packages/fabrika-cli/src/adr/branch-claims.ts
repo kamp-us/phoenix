@@ -1,5 +1,5 @@
 /**
- * The third half of the allocation union: the ids claimed on a branch that has no pull request yet.
+ * The third set of the allocation union: the ids claimed on a branch that has no pull request yet.
  *
  * The merged set and the in-flight set between them see an id only once it is on the base ref or
  * once a pull request publishes it. An epic run is neither shape for the whole life of a phase: a
@@ -10,7 +10,10 @@
  * reports in the same pass.
  *
  * This read closes that. Worktrees of one clone share `refs/heads`, so the moment a sibling commits
- * its record the id is in this set, and `max(union) + 1` cannot hand it out again.
+ * its record the id is in this set, and `max(union) + 1` cannot hand it out again. The walk covers
+ * remote-tracking refs as well, so a branch pushed from another clone counts here once this one has
+ * fetched it; a branch still unpushed elsewhere is the residual, and it is invisible until its pull
+ * request opens.
  *
  * **Why not the other two candidates the report offered.**
  *
@@ -49,7 +52,8 @@ export type BranchClaimsOutcome =
 	| {readonly _tag: "Err"; readonly reason: string};
 
 /**
- * Every record id claimed on a branch ref this clone carries that `baseSha` does not.
+ * Every record id claimed on a branch ref this clone carries — local or remote-tracking — that
+ * `baseSha` does not.
  *
  * Purely additive to the union: an id here is one no merged record and no open pull request holds,
  * so the answer can only move the allocation up. That direction costs a gap, which this group

@@ -90,11 +90,9 @@ const next = leafCommand(
 		yield* emit(yield* runNext({dir: corpus.dir, base, repo: Option.getOrNull(repo), json}));
 	}),
 ).pipe(
-	Command.withShortDescription(
-		"The next unused ADR id, merged set, open-PR claims and branch claims folded.",
-	),
+	Command.withShortDescription("The next unused ADR id: merged, open-PR and branch claims folded."),
 	Command.withDescription(
-		"The next unused ADR id — max(fetched merged set ∪ open-PR claims ∪ branch claims) + 1, where a branch claim is an id on a branch ref of this clone the base does not carry, which is how an epic child's unpublished mint is visible to its siblings. Prints `0240`; --json adds mergedMax/inFlight/branchClaims/baseSha. An empty-and-readable --dir is a fresh corpus and answers 0001. Exits 11 (--dir unreadable), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 21 (origin remote unresolvable), 23 (branch refs unwalkable). Two lanes in two clones still collide; this does not claim otherwise. Example: fabrika adr next",
+		"The next unused ADR id — max(fetched merged set ∪ open-PR claims ∪ branch claims) + 1, where a branch claim is an id on any branch ref this clone carries that the base does not — local branches and fetched remote-tracking ones alike, which is how an epic child's unpublished mint is visible to its siblings. Prints `0240`; --json adds mergedMax/inFlight/branchClaims/baseSha. An empty-and-readable --dir is a fresh corpus and answers 0001. Exits 11 (--dir unreadable), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 21 (origin remote unresolvable), 23 (branch refs unwalkable). Two lanes in two clones still collide while neither branch is pushed; this does not claim otherwise. Example: fabrika adr next",
 	),
 );
 

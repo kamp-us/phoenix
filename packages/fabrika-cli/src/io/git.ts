@@ -573,6 +573,11 @@ const parsePatchIds = (stdout: string): ReadonlyArray<PatchIdentity> =>
 /**
  * Every path under `dir` that a branch ref in this clone touches and `baseSha` does not carry.
  *
+ * `--branches --remotes` is both halves of that: the local branches of every worktree of this clone,
+ * and the remote-tracking refs it has fetched. So a branch pushed from another clone is in the
+ * answer once this one fetches it, and only a branch that is still unpushed elsewhere is out of
+ * reach.
+ *
  * One `git log` rather than a walk over `for-each-ref`: a working clone carries thousands of branch
  * refs, so a per-ref `ls-tree` is thousands of subprocesses, while `--not <baseSha>` prunes every
  * ref already merged into the base inside a single traversal.
