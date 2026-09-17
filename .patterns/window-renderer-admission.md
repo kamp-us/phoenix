@@ -64,6 +64,30 @@ module exports `admits` beside its `default` renderer, and `loadModuleRenderers`
 (`apps/tuval/src/page/module-renderers.ts`) passes the pair through `readsState`. A module with no
 `admits` is a load failure in the table, not an unguarded entry.
 
+## The one entry that admits everything: an authored window
+
+A window written with `defineProgram({window})` is compiled into a renderer whose `render` answers
+`(state) => Out` rather than a node, and `apps/tuval/src/page/authored-windows.tsx` is what adapts
+it into a table entry: it subscribes for the state and calls the author's function per state, then
+mints the entry through `readsState` like every other (#8811).
+
+**The predicate it passes admits any state, and that is deliberate.** An authored program declares
+none — the authoring API's premise is that `window` alone draws a window — so the page has nothing
+to pair, and inventing a predicate here would be the page guessing at a program's shape, which the
+rule above forbids. So invariant 1 holds for an authored entry only in form: it carries an `admits`
+and it is minted by `readsState`, but that `admits` refuses nothing.
+
+What bounds the cost is invariant 2. An authored window reading a state a stale kernel still sends
+throws inside React's render and is caught by its own `ErrorBoundary`, so it costs that one window
+and the desk keeps the rest — the #8157 fault stays closed, and only its named refusal is missing.
+`admitsAnyState` is a named predicate rather than an inline `() => true` so the weaker guarantee
+reads off the code, and so a declared predicate has one seat to land in if the authoring API ever
+grows a way to write one.
+
+Read this before asserting that *every* entry in `pageRenderers` refuses an unknown state:
+`readable-state.unit.test.tsx` does assert that, and it holds because no program is authored in that
+test's process. It is a claim about the page's own entries, not about the table's whole range.
+
 ## The boundary's reset keys
 
 `resetKeys={[mount.host.processId]}`, and nothing that moves per render. The boundary compares keys
@@ -82,6 +106,12 @@ after one window fails:
   table's every entry carries an `admits`; a hand-written entry is not a `ReadableRenderer`.
 - `apps/tuval/src/shell/ui/error-boundary.unit.test.tsx` — one window's renderer throwing leaves the
   sibling rendered, the failed window's title and frame in place, and the status line alive.
+- `apps/tuval/src/page/authored-windows.unit.test.tsx` — an authored `window` is seated under the
+  reference its own row declares, the page's table resolves that reference, and re-compiling the
+  program replaces the one seat. It also checks the namespace the merge rests on: `pageRenderers`
+  writes `pageOwnRenderers`'s keys after the authored ones, so a page key ending in
+  `AUTHORED_WINDOW_SUFFIX` would shadow an authored seat in silence. Flip-verify by dropping the
+  merge in `renderers.tsx`: the resolution falls back to `unknown-ref`.
 
 Flip-verify both: drop the predicate check and the stale-shape test fails with the original
 `Cannot read properties of undefined (reading 'status')`; drop the per-window boundary and the

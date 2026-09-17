@@ -27,7 +27,7 @@
  */
 
 import features from "virtual:tuval/features";
-import {Effect, Fiber, Stream} from "effect";
+import {Effect, Fiber} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useRef, useState} from "react";
 import {AGY_CHAT_WINDOW_REF, agyChatWindow} from "../agy/window/index.ts";
@@ -51,7 +51,8 @@ import type {AnyInspectorRenderer} from "../shell/desk/index.ts";
 import type {PageAttachment} from "../shell/transport/browser.ts";
 import type {WindowHost} from "../shell/window/index.ts";
 import {windowRenderer} from "../shell/window/index.ts";
-import {Pending, type ReadableRenderer, readsState} from "./readable-state.tsx";
+import {authoredPageRenderers} from "./authored-windows.tsx";
+import {Pending, type ReadableRenderer, readsState, useProcessState} from "./readable-state.tsx";
 import {
 	reading,
 	readSessionList,
@@ -67,30 +68,6 @@ import {
 	readSessionTranscript,
 	sessionTranscriptCall,
 } from "./session-transcript.ts";
-
-/**
- * One process's public state, live. The stream never fails and ends on `ProcessGone`, so the hook
- * needs no error arm: `null` means "nothing yet", and a gone process simply stops updating.
- *
- * There is no cast here any more. The host arrives typed at the program's own state because the
- * table below binds every renderer to that program's predicate (`./readable-state.tsx`), and the
- * renderer is mounted only over a state the predicate admitted (#8157).
- */
-const useProcessState = <S,>(host: WindowHost<S>): S | null => {
-	const [state, setState] = useState<S | null>(null);
-	const read = host.readProcess;
-	useEffect(() => {
-		const fiber = Effect.runFork(
-			Stream.runForEach(read, (view) =>
-				Effect.sync(() => {
-					if (view._tag === "Live") setState(view.state);
-				}),
-			),
-		);
-		return () => void Effect.runFork(Fiber.interrupt(fiber));
-	}, [read]);
-	return state;
-};
 
 function CounterRenderer({host}: {readonly host: WindowHost<CounterState>}): ReactElement {
 	const state = useProcessState(host);
@@ -297,11 +274,14 @@ const chatOptions = (openProcess: OpenProcess): ThinChatWindowOptions => ({
 export type OpenProcess = (processId: string) => void;
 
 /**
- * Every renderer the page knows, by the reference a program row names it with — each bound to the
+ * Every renderer this module names, by the reference a program row names it with — each bound to the
  * predicate over the state it reads, which is what the `ReadableRenderer` type asks for. A renderer
  * put here unguarded does not typecheck, so the rule holds at the table and not by review (#8157).
+ *
+ * It is named apart from the merge below because the merge rests on these keys staying clear of the
+ * authored ones, and a key set nothing can read is a key set no test can check.
  */
-export const pageRenderers = (
+export const pageOwnRenderers = (
 	call: SpellCaller,
 	openProcess: OpenProcess,
 ): Readonly<Record<string, ReadableRenderer>> => {
@@ -334,6 +314,26 @@ export const pageRenderers = (
 		),
 	};
 };
+
+/**
+ * The whole table the page answers a row's reference with: every window an author has compiled
+ * (`./authored-windows.tsx`) and every renderer this module names.
+ *
+ * The authored half is read at call time rather than held as a constant, so a table rebuilt after a
+ * hot reload carries the window the author just re-compiled. This module's own keys are written
+ * after them, and that precedence is the way round it has to be: the inverse would let an authored
+ * program capture a page window by picking an id. It costs an author nothing only while the two key
+ * sets stay disjoint — an authored reference always ends in `AUTHORED_WINDOW_SUFFIX` and no key
+ * above does — and `./authored-windows.unit.test.tsx` checks that rather than this comment being
+ * the whole guarantee.
+ */
+export const pageRenderers = (
+	call: SpellCaller,
+	openProcess: OpenProcess,
+): Readonly<Record<string, ReadableRenderer>> => ({
+	...authoredPageRenderers(),
+	...pageOwnRenderers(call, openProcess),
+});
 
 /**
  * Every desk-inspector renderer the page knows, by the reference a program row names it with. It is
