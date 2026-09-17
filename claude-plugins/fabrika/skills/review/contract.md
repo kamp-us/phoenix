@@ -148,7 +148,7 @@ prose copies are not the authority.
 | `13` | refused: the read was completed but its scope is **provably incomplete** — a truncated file list or diff, a check-run enumeration short of `total_count` | ✓ | ✓ | — | ✓ | ✓ | ✓ | — | — |
 | `14` | refused: the invoking token resolves below `write`, or the ACL lookup failed — authorization denied, fail-closed | — | — | — | — | — | — | — | ✓ |
 | `15` | refused: the write is not provably the prior rows plus one — the append-only fence, whose causes carry distinct messages | — | — | — | — | — | — | — | ✓ |
-| `16` | refused: the enumeration is complete and **no gate inspected the bytes** — the rollup is not `red`, yet no workflow this repo authors produced a run at the head, so a `green` would report coverage that does not exist | — | — | — | ✓ | — | — | — | — |
+| `16` | refused: the enumeration is complete and **no gate inspected the bytes** — the rollup is not `red`, yet no workflow this repo authors inspected the head, because every repo-authored run here carries another commit or ran against another ref, so a `green` would report coverage that does not exist | — | — | — | ✓ | — | — | — | — |
 | `17` | refused: the write would retire a standing verdict of the **opposite polarity** at this head and `--supersede` was not passed — nothing written | — | — | — | — | — | — | ✓ | — |
 | `18` | refused: a `PASS` is the terminal of the round that appended an acceptance criterion tagged for that same subject and round — the row binds the next cycle, and a `PASS` has none, so the round owes a `FAIL`; nothing written | — | — | — | — | — | — | ✓ | — |
 | `19` | refused: a `PASS` whose linked contract marks a criterion's evidence as living outside the diff, and whose body names no evidence for it — a marked criterion is graded on the evidence it names, never on the diff alone, so a `PASS` citing none graded it on nothing; nothing written | — | — | — | — | — | — | ✓ | — |
@@ -699,10 +699,11 @@ at the head, and inspected none of it. No other event is filtered: `ci.yml`'s tr
 The `--sha` operand is resolved to the commit's full object name before this read, because the
 Actions run list filters `head_sha` as an exact string — an abbreviation there returns no runs at
 all. An operand that cannot be resolved to one is `11`, never the `16`: "no gate inspected these
-bytes" is a fact about the repository, and an unresolved operand is a fact about the call. A repo that authors no workflow
-of its own has no gate to have missed, and says so on stderr at exit `0`. The read is skipped over a
-`red` rollup, which is already the answer a caller must act on; `green` and `pending` are the two
-words that read as "nothing to do here", and both are wrong over bytes no gate inspected.
+bytes" is a fact about the repository, and an unresolved operand is a fact about the call. A repo
+that authors no workflow of its own has no gate to have missed, and says so on stderr at exit `0`.
+The read is skipped over a `red` rollup, which is already the answer a caller must act on; `green`
+and `pending` are the two words that read as "nothing to do here", and both are wrong over bytes no
+gate inspected.
 
 **`--wait` is the bounded in-verb wait, and it polls a `pending` and nothing else.** A `pending` is
 the ordinary state of a PR minutes after a push — exactly when a reviewer is spawned — so a caller
