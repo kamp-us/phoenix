@@ -41,16 +41,22 @@ of your session hold live markers. With it, a sibling's claim is refused and you
 same re-read refuses a closed target on `7`. Neither refusal is overridable, and a comment read that
 fails is `11` — never a pass.
 
-**Every working file you write goes where this prints, and nowhere else:**
+**Every working file you write is one this verb printed, and nowhere else:**
 
 ```bash
 fabrika triage scratch $issue_number --slug authored --token <claim-token>
 ```
 
-The token's nonce is what keys that directory to your lane. A fan-out shares one session
-scratchpad, so a file named by convention — `authored.md` — is overwritten by a sibling lane
-silently, and the body you then post is another issue's. The path it prints is machine-local and
-must never reach a posted artifact; the writing verbs red on it (`5`).
+**That prints one file, and its name is the `--slug` you passed.** The parent directory is created
+for you and the leaf is not, so write the path exactly as printed — there is nothing to `mkdir`, and
+appending to it (`<printed>/body.md`) fails with `no such file or directory` because the leaf is a
+file, not a folder. **A second working file is a second `scratch` call with a different slug**,
+`--slug notes` beside `--slug authored`.
+
+The token's nonce is what keys those paths to your lane. A fan-out shares one session scratchpad, so
+a slug picked by convention — `authored` — names the same leaf in every lane, and without the nonce
+a sibling's write lands on yours silently and the body you then post is another issue's. The path is
+machine-local and must never reach a posted artifact; the writing verbs red on it (`5`).
 
 ## 2 — Read the issue, then read the code it is about
 
