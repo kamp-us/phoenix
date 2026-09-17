@@ -371,6 +371,25 @@ export const localBranches: Shell<Attempt<ReadonlyArray<string>>> = Effect.gen(f
 		: fail(r.reason);
 });
 
+/**
+ * Check this worktree out at `rev`, detached — the seat, never a branch move.
+ *
+ * Detached because the caller is a reader: it seats its tree at the commit it is judging and commits
+ * nothing there, so switching or moving a branch would be a mutation nobody asked for. The commit is
+ * the whole subject, and `--detach` is what keeps the seat from touching a ref.
+ *
+ * `git switch` rather than `git checkout --force`: `switch` refuses instead of overwriting a
+ * modified file, so a tree carrying uncommitted work is left as it stands and the caller reports
+ * that refusal rather than destroying the work to obey it.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8893
+ */
+export const checkoutDetached = (rev: string): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["switch", "--detach", rev]);
+		return r.ok ? ok<void>(undefined) : fail(r.reason);
+	});
+
 /** One commit a range adds: its object name and its whole message, subject and body together. */
 export interface RangeCommit {
 	readonly sha: string;

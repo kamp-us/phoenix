@@ -1063,6 +1063,7 @@ back. Contract:
 | `review post` | the single sanctioned verdict emit — compose, bind, append into one comment per namespace, read back; with `--base`/`--tip` the positional is the child issue and the marker binds the range instead of a head. A `PASS` also names its `--round`, and is refused when that round appended an acceptance criterion the `PASS` would bury, or when the contract marks a criterion's evidence as outside the diff and the body names none |
 | `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences, its provenance tag naming the `--pr` or, with `--base`/`--tip`, the range an epic child's round was judged over; at the freeze it appends nothing and posts the finding as an `ac:escalated`-tagged comment instead, which `build verdicts` folds for the next repair round |
 | `review scratch` | the per-lane directory a reviewer's staged files go under — `<temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>` |
+| `review seat` | this worktree checked out at an epic child's `--base`/`--tip` range tip, detached, with the commit read back off git — `seated\t<commit>\t<branch>\t<checked-out\|already-seated>`. A child's build branch is local and unpushed, so a reviewer worktree cut fresh from the driver's checkout carries none of the range and every fence that reads the working tree reads a tree the verdict never names. The tip has to resolve here AND be carried by a branch this clone's lane grammar says was cut for that child; a re-run over a seated tree checks out nothing |
 
 **Exit codes.** The shared table, plus `12` the live head moved past the inspected `--sha` · `13`
 the read completed and its scope is provably incomplete · `14` the invoking token is below `write`,
@@ -1070,7 +1071,9 @@ or the ACL lookup failed (ADR 0055) · `15` the write is not provably the prior 
 append-only fence · `17` a standing verdict of the opposite polarity at this head, or over this
 range, would be retired and `--supersede` was not passed · `18` a `PASS` is the terminal of the round
 that appended an acceptance criterion tagged for that same subject and round — the row binds the next
-cycle and a `PASS` has none, so the round owes a `FAIL`. `4` is a deliberate gap.
+cycle and a `PASS` has none, so the round owes a `FAIL` · `20` an epic child's range tip is not
+reachable in this worktree, so `review seat` refuses rather than letting a fence grade the tree the
+shell happened to stand on. `4` is a deliberate gap.
 
 - **A check that cannot see what it is looking for does not return a plausible value.** An
   unreadable response, a provably short read and a non-conforming payload each resolve to their own

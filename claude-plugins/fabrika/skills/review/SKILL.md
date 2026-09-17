@@ -146,6 +146,34 @@ the verb. There are two, and only one of them is a defect:
 
 ## 3 — Judge each class by its rubric
 
+<!-- anchor: AN-EPIC-CHILD-SEATS-ITS-TREE-FIRST --> **On an epic child, seat your worktree at the
+range tip before you run anything that reads the working tree.** A child's build branch is local and
+unpushed by design — one epic run is one branch and one PR at the tail — so a reviewer worktree cut
+fresh from the driver's checkout stands on the assembly branch, or on whatever that checkout last
+held, and the range's tip commit is not in your tree at all. Every fence that reads files — a
+typecheck, a formatter, a test run, the guard below — then reads a tree your verdict never names, and
+the range verdict records base, tip and a content digest, never which tree the commands ran in, so a
+wrong verdict is indistinguishable afterwards from a right one. One reviewer stood on a third commit
+for its whole first pass, caught it itself, and retracted two posted verdicts; nothing forced that
+catch.
+
+```bash
+fabrika review seat $child_issue --base 9f2c1ab --tip 03135b9
+```
+
+The pair is your brief's own `range`, typed out as it printed — never a range you re-resolved here.
+The verb checks the tree out at the tip, detached, and reads the commit back off git, so the answer's
+second field is where you provably stand: `checked-out` on the first run, `already-seated` on a
+re-run, which is not a second checkout. **Exit `20` is a stop, not a note**: the tip is not reachable
+in this clone — no lane branch of the child, no object for that tip, or no lane branch that reaches
+it — and the range was built in a tree this one cannot see, so there is nothing here to grade. Report
+it and end; grading in place is the one thing the verb exists to refuse. `8`, `9` and `11` are
+UNKNOWN in the same way: where the tree stands was not proven, so nothing below this line has run on
+a tree you can name.
+
+The object-database reads further down are unaffected either way — `git show <rev>:<path>` reads a
+commit, not the working tree, so it is right before the seat and after it.
+
 ```bash
 fabrika review diff $pr_number --sha 03135b91
 ```
