@@ -297,8 +297,16 @@ second surface (ADR 0289; #5842, consolidated into epic #5843).
 
 | Verb | Answers |
 |---|---|
-| `decision rule <n> --cites <url>` | records the ruling and flips the audience — **only after** the marker reads back |
+| `decision rule <n> --cites <url>` | records a ruling already comment-shaped on the issue and flips the audience — **only after** the marker reads back |
+| `decision rule <n> --authorization <file>` | posts the founder's dated words verbatim, cites that comment in the marker, then flips the same way |
 | `decision ruling <n>` | whether the issue carries a `current`, `stale` or `absent` ruling |
+
+`rule` takes exactly one of `--cites` and `--authorization`, and neither or both is exit `1`. Under
+`--authorization` the quote lands **first** and the marker second, because a marker citing a comment
+that never posted points at nothing; the file is judged by the same check `grill rule` runs — dated,
+no bare `@` path, no machine-local path — and posted verbatim, never summarized. The ACL does not
+move with it: the invoking account is still the one that has to be on the roster, and what a quoted
+authorization buys is that a ruling given in conversation costs the founder no comment to type.
 
 `rule` derives the digest itself; there is no `--digest`, because a ruling whose scope its caller
 supplies attests whatever the caller pleased. Both verbs resolve the `@kamp-us/control-plane` roster
@@ -306,9 +314,10 @@ through the same `ship/codeowners.ts` path the merge gate uses: the write gates 
 account, and the read gates on the marker's author, because posting those bytes takes nothing but the
 ability to comment. `ruling`'s three states all exit `0` — a missing ruling is the answer.
 
-**Exit codes.** The shared table's `7` / `8` / `9` / `11`, plus one of its own: `20` the invoking
-account is off the control-plane roster, or that roster names nobody. A roster that could not be read
-is `11`, never "unauthorized" and never "authorized" (#4223).
+**Exit codes.** The shared table's `5` / `6` / `7` / `8` / `9` / `11`, plus two of its own: `20` the
+invoking account is off the control-plane roster, or that roster names nobody, and `21` the quoted
+authorization is empty or carries no ISO-8601 date. A roster that could not be read is `11`, never
+"unauthorized" and never "authorized" (#4223).
 
 ## The `glossary` group
 
