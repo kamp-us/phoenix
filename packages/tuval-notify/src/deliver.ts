@@ -23,14 +23,14 @@
  * what it was asked to send and answers a stated `Attempt`. A test then runs the *real* handler.
  */
 
-import { Context, Effect, Layer } from "effect";
+import {Context, Effect, Layer} from "effect";
 import {
-  type Attempt,
-  attemptDelivery,
-  type Fetch,
-  type NotifyTarget,
-  type Outgoing,
-  type Write,
+	type Attempt,
+	attemptDelivery,
+	type Fetch,
+	type NotifyTarget,
+	type Outgoing,
+	type Write,
 } from "./target.ts";
 
 /**
@@ -46,39 +46,35 @@ export const DELIVER = "deliver";
  * a test can compare with `toEqual`, and a checkpoint would carry nothing dangerous in.
  */
 export interface Deliver {
-  readonly type: typeof DELIVER;
-  readonly out: Outgoing;
+	readonly type: typeof DELIVER;
+	readonly out: Outgoing;
 }
 
 /** The effect, as an `update` cell answers it: `[state, [deliver(out)]]`. */
-export const deliver = (out: Outgoing): Deliver => ({ type: DELIVER, out });
+export const deliver = (out: Outgoing): Deliver => ({type: DELIVER, out});
 
 /**
  * What the handler dispatches back into the program when an attempt comes back — the same event
  * the delivering Sub used to dispatch, so the `delivered` cell is untouched by this refactor.
  */
 export interface DeliveredEvent {
-  readonly type: "delivered";
-  /**
-   * The message this is the answer to. It rides on the event rather than being read back off
-   * `state.outbox.inflight` in the cell, and that is what makes the history's `text` honest: an
-   * answer carries what it answers for, so there is no arm for "the outbox was empty when it came
-   * back" and no way for a record to be written against the wrong message.
-   */
-  readonly out: Outgoing;
-  readonly attempt: Attempt;
-  readonly at: number;
+	readonly type: "delivered";
+	/**
+	 * The message this is the answer to. It rides on the event rather than being read back off
+	 * `state.outbox.inflight` in the cell, and that is what makes the history's `text` honest: an
+	 * answer carries what it answers for, so there is no arm for "the outbox was empty when it came
+	 * back" and no way for a record to be written against the wrong message.
+	 */
+	readonly out: Outgoing;
+	readonly attempt: Attempt;
+	readonly at: number;
 }
 
-export const deliveredEvent = (
-  out: Outgoing,
-  attempt: Attempt,
-  at: number,
-): DeliveredEvent => ({
-  type: "delivered",
-  out,
-  attempt,
-  at,
+export const deliveredEvent = (out: Outgoing, attempt: Attempt, at: number): DeliveredEvent => ({
+	type: "delivered",
+	out,
+	attempt,
+	at,
 });
 
 /**
@@ -87,8 +83,8 @@ export const deliveredEvent = (
  * handler holds no URL, a fake holds no network, and neither can drift from the other.
  */
 export class Transport extends Context.Service<
-  Transport,
-  { readonly send: (out: Outgoing) => Effect.Effect<Attempt> }
+	Transport,
+	{readonly send: (out: Outgoing) => Effect.Effect<Attempt>}
 >()("@kampus/tuval-notify/Transport") {}
 
 /**
@@ -98,19 +94,22 @@ export class Transport extends Context.Service<
  * it reaches here, and a second error channel would only invite somebody to log the cause.
  */
 export const liveTransport = (
-  target: NotifyTarget,
-  io: { readonly fetch: Fetch; readonly write: Write },
+	target: NotifyTarget,
+	io: {readonly fetch: Fetch; readonly write: Write},
 ): Layer.Layer<Transport> =>
-  Layer.succeed(Transport, {
-    send: (out: Outgoing) =>
-      Effect.promise(() => attemptDelivery(target, out, io)),
-  });
+	Layer.succeed(Transport, {
+		// `attemptDelivery` catches its own rejections and answers an `Attempt` — an `ok: false` is a
+		// value here, never a thrown cause — so there is no rejection for `tryPromise` to type, and a
+		// second error channel would only invite logging a cause carrying the target URL.
+		// biome-ignore lint/plugin: the promise cannot reject; the docblock above says why at length.
+		send: (out: Outgoing) => Effect.promise(() => attemptDelivery(target, out, io)),
+	});
 
 /** A fake transport: what it was asked to send, and the answer it was told to give. */
 export interface FakeTransport {
-  /** Every message the program asked to have delivered, in order. */
-  readonly sent: ReadonlyArray<Outgoing>;
-  readonly layer: Layer.Layer<Transport>;
+	/** Every message the program asked to have delivered, in order. */
+	readonly sent: ReadonlyArray<Outgoing>;
+	readonly layer: Layer.Layer<Transport>;
 }
 
 /**
@@ -119,20 +118,18 @@ export interface FakeTransport {
  * asserting about the code a desk runs.
  */
 export const fakeTransport = (
-  answer: Attempt | ((out: Outgoing) => Attempt) = { ok: true, status: 200 },
+	answer: Attempt | ((out: Outgoing) => Attempt) = {ok: true, status: 200},
 ): FakeTransport => {
-  const sent: Outgoing[] = [];
-  return {
-    sent,
-    layer: Layer.succeed(Transport, {
-      send: (out: Outgoing) => {
-        sent.push(out);
-        return Effect.succeed(
-          typeof answer === "function" ? answer(out) : answer,
-        );
-      },
-    }),
-  };
+	const sent: Outgoing[] = [];
+	return {
+		sent,
+		layer: Layer.succeed(Transport, {
+			send: (out: Outgoing) => {
+				sent.push(out);
+				return Effect.succeed(typeof answer === "function" ? answer(out) : answer);
+			},
+		}),
+	};
 };
 
 /**
@@ -146,10 +143,10 @@ export const fakeTransport = (
  * has nowhere to be satisfied from up there, so it is satisfied down here.
  */
 export const deliverHandler =
-  (transport: Layer.Layer<Transport>, now: () => number) =>
-  (cmd: Deliver): Effect.Effect<ReadonlyArray<DeliveredEvent>> =>
-    Effect.gen(function* () {
-      const sender = yield* Transport;
-      const attempt = yield* sender.send(cmd.out);
-      return [deliveredEvent(cmd.out, attempt, now())];
-    }).pipe(Effect.provide(transport));
+	(transport: Layer.Layer<Transport>, now: () => number) =>
+	(cmd: Deliver): Effect.Effect<ReadonlyArray<DeliveredEvent>> =>
+		Effect.gen(function* () {
+			const sender = yield* Transport;
+			const attempt = yield* sender.send(cmd.out);
+			return [deliveredEvent(cmd.out, attempt, now())];
+		}).pipe(Effect.provide(transport));

@@ -1,22 +1,17 @@
 {
-  // The window's own lens. Tuval splits its tsconfigs the same way and for the same reason: the
-  // kernel row must stay free of React, and the renderer must stay free of the kernel. One lens
-  // over both would let an import cross that line without anything noticing — the kernel lens
-  // beside this one excludes `src/window.tsx`, and this one includes nothing but the window and
-  // the three leaves it may reach. `./target.ts` is in that list because `./state.ts` names its
-  // `Outgoing`, `Attempt` and `TargetKind` types; it holds a `fetch` signature and no `node:`
-  // import, so it crosses no line.
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "jsx": "react-jsx",
-    "types": ["node", "react"]
-  },
-  "include": [
-    "src/window.tsx",
-    "src/state.ts",
-    "src/renderer-ref.ts",
-    "src/target.ts"
-  ],
-  "exclude": ["node_modules", "dist"]
+	// The window's own lens. Tuval splits its tsconfigs the same way and for the same reason: the
+	// kernel row must stay free of React, and the renderer must stay free of the kernel. One lens
+	// over both would let an import cross that line without anything noticing — the kernel lens
+	// beside this one excludes `src/window.tsx`, and this one includes nothing but the window and
+	// the three leaves it may reach. `./target.ts` is in that list because `./state.ts` names its
+	// `Outgoing`, `Attempt` and `TargetKind` types; it holds a `fetch` signature and no `node:`
+	// import, so it crosses no line.
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"jsx": "react-jsx",
+		"types": ["node", "react"]
+	},
+	"include": ["src/window.tsx", "src/state.ts", "src/renderer-ref.ts", "src/target.ts"],
+	"exclude": ["node_modules", "dist"]
 }

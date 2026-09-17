@@ -22,8 +22,8 @@
  * the same reason.
  */
 
-import type { TurnResultSchema } from "@kampus/tuval/ai-agent/ports";
-import type { Attempt, Outgoing, TargetKind } from "./target.ts";
+import type {TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import type {Attempt, Outgoing, TargetKind} from "./target.ts";
 
 /**
  * A turn as it arrives on `message`, on the encoded side — the shape `./notify.ts` declares that
@@ -41,17 +41,17 @@ export type Turn = typeof TurnResultSchema.Encoded;
  * refused arrival tells both a reader and a listener that this message is not coming.
  */
 export interface Delivery {
-  /**
-   * What was sent, verbatim. It is here because a log of ten `ok`s is a page nobody opens twice:
-   * the thing a person came to a notifier's window to read is the message, and a record that keeps
-   * only the verdict cannot show it. It is the message's text and never the target's — the target
-   * is the credential this file exists to keep out, and `text` arrived on a port.
-   */
-  readonly text: string;
-  readonly ok: boolean;
-  readonly status?: number;
-  readonly reason?: string;
-  readonly at: number;
+	/**
+	 * What was sent, verbatim. It is here because a log of ten `ok`s is a page nobody opens twice:
+	 * the thing a person came to a notifier's window to read is the message, and a record that keeps
+	 * only the verdict cannot show it. It is the message's text and never the target's — the target
+	 * is the credential this file exists to keep out, and `text` arrived on a port.
+	 */
+	readonly text: string;
+	readonly ok: boolean;
+	readonly status?: number;
+	readonly reason?: string;
+	readonly at: number;
 }
 
 /**
@@ -69,31 +69,31 @@ export interface Delivery {
  * which makes "nothing is in flight" and "there is nothing to send" the same question.
  */
 export interface Outbox {
-  readonly inflight: Outgoing | null;
-  readonly queue: ReadonlyArray<Outgoing>;
+	readonly inflight: Outgoing | null;
+	readonly queue: ReadonlyArray<Outgoing>;
 }
 
 export interface NotifyState {
-  /** What this notifier is called: its program id, its graph node id, and its spell. */
-  readonly id: string;
-  /** `webhook`, `ntfy` or `stdout` — the target's discriminant and nothing else about it. */
-  readonly kind: TargetKind;
-  /**
-   * Messages taken but not yet delivered. A delivery is asked for by whichever cell put a message
-   * in `inflight`, so draining it asks for the next message's and an empty outbox asks for nothing
-   * at all. One delivery at a time, in the order the messages arrived.
-   */
-  readonly outbox: Outbox;
-  /** Newest first, bounded at `HISTORY`. */
-  readonly deliveries: ReadonlyArray<Delivery>;
-  /**
-   * How many messages this process has taken. It exists to make an outbox key unique: a delivery
-   * is identified by the in-flight message's `key` — on the history, in a log, and in the `Deliver`
-   * the handler is invoked with — and two messages with the same text arriving in the same
-   * millisecond would otherwise be indistinguishable. A counter is the one thing that cannot
-   * collide.
-   */
-  readonly seq: number;
+	/** What this notifier is called: its program id, its graph node id, and its spell. */
+	readonly id: string;
+	/** `webhook`, `ntfy` or `stdout` — the target's discriminant and nothing else about it. */
+	readonly kind: TargetKind;
+	/**
+	 * Messages taken but not yet delivered. A delivery is asked for by whichever cell put a message
+	 * in `inflight`, so draining it asks for the next message's and an empty outbox asks for nothing
+	 * at all. One delivery at a time, in the order the messages arrived.
+	 */
+	readonly outbox: Outbox;
+	/** Newest first, bounded at `HISTORY`. */
+	readonly deliveries: ReadonlyArray<Delivery>;
+	/**
+	 * How many messages this process has taken. It exists to make an outbox key unique: a delivery
+	 * is identified by the in-flight message's `key` — on the history, in a log, and in the `Deliver`
+	 * the handler is invoked with — and two messages with the same text arriving in the same
+	 * millisecond would otherwise be indistinguishable. A counter is the one thing that cannot
+	 * collide.
+	 */
+	readonly seq: number;
 }
 
 /**
@@ -120,17 +120,17 @@ export const OUTBOX = 16;
 export const DROPPED = "dropped: outbox full";
 
 /** An outbox with nothing in it — what `init` seeds and what a drained outbox returns to. */
-export const EMPTY_OUTBOX: Outbox = { inflight: null, queue: [] };
+export const EMPTY_OUTBOX: Outbox = {inflight: null, queue: []};
 
 /** The history with one more delivery at its head, bounded. Every cell that records one agrees here. */
 export const recorded = (
-  deliveries: ReadonlyArray<Delivery>,
-  delivery: Delivery,
+	deliveries: ReadonlyArray<Delivery>,
+	delivery: Delivery,
 ): ReadonlyArray<Delivery> => [delivery, ...deliveries].slice(0, HISTORY);
 
 /** How many messages the outbox is holding, the one in flight included. */
 export const pending = (outbox: Outbox): number =>
-  (outbox.inflight === null ? 0 : 1) + outbox.queue.length;
+	(outbox.inflight === null ? 0 : 1) + outbox.queue.length;
 
 /** Whether the outbox can take another message at all. `queued` is only meaningful when it can. */
 export const full = (outbox: Outbox): boolean => pending(outbox) >= OUTBOX;
@@ -142,9 +142,9 @@ export const full = (outbox: Outbox): boolean => pending(outbox) >= OUTBOX;
  * to write it in.
  */
 export const queued = (outbox: Outbox, out: Outgoing): Outbox =>
-  outbox.inflight === null
-    ? { inflight: out, queue: outbox.queue }
-    : { inflight: outbox.inflight, queue: [...outbox.queue, out] };
+	outbox.inflight === null
+		? {inflight: out, queue: outbox.queue}
+		: {inflight: outbox.inflight, queue: [...outbox.queue, out]};
 
 /**
  * The outbox after the in-flight message is answered: the queue's head takes its place, or the
@@ -153,8 +153,8 @@ export const queued = (outbox: Outbox, out: Outgoing): Outbox =>
  * flight", stated once and enforced by the type rather than by an index check.
  */
 export const drained = (outbox: Outbox): Outbox => {
-  const [next, ...rest] = outbox.queue;
-  return next === undefined ? EMPTY_OUTBOX : { inflight: next, queue: rest };
+	const [next, ...rest] = outbox.queue;
+	return next === undefined ? EMPTY_OUTBOX : {inflight: next, queue: rest};
 };
 
 /**
@@ -166,15 +166,11 @@ export const drained = (outbox: Outbox): Outbox => {
  * outbox was empty when the answer arrived". `./deliver.ts`'s `DeliveredEvent` carries it because
  * the handler was handed it on the effect.
  */
-export const delivery = (
-  out: Outgoing,
-  attempt: Attempt,
-  at: number,
-): Delivery => ({
-  text: out.text,
-  ok: attempt.ok,
-  ...(attempt.status === undefined ? {} : { status: attempt.status }),
-  at,
+export const delivery = (out: Outgoing, attempt: Attempt, at: number): Delivery => ({
+	text: out.text,
+	ok: attempt.ok,
+	...(attempt.status === undefined ? {} : {status: attempt.status}),
+	at,
 });
 
 /**
@@ -183,14 +179,13 @@ export const delivery = (
  * message this notifier could not take is the one a reader most wants to see in the log.
  */
 export const dropped = (out: Outgoing, at: number): Delivery => ({
-  text: out.text,
-  ok: false,
-  reason: DROPPED,
-  at,
+	text: out.text,
+	ok: false,
+	reason: DROPPED,
+	at,
 });
 
-export const hhmm = (at: number): string =>
-  new Date(at).toTimeString().slice(0, 5);
+export const hhmm = (at: number): string => new Date(at).toTimeString().slice(0, 5);
 
 /**
  * The status line, in one place, so the tile and anything else reading this program draw the same
@@ -199,14 +194,13 @@ export const hhmm = (at: number): string =>
  * not landed, or was never taken.
  */
 export const statusLine = (state: NotifyState): string => {
-  if (state.outbox.inflight !== null) return "sending";
-  const last = state.deliveries[0];
-  if (last === undefined) return "idle";
-  const verdict = last.ok
-    ? "ok"
-    : (last.reason ??
-      (last.status === undefined ? "failed" : `failed ${last.status}`));
-  return `delivered ${hhmm(last.at)} · ${verdict}`;
+	if (state.outbox.inflight !== null) return "sending";
+	const last = state.deliveries[0];
+	if (last === undefined) return "idle";
+	const verdict = last.ok
+		? "ok"
+		: (last.reason ?? (last.status === undefined ? "failed" : `failed ${last.status}`));
+	return `delivered ${hhmm(last.at)} · ${verdict}`;
 };
 
 /**
@@ -214,8 +208,7 @@ export const statusLine = (state: NotifyState): string => {
  * state a process publishes rather than off the closure `notify(...)` was called with, so a window
  * opened on a restored process says what that process says.
  */
-export const titleLine = (state: NotifyState): string =>
-  `${state.id} · ${state.kind}`;
+export const titleLine = (state: NotifyState): string => `${state.id} · ${state.kind}`;
 
 /**
  * The first line of a message, with an ellipsis when there was more of it. A notification is often
@@ -223,9 +216,9 @@ export const titleLine = (state: NotifyState): string =>
  * the message was actually going.
  */
 export const firstLine = (text: string): string => {
-  const [head = "", ...rest] = text.split("\n");
-  const more = rest.join("\n").trim() !== "";
-  return more ? `${head.trim()} …` : head.trim();
+	const [head = "", ...rest] = text.split("\n");
+	const more = rest.join("\n").trim() !== "";
+	return more ? `${head.trim()} …` : head.trim();
 };
 
 /**
@@ -235,34 +228,32 @@ export const firstLine = (text: string): string => {
  * — which is why it is a function beside that one and not a second reading of the record.
  */
 export const outcome = (record: Delivery): string => {
-  if (record.ok) {
-    return record.status === undefined ? "ok" : `ok · ${record.status}`;
-  }
-  const why =
-    record.reason ??
-    (record.status === undefined ? "no answer" : String(record.status));
-  return `failed · ${why}`;
+	if (record.ok) {
+		return record.status === undefined ? "ok" : `ok · ${record.status}`;
+	}
+	const why = record.reason ?? (record.status === undefined ? "no answer" : String(record.status));
+	return `failed · ${why}`;
 };
 
 // -- The window's view of all that ------------------------------------------
 
 /** One delivery as the window lists it: the clock, what went out, and how it ended. */
 export interface DeliveryView {
-  /** Stable within one view: the clock plus the row's place, since two deliveries share a minute. */
-  readonly key: string;
-  readonly at: string;
-  /** The first line of the message, with an ellipsis when there was more. */
-  readonly text: string;
-  readonly ok: boolean;
-  /** `ok · 204`, `failed · 500`, `failed · dropped: outbox full`. */
-  readonly outcome: string;
+	/** Stable within one view: the clock plus the row's place, since two deliveries share a minute. */
+	readonly key: string;
+	readonly at: string;
+	/** The first line of the message, with an ellipsis when there was more. */
+	readonly text: string;
+	readonly ok: boolean;
+	/** `ok · 204`, `failed · 500`, `failed · dropped: outbox full`. */
+	readonly outcome: string;
 }
 
 /** The message on the wire right now, and how many are lined up behind it. */
 export interface SendingView {
-  readonly text: string;
-  /** Waiting in the outbox behind this one. Zero means this is the last of them. */
-  readonly waiting: number;
+	readonly text: string;
+	/** Waiting in the outbox behind this one. Zero means this is the last of them. */
+	readonly waiting: number;
 }
 
 /**
@@ -270,55 +261,55 @@ export interface SendingView {
  * test: what a window shows is decided here and React only puts it on the screen.
  */
 export interface NotifyWindowView {
-  /** The heading: `notify · ntfy` — the tile's own first line. */
-  readonly heading: string;
-  /** `idle`, `sending`, `delivered 07:00 · ok` — the tile's own second line. */
-  readonly status: string;
-  /** The spell the composer stands in for, so the window can name it. */
-  readonly spell: string;
-  /**
-   * Oldest first, at most `HISTORY`. A chat reads downwards: the newest message is the one at the
-   * bottom, nearest the composer, which is where a reader's eye already is.
-   */
-  readonly log: ReadonlyArray<DeliveryView>;
-  /** The message still on the wire, drawn under the log, or `null` when nothing is in flight. */
-  readonly sending: SendingView | null;
-  /** What to say where the log would be, when there is none. */
-  readonly empty: string;
+	/** The heading: `notify · ntfy` — the tile's own first line. */
+	readonly heading: string;
+	/** `idle`, `sending`, `delivered 07:00 · ok` — the tile's own second line. */
+	readonly status: string;
+	/** The spell the composer stands in for, so the window can name it. */
+	readonly spell: string;
+	/**
+	 * Oldest first, at most `HISTORY`. A chat reads downwards: the newest message is the one at the
+	 * bottom, nearest the composer, which is where a reader's eye already is.
+	 */
+	readonly log: ReadonlyArray<DeliveryView>;
+	/** The message still on the wire, drawn under the log, or `null` when nothing is in flight. */
+	readonly sending: SendingView | null;
+	/** What to say where the log would be, when there is none. */
+	readonly empty: string;
 }
 
 /** The whole of the window's reading of a notifier. */
 export const notifyView = (state: NotifyState): NotifyWindowView => {
-  const kept = state.deliveries.slice(0, HISTORY);
-  const inflight = state.outbox.inflight;
-  return {
-    heading: titleLine(state),
-    status: statusLine(state),
-    spell: `:${state.id} send <text>`,
-    // `deliveries` is newest-first, because that is what a tile reads and what the bound drops
-    // from. A chat is the other way round, so the reversal happens here — once, in the view —
-    // rather than in the record, where it would cost the history its cheap head.
-    log: kept
-      .map((record, index) => ({
-        key: `${record.at}-${kept.length - 1 - index}`,
-        at: hhmm(record.at),
-        text: firstLine(record.text),
-        ok: record.ok,
-        outcome: outcome(record),
-      }))
-      .reverse(),
-    sending:
-      inflight === null
-        ? null
-        : {
-            text: firstLine(inflight.text),
-            waiting: state.outbox.queue.length,
-          },
-    empty:
-      inflight === null
-        ? "Nothing sent yet."
-        : "Nothing sent yet — the first message is still going.",
-  };
+	const kept = state.deliveries.slice(0, HISTORY);
+	const inflight = state.outbox.inflight;
+	return {
+		heading: titleLine(state),
+		status: statusLine(state),
+		spell: `:${state.id} send <text>`,
+		// `deliveries` is newest-first, because that is what a tile reads and what the bound drops
+		// from. A chat is the other way round, so the reversal happens here — once, in the view —
+		// rather than in the record, where it would cost the history its cheap head.
+		log: kept
+			.map((record, index) => ({
+				key: `${record.at}-${kept.length - 1 - index}`,
+				at: hhmm(record.at),
+				text: firstLine(record.text),
+				ok: record.ok,
+				outcome: outcome(record),
+			}))
+			.reverse(),
+		sending:
+			inflight === null
+				? null
+				: {
+						text: firstLine(inflight.text),
+						waiting: state.outbox.queue.length,
+					},
+		empty:
+			inflight === null
+				? "Nothing sent yet."
+				: "Nothing sent yet — the first message is still going.",
+	};
 };
 
 /**
@@ -330,48 +321,48 @@ export const notifyView = (state: NotifyState): NotifyWindowView => {
  * the window's own refusal placeholder rather than a throw inside React.
  */
 export const isNotifyState = (state: unknown): state is NotifyState => {
-  if (typeof state !== "object" || state === null) return false;
-  const candidate = state as Record<string, unknown>;
-  return (
-    typeof candidate.id === "string" &&
-    typeof candidate.kind === "string" &&
-    typeof candidate.seq === "number" &&
-    isOutbox(candidate.outbox) &&
-    Array.isArray(candidate.deliveries) &&
-    candidate.deliveries.every(isDelivery)
-  );
+	if (typeof state !== "object" || state === null) return false;
+	const candidate = state as Record<string, unknown>;
+	return (
+		typeof candidate.id === "string" &&
+		typeof candidate.kind === "string" &&
+		typeof candidate.seq === "number" &&
+		isOutbox(candidate.outbox) &&
+		Array.isArray(candidate.deliveries) &&
+		candidate.deliveries.every(isDelivery)
+	);
 };
 
 const isOutgoing = (out: unknown): out is Outgoing => {
-  if (typeof out !== "object" || out === null) return false;
-  const candidate = out as Record<string, unknown>;
-  return (
-    typeof candidate.key === "string" &&
-    typeof candidate.text === "string" &&
-    (candidate.title === undefined || typeof candidate.title === "string")
-  );
+	if (typeof out !== "object" || out === null) return false;
+	const candidate = out as Record<string, unknown>;
+	return (
+		typeof candidate.key === "string" &&
+		typeof candidate.text === "string" &&
+		(candidate.title === undefined || typeof candidate.title === "string")
+	);
 };
 
 const isOutbox = (outbox: unknown): outbox is Outbox => {
-  if (typeof outbox !== "object" || outbox === null) return false;
-  const candidate = outbox as Record<string, unknown>;
-  return (
-    (candidate.inflight === null || isOutgoing(candidate.inflight)) &&
-    Array.isArray(candidate.queue) &&
-    candidate.queue.every(isOutgoing)
-  );
+	if (typeof outbox !== "object" || outbox === null) return false;
+	const candidate = outbox as Record<string, unknown>;
+	return (
+		(candidate.inflight === null || isOutgoing(candidate.inflight)) &&
+		Array.isArray(candidate.queue) &&
+		candidate.queue.every(isOutgoing)
+	);
 };
 
 export const isDelivery = (record: unknown): record is Delivery => {
-  if (typeof record !== "object" || record === null) return false;
-  const candidate = record as Record<string, unknown>;
-  return (
-    typeof candidate.text === "string" &&
-    typeof candidate.ok === "boolean" &&
-    typeof candidate.at === "number" &&
-    (candidate.status === undefined || typeof candidate.status === "number") &&
-    (candidate.reason === undefined || typeof candidate.reason === "string")
-  );
+	if (typeof record !== "object" || record === null) return false;
+	const candidate = record as Record<string, unknown>;
+	return (
+		typeof candidate.text === "string" &&
+		typeof candidate.ok === "boolean" &&
+		typeof candidate.at === "number" &&
+		(candidate.status === undefined || typeof candidate.status === "number") &&
+		(candidate.reason === undefined || typeof candidate.reason === "string")
+	);
 };
 
 /**
@@ -390,9 +381,8 @@ export const isDelivery = (record: unknown): record is Delivery => {
  * deliveries were all pre-`text` comes back reading `idle` rather than the verdict it showed before
  * the restart. That is the truthful line about a history this version cannot read.
  */
-export const readable = (
-  deliveries: ReadonlyArray<Delivery>,
-): ReadonlyArray<Delivery> => deliveries.filter(isDelivery);
+export const readable = (deliveries: ReadonlyArray<Delivery>): ReadonlyArray<Delivery> =>
+	deliveries.filter(isDelivery);
 
 /**
  * One line of text as the `message` port takes it: a turn nobody's agent ran, announced as ok.
@@ -402,7 +392,7 @@ export const readable = (
  * `./window.tsx`'s composer wraps its input with the same function. One wrapper, so the manual
  * path, the window and a routed brief are three arrivals of one payload shape in one cell.
  */
-export const asTurn = (text: string): Turn => ({ text, items: [], ok: true });
+export const asTurn = (text: string): Turn => ({text, items: [], ok: true});
 
 /**
  * The event the window's composer sends: the same arrival `:<id> send <text>` puts on the `message`
@@ -413,12 +403,12 @@ export const asTurn = (text: string): Turn => ({ text, items: [], ok: true });
 // signature, and without one this shape is not assignable to Tuval's `Message` — which is what
 // `WindowHost.dispatch` is typed at.
 export type NotifySendEvent = {
-  readonly type: "message";
-  readonly payload: Turn;
+	readonly type: "message";
+	readonly payload: Turn;
 };
 
 /** That event, built. A function rather than a constant so no caller can hold a shared object. */
 export const sendEvent = (text: string): NotifySendEvent => ({
-  type: "message",
-  payload: asTurn(text),
+	type: "message",
+	payload: asTurn(text),
 });

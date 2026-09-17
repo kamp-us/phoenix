@@ -23,28 +23,23 @@
  * So the working path today is still the spell: `:notify send "…"`. See the README.
  */
 
-import { cron } from "@kampus/tuval-cron";
-import { notify } from "@kampus/tuval-notify";
-import {
-  ClientId,
-  claudeSession,
-  type TuvalConfigInput,
-  WorkspaceId,
-} from "@kampus/tuval/sessions";
+import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
+import {cron} from "@kampus/tuval-cron";
+import {notify} from "@kampus/tuval-notify";
 
 /** One workspace, one client — the two branded ids `claudeSession` will not build a row without. */
 const scope = {
-  workspace: WorkspaceId.make("default"),
-  client: ClientId.make("tuval-desk"),
+	workspace: WorkspaceId.make("default"),
+	client: ClientId.make("tuval-desk"),
 };
 
 /** The brief itself: a Claude session, asked the same question every morning. */
 export const morningBrief = cron({
-  id: "morning-brief",
-  schedule: "0 7 * * *",
-  prompt:
-    "Using the gh CLI, summarize what changed on this repo in the last 24 hours. Five lines max.",
-  job: claudeSession({ cwd: "/tmp/tuval-notify-fixture", scope }),
+	id: "morning-brief",
+	schedule: "0 7 * * *",
+	prompt:
+		"Using the gh CLI, summarize what changed on this repo in the last 24 hours. Five lines max.",
+	job: claudeSession({cwd: "/tmp/tuval-notify-fixture", scope}),
 });
 
 /**
@@ -53,7 +48,7 @@ export const morningBrief = cron({
  * never on the program's state.
  */
 export const phone = notify({
-  target: { kind: "ntfy", topic: "can-tuval", title: "Morning brief" },
+	target: {kind: "ntfy", topic: "can-tuval", title: "Morning brief"},
 });
 
 /**
@@ -61,7 +56,7 @@ export const phone = notify({
  * its place. Named, so it is its own program, its own graph node and its own `:desk send "…"` —
  * where an unnamed second row would collide with `phone` on all three.
  */
-export const desk = notify({ id: "desk", target: { kind: "stdout" } });
+export const desk = notify({id: "desk", target: {kind: "stdout"}});
 
 /**
  * The route this package was written for, written out — and kept **off** the default export,
@@ -74,19 +69,19 @@ export const desk = notify({ id: "desk", target: { kind: "stdout" } });
  * this constant into `graph.nodes` and deleting this paragraph.
  */
 export const BLOCKED_ROUTE = {
-  id: "morning-brief",
-  program: morningBrief.id,
-  on: [{ port: "brief", to: { node: "notify", port: "message" } }],
+	id: "morning-brief",
+	program: morningBrief.id,
+	on: [{port: "brief", to: {node: "notify", port: "message"}}],
 } as const;
 
 export default {
-  version: 1,
-  programs: [morningBrief, phone, desk],
-  graph: {
-    nodes: [
-      { id: "morning-brief", program: morningBrief.id, on: [] },
-      { id: "notify", program: phone.id, on: [] },
-      { id: "desk", program: desk.id, on: [] },
-    ],
-  },
+	version: 1,
+	programs: [morningBrief, phone, desk],
+	graph: {
+		nodes: [
+			{id: "morning-brief", program: morningBrief.id, on: []},
+			{id: "notify", program: phone.id, on: []},
+			{id: "desk", program: desk.id, on: []},
+		],
+	},
 } satisfies TuvalConfigInput;

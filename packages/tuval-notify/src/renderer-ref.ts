@@ -14,16 +14,12 @@
  * assignable there.
  */
 
-export type RendererKind =
-  | "host-native"
-  | "host-declarative"
-  | "isolated-frame"
-  | "module";
+export type RendererKind = "host-native" | "host-declarative" | "isolated-frame" | "module";
 
 /** A reference only: the kernel stores it and reports it, and never renders anything itself. */
 export interface RendererRef {
-  readonly kind: RendererKind;
-  readonly ref: string;
+	readonly kind: RendererKind;
+	readonly ref: string;
 }
 
 /**
@@ -33,6 +29,6 @@ export interface RendererRef {
  * root refuses the page at boot naming this string.
  */
 export const NOTIFY_WINDOW_REF: RendererRef = {
-  kind: "module",
-  ref: "@kampus/tuval-notify/window",
+	kind: "module",
+	ref: "@kampus/tuval-notify/window",
 };

@@ -24,20 +24,20 @@
 
 /** The `fetch` this package calls. The global's own type, so a desk hands over the global itself. */
 export type Fetch = (
-  input: string,
-  init: {
-    readonly method: string;
-    readonly headers: Readonly<Record<string, string>>;
-    readonly body: string;
-    /**
-     * When to give up. Always set — see `TIMEOUT` — because a receiver that accepts the connection
-     * and then says nothing would otherwise hold the request open for as long as the runtime is
-     * willing to wait, and the actor awaits this program's handler inline
-     * (kamp-us/phoenix [#9297](https://github.com/kamp-us/phoenix/issues/9297)).
-     */
-    readonly signal: AbortSignal;
-  },
-) => Promise<{ readonly ok: boolean; readonly status: number }>;
+	input: string,
+	init: {
+		readonly method: string;
+		readonly headers: Readonly<Record<string, string>>;
+		readonly body: string;
+		/**
+		 * When to give up. Always set — see `TIMEOUT` — because a receiver that accepts the connection
+		 * and then says nothing would otherwise hold the request open for as long as the runtime is
+		 * willing to wait, and the actor awaits this program's handler inline
+		 * (kamp-us/phoenix [#9297](https://github.com/kamp-us/phoenix/issues/9297)).
+		 */
+		readonly signal: AbortSignal;
+	},
+) => Promise<{readonly ok: boolean; readonly status: number}>;
 
 /** Where a line of text is written when the target is `stdout`. `console.log` on a real desk. */
 export type Write = (line: string) => void;
@@ -51,17 +51,17 @@ export type Write = (line: string) => void;
  * one-line function, which is why this is a callback and not an enum of vendors.
  */
 export interface WebhookTarget {
-  readonly kind: "webhook";
-  /** The full URL. This is the credential; it is never checkpointed and never logged. */
-  readonly url: string;
-  /** Defaults to `POST`, which is what every incoming webhook takes. */
-  readonly method?: "POST" | "PUT" | "PATCH";
-  /** Merged over `content-type: application/json`. Also a credential, also never written down. */
-  readonly headers?: Readonly<Record<string, string>>;
-  /** What to send. Defaults to Discord's `{content: text}`; Slack is `(text) => ({text})`. */
-  readonly body?: (text: string) => unknown;
-  /** How long one attempt waits before it is given up on, in ms. Defaults to `TIMEOUT`. */
-  readonly timeoutMs?: number;
+	readonly kind: "webhook";
+	/** The full URL. This is the credential; it is never checkpointed and never logged. */
+	readonly url: string;
+	/** Defaults to `POST`, which is what every incoming webhook takes. */
+	readonly method?: "POST" | "PUT" | "PATCH";
+	/** Merged over `content-type: application/json`. Also a credential, also never written down. */
+	readonly headers?: Readonly<Record<string, string>>;
+	/** What to send. Defaults to Discord's `{content: text}`; Slack is `(text) => ({text})`. */
+	readonly body?: (text: string) => unknown;
+	/** How long one attempt waits before it is given up on, in ms. Defaults to `TIMEOUT`. */
+	readonly timeoutMs?: number;
 }
 
 /**
@@ -71,21 +71,21 @@ export interface WebhookTarget {
  * knows it can both read and write it. Pick an unguessable one.
  */
 export interface NtfyTarget {
-  readonly kind: "ntfy";
-  readonly topic: string;
-  /** Defaults to `https://ntfy.sh`. A self-hosted server is the same protocol. */
-  readonly server?: string;
-  /** The notification's title, when a message does not carry one of its own. */
-  readonly title?: string;
-  /** ntfy's 1 (min) — 5 (max). Omitted means the server's default, which is 3. */
-  readonly priority?: 1 | 2 | 3 | 4 | 5;
-  /** How long one attempt waits before it is given up on, in ms. Defaults to `TIMEOUT`. */
-  readonly timeoutMs?: number;
+	readonly kind: "ntfy";
+	readonly topic: string;
+	/** Defaults to `https://ntfy.sh`. A self-hosted server is the same protocol. */
+	readonly server?: string;
+	/** The notification's title, when a message does not carry one of its own. */
+	readonly title?: string;
+	/** ntfy's 1 (min) — 5 (max). Omitted means the server's default, which is 3. */
+	readonly priority?: 1 | 2 | 3 | 4 | 5;
+	/** How long one attempt waits before it is given up on, in ms. Defaults to `TIMEOUT`. */
+	readonly timeoutMs?: number;
 }
 
 /** A line on stdout. For a test, a dev loop, and for seeing what a config would have sent. */
 export interface StdoutTarget {
-  readonly kind: "stdout";
+	readonly kind: "stdout";
 }
 
 export type NotifyTarget = WebhookTarget | NtfyTarget | StdoutTarget;
@@ -94,18 +94,18 @@ export type TargetKind = NotifyTarget["kind"];
 
 /** One message on its way out: the text, an optional title, and the key its delivery is named by. */
 export interface Outgoing {
-  readonly key: string;
-  readonly text: string;
-  readonly title?: string;
+	readonly key: string;
+	readonly text: string;
+	readonly title?: string;
 }
 
 /** What one attempt came back with. `status` is absent when the request never got an answer. */
 export interface Attempt {
-  readonly ok: boolean;
-  readonly status?: number;
+	readonly ok: boolean;
+	readonly status?: number;
 }
 
-const DISCORD_BODY = (text: string): unknown => ({ content: text });
+const DISCORD_BODY = (text: string): unknown => ({content: text});
 
 /**
  * How long one attempt waits before it is given up on, in milliseconds. Every request carries one;
@@ -128,7 +128,7 @@ const NTFY_DEFAULT_SERVER = "https://ntfy.sh";
 
 /** `https://ntfy.sh/my-topic`, with a trailing slash on the server tolerated. */
 export const ntfyUrl = (target: NtfyTarget): string =>
-  `${(target.server ?? NTFY_DEFAULT_SERVER).replace(/\/+$/, "")}/${target.topic}`;
+	`${(target.server ?? NTFY_DEFAULT_SERVER).replace(/\/+$/, "")}/${target.topic}`;
 
 /**
  * ntfy carries a title and a priority as **headers**, not in the body — the body is the message
@@ -136,20 +136,13 @@ export const ntfyUrl = (target: NtfyTarget): string =>
  * refused by the runtime before it leaves, so the title is flattened and trimmed here rather than
  * left to fail at the socket. The message's own title wins over the target's default.
  */
-const ntfyHeaders = (
-  target: NtfyTarget,
-  out: Outgoing,
-): Readonly<Record<string, string>> => {
-  const title = out.title ?? target.title;
-  return {
-    "content-type": "text/plain; charset=utf-8",
-    ...(title === undefined
-      ? {}
-      : { Title: title.replace(/[\r\n]+/g, " ").trim() }),
-    ...(target.priority === undefined
-      ? {}
-      : { Priority: String(target.priority) }),
-  };
+const ntfyHeaders = (target: NtfyTarget, out: Outgoing): Readonly<Record<string, string>> => {
+	const title = out.title ?? target.title;
+	return {
+		"content-type": "text/plain; charset=utf-8",
+		...(title === undefined ? {} : {Title: title.replace(/[\r\n]+/g, " ").trim()}),
+		...(target.priority === undefined ? {} : {Priority: String(target.priority)}),
+	};
 };
 
 /**
@@ -167,44 +160,44 @@ const ntfyHeaders = (
  * lands in the same `catch` as a refused socket and reads the same way: `ok: false`, no status.
  */
 export const attemptDelivery = async (
-  target: NotifyTarget,
-  out: Outgoing,
-  io: { readonly fetch: Fetch; readonly write: Write },
+	target: NotifyTarget,
+	out: Outgoing,
+	io: {readonly fetch: Fetch; readonly write: Write},
 ): Promise<Attempt> => {
-  if (target.kind === "stdout") {
-    io.write(out.title === undefined ? out.text : `${out.title}: ${out.text}`);
-    return { ok: true };
-  }
-  const request =
-    target.kind === "ntfy"
-      ? {
-          url: ntfyUrl(target),
-          method: "POST",
-          headers: ntfyHeaders(target, out),
-          body: out.text,
-        }
-      : {
-          url: target.url,
-          method: target.method ?? "POST",
-          headers: {
-            "content-type": "application/json",
-            ...(target.headers ?? {}),
-          },
-          body: JSON.stringify((target.body ?? DISCORD_BODY)(out.text)),
-        };
-  try {
-    const response = await io.fetch(request.url, {
-      method: request.method,
-      headers: request.headers,
-      body: request.body,
-      signal: AbortSignal.timeout(target.timeoutMs ?? TIMEOUT),
-    });
-    return { ok: response.ok, status: response.status };
-  } catch {
-    // Deliberately swallowed and deliberately un-detailed: the cause carries the URL (fetch puts it
-    // in the message) and the URL is the credential. What the desk gets is `ok: false` with no
-    // status, which is the honest and secret-free reading of "it never got an answer" — and an
-    // abort is exactly that, so a request given up on needs no outcome of its own.
-    return { ok: false };
-  }
+	if (target.kind === "stdout") {
+		io.write(out.title === undefined ? out.text : `${out.title}: ${out.text}`);
+		return {ok: true};
+	}
+	const request =
+		target.kind === "ntfy"
+			? {
+					url: ntfyUrl(target),
+					method: "POST",
+					headers: ntfyHeaders(target, out),
+					body: out.text,
+				}
+			: {
+					url: target.url,
+					method: target.method ?? "POST",
+					headers: {
+						"content-type": "application/json",
+						...(target.headers ?? {}),
+					},
+					body: JSON.stringify((target.body ?? DISCORD_BODY)(out.text)),
+				};
+	try {
+		const response = await io.fetch(request.url, {
+			method: request.method,
+			headers: request.headers,
+			body: request.body,
+			signal: AbortSignal.timeout(target.timeoutMs ?? TIMEOUT),
+		});
+		return {ok: response.ok, status: response.status};
+	} catch {
+		// Deliberately swallowed and deliberately un-detailed: the cause carries the URL (fetch puts it
+		// in the message) and the URL is the credential. What the desk gets is `ok: false` with no
+		// status, which is the honest and secret-free reading of "it never got an answer" — and an
+		// abort is exactly that, so a request given up on needs no outcome of its own.
+		return {ok: false};
+	}
 };

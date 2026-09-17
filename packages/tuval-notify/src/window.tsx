@@ -47,21 +47,16 @@
  * without the palette.
  */
 
-import type { WindowHost } from "@kampus/tuval/window";
-import { windowRenderer } from "@kampus/tuval/window";
-import { Effect, Fiber, Stream } from "effect";
-import type { CSSProperties, ReactElement } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type {
-  DeliveryView,
-  NotifySendEvent,
-  NotifyState,
-  NotifyWindowView,
-} from "./state.ts";
-import { notifyView, sendEvent } from "./state.ts";
+import type {WindowHost} from "@kampus/tuval/window";
+import {windowRenderer} from "@kampus/tuval/window";
+import {Effect, Fiber, Stream} from "effect";
+import type {CSSProperties, ReactElement} from "react";
+import {useCallback, useEffect, useRef, useState} from "react";
+import type {DeliveryView, NotifySendEvent, NotifyState, NotifyWindowView} from "./state.ts";
+import {notifyView, sendEvent} from "./state.ts";
 
 /** The predicate the page admits this renderer's state through (ADR 0358). */
-export { isNotifyState as admits } from "./state.ts";
+export {isNotifyState as admits} from "./state.ts";
 
 type NotifyHost = WindowHost<NotifyState, NotifySendEvent>;
 
@@ -71,79 +66,79 @@ type NotifyHost = WindowHost<NotifyState, NotifySendEvent>;
  * this renderer only over a state `admits` returned true for, so the value is this program's own.
  */
 const useNotifyState = (host: NotifyHost): NotifyState | null => {
-  const [state, setState] = useState<NotifyState | null>(null);
-  const read = host.readProcess;
-  useEffect(() => {
-    const fiber = Effect.runFork(
-      Stream.runForEach(read, (view) =>
-        Effect.sync(() => {
-          if (view._tag === "Live") setState(view.state);
-        }),
-      ),
-    );
-    return () => void Effect.runFork(Fiber.interrupt(fiber));
-  }, [read]);
-  return state;
+	const [state, setState] = useState<NotifyState | null>(null);
+	const read = host.readProcess;
+	useEffect(() => {
+		const fiber = Effect.runFork(
+			Stream.runForEach(read, (view) =>
+				Effect.sync(() => {
+					if (view._tag === "Live") setState(view.state);
+				}),
+			),
+		);
+		return () => void Effect.runFork(Fiber.interrupt(fiber));
+	}, [read]);
+	return state;
 };
 
 // Inline rather than a stylesheet: a `.css` import would make this module's build a second step and
 // its package a second file, for a window that is a header, a list and a text box.
 const styles = {
-  root: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "0.75rem",
-    padding: "0.75rem",
-    font: "inherit",
-    height: "100%",
-    boxSizing: "border-box",
-  },
-  header: { display: "flex", flexDirection: "column", gap: "0.15rem" },
-  heading: { fontWeight: 600 },
-  status: { opacity: 0.75 },
-  // The log scrolls and the composer does not, so the box a person types in stays put while the
-  // conversation above it moves. `flex: 1` with `minHeight: 0` is what lets it actually shrink.
-  log: {
-    flex: 1,
-    minHeight: 0,
-    overflowY: "auto",
-    listStyle: "none",
-    margin: 0,
-    padding: 0,
-    display: "flex",
-    flexDirection: "column",
-    gap: "0.4rem",
-  },
-  item: { display: "flex", flexDirection: "column", gap: "0.1rem" },
-  text: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
-  meta: {
-    display: "flex",
-    gap: "0.4rem",
-    alignItems: "baseline",
-    fontSize: "0.85em",
-    opacity: 0.6,
-  },
-  at: { fontVariantNumeric: "tabular-nums" },
-  // A failure is the one thing in this window worth finding by eye, so it is the one thing with a
-  // colour. `ok` stays in the same grey as the clock beside it.
-  failed: { opacity: 0.9, color: "#c0392b" },
-  composer: { display: "flex", alignItems: "center", gap: "0.5rem" },
-  input: { flex: 1, font: "inherit", padding: "0.25rem 0.4rem" },
-  hint: { opacity: 0.6, fontSize: "0.85em" },
-  empty: { opacity: 0.6 },
+	root: {
+		display: "flex",
+		flexDirection: "column",
+		gap: "0.75rem",
+		padding: "0.75rem",
+		font: "inherit",
+		height: "100%",
+		boxSizing: "border-box",
+	},
+	header: {display: "flex", flexDirection: "column", gap: "0.15rem"},
+	heading: {fontWeight: 600},
+	status: {opacity: 0.75},
+	// The log scrolls and the composer does not, so the box a person types in stays put while the
+	// conversation above it moves. `flex: 1` with `minHeight: 0` is what lets it actually shrink.
+	log: {
+		flex: 1,
+		minHeight: 0,
+		overflowY: "auto",
+		listStyle: "none",
+		margin: 0,
+		padding: 0,
+		display: "flex",
+		flexDirection: "column",
+		gap: "0.4rem",
+	},
+	item: {display: "flex", flexDirection: "column", gap: "0.1rem"},
+	text: {whiteSpace: "pre-wrap", overflowWrap: "anywhere"},
+	meta: {
+		display: "flex",
+		gap: "0.4rem",
+		alignItems: "baseline",
+		fontSize: "0.85em",
+		opacity: 0.6,
+	},
+	at: {fontVariantNumeric: "tabular-nums"},
+	// A failure is the one thing in this window worth finding by eye, so it is the one thing with a
+	// colour. `ok` stays in the same grey as the clock beside it.
+	failed: {opacity: 0.9, color: "#c0392b"},
+	composer: {display: "flex", alignItems: "center", gap: "0.5rem"},
+	input: {flex: 1, font: "inherit", padding: "0.25rem 0.4rem"},
+	hint: {opacity: 0.6, fontSize: "0.85em"},
+	empty: {opacity: 0.6},
 } satisfies Record<string, CSSProperties>;
 
 /** One message that went out: what it said, when, and how it ended. */
-function Row({ row }: { readonly row: DeliveryView }): ReactElement {
-  return (
-    <li style={styles.item}>
-      <span style={styles.text}>{row.text}</span>
-      <span style={styles.meta}>
-        <span style={styles.at}>{row.at}</span>
-        <span style={row.ok ? undefined : styles.failed}>{row.outcome}</span>
-      </span>
-    </li>
-  );
+function Row({row}: {readonly row: DeliveryView}): ReactElement {
+	return (
+		<li style={styles.item}>
+			<span style={styles.text}>{row.text}</span>
+			<span style={styles.meta}>
+				<span style={styles.at}>{row.at}</span>
+				<span style={row.ok ? undefined : styles.failed}>{row.outcome}</span>
+			</span>
+		</li>
+	);
 }
 
 /**
@@ -163,51 +158,49 @@ function Row({ row }: { readonly row: DeliveryView }): ReactElement {
  * it produces is visible without scrolling. Everything else in this window *is* a case, because
  * everything else is a pure function of state in `./state.ts`.
  */
-function Log({ view }: { readonly view: NotifyWindowView }): ReactElement {
-  const list = useRef<HTMLUListElement | null>(null);
-  /**
-   * What is at the end of the list right now, as a string — the whole of what the pin below depends
-   * on, and it is one value rather than two on purpose.
-   *
-   * A row's key carries both the delivery's clock and its place, so it moves when a message is
-   * added *and* when the oldest is dropped at the bound; the in-flight arm moves when a message
-   * goes on or off the wire, or when the next one takes the slot. Depending on `view.sending`
-   * itself would be wrong twice over — `notifyView` builds a fresh record every render, and the
-   * effect does not read the record.
-   */
-  const tail =
-    view.sending === null
-      ? (view.log.at(-1)?.key ?? "")
-      : `sending:${view.sending.text}`;
-  useEffect(() => {
-    const node = list.current;
-    // Null on the render where the log is empty, because that arm draws a `<p>` and not a `<ul>`,
-    // which is also the one case where `tail` is the empty string.
-    if (node === null || tail === "") return;
-    node.scrollTop = node.scrollHeight;
-  }, [tail]);
+function Log({view}: {readonly view: NotifyWindowView}): ReactElement {
+	const list = useRef<HTMLUListElement | null>(null);
+	/**
+	 * What is at the end of the list right now, as a string — the whole of what the pin below depends
+	 * on, and it is one value rather than two on purpose.
+	 *
+	 * A row's key carries both the delivery's clock and its place, so it moves when a message is
+	 * added *and* when the oldest is dropped at the bound; the in-flight arm moves when a message
+	 * goes on or off the wire, or when the next one takes the slot. Depending on `view.sending`
+	 * itself would be wrong twice over — `notifyView` builds a fresh record every render, and the
+	 * effect does not read the record.
+	 */
+	const tail =
+		view.sending === null ? (view.log.at(-1)?.key ?? "") : `sending:${view.sending.text}`;
+	useEffect(() => {
+		const node = list.current;
+		// Null on the render where the log is empty, because that arm draws a `<p>` and not a `<ul>`,
+		// which is also the one case where `tail` is the empty string.
+		if (node === null || tail === "") return;
+		node.scrollTop = node.scrollHeight;
+	}, [tail]);
 
-  if (view.log.length === 0 && view.sending === null) {
-    return <p style={styles.empty}>{view.empty}</p>;
-  }
-  return (
-    <ul ref={list} style={styles.log}>
-      {view.log.map((row) => (
-        <Row key={row.key} row={row} />
-      ))}
-      {view.sending === null ? null : (
-        <li style={styles.item}>
-          <span style={styles.text}>{view.sending.text}</span>
-          <span style={styles.meta}>
-            <span>sending…</span>
-            {view.sending.waiting === 0 ? null : (
-              <span>{view.sending.waiting} waiting behind it</span>
-            )}
-          </span>
-        </li>
-      )}
-    </ul>
-  );
+	if (view.log.length === 0 && view.sending === null) {
+		return <p style={styles.empty}>{view.empty}</p>;
+	}
+	return (
+		<ul ref={list} style={styles.log}>
+			{view.log.map((row) => (
+				<Row key={row.key} row={row} />
+			))}
+			{view.sending === null ? null : (
+				<li style={styles.item}>
+					<span style={styles.text}>{view.sending.text}</span>
+					<span style={styles.meta}>
+						<span>sending…</span>
+						{view.sending.waiting === 0 ? null : (
+							<span>{view.sending.waiting} waiting behind it</span>
+						)}
+					</span>
+				</li>
+			)}
+		</ul>
+	);
 }
 
 /**
@@ -215,52 +208,48 @@ function Log({ view }: { readonly view: NotifyWindowView }): ReactElement {
  * tested on its own; this component decides nothing but where the lines go and what the box holds
  * before it is sent.
  */
-function NotifyWindow({ host }: { readonly host: NotifyHost }): ReactElement {
-  const state = useNotifyState(host);
-  const [draft, setDraft] = useState("");
-  const send = useCallback(() => {
-    const text = draft.trim();
-    // Empty does nothing — not a refusal, not a record, nothing. There is no message here to send,
-    // and a notifier that posted a blank line to your phone on a stray Enter would be a bad one.
-    if (text === "") return;
-    void Effect.runFork(host.dispatch(sendEvent(text)));
-    setDraft("");
-  }, [host, draft]);
+function NotifyWindow({host}: {readonly host: NotifyHost}): ReactElement {
+	const state = useNotifyState(host);
+	const [draft, setDraft] = useState("");
+	const send = useCallback(() => {
+		const text = draft.trim();
+		// Empty does nothing — not a refusal, not a record, nothing. There is no message here to send,
+		// and a notifier that posted a blank line to your phone on a stray Enter would be a bad one.
+		if (text === "") return;
+		void Effect.runFork(host.dispatch(sendEvent(text)));
+		setDraft("");
+	}, [host, draft]);
 
-  if (state === null) {
-    return (
-      <output style={styles.empty}>
-        Waiting for the first state from this notifier.
-      </output>
-    );
-  }
-  const view = notifyView(state);
-  return (
-    <section style={styles.root} aria-label={`notifier ${view.heading}`}>
-      <header style={styles.header}>
-        <span style={styles.heading}>{view.heading}</span>
-        <span style={styles.status}>{view.status}</span>
-      </header>
-      <Log view={view} />
-      <div style={styles.composer}>
-        <input
-          type="text"
-          style={styles.input}
-          value={draft}
-          placeholder="a line to send"
-          aria-label="message to send"
-          onChange={(change) => setDraft(change.target.value)}
-          onKeyDown={(key) => {
-            if (key.key === "Enter") send();
-          }}
-        />
-        <button type="button" onClick={send}>
-          Send
-        </button>
-      </div>
-      <span style={styles.hint}>same as {view.spell}</span>
-    </section>
-  );
+	if (state === null) {
+		return <output style={styles.empty}>Waiting for the first state from this notifier.</output>;
+	}
+	const view = notifyView(state);
+	return (
+		<section style={styles.root} aria-label={`notifier ${view.heading}`}>
+			<header style={styles.header}>
+				<span style={styles.heading}>{view.heading}</span>
+				<span style={styles.status}>{view.status}</span>
+			</header>
+			<Log view={view} />
+			<div style={styles.composer}>
+				<input
+					type="text"
+					style={styles.input}
+					value={draft}
+					placeholder="a line to send"
+					aria-label="message to send"
+					onChange={(change) => setDraft(change.target.value)}
+					onKeyDown={(key) => {
+						if (key.key === "Enter") send();
+					}}
+				/>
+				<button type="button" onClick={send}>
+					Send
+				</button>
+			</div>
+			<span style={styles.hint}>same as {view.spell}</span>
+		</section>
+	);
 }
 
 /**
@@ -268,6 +257,4 @@ function NotifyWindow({ host }: { readonly host: NotifyHost }): ReactElement {
  * being a hand-written `{kind, render}`, so the page's kind check (`module`, not `host-native`) is
  * satisfied by construction and not by a literal that could drift.
  */
-export default windowRenderer("module", (host: NotifyHost) => (
-  <NotifyWindow host={host} />
-));
+export default windowRenderer("module", (host: NotifyHost) => <NotifyWindow host={host} />);
