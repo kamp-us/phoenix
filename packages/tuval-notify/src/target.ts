@@ -126,9 +126,21 @@ export const TIMEOUT = 10_000;
 
 const NTFY_DEFAULT_SERVER = "https://ntfy.sh";
 
+/**
+ * Strip the trailing slashes off a server, by scanning backwards rather than with `/\/+$/`.
+ * The regex reads better and is a polynomial-backtracking shape CodeQL flags (`js/polynomial-redos`)
+ * — `\/+$` is retried from every position in a long run of slashes. This loop is linear and the
+ * answer is identical.
+ */
+const withoutTrailingSlashes = (server: string): string => {
+	let end = server.length;
+	while (end > 0 && server[end - 1] === "/") end -= 1;
+	return server.slice(0, end);
+};
+
 /** `https://ntfy.sh/my-topic`, with a trailing slash on the server tolerated. */
 export const ntfyUrl = (target: NtfyTarget): string =>
-	`${(target.server ?? NTFY_DEFAULT_SERVER).replace(/\/+$/, "")}/${target.topic}`;
+	`${withoutTrailingSlashes(target.server ?? NTFY_DEFAULT_SERVER)}/${target.topic}`;
 
 /**
  * ntfy carries a title and a priority as **headers**, not in the body — the body is the message
