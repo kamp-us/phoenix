@@ -643,7 +643,13 @@ export const openPullsForBase = (
 /** How a head stands to a base right now, in the platform's vocabulary and its own count. */
 export interface BaseStanding {
 	readonly status: CompareStatus;
-	/** Commits the base holds and the head does not — what makes the head's last CI run stale. */
+	/**
+	 * Commits the base holds and the head does not — what makes the head's last CI run stale.
+	 *
+	 * Read by `lane retrigger`, which prints it on the row for each child it moved: the status alone
+	 * says a child was behind, and this says by how much, which is what tells a driver whether the
+	 * base drifted by one commit or by a hundred.
+	 */
 	readonly behindBy: number;
 }
 

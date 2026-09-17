@@ -71,10 +71,22 @@ const short = (sha: string): string => sha.slice(0, SHORT);
  * ends a sweep unretriggered, and they are kept apart because their remedies are opposite — a
  * conflict is a repair round on that child, and an unknown is a re-read before anything else is
  * touched.
+ *
+ * `Moved` and `Unknown` each carry whether this verb wrote to that child, because the sweep's exit
+ * code turns on whether *any* child was written to, and a child that ends unknown after a sibling's
+ * head was already moved is not the untouched sweep exit `11` promises.
  */
 type Outcome =
 	| {readonly _tag: "Current"; readonly pr: number}
-	| {readonly _tag: "Moved"; readonly pr: number; readonly from: string; readonly to: string}
+	| {
+			readonly _tag: "Moved";
+			readonly pr: number;
+			readonly from: string;
+			readonly to: string;
+			/** How far the head trailed the base when this sweep read it, before the move. */
+			readonly behindBy: number;
+			readonly wrote: boolean;
+	  }
 	| {readonly _tag: "Conflicted"; readonly pr: number; readonly reason: string}
 	| {
 			readonly _tag: "Unknown";
@@ -82,6 +94,10 @@ type Outcome =
 			readonly reason: string;
 			readonly wrote: boolean;
 	  };
+
+/** Whether this verb addressed a write to that child — `Current` and `Conflicted` never do. */
+const wroteTo = (outcome: Outcome): boolean =>
+	(outcome._tag === "Moved" || outcome._tag === "Unknown") && outcome.wrote;
 
 /**
  * Watch one child's head until it leaves `from`, within the window.
@@ -98,6 +114,7 @@ const awaitMovedHead = (
 	repo: string,
 	pr: number,
 	from: string,
+	behindBy: number,
 	windowSeconds: number,
 ): Shell<Outcome> =>
 	Effect.gen(function* () {
@@ -115,7 +132,7 @@ const awaitMovedHead = (
 			if (read._tag === "Unknown")
 				return {_tag: "Unknown" as const, pr, reason: read.reason, wrote: true};
 			if (read.value.headSha !== from) {
-				return {_tag: "Moved" as const, pr, from, to: read.value.headSha};
+				return {_tag: "Moved" as const, pr, from, to: read.value.headSha, behindBy, wrote: true};
 			}
 		}
 		return {
@@ -170,9 +187,17 @@ const retriggerOne = (
 						pr: child.number,
 						from: child.headSha,
 						to: read.value.headSha,
+						behindBy: standing.value.behindBy,
+						wrote: false,
 					};
 		}
-		return yield* awaitMovedHead(repo, child.number, child.headSha, windowSeconds);
+		return yield* awaitMovedHead(
+			repo,
+			child.number,
+			child.headSha,
+			standing.value.behindBy,
+			windowSeconds,
+		);
 	});
 
 const row = (outcome: Outcome): string => {
@@ -180,7 +205,7 @@ const row = (outcome: Outcome): string => {
 		case "Current":
 			return `#${outcome.pr} current`;
 		case "Moved":
-			return `#${outcome.pr} ${short(outcome.from)} -> ${short(outcome.to)}`;
+			return `#${outcome.pr} ${outcome.behindBy} behind, ${short(outcome.from)} -> ${short(outcome.to)}`;
 		case "Conflicted":
 			return `#${outcome.pr} conflicted`;
 		case "Unknown":
@@ -232,10 +257,14 @@ export const runRetrigger = ({
 		const rows = outcomes.map(row).join("\n");
 		const note = `${VERB}: ${moved.length} of ${outcomes.length} open pull request(s) on ${base} were behind it and were updated; the rest already carried it.`;
 
+		// The code a driver reads to decide whether a re-run is safe, so it answers over the whole
+		// sweep rather than over the child that ended unknown: one child read badly after a sibling's
+		// head was already moved is an unknown with a write behind it, which is exit 8's fact, not
+		// exit 11's.
 		const unknown = outcomes.find((outcome) => outcome._tag === "Unknown");
 		if (unknown !== undefined) {
 			return refuse(
-				unknown.wrote ? APPEND_UNKNOWN : LANE_UNREADABLE,
+				outcomes.some(wroteTo) ? APPEND_UNKNOWN : LANE_UNREADABLE,
 				`${VERB}: #${unknown.pr}: ${unknown.reason} — whether its checks were retriggered is UNKNOWN.`,
 				[note, ...outcomes.map(row)],
 			);

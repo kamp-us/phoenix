@@ -17,9 +17,13 @@ const ENV = {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} as Recor
 const EPIC = 8716;
 const BEFORE = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const AFTER = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const SIBLING = "cccccccccccccccccccccccccccccccccccccccc";
 
 const LIST = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\?state=open&base=epic%2F8716/;
 const COMPARE = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/compare\/epic\/8716\.\.\./;
+const COMPARE_FIRST = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/compare\/epic\/8716\.\.\.aaaa/;
+const COMPARE_SIBLING =
+	/^GET https:\/\/api\.github\.com\/repos\/o\/r\/compare\/epic\/8716\.\.\.cccc/;
 const UPDATE = /^PUT https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/8859\/update-branch$/;
 const PULL = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/8859$/;
 
@@ -93,7 +97,9 @@ describe("lane retrigger", () => {
 		]);
 
 		expect(outcome.code).toBe(0);
-		expect(outcome.stdout).toBe("#8859 aaaaaaaa -> bbbbbbbb\nRETRIGGER-VERDICT: RETRIGGERED\n");
+		expect(outcome.stdout).toBe(
+			"#8859 3 behind, aaaaaaaa -> bbbbbbbb\nRETRIGGER-VERDICT: RETRIGGERED\n",
+		);
 		const update = requests.findIndex((line) => line.startsWith("PUT"));
 		expect(update).toBeGreaterThan(-1);
 		expect(JSON.parse(bodies[update] ?? "{}")).toEqual({expected_head_sha: BEFORE});
@@ -145,7 +151,23 @@ describe("lane retrigger", () => {
 		]);
 
 		expect(out.code).toBe(0);
-		expect(out.stdout).toBe("#8859 aaaaaaaa -> bbbbbbbb\nRETRIGGER-VERDICT: RETRIGGERED\n");
+		expect(out.stdout).toBe(
+			"#8859 1 behind, aaaaaaaa -> bbbbbbbb\nRETRIGGER-VERDICT: RETRIGGERED\n",
+		);
+	});
+
+	it("routes a read that fails after an earlier child was moved to the written-to code", async () => {
+		const out = await run([
+			[LIST, listed([child(), child({number: 8860, head: {sha: SIBLING, ref: "build/8767"}})])],
+			[COMPARE_FIRST, standing("behind", 2)],
+			[UPDATE, ACCEPTED],
+			[PULL, served(pullPayload({number: 8859, head: {sha: AFTER, ref: "build/8766"}}))],
+			[COMPARE_SIBLING, {status: 502, body: '{"message":"Bad gateway"}'}],
+		]);
+
+		expect(out.code).toBe(APPEND_UNKNOWN);
+		expect(out.code).not.toBe(LANE_UNREADABLE);
+		expect(out.stderr.join(" ")).toContain("#8859 2 behind, aaaaaaaa -> bbbbbbbb");
 	});
 
 	it("is UNKNOWN, never an empty sweep, when the pull request list cannot be read", async () => {

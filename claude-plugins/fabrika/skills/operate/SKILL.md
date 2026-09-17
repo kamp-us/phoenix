@@ -622,8 +622,10 @@ filed under. It raced the rebuild the one time it was used, so the guard re-ran 
 base anyway and took two rounds. Re-running the workflow is no route either: a re-run replays the original event's
 `GITHUB_SHA` and `GITHUB_REF`, which is the stale merge commit — the very red you are clearing.
 Exit `42` is a child the assembly branch does not merge into, and that is a repair round on that
-child rather than anything to retry here; exit `8` says an update was accepted and the head had not
-moved inside its window, so re-read before writing again.
+child rather than anything to retry here; exit `8` says the sweep has already moved a child's head
+and then lost its read — an accepted update whose head had not moved inside its window, or a read
+that failed after that write — so re-read before writing again. Exit `11` is the sweep that wrote to
+nothing, which is the one you can simply re-run.
 
 **The first of those pushes also opens the run's one PR**, as a draft — a draft carries the CI
 signal and the board's view of the run without inviting a review the machine has not asked for.
