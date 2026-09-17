@@ -1915,7 +1915,9 @@ lane, which bricks it rather than stopping the boot.
 **What a `ui` class buys differs by path.** A single-issue lane gets the
 template's own pair, `build:ui` and `review:ui`. An emitted epic child gets `build:ui` and **no**
 `review:ui`: a child opens no pull request, so a rendered-review cell it entered could produce
-nothing, and its rendered review is the epic tail's by construction.
+nothing, and its rendered review is the epic tail's by construction. The tail's region carries the
+`review:ui` that debt is paid in, and it carries no `build:ui` — a rendered class on an epic child
+picks a builder, and a rendered class relayed on the tail picks a reviewer.
 
 ### The owned facets — what `apply` may remove
 

@@ -1146,13 +1146,26 @@ Requiring the namespace held every
 ui-bearing child at exit `23` with no cell and no verb that could ever free it, which once cost one
 epic's tracer child its whole lane. The creditor is the tail, and the bar
 does not drop on the way: one epic run is one branch and one PR, so every rendered file a child's
-range added is in the tail PR's own diff, where the tail's `PASS` derives `review-ui`, defers
-nothing, and refuses until a whole-set verdict binds at a head a preview exists for. The event line
+range added is in the tail PR's own diff, and nothing reaches `ship` until a whole-set verdict binds
+at a head a preview exists for. The event line
 says so — `lane report` records `deferred` on the `PASS` it appends, and `lane history` reads it
 back, so which cell still owes the rendered verdict is a fact in the ledger rather than a
 reconstruction. A child whose range renders nothing derives `review-ui` nowhere, carries no
 `deferred` field, and proves exactly as it always did: an epic child's rendered verdict is the
 tail's by construction.
+
+**The tail pays that debt through its own `review:ui`, so the class relay matters most there.** The
+tail is the one region of a generated epic machine that carries the rendered review cell, and it is
+routed exactly like a single lane's: the `PASS` out of the tail's `review` takes the `class:ui` arm
+when `ui` stands over the task, defers `review-ui` into `review:ui`, and the `PASS` out of that cell
+stands on the whole set. A tail whose run renders nothing never raises the guard and walks
+`review → ship` unchanged. **Relay `--class` on the tail's `lane report` the way you would on any
+other** — the tail's context seeds no class, because it is emitted before any child has classed
+anything, so the class reaches it only off `review scope` on the tail PR's own head. Dropping it
+leaves the whole rendered set owed at `review`, where `lane prove` refuses at exit `23` and the lane
+can neither ship nor park honestly: `review` is an active state, so no stale sweep ever sees it.
+A tail rendered FAIL repairs in the tail's one `build` cell, briefed on the assembly branch beside
+the run's PR; there is no `build:ui` at the tail.
 
 **On a single-issue lane, a merged PR that closed nothing sends the lane round rather than folding
 it.** A `LANDED` whose merge carried `Part of #N` records its `DONE` as always, and the machine takes
@@ -1260,8 +1273,8 @@ names it. A cause outside the set is exit `35` with the log unappended, as it is
 **The cell has to be there, and on an epic lane one key decides whether it is.**
 `.fabrika.jsonc`'s `machineryLaps.onEmit` ships `off` and is read by `lane emit` alone. An epic
 machine emitted under `off` holds no `LAP` cell at all; one emitted under `on` holds it in each
-child region's `integrate` and in the tail's `ship` and `ship:queued` — not in `build`, not in
-`review`. A single-issue lane is a different document: it boots from the committed coder template
+child region's `integrate` and in the tail's `review:ui`, `ship` and `ship:queued` — not in `build`,
+not in `review`. A single-issue lane is a different document: it boots from the committed coder template
 ([`coder.workflow.json`](../../../../packages/fabrika-cli/src/lane/templates/coder.workflow.json)),
 which the key does not gate and which carries the cell in `build`, `build:ui`, `review`,
 `review:ui`, `ship` and `ship:queued`. So a machinery token recorded where the task's state holds no

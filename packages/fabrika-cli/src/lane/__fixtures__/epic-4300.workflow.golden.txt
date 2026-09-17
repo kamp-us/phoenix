@@ -326,6 +326,30 @@
 							},
 							"review": {
 								"on": {
+									"EPIC_4300.PASS": [
+										{
+											"target": "review:ui",
+											"guard": "class:ui"
+										},
+										{
+											"target": "ship"
+										}
+									],
+									"EPIC_4300.BLOCKED": "blocked",
+									"EPIC_4300.FAIL": [
+										{
+											"target": "build",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{
+											"target": "human:budget-spent"
+										}
+									]
+								}
+							},
+							"review:ui": {
+								"on": {
 									"EPIC_4300.PASS": "ship",
 									"EPIC_4300.BLOCKED": "blocked",
 									"EPIC_4300.FAIL": [

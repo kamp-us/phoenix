@@ -151,8 +151,10 @@ export type Claim =
  * verdict no cell of that child's region and no verb of this CLI could ever produce, and every
  * ui-bearing child deadlocked at exit 23 with no legal exit. The cell that owes it is the epic's
  * tail, and the bar moves there rather than down: one epic run is one branch and one PR, so every
- * rendered file a child's range added is in the tail PR's own diff, where the tail's `PASS` derives
- * it, defers nothing and stands on the whole set at a head a preview exists for. A child whose
+ * rendered file a child's range added is in the tail PR's own diff, at a head a preview exists for.
+ * The tail pays it through the ROUTED arm above like any other PR-owning lane — its emitted region
+ * carries {@link REVIEW_UI_STATE} behind a `class:ui` arm, so `next` decides the tail's deferral
+ * where it decides nothing on a child. A child whose
  * range renders nothing never derives the namespace at all, so the subtraction takes nothing off
  * its bar and its proof is byte-for-byte what it was. This one deferral is a constant where every
  * other one is derived from the machine.
