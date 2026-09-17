@@ -69,9 +69,20 @@ export const COMMAND_HEAD = 40;
  */
 export const OUTPUT_BYTE_LIMIT = 64 * 1024;
 
-/** The tile's first line: which shell, and where it runs. */
+/**
+ * The tile's first line: which shell, and where it runs.
+ *
+ * The trailing slashes come off by scanning back from the end rather than by `replace(/\/+$/, "")`.
+ * An anchored `+` over a repeated character backtracks polynomially on a long run of them — CodeQL
+ * calls it `js/polynomial-redos` — and `cwd` arrives from a config, so it is input. The scan reads
+ * each character once and answers the same string.
+ */
 export const basename = (cwd: string): string => {
-	const trimmed = cwd.replace(/\/+$/, "");
+	let end = cwd.length;
+	while (end > 0 && cwd[end - 1] === "/") {
+		end -= 1;
+	}
+	const trimmed = cwd.slice(0, end);
 	const cut = trimmed.lastIndexOf("/");
 	const name = cut === -1 ? trimmed : trimmed.slice(cut + 1);
 	return name === "" ? "/" : name;

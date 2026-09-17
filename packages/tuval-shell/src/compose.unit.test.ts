@@ -84,7 +84,7 @@ describe("a shell fills a cron's job", () => {
 	it("sends a prompt the shell's own port admits, which is the seam in one line", () => {
 		const woken = drive({cwd: "/tmp"}).send("prompt", {
 			text: "git -C ~/phoenix fetch --all",
-			key: "nightly-fetch-1",
+			key: "run-1",
 			timestamp: 1_700_000_000_000,
 		});
 		expect(woken.state.running?.command).toBe("git -C ~/phoenix fetch --all");
