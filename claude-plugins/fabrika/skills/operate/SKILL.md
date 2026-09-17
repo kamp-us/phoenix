@@ -743,9 +743,12 @@ landed child's range verdict is bound to the commits it names and a rebase rewri
 lane emitted before this cell landed does not grow one — its tail `FAIL` still points at `review`,
 and re-emitting is the only way to it.
 
-**The draft flips ready at the tail's `PASS`, and nowhere earlier.** When the epic-level review's
-`PASS` is proven and recorded, the single PR has the verdict it was opened for — mark it ready
-before dispatching `ship`, whose write verbs refuse a draft. The number is the one `lane brief`
+**The draft flips ready at the tail's last review `PASS`, and nowhere earlier.** That is `review`'s
+own `PASS` on a run that renders nothing, and `review:ui`'s on a run that renders something: a
+rendered tail takes the `class:ui` arm out of `review` and still owes the `review-ui` namespace, so
+the PR has the verdict it was opened for only once the cell that arm routes into passes too. When
+that last `PASS` is proven and recorded, mark the PR ready before dispatching `ship`, whose write
+verbs refuse a draft. The number is the one `lane brief`
 printed in the tail's `## Ground`:
 
 ```bash
@@ -1163,7 +1166,9 @@ stands on the whole set. A tail whose run renders nothing never raises the guard
 other** — the tail's context seeds no class, because it is emitted before any child has classed
 anything, so the class reaches it only off `review scope` on the tail PR's own head. Dropping it
 leaves the whole rendered set owed at `review`, where `lane prove` refuses at exit `23` and the lane
-can neither ship nor park honestly: `review` is an active state, so no stale sweep ever sees it.
+can neither ship nor park honestly: `lane recover`'s spawn sweep proves only a dead builder, so it
+never parks a lane standing in `review`, and `lane stale` lists the row without moving it, because
+re-spawning the reviewer reaches the same exit `23`.
 A tail rendered FAIL repairs in the tail's one `build` cell, briefed on the assembly branch beside
 the run's PR; there is no `build:ui` at the tail.
 
