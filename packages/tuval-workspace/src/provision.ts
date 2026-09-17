@@ -34,9 +34,9 @@
  * (kamp-us/phoenix#8716 R12.1, shipped as #9295) and provides the `Machine` layer there.
  */
 
-import { join } from "node:path";
-import { Context, Data, Effect, Exit, Layer, Ref, type Scope } from "effect";
-import { nodeRunner, type Runner } from "./runner.ts";
+import {join} from "node:path";
+import {Context, Data, Effect, Exit, Layer, Ref, type Scope} from "effect";
+import {nodeRunner, type Runner} from "./runner.ts";
 
 // -- The machine, as a service ----------------------------------------------
 
@@ -46,24 +46,20 @@ import { nodeRunner, type Runner } from "./runner.ts";
  * one interface and this class is only how the program reaches it.
  */
 export class Machine extends Context.Service<Machine, Runner>()(
-  "@kampus/tuval-workspace/Machine",
+	"@kampus/tuval-workspace/Machine",
 ) {}
 
 /** The real machine. What a desk runs under. */
-export const MachineLive: Layer.Layer<Machine> = Layer.sync(
-  Machine,
-  nodeRunner,
-);
+export const MachineLive: Layer.Layer<Machine> = Layer.sync(Machine, nodeRunner);
 
 /** Any `Runner` as a layer — how a test hands the recording fake in, and how a config's own does. */
 export const machineLayer = (runner: Runner): Layer.Layer<Machine> =>
-  Layer.succeed(Machine, runner);
+	Layer.succeed(Machine, runner);
 
 /** One `Runner` call, as an Effect. A `Runner` never throws by contract, so this never fails. */
-const ask = <A>(
-  call: (runner: Runner) => Promise<A>,
-): Effect.Effect<A, never, Machine> =>
-  Machine.use((runner) => Effect.promise(() => call(runner)));
+const ask = <A>(call: (runner: Runner) => Promise<A>): Effect.Effect<A, never, Machine> =>
+	// biome-ignore lint/plugin: `Runner` never rejects by contract — every method answers with a result object and the two implementations (`src/runner.ts`, `src/fake-runner.ts`) are the whole set. There is no rejection here to become a defect.
+	Machine.use((runner) => Effect.promise(() => call(runner)));
 
 // -- Substitution -----------------------------------------------------------
 
@@ -78,25 +74,24 @@ const ask = <A>(
  * more — `$$` is left alone for the shell, where it is the process id.
  */
 export interface Vars {
-  /** What the person called the workspace. */
-  readonly NAME: string;
-  /** The port the probe found, as a string. */
-  readonly PORT: string;
-  /** The worktree directory, absolute. */
-  readonly WORKTREE: string;
-  /** The branch the worktree is on. */
-  readonly BRANCH: string;
+	/** What the person called the workspace. */
+	readonly NAME: string;
+	/** The port the probe found, as a string. */
+	readonly PORT: string;
+	/** The worktree directory, absolute. */
+	readonly WORKTREE: string;
+	/** The branch the worktree is on. */
+	readonly BRANCH: string;
 }
 
-const VARIABLE =
-  /\$\{(NAME|PORT|WORKTREE|BRANCH)\}|\$(NAME|PORT|WORKTREE|BRANCH)\b/g;
+const VARIABLE = /\$\{(NAME|PORT|WORKTREE|BRANCH)\}|\$(NAME|PORT|WORKTREE|BRANCH)\b/g;
 
 /** One string with its variables resolved. Pure, total, and the only substitution in the package. */
 export const substitute = (text: string, vars: Vars): string =>
-  text.replace(VARIABLE, (_match, braced?: string, bare?: string) => {
-    const name = (braced ?? bare) as keyof Vars;
-    return vars[name];
-  });
+	text.replace(VARIABLE, (_match, braced?: string, bare?: string) => {
+		const name = (braced ?? bare) as keyof Vars;
+		return vars[name];
+	});
 
 // -- What a failure is allowed to carry -------------------------------------
 
@@ -124,20 +119,17 @@ export const DETAIL_LIMIT = 500;
  * carry the raw output, because an error is a fact and this is a rendering of one.
  */
 export const safeDetail = (text: string): string => {
-  const redacted = text
-    .replace(
-      /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+):([^\s/@]*)@/gi,
-      "$1***:***@",
-    )
-    .replace(
-      // The value runs to the first whitespace or closing punctuation, so a token quoted inside
-      // `(NPM_TOKEN=abc)` loses the token and keeps the bracket the reader needs.
-      /\b([A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD)[A-Za-z0-9_]*)\s*=\s*[^\s,;)\]}"']+/gi,
-      "$1=***",
-    );
-  return redacted.length <= DETAIL_LIMIT
-    ? redacted
-    : `${redacted.slice(0, DETAIL_LIMIT)}… (truncated)`;
+	const redacted = text
+		.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+):([^\s/@]*)@/gi, "$1***:***@")
+		.replace(
+			// The value runs to the first whitespace or closing punctuation, so a token quoted inside
+			// `(NPM_TOKEN=abc)` loses the token and keeps the bracket the reader needs.
+			/\b([A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD)[A-Za-z0-9_]*)\s*=\s*[^\s,;)\]}"']+/gi,
+			"$1=***",
+		);
+	return redacted.length <= DETAIL_LIMIT
+		? redacted
+		: `${redacted.slice(0, DETAIL_LIMIT)}… (truncated)`;
 };
 
 // -- The env file -----------------------------------------------------------
@@ -151,56 +143,55 @@ export const safeDetail = (text: string): string => {
  * uncommenting someone's example line is a guess, and appending is not.
  */
 export const rewriteEnv = (
-  template: string,
-  assignments: ReadonlyArray<readonly [string, string]>,
+	template: string,
+	assignments: ReadonlyArray<readonly [string, string]>,
 ): string => {
-  let lines = template.split("\n");
-  const appended: string[] = [];
-  for (const [key, value] of assignments) {
-    const pattern = new RegExp(`^\\s*(?:export\\s+)?${escapeRegExp(key)}\\s*=`);
-    const at = lines.findIndex((line) => pattern.test(line));
-    if (at === -1) appended.push(`${key}=${value}`);
-    else
-      lines = lines.map((line, index) =>
-        index === at ? `${key}=${value}` : line,
-      );
-  }
-  if (appended.length === 0) return lines.join("\n");
-  const body = lines.join("\n");
-  return `${body}${body.endsWith("\n") ? "" : "\n"}${appended.join("\n")}\n`;
+	let lines = template.split("\n");
+	const appended: string[] = [];
+	for (const [key, value] of assignments) {
+		const pattern = new RegExp(`^\\s*(?:export\\s+)?${escapeRegExp(key)}\\s*=`);
+		const at = lines.findIndex((line) => pattern.test(line));
+		if (at === -1) appended.push(`${key}=${value}`);
+		else lines = lines.map((line, index) => (index === at ? `${key}=${value}` : line));
+	}
+	if (appended.length === 0) return lines.join("\n");
+	const body = lines.join("\n");
+	return `${body}${body.endsWith("\n") ? "" : "\n"}${appended.join("\n")}\n`;
 };
 
-const escapeRegExp = (text: string): string =>
-  text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** The env half of a plan: which template, which key takes the port, what else to write. */
 export interface EnvPlan {
-  /** Relative to the repository root — `.env.example` unless a config says otherwise. */
-  readonly template: string;
-  /** The key the chosen port is written to. */
-  readonly portKey: string;
-  /** Anything else, with `$NAME`/`$PORT`/`$WORKTREE`/`$BRANCH` resolved before it is written. */
-  readonly vars: Readonly<Record<string, string>>;
-  /** What the written file is called, inside the worktree. */
-  readonly file: string;
+	/** Relative to the repository root — `.env.example` unless a config says otherwise. */
+	readonly template: string;
+	/** The key the chosen port is written to. */
+	readonly portKey: string;
+	/** Anything else, with `$NAME`/`$PORT`/`$WORKTREE`/`$BRANCH` resolved before it is written. */
+	readonly vars: Readonly<Record<string, string>>;
+	/** What the written file is called, inside the worktree. */
+	readonly file: string;
 }
 
 // -- The ways a provision stops ---------------------------------------------
 
 /** `git worktree add` refused. Nothing was built, so there is nothing to keep. */
+// biome-ignore lint/plugin: this package publishes to npm and its errors cross into a user's `tuval.config.ts`, not phoenix's fate wire — there is no `FateWireCode` for the annotation to carry, and the move keeps the error surface it arrived with (#9406).
 export class WorktreeFailed extends Data.TaggedError("WorktreeFailed")<{
-  readonly output: string;
+	readonly output: string;
 }> {}
 
 /** Every port in the declared range is spoken for, by the OS or by this program. */
+// biome-ignore lint/plugin: this package publishes to npm and its errors cross into a user's `tuval.config.ts`, not phoenix's fate wire — there is no `FateWireCode` for the annotation to carry, and the move keeps the error surface it arrived with (#9406).
 export class NoFreePort extends Data.TaggedError("NoFreePort")<{
-  readonly from: number;
-  readonly to: number;
+	readonly from: number;
+	readonly to: number;
 }> {}
 
 /** The env template is not where the config said it was. */
+// biome-ignore lint/plugin: this package publishes to npm and its errors cross into a user's `tuval.config.ts`, not phoenix's fate wire — there is no `FateWireCode` for the annotation to carry, and the move keeps the error surface it arrived with (#9406).
 export class EnvTemplateMissing extends Data.TaggedError("EnvTemplateMissing")<{
-  readonly template: string;
+	readonly template: string;
 }> {}
 
 /**
@@ -208,23 +199,25 @@ export class EnvTemplateMissing extends Data.TaggedError("EnvTemplateMissing")<{
  * that went away underneath. It is a failure and not a defect on purpose: see `./runner.ts`'s
  * `WriteResult` for what a throwing write costs.
  */
+// biome-ignore lint/plugin: this package publishes to npm and its errors cross into a user's `tuval.config.ts`, not phoenix's fate wire — there is no `FateWireCode` for the annotation to carry, and the move keeps the error surface it arrived with (#9406).
 export class EnvWriteFailed extends Data.TaggedError("EnvWriteFailed")<{
-  readonly file: string;
-  readonly detail: string;
+	readonly file: string;
+	readonly detail: string;
 }> {}
 
 /** A `setup` command the config wrote failed. The first failure wins and the rest never run. */
+// biome-ignore lint/plugin: this package publishes to npm and its errors cross into a user's `tuval.config.ts`, not phoenix's fate wire — there is no `FateWireCode` for the annotation to carry, and the move keeps the error surface it arrived with (#9406).
 export class SetupFailed extends Data.TaggedError("SetupFailed")<{
-  readonly command: string;
-  readonly output: string;
+	readonly command: string;
+	readonly output: string;
 }> {}
 
 export type ProvisionError =
-  | WorktreeFailed
-  | NoFreePort
-  | EnvTemplateMissing
-  | EnvWriteFailed
-  | SetupFailed;
+	| WorktreeFailed
+	| NoFreePort
+	| EnvTemplateMissing
+	| EnvWriteFailed
+	| SetupFailed;
 
 /** Which of the four steps a provision stopped on. The word a failed record shows. */
 export type ProvisionStep = "worktree" | "port" | "env" | "setup";
@@ -236,58 +229,58 @@ export type ProvisionStep = "worktree" | "port" | "env" | "setup";
  * program branches on.
  */
 const STEP_OF: Readonly<Record<ProvisionError["_tag"], ProvisionStep>> = {
-  WorktreeFailed: "worktree",
-  NoFreePort: "port",
-  EnvTemplateMissing: "env",
-  EnvWriteFailed: "env",
-  SetupFailed: "setup",
+	WorktreeFailed: "worktree",
+	NoFreePort: "port",
+	EnvTemplateMissing: "env",
+	EnvWriteFailed: "env",
+	SetupFailed: "setup",
 };
 
 /** The sentence each failure shows, redacted and bounded at this one boundary. */
 const detailOf = (error: ProvisionError): string => {
-  switch (error._tag) {
-    case "WorktreeFailed":
-      return safeDetail(error.output);
-    case "NoFreePort":
-      return `no free port in ${error.from}-${error.to}`;
-    case "EnvTemplateMissing":
-      return `no env template at ${error.template}`;
-    case "EnvWriteFailed":
-      return safeDetail(`could not write ${error.file}: ${error.detail}`);
-    case "SetupFailed":
-      return safeDetail(`${error.command}: ${error.output}`);
-  }
+	switch (error._tag) {
+		case "WorktreeFailed":
+			return safeDetail(error.output);
+		case "NoFreePort":
+			return `no free port in ${error.from}-${error.to}`;
+		case "EnvTemplateMissing":
+			return `no env template at ${error.template}`;
+		case "EnvWriteFailed":
+			return safeDetail(`could not write ${error.file}: ${error.detail}`);
+		case "SetupFailed":
+			return safeDetail(`${error.command}: ${error.output}`);
+	}
 };
 
 /** Everything one `open` needs, with nothing left to decide. */
 export interface ProvisionPlan {
-  readonly name: string;
-  readonly repo: string;
-  readonly path: string;
-  readonly branch: string;
-  readonly base: string;
-  readonly ports: { readonly from: number; readonly to: number };
-  /** Ports this program has already handed out — skipped on top of whatever the OS refuses. */
-  readonly taken: ReadonlyArray<number>;
-  /** `null` when the config asked for no env step at all. */
-  readonly env: EnvPlan | null;
-  readonly setup: ReadonlyArray<string>;
+	readonly name: string;
+	readonly repo: string;
+	readonly path: string;
+	readonly branch: string;
+	readonly base: string;
+	readonly ports: {readonly from: number; readonly to: number};
+	/** Ports this program has already handed out — skipped on top of whatever the OS refuses. */
+	readonly taken: ReadonlyArray<number>;
+	/** `null` when the config asked for no env step at all. */
+	readonly env: EnvPlan | null;
+	readonly setup: ReadonlyArray<string>;
 }
 
 export type ProvisionOutcome =
-  | { readonly ok: true; readonly port: number }
-  | {
-      readonly ok: false;
-      readonly step: ProvisionStep;
-      readonly detail: string;
-      /**
-       * The half-built worktree the release step **kept**, or `null` when there was none to keep.
-       * The compensation for a failed provision is recording, not deleting: the path is how
-       * `:<id> close <name>` takes the tree away later, and the tree is the evidence of what
-       * happened. See this module's header.
-       */
-      readonly kept: string | null;
-    };
+	| {readonly ok: true; readonly port: number}
+	| {
+			readonly ok: false;
+			readonly step: ProvisionStep;
+			readonly detail: string;
+			/**
+			 * The half-built worktree the release step **kept**, or `null` when there was none to keep.
+			 * The compensation for a failed provision is recording, not deleting: the path is how
+			 * `:<id> close <name>` takes the tree away later, and the tree is the evidence of what
+			 * happened. See this module's header.
+			 */
+			readonly kept: string | null;
+	  };
 
 /**
  * The first port in the range that nothing else holds. `taken` is checked before the probe because
@@ -295,16 +288,16 @@ export type ProvisionOutcome =
  * that workspace has not started — and the OS would happily offer it again.
  */
 export const pickPort = (
-  range: { readonly from: number; readonly to: number },
-  taken: ReadonlyArray<number>,
+	range: {readonly from: number; readonly to: number},
+	taken: ReadonlyArray<number>,
 ): Effect.Effect<number | null, never, Machine> =>
-  Effect.gen(function* () {
-    for (let port = range.from; port <= range.to; port += 1) {
-      if (taken.includes(port)) continue;
-      if (yield* ask((runner) => runner.portFree(port))) return port;
-    }
-    return null;
-  });
+	Effect.gen(function* () {
+		for (let port = range.from; port <= range.to; port += 1) {
+			if (taken.includes(port)) continue;
+			if (yield* ask((runner) => runner.portFree(port))) return port;
+		}
+		return null;
+	});
 
 /**
  * The worktree, acquired. The release is the compensation, and it **records** — on a scope that
@@ -312,148 +305,127 @@ export const pickPort = (
  * Nothing in this package deletes a tree that a later step failed on.
  */
 const acquireWorktree = (
-  plan: ProvisionPlan,
-  kept: Ref.Ref<string | null>,
+	plan: ProvisionPlan,
+	kept: Ref.Ref<string | null>,
 ): Effect.Effect<string, WorktreeFailed, Machine | Scope.Scope> =>
-  Effect.acquireRelease(
-    Effect.gen(function* () {
-      const added = yield* ask((runner) =>
-        runner.exec(
-          `git worktree add -b ${plan.branch} ${plan.path} ${plan.base}`,
-          plan.repo,
-        ),
-      );
-      if (!added.ok) {
-        return yield* Effect.fail(new WorktreeFailed({ output: added.output }));
-      }
-      return plan.path;
-    }),
-    (path, exit) => (Exit.isFailure(exit) ? Ref.set(kept, path) : Effect.void),
-  );
+	Effect.acquireRelease(
+		Effect.gen(function* () {
+			const added = yield* ask((runner) =>
+				runner.exec(`git worktree add -b ${plan.branch} ${plan.path} ${plan.base}`, plan.repo),
+			);
+			if (!added.ok) {
+				return yield* Effect.fail(new WorktreeFailed({output: added.output}));
+			}
+			return plan.path;
+		}),
+		(path, exit) => (Exit.isFailure(exit) ? Ref.set(kept, path) : Effect.void),
+	);
 
 /** The `.env`, written into the worktree — or nothing at all, for a config that declared none. */
 const writeEnv = (
-  plan: ProvisionPlan,
-  vars: Vars,
-  port: number,
+	plan: ProvisionPlan,
+	vars: Vars,
+	port: number,
 ): Effect.Effect<void, EnvTemplateMissing | EnvWriteFailed, Machine> =>
-  Effect.gen(function* () {
-    const env = plan.env;
-    if (env === null) return;
-    const template = yield* ask((runner) =>
-      runner.readFile(join(plan.repo, env.template)),
-    );
-    if (template === null) {
-      return yield* Effect.fail(
-        new EnvTemplateMissing({ template: env.template }),
-      );
-    }
-    const assignments: ReadonlyArray<readonly [string, string]> = [
-      [env.portKey, String(port)],
-      ...Object.entries(env.vars).map(
-        ([key, value]) => [key, substitute(value, vars)] as const,
-      ),
-    ];
-    const file = join(plan.path, env.file);
-    const written = yield* ask((runner) =>
-      runner.writeFile(file, rewriteEnv(template, assignments)),
-    );
-    if (!written.ok) {
-      return yield* Effect.fail(
-        new EnvWriteFailed({ file, detail: written.detail }),
-      );
-    }
-  });
+	Effect.gen(function* () {
+		const env = plan.env;
+		if (env === null) return;
+		const template = yield* ask((runner) => runner.readFile(join(plan.repo, env.template)));
+		if (template === null) {
+			return yield* Effect.fail(new EnvTemplateMissing({template: env.template}));
+		}
+		const assignments: ReadonlyArray<readonly [string, string]> = [
+			[env.portKey, String(port)],
+			...Object.entries(env.vars).map(([key, value]) => [key, substitute(value, vars)] as const),
+		];
+		const file = join(plan.path, env.file);
+		const written = yield* ask((runner) =>
+			runner.writeFile(file, rewriteEnv(template, assignments)),
+		);
+		if (!written.ok) {
+			return yield* Effect.fail(new EnvWriteFailed({file, detail: written.detail}));
+		}
+	});
 
 /** Every setup command, in order, inside the worktree. The first failure wins. */
-const runSetup = (
-  plan: ProvisionPlan,
-  vars: Vars,
-): Effect.Effect<void, SetupFailed, Machine> =>
-  Effect.gen(function* () {
-    for (const command of plan.setup) {
-      const line = substitute(command, vars);
-      const result = yield* ask((runner) => runner.exec(line, plan.path));
-      if (!result.ok) {
-        return yield* Effect.fail(
-          new SetupFailed({ command: line, output: result.output }),
-        );
-      }
-    }
-  });
+const runSetup = (plan: ProvisionPlan, vars: Vars): Effect.Effect<void, SetupFailed, Machine> =>
+	Effect.gen(function* () {
+		for (const command of plan.setup) {
+			const line = substitute(command, vars);
+			const result = yield* ask((runner) => runner.exec(line, plan.path));
+			if (!result.ok) {
+				return yield* Effect.fail(new SetupFailed({command: line, output: result.output}));
+			}
+		}
+	});
 
 /** The whole of `open`, in order — and the order is the four statements below. */
-export const provision = (
-  plan: ProvisionPlan,
-): Effect.Effect<ProvisionOutcome, never, Machine> =>
-  Effect.gen(function* () {
-    const kept = yield* Ref.make<string | null>(null);
-    const steps = Effect.gen(function* () {
-      yield* acquireWorktree(plan, kept);
+export const provision = (plan: ProvisionPlan): Effect.Effect<ProvisionOutcome, never, Machine> =>
+	Effect.gen(function* () {
+		const kept = yield* Ref.make<string | null>(null);
+		const steps = Effect.gen(function* () {
+			yield* acquireWorktree(plan, kept);
 
-      const port = yield* pickPort(plan.ports, plan.taken);
-      if (port === null) {
-        return yield* Effect.fail(
-          new NoFreePort({ from: plan.ports.from, to: plan.ports.to }),
-        );
-      }
+			const port = yield* pickPort(plan.ports, plan.taken);
+			if (port === null) {
+				return yield* Effect.fail(new NoFreePort({from: plan.ports.from, to: plan.ports.to}));
+			}
 
-      const vars: Vars = {
-        NAME: plan.name,
-        PORT: String(port),
-        WORKTREE: plan.path,
-        BRANCH: plan.branch,
-      };
+			const vars: Vars = {
+				NAME: plan.name,
+				PORT: String(port),
+				WORKTREE: plan.path,
+				BRANCH: plan.branch,
+			};
 
-      yield* writeEnv(plan, vars, port);
-      yield* runSetup(plan, vars);
-      return port;
-    });
-    return yield* Effect.scoped(steps).pipe(
-      Effect.matchEffect({
-        onSuccess: (port): Effect.Effect<ProvisionOutcome> =>
-          Effect.succeed({ ok: true, port }),
-        // The failure arm reads `kept` *after* the scope closed, which is the only moment the
-        // release has run and the answer is known.
-        onFailure: (error: ProvisionError): Effect.Effect<ProvisionOutcome> =>
-          Effect.map(Ref.get(kept), (path) => ({
-            ok: false,
-            step: STEP_OF[error._tag],
-            detail: detailOf(error),
-            kept: path,
-          })),
-      }),
-    );
-  });
+			yield* writeEnv(plan, vars, port);
+			yield* runSetup(plan, vars);
+			return port;
+		});
+		return yield* Effect.scoped(steps).pipe(
+			Effect.matchEffect({
+				onSuccess: (port): Effect.Effect<ProvisionOutcome> => Effect.succeed({ok: true, port}),
+				// The failure arm reads `kept` *after* the scope closed, which is the only moment the
+				// release has run and the answer is known.
+				onFailure: (error: ProvisionError): Effect.Effect<ProvisionOutcome> =>
+					Effect.map(Ref.get(kept), (path) => ({
+						ok: false,
+						step: STEP_OF[error._tag],
+						detail: detailOf(error),
+						kept: path,
+					})),
+			}),
+		);
+	});
 
 // -- Close ------------------------------------------------------------------
 
 /** Everything one `close` needs. */
 export interface TeardownPlan {
-  readonly name: string;
-  readonly repo: string;
-  readonly path: string;
-  readonly branch: string;
-  readonly port: number | null;
-  readonly commands: ReadonlyArray<string>;
-  /**
-   * Pass `--force` to `git worktree remove`, which throws away uncommitted work. `false` for every
-   * `:<id> close` and every Close button; `true` only for `:<id> discard`.
-   */
-  readonly force: boolean;
+	readonly name: string;
+	readonly repo: string;
+	readonly path: string;
+	readonly branch: string;
+	readonly port: number | null;
+	readonly commands: ReadonlyArray<string>;
+	/**
+	 * Pass `--force` to `git worktree remove`, which throws away uncommitted work. `false` for every
+	 * `:<id> close` and every Close button; `true` only for `:<id> discard`.
+	 */
+	readonly force: boolean;
 }
 
 /** A `teardown` command the config wrote failed, so the removal never ran. */
-export class TeardownCommandFailed extends Data.TaggedError(
-  "TeardownCommandFailed",
-)<{
-  readonly command: string;
-  readonly output: string;
+// biome-ignore lint/plugin: this package publishes to npm and its errors cross into a user's `tuval.config.ts`, not phoenix's fate wire — there is no `FateWireCode` for the annotation to carry, and the move keeps the error surface it arrived with (#9406).
+export class TeardownCommandFailed extends Data.TaggedError("TeardownCommandFailed")<{
+	readonly command: string;
+	readonly output: string;
 }> {}
 
 /** Git refused to remove the worktree — which is what a dirty tree does with no `--force`. */
+// biome-ignore lint/plugin: this package publishes to npm and its errors cross into a user's `tuval.config.ts`, not phoenix's fate wire — there is no `FateWireCode` for the annotation to carry, and the move keeps the error surface it arrived with (#9406).
 export class RemoveRefused extends Data.TaggedError("RemoveRefused")<{
-  readonly output: string;
+	readonly output: string;
 }> {}
 
 export type TeardownError = TeardownCommandFailed | RemoveRefused;
@@ -462,22 +434,22 @@ export type TeardownError = TeardownCommandFailed | RemoveRefused;
 export type TeardownStage = "teardown" | "remove";
 
 const STAGE_OF: Readonly<Record<TeardownError["_tag"], TeardownStage>> = {
-  TeardownCommandFailed: "teardown",
-  RemoveRefused: "remove",
+	TeardownCommandFailed: "teardown",
+	RemoveRefused: "remove",
 };
 
 const teardownDetail = (error: TeardownError): string =>
-  error._tag === "TeardownCommandFailed"
-    ? safeDetail(`${error.command}: ${error.output}`)
-    : safeDetail(error.output);
+	error._tag === "TeardownCommandFailed"
+		? safeDetail(`${error.command}: ${error.output}`)
+		: safeDetail(error.output);
 
 export type TeardownOutcome =
-  | { readonly ok: true }
-  | {
-      readonly ok: false;
-      readonly stage: TeardownStage;
-      readonly detail: string;
-    };
+	| {readonly ok: true}
+	| {
+			readonly ok: false;
+			readonly stage: TeardownStage;
+			readonly detail: string;
+	  };
 
 /**
  * Teardown, then removal — and **neither half is allowed to throw work away on its own**.
@@ -493,44 +465,39 @@ export type TeardownOutcome =
  * with git's own message — so the record survives holding the reason. `--force` reaches here from
  * one place and one only: `:<id> discard <name>`, the spell whose name says it loses work.
  */
-export const teardown = (
-  plan: TeardownPlan,
-): Effect.Effect<TeardownOutcome, never, Machine> =>
-  Effect.gen(function* () {
-    const vars: Vars = {
-      NAME: plan.name,
-      PORT: plan.port === null ? "" : String(plan.port),
-      WORKTREE: plan.path,
-      BRANCH: plan.branch,
-    };
-    for (const command of plan.commands) {
-      const line = substitute(command, vars);
-      const result = yield* ask((runner) => runner.exec(line, plan.path));
-      if (!result.ok) {
-        return yield* Effect.fail(
-          new TeardownCommandFailed({ command: line, output: result.output }),
-        );
-      }
-    }
-    const removed = yield* ask((runner) =>
-      runner.exec(
-        `git worktree remove ${plan.path}${plan.force ? " --force" : ""}`,
-        plan.repo,
-      ),
-    );
-    if (!removed.ok) {
-      return yield* Effect.fail(new RemoveRefused({ output: removed.output }));
-    }
-  }).pipe(
-    Effect.match({
-      onSuccess: (): TeardownOutcome => ({ ok: true }),
-      onFailure: (error: TeardownError): TeardownOutcome => ({
-        ok: false,
-        stage: STAGE_OF[error._tag],
-        detail: teardownDetail(error),
-      }),
-    }),
-  );
+export const teardown = (plan: TeardownPlan): Effect.Effect<TeardownOutcome, never, Machine> =>
+	Effect.gen(function* () {
+		const vars: Vars = {
+			NAME: plan.name,
+			PORT: plan.port === null ? "" : String(plan.port),
+			WORKTREE: plan.path,
+			BRANCH: plan.branch,
+		};
+		for (const command of plan.commands) {
+			const line = substitute(command, vars);
+			const result = yield* ask((runner) => runner.exec(line, plan.path));
+			if (!result.ok) {
+				return yield* Effect.fail(
+					new TeardownCommandFailed({command: line, output: result.output}),
+				);
+			}
+		}
+		const removed = yield* ask((runner) =>
+			runner.exec(`git worktree remove ${plan.path}${plan.force ? " --force" : ""}`, plan.repo),
+		);
+		if (!removed.ok) {
+			return yield* Effect.fail(new RemoveRefused({output: removed.output}));
+		}
+	}).pipe(
+		Effect.match({
+			onSuccess: (): TeardownOutcome => ({ok: true}),
+			onFailure: (error: TeardownError): TeardownOutcome => ({
+				ok: false,
+				stage: STAGE_OF[error._tag],
+				detail: teardownDetail(error),
+			}),
+		}),
+	);
 
 /**
  * Which recorded workspaces are not on disk any more. Read-only by construction — the caller marks
@@ -538,17 +505,17 @@ export const teardown = (
  * the last evidence that the directory was ever supposed to be there.
  */
 export const reconcile = (
-  records: ReadonlyArray<{ readonly name: string; readonly path: string }>,
+	records: ReadonlyArray<{readonly name: string; readonly path: string}>,
 ): Effect.Effect<ReadonlyArray<string>, never, Machine> =>
-  Effect.gen(function* () {
-    const checked = yield* Effect.forEach(
-      records,
-      (record) =>
-        Effect.map(
-          ask((runner) => runner.exists(record.path)),
-          (there) => ({ name: record.name, there }),
-        ),
-      { concurrency: "unbounded" },
-    );
-    return checked.filter((one) => !one.there).map((one) => one.name);
-  });
+	Effect.gen(function* () {
+		const checked = yield* Effect.forEach(
+			records,
+			(record) =>
+				Effect.map(
+					ask((runner) => runner.exists(record.path)),
+					(there) => ({name: record.name, there}),
+				),
+			{concurrency: "unbounded"},
+		);
+		return checked.filter((one) => !one.there).map((one) => one.name);
+	});

@@ -20,7 +20,7 @@
  * `init` seeds them, `restored` re-seeds them from the config, and no other cell touches them.
  */
 
-import type { ProcessId } from "@kampus/tuval/authoring";
+import type {ProcessId} from "@kampus/tuval/authoring";
 
 /**
  * Where a workspace is in its life. Five words and no sixth, because every one of them is a
@@ -33,29 +33,24 @@ import type { ProcessId } from "@kampus/tuval/authoring";
  * is not on disk any more — recorded, never deleted, because the record is the only evidence left
  * that the directory was ever supposed to be there.
  */
-export type WorkspaceStatus =
-  | "provisioning"
-  | "open"
-  | "closing"
-  | "failed"
-  | "gone";
+export type WorkspaceStatus = "provisioning" | "open" | "closing" | "failed" | "gone";
 
 /** One provisioned set: the four declared inputs, as they were actually resolved. */
 export interface WorkspaceRecord {
-  /** What the person called it. The key, the branch suffix, and the directory name. */
-  readonly name: string;
-  /** The worktree directory, absolute. */
-  readonly path: string;
-  /** The branch the worktree is checked out on — `can/<name>` unless the config says otherwise. */
-  readonly branch: string;
-  /** The TCP port the probe found free, written into the workspace's `.env`. */
-  readonly port: number | null;
-  readonly status: WorkspaceStatus;
-  /** The agent session running *inside* this workspace, or `null` when none is up. */
-  readonly agent: ProcessId | null;
-  /** The last thing worth saying about this workspace — a failure, or an agent's first line. */
-  readonly detail: string | null;
-  readonly openedAt: number;
+	/** What the person called it. The key, the branch suffix, and the directory name. */
+	readonly name: string;
+	/** The worktree directory, absolute. */
+	readonly path: string;
+	/** The branch the worktree is checked out on — `can/<name>` unless the config says otherwise. */
+	readonly branch: string;
+	/** The TCP port the probe found free, written into the workspace's `.env`. */
+	readonly port: number | null;
+	readonly status: WorkspaceStatus;
+	/** The agent session running *inside* this workspace, or `null` when none is up. */
+	readonly agent: ProcessId | null;
+	/** The last thing worth saying about this workspace — a failure, or an agent's first line. */
+	readonly detail: string | null;
+	readonly openedAt: number;
 }
 
 /**
@@ -72,40 +67,40 @@ export interface WorkspaceRecord {
  * `seq` numbers the jobs, so two `open feature-x` in a row are distinguishable on a checkpoint.
  */
 export type PendingJob =
-  | {
-      readonly kind: "open";
-      readonly seq: number;
-      readonly name: string;
-      /** What the agent is told to do, beyond the where-you-are preface. Empty is allowed. */
-      readonly prompt: string;
-    }
-  | {
-      readonly kind: "close";
-      readonly seq: number;
-      readonly name: string;
-      /**
-       * Does this close pass `--force` to `git worktree remove`? `false` for every `:<id> close`
-       * and for every Close button; `true` only for `:<id> discard`, which is the one spell whose
-       * name says it loses work. See `./provision.ts`'s `teardown`.
-       */
-      readonly force: boolean;
-      /**
-       * The agent this close asked the kernel to end, and whose `stopped` the removal is waiting
-       * on — `null` when none was up, in which case the removal was asked for on the spot.
-       *
-       * **It is here because a close is two steps and has to be.** `stop` and the teardown cannot
-       * be answered as one list: the actor runs a cell's effects serially and a failing handler
-       * short-circuits the rest (`apps/tuval/src/host/actor.ts`), and `Processes.stop` fails
-       * `ProcessNotFound` on a process that is already gone — so an agent that crashed a moment
-       * before its `stopped` landed would take the removal down with it and leave this job set for
-       * ever, refusing every later spell "busy". Naming the process is what lets the `stopped` cell
-       * tell *this* close's ending from any other agent's, which is the whole reason a plain
-       * "something stopped" flag would not do.
-       */
-      readonly stopping: ProcessId | null;
-    }
-  /** Every recorded workspace, checked against disk. Queued by `resume` and by nothing else. */
-  | { readonly kind: "reconcile"; readonly seq: number };
+	| {
+			readonly kind: "open";
+			readonly seq: number;
+			readonly name: string;
+			/** What the agent is told to do, beyond the where-you-are preface. Empty is allowed. */
+			readonly prompt: string;
+	  }
+	| {
+			readonly kind: "close";
+			readonly seq: number;
+			readonly name: string;
+			/**
+			 * Does this close pass `--force` to `git worktree remove`? `false` for every `:<id> close`
+			 * and for every Close button; `true` only for `:<id> discard`, which is the one spell whose
+			 * name says it loses work. See `./provision.ts`'s `teardown`.
+			 */
+			readonly force: boolean;
+			/**
+			 * The agent this close asked the kernel to end, and whose `stopped` the removal is waiting
+			 * on — `null` when none was up, in which case the removal was asked for on the spot.
+			 *
+			 * **It is here because a close is two steps and has to be.** `stop` and the teardown cannot
+			 * be answered as one list: the actor runs a cell's effects serially and a failing handler
+			 * short-circuits the rest (`apps/tuval/src/host/actor.ts`), and `Processes.stop` fails
+			 * `ProcessNotFound` on a process that is already gone — so an agent that crashed a moment
+			 * before its `stopped` landed would take the removal down with it and leave this job set for
+			 * ever, refusing every later spell "busy". Naming the process is what lets the `stopped` cell
+			 * tell *this* close's ending from any other agent's, which is the whole reason a plain
+			 * "something stopped" flag would not do.
+			 */
+			readonly stopping: ProcessId | null;
+	  }
+	/** Every recorded workspace, checked against disk. Queued by `resume` and by nothing else. */
+	| {readonly kind: "reconcile"; readonly seq: number};
 
 /**
  * Why an `open` was not taken. Four words, one per refusal the `open` cell makes, kept short
@@ -115,18 +110,18 @@ export type RefusalReason = "name" | "duplicate" | "limit" | "busy";
 
 /** One refused `open`, written down. Newest first, bounded at `REFUSAL_LIMIT`. */
 export interface Refusal {
-  /** The name as it was asked for, trimmed. May be empty — that is one of the refusals. */
-  readonly name: string;
-  readonly reason: RefusalReason;
-  readonly at: number;
+	/** The name as it was asked for, trimmed. May be empty — that is one of the refusals. */
+	readonly name: string;
+	readonly reason: RefusalReason;
+	readonly at: number;
 }
 
 /** The refusals spelled out, for the window. The status line uses the one-word `reason` instead. */
 export const REFUSAL_TEXT: Readonly<Record<RefusalReason, string>> = {
-  name: "not a name a branch and a directory can both be called",
-  duplicate: "a workspace of that name is already held",
-  limit: "the bound on live workspaces is reached",
-  busy: "something else is in flight — one provision or close at a time",
+	name: "not a name a branch and a directory can both be called",
+	duplicate: "a workspace of that name is already held",
+	limit: "the bound on live workspaces is reached",
+	busy: "something else is in flight — one provision or close at a time",
 };
 
 /**
@@ -139,45 +134,45 @@ export const REFUSAL_TEXT: Readonly<Record<RefusalReason, string>> = {
  * carry a sender. When the kernel names the sender, this list stops existing.
  */
 export interface UnattributedResult {
-  readonly text: string;
-  readonly at: number;
+	readonly text: string;
+	readonly at: number;
 }
 
 export interface WorkspaceState {
-  /** The repository worktrees are cut from, absolute. Env. */
-  readonly repo: string;
-  /** Its basename, which is what the tile's title says. Env. */
-  readonly repoName: string;
-  /** Where worktrees are put. Env. */
-  readonly root: string;
-  /** The ref a new worktree's branch starts at. Env. */
-  readonly base: string;
-  /** Newest first, bounded at `LIMIT`. */
-  readonly workspaces: ReadonlyArray<WorkspaceRecord>;
-  readonly pending: PendingJob | null;
-  /** Bumped for every job queued, so a dep key is never reused. */
-  readonly seq: number;
-  /**
-   * The workspace whose agent has been asked for and not yet announced, and the brief the `open`
-   * that started it carried. One, because a spawn is answered by exactly one `spawned` and there is
-   * no other way to tell whose child it is — and it holds the brief because by the time `spawned`
-   * lands the job that carried it is off `pending` and there is nowhere else left to read it.
-   */
-  readonly spawningFor: {
-    readonly name: string;
-    readonly brief: string;
-  } | null;
-  /**
-   * The `open`s this program would not take, newest first and bounded at `REFUSAL_LIMIT`. Recorded
-   * rather than dropped: a refusal that moves no state is a button that did nothing, and "nothing
-   * happened" is the one answer a person cannot act on.
-   */
-  readonly refusals: ReadonlyArray<Refusal>;
-  /**
-   * Turn results that could not be attributed to a workspace, newest first and bounded at
-   * `UNATTRIBUTED_LIMIT`. See `UnattributedResult` for why this list has to exist.
-   */
-  readonly unattributed: ReadonlyArray<UnattributedResult>;
+	/** The repository worktrees are cut from, absolute. Env. */
+	readonly repo: string;
+	/** Its basename, which is what the tile's title says. Env. */
+	readonly repoName: string;
+	/** Where worktrees are put. Env. */
+	readonly root: string;
+	/** The ref a new worktree's branch starts at. Env. */
+	readonly base: string;
+	/** Newest first, bounded at `LIMIT`. */
+	readonly workspaces: ReadonlyArray<WorkspaceRecord>;
+	readonly pending: PendingJob | null;
+	/** Bumped for every job queued, so a dep key is never reused. */
+	readonly seq: number;
+	/**
+	 * The workspace whose agent has been asked for and not yet announced, and the brief the `open`
+	 * that started it carried. One, because a spawn is answered by exactly one `spawned` and there is
+	 * no other way to tell whose child it is — and it holds the brief because by the time `spawned`
+	 * lands the job that carried it is off `pending` and there is nowhere else left to read it.
+	 */
+	readonly spawningFor: {
+		readonly name: string;
+		readonly brief: string;
+	} | null;
+	/**
+	 * The `open`s this program would not take, newest first and bounded at `REFUSAL_LIMIT`. Recorded
+	 * rather than dropped: a refusal that moves no state is a button that did nothing, and "nothing
+	 * happened" is the one answer a person cannot act on.
+	 */
+	readonly refusals: ReadonlyArray<Refusal>;
+	/**
+	 * Turn results that could not be attributed to a workspace, newest first and bounded at
+	 * `UNATTRIBUTED_LIMIT`. See `UnattributedResult` for why this list has to exist.
+	 */
+	readonly unattributed: ReadonlyArray<UnattributedResult>;
 }
 
 /**
@@ -195,44 +190,37 @@ export const UNATTRIBUTED_LIMIT = 5;
 
 /** A record with one more at its head, bounded. Every cell that adds a workspace agrees here. */
 export const recorded = (
-  workspaces: ReadonlyArray<WorkspaceRecord>,
-  record: WorkspaceRecord,
+	workspaces: ReadonlyArray<WorkspaceRecord>,
+	record: WorkspaceRecord,
 ): ReadonlyArray<WorkspaceRecord> => [record, ...workspaces].slice(0, LIMIT);
 
 /** One refusal at the head of the list, bounded. The `open` cell's four arms agree here. */
-export const refused = (
-  refusals: ReadonlyArray<Refusal>,
-  one: Refusal,
-): ReadonlyArray<Refusal> => [one, ...refusals].slice(0, REFUSAL_LIMIT);
+export const refused = (refusals: ReadonlyArray<Refusal>, one: Refusal): ReadonlyArray<Refusal> =>
+	[one, ...refusals].slice(0, REFUSAL_LIMIT);
 
 /** One unowned result at the head of the list, bounded. */
 export const unowned = (
-  results: ReadonlyArray<UnattributedResult>,
-  one: UnattributedResult,
-): ReadonlyArray<UnattributedResult> =>
-  [one, ...results].slice(0, UNATTRIBUTED_LIMIT);
+	results: ReadonlyArray<UnattributedResult>,
+	one: UnattributedResult,
+): ReadonlyArray<UnattributedResult> => [one, ...results].slice(0, UNATTRIBUTED_LIMIT);
 
 /** The workspace under this name, or nothing. Names are unique while a record is held. */
-export const byName = (
-  state: WorkspaceState,
-  name: string,
-): WorkspaceRecord | undefined =>
-  state.workspaces.find((record) => record.name === name);
+export const byName = (state: WorkspaceState, name: string): WorkspaceRecord | undefined =>
+	state.workspaces.find((record) => record.name === name);
 
 /** That workspace with some fields moved, in place, leaving every other record alone. */
 export const withRecord = (
-  workspaces: ReadonlyArray<WorkspaceRecord>,
-  name: string,
-  change: (record: WorkspaceRecord) => WorkspaceRecord,
+	workspaces: ReadonlyArray<WorkspaceRecord>,
+	name: string,
+	change: (record: WorkspaceRecord) => WorkspaceRecord,
 ): ReadonlyArray<WorkspaceRecord> =>
-  workspaces.map((record) => (record.name === name ? change(record) : record));
+	workspaces.map((record) => (record.name === name ? change(record) : record));
 
 /** That workspace, gone from the list entirely — which is what a finished close leaves behind. */
 export const without = (
-  workspaces: ReadonlyArray<WorkspaceRecord>,
-  name: string,
-): ReadonlyArray<WorkspaceRecord> =>
-  workspaces.filter((record) => record.name !== name);
+	workspaces: ReadonlyArray<WorkspaceRecord>,
+	name: string,
+): ReadonlyArray<WorkspaceRecord> => workspaces.filter((record) => record.name !== name);
 
 /**
  * A name a directory and a branch can both be called. Refused where it is typed rather than at
@@ -242,15 +230,13 @@ export const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
 
 /** Is this workspace one the program still considers live — that is, not closable twice? */
 export const isLive = (record: WorkspaceRecord): boolean =>
-  record.status === "provisioning" ||
-  record.status === "open" ||
-  record.status === "closing";
+	record.status === "provisioning" || record.status === "open" || record.status === "closing";
 
 /** The ports this state has already handed out, which a probe must skip on top of the OS's. */
 export const takenPorts = (state: WorkspaceState): ReadonlyArray<number> =>
-  state.workspaces.flatMap((record) =>
-    record.port === null || !isLive(record) ? [] : [record.port],
-  );
+	state.workspaces.flatMap((record) =>
+		record.port === null || !isLive(record) ? [] : [record.port],
+	);
 
 /**
  * The status line, in one place. The row's `status` derives its self-report from this and the
@@ -264,44 +250,40 @@ export const takenPorts = (state: WorkspaceState): ReadonlyArray<number> =>
  * that does not say so is a tile that lies by omission.
  */
 export const statusLine = (state: WorkspaceState): string =>
-  `${liveLine(state)}${refusalClause(state)}${unattributedClause(state)}`;
+	`${liveLine(state)}${refusalClause(state)}${unattributedClause(state)}`;
 
 const liveLine = (state: WorkspaceState): string => {
-  const open = state.workspaces.filter(
-    (record) => record.status === "open",
-  ).length;
-  const head = `${open} open`;
-  const busy = state.pending;
-  if (busy !== null) {
-    return busy.kind === "reconcile"
-      ? `${head} · reconciling`
-      : `${head} · ${busy.kind === "open" ? "provisioning" : "closing"} ${busy.name}`;
-  }
-  const newest = state.workspaces.find(isLive);
-  if (newest === undefined) return `${head} · nothing open`;
-  const port = newest.port === null ? "" : ` :${newest.port}`;
-  return `${head} · ${newest.name}${port} ${agentWord(newest)}`;
+	const open = state.workspaces.filter((record) => record.status === "open").length;
+	const head = `${open} open`;
+	const busy = state.pending;
+	if (busy !== null) {
+		return busy.kind === "reconcile"
+			? `${head} · reconciling`
+			: `${head} · ${busy.kind === "open" ? "provisioning" : "closing"} ${busy.name}`;
+	}
+	const newest = state.workspaces.find(isLive);
+	if (newest === undefined) return `${head} · nothing open`;
+	const port = newest.port === null ? "" : ` :${newest.port}`;
+	return `${head} · ${newest.name}${port} ${agentWord(newest)}`;
 };
 
 /** The newest refusal, in the one word it has. Empty when none has been made. */
 const refusalClause = (state: WorkspaceState): string => {
-  const newest = state.refusals[0];
-  if (newest === undefined) return "";
-  const which = newest.name === "" ? "(unnamed)" : newest.name;
-  return ` · refused ${which}: ${newest.reason}`;
+	const newest = state.refusals[0];
+	if (newest === undefined) return "";
+	const which = newest.name === "" ? "(unnamed)" : newest.name;
+	return ` · refused ${which}: ${newest.reason}`;
 };
 
 /** How many replies could not be told apart. Empty when every one of them could. */
 const unattributedClause = (state: WorkspaceState): string =>
-  state.unattributed.length === 0
-    ? ""
-    : ` · ${state.unattributed.length} unattributed`;
+	state.unattributed.length === 0 ? "" : ` · ${state.unattributed.length} unattributed`;
 
 /** What one workspace's agent is doing, in the one word a status line can hold. */
 const agentWord = (record: WorkspaceRecord): string => {
-  if (record.status === "gone") return "gone";
-  if (record.status === "failed") return "failed";
-  return record.agent === null ? "idle" : "running";
+	if (record.status === "gone") return "gone";
+	if (record.status === "failed") return "failed";
+	return record.agent === null ? "idle" : "running";
 };
 
 /**
@@ -313,98 +295,91 @@ const agentWord = (record: WorkspaceRecord): string => {
  * window's own refusal placeholder rather than a throw inside React.
  */
 export const isWorkspaceState = (state: unknown): state is WorkspaceState => {
-  if (typeof state !== "object" || state === null) return false;
-  const candidate = state as Record<string, unknown>;
-  return (
-    typeof candidate.repo === "string" &&
-    typeof candidate.repoName === "string" &&
-    typeof candidate.root === "string" &&
-    typeof candidate.base === "string" &&
-    typeof candidate.seq === "number" &&
-    (candidate.spawningFor === null ||
-      typeof candidate.spawningFor === "object") &&
-    Array.isArray(candidate.refusals) &&
-    candidate.refusals.every(isRefusal) &&
-    Array.isArray(candidate.unattributed) &&
-    candidate.unattributed.every(isUnattributed) &&
-    Array.isArray(candidate.workspaces) &&
-    candidate.workspaces.every(isWorkspaceRecord)
-  );
+	if (typeof state !== "object" || state === null) return false;
+	const candidate = state as Record<string, unknown>;
+	return (
+		typeof candidate.repo === "string" &&
+		typeof candidate.repoName === "string" &&
+		typeof candidate.root === "string" &&
+		typeof candidate.base === "string" &&
+		typeof candidate.seq === "number" &&
+		(candidate.spawningFor === null || typeof candidate.spawningFor === "object") &&
+		Array.isArray(candidate.refusals) &&
+		candidate.refusals.every(isRefusal) &&
+		Array.isArray(candidate.unattributed) &&
+		candidate.unattributed.every(isUnattributed) &&
+		Array.isArray(candidate.workspaces) &&
+		candidate.workspaces.every(isWorkspaceRecord)
+	);
 };
 
 const REASONS: ReadonlyArray<string> = ["name", "duplicate", "limit", "busy"];
 
 const isRefusal = (refusal: unknown): refusal is Refusal => {
-  if (typeof refusal !== "object" || refusal === null) return false;
-  const candidate = refusal as Record<string, unknown>;
-  return (
-    typeof candidate.name === "string" &&
-    typeof candidate.reason === "string" &&
-    REASONS.includes(candidate.reason) &&
-    typeof candidate.at === "number"
-  );
+	if (typeof refusal !== "object" || refusal === null) return false;
+	const candidate = refusal as Record<string, unknown>;
+	return (
+		typeof candidate.name === "string" &&
+		typeof candidate.reason === "string" &&
+		REASONS.includes(candidate.reason) &&
+		typeof candidate.at === "number"
+	);
 };
 
 const isUnattributed = (result: unknown): result is UnattributedResult => {
-  if (typeof result !== "object" || result === null) return false;
-  const candidate = result as Record<string, unknown>;
-  return typeof candidate.text === "string" && typeof candidate.at === "number";
+	if (typeof result !== "object" || result === null) return false;
+	const candidate = result as Record<string, unknown>;
+	return typeof candidate.text === "string" && typeof candidate.at === "number";
 };
 
-const STATUSES: ReadonlyArray<string> = [
-  "provisioning",
-  "open",
-  "closing",
-  "failed",
-  "gone",
-];
+const STATUSES: ReadonlyArray<string> = ["provisioning", "open", "closing", "failed", "gone"];
 
 const isWorkspaceRecord = (record: unknown): record is WorkspaceRecord => {
-  if (typeof record !== "object" || record === null) return false;
-  const candidate = record as Record<string, unknown>;
-  return (
-    typeof candidate.name === "string" &&
-    typeof candidate.path === "string" &&
-    typeof candidate.branch === "string" &&
-    (candidate.port === null || typeof candidate.port === "number") &&
-    typeof candidate.status === "string" &&
-    STATUSES.includes(candidate.status) &&
-    (candidate.agent === null || typeof candidate.agent === "string") &&
-    (candidate.detail === null || typeof candidate.detail === "string") &&
-    typeof candidate.openedAt === "number"
-  );
+	if (typeof record !== "object" || record === null) return false;
+	const candidate = record as Record<string, unknown>;
+	return (
+		typeof candidate.name === "string" &&
+		typeof candidate.path === "string" &&
+		typeof candidate.branch === "string" &&
+		(candidate.port === null || typeof candidate.port === "number") &&
+		typeof candidate.status === "string" &&
+		STATUSES.includes(candidate.status) &&
+		(candidate.agent === null || typeof candidate.agent === "string") &&
+		(candidate.detail === null || typeof candidate.detail === "string") &&
+		typeof candidate.openedAt === "number"
+	);
 };
 
 // -- The window's view of all that ------------------------------------------
 
 /** One workspace as the window lists it: the inputs it was given, resolved. */
 export interface WorkspaceRowView {
-  readonly key: string;
-  readonly name: string;
-  readonly path: string;
-  readonly branch: string;
-  /** `:5174`, or an em dash while there is no port yet. */
-  readonly port: string;
-  readonly status: WorkspaceStatus;
-  /** `running`, `idle`, `gone`, `failed` — the same word the status line uses. */
-  readonly agent: string;
-  readonly detail: string | null;
-  /** May this row be closed right now? A closing one may not, and neither may a busy program. */
-  readonly closable: boolean;
+	readonly key: string;
+	readonly name: string;
+	readonly path: string;
+	readonly branch: string;
+	/** `:5174`, or an em dash while there is no port yet. */
+	readonly port: string;
+	readonly status: WorkspaceStatus;
+	/** `running`, `idle`, `gone`, `failed` — the same word the status line uses. */
+	readonly agent: string;
+	readonly detail: string | null;
+	/** May this row be closed right now? A closing one may not, and neither may a busy program. */
+	readonly closable: boolean;
 }
 
 /** One refused `open`, as the window spells it out. */
 export interface RefusalView {
-  readonly key: string;
-  readonly name: string;
-  /** The whole sentence, out of `REFUSAL_TEXT` — the window has room the status line does not. */
-  readonly text: string;
+	readonly key: string;
+	readonly name: string;
+	/** The whole sentence, out of `REFUSAL_TEXT` — the window has room the status line does not. */
+	readonly text: string;
 }
 
 /** One reply that belonged to no row, as the window shows it. */
 export interface UnattributedView {
-  readonly key: string;
-  readonly text: string;
+	readonly key: string;
+	readonly text: string;
 }
 
 /**
@@ -412,67 +387,67 @@ export interface UnattributedView {
  * test: what a window shows is decided here and React only puts it on the screen.
  */
 export interface WorkspaceWindowView {
-  /** The heading: which repository these worktrees are cut from. */
-  readonly repoName: string;
-  readonly repo: string;
-  readonly root: string;
-  readonly base: string;
-  /** The same sentence the tile carries. */
-  readonly status: string;
-  /** Is a provision or a close in flight? Every control is disabled while one is. */
-  readonly busy: boolean;
-  readonly rows: ReadonlyArray<WorkspaceRowView>;
-  /** May another workspace be opened, or is the bound reached? */
-  readonly canOpen: boolean;
-  /** What to say where the list would be, when there is none. */
-  readonly empty: string;
-  /** The `open`s this program would not take, newest first. */
-  readonly refusals: ReadonlyArray<RefusalView>;
-  /** The replies that belonged to no row, newest first. */
-  readonly unattributed: ReadonlyArray<UnattributedView>;
-  /** The one line that says why this list exists at all. Empty when it is empty. */
-  readonly unattributedNote: string;
+	/** The heading: which repository these worktrees are cut from. */
+	readonly repoName: string;
+	readonly repo: string;
+	readonly root: string;
+	readonly base: string;
+	/** The same sentence the tile carries. */
+	readonly status: string;
+	/** Is a provision or a close in flight? Every control is disabled while one is. */
+	readonly busy: boolean;
+	readonly rows: ReadonlyArray<WorkspaceRowView>;
+	/** May another workspace be opened, or is the bound reached? */
+	readonly canOpen: boolean;
+	/** What to say where the list would be, when there is none. */
+	readonly empty: string;
+	/** The `open`s this program would not take, newest first. */
+	readonly refusals: ReadonlyArray<RefusalView>;
+	/** The replies that belonged to no row, newest first. */
+	readonly unattributed: ReadonlyArray<UnattributedView>;
+	/** The one line that says why this list exists at all. Empty when it is empty. */
+	readonly unattributedNote: string;
 }
 
 /** The whole of the window's reading of a workspace program. */
 export const workspaceView = (state: WorkspaceState): WorkspaceWindowView => {
-  const busy = state.pending !== null;
-  return {
-    repoName: state.repoName,
-    repo: state.repo,
-    root: state.root,
-    base: state.base,
-    status: statusLine(state),
-    busy,
-    canOpen: !busy && state.workspaces.filter(isLive).length < LIMIT,
-    rows: state.workspaces.map((record) => ({
-      key: `${record.name}-${record.openedAt}`,
-      name: record.name,
-      path: record.path,
-      branch: record.branch,
-      port: record.port === null ? "—" : `:${record.port}`,
-      status: record.status,
-      agent: agentWord(record),
-      detail: record.detail,
-      closable: !busy && record.status !== "closing",
-    })),
-    empty: busy
-      ? "Nothing open yet — the first one is still being provisioned."
-      : "Nothing open. `:workspace open <name>` provisions one.",
-    refusals: state.refusals.map((refusal, index) => ({
-      key: `${refusal.at}-${index}`,
-      name: refusal.name === "" ? "(unnamed)" : refusal.name,
-      text: REFUSAL_TEXT[refusal.reason],
-    })),
-    unattributed: state.unattributed.map((result, index) => ({
-      key: `${result.at}-${index}`,
-      text: result.text,
-    })),
-    unattributedNote:
-      state.unattributed.length === 0
-        ? ""
-        : "More than one agent was running when these came back, and a reply carries no sender — so they are kept here rather than guessed onto a row (phoenix#9287's sibling gap).",
-  };
+	const busy = state.pending !== null;
+	return {
+		repoName: state.repoName,
+		repo: state.repo,
+		root: state.root,
+		base: state.base,
+		status: statusLine(state),
+		busy,
+		canOpen: !busy && state.workspaces.filter(isLive).length < LIMIT,
+		rows: state.workspaces.map((record) => ({
+			key: `${record.name}-${record.openedAt}`,
+			name: record.name,
+			path: record.path,
+			branch: record.branch,
+			port: record.port === null ? "—" : `:${record.port}`,
+			status: record.status,
+			agent: agentWord(record),
+			detail: record.detail,
+			closable: !busy && record.status !== "closing",
+		})),
+		empty: busy
+			? "Nothing open yet — the first one is still being provisioned."
+			: "Nothing open. `:workspace open <name>` provisions one.",
+		refusals: state.refusals.map((refusal, index) => ({
+			key: `${refusal.at}-${index}`,
+			name: refusal.name === "" ? "(unnamed)" : refusal.name,
+			text: REFUSAL_TEXT[refusal.reason],
+		})),
+		unattributed: state.unattributed.map((result, index) => ({
+			key: `${result.at}-${index}`,
+			text: result.text,
+		})),
+		unattributedNote:
+			state.unattributed.length === 0
+				? ""
+				: "More than one agent was running when these came back, and a reply carries no sender — so they are kept here rather than guessed onto a row (phoenix#9287's sibling gap).",
+	};
 };
 
 /**
@@ -484,14 +459,14 @@ export const workspaceView = (state: WorkspaceState): WorkspaceWindowView => {
 // signature, and without one this shape is not assignable to Tuval's `Message` — which is what
 // `WindowHost.dispatch` is typed at.
 export type WorkspaceCommandEvent =
-  | { readonly type: "open"; readonly payload: { readonly name: string } }
-  | { readonly type: "close"; readonly payload: { readonly name: string } }
-  | { readonly type: "discard"; readonly payload: { readonly name: string } };
+	| {readonly type: "open"; readonly payload: {readonly name: string}}
+	| {readonly type: "close"; readonly payload: {readonly name: string}}
+	| {readonly type: "discard"; readonly payload: {readonly name: string}};
 
 /** Those events, built. Functions rather than constants so no caller holds a shared object. */
 export const openEvent = (name: string): WorkspaceCommandEvent => ({
-  type: "open",
-  payload: { name },
+	type: "open",
+	payload: {name},
 });
 
 /**
@@ -500,8 +475,8 @@ export const openEvent = (name: string): WorkspaceCommandEvent => ({
  * button sends, and there is no variant of it that forces.
  */
 export const closeEvent = (name: string): WorkspaceCommandEvent => ({
-  type: "close",
-  payload: { name },
+	type: "close",
+	payload: {name},
 });
 
 /**
@@ -510,6 +485,6 @@ export const closeEvent = (name: string): WorkspaceCommandEvent => ({
  * says what happens and "close --force" does not.
  */
 export const discardEvent = (name: string): WorkspaceCommandEvent => ({
-  type: "discard",
-  payload: { name },
+	type: "discard",
+	payload: {name},
 });

@@ -13,18 +13,13 @@
  * against the real config schema here rather than only when a desk boots it.
  */
 
-import { type Runner, workspace } from "@kampus/tuval-workspace";
-import {
-  ClientId,
-  claudeSession,
-  type TuvalConfigInput,
-  WorkspaceId,
-} from "@kampus/tuval/sessions";
+import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
+import {type Runner, workspace} from "@kampus/tuval-workspace";
 
 /** One workspace, one client — the two branded ids `claudeSession` will not build a row without. */
 const scope = {
-  workspace: WorkspaceId.make("default"),
-  client: ClientId.make("tuval-desk"),
+	workspace: WorkspaceId.make("default"),
+	client: ClientId.make("tuval-desk"),
 };
 
 /**
@@ -32,25 +27,25 @@ const scope = {
  * test process, so every method answers without doing anything and nothing here can provision.
  */
 const inert: Runner = {
-  exec: async () => ({ ok: false, output: "fixture runner: nothing is run" }),
-  portFree: async () => false,
-  readFile: async () => null,
-  writeFile: async () => ({
-    ok: false,
-    detail: "fixture runner: nothing is written",
-  }),
-  exists: async () => false,
+	exec: async () => ({ok: false, output: "fixture runner: nothing is run"}),
+	portFree: async () => false,
+	readFile: async () => null,
+	writeFile: async () => ({
+		ok: false,
+		detail: "fixture runner: nothing is written",
+	}),
+	exists: async () => false,
 };
 
 export const desk = workspace({
-  repo: "/tmp/tuval-workspace-fixture",
-  base: "origin/main",
-  port: { from: 5170, to: 5199 },
-  env: { template: ".env.example", portKey: "PORT" },
-  setup: ["pnpm install --frozen-lockfile"],
-  teardown: [],
-  runner: inert,
-  job: claudeSession({ cwd: "/tmp/tuval-workspace-fixture", scope }),
+	repo: "/tmp/tuval-workspace-fixture",
+	base: "origin/main",
+	port: {from: 5170, to: 5199},
+	env: {template: ".env.example", portKey: "PORT"},
+	setup: ["pnpm install --frozen-lockfile"],
+	teardown: [],
+	runner: inert,
+	job: claudeSession({cwd: "/tmp/tuval-workspace-fixture", scope}),
 });
 
 /**
@@ -60,21 +55,21 @@ export const desk = workspace({
  * half of the surface: a workspace program that only provisions.
  */
 export const reviews = workspace({
-  id: "reviews",
-  repo: "/tmp/tuval-workspace-fixture",
-  root: "/tmp/tuval-workspace-fixture/.reviews",
-  branchPrefix: "review/",
-  env: false,
-  runner: inert,
+	id: "reviews",
+	repo: "/tmp/tuval-workspace-fixture",
+	root: "/tmp/tuval-workspace-fixture/.reviews",
+	branchPrefix: "review/",
+	env: false,
+	runner: inert,
 });
 
 export default {
-  version: 1,
-  programs: [desk, reviews],
-  graph: {
-    nodes: [
-      { id: "workspace", program: desk.id, on: [] },
-      { id: "reviews", program: reviews.id, on: [] },
-    ],
-  },
+	version: 1,
+	programs: [desk, reviews],
+	graph: {
+		nodes: [
+			{id: "workspace", program: desk.id, on: []},
+			{id: "reviews", program: reviews.id, on: []},
+		],
+	},
 } satisfies TuvalConfigInput;

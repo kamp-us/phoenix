@@ -5,40 +5,35 @@
  * download — plus a brief telling the session to run everything through `nix develop -c`.
  */
 
-import { workspace } from "@kampus/tuval-workspace";
-import {
-  ClientId,
-  claudeSession,
-  type TuvalConfigInput,
-  WorkspaceId,
-} from "@kampus/tuval/sessions";
+import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
+import {workspace} from "@kampus/tuval-workspace";
 
 const REPO = "/code/my-flake";
 
 const scope = {
-  workspace: WorkspaceId.make("default"),
-  client: ClientId.make("tuval-desk"),
+	workspace: WorkspaceId.make("default"),
+	client: ClientId.make("tuval-desk"),
 };
 
 export const options = {
-  repo: REPO,
-  base: "origin/main",
-  port: { from: 5170, to: 5199 },
-  // The flake is the environment. There is no `.env.example` to copy and no port key to rewrite, so
-  // the env step is declared away rather than pointed at a file that does not exist.
-  env: false,
-  setup: ["nix develop -c true"],
-  brief:
-    "Run every command through `nix develop -c <command>` — the dev shell is this repository's environment and nothing is on PATH without it. Your dev server's port is the one named above; pass it explicitly rather than taking a default.",
+	repo: REPO,
+	base: "origin/main",
+	port: {from: 5170, to: 5199},
+	// The flake is the environment. There is no `.env.example` to copy and no port key to rewrite, so
+	// the env step is declared away rather than pointed at a file that does not exist.
+	env: false,
+	setup: ["nix develop -c true"],
+	brief:
+		"Run every command through `nix develop -c <command>` — the dev shell is this repository's environment and nothing is on PATH without it. Your dev server's port is the one named above; pass it explicitly rather than taking a default.",
 } as const;
 
 export const workspaces = workspace({
-  ...options,
-  job: claudeSession({ cwd: REPO, scope }),
+	...options,
+	job: claudeSession({cwd: REPO, scope}),
 });
 
 export default {
-  version: 1,
-  programs: [workspaces],
-  graph: { nodes: [{ id: "workspace", program: workspaces.id, on: [] }] },
+	version: 1,
+	programs: [workspaces],
+	graph: {nodes: [{id: "workspace", program: workspaces.id, on: []}]},
 } satisfies TuvalConfigInput;
