@@ -20,6 +20,7 @@
  * why it can be planned here at all.
  */
 
+import {join, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import type {TuvalConfigInput} from "@kampus/tuval/sessions";
 import {cron} from "@kampus/tuval-cron";
@@ -27,8 +28,19 @@ import {notify} from "@kampus/tuval-notify";
 import {shell} from "@kampus/tuval-shell";
 import {workspace} from "@kampus/tuval-workspace";
 
-/** This checkout, read off this file's own location so the config carries no machine's path. */
-const repo = fileURLToPath(new URL("../../..", import.meta.url));
+/**
+ * This checkout, read off this file's own location so the config carries no machine's path.
+ * `resolve` is what drops the trailing slash `fileURLToPath` leaves on a directory URL, so the two
+ * paths derived from it below say what they read as.
+ */
+const repo = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
+
+/**
+ * Where a review's worktree is provisioned — **beside** the checkout, never inside it. A worktree
+ * planted in the repository it is a worktree of is a directory git does not track and every `rm -rf`
+ * of the tree takes with it, so `join(repo, "..")` rather than a suffix on `repo`.
+ */
+const reviewsRoot = join(repo, "..", "tuval-reviews");
 
 /**
  * The shell row, and the one id in this file that is not a matter of taste. `shell({…})` defaults
@@ -43,7 +55,7 @@ export const nightlyFetch = cron({
 	id: "nightly-fetch",
 	schedule: "0 3 * * *",
 	prompt: `git -C ${repo} fetch --all`,
-	job: shell({cwd: repo, timeoutMs: 2 * 60 * 1000}),
+	job: shell({id: "nightly-fetch-runner", cwd: repo, timeoutMs: 2 * 60 * 1000}),
 });
 
 /** The way off the desk. `stdout` because a proof that needs a phone is not a proof. */
@@ -53,7 +65,7 @@ export const desk = notify({id: "desk", target: {kind: "stdout"}});
 export const reviews = workspace({
 	id: "reviews",
 	repo,
-	root: `${repo}.reviews`,
+	root: reviewsRoot,
 	base: "origin/main",
 	branchPrefix: "review/",
 	env: false,
