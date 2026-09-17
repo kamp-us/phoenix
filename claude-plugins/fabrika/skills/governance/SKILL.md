@@ -120,8 +120,10 @@ diff, so a reader can tell a hand read from a skipped one.
 <!-- anchor: CITE-ONLY-LIVE --> **Cite only `live`.** `landed` means present but `proposed`,
 `superseded` or `retired`, and citing one as settled law applies a decision that was already
 withdrawn; an unlanded record can pass every gate and still never merge. A non-zero exit is UNKNOWN,
-never `absent`. An id collision needs the cross-PR union `fabrika adr next` computes, because a
-tree-local read structurally cannot see a sibling branch — that is how two lanes mint one number.
+never `absent`. An id collision needs the union `fabrika adr next` computes over open pull requests
+and this clone's branch refs, remote-tracking ones included, because a tree-local read structurally
+cannot see a sibling branch —
+that is how two lanes mint one number.
 
 <!-- anchor: STATUS-IS-A-CLAIM-TOO --> A `status:` line is a stated field, not an observation: a
 record can read `proposed` and still be enforced at a live gate. So `proposed` never by itself means
@@ -367,7 +369,8 @@ authorable, and every read routes through a verb.
 
 Two more come from the `adr` group — the surface is what matters, not which group serves it:
 decision-record status and filenames (`adr resolve`, against a freshly fetched base ref) and the ids
-open ADR pull requests claim (`adr next`).
+open ADR pull requests and this clone's branch refs claim, remote-tracking ones included
+(`adr next`).
 
 **Nothing else is an input.** No PR body, issue body or comment is read as content to judge; a
 verdict resting on one rests on nothing this gate can prove. `post` and `readout` read comments only

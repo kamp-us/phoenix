@@ -18,6 +18,7 @@ import {FAILED} from "../verb.ts";
 import {
 	ALREADY_EXISTS,
 	BASE_UNFETCHABLE,
+	BRANCH_CLAIMS_UNKNOWN,
 	DIR_UNREADABLE,
 	IN_FLIGHT_UNKNOWN,
 	ORIGIN_REPO_UNRESOLVABLE,
@@ -44,6 +45,7 @@ const seams = (overrides: ReadonlyArray<Scripted> = []) =>
 		[/^git fetch/, okOut("")],
 		[/^git rev-parse/, okOut(`${SHA}\n`)],
 		[/^git ls-tree/, okOut(tree("0234-a.md", "0235-b.md", "0236-c.md"))],
+		[/^git log/, okOut("")],
 		[PULLS, {status: 200, body: JSON.stringify([{number: 11}, {number: 12}])}],
 		[/pulls\/11\/files/, files(["added", ".records/0237-x.md"], ["modified", "README.md"])],
 		[/pulls\/12\/files/, files(["added", ".records/0239-y.md"])],
@@ -88,6 +90,7 @@ describe("runMint", () => {
 			slug: "only-landed-adrs-may-be-cited",
 			mergedMax: "0236",
 			inFlight: ["0237", "0239"],
+			branchClaims: [],
 			baseRef: "origin/main",
 			baseSha: SHA,
 		});
@@ -96,6 +99,14 @@ describe("runMint", () => {
 	it("allocates over the in-flight set, not the merged maximum", async () => {
 		const fs = fakeFs({});
 		await run([[/pulls\/12\/files/, files(["added", ".records/0299-z.md"])]], {}, fs);
+		expect([...fs.written.keys()]).toEqual([".records/0300-only-landed-adrs-may-be-cited.md"]);
+	});
+
+	// The epic-sibling shape: the id is on a branch ref and behind no pull request at all, which is
+	// what the merged and in-flight halves between them cannot see.
+	it("allocates over a branch claim no pull request carries", async () => {
+		const fs = fakeFs({});
+		await run([[/^git log/, okOut(".records/0299-sibling.md\0")]], {}, fs);
 		expect([...fs.written.keys()]).toEqual([".records/0300-only-landed-adrs-may-be-cited.md"]);
 	});
 
@@ -116,6 +127,11 @@ describe("runMint", () => {
 			"a pull request's files cannot be read",
 			[/pulls\/11\/files/, {status: 502, body: "{}"}],
 			IN_FLIGHT_UNKNOWN,
+		],
+		[
+			"this clone's branch refs cannot be walked",
+			[/^git log/, errOut("boom")],
+			BRANCH_CLAIMS_UNKNOWN,
 		],
 	];
 
