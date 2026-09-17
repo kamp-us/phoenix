@@ -1,0 +1,63 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    // ES2023 + DOM, and `exactOptionalPropertyTypes` off, because `@kampus/tuval` is consumed as
+    // **raw TypeScript**: its `exports` map points at `src/*.ts` and it ships no `.d.ts`, so its
+    // whole reachable source tree enters this program and is checked under *these* options.
+    // `skipLibCheck` covers declaration files and does nothing for source. These three lines are
+    // therefore not this package's taste — they are `apps/tuval/tsconfig.json`'s, restated, and a
+    // consumer that picked its own would be told about `findLast`, `Element` and the MCP SDK's
+    // optional props in code it does not own. They come back to this package's own preference the
+    // day `@kampus/tuval` publishes built declarations.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "exactOptionalPropertyTypes": false,
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    // The sibling `@kampus/tuval-cron` is a workspace dependency, and its `exports` map answers a
+    // `development` condition with its source entry. TypeScript asks for no such condition on its
+    // own — under `Bundler` resolution it offers `import`/`types`/`default` and whatever is named
+    // here — so without this line the sibling resolves to `dist/index.d.ts`, which does not exist
+    // until cron has been built, and the fixture and `notify.unit.test.ts` both fail to resolve it
+    // (#9378 R1.1). Naming the condition is what replaces the `paths` entry that used to point at
+    // the sibling's source by relative path.
+    "customConditions": ["development"],
+    "noEmit": true,
+    // Relative imports carry an explicit .ts extension, because Tuval loads a config — and through
+    // it this package — with `node` under native type-stripping and no bundler; an extensionless
+    // specifier is ERR_MODULE_NOT_FOUND there. Tuval's own source does the same for the same reason.
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    // The fixture config imports this package the way a user's does, by name. The mapping points
+    // that name at the same `src/index.ts` the published `exports` map points at through `dist`,
+    // so the fixture needs no build to type-check and still reaches nothing but the public entry.
+    // `@kampus/tuval-cron` — which the fixture also names, because the composition proof needs a
+    // real cron row beside a real notify row — is NOT mapped here: it is a workspace dependency,
+    // and its own `exports` map carries a `development` condition pointing at its source entry, so
+    // the sibling resolves through the published door rather than through a relative path this
+    // package would have to keep in step (#9378 R1.1).
+    "paths": {
+      "@kampus/tuval-notify": ["./src/index.ts"]
+    },
+    // This package keeps its own standalone lens rather than extending the repo root's, because
+    // three of the options above are `apps/tuval`'s restated and the root's are not compatible with
+    // them. The one thing it has to take from the root anyway is this plugin entry: it is what
+    // seats the Effect language service over the project, and `effect-tsgo diagnostics` reads its
+    // file set from that seating — without it the run reports `Checked 0 files out of N` and exits
+    // clean, which is a green that read nothing.
+    "plugins": [{ "name": "@effect/language-service", "includeSuggestionsInTsc": false }]
+  },
+  // `src/window.tsx` is not here: it is React, it is browser-only, and it has its own lens
+  // (`tsconfig.window.json`). Excluding it from this one is what keeps the kernel row free of React
+  // — an accidental `import ... from "./window.tsx"` in `notify.ts` fails to compile here.
+  // `.tuval/` is the consumer fixture: a real user config, type-checked here so the README's usage
+  // cannot drift from what actually compiles.
+  "include": ["src", ".tuval"],
+  "exclude": ["node_modules", "dist", "src/window.tsx"]
+}
