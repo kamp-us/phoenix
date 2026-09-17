@@ -86,7 +86,7 @@ describe("a schedule cron refuses before it is ever armed", () => {
 	});
 
 	it("refuses both clocks at once, which the type already refuses", () => {
-		// biome-ignore lint/plugin: the cast IS the subject — proving the runtime guard fires for the both-clocks shape the type already refuses means reaching the call past the compiler.
+		// biome-ignore lint/plugin: the cast IS the subject — proving the runtime guard fires for the both-clocks shape the type already refuses means reaching the call past the compiler. Permanent: no upstream change removes a cast that is the assertion.
 		const both = {
 			everyMs: 60_000,
 			schedule: "0 7 * * *",
@@ -97,7 +97,7 @@ describe("a schedule cron refuses before it is ever armed", () => {
 	});
 
 	it("refuses a cron given neither clock, rather than silently never waking", () => {
-		// biome-ignore lint/plugin: the cast IS the subject — proving the runtime guard fires for the no-clock shape the type already refuses means reaching the call past the compiler.
+		// biome-ignore lint/plugin: the cast IS the subject — proving the runtime guard fires for the no-clock shape the type already refuses means reaching the call past the compiler. Permanent: no upstream change removes a cast that is the assertion.
 		expect(() => cronProgram({prompt: "what changed?"} as unknown as CronOptions)).toThrow(
 			/give `everyMs`/,
 		);

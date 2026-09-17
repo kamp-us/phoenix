@@ -309,10 +309,11 @@ was spread with, and the answer arrives as an ordinary dispatched event.
 ### The provisioning itself is an Effect program
 
 `src/provision.ts` is `Effect.gen` over the four steps, and the order *is* the statements: a step
-that fails short-circuits the rest by construction. Four `Data.TaggedError` classes are the four
-ways it stops — `WorktreeFailed`, `NoFreePort`, `EnvTemplateMissing`, `SetupFailed` — so a failure
-**names its step by type**, through an exhaustive map off the `_tag`, and there is no `step: string`
-anybody could set wrong. Close has two of its own: `TeardownCommandFailed` and `RemoveRefused`.
+that fails short-circuits the rest by construction. Four `Schema.TaggedError` classes are the
+four ways it stops — `WorktreeFailed`, `NoFreePort`, `EnvTemplateMissing`, `SetupFailed` — so a
+failure **names its step by type**, through an exhaustive map off the `_tag`, and there is no
+`step: string` anybody could set wrong. Close has two of its own: `TeardownCommandFailed` and
+`RemoveRefused`.
 
 The worktree is taken with `Effect.acquireRelease`, and its release **records rather than deletes**:
 on a scope that ended in failure it writes the half-built tree's path down as `kept` on the outcome.

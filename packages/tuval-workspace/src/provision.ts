@@ -11,8 +11,8 @@
  * here is silent and expensive.
  *
  * **A failure names its step by type.** There is no `step: string` field anybody could set wrong:
- * the ways a provision stops are `Data.TaggedError` classes, and the word a record shows is read
- * off the `_tag` through an exhaustive map. An error that carries no step, or a step no error
+ * the ways a provision stops are `Schema.TaggedError` classes, and the word a record shows is
+ * read off the `_tag` through an exhaustive map. An error that carries no step, or a step no error
  * produces, does not typecheck.
  *
  * **The compensation records, it does not delete.** The worktree is acquired with
@@ -35,7 +35,7 @@
  */
 
 import {join} from "node:path";
-import {Context, Data, Effect, Exit, Layer, Ref, type Scope} from "effect";
+import {Context, Effect, Exit, Layer, Ref, Schema, type Scope} from "effect";
 import {nodeRunner, type Runner} from "./runner.ts";
 
 // -- The machine, as a service ----------------------------------------------
@@ -56,10 +56,27 @@ export const MachineLive: Layer.Layer<Machine> = Layer.sync(Machine, nodeRunner)
 export const machineLayer = (runner: Runner): Layer.Layer<Machine> =>
 	Layer.succeed(Machine, runner);
 
-/** One `Runner` call, as an Effect. A `Runner` never throws by contract, so this never fails. */
+/**
+ * A `Runner` method that rejected instead of answering. It is never constructed by a conforming
+ * implementation — `./runner.ts`'s `WriteResult` docblock is the contract that every method is
+ * total — so it exists to give the defect a name in a stack trace rather than a case to handle.
+ */
+class RunnerRejected extends Schema.TaggedError<RunnerRejected>()("RunnerRejected", {
+	cause: Schema.String,
+}) {}
+
+/**
+ * One `Runner` call, as an Effect. A `Runner` never throws by contract, so this never fails: the
+ * rejection branch is `orDie`, which is the same defect `Effect.promise` would have raised, with a
+ * named error inside it instead of a bare cause.
+ */
 const ask = <A>(call: (runner: Runner) => Promise<A>): Effect.Effect<A, never, Machine> =>
-	// biome-ignore lint/plugin: `Runner` never rejects by contract — every method answers with a result object and the two implementations (`src/runner.ts`, `src/fake-runner.ts`) are the whole set. There is no rejection here to become a defect.
-	Machine.use((runner) => Effect.promise(() => call(runner)));
+	Machine.use((runner) =>
+		Effect.tryPromise({
+			try: () => call(runner),
+			catch: (cause) => new RunnerRejected({cause: String(cause)}),
+		}).pipe(Effect.orDie),
+	);
 
 // -- Substitution -----------------------------------------------------------
 
@@ -176,41 +193,39 @@ export interface EnvPlan {
 // -- The ways a provision stops ---------------------------------------------
 
 /** `git worktree add` refused. Nothing was built, so there is nothing to keep. */
-// biome-ignore lint/plugin: this package publishes to npm and its errors cross into a user's `tuval.config.ts`, not phoenix's fate wire — there is no `FateWireCode` for the annotation to carry, and the move keeps the error surface it arrived with (#9406).
-export class WorktreeFailed extends Data.TaggedError("WorktreeFailed")<{
-	readonly output: string;
-}> {}
+export class WorktreeFailed extends Schema.TaggedError<WorktreeFailed>()("WorktreeFailed", {
+	output: Schema.String,
+}) {}
 
 /** Every port in the declared range is spoken for, by the OS or by this program. */
-// biome-ignore lint/plugin: this package publishes to npm and its errors cross into a user's `tuval.config.ts`, not phoenix's fate wire — there is no `FateWireCode` for the annotation to carry, and the move keeps the error surface it arrived with (#9406).
-export class NoFreePort extends Data.TaggedError("NoFreePort")<{
-	readonly from: number;
-	readonly to: number;
-}> {}
+export class NoFreePort extends Schema.TaggedError<NoFreePort>()("NoFreePort", {
+	from: Schema.Number,
+	to: Schema.Number,
+}) {}
 
 /** The env template is not where the config said it was. */
-// biome-ignore lint/plugin: this package publishes to npm and its errors cross into a user's `tuval.config.ts`, not phoenix's fate wire — there is no `FateWireCode` for the annotation to carry, and the move keeps the error surface it arrived with (#9406).
-export class EnvTemplateMissing extends Data.TaggedError("EnvTemplateMissing")<{
-	readonly template: string;
-}> {}
+export class EnvTemplateMissing extends Schema.TaggedError<EnvTemplateMissing>()(
+	"EnvTemplateMissing",
+	{
+		template: Schema.String,
+	},
+) {}
 
 /**
  * The `.env` could not be written into the worktree — a read-only tree, a full disk, a directory
  * that went away underneath. It is a failure and not a defect on purpose: see `./runner.ts`'s
  * `WriteResult` for what a throwing write costs.
  */
-// biome-ignore lint/plugin: this package publishes to npm and its errors cross into a user's `tuval.config.ts`, not phoenix's fate wire — there is no `FateWireCode` for the annotation to carry, and the move keeps the error surface it arrived with (#9406).
-export class EnvWriteFailed extends Data.TaggedError("EnvWriteFailed")<{
-	readonly file: string;
-	readonly detail: string;
-}> {}
+export class EnvWriteFailed extends Schema.TaggedError<EnvWriteFailed>()("EnvWriteFailed", {
+	file: Schema.String,
+	detail: Schema.String,
+}) {}
 
 /** A `setup` command the config wrote failed. The first failure wins and the rest never run. */
-// biome-ignore lint/plugin: this package publishes to npm and its errors cross into a user's `tuval.config.ts`, not phoenix's fate wire — there is no `FateWireCode` for the annotation to carry, and the move keeps the error surface it arrived with (#9406).
-export class SetupFailed extends Data.TaggedError("SetupFailed")<{
-	readonly command: string;
-	readonly output: string;
-}> {}
+export class SetupFailed extends Schema.TaggedError<SetupFailed>()("SetupFailed", {
+	command: Schema.String,
+	output: Schema.String,
+}) {}
 
 export type ProvisionError =
 	| WorktreeFailed
@@ -314,7 +329,7 @@ const acquireWorktree = (
 				runner.exec(`git worktree add -b ${plan.branch} ${plan.path} ${plan.base}`, plan.repo),
 			);
 			if (!added.ok) {
-				return yield* Effect.fail(new WorktreeFailed({output: added.output}));
+				return yield* new WorktreeFailed({output: added.output});
 			}
 			return plan.path;
 		}),
@@ -332,7 +347,7 @@ const writeEnv = (
 		if (env === null) return;
 		const template = yield* ask((runner) => runner.readFile(join(plan.repo, env.template)));
 		if (template === null) {
-			return yield* Effect.fail(new EnvTemplateMissing({template: env.template}));
+			return yield* new EnvTemplateMissing({template: env.template});
 		}
 		const assignments: ReadonlyArray<readonly [string, string]> = [
 			[env.portKey, String(port)],
@@ -343,7 +358,7 @@ const writeEnv = (
 			runner.writeFile(file, rewriteEnv(template, assignments)),
 		);
 		if (!written.ok) {
-			return yield* Effect.fail(new EnvWriteFailed({file, detail: written.detail}));
+			return yield* new EnvWriteFailed({file, detail: written.detail});
 		}
 	});
 
@@ -354,7 +369,7 @@ const runSetup = (plan: ProvisionPlan, vars: Vars): Effect.Effect<void, SetupFai
 			const line = substitute(command, vars);
 			const result = yield* ask((runner) => runner.exec(line, plan.path));
 			if (!result.ok) {
-				return yield* Effect.fail(new SetupFailed({command: line, output: result.output}));
+				return yield* new SetupFailed({command: line, output: result.output});
 			}
 		}
 	});
@@ -368,7 +383,7 @@ export const provision = (plan: ProvisionPlan): Effect.Effect<ProvisionOutcome, 
 
 			const port = yield* pickPort(plan.ports, plan.taken);
 			if (port === null) {
-				return yield* Effect.fail(new NoFreePort({from: plan.ports.from, to: plan.ports.to}));
+				return yield* new NoFreePort({from: plan.ports.from, to: plan.ports.to});
 			}
 
 			const vars: Vars = {
@@ -416,17 +431,18 @@ export interface TeardownPlan {
 }
 
 /** A `teardown` command the config wrote failed, so the removal never ran. */
-// biome-ignore lint/plugin: this package publishes to npm and its errors cross into a user's `tuval.config.ts`, not phoenix's fate wire — there is no `FateWireCode` for the annotation to carry, and the move keeps the error surface it arrived with (#9406).
-export class TeardownCommandFailed extends Data.TaggedError("TeardownCommandFailed")<{
-	readonly command: string;
-	readonly output: string;
-}> {}
+export class TeardownCommandFailed extends Schema.TaggedError<TeardownCommandFailed>()(
+	"TeardownCommandFailed",
+	{
+		command: Schema.String,
+		output: Schema.String,
+	},
+) {}
 
 /** Git refused to remove the worktree — which is what a dirty tree does with no `--force`. */
-// biome-ignore lint/plugin: this package publishes to npm and its errors cross into a user's `tuval.config.ts`, not phoenix's fate wire — there is no `FateWireCode` for the annotation to carry, and the move keeps the error surface it arrived with (#9406).
-export class RemoveRefused extends Data.TaggedError("RemoveRefused")<{
-	readonly output: string;
-}> {}
+export class RemoveRefused extends Schema.TaggedError<RemoveRefused>()("RemoveRefused", {
+	output: Schema.String,
+}) {}
 
 export type TeardownError = TeardownCommandFailed | RemoveRefused;
 
@@ -477,16 +493,14 @@ export const teardown = (plan: TeardownPlan): Effect.Effect<TeardownOutcome, nev
 			const line = substitute(command, vars);
 			const result = yield* ask((runner) => runner.exec(line, plan.path));
 			if (!result.ok) {
-				return yield* Effect.fail(
-					new TeardownCommandFailed({command: line, output: result.output}),
-				);
+				return yield* new TeardownCommandFailed({command: line, output: result.output});
 			}
 		}
 		const removed = yield* ask((runner) =>
 			runner.exec(`git worktree remove ${plan.path}${plan.force ? " --force" : ""}`, plan.repo),
 		);
 		if (!removed.ok) {
-			return yield* Effect.fail(new RemoveRefused({output: removed.output}));
+			return yield* new RemoveRefused({output: removed.output});
 		}
 	}).pipe(
 		Effect.match({
