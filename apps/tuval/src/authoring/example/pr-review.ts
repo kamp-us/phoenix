@@ -23,6 +23,19 @@
  * `agy/`. Declaring `Schema.String` here instead would name a shape no shipped agent carries and no
  * shipped row could ever fill.
  *
+ * **`program({...})` is why no cell here states a type the layer already knows (#8825).** The
+ * record has to live in a binding — this module exports it so a test can drive it, and `prReview`
+ * below compiles it — and a `const` contextually types nothing, so every cell used to carry its own
+ * `State`, its own event and its own `Answer<State>`. The one cell that still names an event is
+ * `result`: a `Reply`'s name is chosen by the `spawn` above it, so it is the author's to declare
+ * and nothing in the layer can read it back. `spawned` is not — it is the layer's own event with a
+ * fixed name, and `UpdateTable` types it like `key`.
+ *
+ * That call's one-word name is this budget's doing. A longer one pushes the single import line
+ * below past the formatter's width, which costs eight wrapped lines and breaks the ceiling
+ * `pr-review.unit.test.ts` asserts — so the name was picked here, against this number, and
+ * `program`'s own docblock points back to this paragraph rather than restating it.
+ *
  * The one command is `send("pr", pr)`: a bare port name, which means an in-port of *this* program's
  * own process, looked up against this program's live processes at the call (`../own-process.ts`).
  * It is the whole of what a command may ask for — `send` and nothing else (ADR 0372) — and it is
@@ -42,36 +55,33 @@
 
 import {Schema} from "effect";
 import {PromptPayloadSchema, TurnResultSchema} from "../../ai-agent/ports/index.ts";
-import type {Answer, ArrivalEvent, Reply, ShapeSource, Spawned} from "../index.ts";
-import {defineProgram, emit, Program, port, programArgs, send, spawn} from "../index.ts";
+import type {Reply, ShapeSource} from "../index.ts";
+import {defineProgram, emit, Program, port, program, programArgs, send, spawn} from "../index.ts";
 
 const agent = Program.shape({in: {prompt: PromptPayloadSchema}, out: {result: TurnResultSchema}});
 const args = programArgs("pr-review", {reviewer: agent});
 const prompt = (text: string, key: string) => ({text, key, timestamp: Date.now()});
 type State = {readonly pr: number | null; readonly verdict: string | null};
-export const prReviewProgram = {
+export const prReviewProgram = program({
 	id: "pr-review",
 	ports: {pr: port.in(Schema.Number), verdict: port.out(Schema.String)},
 	args,
 	init: (): State => ({pr: null, verdict: null}),
 	update: {
-		pr: (s: State, e: ArrivalEvent<"pr", number>): Answer<State> => [
-			{...s, pr: e.payload},
-			[spawn(args.reviewer, {on: {result: "result"}})],
-		],
-		spawned: (s: State, e: Spawned): Answer<State> => [
+		pr: (s, e) => [{...s, pr: e.payload}, [spawn(args.reviewer, {on: {result: "result"}})]],
+		spawned: (s, e) => [
 			s,
 			[send({process: e.process, port: "prompt"}, prompt(`review PR #${s.pr}`, e.process))],
 		],
-		result: (s: State, e: Reply<"result", typeof TurnResultSchema.Type>): Answer<State> => [
+		result: (s, e: Reply<"result", typeof TurnResultSchema.Type>) => [
 			{...s, verdict: e.payload.text},
 			[emit("verdict", e.payload.text)],
 		],
 	},
 	commands: {review: {args: Schema.Number, run: (pr: number) => send("pr", pr)}},
-	title: (s: State) => (s.pr === null ? "pr-review" : `pr-review #${s.pr}`),
-	status: (s: State) => s.verdict ?? "idle",
-};
+	title: (s) => (s.pr === null ? "pr-review" : `pr-review #${s.pr}`),
+	status: (s) => s.verdict ?? "idle",
+});
 
 export const prReview = (fill: {readonly reviewer: ShapeSource}) =>
 	defineProgram({...prReviewProgram, fill, label: `pr-review (${fill.reviewer.id})`});
