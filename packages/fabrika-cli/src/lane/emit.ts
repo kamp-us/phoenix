@@ -15,7 +15,8 @@
  * **One epic run is one branch and one PR**. A child's region is the local loop only —
  * `queued → build → review → integrate`, the integrate step merging the child's range into the epic
  * branch — and the merge to `main` lives once, in the tail phase's single epic-level region
- * (`review → ship → shipped`, plus the `build` repair cell a failed tail review retries into). The
+ * (`review → ship → shipped`, plus the `build` repair cell a failed tail review retries into and the
+ * `review:ui` cell a rendered run's tail routes through on its way to `ship`). The
  * tail is a *phase* rather than a bare state because `machine.ts` reads the workflow's two terminals
  * off the last phase's `onDone` pair; shaped this way the compiler needs no change at all.
  *
@@ -83,10 +84,13 @@ const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
  * the `queued` `WIP` and both FAIL arms; a child carrying none is emitted byte-for-byte as it was
  * before this axis existed.
  *
- * **The rendered REVIEW cell is deliberately not emitted**, on the decision record that rules an
- * epic child's rendered review the tail's by construction. A child opens no pull request, so a
+ * **No CHILD region emits the rendered REVIEW cell**, on the decision record that rules an epic
+ * child's rendered review the tail's by construction. A child opens no pull request, so a
  * `review:ui` cell it entered could produce nothing: `wire/lane-brief.ts` maps the state to
  * `ui-reviewer` with no child arm, and `prove.ts`'s `claimOf` gates its `PASS` on `&& !child`.
+ *
+ * The creditor that record names does emit it — see {@link epicRegion}. The guard spelling is the
+ * one thing the two cells share: a child's routes it to a BUILDER, the tail's to a reviewer.
  */
 const UI_CLASS = "ui";
 const UI_GUARD = `class:${UI_CLASS}`;
@@ -258,6 +262,23 @@ const region = (
  * anyway (the 2026-08-20 amendment to the epic-machine decision record). The fallthrough is the same `human:budget-spent` a
  * child's is: an epic review that spent its budget is a park its driver resumes, not the end of the
  * run, and one leaf for one fact means one route to read it by.
+ *
+ * `review:ui` is the tail's second review cell, and the tail is the ONE region of this machine that
+ * carries it. Every child hands its rendered namespace on unconditionally, so the whole run's
+ * `review-ui` debt arrives here; with no cell to route into, `prove.ts` left the tail owing the set
+ * at `review`, refused every `PASS` at exit 23, and the lane could neither ship nor park honestly —
+ * `review` is an active state, so no stale sweep ever saw it. The cell is emitted unconditionally
+ * rather than on a class, because the tail's context seeds none: the tail is emitted before any
+ * child has classed anything, and the class reaches it only as the `classes` a reviewer relays on
+ * `lane report --class ui`. A tail whose run renders nothing never raises the guard, walks
+ * `review → ship` on the bytes it always walked, and derives no namespace for the cell to owe.
+ *
+ * Its `FAIL` retries into `build` — the tail's one repair cell — and not into a `build:ui` of its
+ * own. A tail repair round is briefed on the assembly branch beside the run's PR, and
+ * `wire/lane-brief.ts` admits that pair for `build` alone; a rendered repair is the mixed builder's
+ * per-file law over that same branch, which needs no second cell here.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8937
  */
 const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => ({
 	initial: "review",
@@ -265,12 +286,23 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 		build: {on: {[`${ns}.DONE`]: "review", [`${ns}.BLOCKED`]: "blocked"}},
 		review: {
 			on: {
+				[`${ns}.PASS`]: [{target: "review:ui", guard: UI_GUARD}, {target: "ship"}],
+				[`${ns}.BLOCKED`]: "blocked",
+				[`${ns}.FAIL`]: [
+					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+					{target: "human:budget-spent"},
+				],
+			},
+		},
+		"review:ui": {
+			on: {
 				[`${ns}.PASS`]: "ship",
 				[`${ns}.BLOCKED`]: "blocked",
 				[`${ns}.FAIL`]: [
 					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 					{target: "human:budget-spent"},
 				],
+				...(machinery ? {[`${ns}.LAP`]: lapArm("review:ui")} : {}),
 			},
 		},
 		ship: {
