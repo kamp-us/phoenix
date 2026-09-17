@@ -22,8 +22,10 @@
 // The Claude row names only the `scope` its three kernel tools call under — four plain ids. The
 // `SpellBridge` those tools speak through is left open on the row and arrives at spawn from the
 // shell's own kernel context (#7951/#7958), because this module is evaluated inside `boot`, before
-// there is a bridge to name. The scope names no window, so a tool `spawn` starts a root process
-// rather than a child of the Claude one until #7894.
+// there is a bridge to name. The scope names no window for the same reason — no window exists yet
+// — and it does not have to: opening the row into a window hands the process that window as
+// `CallingWindow` (`src/shell/picker/open.ts`), and the kernel resolves the parent of a tool
+// `spawn` from it, so a spawned process is a child of the Claude one (#8758).
 import {Console} from "effect";
 import {agySessionProgram} from "../src/agy/program.ts";
 import {sessionListProgram} from "../src/ai-agent/session-list.ts";
