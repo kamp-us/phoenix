@@ -234,9 +234,26 @@ describe("authoring.payloadFits over set-valued schema keywords", () => {
 		).toBe(false);
 	});
 
+	it("keeps an annotation literal, so reordered examples are two payloads", () => {
+		// `examples` is the generator's other array, and it stays out of the set because every
+		// annotation binds as written — a differing `description` already refuses fit.
+		expect(
+			payloadFits(
+				Schema.String.annotate({examples: ["a", "b"]}),
+				Schema.String.annotate({examples: ["b", "a"]}),
+			),
+		).toBe(false);
+		expect(
+			payloadFits(
+				Schema.String.annotate({description: "one"}),
+				Schema.String.annotate({description: "two"}),
+			),
+		).toBe(false);
+	});
+
 	it("keeps a tuple positional, so two element orders are two payloads", () => {
-		// `prefixItems` is the one array the generator emits by index rather than as a set; sorting it
-		// would call these two the same.
+		// `prefixItems` holds its members by index rather than as a set; sorting it would call these
+		// two the same.
 		expect(
 			payloadFits(
 				Schema.Tuple([Schema.String, Schema.Number]),
