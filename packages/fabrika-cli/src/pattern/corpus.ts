@@ -11,11 +11,6 @@ import type {ParsedIndex} from "./index-table.ts";
 
 export type Registration = "registered" | "unregistered" | "unknown";
 
-/**
- * `absent` — the directory is not in the tree. `none` — it is, and holds no doc. `library` — it
- * holds at least one. All three are facts at exit `0`: the two empty ones are the adopting-repo
- * case, and refusing there would leave a repo unable to write its first pattern doc.
- */
 export type CorpusOutcome = "library" | "none" | "absent";
 
 /** One doc, before its history is read. */

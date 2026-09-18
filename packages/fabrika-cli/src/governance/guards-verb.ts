@@ -2,12 +2,8 @@
  * `governance guards` — the anchored invariants the bound diff removes or modifies, and the
  * guard-bearing files it touches.
  *
- * **The three outcomes are distinct facts and none is a clearance.** `hits` — an anchored invariant
- * moved. `no-anchor-change` — anchors exist in the diff's reach and none moved. `no-anchors-in-reach`
- * — the touched files carry no anchors at all, so this scan had nothing to look at. That third one is
- * the mechanical floor reporting its own silence, not a statement that no guard was weakened: a guard
- * weakened in prose carrying no anchor is invisible here by construction, and the skill's judgment is
- * what covers it.
+ * A guard weakened in prose with no anchor is invisible to this scan. The skill must still judge
+ * it. See ./command.ts help for the result states; none grants clearance.
  *
  * A truncated diff is refused rather than scanned, and what proves it truncated is git against git:
  * the served diff body against the status enumeration of the same range. GitHub's `changed_files` is

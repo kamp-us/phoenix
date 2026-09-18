@@ -617,8 +617,8 @@ children open none — and it costs one board read.
 
 **Never close and reopen a PR to force this.** A reopen does rebuild the merge ref, and it also
 tears the PR's preview stage down mid-deploy — which is the reason it is forbidden rather than
-merely discouraged, and `lane retrigger`'s own reference row carries the report that fallout was
-filed under. It raced the rebuild the one time it was used, so the guard re-ran against the stale
+merely discouraged. The [lane group overview](../../../../packages/fabrika-cli/docs/verb-reference.md#the-lane-group)
+links the incident report. It raced the rebuild the one time it was used, so the guard re-ran against the stale
 base anyway and took two rounds. Re-running the workflow is no route either: a re-run replays the original event's
 `GITHUB_SHA` and `GITHUB_REF`, which is the stale merge commit — the very red you are clearing.
 Exit `42` is a child the assembly branch does not merge into, and that is a repair round on that
@@ -1763,17 +1763,17 @@ A `parkable` row is a lane whose builder is provably gone, and every answer shor
 `working` row that changed nothing — a claim still inside its budget (the live-but-quiet builder,
 which once lost its claim to exactly this kind of guess), a branch still carrying the dead builder's
 commits, an open PR, or no claim at all. A read that failed is `unreadable` and never dead.
-**The conjunction itself is the verb's, written once in its reference row**
-(`packages/fabrika-cli/docs/verb-reference.md`, `lane recover`) — read it there rather than off a
-restatement here, because what counts as "left something behind" differs by role and a copy of it
-here drifted the day it landed. Dropping `--check` records the `BLOCKED --cause spawn-dead`.
+**Read the conjunction in `lane recover --help`.** What counts as "left something behind"
+differs by role; the help owns that predicate rather than a second copy here. Dropping `--check`
+records the `BLOCKED --cause spawn-dead`.
 
 **It retracts nothing, and it is not the end of the chain.** This sweep leaves the claim standing,
 and the park it writes is the exact `blocked` + `spawn-dead` pair `recipe unpark`'s `spawn-clear` row
 clears — which §4 above already tells you to run on a `blocked` fold. That row retracts the claim on
 the same age proof, so the claim does end, one verb later, with no human between the two. That is a
-decision this repo's corpus records, and the verb's reference row names it: a verb-made age read may
-license the park, and the retraction stays where it always was, under every one of its conditions.
+ruling cited by the `@ruling` tag in
+[`recover-verb.ts`](../../../../packages/fabrika-cli/src/lane/recover-verb.ts): the sweep may record
+the park, and retraction keeps its existing conditions.
 **The eviction rule above still holds whole where it matters** — no reader
 retracts a claim, and no claim ends outside a proven identity or a budget-proved death. What changed
 is who may write down the park that death happens inside. The arm is off unless you pass the flag,

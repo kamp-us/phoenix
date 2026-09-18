@@ -1,11 +1,8 @@
 /**
  * `triage claim` — take one lane's claim on one issue, proven by read-back.
  *
- * Post this lane's marker, re-read every marker on the issue, discard the ones older than the
- * TTL, and let the earliest survivor win. `won` and `lost` are both **proven answers** and both exit
- * 0, with the discriminator in the state word: a losing claim is something this verb *determined*,
- * so seating it on a non-zero code would make "another sweep holds it" indistinguishable from "the
- * verb is broken".
+ * Post this lane's marker and resolve the race through `claim.ts`.
+ * See `triage claim --help` for the answer contract.
  *
  * **A claim names a lane, and the lane is the token this verb hands back.** A run with no `--token`
  * mints one and races under its nonce; a run that passes the token it was handed re-enters the lane

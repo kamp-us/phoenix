@@ -1,24 +1,9 @@
 /**
- * The one exit table every `adr` verb allocates from, so a code means one thing across the group.
+ * Exit allocations for `adr`; caller semantics are in `./command.ts` help.
+ * Shared meanings import `../exit-codes.ts` so separate verbs cannot assign competing numbers.
  *
- * Before this table each verb seated its own numerals and the group collided with itself: `3` was
- * `ALREADY_EXISTS`, `BASE_UNFETCHABLE`, `NO_SUBJECT` or `CORPUS_UNREADABLE` depending on which verb
- * produced it, and `NO_SUBJECT` was `3` under `adr supersede` and `4` under `adr sweep` — one name,
- * two numbers, shipped.
- *
- * The two shared seats are **imported from the base, never re-typed** — the discipline
- * `../exit-code-alignment.ts` can check, because an import cannot drift. `12` and up are this
- * group's own.
- *
- * **`5` is absent from this table on purpose and must not be added to it.** It meant "the record
- * directory was read and is empty — refusing" until a read-and-empty corpus became an answer, so it
- * is a *vacated* seat rather than a free one: a caller still pinned to the old reading would take a
- * new meaning there as the old one. The private band starting at `12` puts it out of reach.
- *
- * `0`, `1` and `127` are reserved by the interface convention (`../verb.ts`). A malformed `<id>` or
- * `<slug>` stays on `1` with the other usage errors: `adr resolve` already refuses a non-four-digit
- * id there, so `adr new`'s old `BAD_ARGUMENT = 4` put one fact on two numbers at the reserved end of
- * the same table.
+ * Code 5 is retired. It refused an empty directory before that became a valid answer.
+ * Reusing it would give old callers a different meaning for the same number.
  */
 
 import {
@@ -49,19 +34,12 @@ export const NO_SUBJECT = SHARED_NO_TARGET;
  */
 export const DIR_UNREADABLE = SHARED_PRECONDITION_UNKNOWN;
 
-/** The target path already exists — refused, never overwritten. */
 export const ALREADY_EXISTS = 12;
-/** `--by` has no record under `--dir` — the link would be dead on arrival. */
 export const NO_BY = 13;
-/** `<id>`'s frontmatter has no single rewritable `status:` line. */
 export const NO_STATUS_LINE = 14;
-/** The rewrite would have changed a line other than `status:` — aborted before writing. */
 export const MULTI_LINE_DIFF = 15;
-/** `<id>` is already `superseded by …`, so it is not amendable or re-supersedable. */
 export const ALREADY_SUPERSEDED = 16;
-/** `--base` could not be fetched, so the merged set is UNKNOWN. */
 export const BASE_UNFETCHABLE = 17;
-/** The open pull requests could not be enumerated, so the in-flight set is UNKNOWN. */
 export const IN_FLIGHT_UNKNOWN = 18;
 
 /**

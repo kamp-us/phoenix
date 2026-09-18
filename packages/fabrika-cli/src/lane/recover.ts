@@ -39,7 +39,7 @@
  * paragraph above is about *finishing* a build, which stays off limits for the reason it gives. What
  * the spawn arm asks is whether the builder is **gone**, which turns on live board residue rather
  * than on an offline proof — so the conjunction it reads is the verb's, written once in that verb's
- * own reference row (`../../docs/verb-reference.md`, `lane recover`). What lives here is the offline
+ * `lane recover --help` description in `./command.ts`. What lives here is the offline
  * half: which tasks to ask about ({@link buildingBy}), where a builder in each role would have left
  * its work ({@link publicationOf}), and the park those reads record ({@link DEAD_SPAWN_EVENT},
  * {@link DEAD_SPAWN_CAUSE}).

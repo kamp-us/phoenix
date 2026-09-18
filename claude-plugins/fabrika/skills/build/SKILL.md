@@ -226,16 +226,11 @@ markdown, validates under `prose`) — and read the matching rubric file in
 [`references/`](references/) before writing. Done when every acceptance criterion maps to
 something you can point at.
 
-**When the change alters what a fabrika verb prints, the surface is wider than the file you opened.**
-That grammar is hand-copied into six places and nothing compares them, so a sweep scoped to the
-directory you started in leaves a copy that still reads as true — one child died three repair rounds
-running on exactly that, because each round fixed the copies under the directory it opened and CI
-kept reading a seventh. The six are the verb's **Output** paragraph in `contract.md`, the fenced
-worked examples further down that same file, the `SKILL.md` step that runs the verb and routes off
-its tokens, the verb's `Command.withDescription` help string, the verb's row on the package's verb
-reference page, and the source docblocks on the verb module and its helpers. The prose and the
-examples are two passes rather than one, and a sweep scoped to markdown never opens the `.ts`
-surfaces at all — walk all six and land every one in this PR.
+**When a fabrika verb's contract changes, update it with the implementation in the same PR.**
+Read [command documentation ownership](../../docs/interface-convention.md#command-documentation-ownership)
+before changing what a verb prints. Update the help callers use, the contract requirements and
+examples affected, and any skill step whose next action changes. Done when each changed fact has
+an owner, retained pointers resolve, and the caller can still read and act on the answer.
 
 ## 4 — Branch, build, verify in this tree
 
@@ -312,14 +307,15 @@ what a builder needs beyond them is here.
 
 Allocate with the fence above, giving `--slug` the body's own name — `commit-message`,
 `deviations`, `pr-body`, `note` — so one lane's four bodies do not overwrite each other, and none of
-them lands on the `notes` slug. Write the body in with bounded `cat >>` appends, then run the verb
-with a literal input redirect in place of the heredoc:
-`fabrika build pr $issue_or_pr_number < <the path it printed>`. The bytes arrive on stdin exactly
+them lands on the `notes` slug. Treat the returned path as the staging directory: first run
+`mkdir -p <allocated-directory>` with that literal absolute path. Put the body in a leaf file
+named `body.md` inside it. Write that file's absolute path literally in each bounded
+`cat >> <allocated-directory>/body.md` append and in the verb's input redirect:
+`fabrika build pr $issue_or_pr_number < <allocated-directory>/body.md`.
+The bytes arrive on stdin exactly
 as the heredoc would have delivered them, so each verb makes every refusal it always makes — the commit's
 read-back, the `## Deviations` shape, the leak scan — and the allocated path is machine-local, so a
-body quoting it reds at `5`. `build commit`'s `--message-file` is the same file reached the other
-way and is equally sanctioned; it refuses any path that is not a leaf of this lane's scratch
-directory.
+body quoting it reds at `5`. Send staged commit messages through the same stdin redirect.
 
 Then validate **in this tree** — a green borrowed from another checkout is the false green this verb
 exists to refuse. Hand it the surface you named in step 3; it
@@ -368,9 +364,7 @@ fix(build): one line saying what changed (#<n>)
 EOF
 ```
 
-Send the message on stdin. The alternative is a leaf under `fabrika build scratch`; any other path is
-refused, because a path outside the allocator has no per-lane key — that is how a lane commits a
-stale message belonging to another lane, with nothing failing anywhere. Exit `9`
+Send the message on stdin, using the staged file redirect above when needed. Exit `9`
 means the commit exists and carries a message you did not write: amend it and re-run, do not push.
 Exit `4` means your message names an issue this lane holds no claim on — a related reference belongs
 in the PR body, not the merge record.
@@ -436,11 +430,19 @@ before yours disclosed — still true of the range a reviewer grades — leave w
 you carry them. Read what stands first, and build this round's section out of it:
 
 ```bash
-fabrika build deviations <n> --token <claim-token> --standing > round.md
+fabrika build scratch <n> --slug deviations --token <claim-token>
+```
+
+Create the returned directory and use a file named `body.md` inside it, with the absolute paths
+written literally in each command:
+
+```bash
+mkdir -p <allocated-directory>
+fabrika build deviations <n> --token <claim-token> --standing > <allocated-directory>/body.md
 ```
 
 That prints the standing `## Deviations` section, or nothing when yours is the first round. Edit
-`round.md`: keep every entry still true, add this round's, and **retire an entry by restating it
+that allocated file: keep every entry still true, add this round's, and **retire an entry by restating it
 with a `Disposition` that says what became of it** — `corrected — the revert in <sha> removes it`,
 never by deleting the bullet. Entries match on `Said`, so revise `Did`, `Why` and `Disposition`
 freely. Send the result on stdin as above; a section that drops a standing entry is exit `35`,

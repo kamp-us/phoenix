@@ -131,7 +131,6 @@ export const readNamespaced = (artifact: string, namespace: string): RoutedElsew
 export const emit = ({namespace, sha, clause: text}: RoutedElsewhere): string =>
 	`${KEY}: ${namespace} @ ${sha} ${CLAUSE_SEPARATOR} ${text}\n`;
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderRecord = (record: RoutedElsewhere): NonEmptyReadonlyArray<string> => [
 	`namespace\t${record.namespace}`,
 	`sha\t${record.sha}`,

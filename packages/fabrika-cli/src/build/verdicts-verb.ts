@@ -13,8 +13,7 @@
  * - **Native reviews are their own row kind**, never coerced into markers. Whether a
  *   `CHANGES_REQUESTED` with no marker drives a repair is still undecided; this verb reports the
  *   state honestly and pre-rules nothing.
- * - **An unreadable page is `11`, never a shorter list.** `{"rows": []}` on exit 0 is a proven "no
- *   verdicts", readable against the scope line's counts.
+ * - An unreadable page cannot prove there are no verdicts. See ./command.ts help for the answer.
  *
  * - **Mergeability is folded beside the rows**, because a PR conflicting against its base is repair
  *   work no gate emits a FAIL for: without the field, an all-PASS fold over a conflicting PR is the

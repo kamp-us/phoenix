@@ -8,9 +8,6 @@
  *
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
- *
- * `build push` is the group's one deviant on the channel rule and the emitter honours it: its whole
- * report is stdout, so `tail -1` of stdout on exit 0 is always the verdict line.
  */
 import {randomUUID} from "node:crypto";
 import {tmpdir} from "node:os";

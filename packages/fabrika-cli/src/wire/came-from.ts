@@ -183,7 +183,6 @@ export const read = (body: string): CameFromRead => {
 /** Compose the section's bytes. Round-trips through {@link read}. */
 export const emit = (cameFrom: CameFrom): string => `${CAME_FROM_HEADING}\n\n${cameFrom.binding}\n`;
 
-/** One `<field>\t<value>` line — the `wire read` answer for this format. */
 export const renderBinding = (cameFrom: CameFrom): NonEmptyReadonlyArray<string> => [
 	`binding\t${cameFrom.binding}`,
 ];

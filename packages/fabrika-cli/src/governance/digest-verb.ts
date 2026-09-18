@@ -2,8 +2,8 @@
  * `governance digest` — the decision records that landed in a window, each with its id, title,
  * status, landing commit and the anchor delta of that commit's own diff.
  *
- * **`none` is a proven answer at exit 0** — the window was walked and nothing landed in it. Empty
- * stdout would be byte-identical to a verb that never ran, which is v1's `adr-sweep.sh` scar.
+ * An empty window still needs an explicit answer; silence is indistinguishable from a run that
+ * never happened. See ./command.ts help for the digest output.
  *
  * **The `status` field is reported, never interpreted.** Nine records on `main` read `proposed` while
  * being enforced at a live gate, so a consumer that treats `proposed` as "not law" is reading

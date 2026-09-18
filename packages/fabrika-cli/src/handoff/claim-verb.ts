@@ -7,11 +7,6 @@
  *
  * **This verb does not re-derive the ground state and does not report drift.** That is `read`'s, and
  * duplicating it here would be a second answer to one question.
- *
- * `epic-lock`'s scars are designed out: it never reads back the presence stamp it writes, so an
- * abandoned lock wedges the issue forever, and it collapses several distinct refusals onto one exit
- * code. Here the write is read back (`9`), and `13`, `14`, `15` and `11` are four seats with four
- * remedies.
  */
 
 import {Effect} from "effect";

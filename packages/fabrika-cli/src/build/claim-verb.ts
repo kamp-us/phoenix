@@ -6,10 +6,8 @@
  * authorized marker wins. Posting alone only detects a race; the checkpoint read is what resolves it,
  * and a claim that skipped it would let two staggered co-racers both proceed.
  *
- * **A lost race is a proven outcome on its own code, never exit 0.** v1's direct-claim script exited 0
- * on both won and lost and left the routing to prose (`step3-direct-claim.sh:31,40`), and v1's
- * `claim is-mine` fused "proven lost" with "no session id" on exit 1 (`claim/command.ts:57`). Here
- * `15` is proven-foreign only, a missing session id is `1`, and an unreadable marker set is `11`.
+ * A lost race must stay distinct from an unreadable marker set or a missing session identity.
+ * See ./command.ts help for the refusal codes.
  *
  * A loser retracts its **own** marker and nothing else — never another lane's, which is the one write
  * this protocol must never make. Which marker is its own is decided by the whole token: `claim` races

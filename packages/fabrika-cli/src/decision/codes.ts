@@ -1,22 +1,7 @@
 /**
- * The one exit table both `decision` verbs allocate from, so a code means one thing across this
- * group whichever verb produced it.
- *
- * The overlap with `report` is **re-exported, never re-typed** — the discipline `grill/codes.ts` and
- * `build/codes.ts` state in full: an aligning group imports the base's constant, so a drift is
- * unrepresentable rather than merely detectable. This group shares seven seats and adds two of its
- * own for facts neither `report` nor any other group proves.
- *
- * Two of the base's seats are deliberately left empty rather than given a second meaning. No verb
- * here reads stdin (`3`) or classifies a label or a title (`10`) — the group writes exactly one
- * audience label pair and one marker whose every field is a digest, a URL or a stamp.
- *
- * The two redaction seats (`5`, `6`) were empty on the same reading until `decision rule` grew
- * `--authorization`: a quoted authority is free human text this verb posts, so both are now reached
- * exactly as they are in `grill`, through the one check in `../authorization.ts`.
- *
- * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
- *
+ * Exit allocations for `decision`; caller semantics are in `./command.ts` help.
+ * Shared meanings import `../exit-codes.ts`; unused shared codes stay unallocated.
+ * Quoted authorization reaches the shared redaction checks, unlike marker-only input.
  * @ruling https://github.com/kamp-us/phoenix/issues/8857#issuecomment-5625302485
  */
 
@@ -40,18 +25,12 @@ import {
  */
 export const CRITERIA_REQUIRED = SHARED_BAD_SECTIONS;
 
-/** Proven: the quoted authorization carries a machine-local path, so it was not posted. */
 export const LEAKED_PATH = SHARED_LEAKED_PATH;
-/** Proven: the quoted authorization is a bare `@` path reference — not redactable, so a second code. */
 export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 
-/** Proven absent: the issue does not exist, is a pull request, or is not a `type:decision`. */
 export const NO_TARGET = SHARED_NO_TARGET;
-/** The write failed and may or may not have landed — re-read the issue before retrying. */
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
-/** The write landed and does not read back as what was sent. */
 export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
-/** A precondition could not be read — the roster, the comments, the invoking account. Never a state. */
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /**

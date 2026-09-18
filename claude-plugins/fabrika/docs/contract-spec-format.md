@@ -43,27 +43,27 @@ that test belongs in the skill, not the CLI.
 | Section | Content |
 |---|---|
 | Invocation | the literal command string, with subcommands. [Rule 5](interface-convention.md#5-every-documented-invocation-is-a-plain-literal-command-string) applies. |
-| Inputs | one row per flag: name, type, required or optional, default, and the description text that becomes the flag's help string verbatim. |
-| Output | the channel (machine or prose), the exact shape, and what an empty answer means. |
-| Exit status | every code the verb can return and its trigger, obeying the reserved table in [rule 3](interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is). |
+| Inputs | validation and interactions between inputs; for a new verb, also specify each flag's type, requiredness, default and help meaning. For shipped caller facts, a per-verb help pointer suffices. |
+| Output | derivation of values, ordering, completeness and empty-answer requirements. Point to shipped help for the caller's channel and grammar; specify them here for a new verb. |
+| Exit status | the conditions that produce each outcome, obeying [rule 3](interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is); use shipped help for code meanings already stated there. |
 | Errors | one row per named failure: message text, stream, exit code, and whether it is a refusal (fail-closed) or a usage error. |
 | Scope | for a judging verb: what it scans, and what zero scope does. |
-| Examples | at least one literal invocation with its expected stdout, byte for byte. |
+| Examples | literal invocations with expected stdout that demonstrate implementation requirements or distinct cases beyond the help example. For a new verb, include its caller example here too. |
 | Grounding | the incidents, rulings, or ADRs the behavior encodes — one line each. |
 
 ## Completeness test
 
-A spec is complete when all eight hold. Each is checkable by reading the spec alone, which is the
-point: an implementer can tell an unfinished spec from a finished one before starting.
+A spec is complete when all eight hold across the spec and its explicitly named per-verb help.
+For a new verb, the spec supplies the caller facts until that help exists. Once shipped, replace
+repeated caller facts with the help pointer; keep the requirements an implementer cannot read there.
 
 1. Every flag has a type and, if optional, a default.
 2. Every stdout shape is shown by an example, not only described.
 3. Every non-zero exit code is enumerated with the condition that produces it.
 4. Every error names its message, its stream, and its code.
 5. Every judging verb states its scope and its zero-scope behavior.
-6. No clause defers to a legacy script, another skill's prose, or the authoring session. Deferral is
-   the failure the whole document exists to prevent: the spec *is* the contract, so a spec that
-   points elsewhere has not derived one.
+6. Implementation requirements live in the spec. Caller facts may resolve through shipped help;
+   a legacy script, another skill's prose or the authoring session supplies neither.
 7. **Every value an example prints is derivable from the spec.** A verb that emits a computed value
    specifies the computation — every input to it, down to the tie-break and the rounding — or prints
    no example value. Where the value also depends on data outside the spec, the example names data a
@@ -105,49 +105,81 @@ fabrika decisions next-id [--dir <path>]
 |---|---|---|---|---|
 | `--dir` | string | no | `.decisions` | the directory of `NNNN-slug.md` decision records to scan |
 
-**Output** — machine channel. One line, the zero-padded four-digit id, newline-terminated. There is
-no empty answer: see Scope.
+**Output** — machine channel. Parse each valid filename's four decimal digits, take the maximum,
+add one and pad to four digits. Emit that id followed by a newline. File contents and directory
+iteration order do not affect the result. There is no empty answer. An id above `9999` is refused.
+On success, stderr reports `decisions: scanned <dir>, <count> decision records`.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
 | `0` | the id was produced on stdout |
-| `1` | usage error (unknown flag), or the directory could not be read |
-| `3` | the directory was read and held zero `NNNN-slug.md` files — a refusal, see Scope |
+| `1` | usage error, such as an unknown flag or a missing `--dir` value |
+| `3` | the directory was read and held zero candidate files |
+| `4` | a candidate filename does not satisfy the record grammar |
+| `5` | the directory or an entry's file type could not be read |
+| `6` | the greatest parsed id is `9999`, so no four-digit successor exists |
+
+Every refusal leaves stdout empty. Filesystem errors take precedence over content judgments;
+malformed names take precedence over id derivation. If several names are malformed, report the
+lexicographically first name by Unicode code point.
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `decisions: cannot read <dir>: <reason>` | 1 | refusal |
+| `decisions: unknown flag: <flag>` | 1 | usage error |
+| `decisions: --dir requires a value` | 1 | usage error |
+| `decisions: unexpected operand: <value>` | 1 | usage error |
+| `decisions: cannot read <path>: <reason>` | 5 | refusal; reason is the filesystem error code |
 | `decisions: scanned <dir>, 0 decision records — refusing to answer` | 3 | refusal |
-| `decisions: <dir> holds a record with an unparseable id: <name>` | 1 | refusal |
+| `decisions: <dir> holds a record with an unparseable id: <name>` | 4 | refusal |
+| `decisions: <dir> has no four-digit id after 9999` | 6 | refusal |
 
-**Scope** — every file in `--dir` matching `NNNN-slug.md`. Zero matches is a **failed read, not an
-answer**: this repo always has decision records, so an empty scan means the wrong directory or a
-broken read, and answering `0001` would silently propose an id that collides with an existing record.
-The scope line goes to stderr, because this verb's answer channel is machine.
+**Scope** — regular files immediately inside `--dir` whose names end in `.md`; no recursion or
+symlink traversal. Each candidate must match `[0-9]{4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md` in full.
+Other entries are ignored. A candidate such as `draft-choice.md` is malformed, not silently absent.
+Zero candidates is a proven empty scan and refuses: this example assumes an existing decision
+corpus, so answering `0001` could conceal a wrong directory. This supplies an id; it does not judge
+the records' contents. The scope diagnostic belongs on stderr beside the machine answer.
 
 **Examples**
 
-```
-$ fabrika decisions next-id
+Hold these input directories fixed. Every listed file is a readable regular file with empty
+contents, every directory is readable, and no other entries exist. `example-missing` does not exist
+and the filesystem reports `ENOENT` for it.
+
+| Directory | Files |
+|---|---|
+| `example-decisions` | `0001-first.md`, `0232-second.md` |
+| `example-empty` | none |
+| `example-malformed` | `draft-choice.md` |
+| `example-full` | `9999-last.md` |
+
+```text
+$ fabrika decisions next-id --dir example-decisions
 0233
 ```
 
-```
-$ fabrika decisions next-id --dir /nonexistent
-decisions: cannot read /nonexistent: ENOENT
-$ echo $?
-1
-```
+That invocation exits `0`; stdout is `0233` plus a newline and stderr is
+`decisions: scanned example-decisions, 2 decision records` plus a newline. The maximum is 232,
+so the successor is 233, regardless of enumeration order.
+
+Each invocation below has empty stdout and the named stderr line plus a newline:
+
+| Invocation | Exit | Stderr |
+|---|---|---|
+| `fabrika decisions next-id --dir example-empty` | 3 | `decisions: scanned example-empty, 0 decision records — refusing to answer` |
+| `fabrika decisions next-id --dir example-malformed` | 4 | `decisions: example-malformed holds a record with an unparseable id: draft-choice.md` |
+| `fabrika decisions next-id --dir example-missing` | 5 | `decisions: cannot read example-missing: ENOENT` |
+| `fabrika decisions next-id --dir example-full` | 6 | `decisions: example-full has no four-digit id after 9999` |
 
 **Grounding**
 
-- Zero scope reds: a judging verb that scanned nothing refuses rather than answering `0001`, because
-  an empty scan and a correct answer are indistinguishable to the caller otherwise.
-- The proven refusal sits on `3`, never on `1` or `127`, so a caller can tell a proven empty scan
-  from a verb that never ran.
+- Zero scope refuses rather than answering `0001`, because an empty scan cannot establish the
+  next id in an existing corpus.
+- Proven refusals use `3` and above; usage failures use `1`. An unreadable directory has its own
+  code and is never evidence of an empty directory.
 - Serialized authoring: concurrent id derivation races, so a caller that mints records in parallel
   pre-assigns ids rather than calling this verb twice.

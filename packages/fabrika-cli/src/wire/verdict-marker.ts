@@ -339,7 +339,6 @@ export const parseFields = (fields: string): VerdictMarkerFields => {
 	return {_tag: "Fields", marker: {namespace, polarity, sha, content, clause: text}};
 };
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderMarker = (marker: VerdictMarker): NonEmptyReadonlyArray<string> => [
 	`namespace\t${marker.namespace}`,
 	`polarity\t${marker.polarity}`,

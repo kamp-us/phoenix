@@ -1,15 +1,6 @@
 /**
- * The one exit table every `lane` verb allocates from, so a code means one thing across the group.
- *
- * The five shared seats are **imported from the base, never re-typed** — the discipline
- * `../exit-code-alignment.ts` checks. The lane verbs read a local lane directory and append to its
- * log, so the base's facts they can establish are exactly these: the target is not there, the
- * target was read but is not the shape, the write did not land, a marker landed and does not read
- * back, the read that would have proven any of that failed. `12`+ is this group's own band.
- *
- * **A fold that could not be made never resolves to a plausible state.** An absent lane, an
- * unreadable one, and a lane whose bytes parse but contradict the machine stay distinct codes,
- * because they take opposite remedies: open the lane, fix the tree, fix the record.
+ * Exit allocations for lane. See ./command.ts help for caller semantics.
+ * Shared meanings stay imported so their values cannot drift.
  */
 
 import {
@@ -55,10 +46,6 @@ export const LANE_ABSENT = SHARED_NO_TARGET;
  */
 export const MALFORMED_RECORD = SHARED_BAD_SECTIONS;
 
-/**
- * The append did not land, or `lane claim`'s marker write did not. The caller refuses; it never
- * reports the event as recorded, nor the claim as held.
- */
 export const APPEND_UNKNOWN = SHARED_WRITE_UNKNOWN;
 
 /**
@@ -103,10 +90,8 @@ export const LANE_EXISTS = 14;
  */
 export const TOPOLOGY_ABSENT = 15;
 
-/** The topology references an issue that is not a child of the epic, and the ref is named. */
 export const TOPOLOGY_FOREIGN = 16;
 
-/** The topology's dependency graph holds a cycle, and the ref path is named. */
 export const TOPOLOGY_CYCLE = 17;
 
 /**

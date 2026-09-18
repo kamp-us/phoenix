@@ -4,9 +4,7 @@
  *
  * The verb is the IO boundary: read `patchedDependencies` out of `pnpm-workspace.yaml`, walk the
  * test tree gathering `@patch-pin:` markers, hand both to the pure rule in `./patch.ts`, seat the
- * answer on the group's exit taxonomy. v1 collapsed every red onto `1`; here an empty patch set
- * (`7`), a failed read (`11`) and a real unpinned patch (`12`) are three numbers, because
- * their remedies are three different things.
+ * answer on the group's exit taxonomy. See `guard patch-guard check --help` for exit codes.
  */
 
 import {Effect, type FileSystem, Path} from "effect";

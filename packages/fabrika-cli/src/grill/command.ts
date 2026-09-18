@@ -8,9 +8,6 @@
  *
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form
  * silently opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
- *
- * There is no `--json` flag: the answer channel is already one JSON object on stdout, and a second
- * rendering would be a second contract to keep in step.
  */
 
 import {Effect, type FileSystem, Option, Result} from "effect";
