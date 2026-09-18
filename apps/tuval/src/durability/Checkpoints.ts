@@ -245,7 +245,15 @@ const makeService = (stores: CheckpointStores): Checkpoints["Service"] => {
 
 	return Checkpoints.of({
 		open: (target) =>
-			Effect.acquireRelease(acquire(target), () => Effect.sync(() => void held.delete(target.id))),
+			Effect.acquireRelease(acquire(target), () =>
+				// The Scope closing is the moment no further commit can arrive, so it is where the seal
+				// is released too — otherwise `forgotten` grows one entry per removal for the kernel's
+				// life, and only a re-open at the same id would ever clear one.
+				Effect.sync(() => {
+					held.delete(target.id);
+					forgotten.delete(target.id);
+				}),
+			),
 		list: Effect.map(loadManifest, (manifest) => manifest.processes),
 		forget,
 	});

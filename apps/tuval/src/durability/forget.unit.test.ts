@@ -176,6 +176,34 @@ describe("Checkpoints.forget", () => {
 	);
 
 	/**
+	 * The seal's release. A forgotten id is not retired: the next `open` at it is a new life, and
+	 * that life persists like any other — so a process spawned at a removed id checkpoints again.
+	 * Delete the release and every `save` at that id resolves, writes nothing and reports success.
+	 */
+	it.effect("a later open at a forgotten id clears the seal and persists again", () => {
+		const watcher = watchingStores();
+		return Effect.gen(function* () {
+			const processes = yield* Processes;
+			const checkpoints = yield* Checkpoints;
+			const {root, child, grandchild} = yield* threeDeep;
+
+			yield* processes.remove(root);
+			for (const id of [root, child, grandchild]) {
+				assert.isNull(yield* snapshotAt(watcher.stores, id));
+			}
+
+			const reborn = yield* processes.spawn(counter, {id: root, services: Context.empty()});
+			yield* reborn.dispatch({type: "tick"});
+
+			assert.isNotNull(yield* snapshotAt(watcher.stores, root));
+			assert.deepStrictEqual(
+				(yield* checkpoints.list).map((entry) => entry.id),
+				[root as string],
+			);
+		}).pipe(Effect.provide(kernel(watcher.stores)), Effect.orDie);
+	});
+
+	/**
 	 * The epic's actual claim, over `memoryStores()` — which `./stores.ts` keeps in a map precisely
 	 * so a second kernel built on the same object is a reload. Spawn, remove, rebuild: the removed
 	 * process comes back from neither the manifest nor a snapshot, and its child does not outlive it.

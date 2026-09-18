@@ -487,8 +487,8 @@ uses them interchangeably re-opens the question the ruling closed.
   one is ordinary, and is what makes the removal below refusable.
 - **remove** — the desk-facing verb, as it already is on `workspace.remove`, and it means
   **forget-then-stop, in that order**. A removal whose forget fails is refused whole: the process
-  keeps running and keeps its manifest row, because a process gone from the table and still in the manifest
-  is the half-forgotten state the pair exists to make unwritable.
+  keeps running and keeps its manifest row, because a process gone from the table and still in the
+  manifest is the half-forgotten state the distinction exists to make unwritable.
 
 A **graph-declared** process — one the config's `graph` plans and boot recreates at its own id —
 refuses removal, because forgetting it would be undone by the next boot rather than by anything the
