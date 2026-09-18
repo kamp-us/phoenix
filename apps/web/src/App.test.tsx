@@ -549,9 +549,11 @@ describe("Two-tier fate provider — /pano public first paint (#2285)", () => {
 	});
 });
 
-// /profile's eager tier paints a SKELETON (the identity-scoped read can't show anon data) and,
-// unlike /pano's, mounts NO FateClient — so there is nothing above the gate to re-key (#2188).
-describe("Two-tier fate provider — /profile eager Katkıların skeleton (#2188)", () => {
+// #9273 moved the contribution block below every settings section on /profile, so a pre-session
+// skeleton at the top of <Main> would settle nowhere near where the block lands. /profile now
+// paints no eager tier at all. ADR 0167's public client is untouched: this skeleton never mounted
+// one (#2188), so dropping it decouples nothing from the session gate.
+describe("/profile paints no eager Katkıların skeleton (#9273)", () => {
 	beforeEach(() => {
 		fateMounts.length = 0;
 		sessionState = {data: null, isPending: true};
@@ -560,20 +562,14 @@ describe("Two-tier fate provider — /profile eager Katkıların skeleton (#2188
 		vi.clearAllMocks();
 	});
 
-	it("paints the Katkıların skeleton on /profile while the session isPending — before the authed gate commits", () => {
+	it("paints no Katkıların skeleton above the gate on /profile while the session isPending", () => {
 		renderApp("/profile");
 
-		expect(screen.getByTestId("signal-loading")).toBeTruthy();
+		expect(screen.queryByTestId("signal-loading")).toBeNull();
 		expect(fateMounts).toHaveLength(0);
 	});
 
-	it("#438: the eager /profile skeleton mounts NO FateClient — nothing to re-key anon→id", () => {
-		renderApp("/profile");
-		expect(fateMounts).toHaveLength(0);
-		expect(screen.getByTestId("signal-loading")).toBeTruthy();
-	});
-
-	it("scoped: a non-profile route paints NO eager Katkıların skeleton", () => {
+	it("scoped: a non-profile route paints no Katkıların skeleton either", () => {
 		renderApp("/sozluk");
 		expect(screen.queryByTestId("signal-loading")).toBeNull();
 		expect(fateMounts).toHaveLength(0);
