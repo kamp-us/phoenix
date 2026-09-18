@@ -56,6 +56,15 @@ playwright-report
 # (ADR 0085); a real session, never committed.
 apps/web/tests/e2e/.auth
 
+# skill-doctor run artifacts (#8048): transcripts, inventories, report.json and the
+# rendered report.html all embed transcript-derived content and machine-local absolute
+# paths — nothing under the skill's results directory is ever committed.
+claude-plugins/fabrika/skills/skill-doctor/results/
+
+# Python bytecode — the vendored skill-doctor skill ships Python test/tool scripts that
+# drop these when run locally; the sources are tracked, the bytecode never is (#8048).
+__pycache__/
+
 # Local scratch (uncommitted explorations)
 /.scratch/
 
