@@ -929,6 +929,9 @@ importers:
       '@effect/platform-node':
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=aad6096dd5b19a9e6aa57e5f7752c4c561d1491ac6c22b311082497aee42cf11))(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/platform-node-shared':
+        specifier: 4.0.0-rc.112
+        version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=aad6096dd5b19a9e6aa57e5f7752c4c561d1491ac6c22b311082497aee42cf11))
       '@playwright/test':
         specifier: 'catalog:'
         version: 1.62.1
