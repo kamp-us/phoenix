@@ -151,7 +151,11 @@ export const emit = <Port extends string>(port: Port, payload: unknown): EmitEff
 	payload,
 });
 
-/** End a process I started. It answers nothing; the `stopped` below is what arrives when it ends. */
+/**
+ * End a process I started, and forget it durably — its manifest row and snapshot go with it, and
+ * its descendants' too, so nothing it left behind comes back at the next boot (#9446). It answers
+ * nothing; the `stopped` below is what arrives when it ends.
+ */
 export const stop = (process: ProcessId): StopEffect => ({type: "stop", process});
 
 /** The event a `spawn` answers with: the new process, and which program it runs. */

@@ -44,7 +44,12 @@ import {SpawnedProcesses} from "../commands/core/process.ts";
 import type {OpenError} from "../durability/Checkpoints.ts";
 import type {PayloadRejected, PortNotWired} from "../ports/errors.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
-import type {HandlerFailed, ProcessNotFound} from "../process/errors.ts";
+import type {
+	ForgetRefused,
+	HandlerFailed,
+	ProcessIsPlanned,
+	ProcessNotFound,
+} from "../process/errors.ts";
 import {isAsked, NO_REPLY, type ReplyTo} from "../process/inbox.ts";
 import {Processes} from "../process/Processes.ts";
 import {ProcessSelf} from "../process/self.ts";
@@ -438,7 +443,13 @@ const replyHandler = (cmd: ReplyEffect) =>
 	});
 
 /**
- * End the named process, and answer nothing (#9227). `stopped` still arrives — it is delivered by
+ * End the named process durably, and answer nothing (#9227). Durably because a `stop` that only
+ * closed the Scope left the child's manifest row and snapshot behind, so a `cron`-shaped program
+ * accumulated one restored process per completed job (#9220): this runs `Processes.remove`, which
+ * forgets the child and its descendants before it closes anything (#9446). A child the config's
+ * graph declared refuses — boot would start it again, so ending it is the config's call.
+ *
+ * `stopped` still arrives — it is delivered by
  * the child's own exit, from the finalizer `SpawnedProcesses.spawn` hung on it
  * (`../commands/core/process.ts`), which is now the single producer of that event.
  *
@@ -455,7 +466,7 @@ const replyHandler = (cmd: ReplyEffect) =>
 const stopHandler = (cmd: StopEffect) =>
 	Effect.gen(function* () {
 		const processes = yield* Processes;
-		yield* processes.stop(cmd.process);
+		yield* processes.remove(cmd.process);
 		return NO_EVENTS;
 	});
 
@@ -472,7 +483,9 @@ export type EffectFailure =
 	| PortRefused
 	| OpenError
 	| HandlerFailed
-	| ProcessNotFound;
+	| ProcessNotFound
+	| ProcessIsPlanned
+	| ForgetRefused;
 
 export type EffectServices = ProcessPorts | ProcessSelf | SpawnedProcesses | Processes;
 

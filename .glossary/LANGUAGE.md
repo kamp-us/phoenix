@@ -469,6 +469,31 @@ slice of epic [#7496](https://github.com/kamp-us/phoenix/issues/7496) under `app
 means program (definition) or process (running instance). "Grain" (Orleans' virtual actor) is
 noted as a future-feeling alternative and is not adopted.
 
+### Tuval: stop, forget, remove
+
+What ends a process, and what ends it for good. The pair was ruled by the founder on 2026-09-07
+(epic [#8332](https://github.com/kamp-us/phoenix/issues/8332)) — removing a desk process durably
+forgets it and its descendants, so they stay gone after a restart — and first used in code by
+[`apps/tuval/src/durability/Checkpoints.ts`](../apps/tuval/src/durability/Checkpoints.ts) and
+[`apps/tuval/src/process/Processes.ts`](../apps/tuval/src/process/Processes.ts) (#9446). Prose that
+uses them interchangeably re-opens the question the ruling closed.
+
+- **stop** — end a *running* process: close its Effect Scope, which drains it, disposes its Subs and
+  takes its descendants with it. The durable store is untouched, so a stopped process's manifest row
+  and snapshot survive and `restore` brings it back at the next boot. That is the right answer for a
+  shutdown and the wrong one for a removal.
+- **forget** — drop a process and its whole subtree from the *durable* store: the checkpoint manifest
+  rows and the `processes/<id>.json` snapshots. Nothing about the running process; a forget of a live
+  one is ordinary, and is what makes the removal below refusable.
+- **remove** — the desk-facing verb, as it already is on `workspace.remove`, and it means
+  **forget-then-stop, in that order**. A removal whose forget fails is refused whole: the process
+  keeps running and keeps its rows, because a process gone from the table and still in the manifest
+  is the half-forgotten state the pair exists to make unwritable.
+
+A **graph-declared** process — one the config's `graph` plans and boot recreates at its own id —
+refuses removal, because forgetting it would be undone by the next boot rather than by anything the
+operator did.
+
 ### Tuval: stack, orientation, size, zoom
 
 The layout tree's four nouns, first used in code by

@@ -195,7 +195,12 @@ export const pickerHarness = (
 			// pretended to hand back a live actor would be claiming more than these tests exercise.
 			Layer.succeed(
 				Processes,
-				Processes.of({spawn, stop: () => Effect.void, handle: () => Effect.succeed(Option.none())}),
+				Processes.of({
+					spawn,
+					stop: () => Effect.void,
+					remove: () => Effect.void,
+					handle: () => Effect.succeed(Option.none()),
+				}),
 			),
 			Layer.succeed(ProcessTable, processTable),
 			Layer.succeed(ProcessTablePort, port),

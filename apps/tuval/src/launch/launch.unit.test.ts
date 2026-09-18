@@ -9,8 +9,10 @@ import {bound, isNumber} from "../ports/fixtures.ts";
 import {type Graph, NodeId} from "../ports/graph.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import {open} from "../ports/wiring.ts";
+import {PlannedProcesses} from "../process/PlannedProcesses.ts";
 import {Processes} from "../process/Processes.ts";
 import {ProcessTable} from "../process/ProcessTable.ts";
+import {ProcessId} from "../process/process.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {NoReceiver} from "./errors.ts";
@@ -101,7 +103,13 @@ const withKernel = <A, E>(
 	body: Effect.Effect<
 		A,
 		E,
-		Processes | ProcessTable | Registry | Checkpoints | SpawnedProcesses | Scope.Scope
+		| Processes
+		| PlannedProcesses
+		| ProcessTable
+		| Registry
+		| Checkpoints
+		| SpawnedProcesses
+		| Scope.Scope
 	>,
 ) =>
 	body.pipe(
@@ -191,6 +199,36 @@ describe("launch", () => {
 				yield* eventually(() => (s!.handle.getState() as Watched).ended !== null);
 
 				assert.strictEqual((s!.handle.getState() as Watched).ended, l!.handle.id);
+			}),
+		),
+	);
+
+	/**
+	 * The record `Processes.remove` refuses on (#9446). It is written here because here is the only
+	 * place the planned node ids exist — `compile(graph)` is a local in `src/boot.ts` and nothing
+	 * downstream retains it — and it is the compiled graph's ids, never "was this id checkpointed":
+	 * a restored process and a planned one both come back at their saved id.
+	 */
+	it.effect("declares its nodes as planned, so removing one is refused", () =>
+		withKernel(
+			[speaker, listener(true)],
+			Effect.gen(function* () {
+				const processes = yield* Processes;
+				const planned = yield* PlannedProcesses;
+				const compiled = yield* compile(graph);
+				yield* launch(compiled, yield* open(compiled));
+
+				assert.isTrue(yield* planned.isPlanned(ProcessId.make("s")));
+				const refused = yield* Effect.flip(processes.remove(ProcessId.make("s")));
+				assert.strictEqual(refused._tag, "tuval/ProcessIsPlanned");
+				assert.strictEqual(
+					refused.message,
+					'process "s" is declared by the config graph, so boot would start it again; edit the config to remove it',
+				);
+				assert.deepStrictEqual(
+					(yield* ProcessTable.use((table) => table.list)).map((row) => row.id),
+					[ProcessId.make("s"), ProcessId.make("l")],
+				);
 			}),
 		),
 	);
