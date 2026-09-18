@@ -32,6 +32,8 @@ export interface WindowViewProps {
 	readonly entries: PickerEntries;
 	readonly dispatch: (msg: ShellMsg) => void;
 	readonly reducedMotion: boolean;
+	/** The operator's `processRemove` flag, for the picker an empty window mounts (`./PickerView.tsx`). */
+	readonly processRemove?: boolean;
 }
 
 /**
@@ -56,6 +58,7 @@ export function WindowView({
 	entries,
 	dispatch,
 	reducedMotion,
+	processRemove = false,
 }: WindowViewProps): ReactElement {
 	return (
 		<section
@@ -95,6 +98,7 @@ export function WindowView({
 						dispatch={dispatch}
 						reducedMotion={reducedMotion}
 						focused={focused}
+						processRemove={processRemove}
 					/>
 				) : (
 					<div className="tuval-placeholder" role="status">

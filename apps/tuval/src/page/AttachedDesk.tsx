@@ -80,6 +80,12 @@ export interface AttachedDeskProps {
 	 * this component at either setting without a bundler in the way.
 	 */
 	readonly windowTitles?: boolean;
+	/**
+	 * The operator's `processRemove` flag (`../features.ts`, #9447), handed down the same way and for
+	 * the same reason as `windowTitles`. Off — the default — and this desk carries neither the
+	 * `process:remove <id>` row nor the picker's `d` key.
+	 */
+	readonly processRemove?: boolean;
 }
 
 /**
@@ -161,6 +167,7 @@ export function AttachedDesk({
 	board = false,
 	refusal,
 	windowTitles = false,
+	processRemove = false,
 }: AttachedDeskProps): ReactElement {
 	const spells = useSpellRegistry(page);
 	const [rows, setRows] = useState<ReadonlyMap<ProcessId, TableRow>>(new Map());
@@ -418,6 +425,7 @@ export function AttachedDesk({
 			commandsConnected={attachment.status === "attached" && refusal === null}
 			board={board}
 			windowTitles={windowTitles}
+			processRemove={processRemove}
 		/>
 	);
 

@@ -211,6 +211,8 @@ const pickerPress = (
 			return answer.intent._tag === "OpenProgram"
 				? {type: "window.open", windowId: windowId as never, programId: answer.intent.programId}
 				: {type: "window.attach", windowId: windowId as never, processId: answer.intent.processId};
+		case "Removing":
+			return {type: "process.remove", windowId: windowId as never, processId: answer.processId};
 		case "Ignored":
 			return null;
 	}

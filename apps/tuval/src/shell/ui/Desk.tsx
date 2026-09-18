@@ -130,6 +130,12 @@ export interface DeskProps {
 	 * that builds the mounts is handed the same flag on the page (`../../page/AttachedDesk.tsx`).
 	 */
 	readonly windowTitles?: boolean;
+	/**
+	 * The operator's `processRemove` flag (`../../features.ts`, #9447), as this desk's two halves of
+	 * it read it: the `process:remove <id>` row the command line and the palette offer, and the `d`
+	 * key each empty window's picker answers. Off — the default — leaves both absent.
+	 */
+	readonly processRemove?: boolean;
 }
 
 export function Desk({
@@ -148,8 +154,12 @@ export function Desk({
 	commandsConnected = true,
 	board = false,
 	windowTitles = false,
+	processRemove = false,
 }: DeskProps): ReactElement {
-	const commands = useMemo(() => commandIndexFor({processBoard: board}), [board]);
+	const commands = useMemo(
+		() => commandIndexFor({processBoard: board, processRemove}),
+		[board, processRemove],
+	);
 	const [commandLineOpen, setCommandLineOpen] = useState(false);
 	const [forwarded, setForwarded] = useState<ForwardedKey | null>(null);
 	const [modality, setModality] = useState<InputModality>(INITIAL_INPUT_MODALITY);
@@ -342,6 +352,7 @@ export function Desk({
 			entries={entries}
 			dispatch={dispatch}
 			reducedMotion={reducedMotion}
+			processRemove={processRemove}
 		/>
 	);
 

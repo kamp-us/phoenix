@@ -110,6 +110,7 @@ const PageDesk = ({recovery}: {readonly recovery: Recovery}) => {
 			reducedMotion={reducedMotion}
 			windowTitles={features.windowTitles}
 			board={features.processBoard}
+			processRemove={features.processRemove}
 		/>
 	);
 };

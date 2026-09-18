@@ -9,8 +9,8 @@ import {Context, Effect, Exit, Layer, Option, PubSub, type Scope, Stream} from "
 import {SessionOpening} from "../../ai-agent/opening.ts";
 import {CallingWindow} from "../../commands/scope.ts";
 import type {WindowId as CallWindowId} from "../../commands/spell.ts";
-import {ProcessNotFound} from "../../process/errors.ts";
-import {Processes, type SpawnOptions} from "../../process/Processes.ts";
+import {ForgetRefused, ProcessIsPlanned, ProcessNotFound} from "../../process/errors.ts";
+import {Processes, type RemoveError, type SpawnOptions} from "../../process/Processes.ts";
 import {ProcessTable} from "../../process/ProcessTable.ts";
 import {
 	type Lifecycle,
@@ -210,6 +210,63 @@ export const pickerHarness = (
 	});
 
 export const shellProcessId = ProcessId.make("shell-process");
+
+/** Which refusal a scripted `Processes.remove` answers with, or none at all. */
+export type RemoveRefusal = "planned" | "forget" | "missing";
+
+export interface RemoveHarness {
+	/** Every id `remove` was called with, in call order — including the calls that were refused. */
+	readonly removed: () => ReadonlyArray<ProcessId>;
+	readonly layer: Layer.Layer<Processes>;
+}
+
+/**
+ * A `Processes` whose `remove` records its argument and answers with one scripted refusal. Only
+ * `remove` is served: the removal handler needs nothing else, and a double that stood in for `spawn`
+ * as well would be claiming more than `./remove.unit.test.ts` exercises.
+ *
+ * The `forget` arm's cause rides as the defect `ForgetRefused` declares it to be, so the reason the
+ * window renders is read off the cause rather than composed by the handler. Nothing here names the
+ * durability slice: no file under `src/shell/` may (`../program.unit.test.ts` scans for it).
+ */
+export const removeHarness = (options?: {
+	readonly refuseWith?: RemoveRefusal;
+	/** The `forget` arm's cause message — what the window is expected to end up rendering. */
+	readonly reason?: string;
+}): Effect.Effect<RemoveHarness> =>
+	Effect.sync(() => {
+		const calls: Array<ProcessId> = [];
+		const refusalOf = (id: ProcessId): Effect.Effect<void, RemoveError> => {
+			switch (options?.refuseWith) {
+				case "planned":
+					return Effect.fail(new ProcessIsPlanned({id}));
+				case "forget":
+					return Effect.fail(
+						new ForgetRefused({id, cause: new Error(options?.reason ?? "the store refused")}),
+					);
+				case "missing":
+					return Effect.fail(new ProcessNotFound({id}));
+				default:
+					return Effect.void;
+			}
+		};
+		return {
+			removed: () => [...calls],
+			layer: Layer.succeed(
+				Processes,
+				Processes.of({
+					spawn: () => Effect.die(new Error("test setup: this harness serves remove only")),
+					stop: () => Effect.void,
+					remove: (id) =>
+						Effect.suspend(() => {
+							calls.push(id);
+							return refusalOf(id);
+						}),
+					handle: () => Effect.succeed(Option.none()),
+				}),
+			),
+		};
+	});
 
 /** The services a picker call needs, as one context — what a test provides in one line. */
 export type PickerServices = Context.Context<

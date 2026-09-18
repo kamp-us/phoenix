@@ -271,3 +271,47 @@ describe("picker filter", () => {
 		expect(asPickerView({cursor: 1}).filter).toBeNull();
 	});
 });
+
+/**
+ * The `d` key (#9447). It is the one key a feature flag decides, so every claim here is made twice —
+ * once with the flag on and once with it off — because "the key does nothing" and "the key does not
+ * exist" are the same thing to an operator and two different things to this module.
+ */
+describe("the remove key", () => {
+	const on = {processRemove: true};
+	const off = {processRemove: false};
+
+	it("answers with the highlighted process, so the row and the removal cannot disagree", () => {
+		const atProcess = press(mountPicker(), "<end>");
+		expect(highlighted(entries, atProcess)).toEqual(entries.processes[0]);
+		expect(pickerKey(window, entries, atProcess, "d", on)).toEqual({
+			_tag: "Removing",
+			processId: "p-1",
+		});
+	});
+
+	it("ignores a program row, which names no process to forget", () => {
+		expect(highlighted(entries, mountPicker())?._tag).toBe("Program");
+		expect(pickerKey(window, entries, mountPicker(), "d", on)).toEqual({_tag: "Ignored"});
+	});
+
+	it("ignores an empty list, where there is no row under the cursor at all", () => {
+		expect(pickerKey(window, noEntries, mountPicker(), "d", on)).toEqual({_tag: "Ignored"});
+	});
+
+	it("is not a key at all with the flag off, which is also the default", () => {
+		const atProcess = press(mountPicker(), "<end>");
+		expect(pickerKey(window, entries, atProcess, "d", off)).toEqual({_tag: "Ignored"});
+		expect(pickerKey(window, entries, atProcess, "d")).toEqual({_tag: "Ignored"});
+	});
+
+	it("takes no key away: the flag moves `d` and nothing else", () => {
+		const keys = ["j", "k", "g", "G", "<enter>", "<escape>", "/"];
+		for (const key of keys) {
+			const view = mountPicker("p-1");
+			expect(`${key}: ${pickerKey(window, entries, view, key, on)._tag}`).toBe(
+				`${key}: ${pickerKey(window, entries, view, key, off)._tag}`,
+			);
+		}
+	});
+});
