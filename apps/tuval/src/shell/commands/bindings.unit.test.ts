@@ -40,8 +40,8 @@ describe("the default prefix table against the command table", () => {
  * that names nothing, which is exactly what this file exists to catch.
  */
 describe("a feature-gated binding against its own gated table", () => {
-	const on = {processBoard: true};
-	const off = {processBoard: false};
+	const on = {processBoard: true, processRemove: false};
+	const off = {processBoard: false, processRemove: false};
 
 	it("adds the board chord and its row together when the flag is on", () => {
 		const table = prefixTableFor(defaultPrefixTable, on);
@@ -82,5 +82,33 @@ describe("a table naming a row that is not there", () => {
 			"windo:close",
 			"window:quit",
 		]);
+	});
+});
+
+/**
+ * The removal row's gate (#9447). It is the one gated row with no binding, so the pair the board's
+ * flag keeps — a chord and a row together — is here a row and no chord at all: the id has nowhere to
+ * ride on a key sequence, and `x` is taken by `window:close`, which the epic's no-gos protect.
+ */
+describe("a feature-gated row with no binding", () => {
+	const on = {processBoard: false, processRemove: true};
+	const off = {processBoard: false, processRemove: false};
+
+	it("adds the row and no sequence, so the grammar is the one it was", () => {
+		expect(commandIndexFor(on).commandFor("process:remove")).toBeDefined();
+		expect(prefixTableFor(defaultPrefixTable, on)).toEqual(defaultPrefixTable);
+		expect(boundNames(prefixTableFor(defaultPrefixTable, on))).not.toContain("process:remove");
+	});
+
+	it("has no row with the flag off either, so nothing names it anywhere", () => {
+		expect(commandIndexFor(off).commandFor("process:remove")).toBeUndefined();
+	});
+
+	it("leaves `x` bound to window:close, whichever way the flag is set", () => {
+		for (const features of [on, off]) {
+			const table = prefixTableFor(defaultPrefixTable, features);
+			const onX = table.bindings.filter((binding) => binding.sequence === "x");
+			expect(onX.map((binding) => String(binding.command))).toEqual(["window:close"]);
+		}
 	});
 });

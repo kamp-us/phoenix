@@ -102,6 +102,18 @@ export type KernelCmd =
 			readonly processId: string;
 			readonly view?: ViewState;
 	  }
+	/**
+	 * Forget this process durably and stop it — `Processes.remove`, which the reducer cannot reach
+	 * for the same reason `openProgram` names a program rather than spawning one (#9447). The window
+	 * and its slot ride along because every way this refuses is shown *in* that window, as the two
+	 * arms above are.
+	 */
+	| {
+			readonly type: "removeProcess";
+			readonly windowId: WindowId;
+			readonly processId: string;
+			readonly view?: ViewState;
+	  }
 	| {readonly type: "reloadConfig"};
 
 /**
@@ -118,10 +130,11 @@ export type PageCmd =
 	| {readonly type: "openCommandLine"};
 
 /**
- * What the core asks its host to do, as the two halves that answer it. The absence is the point:
- * there is no stop-a-process arm, so closing a window cannot end the process it was showing — a
- * window is a view onto a process, and the last view closing says nothing about the process's
- * lifetime. A ninth arm joins `KernelCmd` or `PageCmd`; there is nowhere else to put one.
+ * What the core asks its host to do, as the two halves that answer it. The absence is still the
+ * point: `removeProcess` is asked for by name and by nothing else, so closing a window cannot end
+ * the process it was showing — a window is a view onto a process, and the last view closing says
+ * nothing about the process's lifetime (`window:close` keeps its detach-only behaviour, #9447). A
+ * tenth arm joins `KernelCmd` or `PageCmd`; there is nowhere else to put one.
  */
 export type ShellCmd = KernelCmd | PageCmd;
 
@@ -190,6 +203,18 @@ export type ShellMsg =
 			 * the focused window, which is the parent's own.
 			 */
 			readonly split?: Orientation;
+	  }
+	| {
+			/**
+			 * Remove this process: forget it durably, then stop it. The desk's two routes to it — the
+			 * `process:remove <id>` command row and `d` on the focused picker row — both land here, so
+			 * one Msg is the whole affordance (#9447). No confirmation is asked for and none is
+			 * modelled: the kernel refuses what it must and otherwise acts, which is the shape
+			 * `workspace.remove` above already has.
+			 */
+			readonly type: "process.remove";
+			readonly processId: string;
+			readonly windowId?: WindowId;
 	  }
 	| {readonly type: "command.open"}
 	| {readonly type: "config.reload"}
@@ -664,6 +689,24 @@ export const cellsFor = (
 		// Neither touches the desk, and neither leaves as `runCommand`: a host answering that Cmd
 		// resolves the name through the command table, so routing a row's own Msg back through it
 		// would be a loop. Each gets the arm that says what it is.
+		// The window is where the removal's refusals are shown, so the Cmd carries it and its slot the
+		// way the two picker arms above do. A desk with no window to show one in asks for nothing.
+		"process.remove": (state, msg) => {
+			const target = targetWindow(state, msg.windowId);
+			return target === null
+				? [state, NO_CMDS]
+				: [
+						state,
+						[
+							{
+								type: "removeProcess",
+								windowId: target,
+								processId: msg.processId,
+								...viewOf(state, target),
+							},
+						],
+					];
+		},
 		"command.open": (state) => [state, [{type: "openCommandLine"}]],
 		"config.reload": (state) => [state, [{type: "reloadConfig"}]],
 		// Desk-level, so every workspace cell above leaves it untouched by spreading `...state`.
@@ -722,6 +765,7 @@ export const shellCore = ({table, commands}: ShellCoreOptions) =>
 			runCommand: () => Promise.resolve(),
 			openProgram: () => Promise.resolve(),
 			attachProcess: () => Promise.resolve(),
+			removeProcess: () => Promise.resolve(),
 			openCommandLine: () => Promise.resolve(),
 			reloadConfig: () => Promise.resolve(),
 		},

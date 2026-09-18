@@ -61,6 +61,12 @@ export interface PickerViewProps {
 	readonly reducedMotion: boolean;
 	/** Whether this window is the desk's focused one — the picker holds DOM focus only then. */
 	readonly focused: boolean;
+	/**
+	 * The operator's `processRemove` flag (`../../features.ts`, #9447). It decides whether `d` is one
+	 * of this picker's keys at all, and whether the key help names it — both through the picker's own
+	 * declarations, so this file still decides nothing.
+	 */
+	readonly processRemove?: boolean;
 }
 
 export function PickerView({
@@ -70,8 +76,9 @@ export function PickerView({
 	dispatch,
 	reducedMotion,
 	focused,
+	processRemove = false,
 }: PickerViewProps): ReactElement {
-	const frame = pickerFrame(windowId, entries, view, {reducedMotion});
+	const frame = pickerFrame(windowId, entries, view, {reducedMotion, processRemove});
 	const listbox = useRef<HTMLDivElement>(null);
 	const filterInput = useRef<HTMLInputElement>(null);
 
@@ -147,6 +154,9 @@ export function PickerView({
 							: {type: "window.attach", windowId, processId: answer.intent.processId},
 					);
 					return;
+				case "Removing":
+					dispatch({type: "process.remove", windowId, processId: answer.processId});
+					return;
 				case "Ignored":
 					return;
 			}
@@ -162,16 +172,16 @@ export function PickerView({
 			const spelled = FILTER_KEYS[event.key];
 			if (spelled === undefined) return;
 			event.preventDefault();
-			run(pickerKey(windowId, entries, view, spelled));
+			run(pickerKey(windowId, entries, view, spelled, {processRemove}));
 		},
-		[entries, run, view, windowId],
+		[entries, processRemove, run, view, windowId],
 	);
 
 	useForwardedKey(windowId, (key) => {
 		// A forwarded key means the desk considers this window focused. Re-claiming here is what
 		// carries focus back after the command line closes onto the desk container.
 		takeFocus();
-		run(pickerKey(windowId, entries, view, key));
+		run(pickerKey(windowId, entries, view, key, {processRemove}));
 	});
 
 	return (

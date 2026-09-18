@@ -369,7 +369,7 @@ describe("the shell row under a boot's merged feature flags", () => {
 	it(
 		"adds the board's binding and its spell together when the flag is on",
 		() => {
-			const [gated] = withShellFeatures([row()], {processBoard: true});
+			const [gated] = withShellFeatures([row()], {processBoard: true, processRemove: false});
 			assert.isDefined(gated);
 			const table = shellPrefixTable([gated as AnyProgram]);
 			assert.include(
@@ -384,7 +384,7 @@ describe("the shell row under a boot's merged feature flags", () => {
 	it(
 		"leaves the row exactly as the config built it when the flag is off",
 		() => {
-			const [plain] = withShellFeatures([row()], {processBoard: false});
+			const [plain] = withShellFeatures([row()], {processBoard: false, processRemove: false});
 			assert.isDefined(plain);
 			assert.deepStrictEqual(shellPrefixTable([plain as AnyProgram]), defaultPrefixTable);
 			assert.notInclude(named(plain as AnyProgram), "desk:board-toggle");
@@ -393,10 +393,26 @@ describe("the shell row under a boot's merged feature flags", () => {
 	);
 
 	it(
+		"registers the removal row as a spell only with its own flag on (#9447)",
+		() => {
+			const [gated] = withShellFeatures([row()], {processBoard: false, processRemove: true});
+			const [plain] = withShellFeatures([row()], {processBoard: false, processRemove: false});
+			assert.isDefined(gated);
+			assert.isDefined(plain);
+			assert.include(named(gated as AnyProgram), "process:remove");
+			// Off, the row is absent everywhere a surface could read it: no spell for `help` or the
+			// palette, and no binding, because a key sequence cannot carry the process id anyway.
+			assert.notInclude(named(plain as AnyProgram), "process:remove");
+			assert.deepStrictEqual(shellPrefixTable([gated as AnyProgram]), defaultPrefixTable);
+		},
+		BUDGET_MS,
+	);
+
+	it(
 		"touches no row but the shell's",
 		() => {
 			const other: AnyProgram = {...row(), id: ProgramId.make("not-the-shell")} as AnyProgram;
-			const [kept] = withShellFeatures([other], {processBoard: true});
+			const [kept] = withShellFeatures([other], {processBoard: true, processRemove: false});
 			assert.strictEqual(kept, other);
 		},
 		BUDGET_MS,

@@ -264,7 +264,16 @@ program-blind: a process's state still crosses as `unknown`.
   the single highlight the mouse and the keyboard both move and a screen reader announces. Why it has
   to be one structure and not two is ADR
   [0368](../.decisions/0368-picker-one-cursor-both-inputs.md), which binds every Tuval picker
-  (#8655).
+  (#8655). The union grew a keyboard-only arm with #9447 — `Removing`, what `d` answers with — and
+  that direction is the one ADR 0368 leaves open: its rule is that the *pointer* can express nothing
+  the keyboard cannot, and a `role="option"` has no destructive gesture to spend on a removal.
+- **A gated key is declared in its own list, like a gated row.** `pickerKey` takes the picker's read
+  of the feature flags and resolves its flag-gated keys through one function, so a flag off leaves an
+  empty set and the key falls through to `Ignored` exactly as it did before the key existed. It is
+  the shape `boardCommands` (`src/shell/commands/table.ts`) and `boardBindings`
+  (`src/shell/keys/table.ts`) already have, and it is why "the key does nothing" and "the key does
+  not exist" are one thing to an operator: `pickerFrame`'s `keyHelp` reads the same flag, so a desk
+  never names a key it does not answer (#9447).
 - **The `/` filter narrows before anything reads the list.** `visibleEntries`
   (`src/shell/picker/filter.ts`) runs the `fzf` package over each section's own `label`, and
   `visibleFor` is the one door every reader goes through — `cursorOf`, `highlighted`, `pickerKey`,

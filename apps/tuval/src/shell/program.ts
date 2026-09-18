@@ -111,6 +111,10 @@ export const unwiredShellEffects: ShellEffects = {
 		Effect.logDebug(
 			`shell: attachProcess "${cmd.processId}" dropped — no surface attached to resolve it`,
 		).pipe(Effect.as([])),
+	removeProcess: (cmd) =>
+		Effect.logDebug(
+			`shell: removeProcess "${cmd.processId}" dropped — no surface attached to remove it`,
+		).pipe(Effect.as([])),
 	openCommandLine: () =>
 		Effect.logDebug("shell: openCommandLine dropped — no surface attached").pipe(Effect.as([])),
 	reloadConfig: () =>

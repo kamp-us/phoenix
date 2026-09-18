@@ -126,6 +126,12 @@ export interface PickerFrame {
 export interface PickerFrameOptions {
 	/** The user's `prefers-reduced-motion`. Unknown is `true`: the safe answer is the still one. */
 	readonly reducedMotion?: boolean;
+	/**
+	 * The operator's `processRemove` flag (`../../features.ts`, #9447). It decides one row of
+	 * `keyHelp` and nothing else: a desk whose `d` key does not exist must not offer it, and a desk
+	 * whose does must say so, because a key nothing names is a key nobody finds.
+	 */
+	readonly processRemove?: boolean;
 }
 
 const themeFor = (options: PickerFrameOptions | undefined): PickerTheme => ({
@@ -162,6 +168,9 @@ const KEY_HELP = [
 	{keys: "/", action: "Filter the rows by typing"},
 	{keys: "Enter", action: "Open or attach the highlighted row"},
 ] as const;
+
+/** The help for the one key a flag adds (`./view.ts`, `REMOVE`). */
+const REMOVE_HELP = {keys: "d", action: "Remove the highlighted process and forget it durably"};
 
 /** Escape's help is the one row that reads off the view: it says what the key will actually do. */
 const escapeHelp = (view: PickerView) => ({
@@ -279,6 +288,10 @@ export const pickerFrame = (
 		groups,
 		announcement,
 		theme: themeFor(options),
-		keyHelp: [...KEY_HELP, escapeHelp(view)],
+		keyHelp: [
+			...KEY_HELP,
+			...(options?.processRemove === true ? [REMOVE_HELP] : []),
+			escapeHelp(view),
+		],
 	};
 };
