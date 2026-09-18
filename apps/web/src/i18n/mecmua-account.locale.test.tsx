@@ -33,7 +33,7 @@ describe("the account surfaces render English once the locale is en", () => {
 	it("swaps the profile header, the shared badges and the 404, and holds the brand nouns", async () => {
 		mountInEnglish(
 			<>
-				<ProfileHeader displayName="Elif" handle="elif" stats={null} statsError />
+				<ProfileHeader displayName="Elif" handle="elif" stats={{status: "error"}} />
 				<ReviewBadge />
 				<CaylakBadge />
 				<DraftRestoreBanner onRestore={() => {}} onDismiss={() => {}} />
