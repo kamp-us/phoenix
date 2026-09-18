@@ -36,19 +36,36 @@ export const fileStores = (dir: string): CheckpointStores => ({
 });
 
 export const memoryStores = (): CheckpointStores => {
-	const snapshots = new Map<ProcessId, Store<Snapshot>>();
+	// One cell per id, and the store handed out is a view onto it rather than the cell itself, so a
+	// drop empties the cell in place the way `rm` empties a path: a process that acquired its store
+	// before the drop keeps writing to the same cell a later reader loads from. Deleting the map
+	// entry instead would hand the next reader a fresh empty cell while the live process's saves
+	// land in a detached one — a store that lies about exactly the window `forget` is built for.
+	const cells = new Map<ProcessId, {value: Snapshot | null}>();
+	const cellFor = (id: ProcessId): {value: Snapshot | null} => {
+		let cell = cells.get(id);
+		if (cell === undefined) {
+			cell = {value: null};
+			cells.set(id, cell);
+		}
+		return cell;
+	};
 	return {
 		manifest: memoryStore<Manifest>(null, parseManifest),
 		snapshot: (id) => {
-			let store = snapshots.get(id);
-			if (store === undefined) {
-				store = memoryStore<Snapshot>(null, parseSnapshot);
-				snapshots.set(id, store);
-			}
-			return store;
+			const cell = cellFor(id);
+			return {
+				load: () => Promise.resolve(cell.value),
+				save: (snapshot) => {
+					cell.value = snapshot;
+					return Promise.resolve();
+				},
+				migrate: (raw) => parseSnapshot(raw),
+			};
 		},
 		dropSnapshot: (id) => {
-			snapshots.delete(id);
+			const cell = cells.get(id);
+			if (cell !== undefined) cell.value = null;
 			return Promise.resolve();
 		},
 	};

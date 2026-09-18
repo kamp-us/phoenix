@@ -11,7 +11,7 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer} from "effect";
+import {Context, Effect, Layer, Option} from "effect";
 import {Processes} from "../process/Processes.ts";
 import {ProcessTable} from "../process/ProcessTable.ts";
 import {ProcessId} from "../process/process.ts";
@@ -133,6 +133,47 @@ describe("Checkpoints.forget", () => {
 			);
 		}).pipe(Effect.provide(kernel(watcher.stores)), Effect.orDie);
 	});
+
+	/**
+	 * The seal (`Checkpoints.ts`, `forgotten`). A forget runs while its processes are still alive —
+	 * `Processes.remove` closes the Scope only after the store is clean — so a commit landing in that
+	 * window must not write the snapshot back under a manifest that no longer names it. And a forget
+	 * that was refused sealed nothing: the process still owns its rows, and its next commit rewrites
+	 * the snapshot the failed attempt dropped.
+	 */
+	it.effect(
+		"a commit after a forget writes no snapshot back; after a refused forget it does",
+		() => {
+			const watcher = watchingStores();
+			return Effect.gen(function* () {
+				const processes = yield* Processes;
+				const checkpoints = yield* Checkpoints;
+				const {root, grandchild} = yield* threeDeep;
+				const live = Option.getOrThrow(yield* processes.handle(grandchild));
+
+				yield* checkpoints.forget(root);
+				yield* live.dispatch({type: "tick"});
+
+				assert.isNull(yield* snapshotAt(watcher.stores, grandchild));
+				assert.deepStrictEqual(yield* checkpoints.list, []);
+
+				const other = yield* processes.spawn(counter, {services: Context.empty()});
+				yield* other.dispatch({type: "tick"});
+				watcher.refuseManifestSave = true;
+				yield* Effect.flip(checkpoints.forget(other.id));
+				watcher.refuseManifestSave = false;
+				assert.isNull(yield* snapshotAt(watcher.stores, other.id));
+
+				yield* other.dispatch({type: "tick"});
+
+				assert.isNotNull(yield* snapshotAt(watcher.stores, other.id));
+				assert.deepStrictEqual(
+					(yield* checkpoints.list).map((entry) => entry.id),
+					[other.id as string],
+				);
+			}).pipe(Effect.provide(kernel(watcher.stores)), Effect.orDie);
+		},
+	);
 
 	/**
 	 * The epic's actual claim, over `memoryStores()` — which `./stores.ts` keeps in a map precisely

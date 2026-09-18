@@ -205,7 +205,9 @@ const makeService = (stores: CheckpointStores): Checkpoints["Service"] => {
 	 * Snapshots first and descendants before their parent, then the manifest once, last. The order
 	 * is what makes a crash mid-forget survivable: what it leaves behind is orphaned snapshot bytes,
 	 * and `./restore.ts` reads the manifest, so nothing replays. Writing the manifest first would
-	 * leave the mirror image — rows whose snapshots are gone, which is a refused boot.
+	 * leave the mirror image — rows whose snapshots are gone, which `restore` replays as a fresh init
+	 * (`loadSnapshot` reads absent bytes as `null`): the process comes back with its state silently
+	 * lost, rather than staying gone.
 	 */
 	const forget = Effect.fn("Tuval.Checkpoints.forget")(function* (id: ProcessId) {
 		const manifest = yield* loadManifest;

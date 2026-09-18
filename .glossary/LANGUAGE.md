@@ -471,7 +471,7 @@ noted as a future-feeling alternative and is not adopted.
 
 ### Tuval: stop, forget, remove
 
-What ends a process, and what ends it for good. The pair was ruled by the founder on 2026-09-07
+What ends a process, and what ends it for good. The direction was ruled by the founder on 2026-09-07
 (epic [#8332](https://github.com/kamp-us/phoenix/issues/8332)) — removing a desk process durably
 forgets it and its descendants, so they stay gone after a restart — and first used in code by
 [`apps/tuval/src/durability/Checkpoints.ts`](../apps/tuval/src/durability/Checkpoints.ts) and
@@ -487,7 +487,7 @@ uses them interchangeably re-opens the question the ruling closed.
   one is ordinary, and is what makes the removal below refusable.
 - **remove** — the desk-facing verb, as it already is on `workspace.remove`, and it means
   **forget-then-stop, in that order**. A removal whose forget fails is refused whole: the process
-  keeps running and keeps its rows, because a process gone from the table and still in the manifest
+  keeps running and keeps its manifest row, because a process gone from the table and still in the manifest
   is the half-forgotten state the pair exists to make unwritable.
 
 A **graph-declared** process — one the config's `graph` plans and boot recreates at its own id —
