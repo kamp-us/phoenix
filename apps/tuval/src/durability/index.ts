@@ -1,6 +1,7 @@
 export {
 	Checkpoints,
 	type CheckpointTarget,
+	type ForgetError,
 	type OpenError,
 	type OpenedCheckpoint,
 } from "./Checkpoints.ts";

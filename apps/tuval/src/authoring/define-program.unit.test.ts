@@ -256,25 +256,30 @@ describe("authoring.defineProgram", () => {
 	// `stopped` is no longer this handler's answer (#9227). The child's own end is the single producer
 	// of it, so the parent hears back on a later dispatch and hears back exactly once — which the
 	// real-kernel test at the bottom of this file is what proves.
-	it.effect("runs an authored `stop` through Processes and answers no event of its own", () =>
-		Effect.gen(function* () {
-			const child = ProcessId.make("process-child");
-			const halted: Array<ProcessId> = [];
-			const processes = Processes.of({
-				spawn: () => Effect.die("this test spawns through no kernel"),
-				stop: (id) =>
-					Effect.sync(() => {
-						halted.push(id);
-					}),
-				handle: () => Effect.succeed(Option.none<ProcessHandle>()),
-			});
+	it.effect(
+		"runs an authored `stop` through Processes.remove and answers no event of its own",
+		() =>
+			Effect.gen(function* () {
+				const child = ProcessId.make("process-child");
+				const halted: Array<ProcessId> = [];
+				const processes = Processes.of({
+					spawn: () => Effect.die("this test spawns through no kernel"),
+					// The authored effect goes through the durable removal since #9446: a `stop` that only
+					// closed the Scope left the child in the manifest, so this double dies on it.
+					stop: () => Effect.die("an authored `stop` removes; it does not stop and leave the row"),
+					remove: (id) =>
+						Effect.sync(() => {
+							halted.push(id);
+						}),
+					handle: () => Effect.succeed(Option.none<ProcessHandle>()),
+				});
 
-			const events = yield* runEffect(counter, stop(child)).pipe(
-				Effect.provideService(Processes, processes),
-			);
-			assert.deepStrictEqual(halted, [child]);
-			assert.deepStrictEqual(events, []);
-		}),
+				const events = yield* runEffect(counter, stop(child)).pipe(
+					Effect.provideService(Processes, processes),
+				);
+				assert.deepStrictEqual(halted, [child]);
+				assert.deepStrictEqual(events, []);
+			}),
 	);
 });
 
