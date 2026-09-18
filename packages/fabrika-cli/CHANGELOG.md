@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.7.0...fabrika-cli-v0.7.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* **fabrika-cli:** pin @effect/platform-node-shared so a consumer's fresh install resolves ([#9450](https://github.com/kamp-us/phoenix/issues/9450)) ([bcc057b](https://github.com/kamp-us/phoenix/commit/bcc057b3404e253d462869dd83bd480a6a774991))
+
 ## [0.7.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.6.0...fabrika-cli-v0.7.0) (2026-09-18)
 
 
