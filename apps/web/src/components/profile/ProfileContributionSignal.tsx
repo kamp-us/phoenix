@@ -52,9 +52,7 @@ function SignalShell({children}: {children: ReactNode}) {
 	);
 }
 
-// Shared by the `<Screen>` fallback below and the eager pre-session paint above the
-// gate so the two are byte-identical and the handoff shows no visual jump. See ADR 0167.
-export function ProfileContributionSkeleton() {
+function ProfileContributionSkeleton() {
 	return (
 		<SignalShell>
 			<ContributionLoading />
@@ -69,16 +67,6 @@ function ContributionLoading() {
 			{t("profile.contributions.loading")}
 		</p>
 	);
-}
-
-/**
- * Painted above the session gate, and unlike `/pano`'s eager tier it mounts NO fate
- * client on purpose: these contributions are identity-scoped, so the real read must
- * stay on the authed client below the gate, and with no client above there is nothing
- * to re-key anon→id (#438). See ADR 0167.
- */
-export function EagerProfileContributionSkeleton() {
-	return <ProfileContributionSkeleton />;
 }
 
 export function ProfileContributionSignal({username}: {username: string}) {

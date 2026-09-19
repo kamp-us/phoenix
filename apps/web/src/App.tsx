@@ -30,7 +30,6 @@ import {
 	AuthorshipStandingContext,
 	useAuthorshipStanding,
 } from "./components/profile/CaylakStatusBlock";
-import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
 import {SearchPalette} from "./components/search/SearchPalette";
 import {SearchPaletteProvider, useSearchPalette} from "./components/search/SearchPaletteState";
 import {SozlukCreateDialogProvider} from "./components/sozluk/SozlukCreateDialogState";
@@ -119,10 +118,10 @@ function Layout() {
 	const eagerPanoHost = panoSiteMatch?.params.host;
 	const showEagerPanoFeed = session.isPending && (panoMatch != null || panoSiteMatch != null);
 
-	// The same two-tier decoupling for `/profile` (#2188) — see ADR 0167; why it is a skeleton
-	// rather than anon data lives on `EagerProfileContributionSkeleton`.
-	const profileMatch = useMatch("/profile");
-	const showEagerProfileSkeleton = session.isPending && profileMatch != null;
+	// `/profile` paints no eager tier: since #9273 its contribution block renders below every
+	// settings section, so a pre-session skeleton at the top of <Main> would land nowhere near
+	// where the block settles. ADR 0167's public client is untouched — that skeleton never
+	// mounted one, so dropping it decouples nothing.
 
 	const searchQuery =
 		location.pathname === "/search" ? (new URLSearchParams(location.search).get("q") ?? "") : "";
@@ -229,7 +228,6 @@ function Layout() {
 									<PanoFeed {...(eagerPanoHost ? {host: eagerPanoHost} : {})} />
 								</PublicFateProvider>
 							) : null}
-							{showEagerProfileSkeleton ? <EagerProfileContributionSkeleton /> : null}
 							<FateProvider>
 								<SetTopbarChipsContext.Provider value={setChips}>
 									<LayoutContent />
