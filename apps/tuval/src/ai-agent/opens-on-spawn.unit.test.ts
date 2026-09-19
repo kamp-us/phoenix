@@ -19,6 +19,7 @@ import {ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {type AiAgentSessionState, isAiAgentSessionState} from "./core/index.ts";
 import {aiAgentPortNames} from "./handlers/index.ts";
+import {SessionOpening} from "./opening.ts";
 import type {TranscriptPayload} from "./ports/index.ts";
 import {aiAgentProgram} from "./program.ts";
 import {plainReply, SESSION_ID} from "./service/fixtures/scripts.ts";
@@ -72,13 +73,17 @@ const sessionOf = (handle: ProcessHandle): AiAgentSessionState => {
 /** Spawn with no checkpoint and no `start`, exactly as `shell/picker/open.ts` does. */
 const onAFreshSpawn = <A, E>(
 	body: (handle: ProcessHandle, log: ReadonlyArray<Emitted>) => Effect.Effect<A, E>,
+	cwd?: string,
 ) =>
 	Effect.gen(function* () {
 		const log: Array<Emitted> = [];
 		const processes = yield* Processes;
-		const handle = yield* processes.spawn(ProgramId.make(PROGRAM), {
-			services: Context.make(ProcessPorts, recorder(log)),
-		});
+		const ports = Context.make(ProcessPorts, recorder(log));
+		const services =
+			cwd === undefined
+				? ports
+				: Context.merge(ports, Context.make(SessionOpening, {cwd, resume: null}));
+		const handle = yield* processes.spawn(ProgramId.make(PROGRAM), {services});
 		return yield* body(handle, log);
 	}).pipe(Effect.scoped, Effect.provide(kernel));
 
@@ -96,6 +101,23 @@ describe("a freshly spawned agent session", () => {
 				assert.strictEqual(session.cwd, CWD);
 				assert.isNull(session.failure, "opening the session recorded a refusal");
 			}),
+		),
+	);
+
+	it.live("opens a fresh session in the directory its spawner chose", () =>
+		onAFreshSpawn(
+			(handle) =>
+				Effect.gen(function* () {
+					yield* eventually(
+						"the spawned session to reach ready",
+						() => sessionOf(handle).phase === "ready",
+					);
+					const session = sessionOf(handle);
+					assert.strictEqual(session.sessionId, SESSION_ID);
+					assert.strictEqual(session.cwd, "/worktrees/reviewer");
+					assert.isNull(session.failure);
+				}),
+			"/worktrees/reviewer",
 		),
 	);
 

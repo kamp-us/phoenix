@@ -71,7 +71,7 @@ export interface SpawnCall {
 	 * a `{cwd, resume}` that never reaches the child is the failure that looks exactly like a
 	 * success from the outside (epic #8070, ruling 2).
 	 */
-	readonly session: {readonly cwd: string; readonly resume: string} | undefined;
+	readonly session: {readonly cwd: string; readonly resume: string | null} | undefined;
 	/**
 	 * The window the child was told it was opened into, read back out of the same context. Recorded
 	 * for the reason `session` is: a window that never reaches the child leaves every kernel call
