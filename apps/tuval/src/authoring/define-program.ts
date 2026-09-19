@@ -608,7 +608,7 @@ const compileReceive = (
 	Object.fromEntries(
 		arrivingPorts(authored).map((name) => [
 			name,
-			receiverFor(name, (authored.ports ?? {})[name] as AnyPortDecl),
+			receiverFor(name, authored.ports?.[name] as AnyPortDecl),
 		]),
 	);
 

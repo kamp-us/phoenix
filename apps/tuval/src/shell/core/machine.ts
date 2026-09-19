@@ -48,7 +48,7 @@ import {
 	type WindowId,
 	zoom,
 } from "../layout/index.ts";
-import type {OpenSession} from "../picker/intent.ts";
+import type {ProgramOpening} from "../picker/intent.ts";
 import {mountPicker} from "../picker/view.ts";
 import type {ViewState} from "../window/host.ts";
 import {
@@ -93,7 +93,7 @@ export type KernelCmd =
 			readonly type: "openProgram";
 			readonly windowId: WindowId;
 			readonly programId: string;
-			readonly session?: OpenSession;
+			readonly session?: ProgramOpening;
 			readonly view?: ViewState;
 	  }
 	| {
@@ -188,7 +188,7 @@ export type ShellMsg =
 			readonly programId: string;
 			readonly windowId?: WindowId;
 			/** The session this open is for, when it is for one (`../picker/intent.ts`). */
-			readonly session?: OpenSession;
+			readonly session?: ProgramOpening;
 	  }
 	| {
 			readonly type: "window.attach";

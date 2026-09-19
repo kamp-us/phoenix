@@ -151,7 +151,7 @@ export function CommandLine({
 				value={line}
 				autoComplete="off"
 				spellCheck={false}
-				placeholder="workspace:create"
+				placeholder="open pi /work/project"
 				aria-label="Type a command"
 				aria-describedby={refusal === null ? undefined : "tuval-command-refusal"}
 				aria-invalid={refusal !== null}

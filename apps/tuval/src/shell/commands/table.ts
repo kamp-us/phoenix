@@ -53,19 +53,15 @@ const pickerRow = (command: PickerCommand): AnyShellCommand => {
 		return defineCommand({
 			path,
 			describe: command.summary,
-			// `session` and `cwd` are one argument in two halves, and both or neither: an open naming
-			// a session is the first send on a row picked out of the session list, and a session id
-			// with no folder is not something a backend can find (epic #8070, ruling 2). A typed
-			// command line never fills them — the caller is the session window.
 			params: Schema.Struct({
 				program: Schema.NonEmptyString,
-				session: Schema.optionalKey(Schema.NonEmptyString),
 				cwd: Schema.optionalKey(Schema.NonEmptyString),
+				session: Schema.optionalKey(Schema.NonEmptyString),
 			}),
 			toMsg: ({program, session, cwd}) => ({
 				type: "window.open",
 				programId: program,
-				...(session === undefined || cwd === undefined ? {} : {session: {cwd, resume: session}}),
+				...(cwd === undefined ? {} : {session: {cwd, resume: session ?? null}}),
 			}),
 		});
 	}
