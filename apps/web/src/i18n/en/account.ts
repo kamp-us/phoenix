@@ -95,6 +95,7 @@ export const account = {
 	"profile.page.loading": "loading…",
 	"profile.page.error": "the profile could not be loaded: {code}",
 	"profile.header.statsError": "stats could not be loaded",
+	"profile.header.statsLoading": "loading stats…",
 	"profile.standing.yazar": "yazar",
 	"profile.standing.caylak": "çaylak",
 	"profile.stat.definitions": "definitions",

@@ -17,6 +17,7 @@ import {
 } from "../components/profile/profileContributions";
 import {
 	ContributionsConnectionView,
+	PROFILE_READ_OPTIONS,
 	profileRequest,
 	UserProfileView,
 } from "../components/profile/profileReads";
@@ -57,7 +58,7 @@ export function UserProfilePage() {
 function UserProfileContent({username}: {username: string}) {
 	const fate = useFateClient();
 	const t = useT();
-	const {profile} = useRequest(profileRequest(username));
+	const {profile} = useRequest(profileRequest(username), PROFILE_READ_OPTIONS);
 	// The same network-only re-pull the divan promote handler drives (#7036): a settled
 	// tier answer re-pulls this page's read so the rendered status can't stay stale.
 	const refetchProfile = useCallback(

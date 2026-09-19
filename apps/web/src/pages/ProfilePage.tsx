@@ -9,7 +9,7 @@ import {actorLabel} from "../components/moderation/actor-identity";
 import {CaylakStatusBlock} from "../components/profile/CaylakStatusBlock";
 import {DeleteAccountDialog} from "../components/profile/DeleteAccountDialog";
 import {ProfileContributionSignal} from "../components/profile/ProfileContributionSignal";
-import {ProfileHeader} from "../components/profile/ProfileHeader";
+import {ProfileHeader, type ProfileHeaderStatsState} from "../components/profile/ProfileHeader";
 import {profileStandingLabelKey} from "../components/profile/profileStanding";
 import {PHOENIX_CAYLAK_VISIBILITY} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
@@ -49,9 +49,15 @@ export function ProfilePage() {
 	const readUsername = u?.username ?? me?.username ?? null;
 	const statsState = useProfileStats(readUsername);
 	// A failed stats (or `me`) fetch must NOT render as `0` — that's the silent
-	// honest-empty-state bug (#448). Treat either failure as the strip's error.
-	const statsFailed = statsState.status === "error" || meStatus === "error";
-	const stats = statsState.status === "ok" ? statsState.stats : null;
+	// honest-empty-state bug (#448). Nor may an unanswered one: the read is
+	// `network-only`, so every visit holds the in-flight window open for a full
+	// round-trip, and collapsing it to `null` painted those zeros as counts (#9265).
+	const headerStats: ProfileHeaderStatsState =
+		statsState.status === "error" || meStatus === "error"
+			? {status: "error"}
+			: statsState.status === "ok"
+				? {status: "ready", stats: statsState.stats}
+				: {status: "loading"};
 	const {choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const {choice: densityChoice, setChoice: setDensityChoice} = useDensity();
 	// The entry point into /caylak-gorunurlugu (#6426): shown only when the feature is live AND
@@ -151,8 +157,7 @@ export function ProfilePage() {
 					handle={handle}
 					standingLabel={standingLabel}
 					image={me?.image ?? null}
-					stats={stats}
-					statsError={statsFailed}
+					stats={headerStats}
 					showKarma
 				/>
 
