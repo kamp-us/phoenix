@@ -106,3 +106,28 @@ a branch in every repo installing it would be mutating trees it cannot see.
 - A checkout parked off its default branch stops advancing, loudly, at every session start until a
   human moves it. That noise is the intended reading: a plugin source that has stopped advancing is
   the state this record exists to make visible.
+
+## Amendment (2026-09-19, #9459) — the dirty-tree refusal narrows to the paths that actually collide
+
+The Decision above states the refusal set as "a parked branch, a detached HEAD, uncommitted work or
+a diverged branch". The "uncommitted work" arm shipped as a single yes/no read of
+`git status --porcelain`, so it refused whether or not the uncommitted paths were paths the incoming
+commits touch. The primary checkout carries one standing local-only edit — `.fabrika.jsonc` — that
+no commit ever touches, so link 1 never advanced there: the run that filed
+[#9459](https://github.com/kamp-us/phoenix/issues/9459) found it six commits behind with five
+lagging bindings, and a hand-run `git merge --ff-only origin/main` in the same checkout succeeded
+with the local edit intact. A refusal that never clears is not a guard, it is a stopped clock.
+
+Founder ruling, 2026-09-19 PT:
+[the ruling comment on #9459](https://github.com/kamp-us/phoenix/issues/9459#issuecomment-5745160952).
+
+**The refusal set that ships is: a parked branch, a detached HEAD, a diverged branch, or uncommitted
+work that the incoming commits also change.** Uncommitted work outside those paths yields a
+fast-forward. An untracked file an incoming commit would create counts as an overlap and is refused
+— that clobber is the whole thing the blanket arm bought, and it is kept.
+
+The original clause's rationale survives the narrowing rather than being overturned: where a human's
+checkout sits is still a human's call, and a dirty path the incoming commits never touch is not
+where that human's work sits. The comparison is the same one `git merge --ff-only` makes, and it
+stays the last judge — the `FAST_FORWARD_FAILED` arm already reports a refusal git itself makes, so
+a collision this comparison misses is still caught before anything is overwritten.

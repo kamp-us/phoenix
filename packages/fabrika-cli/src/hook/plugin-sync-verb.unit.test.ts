@@ -44,15 +44,22 @@ const piped = (text: string): StdinRead => ({_tag: "Text", text});
 
 type Script = ReadonlyArray<readonly [RegExp, ExecResult]>;
 
-/** Every git read the verb makes on the way to a plan, answered so it reaches one. */
-const reachesThePlan = (dirty: boolean): Script => [
+/**
+ * Every git read the verb makes on the way to a plan, answered so it reaches one.
+ *
+ * `dirty` names the one uncommitted path the scripted tree carries. The incoming range always
+ * changes `skills/build/SKILL.md`, so `"skills/build/SKILL.md"` is the clobber arm and any other
+ * path is dirt the fast-forward may take.
+ */
+const reachesThePlan = (dirty: string | null): Script => [
 	[/--git-common-dir/, okOut(`${ROOT}/.git`)],
 	[/symbolic-ref --short refs\/remotes\/origin\/HEAD/, okOut("origin/main")],
 	[/^git fetch/, okOut("")],
 	[/symbolic-ref --quiet --short HEAD/, okOut("main")],
 	[/rev-parse HEAD/, okOut(HEAD)],
 	[/rev-parse refs\/remotes\/origin\/main/, okOut(REMOTE)],
-	[/status --porcelain/, okOut(dirty ? " M skills/build/SKILL.md" : "")],
+	[/status --porcelain/, okOut(dirty === null ? "" : ` M ${dirty}\0`)],
+	[/diff --name-only/, okOut("skills/build/SKILL.md\0")],
 	[/merge-base --is-ancestor/, okOut("")],
 	[/^git merge --ff-only/, okOut("")],
 ];
@@ -78,7 +85,7 @@ const run = (
 		readonly files?: Readonly<Record<string, string>>;
 	} = {},
 ): Promise<VerbOutcome> => {
-	const shell = fakeShell([...(options.script ?? reachesThePlan(false))]);
+	const shell = fakeShell([...(options.script ?? reachesThePlan(null))]);
 	const fs = fakeFs({files: {...options.files}});
 	return Effect.runPromise(
 		Effect.provide(
@@ -131,7 +138,7 @@ const paths = [
 		{
 			script: [
 				[/^git fetch/, errOut("fatal: unable to access origin")] as const,
-				...reachesThePlan(false),
+				...reachesThePlan(null),
 			],
 		},
 	],
@@ -140,17 +147,14 @@ const paths = [
 		GROUND_UNKNOWN,
 		"fetched origin/main and could not read this checkout's own state",
 		{
-			script: [
-				[/rev-parse HEAD/, errOut("fatal: bad revision")] as const,
-				...reachesThePlan(false),
-			],
+			script: [[/rev-parse HEAD/, errOut("fatal: bad revision")] as const, ...reachesThePlan(null)],
 		},
 	],
 	[
 		"the checkout is in no state to advance",
 		SYNC_REFUSED,
 		"carries uncommitted changes",
-		{script: reachesThePlan(true), files: LAGGING_RECORDS},
+		{script: reachesThePlan("skills/build/SKILL.md"), files: LAGGING_RECORDS},
 	],
 	[
 		"the planned fast-forward failed",
@@ -159,7 +163,7 @@ const paths = [
 		{
 			script: [
 				[/^git merge --ff-only/, errOut("fatal: refusing to merge")] as const,
-				...reachesThePlan(false),
+				...reachesThePlan(null),
 			],
 		},
 	],
@@ -180,7 +184,10 @@ describe("a plugin-sync refusal", () => {
 	});
 
 	it("keeps the scope line and every install-binding line, behind the reason", async () => {
-		const outcome = await run({script: reachesThePlan(true), files: LAGGING_RECORDS});
+		const outcome = await run({
+			script: reachesThePlan("skills/build/SKILL.md"),
+			files: LAGGING_RECORDS,
+		});
 		expect(outcome.stderr[0]).toContain("carries uncommitted changes");
 		expect(outcome.stderr.slice(1)).toEqual([
 			SCOPE,
@@ -207,5 +214,18 @@ describe("a plugin-sync answer", () => {
 			`fast-forwarded main ${HEAD.slice(0, 12)}..${REMOTE.slice(0, 12)}`,
 		);
 		expect(outcome.stderr[2]).toContain("install binding(s) are still copied");
+	});
+
+	/**
+	 * The narrowing read end to end: the checkout that filed it carried one uncommitted
+	 * `.fabrika.jsonc` no incoming commit touched, and refusing it left the plugin source six
+	 * commits behind at every session start.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/9459#issuecomment-5745160952
+	 */
+	it("advances over dirt the incoming commits never touch", async () => {
+		const outcome = await run({script: reachesThePlan(".fabrika.jsonc")});
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toBe(`advanced\tmain\t${REMOTE.slice(0, 12)}\n`);
 	});
 });
