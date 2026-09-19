@@ -39,7 +39,7 @@ const VERB = "guard design-token-guard check";
 const CSS_ROOTS = ["apps/web/src", "packages/design/src"] as const;
 const CONFIG_PATH = "packages/design/design-token-lint.config.json";
 /** The one file where hex and raw px legitimately live — the raw-scale layer. */
-const RAW_LAYER = "packages/design/src/tokens.css";
+export const RAW_LAYER = "packages/design/src/tokens.css";
 
 export interface DesignTokenGuardOptions {
 	/** An explicit repo root, or `null` to walk up from `cwd` for one. */

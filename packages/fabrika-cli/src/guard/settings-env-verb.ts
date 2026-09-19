@@ -27,7 +27,7 @@ import {
 
 const VERB = "guard settings-env-guard check";
 
-const SETTINGS = ".claude/settings.json";
+export const SETTINGS = ".claude/settings.json";
 
 export interface SettingsEnvGuardOptions {
 	/** An explicit repo root, or `null` to walk up from `cwd` for one. */

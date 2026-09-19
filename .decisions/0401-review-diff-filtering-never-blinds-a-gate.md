@@ -186,5 +186,9 @@ If accepted, with fields 2–4 landing as recommended and a placement ruling pic
   figure, each re-derived from the artifacts and checked against the live posted text, 21/21 PASS
   2026-09-13) lands beside them and is cited here as the correspondence proof between the posted
   thread numbers and the repo's artifacts.
-- The local spike branch `spike/ocr-port-filter-placement` (commits `19009cec`, `ac16ae67`) is
-  reference material — never merged; the epic's cherry-pick list names what it donates.
+- The spike branch `spike/ocr-port-filter-placement` (commits `19009cec`, `ac16ae67`) is the
+  implementation's origin — reference material, never merged. This PR carries the implementation
+  itself, cherry-picked from the spike and resolved against main: `GOVERNED_FILTER` re-seated
+  17 → 21 (main took 17–20), the design guards' corpus paths updated to `packages/design/`, and
+  the diff parser made CRLF-tolerant. The `--filter-placement` flag carries BOTH placements while
+  field 1 stays open; the shipped default collapses to the placement the ruling picks.

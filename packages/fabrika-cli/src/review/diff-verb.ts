@@ -16,8 +16,18 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {diffRange, diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {
+	applyPlacement,
+	DEFAULT_EXCLUSIONS,
+	filterDiff,
+	type FilterPlacement,
+	parseExcludeList,
+	refusalFor,
+} from "./filter-spike.ts";
+import {refusalProbes} from "./guard-trees.ts";
+import {GOVERNED_FILTER, INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {filesInDiff} from "./diff.ts";
+import {SHIPPED_GOVERNED_ROOTS} from "./classes.ts";
 import {bindHead, boundLine} from "./head.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 
@@ -28,6 +38,12 @@ export interface DiffOptions {
 	/** The head the caller scoped. `null` binds to the PR's live head instead of asserting one. */
 	readonly sha: string | null;
 	readonly repo: string | null;
+	/** ocr-port spike: `before`/`after` serve the filtered diff with its exclusion header; null = off. */
+	readonly filterPlacement?: FilterPlacement | null;
+	/** ocr-port spike: comma-separated extra exclusion patterns, refused on a guard-probe match. */
+	readonly exclude?: string | null;
+	/** The governed roots, read by the adapter's `governedRootsOr` — the union's config half. */
+	readonly governedRoots?: ReadonlyArray<string>;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -100,5 +116,34 @@ export const runDiff = (
 				diagnostics,
 			);
 		}
-		return answer(diff, diagnostics);
+		// ocr-port spike: the filter runs strictly AFTER the completeness proof above, so a deliberate
+		// exclusion can never masquerade as a short read — the header names what was left out on
+		// purpose. Refusal union derived per run from the guards' probes plus the governed roots.
+		let servedDiff = diff;
+		if (options.filterPlacement != null) {
+			const patterns = [
+				...DEFAULT_EXCLUSIONS,
+				...(options.exclude == null ? [] : parseExcludeList(options.exclude)),
+			];
+			const refused = refusalFor(
+				patterns,
+				refusalProbes(options.governedRoots ?? SHIPPED_GOVERNED_ROOTS),
+			);
+			if (refused.length > 0) {
+				const detail = refused
+					.map((entry) => `"${entry.pattern}" matches the ${entry.guard} probe "${entry.probe}"`)
+					.join("; ");
+				return refuse(
+					GOVERNED_FILTER,
+					`${VERB}: exclusion pattern intersects a governed root — ${detail}. A filter that blinds a governed surface is refused, not narrowed; guard corpora are protected by the consumer split (guards read the raw path list).`,
+					diagnostics,
+				);
+			}
+			const split = applyPlacement(listed.value, patterns);
+			servedDiff = filterDiff(diff, split.excluded, options.filterPlacement);
+			diagnostics.push(
+				`${VERB}: filter placement=${options.filterPlacement} excluded=${split.excluded.length} served=${listed.value.length - split.excluded.length} of ${listed.value.length} files — deliberate, not truncated.`,
+			);
+		}
+		return answer(servedDiff, diagnostics);
 	});

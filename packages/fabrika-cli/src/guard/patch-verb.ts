@@ -34,7 +34,7 @@ import {
 
 const VERB = "guard patch-guard check";
 
-const WORKSPACE = "pnpm-workspace.yaml";
+export const WORKSPACE = "pnpm-workspace.yaml";
 
 // Dirs never worth walking for test files: dependency trees, VCS, nested agent worktrees/checkouts
 // (present only in a dev tree, never on a fresh CI checkout), and build output. Excluding `.claude`

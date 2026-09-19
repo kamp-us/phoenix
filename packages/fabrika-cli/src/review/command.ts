@@ -12,16 +12,21 @@
 import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {governedRootsOr} from "../config/paths.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
+import {refuse} from "../verb.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
+import {OFF_VOCABULARY} from "./codes.ts";
+import type {FilterPlacement} from "./filter-spike.ts";
 import {runAppendCriterion} from "./append-criterion-verb.ts";
 import {runCi} from "./ci-verb.ts";
 import {runCriteria} from "./criteria-verb.ts";
 import {runDeviations} from "./deviations-verb.ts";
 import {runDiff} from "./diff-verb.ts";
 import {runPost} from "./post-verb.ts";
+import {runPreview} from "./preview-verb.ts";
 import {runScope} from "./scope-verb.ts";
 import {runScratch} from "./scratch-verb.ts";
 import {runSeat} from "./seat-verb.ts";
@@ -50,6 +55,34 @@ const prArg = Argument.integer("pr").pipe(
 );
 
 /**
+ * The ocr-port spike's two flags (benchmarks/ocr-port/): where the exclusion set sits relative to
+ * namespace derivation, and any extra exclusion globs beyond the defaults. Local experimental
+ * surface — not part of the review contract.
+ */
+const filterPlacementFlag = Flag.string("filter-placement").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"review diff filtering (ADR 0401): apply the exclusion set `before` or `after` namespace derivation; omitted, no filtering runs. Both placements are demonstrated while the placement ruling (ADR 0401 field 1) is open",
+	),
+);
+
+const excludeFlag = Flag.string("exclude").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"review diff filtering (ADR 0401): comma-separated extra exclusion globs beyond the defaults; refused at 21 when one intersects a governed root",
+	),
+);
+
+/** The spike flag narrowed to its two-value vocabulary; off-vocabulary values refuse, never filter. */
+const placementOf = (
+	verb: string,
+	value: string | null,
+): FilterPlacement | null | ReturnType<typeof refuse> =>
+	value === null || value === "before" || value === "after"
+		? value
+		: refuse(OFF_VOCABULARY, `review ${verb}: --filter-placement must be \`before\` or \`after\`, got "${value}"`);
+
+/**
  * The read verbs' `--sha`: the head the caller scoped, asserted so the answer's provenance is the
  * caller's claim and not whatever the endpoint happened to serve. Omitted, the verb binds to the
  * PR's live head — which is still read out of the object database, so the answer names its commit
@@ -64,14 +97,21 @@ const boundShaFlag = Flag.string("sha").pipe(
 
 const scope = leafCommand(
 	"scope",
-	{pr: prArg, sha: boundShaFlag, repo: repoFlag, json: jsonFlag},
-	Effect.fn(function* ({pr, sha, repo, json}) {
+	{pr: prArg, sha: boundShaFlag, repo: repoFlag, json: jsonFlag, filterPlacement: filterPlacementFlag, exclude: excludeFlag},
+	Effect.fn(function* ({pr, sha, repo, json, filterPlacement, exclude}) {
+		const placement = placementOf("scope", Option.getOrNull(filterPlacement));
+		if (placement && typeof placement === "object") {
+			yield* emit(placement);
+			return;
+		}
 		yield* emit(
 			yield* runScope({
 				pr,
 				sha: Option.getOrNull(sha),
 				repo: Option.getOrNull(repo),
 				json,
+				filterPlacement: placement,
+				exclude: Option.getOrNull(exclude),
 				cwd: process.cwd(),
 				env: process.env,
 			}),
@@ -86,13 +126,32 @@ const scope = leafCommand(
 
 const diff = leafCommand(
 	"diff",
-	{pr: prArg, sha: boundShaFlag, repo: repoFlag},
-	Effect.fn(function* ({pr, sha, repo}) {
+	{pr: prArg, sha: boundShaFlag, repo: repoFlag, filterPlacement: filterPlacementFlag, exclude: excludeFlag},
+	Effect.fn(function* ({pr, sha, repo, filterPlacement, exclude}) {
+		const placement = placementOf("diff", Option.getOrNull(filterPlacement));
+		if (placement && typeof placement === "object") {
+			yield* emit(placement);
+			return;
+		}
+		// The governed roots are read here, adapter-side, because the diff verb itself stays a pure
+		// git read — the union is the caller's config, not the diff's.
+		const roots = yield* governedRootsOr(
+			"review diff",
+			process.cwd(),
+			"the filter refusal union is UNKNOWN without the governed roots.",
+		);
+		if (roots._tag === "Refused") {
+			yield* emit({code: 11, stdout: "", stderr: [roots.message]});
+			return;
+		}
 		yield* emit(
 			yield* runDiff({
 				pr,
 				sha: Option.getOrNull(sha),
 				repo: Option.getOrNull(repo),
+				filterPlacement: placement,
+				exclude: Option.getOrNull(exclude),
+				governedRoots: roots.roots,
 				env: process.env,
 			}),
 		);
@@ -426,6 +485,43 @@ const seat = leafCommand(
 	),
 );
 
+const preview = leafCommand(
+	"preview",
+	{
+		diffFile: Flag.string("diff-file").pipe(
+			Flag.withDescription(
+				"a unified diff on local disk to extract paths from (no PR, no network, no LLM)",
+			),
+		),
+		filterPlacement: filterPlacementFlag,
+		exclude: excludeFlag,
+		emitDiff: Flag.boolean("emit-diff").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				"print the filtered diff (header + kept sections) instead of the preview rows",
+			),
+		),
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({diffFile, filterPlacement, exclude, emitDiff, json}) {
+		yield* emit(
+			yield* runPreview({
+				diffFile,
+				filterPlacement: Option.getOrNull(filterPlacement),
+				exclude: Option.getOrNull(exclude),
+				emitDiff,
+				json,
+				cwd: process.cwd(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Filtered path extraction for review diffs — no LLM, no write."),
+	Command.withDescription(
+		"Read a local unified diff and return its filtered path extraction (ADR 0401): the matched paths, the excluded paths, the active class partition and the namespaces it derives, at the requested --filter-placement. `before` derives the partition over the kept paths only (an all-excluded diff derives zero namespaces); `after` derives over the full read and enumerates the excluded paths beside the rows. The defaults exclude pnpm-lock.yaml, **/__snapshots__/** and the generated-schema/build-output shapes; --exclude adds globs, and any pattern intersecting a governed root refuses at 21. --emit-diff prints the filtered diff with its `x-fabrika-filter` / `x-fabrika-excluded-path` header instead of the rows. No LLM invocation, no network write. Exits 10 (missing or off-vocabulary --filter-placement, or --emit-diff with --json), 11 (the diff file or .fabrika.jsonc could not be read), 21 (an exclusion pattern intersects governedRoots). Example: fabrika review preview --diff-file pr.diff --filter-placement=before --json",
+	),
+);
+
 export const reviewCommand = Command.make("review").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
@@ -435,6 +531,7 @@ export const reviewCommand = Command.make("review").pipe(
 		ci,
 		verdicts,
 		deviations,
+		preview,
 		post,
 		appendCriterion,
 		scratch,

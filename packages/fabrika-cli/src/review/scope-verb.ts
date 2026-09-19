@@ -48,7 +48,15 @@ import {
 	shipNamespacesOf,
 	touchesGovernanceRoot,
 } from "./classes.ts";
-import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {GOVERNED_FILTER, INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {
+	applyPlacement,
+	DEFAULT_EXCLUSIONS,
+	type FilterPlacement,
+	parseExcludeList,
+	refusalFor,
+} from "./filter-spike.ts";
+import {refusalProbes} from "./guard-trees.ts";
 import {bindHead, boundLine} from "./head.ts";
 import {readLocalFileSet} from "./local-file-set.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
@@ -64,6 +72,10 @@ export interface ScopeOptions {
 	readonly sha: string | null;
 	readonly repo: string | null;
 	readonly json: boolean;
+	/** ocr-port spike: `before` filters then derives, `after` derives then marks, `null` = off. */
+	readonly filterPlacement?: FilterPlacement | null;
+	/** ocr-port spike: comma-separated extra exclusion patterns, refused on a guard-probe match. */
+	readonly exclude?: string | null;
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -144,8 +156,36 @@ export const runScope = (
 			);
 		}
 
-		const flags = partition(files);
-		const result = partitionWithUi(files, roots.roots, surfaces.prefixes);
+		// Review diff filtering (ADR 0401): the exclusion split runs after the empty-read refusal
+		// above (a zero-file read is still #3999), and the placement decides what the partition
+		// derives over — `before` the kept paths, `after` the full read. The refusal union is
+		// `governedRoots`, derived per run; guard trigger trees stay documented and drift-loud by
+		// the golden test, not protected by refusal.
+		let excluded: ReadonlyArray<string> = [];
+		let partitionSource = files;
+		if (options.filterPlacement != null) {
+			const patterns = [
+				...DEFAULT_EXCLUSIONS,
+				...(options.exclude == null ? [] : parseExcludeList(options.exclude)),
+			];
+			const refused = refusalFor(patterns, refusalProbes(roots.roots));
+			if (refused.length > 0) {
+				const detail = refused
+					.map((entry) => `"${entry.pattern}" matches the ${entry.guard} probe "${entry.probe}"`)
+					.join("; ");
+				return refuse(
+					GOVERNED_FILTER,
+					`${VERB}: exclusion pattern intersects a governed root — ${detail}. A filter that blinds a governed surface is refused, not narrowed; guard corpora are protected by the consumer split (guards read the raw path list).`,
+					diagnostics,
+				);
+			}
+			const split = applyPlacement(files, patterns);
+			excluded = split.excluded;
+			partitionSource = options.filterPlacement === "before" ? split.kept : files;
+		}
+
+		const flags = partition(partitionSource);
+		const result = partitionWithUi(partitionSource, roots.roots, surfaces.prefixes);
 		const namespaces = shipNamespacesOf(result);
 		const routed = routedNamespacesOf(namespaces);
 		const governance = touchesGovernanceRoot(files, roots.roots) ? "required" : "not-required";
@@ -163,6 +203,9 @@ export const runScope = (
 					scanned: result.scanned,
 					namespaces,
 					routed,
+					...(options.filterPlacement != null
+						? {filter_placement: options.filterPlacement, excluded: {count: excluded.length, paths: excluded}}
+						: {}),
 				}),
 				diagnostics,
 			);
@@ -176,6 +219,9 @@ export const runScope = (
 				`self\t${flags.self}`,
 				`harness\t${flags.harness}`,
 				`governance\t${governance}`,
+				...(options.filterPlacement != null
+					? [`excluded\t${excluded.length}`, ...excluded.map((path) => `excluded-path\t${path}`)]
+					: []),
 			].join("\n"),
 			diagnostics,
 		);

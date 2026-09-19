@@ -38,7 +38,7 @@ import {
 
 const VERB = "guard catalog-guard check";
 
-const MANIFEST = "package.json";
+export const MANIFEST = "package.json";
 
 export interface CatalogGuardOptions {
 	/** An explicit repo root, or `null` to walk up from `cwd` for one. */
