@@ -97,9 +97,9 @@
 	flex: 1;
 }
 
-/* The form is a bare layout box. The pill a reader sees is the field's own
-   [data-part="control"], which is also the element global.css paints the focus ring on — one
-   element draws the border and owns the ring, so they cannot disagree (#5660). */
+/* The search zone is a bare layout box; the pill a reader sees is the trigger button itself,
+   which is also the element global.css paints the focus ring on — one element draws the border
+   and owns the ring, so they cannot disagree (#5660). */
 .kp-topbar__search {
 	display: flex;
 	width: 240px;
@@ -108,41 +108,46 @@
 	color: var(--text-muted);
 	flex-shrink: 0;
 }
-.kp-topbar__search-field[data-scope="field"][data-part="root"] {
+/* The trigger wears the field's old frame: same height, same padding, same border, so folding
+   the query into the ⌘K palette (ADR 0186) changed where a reader types, not where they look.
+   It is a design-system Button, so these rules spell out the full Button anatomy selector to
+   override the tertiary variant's own frame (see packages/design/src/Button.css). */
+.kp-topbar__search-trigger[data-scope="button"][data-part="root"] {
+	--manti-button-height: 24px;
+	--manti-button-padding-x: 0;
+	justify-content: flex-start;
 	flex: 1;
 	min-width: 0;
-}
-.kp-topbar__search-field[data-scope="field"] [data-part="control"] {
-	/* An addon's glyph lands at 2 × --manti-field-addon-padding-x from the border, not at one:
-	   Manti pulls the addon's box out of the control's padding by (addon − field) and then re-adds
-	   `addon` as the addon's own padding. So s-1 here is what puts the magnifier at the s-2 the
-	   hand-rolled group used, and the input text still starts at --manti-field-padding-x. */
-	--manti-field-height: 24px;
-	--manti-field-padding-x: var(--s-2);
-	--manti-field-addon-padding-x: var(--s-1);
-	gap: 6px;
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
-}
-/* Manti recolours the control's border to the accent on :focus-within. global.css already paints
-   the shared ring on this same element, so letting both fire is the doubled treatment #5660 is
-   about — only now concentric instead of misaligned. The ring is the one focus owner, so the
-   border holds its resting colour. This neutralizes; it does not paint. */
-.kp-topbar__search-field[data-scope="field"] [data-part="control"]:focus-within {
-	border-color: var(--border);
-}
-/* Asymmetric on purpose: the trailing edge holds a ⌘K keycap, which carries its own box, so it
-   needs half the breathing room the leading magnifier does. Dropping the addon's own trailing
-   padding leaves the keycap at s-1, where the form's asymmetric padding used to put it. */
-.kp-topbar__search-field[data-scope="field"] [data-part="addon"][data-position="right"] {
-	padding-inline-end: 0;
-}
-.kp-topbar__search-field[data-scope="field"] [data-part="input"] {
+	color: var(--text-primary);
 	font: var(--t-body-sm);
+	font-weight: 400;
+	text-align: start;
+}
+.kp-topbar__search-trigger[data-scope="button"][data-part="root"]:hover {
+	background: var(--surface-raised);
+}
+.kp-topbar__search-trigger [data-part="label"] {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: 1;
 	min-width: 0;
 }
-.kp-topbar__search-field[data-scope="field"] [data-part="input"]::placeholder {
+/* The echoed query truncates rather than widening the topbar — the trigger's width is the
+   zone's, not the query's. */
+.kp-topbar__search-value {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+/* Placeholder copy is copy, not a value: it reads at the same weight the field's own
+   ::placeholder did. */
+.kp-topbar__search-value--empty {
 	color: var(--text-faint);
 }
 .kp-topbar__search kbd {

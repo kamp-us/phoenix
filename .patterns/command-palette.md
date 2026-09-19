@@ -6,6 +6,14 @@ product use is the search-only `⌘K` contract fixed by
 [ADR 0186](../.decisions/0186-command-palette-single-search-contract.md); callers supply result
 data and selection behavior, so the design package never imports an app router or search service.
 
+In the web app that caller is
+[`apps/web/src/components/search/SearchPalette.tsx`](../apps/web/src/components/search/SearchPalette.tsx):
+the topbar renders the trigger and owns `⌘K` (it paints before the session settles), the palette
+mounts under `FateProvider` because it reads `searchTerms`/`searchPosts`, and the open state is
+hoisted above both in `SearchPaletteState` so neither side's unmount can close it. Its read is
+imperative and debounced rather than a suspending `useRequest`: a suspending read would tear the
+open dialog down on every keystroke.
+
 ## Interface
 
 - `items` carry a stable `value`, searchable string copy, optional group/keywords/icon/key legend,

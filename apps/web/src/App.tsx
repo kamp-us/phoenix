@@ -31,6 +31,8 @@ import {
 	useAuthorshipStanding,
 } from "./components/profile/CaylakStatusBlock";
 import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
+import {SearchPalette} from "./components/search/SearchPalette";
+import {SearchPaletteProvider, useSearchPalette} from "./components/search/SearchPaletteState";
 import {SozlukCreateDialogProvider} from "./components/sozluk/SozlukCreateDialogState";
 import {SozlukSubnavLayout} from "./components/sozluk/SozlukSubnavLayout";
 import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
@@ -50,7 +52,6 @@ import {AtolyeIndexPage} from "./lab/atolye/AtolyeIndexPage";
 import {DensityProvider} from "./lib/density";
 import {SAVED_HREF} from "./lib/panoNav";
 import {safeReturnTo} from "./lib/returnTo";
-import {searchTarget} from "./lib/searchTarget";
 import {ThemeProvider, useTheme} from "./lib/theme";
 import {AuthPage} from "./pages/AuthPage";
 import {BildirimlerPage} from "./pages/BildirimlerPage";
@@ -124,6 +125,9 @@ function Layout() {
 
 	const searchQuery =
 		location.pathname === "/search" ? (new URLSearchParams(location.search).get("q") ?? "") : "";
+	// The palette itself mounts under `FateProvider` (it reads search); the shell owns only the
+	// opener, so ⌘K and the trigger work on the first frame — see `SearchPaletteState`.
+	const {setOpen: setSearchOpen} = useSearchPalette();
 
 	async function onSignOut() {
 		// Drop this identity's persisted feed snapshot at the sign-out seam BEFORE the
@@ -194,10 +198,7 @@ function Layout() {
 							{...(chips?.caylakMeter ? {caylakMeter: chips.caylakMeter} : {})}
 							{...(chips?.bildirim ? {bildirim: chips.bildirim} : {})}
 							searchQuery={searchQuery}
-							onSearchSubmit={(query) => {
-								const target = searchTarget(query);
-								if (target) navigate(target);
-							}}
+							onSearchOpen={() => setSearchOpen(true)}
 							// No `onToggleTheme`: the three-way theme picker is the sole theme control
 							// (#2612), so no tema button renders.
 							themeChoice={themeChoice}
@@ -358,6 +359,9 @@ function LayoutContent() {
 	return (
 		<>
 			<EmailDeliveryNoticeMount me={me} />
+			{/* Under `FateProvider`, because the palette reads `searchTerms`/`searchPosts`. Closed
+			    it renders nothing; its open state comes from the shell above (ADR 0186). */}
+			<SearchPalette />
 			<AuthorshipStandingContext.Provider value={standingChannel}>
 				{needsBootstrap && sessionUser ? (
 					<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
@@ -446,54 +450,60 @@ export function App() {
 		<ThemeProvider>
 			<LocaleProvider>
 				<DensityProvider>
-					<Routes>
-						<Route element={<Layout />}>
-							<Route path="/" element={<LandingPage />} />
-							<Route key="pano-zone" element={<PanoSubnavLayout />}>
-								{panoRoutes}
-							</Route>
-							<Route key="mecmua-zone" element={<MecmuaSubnavLayout />}>
-								{mecmuaRoutes}
-							</Route>
-							<Route key="sozluk-zone" element={<SozlukSubnavLayout />}>
-								{sozlukRoutes}
-							</Route>
-							<Route key="divan-zone" element={<DivanSubnavLayout />}>
-								{divanRoutes}
-							</Route>
-							<Route path="/search" element={<SearchPage />} />
-							<Route path="/auth" element={<AuthPage />} />
-							{/* The welcome moment (#7043) — dark behind phoenix-welcome; the page owns
+					{/* The ⌘K palette's open state, above BOTH sides that read it: the shell's trigger
+					    (which paints before the session settles) and the palette under `FateProvider`
+					    (which reads search). Hoisted for the same reason the sözlük create dialog's is
+					    (#3840) — an ancestor unmount below must not silently close it. */}
+					<SearchPaletteProvider>
+						<Routes>
+							<Route element={<Layout />}>
+								<Route path="/" element={<LandingPage />} />
+								<Route key="pano-zone" element={<PanoSubnavLayout />}>
+									{panoRoutes}
+								</Route>
+								<Route key="mecmua-zone" element={<MecmuaSubnavLayout />}>
+									{mecmuaRoutes}
+								</Route>
+								<Route key="sozluk-zone" element={<SozlukSubnavLayout />}>
+									{sozlukRoutes}
+								</Route>
+								<Route key="divan-zone" element={<DivanSubnavLayout />}>
+									{divanRoutes}
+								</Route>
+								<Route path="/search" element={<SearchPage />} />
+								<Route path="/auth" element={<AuthPage />} />
+								{/* The welcome moment (#7043) — dark behind phoenix-welcome; the page owns
 						    its own visibility per `.patterns/flag-dark-page-gate.md`. */}
-							<Route path={WELCOME_PATH} element={<WelcomePage />} />
-							<Route path="/funnel" element={<FunnelPage />} />
-							<Route path="/bildirimler" element={<BildirimlerPage />} />
-							{/* /lab/composer — throwaway tiptap spike (#2465), reachable by URL only,
+								<Route path={WELCOME_PATH} element={<WelcomePage />} />
+								<Route path="/funnel" element={<FunnelPage />} />
+								<Route path="/bildirimler" element={<BildirimlerPage />} />
+								{/* /lab/composer — throwaway tiptap spike (#2465), reachable by URL only,
 						    no nav entry; deletable when the rich-composer phase begins. */}
-							<Route
-								path="/lab/composer"
-								element={
-									<Suspense fallback={<ComposerRouteFallback />}>
-										<LabComposerPage />
-									</Suspense>
-								}
-							/>
-							<Route path="/lab/atolye" element={<AtolyeIndexPage />} />
-							<Route path="/lab/atolye/:exhibit" element={<AtolyeExhibitPage />} />
-							<Route path="/profile" element={<ProfilePage />} />
-							<Route path="/susturduklarim" element={<MutesPage />} />
-							{/* The yazar's çaylak in-place visibility setting (#6426) — beside the other
+								<Route
+									path="/lab/composer"
+									element={
+										<Suspense fallback={<ComposerRouteFallback />}>
+											<LabComposerPage />
+										</Suspense>
+									}
+								/>
+								<Route path="/lab/atolye" element={<AtolyeIndexPage />} />
+								<Route path="/lab/atolye/:exhibit" element={<AtolyeExhibitPage />} />
+								<Route path="/profile" element={<ProfilePage />} />
+								<Route path="/susturduklarim" element={<MutesPage />} />
+								{/* The yazar's çaylak in-place visibility setting (#6426) — beside the other
 						    per-member preference routes; self-404s behind phoenix-caylak-visibility. */}
-							<Route path={CAYLAK_VISIBILITY_PATH} element={<CaylakVisibilityPage />} />
-							<Route path="/u/:username" element={<UserProfilePage />} />
-							{/* The admin console (#2740, epic #2711) — the route element self-gates on
+								<Route path={CAYLAK_VISIBILITY_PATH} element={<CaylakVisibilityPage />} />
+								<Route path="/u/:username" element={<UserProfilePage />} />
+								{/* The admin console (#2740, epic #2711) — the route element self-gates on
 						    the server-authoritative admin probe (denied ⇒ the ordinary not-found
 						    page, invisible-denial), and the console chunk is lazy-imported only past
 						    the gate, so the route ships no console code to a non-admin. */}
-							<Route path="/admin" element={<AdminConsoleRoute />} />
-							<Route path="*" element={<NotFoundPage />} />
-						</Route>
-					</Routes>
+								<Route path="/admin" element={<AdminConsoleRoute />} />
+								<Route path="*" element={<NotFoundPage />} />
+							</Route>
+						</Routes>
+					</SearchPaletteProvider>
 				</DensityProvider>
 			</LocaleProvider>
 		</ThemeProvider>
