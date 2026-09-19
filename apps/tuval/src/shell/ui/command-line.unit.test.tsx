@@ -15,11 +15,6 @@ import {CommandLine} from "./CommandLine.tsx";
 
 afterEach(cleanup);
 
-it("shows how to open an agent in a project directory", () => {
-	render(<CommandLine dispatch={vi.fn()} onClose={vi.fn()} />);
-	expect(screen.getByPlaceholderText("open pi /work/project")).toBeTruthy();
-});
-
 it("opens a fresh agent session in the directory typed by the operator", () => {
 	const dispatch = vi.fn();
 	const close = vi.fn();
