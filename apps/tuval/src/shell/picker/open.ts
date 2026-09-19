@@ -24,7 +24,7 @@ import {Registry} from "../../registry/Registry.ts";
 import type {ShellMsg} from "../core/machine.ts";
 import type {ViewState, WindowId} from "../window/host.ts";
 import {showsInAWindow} from "./entries.ts";
-import type {OpenSession, PickerIntent} from "./intent.ts";
+import type {PickerIntent, ProgramOpening} from "./intent.ts";
 import {
 	type PickerRefusal,
 	processGone,
@@ -75,7 +75,7 @@ const open = Effect.fn("Tuval.Picker.open")(function* (
 	windowId: WindowId,
 	programId: ProgramId,
 	options: PickerOptions,
-	session: OpenSession | undefined,
+	opening: ProgramOpening | undefined,
 ) {
 	const registry = yield* Registry;
 	const processes = yield* Processes;
@@ -113,10 +113,7 @@ const open = Effect.fn("Tuval.Picker.open")(function* (
 	// row the operator picked out of the session list, and the child has to come up resuming that
 	// session instead of booting a second one beside it (epic #8070, ruling 2). The agent row's
 	// `aiAgent.boot` handler is the only reader (`../../ai-agent/handlers/index.ts`).
-	const services =
-		session === undefined
-			? shown
-			: Context.add(shown, SessionOpening, {cwd: session.cwd, resume: session.resume});
+	const services = opening === undefined ? shown : Context.add(shown, SessionOpening, opening);
 	const spawned = yield* Effect.result(
 		processes.spawn(programId, {id, parent: options.shellProcessId, services}),
 	);
@@ -152,5 +149,5 @@ export const runPickerIntent = (
 	options: PickerOptions,
 ): Effect.Effect<ReadonlyArray<ShellMsg>, never, Registry | Processes | ProcessTable> =>
 	intent._tag === "OpenProgram"
-		? open(intent.windowId, intent.programId, options, intent.session)
+		? open(intent.windowId, intent.programId, options, intent.opening)
 		: attach(intent.windowId, intent.processId, options);

@@ -32,6 +32,7 @@
 
 import type {DepKeyedSub, Interpret} from "@demlik/tea";
 import {Context, Effect, Option, Result} from "effect";
+import {SessionOpening} from "../ai-agent/opening.ts";
 import type {
 	PortAnswersNothing,
 	PortRefused,
@@ -409,7 +410,10 @@ const spawnHandler = (cmd: SpawnEffect) =>
 		// The parent is stamped here, off the process this interpretation is running for, and is
 		// never something the `spawn` effect carries (#8757). `on` rides along as that same
 		// process's routing table, so a named child port arrives as this process's own event.
-		const child = yield* processes.spawn(ProgramId.make(program), Option.some(self.id), cmd.on);
+		const start = processes.spawn(ProgramId.make(program), Option.some(self.id), cmd.on);
+		const child = yield* cmd.cwd === undefined
+			? start
+			: start.pipe(Effect.provideService(SessionOpening, {cwd: cmd.cwd, resume: null}));
 		return [spawned(child, program)];
 	});
 
@@ -604,7 +608,7 @@ const compileReceive = (
 	Object.fromEntries(
 		arrivingPorts(authored).map((name) => [
 			name,
-			receiverFor(name, (authored.ports ?? {})[name] as AnyPortDecl),
+			receiverFor(name, authored.ports?.[name] as AnyPortDecl),
 		]),
 	);
 

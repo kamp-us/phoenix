@@ -47,6 +47,15 @@ describe("reading a command line", () => {
 		});
 	});
 
+	it("opens a fresh agent session in a quoted cwd", () => {
+		const opened = readCommandLine('open pi "/work/project with spaces"');
+		expect(opened._tag === "Msg" ? opened.msg : null).toEqual({
+			type: "window.open",
+			programId: "pi",
+			session: {cwd: "/work/project with spaces", resume: null},
+		});
+	});
+
 	it("lexes with the framework's own tokenizer: quotes group and whitespace around is ignored", () => {
 		const quoted = readCommandLine('  workspace:activate  "my desk"  ');
 		expect(quoted._tag === "Msg" ? quoted.msg : null).toEqual({

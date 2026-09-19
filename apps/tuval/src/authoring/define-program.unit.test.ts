@@ -2,6 +2,7 @@ import {readFileSync} from "node:fs";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Option, Schema} from "effect";
 import {expect, expectTypeOf} from "vitest";
+import {SessionOpening} from "../ai-agent/opening.ts";
 import {SpawnedProcesses} from "../commands/core/process.ts";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
@@ -250,6 +251,44 @@ describe("authoring.defineProgram", () => {
 			);
 			assert.deepStrictEqual(sent, [[child, "pr", 8728]]);
 			assert.deepStrictEqual(sentEvents, []);
+		}),
+	);
+
+	it.effect("provides an authored cwd to the spawned child as a fresh session opening", () =>
+		Effect.gen(function* () {
+			const child = ProcessId.make("process-child");
+			const openings: Array<Option.Option<{readonly cwd: string; readonly resume: string | null}>> =
+				[];
+			const spells = SpawnedProcesses.of({
+				spawn: () =>
+					Effect.gen(function* () {
+						openings.push(yield* Effect.serviceOption(SessionOpening));
+						return child;
+					}),
+				send: () => Effect.die("this test sends nothing"),
+				adopt: () => Effect.die("this test adopts nothing"),
+				ask: () => Effect.die("this test asks nothing"),
+				answer: () => Effect.die("this test answers nothing"),
+				read: () => Effect.succeed(Option.none()),
+			});
+			const self = ProcessId.make("process-self");
+
+			yield* Effect.scoped(
+				runEffect(
+					counter,
+					spawn({programId: "reviewer", out: {}}, {cwd: "/worktrees/reviewer"}),
+				).pipe(
+					Effect.provideService(SpawnedProcesses, spells),
+					Effect.provideServiceEffect(
+						ProcessSelf,
+						Effect.map(Effect.scope, (scope) => ({id: self, scope, state: () => undefined})),
+					),
+				),
+			);
+
+			assert.deepStrictEqual(openings.map(Option.getOrUndefined), [
+				{cwd: "/worktrees/reviewer", resume: null},
+			]);
 		}),
 	);
 

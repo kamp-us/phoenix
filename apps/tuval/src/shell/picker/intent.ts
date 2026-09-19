@@ -21,9 +21,9 @@ import type {PickerEntry} from "./entries.ts";
  * system, so this rides one narrow slot the spawner turns into a `SessionOpening` service
  * (`../../ai-agent/opening.ts`) and nothing else reads.
  */
-export interface OpenSession {
+export interface ProgramOpening {
 	readonly cwd: string;
-	readonly resume: string;
+	readonly resume: string | null;
 }
 
 export type PickerIntent =
@@ -31,20 +31,20 @@ export type PickerIntent =
 			readonly _tag: "OpenProgram";
 			readonly windowId: WindowId;
 			readonly programId: ProgramId;
-			/** Absent is the ordinary open: the spawned program starts whatever it starts fresh. */
-			readonly session?: OpenSession;
+			/** Absent leaves the program to choose its own opening; present fixes its cwd and optional resume. */
+			readonly opening?: ProgramOpening;
 	  }
 	| {readonly _tag: "AttachProcess"; readonly windowId: WindowId; readonly processId: ProcessId};
 
 export const openProgram = (
 	windowId: WindowId,
 	programId: ProgramId,
-	session?: OpenSession,
+	opening?: ProgramOpening,
 ): PickerIntent => ({
 	_tag: "OpenProgram",
 	windowId,
 	programId,
-	...(session === undefined ? {} : {session}),
+	...(opening === undefined ? {} : {opening}),
 });
 
 export const attachProcess = (windowId: WindowId, processId: ProcessId): PickerIntent => ({

@@ -87,11 +87,11 @@ describe("the command table", () => {
 		}
 	});
 
-	it("lets `window:open` name a session, and never requires one (epic #8070)", () => {
+	it("lets `window:open` name a cwd and optional session, and requires neither", () => {
 		const row = commandFor("window:open");
-		expect(row === undefined ? [] : parameterNames(row)).toEqual(["program", "session", "cwd"]);
+		expect(row === undefined ? [] : parameterNames(row)).toEqual(["program", "cwd", "session"]);
 		expect(
-			row === undefined ? [] : ["session", "cwd"].map((name) => isOptionalParameter(row, name)),
+			row === undefined ? [] : ["cwd", "session"].map((name) => isOptionalParameter(row, name)),
 		).toEqual([true, true]);
 	});
 });
@@ -137,6 +137,19 @@ describe("each row's Msg", () => {
 		expect(msgOf("window:attach", {process: "p-1"})).toEqual({
 			type: "window.attach",
 			processId: "p-1",
+		});
+	});
+
+	it("opens a fresh session in the cwd named by the command line", () => {
+		expect(msgOf("window:open", {program: "pi", cwd: "/work/phoenix"})).toEqual({
+			type: "window.open",
+			programId: "pi",
+			session: {cwd: "/work/phoenix", resume: null},
+		});
+		expect(msgOf("window:open", {program: "pi", cwd: "/work/phoenix", session: "s-1"})).toEqual({
+			type: "window.open",
+			programId: "pi",
+			session: {cwd: "/work/phoenix", resume: "s-1"},
 		});
 	});
 

@@ -40,6 +40,8 @@ export interface SpawnEffect<Out extends string = string, Event extends string =
 	readonly type: "spawn";
 	readonly program: string;
 	readonly on: ChildRouting<Out, Event>;
+	/** The working directory of a fresh AI-agent session started by this spawn. */
+	readonly cwd?: string;
 }
 
 /**
@@ -110,11 +112,12 @@ export type AnyEffect = ProgramEffect | SendEffect<SendTarget>;
 /** Start a process of `program`, routing the child's out-ports back into my own events. */
 export const spawn = <Out extends string, Event extends string>(
 	program: Spawnable<Out>,
-	options?: {readonly on: ChildRouting<Out, Event>},
+	options?: {readonly on?: ChildRouting<Out, Event>; readonly cwd?: string},
 ): SpawnEffect<Out, Event> => ({
 	type: "spawn",
 	program: program.programId,
 	on: options?.on ?? {},
+	...(options?.cwd === undefined ? {} : {cwd: options.cwd}),
 });
 
 /**
