@@ -1,5 +1,5 @@
 /**
- * The letter route's own guard (#9267): a route value that names no alphabet letter has no
+ * The letter route's own guard (#9267): a route value that names no indexed letter has no
  * page, so it goes home instead of rendering an index that is empty by construction. Only the
  * pre-fate half is exercised here — the list itself reads a connection, which the e2e walks.
  */
@@ -21,7 +21,7 @@ function renderRoute(initial: string) {
 
 describe("SozlukLetter — the route guard", () => {
 	it("sends a non-letter route value home rather than rendering an empty letter", () => {
-		renderRoute("/sozluk/harf/q");
+		renderRoute("/sozluk/harf/3");
 		expect(screen.getByTestId("home")).toBeTruthy();
 	});
 
@@ -40,5 +40,18 @@ describe("SozlukLetter — the route guard", () => {
 	it("normalises an uppercase route value to its own letter, Turkish-wise", () => {
 		const {container} = renderRoute(`/sozluk/harf/${encodeURIComponent("I")}`);
 		expect(container.querySelector(".kp-sozluk-letter__title")?.textContent).toBe("I harfi");
+	});
+
+	it("keeps q, w and x on their own pages, in either case (#9425)", () => {
+		for (const [route, title] of [
+			["q", "Q harfi"],
+			["W", "W harfi"],
+			["x", "X harfi"],
+		] as const) {
+			const {container, unmount} = renderRoute(`/sozluk/harf/${route}`);
+			expect(screen.queryByTestId("home")).toBeNull();
+			expect(container.querySelector(".kp-sozluk-letter__title")?.textContent).toBe(title);
+			unmount();
+		}
 	});
 });

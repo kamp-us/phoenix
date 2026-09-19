@@ -147,12 +147,16 @@ describe("recomputeTermSummary", () => {
 		expect(recomputeTermSummary([], "isci", "İŞÇİ", NOW).firstLetter).toBe("i");
 	});
 
-	// A headword outside the alphabet belongs to no letter page: `/sozluk/harf/q` and
-	// `/sozluk/harf/3` both resolve to no letter and send the reader home. `""` is that
-	// "no letter" in a NOT NULL column.
-	it("stores the empty string for a headword the alphabet does not index", () => {
+	it("files a q, w or x headword under its own letter (#9425)", () => {
+		expect(recomputeTermSummary([], "qwerty", "qwerty", NOW).firstLetter).toBe("q");
+		expect(recomputeTermSummary([], "web", "Web", NOW).firstLetter).toBe("w");
+		expect(recomputeTermSummary([], "xml", "XML", NOW).firstLetter).toBe("x");
+	});
+
+	// A headword outside the index belongs to no letter page: `/sozluk/harf/3` resolves to no
+	// letter and sends the reader home. `""` is that "no letter" in a NOT NULL column.
+	it("stores the empty string for a headword the index does not hold", () => {
 		expect(recomputeTermSummary([], "3d-baski", "3D baskı", NOW).firstLetter).toBe("");
-		expect(recomputeTermSummary([], "qwerty", "qwerty", NOW).firstLetter).toBe("");
 		expect(recomputeTermSummary([], "dash", "—em dash", NOW).firstLetter).toBe("");
 	});
 
@@ -160,7 +164,7 @@ describe("recomputeTermSummary", () => {
 	// test asserts against this same function, so the two producers agree by construction
 	// rather than by two hand-kept folds.
 	it("routes the derivation through the shared fold the other producers use", () => {
-		for (const title of ["önbellek", "ışık", "Zebra", "3D baskı"]) {
+		for (const title of ["önbellek", "ışık", "Zebra", "XML", "3D baskı"]) {
 			expect(recomputeTermSummary([], "slug", title, NOW).firstLetter).toBe(
 				storedFirstLetter(title),
 			);

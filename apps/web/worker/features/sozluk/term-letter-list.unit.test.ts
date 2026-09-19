@@ -12,9 +12,9 @@ import {Effect} from "effect";
 import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
 import {Sozluk} from "./Sozluk.ts";
 import {D1_MAX_BOUND_PARAMS, runList, scriptedAccess, sozlukLayer} from "./term-list.testing.ts";
-import {turkishCollationKey, turkishLetterKeyRange} from "./turkish-collation.ts";
+import {sozlukLetterKeyRange, turkishCollationKey} from "./turkish-collation.ts";
 
-const C_RANGE = turkishLetterKeyRange("c");
+const C_RANGE = sozlukLetterKeyRange("c");
 
 describe("Sozluk.listTermSummariesConnection — the letter index (#9267)", () => {
 	it.effect("bounds the page by the letter's half-open collation range, never a LIKE prefix", () =>
@@ -82,14 +82,14 @@ describe("Sozluk.listTermSummariesConnection — the letter index (#9267)", () =
 		}),
 	);
 
-	it.effect("answers a letter outside the alphabet with nothing — never the whole corpus", () =>
+	it.effect("answers a value outside the letter index with nothing — never the whole corpus", () =>
 		Effect.gen(function* () {
 			const {access, builders, prepared} = scriptedAccess([]);
 			const page = yield* Effect.gen(function* () {
 				const sozluk = yield* Sozluk;
 				return yield* sozluk.listTermSummariesConnection({
 					sort: "alphabetical",
-					letter: "q",
+					letter: "3",
 					sandboxViewer: anonymousViewer,
 				});
 			}).pipe(Effect.provide(sozlukLayer(access)));
@@ -97,8 +97,9 @@ describe("Sozluk.listTermSummariesConnection — the letter index (#9267)", () =
 			assert.deepStrictEqual(page.rows, []);
 			assert.strictEqual(page.totalCount, 0);
 			assert.strictEqual(page.hasNextPage, false);
-			// The refusal short-circuits ABOVE the query — an unmatched letter that fell through
-			// to an unfiltered `WHERE` would render `/sozluk/harf/q` as the whole index.
+			// The refusal short-circuits ABOVE the query — an unmatched value that fell through
+			// to an unfiltered `WHERE` would render `/sozluk/harf/3` as the whole index. `q` is
+			// no longer such a value: it is an indexed letter as of #9425.
 			assert.strictEqual(builders.length + prepared.length, 0, "no read reached the database");
 		}),
 	);
