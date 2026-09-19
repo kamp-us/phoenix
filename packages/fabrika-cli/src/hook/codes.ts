@@ -102,12 +102,19 @@ export const GROUND_UNKNOWN = 19;
 
 /**
  * The plugin source directory was read and its primary worktree is in no state to be advanced — it
- * is off its default branch, on a detached HEAD, carrying uncommitted work, or diverged.
+ * is off its default branch, on a detached HEAD, diverged, or carrying uncommitted work that the
+ * incoming commits also change.
+ *
+ * Uncommitted work **outside** the incoming commits' paths is not one of those states and does not
+ * reach this code: `git merge --ff-only` takes that move and leaves the work alone, so refusing it
+ * left a checkout carrying one standing local-only edit behind forever.
  *
  * A **proven** outcome, and deliberately not {@link GROUND_UNKNOWN}: the ground was read fine and
  * says the move would not be safe. Nothing was moved, and the reason is on stderr, which is the
  * whole point of the seat — a plugin source that stops advancing is exactly the silent state
  * `hook plugin-sync` exists to make loud, so it may never be reported as a clean pass.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9459#issuecomment-5745160952
  */
 export const SYNC_REFUSED = 20;
 
