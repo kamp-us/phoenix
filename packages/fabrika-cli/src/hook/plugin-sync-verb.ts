@@ -275,6 +275,30 @@ const token = (outcome: Exclude<SyncPlan, {_tag: "Refused"}>, dryRun: boolean): 
 	return `${dryRun ? "would-advance" : "advanced"}\t${outcome.branch}\t${short(outcome.to)}`;
 };
 
+/**
+ * A refusal whose **reason is stderr's first line**, with its context after — this verb's order, not
+ * the CLI's.
+ *
+ * A failed `SessionStart` hook surfaces one line in the session, and `refuse` writes its `extra`
+ * lines ahead of the reason, so every refusal here read as `judging the plugin source at <root>` and
+ * named no cause. The reason for the refusal that cost a replay to recover sat eighth, behind the
+ * scope line and six install-binding lines.
+ *
+ * `refuse` still constructs the outcome, so the code and the empty stdout stay its invariants and
+ * the CLI-wide extras-before-reason order is untouched everywhere else. Only the context this verb
+ * adds moves, and it moves to the back.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9460
+ */
+const refuseLeadingWithReason = (
+	code: number,
+	reason: string,
+	context: ReadonlyArray<string> = [],
+): VerbOutcome => {
+	const outcome = refuse(code, reason);
+	return {...outcome, stderr: [...outcome.stderr, ...context]};
+};
+
 export const runPluginSync = ({
 	stdin,
 	dryRun,
@@ -283,18 +307,26 @@ export const runPluginSync = ({
 	Effect.gen(function* () {
 		const read = readEnvelope(yield* stdin);
 		if (read._tag === "Empty") {
-			return refuse(EMPTY_STDIN, `${VERB}: stdin was read and held no ${EVENT} envelope`);
+			return refuseLeadingWithReason(
+				EMPTY_STDIN,
+				`${VERB}: stdin was read and held no ${EVENT} envelope`,
+			);
 		}
 		if (read._tag === "Unknown") {
-			return refuse(ENVELOPE_UNKNOWN, `${VERB}: envelope UNKNOWN — ${read.reason}`);
+			return refuseLeadingWithReason(
+				ENVELOPE_UNKNOWN,
+				`${VERB}: envelope UNKNOWN — ${read.reason}`,
+			);
 		}
 		if (read._tag === "Malformed") {
-			return refuse(MALFORMED_ENVELOPE, `${VERB}: not a hook envelope — ${read.reason}`, [
-				`${VERB}: ${read.evidence}`,
-			]);
+			return refuseLeadingWithReason(
+				MALFORMED_ENVELOPE,
+				`${VERB}: not a hook envelope — ${read.reason}`,
+				[`${VERB}: ${read.evidence}`],
+			);
 		}
 		if (read.envelope.event !== EVENT) {
-			return refuse(
+			return refuseLeadingWithReason(
 				WRONG_EVENT,
 				`${VERB}: judges ${EVENT} and the envelope is ${read.envelope.event} — the declaration is wired to the wrong event`,
 			);
@@ -303,7 +335,7 @@ export const runPluginSync = ({
 		const child = childEnv(env);
 		const root = yield* primaryWorktree(read.envelope.cwd, child);
 		if (root === null) {
-			return refuse(
+			return refuseLeadingWithReason(
 				GROUND_UNKNOWN,
 				`${VERB}: the envelope's cwd (${read.envelope.cwd}) names no clone whose primary worktree this verb can read`,
 			);
@@ -313,7 +345,7 @@ export const runPluginSync = ({
 		const defaultBranch = yield* defaultBranchOf(root, child);
 		const fetched = yield* git(["fetch", "--quiet", "origin", defaultBranch], root, child);
 		if (!ran(fetched)) {
-			return refuse(
+			return refuseLeadingWithReason(
 				REMOTE_UNREADABLE,
 				`${VERB}: could not fetch origin/${defaultBranch} — whether this checkout is current is UNKNOWN: ${why(fetched)}`,
 				[scope],
@@ -322,7 +354,7 @@ export const runPluginSync = ({
 
 		const facts = yield* readFacts(root, defaultBranch, child);
 		if (facts === null) {
-			return refuse(
+			return refuseLeadingWithReason(
 				GROUND_UNKNOWN,
 				`${VERB}: fetched origin/${defaultBranch} and could not read this checkout's own state`,
 				[scope],
@@ -331,7 +363,7 @@ export const runPluginSync = ({
 
 		const decided = plan(facts);
 		if (decided._tag === "Refused") {
-			return refuse(SYNC_REFUSED, planLine(decided, dryRun), [
+			return refuseLeadingWithReason(SYNC_REFUSED, planLine(decided, dryRun), [
 				scope,
 				...installLines(yield* installReport(env, root, facts.head), facts.head),
 			]);
@@ -344,7 +376,7 @@ export const runPluginSync = ({
 				child,
 			);
 			if (!ran(merged)) {
-				return refuse(
+				return refuseLeadingWithReason(
 					FAST_FORWARD_FAILED,
 					`${VERB}: ${decided.branch} passed every precondition and the fast-forward failed — the checkout changed under the read: ${why(merged)}`,
 					[scope],
