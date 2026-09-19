@@ -105,4 +105,15 @@ export const sozluk = {
 	"search.postCount.other": "{count} posts",
 	"search.noTerms": "no terms found.",
 	"search.noPosts": "no posts found.",
+
+	"search.palette.title": "search kamp.us",
+	"search.palette.placeholder": "search for something…",
+	"search.palette.empty": "nothing matched.",
+	"search.palette.scope.sozluk": "sözlük entry",
+	"search.palette.scope.pano": "pano topic",
+	"search.palette.scopeHint": "tip",
+	"search.palette.allResults": 'all results for "{query}"',
+	"search.palette.legend.move": "move",
+	"search.palette.legend.open": "open",
+	"search.palette.legend.close": "close",
 } satisfies Record<SozlukKey, string>;

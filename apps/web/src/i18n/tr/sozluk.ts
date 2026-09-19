@@ -111,6 +111,17 @@ export const sozluk = {
 	"search.postCount.other": "{count} gönderi",
 	"search.noTerms": "terim bulunamadı.",
 	"search.noPosts": "gönderi bulunamadı.",
+
+	"search.palette.title": "kamp.us'ta ara",
+	"search.palette.placeholder": "bir şeyler ara…",
+	"search.palette.empty": "eşleşen bir şey bulamadık.",
+	"search.palette.scope.sozluk": "sözlük başlığı",
+	"search.palette.scope.pano": "pano konusu",
+	"search.palette.scopeHint": "tüyo",
+	"search.palette.allResults": '"{query}" için tüm sonuçlar',
+	"search.palette.legend.move": "gezin",
+	"search.palette.legend.open": "aç",
+	"search.palette.legend.close": "kapat",
 };
 
 /** `tr` is the source of truth for the key set; `en/sozluk.ts` is checked against this. */
