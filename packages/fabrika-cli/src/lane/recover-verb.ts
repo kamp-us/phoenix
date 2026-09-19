@@ -39,12 +39,10 @@
  * finished and never will. Lane 7778 read `issue: build` for five days holding a seat against the
  * concurrency cap, because the only thing that records `BLOCKED --cause spawn-dead` was a driver
  * re-reading the lane by hand. **The conjunction it reads, and what each answer short of it means,
- * is written once in this verb's own reference row** (`../../docs/verb-reference.md`, `lane
- * recover`); repeating it here is what left five copies disagreeing about the population on the day
- * they landed.
+ * is owned by `lane recover --help`** in `./command.ts`. Repeating it here left five copies
+ * disagreeing about the population when they landed.
  *
- * What this module owes beyond that row is the two invariants the code has to hold and the row
- * cannot show:
+ * The implementation also holds two local invariants:
  *
  * - **Every conjunct is a read actually made, and every row's reason names the read it stands on.**
  *   The population spans two build leaves and three lane roles, so the third conjunct is picked off
@@ -53,8 +51,7 @@
  * - **It retracts nothing, and it is not the end of the chain.** Ending a claim stays the
  *   `spawn-dead` unpark row's act, on the same budget proof through the same `../build/dead-claim.ts`
  *   read — and that row is keyed on exactly the park this arm writes, so the claim does end, one
- *   verb later, with no person in between. The reference row names the decision record that admits
- *   a verb-made age read licensing that park.
+ *   verb later, with no person in between. The ruling below authorizes the sweep to record that park.
  *
  * It is off unless a caller hands in the reads, because it costs board reads per building lane and
  * because recording a **park** is a different act from recording the verdict a finished shell earned.
@@ -71,6 +68,8 @@
  * read is the gate refusing to take this sweep's word for it, which is the property worth the read —
  * and it is paid only by a lane that is actually recoverable, which is a killed shell's lane and not
  * a busy one. `--check` pays the first read alone and appends nothing.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9241#issuecomment-5687141320
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {ClaimStanding} from "../build/dead-claim.ts";

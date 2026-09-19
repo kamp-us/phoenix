@@ -23,11 +23,8 @@
  * puts that branch back too, so a replay this verb did not keep leaves the graded range where its
  * reviewer left it — see {@link restore}.
  *
- * On exit 0 the last stdout line is `INTEGRATE-VERDICT: MERGED` or, after a replay,
- * `INTEGRATE-VERDICT: REPLAYED` — the line above it the merged head either way, and above that, on a
- * replay, the machinery event carrying the moved range. Publishing that head is `lane push`'s and
- * recording the `DONE` is the driver's: this verb neither pushes nor writes the lane's log, so its
- * answer is a fact about a tree and nothing else.
+ * Publishing the merged head is `lane push`'s job; the driver records `DONE`. This verb neither
+ * pushes nor writes the lane log. See ./command.ts help for its report format.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

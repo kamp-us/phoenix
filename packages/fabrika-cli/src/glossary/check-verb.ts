@@ -1,13 +1,8 @@
 /**
  * `glossary check` — row-shape, duplicate-key, ordering and citation-liveness defects.
  *
- * **All three outcomes exit 0**, because the outcome is this verb's own verdict: a caller must never
- * read its own finding list as a failed run, which is the mistake v1's `adr-sweep` made by exiting
- * non-zero on the one case it was asked to produce.
- *
- * **Zero scope is a red, with one carved-out exception.** A register present and holding zero rows is
- * `7` — a check that scanned nothing must never report `clean`. An *absent* register is
- * `bootstrap` on exit `0`: refusing there would leave a fresh repo unable to run the skill at all.
+ * An absent register permits adoption, while checking an existing register with no rows would
+ * claim a clean scan over nothing. See `glossary check --help` for the result contract.
  *
  * Two defect classes are deliberately not computed here — machine-local paths and dead internal links
  * — because a merge-blocking gate already decides each, and a second answer could contradict it.

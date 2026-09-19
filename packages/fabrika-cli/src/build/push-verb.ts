@@ -5,12 +5,7 @@
  * downstream assumed a branch that was not there. So the verdict comes from `git ls-remote`
  * asking the remote directly, compared against the local head.
  *
- * **This verb is the group's one deviant on the channel rule: the entire report is stdout,
- * single-stream, so the last stdout line is always the verdict line.** v1 documented exactly this
- * `tail -1` idiom and then shipped the report to stderr at both call sites (`SKILL.md:778-781` vs
- * `step5-push.sh:47`), so the documented read never ran. Here the channel is part of the contract, and
- * the two non-`MOVED` outcomes take their own codes with empty stdout — which is what keeps `tail -1`
- * of stdout on exit 0 unambiguous.
+ * See the push help in ./command.ts for the report channels and verdict line.
  *
  * `--force-with-lease` is the only force shape. A bare `--force` flag does not exist, and neither does
  * `--no-verify`: the ban is enforced by the flag not existing rather than by prose.

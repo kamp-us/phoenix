@@ -5,6 +5,10 @@ import {read as readRuling} from "../wire/decision-ruling.ts";
 import {bodyDigest} from "./digest.ts";
 import {
 	ADD_LABEL,
+	AUTHORIZATION,
+	AUTHORIZATION_COMMENT,
+	AUTHORIZATION_POSTED,
+	AUTHORIZATION_URL,
 	acl,
 	BODY,
 	BODY_DRIFTED_CRITERIA,
@@ -32,14 +36,24 @@ import {
 	taxonomy,
 	VIEWER,
 } from "./fixtures.test-support.ts";
-import {runRule} from "./rule-verb.ts";
+import {type RulingSource, runRule} from "./rule-verb.ts";
 
 type Script = ReadonlyArray<Scripted>;
 
-const run = (script: Script, cites: string = RULING_URL) => {
+/** The `--cites` shape, which every case that is not about the quoted one runs under. */
+const citing = (cites: string = RULING_URL): RulingSource => ({_tag: "Cited", cites});
+
+/** The `--authorization` shape, with the file already read — the adapter's job, not the verb's. */
+const quoting = (text: string = AUTHORIZATION): RulingSource => ({
+	_tag: "Quoted",
+	authorizationPath: "ruling.md",
+	authorization: Effect.succeed({_tag: "Text", text}),
+});
+
+const run = (script: Script, ruling: RulingSource = citing()) => {
 	const seams = fakeSeams(script);
 	return Effect.runPromise(
-		Effect.provide(runRule({number: ISSUE, cites, repo: null, env, now: NOW}), seams.layer),
+		Effect.provide(runRule({number: ISSUE, ruling, repo: null, env, now: NOW}), seams.layer),
 	).then((outcome) => ({outcome, calls: seams.requests, bodies: seams.bodies}));
 };
 
@@ -189,14 +203,14 @@ describe("runRule", () => {
 	it("refuses a --cites naming another repository or another issue, before any read", async () => {
 		const elsewhere = await run(
 			upToMarker(),
-			"https://github.com/other/repo/issues/4300#issuecomment-900001",
+			citing("https://github.com/other/repo/issues/4300#issuecomment-900001"),
 		);
 		expect(elsewhere.outcome.code).toBe(1);
 		expect(elsewhere.calls).toEqual([]);
 
 		const otherIssue = await run(
 			upToMarker(),
-			"https://github.com/o/r/issues/9999#issuecomment-900001",
+			citing("https://github.com/o/r/issues/9999#issuecomment-900001"),
 		);
 		expect(otherIssue.outcome.code).toBe(1);
 		expect(otherIssue.calls).toEqual([]);
@@ -212,7 +226,7 @@ describe("runRule", () => {
 
 		const wrongId = await run(
 			upToMarker(),
-			`https://github.com/o/r/issues/${ISSUE}#issuecomment-${RULING_COMMENT + 1}`,
+			citing(`https://github.com/o/r/issues/${ISSUE}#issuecomment-${RULING_COMMENT + 1}`),
 		);
 		expect(wrongId.outcome.code).toBe(7);
 	});
@@ -271,5 +285,107 @@ describe("runRule", () => {
 		expect(outcome.code).toBe(0);
 		expect(calls.some((line) => ADD_LABEL.test(line))).toBe(false);
 		expect(calls.some((line) => LABELS.test(line))).toBe(false);
+	});
+});
+
+/** The bodies of every comment the run posted, in the order it posted them. */
+const postedBodies = (posted: {
+	calls: ReadonlyArray<string>;
+	bodies: ReadonlyArray<string>;
+}): ReadonlyArray<string> =>
+	posted.calls.flatMap((line, at) => {
+		if (!POST.test(line)) return [];
+		const sent: unknown = JSON.parse(posted.bodies[at] ?? "{}");
+		return typeof sent === "object" && sent !== null && "body" in sent
+			? [String((sent as {body: unknown}).body)]
+			: [];
+	});
+
+describe("runRule --authorization", () => {
+	/** Everything up to the marker read-back, with the quote's create answered before the marker's. */
+	const upToQuotedMarker = (): Script => [
+		[once(ISSUE_READ), issueRead()],
+		...acl,
+		[LABELS, taxonomy],
+		[once(POST), AUTHORIZATION_POSTED],
+		[POST, POSTED],
+	];
+
+	const quotedMarker = async (): Promise<string> => {
+		const bodies = postedBodies(await run(upToQuotedMarker(), quoting()));
+		return bodies[1] ?? "";
+	};
+
+	it("posts the quote first, then a marker citing it, and flips the audience", async () => {
+		const bytes = await quotedMarker();
+		const posted = await run(
+			[
+				...upToQuotedMarker(),
+				[GET_MARKER, {status: 200, body: JSON.stringify({body: bytes})}],
+				[ADD_LABEL, LABEL_WRITTEN],
+				[REMOVE_LABEL, LABEL_WRITTEN],
+				[ISSUE_READ, issueRead(["type:decision", "ready-for:agent"])],
+			],
+			quoting(),
+		);
+		expect(posted.outcome.code).toBe(0);
+		expect(JSON.parse(posted.outcome.stdout)).toMatchObject({
+			answer: "ruled",
+			ruling: AUTHORIZATION_URL,
+			by: RULER,
+			comment: MARKER_COMMENT,
+			audience: "ready-for:agent",
+		});
+		const bodies = postedBodies(posted);
+		expect(bodies[0]).toBe(AUTHORIZATION);
+		expect(readRuling(bodies[1] ?? "")).toMatchObject({
+			_tag: "Found",
+			value: {issue: ISSUE, digest: bodyDigest(BODY), ruling: AUTHORIZATION_URL},
+		});
+		expect(posted.outcome.stderr.join("\n")).toContain(`comment ${AUTHORIZATION_COMMENT}`);
+		// The founder's own words are the ruling: nothing reads the issue's existing comments for one.
+		expect(posted.calls.some((line) => COMMENTS.test(line))).toBe(false);
+	});
+
+	it("refuses an undated or empty quote on 21, with nothing read and nothing written", async () => {
+		const undated = await run(upToQuotedMarker(), quoting("> take the second fork\n"));
+		expect(undated.outcome.code).toBe(21);
+		expect(undated.calls).toEqual([]);
+
+		const empty = await run(upToQuotedMarker(), quoting("   \n"));
+		expect(empty.outcome.code).toBe(21);
+		expect(empty.calls).toEqual([]);
+	});
+
+	it("refuses a quote carrying a machine-local path, and one that is a bare @ path", async () => {
+		const leaked = await run(
+			upToQuotedMarker(),
+			quoting("2026-08-19: ruled, see ~/notes/rulings.md\n"),
+		);
+		expect(leaked.outcome.code).toBe(5);
+		expect(leaked.calls).toEqual([]);
+
+		const bare = await run(upToQuotedMarker(), quoting("@~/rulings/2026-08-19.md"));
+		expect(bare.outcome.code).toBe(6);
+		expect(bare.calls).toEqual([]);
+	});
+
+	it("writes no marker when the quote's own write is UNKNOWN", async () => {
+		const {outcome, calls} = await run(
+			[[POST, {status: 502, body: '{"message":"Bad gateway"}'}], ...upToQuotedMarker()],
+			quoting(),
+		);
+		expect(outcome.code).toBe(8);
+		expect(calls.filter((line) => POST.test(line)).length).toBe(1);
+		expect(wroteLabels(calls)).toBe(false);
+	});
+
+	it("holds the control-plane ACL: an account off the roster posts nothing", async () => {
+		const {outcome, calls} = await run(
+			[[VIEWER, {status: 200, body: '{"login":"drive-by"}'}], ...upToQuotedMarker()],
+			quoting(),
+		);
+		expect(outcome.code).toBe(20);
+		expect(calls.some((line) => POST.test(line))).toBe(false);
 	});
 });

@@ -8,9 +8,18 @@
  * executor is reached (`.patterns/tuval-spells.md`, "The bridge").
  *
  * Nothing here names a program. The one process the bridge speaks for is the caller's own, and the
- * caller is named by the `Scope` the layer is built with — the executor re-resolves the process
- * from that scope's window, so a spawn is a child of the calling process and nothing on the wire
+ * caller is named by the window in the `Scope` every call carries — the executor re-resolves the
+ * process from that window, so a spawn is a child of the calling process and nothing on the wire
  * can claim otherwise (#7617 R2.2).
+ *
+ * That window does not come from the `Scope` the layer is built with, and it cannot: a config
+ * module writes a row's scope down inside `boot`, before any window exists, so a static scope names
+ * four plain ids and no window (#8758). It comes from `CallingWindow`, the service the spawner adds
+ * to the child's context naming the window the program was opened into
+ * (`../../commands/scope.ts`), read here at build and written over the row's scope for every call.
+ * A build under no `CallingWindow` — a proof standing its own index up, a restored process — keeps
+ * whatever window the scope itself names, which for a config row's scope is none, and a call with
+ * no window is parented by nobody exactly as it was before.
  *
  * The three answers are decoded against the spells' own result shapes. A reply that does not decode
  * is the kernel answering off its own `result` schema, which is not something a caller can act on,
@@ -20,6 +29,7 @@
 import {Context, Effect, Layer, Option, Schema} from "effect";
 import type {SpellNotAllowed} from "../../commands/bridge/index.ts";
 import {SpellBridge} from "../../commands/bridge/index.ts";
+import {CallingWindow} from "../../commands/scope.ts";
 import type {Scope, SpellPath} from "../../commands/spell.ts";
 import {ProcessId} from "../../process/process.ts";
 import type {SpellFailure} from "../../protocol/messages.ts";
@@ -88,9 +98,9 @@ export class KernelBridge extends Context.Service<
 	}
 >()("tuval/KernelBridge") {
 	/**
-	 * The bridge as the calling process sees it. `scope` is the caller's own — the window it runs
-	 * in, its workspace and its client — and every call carries it, so the kernel resolves the
-	 * parent rather than trusting an id.
+	 * The bridge as the calling process sees it. `scope` is the caller's own — its workspace, its
+	 * client, and the window it runs in once `CallingWindow` has supplied one — and every call
+	 * carries it, so the kernel resolves the parent rather than trusting an id.
 	 */
 	static readonly live = (scope: Scope): Layer.Layer<KernelBridge, never, SpellBridge> =>
 		Layer.effect(KernelBridge, make(scope));
@@ -115,8 +125,15 @@ export class KernelBridge extends Context.Service<
 const unexpected = (path: SpellPath, failure: SpellFailure) =>
 	Effect.die(`${path.join(".")} answered "${failure.tag}": ${failure.message}`);
 
-const make = Effect.fn("Tuval.KernelBridge.make")(function* (scope: Scope) {
+const make = Effect.fn("Tuval.KernelBridge.make")(function* (rowScope: Scope) {
 	const bridge = yield* SpellBridge;
+	// The running session's window beats the row's, because the row's was written down before any
+	// window existed (#8758). Read once: this layer is rebuilt per session open, and the window a
+	// process was opened into does not change under a built one.
+	const opened = yield* Effect.serviceOption(CallingWindow);
+	const scope: Scope = Option.isNone(opened)
+		? rowScope
+		: {...rowScope, window: opened.value.window};
 
 	/** One spell call, its reply decoded, its failure re-read as one of this bridge's four. */
 	const call = <A extends Schema.Top, E>(

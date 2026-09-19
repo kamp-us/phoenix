@@ -179,7 +179,6 @@ export const parseStamp = (payload: string): StampParse => {
 export const emitStamp = (key: string, stamp: Stamp): string =>
 	`${key}: ${stamp.question} @ ${stamp.digest} ${FIELD_SEPARATOR} ${stamp.at}\n`;
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for a stamp format. */
 export const renderStamp = (stamp: Stamp): NonEmptyReadonlyArray<string> => [
 	`question\t${stamp.question}`,
 	`digest\t${stamp.digest}`,

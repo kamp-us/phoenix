@@ -37,7 +37,7 @@ Named because a spec that leaves the substrate open makes the implementer guess.
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `ship scope` | one PR's state, head, linked issue, class set with required namespaces, and §CP three-state classification | path partition against single-sourced maps, count-checked reads, and closing-keyword resolution are mechanical; what each state means for the run is judgment |
+| `ship scope` | one PR's state, head, linked issue, class set with required namespaces, and §CP three-state classification | path partition against single-sourced maps, exhaustion-checked reads, and closing-keyword resolution are mechanical; what each state means for the run is judgment |
 | `ship cp-approval` | the roster-cardinality discharge: `discharge` / `stop` / `n/a` from head-bound signals only | the case split and the head-binding are a transcription of a ruled table; nothing in it is judgment, and a verb that judged here shipped an unapproved control-plane PR |
 | `ship gate` | the verdict conjunction: every required namespace's in-force, current-head verdict, §CP advisory resolution and native-review fold included | in-force resolution (write-stamp ordering, staleness, authorization) is mechanical; what to do with `blocked` is judgment |
 | `ship floor` | whether the governance floor binds on this diff and is discharged at this head — `n/a` / `satisfied` / a refusal CI reds on | asking `ship gate` for the one `governance` namespace and seating the answer on an exit code is mechanical; nothing about the verdict itself is decided here |
@@ -214,7 +214,7 @@ authority.
 | `10` | a supplied classification value is off the closed vocabulary — an unknown `--require` namespace, a bad `--site` | `gate`, `disarm` |
 | `11` | a **precondition read failed** — nothing was proven and (for a write) nothing was written | all |
 | `12` | refused: the live head moved past the inspected `--sha` — a mutation formed over a tree that is no longer the PR | `enqueue`, `merge`, `nudge` |
-| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page | `scope`, `cp-approval`, `gate`, `checks`, `evidence`, `threads`, `nudge`, `release`, `reconcile`, `floor` |
+| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page. A changed-file list short of the pull-request record's own `changed_files` is **not** that proof: no verb in this group refuses on it any more — `scope`, `cp-approval`, `gate`, `floor` and `release` report it and derive from the list they read. A list at GitHub's own 3000-file ceiling **is** that proof, because the Link header ends there as a complete read ends | `scope`, `cp-approval`, `gate`, `floor`, `checks`, `evidence`, `threads`, `nudge`, `release`, `reconcile` |
 | `14`, `15` | *(deliberate gaps — `review`'s ACL and append-only seats; no verb here performs either)* | — |
 | `16` | refused: the target is **proven not in the state this write acts on** — nothing was mutated | `resolve`, `enqueue`, `merge`, `nudge` |
 | `17` | refused: the nudge's close landed and the reopen is **unconfirmed — the PR may be left closed**; a human re-opens before anything else happens | `nudge` |
@@ -400,9 +400,9 @@ downstream verb consumes, and that verb guards itself.
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent (404); or it has zero changed files; or its non-empty diff derives zero required namespaces — a vacuous conjunction |
+| `7` | the PR is proven absent (404); or the enumerated changed-file list is empty; or its non-empty diff derives zero required namespaces — a vacuous conjunction |
 | `11` | the PR, its file list, the §CP boundary, or the worktree fact could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
-| `13` | the changed-file enumeration is provably short (received < declared count) |
+| `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a class, a namespace or a §CP path could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 | `33` | the verb is standing in the repository's main working tree — the driver's checkout, not the shipper's own worktree. Proven before anything is read, and only on a shipper's own run: `recipe unpark`'s in-process call is exempt |
 
 **Errors**
@@ -414,13 +414,18 @@ downstream verb consumes, and that verb guards itself.
 | `ship scope: #<n>'s diff derives zero review namespaces — a merge gated on nothing is vacuously green; the class map has a hole, file it.` | 7 | refusal |
 | `ship scope: cannot read <what> for #<n>: <reason> — the scope is UNKNOWN.` | 11 | refusal |
 | `ship scope: cannot read <base>'s landing path: <reason> — reporting it unknown; `ship merge` refuses on the same read rather than landing.` | 0 | notice |
-| `ship scope: file list shows <k> of <m> declared files — refusing to partition a truncated read.` | 13 | refusal |
+| `ship scope: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
+| `ship scope: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a class, a namespace or a §CP path could sit in the part the platform never served.` | 13 | refusal |
 | `ship scope: cannot tell whether this tree is a linked worktree: <reason> — whether this shipper stands in the driver's checkout is UNKNOWN, and nothing was read.` | 11 | refusal |
 | `ship scope: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. Nothing was read.` | 33 | refusal |
 
 **Scope** — on a shipper's own run, one `git rev-parse --git-dir --git-common-dir` in the checkout
-the verb runs in, then one PR's metadata and changed-file list, paginated and count-checked, plus one boundary read from
-the PR's base ref and one `governedRoots` read from that same checkout. The worktree read is first
+the verb runs in, then one PR's metadata and changed-file list, paginated to exhaustion, plus one boundary read from
+the PR's base ref and one `governedRoots` read from that same checkout. The partition is taken over
+that enumerated list rather than over the pull-request record's `changed_files`: GitHub computes the
+record's count against a base it cached at the PR's last push, so a disagreement is reported and
+never refused on. What still refuses is the list arriving at GitHub's own 3000-file ceiling, where
+the endpoint stops serving files and ends its Link chain normally. The worktree read is first
 and writes nothing; a boundary read that failed refuses `11` on the spot and reads no config. The
 partition is total over what was read.
 
@@ -541,9 +546,9 @@ approval scan.
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent (404) or closed |
+| `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — `classify` over no files answers `not-control-plane`, so a zero would render as a discharged boundary |
 | `11` | the CODEOWNERS boundary, the roster, the reviews, the marker comments, or the live head could not be read — the discharge is UNKNOWN, never `stop`, never `awaiting approval` |
-| `13` | the changed-file or comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page |
+| `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
 
@@ -552,14 +557,19 @@ approval scan.
 | `ship cp-approval: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship cp-approval: PR #<n> is closed — nothing to discharge.` | 7 | refusal |
 | `ship cp-approval: cannot read <what>: <reason> — the discharge is UNRESOLVED, not "awaiting approval".` | 11 | refusal |
-| `ship cp-approval: received <k> of <m> changed files — refusing the partial sweep.` | 13 | refusal |
+| `ship cp-approval: PR #<n> has zero changed files — whether it crosses the §CP boundary is unanswerable.` | 7 | refusal |
+| `ship cp-approval: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
+| `ship cp-approval: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a control-plane path could sit in the part the platform never served.` | 13 | refusal |
 | `ship cp-approval: received <k> of <m> comments — refusing the partial sweep.` | 13 | refusal |
 | `ship cp-approval: the review read never reached a terminal page — pagination is unexhausted, so an approval could sit on a page nobody read; refusing the partial sweep.` | 13 | refusal |
 
 **Scope** — the control-plane roster (the union over every named team and every individual owner), the PR's changed
-files and comments (paginated, count-checked) and its reviews (paginated to exhaustion), and the
-live head. `n/a` is a proven answer computed from the same `cp`
-derivation `ship scope` prints (one shared module).
+files (paginated to exhaustion) and comments (paginated, count-checked) and its reviews (paginated
+to exhaustion), and the live head. The boundary is classified over the enumerated file list rather
+than over the pull-request record's `changed_files`, whose count GitHub computes against a base it
+cached at the PR's last push — the disagreement is reported, an empty list refuses at `7`, and that
+list at GitHub's own 3000-file ceiling refuses at `13`. `n/a` is a proven answer computed from the
+same `cp` derivation `ship scope` prints (one shared module).
 
 **Examples**
 
@@ -682,10 +692,10 @@ answer this contract bans.
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent (404) or closed, or its diff has zero changed files — a conjunction over an empty diff proves nothing |
+| `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — a conjunction over an empty diff proves nothing |
 | `10` | a `--require` value is not a known gateable namespace |
 | `11` | the changed-file list, comments, reviews, or ACL could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
-| `13` | the changed-file or comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page |
+| `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
 
@@ -696,15 +706,17 @@ answer this contract bans.
 | `ship gate: PR #<n> has zero changed files — a conjunction over an empty diff proves nothing.` | 7 | refusal |
 | `ship gate: --require <v> is not a gateable namespace (known: review-code, review-doc, review-skill, review-ui, governance).` | 10 | refusal |
 | `ship gate: cannot read <what> for #<n>: <reason> — the conjunction is UNKNOWN.` | 11 | refusal |
-| `ship gate: received <k> of <m> changed files — refusing to derive the required floor from a truncated read.` | 13 | refusal |
+| `ship gate: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
+| `ship gate: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — refusing to derive the required floor from a capped read.` | 13 | refusal |
 | `ship gate: received <k> of <m> comments — refusing the partial resolution.` | 13 | refusal |
 | `ship gate: the review read never reached a terminal page — pagination is unexhausted, so the native-review fold would rest on a truncated set; refusing the partial resolution.` | 13 | refusal |
 | `ship gate: #<n>'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.` | 0 | notice |
 | `ship gate: #<n> carries a §CP advisory with a [FAIL] row — an invalid emission; treated as fail, report it.` | 0 | notice |
 
-**Scope** — one PR's changed-file list (paginated, count-checked — the floor may not rest on a
-truncated read), its verdict comments (paginated, count-checked) and native reviews (paginated to
-exhaustion), each candidate ACL-resolved. The verdict-marker and advisory grammars are the registered wire
+**Scope** — one PR's changed-file list (paginated to exhaustion, and the floor is derived from that
+list rather than from the pull-request record's `changed_files`; a list at GitHub's 3000-file
+ceiling refuses at `13`, because exhaustion cannot tell that case from a complete read), its verdict comments (paginated,
+count-checked) and native reviews (paginated to exhaustion), each candidate ACL-resolved. The verdict-marker and advisory grammars are the registered wire
 formats (`packages/fabrika-cli/src/wire/verdict-marker.ts`, `src/review/advisory.ts`) —
 imported, never re-parsed; a hand-rolled marker regex is the drift the registry ended.
 
@@ -882,9 +894,9 @@ it is *present and wrong*. All four of these red on `18`, and each has a unit te
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent (404) or closed, or has zero changed files — whether it touches a governance root is unanswerable |
+| `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — whether it touches a governance root is unanswerable |
 | `11` | the PR, its changed-file list, or the conjunction underneath could not be read — the floor is UNKNOWN, never `n/a`. Under `--publish-check`, also: the check-runs at the head could not be enumerated, so whether this head already carries the floor's row is unknown and nothing is published |
-| `13` | the changed-file enumeration is provably short — a governance root could sit in the part nobody read |
+| `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a governance root could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 | `18` | the diff touches a governance root and its `governance` verdict at this head is `absent`, `stale` or `fail` |
 | `8` | **`--publish-check` only** — the check-run could not be written, so the floor is resolved and nothing published it |
 | `9` | **`--publish-check` only** — the check-run landed and GitHub echoed a state this run did not decide |
@@ -898,7 +910,8 @@ it is *present and wrong*. All four of these red on `18`, and each has a unit te
 | `ship floor: cannot read PR #<n> in <repo>: <reason> — whether the floor binds is UNKNOWN, never "n/a".` | 11 | refusal |
 | `ship floor: cannot read the changed-file list for #<n>: <reason> — whether the floor binds is UNKNOWN, never "n/a".` | 11 | refusal |
 | ``ship floor: `ship gate` answered without a resolvable governance row — the floor is UNKNOWN, never discharged.`` | 11 | refusal |
-| `ship floor: received <k> of <m> changed files — a governance root could sit in the part nobody read.` | 13 | refusal |
+| `ship floor: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
+| `ship floor: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a governance root could sit in the part the platform never served.` | 13 | refusal |
 | `ship floor: #<n> touches a governance root and its governance verdict at <sha> is <state> — <remedy>.` | 18 | refusal |
 | `ship floor: #<n>'s diff touches no governance root, so the floor does not bind — this is an answer about the diff, not a discharged verdict.` | 0 | notice |
 | `ship floor --publish-check: cannot enumerate the check runs at <sha>: <reason> — nothing was published, so the floor stays UNKNOWN rather than posting a duplicate row.` | 11 | refusal |
@@ -907,9 +920,14 @@ it is *present and wrong*. All four of these red on `18`, and each has a unit te
 | `ship floor --publish-check: posted check-run <id> — the job's own exit code no longer carries the floor.` | 0 | notice |
 | `ship floor --publish-check: rewrote check-run <id> — the job's own exit code no longer carries the floor.` | 0 | notice |
 
-**Scope** — one PR's changed-file list, count-checked against the declared total, plus whatever
-`ship gate` scans for the one required namespace (its own file list, the comments, the reviews and
-the comment authors' ACL). Both scanned counts reach stderr, this verb's first.
+**Scope** — one PR's changed-file list, paginated to exhaustion, plus whatever `ship gate` scans for
+the one required namespace (its own file list, the comments, the reviews and the comment authors'
+ACL). Both scanned counts reach stderr, this verb's first. Neither verb refuses on that list
+disagreeing with the pull-request record's `changed_files`: GitHub computes the record's count
+against a base it cached at the PR's last push, so the disagreement is reported and the enumerated
+list is the file set both derive from. What both still refuse on is that list arriving at GitHub's
+own 3000-file ceiling: the endpoint stops serving files there and ends its Link chain normally, so
+the exhaustion proof passes over a list the platform already cut short.
 
 **Where it is enforced.** `.github/workflows/governance-floor.yml`, job `floor`, on every
 `pull_request` with no `paths:` filter — the verb's own read of the changed files is the path
@@ -1140,12 +1158,20 @@ rollup would be `green`, the head's workflow runs are read against the active in
 `src/review/gate-coverage.ts` — the same module `review ci` refuses on, so the two gates cannot
 drift a second copy of the rule. A workflow the repo checks in is addressed by its file path
 (`.github/workflows/…`); one the platform provides on the repo's behalf is addressed
-`dynamic/<provider>/<name>`, and that prefix is the whole discriminator: no expected job names, and
-never `review ci`'s informational *name* denylist, which answers a different question. A head where
-the repo declares at least one workflow of its own and **none** of them produced a run refuses on
+`dynamic/<provider>/<name>`, and that prefix is one of two discriminators: no expected job names, and
+never `review ci`'s informational *name* denylist, which answers a different question. The second is
+the run's own provenance — a run counts only where it carries this commit and its event is one
+GitHub runs against the head. `pull_request_target` is the one that is not: it carries the pull
+request's head and checks out the base, so `.github/workflows/pr-cleanup.yml` is repo-authored, sits
+at the head, and inspected none of it. No other event is filtered, so `ci.yml`'s trusted
+`workflow_dispatch` release path counts as any `pull_request` run does. The `--sha` operand is
+resolved to its full object name first, because the Actions run list filters `head_sha` as an exact
+string and an abbreviation there returns no runs at all; an operand that resolves to no full commit
+is `11`, never the `20`. A head where the repo declares at least one workflow of its own and **none**
+of them inspected it refuses on
 `20` — `ship` is the merge authority, so "no gate inspected these bytes" must not read as "every
 gate passed". Otherwise the coverage is stated on the notes channel: `ship checks: <k> of <m>
-workflow(s) <repo> authors produced a run at <sha>.`, or, for a repo that authors no workflow at
+workflow(s) <repo> authors inspected <head>.`, or, for a repo that authors no workflow at
 all, `ship checks: <repo> authors no workflow of its own — …`. The floor sits on `green` alone: a
 `red` head already routes to `heal-ci` by name, and a `pending` head is one this group waits on
 rather than lands.
@@ -1191,7 +1217,7 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `7` | the PR or the `--sha` commit is proven absent; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
 | `11` | the check-run read, the workflow read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
 | `13` | entries received < declared `total_count` — never read as "no red checks" |
-| `20` | every check at the head passed and **no workflow the repo authors produced a run there** — no gate inspected these bytes, so `green` is UNKNOWN, never merged |
+| `20` | every check at the head passed and **no workflow the repo authors inspected it** — every repo-authored run here carries another commit or ran against another ref, so `green` is UNKNOWN, never merged |
 
 **Errors**
 
@@ -1205,8 +1231,9 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `ship checks: cannot enumerate <what> at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
 | `ship checks: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration.` | 13 | refusal |
 | `ship checks: the live head is <live>, you are enumerating <sha> — the head moved.` | 0 | notice |
-| `ship checks: none of the <m> workflow(s) <repo> authors produced a run at <sha> — the <k> check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.` | 20 | refusal |
-| `ship checks: <k> of <m> workflow(s) <repo> authors produced a run at <sha>.` | 0 | notice |
+| `ship checks: none of the <m> workflow(s) <repo> authors inspected <head> — the <k> check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.` | 20 | refusal |
+| `ship checks: cannot judge gate coverage at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
+| `ship checks: <k> of <m> workflow(s) <repo> authors inspected <head>.` | 0 | notice |
 | `ship checks: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
 
 **Scope** — the check runs and workflow inventory at one commit, paginated,
@@ -1243,8 +1270,8 @@ facts	workflows:0	runs:0
 ```
 
 ```
-$ fabrika ship checks 4324 --sha 5b1c0d72   # every check passed; only CodeQL's own workflow ran
-ship checks: none of the 12 workflow(s) acme/repo authors produced a run at 5b1c0d72 — the 2 check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.
+$ fabrika ship checks 4324 --sha 5b1c0d72   # every check passed; only the base-context cleanup ran
+ship checks: none of the 12 workflow(s) acme/repo authors inspected 5b1c0d7240e8c1a97be3f5d206c8a1394ef70b25 — the 2 check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.
 $ echo $?
 20
 ```
@@ -1608,7 +1635,7 @@ resolved	PRRT_kwDOLxx1	https://github.com/acme/repo/pull/4321#discussion_r515499
 **Invocation**
 
 ```
-fabrika ship enqueue 4321 --sha 03135b91 [--repo <owner/name>] [--json]
+fabrika ship enqueue 4321 --sha 03135b91 [--mergeability-seconds <n>] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -1617,6 +1644,7 @@ fabrika ship enqueue 4321 --sha 03135b91 [--repo <owner/name>] [--json]
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number |
 | `--sha` | string | yes | — | the head every gate verified; the arm binds to it |
+| `--mergeability-seconds` | integer | no | `60` | how long an indefinite `mergeable` is re-read before it is called UNKNOWN |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -1641,10 +1669,24 @@ armed and reported as `enqueued … settling`, indistinguishable from a healthy 
 
 The assertion and its indefinite-value handling are **one unit, and neither ships without the
 other**: `mergeable` is computed lazily by GitHub, so a `null` / `unknown` read is routine and is
-**not an answer**. An indefinite read is re-read up to **3 times, 2 seconds apart**; if it is
-*still* indefinite the answer is UNKNOWN and the verb refuses `11` with nothing armed. A gate that
-read the indefinite value as green would be worse than no gate — a read that could not produce a
-definite answer must never resolve to one. A read that *fails* is likewise `11`, never a pass.
+**not an answer**. An indefinite read is re-read across `--mergeability-seconds` (default **60**) on
+a backoff — 2s, then doubling to a cap of 8s, the last wait trimmed so the waits sum to the window;
+if it is *still* indefinite the answer is UNKNOWN and the verb refuses `11` with nothing armed. A
+gate that read the indefinite value as green would be worse than no gate — a read that could not
+produce a definite answer must never resolve to one. A read that *fails* is likewise `11`, never a
+pass.
+
+**The window is the whole fix for a conflicted PR reading as UNKNOWN, and the read path is not.**
+GitHub computes `mergeable` in a background job that a read of `GET /repos/{repo}/pulls/{n}`
+*starts*, and its own guide's procedure is to call that endpoint and then poll that same endpoint
+until `mergeable` is true or false
+([Checking mergeability of pull requests](https://docs.github.com/en/rest/guides/getting-started-with-the-git-database-api?apiVersion=2022-11-28#checking-mergeability-of-pull-requests)).
+There is no list read to fall back to: the REST list route carries no `mergeable` field at all, and
+a live probe found the GraphQL list read answering `UNKNOWN` for 11 of 12 open PRs on a first read
+and decided for all 12 on a second — the same lazy job, not a privileged route. What had been wrong
+was the budget: three
+polls two seconds apart gave that job six seconds, so a conflicting PR whose job had not landed
+refused as UNKNOWN when one more read of the same endpoint would have said `dirty`.
 
 **A definite `mergeable: false` refuses, and does not arm.** The premise this overturns
 is that a definite `dirty` is an answer the arm may proceed on and leave to the platform's own error
@@ -1684,7 +1726,7 @@ response, quoted verbatim on `8`.
 |---|---|
 | `7` | the PR is proven absent (404), closed, or already merged (an idempotent success belongs to `ship scope`'s answer, not to an arm) |
 | `8` | the arm request, or its confirming post-arm read-back, failed — the error quoted; whether an intent is parked is UNKNOWN, so the caller runs `ship disarm --site refuse` before stopping |
-| `11` | the live head could not be read, the mergeability could not be read, or the mergeability was still indefinite after the polls — nothing was armed |
+| `11` | the live head could not be read, the mergeability could not be read, or the mergeability was still indefinite at the end of the poll window — nothing was armed |
 | `12` | the live head moved past `--sha` — every verdict upstream bound a tree that is gone; re-enter at step 1 |
 | `16` | the PR is **provably not mergeable** for a reason other than a conflicted base — a definite `mergeable: false` read; nothing was armed and no enqueue round was spent |
 | `21` | the base moved under the branch and the merge **conflicts** — a definite `mergeable_state: dirty`; nothing was armed. Report it as `BASE-CONFLICTED`, which spends a machinery lap instead of a repair round; the re-review is still owed |
@@ -1697,7 +1739,7 @@ response, quoted verbatim on `8`.
 | `ship enqueue: PR #<n> is <closed|merged> — nothing to enqueue.` | 7 | refusal |
 | `ship enqueue: cannot read #<n>'s live head: <reason> — nothing was armed.` | 11 | refusal |
 | `ship enqueue: cannot read #<n>'s mergeability: <reason> — nothing was armed.` | 11 | refusal |
-| `ship enqueue: #<n>'s mergeable_state is still indefinite after <k> polls — mergeability is UNKNOWN, never green; nothing was armed.` | 11 | refusal |
+| `ship enqueue: #<n>'s mergeable_state is still indefinite after <k> polls over <s>s — mergeability is UNKNOWN, never green; nothing was armed.` | 11 | refusal |
 | `ship enqueue: #<n> is not mergeable (mergeable_state: <state>) — a definite read; nothing was armed.` | 16 | refusal |
 | `ship enqueue: #<n>'s base moved under it and the merge conflicts (mergeable_state: dirty) — a definite read; nothing was armed. The re-review is owed: the moved base moves the merge-base blob every verdict's content digest covers, so route to repair against a rebased head.` | 21 | refusal |
 | `ship enqueue: mergeable_state is <state> (mergeable: true) — a definite read; arming.` | 0 | notice |
@@ -1714,6 +1756,11 @@ request, one read-back of the PR's merge state.
 ```
 $ fabrika ship enqueue 4321 --sha 03135b91
 enqueued	03135b91	queued
+```
+
+```
+$ fabrika ship enqueue 4321 --sha 03135b91 --mergeability-seconds 120
+enqueued	03135b91	settling
 ```
 
 **Grounding**
@@ -1734,6 +1781,13 @@ enqueued	03135b91	queued
   either round.
   `21` and its `BASE-CONFLICTED` terminal are that evidence applied — the round still happens, and
   the budget that bounds how often a builder may fail a review is not what pays for it.
+- **The poll window, sized against a live probe.** GitHub's own guide says to call
+  `GET /repos/{repo}/pulls/{n}` to start the mergeability job and then poll that same endpoint until
+  `mergeable` is true or false, and the REST list route carries no `mergeable` field at all — so
+  there is no list read to prefer. A live probe found the GraphQL list read answering `UNKNOWN` for
+  11 of 12 open PRs on a first read and decided for all 12 on a second, the same lazy job rather
+  than a privileged route. The six seconds the old three-poll cadence gave that job is what refused
+  a conflicting PR as UNKNOWN; 60 is what the probe's own settling time supports.
 
 ---
 
@@ -1742,7 +1796,7 @@ enqueued	03135b91	queued
 **Invocation**
 
 ```
-fabrika ship merge 4321 --sha 03135b91 [--repo <owner/name>] [--json]
+fabrika ship merge 4321 --sha 03135b91 [--mergeability-seconds <n>] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -1751,6 +1805,7 @@ fabrika ship merge 4321 --sha 03135b91 [--repo <owner/name>] [--json]
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number |
 | `--sha` | string | yes | — | the head every gate verified; the landing binds to it |
+| `--mergeability-seconds` | integer | no | `60` | how long an indefinite `mergeable` is re-read before it is called UNKNOWN |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -1784,8 +1839,9 @@ sends the run onward to `ship enqueue`, `19` ends the lane at a human with repos
 access.
 
 **A definite `mergeable_state` is asserted before the write**, on the same poll policy
-`ship enqueue` uses and out of the same shared read — indefinite is re-read up to 3 times, 2 seconds
-apart, and a still-indefinite value is UNKNOWN and refuses `11`. A definite `mergeable: false`
+`ship enqueue` uses and out of the same shared read — indefinite is re-read on a backoff across
+`--mergeability-seconds` (default 60), and a value still indefinite at the end of that window is
+UNKNOWN and refuses `11`. A definite `mergeable: false`
 refuses `16`, the same line the arm draws, rather than sending a call the endpoint will
 reject with a 405 that is indistinguishable, from the outside, from a write whose outcome nobody
 knows.
@@ -1804,7 +1860,7 @@ because whether the PR landed is exactly what is UNKNOWN there.
 | `7` | the PR is proven absent (404), closed, or already merged (an idempotent success belongs to `ship scope`'s answer, not to a landing) |
 | `8` | the merge request, or its confirming read-back, failed — whether the PR landed is UNKNOWN; re-read the PR before stopping |
 | `9` | the merge was sent and the read-back does not show it merged at a commit — the landing is not proven |
-| `11` | the live head, the landing path or the mergeability could not be read, or the mergeability was still indefinite after the polls — nothing was merged |
+| `11` | the live head, the landing path or the mergeability could not be read, or the mergeability was still indefinite at the end of the poll window — nothing was merged |
 | `12` | the live head moved past `--sha` — every verdict upstream bound a tree that is gone; re-enter at step 1 |
 | `16` | proven: a merge queue governs the base (run `ship enqueue`), or the PR is definitely not mergeable — nothing was merged |
 | `19` | the repository permits no merge method at all — a human enables one in the repository settings |
@@ -1820,7 +1876,7 @@ because whether the PR landed is exactly what is UNKNOWN there.
 | `ship merge: cannot read #<n>'s live head: <reason> — nothing was merged.` | 11 | refusal |
 | `ship merge: cannot read <base>'s landing path: <reason> — nothing was merged.` | 11 | refusal |
 | `ship merge: cannot read #<n>'s mergeability: <reason> — nothing was merged.` | 11 | refusal |
-| `ship merge: #<n>'s mergeable_state is still indefinite after <k> polls — mergeability is UNKNOWN, never green; nothing was merged.` | 11 | refusal |
+| `ship merge: #<n>'s mergeable_state is still indefinite after <k> polls over <s>s — mergeability is UNKNOWN, never green; nothing was merged.` | 11 | refusal |
 | `ship merge: the live head is <live>, gates ran at <sha> — refusing to merge a tree nobody verified.` | 12 | refusal |
 | ``ship merge: a merge queue governs <base> — the queue owns the method and the landing; run `fabrika ship enqueue` instead.`` | 16 | refusal |
 | `ship merge: #<n> is not mergeable (mergeable_state: <state>) — a definite read; nothing was merged.` | 16 | refusal |
@@ -2240,11 +2296,11 @@ only on the path that would post — `n/a` and `no-issue` read none.
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent (404) |
+| `7` | the PR is proven absent (404), or the enumerated changed-file list is empty — a zero carries no declaration to find, and `n/a` there would be a dark ship nobody queued |
 | `8` | the label write, or its confirming re-read, failed — UNKNOWN; the release queue may be missing a real dark ship, say so loudly |
 | `9` | the label write landed but the read-back does not show it |
 | `11` | the diff, body, flag registry, or linked issue could not be read — dark-ship-ness is UNKNOWN, never `n/a` |
-| `13` | the changed-file or diff enumeration is provably short — a partial diff must not read as "no flag declaration added" |
+| `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a flag declaration could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 | `23` | `status:awaiting-release` is absent from the repository's taxonomy — refused rather than let the POST mint it; guarded only on the path that would post, so `n/a` and `no-issue` read no taxonomy |
 
 **Errors**
@@ -2255,13 +2311,18 @@ only on the path that would post — `n/a` and `no-issue` read none.
 | `ship release: cannot read <what>: <reason> — whether this is a dark ship is UNKNOWN, never "n/a".` | 11 | refusal |
 | `ship release: label write failed: <reason> — a real dark ship may be missing from the release queue; escalate.` | 8 | refusal |
 | `ship release: label read-back does not show status:awaiting-release on #<issue> — inspect it.` | 9 | refusal |
-| `ship release: received <k> of <m> declared files — refusing to scan a truncated diff for flag signals.` | 13 | refusal |
+| `ship release: PR #<n> has zero changed files — whether it carries a flag signal is unanswerable, and "n/a" would be a dark ship nobody queued.` | 7 | refusal |
+| `ship release: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
+| `ship release: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a flag declaration could sit in the part the platform never served.` | 13 | refusal |
 | `ship release: label "status:awaiting-release" is absent from <repo>'s taxonomy — refusing to create it. A real dark ship is not queued; run `fabrika status bootstrap label-taxonomy` and re-run.` | 23 | refusal |
 | `ship release: cannot read <repo>'s label taxonomy: <reason> — nothing was written, and a real dark ship is not queued; escalate.` | 11 | refusal |
 
-**Scope** — one PR's diff and body, the flag registry file at the PR's base ref, the repository's
-label taxonomy (read only when a write is due), one linked issue's labels; one label write with
-read-back.
+**Scope** — one PR's changed-file list (paginated to exhaustion), its diff and body, the flag registry
+file at the PR's base ref, the repository's label taxonomy (read only when a write is due), one
+linked issue's labels; one label write with read-back. The scan runs over the enumerated list rather
+than over the pull-request record's `changed_files`, whose count GitHub computes against a base it
+cached at the PR's last push — the disagreement is reported, an empty list refuses at `7`, and that
+list at GitHub's own 3000-file ceiling refuses at `13`.
 
 **Examples**
 

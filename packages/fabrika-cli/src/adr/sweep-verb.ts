@@ -1,12 +1,7 @@
 /**
- * `adr sweep` — rank the uncited live-accepted records the subject may contradict.
+ * `adr sweep` ranks uncited live records. See `adr sweep --help` for the answer contract.
  *
- * **All three outcomes are answers and all three exit 0.** A caller must never read its own
- * shortlist as a failed run, which is precisely the mistake v1's `adr-sweep` makes by exiting 1 on
- * the one case it was asked to produce; and `--json` goes to **stdout**, not stderr.
- *
- * A readable-but-empty `--dir` is the rarity floor at its limit, so it answers `indeterminate` and
- * needs no case of its own; only an unreadable corpus is UNKNOWN.
+ * A readable empty corpus is below the rarity floor; an unreadable corpus cannot be ranked.
  */
 import {Effect, type FileSystem, Result} from "effect";
 import {readDir, readFile} from "../io/fs.ts";

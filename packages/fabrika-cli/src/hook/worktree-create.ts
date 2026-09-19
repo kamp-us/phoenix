@@ -165,11 +165,9 @@ export const pruneWorktreesArgs: ReadonlyArray<string> = ["worktree", "prune"];
 /**
  * How the sweep re-enters this CLI, and how much of the spawn it may spend.
  *
- * **Whatever creates a worktree reaps first.** Why the bound belongs at provisioning, and which
- * alternatives that ruling refused, is the decision record linked from `build reap`'s entry in
- * `docs/verb-reference.md` — not restated here. What is local: it runs *before* the fetch and the
- * add, because the failure it exists to prevent is a full volume refusing the add, and freeing the
- * disk after that refusal is a spawn too late.
+ * Reap before the fetch and add: a full volume can refuse the add, so freeing disk after that
+ * refusal is a spawn too late.
+ * @ruling https://github.com/kamp-us/phoenix/issues/7990
  *
  * It is a **child process** rather than a call into `runReap`, for the one thing a child gives that
  * a call does not: `cwd`. This package's git seam runs every command in the process's own cwd, and a

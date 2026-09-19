@@ -112,7 +112,10 @@ describe("the shared load refusals", () => {
 	});
 
 	it("refuses an unreadable lane as UNKNOWN, never as fresh", async () => {
-		const out = await run(fakeFs({files: {[WORKFLOW]: null}, unprobeable: [WORKFLOW]}), runStatus);
+		const out = await run(
+			fakeFs({files: {[WORKFLOW]: coderTemplateText()}, unreadable: [WORKFLOW]}),
+			runStatus,
+		);
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.at(-1)).toContain("UNKNOWN");

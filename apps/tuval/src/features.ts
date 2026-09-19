@@ -60,6 +60,13 @@ export interface TuvalFeatures {
 	 * the row. ADR 0375.
 	 */
 	readonly prReviewExample: boolean;
+	/**
+	 * The desk's way to remove a process: the `process:remove <id>` command row and the `d` key on the
+	 * focused picker row, both asking the kernel for the durable forget #9446 built (#9447). Off: the
+	 * row is not registered, `d` falls through to `ignored` as it did before, and the picker's key help
+	 * names neither.
+	 */
+	readonly processRemove: boolean;
 }
 
 /**
@@ -76,4 +83,5 @@ export const featuresDefault: TuvalFeatures = {
 	windowTitles: false,
 	processBoard: false,
 	prReviewExample: false,
+	processRemove: false,
 };

@@ -8,6 +8,7 @@ import {
 	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {PULL_FILES_CAP} from "../io/pulls.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, PRIMARY_CHECKOUT, ZERO_SCOPE} from "./codes.ts";
 import {
 	branchRules,
@@ -15,6 +16,7 @@ import {
 	ENV,
 	files,
 	HEAD,
+	LINKED_ISSUE,
 	LINKED_WORKTREE,
 	pull,
 	repositoryServed,
@@ -258,26 +260,52 @@ describe("runScope", () => {
 		expect(out.stdout).toBe("");
 	});
 
-	it("refuses zero changed files on 7", async () => {
+	// The declared count is GitHub's own, computed against a base cached at the last push, so a list
+	// short of it proved nothing about completeness. It used to refuse at 13 — and this is the first
+	// verb a `ship` run makes, so the whole merge path stranded before it started.
+	it("reports a file list short of the declared count and still partitions it (#9322)", async () => {
 		const out = await run([
-			[PULL, served(pull({changedFiles: 0}))],
+			[PULL, served(pull({changedFiles: 9}))],
+			[FILES, served(files("README.md"))],
+			[OWNERS, raw(CODEOWNERS)],
+			[RULES, served(branchRules())],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\topen\tfixes:${LINKED_ISSUE}`);
+		expect(out.stderr.join("\n")).toContain(
+			"GitHub's file list for #4321 holds 1 paths against the 9 its own pull-request record declares",
+		);
+	});
+
+	// The empty read is the seat that survives the retirement, and it is driven by the list rather
+	// than the declared count: a zero can never render as a clean partition.
+	it("refuses an empty file list on 7 even where the record declares files (#9322)", async () => {
+		const out = await run([
+			[PULL, served(pull({changedFiles: 9}))],
 			[FILES, served(files())],
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
 			"ship scope: PR #4321 has zero changed files — nothing to ship.",
 		);
 	});
 
-	it("refuses a truncated file list on 13 rather than partitioning it", async () => {
+	// The ceiling is the truncation pagination cannot catch: GitHub stops serving files at 3000 and
+	// ends the Link chain there exactly as a complete read ends. The retired count arm caught this
+	// case by accident; `capped` catches it on purpose.
+	it("refuses a file list at the 3000-file ceiling on 13 (#9322)", async () => {
 		const out = await run([
-			[PULL, served(pull({changedFiles: 9}))],
-			[FILES, served(files("README.md"))],
+			[PULL, served(pull({changedFiles: PULL_FILES_CAP}))],
+			[
+				FILES,
+				served(files(...Array.from({length: PULL_FILES_CAP}, (_, i) => `apps/site/src/f${i}.ts`))),
+			],
 		]);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"ship scope: file list shows 1 of 9 declared files — refusing to partition a truncated read.",
+			"ship scope: GitHub's file list for #4321 came back at its 3000-file ceiling, so the list is provably partial — a class, a namespace or a §CP path could sit in the part the platform never served.",
 		);
 	});
 

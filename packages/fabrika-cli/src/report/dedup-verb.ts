@@ -1,9 +1,7 @@
 /**
  * `report dedup` — rank the open issues that may already cover an observation.
  *
- * The verb **supplies an input; it does not judge**, which is why all three outcomes exit 0: the
- * check is advisory, never a gate on filing. A duplicate is cheap for triage to close
- * and a lost observation is gone, so the skill files on ambiguity.
+ * The ranking is advisory. A duplicate can be closed later; a lost observation cannot be recovered.
  *
  * The two halves are read for different reasons. The **label queue** is read-after-write consistent
  * and catches an issue filed seconds ago; the **search index** is eventually consistent — it lags

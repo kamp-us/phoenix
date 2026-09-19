@@ -127,3 +127,15 @@ recorded explicitly per the `/adr` vocabulary-impact step.
   isolation; the stage-uniformity argument rests on it.
 - **ADR [0155](0155-fanned-mutation-publish-guard.md)** — the fanned-mutation seam the
   `Cache-Tag` purge attaches to in [#2324](https://github.com/kamp-us/phoenix/issues/2324).
+
+## Amendments
+
+- **[#8934](https://github.com/kamp-us/phoenix/pull/8934) — explicit response policies (2026-09-10).**
+  Workers Cache defaults a headerless HTTP 200 response to a two-hour TTL; enabling it
+  is not inert until a route sets `Cache-Control`. The worker therefore supplies
+  `private, no-store` when a response has no explicit policy, and always applies that
+  policy to authentication and personalized HTML. The public Pano projection keeps
+  its explicit shared-cache policy. Cloudflare consumes `Cache-Tag` before returning
+  a response to the client: verify tag emission at the handler and cache/purge behavior
+  against the deployed worker. These mechanisms preserve this decision's viewer-invariant
+  caching constraint. Source: [Cloudflare Workers Cache configuration](https://developers.cloudflare.com/workers/cache/configuration/).

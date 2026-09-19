@@ -1,10 +1,8 @@
 /**
  * `ui manifest` — the repo's design surfaces, by convention: presence and paths, no judgment.
  *
- * The manifest is the one surface whose absence refuses, and it refuses on `12` rather than the
- * generic zero-scope `7`: an un-bootstrapped repo is a *routable* state with a named next step
- * (front-door's bootstrap), not an absence to report. Everything else reports `null`, because
- * "this repo ships no inventory" is a fact a skill acts on.
+ * The design manifest is required; the other convention files are optional.
+ * See `ui manifest --help` for the reported fields and refusals.
  *
  * A probe that could not be *performed* is `11`. Presence is UNKNOWN, never "absent" — `node:fs`'s
  * `existsSync` reports an unreadable parent directory as absent, which is how a missing law comes to

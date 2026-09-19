@@ -45,7 +45,9 @@ export const termRecord = sqliteTable(
 	{
 		slug: text("slug").primaryKey(),
 		title: text("title").notNull(),
-		// Lower-cased first character; powers the alphabet pivot on SozlukHome.
+		// The headword's Turkish alphabet letter, or `""` when it starts outside the alphabet
+		// (`storedFirstLetter`, #9331). Read by the term row and the term header's breadcrumb;
+		// NOT the letter page's filter, which rides the collation key over `title` (#9267).
 		firstLetter: text("first_letter").notNull(),
 		definitionCount: integer("definition_count").notNull().default(0),
 		totalScore: integer("total_score").notNull().default(0),
@@ -59,7 +61,12 @@ export const termRecord = sqliteTable(
 	(t) => [
 		index("term_record_recent").on(t.lastActivityAt),
 		index("term_record_popular").on(t.totalScore),
-		index("term_record_letter").on(t.firstLetter),
+		// No `first_letter` index: `/sozluk/harf/<x>` filters AND orders by one collation-key
+		// expression over `title`, because the letter's key range is a slice of the very key
+		// `alphabetical` sorts on. An index over the stored column could serve the filter but
+		// never that ORDER BY, so pointing the filter at it would split the page's membership
+		// (stored data) from its walk (a computed key) — the disagreement `turkish-collation.ts`
+		// exists to prevent. `term_record_letter` was therefore unreachable and is dropped (#9331).
 	],
 );
 

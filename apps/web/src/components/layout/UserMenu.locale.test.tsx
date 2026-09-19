@@ -98,7 +98,8 @@ describe("picking English renders the layout in English", () => {
 		await waitFor(() => expect(screen.getByText("skip to content")).toBeTruthy());
 		expect(screen.getByRole("button", {name: "log out"})).toBeTruthy();
 		expect(screen.getByTestId("topbar-profile-link").textContent).toBe("profile");
-		expect(screen.getByPlaceholderText("search…")).toBeTruthy();
+		// The palette trigger carries the placeholder copy as text now, not a field placeholder.
+		expect(screen.getByRole("button", {name: "Search"})).toBeTruthy();
 		expect(screen.getByText("× clear filter")).toBeTruthy();
 		// divan is a brand noun — it reads the same in the English interface (ADR 0347).
 		expect(screen.getByTestId("topbar-divan-link").getAttribute("aria-label")).toBe("divan");

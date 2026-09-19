@@ -83,7 +83,9 @@ export type FacetName = (typeof FACET_NAMES)[number];
 
 /**
  * Every label an input can make each facet keep. Five come off the board vocabulary; `class` comes
- * off {@link classLabel}'s closed set, which no repo declares.
+ * off {@link classLabel}'s closed set, which no board vocabulary can widen or rename. A repo does
+ * carry the four labels — `../labels.ts`'s `CLASS_LABELS` is the bootstrap row that mints them —
+ * because a facet whose values name labels the board lacks is a stamp that refuses every value.
  */
 export const facetValues = (
 	board: BoardVocabulary,

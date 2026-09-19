@@ -9,6 +9,10 @@
  * `pano-hot-score-decay` (#645/#2027) — the test drives the shipped method directly against this
  * stage's real D1, never a `node:sqlite` oracle (banned by ADR 0082) and never a re-implementation
  * of the fold. Per-file `integrationStack`, so `sozluk_stats` counts only this file's definitions.
+ *
+ * The same sweep is #9331's declared backfill route for `term_record.first_letter`, so the second
+ * suite below rides it: correcting the derivation alone leaves every untouched row stale forever,
+ * because `recomputeTermSummary` runs only on a definition write.
  */
 import {eq} from "drizzle-orm";
 import {type Context, Effect, Layer} from "effect";
@@ -27,6 +31,18 @@ const h = integrationStack(import.meta.url);
 const SLUG = `reconcile-${Date.now().toString(36)}`;
 const TITLE = "Reconcile Term";
 const DEF_BODY = "the one true live definition body for the reconcile term";
+
+/**
+ * The #9331 backfill subjects. Each pair is `[slug, title]` where the slug is the ASCII fold —
+ * so the letter the pre-fix code stored (the slug's head) differs from the letter the headword
+ * actually files under. `w` has no Turkish letter at all and must land on `""`.
+ */
+const LETTER_STAMP = Date.now().toString(36);
+const LETTER_TERMS: ReadonlyArray<readonly [slug: string, title: string, letter: string]> = [
+	[`onbellek-${LETTER_STAMP}`, "önbellek", "ö"],
+	[`isik-${LETTER_STAMP}`, "ışık", "ı"],
+	[`webhook-${LETTER_STAMP}`, "webhook", ""],
+];
 
 // reconcileCaches touches only `run`/`batch` (persistTermSummary + recomputeSozlukStats), never
 // Vote/Reaction/Pasaport — so inert stubs satisfy the layer without an implementation.
@@ -54,12 +70,14 @@ async function realSozluk() {
 	return {reconcile, read};
 }
 
-const readTerm = (s: Awaited<ReturnType<typeof realSozluk>>) =>
+const readTermBySlug = (s: Awaited<ReturnType<typeof realSozluk>>, slug: string) =>
 	s.read((a) =>
 		a.run((db) =>
-			db.select().from(schema.termRecord).where(eq(schema.termRecord.slug, SLUG)).get(),
+			db.select().from(schema.termRecord).where(eq(schema.termRecord.slug, slug)).get(),
 		),
 	);
+
+const readTerm = (s: Awaited<ReturnType<typeof realSozluk>>) => readTermBySlug(s, SLUG);
 
 const readStats = (s: Awaited<ReturnType<typeof realSozluk>>) =>
 	s.read((a) =>
@@ -73,6 +91,15 @@ beforeAll(async () => {
 		definitions: [{authorName: "reconcile-yazar", body: DEF_BODY}],
 	});
 	expect(seeded.insertedDefinitions).toBe(1);
+
+	for (const [slug, title] of LETTER_TERMS) {
+		const row = await h.seedTerm({
+			slug,
+			title,
+			definitions: [{authorName: "reconcile-yazar", body: `${title} icin tohum tanim`}],
+		});
+		expect(row.insertedDefinitions).toBe(1);
+	}
 });
 
 describe("sözlük backstop-reconciliation (#2558 AC5) — a swallowed-refresh stale term re-converges", () => {
@@ -113,7 +140,39 @@ describe("sözlük backstop-reconciliation (#2558 AC5) — a swallowed-refresh s
 		expect(after?.excerpt).toBe(trueExcerpt);
 		expect(after?.excerpt).not.toBe("STALE-SWALLOWED-REFRESH");
 
+		// One definition per seeded term, and `LETTER_TERMS` adds its own to this file's stage.
 		const statsAfter = await readStats(s);
-		expect(statsAfter?.totalDefinitions).toBe(1);
+		expect(statsAfter?.totalDefinitions).toBe(1 + LETTER_TERMS.length);
+	});
+});
+
+describe("term_record.first_letter backfill (#9331) — one reconcile pass corrects every row", () => {
+	it("re-derives the stored letter from the headword, so pre-fix ASCII-folded rows converge", async () => {
+		const s = await realSozluk();
+
+		// The pre-fix state, written the way the pre-fix code wrote it: `first_letter` is the
+		// slug's head, and the slug is the ASCII fold. `önbellek` files under `o`, `ışık` under
+		// `i`, `webhook` under `w` — a letter the alphabet does not index at all.
+		for (const [slug] of LETTER_TERMS) {
+			const rows = await h.execD1("UPDATE term_record SET first_letter = ? WHERE slug = ?", [
+				slug.charAt(0),
+				slug,
+			]);
+			expect(rows).toBe(1);
+		}
+		for (const [slug] of LETTER_TERMS) {
+			expect((await readTermBySlug(s, slug))?.firstLetter).toBe(slug.charAt(0));
+		}
+
+		// ONE full pass. `reconcileCaches` walks every term slug in chunks and re-runs
+		// `persistTermSummary`, so it is the backfill route — there is no separate script.
+		const result = await s.reconcile(new Date());
+		expect(result.scanned).toBeGreaterThanOrEqual(LETTER_TERMS.length);
+
+		for (const [slug, title, letter] of LETTER_TERMS) {
+			const row = await readTermBySlug(s, slug);
+			expect(row?.title).toBe(title);
+			expect(row?.firstLetter).toBe(letter);
+		}
 	});
 });

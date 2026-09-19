@@ -1,9 +1,13 @@
 # Skill rubric — the `review-skill` namespace
 
-Applied to the skill-class slice of the diff (SKILL.md files, rubric/reference files beside them,
-contract specs, agent definitions). These are the checks no other surface's rubric structurally
-makes (v1's rigor checks 1–3; rigor check 4 — gate-invariant preservation — is the `governance`
-skill's, never graded here).
+Applied to every skill-class file the diff touches (SKILL.md files, rubric/reference files beside
+them, contract specs, agent definitions), each read whole rather than by hunk, because the document
+is the contract its reader executes. A `contract.md` is the one exception and stays a
+heading-at-a-time read. So the unit for a contradiction finding is the touched file, not the diff's
+slice of it; [`review` §3](../SKILL.md) states how that read runs, the contract carve included, and
+why every contradiction one file holds lands in one round's verdict. These are the checks no other
+surface's rubric structurally makes (v1's rigor checks 1–3; rigor check 4 — gate-invariant
+preservation — is the `governance` skill's, never graded here).
 
 ## 1 — Behavioral correctness
 
@@ -12,7 +16,9 @@ completion criterion is checkable, every fence is a plain literal **in the strin
 executes** (no shell-expanded `$VAR`, no default expansion, no `..` climb — the isolation verifier
 is syntactic and refuses them), and every verb the text invokes exists in the contract beside it,
 same spelling, same flags. An instruction the model cannot carry out, or a state word the contract
-never prints, is a finding.
+never prints, is a finding. So is one file answering the same question two ways: a rule the change
+retired, left standing three lines from the rule replacing it, is what the executor meets first, and
+the round that reads the file owns that finding however far outside a hunk the stale line sits.
 
 A `$<name>` that the skill declares in its own `arguments:` frontmatter is **not** a finding: the
 harness substitutes it textually before the body reaches the agent, so the verifier never sees it
@@ -48,7 +54,9 @@ waiting to happen; name it.
 `packages/fabrika-cli/src/` and take a red as a finding: a skill installed elsewhere whose refusal
 rationale names a ticket the reader cannot open teaches nothing, and the fix is a self-contained
 sentence, not a shorter pointer. The guard's floor only shrinks, so a diff that lifts a ceiling to
-admit a new reference is the finding rather than the remedy.
+admit a new reference is the finding rather than the remedy. Skill text gets no exception: the
+`@ruling` citation tag the guard admits is scoped to `packages/fabrika-cli/`, because a skill's
+reader is the adopter's agent and a link into this repo's history teaches that agent nothing.
 
 **Every contract read the diff instructs is a section read** — a contract is a reference the reader
 resolves one heading at a time, never a document loaded whole. Skill text and any
@@ -58,9 +66,10 @@ open, or load a `contract.md` whole is a finding, whatever the read's shape.
 
 ## 5 — Writing craft
 
-Apply [`writing-for-agents`](../../writing-for-agents/SKILL.md) verbatim to the skill-class slice
-and state its verdict here. `claude-plugins/fabrika/docs/skill-conventions.md` §8 gate 1 admits a
-skill only when it is written under that discipline, and the gate reads the text rather than the
+Apply [`writing-for-agents`](../../writing-for-agents/SKILL.md) verbatim to each skill-class file
+the diff touches, over the whole file as the header says, and state its verdict here.
+`claude-plugins/fabrika/docs/skill-conventions.md` §8 gate 1 admits a skill only when it is written
+under that discipline, and the gate reads the text rather than the
 session that produced it, so this section is where the gate acquires teeth. Read the skill inline as
 a reference; it has no run to spawn.
 

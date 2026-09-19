@@ -12,11 +12,11 @@
  * whoever runs the desk, and this slice ships only the inert set (`unwiredShellEffects`).
  */
 
-import {Effect} from "effect";
+import {Effect, Option, Predicate} from "effect";
 import type {GraphNode} from "../ports/graph.ts";
 import {NodeId} from "../ports/graph.ts";
 import {ProcessId} from "../process/process.ts";
-import type {AnyProgram, HostHandlers, Program} from "../registry/program.ts";
+import type {AnyProgram, HostHandlers, Migrations, Program} from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
 import {shellSpells, shellSpellsFor} from "./commands/spells.ts";
 import {commandIndexFor, type ShellCommandFeatures} from "./commands/table.ts";
@@ -27,6 +27,7 @@ import {
 	type ShellState,
 	shellCore,
 } from "./core/index.ts";
+import {initialDesk} from "./desk/state.ts";
 import {defaultPrefixTable, type PrefixTable, prefixTableFor} from "./keys/index.ts";
 import {windows} from "./layout/index.ts";
 import {type Empty, empty, type ProcessGone, processGone, WindowId} from "./window/index.ts";
@@ -41,10 +42,36 @@ export const shellId = ProgramId.make("shell");
 export const shellNode = NodeId.make("shell");
 
 /**
- * The definition version a snapshot is checked against. Bumping it refuses every desk saved under
- * the old one rather than replaying it into a changed state shape (#7467).
+ * The definition version a snapshot is checked against. A desk saved under an older one comes back
+ * through the step `shellMigrations` declares for it, and is refused when there is none rather than
+ * replayed into a changed state shape (#7467).
  */
 export const SHELL_VERSION = "1.2.0";
+
+/**
+ * How a desk saved under an older shell comes back (the founder ruling on #8907:
+ * https://github.com/kamp-us/phoenix/issues/8907#issuecomment-5625300780). One entry per version
+ * that ever wrote a checkpoint, keyed by that version; a bump that changes the state shape adds its
+ * own entry here in the same commit, or every desk saved before it is refused.
+ *
+ * 1.2.0 grew `desk.boardOpen` (#8876) and nothing else, so the step is the field's fresh value —
+ * the board is closed until `<c-b> p` pulls it up, which is what a founder who has never seen it
+ * expects. `boardOpen` in the saved bytes wins over the default: the step fills a gap and never
+ * overwrites a desk's own answer.
+ */
+export const shellMigrations: Migrations = {
+	"1.1.0": {
+		to: "1.2.0",
+		migrate: (raw) =>
+			// Structural, not `isShellState`: this reads bytes written by a *past* shell, whose shape
+			// the current guard no longer describes. `desk` is the only field the step touches, so
+			// `desk` is the whole thing it has to find — everything else rides through untouched and
+			// meets `shellStateOf` on the other side, as an unmigrated desk always has.
+			Predicate.isObject(raw) && Predicate.isObject(raw.desk)
+				? Option.some({...raw, desk: {boardOpen: initialDesk.boardOpen, ...raw.desk}})
+				: Option.none(),
+	},
+};
 
 /**
  * What the core asks its host to do, as the kernel's own handler shape. `E` and `R` ride through to
@@ -83,6 +110,10 @@ export const unwiredShellEffects: ShellEffects = {
 	attachProcess: (cmd) =>
 		Effect.logDebug(
 			`shell: attachProcess "${cmd.processId}" dropped — no surface attached to resolve it`,
+		).pipe(Effect.as([])),
+	removeProcess: (cmd) =>
+		Effect.logDebug(
+			`shell: removeProcess "${cmd.processId}" dropped — no surface attached to remove it`,
 		).pipe(Effect.as([])),
 	openCommandLine: () =>
 		Effect.logDebug("shell: openCommandLine dropped — no surface attached").pipe(Effect.as([])),
@@ -144,6 +175,7 @@ export const shellProgram = <E = never, R = never>({
 		ports: {},
 		spells: shellSpells,
 		handlers: effects,
+		migrations: shellMigrations,
 		capabilities: [],
 		identity: {
 			package: "@kampus/tuval",

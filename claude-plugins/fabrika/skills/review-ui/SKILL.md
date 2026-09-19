@@ -72,12 +72,26 @@ the route can post; exit `11` naming the ceiling, or naming the two heads as div
 flag where there is no hand-verification, and never derive the range by hand — a condition you check
 by eye is one the next gate checks differently.
 
-Exit `7` covers four different facts, and only one of them is a clean end — **read the message
+**The route also rests on the text gate's verdict, and the verb reads that for you.** Exit `20`
+means the `review-code` verdict in force at `--sha` is a **FAIL**: the record would assert a text
+PASS that is not there, and the polarity-free format leaves no later reader able to falsify it. That
+is not yours to route around — the text lane repairs, and you route at the head it passes. The same
+`20` covers an **absent** text verdict on a `--verified-at` route, because the exception's clause
+names both halves; a prose-only route with no text verdict posts, and the answer's `textReview`
+field says which of the two it rested on. The verdict is read before the `--verified-at` range, so a
+route that is both spent at `--verified-at` and standing-FAIL at `--sha` meets `20` rather than
+`12` — the text lane is the move to make first, and the desk run is re-run after it.
+
+Exit `7` covers five different facts, and only one of them is a clean end — **read the message
 before you pick a terminal.** `raises no ui class` means nothing required your namespace and there
-is nothing to route: end ROUTED-ELSEWHERE with no write. The other three — the PR proven absent
-(404), the PR closed, the diff empty — are an **unread** PR, not a judged one, so ending
+is nothing to route: end ROUTED-ELSEWHERE with no write. The other four — the PR proven absent
+(404), the PR closed, the diff empty, and GitHub serving no changed files against a record that
+declares some — are an **unread** PR, not a judged one, so ending
 ROUTED-ELSEWHERE on any of them claims a judgment you never formed: end **CANT-SEE** and name the
-message.
+message. **Exit `11` naming GitHub's 3000-file ceiling ends the same way.** The verb never refuses
+on the `changed_files` the pull-request record declares — that count is computed against a base
+cached at the last push and prints as a line beside the enumeration — but a list the platform cut
+short can only shrink the `ui` count, so the class is unread rather than absent.
 
 ## 2 — Read the law you judge by
 
@@ -123,9 +137,23 @@ suppressed for `:auth` by the product rule, so an `:auth` shot of it comes back 
 — the failure that reads as a judged surface. Anything else after the colon is refused on
 `10`, because a state nothing renders would shoot the default pixels under a variant's name.
 
-The values that make a tier state work come from somewhere specific. `BETTER_AUTH_SECRET` is the
-**preview worker's** secret, not your local one, because it is the worker that verifies the cookie's
-signature. Each tier's session token is what an operator passed to
+The values that make a tier state work come from somewhere specific. The signing secret is the
+**preview worker's**, not your local one, because it is the worker that verifies the cookie's
+signature — and you name where it came from rather than trusting your environment:
+`--auth-secret-from <file>` reads the `BETTER_AUTH_SECRET` the preview worker deploys with out of an
+export of the **ci-credentials** stack's alchemy state, its one readable copy. That value is
+repo-wide, not per-stage: `infra/ci-credentials/github.ts` mints one of it and pushes it as a
+write-only Actions secret handed to the deploy of every stage of an app whose worker binds it, so
+there is no preview-stage copy, the app
+stack holds only a `secret_text` binding that does not read back, and the export is taken from the
+ci-credentials state behind `$ALCHEMY_PASSWORD`. Without the flag the verb falls back to the
+ambient `$BETTER_AUTH_SECRET` and **refuses on `11` when that is empty or carries the `insecure_`
+placeholder** an example env file ships, naming the source it read. That refusal is the whole
+point: a placeholder-signed cookie is well-formed, the worker answers it as a visitor, and at the
+shot that is indistinguishable from a preview nobody seeded — which parked two gates and cost a
+founder read to split. If you hold no export of that value and your ambient value is the
+placeholder, you have not been handed the secret, and `review-ui note` is the honest route.
+Each tier's session token is what an operator passed to
 `node packages/preview-seed/src/bin.ts test-account --database-id <preview-d1>` —
 `PREVIEW_TEST_SESSION_TOKEN` for yazar, `PREVIEW_TEST_CAYLAK_SESSION_TOKEN` for çaylak — which is
 what puts that account and its session row on this PR's preview D1. **One tier's token never stands
@@ -148,7 +176,11 @@ The verb captures the PR's **preview deployment** at the inspected head — neve
 the PR's code run on your machine. Every surface returns a proven outcome — captured, crashed
 (13), unreachable (14), invalid capture (15) — and two run-level refusals precede the per-surface
 loop: stale preview (12 — wait for the preview to catch up and re-render; unrepairable this
-session is CANT-SEE) and no preview at all (16 — CANT-SEE). **A crashed
+session is CANT-SEE) and no preview at all (16 — CANT-SEE). A third refuses the operands themselves:
+a `--surface` whose app this preview never announced is `11`, because one origin is resolved for the
+run and shooting a foreign surface at it returns that app's not-found page as a clean capture. A
+product that never deploys has no preview to name, so that refusal is the CANT-SEE route for it, not
+a flag to work around. **A crashed
 surface is FAIL ground** — a screenshot of a broken page is not composition to judge. An
 **unreachable** surface forks on disclosure: named in the PR's Deviations with its reason
 (`fabrika review deviations $pr_number`) → judge what you can see and record the gap; undisclosed → a
@@ -173,7 +205,7 @@ while four of the PR's own compositions never painted.
 `:auth` reaches what is behind login, and `--flag <key>=<on|off>` forces a dark-shipped flag on:
 
 ```bash
-fabrika review-ui render --pr $pr_number --out forced --surface /welcome:auth --flag welcome-banner=on
+fabrika review-ui render --pr $pr_number --out forced --surface /welcome:auth --flag welcome-banner=on --auth-secret-from <file>
 ```
 
 Both fences hold, so neither can quietly hand you the default pixels. A forced run must name

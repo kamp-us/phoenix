@@ -1,14 +1,6 @@
 /**
- * The one exit table all fifteen `build` verbs allocate from, so a code means one thing across this
- * group whichever verb produced it.
- *
- * **The overlap with `report` is re-exported, never re-typed** — the discipline `review/codes.ts`
- * states in full: an aligning group *imports* the base's constant, so a drift is unrepresentable
- * rather than merely detectable. This group shares nine seats over `3`-`11` and adds its own `13`-`24`
- * for facts about the lane — the tree, the claim, the commit, the push, the validators, and the two
- * admission axes — that no writing verb has.
- *
- * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
+ * Exit allocations for build. See ./command.ts help for caller semantics.
+ * Shared meanings stay imported so their values cannot drift.
  */
 
 import {
@@ -23,29 +15,15 @@ import {
 	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
 } from "../exit-codes.ts";
 
-/** Stdin was read and held nothing. Distinct from a read that failed, which is `1`. */
 export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
-/** A required section is missing, malformed, empty, or out of place — authored, or derived from. */
 export const BAD_SECTIONS = SHARED_BAD_SECTIONS;
-/** The authored text carries a machine-local path, unredacted. */
 export const LEAKED_PATH = SHARED_LEAKED_PATH;
-/** The authored text is a bare `@` path reference — not redactable, so a second code. */
 export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
-/**
- * Zero scope: the target is **proven** absent (404) or closed, or there is nothing to judge.
- *
- * *Proven* is the operative word, and the split against {@link PRECONDITION_UNKNOWN} is the one the
- * whole group rests on: a 404 is a verdict about the repository, a 5xx is a verdict about nothing.
- * No verb fuses them, and no message here is worded "does not exist, or is not readable".
- */
+/** An absent target is proven; a failed read must use PRECONDITION_UNKNOWN. */
 export const ZERO_SCOPE = SHARED_NO_TARGET;
-/** A write was attempted and its outcome could not be proven — UNKNOWN, deliberately not `1`. */
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
-/** The write landed but the read-back does not match; the artifact exists and needs a human. */
 export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
-/** A value off its closed vocabulary, or a classification claim where none is permitted. */
 export const OFF_VOCABULARY = SHARED_CLASSIFIED;
-/** A required read or validator execution failed — nothing was written, no outcome is proven. */
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /**
@@ -54,9 +32,7 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
  * into it: a reader of an old transcript must not find `12` meaning something new.
  */
 
-/** Proven: the tree was dirty at a `--require-clean` open. An unauthored hunk is not ours. */
 export const DIRTY_TREE = 13;
-/** Proven: the checked-out branch does not belong to this lane's claim (the lane-identity rule). */
 export const WRONG_LANE = 14;
 /**
  * Proven: this session does not hold the claim — lost, foreign, or none exists at all.
@@ -66,13 +42,9 @@ export const WRONG_LANE = 14;
  * reader; the code deliberately does not, because the caller's action is identical.
  */
 export const CLAIM_NOT_MINE = 15;
-/** Proven: the issue is blocked — the open dependency edge is named on stderr. */
 export const BLOCKED = 16;
-/** Proven: the push completed but the remote ref did not move. */
 export const REF_NOT_MOVED = 17;
-/** Proven: this tree's validation is red. */
 export const VALIDATION_RED = 18;
-/** Refused: the requested push is unsafe (detached HEAD, or non-fast-forward without a lease). */
 export const UNSAFE_PUSH = 19;
 /**
  * Proven: not admitted on the **scope axis** — out of scope.
@@ -83,7 +55,6 @@ export const UNSAFE_PUSH = 19;
  * and `21` are *proven* refusals, while a read that failed has proven nothing.
  */
 export const OUT_OF_SCOPE = 20;
-/** Proven: not admitted on the **audience axis** — the `ready-for:` label is not agent, or absent. */
 export const AUDIENCE_NOT_AGENT = 21;
 /**
  * Proven: every changed file falls outside all three surfaces' validators — nothing is checkable.
@@ -129,7 +100,6 @@ export const COMMIT_NOT_CREATED = 24;
  * config, the memberships and the ACL were read in full, so the refusal is a fact about the account.
  */
 export const GRANT_UNAUTHORIZED = 25;
-/** Proven: the quoted authorization is empty or undated — a bare stamp is void. */
 export const AUTHORIZATION_VOID = 26;
 /**
  * Proven: the grant is recorded on the PR and the local lane did not take it.

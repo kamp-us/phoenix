@@ -18,6 +18,7 @@ import {
 	PROOF_AMBIGUOUS,
 	PROOF_CONTRADICTED,
 	PROOF_IN_FLIGHT,
+	ROUTE_UNDERIVED,
 } from "./codes.ts";
 import {coderTemplateText, coderWorkflow} from "./fixtures.test-support.ts";
 import {proveDispatched, runProve} from "./prove-verb.ts";
@@ -506,6 +507,63 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 		]);
 
 		const out = await run(laneAt("review"), seams, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
+			{namespace: "review-code", state: "pass", commentId: 1},
+		]);
+		expect(JSON.parse(out.stdout).evidence.deferred).toEqual([]);
+	});
+
+	/**
+	 * The lane the ruling below is about: `triage apply --class ui` stamped the ticket, the boot
+	 * verb seeded it, the `WIP` relayed it — and the fix turned out text-only. The stamp is a fact
+	 * about the ticket and this head raises no rendered file, so the round it routes into is one no
+	 * changed file asks for.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
+	 */
+	const TEXT_ONLY = served([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]);
+
+	const uiStampedInReview = () =>
+		fakeFs({
+			files: {
+				...UI_CONFIG,
+				[WORKFLOW]: coderTemplateText(),
+				[LOG]: logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]) + DONE_LINE,
+			},
+		});
+
+	it("refuses a ui-stamped lane's PASS over a text-only head, rather than routing a rendered round", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, TEXT_ONLY],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await run(uiStampedInReview(), seams, "PASS");
+
+		expect(out.code).toBe(ROUTE_UNDERIVED);
+		expect(out.stderr.join("\n")).toContain("no file of this head asks for that round");
+		expect(out.stderr.join("\n")).toContain("review scope 4318");
+	});
+
+	/**
+	 * The same lane, the same head, with the classes the head raises relayed over the stamp — the
+	 * whole remedy the refusal above names. The `PASS` walks to `ship` and owes `review-code` alone.
+	 */
+	it("proves that same PASS once the head's own classes are relayed, owing review-code only", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, TEXT_ONLY],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await run(uiStampedInReview(), seams, "PASS", ["code"]);
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
@@ -1612,6 +1670,44 @@ describe("lane prove — the epic tail keeps the PR arms", () => {
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-ui (absent)");
+	});
+
+	/**
+	 * The tail's own split, and the other half of the deferral above. The emitted tail now carries
+	 * `review:ui` behind a `class:ui` arm, so a tail PASS relaying that class routes into it and
+	 * hands the rendered namespace to the cell that will prove it — the same read a single-issue
+	 * lane has always taken, reached by the one lane shape that could not take it. Without the cell
+	 * the whole `review-ui` set piled onto `review`, every tail PASS refused at exit 23, and the run
+	 * could not park honestly either, because `review` is an active state no stale sweep reads.
+	 */
+	it("defers the tail's review-ui into review:ui when the PASS relays the ui class", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull({body: "Fixes #4300\n\n## Deviations\nNone.\n"})],
+			[FILES, served([{filename: "apps/site/src/routes/page.tsx"}])],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runProve({
+					root: ROOT,
+					lane: "4300",
+					event: "PASS",
+					task: "epic_4300",
+					classes: ["ui"],
+					pr: null,
+					repo: null,
+					cwd: "/repo",
+					env: {CLAUDE_PIPELINE_REPO: "o/r"},
+				}),
+				Layer.mergeAll(epicLaneAt("tail").layer, seams.layer),
+			),
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence).toMatchObject({deferred: ["review-ui"]});
 	});
 });
 

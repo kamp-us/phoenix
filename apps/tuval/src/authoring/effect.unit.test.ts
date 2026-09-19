@@ -60,6 +60,15 @@ describe("authoring.effect", () => {
 		assert.deepStrictEqual(spawn(codex), {type: "spawn", program: "codex-session", on: {}});
 	});
 
+	it("spawn may choose the working directory of a fresh agent session", () => {
+		assert.deepStrictEqual(spawn(codex, {cwd: "/worktrees/reviewer"}), {
+			type: "spawn",
+			program: "codex-session",
+			on: {},
+			cwd: "/worktrees/reviewer",
+		});
+	});
+
 	it("send addresses another process's in-port", () => {
 		assert.deepStrictEqual(send({process: reviewer, port: "prompt"}, "review #8727"), {
 			type: "send",

@@ -25,9 +25,14 @@ export class MsgNotAcceptedError extends Schema.TaggedError<MsgNotAcceptedError>
 	}
 }
 
-/** A `Store` rejected. Demlik lets the rejection propagate to the dispatcher; here it is typed. */
+/**
+ * A `Store` rejected. Demlik lets the rejection propagate to the dispatcher; here it is typed.
+ * `drop` is durability's own third operation — `Checkpoints.forget` deleting a snapshot's bytes
+ * (`../durability/stores.ts`), which Demlik's `Store` has no word for and which fails on its own
+ * terms rather than as a save that happened to write nothing.
+ */
 export class StoreError extends Schema.TaggedError<StoreError>()("tuval/host/StoreError", {
-	operation: Schema.Literals(["load", "save"]),
+	operation: Schema.Literals(["load", "save", "drop"]),
 	cause: Schema.Defect(),
 }) {}
 

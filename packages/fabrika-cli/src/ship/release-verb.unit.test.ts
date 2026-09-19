@@ -2,12 +2,14 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {PULL_FILES_CAP} from "../io/pulls.ts";
 import {
 	INCOMPLETE_SCAN,
 	LABEL_ABSENT,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
+	ZERO_SCOPE,
 } from "./codes.ts";
 import {FLAG_REGISTRY} from "./dark-ship.ts";
 import {ENV, files, issue, pull} from "./fixtures.test-support.ts";
@@ -151,9 +153,46 @@ describe("runRelease", () => {
 		expect(out.stderr.at(-1)).toContain('whether this is a dark ship is UNKNOWN, never "n/a"');
 	});
 
-	it("refuses a truncated diff on 13 rather than scanning it for flag signals", async () => {
-		const out = await run([pullRecord({changedFiles: 9}), [FILES, served(files("README.md"))]]);
+	// The declared count is GitHub's own, computed against a base cached at the last push, so a list
+	// short of it proved nothing about completeness. It used to refuse at 13 and block the flag scan.
+	it("reports a file list short of the declared count and still scans (#9322)", async () => {
+		const out = await run(
+			[pullRecord({changedFiles: 9}), [FILES, served(files("README.md"))], diff(PLAIN_DIFF)],
+			[[REGISTRY, REGISTRY_SERVED]],
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("release\tn/a\t-\n");
+		expect(out.stderr.join("\n")).toContain(
+			"GitHub's file list for #4321 holds 1 paths against the 9 its own pull-request record declares",
+		);
+	});
+
+	// The empty read is the seat that survives the retirement: an empty list carries no declaration
+	// to find, so `n/a` would be a dark ship nobody queued.
+	it("refuses an empty file list on 7 rather than answering n/a (#9322)", async () => {
+		const out = await run([pullRecord({changedFiles: 9}), [FILES, served(files())]]);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			'ship release: PR #4321 has zero changed files — whether it carries a flag signal is unanswerable, and "n/a" would be a dark ship nobody queued.',
+		);
+	});
+
+	// The ceiling is the truncation pagination cannot catch: GitHub stops serving files at 3000 and
+	// ends the Link chain there exactly as a complete read ends.
+	it("refuses a file list at the 3000-file ceiling on 13 (#9322)", async () => {
+		const out = await run([
+			pullRecord({changedFiles: PULL_FILES_CAP}),
+			[
+				FILES,
+				served(files(...Array.from({length: PULL_FILES_CAP}, (_, i) => `apps/site/src/f${i}.ts`))),
+			],
+		]);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"ship release: GitHub's file list for #4321 came back at its 3000-file ceiling, so the list is provably partial — a flag declaration could sit in the part the platform never served.",
+		);
 	});
 
 	it("refuses on 8 when the label write fails — escalate, never `queued`", async () => {

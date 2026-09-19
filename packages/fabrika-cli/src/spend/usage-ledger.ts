@@ -53,7 +53,7 @@ export const readUsageLedger = (text: string) => {
 	return {records, legacy, diagnostics: {malformed, newerVersion, duplicates, conflicts}};
 };
 
-class RecordingFailed extends Schema.TaggedErrorClass<RecordingFailed>()("spend/RecordingFailed", {
+class RecordingFailed extends Schema.TaggedError<RecordingFailed>()("spend/RecordingFailed", {
 	reason: Schema.String,
 }) {}
 

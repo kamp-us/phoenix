@@ -334,7 +334,23 @@ describe("lane emit — an off-set child class", () => {
 		expect(out.code).toBe(0);
 		const written = fs.written.get(".fabrika/lanes/4300/workflow.json") ?? "";
 		expect(written).toContain('"classes"');
-		expect(written).toContain("build:ui");
-		expect(written).not.toContain("review:ui");
+		const document = JSON.parse(written) as {
+			machine: {
+				states: Record<string, {states?: Record<string, {states: Record<string, unknown>}>}>;
+			};
+		};
+		const cellsOf = (task: string): ReadonlyArray<string> => {
+			for (const phase of Object.values(document.machine.states)) {
+				const region = phase.states?.[task];
+				if (region !== undefined) return Object.keys(region.states);
+			}
+			throw new Error(`no region for ${task}`);
+		};
+
+		expect(cellsOf("issue_4301")).toContain("build:ui");
+		// The child's rendered review is the tail's, so the rendered cell the document does carry is
+		// the tail's own — asserted here so a document-wide string match cannot pass on it.
+		expect(cellsOf("issue_4301")).not.toContain("review:ui");
+		expect(cellsOf("epic_4300")).toContain("review:ui");
 	});
 });

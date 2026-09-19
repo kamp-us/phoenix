@@ -1,15 +1,6 @@
 /**
- * The one exit table every `lane` verb allocates from, so a code means one thing across the group.
- *
- * The five shared seats are **imported from the base, never re-typed** — the discipline
- * `../exit-code-alignment.ts` checks. The lane verbs read a local lane directory and append to its
- * log, so the base's facts they can establish are exactly these: the target is not there, the
- * target was read but is not the shape, the write did not land, a marker landed and does not read
- * back, the read that would have proven any of that failed. `12`+ is this group's own band.
- *
- * **A fold that could not be made never resolves to a plausible state.** An absent lane, an
- * unreadable one, and a lane whose bytes parse but contradict the machine stay distinct codes,
- * because they take opposite remedies: open the lane, fix the tree, fix the record.
+ * Exit allocations for lane. See ./command.ts help for caller semantics.
+ * Shared meanings stay imported so their values cannot drift.
  */
 
 import {
@@ -55,10 +46,6 @@ export const LANE_ABSENT = SHARED_NO_TARGET;
  */
 export const MALFORMED_RECORD = SHARED_BAD_SECTIONS;
 
-/**
- * The append did not land, or `lane claim`'s marker write did not. The caller refuses; it never
- * reports the event as recorded, nor the claim as held.
- */
 export const APPEND_UNKNOWN = SHARED_WRITE_UNKNOWN;
 
 /**
@@ -103,10 +90,8 @@ export const LANE_EXISTS = 14;
  */
 export const TOPOLOGY_ABSENT = 15;
 
-/** The topology references an issue that is not a child of the epic, and the ref is named. */
 export const TOPOLOGY_FOREIGN = 16;
 
-/** The topology's dependency graph holds a cycle, and the ref path is named. */
 export const TOPOLOGY_CYCLE = 17;
 
 /**
@@ -650,3 +635,21 @@ export const ROOT_NOT_OWNED = 65;
  * `build clear` from an account that may.
  */
 export const GRANT_UNAUTHORIZED = 66;
+
+/**
+ * The classes standing over a task route this event into a cell the head's own diff owes nothing —
+ * refused with nothing proven and nothing appended.
+ *
+ * A class is a fact about a ticket while no head exists and a fact about the head once one does,
+ * and the two come apart the moment a `class:ui` ticket's fix turns out text-only: the standing set
+ * still takes the `PASS` out of `review` into `review:ui`, the rendered gate refuses a diff with no
+ * rendered surface, and the lane parks on a person for a round no changed file asked for.
+ *
+ * Its own seat rather than {@link PROOF_IN_FLIGHT}'s, because the remedies are opposite. `23` says
+ * a namespace this head derives holds no binding verdict yet, and is answered by producing one.
+ * This says the head derives no such namespace at all, and is answered by relaying the classes the
+ * head raises — `review scope` prints them, one `class` row each.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
+ */
+export const ROUTE_UNDERIVED = 67;

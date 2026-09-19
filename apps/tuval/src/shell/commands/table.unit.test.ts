@@ -8,7 +8,14 @@ import type {ShellMsg} from "../core/machine.ts";
 import {CommandName, FOCUS_LIST_KEY} from "../keys/index.ts";
 import {pickerCommands} from "../picker/intent.ts";
 import {commandName, isOptionalParameter, parameterNames} from "./row.ts";
-import {commandFor, commandNames, msgForCommandName, resolveVerb, shellCommands} from "./table.ts";
+import {
+	commandFor,
+	commandIndexFor,
+	commandNames,
+	msgForCommandName,
+	resolveVerb,
+	shellCommands,
+} from "./table.ts";
 
 /** Drive a row by name. Every row this file names exists, so an absent one is a failure, not a skip. */
 const msgOf = (name: string, params: Record<string, string> = {}): ShellMsg => {
@@ -80,11 +87,11 @@ describe("the command table", () => {
 		}
 	});
 
-	it("lets `window:open` name a session, and never requires one (epic #8070)", () => {
+	it("lets `window:open` name a cwd and optional session, and requires neither", () => {
 		const row = commandFor("window:open");
-		expect(row === undefined ? [] : parameterNames(row)).toEqual(["program", "session", "cwd"]);
+		expect(row === undefined ? [] : parameterNames(row)).toEqual(["program", "cwd", "session"]);
 		expect(
-			row === undefined ? [] : ["session", "cwd"].map((name) => isOptionalParameter(row, name)),
+			row === undefined ? [] : ["cwd", "session"].map((name) => isOptionalParameter(row, name)),
 		).toEqual([true, true]);
 	});
 });
@@ -130,6 +137,19 @@ describe("each row's Msg", () => {
 		expect(msgOf("window:attach", {process: "p-1"})).toEqual({
 			type: "window.attach",
 			processId: "p-1",
+		});
+	});
+
+	it("opens a fresh session in the cwd named by the command line", () => {
+		expect(msgOf("window:open", {program: "pi", cwd: "/work/phoenix"})).toEqual({
+			type: "window.open",
+			programId: "pi",
+			session: {cwd: "/work/phoenix", resume: null},
+		});
+		expect(msgOf("window:open", {program: "pi", cwd: "/work/phoenix", session: "s-1"})).toEqual({
+			type: "window.open",
+			programId: "pi",
+			session: {cwd: "/work/phoenix", resume: "s-1"},
 		});
 	});
 
@@ -185,5 +205,43 @@ describe("the Msg a bound key runs", () => {
 	it("is nothing for a row needing an argument a key sequence cannot carry", () => {
 		expect(msgForCommandName(commandName(["window", "open"]))).toBeNull();
 		expect(msgForCommandName(commandName(["workspace", "activate"]))).toBeNull();
+	});
+});
+
+/**
+ * The `process:remove <id>` row (#9447). It is the desk's removal verb rather than a
+ * `commands/core/` spell, and it is gated, so the two claims are that the row does exactly what the
+ * issue names and that a desk without the flag does not hold it at all.
+ */
+describe("the process:remove row", () => {
+	const on = {processBoard: false, processRemove: true};
+	const off = {processBoard: false, processRemove: false};
+
+	it("produces the removal Msg for the process it was given", () => {
+		const row = commandIndexFor(on).commandFor("process:remove");
+		expect(row).toBeDefined();
+		expect(row?.toMsg({process: "p-1"})).toEqual({type: "process.remove", processId: "p-1"});
+	});
+
+	it("takes the process id as its one required parameter", () => {
+		const row = commandIndexFor(on).commandFor("process:remove");
+		if (row === undefined) throw new Error("test setup: no process:remove row");
+		expect(parameterNames(row)).toEqual(["process"]);
+		expect(isOptionalParameter(row, "process")).toBe(false);
+		// A bound key sequence has nowhere to carry the id, so no key can run this row on its own.
+		expect(commandIndexFor(on).msgForCommandName(CommandName.make("process:remove"))).toBeNull();
+	});
+
+	it("does not exist with the flag off, so nothing can type it, bind it or publish it", () => {
+		expect(commandIndexFor(off).commandFor("process:remove")).toBeUndefined();
+		expect(commandIndexFor(off).commandNames.map(String)).toEqual(commandNames.map(String));
+		expect(commandFor("process:remove")).toBeUndefined();
+	});
+
+	it("leaves window:close alone, which still closes a window and stops nothing", () => {
+		expect(msgOf("window:close")).toEqual({type: "window.close"});
+		expect(commandIndexFor(on).commandFor("window:close")?.describe).toBe(
+			"Close the focused window. The process it was showing keeps running.",
+		);
 	});
 });

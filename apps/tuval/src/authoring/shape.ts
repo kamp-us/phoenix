@@ -17,6 +17,7 @@
  */
 
 import {Result, Schema} from "effect";
+import {payloadFits} from "../registry/payload-fit.ts";
 import type {PortSchema} from "../registry/program.ts";
 import type {AnyPortDecl, PortCodec} from "./port.ts";
 
@@ -130,43 +131,11 @@ export const shapeOf = (source: ShapeSource): AnyProgramShape => {
 };
 
 /**
- * The generator's default reference policy is `({identifier}) => identifier`, which emits any schema
- * carrying an `identifier` annotation as a `$ref` into `$defs` keyed by that name — so the name its
- * package chose would land in the compared string and two identical payloads named differently would
- * not fit. Naming a schema is the ordinary Effect idiom, so that is the common case, not the rare
- * one. Returning `undefined` inlines every named schema instead. A recursive payload still needs a
- * `$def` to point at and gets a synthetic name derived from its own structure, not from the author's
- * annotation, so two recursive payloads of the same shape still compare equal.
+ * Payload fit is `../registry/payload-fit.ts`'s, re-exported here because a shape check is where it
+ * was first spelled and `shape.unit.test.ts` still reads it from this module. It moved because a
+ * graph route now asks the same question (ADR 0395, #8923) and the two must not answer differently.
  */
-const inlineNames = {referencePolicy: () => undefined} as const;
-
-/**
- * A schema's payload as a comparable string: its JSON Schema, with every object's keys sorted, so
- * two structurally identical payloads compare equal however their authors ordered the fields.
- */
-const canonical = (schema: PortCodec<any>): string =>
-	stable(Schema.toJsonSchemaDocument(schema, inlineNames));
-
-const stable = (value: unknown): string => {
-	if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
-	if (typeof value === "object" && value !== null) {
-		const keys = Object.keys(value as Record<string, unknown>).sort();
-		return `{${keys.map((key) => `${JSON.stringify(key)}:${stable(unordered(key, (value as Record<string, unknown>)[key]))}`).join(",")}}`;
-	}
-	return JSON.stringify(value) ?? "null";
-};
-
-/**
- * `required` is a set, so the order the author declared their struct's fields in is not part of the
- * payload. Every other array in a JSON Schema is positional (`prefixItems`, `anyOf` branches), and
- * sorting one of those would call two different payloads the same.
- */
-const unordered = (key: string, value: unknown): unknown =>
-	key === "required" && Array.isArray(value) ? [...(value as ReadonlyArray<string>)].sort() : value;
-
-/** Do two ports carry the same payload? Structural, over the schemas — no version is read. */
-export const payloadFits = (declared: PortCodec<any>, offered: PortCodec<any>): boolean =>
-	canonical(declared) === canonical(offered);
+export {payloadFits};
 
 interface FitContext {
 	readonly arg: string;

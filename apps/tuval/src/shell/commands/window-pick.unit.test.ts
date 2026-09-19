@@ -92,6 +92,10 @@ const press = (state: ShellState, entries: PickerEntries, windowId: WindowId, ke
 						? {type: "window.open", windowId, programId: answer.intent.programId}
 						: {type: "window.attach", windowId, processId: answer.intent.processId},
 				);
+			case "Removing":
+				return yield* Effect.die(
+					new Error(`test setup: "${key}" asked to remove ${answer.processId}`),
+				);
 			case "Ignored":
 				return yield* Effect.die(new Error(`test setup: the picker ignored "${key}"`));
 		}

@@ -19,6 +19,10 @@ function renderZone(initial = "/sozluk") {
 			<Routes>
 				<Route element={<SozlukSubnavLayout />}>
 					<Route path="/sozluk" element={<div data-testid="home-leaf">home</div>} />
+					<Route
+						path="/sozluk/harf/:letter"
+						element={<div data-testid="letter-leaf">letter</div>}
+					/>
 					<Route path="/sozluk/:slug" element={<TermLeaf />} />
 				</Route>
 			</Routes>
@@ -52,11 +56,16 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 		expect(container.querySelector(".kp-subnav__filters .kp-sozluk-alphabet")).toBeTruthy();
 	});
 
-	it("preserves the ?harf= URL-driven active letter on the alphabet", () => {
-		const {container} = renderZone("/sozluk?harf=a");
+	it("marks the letter route's own letter active on the alphabet", () => {
+		const {container} = renderZone("/sozluk/harf/a");
 		const active = container.querySelector(".kp-sozluk-alphabet__letter.is-active");
 		expect(active?.textContent).toBe("a");
 		expect(active?.getAttribute("aria-current")).toBe("page");
+	});
+
+	it("marks no letter active off a letter route — a term page is not a letter", () => {
+		const {container} = renderZone("/sozluk/mevcut-terim");
+		expect(container.querySelector(".kp-sozluk-alphabet__letter.is-active")).toBeNull();
 	});
 
 	it("exposes the create CTA as the primaryAction slot — never a filter/input treatment", () => {

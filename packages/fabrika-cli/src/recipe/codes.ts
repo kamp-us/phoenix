@@ -1,16 +1,6 @@
 /**
- * The one exit table every `recipe` verb allocates from, so a code means one thing across the group.
- *
- * The five shared seats are **imported from the base, never re-typed** — the discipline
- * `../exit-code-alignment.ts` checks. A recipe verb reads a lane or a pull request, applies a fixed
- * fix, and reads the fix back, so the base's facts it can establish are exactly these: the target is
- * not there, the target was read but is not the shape, the write did not land, the write landed and
- * the read-back contradicts it, the read that would have proven any of that failed. `12`+ is this
- * group's own band.
- *
- * **The known/novel split is an exit code, never prose.** A recipe either matched and its
- * fixed fix applied, or it did not match and nothing was touched — and those two are different
- * numbers, because the caller routes autonomously on the first and to a human on the second.
+ * Exit allocations for recipe. See ./command.ts help for caller semantics.
+ * Shared meanings stay imported so their values cannot drift.
  */
 
 import {
@@ -21,32 +11,15 @@ import {
 	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
 } from "../exit-codes.ts";
 
-/**
- * The target is proven absent: no lane under the lanes root, or a pull request that does not exist
- * or is closed. The base's target seat — the thing the verb was pointed at is not there to act on.
- */
 export const TARGET_ABSENT = SHARED_NO_TARGET;
 
-/**
- * A record was read in full and is not the shape: a `workflow.json` the lane compiler refuses, an
- * `events.jsonl` line that does not parse, or a log the machine cannot replay. The base's section
- * seat widened to a whole on-disk record, on the `lane` precedent.
- */
+/** The shared section code also covers complete on-disk records, as it does in lane. */
 export const MALFORMED_RECORD = SHARED_BAD_SECTIONS;
 
-/** The fix's own write did not land. The verb never reports the recipe as applied. */
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
 
-/**
- * The write landed and the read-back contradicts it — the lane did not leave the park, or the
- * rerun's own run record shows no new attempt. The artifact moved and needs a human.
- */
 export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 
-/**
- * A precondition read failed, so nothing was written and no outcome is proven. UNKNOWN, never a
- * permissive reading: the read is what makes every proven code above *proven*.
- */
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /**
@@ -66,16 +39,10 @@ export const PARK_NOVEL = 12;
  */
 export const PARK_HOLDS = 13;
 
-/** The task's leaf state is not a park — there is nothing to clear, and nothing was written. */
 export const NOT_PARKED = 14;
 
-/**
- * The task the recipe was addressed to is not in this lane's machine, `--task` was omitted on a lane
- * with more than one task, or neither the task nor the lane names the issue the park hangs on.
- */
 export const TASK_UNRESOLVED = 15;
 
-/** The pull request carries no `governance` verdict at all. The remedy is forming one. */
 export const VERDICT_ABSENT = 16;
 
 /**
@@ -85,10 +52,8 @@ export const VERDICT_ABSENT = 16;
  */
 export const VERDICT_STALE = 17;
 
-/** The `governance` verdict at the current head is FAIL. Nothing is rerun. */
 export const VERDICT_FAIL = 18;
 
-/** No workflow run at the pull request's head concluded in failure — there is nothing to rerun. */
 export const NOTHING_TO_RERUN = 19;
 
 /**

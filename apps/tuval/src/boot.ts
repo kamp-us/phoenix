@@ -22,6 +22,7 @@ import {type LaunchedProcess, launch} from "./launch/launch.ts";
 import {compile} from "./ports/compile.ts";
 import type {Graph} from "./ports/graph.ts";
 import {open} from "./ports/wiring.ts";
+import {PlannedProcesses} from "./process/PlannedProcesses.ts";
 import {Processes} from "./process/Processes.ts";
 import {ProcessTable} from "./process/ProcessTable.ts";
 import type {ProcessHandle} from "./process/process.ts";
@@ -58,6 +59,8 @@ export type Kernel =
 	| AiAgentTranscripts
 	| Checkpoints
 	| Processes
+	// The graph-declared process ids `launch` records and `Processes.remove` refuses on (#9446).
+	| PlannedProcesses
 	| ProcessTable
 	| ProcessTablePort
 	| SpawnedProcesses
@@ -105,8 +108,9 @@ export interface Started {
  * The app from rows and a graph, built into the caller's Scope. The graph is compiled over the
  * registry before any process exists, so a bad route refuses here with nothing spawned and
  * nothing written; the wiring opens next and the kernel after it, so a stop takes the processes
- * down — pumps included — before their queues close. A snapshot under another definition
- * refuses the boot at its spawn, with nothing fresh-booted (#7467, #7514).
+ * down — pumps included — before their queues close. A snapshot under a definition the program's
+ * own `migrations` do not reach refuses the boot at its spawn, with nothing fresh-booted
+ * (#7467, #7514).
  */
 export const start = Effect.fn("Tuval.start")(function* ({
 	programs,
@@ -156,6 +160,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	// planned program and an ad-hoc one alike.
 	const spawnerNeeds = Context.pick(
 		Checkpoints,
+		PlannedProcesses,
 		Processes,
 		ProcessTable,
 		Registry,

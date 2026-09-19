@@ -63,7 +63,7 @@ export interface UseImperativeViewOptions {
  * demanding a context there would break every fate-free first-paint render. The hook
  * call itself stays unconditional — the catch demotes the throw, not the read.
  */
-function useFateClientWhenEnabled(enabled: boolean): ImperativeViewClient | null {
+export function useFateClientWhenEnabled(enabled: boolean): ImperativeViewClient | null {
 	try {
 		return useFateClient();
 	} catch (err) {

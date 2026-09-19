@@ -289,5 +289,11 @@ export const retirements = (scan: MarkerScan): ReadonlyMap<QuestionId, number> =
 	return retired;
 };
 
-/** An ISO-8601 date, which is what makes a quoted authorization datable. */
-export const ISO_DATE = /\d{4}-\d{2}-\d{2}/;
+/**
+ * An ISO-8601 date, which is what makes a quoted authorization datable.
+ *
+ * Re-exported rather than declared: the pattern belongs to `../authorization.ts`, which every verb
+ * taking an `--authorization` file now judges through, and a second declaration here is how two
+ * verbs come to disagree about what "dated" means.
+ */
+export {ISO_DATE} from "../authorization.ts";

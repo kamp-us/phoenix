@@ -1,0 +1,123 @@
+/**
+ * `@kampus/tuval-worktree` — the front door. One row factory and the types a config annotates it
+ * with; `worktreeProgram` and the constants beside it are here because the test drives the
+ * authored record directly, and because a consumer that wants a default (the port range, the
+ * branch prefix) should read the one this program uses rather than restate it.
+ *
+ * `Runner` and `nodeRunner` are public because the injection is the point: a consumer's own test,
+ * not only this package's, should be able to drive a worktree program without touching git.
+ */
+
+export {
+	type Call,
+	type FakeOptions,
+	type FakeRunner,
+	fakeRunner,
+} from "./fake-runner.ts";
+
+export {
+	DETAIL_LIMIT,
+	type EnvPlan,
+	EnvTemplateMissing,
+	EnvWriteFailed,
+	Machine,
+	MachineLive,
+	machineLayer,
+	NoFreePort,
+	type ProvisionError,
+	type ProvisionOutcome,
+	type ProvisionPlan,
+	type ProvisionStep,
+	pickPort,
+	provision,
+	RemoveRefused,
+	reconcile,
+	rewriteEnv,
+	SetupFailed,
+	safeDetail,
+	substitute,
+	TeardownCommandFailed,
+	type TeardownError,
+	type TeardownOutcome,
+	type TeardownPlan,
+	type TeardownStage,
+	teardown,
+	type Vars,
+	WorktreeFailed,
+} from "./provision.ts";
+export {
+	type RendererKind,
+	type RendererRef,
+	WORKTREE_WINDOW_REF,
+} from "./renderer-ref.ts";
+
+export {
+	COMMAND_TIMEOUT_MS,
+	type ExecResult,
+	nodeRunner,
+	type Runner,
+	type WriteResult,
+} from "./runner.ts";
+export {
+	byName,
+	closeEvent,
+	discardEvent,
+	isLive,
+	isWorktreeState,
+	LIMIT,
+	NAME_PATTERN,
+	openEvent,
+	type PendingJob,
+	REFUSAL_LIMIT,
+	REFUSAL_TEXT,
+	type Refusal,
+	type RefusalReason,
+	type RefusalView,
+	statusLine,
+	takenPorts,
+	UNATTRIBUTED_LIMIT,
+	type UnattributedResult,
+	type UnattributedView,
+	type WorktreeCommandEvent,
+	type WorktreeRecord,
+	type WorktreeRowView,
+	type WorktreeState,
+	type WorktreeStatus,
+	type WorktreeWindowView,
+	worktreeView,
+} from "./state.ts";
+export {
+	authoredWorktree,
+	CloseRequest,
+	closePlan,
+	DEFAULT_BASE,
+	DEFAULT_BRANCH_PREFIX,
+	DEFAULT_ENV,
+	DEFAULT_ID,
+	DEFAULT_PORTS,
+	DEFAULT_ROOT,
+	DiscardRequest,
+	type EnvOptions,
+	freshRecord,
+	jobShape,
+	OpenRequest,
+	openPlan,
+	type Provision,
+	preface,
+	provisionEffect,
+	type Reconcile,
+	reconcileEffect,
+	type Settled,
+	settle,
+	type Teardown,
+	teardownEffect,
+	type WorktreeArgs,
+	type WorktreeCommands,
+	type WorktreeEffect,
+	type WorktreeEvent,
+	type WorktreeFill,
+	type WorktreeOptions,
+	worktree,
+	worktreeHandlers,
+	worktreeProgram,
+} from "./worktree.ts";

@@ -122,7 +122,15 @@ describe("authoring.view title and status", () => {
 		expect(counter.core.init({count: 9}, undefined)).toEqual([{count: 9}, []]);
 	});
 
+	it("answers the lines a state derives, which is what a restore reads instead of an emit", () => {
+		expect(counter.derivedLines?.({count: 9})).toEqual({
+			[TITLE_PORT]: "count: 9",
+			[STATUS_PORT]: "counting",
+		});
+	});
+
 	it("compiles a program deriving neither field to a row that emits on neither", () => {
+		expect(silent.derivedLines).toBeUndefined();
 		expect(silent.core.init(null, undefined)).toEqual([{count: 0}, []]);
 		const [next, effects] = cellFor(silent, "ticks")({count: 1}, {type: "ticks", payload: 1});
 		expect(next).toEqual({count: 2});

@@ -72,3 +72,25 @@ export const resolveScope = Effect.fn("Tuval.Commands.resolveScope")(function* (
 		client: client.id,
 	} satisfies Scope;
 });
+
+/**
+ * The window a process was opened into, as the spawner named it (#8758).
+ *
+ * `WindowIndex` answers "which process does this window show"; this is the other direction, and it
+ * exists because a process cannot read it. The window is the only thing a caller may put on the
+ * wire — the executor re-resolves the process from it (#7617 R2.2) — so a caller with no window has
+ * no way to be anyone's child, which is what made every agent-tool `spawn` a root.
+ *
+ * It is a service a spawner adds to the context it hands a child rather than a field of the row,
+ * for the reason a config module cannot state one: a row is built inside `boot`, before any window
+ * exists. `../shell/picker/open.ts` is the one place that adds it, because opening a program into a
+ * window is the one spawn that knows which window. A process started any other way — the graph's
+ * launcher, `durability/restore.ts` — carries none and is read with `Effect.serviceOption`, so
+ * absence is the ordinary case and not a missing dependency.
+ *
+ * The id is the window as it stood at the open. Re-binding that window to another process moves
+ * what it resolves to, which is a staleness only a process-scoped `self` can close (#8757).
+ */
+export class CallingWindow extends Context.Service<CallingWindow, {readonly window: WindowId}>()(
+	"tuval/CallingWindow",
+) {}

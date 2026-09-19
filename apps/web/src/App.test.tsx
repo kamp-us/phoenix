@@ -576,7 +576,9 @@ describe("/profile paints no eager Katkıların skeleton (#9273)", () => {
 	});
 });
 
-// The search box lives in the fate-free shell, so these render without settling the session (#2199).
+// The search trigger lives in the fate-free shell, so these render without settling the session
+// (#2199). It echoes the results page's query as its label — since ADR 0186 the typing itself
+// happens in the ⌘K palette, which mounts below the session gate.
 describe("Topbar search echo (#2199)", () => {
 	beforeEach(() => {
 		fateMounts.length = 0;
@@ -586,19 +588,19 @@ describe("Topbar search echo (#2199)", () => {
 		vi.clearAllMocks();
 	});
 
-	it("echoes the URL q in the header search input on /search", () => {
+	it("echoes the URL q on the header search trigger on /search", () => {
 		renderApp("/search?q=elma");
-		expect((screen.getByLabelText("Ara") as HTMLInputElement).value).toBe("elma");
+		expect(screen.getByRole("button", {name: "Ara"}).textContent).toContain("elma");
 	});
 
 	it("reads q live — a different query renders a different echoed value (no stale/double source)", () => {
 		renderApp("/search?q=armut");
-		expect((screen.getByLabelText("Ara") as HTMLInputElement).value).toBe("armut");
+		expect(screen.getByRole("button", {name: "Ara"}).textContent).toContain("armut");
 	});
 
-	it("leaves the header input empty off the results page (unchanged behavior)", () => {
+	it("falls back to the placeholder copy off the results page (no query to echo)", () => {
 		renderApp("/pano");
-		expect((screen.getByLabelText("Ara") as HTMLInputElement).value).toBe("");
+		expect(screen.getByRole("button", {name: "Ara"}).textContent).toContain("ara…");
 	});
 });
 

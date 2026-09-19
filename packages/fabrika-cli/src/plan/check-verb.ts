@@ -1,13 +1,8 @@
 /**
  * `plan check` — the deterministic floor, and the whole pass/fail decision.
  *
- * **Both arms exit `0`** and the discriminator is a state word on stdout (`clean` / `defective`), per
- * the interface convention's pipe clause. v1's gate exited `0` on FAIL *and* printed only a `✓`/`✗`
- * glyph, so `run-gate.sh && proceed` proceeded on a failure. The guard against acting on a defective
- * plan is not at *this* read at all — it is at the **write**: `plan flip` re-derives the floor itself
- * and refuses on `20` rather than trusting any caller's reading of an exit code.
- *
- * There is deliberately no `20` here: a defective floor is this verb's answer, not its refusal.
+ * `plan flip` re-derives the floor at the write rather than trusting this report.
+ * See `plan check --help` for the answer and refusal contract.
  *
  * **The one refusal that outranks the answer is the approval precondition** (`25`). It runs
  * before the floor is derived, so an unapproved plan gets no floor reading at all — a defective *and*

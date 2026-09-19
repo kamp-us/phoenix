@@ -13,6 +13,7 @@ export const TermHeaderView = view<Term>()({
 	totalScore: true,
 	firstAt: true,
 	lastEdit: true,
+	firstLetter: true,
 });
 
 export interface SozlukTermHeaderProps {
@@ -23,14 +24,22 @@ export function SozlukTermHeader(props: SozlukTermHeaderProps) {
 	const term = useView(TermHeaderView, props.term);
 	const t = useT();
 	const tp = useTPlural();
-	const firstLetter = term.title.charAt(0).toLowerCase();
+	// The stored column, not a fourth private fold: ASCII lowercasing read `İŞÇİ` as `i` and
+	// `IŞIK` as `i` too, both wrong under Turkish casing (#9331). A headword starting outside
+	// the alphabet stores `""` and belongs to no letter page, so it gets no letter crumb.
+	const firstLetter = term.firstLetter;
 	const firstAt = toIsoOrNull(term.firstAt);
 	const lastEdit = toIsoOrNull(term.lastEdit);
 	return (
 		<header className="kp-sozluk-term__head">
 			<p className="kp-sozluk-term__crumbs">
 				<Link to="/sozluk">{t("sozluk.term.crumbRoot")}</Link> /{" "}
-				<Link to="/sozluk">{firstLetter}</Link> / {term.title}
+				{firstLetter ? (
+					<>
+						<Link to="/sozluk">{firstLetter}</Link> /{" "}
+					</>
+				) : null}
+				{term.title}
 			</p>
 			<h1 className="kp-sozluk-term__title">{term.title}</h1>
 			<div className="kp-sozluk-term__meta">

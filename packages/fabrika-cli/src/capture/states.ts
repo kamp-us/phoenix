@@ -74,3 +74,16 @@ export const stateOf = (surface: string): string | null => {
 		return null;
 	}
 };
+
+/**
+ * The route a surface token names, through the one parser for the same reason {@link stateOf} is.
+ * A token the grammar rejects is answered whole, so the refusal a caller reads stays
+ * `buildCapturePlan`'s rather than a thrown defect from a route read taken ahead of it.
+ */
+export const routeOf = (surface: string): string => {
+	try {
+		return parseSurfaceSpec(surface).route;
+	} catch {
+		return surface;
+	}
+};

@@ -1,11 +1,7 @@
 /**
  * The one exit table every `hook` verb allocates from.
  *
- * `0`, `1`, `126` and `127` are reserved by the interface convention (`../verb.ts`). The three seats
- * below keep apart the three ways a harness envelope fails to arrive, which is the whole reason a
- * hook verb needs its own table: "stdin held nothing", "stdin held bytes that are not an envelope"
- * and "fd 0 could not be read" are three different claims, and collapsing any two of them lets a
- * hook report a proven negative over evidence it never saw — a verdict nothing was scanned for.
+ * `hook codes` exposes {@link HOOK_EXIT_TABLE}; each verb's `--help` states what triggers its codes.
  *
  * **`2` is allocated by nothing, here or in any other group, and this is the group that makes it a
  * hard rule.** On `PreToolUse` exit `2` is the harness's one blocking code (`./harness-exit.ts`), so
@@ -104,6 +100,42 @@ export const DEPS_NOT_PROVISIONED = 18;
  */
 export const GROUND_UNKNOWN = 19;
 
+/**
+ * The plugin source directory was read and its primary worktree is in no state to be advanced — it
+ * is off its default branch, on a detached HEAD, diverged, or carrying uncommitted work that the
+ * incoming commits also change.
+ *
+ * Uncommitted work **outside** the incoming commits' paths is not one of those states and does not
+ * reach this code: `git merge --ff-only` takes that move and leaves the work alone, so refusing it
+ * left a checkout carrying one standing local-only edit behind forever.
+ *
+ * A **proven** outcome, and deliberately not {@link GROUND_UNKNOWN}: the ground was read fine and
+ * says the move would not be safe. Nothing was moved, and the reason is on stderr, which is the
+ * whole point of the seat — a plugin source that stops advancing is exactly the silent state
+ * `hook plugin-sync` exists to make loud, so it may never be reported as a clean pass.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9459#issuecomment-5745160952
+ */
+export const SYNC_REFUSED = 20;
+
+/**
+ * The `git fetch` against the plugin source's remote failed, so nothing current was read.
+ *
+ * Apart from {@link SYNC_REFUSED} because no refusal was proven: an unfetchable remote leaves the
+ * comparison **UNKNOWN**, and an offline session must not read as "the source is already current".
+ */
+export const REMOTE_UNREADABLE = 21;
+
+/**
+ * The fast-forward was planned from facts that permitted it and the merge itself failed.
+ *
+ * Its own seat because it is the one arm where the plan and the tree disagree: every precondition
+ * read clean and git still refused, which means the worktree changed under the read — a sibling
+ * session, a human at a terminal. The remedy is to run it again, not to force anything, so it must
+ * not collapse into {@link SYNC_REFUSED}, whose remedy is a human deciding where that checkout sits.
+ */
+export const FAST_FORWARD_FAILED = 22;
+
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
 
@@ -131,6 +163,15 @@ export const HOOK_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{
 		code: GROUND_UNKNOWN,
 		meaning: "the working tree the envelope's cwd belongs to could not be established",
+	},
+	{
+		code: SYNC_REFUSED,
+		meaning: "the plugin source's primary worktree is in no state to be advanced",
+	},
+	{code: REMOTE_UNREADABLE, meaning: "the plugin source's remote could not be fetched — UNKNOWN"},
+	{
+		code: FAST_FORWARD_FAILED,
+		meaning: "the planned fast-forward failed — the tree changed under it",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

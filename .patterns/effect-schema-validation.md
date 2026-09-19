@@ -11,7 +11,7 @@ The real boundaries in phoenix:
 - **External API responses** — when phoenix fetches from an outside service. The response is untyped.
 - **Persisted JSON columns** — if phoenix ever stores arbitrary JSON in D1.
 
-For fate: validation of *semantic* constraints (string length, format patterns, business invariants) lives **inside the service method**, not at the resolver (ADR 0013). The service owns its own invariants — see [feature-services.md](./feature-services.md). Service methods do this validation in plain TS (if/else with tagged errors), or with `Schema.decodeUnknown` if the validation is genuinely complex.
+For fate: validation of *semantic* constraints (string length, format patterns, business invariants) lives **inside the service method**, not at the resolver (ADR 0013). The service owns its own invariants — see [feature-services.md](./feature-services.md). Service methods do this validation in plain TS (if/else with tagged errors), or with `Schema.decodeUnknownEffect` if the validation is genuinely complex.
 
 ## `Schema.Class` — the canonical shape
 
@@ -21,16 +21,16 @@ For fate: validation of *semantic* constraints (string length, format patterns, 
 import {Schema} from "effect";
 
 export class SeedTermBody extends Schema.Class<SeedTermBody>("SeedTermBody")({
-  slug: Schema.String.pipe(
-    Schema.minLength(1),
-    Schema.maxLength(200),
-    Schema.pattern(/^[a-z0-9-]+$/),
+  slug: Schema.String.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(200),
+    Schema.isPattern(/^[a-z0-9-]+$/),
   ),
-  title: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(200)),
+  title: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
   definitions: Schema.Array(Schema.Struct({
     authorId: Schema.String,
     authorName: Schema.String,
-    body: Schema.String.pipe(Schema.maxLength(10_000)),
+    body: Schema.String.check(Schema.isMaxLength(10_000)),
   })),
 }) {}
 ```
@@ -38,8 +38,8 @@ export class SeedTermBody extends Schema.Class<SeedTermBody>("SeedTermBody")({
 `SeedTermBody` is:
 
 - A **TypeScript type** (used like any class).
-- A **runtime parser**: `Schema.decodeUnknown(SeedTermBody)(rawJson)` → `Effect<SeedTermBody, ParseError>`.
-- An **encoder**: `Schema.encode(SeedTermBody)(instance)` → the JSON wire form.
+- A **runtime parser**: `Schema.decodeUnknownEffect(SeedTermBody)(rawJson)` → `Effect<SeedTermBody, SchemaError>`.
+- An **encoder**: `Schema.encodeEffect(SeedTermBody)(instance)` → the JSON wire form.
 
 ## Parsing at a typed-JSON route boundary
 
@@ -65,7 +65,7 @@ HttpApiBuilder.group(SozlukApi, "sozluk", (h) =>
 );
 ```
 
-`HttpApiBuilder` is the boundary. Past it, the service receives a typed `SeedTermBody` and never re-validates structure. The service can still enforce domain rules (e.g., uniqueness, ownership) — those are different from structural validation. Schema's `ParseError` surfaces as a typed `BadRequest`-shaped failure at the HTTP edge.
+`HttpApiBuilder` is the boundary. Past it, the service receives a typed `SeedTermBody` and never re-validates structure. The service can still enforce domain rules (e.g., uniqueness, ownership) — those are different from structural validation. Schema's `SchemaError` surfaces as a typed `BadRequest`-shaped failure at the HTTP edge.
 
 ## Service-method validation, not Schema
 
@@ -87,7 +87,7 @@ addDefinition: Effect.fn("Sozluk.addDefinition")(function*(input: AddDefinitionI
 
 The error tags appear in the method's `E` channel, the resolver maps them to wire codes. Same pattern, no Schema needed.
 
-Reach for `Schema.decodeUnknown` *inside* a service method only when the validation is genuinely complex enough to be tedious as if/else — nested shape validation, conditional fields, branded primitives. Even then, the schema lives inside the service's closure as an implementation detail, not at the method signature.
+Reach for `Schema.decodeUnknownEffect` *inside* a service method only when the validation is genuinely complex enough to be tedious as if/else — nested shape validation, conditional fields, branded primitives. Even then, the schema lives inside the service's closure as an implementation detail, not at the method signature.
 
 ## A repo-authored config file: whole-file refusal with pinned wording
 
@@ -155,42 +155,42 @@ that is the reducer's invariant and its readers already answer `undefined` rathe
 
 ## Schema for tagged errors that cross boundaries
 
-[effect-errors.md](./effect-errors.md) covers this briefly. If an error needs to round-trip through JSON (RPC, persisted error log, message queue), use `Schema.TaggedErrorClass`:
+[effect-errors.md](./effect-errors.md) covers this briefly. If an error needs to round-trip through JSON (RPC, persisted error log, message queue), use `Schema.TaggedError`:
 
 ```ts
-export class PersistedAuditError extends Schema.TaggedErrorClass<PersistedAuditError>()("PersistedAuditError", {
+export class PersistedAuditError extends Schema.TaggedError<PersistedAuditError>()("PersistedAuditError", {
   userId: Schema.String,
   action: Schema.String,
-  timestamp: Schema.DateTimeUtc,
+  timestamp: Schema.Number,
 }) {}
 ```
 
-`Schema.encode(PersistedAuditError)(err)` produces a structurally-validated JSON form. `Schema.decode(PersistedAuditError)(json)` reconstructs the typed error.
+`Schema.encodeEffect(PersistedAuditError)(err)` produces a structurally-validated JSON form. `Schema.decodeUnknownEffect(PersistedAuditError)(json)` reconstructs the typed error.
 
-Phoenix doesn't have this need — phoenix's domain errors *are* `Schema.TaggedErrorClass`es, but only for the `FateWireCode` annotation they carry: at the fate boundary `encodeWireError` (`packages/fate-effect/src/WireError.ts`) reads the annotation off the failed instance's class and emits the wire `FateRequestError`; nothing ever decodes an error back from JSON. Any typed-JSON group carries its failures on the `HttpApiEndpoint`'s declared error channel. See [fate-effect-wire-errors.md](./fate-effect-wire-errors.md); reserve the full encode/decode round-trip for the moment you need wire-form errors over a non-fate transport.
+Phoenix doesn't have this need — phoenix's domain errors *are* `Schema.TaggedError`es, but only for the `FateWireCode` annotation they carry: at the fate boundary `encodeWireError` (`packages/fate-effect/src/WireError.ts`) reads the annotation off the failed instance's class and emits the wire `FateRequestError`; nothing ever decodes an error back from JSON. Any typed-JSON group carries its failures on the `HttpApiEndpoint`'s declared error channel. See [fate-effect-wire-errors.md](./fate-effect-wire-errors.md); reserve the full encode/decode round-trip for the moment you need wire-form errors over a non-fate transport.
 
 ## Schema features worth knowing about
 
-Documented in `Effect-TS/effect`'s `Schema.ts` (`packages/effect/src/Schema.ts`). Not exhaustive, just what phoenix would actually use:
+Checked against [Effect rc.112 Schema source](https://unpkg.com/effect@4.0.0-rc.112/src/Schema.ts). Not exhaustive, just what phoenix would actually use:
 
 - **`Schema.String`, `Schema.Number`, `Schema.Boolean`, `Schema.Date`, `Schema.BigInt`** — primitives.
-- **`Schema.Array(itemSchema)`, `Schema.Record({key, value})`, `Schema.Tuple(...)`** — collections.
-- **`Schema.Union([SchemaA, SchemaB])`, `Schema.Literal("a", "b", "c")`** — discriminated unions and enum-like literals.
-- **`Schema.optional(schema)`, `Schema.optionalWith(schema, {default})`** — optional fields.
-- **`.pipe(Schema.minLength(n))`, `Schema.maxLength`, `Schema.pattern`, `Schema.startsWith`** — string refinements.
+- **`Schema.Array(itemSchema)`, `Schema.Record(key, value)`, `Schema.Tuple([SchemaA, SchemaB])`** — collections.
+- **`Schema.Union([SchemaA, SchemaB])`, `Schema.Literals(["a", "b", "c"])`** — discriminated unions and enum-like literals.
+- **`Schema.optionalKey(schema)`** — optional fields; `schema.pipe(Schema.withDecodingDefaultKey(Effect.succeed(value)))` supplies a missing-key default.
+- **`.check(Schema.isMinLength(n))`, `Schema.isMaxLength`, `Schema.isPattern`, `Schema.isStartsWith`** — string checks.
 - **`Schema.brand("UserId")`** — nominal types (`Schema.String.pipe(Schema.brand("UserId"))` makes `UserId` a distinct type from `string`).
-- **`Schema.transform(from, to, {decode, encode})`** — bidirectional codecs for changing shape between wire and domain.
+- **`from.pipe(Schema.decodeTo(to, {decode, encode}))`** — bidirectional codecs; each transformation uses a `SchemaGetter`, as shown in the pinned [Schema source](https://unpkg.com/effect@4.0.0-rc.112/src/Schema.ts).
 
 ## Anti-patterns
 
 - **Schema at the fate resolver layer.** fate's mutation `input` schema is the boundary; the wire payload is already coerced by the time the resolver body runs. Schema here is redundant and leaks validation infrastructure into product code. Domain validation (length, format, etc.) belongs inside the service method as tagged-error checks.
 - **Schema everywhere.** Validating internal data is ceremony. Schema costs runtime parse time at every call.
-- **Defining a Schema for a type that already exists as a TypeScript interface.** Pick one — either Schema (and use `Schema.Schema.Type<typeof X>` to get the type) or interface. Maintaining both is a smell.
+- **Defining a Schema for a type that already exists as a TypeScript interface.** Pick one — either Schema (and use `typeof X.Type` to get the type) or interface. Maintaining both is a smell.
 - **Schema for drizzle rows.** Drizzle already gives you types from the schema. Re-parsing is redundant.
 
 ## See also
 
 - [feature-services.md](./feature-services.md) — service methods own their input validation
-- [effect-errors.md](./effect-errors.md) — tagged errors for domain validation failures, `Schema.TaggedErrorClass` for wire-form errors
-- [effect-error-operators.md](./effect-error-operators.md) — handling `ParseError` when it does come up (typed-JSON boundaries)
+- [effect-errors.md](./effect-errors.md) — tagged errors for domain validation failures, `Schema.TaggedError` for wire-form errors
+- [effect-error-operators.md](./effect-error-operators.md) — handling `SchemaError` when it does come up (typed-JSON boundaries)
 - `Effect-TS/effect` `Schema.ts` — full API reference at `packages/effect/src/Schema.ts`

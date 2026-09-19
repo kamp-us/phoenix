@@ -5,8 +5,11 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {normalizeSearchText} from "@kampus/web/features/search/normalize";
+import {storedFirstLetter} from "@kampus/web/features/sozluk/turkish-alphabet";
 import {
 	buildFixtures,
+	LETTER_TERM_LETTER,
+	LETTER_TERMS,
 	SEARCH_TERM_SLUG,
 	SEARCH_TERM_TITLE,
 	SEED_LINK_POST_HOST,
@@ -31,10 +34,23 @@ describe("buildFixtures — sözlük content (07-sozluk-term, 00-smoke)", () => 
 		}
 	});
 
-	it("first_letter is the lower-cased first character of the title", () => {
+	// The seed used to run its own `toLocaleLowerCase("tr")` while the app ran a slug fold, so
+	// a seeded row and the same term created through the app carried different letters (#9331).
+	// Asserting against the shared function is what keeps the two producers one producer.
+	it("first_letter comes from the shared fold, not the seed's own lower-casing", () => {
 		for (const t of buildFixtures().terms) {
-			assert.strictEqual(t.firstLetter, t.title[0]?.toLocaleLowerCase("tr"));
+			assert.strictEqual(t.firstLetter, storedFirstLetter(t.title));
 		}
+	});
+
+	// The app side pins the other half of this equality in
+	// `apps/web/worker/features/sozluk/recompute-term-summary.unit.test.ts`: `recomputeTermSummary`
+	// over the same Turkish headword yields `ı` through the same function. A seeded `ışık` and
+	// an app-created `ışık` therefore file under one letter.
+	it("the seeded Turkish headword carries the letter the app computes for it", () => {
+		const search = buildFixtures().terms.find((t) => t.title === SEARCH_TERM_TITLE);
+		assert.strictEqual(search?.firstLetter, "ı");
+		assert.strictEqual(search?.firstLetter, storedFirstLetter(SEARCH_TERM_TITLE));
 	});
 
 	it("seeds at least one non-deleted definition for the seeded term", () => {
@@ -85,6 +101,34 @@ describe("buildFixtures — searchable terms (24-search, ADR 0080)", () => {
 		// prefix of the indexed norm.
 		const norm = normalizeSearchText(SEED_TERM_TITLE);
 		assert.isTrue(norm.startsWith("mer"));
+	});
+});
+
+describe("buildFixtures — the letter index (33-sozluk-letter, #9267)", () => {
+	it("seeds more ç headwords than one letter page holds, each with a live definition", () => {
+		const {terms, definitions} = buildFixtures();
+		const seeded = terms.filter((t) => t.firstLetter === LETTER_TERM_LETTER);
+		assert.strictEqual(seeded.length, LETTER_TERMS.length);
+		// The letter page holds 10 (`SOZLUK_LETTER_PAGE_SIZE`, which lives in the SPA and is not
+		// importable here), so 12 leaves a second page for the spec's "load more" to fetch.
+		assert.isAbove(seeded.length, 10, "the walk has a second page to fetch");
+		for (const term of seeded) {
+			const own = definitions.filter((d) => d.termSlug === term.slug);
+			assert.strictEqual(own.length, 1, `${term.slug} has a definition, so the list can see it`);
+			assert.isTrue(own[0]?.removedAt == null);
+		}
+	});
+
+	it("keeps every ç slug distinct and ASCII-folded — the slug is the route value", () => {
+		const slugs = LETTER_TERMS.map(([, slug]) => slug);
+		assert.strictEqual(new Set(slugs).size, slugs.length);
+		for (const slug of slugs) assert.match(slug, /^[a-z0-9-]+$/);
+	});
+
+	it("carries the ı-before-i pair the collation is proven on", () => {
+		const titles = LETTER_TERMS.map(([title]) => title);
+		assert.include(titles, "çıktı");
+		assert.include(titles, "çizelge");
 	});
 });
 

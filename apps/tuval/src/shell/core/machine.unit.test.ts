@@ -57,6 +57,7 @@ describe("shell core: the reducer's cells", () => {
 			"layout.resize",
 			"layout.zoom",
 			"prefix.repeatLapsed",
+			"process.remove",
 			"window.attach",
 			"window.bind",
 			"window.close",
@@ -125,7 +126,7 @@ describe("shell core: the desk inspector", () => {
  */
 describe("shell core: the process board", () => {
 	const gated = prefixTableFor(defaultPrefixTable, {processBoard: true});
-	const gatedCells = cellsFor(gated, commandIndexFor({processBoard: true}));
+	const gatedCells = cellsFor(gated, commandIndexFor({processBoard: true, processRemove: false}));
 	const run = (state: ShellState, ...msgs: readonly ShellMsg[]): ShellState =>
 		msgs.reduce(
 			(acc, msg) =>
@@ -325,6 +326,33 @@ describe("shell core: windows", () => {
 		expect(cmds).toEqual([{type: "attachProcess", windowId: opened, processId: "p-9"}]);
 		// The parent keeps its own window and its own view slot.
 		expect(after.views[parent]).toEqual({scroll: 7});
+	});
+
+	// #9447. Two routes reach this cell — the `d` key and `process:remove <id>` — and both arrive as
+	// this one Msg, so the cell is the whole of what the desk does about a removal.
+	it("process.remove asks for the removal over the focused window and its slot", () => {
+		const state = fold(initialState(), {type: "window.setView", view: {cursor: 2, refusal: null}});
+		const target = active(state).focused;
+
+		const [after, cmds] = apply(state, {type: "process.remove", processId: "p-9"});
+
+		// Nothing about the desk changes: the row leaves the picker when the process leaves the table.
+		expect(after).toBe(state);
+		expect(cmds).toEqual([
+			{
+				type: "removeProcess",
+				windowId: target,
+				processId: "p-9",
+				view: {cursor: 2, refusal: null},
+			},
+		]);
+	});
+
+	it("process.remove refuses a window this workspace does not hold", () => {
+		const state = initialState();
+		expect(
+			apply(state, {type: "process.remove", processId: "p-9", windowId: "window-nope"}),
+		).toEqual([state, []]);
 	});
 
 	it("window.attach refuses a window this workspace does not hold, split or not", () => {

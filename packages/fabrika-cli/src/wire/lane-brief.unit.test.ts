@@ -9,6 +9,7 @@
 import {describe, expect, it} from "vitest";
 import {
 	artifactUrl,
+	EPIC_RANGE_RULES,
 	EPIC_RULES,
 	EPIC_TAIL_REPAIR_RULES,
 	EPIC_TAIL_RULES,
@@ -101,7 +102,13 @@ describe("the five shell states route through one table", () => {
 
 describe("the lane-brief carries no repo's own path in its rules", () => {
 	it("names no in-tree fabrika path anywhere in the byte-fixed text", () => {
-		for (const text of [RULES, EPIC_RULES, EPIC_TAIL_RULES, EPIC_TAIL_REPAIR_RULES]) {
+		for (const text of [
+			RULES,
+			EPIC_RULES,
+			EPIC_RANGE_RULES,
+			EPIC_TAIL_RULES,
+			EPIC_TAIL_REPAIR_RULES,
+		]) {
 			expect(text).not.toContain("packages/fabrika-cli/");
 			expect(text).not.toMatch(/node\s+\S*bin\.[jt]s/);
 		}
@@ -112,6 +119,14 @@ describe("the lane-brief carries no repo's own path in its rules", () => {
 		expect(EPIC_RULES).toContain("node <fabrika> build deviations <child>");
 		expect(EPIC_RULES).toContain("node <fabrika> wire emit --format range-verdict-marker");
 		expect(EPIC_TAIL_RULES).toContain("node <fabrika> wire read --format build-deviations");
+		expect(EPIC_RANGE_RULES).toContain("node <fabrika> review seat <child> --base <base> --tip");
+	});
+
+	// A shell reading only its brief has to learn that its tree is the wrong tree by default, and
+	// that the seat refuses rather than falling back to whatever it happened to stand on.
+	it("tells a range-carrying child's shell to seat its tree, and names the refusal", () => {
+		expect(EPIC_RANGE_RULES).toContain("Before any command that reads the working tree");
+		expect(EPIC_RANGE_RULES).toContain("exit 20");
 	});
 
 	// The repair round is told which shell moves the assembly branch, because the assembly worktree

@@ -17,19 +17,19 @@ import {
 	wireCodeOfClass,
 } from "./WireError.ts";
 
-class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
+class BodyRequired extends Schema.TaggedError<BodyRequired>()(
 	"test/BodyRequired",
 	{message: Schema.String},
 	{[FateWireCode]: "BODY_REQUIRED"},
 ) {}
 
-class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
+class DefinitionNotFound extends Schema.TaggedError<DefinitionNotFound>()(
 	"test/DefinitionNotFound",
 	{definitionId: Schema.String, message: Schema.String},
 	{[FateWireCode]: "DEFINITION_NOT_FOUND"},
 ) {}
 
-class Unannotated extends Schema.TaggedErrorClass<Unannotated>()("test/Unannotated", {
+class Unannotated extends Schema.TaggedError<Unannotated>()("test/Unannotated", {
 	message: Schema.String,
 }) {}
 

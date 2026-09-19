@@ -14,15 +14,32 @@
  * `stop` and never "awaiting approval" — it is `11`. And head-binding is checked here, always,
  * rather than delegated to the ruleset's `dismiss_stale_reviews_on_push`, which has been seen to
  * leave a patch-changing push's approval undismissed.
+ *
+ * **The §CP classification is taken over the enumerated file list, not over GitHub's `changed_files`.**
+ * A list short of that declared count used to refuse at `13`, and this verb gates the control-plane
+ * discharge, so the refusal left a §CP merge with no act available to clear it. The count is the
+ * stale side — GitHub computes it against a base cached at the PR's last push.
+ * {@link platformFileSet} owns that argument; the disagreement leaves as a `scanned` line.
+ *
+ * **The empty-list refusal below is new, and it is what the retired arm used to cover by accident.**
+ * `classify` over no files answers `not-control-plane`, so a zero would have rendered as a discharged
+ * §CP boundary rather than as an unread one. The other `13` this verb keeps for that list is the
+ * endpoint's own 3000-file ceiling (`PULL_FILES_CAP`), where the Link chain ends as a complete read
+ * ends: a control-plane path could sit in the part the platform never served. Its `13` refusals on
+ * unexhausted review and comment pagination are untouched — those are the platform's own exhaustion
+ * proofs, not a count comparison.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {listComments} from "../io/issues.ts";
 import {listPullFiles} from "../io/pulls.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {readBoundary} from "./boundary.ts";
 import {classify, controlPlaneOwnersOf, splitTeam} from "./codeowners.ts";
-import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {behindBase, listReviews, listTeamMembers} from "./github.ts";
 import {
 	badNumber,
@@ -89,16 +106,40 @@ export const runCpApproval = (
 		if (target._tag === "Refused") return target.outcome;
 		const pull = target.pull;
 
-		const listed = yield* listPullFiles(repo, pr);
-		if (listed._tag === "Failure") return unknownRead(`#${pr}'s changed files`, listed.reason);
-		const files = listed.value;
+		const listed = platformFileSet(
+			VERB,
+			`#${pr}`,
+			pull.changedFiles,
+			yield* listPullFiles(repo, pr),
+		);
+		if (listed._tag === "Unreadable") {
+			return unknownRead(`#${pr}'s changed files`, listed.reason);
+		}
+		const files = listed.set.files;
 		const diagnostics = [
 			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared`),
+			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
 		];
-		if (files.length < pull.changedFiles) {
+		// `classify` over no files answers `not-control-plane`, so an empty list would emit a discharged
+		// boundary over a diff nobody read. With the declared count no longer refusing, this is the seat
+		// that keeps a zero from rendering as `n/a`.
+		if (files.length === 0) {
+			return refuse(
+				ZERO_SCOPE,
+				`${VERB}: PR #${pr} has zero changed files — whether it crosses the §CP boundary is unanswerable.`,
+				diagnostics,
+			);
+		}
+		// The ceiling is the one truncation the enumeration cannot rule out on its own: the endpoint
+		// stops serving files there and ends its Link chain as a complete read ends.
+		if (listed.set.capped) {
 			return refuse(
 				INCOMPLETE_SCAN,
-				`${VERB}: received ${files.length} of ${pull.changedFiles} changed files — refusing the partial sweep.`,
+				platformCapLine(
+					VERB,
+					`#${pr}`,
+					"a control-plane path could sit in the part the platform never served.",
+				),
 				diagnostics,
 			);
 		}

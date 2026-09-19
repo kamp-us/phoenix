@@ -14,13 +14,20 @@
  * by relative path from inside `src/`. They are how a row is built, not how one is written, and
  * `defineProgram` is the whole of the seam between the two.
  *
+ * **`program({...})` is public because the record an author keeps has to be typed somewhere.** It
+ * compiles nothing — it answers its argument — and it is here because an author holds the authored
+ * record in a `const` (the config compiles it, a test drives it), and a `const` contextually types
+ * nothing, so without this call the whole of R12.1's inference was lost at that binding (#8825).
+ * It is not `Program` (`./shape.ts`), which is how a program is *named by its ports* for an arg.
+ *
  * **A few names come from outside `authoring/`, and each is here because a consumer cannot write
  * a typed program without it.** `AnyProgram` is what `defineProgram` returns; `PortSchema` (with
  * `InPort`/`OutPort` under it) is how a row's ports read back; `ProcessId` is what `stop` takes and
  * what `Spawned`/`Stopped` carry, and it is exported as a *value* because `ProcessId.make` is the
  * only way to name one; `TITLE_PORT` / `STATUS_PORT` are the two generic self-report ports a
  * program emits its derived lines on, which is a string an author would otherwise have to guess.
- * The first outside consumer (`@cansirin/tuval-cron`, which lives in its own repo) found each of
+ * The first outside consumer (`@kampus/tuval-cron`, which lives in this repo at
+ * `packages/tuval-cron` and reaches this package only through its published doors) found each of
  * these by failing to compile without it.
  *
  * **The whole `ArgRefs` chain is public for the same reason, and it is not optional.** The type
@@ -30,6 +37,11 @@
  * `src/authoring/args`" — unless every one of those is reachable through this door.
  * `../test-consumer/` is a fixture that emits exactly such a declaration, and
  * `public-surface.unit.test.ts` runs `tsc --declaration` over it.
+ *
+ * **`HostHandlers` is here because R12.1's other half needs a name.** A program that answers an
+ * effect of its own — `defineProgram`'s `X` — supplies the handler for it by spreading the compiled
+ * row, and `HostHandlers<Msg, MyEffect, Failure, Services>` is the type that handler record is
+ * written against (#9294). Nothing else of the kernel's row types is on this door.
  *
  * **The window half is its own door, `@kampus/tuval/window` (`./window.ts`).** Not because
  * `./view.ts` is unsafe — its value-import closure reaches no `node:` builtin, and
@@ -47,7 +59,7 @@
 
 export {ProcessId} from "../process/process.ts";
 export {STATUS_PORT, TITLE_PORT} from "../process/self-report.ts";
-export type {AnyProgram, InPort, OutPort, PortSchema} from "../registry/program.ts";
+export type {AnyProgram, HostHandlers, InPort, OutPort, PortSchema} from "../registry/program.ts";
 export {
 	type AnyArgRef,
 	type AnyArgRefs,
@@ -71,6 +83,7 @@ export {
 	type AuthoredProgram,
 	defineProgram,
 	type EventHandler,
+	program,
 	type RequestArrivalEvent,
 } from "./define-program.ts";
 export {

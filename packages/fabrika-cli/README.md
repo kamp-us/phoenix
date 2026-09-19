@@ -44,7 +44,12 @@ portability-guard check` holds that on every push: it walks `claude-plugins/fabr
 `packages/fabrika-cli/src/` and reds a ticket number, a decision-record number in either spelling, a
 `.decisions/` path, a hosted issue or pull-request URL, and any name the repo declares under the
 `portability` key of `.fabrika.jsonc`. A markdown heading, a hex colour and a ticket number that is
-test data are not references. The bounded allow-list in `portability-guard.config.json` has two
+test data are not references. Neither is an `@ruling <issue url>` citation under
+`packages/fabrika-cli/`: a docblock here cites the ruling issue that governs it rather than a
+decision record, because a decision-record number means something else in the next repository
+([ADR 0394](../../.decisions/0394-a-fabrika-cli-docblock-cites-its-ruling-issue.md)). Only the tag's
+own span is admitted, so prose sharing the line is scanned as usual, and the tag must name a URL.
+The bounded allow-list in `portability-guard.config.json` has two
 buckets, each entry carrying a mandatory `why`: `exempt` is a permanent per-file cap for text that
 is not a portability defect, and `unmigrated` is the sweep floor — one row per sweep unit, and it
 only shrinks, so a ceiling left above the count reds exactly as loudly as a new reference does.
@@ -58,13 +63,11 @@ from a consumer repo — are in
 - [`docs/usage-recording.md`](./docs/usage-recording.md) describes the shared host recording API,
   versioned usage envelopes, issue/run model and token summaries, native counter meanings and
   recovery. Claude and Codex totals report their coverage; Pi observation remains unavailable.
-- [`docs/verb-reference.md`](./docs/verb-reference.md) — every registered verb group, its verbs, its
-  flags and its exit codes, plus the four caller-facing interface rules, the shared exit table those
-  codes are read against, and the `capture` library subpath. The governing convention is
-  [`claude-plugins/fabrika/docs/interface-convention.md`](../../claude-plugins/fabrika/docs/interface-convention.md).
-  Each verb's own `--help` states the same contract at the point of use, and the `--help` index is
-  derived from [`src/registry.ts`](./src/registry.ts) — a group appears by being registered and
-  nowhere else.
+- [`docs/verb-reference.md`](./docs/verb-reference.md) orients readers to command groups, retained
+  contracts and the `capture` library. Group help lists verbs; each verb's `--help` owns its inputs,
+  answer and exit meanings. The help index comes from [`src/registry.ts`](./src/registry.ts).
+  [The interface convention](../../claude-plugins/fabrika/docs/interface-convention.md) defines
+  the shared calling rules and documentation owners.
 - [`docs/packaging.md`](./docs/packaging.md) — which copy of the binary serves an invocation, the
   delegation-outcome table, the environment variables, the two Node floors and the `publishConfig`
   rewrite.

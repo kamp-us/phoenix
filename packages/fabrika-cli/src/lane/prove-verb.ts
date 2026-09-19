@@ -51,7 +51,7 @@ import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {getPullRequest, listPullFiles} from "../io/pulls.ts";
-import {readAdvisory} from "../review/advisory.ts";
+import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
 import {partitionWithUi, ROUTED_NAMESPACES, shipNamespacesOf} from "../review/classes.ts";
 import {bindRange, contentDigestAt, rangeContentAt} from "../review/content-binding.ts";
 import {bindHead} from "../review/head.ts";
@@ -69,6 +69,7 @@ import {
 	PROOF_AMBIGUOUS,
 	PROOF_CONTRADICTED,
 	PROOF_IN_FLIGHT,
+	ROUTE_UNDERIVED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {foldLog, resolveTask, walkOf} from "./fold.ts";
@@ -113,7 +114,9 @@ export interface ProveOptions extends LaneRef {
 	 * The lane classes the caller is about to record, exactly as `lane report` validated them —
 	 * `null` leaves the classes already standing alone, the fold's own rule. They are an
 	 * input here because they pick the arm the event takes, and the arm picks which cell owes the
-	 * routed namespace.
+	 * routed namespace. That is also why `null` is not free once a head exists: the standing set is
+	 * the ticket's, and an arm it picks that the head derives nothing for refuses at
+	 * {@link ROUTE_UNDERIVED}.
 	 */
 	readonly classes: ReadonlyArray<string> | null;
 	/**
@@ -685,6 +688,14 @@ const proveNoPull = (
  * had not reached; demanding it of a `PASS` that walks to `ship` is the floor, and it still stands.
  * `ship gate` re-derives the full set at the merge either way.
  *
+ * **A deferral this head derives nothing for is refused rather than taken.** The head decides which
+ * classes a review round owes, so once one exists the standing set has to come from it; a `ui`
+ * stamp that outlived a text-only fix routes the `PASS` into a rendered round the diff cannot fill,
+ * and the rendered gate then parks the lane on a person. That read comes back `Underived`, and the
+ * remedy on the refusal is the relay.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
+ *
  * On a control-plane PR the reviewer's PASS arrives through the §CP advisory carrier by design —
  * no first-line marker, the head in the body — so a marker-only read would row it
  * `absent` and hold the lane at `PROOF_IN_FLIGHT` forever. The advisory is read exactly as
@@ -728,6 +739,12 @@ const readNamespaceRows = (
 		const derived = shipNamespacesOf(partitionWithUi(files.value, roots, uiPrefixes));
 		const deferred = derived.filter((namespace) => defers.includes(namespace));
 		const required = derived.filter((namespace) => !defers.includes(namespace));
+
+		// The head is what decides the round, so a deferral this head derives nothing for is not a
+		// deferral at all — it is the boot-time class still routing after a head exists to replace it.
+		if (defers.length > 0 && deferred.length === 0) {
+			return {_tag: "Underived" as const, head, defers, derived};
+		}
 
 		const commented = yield* listComments(repo, pr);
 		if (commented._tag === "Failure") {
@@ -784,9 +801,9 @@ const readNamespaceRows = (
 				advisories.push({
 					claim: {
 						namespace: advisory.namespace,
-						// The advisory carrier is PASS-only; a [FAIL] row inside one is an
-						// invalid emission — treated as fail below, never read as a pass.
-						polarity: /\[FAIL\]/.test(comment.body) ? "FAIL" : "PASS",
+						// An invalid [FAIL] emission inside an advisory is treated as fail below,
+						// never read as a pass — the carrier's own predicate, one copy.
+						polarity: advisoryPolarity(comment.body),
 						commentId: comment.id,
 						sha: advisory.sha,
 						// The advisory withholds a content binding by design — head-bound only.
@@ -899,7 +916,17 @@ type HeadRead =
 			readonly notes: ReadonlyArray<string>;
 	  }
 	| {readonly _tag: "Unread"; readonly what: string; readonly reason: string}
-	| {readonly _tag: "Gone"; readonly what: string};
+	| {readonly _tag: "Gone"; readonly what: string}
+	/**
+	 * The event routes into a cell this head owes nothing — the standing class is the ticket's, not
+	 * the head's. `derived` is what the head actually raises, so the refusal can name the relay.
+	 */
+	| {
+			readonly _tag: "Underived";
+			readonly head: string;
+			readonly defers: ReadonlyArray<string>;
+			readonly derived: ReadonlyArray<string>;
+	  };
 
 const proveVerdicts = (
 	repo: string,
@@ -917,6 +944,19 @@ const proveVerdicts = (
 		if (read._tag === "Unread") return {...unreadable(read.what, read.reason), deferred: []};
 		if (read._tag === "Gone") {
 			return {...seat({_tag: "Absent", what: read.what}, diagnostics), deferred: []};
+		}
+		if (read._tag === "Underived") {
+			return {
+				...refuse(
+					ROUTE_UNDERIVED,
+					`${VERB}: the classes standing over "${taskId}" route this ${event} into the cell that owes ${read.defers.join(", ")}, and #${pr} at ${read.head} derives ${read.derived.join(", ")} — no file of this head asks for that round.`,
+					[
+						...diagnostics,
+						`${VERB}: relay the classes this head raises instead of the ones the ticket booted with — \`review scope ${pr}\` prints one \`class\` row each, and \`lane report … --class <name>\` replaces the standing set.`,
+					],
+				),
+				deferred: [],
+			};
 		}
 		const proof = foldNamespaces(read.rows, `#${pr}`);
 		if (proof._tag !== "Proven") return {...seat(proof, read.notes), deferred: []};
@@ -980,7 +1020,8 @@ const proveParkUncontradicted = (
 		if (read._tag !== "Rows") {
 			return uncontradicted(event, taskId, issue, pr, [
 				...diagnostics,
-				`${VERB}: ${read._tag === "Unread" ? `cannot read ${read.what}: ${read.reason}` : read.what} — a park is refused only by a FAIL that still binds, so an unread board leaves it recordable.`,
+				// A park defers nothing, so `Underived` is unreachable here and reads as an unread board.
+				`${VERB}: ${read._tag === "Unread" ? `cannot read ${read.what}: ${read.reason}` : read._tag === "Gone" ? read.what : "the head's derived set did not settle"} — a park is refused only by a FAIL that still binds, so an unread board leaves it recordable.`,
 			]);
 		}
 		const proof = foldPark(read.rows, `#${pr}`);

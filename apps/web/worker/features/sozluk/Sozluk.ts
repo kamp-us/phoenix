@@ -3,7 +3,7 @@
  * connection-shaped pagination. See ADR 0013 / 0082.
  */
 import {id} from "@usirin/forge";
-import {and, asc, desc, eq, gt, inArray, isNull, sql} from "drizzle-orm";
+import {and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -55,6 +55,12 @@ import {
 	termSummaryColumns,
 	toTermSummaryRow,
 } from "./term-fields.ts";
+import {
+	storedFirstLetter,
+	turkishCollateSql,
+	turkishCollationKey,
+	turkishLetterKeyRange,
+} from "./turkish-collation.ts";
 
 export type {DefinitionConnectionPage, DefinitionRow, TermPage} from "./definition-fields.ts";
 export type {TermConnectionPage, TermSummaryRow} from "./term-fields.ts";
@@ -134,7 +140,9 @@ export const recomputeTermSummary = (
 	return {
 		slug,
 		title,
-		firstLetter: slug.charAt(0).toLowerCase(),
+		// The HEADWORD's letter, never the slug's: the slug is the ASCII fold, so `önbellek`
+		// filed under `o` and `ışık` collapsed onto `i` (#9331).
+		firstLetter: storedFirstLetter(title),
 		definitionCount: rows.length,
 		totalScore: rows.reduce((s, d) => s + d.score, 0),
 		topDefinitionId: top?.id ?? null,
@@ -341,9 +349,15 @@ export class Sozluk extends Context.Service<
 		 * Viewer-masked: a term surfaces only when the viewer can read at least one of its
 		 * definitions (#3724), so a sandbox-only term is never a dead-end page.
 		 */
+		/**
+		 * `letter` narrows the page to one Turkish alphabet letter's headwords. It is a filter,
+		 * not a sort: the letter index asks for `sort: "alphabetical"` beside it, and a letter
+		 * outside the alphabet matches nothing rather than falling through to the whole corpus.
+		 */
 		readonly listTermSummariesConnection: (
 			opts: MaskedReadOptions & {
 				sort?: ListSort;
+				letter?: string | null;
 				first?: number;
 				after?: string | null;
 				viewerId?: string | null | undefined;
@@ -516,6 +530,10 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						target: schema.termRecord.slug,
 						set: {
 							title: sql`excluded.title`,
+							// The title can be re-cased between writes, and a pre-#9331 row carries the
+							// slug-derived letter, so the column has to move with the fold — omitting it
+							// here is what made `reconcileCaches` a no-op for every existing row.
+							firstLetter: sql`excluded.first_letter`,
 							definitionCount: sql`excluded.definition_count`,
 							totalScore: sql`excluded.total_score`,
 							excerpt: sql`excluded.excerpt`,
@@ -836,6 +854,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		const listTermSummariesConnection = Effect.fn("Sozluk.listTermSummariesConnection")(function* (
 			opts: MaskedReadOptions & {
 				sort?: ListSort;
+				letter?: string | null;
 				first?: number;
 				after?: string | null;
 				viewerId?: string | null | undefined;
@@ -846,6 +865,19 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const after = opts.after ?? null;
 			const viewer = opts.sandboxViewer;
 
+			// A letter outside the Turkish alphabet has no page, so it yields nothing — falling
+			// through to an unfiltered `WHERE` would answer `/sozluk/harf/q` with every term.
+			const letterRange = opts.letter ? turkishLetterKeyRange(opts.letter) : null;
+			if (opts.letter && !letterRange) {
+				return {...emptyKeysetPage, totalCount: 0} satisfies TermConnectionPage;
+			}
+			// One expression filters and orders: the letter's half-open key range is a slice of
+			// the very key `alphabetical` sorts on, so the filter can never disagree with the walk.
+			const titleKey = turkishCollateSql(schema.termRecord.title);
+			const letterWhere = letterRange
+				? and(gte(titleKey, letterRange.start), lt(titleKey, letterRange.end))
+				: undefined;
+
 			// The count carries the SAME mask as the page below: an unmasked `count(*)`
 			// would report terms the page can never yield, so the connection would claim
 			// pages that don't exist.
@@ -853,12 +885,17 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				db
 					.select({n: sql<number>`count(*)`})
 					.from(schema.termRecord)
-					.where(termHasVisibleDefinitionWhere(db, viewer))
+					.where(and(termHasVisibleDefinitionWhere(db, viewer), letterWhere))
 					.get()
 					.then((r) => r?.n ?? 0),
 			);
 
-			type CursorRow = {slug: string; totalScore: number; lastActivityAt: Date | null};
+			type CursorRow = {
+				slug: string;
+				title: string;
+				totalScore: number;
+				lastActivityAt: Date | null;
+			};
 			// Deliberately UNMASKED: this read only recovers the cursor's keyset position,
 			// it never yields a row. Masking it would turn a cursor whose term went
 			// sandboxed mid-scroll into a cursor miss and truncate the rest of the list.
@@ -867,6 +904,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						db
 							.select({
 								slug: schema.termRecord.slug,
+								title: schema.termRecord.title,
 								totalScore: schema.termRecord.totalScore,
 								lastActivityAt: schema.termRecord.lastActivityAt,
 							})
@@ -880,21 +918,23 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				return {...emptyKeysetPage, totalCount} satisfies TermConnectionPage;
 			}
 			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
+			// `collation` is stored nowhere: it is the Turkish collation key, a pure function of
+			// the title the cursor row already carries, derived only when the ordering asks.
+			const cursorValue = (field: string): unknown => {
+				if (!cursorRow) return null;
+				if (field === "collation") return turkishCollationKey(cursorRow.title);
+				return (cursorRow as Record<string, unknown>)[field] ?? null;
+			};
 
 			// A null `lastActivityAt` cursor value drops the lead column → slug-only keyset.
 			const ordering = TERM_SUMMARY_ORDERING[sort];
-			const cursorPredicate = keysetAfter(
-				keysetKeys(
-					ordering,
-					(field) => (cursorRow as Record<string, unknown> | null)?.[field] ?? null,
-				),
-			);
+			const cursorPredicate = keysetAfter(keysetKeys(ordering, cursorValue));
 
 			const fetched = yield* run((db) =>
 				db
 					.select(termSummaryColumns)
 					.from(schema.termRecord)
-					.where(and(cursorPredicate, termHasVisibleDefinitionWhere(db, viewer)))
+					.where(and(cursorPredicate, termHasVisibleDefinitionWhere(db, viewer), letterWhere))
 					.orderBy(...orderByColumns(ordering))
 					.limit(first + 1),
 			);

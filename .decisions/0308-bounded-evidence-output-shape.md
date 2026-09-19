@@ -343,3 +343,19 @@ to-do the next builder may pick up: a row leaves this section when the founder r
   collapses.
 - [`claude-plugins/fabrika/skills/build/contract.md`](../claude-plugins/fabrika/skills/build/contract.md)
   — the exemplar's pinned output shape.
+
+## Amendments
+
+- **#8882 — Give command details distinct documentation owners (2026-09-10).** The founder's
+  selection recorded in [issue 8882](https://github.com/kamp-us/phoenix/issues/8882) removes repeated
+  command output and exit-code details from the package reference and source comments. Runtime
+  help owns caller facts; contracts retain implementation requirements and useful examples; skills
+  retain the facts needed to choose the next action. References and comments point to those owners.
+  This retires the six-place sweep added by
+  [issue 6523](https://github.com/kamp-us/phoenix/issues/6523). A reader may need a help invocation
+  or a link instead of an inline copy. An actual contract change still travels with its
+  implementation in the same PR. The answer/evidence classification and bounded-output policy
+  above remain in force. No generator, comparison guard or synchronization tool is added.
+  The current authoring rule is
+  [command documentation ownership](../claude-plugins/fabrika/docs/interface-convention.md#command-documentation-ownership).
+  No vocabulary impact.

@@ -18,6 +18,7 @@ import {open} from "../ports/wiring.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {toTableRow} from "../table/row.ts";
+import type {PlannedProcesses} from "./PlannedProcesses.ts";
 import {Processes} from "./Processes.ts";
 import {ProcessTable} from "./ProcessTable.ts";
 import type {ProcessHandle, ProcessId} from "./process.ts";
@@ -93,7 +94,13 @@ const withKernel = <A, E>(
 	body: Effect.Effect<
 		A,
 		E,
-		Processes | ProcessTable | Registry | Checkpoints | SpawnedProcesses | Scope.Scope
+		| Processes
+		| PlannedProcesses
+		| ProcessTable
+		| Registry
+		| Checkpoints
+		| SpawnedProcesses
+		| Scope.Scope
 	>,
 ) =>
 	body.pipe(

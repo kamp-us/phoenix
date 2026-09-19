@@ -16,10 +16,12 @@ import {readStdin} from "../io/stdin.ts";
 import {runClaudeSpend} from "../spend/claude/collector.ts";
 import {runCheck} from "./check-verb.ts";
 import {runCodes} from "./codes-verb.ts";
+import {runPluginSync} from "./plugin-sync-verb.ts";
 import {runPreBash} from "./pre-bash-verb.ts";
 import {type CliEntry, runWorktreeCreate} from "./worktree-create-verb.ts";
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
@@ -95,6 +97,7 @@ const worktreeCreate = leafCommand(
 	"worktree-create",
 	{
 		dryRun: Flag.boolean("dry-run").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("print the path this would create, and create nothing"),
 		),
 	},
@@ -115,12 +118,33 @@ const worktreeCreate = leafCommand(
 	),
 );
 
+const pluginSync = leafCommand(
+	"plugin-sync",
+	{
+		dryRun: Flag.boolean("dry-run").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription("report what this would advance, and move nothing"),
+		),
+	},
+	Effect.fn(function* ({dryRun}) {
+		yield* emitOutcome(
+			yield* runPluginSync({stdin: Effect.sync(readStdin), dryRun, env: globalThis.process.env}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Advance the checkout a directory-source plugin is served from."),
+	Command.withDescription(
+		"Fast-forward the primary worktree of the checkout a directory-source marketplace is registered against, so the next spawned shell's `skills:` preload carries the skill text that landed. A preload is rendered from the harness's COPY of the plugin tree, taken from that directory at whatever commit its primary worktree sat at, so a skill-class merge binds no shell until the directory advances — and the failure is silent, since preloaded text names no version. Reads the SessionStart envelope on STDIN, resolves the clone's primary worktree from its `cwd` through the shared git common dir (never the session's own linked worktree), fetches `origin/<default>` and TAKES A FAST-FORWARD AND NOTHING ELSE: a parked branch, a detached HEAD, a diverged branch, or uncommitted work the incoming commits would write over is refused with its reason, because where a human's checkout sits is a human's call. UNCOMMITTED WORK OUTSIDE THE INCOMING COMMITS' PATHS IS NOT ONE OF THOSE STATES — the refusal compares the uncommitted paths (untracked files included, each named individually) against the paths the incoming range changes and fires only on an overlap, which is the same overlap `git merge --ff-only` itself refuses on. EVERY REFUSAL LEADS STDERR WITH ITS REASON, and carries the scope line and any install lines after it: a failed SessionStart hook surfaces one line in the session, so a refusal whose first line named the directory it judged named no cause at all. It then READS THE HARNESS'S OWN INSTALL RECORDS AND REPORTS, never drives, the second link: re-copying the advanced directory into the plugin cache is the harness's `autoUpdate` pass, so every install still bound to an earlier commit is named on stderr. Names no repository, marketplace or plugin — the marketplace is selected by the directory it declares. Stdout is `current\\t<branch>\\t<commit>` or `advanced\\t<branch>\\t<commit>`. Exits 3 (stdin held nothing), 12 (not a hook envelope), 13 (fd 0 unreadable — UNKNOWN), 14 (a harness event this verb does not judge), 19 (no clone's primary worktree could be read), 20 (the checkout is in no state to advance — nothing moved), 21 (the remote could not be fetched — UNKNOWN), 22 (the planned fast-forward failed). Every non-zero exit shows stderr and lets the session start. Example: fabrika hook plugin-sync",
+	),
+);
+
 export const hookCommand = Command.make("hook").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
 		check,
 		claudeSpend,
 		codes,
+		pluginSync,
 		preBash,
 		worktreeCreate,
 	]),

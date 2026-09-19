@@ -30,6 +30,7 @@ Named because a spec that leaves the substrate open makes the implementer guess.
 | `review post` | the single sanctioned verdict emit: compose through the `verdict-marker` wire format, bind to the inspected head at post time, post one comment per namespace at that head, read it back | marker composition, head re-resolution, leak scan and read-back are a protocol; the polarity and clause are judgment |
 | `review append-criterion` | append one reviewer-authored acceptance criterion to the linked issue under the four fences (append-only · ACL-gated fail-closed · frozen at `src/retry-budget.ts`'s `CAP_ROUND`), with a provenance tag naming the PR or, on an epic child, the range | the fences and the diff-guarded append are mechanical; whether a finding is in-scope is judgment |
 | `review scratch` | the per-lane directory this reviewer's staged files go under, allocated fail-closed | deriving a namespace no second lane resolves to, and refusing when it cannot be derived, is mechanical; what to stage there is judgment |
+| `review seat` | this worktree checked out at an epic child's range tip, read back off git, or a refusal naming the range it cannot reach | resolving the child's local branch, proving it carries the tip and checking out is mechanical; what the seated tree then says is judgment |
 
 ### Considered and deliberately not derived
 
@@ -54,6 +55,20 @@ the same tracked debt the sibling contracts carry.)
   (`git diff <base>...<head>`), which writes objects and no working tree. Nothing is checked out,
   so no head instruction file is ever on disk to be loaded — a diff that adds a worktree or a
   checkout is still the wrong fix and should be red at review.
+
+  **`review seat` is the one checkout this group performs, and it is narrower than the posture it
+  looks like it reverses.** It executes nothing and judges nothing: it moves the reviewer's *own*
+  worktree onto the commit its verdict already names, on an epic child, where the fences that read
+  the working tree are the child review's by design and the child's branch is local to the tree that
+  built it. It cuts no worktree of its own — so the `/tmp` collision and the fixed-name scratch file
+  both stay unconstructible — and it never checks out a pull request's head, which is the surface the
+  self-review hole lives on. What it does put on disk is the child's range as its own run built it,
+  and **no `self` fence governs that read** — `self` is computed by `review scope`, which resolves a
+  pull request's head and has no range form, so an epic child's review never derives that flag at
+  all. What holds instead is narrower and mechanical: a checkout mid-run auto-loads no instruction
+  file, and the shell judges by the rubric text its spawn preloaded, so moving the tree cannot change
+  which rules the reviewer applies. That is the whole control on this path; it is not the `self`
+  fence, and a later narrowing may not cite one here.
 - **A dead-link / decision-index / skill-frontmatter checker.** The repo's own CI jobs already
   gate each. The rubrics state the expectation; the verdict stays where it is enforced.
 - **A control-plane classifier.** `cp-classify` routes §CP membership and CODEOWNERS enforces it
@@ -133,9 +148,10 @@ prose copies are not the authority.
 | `13` | refused: the read was completed but its scope is **provably incomplete** — a truncated file list or diff, a check-run enumeration short of `total_count` | ✓ | ✓ | — | ✓ | ✓ | ✓ | — | — |
 | `14` | refused: the invoking token resolves below `write`, or the ACL lookup failed — authorization denied, fail-closed | — | — | — | — | — | — | — | ✓ |
 | `15` | refused: the write is not provably the prior rows plus one — the append-only fence, whose causes carry distinct messages | — | — | — | — | — | — | — | ✓ |
-| `16` | refused: the enumeration is complete and **no gate inspected the bytes** — the rollup is not `red`, yet no workflow this repo authors produced a run at the head, so a `green` would report coverage that does not exist | — | — | — | ✓ | — | — | — | — |
+| `16` | refused: the enumeration is complete and **no gate inspected the bytes** — the rollup is not `red`, yet no workflow this repo authors inspected the head, because every repo-authored run here carries another commit or ran against another ref, so a `green` would report coverage that does not exist | — | — | — | ✓ | — | — | — | — |
 | `17` | refused: the write would retire a standing verdict of the **opposite polarity** at this head and `--supersede` was not passed — nothing written | — | — | — | — | — | — | ✓ | — |
 | `18` | refused: a `PASS` is the terminal of the round that appended an acceptance criterion tagged for that same subject and round — the row binds the next cycle, and a `PASS` has none, so the round owes a `FAIL`; nothing written | — | — | — | — | — | — | ✓ | — |
+| `19` | refused: a `PASS` whose linked contract marks a criterion's evidence as living outside the diff, and whose body names no evidence for it — a marked criterion is graded on the evidence it names, never on the diff alone, so a `PASS` citing none graded it on nothing; nothing written | — | — | — | — | — | — | ✓ | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb
@@ -516,12 +532,20 @@ fabrika review criteria 4287 [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line: `criteria\t<count>`. Then one line per criterion —
-`<checked|open>\t<text>` — the same line grammar `wire read --format acceptance-criteria`
-prints, because it **is** that read: the verb fetches the issue body and hands it to the
-registered format's `read` (`packages/fabrika-cli/src/wire/acceptance-criteria.ts`), importing
-the module. No second parser.
+`<checked|open>\t<text>`, with a third `\t<evidence source>` column on a criterion carrying the
+outside-diff evidence marker and none on one that does not — the same line grammar
+`wire read --format acceptance-criteria` prints, because it **is** that read: the verb fetches the
+issue body and hands it to the registered format's `read`
+(`packages/fabrika-cli/src/wire/acceptance-criteria.ts`), importing the module. No second parser.
 
-With `--json`: `{"outcome":"criteria","issue":<n>,"count":<n>,"criteria":[{"text":…,"checked":…}…]}`.
+With `--json`: `{"outcome":"criteria","issue":<n>,"count":<n>,"marked":<n>,"criteria":[{"text":…,"checked":…,"evidence":<source|null>}…]}`.
+
+**A marked criterion is one the diff's bytes cannot settle either way**, and the marker names where
+its proof lives — `[evidence: <source>]`, the grammar owned by the wire format and written at mint
+time by `triage enrich`. Every marked row is also counted and quoted on stderr, so a reviewer
+scanning diagnostics cannot miss that this contract has any. Grade each one on the evidence it
+names and name that evidence in the verdict body: `review post` refuses a `PASS` that does not
+(`19`).
 
 The count is never `0`: the wire format holds a conforming block's criteria as a non-empty
 array — a heading with zero checkbox rows reads `Malformed`, so "a gradeable contract with
@@ -564,6 +588,14 @@ $ fabrika review criteria 4287
 criteria	2
 open	the first retry delay equals `base`
 open	the retry guide documents the delay table
+
+$ fabrika review criteria 8900
+criteria	2
+open	the stored-id migration runs on load
+open	a desk checkpointed under the old shape comes back whole	hand-verification on a real desk
+review criteria: 1 of 2 criteria mark evidence outside the diff — grade each on the evidence it
+names, and name it in the verdict body:
+  - "a desk checkpointed under the old shape comes back whole" — evidence: hand-verification on a real desk
 ```
 
 **Grounding**
@@ -657,11 +689,21 @@ A complete, all-green enumeration that came from no workflow this repo authors i
 — not `green`, not `pending`. The set of gates is the **live workflow inventory**: a workflow
 checked into the repo is addressed by its file path (`.github/workflows/ci.yml`), one the platform
 provides on the repo's behalf by a synthetic `dynamic/<provider>/<name>`, and coverage is the
-intersection of the first with the workflows that actually produced a run at this head. No job
-names, no expected set — nothing here knows what a gate is called. A repo that authors no workflow
-of its own has no gate to have missed, and says so on stderr at exit `0`. The read is skipped over a
-`red` rollup, which is already the answer a caller must act on; `green` and `pending` are the two
-words that read as "nothing to do here", and both are wrong over bytes no gate inspected.
+intersection of the first with the workflows that produced a **head-inspecting** run here. No job
+names, no expected set — nothing here knows what a gate is called. Head-inspecting is read off each
+run's own provenance rather than its path: the run has to carry this commit, and its event has to be
+one GitHub runs against the head. `pull_request_target` is the one that is not — it carries the pull
+request's head and checks out the base, so `.github/workflows/pr-cleanup.yml` is repo-authored, sits
+at the head, and inspected none of it. No other event is filtered: `ci.yml`'s trusted
+`workflow_dispatch` path for Release-PR head inspection counts exactly as a `pull_request` run does.
+The `--sha` operand is resolved to the commit's full object name before this read, because the
+Actions run list filters `head_sha` as an exact string — an abbreviation there returns no runs at
+all. An operand that cannot be resolved to one is `11`, never the `16`: "no gate inspected these
+bytes" is a fact about the repository, and an unresolved operand is a fact about the call. A repo
+that authors no workflow of its own has no gate to have missed, and says so on stderr at exit `0`.
+The read is skipped over a `red` rollup, which is already the answer a caller must act on; `green`
+and `pending` are the two words that read as "nothing to do here", and both are wrong over bytes no
+gate inspected.
 
 **`--wait` is the bounded in-verb wait, and it polls a `pending` and nothing else.** A `pending` is
 the ordinary state of a PR minutes after a push — exactly when a reviewer is spawned — so a caller
@@ -716,7 +758,7 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | `7` | the PR or the `--sha` is proven absent — no commit to enumerate; **or zero check runs are declared at the commit** — a vacuous green is a fail-open and is refused; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
 | `11` | the check-run read, the workflow-inventory read, the runs-at-head read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green` |
 | `13` | entries received < declared `total_count` — the enumeration is provably incomplete and is never read as "no red checks" |
-| `16` | the rollup is not `red` and **no workflow this repo authors produced a run at the head** — the enumeration is complete, no gate inspected the bytes, and the CI state is UNKNOWN, never `green` |
+| `16` | the rollup is not `red` and **no workflow this repo authors inspected the head** — the enumeration is complete, every repo-authored run here carries another commit or ran against another ref, and the CI state is UNKNOWN, never `green` |
 
 **Errors**
 
@@ -731,15 +773,17 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | `review ci: cannot read \`ci\` from the repo config (<reason>) — whether <repo> produces CI is UNKNOWN, never green.` | 11 | refusal |
 | `review ci: <repo> declares \`ci.noProducer: degrade\` and has zero workflows — no producer, so there is nothing to roll up.` | 0 | notice |
 | `review ci: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration (#3999).` | 13 | refusal |
-| `review ci: none of the <g> workflow(s) <repo> authors produced a run at <sha> — the <n> check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green (#6522).` | 16 | refusal |
+| `review ci: none of the <g> workflow(s) <repo> authors inspected <head> — the <n> check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected these bytes: the CI state is UNKNOWN, never green.` | 16 | refusal |
 | `review ci: cannot enumerate the workflow inventory of <repo>: <reason> — which gates exist is UNKNOWN, never green.` | 11 | refusal |
 | `review ci: cannot enumerate the workflow runs at <sha>: <reason> — which gates ran is UNKNOWN, never green.` | 11 | refusal |
-| `review ci: <c> of <g> workflow(s) <repo> authors produced a run at <sha>.` | 0 | notice |
+| `review ci: cannot judge gate coverage at <sha>: <reason> — which gates inspected these bytes is UNKNOWN, never green.` | 11 | refusal |
+| `review ci: <c> of <g> workflow(s) <repo> authors inspected <head>.` | 0 | notice |
 | `review ci: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
 | `review ci: the live head is <live>, you are enumerating at <sha> — the head moved; a verdict still binds only what was inspected.` | 0 | notice |
 
 **Scope** — the check runs at one commit, paginated, count-verified against `total_count`, and the
-workflows that produced a run there, against the repo's live inventory.
+workflow runs carrying that commit — each judged by its path, event and head — against the repo's
+live inventory.
 
 **Examples**
 
@@ -1208,6 +1252,7 @@ proven negative, since `review append-criterion` refuses an issue carrying no co
 | `12` | the live head moved past `--sha` — re-review at the new head, never re-bind |
 | `17` | a standing verdict of the opposite polarity at this head — ranged, over this range — would be retired and `--supersede` was not passed; nothing written |
 | `18` | this round appended an acceptance criterion tagged for this same subject and round, and a `PASS` has no next cycle to carry it — the round owes a `FAIL`; nothing written |
+| `19` | a `PASS`, and a criterion on a linked issue's contract carries the outside-diff evidence marker whose source this body names nowhere — the round owes either the evidence or a `FAIL`; nothing written |
 
 **Errors**
 
@@ -1229,6 +1274,8 @@ proven negative, since `review append-criterion` refuses an issue carrying no co
 | `review post: --round is required on a PASS — a PASS ends the cycle, and the round is what says whether this one appended a criterion that would die with it.` | 10 | refusal |
 | `review post: round <r> appended <an acceptance criterion\|<k> acceptance criteria> to #<n> from <PR #<n>\|the range <base>..<tip>>:` + one `  - "<row>"` line each + `An appended row binds the NEXT cycle, and a PASS has none — the lane folds to ship, the PR merges, and #<n> closes with the row unread. This round owes --polarity FAIL. Nothing was posted.` | 18 | refusal |
 | `review post: cannot read #<n>, which would carry a criterion appended on <subject>'s round <r>: <reason> — whether this PASS strands one is UNKNOWN; nothing was posted.` | 11 | refusal |
+| `review post: on #<n>, <an acceptance criterion marks\|<k> acceptance criteria mark> evidence outside the diff and this body names none:` + one `  - "<criterion>" — evidence: <source>` line each + `A marked criterion is graded on the evidence it names, never on the diff alone — so name what each one rested on, or post --polarity FAIL naming the missing evidence. Nothing was posted.` | 19 | refusal |
+| `review post: cannot read #<n>, whose contract would mark criteria this verdict owes evidence for: <reason> — whether this PASS grades one on nothing is UNKNOWN; nothing was posted.` | 11 | refusal |
 
 Ranged, the same steps produce their own text — the target is an issue, the subject is the range:
 
@@ -1351,8 +1398,16 @@ tag names.
 
 **Output** — machine channel. One line: `appended\t<issue>\t<row-count-after>`, or
 `escalated-frozen\t<issue>\t<round>` when `--round` is at or past `CAP_ROUND` — the escalation comment landed and the
-AC did **not** (fence 4: append-rate stays bounded by fix-rate; a finding raised at the freeze
-routes to a human). Both are proven answers at exit 0, discriminated by the token.
+AC did **not** (fence 3: append-rate stays bounded by fix-rate, so the finding enters no contract).
+Both are proven answers at exit 0, discriminated by the token.
+
+**The escalation comment is machine-readable, and that is what keeps the token honest.** It carries
+`<!-- ac:escalated pr:#<pr> round:<n> -->` — the same grammar the provenance tag is written under,
+in `src/review/append.ts` — and `build verdicts` folds every such comment on the issue into its
+`escalatedFindings`. So the next repair round reads the finding through the verb it already opens,
+rather than through a comment id a driver typed into a spawn prompt. The prose beside the
+tag says the same thing to a human reading the issue: the finding is on record, the round after this
+one repairs it, and a human is asked only once the round budget is spent.
 
 With `--json`: `{"outcome":…,"issue":…,"rows":…,"round":…,"acl":"write+"}`.
 
@@ -1370,7 +1425,8 @@ With `--json`: `{"outcome":…,"issue":…,"rows":…,"round":…,"acl":"write+"
    spans several lines and its text appears on none of them, so matching text against lines found
    no anchor and refused every append on such a body.
 3. **Frozen at the repair budget's round K**, read from `src/retry-budget.ts`'s `CAP_ROUND`: a `--round` at
-   or past it posts the escalation comment instead of appending.
+   or past it posts the tagged escalation comment instead of appending. The finding is not thereby
+   lost — it is on record and folded by `build verdicts` — it is only kept out of the contract.
 4. **In-scope-only is the caller's** (the trace-to-stated-goal test is judgment); the provenance
    tag is what makes a routed row auditable after the fact.
 
@@ -1415,7 +1471,7 @@ The row enters the **next** review cycle's conjunctive verdict; the verb does no
 | `review append-criterion: read-back does not show the prior rows plus this one — inspect #<n>.` | 9 | refusal |
 
 **Scope** — one issue body (through the registered AC format), the invoking token's ACL, and on
-the frozen path one comment write. The read-back re-reads the block through the same format and
+the frozen path one tagged comment write. The read-back re-reads the block through the same format and
 compares row-by-row.
 
 **Examples**
@@ -1443,6 +1499,10 @@ appended	6095	7
   difference between a fence and a fence description.
 - **Authority comes from the ACL check**; a below-write author or a failed lookup skips the
   append entirely, fail-closed.
+- **The escalation the freeze forces had no reader.** Fence 3's comment was printed for nobody, so a
+  repair round dispatched past the freeze read a contract missing the round it was sent to repair,
+  and only a driver hand-writing the comment id into a spawn prompt connected the two ends. The tag
+  is what `build verdicts` folds it by.
 
 ---
 
@@ -1523,6 +1583,124 @@ $ echo $?
 - **The alternative was rejected.** Having `review diff` verify staged bytes on re-read re-derives
   *detection* where the namespace makes the collision unconstructible, which is the route both
   prior fixes took.
+
+---
+
+## `review seat`
+
+**Invocation**
+
+```
+fabrika review seat 8820 --base <base> --tip <tip>
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the epic child whose range this shell was briefed on |
+| `--base` | string | yes | — | the range's base revision, as the brief's `range` prints it |
+| `--tip` | string | yes | — | the range's tip revision — the commit this tree is seated at |
+| `--json` | boolean | no | `false` | the full result object instead of the line grammar |
+
+**Why the tree is the wrong tree by default.** One epic run is one branch and one pull request at
+the tail, so a child's build branch is local and unpushed. A reviewer worktree cut fresh from the
+driver's checkout stands on the assembly branch — or on whatever that checkout last held — and the
+range's tip is not in it. Every fence that reads the working tree then reads a tree the verdict
+never names, and the `range-verdict-marker` binds base, tip and a content digest, never which tree
+the commands ran in, so a wrong verdict is indistinguishable afterwards from a right one.
+
+**It seats or it refuses.** Two facts have to hold: the tip resolves to a commit here, and a branch
+this clone's own lane grammar says was cut for this child reaches it. Neither is a read that failed,
+so both refuse on `20` rather than on the UNKNOWN seat, and a refusal is a stop — there is no arm
+that grades in place. Several carrying branches is not ambiguity about the seat: each reaches the
+same commit, and the commit is what the tree is put on, so all of them are reported and the first is
+named.
+
+**A candidate nobody could read decides nothing once another has carried the tip.** A clone that has
+run more than one attempt at a child carries stale `build/<n>-…` refs beside the live one, so a
+candidate whose ref or containment read fails is ordinary rather than exotic. Each such failure is
+kept as a fact about that candidate and reported on stderr beside the seat; it becomes the `11`
+refusal only where no candidate carried the tip and an unread one could have. Refusing the whole verb
+on it while the seat was already proven would turn a determined answer into a park on a human.
+
+**The seat is detached, and a re-run is not a second checkout.** A reviewer commits nothing, so
+switching or moving a branch would be a mutation nobody asked for. A tree already standing on the
+tip is answered by reading the commit rather than by checking out again, and the answer says which
+happened. It is `git switch --detach`, not `git checkout --force`: a tree carrying uncommitted work
+is left exactly as it stands and the refusal is reported rather than the work destroyed.
+
+**Output** — machine channel. One stdout line:
+`seated\t<commit>\t<branch>\t<checked-out|already-seated>`, where `<commit>` is read back off git
+*after* the checkout — never the operand echoed. The carrying branches and the read-back are on
+stderr. `--json` answers
+`{answer, issue, base, tip, head, branch, carriers, action}`.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `1` | the positional is not an issue number |
+| `8` | the checkout itself failed — where this tree stands is UNKNOWN |
+| `9` | the checkout reported success and the commit reads back as another — nothing here is seated |
+| `10` | a lone `--base`/`--tip`, neither given, or an end that is not a revision |
+| `11` | a git read the answer turns on failed — the branch list, this tree's HEAD, the read-back, or every candidate that could have carried the tip; nothing was checked out |
+| `20` | the tip is not reachable here: no lane branch of this child is in this clone, the tip resolves to no object, or no lane branch of this child reaches it |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review seat: <n> is not an issue number.` | 1 | refusal |
+| `review seat: --base and --tip are required — the range out of this shell's brief is the subject, and there is no PR here to resolve one from.` | 10 | refusal |
+| `review seat: --base and --tip come together — a range has two ends.` | 10 | refusal |
+| `review seat: --<end> "<v>" is not a revision — expected 7–40 lowercase hex characters.` | 10 | refusal |
+| `review seat: no branch of this clone was cut for #<n> — "build/<n>-<slug>-<nonce>" resolves to nothing, so <base>..<tip> was built somewhere this worktree cannot see. …` | 20 | refusal |
+| `review seat: cannot resolve <tip> to a commit — the tip of <base>..<tip>; <branches> carry #<n>'s commits and this tree holds no object for that tip. …` | 20 | refusal |
+| `review seat: <base>..<tip>'s tip is in this tree's object database, but no lane branch of #<n> reaches it — <branches> carry other commits. …` | 20 | refusal |
+| `review seat: cannot read this tree's local branches: <reason> — whether <base>..<tip>'s tip is here is UNKNOWN, so nothing was checked out.` | 11 | refusal |
+| `review seat: no readable lane branch of #<n> carries <base>..<tip>'s tip and <k> could not be read — cannot resolve "<branch>": <reason>; cannot tell whether "<branch>" carries <tip>: <reason> — so whether the tip is here is UNKNOWN and nothing was checked out.` | 11 | refusal |
+| `review seat: cannot read this tree's HEAD: <reason> — where it stands is UNKNOWN, so nothing was checked out.` | 11 | refusal |
+| `review seat: cannot read this tree's HEAD back: <reason> — whether the seat took is UNKNOWN.` | 11 | refusal |
+| `review seat: <k> other candidate branch(es) could not be read — <per-candidate reasons>. The seat was proven without them.` | 0 | notice |
+| `review seat: \`git switch --detach <tip>\` failed: <reason> — this tree stood on <commit> when the checkout was attempted and where it stands now is UNKNOWN. …` | 8 | refusal |
+| `review seat: the checkout reported success and HEAD reads <other>, not <tip> — this tree is not seated on <base>..<tip> …` | 9 | refusal |
+
+**Scope** — one worktree, moved. It reads this clone's refs and object database, checks out one
+commit, and reads the result back. No network call, no board state, no write to any artifact.
+
+**Examples**
+
+```
+$ fabrika review seat 8820 --base 99b1453 --tip 4011b1d
+seated	4011b1d8238aaf1d71de8704bedb1aa1dd98fda9	build/8820-seat-the-tree-9f2e1a4b	checked-out
+
+$ fabrika review seat 8820 --base 99b1453 --tip 4011b1d
+seated	4011b1d8238aaf1d71de8704bedb1aa1dd98fda9	build/8820-seat-the-tree-9f2e1a4b	already-seated
+
+$ fabrika review seat <child> --base 99b1453 --tip 4011b1d
+review seat: no branch of this clone was cut for #<child> — "build/<child>-<slug>-<nonce>" resolves
+to nothing, so 99b1453..4011b1d was built somewhere this worktree cannot see.
+$ echo $?
+20
+```
+
+**Grounding**
+
+- **A reviewer graded a tree that was neither end of its range.** On one epic run the brief's range
+  was `<base>..<tip>` and the reviewer's shell stood on a third commit, so its first typecheck,
+  formatter, test and guard runs all read the pre-range tree. It noticed on its own, retracted both
+  posted verdicts and re-graded those rows UNKNOWN. Nothing in the machinery forced that catch, and
+  a less careful shell posts the verdict: a false PASS reaches the assembly merge and then the tail
+  PR, a false FAIL spends one of the child's three repair rounds, and neither is visible afterwards.
+- **A brief sentence was the alternative, and it is advice a shell can skip silently** — which is
+  the exact failure mode here. The brief rule ships too, as the human-readable half: the byte-fixed
+  `EPIC_RANGE_RULES` on a range-carrying child brief names this verb and its refusal, so a shell
+  reading only its brief learns the rule. The verb is what makes it provable.
+- **The tip alone was not enough.** Seating on any commit that happens to resolve would put the tree
+  on a revision nothing ties to this child, so the branch this clone's lane grammar names is read
+  first and the tip has to be on one — the same `childLaneBranches` nomination `lane prove` and
+  `lane brief` read, never a second filter.
 
 ---
 

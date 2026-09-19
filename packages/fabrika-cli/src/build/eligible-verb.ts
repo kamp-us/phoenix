@@ -7,10 +7,8 @@
  * The parent is still resolved, because the assembly-branch discharge below is named from it and
  * the answer carries it.
  *
- * Three outcomes and no fourth: `eligible` on stdout, **every** open blocker on `16`, and UNKNOWN on
- * `11`. An edge list that could not be read is `11` — "no edges found" is never read as "not
- * blocked", and the whole derivation lives in [`./blockedness.ts`](./blockedness.ts), the one reader
- * over that one source.
+ * The dependency read lives in [`./blockedness.ts`](./blockedness.ts). An unreadable graph cannot
+ * prove that no issue blocks this one. See ./command.ts help for the result and refusal codes.
  *
  * **A blocker is discharged by a closed issue OR by a landed commit** (`./discharge.ts`).
  * That derivation is shared with the claim seam, which once carried none and refused an edge this

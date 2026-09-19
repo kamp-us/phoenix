@@ -3,17 +3,6 @@
  * changed surfaces over its preview deploy, host each as a GitHub attachment,
  * and return one record per surface.
  *
- *   captureAndUpload(request) : Effect<CaptureRecord[], CaptureError, HttpClient>
- *
- * Each `CaptureRecord` is `{surface, route, state, localPath, hostedUrl,
- * uploadError}`:
- *   - `localPath` is ALWAYS present when capture succeeded — the PRIMARY judged
- *     artifact (the gate reads the local PNG bytes), decoupled from upload.
- *   - `hostedUrl` is the GitHub user-attachments URL when upload succeeded, else
- *     `null` (the fallback fired).
- *   - `uploadError` is the diagnostic when the (undocumented) upload endpoint
- *     failed, else `null`.
- *
  * Only a genuine CAPTURE failure short-circuits (`CaptureError`); the upload leg
  * never fails the effect, so a broken endpoint degrades `hostedUrl`/`uploadError`
  * but never loses `localPath` and never breaks the gate.

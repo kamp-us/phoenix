@@ -8,9 +8,8 @@
  * so a single unclassifiable PR fails the whole sweep rather than being silently dropped, and a
  * rate limit exhausted mid-scan refuses with nothing partial emitted.
  *
- * Each row is `pr\t<number>\t<token>\t<age>\t<head>\t<lane>`. The lane is `lane.ts`'s lookup off the
- * class, emitted here so the scheduled workflow relays the note's arrow instead of deriving one in
- * its `run:` block, which must never derive a decision — it used to hardcode `nobody` on every row.
+ * The lane comes from ./lane.ts so the scheduled workflow relays the route instead of deriving it
+ * in shell. See ./command.ts help for the row format.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -35,6 +34,8 @@ export interface SweepOptions {
 	readonly dwellMinutes: number;
 	readonly wedgeDwellMinutes: number;
 	readonly driftCommits: number;
+	/** Passed through to each classification: the lazy `mergeable` job's re-read window. */
+	readonly mergeabilitySeconds: number;
 	readonly repo: string | null;
 	readonly json: boolean;
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */

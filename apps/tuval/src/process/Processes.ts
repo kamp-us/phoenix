@@ -5,6 +5,12 @@
  * dispose Subs, flush, refuse later dispatches — is the host's shutdown protocol registered as the
  * actor's Scope finalizer (`make` in `../host/actor.ts`); this slice only closes the Scope, and a
  * parent's close reaches every descendant because `Scope.fork` closes children with the parent.
+ *
+ * `remove` is stop's durable counterpart (#9446): the founder ruled that removing a process forgets
+ * it and its descendants for good, so it drops the checkpoint first and closes the Scope second.
+ * That order is the whole guarantee — a Scope closed ahead of a failed manifest write would leave a
+ * process gone from the table and still queued for the next `restore`, which is the half-forgotten
+ * state this exists to make unwritable.
  */
 
 import {randomUUID} from "node:crypto";
@@ -18,7 +24,8 @@ import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import type {ProgramNotFound} from "../registry/errors.ts";
 import type {AnyProgram, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
-import {HandlerFailed, ProcessNotFound} from "./errors.ts";
+import {ForgetRefused, HandlerFailed, ProcessIsPlanned, ProcessNotFound} from "./errors.ts";
+import {PlannedProcesses} from "./PlannedProcesses.ts";
 import {ProcessTable} from "./ProcessTable.ts";
 import {
 	type Lifecycle,
@@ -35,6 +42,7 @@ import {
 	noSelfReport,
 	type SelfReport,
 	type SelfReportPort,
+	seedSelfReport,
 	TITLE_PORT,
 } from "./self-report.ts";
 
@@ -61,6 +69,12 @@ export interface SpawnOptions {
  */
 export type SpawnError = ProgramNotFound | ProcessNotFound | OpenError | HandlerFailed;
 
+/**
+ * Every way a `remove` refuses, and each one leaves the process exactly as it found it: unknown to
+ * the table, declared by the config graph, or durably un-forgettable.
+ */
+export type RemoveError = ProcessNotFound | ProcessIsPlanned | ForgetRefused;
+
 export class Processes extends Context.Service<
 	Processes,
 	{
@@ -69,6 +83,14 @@ export class Processes extends Context.Service<
 			options: SpawnOptions,
 		) => Effect.Effect<ProcessHandle, SpawnError>;
 		readonly stop: (id: ProcessId) => Effect.Effect<void, ProcessNotFound>;
+		/**
+		 * Forget the process durably, then stop it — the desk's `remove` and the authored `stop`
+		 * effect's one operation. Its subtree goes with it both ways: the checkpoint's descendants are
+		 * dropped by `Checkpoints.forget`, and the live ones by the Scope close. A process the config
+		 * graph declares is refused outright, and so is one whose durable write fails; in both cases
+		 * the process is still running and still in the manifest when the failure arrives.
+		 */
+		readonly remove: (id: ProcessId) => Effect.Effect<void, RemoveError>;
 		/**
 		 * The live handle for one id, or none. `ProcessTable.get` answers with the public row; this
 		 * answers with the thing that can be dispatched into, which is what the shell's `forwardKey`
@@ -82,8 +104,11 @@ export class Processes extends Context.Service<
 	 * `Processes` and `ProcessTable` over one map. The layer's Scope is the root every root process
 	 * forks from, so closing the layer stops every process (`LLMS.md` "Writing Effect services").
 	 */
-	static readonly layer: Layer.Layer<Processes | ProcessTable, never, Registry | Checkpoints> =
-		Layer.effectContext(makeServices());
+	static readonly layer: Layer.Layer<
+		Processes | ProcessTable | PlannedProcesses,
+		never,
+		Registry | Checkpoints
+	> = Layer.effectContext(makeServices());
 }
 
 interface Entry {
@@ -228,6 +253,9 @@ function makeServices() {
 		const checkpoints = yield* Checkpoints;
 		const root = yield* Effect.scope;
 		const live = new Map<ProcessId, Entry>();
+		// The graph-declared ids, written by `launch` through `PlannedProcesses` and read by `remove`
+		// off this same set — the way `ProcessTable` reads the map above.
+		const planned = new Set<ProcessId>();
 		const changes = yield* PubSub.unbounded<ProcessChange>();
 		yield* Scope.addFinalizer(root, PubSub.shutdown(changes));
 		const publish = (change: ProcessChange) => Effect.asVoid(PubSub.publish(changes, change));
@@ -304,6 +332,7 @@ function makeServices() {
 					programId,
 					parentId,
 					version: program.identity.version,
+					...(program.migrations === undefined ? {} : {migrations: program.migrations}),
 					...(program.restorable === undefined ? {} : {restorable: program.restorable}),
 				});
 				return yield* makeActor(toDefinition(program, checkpoint.store, handlerServices, onCommit));
@@ -312,6 +341,12 @@ function makeServices() {
 				Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))),
 			);
 			readState = actor.getState;
+			// The latch only ever records what this process emitted, and a restored one emits nothing:
+			// a rehydrating `init` may answer no Cmds and the authored `update` publishes a derived
+			// line only on the transition that moves it, so a stable title would read back as absent
+			// forever (#8812). Seeding it off the state the actor actually booted on covers both arms
+			// at once — a fresh boot's `init` derives the same lines from that same state.
+			seedSelfReport(program, actor.getState(), record);
 			yield* Scope.addFinalizer(
 				scope,
 				Effect.sync(() => {
@@ -353,6 +388,16 @@ function makeServices() {
 			yield* Scope.close(entry.scope, Exit.void);
 		});
 
+		const remove = Effect.fn("Tuval.Processes.remove")(function* (id: ProcessId) {
+			const entry = yield* lookup(id);
+			if (planned.has(id)) return yield* new ProcessIsPlanned({id});
+			// Durable half first, and nothing is closed until it has landed. The refusal carries the
+			// store's own failure so a caller can say why, and says in its own message that the
+			// process it names is still running.
+			yield* Effect.mapError(checkpoints.forget(id), (cause) => new ForgetRefused({id, cause}));
+			yield* Scope.close(entry.scope, Exit.void);
+		});
+
 		const table = ProcessTable.of({
 			list: Effect.sync(() => [...live.values()].map((entry) => entry.row)),
 			get: (id) => Effect.map(lookup(id), (entry) => entry.row),
@@ -362,8 +407,15 @@ function makeServices() {
 		const handleOf = (id: ProcessId) =>
 			Effect.sync(() => Option.fromNullishOr(live.get(id)?.handle));
 
-		return Context.make(Processes, {spawn, stop, handle: handleOf}).pipe(
+		return Context.make(Processes, {spawn, stop, remove, handle: handleOf}).pipe(
 			Context.add(ProcessTable, table),
+			Context.add(PlannedProcesses, {
+				declare: (ids) =>
+					Effect.sync(() => {
+						for (const id of ids) planned.add(id);
+					}),
+				isPlanned: (id) => Effect.sync(() => planned.has(id)),
+			}),
 		);
 	});
 }

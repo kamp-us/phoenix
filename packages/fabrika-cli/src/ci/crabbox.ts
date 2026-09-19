@@ -75,7 +75,7 @@ export const parseRunSummaryJson = (
 	}).pipe(Effect.flatMap(decodeRunSummary));
 
 /** crabbox output could not be parsed at all (not JSON / not the expected shape upstream of Schema). */
-export class CrabboxParseError extends Schema.TaggedErrorClass<CrabboxParseError>()(
+export class CrabboxParseError extends Schema.TaggedError<CrabboxParseError>()(
 	"@kampus/crabbox-manifest/CrabboxParseError",
 	{
 		message: Schema.String,

@@ -11,6 +11,7 @@ import {defaultPrefixTable} from "../keys/index.ts";
 import type {CommandRefusal} from "./errors.ts";
 import {refusalMessage} from "./errors.ts";
 import {readCommandLine} from "./line.ts";
+import {commandIndexFor} from "./table.ts";
 
 /** The refusal a line was refused with. A line that read is a test-setup error, not a skip. */
 const refusalOf = (line: string): CommandRefusal => {
@@ -43,6 +44,15 @@ describe("reading a command line", () => {
 		expect(attach._tag === "Msg" ? attach.msg : null).toEqual({
 			type: "window.attach",
 			processId: "p-1",
+		});
+	});
+
+	it("opens a fresh agent session in a quoted cwd", () => {
+		const opened = readCommandLine('open pi "/work/project with spaces"');
+		expect(opened._tag === "Msg" ? opened.msg : null).toEqual({
+			type: "window.open",
+			programId: "pi",
+			session: {cwd: "/work/project with spaces", resume: null},
 		});
 	});
 
@@ -161,5 +171,54 @@ describe("the Msg a line produces, run through the core", () => {
 	it("a window row that only moves the desk asks the host for nothing", () => {
 		expect(cmdsOf("window:split-vertical")).toEqual([]);
 		expect(cmdsOf("workspace:create")).toEqual([]);
+	});
+});
+
+/**
+ * `process:remove <id>` off the command line (#9447). The line is the route that names a process the
+ * picker's cursor is not on, and the gate is the same one the table applies: with the flag off the
+ * verb reads as a verb nobody wrote.
+ */
+describe("reading process:remove", () => {
+	const commands = commandIndexFor({processBoard: false, processRemove: true});
+
+	it("decodes the typed line to the removal Msg", () => {
+		const read = readCommandLine("process:remove p-1", {commands});
+		expect(read).toEqual({
+			_tag: "Msg",
+			command: expect.objectContaining({path: ["process", "remove"]}),
+			msg: {type: "process.remove", processId: "p-1"},
+		});
+	});
+
+	it("emits the one Cmd that removal needs, over the focused window and its slot", () => {
+		const read = readCommandLine("process:remove p-1", {commands});
+		if (read._tag !== "Msg") throw new Error("test setup: the line was refused");
+		const state = initialState();
+		const workspace = activeWorkspace(state);
+		if (workspace === undefined) throw new Error("test setup: no active workspace");
+		const [, cmds] = applyMsg(defaultPrefixTable, state, read.msg);
+		expect(cmds).toEqual([
+			{
+				type: "removeProcess",
+				windowId: workspace.focused,
+				processId: "p-1",
+			} satisfies ShellCmd,
+		]);
+	});
+
+	it("refuses a line with no id rather than removing something unnamed", () => {
+		const read = readCommandLine("process:remove", {commands});
+		expect(read._tag).toBe("Refused");
+	});
+
+	it("is unreadable with the flag off, the way any unwritten verb is", () => {
+		expect(readCommandLine("process:remove p-1")._tag).toBe("Refused");
+	});
+
+	it("leaves `remove` ambiguous rather than guessing between the workspace and the process", () => {
+		// `workspace:remove` and `process:remove` both claim the bare segment, and neither is a window
+		// row, so the table resolves it to neither — the same rule that keeps `open` unguessable.
+		expect(commands.resolveVerb("remove")).toBeUndefined();
 	});
 });

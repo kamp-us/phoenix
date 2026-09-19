@@ -5,11 +5,10 @@
  * in the since-deleted `moderator-grant`). All three checks run with no CF creds and
  * no SQL engine (ADR 0082 unit tier): the param transform is pure, and the
  * `makeD1Rest` shape assertions drive the real REST adapter offline over a fake
- * `FetchHttpClient.Fetch`. The faithful proof that real D1 actually rejects null /
- * flips a row lives on each consumer's integration tier.
+ * `FetchHttpClient.Fetch`. Actual SQL execution remains each consumer's integration tier.
  */
 import {fromApiToken} from "@distilled.cloud/cloudflare/Credentials";
-import {assert, describe, it} from "@effect/vitest";
+import {assert, describe, expect, it} from "@effect/vitest";
 import {Layer} from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {
@@ -31,7 +30,50 @@ const restD1 = (fetch: typeof globalThis.fetch): D1Database =>
 		),
 	});
 
-describe("toRestParams / assertRestParam — D1 REST rejects null params (#569)", () => {
+describe("makeD1Rest preserves SQL column names through the installed REST decoder", () => {
+	const columns = ["created_at", "createdAt", "rows_read", "actor_id", "2", "1"];
+	const row = [1789028499, "literal camel-case column", 7, "admin", "second", null];
+	const expected = Object.fromEntries(columns.map((column, index) => [column, row[index]]));
+	const sql = 'SELECT created_at, createdAt, rows_read, actor_id, 2 AS "2", NULL AS "1" FROM audit';
+	const requests: string[] = [];
+	const respond: typeof globalThis.fetch = async (input) => {
+		const url = String(input);
+		requests.push(url);
+		return Response.json({
+			result: [
+				{results: url.endsWith("/raw") ? {columns, rows: [row]} : [expected], success: true},
+			],
+		});
+	};
+
+	it("first and all retain colliding wire and camel-case names without dropping values", async () => {
+		const d1 = restD1(respond);
+		assert.deepStrictEqual(await d1.prepare(sql).first(), expected);
+		assert.deepStrictEqual((await d1.prepare(sql).all()).results, [expected]);
+		assert.isTrue(requests.every((url) => url.endsWith("/raw")));
+	});
+
+	it("raw retains SQL column order, including numeric column aliases and null", async () => {
+		const d1 = restD1(respond);
+		assert.deepStrictEqual(await d1.prepare(sql).raw(), [row]);
+	});
+
+	it("an empty result returns null from first and empty arrays from all and raw", async () => {
+		const d1 = restD1(async () => Response.json({result: [{results: {columns, rows: []}}]}));
+		assert.isNull(await d1.prepare(sql).first());
+		assert.deepStrictEqual((await d1.prepare(sql).all()).results, []);
+		assert.deepStrictEqual(await d1.prepare(sql).raw(), []);
+	});
+
+	it("rejects malformed rows rather than silently fabricating missing column values", async () => {
+		for (const rows of [[null], [[1]]]) {
+			const d1 = restD1(async () => Response.json({result: [{results: {columns, rows}}]}));
+			await expect(d1.prepare(sql).all()).rejects.toThrow(/row that does not match its columns/);
+		}
+	});
+});
+
+describe("toRestParams / assertRestParam — adapter rejects null params (#569)", () => {
 	it("rejects a null or undefined bound param with the wire-contract message", () => {
 		for (const bad of [null, undefined]) {
 			assert.throws(

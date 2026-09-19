@@ -8,13 +8,13 @@ How `@kampus/fate-effect` (the workspace package at `packages/fate-effect`) maps
 
 ## Declaring an error
 
-Attach the wire code where the error is defined, via the `FateWireCode` annotation key (`Schema.TaggedErrorClass`'s third parameter):
+Attach the wire code where the error is defined, via the `FateWireCode` annotation key (`Schema.TaggedError`'s third parameter):
 
 ```ts
 import {FateWireCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
 
-export class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
+export class BodyRequired extends Schema.TaggedError<BodyRequired>()(
 	"sozluk/BodyRequired",
 	{message: Schema.String},
 	{[FateWireCode]: "BODY_REQUIRED"},
@@ -35,7 +35,7 @@ That is the whole contract — the class declaration carries its own wire mappin
 | un-annotated error, defect, any other value | `INTERNAL_WIRE_CODE` (`INTERNAL_SERVER_ERROR`) + a fixed message — **defect details never reach the wire** |
 | `FateRequestError` | passed through verbatim (the escape hatch for code already speaking the wire shape) |
 
-At runtime the codec reads the annotation off `instance.constructor` — a `Schema.TaggedErrorClass`'s annotations land on the class's static `ast.annotations` — through structural guards (`Predicate.hasProperty`), so arbitrary defect values are safe inputs and no type assertion is needed. `wireCodeOf` (instance) and `wireCodeOfClass` (class) expose the same read for tests and tooling.
+At runtime the codec reads the annotation off `instance.constructor` — a `Schema.TaggedError`'s annotations land on the class's static `ast.annotations` — through structural guards (`Predicate.hasProperty`), so arbitrary defect values are safe inputs and no type assertion is needed. `wireCodeOf` (instance) and `wireCodeOfClass` (class) expose the same read for tests and tooling.
 
 `INTERNAL_WIRE_CODE` is `INTERNAL_SERVER_ERROR` — phoenix's historical wire code and a member of the SPA's `FATE_WIRE_CODES` vocabulary — not fate's protocol `INTERNAL_ERROR`, preserved verbatim through the migration.
 

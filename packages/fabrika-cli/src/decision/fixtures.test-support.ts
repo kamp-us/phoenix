@@ -13,6 +13,11 @@ export const RULER = "usirin";
 export const RULING_COMMENT = 900001;
 export const RULING_URL = `https://github.com/${REPO}/issues/${ISSUE}#issuecomment-${RULING_COMMENT}`;
 export const MARKER_COMMENT = 900002;
+/** The comment `--authorization` posts, and the URL the marker cites it by. */
+export const AUTHORIZATION_COMMENT = 900003;
+export const AUTHORIZATION_URL = `https://github.com/${REPO}/issues/${ISSUE}#issuecomment-${AUTHORIZATION_COMMENT}`;
+/** A quote a founder could have given in conversation: verbatim, dated, no machine-local path. */
+export const AUTHORIZATION = "## Ruling (founder, 2026-08-19 PT)\n\n> take the second fork\n";
 /** A gradeable decision body: the acceptance-criteria block `decision rule` needs to flip on. */
 export const BODY =
 	"## The decision\n\nWhich fork?\n\n### Acceptance criteria\n\n- [ ] an ADR records the choice\n";
@@ -95,6 +100,15 @@ export const POSTED: HttpReply = {
 	status: 201,
 	body: JSON.stringify({
 		id: MARKER_COMMENT,
+		html_url: `https://github.com/${REPO}/issues/${ISSUE}#c`,
+	}),
+};
+
+/** The authorization comment's create answer — the write `--authorization` makes before the marker. */
+export const AUTHORIZATION_POSTED: HttpReply = {
+	status: 201,
+	body: JSON.stringify({
+		id: AUTHORIZATION_COMMENT,
 		html_url: `https://github.com/${REPO}/issues/${ISSUE}#c`,
 	}),
 };

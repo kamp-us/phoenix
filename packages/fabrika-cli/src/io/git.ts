@@ -371,6 +371,25 @@ export const localBranches: Shell<Attempt<ReadonlyArray<string>>> = Effect.gen(f
 		: fail(r.reason);
 });
 
+/**
+ * Check this worktree out at `rev`, detached — the seat, never a branch move.
+ *
+ * Detached because the caller is a reader: it seats its tree at the commit it is judging and commits
+ * nothing there, so switching or moving a branch would be a mutation nobody asked for. The commit is
+ * the whole subject, and `--detach` is what keeps the seat from touching a ref.
+ *
+ * `git switch` rather than `git checkout --force`: `switch` refuses instead of overwriting a
+ * modified file, so a tree carrying uncommitted work is left as it stands and the caller reports
+ * that refusal rather than destroying the work to obey it.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8893
+ */
+export const checkoutDetached = (rev: string): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["switch", "--detach", rev]);
+		return r.ok ? ok<void>(undefined) : fail(r.reason);
+	});
+
 /** One commit a range adds: its object name and its whole message, subject and body together. */
 export interface RangeCommit {
 	readonly sha: string;
@@ -569,6 +588,45 @@ const parsePatchIds = (stdout: string): ReadonlyArray<PatchIdentity> =>
 		.flatMap(([patch, commit]) =>
 			patch === undefined || patch === "" ? [] : [{patch, commit: commit ?? ""}],
 		);
+
+/**
+ * Every path under `dir` that a branch ref in this clone touches and `baseSha` does not carry.
+ *
+ * `--branches --remotes` is both halves of that: the local branches of every worktree of this clone,
+ * and the remote-tracking refs it has fetched. So a branch pushed from another clone is in the
+ * answer once this one fetches it, and only a branch that is still unpushed elsewhere is out of
+ * reach.
+ *
+ * One `git log` rather than a walk over `for-each-ref`: a working clone carries thousands of branch
+ * refs, so a per-ref `ls-tree` is thousands of subprocesses, while `--not <baseSha>` prunes every
+ * ref already merged into the base inside a single traversal.
+ *
+ * **Every touched path counts, not only added ones.** A `--diff-filter` would have to decide what a
+ * renumbering rename is, and getting that wrong drops the destination id from the answer. Counting
+ * a modified or deleted record instead over-reads in the one harmless direction: its id is on the
+ * base ref already, so it cannot raise a maximum the merged set does not hold.
+ *
+ * Worktrees of one clone share `refs/heads`, which is what puts a sibling lane's unpushed branch in
+ * this answer — see `../adr/branch-claims.ts` for what that closes.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8901
+ */
+export const pathsOffBase = (baseSha: string, dir: string): Shell<Attempt<ReadonlyArray<string>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", [
+			"log",
+			"--branches",
+			"--remotes",
+			"--not",
+			baseSha,
+			"--name-only",
+			"-z",
+			"--format=",
+			"--",
+			dir,
+		]);
+		return r.ok ? ok(r.stdout.split("\0").filter((p) => p !== "")) : fail(r.reason);
+	});
 
 /**
  * The stable patch identities of a stream of diffs, read by handing the bytes to `git patch-id`.

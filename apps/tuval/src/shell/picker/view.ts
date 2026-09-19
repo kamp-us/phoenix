@@ -137,6 +137,19 @@ export type PickerKeyAnswer =
 	| {readonly _tag: "Cleared"; readonly view: PickerView}
 	| {readonly _tag: "Filtering"; readonly view: PickerView}
 	| {readonly _tag: "Chose"; readonly intent: PickerIntent}
+	/**
+	 * Remove the highlighted row's process — forget it durably and stop it (#9447). It carries no
+	 * view, because nothing about the picker changes: the row leaves the list when the process leaves
+	 * the table, and a refused removal comes back as a `window.setView` the kernel handler sends
+	 * (`./remove.ts`). A separate arm from `Chose` because a removal is not an intent: it binds no
+	 * window and spawns nothing.
+	 *
+	 * The one arm no pointer gesture produces, which is the direction
+	 * [ADR 0368](../../../../../.decisions/0368-picker-one-cursor-both-inputs.md) leaves open: its
+	 * rule is that the pointer can express nothing the keyboard cannot, and a `role="option"` has no
+	 * destructive gesture to spend here.
+	 */
+	| {readonly _tag: "Removing"; readonly processId: ProcessId}
 	| {readonly _tag: "Ignored"};
 
 const ignored: PickerKeyAnswer = {_tag: "Ignored"};
@@ -148,6 +161,30 @@ const LAST = ["<end>", "G"];
 const CHOOSE = ["<enter>", "<space>"];
 const DISMISS = ["<escape>"];
 const FILTER = ["/"];
+
+/**
+ * The keys a feature flag adds, declared in their own list the way `../commands/table.ts` declares
+ * `boardCommands` and `../keys/table.ts` declares `boardBindings`: with `processRemove` off the set
+ * is empty, so `d` falls through to `ignored` exactly as it did before this key existed (#9447).
+ *
+ * `d` and never `x`: `../keys/table.ts` binds prefix `x` to `window:close`, which is why the epic's
+ * no-gos rule an `x` shortcut out. It is live only while the filter is not focused — every key typed
+ * into the filter is the input's own (`../ui/PickerView.tsx`), which is already how `j`/`k`/`g`/`G`
+ * behave.
+ */
+const REMOVE = ["d"];
+
+/** The flags a picker key can be gated on — the picker's own read of `../../features.ts`. */
+export interface PickerKeyFeatures {
+	readonly processRemove: boolean;
+}
+
+/** Every flag off: what a caller that has resolved none is entitled to, and `pickerKey`'s default. */
+export const noPickerKeyFeatures: PickerKeyFeatures = {processRemove: false};
+
+/** The keys these flags leave standing, empty for every flag that is off. */
+const removeKeysFor = (features: PickerKeyFeatures): ReadonlyArray<string> =>
+	features.processRemove ? REMOVE : [];
 
 /**
  * The one move. A move onto the row already under the cursor keeps a showing refusal, because
@@ -175,13 +212,18 @@ const movedTo = (view: PickerView, at: number, next: number, length: number): Pi
  *
  * `/` opens the filter and nothing else takes text (founder ruling, 2026-09-09 on #8450), which is
  * what keeps `j` / `k` / `g` / `G` movement keys. Every key typed *into* the filter is the input's
- * own: the desk leaves a focused text entry its presses, so nothing below ever sees them.
+ * own: the desk leaves a focused text entry its presses, so nothing below ever sees them — which is
+ * also the whole of why `d` is not live there.
+ *
+ * `d` is the one key a flag decides, and it is read last: every key above it is the picker's
+ * whatever the operator's `processRemove` is, so turning the flag on takes nothing away.
  */
 export const pickerKey = (
 	windowId: WindowId,
 	entries: PickerEntries,
 	view: PickerView,
 	key: string,
+	features: PickerKeyFeatures = noPickerKeyFeatures,
 ): PickerKeyAnswer => {
 	const spelled = normalize(key);
 	if (Result.isFailure(spelled)) return ignored;
@@ -221,6 +263,15 @@ export const pickerKey = (
 	if (CHOOSE.includes(pressed)) {
 		const entry = rows[at];
 		return entry === undefined ? ignored : {_tag: "Chose", intent: intentOf(windowId, entry)};
+	}
+	if (removeKeysFor(features).includes(pressed)) {
+		// A program row names no process, so there is nothing to forget: the key is ignored rather
+		// than answered with a refusal, because the operator asked about a row that cannot be removed
+		// and never about a removal that failed.
+		const entry = rows[at];
+		return entry === undefined || entry._tag !== "Process"
+			? ignored
+			: {_tag: "Removing", processId: entry.processId};
 	}
 	return ignored;
 };

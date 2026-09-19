@@ -5,10 +5,7 @@
  * members behind it, hand the manifests to the pure rule in `./publish-isolation.ts`, seat the
  * answer on the group's exit taxonomy.
  *
- * **v1's single non-zero exit splits into three seats here.** A missing publish.yml, a prefix that
- * maps to no member, and a zero-prefix workflow are all broken scope (`7`); an unreadable
- * or unparseable manifest is UNKNOWN (`11`); only a real linked private dep is the violation (`12`).
- * All three stay red, so the gate's strictness is unchanged.
+ * See `guard publish-isolation-guard check --help` for results and exit codes.
  */
 
 import {Effect, type FileSystem, Path} from "effect";

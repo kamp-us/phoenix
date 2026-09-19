@@ -595,6 +595,38 @@ drifted back into the driver's checkout is caught at the one step every publicat
 rather than after the fact. The remedy is never a flag: place the run's worktree with
 `lane assembly` and push from there.
 
+**A push of the assembly branch leaves every open child PR on it reporting checks over the old
+base, so retrigger them in the same breath.** GitHub rebuilds `refs/pull/<n>/merge` when a base
+moves — a merge ref fetched over a PR whose head had not been pushed for eleven days carried that
+morning's trunk tip as its first parent — but it emits no `pull_request` event for a base push:
+the event fires on `opened`, `synchronize` and `reopened`, and a base push is none of them. So
+nothing schedules a run, and the red the child inherited from the base you just fixed stays on the
+PR until something moves its head:
+
+```bash
+node packages/fabrika-cli/src/bin.ts lane retrigger $lane_key
+```
+
+It sweeps every OPEN pull request based on `epic/<n>` and moves the head of each one that is behind
+the branch, through GitHub's own branch update — a merge of the base into the head branch, which is
+a `synchronize`, so the run is scheduled against a merge ref computed now. It is safe to run after
+every push: a child whose head already carries the base tip is read, reported `current` and never
+written to, so a second call schedules nothing. `RETRIGGER-VERDICT: NONE` says no open PR sits on
+the branch at all, which is the ordinary answer under this shape — the run opens one PR and its
+children open none — and it costs one board read.
+
+**Never close and reopen a PR to force this.** A reopen does rebuild the merge ref, and it also
+tears the PR's preview stage down mid-deploy — which is the reason it is forbidden rather than
+merely discouraged. The [lane group overview](../../../../packages/fabrika-cli/docs/verb-reference.md#the-lane-group)
+links the incident report. It raced the rebuild the one time it was used, so the guard re-ran against the stale
+base anyway and took two rounds. Re-running the workflow is no route either: a re-run replays the original event's
+`GITHUB_SHA` and `GITHUB_REF`, which is the stale merge commit — the very red you are clearing.
+Exit `42` is a child the assembly branch does not merge into, and that is a repair round on that
+child rather than anything to retry here; exit `8` says the sweep has already moved a child's head
+and then lost its read — an accepted update whose head had not moved inside its window, or a read
+that failed after that write — so re-read before writing again. Exit `11` is the sweep that wrote to
+nothing, which is the one you can simply re-run.
+
 **The first of those pushes also opens the run's one PR**, as a draft — a draft carries the CI
 signal and the board's view of the run without inviting a review the machine has not asked for.
 Open it yourself; no shell owns this branch. Its body carries three
@@ -711,9 +743,12 @@ landed child's range verdict is bound to the commits it names and a rebase rewri
 lane emitted before this cell landed does not grow one — its tail `FAIL` still points at `review`,
 and re-emitting is the only way to it.
 
-**The draft flips ready at the tail's `PASS`, and nowhere earlier.** When the epic-level review's
-`PASS` is proven and recorded, the single PR has the verdict it was opened for — mark it ready
-before dispatching `ship`, whose write verbs refuse a draft. The number is the one `lane brief`
+**The draft flips ready at the tail's last review `PASS`, and nowhere earlier.** That is `review`'s
+own `PASS` on a run that renders nothing, and `review:ui`'s on a run that renders something: a
+rendered tail takes the `class:ui` arm out of `review` and still owes the `review-ui` namespace, so
+the PR has the verdict it was opened for only once the cell that arm routes into passes too. When
+that last `PASS` is proven and recorded, mark the PR ready before dispatching `ship`, whose write
+verbs refuse a draft. The number is the one `lane brief`
 printed in the tail's `## Ground`:
 
 ```bash
@@ -1062,18 +1097,29 @@ prints it; a single-task lane tolerates omission.)
 
 **`--class` is how a UI lane reaches its own shells.** The machine's `build:ui` and `review:ui`
 states are entered by a guarded arm reading the classes standing over the task, and those classes
-ride the event line the way `--cause` does. So a lane whose work is a rendered surface takes
-`--class ui` on the `WIP` you record before spawning the builder, and it stands from there — the
-`PASS` out of `review` routes to `review:ui` without you naming it again. **Relay it, never derive
-it**: the class is the lane's own fact, not your reading of the diff. At `WIP` there is
-no head to scope and no `ui` label to read, so the class you relay is the one the machine already
-carries — `lane status` prints the task's `classes` when any stand, seeded into the lane document by
-the boot verb off the issue's `class:<name>` label (`triage apply --class` is what stamps it) and
-carried forward by every event since. No `classes` key means unclassed: record the bare `WIP`, which
-is now the honest answer for an unclassed ticket rather than the answer every ticket got. Once
-a head exists, `ship scope` / `review scope` name the classes it raises — one derivation, printed by
-both, so they cannot disagree — and those are what you relay from then on. A spelling
-outside the closed set is refused at exit `38`, never routed.
+ride the event line the way `--cause` does.
+
+**A head decides the classes wherever one exists; the ticket's stamp decides only the first build.**
+That is the ruling the decision record *The head's diff decides the classes a review round owes*
+transcribes, and it splits the relay in two.
+
+- **No head yet** — the first `WIP` out of `queued`. There is no diff to scope, so relay the class
+  the machine already carries: `lane status` prints the task's `classes` when any stand, seeded into
+  the lane document by the boot verb off the issue's `class:<name>` label (`triage apply --class` is
+  what stamps it). That stamp is what routes a rendered ticket's first build to `build:ui`, and
+  nothing here narrows it. No `classes` key means unclassed: record the bare `WIP`.
+- **A head exists** — every later event, the `WIP` after a cleared park included. Relay the classes
+  that head raises: `ship scope` / `review scope` name them, one `class` row each, from one
+  derivation printed by both so they cannot disagree. Relay **every** row, because a non-empty set
+  replaces the standing one outright, so a row you leave off a passed set is cleared. Omitting the
+  flag entirely is the separate act that keeps what stands, and it belongs to the no-head arm above.
+
+**A stamp that outlives the head it no longer describes is the defect this closes.** A ticket
+stamped `class:ui` whose fix turns out text-only used to take the `PASS` out of `review` into
+`review:ui`, where the rendered gate refuses a diff with no rendered surface and the lane parks on
+you — one park per lane, for a round no changed file asked for. `lane prove` now refuses that route
+at exit `67` instead, with nothing appended, and the remedy on the refusal is the relay above. A
+spelling outside the closed set is refused at exit `38`, never routed.
 
 **The two review cells prove different halves, and that is what makes the ui arm walkable.** `lane
 prove` takes the `PASS` out of `review` against the namespaces that cell owes, leaving the routed
@@ -1085,10 +1131,13 @@ merge regardless.
 
 **That split is the routing, so it never outlives it.** `prove` asks this lane's own machine which
 arm the event takes, with the classes the append will carry, and defers only into `review:ui` — so a
-lane whose machine has no such arm, and a rendered `PASS` whose class flag was never relayed, both
-owe the whole set at `review` and refuse there exactly as before: the review bar splits across the
-two cells and the machine decides where it falls. The remedy the refusal names is the class relay,
-and it is the reviewer's to make.
+lane whose machine has no such arm owes the whole set at `review` and refuses there exactly as
+before: the review bar splits across the two cells and the machine decides where it falls. A `PASS`
+whose class flag was never relayed leaves the standing set in force, and that set picks which of the
+two refusals it meets — with nothing standing it owes the whole set at `review` and refuses at exit
+`23` the same way, and with a stale `ui` standing over a text-only head the arm is taken and the
+refusal is exit `67`. The remedy either refusal names is the class relay, and it is the reviewer's
+to make.
 
 **An epic child is the one lane where that deferral is not routed at all — it is the child's shape.**
 A child opens no PR and no verb of this CLI posts `review-ui` at range scope, so its
@@ -1100,13 +1149,28 @@ Requiring the namespace held every
 ui-bearing child at exit `23` with no cell and no verb that could ever free it, which once cost one
 epic's tracer child its whole lane. The creditor is the tail, and the bar
 does not drop on the way: one epic run is one branch and one PR, so every rendered file a child's
-range added is in the tail PR's own diff, where the tail's `PASS` derives `review-ui`, defers
-nothing, and refuses until a whole-set verdict binds at a head a preview exists for. The event line
+range added is in the tail PR's own diff, and nothing reaches `ship` until a whole-set verdict binds
+at a head a preview exists for. The event line
 says so — `lane report` records `deferred` on the `PASS` it appends, and `lane history` reads it
 back, so which cell still owes the rendered verdict is a fact in the ledger rather than a
 reconstruction. A child whose range renders nothing derives `review-ui` nowhere, carries no
 `deferred` field, and proves exactly as it always did: an epic child's rendered verdict is the
 tail's by construction.
+
+**The tail pays that debt through its own `review:ui`, so the class relay matters most there.** The
+tail is the one region of a generated epic machine that carries the rendered review cell, and it is
+routed exactly like a single lane's: the `PASS` out of the tail's `review` takes the `class:ui` arm
+when `ui` stands over the task, defers `review-ui` into `review:ui`, and the `PASS` out of that cell
+stands on the whole set. A tail whose run renders nothing never raises the guard and walks
+`review → ship` unchanged. **Relay `--class` on the tail's `lane report` the way you would on any
+other** — the tail's context seeds no class, because it is emitted before any child has classed
+anything, so the class reaches it only off `review scope` on the tail PR's own head. Dropping it
+leaves the whole rendered set owed at `review`, where `lane prove` refuses at exit `23` and the lane
+can neither ship nor park honestly: `lane recover`'s spawn sweep proves only a dead builder, so it
+never parks a lane standing in `review`, and `lane stale` lists the row without moving it, because
+re-spawning the reviewer reaches the same exit `23`.
+A tail rendered FAIL repairs in the tail's one `build` cell, briefed on the assembly branch beside
+the run's PR; there is no `build:ui` at the tail.
 
 **On a single-issue lane, a merged PR that closed nothing sends the lane round rather than folding
 it.** A `LANDED` whose merge carried `Part of #N` records its `DONE` as always, and the machine takes
@@ -1214,8 +1278,10 @@ names it. A cause outside the set is exit `35` with the log unappended, as it is
 **The cell has to be there, and on an epic lane one key decides whether it is.**
 `.fabrika.jsonc`'s `machineryLaps.onEmit` ships `off` and is read by `lane emit` alone. An epic
 machine emitted under `off` holds no `LAP` cell at all; one emitted under `on` holds it in each
-child region's `integrate` and in the tail's `ship` and `ship:queued` — not in `build`, not in
-`review`. A single-issue lane is a different document: it boots from the committed coder template
+child region's `build`, `review` and `integrate` — plus a rendered child's `build:ui` — and in the
+tail's `build`, `review`, `review:ui`, `ship` and `ship:queued`. Every state that dispatches a shell
+carries it on both sides of that list, so a `SHELL-DEAD` is recordable wherever a shell was
+dispatched. A single-issue lane is a different document: it boots from the committed coder template
 ([`coder.workflow.json`](../../../../packages/fabrika-cli/src/lane/templates/coder.workflow.json)),
 which the key does not gate and which carries the cell in `build`, `build:ui`, `review`,
 `review:ui`, `ship` and `ship:queued`. So a machinery token recorded where the task's state holds no
@@ -1697,17 +1763,17 @@ A `parkable` row is a lane whose builder is provably gone, and every answer shor
 `working` row that changed nothing — a claim still inside its budget (the live-but-quiet builder,
 which once lost its claim to exactly this kind of guess), a branch still carrying the dead builder's
 commits, an open PR, or no claim at all. A read that failed is `unreadable` and never dead.
-**The conjunction itself is the verb's, written once in its reference row**
-(`packages/fabrika-cli/docs/verb-reference.md`, `lane recover`) — read it there rather than off a
-restatement here, because what counts as "left something behind" differs by role and a copy of it
-here drifted the day it landed. Dropping `--check` records the `BLOCKED --cause spawn-dead`.
+**Read the conjunction in `lane recover --help`.** What counts as "left something behind"
+differs by role; the help owns that predicate rather than a second copy here. Dropping `--check`
+records the `BLOCKED --cause spawn-dead`.
 
 **It retracts nothing, and it is not the end of the chain.** This sweep leaves the claim standing,
 and the park it writes is the exact `blocked` + `spawn-dead` pair `recipe unpark`'s `spawn-clear` row
 clears — which §4 above already tells you to run on a `blocked` fold. That row retracts the claim on
 the same age proof, so the claim does end, one verb later, with no human between the two. That is a
-decision this repo's corpus records, and the verb's reference row names it: a verb-made age read may
-license the park, and the retraction stays where it always was, under every one of its conditions.
+ruling cited by the `@ruling` tag in
+[`recover-verb.ts`](../../../../packages/fabrika-cli/src/lane/recover-verb.ts): the sweep may record
+the park, and retraction keeps its existing conditions.
 **The eviction rule above still holds whole where it matters** — no reader
 retracts a claim, and no claim ends outside a proven identity or a budget-proved death. What changed
 is who may write down the park that death happens inside. The arm is off unless you pass the flag,

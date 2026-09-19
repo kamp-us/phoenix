@@ -31,6 +31,21 @@
  * shipper's seat, not about the derivation, so an in-process relay that stands on no lane branch and
  * writes to no tree passes `relay` and skips the read entirely — see that type for why a default
  * would be the wrong shape here.
+ *
+ * **The partition is taken over the enumerated file list, not over GitHub's `changed_files`.** A list
+ * short of that declared count used to refuse at `13`, and this is the first verb a `ship` run makes,
+ * so the refusal stranded the whole merge path before it started. The count is the stale side —
+ * GitHub computes it against a base cached at the PR's last push, which nothing on the shipper's
+ * side can invalidate. {@link platformFileSet} owns that argument; the disagreement leaves as a
+ * `scanned` line, and the zero-file refusal below is what keeps a partition over an unread diff from
+ * printing.
+ *
+ * **The `13` this verb keeps for that list is the endpoint's own ceiling, not a count comparison.**
+ * `pulls/<n>/files` serves at most 3000 files (`PULL_FILES_CAP`) and ends its Link chain normally
+ * there, so the pagination proof passes over a list GitHub already truncated — and a class, a
+ * namespace or a §CP path could sit in the part it never served.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -39,6 +54,7 @@ import {governedRootsOr, noUiSurfaces, uiSurfacesOr} from "../config/paths.ts";
 import {listPullFiles} from "../io/pulls.ts";
 import {standingInLinkedWorktree} from "../lane/assembly.ts";
 import {issueRefOf, partitionWithUi, renderIssueRef, shipNamespacesOf} from "../review/classes.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {readBoundary} from "./boundary.ts";
 import {classify} from "./codeowners.ts";
@@ -135,31 +151,48 @@ export const runScope = (
 		if (target._tag === "Refused") return target.outcome;
 		const pull = target.pull;
 
-		const listed = yield* listPullFiles(repo, pr);
-		if (listed._tag === "Failure") {
+		// The enumerated list IS the file set this verb partitions, and the pull-request record's
+		// `changed_files` is reported beside it rather than refused on — `platformFileSet` carries why.
+		const listed = platformFileSet(
+			VERB,
+			`#${pr}`,
+			pull.changedFiles,
+			yield* listPullFiles(repo, pr),
+		);
+		if (listed._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot read the changed-file list for #${pr}: ${listed.reason} — the scope is UNKNOWN.`,
 			);
 		}
-		const files = listed.value;
+		const files = listed.set.files;
 		const diagnostics = [
 			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared`),
+			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
 			surfaces.prefixes.length === 0
 				? noUiSurfaces(VERB)
 				: `${VERB}: ui derived over ${surfaces.prefixes.length} prefix(es) — ${surfaces.note}.`,
 		];
-		if (files.length < pull.changedFiles) {
-			return refuse(
-				INCOMPLETE_SCAN,
-				`${VERB}: file list shows ${files.length} of ${pull.changedFiles} declared files — refusing to partition a truncated read.`,
-				diagnostics,
-			);
-		}
+		// Zero is the shortfall the enumeration alone establishes, and with the declared count no longer
+		// refusing it is the whole floor: an empty list partitions into no class and derives no
+		// namespace, so the vacuous-conjunction refusal below would fire for the wrong reason.
 		if (files.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
 				`${VERB}: PR #${pr} has zero changed files — nothing to ship.`,
+				diagnostics,
+			);
+		}
+		// The ceiling is the one truncation the enumeration cannot rule out on its own: the endpoint
+		// stops serving files there and ends its Link chain as a complete read ends.
+		if (listed.set.capped) {
+			return refuse(
+				INCOMPLETE_SCAN,
+				platformCapLine(
+					VERB,
+					`#${pr}`,
+					"a class, a namespace or a §CP path could sit in the part the platform never served.",
+				),
 				diagnostics,
 			);
 		}

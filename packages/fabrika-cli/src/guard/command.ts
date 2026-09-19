@@ -151,7 +151,7 @@ const portabilityCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a reference in fabrika's text that only resolves here."),
 	Command.withDescription(
-		"Walk claude-plugins/fabrika/ and packages/fabrika-cli/src/ and red on any reference that resolves only in the repository fabrika is developed in: a ticket number, a decision-record number in either spelling, a decision-corpus path, a hosted issue or pull-request URL, and any name declared under the `portability` key of the repo config. A markdown heading, a hex colour and a ticket number that is test data (a string literal in a *.test.ts file, or anything under a fixtures directory) are not references. The allow-list at portability-guard.config.json carries two buckets, each entry with a mandatory `why`: `exempt` is a permanent per-file cap, `unmigrated` is the sweep floor and only shrinks, so a ceiling left above the count reds too. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: a root walked to nothing, a directory contributed no file, or the allow-list is unusable — fail-closed), 11 (a read failed, so the verdict is UNKNOWN), 12 (a reference was found, a ceiling was exceeded, or a floor row sits above its count). Example: fabrika guard portability-guard check",
+		"Walk claude-plugins/fabrika/ and packages/fabrika-cli/src/ and red on any reference that resolves only in the repository fabrika is developed in: a ticket number, a decision-record number in either spelling, a decision-corpus path, a hosted issue or pull-request URL, and any name declared under the `portability` key of the repo config. A markdown heading, a hex colour and a ticket number that is test data (a string literal in a *.test.ts file, or anything under a fixtures directory) are not references. Neither is an `@ruling <issue or pull-request URL>` citation under packages/fabrika-cli/, which is how a docblock there names the ruling that governs it; only the tag's own span is admitted, and a tag naming no URL admits nothing. The allow-list at portability-guard.config.json carries two buckets, each entry with a mandatory `why`: `exempt` is a permanent per-file cap, `unmigrated` is the sweep floor and only shrinks, so a ceiling left above the count reds too. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: a root walked to nothing, a directory contributed no file, or the allow-list is unusable — fail-closed), 11 (a read failed, so the verdict is UNKNOWN), 12 (a reference was found, a ceiling was exceeded, or a floor row sits above its count). Example: fabrika guard portability-guard check",
 	),
 );
 
@@ -598,6 +598,7 @@ const designTokenCheck = leafCommand(
 	{
 		root: rootFlag,
 		"write-baseline": Flag.boolean("write-baseline").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("re-snapshot the raw-px ceilings from this tree instead of judging it"),
 		),
 	},

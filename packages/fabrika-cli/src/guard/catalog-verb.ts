@@ -5,10 +5,7 @@
  * The verb is scope plus IO: the members come from `./members.ts`, the root manifest is added here
  * because the catalog rule governs it too, and the rule itself lives in `./catalog.ts`.
  *
- * **v1's one non-zero exit splits into three seats here.** A tree with no manifest at all is a
- * broken scope assumption (`7`, fail-closed), a manifest that will not parse is a scan that could not
- * judge what it read (`11`), and a hardcoded version is the thing the guard forbids (`12`). All
- * three stay red, so the gate is exactly as strict as it was.
+ * See `guard catalog-guard check --help` for results and exit codes.
  */
 
 import {Effect, type FileSystem, Path} from "effect";

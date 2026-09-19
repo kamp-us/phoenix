@@ -1,12 +1,8 @@
 /**
- * Phoenix's `BetterAuth` Layer — forked from `@alchemy.run/better-auth`'s
- * `CloudflareD1` because that one declares its own D1 while phoenix's better-auth
- * tables live on the shared `PhoenixDb` (ADR 0009), reached through the `Database`
- * seam so auth and every feature run on one handle. The fork also carries
- * phoenix-only plugins and reads its secret from a binding, not `alchemy/Random`.
+ * Phoenix's auth instance uses the shared D1 binding, binding-provided secret and local plugins.
+ * The service tag is local: Alchemy's integration factory owns a different database lifecycle.
  */
 
-import * as BetterAuth from "@alchemy.run/better-auth";
 import {apiKey} from "@better-auth/api-key";
 // Re-anchor transitive type specifiers away from `.pnpm/<hash>/...` paths so
 // tsgo can portably name plugin types under composite project refs.
@@ -27,6 +23,7 @@ import {Database} from "../../db/Database.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {PHOENIX_APEX_HOSTNAME} from "../../env.ts";
 import {authBridgeFetch} from "./auth-bridge.ts";
+import * as BetterAuth from "./BetterAuth.ts";
 import {type EmailMessage, EmailSender} from "./email-sender.ts";
 import {
 	changeEmailConfirmationEmail,

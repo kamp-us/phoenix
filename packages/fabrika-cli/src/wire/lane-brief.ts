@@ -257,6 +257,29 @@ A child's review judges the \`range\` above and records its verdict on the child
 \`node <fabrika> wire emit --format range-verdict-marker\`.`;
 
 /**
+ * The rule a **range-carrying** child brief adds: seat the tree before anything reads it.
+ *
+ * Its own text rather than a sentence inside {@link EPIC_RULES} because it is only true of a brief
+ * that prints a `range` — an `Epic` ground has no two commits to seat between, and a rule naming a
+ * field the brief does not carry is one a reader cannot follow.
+ *
+ * A child's build branch is local and unpushed by design, so a shell cut fresh from the driver's
+ * checkout stands on the assembly branch and the range's tip is not in its tree. Every fence that
+ * reads the working tree then reads a tree the verdict never names, and the range verdict records
+ * base, tip and a content digest — never which tree the commands ran in. The rule is here as well as
+ * in the skill because the brief is the one artifact every spawned shell provably reads.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8893
+ */
+export const EPIC_RANGE_RULES = `A child's shell does not carry the \`range\` above until it seats its own tree: the branch that
+built it is local to the tree that built it. Before any command that reads the working tree — a
+typecheck, a formatter, a test run, a guard — seat this worktree with
+\`node <fabrika> review seat <child> --base <base> --tip <tip>\`, which checks the tree out at the
+range tip and reads the commit it landed on back. It refuses at exit 20 when that tip is not
+reachable here; a refusal is a stop, never a licence to grade the tree this shell happened to stand
+on.`;
+
+/**
  * The rules an epic run's tail adds — the counterpart of {@link EPIC_RULES}, appended when the
  * ground is `Tail`. This is where the tail review is told where each child's deviation disclosure
  * lives: the brief is the one artifact every tail shell provably reads.
@@ -346,6 +369,7 @@ const rulesFor = (ground: LaneGround): string => {
 	if (ground._tag === "Pull") return RULES;
 	if (ground._tag === "Tail") return `${RULES}\n${EPIC_TAIL_RULES}`;
 	if (ground._tag === "TailRepair") return `${RULES}\n${EPIC_TAIL_REPAIR_RULES}`;
+	if (ground._tag === "EpicRange") return `${RULES}\n${EPIC_RULES}\n${EPIC_RANGE_RULES}`;
 	return `${RULES}\n${EPIC_RULES}`;
 };
 
@@ -663,7 +687,6 @@ export const read = (artifact: string): LaneBriefRead => {
 	};
 };
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderBrief = (brief: LaneBrief): NonEmptyReadonlyArray<string> => [
 	`lane\t${brief.lane}`,
 	`root\t${brief.root}`,

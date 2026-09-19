@@ -1,0 +1,36 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		// ES2023 + DOM, and `exactOptionalPropertyTypes` off, restated from `apps/tuval/tsconfig.json`
+		// for the reason every one of the four packages restates them: `@kampus/tuval` is consumed as
+		// raw TypeScript, so its whole reachable source tree enters this program and is checked under
+		// these options. See `packages/tuval-cron/tsconfig.json` for the long form.
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"exactOptionalPropertyTypes": false,
+		"module": "ES2022",
+		"moduleResolution": "Bundler",
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"isolatedModules": true,
+		"verbatimModuleSyntax": true,
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"skipLibCheck": true,
+		"types": ["node"],
+		// The four are reached by package name through their `exports` maps, and this is the condition
+		// that makes those maps answer `src/index.ts` instead of a `dist` nothing has built yet — the
+		// ruled cross-package answer (epic #9374, R1.1), the same line `tuval-shell` and `tuval-notify`
+		// carry to reach `tuval-cron`. Boot is the other half of it: `node --conditions=development`,
+		// or a `pnpm build` first. The README says which.
+		"customConditions": ["development"],
+		// Seats the Effect language service over the project, which is where `effect-tsgo diagnostics`
+		// reads its file set from; without it the run reports `Checked 0 files` and exits clean.
+		"plugins": [{ "name": "@effect/language-service", "includeSuggestionsInTsc": false }]
+	},
+	// There is no `src`. This package is the config and nothing else: the only thing held to compile
+	// is the consumer file itself.
+	"include": [".tuval/tuval.config.ts"],
+	"exclude": ["node_modules"]
+}

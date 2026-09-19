@@ -188,7 +188,9 @@ const locating = (
  * live lane.
  */
 const epicLane = (
-	events: ReadonlyArray<readonly [string, string]>,
+	// A third element rides the classes a reviewer relayed on that event — the only way the tail's
+	// `class:ui` arm is ever reached, since a tail's context seeds no class.
+	events: ReadonlyArray<readonly [string, string, ReadonlyArray<string>?]>,
 	childClasses: ReadonlyArray<string> = [],
 ) => {
 	const emitted = emitMachine(EPIC, "## Dependencies\n\n- phase 1: #5828\n", [
@@ -202,11 +204,12 @@ const epicLane = (
 				events.length === 0
 					? null
 					: `${events
-							.map(([task, event]) =>
+							.map(([task, event, classes]) =>
 								JSON.stringify({
 									task,
 									event: `${task.toUpperCase()}.${event}`,
 									at: "2026-08-17T00:00:00Z",
+									...(classes === undefined ? {} : {classes}),
 								}),
 							)
 							.join("\n")}\n`,
@@ -772,6 +775,39 @@ describe("lane brief on an epic lane", () => {
 		// The tail's brief names where each child's build-deviations disclosure lives.
 		expect(out.stdout).toContain(EPIC_TAIL_RULES);
 		expect(out.stdout).not.toContain(EPIC_RULES);
+	});
+
+	/**
+	 * The creditor cell's dispatch. Every child hands its `review-ui` to the tail, so the tail is
+	 * where the rendered gate actually runs — and until the emitted tail carried the cell there was
+	 * no sanctioned way to fire it: the driver of one live epic hand-composed a ui-reviewer spawn off
+	 * the tail's own `review` brief with the `shell:` line swapped, which `operate` otherwise forbids.
+	 */
+	it("briefs the ui-reviewer on a tail sitting in review:ui, over that same one PR", async () => {
+		const {out} = await runEpic(
+			epicLane([
+				["issue_5828", "WIP"],
+				["issue_5828", "DONE"],
+				["issue_5828", "PASS"],
+				["issue_5828", "DONE"],
+				["epic_5800", "PASS", ["ui"]],
+			]),
+			[[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)], ...linked(EPIC, [5890, PR_URL])],
+			{task: "epic_5800"},
+		);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {
+				task: "epic_5800",
+				state: "review:ui",
+				shell: "ui-reviewer",
+				issue: EPIC_URL,
+				ground: {_tag: "Tail", pr: PR_URL, epic: EPIC_URL},
+			},
+		});
+		expect(out.stdout).toContain(EPIC_TAIL_RULES);
 	});
 
 	// `lane brief` used to fall through to a `Pull` ground for any build state, so the builder sent

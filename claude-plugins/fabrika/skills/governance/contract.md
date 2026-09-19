@@ -62,8 +62,9 @@ same tracked debt the sibling contracts carry.)
   directly. A `governance resolve` would be a wrapper whose only behaviour is relaying an upstream
   answer, and a wrapper whose whole behaviour is relaying is not a verb.
 - **An ADR-number-collision verb.** `fabrika adr next` already unions the merged set with the ids
-  open ADR PRs claim — the cross-PR read a tree-local guard structurally cannot make.
-  The skill invokes it; this group adds nothing.
+  open ADR PRs claim and the ids this clone's branch refs carry, remote-tracking ones included — the
+  cross-PR and cross-worktree
+  read a tree-local guard structurally cannot make. The skill invokes it; this group adds nothing.
 - **A dead-link or ADR-index checker.** A repo that arms a link checker and a corpus-index
   validator gates each already. Note what they do **not** cover, because it is this skill's job and
   not a gap in theirs: `lychee --offline` skips `http(s)` by design and `decisions-index validate`
@@ -147,13 +148,13 @@ package**, never from a sibling `contract.md`.
 | `4` | *(deliberate gap — `report file`'s body-section seat; no verb here composes body sections)* | — | — | — | — | — | — | — |
 | `5` | the **authored** text carries a machine-local path | — | — | — | — | ✓ | — | ✓ |
 | `6` | the **authored** text is a bare `@` path reference — not redactable | — | — | — | — | ✓ | — | ✓ |
-| `7` | zero scope: the target is **proven absent (404)** or closed, the PR has zero changed files, the corpus holds zero decision records, the window holds zero landings, or the readout artifact is proven absent — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `7` | zero scope: the target is **proven absent (404)** or closed, the PR has zero changed files — declared, or in the local three-dot read a verb derives from — the corpus holds zero decision records, the window holds zero landings, or the readout artifact is proven absent — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `8` | the write itself failed — the outcome is **UNKNOWN** | — | — | — | — | ✓ | — | ✓ |
 | `9` | the write landed but the read-back does not match | — | — | — | — | ✓ | — | ✓ |
 | `10` | a supplied value is off the closed vocabulary — a bad `--polarity`, a `--sha` that is not a head SHA, an unparseable `--since`, a `--record` that is not a four-digit id, a `--path` outside this skill's own resolved directory | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `12` | refused: the `--sha` given is not the PR's head — a read taken over, or a verdict bound to, a tree that is no longer the PR | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| `13` | refused: the read completed but its scope is **provably incomplete** — a truncated changed-file list or diff, a comment enumeration short of its declared count | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
+| `13` | refused: the read completed but its scope is **provably incomplete** — a truncated changed-file list or diff, a comment enumeration short of its declared count. A local read short of GitHub's `changed_files` is **not** that proof anywhere in this group | ✓ | — | ✓ | — | — | ✓ | ✓ |
 | `14` | refused: this PR's diff derives **no** governance namespace — a verdict in a namespace the diff did not require | — | — | — | — | ✓ | — | — |
 | `17` | refused: the write would retire a standing verdict of the **opposite polarity** at this head — ranged, over this range — and `--supersede` was not passed; nothing written | — | — | — | — | ✓ | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -418,11 +419,11 @@ directory is always a subset of
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent (404), or closed, or has **zero changed files**; or the range changes no path — a derivation over nothing, refused fail-closed |
+| `7` | the PR is proven absent (404), or closed, or declares **zero changed files**; or the local three-dot read changes no path; or the range changes no path — a derivation over nothing, refused fail-closed |
 | `10` | `--sha` is not a head SHA; a lone `--base`/`--tip`; `--sha` beside a range; a range end that is not a revision; a positional beside a range, or neither a positional nor a range |
 | `11` | the PR could not be read, the commit could not be bound, or the range's merge base or file list could not be read — the derivation is UNKNOWN, never `not-required` |
 | `12` | `--sha` is not the PR's head — re-scope at the head |
-| `13` | the changed-file enumeration is provably short (received < declared count) |
+| `13` | the range's changed-file enumeration is provably short against a **second read of the same range** — the range mode's `--name-status` walk under its `--name-only` count. GitHub's `changed_files` is not that second read and no longer refuses here |
 
 **Errors**
 
@@ -442,15 +443,24 @@ directory is always a subset of
 | `governance scope: <what> — the file list cannot be bound to a commit, so the derivation is UNKNOWN.` | 11 | refusal |
 | `governance scope: cannot resolve the merge base of <base>..<tip>: <reason> — the file list cannot be bound to a commit, so the derivation is UNKNOWN.` | 11 | refusal |
 | `governance scope: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live>.` | 12 | refusal |
-| `governance scope: <sha> carries <k> of the <m> files #<n> declares — refusing to derive from a short read.` | 13 | refusal |
+| `governance scope: <base>...<head> changes no path — refusing to derive over an empty diff.` | 7 | refusal |
 | `governance scope: <base>..<tip> carries <k> of the <m> files its ends change — refusing to derive from a short read.` | 13 | refusal |
-| `governance scope: root <name> is absent in this repository — the derivation covered <k> of 4 roots.` | 0 | notice |
-| `governance scope: partitioned <k> of <k> declared changed files at <subject> across 4 roots.` | 0 | notice |
+| `governance scope: git and GitHub disagree on #<n>'s file count (<k> vs <m>) — different merge base and different rename detection; reported, never refused on.` | 0 | notice |
+| `governance scope: root <name> is absent in this repository — the derivation covered <k> of <roots> roots.` | 0 | notice |
+| `governance scope: partitioned <local> of the <declared> declared changed files at <subject> across <roots> roots.` | 0 | notice |
 
-**Scope** — one PR's metadata and the changed-file list of one bound commit, count-checked against
-the declared total; or one range's changed-file list, count-checked against a second, independent
-enumeration of the same range. Zero changed files is a refusal in either mode, never `not-required`:
-the whole value of a `not-required` answer is that it was computed over everything.
+**Scope** — one PR's metadata and the local three-dot changed-file list of one bound commit; or one
+range's changed-file list, count-checked against a second, independent enumeration of the same
+range. **On the PR path the local list IS the file set.** GitHub's `changed_files` is computed
+against a base it cached at the last push and pairs a rename as two files where git reports one, so a
+disagreement with it is printed as a notice and never refused on. Nothing on the reviewer's side can
+invalidate that cache, so refusing there stranded the round with no act available to clear it. The
+`partitioned` notice prints both counts, and on a disagreement they differ by design — the first is
+the set the derivation ran over, the second is what the platform declares.
+
+Zero changed files is a refusal in either mode, never `not-required`. The whole value of a
+`not-required` answer is that it was computed over everything. On the PR path the local read is
+checked for that too, not only the PR's declared count.
 
 **Examples**
 
@@ -541,11 +551,10 @@ implementer reproduces scores from the imported module, never from this document
 
 | Code | Trigger |
 |---|---|
-| `7` | `--dir` was read and held zero decision records — zero scope, refused fail-closed; or the PR is proven absent (404) or closed |
+| `7` | `--dir` was read and held zero decision records — zero scope, refused fail-closed; or the PR is proven absent (404) or closed, or its local three-dot range changes no path |
 | `10` | `--record` / `--landed` is not a four-digit id; `--sha` is not a head SHA; `--limit` is negative; or the positional and `--landed` were both given |
 | `11` | the subject record could not be read at the bound commit, the commit could not be bound, **or a corpus member exists and could not be read** — an incomplete corpus is UNKNOWN |
 | `12` | `--sha` is not the PR's head |
-| `13` | the changed-file list proving `--record` is in this PR is provably short |
 
 **Errors**
 
@@ -561,14 +570,17 @@ implementer reproduces scores from the imported module, never from this document
 | `governance sweep: cannot read <dir>/<file>: <reason> — an incomplete corpus is UNKNOWN, never "no-overlap".` | 11 | refusal |
 | `governance sweep: <what> — the subject cannot be bound to a commit, so what it says is UNKNOWN.` | 11 | refusal |
 | `governance sweep: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live>.` | 12 | refusal |
-| `governance sweep: <sha> carries <k> of the <m> files #<n> declares — refusing to prove <id> is in this PR from a short read.` | 13 | refusal |
+| `governance sweep: <base>...<tip> changes no path — refusing to sweep over an empty diff.` | 7 | refusal |
+| `governance sweep: git and GitHub disagree on #<n>'s file count (<local> vs <declared>) — different merge base and different rename detection; reported, never refused on.` | 0 | notice |
 | `governance sweep: ranked <k> uncited live-accepted records of <m> in scope.` | 0 | notice |
 | `governance sweep: only <k> live-accepted records in <dir> (rarity needs at least 10) — the run carries no information.` | 0 | notice |
 
-**Scope** — the live-`accepted` records in `--dir`, minus those the subject already cites. The scope
-line names the corpus size and the in-scope count on stderr, because the outcome is only readable
-against them. Zero records is a refusal; a corpus below the rarity floor is `indeterminate` at
-exit 0, which is a different fact and stays a different answer.
+**Scope** — the live-`accepted` records in `--dir`, minus those the subject already cites. On the PR
+path the file set proving `--record` is in this PR is the local three-dot read, shared with
+`governance scope` and `governance guards`; GitHub's `changed_files` is reported beside it and
+never refused on. The scope line names the corpus size and the in-scope count on stderr, because
+the outcome is only readable against them. Zero records is a refusal; a corpus below the rarity
+floor is `indeterminate` at exit 0, which is a different fact and stays a different answer.
 
 **Examples**
 
@@ -649,7 +661,8 @@ included: a whole list must never read as a truncated one.
 was removed or its claim changed. `no-anchor-change` — anchors exist in the diff's reach and none
 moved. `no-anchors-in-reach` — the touched files carry no anchors at all, so this scan had nothing
 to look at; it is the mechanical floor reporting its own silence, not a statement that no guard was
-weakened. A guard weakened in prose that carries no anchor is invisible here **by construction**,
+weakened. It always names a file set that was read: a scan whose file set is empty refuses at `7`
+instead of taking this outcome. A guard weakened in prose that carries no anchor is invisible here **by construction**,
 and the skill's judgment is what covers it.
 
 **What an anchor is.** The `<!-- anchor: NAME -->` HTML comment fabrika skills already carry; NAME is
@@ -704,11 +717,11 @@ anchors rather than invariants.
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent (404) or closed, or has zero changed files |
+| `7` | the PR is proven absent (404) or closed; or it declares zero changed files; or the local three-dot read — the set actually scanned — changes no path |
 | `10` | `--sha` is not a head SHA |
 | `11` | the diff could not be read, or the commit could not be bound — UNKNOWN, never `no-anchor-change` |
 | `12` | `--sha` is not the PR's head |
-| `13` | the diff is provably incomplete — fewer files than the PR declares; a partial scan must never print beside a "nothing moved" answer |
+| `13` | the served diff body is provably incomplete — fewer files than git's own `--name-status` enumeration of the same range reports; a partial scan must never print beside a "nothing moved" answer. GitHub's declared count is not that proof and no longer refuses here |
 
 **Errors**
 
@@ -716,19 +729,27 @@ anchors rather than invariants.
 |---|---|---|
 | `governance guards: PR #<n> not found in <repo>.` | 7 | refusal |
 | `governance guards: PR #<n> has zero changed files — nothing to scan.` | 7 | refusal |
+| `governance guards: <base>...<head> changes no path — refusing to scan an empty file set.` | 7 | refusal |
 | `governance guards: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
 | `governance guards: <what> — the diff cannot be bound to a commit, so what it shows is UNKNOWN.` | 11 | refusal |
 | `governance guards: cannot read the diff for #<n> at <sha>: <reason> — UNKNOWN, never "nothing moved".` | 11 | refusal |
 | `governance guards: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live>.` | 12 | refusal |
-| `governance guards: the diff at <sha> carries <k> of #<n>'s <m> declared files — refusing a partial anchor scan.` | 13 | refusal |
+| `governance guards: the diff at <sha> carries <k> of the <m> files git reports for the same range <base>...<sha> — both counts from git, so this diff is provably short; refusing a partial anchor scan.` | 13 | refusal |
+| `governance guards: git and GitHub disagree on #<n>'s file count (<k> vs <m>) — different merge base and different rename detection; reported, never refused on.` | 0 | notice |
 | `governance guards: cannot read <path> at <sha>: <reason> — UNKNOWN, never "nothing moved".` | 11 | refusal |
 | `governance guards: scanned <k> files, <m> anchored invariants in reach, <j> compared block-by-block against <base>.` | 0 | notice |
 
-**Scope** — the bound commit's diff, completeness-checked against the PR's declared changed-file
-count, and the anchors in every file that diff touches, read at the base commit as well as at the
-head. A truncated diff is refused rather than scanned, because an under-reported hit list reads as a
-checked-clean answer that was never checked; a file that cannot be read at either commit is refused
-for the same reason.
+**Scope** — the bound commit's diff, completeness-checked against **git's own `--name-status`
+enumeration of the same range**, and the anchors in every file that diff touches, read at the base
+commit as well as at the head. A truncated diff is refused rather than scanned, because an
+under-reported hit list reads as a checked-clean answer that was never checked; a file that cannot be
+read at either commit is refused for the same reason. The completeness proof is git against git:
+GitHub's `changed_files` is a different merge base and a different rename detection, so a
+disagreement with it is a notice here rather than a refusal. **A local read of zero files is still a
+refusal**, on the `7` seat, and it is the floor the third outcome needs: `anchors-in-reach` counts
+only over files that were read, so an empty set would print `no-anchors-in-reach` at exit 0 — a scan
+of nothing reading as a clean answer. The PR's own declared zero refuses one step earlier, and this
+catches the zero that count no longer sees.
 
 **Examples**
 
@@ -999,9 +1020,19 @@ stderr line and the `--json` `floor` field. The six: `refired` (a new attempt ex
 (the re-fired run is queued or running again under its own id with the new attempt number not yet
 published — wait and re-read that run, never escalate it), `green` (the run at this head already
 passed), `in-flight` (the run had not completed, so it may still judge state older than this verdict
-— re-read the check), `no-run` (no floor run at this head: not installed in this repository, or not
-fired yet), `unknown` (the state could not be read or the re-fire could not be proven — never read as
+— re-read the check), `no-run` (the runs listed at this head carry no `governance-floor` one),
+`unknown` (the state could not be read or the re-fire could not be proven — never read as
 a pass).
+
+**`no-run`'s line states the read and offers no cause.** The tag is one token, and what the verb
+observed is that this head's run list carried no `governance-floor` entry — never why. The head's own
+run count rides the line because it says how much was read: a head carrying other runs narrows the
+empty filter to that one list, and a head carrying **no run at all** narrows nothing, since that is
+also the answer the platform gives while it has not indexed the head's runs yet. Both arms end by
+sending the reader back to re-read rather than treating the floor as absent. Concluding a cause here
+has been wrong twice over: the line once offered "not installed" over a repository whose floor had
+run at that head minutes before, and the head that incident was filed from listed 31 runs, so
+"the floor did not fire for this head" would have been false there too.
 
 **No advisory carrier.** `review post` takes `--carrier advisory` for §CP PRs, where a human approval
 is the gate. This verb has no such mode: §CP is not this namespace's question, the governance verdict

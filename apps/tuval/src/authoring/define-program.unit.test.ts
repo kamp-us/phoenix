@@ -2,6 +2,7 @@ import {readFileSync} from "node:fs";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Option, Schema} from "effect";
 import {expect, expectTypeOf} from "vitest";
+import {SessionOpening} from "../ai-agent/opening.ts";
 import {SpawnedProcesses} from "../commands/core/process.ts";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
@@ -13,8 +14,17 @@ import {ProcessSelf} from "../process/self.ts";
 import {type AnyProgram, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {ArgUnfilled, programArgs} from "./args.ts";
-import {type ArrivalEvent, defineProgram} from "./define-program.ts";
-import {emit, type Spawned, type Stopped, send, spawn, stop} from "./effect.ts";
+import {type Answer, type ArrivalEvent, defineProgram, program} from "./define-program.ts";
+import {
+	emit,
+	type ProgramEffect,
+	type Spawned,
+	type Stopped,
+	send,
+	spawn,
+	stop,
+	stopped,
+} from "./effect.ts";
 import {port} from "./port.ts";
 import {Program, ShapeMismatch, type ShapeSource} from "./shape.ts";
 
@@ -244,28 +254,71 @@ describe("authoring.defineProgram", () => {
 		}),
 	);
 
+	it.effect("provides an authored cwd to the spawned child as a fresh session opening", () =>
+		Effect.gen(function* () {
+			const child = ProcessId.make("process-child");
+			const openings: Array<Option.Option<{readonly cwd: string; readonly resume: string | null}>> =
+				[];
+			const spells = SpawnedProcesses.of({
+				spawn: () =>
+					Effect.gen(function* () {
+						openings.push(yield* Effect.serviceOption(SessionOpening));
+						return child;
+					}),
+				send: () => Effect.die("this test sends nothing"),
+				adopt: () => Effect.die("this test adopts nothing"),
+				ask: () => Effect.die("this test asks nothing"),
+				answer: () => Effect.die("this test answers nothing"),
+				read: () => Effect.succeed(Option.none()),
+			});
+			const self = ProcessId.make("process-self");
+
+			yield* Effect.scoped(
+				runEffect(
+					counter,
+					spawn({programId: "reviewer", out: {}}, {cwd: "/worktrees/reviewer"}),
+				).pipe(
+					Effect.provideService(SpawnedProcesses, spells),
+					Effect.provideServiceEffect(
+						ProcessSelf,
+						Effect.map(Effect.scope, (scope) => ({id: self, scope, state: () => undefined})),
+					),
+				),
+			);
+
+			assert.deepStrictEqual(openings.map(Option.getOrUndefined), [
+				{cwd: "/worktrees/reviewer", resume: null},
+			]);
+		}),
+	);
+
 	// `stopped` is no longer this handler's answer (#9227). The child's own end is the single producer
 	// of it, so the parent hears back on a later dispatch and hears back exactly once — which the
 	// real-kernel test at the bottom of this file is what proves.
-	it.effect("runs an authored `stop` through Processes and answers no event of its own", () =>
-		Effect.gen(function* () {
-			const child = ProcessId.make("process-child");
-			const halted: Array<ProcessId> = [];
-			const processes = Processes.of({
-				spawn: () => Effect.die("this test spawns through no kernel"),
-				stop: (id) =>
-					Effect.sync(() => {
-						halted.push(id);
-					}),
-				handle: () => Effect.succeed(Option.none<ProcessHandle>()),
-			});
+	it.effect(
+		"runs an authored `stop` through Processes.remove and answers no event of its own",
+		() =>
+			Effect.gen(function* () {
+				const child = ProcessId.make("process-child");
+				const halted: Array<ProcessId> = [];
+				const processes = Processes.of({
+					spawn: () => Effect.die("this test spawns through no kernel"),
+					// The authored effect goes through the durable removal since #9446: a `stop` that only
+					// closed the Scope left the child in the manifest, so this double dies on it.
+					stop: () => Effect.die("an authored `stop` removes; it does not stop and leave the row"),
+					remove: (id) =>
+						Effect.sync(() => {
+							halted.push(id);
+						}),
+					handle: () => Effect.succeed(Option.none<ProcessHandle>()),
+				});
 
-			const events = yield* runEffect(counter, stop(child)).pipe(
-				Effect.provideService(Processes, processes),
-			);
-			assert.deepStrictEqual(halted, [child]);
-			assert.deepStrictEqual(events, []);
-		}),
+				const events = yield* runEffect(counter, stop(child)).pipe(
+					Effect.provideService(Processes, processes),
+				);
+				assert.deepStrictEqual(halted, [child]);
+				assert.deepStrictEqual(events, []);
+			}),
 	);
 });
 
@@ -545,4 +598,239 @@ describe("authoring.defineProgram hearing a child end, through the real kernel",
 			assert.strictEqual(read().stops, 1);
 		}).pipe(Effect.provide(kernel([watcher, reviewerRow]))),
 	);
+});
+
+/**
+ * R12.1's other half (#9294): an effect the *author* named, answered from an authored `update` cell
+ * and run by a handler the row was spread with. The type half is `defineProgram`'s `X`; the runtime
+ * half is `{...row, handlers: {...row.handlers, run}}`, and this file's claim is that the two meet —
+ * the actor dispatches the Cmd to that handler by string and its follow-up Msg lands back in the
+ * process's own inbox, on the same `SpawnedProcesses` + `Processes` layer the box boots.
+ *
+ * The second test is the documented silence: `defineProgram` compiles before any spread exists, so
+ * it cannot refuse a named effect with no handler. A row that opts in and forgets the spread is
+ * skipped by the actor and keeps running, which is exactly what a hand-assembled row has always
+ * done for the same mistake.
+ */
+type Run = {readonly type: "run"; readonly command: string};
+type Ran = {readonly type: "ran"; readonly output: string};
+
+const run = (command: string): Run => ({type: "run", command});
+
+interface RunnerState {
+	readonly asked: string | null;
+	readonly output: string | null;
+}
+
+const runnerInit = (): RunnerState => ({asked: null, output: null});
+
+const runnerUpdate = {
+	go: (state: RunnerState): Answer<RunnerState, Run> => [{...state, asked: "echo"}, [run("echo")]],
+	ran: (state: RunnerState, event: Ran): Answer<RunnerState, Run> => [
+		{...state, output: event.output},
+		[],
+	],
+};
+
+/**
+ * `Run` is named only in a cell's answer, which is not a place inference reaches, so an opted-in
+ * program states the whole argument list once over an `update` declared beside the call.
+ */
+const runnerRow = (id: string) =>
+	defineProgram<
+		RunnerState,
+		Record<string, never>,
+		typeof runnerUpdate,
+		Record<string, never>,
+		unknown,
+		Run
+	>({id, init: runnerInit, update: runnerUpdate});
+
+const compiledRunner = runnerRow("runner");
+
+/** The compiled row, plus the one handler the layer does not write. The spread is the whole seam. */
+const runner: AnyProgram = {
+	...compiledRunner,
+	handlers: {
+		...compiledRunner.handlers,
+		run: (cmd: Run) => Effect.succeed([{type: "ran", output: `ran:${cmd.command}`} satisfies Ran]),
+	},
+};
+
+/** The same program with the spread left off: it names `run` and no handler answers it. */
+const unhandledRunner: AnyProgram = runnerRow("runner-bare");
+
+const running = (programId: string) =>
+	Effect.gen(function* () {
+		const spawner = yield* SpawnedProcesses;
+		const id = yield* spawner.spawn(ProgramId.make(programId), Option.none());
+		const handle = Option.getOrThrow(yield* Processes.use((processes) => processes.handle(id)));
+		return {handle, read: () => handle.getState() as RunnerState};
+	});
+
+describe("authoring.defineProgram answering an effect of the author's own", () => {
+	it("keeps the six kernel effects closed for a program that named none", () => {
+		const cell = (state: CounterState): Answer<CounterState> => [
+			state,
+			[
+				// @ts-expect-error a program naming no effect of its own answers the six and nothing
+				// else, so a typo is still refused at compile rather than skipped at runtime.
+				{type: "emitt", port: "announced", payload: 1},
+			],
+		];
+
+		expect(cell({count: 1})[0]).toEqual({count: 1});
+	});
+
+	it("widens the answer to exactly the effect a program did name", () => {
+		expectTypeOf<Answer<RunnerState, Run>[1]>().toEqualTypeOf<ReadonlyArray<ProgramEffect | Run>>();
+		expectTypeOf<Answer<RunnerState>[1]>().toEqualTypeOf<ReadonlyArray<ProgramEffect>>();
+	});
+
+	it.live("runs the handler the row was spread with and dispatches its follow-up", () =>
+		Effect.gen(function* () {
+			const {handle, read} = yield* running("runner");
+
+			yield* handle.dispatch({type: "go"});
+			yield* settle(() => read().output !== null);
+
+			assert.strictEqual(read().asked, "echo");
+			assert.strictEqual(read().output, "ran:echo");
+		}).pipe(Effect.provide(kernel([runner]))),
+	);
+
+	it.live("skips a named effect no handler answers, and leaves the process running", () =>
+		Effect.gen(function* () {
+			const {handle, read} = yield* running("runner-bare");
+
+			yield* handle.dispatch({type: "go"});
+			yield* settle(() => read().output !== null);
+			assert.strictEqual(read().output, null);
+
+			// Skipped, not crashed: the next event still lands on the same live process.
+			yield* handle.dispatch({type: "ran", output: "by hand"});
+			yield* settle(() => read().output !== null);
+			assert.strictEqual(read().output, "by hand");
+		}).pipe(Effect.provide(kernel([unhandledRunner]))),
+	);
+});
+
+/**
+ * The inference test above runs at a call site, which is where TypeScript contextually types an
+ * object literal. These run at a binding, which is where an author actually keeps the record — the
+ * config compiles it, a test drives it — and where nothing typed it before `program` (#8825).
+ */
+describe("authoring.program types a program held in a binding", () => {
+	it("infers each cell's state, its arriving event and its `Answer` return", () => {
+		const held = program({
+			id: "held",
+			ports: {ticks: port.in(Count), review: port.request(Review, Count)},
+			init: (): CounterState => ({count: 0}),
+			update: {
+				ticks: (state, event) => {
+					expectTypeOf(state).toEqualTypeOf<CounterState>();
+					expectTypeOf(state).not.toBeAny();
+					expectTypeOf(event).toEqualTypeOf<ArrivalEvent<"ticks", number>>();
+					expectTypeOf(event).not.toBeAny();
+					return [{count: state.count + event.payload}, []];
+				},
+				review: (state, event) => {
+					expectTypeOf(event.payload).toEqualTypeOf<{
+						readonly pr: number;
+						readonly urgent: boolean;
+					}>();
+					return [state, []];
+				},
+			},
+			title: (state) => `held (${state.count})`,
+		});
+
+		// The fields the author wrote read back as written rather than as possibly-`undefined`,
+		// which is what the `A` half of the signature buys.
+		expect(held.ports.ticks.direction).toBe("in");
+		expect(held.title({count: 2})).toBe("held (2)");
+		expect(held.update.ticks({count: 1}, {type: "ticks", payload: 2})[0]).toEqual({count: 3});
+	});
+
+	it("is the same record `defineProgram` takes, so the author keeps one binding", () => {
+		const held = program({
+			id: "held-compiled",
+			ports: {ticks: port.in(Count)},
+			init: (): CounterState => ({count: 0}),
+			update: {ticks: (state, event) => [{count: state.count + event.payload}, []]},
+		});
+		const row = defineProgram(held);
+		expect(row.id).toBe("held-compiled");
+		expect(Object.keys(row.receive ?? {})).toEqual(["ticks"]);
+		expect(row.core.init(null, undefined)).toEqual([{count: 0}, []]);
+	});
+
+	it("restores the inference without loosening it: a cell answering no `Answer<S>` is refused", () => {
+		const held = program({
+			id: "held-wrong-answer",
+			ports: {ticks: port.in(Count)},
+			init: (): CounterState => ({count: 0}),
+			update: {
+				// @ts-expect-error a cell answers the next state *and* the effects it asks for, and a
+				// bare state is not that tuple — the refusal the hand-written `Answer<S>` used to give.
+				ticks: (state) => state,
+			},
+		});
+
+		expect(held.id).toBe("held-wrong-answer");
+	});
+
+	it("restores the inference without loosening it: a field the port does not carry is refused", () => {
+		const held = program({
+			id: "held-wrong-event",
+			ports: {ticks: port.in(Count)},
+			init: (): CounterState => ({count: 0}),
+			update: {
+				// @ts-expect-error `ticks` carries a number, so its arrival has a `payload` and no
+				// `urgent` — an inferred event is checked exactly as an annotated one was.
+				ticks: (state, event) => [{count: state.count + (event.urgent ? 1 : 0)}, []],
+			},
+		});
+
+		expect(held.id).toBe("held-wrong-event");
+	});
+
+	it("refuses a field the record does not carry, as `defineProgram({...})` refuses one", () => {
+		const held = program({
+			id: "held-typo",
+			ports: {ticks: port.in(Count)},
+			init: (): CounterState => ({count: 0}),
+			update: {ticks: (state, event) => [{count: state.count + event.payload}, []]},
+			// @ts-expect-error `A` is an inference site for the literal itself, so every field the
+			// author wrote is a known property of the target and TypeScript's own excess-property
+			// check cannot fire. `NoStrayFields` is what replaces it: a key `AuthoredProgram` does
+			// not declare is typed `never`, so a misspelled `title` is refused at the field.
+			titel: (state: CounterState) => `held (${state.count})`,
+		});
+
+		expect(held.id).toBe("held-typo");
+	});
+
+	it("types the two answer events the layer owns, so neither cell names its own", () => {
+		const held = program({
+			id: "held-answers",
+			init: (): CounterState => ({count: 0}),
+			update: {
+				spawned: (state, event) => {
+					expectTypeOf(event).toEqualTypeOf<Spawned>();
+					expectTypeOf(event).not.toBeAny();
+					return [state, [send({process: event.process, port: "prompt"}, event.program)]];
+				},
+				stopped: (state, event) => {
+					expectTypeOf(event).toEqualTypeOf<Stopped>();
+					expectTypeOf(event).not.toBeAny();
+					return [{count: state.count + 1}, []];
+				},
+			},
+		});
+
+		expect(held.update.stopped({count: 1}, stopped(ProcessId.make("proc-x")))[0]).toEqual({
+			count: 2,
+		});
+	});
 });

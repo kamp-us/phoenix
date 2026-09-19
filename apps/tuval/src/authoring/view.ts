@@ -12,6 +12,12 @@
  * nothing to publish — emitting it anyway would spend a wire message per event to restate a value
  * every reader already holds.
  *
+ * **A restored process publishes nothing at all, so it does not go through a port.** Demlik refuses
+ * Cmds from a rehydrating `init` and the diff above stays silent on an unmoved line, which between
+ * them left a restored stable title unreadable (#8812). `compileDerivedLines` answers the third
+ * seam instead: the kernel asks the row what its loaded state derives and seeds the latch directly
+ * (`../process/self-report.ts`), so the restore costs no wire message and the diff keeps its job.
+ *
  * **The window bridge is a function of state, because a host publishes state as a stream.** A
  * `WindowHost` carries `readProcess` and no synchronous read (`../shell/window/host.ts`), and this
  * layer is on the kernel's React-free lens, so it cannot subscribe on the author's behalf. The
@@ -116,6 +122,22 @@ export const initialSelfReport = (
 ): ReadonlyArray<ProgramEffect> =>
 	derivations(authored).map(([port, line]) => emit(port, line(state)));
 
+/**
+ * Every derived line as a function of state, keyed by its port — what the kernel seeds a restored
+ * process's self-report latch from (#8812), and the only publisher that path reaches.
+ *
+ * `undefined` for a program deriving neither line, which leaves the row field off entirely: such a
+ * program is never asked for a line and pays nothing on the restore path.
+ */
+export const compileDerivedLines = (
+	authored: AnyAuthoredProgram,
+): ((state: unknown) => Readonly<Record<string, string>>) | undefined => {
+	const derived = derivations(authored);
+	if (derived.length === 0) return undefined;
+	return (state: unknown) =>
+		Object.fromEntries(derived.map(([port, line]) => [port, line(state)] as const));
+};
+
 const movedLines = (
 	derived: ReadonlyArray<Derivation>,
 	previous: unknown,
@@ -151,10 +173,18 @@ export const withSelfReport = <U>(authored: AnyAuthoredProgram, update: U): U =>
 
 const WINDOW_KIND: RendererKind = "host-native";
 
+/**
+ * The final segment every authored reference ends with, and the page's half of a namespace split.
+ * `pageRenderers` writes its own keys after the authored ones, so a page key ending here would
+ * shadow an authored seat in silence (`../page/renderers.tsx`). It is named rather than inlined so
+ * the page side can check its own keys against it instead of restating the shape.
+ */
+export const AUTHORED_WINDOW_SUFFIX = "/window";
+
 /** The reference an authored window takes. Derived from the program id, so no author writes one. */
 export const authoredWindowRef = (id: ProgramId): RendererRef => ({
 	kind: WINDOW_KIND,
-	ref: `${id}/window`,
+	ref: `${id}${AUTHORED_WINDOW_SUFFIX}`,
 });
 
 /**

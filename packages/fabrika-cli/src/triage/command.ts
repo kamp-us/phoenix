@@ -56,6 +56,7 @@ export const repoFlag = Flag.string("repo").pipe(
 );
 
 export const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
@@ -96,6 +97,7 @@ const kill = leafCommand(
 		// absence is a usage error indistinguishable from a typo, and the salvage confirmation is a
 		// decision whose absence must be a proven refusal (exit 13).
 		confirm: Flag.boolean("confirm").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"assert that salvage was attempted and this filing is genuinely unsalvageable; its absence is a refusal on 13, not a usage error",
 			),
@@ -432,6 +434,7 @@ const enrich = leafCommand(
 	{
 		issue: Argument.integer("issue").pipe(Argument.withDescription("the issue to enrich")),
 		epic: Flag.boolean("epic").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"wrap the original under a fixed header and head a pitch above it; stdin carries the pitch's five field lines, not a rewrite",
 			),
@@ -456,7 +459,7 @@ const enrich = leafCommand(
 ).pipe(
 	Command.withShortDescription("Replace an issue body with the rewrite on stdin."),
 	Command.withDescription(
-		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. The authored region is scanned for a stated ordering — an ordering phrase binding a #N, in the issue's own voice rather than a third-person report about another issue — and refused when the live blocked_by graph carries no edge for a number it names; there is no override, so wire the edge with `triage apply <n> --blocked-by <m>` or reword. A #N that is a pull request is not read as a prerequisite: a blocking PR is named in the graph by the issue its merge closes. A criteria-less rewrite is accepted, except over a target already carrying ready-for:agent: that label promises a builder can pick the issue up cold, so the write is refused rather than left standing over no contract — author the block and re-send, or drop the audience label first; --epic is exempt. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent or closed, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue, the claim on it, its blocked_by edges, or a number a stated ordering names could not be read), 15 (the authored region composes an acceptance-criteria block the wire reader classifies Malformed), 16 (the target carries ready-for:agent and the authored region composes no criteria block the reader answers Found on — nothing written), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 20 (the authored region states an ordering the graph carries no edge for — nothing written). Example: fabrika triage enrich 4312 < enriched.md",
+		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. The authored region is scanned for a stated ordering — an ordering phrase binding a #N, in the issue's own voice rather than a third-person report about another issue — and refused when the live blocked_by graph carries no edge for a number it names; there is no override, so wire the edge with `triage apply <n> --blocked-by <m>` or reword. A #N that is a pull request is not read as a prerequisite: a blocking PR is named in the graph by the issue its merge closes. A criteria-less rewrite is accepted, except over a target already carrying ready-for:agent: that label promises a builder can pick the issue up cold, so the write is refused rather than left standing over no contract — author the block and re-send, or drop the audience label first; --epic is exempt. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent or closed, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue, the claim on it, its blocked_by edges, or a number a stated ordering names could not be read), 15 (the authored region composes an acceptance-criteria block the wire reader classifies Malformed, which includes an outside-diff evidence marker `[evidence: <source>]` whose keyword drifted or which names no source; marked rows are counted and quoted on stderr), 16 (the target carries ready-for:agent and the authored region composes no criteria block the reader answers Found on — nothing written), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 20 (the authored region states an ordering the graph carries no edge for — nothing written). Example: fabrika triage enrich 4312 < enriched.md",
 	),
 );
 
@@ -468,11 +471,13 @@ const repairCriteria = leafCommand(
 			Argument.withDescription("the one issue whose criteria block to repair"),
 		),
 		sweep: Flag.boolean("sweep").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"repair every repairable open issue in one run instead of one issue, with a per-issue outcome line",
 			),
 		),
 		dryRun: Flag.boolean("dry-run").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"plan every issue and write nothing — a repairable issue answers `would-repair` with the repairs it would make, so the blast radius is reviewable before the first body is written",
 			),

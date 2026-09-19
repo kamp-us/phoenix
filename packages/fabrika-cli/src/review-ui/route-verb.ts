@@ -22,6 +22,13 @@
  * the exact rule that raised the class, or the two drift and this verb refuses on a PR the gate is
  * meanwhile blocking.
  *
+ * The file set that runs over is the `pulls/<n>/files` enumeration read through
+ * {@link platformFileSet}, so the `changed_files` the pull-request record declares is reported as a
+ * disagreement line and never refused on — that count is computed against a base cached at the last
+ * push, and refusing on it stranded the lane with no act available to clear it. Two shapes still
+ * refuse, because neither leaves a ui count anybody read: an **empty** list, and one at the
+ * endpoint's own file ceiling, which can only ever shrink that count.
+ *
  * Whether the diff renders anything is the *skill's* judgment over `review diff`'s refusal-guarded
  * bytes, and it stays there. No verb decides it: that was a rejected candidate, because a
  * second path heuristic is the first one's defect relocated.
@@ -34,6 +41,15 @@
  * are UNKNOWN.
  * Left off, the range is never read and the route behaves as it always did: a prose-only diff under
  * a declared prefix rests on the body alone and has no head to compare against.
+ *
+ * **The record also rests on the text gate's verdict, so this verb reads that too.** The `review-code`
+ * verdict in force at `--sha` is a precondition: a standing FAIL refuses the route outright, and a
+ * route resting on a hand-verification refuses when no text verdict binds that head at all, because
+ * the clause the interim exception prescribes asserts the conjunction. A prose-only route asserts
+ * nothing about the text lane, so an absent verdict there is stated on stderr rather than refused.
+ * The reader is `review verdicts`'s and the ordering `ship gate`'s — see `./text-verdict.ts`.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9196#issuecomment-5688739893
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -49,6 +65,8 @@ import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "../review/authored.ts";
 import {isUiSurface} from "../review/classes.ts";
+import {headContentFor} from "../review/head-content.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -62,10 +80,12 @@ import {
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	STALE_TREE,
+	TEXT_REVIEW_UNMET,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {NAMESPACE} from "./post-verb.ts";
+import {standingTextVerdict, TEXT_NAMESPACE, textClaims} from "./text-verdict.ts";
 
 const VERB = "review-ui route";
 
@@ -162,24 +182,46 @@ export const runRoute = (
 			);
 		}
 
-		const listed = yield* listPullFiles(repo, pr);
-		if (listed._tag === "Failure") return unreadable("the changed-file list", pr, listed.reason);
 		const declared = target.pull.changedFiles;
-		const ui = listed.value.filter((file) => isUiSurface(file, options.uiPrefixes));
+		// The enumeration is the file set and `changed_files` is a second opinion beside it —
+		// `platformFileSet` carries why, and the seats it leaves to this verb are the two below.
+		const listed = platformFileSet(VERB, `#${pr}`, declared, yield* listPullFiles(repo, pr));
+		if (listed._tag === "Unreadable") return unreadable("the changed-file list", pr, listed.reason);
+		const files = listed.set.files;
+		const ui = files.filter((file) => isUiSurface(file, options.uiPrefixes));
 		const diagnostics = [
 			scannedLine(
 				VERB,
-				listed.value.length,
+				files.length,
 				"changed file",
 				`${declared} declared; ${ui.length} raise the ui class`,
 			),
+			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
 		];
-		// A truncated list can only ever *shrink* the ui count, so the zero-scope refusal below would
-		// fire on a PR whose class the gate is meanwhile raising. UNKNOWN, never a derivation.
-		if (listed.value.length < declared) {
+		// Zero is the shortfall the enumeration alone establishes, and with the declared count no
+		// longer refusing it is the only seat left: the zero-class refusal below would then answer
+		// "nothing renders" over a diff nobody read.
+		if (files.length === 0) {
+			return refuse(
+				ZERO_SCOPE,
+				`${VERB}: GitHub served no changed files for #${pr} against the ${declared} its own pull-request record declares — refusing to derive the ui class from a diff nobody read.`,
+				diagnostics,
+			);
+		}
+		// The ceiling is the one truncation the enumeration cannot rule out on its own, and a
+		// truncated list can only ever *shrink* the ui count, so the zero-class refusal below would
+		// fire on a PR whose class the gate is meanwhile raising. Seated at PRECONDITION_UNKNOWN
+		// rather than the `13` the `ship` verbs use: `13` is RENDER_CRASHED in this group's table,
+		// and this verb already answers UNKNOWN for its other capped platform read, the
+		// `--verified-at` comparison below.
+		if (listed.set.capped) {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: received ${listed.value.length} of ${declared} changed files — refusing to derive the ui class from a truncated read.`,
+				platformCapLine(
+					VERB,
+					`#${pr}`,
+					"a ui-class file could sit in the part the platform never served.",
+				),
 				diagnostics,
 			);
 		}
@@ -188,6 +230,58 @@ export const runRoute = (
 				ZERO_SCOPE,
 				`${VERB}: #${pr}'s diff raises no ui class, so ship gate requires no ${NAMESPACE} namespace — there is nothing to route.`,
 				diagnostics,
+			);
+		}
+
+		// The clause's other half. `ship gate` reads the two namespaces independently, so a route over
+		// a standing text FAIL merges nothing wrong — what it costs is a permanent record asserting a
+		// PASS nobody formed, which the polarity-free wire format gives a later reader no way to
+		// falsify. One comments read serves this and the upsert below.
+		const comments = yield* listComments(repo, pr);
+		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
+		diagnostics.push(scannedLine(VERB, comments.value.length, "comment"));
+		const claims = textClaims(comments.value);
+		const headContent = yield* headContentFor(
+			VERB,
+			repo,
+			pr,
+			target.pull,
+			options.sha,
+			claims,
+			inspected,
+		);
+		diagnostics.push(...headContent.diagnostics);
+		const text = standingTextVerdict(claims, inspected, headContent.digest);
+		diagnostics.push(
+			scannedLine(
+				VERB,
+				claims.length,
+				`${TEXT_NAMESPACE} claim`,
+				text === null
+					? `none in force at ${inspected}`
+					: `${text.polarity} at ${text.sha} via the ${text.carrier} carrier`,
+			),
+		);
+		if (text !== null && text.polarity === "FAIL") {
+			return refuse(
+				TEXT_REVIEW_UNMET,
+				`${VERB}: ${TEXT_NAMESPACE} stands FAIL at ${inspected} (comment ${text.commentId}) — this record would assert a text PASS that is not there; repair the finding and route at the head the text gate passes.`,
+				diagnostics,
+			);
+		}
+		// Absence refuses exactly where the record claims a PASS: a route resting on a
+		// hand-verification stands in for the render under an interim exception whose prescribed
+		// clause names both halves. A prose-only route claims neither, so it says so instead.
+		if (text === null && verified !== null) {
+			return refuse(
+				TEXT_REVIEW_UNMET,
+				`${VERB}: no standing ${TEXT_NAMESPACE} verdict binds ${inspected}, and a route resting on a hand-verification asserts one — land the text verdict first, and read what stands with fabrika review verdicts ${pr}.`,
+				diagnostics,
+			);
+		}
+		if (text === null) {
+			diagnostics.push(
+				`${VERB}: no standing ${TEXT_NAMESPACE} verdict binds ${inspected} — this record rests on the diff alone and asserts nothing about the text lane.`,
 			);
 		}
 
@@ -245,9 +339,6 @@ export const runRoute = (
 		// would leave `ship gate` picking between two claims about one question.
 		const me = yield* viewerLogin;
 		if (me._tag === "Failure") return unreadable("the authenticated user", pr, me.reason);
-		const comments = yield* listComments(repo, pr);
-		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
-		diagnostics.push(scannedLine(VERB, comments.value.length, "comment"));
 		const mine = comments.value
 			.filter(
 				(comment) =>
@@ -317,6 +408,7 @@ export const runRoute = (
 				sha: inspected,
 				uiFiles: ui.length,
 				verifiedAt: verified,
+				textReview: text === null ? "absent" : "pass",
 				upsert: mine === undefined ? "created" : "edited",
 				commentUrl: landed.url,
 			}),

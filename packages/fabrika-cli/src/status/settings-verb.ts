@@ -7,12 +7,8 @@
  * and "the governance roots are five values this repo declared" are different facts, and an agent
  * reading a bare value cannot tell whether the repo made a choice. So each row says which.
  *
- * A key whose value could not be established prints UNKNOWN and the verb exits non-zero — never a
- * green readout over defaults, which is the collapse the whole config surface exists to prevent.
- * A non-zero exit writes nothing to the answer channel (`../verb.ts`), so on that path stderr
- * carries the refusal, the scope line, and **only** the UNKNOWN rows: the resolved rows are not an
- * answer here, and printing them beside a refusal invites a caller to read the bytes without
- * reading the status.
+ * See `status settings --help` for results and exit codes. On refusal, omit resolved rows so they
+ * cannot be mistaken for a complete answer.
  *
  * **`--surfaces` expands one key rather than adding a readout.** `surfaceDispositions` resolves to
  * an id-to-word map, and a map is not what the front door relays to a human — it relays what each

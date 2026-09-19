@@ -79,10 +79,12 @@ citation, and a gap the ruling left open goes back to the founder rather than ge
 citation does not lift, so the issue still has to carry `ready-for:agent`. Two things stamp it:
 triage, when it first reads a decision that already carries a ruling comment — its
 [`--ready-for` routing](../triage/SKILL.md) owns that call, not this skill — and
-`fabrika decision rule <n> --cites <url>`, which a control-plane human runs on a decision that is
-already parked. On `ready-for:human` the claim is exit `21` and step 2's rule holds unchanged: end
-the run naming the code, and name that verb as the way back in — a control-plane human runs it, never
-you, and never an override on your own authority, however good the citation.
+`fabrika decision rule <n>`, which a control-plane human runs on a decision that is already parked —
+`--cites <url>` over a comment that is already there, `--authorization <file>` over a ruling given in
+conversation, from a file quoting it verbatim and dated. On `ready-for:human` the claim is exit `21`
+and step 2's rule holds unchanged: end the run naming the code, and name that verb as the way back
+in — a control-plane human runs it, never you, and never an override on your own authority, however
+good the citation.
 
 **Composition — what holds when `build-ui` is loaded beside this skill.** A shell's `skills:` list is
 its capability set, so a shell preloading both carries both construction laws and a mixed-deliverable
@@ -146,8 +148,8 @@ overridable, and the remedy is on the refusal line.** An epic goes to `--purpose
 and the verb can prove no more than that, so citing a comment that does not rule anything is a lie
 the tool cannot catch and you must not tell. Passing `--cites` on a decision whose audience is still
 `ready-for:human` lands on `21`, because the citation opens the type axis and nothing else — the
-route back in is `fabrika decision rule <n> --cites <url>`, run by a control-plane human, as step 1
-says.
+route back in is `fabrika decision rule <n> --cites <url>` — or `--authorization <file>` over a
+ruling given in conversation — run by a control-plane human, as step 1 says.
 
 Exit `32` (no acceptance criteria) is the fourth refusal, and it is the one you are most likely to
 meet: the verb reads the issue's body itself, so a body with no readable `### Acceptance criteria`
@@ -175,6 +177,15 @@ fabrika build issue $issue_or_pr_number
 ```
 
 That is the issue body and its acceptance criteria, off the verb, never off memory.
+
+**A criterion whose `evidence` field is not `null` is telling you the diff cannot settle it, and
+that row's proof is yours to write.** The field names where the proof lives — a hand-verification,
+a pre-fix artifact, a runtime observation — and stderr quotes every marked row so you cannot miss
+one. Do that verification and write what you observed into the PR body, naming the source the
+criterion named: `review post` refuses a `PASS` whose verdict body cites no evidence for a marked
+criterion (exit `19`), so a row you left unevidenced costs the lane a repair round on a PR that is
+otherwise fine. An `evidence` of `null` is the proven absence of a marker, and that row is
+discharged by the diff exactly as it always was.
 
 **Neither `absent` nor `malformed` is a token you build past.** The verb's three tokens are
 three different facts, and only `found` is a contract: `absent` says no heading reaches for the
@@ -215,16 +226,11 @@ markdown, validates under `prose`) — and read the matching rubric file in
 [`references/`](references/) before writing. Done when every acceptance criterion maps to
 something you can point at.
 
-**When the change alters what a fabrika verb prints, the surface is wider than the file you opened.**
-That grammar is hand-copied into six places and nothing compares them, so a sweep scoped to the
-directory you started in leaves a copy that still reads as true — one child died three repair rounds
-running on exactly that, because each round fixed the copies under the directory it opened and CI
-kept reading a seventh. The six are the verb's **Output** paragraph in `contract.md`, the fenced
-worked examples further down that same file, the `SKILL.md` step that runs the verb and routes off
-its tokens, the verb's `Command.withDescription` help string, the verb's row on the package's verb
-reference page, and the source docblocks on the verb module and its helpers. The prose and the
-examples are two passes rather than one, and a sweep scoped to markdown never opens the `.ts`
-surfaces at all — walk all six and land every one in this PR.
+**When a fabrika verb's contract changes, update it with the implementation in the same PR.**
+Read [command documentation ownership](../../docs/interface-convention.md#command-documentation-ownership)
+before changing what a verb prints. Update the help callers use, the contract requirements and
+examples affected, and any skill step whose next action changes. Done when each changed fact has
+an owner, retained pointers resolve, and the caller can still read and act on the answer.
 
 ## 4 — Branch, build, verify in this tree
 
@@ -277,6 +283,16 @@ Scratch files go only where this prints:
 fabrika build scratch $issue_or_pr_number --slug notes --token <claim-token>
 ```
 
+**What it prints is a directory, so a scratch *tree* roots there too — not only a file.** The
+session scratchpad is shared across a session's lanes, so any name a builder picks inside it is
+unlocked shared state. The case that bit is a hand-verification desk — the local app instance a
+builder stands up and drives by hand when no reviewer can render the surface: two lanes both put one
+at a fixed `desk` leaf, and the second one's rebuild deleted the first one's live desk mid-run, with
+no lock and no error. So allocate that desk's root with `--slug desk` and put the whole tree under
+it — the project directory the desk opens, the scratch agent home it runs under, the app's process
+checkpoints and the driver scripts. The allocated path is keyed on this lane's claim nonce, which is
+what makes it a name no concurrent lane writes.
+
 <!-- anchor: STAGE-THE-BODY-RATHER-THAN-TRIM-IT --> **That verb is also how a body the harness
 refuses to carry reaches a verb — staged, never trimmed.** Four verbs below take their body on a
 heredoc — `build commit`, `build deviations`, `build pr` and `build note` — and a heredoc puts the
@@ -291,14 +307,15 @@ what a builder needs beyond them is here.
 
 Allocate with the fence above, giving `--slug` the body's own name — `commit-message`,
 `deviations`, `pr-body`, `note` — so one lane's four bodies do not overwrite each other, and none of
-them lands on the `notes` slug. Write the body in with bounded `cat >>` appends, then run the verb
-with a literal input redirect in place of the heredoc:
-`fabrika build pr $issue_or_pr_number < <the path it printed>`. The bytes arrive on stdin exactly
+them lands on the `notes` slug. Treat the returned path as the staging directory: first run
+`mkdir -p <allocated-directory>` with that literal absolute path. Put the body in a leaf file
+named `body.md` inside it. Write that file's absolute path literally in each bounded
+`cat >> <allocated-directory>/body.md` append and in the verb's input redirect:
+`fabrika build pr $issue_or_pr_number < <allocated-directory>/body.md`.
+The bytes arrive on stdin exactly
 as the heredoc would have delivered them, so each verb makes every refusal it always makes — the commit's
 read-back, the `## Deviations` shape, the leak scan — and the allocated path is machine-local, so a
-body quoting it reds at `5`. `build commit`'s `--message-file` is the same file reached the other
-way and is equally sanctioned; it refuses any path that is not a leaf of this lane's scratch
-directory.
+body quoting it reds at `5`. Send staged commit messages through the same stdin redirect.
 
 Then validate **in this tree** — a green borrowed from another checkout is the false green this verb
 exists to refuse. Hand it the surface you named in step 3; it
@@ -309,6 +326,12 @@ fabrika build check --surface code
 ```
 
 Loop construct → check until green. `red` rows name the diagnostics; fix them here, in this tree.
+
+**Run the unit tests of the areas your diff touches, never the package's whole suite.** For a
+change under `packages/fabrika-cli` those areas are the `src/<area>` directories the diff changed — a
+diff in `src/build` and `src/lane` runs those two and nothing else. Several lanes build on one
+machine at once, so a lane that runs the full `fabrika-cli` suite spends every sibling's CPU
+re-proving code its diff never reached, and CI runs that suite against the merge ref anyway.
 
 **Every run also sweeps the shipped local-tree guards, whatever the surface**, so a guard that would
 red in CI reds here first. A passing member is named in the green's `ran` as `guard <name> <leaf>`; a
@@ -341,9 +364,7 @@ fix(build): one line saying what changed (#<n>)
 EOF
 ```
 
-Send the message on stdin. The alternative is a leaf under `fabrika build scratch`; any other path is
-refused, because a path outside the allocator has no per-lane key — that is how a lane commits a
-stale message belonging to another lane, with nothing failing anywhere. Exit `9`
+Send the message on stdin, using the staged file redirect above when needed. Exit `9`
 means the commit exists and carries a message you did not write: amend it and re-run, do not push.
 Exit `4` means your message names an issue this lane holds no claim on — a related reference belongs
 in the PR body, not the merge record.
@@ -409,11 +430,19 @@ before yours disclosed — still true of the range a reviewer grades — leave w
 you carry them. Read what stands first, and build this round's section out of it:
 
 ```bash
-fabrika build deviations <n> --token <claim-token> --standing > round.md
+fabrika build scratch <n> --slug deviations --token <claim-token>
+```
+
+Create the returned directory and use a file named `body.md` inside it, with the absolute paths
+written literally in each command:
+
+```bash
+mkdir -p <allocated-directory>
+fabrika build deviations <n> --token <claim-token> --standing > <allocated-directory>/body.md
 ```
 
 That prints the standing `## Deviations` section, or nothing when yours is the first round. Edit
-`round.md`: keep every entry still true, add this round's, and **retire an entry by restating it
+that allocated file: keep every entry still true, add this round's, and **retire an entry by restating it
 with a `Disposition` that says what became of it** — `corrected — the revert in <sha> removes it`,
 never by deleting the bullet. Entries match on `Said`, so revise `Did`, `Why` and `Disposition`
 freely. Send the result on stdin as above; a section that drops a standing entry is exit `35`,
@@ -559,6 +588,21 @@ The fold is the only entry: paginated, current-head, per-gate — polarity visib
 included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer **about the
 gates**, but an UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**.
 
+**Read `escalatedFindings` beside the rows: those are findings too, and they are not in the
+contract.** Past the acceptance-criteria freeze a reviewer may no longer append, so its finding lands
+as a tagged comment on the issue and the criteria block you read at step 3 does not contain it. The
+fold carries each one's full text, so fix them exactly as you fix a FAIL row's — and do not go
+looking for them in the criteria, where they will never be. The freeze is deliberate: a finding here
+enters no contract and no later round grades it, so nothing here widens the spec.
+
+**The fold has no resolved state, so on any round after the first, read each escalation against the
+tree before you treat it as unfixed.** A row is selected by its tag naming this PR, and nothing
+marks it repaired — no gate grades it, so no PASS ever retires it — which means an escalation an
+earlier cleared round already fixed comes back in this round's fold reading exactly like a new one.
+Check the code before you change it: where the fix is already in, say so in your `build note`
+naming the round that landed it, and leave the tree alone. Re-fixing a settled finding is how a
+repair round spends its budget undoing work the PR already carries.
+
 **Read the fold's `mergeability` beside its rows, because no gate emits a FAIL for a conflict.**
 `conflicting` says the PR cannot merge into its base, and that is real repair work an all-PASS fold
 would otherwise let you read as nothing to do — so a fold with no rows is not a no-work answer over
@@ -633,7 +677,9 @@ naming each one addressed, then release with `fabrika build release <repair-pr> 
 <claim-token>`. Exit `23` on that push means your head **drops commits the PR already published** —
 `build branch --resume` again so you rebuild on the published head, never
 `--drop-remote-commits`, which is for a rewrite you actually intend. The fold's `frozenCriteria`
-rows are the review-appended criteria past the freeze — note them, do not chase them.
+rows are the review-appended criteria past the freeze — note them, do not chase them. Its
+`escalatedFindings` rows are the opposite call: they never became criteria, and they are this
+round's work — each one you verify is still unfixed, because nothing retires a row from that fold.
 
 **When the whole fix is the PR body, the route is `fabrika build pr-body <pr>` and nothing else.**
 The recurring one is a FAIL reading `deviations malformed`: the head does not need to move, so a

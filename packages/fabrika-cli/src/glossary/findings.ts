@@ -202,6 +202,5 @@ export const findDefects = (input: DefectInput): ReadonlyArray<Finding> => {
 	return [...findings].sort((a, b) => KINDS.indexOf(a.kind) - KINDS.indexOf(b.kind));
 };
 
-/** The line grammar for one finding: `<kind>\t<register>\t<section>\t<term>\t<detail>`. */
 export const renderFinding = (finding: Finding): string =>
 	[finding.kind, finding.register, finding.section, finding.term, finding.detail].join("\t");
