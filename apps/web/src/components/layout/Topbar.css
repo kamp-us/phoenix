@@ -114,10 +114,10 @@
    override the tertiary variant's own frame (see packages/design/src/Button.css). */
 .kp-topbar__search-trigger[data-scope="button"][data-part="root"] {
 	--manti-button-height: 24px;
-	--manti-button-padding-x: 0;
 	justify-content: flex-start;
 	flex: 1;
 	min-width: 0;
+	padding: 0 var(--s-1) 0 var(--s-2);
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);

@@ -15,6 +15,7 @@ import {MIN_SEARCH_LENGTH, searchTarget} from "../../lib/searchTarget";
 import {Icon} from "../Icon";
 import {useSearchPalette} from "./SearchPaletteState";
 import {PANO_SIGIL, SOZLUK_SIGIL, useSearchResults} from "./useSearchResults";
+import "./SearchPalette.css";
 
 /** The trailing row's value. Namespaced like every other row so no result can collide. */
 const ALL_RESULTS = "all-results";
@@ -114,6 +115,7 @@ export function SearchPalette() {
 
 	return (
 		<CommandPalette
+			className="kp-search-palette"
 			open={open}
 			onOpenChange={setOpen}
 			// The shortcut is the Topbar's: it owns ⌘K for the whole shell, including the frames

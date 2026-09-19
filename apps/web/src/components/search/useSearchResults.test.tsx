@@ -28,9 +28,12 @@ vi.mock("../../fate/useImperativeView", async (importOriginal) => {
 });
 
 let seen: ReturnType<typeof useSearchResults>;
+/** Every status the hook rendered, in order — a flash is a transient status, not a final one. */
+const statuses: string[] = [];
 
 function Probe({query, scope}: {query: string; scope?: string}) {
 	seen = useSearchResults(query, scope);
+	if (statuses.at(-1) !== seen.status) statuses.push(seen.status);
 	return null;
 }
 
@@ -43,6 +46,7 @@ const settle = async () => {
 describe("useSearchResults", () => {
 	beforeEach(() => {
 		requests.length = 0;
+		statuses.length = 0;
 		resolvers = [];
 		vi.useFakeTimers({shouldAdvanceTime: true});
 	});
@@ -113,5 +117,52 @@ describe("useSearchResults", () => {
 
 		expect(seen.status).toBe("ok");
 		expect(seen.status === "ok" ? seen.terms.map((term) => term.id) : []).toEqual(["armut"]);
+	});
+
+	it("keeps the rows on screen while the next query reads — the list never blanks per keystroke", async () => {
+		const {rerender} = render(<Probe query="elma" />);
+		await act(async () => {
+			vi.advanceTimersByTime(200);
+		});
+		await act(async () => {
+			resolvers[0]?.({searchTerms: {items: [{node: {id: "elma"}}]}, searchPosts: {items: []}});
+		});
+		await settle();
+		expect(seen.status).toBe("ok");
+
+		statuses.length = 0;
+		rerender(<Probe query="elmas" />);
+		// Well past the slow-read threshold, with the second read still unanswered.
+		await act(async () => {
+			vi.advanceTimersByTime(1000);
+		});
+		expect(statuses).toEqual(["ok"]);
+		expect(seen.status === "ok" ? seen.terms.map((term) => term.id) : []).toEqual(["elma"]);
+
+		await act(async () => {
+			resolvers[1]?.({searchTerms: {items: [{node: {id: "elmas"}}]}, searchPosts: {items: []}});
+		});
+		await settle();
+		expect(seen.status === "ok" ? seen.terms.map((term) => term.id) : []).toEqual(["elmas"]);
+	});
+
+	it("a first read that answers quickly never shows the loading status", async () => {
+		render(<Probe query="el" />);
+		await act(async () => {
+			vi.advanceTimersByTime(200);
+		});
+		await act(async () => {
+			resolvers[0]?.({searchTerms: {items: []}, searchPosts: {items: []}});
+		});
+		await settle();
+		expect(statuses).toEqual(["idle", "ok"]);
+	});
+
+	it("a slow first read admits it is searching", async () => {
+		render(<Probe query="el" />);
+		await act(async () => {
+			vi.advanceTimersByTime(600);
+		});
+		expect(seen.status).toBe("loading");
 	});
 });

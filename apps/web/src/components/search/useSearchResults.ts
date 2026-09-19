@@ -38,6 +38,11 @@ const PostConnectionView = {items: {node: PostPaletteView}} as const;
 const PER_SURFACE = 5;
 /** A keystroke is not a query: the palette waits out a typing burst before it reads. */
 const DEBOUNCE_MS = 180;
+/**
+ * How long a first read may run before the palette admits it is searching. The loading status
+ * REPLACES the list, so showing it for a read that answers quickly is a flash, not feedback.
+ */
+const SLOW_READ_MS = 300;
 
 /**
  * The palette's own row shapes. The read maps fate's view data into these rather than handing
@@ -134,7 +139,14 @@ export function useSearchResults(query: string, scope: string | undefined): Sear
 			setResults({status: "idle"});
 			return;
 		}
-		setResults({status: "loading"});
+		// The rows already on screen stay there until the new answer replaces them: blanking them
+		// for every keystroke is what made the list flash. Only a palette with nothing to show yet
+		// admits it is searching, and only once the read is slow enough to need saying.
+		setResults((previous) => (previous.status === "ok" ? previous : {status: "idle"}));
+		const slow = setTimeout(() => {
+			if (readId.current !== id) return;
+			setResults((previous) => (previous.status === "ok" ? previous : {status: "loading"}));
+		}, DEBOUNCE_MS + SLOW_READ_MS);
 		const timer = setTimeout(() => {
 			void (async () => {
 				try {
@@ -170,7 +182,10 @@ export function useSearchResults(query: string, scope: string | undefined): Sear
 				}
 			})();
 		}, DEBOUNCE_MS);
-		return () => clearTimeout(timer);
+		return () => {
+			clearTimeout(timer);
+			clearTimeout(slow);
+		};
 	}, [fate, term, enabled, roots]);
 
 	return results;
