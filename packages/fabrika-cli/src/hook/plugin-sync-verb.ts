@@ -17,9 +17,12 @@
  * --git-common-dir`, which every linked worktree of a clone answers with the one shared directory.
  *
  * **It takes fast-forwards and nothing else.** Every other state — a parked branch, a detached HEAD,
- * uncommitted work, a diverged branch — is refused with its reason on stderr, because where a
- * human's checkout sits is a human's call. The refusal is the loud half of the guarantee: a plugin
- * source that has stopped advancing is precisely the state that used to pass unnoticed.
+ * uncommitted work the incoming commits would write over, a diverged branch — is refused with its
+ * reason on stderr, because where a human's checkout sits is a human's call. The refusal is the
+ * loud half of the guarantee: a plugin source that has stopped advancing is precisely the state
+ * that used to pass unnoticed. Uncommitted work **outside** the incoming commits' paths is not one
+ * of those states: `git merge --ff-only` takes that move and leaves the work alone, and refusing it
+ * left a checkout carrying one standing local-only edit behind forever.
  *
  * **The second link is reported, never driven.** Re-copying the advanced directory into the plugin
  * cache is the harness's own `autoUpdate` pass. This verb reads the harness's install records and
@@ -30,6 +33,7 @@
  * directory it declares, so an adopting repo needs only to declare the hook.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9031#issuecomment-5625309469
+ * @ruling https://github.com/kamp-us/phoenix/issues/9459#issuecomment-5745160952
  */
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -48,7 +52,9 @@ import {
 } from "./codes.ts";
 import {classifyEnvelope, type EnvelopeRead} from "./envelope.ts";
 import {
+	changedPathsIn,
 	directoryMarketplacesAt,
+	dirtyPathsIn,
 	type InstallReport,
 	installsFrom,
 	plan,
@@ -108,6 +114,16 @@ const text = (bytes: Uint8Array): string => new TextDecoder().decode(bytes).trim
 const stdoutOf = (outcome: ChildOutcome): string =>
 	outcome._tag === "Ran" ? text(outcome.stdout) : "";
 
+/**
+ * Stdout as git wrote it, for the two `-z` lists whose own bytes are significant.
+ *
+ * {@link stdoutOf} trims, and a porcelain status record's first field is `XY ` — for an unstaged
+ * change that leading column is a space, so trimming the first record shifts every path in the
+ * answer by one character.
+ */
+const rawStdoutOf = (outcome: ChildOutcome): string =>
+	outcome._tag === "Ran" ? new TextDecoder().decode(outcome.stdout) : "";
+
 const why = (outcome: ChildOutcome): string => {
 	if (outcome._tag === "Unstartable") return `could not run git — ${outcome.reason}`;
 	if (outcome.timedOut) return `git did not finish within ${GIT_TIMEOUT_SECONDS}s`;
@@ -150,7 +166,14 @@ const defaultBranchOf = (
 		}),
 	);
 
-/** Read every fact the plan needs, after the fetch that makes the remote half current. */
+/**
+ * Read every fact the plan needs, after the fetch that makes the remote half current.
+ *
+ * `--untracked-files=all` is load-bearing on the status read: git's default collapses a wholly
+ * untracked directory to the single entry `dir/`, and a directory entry compares equal to none of
+ * the file paths the incoming commits name, so the clobber the arm exists to catch would read as no
+ * overlap. Asking for every untracked file names them at the width the comparison is made at.
+ */
 const readFacts = (
 	root: string,
 	defaultBranch: string,
@@ -161,10 +184,12 @@ const readFacts = (
 		const head = yield* git(["rev-parse", "HEAD"], root, env);
 		const remote = yield* git(["rev-parse", `refs/remotes/origin/${defaultBranch}`], root, env);
 		if (!ran(head) || !ran(remote)) return null;
-		const status = yield* git(["status", "--porcelain"], root, env);
+		const status = yield* git(["status", "--porcelain", "-z", "--untracked-files=all"], root, env);
 		if (!ran(status)) return null;
 		const headCommit = stdoutOf(head);
 		const remoteCommit = stdoutOf(remote);
+		const incoming = yield* git(["diff", "--name-only", "-z", headCommit, remoteCommit], root, env);
+		if (!ran(incoming)) return null;
 		const ancestor = yield* git(
 			["merge-base", "--is-ancestor", headCommit, remoteCommit],
 			root,
@@ -173,9 +198,10 @@ const readFacts = (
 		return {
 			branch: ran(onBranch) ? stdoutOf(onBranch) : null,
 			defaultBranch,
-			dirty: stdoutOf(status) !== "",
+			dirtyPaths: dirtyPathsIn(rawStdoutOf(status)),
 			head: headCommit,
 			remoteHead: remoteCommit,
+			incomingPaths: changedPathsIn(rawStdoutOf(incoming)),
 			fastForwardable: ran(ancestor),
 		};
 	});
