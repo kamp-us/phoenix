@@ -40,7 +40,8 @@ export function SozlukLetter() {
 	const {letter: raw} = useParams<{letter: string}>();
 	const letter = sozlukLetterParam(raw);
 	// A route value naming no letter has no page to render — the strip only ever links to the
-	// 29, so this catches a hand-typed or stale URL rather than inventing an empty letter.
+	// letters the index holds, so this catches a hand-typed or stale URL rather than inventing
+	// an empty letter.
 	if (!letter) return <Navigate to="/sozluk" replace />;
 
 	return (

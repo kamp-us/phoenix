@@ -56,10 +56,10 @@ import {
 	toTermSummaryRow,
 } from "./term-fields.ts";
 import {
+	sozlukLetterKeyRange,
 	storedFirstLetter,
 	turkishCollateSql,
 	turkishCollationKey,
-	turkishLetterKeyRange,
 } from "./turkish-collation.ts";
 
 export type {DefinitionConnectionPage, DefinitionRow, TermPage} from "./definition-fields.ts";
@@ -865,9 +865,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const after = opts.after ?? null;
 			const viewer = opts.sandboxViewer;
 
-			// A letter outside the Turkish alphabet has no page, so it yields nothing — falling
-			// through to an unfiltered `WHERE` would answer `/sozluk/harf/q` with every term.
-			const letterRange = opts.letter ? turkishLetterKeyRange(opts.letter) : null;
+			// A letter outside the sözlük's index has no page, so it yields nothing — falling
+			// through to an unfiltered `WHERE` would answer `/sozluk/harf/0` with every term.
+			const letterRange = opts.letter ? sozlukLetterKeyRange(opts.letter) : null;
 			if (opts.letter && !letterRange) {
 				return {...emptyKeysetPage, totalCount: 0} satisfies TermConnectionPage;
 			}

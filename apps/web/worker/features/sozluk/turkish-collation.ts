@@ -19,42 +19,44 @@
 import {type SQL, type SQLWrapper, sql} from "drizzle-orm";
 import {
 	foldTurkishChar,
-	TURKISH_ALPHABET,
-	turkishLetterIndex,
+	SOZLUK_ALPHABET,
+	sozlukLetterIndex,
 	UPPERCASE_FOLD,
 } from "./turkish-alphabet.ts";
 
 export {
 	foldTurkishChar,
-	isTurkishLetter,
+	isSozlukLetter,
+	SOZLUK_ALPHABET,
+	type SozlukLetter,
+	sozlukLetterOf,
 	storedFirstLetter,
 	TURKISH_ALPHABET,
-	type TurkishLetter,
-	turkishLetterOf,
 } from "./turkish-alphabet.ts";
 
 /**
- * The key alphabet starts at `A`, so the 29 letters land on `A`..`]` — 29 consecutive ASCII code
- * points whose byte order is the Turkish order. Space, `-` and the digits all sit below `A` and
- * keep sorting ahead of every letter; `q`, `w`, `x` and any other unmapped character sit above
- * `]` and sort after `z`, which is where Turkish puts its foreign letters.
+ * The key alphabet starts at `A`, so the 32 letters land on `A`..`` ` `` — 32 consecutive ASCII
+ * code points whose byte order is the sözlük's order. Space, `-` and the digits all sit below
+ * `A` and keep sorting ahead of every letter; the Turkish 29 hold `A`..`]`, `q`, `w` and `x`
+ * take the next three (`^`, `_`, `` ` ``) and so still sort after `z`, which is where Turkish
+ * puts its foreign letters, and any remaining unmapped character sits above them all.
  */
 const KEY_ORIGIN = "A".charCodeAt(0);
 
 const keyChar = (index: number): string => String.fromCharCode(KEY_ORIGIN + index);
 
-/** The sortable key for one headword. Compare two keys byte-wise and you get Turkish order. */
+/** The sortable key for one headword. Compare two keys byte-wise and you get the strip's order. */
 export function turkishCollationKey(text: string): string {
 	let key = "";
 	for (const char of text) {
 		const folded = foldTurkishChar(char);
-		const index = turkishLetterIndex(folded);
+		const index = sozlukLetterIndex(folded);
 		key += index === -1 ? folded : keyChar(index);
 	}
 	return key;
 }
 
-/** Turkish-order comparison of two headwords. */
+/** Sözlük-order comparison of two headwords: the Turkish 29 in order, then `q`, `w`, `x`. */
 export function compareTurkish(left: string, right: string): number {
 	const a = turkishCollationKey(left);
 	const b = turkishCollationKey(right);
@@ -66,10 +68,10 @@ export function compareTurkish(left: string, right: string): number {
  * then share one expression: the letter page is `key >= start AND key < end`, and its keyset
  * walks that same key.
  */
-export function turkishLetterKeyRange(
+export function sozlukLetterKeyRange(
 	letter: string,
 ): {readonly start: string; readonly end: string} | null {
-	const index = turkishLetterIndex(foldTurkishChar(letter.charAt(0)));
+	const index = sozlukLetterIndex(foldTurkishChar(letter.charAt(0)));
 	if (index === -1) return null;
 	return {start: keyChar(index), end: keyChar(index + 1)};
 }
@@ -78,11 +80,13 @@ export function turkishLetterKeyRange(
  * A SQL text literal for one character of the fold table.
  *
  * The fold is INLINED rather than bound, and that is load-bearing: D1 caps a statement at 100
- * bound parameters, and the expression below nests 36 `replace()` calls, each of which would
- * bind two. One instance costs 72 parameters, and the letter page embeds the expression in its
- * `ORDER BY`, in both bounds of the letter range and inside the keyset predicate — 219 bound
- * parameters on a first page and 366 on a cursor page, so D1 rejected every letter read and the
- * page served neither rows nor an empty state (#9267).
+ * bound parameters, and the expression below nests one `replace()` call per fold row — 39 of
+ * them today — each of which would bind two. The letter page embeds the expression in its
+ * `ORDER BY`, in both bounds of the letter range and inside the keyset predicate, so at the
+ * 36 rows of the time that was 219 bound parameters on a first page and 366 on a cursor page:
+ * D1 rejected every letter read and the page served neither rows nor an empty state (#9267).
+ * Every letter added to the table pushes that count further, which is why inlining is the
+ * invariant and not the row count.
  *
  * Inlining is safe because the operand is never user input: every character comes from this
  * module's own compile-time alphabet table or from {@link keyChar}'s ASCII output. Quote-doubling
@@ -97,7 +101,7 @@ export function turkishCollateSql(column: SQLWrapper): SQL<string> {
 		expression = sql`replace(${expression}, ${foldLiteral(upper)}, ${foldLiteral(lower)})`;
 	}
 	expression = sql`lower(${expression})`;
-	TURKISH_ALPHABET.forEach((letter, index) => {
+	SOZLUK_ALPHABET.forEach((letter, index) => {
 		expression = sql`replace(${expression}, ${foldLiteral(letter)}, ${foldLiteral(keyChar(index))})`;
 	});
 	return expression as SQL<string>;

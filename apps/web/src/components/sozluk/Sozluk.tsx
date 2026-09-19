@@ -1,6 +1,6 @@
 import type * as React from "react";
 import {Link} from "react-router";
-import {TURKISH_ALPHABET} from "../../../worker/features/sozluk/turkish-alphabet";
+import {SOZLUK_ALPHABET} from "../../../worker/features/sozluk/turkish-alphabet";
 import {useT, useTPlural} from "../../i18n";
 import {sozlukLetterHref} from "../../lib/sozlukLetterHref";
 import {actorLabel} from "../moderation/actor-identity";
@@ -114,7 +114,7 @@ export function SozlukAlphabet({
 	const t = useT();
 	return (
 		<nav className="kp-sozluk-alphabet" aria-label={t("sozluk.alphabet.label")}>
-			{TURKISH_ALPHABET.map((l) => {
+			{SOZLUK_ALPHABET.map((l) => {
 				const isEmpty = emptyLetters.includes(l);
 				const isActive = value === l;
 				const cls = [
