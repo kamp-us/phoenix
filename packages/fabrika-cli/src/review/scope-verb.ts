@@ -156,11 +156,10 @@ export const runScope = (
 			);
 		}
 
-		// Review diff filtering (ADR 0401): the exclusion split runs after the empty-read refusal
-		// above (a zero-file read is still #3999), and the placement decides what the partition
-		// derives over — `before` the kept paths, `after` the full read. The refusal union is
-		// `governedRoots`, derived per run; guard trigger trees stay documented and drift-loud by
-		// the golden test, not protected by refusal.
+		// Review diff filtering: the exclusion split runs after the empty-read refusal above, and
+		// the placement decides what the partition derives over — `before` the kept paths, `after`
+		// the full read. The refusal union is `governedRoots`, derived per run; guard trigger trees
+		// stay documented and drift-loud by the golden test, not protected by refusal.
 		let excluded: ReadonlyArray<string> = [];
 		let partitionSource = files;
 		if (options.filterPlacement != null) {
@@ -204,7 +203,10 @@ export const runScope = (
 					namespaces,
 					routed,
 					...(options.filterPlacement != null
-						? {filter_placement: options.filterPlacement, excluded: {count: excluded.length, paths: excluded}}
+						? {
+								filter_placement: options.filterPlacement,
+								excluded: {count: excluded.length, paths: excluded},
+							}
 						: {}),
 				}),
 				diagnostics,

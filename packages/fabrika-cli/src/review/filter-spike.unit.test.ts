@@ -21,10 +21,10 @@ const probes = [
 	{guard: "catalog-guard", path: "package.json", source: "test"},
 	{
 		guard: "fanout-guard",
-		path: "apps/web/worker/features/fate-live/fanned-mutations.ts",
+		path: "src/features/fate-live/fanned-mutations.ts",
 		source: "test",
 	},
-	{guard: "governedRoots", path: ".decisions/probe.md", source: "test"},
+	{guard: "governedRoots", path: "governed/probe.md", source: "test"},
 ];
 
 describe("pattern matching", () => {
@@ -56,8 +56,8 @@ describe("the refusal invariant", () => {
 		expect(refusalFor([{pattern: "**/package.json", source: "caller"}], probes)).toEqual([
 			{pattern: "**/package.json", guard: "catalog-guard", probe: "package.json"},
 		]);
-		expect(refusalFor([{pattern: "apps/web/worker/**", source: "caller"}], probes)).toHaveLength(1);
-		expect(refusalFor([{pattern: ".decisions/", source: "caller"}], probes)).toHaveLength(1);
+		expect(refusalFor([{pattern: "src/features/**", source: "caller"}], probes)).toHaveLength(1);
+		expect(refusalFor([{pattern: "governed/", source: "caller"}], probes)).toHaveLength(1);
 	});
 
 	it("never refuses the spike's own defaults over guard probes", () => {
@@ -163,7 +163,12 @@ describe("the preview derivation", () => {
 	});
 
 	it("refuses instead of previewing when a pattern blinds a guard", () => {
-		const preview = previewOf(diff, "before", [...DEFAULT_EXCLUSIONS, {pattern: ".decisions/", source: "caller"}], probes);
+		const preview = previewOf(
+			diff,
+			"before",
+			[...DEFAULT_EXCLUSIONS, {pattern: "governed/", source: "caller"}],
+			probes,
+		);
 		expect(preview._tag).toBe("Refused");
 	});
 });

@@ -15,7 +15,7 @@
  * suffix surface (leak-guard's `*.md`) would otherwise intersect every directory exclusion and
  * refuse the spike's own defaults.
  */
-import {classOf, type ClassName, partition, type Partition} from "./classes.ts";
+import {type ClassName, classOf, type Partition, partition} from "./classes.ts";
 
 /** One exclusion pattern, with where it came from — a default or the caller's `--exclude`. */
 export interface ExclusionPattern {
@@ -52,7 +52,7 @@ export interface GuardProbe {
 	readonly source: string;
 }
 
-const escape = (segment: string): string => segment.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+const escapeRegex = (segment: string): string => segment.replace(/[.+^${}()|[\]\\]/g, "\\$&");
 
 /**
  * The pattern to a full-match regex. Slash-separated: `*` is anything but a slash inside one
@@ -80,8 +80,8 @@ export const patternToMatcher = (pattern: string): RegExp => {
 			continue;
 		}
 		const segment = part.includes("*")
-			? escape(part).replace(/\*/g, "[^/]*")
-			: escape(part);
+			? escapeRegex(part).replace(/\*/g, "[^/]*")
+			: escapeRegex(part);
 		source += `${needSlash ? "/" : ""}${segment}`;
 		needSlash = true;
 	}

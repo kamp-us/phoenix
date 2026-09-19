@@ -1,10 +1,11 @@
 /**
- * `review preview` — the ocr-port spike's read-only path extraction: matched paths, exclusions, and
- * the active class partition at the requested filter placement, with the filtered diff available on
- * the same answer. No LLM, no network, no write: the diff arrives from `--diff-file` on disk.
+ * `review preview` — the read-only path extraction behind review diff filtering: matched paths,
+ * exclusions, and the active class partition at the requested filter placement, with the filtered
+ * diff available on the same answer. No LLM, no network, no write: the diff arrives from
+ * `--diff-file` on disk.
  *
- * Spike-scope refusal mapping: a placement off the two-value vocabulary seats on `OFF_VOCABULARY`;
- * an exclusion pattern matching a guard probe seats on `GOVERNED_FILTER` (the hard invariant); an
+ * Refusal mapping: a placement off the two-value vocabulary seats on `OFF_VOCABULARY`; an
+ * exclusion pattern matching a governed root seats on `GOVERNED_FILTER` (the hard invariant); an
  * unreadable diff file is `PRECONDITION_UNKNOWN` — never a permissive empty read.
  */
 import {readFileSync} from "node:fs";
@@ -14,10 +15,10 @@ import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {GOVERNED_FILTER, OFF_VOCABULARY, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {
 	DEFAULT_EXCLUSIONS,
+	type ExclusionPattern,
 	isFilterPlacement,
 	parseExcludeList,
 	previewOf,
-	type ExclusionPattern,
 } from "./filter-spike.ts";
 import {refusalProbes} from "./guard-trees.ts";
 
@@ -25,7 +26,7 @@ const VERB = "review preview";
 
 export interface PreviewOptions {
 	readonly diffFile: string;
-	/** `null` (flag omitted) is refused — the spike exists to compare the two placements. */
+	/** `null` (flag omitted) is refused — the verb exists to compare the two placements. */
 	readonly filterPlacement: string | null;
 	/** Comma-separated extra patterns; blanks dropped. Refused when one matches a guard probe. */
 	readonly exclude: string | null;
@@ -42,7 +43,7 @@ export const runPreview = (
 		if (options.filterPlacement === null) {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --filter-placement is required — the spike compares \`before\` and \`after\` only`,
+				`${VERB}: --filter-placement is required — the verb compares \`before\` and \`after\` only`,
 			);
 		}
 		if (!isFilterPlacement(options.filterPlacement)) {
@@ -61,15 +62,23 @@ export const runPreview = (
 		);
 		if (roots._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, roots.message);
 
-		let diff: string;
-		try {
-			diff = readFileSync(options.diffFile, "utf8");
-		} catch (cause) {
+		const read = yield* Effect.match(
+			Effect.try({
+				try: () => readFileSync(options.diffFile, "utf8"),
+				catch: (cause) => (cause instanceof Error ? cause.message : String(cause)),
+			}),
+			{
+				onFailure: (reason: string) => ({_tag: "Refused" as const, message: reason}),
+				onSuccess: (text: string) => ({_tag: "Loaded" as const, text}),
+			},
+		);
+		if (read._tag === "Refused") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read --diff-file "${options.diffFile}": ${cause instanceof Error ? cause.message : String(cause)}`,
+				`${VERB}: cannot read --diff-file "${options.diffFile}": ${read.message}`,
 			);
 		}
+		const diff = read.text;
 
 		const patterns: ReadonlyArray<ExclusionPattern> = [
 			...DEFAULT_EXCLUSIONS,

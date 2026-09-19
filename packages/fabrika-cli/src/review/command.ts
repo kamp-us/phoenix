@@ -16,15 +16,15 @@ import {governedRootsOr} from "../config/paths.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import {refuse} from "../verb.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
-import {OFF_VOCABULARY} from "./codes.ts";
-import type {FilterPlacement} from "./filter-spike.ts";
+import {refuse} from "../verb.ts";
 import {runAppendCriterion} from "./append-criterion-verb.ts";
 import {runCi} from "./ci-verb.ts";
+import {OFF_VOCABULARY} from "./codes.ts";
 import {runCriteria} from "./criteria-verb.ts";
 import {runDeviations} from "./deviations-verb.ts";
 import {runDiff} from "./diff-verb.ts";
+import type {FilterPlacement} from "./filter-spike.ts";
 import {runPost} from "./post-verb.ts";
 import {runPreview} from "./preview-verb.ts";
 import {runScope} from "./scope-verb.ts";
@@ -62,14 +62,14 @@ const prArg = Argument.integer("pr").pipe(
 const filterPlacementFlag = Flag.string("filter-placement").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		"review diff filtering (ADR 0401): apply the exclusion set `before` or `after` namespace derivation; omitted, no filtering runs. Both placements are demonstrated while the placement ruling (ADR 0401 field 1) is open",
+		"review diff filtering: apply the exclusion set `before` or `after` namespace derivation; omitted, no filtering runs. Both placements stay selectable while the placement ruling is open",
 	),
 );
 
 const excludeFlag = Flag.string("exclude").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		"review diff filtering (ADR 0401): comma-separated extra exclusion globs beyond the defaults; refused at 21 when one intersects a governed root",
+		"review diff filtering: comma-separated extra exclusion globs beyond the defaults; refused at 21 when one intersects a governed root",
 	),
 );
 
@@ -80,7 +80,10 @@ const placementOf = (
 ): FilterPlacement | null | ReturnType<typeof refuse> =>
 	value === null || value === "before" || value === "after"
 		? value
-		: refuse(OFF_VOCABULARY, `review ${verb}: --filter-placement must be \`before\` or \`after\`, got "${value}"`);
+		: refuse(
+				OFF_VOCABULARY,
+				`review ${verb}: --filter-placement must be \`before\` or \`after\`, got "${value}"`,
+			);
 
 /**
  * The read verbs' `--sha`: the head the caller scoped, asserted so the answer's provenance is the
@@ -97,7 +100,14 @@ const boundShaFlag = Flag.string("sha").pipe(
 
 const scope = leafCommand(
 	"scope",
-	{pr: prArg, sha: boundShaFlag, repo: repoFlag, json: jsonFlag, filterPlacement: filterPlacementFlag, exclude: excludeFlag},
+	{
+		pr: prArg,
+		sha: boundShaFlag,
+		repo: repoFlag,
+		json: jsonFlag,
+		filterPlacement: filterPlacementFlag,
+		exclude: excludeFlag,
+	},
 	Effect.fn(function* ({pr, sha, repo, json, filterPlacement, exclude}) {
 		const placement = placementOf("scope", Option.getOrNull(filterPlacement));
 		if (placement && typeof placement === "object") {
@@ -126,7 +136,13 @@ const scope = leafCommand(
 
 const diff = leafCommand(
 	"diff",
-	{pr: prArg, sha: boundShaFlag, repo: repoFlag, filterPlacement: filterPlacementFlag, exclude: excludeFlag},
+	{
+		pr: prArg,
+		sha: boundShaFlag,
+		repo: repoFlag,
+		filterPlacement: filterPlacementFlag,
+		exclude: excludeFlag,
+	},
 	Effect.fn(function* ({pr, sha, repo, filterPlacement, exclude}) {
 		const placement = placementOf("diff", Option.getOrNull(filterPlacement));
 		if (placement && typeof placement === "object") {
@@ -518,7 +534,7 @@ const preview = leafCommand(
 ).pipe(
 	Command.withShortDescription("Filtered path extraction for review diffs — no LLM, no write."),
 	Command.withDescription(
-		"Read a local unified diff and return its filtered path extraction (ADR 0401): the matched paths, the excluded paths, the active class partition and the namespaces it derives, at the requested --filter-placement. `before` derives the partition over the kept paths only (an all-excluded diff derives zero namespaces); `after` derives over the full read and enumerates the excluded paths beside the rows. The defaults exclude pnpm-lock.yaml, **/__snapshots__/** and the generated-schema/build-output shapes; --exclude adds globs, and any pattern intersecting a governed root refuses at 21. --emit-diff prints the filtered diff with its `x-fabrika-filter` / `x-fabrika-excluded-path` header instead of the rows. No LLM invocation, no network write. Exits 10 (missing or off-vocabulary --filter-placement, or --emit-diff with --json), 11 (the diff file or .fabrika.jsonc could not be read), 21 (an exclusion pattern intersects governedRoots). Example: fabrika review preview --diff-file pr.diff --filter-placement=before --json",
+		"Read a local unified diff and return its filtered path extraction: the matched paths, the excluded paths, the active class partition and the namespaces it derives, at the requested --filter-placement. `before` derives the partition over the kept paths only (an all-excluded diff derives zero namespaces); `after` derives over the full read and enumerates the excluded paths beside the rows. The defaults exclude pnpm-lock.yaml, **/__snapshots__/** and the generated-schema/build-output shapes; --exclude adds globs, and any pattern intersecting a governed root refuses at 21. --emit-diff prints the filtered diff with its `x-fabrika-filter` / `x-fabrika-excluded-path` header instead of the rows. No LLM invocation, no network write. Exits 10 (missing or off-vocabulary --filter-placement, or --emit-diff with --json), 11 (the diff file or .fabrika.jsonc could not be read), 21 (an exclusion pattern intersects governedRoots). Example: fabrika review preview --diff-file pr.diff --filter-placement=before --json",
 	),
 );
 

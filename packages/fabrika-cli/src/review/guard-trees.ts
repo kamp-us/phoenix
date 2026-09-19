@@ -15,20 +15,19 @@
  * default exclusion set and its refusal invariant are both satisfiable.
  */
 import {MANIFEST} from "../guard/catalog-verb.ts";
+import {CI_CHANGES_SOURCE} from "../guard/change-detect.ts";
 import {CODEOWNERS} from "../guard/codeowners-cp-verb.ts";
 import {COMPONENTS_DIR} from "../guard/design-inventory-verb.ts";
 import {RAW_LAYER} from "../guard/design-token-verb.ts";
-import {SOURCE} from "../guard/no-gh-verb.ts";
 import {MANIFEST_PATH} from "../guard/fanout.ts";
 import {FEATURES_DIR} from "../guard/fanout-verb.ts";
-import {CI_CHANGES_SOURCE} from "../guard/change-detect.ts";
+import {SOURCE} from "../guard/no-gh-verb.ts";
+import {WORKSPACE} from "../guard/patch-verb.ts";
 import {CI_E2E_SOURCE, DEPLOY_SOURCE} from "../guard/path-filter.ts";
 import {DOC as POINTER_DOC} from "../guard/pointer-verb.ts";
 import {PUBLISH_WORKFLOW} from "../guard/publish-isolation-verb.ts";
-import {GLOB as README_GLOB} from "../guard/readme-verb.ts";
 import {SETTINGS} from "../guard/settings-env-verb.ts";
 import {CORPUS} from "../guard/skill-lint-verb.ts";
-import {WORKSPACE} from "../guard/patch-verb.ts";
 import type {GuardProbe} from "./filter-spike.ts";
 
 /**
@@ -84,7 +83,11 @@ export const guardProbes = (): ReadonlyArray<GuardProbe> => [
 		source: "src/guard/change-detect.ts:CI_CHANGES_SOURCE",
 	},
 	{guard: "codeowners-cp", path: CODEOWNERS, source: "src/guard/codeowners-cp-verb.ts:CODEOWNERS"},
-	{guard: "design-token-guard", path: RAW_LAYER, source: "src/guard/design-token-verb.ts:RAW_LAYER"},
+	{
+		guard: "design-token-guard",
+		path: RAW_LAYER,
+		source: "src/guard/design-token-verb.ts:RAW_LAYER",
+	},
 	{
 		guard: "design-inventory",
 		path: `${COMPONENTS_DIR}/probe.tsx`,
@@ -108,8 +111,9 @@ export const governedRootProbes = (roots: ReadonlyArray<string>): ReadonlyArray<
  * and nothing else.
  *
  * Narrowed from the first spike draft's governed-roots-plus-guard-trees union after the benchmark
- * measured the over-broad form misfiring: on real dep-only PR #399 the caller's package.json glob
- * refused because it grazed catalog-guard's corpus, blocking a legitimate exclusion of a file that
+ * measured the over-broad form misfiring: on a real dependency-only PR in the measured corpus, the
+ * caller's package.json glob refused because it grazed catalog-guard's corpus, blocking a
+ * legitimate exclusion of a file that
  * is not a review gate's input. Guards are protected by the consumer split — they read the RAW
  * path list, never the filtered one — with {@link guardProbes} and the sync golden test kept as
  * the documented, drift-loud statement of what that split protects, not as a refusal input.

@@ -16,18 +16,18 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {diffRange, diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {SHIPPED_GOVERNED_ROOTS} from "./classes.ts";
+import {GOVERNED_FILTER, INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {filesInDiff} from "./diff.ts";
 import {
 	applyPlacement,
 	DEFAULT_EXCLUSIONS,
-	filterDiff,
 	type FilterPlacement,
+	filterDiff,
 	parseExcludeList,
 	refusalFor,
 } from "./filter-spike.ts";
 import {refusalProbes} from "./guard-trees.ts";
-import {GOVERNED_FILTER, INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
-import {filesInDiff} from "./diff.ts";
-import {SHIPPED_GOVERNED_ROOTS} from "./classes.ts";
 import {bindHead, boundLine} from "./head.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 

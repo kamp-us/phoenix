@@ -1,22 +1,34 @@
 /**
  * `review preview` over a real subprocess: the golden fixture diff goes in, the placement split, the
  * exclusion enumeration, and the refusal seats come out. The fixture is a captured committed payload
- * (ADR 0180), not a hand-built string at the call site.
+ * asserted against its committed bytes, not a hand-built string at the call site.
  *
  * The cwd is the repo root so `.fabrika.jsonc`'s governedRoots feed the refusal union exactly as a
- * real invocation would.
+ * real invocation would; the refusal test derives its pattern from that same runtime config rather
+ * than naming any repository's paths.
  */
 import {execFileSync} from "node:child_process";
+import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
-import {OFF_VOCABULARY, GOVERNED_FILTER} from "./codes.ts";
+import {GOVERNED_FILTER, OFF_VOCABULARY} from "./codes.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../..", import.meta.url));
 const FIXTURE = fileURLToPath(new URL("./__fixtures__/preview-sample.diff", import.meta.url));
 
-const fabrika = (args: ReadonlyArray<string>): {readonly code: number; readonly stdout: string; readonly stderr: string} => {
+// The first governed root the runtime itself will see — the refusal test proves the live union
+// against it instead of hardcoding a path that only exists in one repository.
+const firstGovernedRoot = (() => {
+	const raw = readFileSync(`${REPO_ROOT}/.fabrika.jsonc`, "utf8").replace(/^\s*\/\/.*$/gm, "");
+	const parsed = JSON.parse(raw) as {governedRoots: string[]};
+	return parsed.governedRoots[0];
+})();
+
+const fabrika = (
+	args: ReadonlyArray<string>,
+): {readonly code: number; readonly stdout: string; readonly stderr: string} => {
 	try {
 		return {
 			code: 0,
@@ -79,7 +91,9 @@ describe("review preview", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	it("--emit-diff serves the header plus kept sections, never the excluded bytes", () => {
 		const run = fabrika(["--diff-file", FIXTURE, "--filter-placement=before", "--emit-diff"]);
 		expect(run.code).toBe(0);
-		expect(run.stdout.startsWith("x-fabrika-filter: placement=before excluded=2 served=1\n")).toBe(true);
+		expect(run.stdout.startsWith("x-fabrika-filter: placement=before excluded=2 served=1\n")).toBe(
+			true,
+		);
 		expect(run.stdout).toContain("x-fabrika-excluded-path: pnpm-lock.yaml");
 		expect(run.stdout).toContain("x-fabrika-excluded-path: src/__snapshots__/feature.snap");
 		expect(run.stdout).toContain("+export const featureExtra = () => 2;");
@@ -87,17 +101,30 @@ describe("review preview", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	});
 
 	it("an exclusion pattern reaching a governed root refuses at 21, proving the union is live", () => {
-		const run = fabrika(["--diff-file", FIXTURE, "--filter-placement=before", "--exclude", ".decisions/**"]);
+		const run = fabrika([
+			"--diff-file",
+			FIXTURE,
+			"--filter-placement=before",
+			"--exclude",
+			`${firstGovernedRoot}**`,
+		]);
 		expect(run.code).toBe(GOVERNED_FILTER);
 		expect(run.stdout).toBe("");
 		expect(run.stderr).toContain("intersects a governed root");
-		expect(run.stderr).toContain(".decisions/probe.md");
+		expect(run.stderr).toContain(`${firstGovernedRoot}probe.md`);
 	});
 
 	it("the narrowed union accepts guard-corpus patterns — a package.json glob is not a governed root", () => {
-		const run = fabrika(["--diff-file", FIXTURE, "--filter-placement=before", "--exclude", "**/package.json", "--json"]);
+		const run = fabrika([
+			"--diff-file",
+			FIXTURE,
+			"--filter-placement=before",
+			"--exclude",
+			"**/package.json",
+			"--json",
+		]);
 		expect(run.code).toBe(0);
-		const parsed = JSON.parse(run.stdout) as { excluded: { count: number; paths: string[] } };
+		const parsed = JSON.parse(run.stdout) as {excluded: {count: number; paths: string[]}};
 		expect(parsed.excluded.count).toBe(2);
 		expect(parsed.excluded.paths).toEqual(["pnpm-lock.yaml", "src/__snapshots__/feature.snap"]);
 	});
@@ -113,7 +140,13 @@ describe("review preview", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	});
 
 	it("--emit-diff and --json are mutually exclusive", () => {
-		const run = fabrika(["--diff-file", FIXTURE, "--filter-placement=before", "--emit-diff", "--json"]);
+		const run = fabrika([
+			"--diff-file",
+			FIXTURE,
+			"--filter-placement=before",
+			"--emit-diff",
+			"--json",
+		]);
 		expect(run.code).toBe(OFF_VOCABULARY);
 	});
 });

@@ -3,15 +3,15 @@
  * composed from, and this test re-reads that source to assert the constant is still exported there.
  *
  * This is what makes the refusal union *derived* rather than hardcoded — a guard that renames or
- * moves its corpus reds here, instead of silently shrinking what the ocr-port filter refuses to
- * blind (ADR 0180's captured-payload discipline, applied to a source citation instead of a wire
- * payload).
+ * moves its corpus reds here, instead of silently shrinking what the filter refuses to blind
+ * (the captured-payload discipline, applied to a source citation instead of a wire payload: cite
+ * the source, assert the source, never assert a copy).
  */
 import {readFileSync} from "node:fs";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
-import {guardProbes, governedRootProbes} from "./guard-trees.ts";
+import {governedRootProbes, guardProbes} from "./guard-trees.ts";
 
 const srcDir = dirname(fileURLToPath(import.meta.url));
 
@@ -27,10 +27,10 @@ describe("the guard-probe citations", () => {
 	});
 
 	it("the governed-root probes key off the runtime roots, not a copied list", () => {
-		expect(governedRootProbes([".decisions/", "claude-plugins/"]).map((probe) => probe.path)).toEqual([
-			".decisions/probe.md",
-			"claude-plugins/probe.md",
+		expect(governedRootProbes(["governed-a/", "governed-b/"]).map((probe) => probe.path)).toEqual([
+			"governed-a/probe.md",
+			"governed-b/probe.md",
 		]);
-		expect(governedRootProbes([".fabrika.jsonc"]).map((probe) => probe.path)).toEqual([".fabrika.jsonc"]);
+		expect(governedRootProbes(["config.json"]).map((probe) => probe.path)).toEqual(["config.json"]);
 	});
 });
