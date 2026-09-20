@@ -7,18 +7,22 @@
  * all) falls through to the results page, which owns depth and pagination.
  */
 import {CommandPalette, type CommandPaletteItem, Kbd} from "@kampus/design";
-import {BookOpen, FileText, Search} from "lucide-react";
+import {BookOpen, FileText, History, Search, User} from "lucide-react";
 import {useEffect, useMemo, useState} from "react";
 import {useLocation, useNavigate} from "react-router";
 import {useT, useTPlural} from "../../i18n";
+import {browserStorage} from "../../lib/browserStorage";
 import {MIN_SEARCH_LENGTH, searchTarget} from "../../lib/searchTarget";
 import {Icon} from "../Icon";
 import {useSearchPalette} from "./SearchPaletteState";
+import {readSearchHistory, rememberSearch} from "./searchHistory";
 import {PANO_SIGIL, SOZLUK_SIGIL, useSearchResults} from "./useSearchResults";
 import "./SearchPalette.css";
 
 /** The trailing row's value. Namespaced like every other row so no result can collide. */
 const ALL_RESULTS = "all-results";
+const RECENT_PREFIX = "recent:";
+const DEFAULT_PREFIX = "default:";
 
 export function SearchPalette() {
 	const {open, setOpen} = useSearchPalette();
@@ -28,6 +32,7 @@ export function SearchPalette() {
 	const tp = useTPlural();
 	const [query, setQuery] = useState("");
 	const [scope, setScope] = useState<string | undefined>(undefined);
+	const [recentSearches, setRecentSearches] = useState<readonly string[]>([]);
 	const results = useSearchResults(query, scope);
 
 	// Opening on the results page carries that page's query in, so ⌘K refines the search a
@@ -37,6 +42,7 @@ export function SearchPalette() {
 		location.pathname === "/search" ? (new URLSearchParams(location.search).get("q") ?? "") : "";
 	useEffect(() => {
 		setQuery(open ? urlQuery : "");
+		setRecentSearches(open ? readSearchHistory(browserStorage()) : []);
 		// `urlQuery` is deliberately not a dependency: it seeds the field at the open seam and
 		// must not overwrite what the reader has typed since.
 	}, [open]);
@@ -50,6 +56,40 @@ export function SearchPalette() {
 	);
 
 	const items = useMemo<readonly CommandPaletteItem[]>(() => {
+		const normalizedQuery = query.trim();
+		if (normalizedQuery.length === 0) {
+			if (recentSearches.length > 0) {
+				return recentSearches.map((recent) => ({
+					value: `${RECENT_PREFIX}${recent}`,
+					label: recent,
+					description: t("search.palette.recent.description"),
+					group: t("search.palette.recent.group"),
+					icon: <Icon icon={History} size={20} />,
+				}));
+			}
+			const group = t("search.palette.destinations.group");
+			return [
+				{
+					value: `${DEFAULT_PREFIX}sozluk`,
+					label: t("search.palette.destination.sozluk"),
+					group,
+					icon: <Icon icon={BookOpen} size={20} />,
+				},
+				{
+					value: `${DEFAULT_PREFIX}pano`,
+					label: t("search.palette.destination.pano"),
+					group,
+					icon: <Icon icon={FileText} size={20} />,
+				},
+				{
+					value: `${DEFAULT_PREFIX}profile`,
+					label: t("search.palette.destination.profile"),
+					group,
+					icon: <Icon icon={User} size={20} />,
+				},
+			];
+		}
+		if (normalizedQuery.length < MIN_SEARCH_LENGTH) return [];
 		const rows: CommandPaletteItem[] = [];
 		if (results.status === "ok") {
 			for (const term of results.terms) {
@@ -86,7 +126,7 @@ export function SearchPalette() {
 			});
 		}
 		return rows;
-	}, [results, query, t, tp]);
+	}, [results, query, recentSearches, t, tp]);
 
 	const status =
 		results.status === "error"
@@ -96,9 +136,23 @@ export function SearchPalette() {
 				: t("search.palette.empty");
 
 	const select = (item: CommandPaletteItem) => {
+		if (item.value.startsWith(RECENT_PREFIX)) {
+			setQuery(item.value.slice(RECENT_PREFIX.length));
+			return;
+		}
+		if (item.value.startsWith(DEFAULT_PREFIX)) {
+			const destination = item.value.slice(DEFAULT_PREFIX.length);
+			setOpen(false);
+			navigate(destination === "profile" ? "/profile" : `/${destination}`);
+			return;
+		}
+		const target = searchTarget(query);
+		if (target) setRecentSearches(rememberSearch(browserStorage(), query));
 		if (item.value === ALL_RESULTS) {
-			const target = searchTarget(query);
-			if (target) navigate(target);
+			if (target) {
+				setOpen(false);
+				navigate(target);
+			}
 			return;
 		}
 		const [kind, ...rest] = item.value.split(":");
@@ -110,6 +164,7 @@ export function SearchPalette() {
 					: results.posts.find((post) => post.id === id)
 				: undefined;
 		if (!row) return;
+		setOpen(false);
 		navigate(kind === "term" ? `/sozluk/${row.slug}` : `/pano/${row.slug ?? row.id}`);
 	};
 
@@ -136,6 +191,7 @@ export function SearchPalette() {
 			scopeHintLabel={t("search.palette.scopeHint")}
 			onScopeChange={setScope}
 			onSelect={select}
+			closeOnSelect={false}
 			footer={
 				<>
 					<Kbd>↑↓</Kbd> {t("search.palette.legend.move")} · <Kbd>↵</Kbd>{" "}

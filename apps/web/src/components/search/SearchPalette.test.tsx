@@ -4,12 +4,14 @@
  * results page. The result READ is stubbed here — this file is about what the palette does
  * with results, not about how fate fetches them.
  */
-import {fireEvent, render, screen} from "@testing-library/react";
+import {fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {MemoryRouter, useLocation} from "react-router";
 import {beforeEach, describe, expect, it, vi} from "vitest";
+import {installFakeStorage} from "../../../tests/client/fakeStorage";
 import {Topbar} from "../layout/Topbar";
 import {SearchPalette} from "./SearchPalette";
 import {SearchPaletteProvider, useSearchPalette} from "./SearchPaletteState";
+import {SEARCH_HISTORY_STORAGE_KEY} from "./searchHistory";
 import type {SearchPostResult, SearchResults, SearchTermResult} from "./useSearchResults";
 
 let results: SearchResults = {status: "idle"};
@@ -93,6 +95,7 @@ const query = async (value: string) => {
 describe("⌘K palette wiring (ADR 0186)", () => {
 	beforeEach(() => {
 		results = {status: "idle"};
+		installFakeStorage();
 	});
 
 	it("stays closed until the shell opens it — no second search surface renders on its own", () => {
@@ -112,6 +115,20 @@ describe("⌘K palette wiring (ADR 0186)", () => {
 		document.dispatchEvent(event);
 		expect(event.defaultPrevented).toBe(true);
 		expect(await screen.findByRole("combobox")).toBeTruthy();
+	});
+
+	it.each([
+		["sözlük", "/sozluk", 0],
+		["pano", "/pano", 1],
+		["profilin", "/profile", 2],
+	])("the empty frame opens the %s shortcut with Enter", async (_label, destination, moves) => {
+		renderApp();
+		fireEvent.click(screen.getByRole("button", {name: "Ara"}));
+		const field = await screen.findByRole("combobox");
+		expect(screen.getAllByRole("option")).toHaveLength(3);
+		for (let move = 0; move < moves; move += 1) fireEvent.keyDown(field, {key: "ArrowDown"});
+		fireEvent.keyDown(field, {key: "Enter"});
+		expect(screen.getByTestId("here").textContent).toBe(destination);
 	});
 
 	it("selecting a sözlük row navigates to that term", async () => {
@@ -148,5 +165,47 @@ describe("⌘K palette wiring (ADR 0186)", () => {
 		await query("a");
 		expect(screen.queryByRole("option")).toBeNull();
 		expect(screen.getByRole("status").textContent).toContain("en az 2 harf");
+	});
+
+	it("shows only search rows once the query reaches the backend minimum", async () => {
+		results = ok({terms: [term({slug: "react", title: "React"})]});
+		renderApp();
+		fireEvent.click(screen.getByRole("button", {name: "Ara"}));
+		await query("re");
+		expect(screen.getByRole("option", {name: /React/})).toBeTruthy();
+		expect(screen.getByRole("option", {name: /tüm sonuçlar/})).toBeTruthy();
+		expect(screen.queryByRole("option", {name: "profilin"})).toBeNull();
+	});
+
+	it("remembers a submitted query and selecting it searches again without navigating", async () => {
+		results = ok({posts: [post({slug: "effect-ts", title: "Effect nedir"})]});
+		renderApp();
+		fireEvent.click(screen.getByRole("button", {name: "Ara"}));
+		await query("effect");
+		fireEvent.pointerDown(screen.getByRole("option", {name: /Effect nedir/}));
+		expect(screen.getByTestId("here").textContent).toBe("/pano/effect-ts");
+		expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? "null")).toEqual([
+			"effect",
+		]);
+
+		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+		fireEvent.click(screen.getByRole("button", {name: "Ara"}));
+		const recent = await screen.findByRole("option", {name: /effect yeniden ara/});
+		fireEvent.pointerDown(recent);
+		expect(screen.getByRole<HTMLInputElement>("combobox").value).toBe("effect");
+		expect(screen.getByTestId("here").textContent).toBe("/pano/effect-ts");
+	});
+
+	it("falls back to the three shortcuts when storage refuses reads", async () => {
+		const refusing: Storage = {
+			...installFakeStorage(),
+			getItem: () => {
+				throw new Error("blocked");
+			},
+		};
+		Object.defineProperty(window, "localStorage", {value: refusing, configurable: true});
+		renderApp();
+		fireEvent.click(screen.getByRole("button", {name: "Ara"}));
+		expect(await screen.findAllByRole("option")).toHaveLength(3);
 	});
 });
