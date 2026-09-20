@@ -104,7 +104,7 @@ export const auth = {
 	"auth.landing.join.sub": "kapı açık · söz hakkı kazanılır",
 	"auth.landing.browse.panoSub": "başlıklar · tartışmalar",
 	"auth.landing.browse.sozlukSub": "terimler · tanımlar",
-	"auth.landing.col.pano": "panoda son 24 saat",
+	"auth.landing.col.pano": "panoda son gönderiler",
 	"auth.landing.col.sozluk": "sözlüğe son eklenenler",
 	"auth.landing.seeAll": "hepsini gör",
 	"auth.landing.empty.posts": "henüz başlık yok.",
