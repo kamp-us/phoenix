@@ -172,6 +172,28 @@ const spawnTypeOf = (input: JsonValue): string | null => {
 	return typeof type === "string" && type.length > 0 ? type : null;
 };
 
+/**
+ * Whether this user frame's structured tool output is a background spawn's *launch* answer rather
+ * than a worker's report.
+ *
+ * `SDKUserMessage.tool_use_result` is "the tool's full Output object, not the string content sent to
+ * the model" (`sdk.d.ts`, 0.3.259), and the Agent tool's own output is where the two spawns differ:
+ * a foreground one reads `status: "completed"` with the worker's report under `content`
+ * (`fixtures/subagent-turn.json`), a background one reads `isAsync: true` and
+ * `status: "async_launched"` seconds after the call, while the worker is still starting
+ * (`fixtures/background-subagent-turn.json`). Read off that field rather than off the result's
+ * prose, and rather than off the call's own `run_in_background`, which the harness omits altogether
+ * once background is the default it already took.
+ *
+ * The field is the frame's, not the block's, so it names no call of its own. Every captured user
+ * frame answers exactly one call — `boundary.unit.test.ts` holds the corpus to that — so on every
+ * shape captured here the frame's answer and the call it settles have one subject.
+ */
+const isAsyncLaunch = (message: Record<string, unknown>): boolean => {
+	const result = message.tool_use_result;
+	return isRecord(result) && (result.isAsync === true || result.status === "async_launched");
+};
+
 const counted = (value: unknown): number =>
 	typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 
@@ -845,9 +867,15 @@ export const userEvents = (
 	// A settling call is the one thing that ends its worker's slot, and it must be reported: the core
 	// settles a running slot at the turn's end as a backstop only, so a slot left running here is a
 	// state no checkpoint can be taken on (#8401).
+	//
+	// A background spawn is the one call whose result is not that settling: it answers the launch
+	// within a second and the worker runs on for minutes, so ending the slot here emptied the running
+	// list for the whole run (#9506). Its end arrives as the `task_notification` for the same
+	// `tool_use_id`, which `taskNoticeEvents` below finishes the slot on, so the slot still cannot
+	// outlive the turn.
 	let subagents = folded.subagents;
 	const ended: Array<AgentEvent> = [];
-	for (const one of settled) {
+	for (const one of isAsyncLaunch(message) ? [] : settled) {
 		const slot = subagents.get(one.id);
 		if (slot === undefined || slot.status === "finished") continue;
 		const finished: SubagentSlot = {...slot, status: "finished"};
@@ -1190,6 +1218,13 @@ const taskOutcomeOf = (status: unknown): string => {
  * The name is the slot's, so the notice and the list row a reader jumps to say the same word about
  * the same worker. A task holding no slot — a backgrounded `Bash` raises this frame too — falls
  * back to the spawning call's name and carries no link, because there is no row to link to.
+ *
+ * **This frame is also where a background worker's slot ends**, and for that worker it is the only
+ * place: its spawning call answered the launch while it was still starting, so `userEvents` above
+ * leaves the slot running and this one finishes it (#9506). Every status ends it — the frame is
+ * raised when a task settles, and `failed` and `stopped` are settlings too — so a slot still cannot
+ * outlive its turn (#8401). A foreground worker's slot was finished by its own settling call before
+ * this frame arrives, and a finished slot is left exactly as it was (Q2 on #8384).
  */
 export const taskNoticeEvents = (
 	message: unknown,
@@ -1202,8 +1237,13 @@ export const taskNoticeEvents = (
 	const callId = typeof message.tool_use_id === "string" ? message.tool_use_id : "";
 	const slot = callId.length === 0 ? undefined : mapping.subagents.get(callId);
 	const name = slot?.type ?? mapping.toolCalls.get(callId)?.name ?? "task";
+	const ended: SubagentSlot | null =
+		slot === undefined || slot.status === "finished" ? null : {...slot, status: "finished"};
 	return {
-		mapping,
+		mapping:
+			ended === null
+				? mapping
+				: {...mapping, subagents: new Map(mapping.subagents).set(callId, ended)},
 		events: [
 			item({
 				kind: "system",
@@ -1212,6 +1252,7 @@ export const taskNoticeEvents = (
 				text: `${name} ${taskOutcomeOf(message.status)}`,
 				...(slot === undefined ? {} : {subagent: itemId(callId)}),
 			}),
+			...(ended === null ? [] : [{kind: "subagent", slot: ended} as const]),
 		],
 	};
 };

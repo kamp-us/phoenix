@@ -6,13 +6,13 @@ and ADR [0180](../../../../../../.decisions/0180-capture-real-runtime-artifact-b
 Nothing here is hand-authored: the SDK's message shapes are observable only at execution, so an
 invented envelope would prove the mapping against a contract nobody emits.
 
-Most of them came off `query()`. Eight did not, because no `query()` run can force what they carry;
+Most of them came off `query()`. Nine did not, because no `query()` run can force what they carry;
 they were excerpted from an operator's own CLI session log and re-keyed to the SDK's declared
-envelope, and the two sections below say exactly which part of each is the captured part.
+envelope, and the three sections below say exactly which part of each is the captured part.
 
 ## What produced them
 
-The rows below describe the `query()` captures; the eight excerpted fixtures have their own
+The rows below describe the `query()` captures; the nine excerpted fixtures have their own
 sections.
 
 | | |
@@ -52,6 +52,7 @@ in order.
 | `thinking-turn.json` | excerpted from an operator's own CLI session transcript, not from a `query()` run — see below |
 | `compact-boundary.json` | the same, from a session that compacted |
 | `informational-notice.json` | the same, from a session that hit a usage limit |
+| `background-subagent-turn.json` | excerpted from an operator's own CLI session transcript, from a turn that spawned a **background** `Agent` worker — see below |
 
 ### The two-worker capture
 
@@ -229,6 +230,51 @@ with the uuid and session id. **The plugin-command shape is not captured**: a pl
 `../local-command.unit.test.ts` covers it with a `/unslop` frame's text quoted verbatim over this
 envelope rather than with a fixture of its own.
 
+## The background-spawn capture
+
+`background-subagent-turn.json` is the spawn both `query()` captures above could not be: a worker
+launched **in the background**, which is what the harness does with `Agent` by default. The two
+foreground captures answer their spawning call with the worker's whole report; a background one
+answers it within seconds with a launch receipt and the worker runs on for minutes, which is the
+shape that emptied the running list for the whole of every fabrika lane (#9506). No `query()` run
+forces it — backgrounding is the CLI's, not the SDK's — so this is an excerpt under the same founder
+ruling as the sections above
+([#8151](https://github.com/kamp-us/phoenix/issues/8151#issuecomment-5556626806)).
+
+| | |
+|---|---|
+| Captured | 2026-09-20, from a local session transcript written by CLI **2.1.278** — one `Agent` spawn with `subagent_type: "Explore"` on `claude-haiku-4-5-20251001`, the call at `20:08:23.596Z`, its answer 17s later, the worker settling 57s after that |
+| Frames | 3: the `Agent` `tool_use`, its async-launch `tool_result`, and the `task_notification` for the same `tool_use_id` |
+| Verbatim | the whole `message` body of both frames — the call's input and `usage`, the receipt's own text — plus `toolUseResult` entire, each row's `timestamp`, and every value of the notification |
+| Re-keyed | `sessionId` → `session_id`, `requestId` → `request_id`, `toolUseResult` → `tool_use_result`, `parent_tool_use_id: null` added, CLI-only keys dropped (`parentUuid`, `promptId`, `agentId`, `isSidechain`, `wireToolInputs`, `apiBlockIndex`, `sourceToolAssistantUUID`, `attributionAgent`, `attributionPlugin`, `advisorModel`, `effort`, `perTurnEffort`, `cwd`, `gitBranch`, `version`, `userType`, `entrypoint`) |
+
+**`tool_use_result` is the golden part, and it is what the mapping reads.** The CLI's `toolUseResult`
+is the Agent tool's own Output object, which `SDKUserMessage.tool_use_result` carries through
+untouched — "the tool's full Output object, not the string content sent to the model" (`sdk.d.ts`,
+0.3.259) — and the foreground captures prove the pass-through, since `subagent-turn.json` and
+`two-subagent-turn.json` each carry that same camelCase object under the snake_case key. Here it
+reads `{"isAsync": true, "status": "async_launched", …}` where theirs read `{"status":
+"completed", …}`, and that difference is the whole discriminator `../map.ts` turns on. The call's own
+input is the other half of the evidence and it is a negative: it carries **no** `run_in_background`
+at all, where the foreground captures carry `run_in_background: false` — the harness writes nothing
+once background is the default it already took, so the input cannot be read for this.
+
+**The notification's envelope is re-keyed against a capture rather than a declaration.** The CLI
+records this frame as an `attachment` row whose prompt is `<task-notification>` markup, and
+`getSessionMessages` raises no such row at all; the SDK's wire form is
+`SDKTaskNotificationMessage`, which `two-subagent-turn.json` carries verbatim off a live stream. So
+each field here is this run's own value — `task_id`, `tool_use_id`, `status`, `output_file`,
+`summary`, and the usage totals the markup's `<usage>` block reported — lifted into the key set that
+sibling capture proves. That makes it stronger evidence than `compact-boundary.json`, whose key
+names come from the type declaration alone, and weaker than a live `query()` capture, which is what
+[#8038](https://github.com/kamp-us/phoenix/issues/8038)'s run would replace it with.
+
+Sanitized as everywhere else here: the session id, `msg_*`, `req_*` and `toolu_*` ids and the
+worker's agent id substituted consistently, and every absolute path rewritten to
+`/tmp/tuval-capture` — in the prompt, in the receipt's text, and in both copies of the output file's
+path, which is the CLI's slug-encoded project key and therefore the shape the `two-subagent-turn`
+sanitization missed the first time.
+
 ## The sidechain capture
 
 `agent-a1b2c3d4e5f60718a.jsonl` and `agent-a1b2c3d4e5f60718a.meta.json` are one subagent's own
@@ -267,7 +313,7 @@ sidechain file is still uncovered here and rides
 ## What was sanitized, and what is golden
 
 For the `query()` captures, the **key set and the field shapes are the golden part** and are
-untouched. The eight excerpted fixtures are re-keyed instead, exactly as the two sections above
+untouched. The nine excerpted fixtures are re-keyed instead, exactly as the three sections above
 record —
 their golden part is the payload inside that envelope, not the envelope. Substituted, in both
 groups:
@@ -316,6 +362,13 @@ is a capture from this directory. Replacing the derived frame with a real captur
 [#8197](https://github.com/kamp-us/phoenix/issues/8197)'s open evidence, and it belongs to the same
 live capture run as the three excerpted fixtures above.
 
+**A `task_notification` that failed or stopped.** Every notification captured here reads
+`completed`, on both the foreground and the background runs, and nothing a prompt controls decides
+whether a worker fails — `'completed' | 'failed' | 'stopped'` is the whole union `sdk.d.ts` declares
+for the field at 0.3.259. `../events.unit.test.ts` covers the other two by stamping that one field
+over the captured background notification, leaving every other key the capture's, and says so at the
+case.
+
 **A subagent's streamed reply.** The live-stream gap this section used to name is closed from both
 ends now: `subagent-turn.json` is the SDK's stream — a worker's `user`, `assistant` (prose and
 reasoning) and tool frames all arrive parent-tagged on the parent session — and the sidechain pair
@@ -360,11 +413,12 @@ an operator act, not a test fixture generator. To re-capture the `query()` fixtu
 from a scratch directory exactly as the first table describes, then apply the substitutions above
 before the JSON comes anywhere near this directory.
 
-The eight excerpted fixtures cannot be re-produced that way — no `query()` run forces reasoning, a
-compaction, a usage-limit notice or a slash command. Re-producing them means finding the frame again
+The nine excerpted fixtures cannot be re-produced that way — no `query()` run forces reasoning, a
+compaction, a usage-limit notice, a slash command or a background spawn. Re-producing them means finding the frame again
 in an operator's own local CLI session log and re-keying it against `sdk.d.ts` at the catalog pin,
 per the table in
-[the section above](#the-three-excerpted-from-a-cli-session-transcript) or in
-[the one after it](#the-five-local-command-captures). Replacing them with real
+[the section above](#the-three-excerpted-from-a-cli-session-transcript), in
+[the one after it](#the-five-local-command-captures) or in
+[the background-spawn section](#the-background-spawn-capture). Replacing them with real
 `query()` captures is [#8038](https://github.com/kamp-us/phoenix/issues/8038)'s live capture run,
 which is where `compact-boundary.json`'s declaration-derived key names get closed.

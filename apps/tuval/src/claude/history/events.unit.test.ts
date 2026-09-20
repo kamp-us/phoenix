@@ -1056,3 +1056,107 @@ describe("toAgentEvents over the captured task notifications", () => {
 		]);
 	});
 });
+
+/**
+ * The background spawn, which is the harness default for `Agent` and the one the list drew nothing
+ * for (#9506). Its capture is three frames: the `Agent` call, the async-launch `tool_result` that
+ * answers it seventeen seconds later, and the `task_notification` raised when the worker actually
+ * settled a minute after that (`fixtures/background-subagent-turn.json`).
+ */
+describe("toAgentEvents over a captured background spawn", () => {
+	const stream = messages("background-subagent-turn");
+	const SPAWN = "toolu_000000000000000000000001";
+	/** The slot as each frame in turn leaves it, which is the whole subject here. */
+	const walk = (frames: ReadonlyArray<SDKMessage>) => {
+		const seen: Array<{status: string; events: number}> = [];
+		let mapping = emptyMapping;
+		for (const one of frames) {
+			const step = toAgentEvents(one, mapping, {at: AT});
+			mapping = step.mapping;
+			seen.push({
+				status: mapping.subagents.get(SPAWN)?.status ?? "none",
+				events: step.events.filter((event) => event.kind === "subagent").length,
+			});
+		}
+		return {seen, mapping};
+	};
+
+	it("leaves the slot running on the launch answer and ends it on the notification", () => {
+		expect(walk(stream).seen.map((one) => one.status)).toEqual(["running", "running", "finished"]);
+	});
+
+	it("reads the launch off the frame's structured output, not off its prose", () => {
+		const launch = stream[1];
+		expect(launch?.type).toBe("user");
+		expect(
+			(launch as {readonly tool_use_result?: Record<string, unknown>}).tool_use_result,
+		).toMatchObject({isAsync: true, status: "async_launched"});
+		// The call's own input says nothing: the harness writes no `run_in_background` at all once
+		// background is the default it already took, where the foreground captures carry `false`.
+		const call = stream[0];
+		const blocks = (
+			call as {
+				readonly message?: {
+					readonly content?: ReadonlyArray<{
+						readonly type?: string;
+						readonly input?: Record<string, unknown>;
+					}>;
+				};
+			}
+		).message?.content;
+		expect(blocks?.[0]?.input && "run_in_background" in blocks[0].input).toBe(false);
+	});
+
+	it("emits the slot's ended event alongside the notice, so no slot outlives the turn (#8401)", () => {
+		const {events} = run(stream);
+		const last = events.at(-1);
+		expect(last?.kind === "subagent" && last.slot).toMatchObject({
+			id: SPAWN,
+			type: "Explore",
+			status: "finished",
+		});
+		const notice = items(events).at(-1);
+		expect(notice?.kind === "system" && notice.text).toBe("Explore finished");
+		expect(notice?.kind === "system" && notice.subagent).toBe(SPAWN);
+		expect(walk(stream).seen.map((one) => one.events)).toEqual([1, 0, 1]);
+	});
+
+	/**
+	 * `failed` and `stopped` are the other two members of `SDKTaskNotificationMessage.status`
+	 * (`sdk.d.ts`, 0.3.259) and no run forces either — a worker fails when it fails. So this is the
+	 * captured notification with that one field stamped over it, every other key the capture's.
+	 */
+	it("ends the slot on a notification that failed or stopped, not only on completed", () => {
+		for (const status of ["failed", "stopped"] as const) {
+			const stamped = stream.map((one) =>
+				one.type === "system" && one.subtype === "task_notification"
+					? ({...one, status} as SDKMessage)
+					: one,
+			);
+			const {seen, mapping} = walk(stamped);
+			expect(seen.map((one) => one.status)).toEqual(["running", "running", "finished"]);
+			expect(mapping.subagents.get(SPAWN)?.status).toBe("finished");
+		}
+	});
+});
+
+/**
+ * The other half of #9506's fix: a *foreground* spawn's own `tool_result` is still what ends its
+ * slot, and the proof is that both foreground captures reach every slot's end with their
+ * notifications dropped. Without that the change would have moved every worker's end onto a frame a
+ * foreground run raises after the fact.
+ */
+describe("toAgentEvents over the foreground captures with no notification", () => {
+	const withoutNotices = (name: "subagent-turn" | "two-subagent-turn") =>
+		messages(name).filter((one) => !(one.type === "system" && one.subtype === "task_notification"));
+
+	it.each([
+		"subagent-turn",
+		"two-subagent-turn",
+	] as const)("finishes every %s slot on the call that spawned it", (name) => {
+		const {mapping} = run(withoutNotices(name));
+		const slots = [...mapping.subagents.values()];
+		expect(slots.length).toBeGreaterThan(0);
+		expect(slots.map((one) => one.status)).toEqual(slots.map(() => "finished"));
+	});
+});

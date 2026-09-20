@@ -3,8 +3,14 @@
  * what order, how many the tail collapses into — is decided here, so it is proven here.
  */
 
+import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {describe, expect, it} from "vitest";
+import {foldEvent} from "../../ai-agent/core/fold.ts";
+import {initialState} from "../../ai-agent/core/state.ts";
 import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
+import {toAgentEvents} from "../../claude/history/events.ts";
+import {loadFixture} from "../../claude/history/fixtures/load.ts";
+import {emptyMapping} from "../../claude/history/map.ts";
 import {
 	elapsedLabel,
 	runningSubagents,
@@ -218,5 +224,45 @@ describe("subagentPhrase", () => {
 		expect(`The ${subagentPhrase("explorer", 3)} is still running.`).toBe(
 			"The 3-worker explorer subagent is still running.",
 		);
+	});
+});
+
+/**
+ * The list over a real background spawn, which is the shape it used to draw nothing for (#9506).
+ *
+ * Synthetic slots prove what the list does with a slot; only the captured frames prove there is a
+ * slot to draw. So this folds `background-subagent-turn.json` through the same mapping and core the
+ * window's process runs and asks the list after every frame.
+ */
+describe("runningSubagents over a captured background spawn", () => {
+	const SPAWN = "toolu_000000000000000000000001";
+	const frames = loadFixture("background-subagent-turn") as ReadonlyArray<SDKMessage>;
+
+	/** The list model after each frame in turn, folded exactly as the live session folds it. */
+	const perFrame = () => {
+		const seen: Array<ReturnType<typeof runningSubagents>> = [];
+		let mapping = emptyMapping;
+		let state = initialState("/repo");
+		for (const one of frames) {
+			const step = toAgentEvents(one, mapping, {at: 1_700_000_000_000});
+			mapping = step.mapping;
+			state = step.events.reduce((carried, event) => foldEvent(carried, event, {}), state);
+			seen.push(runningSubagents(state.subagents));
+		}
+		return seen;
+	};
+
+	it("draws the worker's row for every frame between the launch answer and the notification", () => {
+		const seen = perFrame();
+		expect(seen).toHaveLength(3);
+		for (const model of seen.slice(0, 2)) {
+			expect(model.rows.map((row) => row.id)).toEqual([SPAWN]);
+			expect(model.rows[0]).toMatchObject({type: "Explore", status: "running", current: false});
+			expect(model.more).toBe(0);
+		}
+	});
+
+	it("drops the row once the notification ends the worker (Q2)", () => {
+		expect(perFrame().at(-1)).toEqual({rows: [], more: 0});
 	});
 });
