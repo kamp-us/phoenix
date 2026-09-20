@@ -12,6 +12,7 @@
  * written down, so nothing machine-local lands in the repo (ADR 0362).
  */
 
+import type {Duration} from "effect";
 import type {ModelRef} from "../ai-agent/ports/index.ts";
 
 /**
@@ -96,4 +97,6 @@ export interface AgyAiAgentOptions {
 	readonly models?: ReadonlyArray<ModelRef>;
 	/** Extra environment for the child, merged over the parent's. */
 	readonly env?: Readonly<Record<string, string>>;
+	/** Launch deadline. The shorter override is used by subprocess tests; production keeps 60s. */
+	readonly startTimeout?: Duration.Input;
 }

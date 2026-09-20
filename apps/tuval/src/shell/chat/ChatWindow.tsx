@@ -595,7 +595,15 @@ function ChatWindow({
 		[dispatch],
 	);
 
-	const setMode = useCallback((mode: Mode) => dispatch({type: "setMode", mode}), [dispatch]);
+	const [pendingMode, setPendingMode] = useState<Mode | null>(null);
+	const setMode = useCallback(
+		(mode: Mode) => {
+			if (pendingMode !== null) return;
+			setPendingMode(mode);
+			dispatch({type: "setMode", mode});
+		},
+		[dispatch, pendingMode],
+	);
 
 	// The slots the flag makes rows disappear behind. Off, it is the shared empty set and `chatRows`
 	// folds exactly as it did; on, every row whose parent chain reaches one of these leaves the
@@ -988,6 +996,11 @@ function ChatWindow({
 	);
 
 	const phase = state?.phase ?? "idle";
+	useEffect(() => {
+		if (pendingMode !== null && (state?.modes.current === pendingMode || phase === "gone")) {
+			setPendingMode(null);
+		}
+	}, [pendingMode, phase, state?.modes.current]);
 	const models = state?.models ?? null;
 	const commands = state?.commands ?? null;
 	const thinking = state?.thinking ?? null;
@@ -1330,7 +1343,11 @@ function ChatWindow({
 										 * every other implementor of `AgentChatInputBridge` answer a question only
 										 * this one has (#8190).
 										 */}
-										<ModeSwitch modes={process.state.modes} onSetMode={setMode} />
+										<ModeSwitch
+											modes={process.state.modes}
+											onSetMode={setMode}
+											pending={pendingMode !== null}
+										/>
 									</AgentChatInput.Settings>
 									<AgentChatInput.Overflow />
 								</AgentChatInput.Toolbar>

@@ -173,6 +173,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 		const binary = options.binary ?? AGY_BINARY;
 		const home = options.home ?? homedir();
 		const offered = options.models ?? AGY_MODELS;
+		const startTimeout = options.startTimeout ?? START_TIMEOUT;
 		const envOptions =
 			options.env === undefined ? {} : {env: {...options.env}, extendEnv: true as const};
 
@@ -335,9 +336,9 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			);
 
 		const teardown = (child: Child): Effect.Effect<void> =>
-			Fiber.interrupt(child.fiber).pipe(
+			Scope.close(child.scope, Exit.void).pipe(
 				Effect.andThen(Queue.shutdown(child.stdin)),
-				Effect.andThen(Scope.close(child.scope, Exit.void)),
+				Effect.andThen(Fiber.interrupt(child.fiber)),
 			);
 
 		// The child is spawned into a Scope of its own so a respawn can take one down without taking
@@ -392,9 +393,8 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 				const child: Child = {handle, stdin, scope, fiber};
 				const conversationId = yield* Deferred.await(opened).pipe(
 					Effect.timeoutOrElse({
-						duration: START_TIMEOUT,
-						orElse: () =>
-							Effect.fail(`agy produced no init line within ${START_TIMEOUT} of launch`),
+						duration: startTimeout,
+						orElse: () => Effect.fail(`agy produced no init line within ${startTimeout} of launch`),
 					}),
 					Effect.tapError(() => teardown(child)),
 				);

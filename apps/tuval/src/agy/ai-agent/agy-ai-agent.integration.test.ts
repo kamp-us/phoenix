@@ -10,7 +10,7 @@
 import {existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {Effect, Fiber, Stream} from "effect";
+import {type Duration, Effect, Fiber, Stream} from "effect";
 import {beforeEach, describe, expect, it} from "vitest";
 import {
 	addUsage,
@@ -52,6 +52,7 @@ const launches = (): ReadonlyArray<ReadonlyArray<string>> =>
 
 interface Overrides {
 	readonly model?: string;
+	readonly startTimeout?: Duration.Input;
 	/** Extra fixture env, merged over `AGY_FAKE_LOG` — the fake's stream knobs ride here. */
 	readonly env?: Readonly<Record<string, string>>;
 }
@@ -543,6 +544,41 @@ describe("the agy layer over a scripted binary", () => {
 		);
 		expect(refusal._tag).toBe("tuval/ai-agent/StartError");
 		expect(refusal.reason).toBe("transport");
+	});
+
+	it("kills a child that withholds init when the launch deadline expires", async () => {
+		const pidLog = join(home, "pids");
+		writeFileSync(pidLog, "");
+		const refusal = await Effect.gen(function* () {
+			const agent = yield* TuvalAiAgent;
+			return yield* Effect.flip(
+				agent.start({
+					cwd: "/repo",
+					resume: {sessionId: "stalled-conversation", holdsTranscript: false},
+				}),
+			);
+		}).pipe(
+			Effect.provide(
+				layerFor({
+					startTimeout: "100 millis",
+					env: {AGY_FAKE_PID_LOG: pidLog, AGY_FAKE_WITHHOLD_INIT: "1"},
+				}),
+			),
+			Effect.scoped,
+			Effect.orDie,
+			Effect.runPromise,
+		);
+		expect(refusal._tag).toBe("tuval/ai-agent/StartError");
+		expect(refusal.reason).toBe("session-not-found");
+		const pid = Number(readFileSync(pidLog, "utf8").trim());
+		const gone = await Effect.gen(function* () {
+			for (let attempt = 0; attempt < 100; attempt += 1) {
+				if (!(yield* alive(pid))) return true;
+				yield* Effect.sleep("20 millis");
+			}
+			return false;
+		}).pipe(Effect.runPromise);
+		if (!gone) expect.fail(`the timed-out launch left the agy child (pid ${pid}) running`);
 	});
 
 	/**

@@ -93,10 +93,12 @@ describe("composerBridge", () => {
 		expect(seen).toEqual([]);
 	});
 
-	it("answers an unheld capability, and a held empty one, empty not rejected", async () => {
+	it("answers empty capabilities without pretending project resources are supported", async () => {
 		const {bridge} = composerBridge({...seam(), initialPhase: "ready"});
 		expect(await bridge.loadPiFiles("src")).toEqual([]);
-		expect(await bridge.setPiProjectTrust("approve")).toBeUndefined();
+		await expect(bridge.setPiProjectTrust("approve")).rejects.toThrow(
+			"Project resources cannot be changed for this agent.",
+		);
 		expect(await bridge.answerPiExtension({id: "r1"})).toBeUndefined();
 		// Models (#7981), commands (#8060) and thinking levels (#8062) it does have, and an agent
 		// offering none still answers empty rather than rejecting: a rejection puts the composer in
@@ -162,8 +164,10 @@ describe("composerBridge", () => {
 			initialPhase: "ready",
 			initialThinking: effort,
 		});
-		await composer.bridge.setPiThinkingLevel("xhigh");
+		const changed = composer.bridge.setPiThinkingLevel("xhigh");
 		expect(handlers.onSetThinkingLevel.mock.calls).toEqual([["xhigh"]]);
+		composer.setThinking({...effort, current: "xhigh"});
+		await changed;
 	});
 
 	it("passes Codex's offered ultra level through unchanged", async () => {
@@ -174,8 +178,10 @@ describe("composerBridge", () => {
 			initialThinking: {current: "ultra", available: ["high", "ultra"]},
 		});
 		expect(await composer.bridge.loadPiThinkingLevels()).toEqual(["high", "ultra"]);
-		await composer.bridge.setPiThinkingLevel("ultra");
+		const changed = composer.bridge.setPiThinkingLevel("ultra");
 		expect(handlers.onSetThinkingLevel.mock.calls).toEqual([["ultra"]]);
+		composer.setThinking({current: "ultra", available: ["high", "ultra"]});
+		await changed;
 	});
 
 	it("drops a level the session does not offer rather than rejecting it", async () => {
@@ -327,8 +333,14 @@ describe("composerBridge", () => {
 			initialModels: {current: opus, available: [opus, sonnet]},
 		});
 		// The picker sends back the label it rendered; what leaves is the ref the session offered.
-		await composer.bridge.setPiModel({provider: "anthropic", id: "claude-sonnet-5", name: "!"});
+		const changed = composer.bridge.setPiModel({
+			provider: "anthropic",
+			id: "claude-sonnet-5",
+			name: "!",
+		});
 		expect(handlers.onSetModel.mock.calls).toEqual([[sonnet]]);
+		composer.setModels({current: sonnet, available: [opus, sonnet]});
+		await changed;
 	});
 
 	it("resolves each of two providers' same-named models to its own ref", async () => {
@@ -345,8 +357,20 @@ describe("composerBridge", () => {
 			initialModels: {current: openaiLuna, available: [openaiLuna, codexLuna]},
 		});
 
-		await composer.bridge.setPiModel({provider: "openai-codex", id: "gpt-5.6-luna", name: "!"});
-		await composer.bridge.setPiModel({provider: "openai", id: "gpt-5.6-luna", name: "!"});
+		const codexChanged = composer.bridge.setPiModel({
+			provider: "openai-codex",
+			id: "gpt-5.6-luna",
+			name: "!",
+		});
+		composer.setModels({current: codexLuna, available: [openaiLuna, codexLuna]});
+		await codexChanged;
+		const openaiChanged = composer.bridge.setPiModel({
+			provider: "openai",
+			id: "gpt-5.6-luna",
+			name: "!",
+		});
+		composer.setModels({current: openaiLuna, available: [openaiLuna, codexLuna]});
+		await openaiChanged;
 
 		expect(handlers.onSetModel.mock.calls).toEqual([[codexLuna], [openaiLuna]]);
 	});
