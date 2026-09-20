@@ -196,7 +196,11 @@ describe("tuval end to end", () => {
 
 	it("the demo programs import only the kernel's ports and registry slices, Demlik and Effect", () => {
 		const dir = import.meta.dirname;
-		const allowed = /^(effect|@demlik\/tea|\.\/[a-z]+\.ts|\.\.\/(ports|registry)\/[A-Za-z]+\.ts)$/;
+		// `../authoring/index.ts` is the one door beyond that set, and `module-counter.ts` is the one
+		// file that walks through it: it is the authored demo, so the authoring surface is its
+		// subject rather than a reach into the app (#8946).
+		const allowed =
+			/^(effect|@demlik\/tea|\.\/[a-z-]+\.ts|\.\.\/(ports|registry)\/[A-Za-z]+\.ts|\.\.\/authoring\/index\.ts)$/;
 		const offenders = readdirSync(dir)
 			.filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
 			.flatMap((name) => {

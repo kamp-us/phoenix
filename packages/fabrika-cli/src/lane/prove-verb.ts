@@ -48,6 +48,8 @@ import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
 import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
+import {newestRulingAt} from "../decision/ruling.ts";
+import {standingRulings} from "../decision/standing-rulings.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {getPullRequest, listPullFiles} from "../io/pulls.ts";
@@ -92,6 +94,7 @@ import {
 } from "./prove.ts";
 import {type ChildRange, DEEPEN_REMEDY, locateRange} from "./range.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
+import {againstRuling} from "./ruling-currency.ts";
 import {type LaneRef, type LoadedLane, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane prove";
@@ -103,6 +106,14 @@ interface Claim {
 	readonly commentId: number;
 	readonly sha: string;
 	readonly content: string | null;
+	/**
+	 * The comment's write stamp — when the reviewer judged.
+	 *
+	 * Carried on the claim rather than left in the ordering map because a second question is asked of
+	 * it: a verdict written before the newest standing ruling graded a contract that has since moved
+	 * (`./ruling-currency.ts`).
+	 */
+	readonly stamp: string;
 }
 
 export interface ProveOptions extends LaneRef {
@@ -721,6 +732,7 @@ const readNamespaceRows = (
 	roots: ReadonlyArray<string>,
 	uiPrefixes: ReadonlyArray<string>,
 	defers: ReadonlyArray<string>,
+	rulingAt: string | null,
 ): Effect.Effect<HeadRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const pull = yield* getPullRequest(repo, pr);
@@ -774,6 +786,7 @@ const readNamespaceRows = (
 						commentId: comment.id,
 						sha: marker.sha,
 						content: marker.content,
+						stamp: comment.updatedAt,
 					},
 					comment.updatedAt,
 				);
@@ -791,6 +804,7 @@ const readNamespaceRows = (
 						// Head-bound, never content-bound — a push re-opens the question, so a
 						// route can never gain survival it did not earn.
 						content: null,
+						stamp: comment.updatedAt,
 					},
 					comment.updatedAt,
 				);
@@ -808,6 +822,7 @@ const readNamespaceRows = (
 						sha: advisory.sha,
 						// The advisory withholds a content binding by design — head-bound only.
 						content: null,
+						stamp: comment.updatedAt,
 					},
 					stamp: comment.updatedAt,
 				});
@@ -889,11 +904,20 @@ const readNamespaceRows = (
 
 		const inForce: VerdictFact[] = claims.map((claim) => {
 			const binding = bindToContent(claim, head, digest);
+			const bound =
+				binding._tag === "Current" ? "current" : binding._tag === "Stale" ? "stale" : "unknown";
+			// The contract is the second binding, and it is asked only of a verdict the tree still
+			// binds: a verdict already stale at the head is stale whatever the issue was ruled.
+			const ruled = bound === "current" ? againstRuling(claim.stamp, rulingAt) : "current";
+			if (ruled !== "current") {
+				notes.push(
+					`${VERB}: ${claim.namespace} on #${pr} binds this head and was written at ${claim.stamp}, ${ruled === "superseded" ? `before the standing ruling at ${rulingAt} — it graded a contract that has since moved` : `against a ruling stamp that would not read — its currency is UNKNOWN`}.`,
+				);
+			}
 			return {
 				namespace: claim.namespace,
 				polarity: claim.polarity,
-				binding:
-					binding._tag === "Current" ? "current" : binding._tag === "Stale" ? "stale" : "unknown",
+				binding: ruled === "superseded" ? "stale" : ruled === "unknown" ? "unknown" : bound,
 				commentId: claim.commentId,
 			};
 		});
@@ -940,7 +964,32 @@ const proveVerdicts = (
 	defers: ReadonlyArray<string>,
 ): Effect.Effect<ProofAnswer, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, uiPrefixes, defers);
+		// The contract half of currency: a PASS written before the newest standing ruling graded a
+		// spec that has moved, and folding it as current is what carried one lane past three of them.
+		const ruled = yield* standingRulings(repo, issue);
+		if (ruled._tag === "Unknown") {
+			return {
+				...refuse(
+					LANE_UNREADABLE,
+					`${VERB}: ${ruled.reason} — whether #${pr}'s verdicts still grade this contract is UNKNOWN, never proven.`,
+					diagnostics,
+				),
+				deferred: [],
+			};
+		}
+		const rulingAt = newestRulingAt(ruled.scan);
+		const read = yield* readNamespaceRows(
+			repo,
+			pr,
+			[
+				...diagnostics,
+				`${VERB}: #${issue} carries ${ruled.scan.all.length} standing ruling(s)${rulingAt === null ? "" : `, the newest at ${rulingAt}`}; ${ruled.scan.disregarded} drifted marker(s) disregarded, ${ruled.scan.unauthorized} off the control-plane roster.`,
+			],
+			roots,
+			uiPrefixes,
+			defers,
+			rulingAt,
+		);
 		if (read._tag === "Unread") return {...unreadable(read.what, read.reason), deferred: []};
 		if (read._tag === "Gone") {
 			return {...seat({_tag: "Absent", what: read.what}, diagnostics), deferred: []};
@@ -1016,7 +1065,9 @@ const proveParkUncontradicted = (
 	uiPrefixes: ReadonlyArray<string>,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, uiPrefixes, []);
+		// A park is refused only by a FAIL that still binds, and a ruling cannot make one bind
+		// harder — so this arm asks no ruling question and pays no read for one.
+		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, uiPrefixes, [], null);
 		if (read._tag !== "Rows") {
 			return uncontradicted(event, taskId, issue, pr, [
 				...diagnostics,

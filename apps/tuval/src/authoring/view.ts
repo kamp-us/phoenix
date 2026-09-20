@@ -1,11 +1,17 @@
 /**
- * The three fields an author declares as functions of state, and the compiler that turns each into
+ * The two fields an author declares as functions of state, and the compiler that turns each into
  * something the kernel already carries: `title` and `status` onto the two generic self-report
- * out-ports (`../process/self-report.ts`), and `window` into the row's renderer reference plus the
- * renderer that reference names.
+ * out-ports (`../process/self-report.ts`).
  *
- * Declaring none of the three is a whole program. A headless program has no window and a program
- * with no `title` reads back as having none; nothing here is enforced, and nothing here throws.
+ * Declaring neither is a whole program. A program with no `title` reads back as having none;
+ * nothing here is enforced, and nothing here throws.
+ *
+ * **A window is not one of these fields, and cannot be** (#8946, ruled 2026-09-20). A window is a
+ * React component, this module is compiled by Node inside the kernel process, and the page is a
+ * browser tab that cannot reach anything the kernel compiled. So a program names its window by
+ * module specifier — `renderer: {kind: "module", ref}` on the authored record, ADR 0359 — and the
+ * page imports that module itself. What a window shares with its program travels the same way it
+ * would from any other browser module: a type-only import, or a leaf file that imports nothing.
  *
  * **A derived line crosses its port only when it moves.** The kernel latches the newest line a
  * process emits on each port (#8718), so a transition that leaves the title where it was has
@@ -18,32 +24,15 @@
  * seam instead: the kernel asks the row what its loaded state derives and seeds the latch directly
  * (`../process/self-report.ts`), so the restore costs no wire message and the diff keeps its job.
  *
- * **The window bridge is a function of state, because a host publishes state as a stream.** A
- * `WindowHost` carries `readProcess` and no synchronous read (`../shell/window/host.ts`), and this
- * layer is on the kernel's React-free lens, so it cannot subscribe on the author's behalf. The
- * compiled renderer therefore binds `send` to the host once and answers the author's view as a
- * function of the state the mounting surface reads — which is the subscription `readsState` already
- * owns on the page side (`../page/readable-state.tsx`). The author writes `{state, send}` either
- * way and names neither `WindowHost` nor the renderer table.
  */
 
-import {Effect} from "effect";
-import type {Message} from "../process/process.ts";
 import {STATUS_PORT, statusPort, TITLE_PORT, titlePort} from "../process/self-report.ts";
-import type {PortSchema, ProgramId, RendererKind, RendererRef} from "../registry/program.ts";
-import type {
-	AnyWindowRenderer,
-	ViewState,
-	WindowHost,
-	WindowRenderer,
-} from "../shell/window/index.ts";
-import {windowRenderer} from "../shell/window/index.ts";
+import type {PortSchema} from "../registry/program.ts";
 import type {
 	Answer,
 	AnyAuthoredProgram,
 	ArrivalEventOf,
 	ArrivingPortNames,
-	CompileContext,
 } from "./define-program.ts";
 import {emit, type ProgramEffect} from "./effect.ts";
 import type {PortDecls} from "./port.ts";
@@ -64,32 +53,18 @@ type EventOf<K, H> = H extends (state: any, event: infer E) => any
 
 /**
  * Every event this program's own `update` holds a cell for: the author's own, read back off the
- * cells they wrote, and one per arriving port. It is what `send` inside a window is typed against,
- * so a window sending an event no cell answers is a compile error where the window is written.
+ * cells they wrote, and one per arriving port.
+ *
+ * It is what a window module types its `WindowHost` dispatch against, so a window sending an event
+ * no cell answers is a compile error where the window is written. A window reaches it the one way a
+ * browser module may reach a program file at all: `import type`, which a bundler erases before it
+ * can pull the kernel in behind it (#8946). `../demo/module-window.tsx` is the worked shape.
  */
 export type ProgramEvent<D extends PortDecls, U> =
 	| {[K in keyof U]: EventOf<K & string, U[K]>}[keyof U]
 	| {
 			[K in ArrivingPortNames<D>]: ArrivalEventOf<D, K & keyof D & string>;
 	  }[ArrivingPortNames<D>];
-
-/** What an authored window is handed: this process's state, and a way into its own events. */
-export interface WindowView<S, E> {
-	readonly state: S;
-	readonly send: (event: E) => void;
-}
-
-export type AuthoredWindow<S, D extends PortDecls, U, Out> = (
-	view: WindowView<S, ProgramEvent<D, U>>,
-) => Out;
-
-/** What `window` compiles to: the author's view, bound to a host and left as a function of state. */
-export type AuthoredWindowRenderer<S, Out> = WindowRenderer<
-	(state: S) => Out,
-	S,
-	Message,
-	ViewState
->;
 
 /** Is this one of the kernel's two generic self-report ports? */
 export const isSelfReportPort = (port: string): boolean =>
@@ -169,70 +144,4 @@ export const withSelfReport = <U>(authored: AnyAuthoredProgram, update: U): U =>
 			},
 		]),
 	) as U;
-};
-
-const WINDOW_KIND: RendererKind = "host-native";
-
-/**
- * The final segment every authored reference ends with, and the page's half of a namespace split.
- * `pageRenderers` writes its own keys after the authored ones, so a page key ending here would
- * shadow an authored seat in silence (`../page/renderers.tsx`). It is named rather than inlined so
- * the page side can check its own keys against it instead of restating the shape.
- */
-export const AUTHORED_WINDOW_SUFFIX = "/window";
-
-/** The reference an authored window takes. Derived from the program id, so no author writes one. */
-export const authoredWindowRef = (id: ProgramId): RendererRef => ({
-	kind: WINDOW_KIND,
-	ref: `${id}${AUTHORED_WINDOW_SUFFIX}`,
-});
-
-/**
- * The renderers `defineProgram` has compiled, by the reference their rows name. It is the table an
- * author never edits: compiling a program seats its window, and re-compiling the same program (a
- * hot reload) replaces that one seat rather than adding a second.
- */
-const seated = new Map<string, AnyWindowRenderer>();
-
-export const authoredWindowRenderers = (): Readonly<Record<string, AnyWindowRenderer>> =>
-	Object.fromEntries(seated);
-
-/** An authored window with its program's types erased — what the compiler is handed. */
-type ErasedWindow = (view: WindowView<unknown, Message>) => unknown;
-
-/**
- * `send`, bound to the host. It is typed at `Message` — the row's own erasure of a program's
- * private Msg type — and the author's own event union is what `AuthoredWindow` types their side at,
- * so the narrowing lives where the program is written and nothing is cast to recover it here.
- */
-const sendThrough =
-	(host: WindowHost<unknown, Message, ViewState>) =>
-	(event: Message): void => {
-		void Effect.runFork(host.dispatch(event));
-	};
-
-/**
- * The row's renderer reference for an authored `window`, with the renderer it names seated on the
- * way past. `undefined` for a program declaring no window, which leaves the field off the row and
- * is how a headless program stays one.
- */
-export const compileWindow = (
-	authored: AnyAuthoredProgram,
-	context: CompileContext,
-): RendererRef | undefined => {
-	// The row erases a program's private types and so does this compiler: the author's own state and
-	// event union are checked where `AuthoredWindow` is written, and nothing recovers them here.
-	const window = authored.window as ErasedWindow | undefined;
-	if (window === undefined) return undefined;
-	const reference = authoredWindowRef(context.id);
-	seated.set(
-		reference.ref,
-		windowRenderer(
-			WINDOW_KIND,
-			(host: WindowHost<unknown, Message, ViewState>) =>
-				(state: unknown): unknown =>
-					window({state, send: sendThrough(host)}),
-		),
-	);
-	return reference;
 };

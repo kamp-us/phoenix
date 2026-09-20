@@ -275,7 +275,7 @@ describe("boot", () => {
 			expect(first.stderr).toBe("");
 			expect(first.status).toBe(0);
 			expect(first.stdout).toContain(
-				`tuval: booted — 8 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
+				`tuval: booted — 9 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
 			);
 			expect(first.stdout).toContain(
 				"tuval: process shell program=shell parent=- ports=- state=running@0\n",
@@ -301,7 +301,7 @@ describe("boot", () => {
 			const second = await runUntilRunning(args, env);
 			expect(second.status).toBe(0);
 			expect(second.stdout).toContain(
-				`tuval: booted — 8 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${homeStateDir(project, home)}\n`,
+				`tuval: booted — 9 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${homeStateDir(project, home)}\n`,
 			);
 			expect(second.stdout).toContain("tuval: process log program=log parent=counter");
 		},

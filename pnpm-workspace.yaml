@@ -56,7 +56,7 @@ catalog:
   '@testing-library/dom': ^10.4.1
   '@testing-library/react': ^16.3.0
   '@testing-library/user-event': ^14.6.7
-  '@tiptap/core': 3.30.4
+  '@tiptap/core': 3.30.5
   '@tiptap/markdown': 3.27.3
   '@tiptap/pm': 3.27.3
   '@tiptap/react': 3.27.3
@@ -118,7 +118,7 @@ catalog:
   # `onLayoutChanged` that fires on release, and `useGroupRef().setLayout` as the only write-back
   # (`.patterns/layout-tree-with-resizable-panels.md`).
   react-resizable-panels: 4.12.3
-  react-router: ^7.18.0
+  react-router: ^7.18.2
   turbo: ^2.9.14
   # Pi's own pin (`@earendil-works/pi-coding-agent@0.85.1`'s `package.json`), because a
   # `ToolDefinition.parameters` this repo writes and one Pi's own tools write have to be the same

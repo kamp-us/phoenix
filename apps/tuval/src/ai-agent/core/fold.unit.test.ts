@@ -160,17 +160,27 @@ describe("folding the thinking and compaction kinds", () => {
 		expect(upsertItem([local], echoing)).toEqual([local, echoing]);
 	});
 
+	const newKinds = [
+		systemItem("s0"),
+		compactionItem("c0"),
+		userItem("u1"),
+		thinkingItem("k1"),
+		assistantItem("a1"),
+	];
+
+	// The notice answers to a ceiling of its own now, so the four items this bound holds are the
+	// marker and the exchange, and the notice beside them costs none of them (#9514).
+	it("spends the item bound on the conversation, never on a session notice", () => {
+		const bounded = foldAll(empty, newKinds, {itemLimit: 4}).at(-1);
+		expect(bounded?.items).toEqual(newKinds);
+		expect(bounded?.omitted).toEqual({items: 0, bytes: 0, reason: "none"});
+	});
+
 	it("bounds the tail over the new kinds, cutting at the compaction marker's own edge", () => {
-		const stream = [
-			systemItem("s0"),
-			compactionItem("c0"),
-			userItem("u1"),
-			thinkingItem("k1"),
-			assistantItem("a1"),
-		];
+		const stream = [...newKinds, userItem("u2")];
 		const bounded = foldAll(empty, stream, {itemLimit: 4}).at(-1);
-		expect(bounded?.items).toEqual(stream.slice(1));
-		expect(bounded?.omitted.items).toBe(1);
+		expect(bounded?.items).toEqual(stream.slice(2));
+		expect(bounded?.omitted.items).toBe(2);
 		expect(bounded?.omitted.reason).toBe("item-limit");
 	});
 

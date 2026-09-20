@@ -120,23 +120,22 @@ export interface Harness {
 		definitions: Array<{id: string; authorId: string; authorName: string; score: number}>;
 	}>;
 	/**
-	 * Re-stamp a term's `last_activity_at` to "now" through the PUBLIC seam — a
-	 * fresh voter casts a single up-vote on `definitionId`, which the worker counts
-	 * as activity and funnels through `recomputeTermSummary(now)` (`Sozluk.ts`).
-	 * This is the only HTTP-realizable handle on the `recent` keyset's lead column:
-	 * the worker stamps `last_activity_at` from the real write clock (truncated to
-	 * the second), never from caller input, so the integration `recent`-ordering
-	 * vertical controls relative activity by the ORDER + SPACING of touches, not by
-	 * injecting a timestamp. Returns the score the vote landed.
+	 * Cast a fresh voter's single up-vote on `definitionId` through the PUBLIC seam,
+	 * re-running the term's summary refresh, and return the score the vote landed.
+	 *
+	 * It does NOT move `last_activity_at`: that column is derived from the live
+	 * definitions' own `updated_at ?? created_at` (`recomputeTermSummary`, #9540), and a
+	 * vote is not a content edit. Use `setLastActivityAt` for the `recent` keyset's lead
+	 * column; the only public seam that moves it is an add or an edit.
 	 */
 	touchTerm(definitionId: string): Promise<number>;
 	/**
 	 * Stamp a term's `term_record.last_activity_at` to an EXACT whole-second epoch,
-	 * by-passing the server write clock — the deterministic handle the public seam
-	 * cannot give. `last_activity_at` is server-stamped (`recomputeTermSummary` writes
-	 * `floor(now/1000)`, `Sozluk.ts`) and never settable by caller input, so two
-	 * touches tie on a second only when they happen to land in the same wall-clock
-	 * second — a race that real remote D1's round-trip latency loses far more often
+	 * by-passing the summary refresh — the deterministic handle the public seam cannot
+	 * give. The column is server-derived from definition content (`recomputeTermSummary`,
+	 * `Sozluk.ts`) and never settable by caller input, so two writes tie on a second only
+	 * when they happen to land in the same wall-clock second — a race that real remote
+	 * D1's round-trip latency loses far more often
 	 * than not (#643). This issues a controlled `UPDATE` against the per-stage real D1
 	 * over the Cloudflare D1 REST API (NOT the worker binding — the black-box contract
 	 * holds for assertions; this is setup-only), so a keyset tie is CONSTRUCTED, not
@@ -785,14 +784,13 @@ export function harness(
 		return {slug: input.slug, created, insertedDefinitions, skippedDefinitions, definitions};
 	};
 
-	// Each touch is a NEW voter's first up-vote, so `voteResult.changed` is true and
-	// the worker re-runs `recomputeTermSummary(now)` (a duplicate vote is a no-op and
-	// would NOT re-stamp activity). `definition.vote` is idempotent, so the stalled-
-	// request replay is safe.
+	// Each touch is a NEW voter's first up-vote, so `voteResult.changed` is true and the
+	// worker re-runs the summary refresh (a duplicate vote is a no-op and refreshes
+	// nothing). `definition.vote` is idempotent, so the stalled-request replay is safe.
 	const touchTerm: Harness["touchTerm"] = async (definitionId) => {
 		// Grow the pool by one and take the NEW voter (last slot): an already-pooled
 		// voter may have up-voted this definition before, making the re-cast a no-op
-		// that would NOT re-stamp activity. A never-seen voter guarantees `changed`.
+		// that refreshes nothing. A never-seen voter guarantees `changed`.
 		const pool = await voters(voterPool.length + 1);
 		const voterCookie = pool[pool.length - 1]!;
 		const voted = await fate(

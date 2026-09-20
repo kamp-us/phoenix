@@ -224,7 +224,7 @@ write instead of a relative path into `src/`. Four doors, and they are the whole
 |---|---|
 | `@kampus/tuval/authoring` | `defineProgram`, `port`, `programArgs`, `Program`, the effect constructors (`spawn`, `send`, `ask`, `reply`, `emit`, `stop`), `testProgram`, `HostHandlers`, and the types an authored `update` annotates itself with. `src/authoring/index.ts` says at length what is on it and what is deliberately not. |
 | `@kampus/tuval/ai-agent/ports` | The AI-agent port vocabulary — `PromptPayloadSchema`, `TurnResultSchema` and the rest of `src/ai-agent/ports/index.ts`. It stays its own door because its `boundary.unit.test.ts` holds it closed over `effect` plus the kernel's program row, and folding it into the authoring door would make one surface owe two stabilities. |
-| `@kampus/tuval/window` | The window half — `windowRenderer` and `WindowHost` for a `kind: module` window, and the `AuthoredWindow` / `WindowView` types the `window` field on an authored record is written against. Its own door because its closure is browser-safe and `./authoring`'s is not. |
+| `@kampus/tuval/window` | The window half — `windowRenderer` and `WindowHost` for a `kind: module` window, and `ProgramEvent`, which types that host's dispatch at the program's own event union. Its own door because its closure is browser-safe and `./authoring`'s is not. |
 | `@kampus/tuval/sessions` | The shipped session rows a *config* fills a shaped arg with — `claudeSession`, `codexSession`, and the `WorkspaceId` / `ClientId` constructors a row's `scope` is built from. |
 
 A kernel-side program looks like this — the same shape `src/authoring/example/pr-review.ts`
@@ -240,6 +240,34 @@ and its config hands the shaped arg a real row:
 ```ts
 import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval/sessions";
 ```
+
+### Giving a program a window
+
+A window is a separate browser module, named on the row by module specifier, and there is no other
+way (ADR 0359, as [#8946](https://github.com/kamp-us/phoenix/issues/8946) ruled it). `defineProgram`
+is compiled by Node inside the kernel process and the desk is a browser tab, so a window declared
+inline on the authored record could never be loaded from a config or from npm.
+
+```ts
+export const counter = defineProgram({
+	id: "counter",
+	init: (): CounterState => ({count: 0}),
+	update: {bump: (state: CounterState) => [{count: state.count + 1}, []]},
+	renderer: {kind: "module", ref: "@you/counter/window"},
+});
+```
+
+`@you/counter/window` exports the renderer as `default` and the predicate over the state it reads as
+`admits`, and it resolves from the config module that declared the row (#8262) — a module in this
+tree writes a root-relative path instead, `/src/demo/module-window.tsx`.
+
+**What the window may share with its program, and how.** A value it needs at runtime — a predicate,
+a view function, an event constructor — goes in a leaf file that imports nothing, and both halves
+import that. A type crosses by `import type`, which a bundler erases. A window that imports its
+program's file for a *value* pulls `node:crypto` into the page through `define-program.ts` and
+renders a load failure instead of itself. `src/demo/module-counter.ts`,
+`src/demo/module-window.tsx` and `src/demo/counter-state.ts` are the worked shape in this tree, and
+`src/page/boundary.unit.test.ts` walks every in-tree window module at each run.
 
 ### An effect of your own
 
@@ -263,7 +291,7 @@ const update = {
 	ran: (state: State, event: Ran): Answer<State, Run> => [{...state, output: event.output}, []],
 };
 
-const row = defineProgram<State, typeof ports, typeof update, Commands, unknown, Run>({
+const row = defineProgram<State, typeof ports, typeof update, Commands, Run>({
 	id: "runner",
 	ports,
 	init: (): State => ({output: null}),
@@ -287,16 +315,18 @@ added after it returns, so an effect the row has no handler for is skipped silen
 rather than refused at definition.
 
 The kernel is not on any of them: the compilers (`compilePorts`, `compileCommands`, `fillArgs`,
-`FIELD_COMPILERS`, `compileWindow`, …) stay reachable only by relative path from inside `src/`.
+`FIELD_COMPILERS`, …) stay reachable only by relative path from inside `src/`.
 
 `./authoring` and `./window` are two doors rather than one because only one of them is
 browser-safe: the kernel-side barrel reaches `src/process/Processes.ts` and
 `src/commands/core/process.ts`, both `node:crypto` importers, while `./window`'s whole value-import
 closure is five modules and reaches no `node:` builtin and no package but `effect`.
 `src/authoring/window-closure.unit.test.ts` walks both at every run, so the day an import changes
-that, a test says so rather than a browser does. (#8946 is a different chain: a window module
-importing its *own program's* file, which reaches the kernel through `define-program.ts`. Nothing
-on `./window` makes that import safe.)
+that, a test says so rather than a browser does. The chain #8946 reported is the same law from the
+other side — a window module importing its *own program's* file, which reaches the kernel through
+`define-program.ts` — and nothing on `./window` makes that import safe. What a window shares with
+its program goes through an `import type` or a leaf file that imports nothing; see
+"Giving a program a window" below.
 
 `src/authoring/public-surface.unit.test.ts` is the other proof: it reaches the API through the
 specifiers above and nothing else, writes a program, and fills its shaped arg with a shipped row.

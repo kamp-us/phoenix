@@ -3,6 +3,7 @@ import {
 	assistantItem,
 	randomStream,
 	randomTranscript,
+	systemItem,
 	thinkingItem,
 	toolItem,
 	userItem,
@@ -107,6 +108,31 @@ describe("the page bound", () => {
 			expect(page.kind).toBe("refused");
 			if (page.kind === "refused") expect(page.reason).toBe("cursor-not-found");
 		}
+	});
+
+	/**
+	 * The live window may cross its own bound to reach a row a page cursor can be minted from
+	 * (`window.ts`'s `anchor: "yield"`). A page may not: its own bound *is* the caller's `limit`, and
+	 * a cursor is never minted from a page answer, so there is nothing here to hold out for. Wired
+	 * into the shared walk without that distinction, a page whose newest rows cannot anchor answered
+	 * past its limit (#9514).
+	 */
+	it("honours its limit exactly when the newest rows in range can anchor nothing", () => {
+		const noticed = [
+			userItem("u1"),
+			assistantItem("a1"),
+			userItem("u2"),
+			assistantItem("a2"),
+			systemItem("s1", "task progress"),
+			systemItem("s2", "task started"),
+			systemItem("s3", "Bash finished"),
+		];
+		const page = planTranscriptPage(noticed, {before: null, limit: 3});
+		expect(page.kind).toBe("page");
+		if (page.kind !== "page") return;
+		expect(page.items.map((item) => item.id)).toEqual(["s1", "s2", "s3"]);
+		expect(page.next).toBe("s1");
+		expect(page.omitted.reason).toBe("item-limit");
 	});
 
 	it("emits an exchange larger than the limit whole, so paging never stalls", () => {

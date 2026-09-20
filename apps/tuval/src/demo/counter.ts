@@ -6,21 +6,17 @@
  */
 
 import {defineMachine} from "@demlik/tea";
-import {Effect, Predicate} from "effect";
+import {Effect} from "effect";
 import type {PayloadRejected, PortNotWired} from "../ports/errors.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import {type AnyProgram, type Program, ProgramId, type RendererRef} from "../registry/program.ts";
 import {COUNT_KIND, isCount} from "./count.ts";
+import type {CounterState} from "./counter-state.ts";
 
-export type CounterState = {readonly count: number};
+// The state type and its predicate live in `./counter-state.ts`, a file that imports nothing, so a
+// browser module can read them without pulling a program's graph into the page (#8946).
+export {type CounterState, isCounterState} from "./counter-state.ts";
 
-/**
- * Is this a counter's state? The admission test its window renderer reads through
- * (`../page/readable-state.tsx`): a program owns the predicate over its own state, so a wire that
- * carries something else is refused in the window rather than rendered over (#8157).
- */
-export const isCounterState = (value: unknown): value is CounterState =>
-	Predicate.isObject(value) && typeof value.count === "number" && Number.isFinite(value.count);
 /**
  * `key` is a keystroke the shell forwarded in. With the prefix unarmed every key belongs to the
  * focused window, and the shell's `forwardKey` Cmd delivers it into that window's process as this

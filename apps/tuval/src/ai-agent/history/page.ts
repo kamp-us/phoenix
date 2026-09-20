@@ -15,7 +15,7 @@ import type {PlanRefusal} from "./refusal.ts";
 import {
 	boundaryOf,
 	bytesOf,
-	nestedLimitsFor,
+	pagePassengersFor,
 	positiveLimit,
 	TRANSCRIPT_WINDOW_BYTE_LIMIT,
 	takeGroups,
@@ -68,7 +68,7 @@ export const planTranscriptPage = (
 	if (typeof boundary !== "number") return boundary;
 
 	const own = {items: options.limit, bytes: byteLimit};
-	const taken = takeGroups(history, groups, boundary, {own, nested: nestedLimitsFor(own)});
+	const taken = takeGroups(history, groups, boundary, {own, ...pagePassengersFor(own)});
 	const older = history.slice(0, taken.start);
 	return {
 		kind: "page",

@@ -133,8 +133,8 @@
 			"paths": ["packages/fabrika-cli/src/ship", "packages/fabrika-cli/src/heal-ci"]
 		},
 		"cli-wire": {
-			"ceiling": 19,
-			"why": "Fixture URLs no prose rewrite reaches. Ten are `https://github.com/o/r/issues/<n>#issuecomment-<n>` values that `decision-ruling`'s own `RULING_URL_RE` pins to the github.com host, so a placeholder host would exercise nothing — the pin itself is the defect, parked behind #8359. Nine are the package's `o/r` placeholder issue and pull URLs, served by a fake HTTP layer and compared at runtime; `o/r` resolves in no repository, and the `url` matcher's missing test-data carve-out is #8350.",
+			"ceiling": 13,
+			"why": "Fixture URLs no prose rewrite reaches. Four are `https://github.com/o/r/issues/<n>#issuecomment-<n>` values that `decision-ruling`'s own `RULING_URL_RE` pins to the github.com host, so a placeholder host would exercise nothing — the pin itself is the defect, parked behind #8359; the registry's own copies collapsed to one `RULING_COMMENT_URL` constant when the ruling marker widened past decisions. Nine are the package's `o/r` placeholder issue and pull URLs, served by a fake HTTP layer and compared at runtime; `o/r` resolves in no repository, and the `url` matcher's missing test-data carve-out is #8350.",
 			"paths": [
 				"packages/fabrika-cli/src/wire",
 				"packages/fabrika-cli/src/io",

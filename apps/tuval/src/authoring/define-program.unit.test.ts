@@ -642,7 +642,6 @@ const runnerRow = (id: string) =>
 		Record<string, never>,
 		typeof runnerUpdate,
 		Record<string, never>,
-		unknown,
 		Run
 	>({id, init: runnerInit, update: runnerUpdate});
 

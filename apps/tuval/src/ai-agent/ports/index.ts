@@ -75,6 +75,7 @@ export {
 } from "./thinking.ts";
 export {
 	type AssistantItem,
+	anchorsCursor,
 	boundToolResult,
 	byteLength,
 	type CompactionItem,
@@ -82,6 +83,7 @@ export {
 	isJsonValue,
 	isNamedItem,
 	isNestedItem,
+	isNoticeItem,
 	isTranscriptItem,
 	isTranscriptItems,
 	itemIds,

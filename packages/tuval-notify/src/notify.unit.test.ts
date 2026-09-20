@@ -117,8 +117,8 @@ type Authored = ReturnType<typeof program>;
 /**
  * The authored record, at the shape `testProgram` takes.
  *
- * `defineProgram` grew a sixth type argument in #9295 — `X`, the author's own effect — and
- * `testProgram` still stops at five, so a record whose cells answer `Answer<State, Deliver>` does
+ * `defineProgram` takes `X` — the author's own effect — as its fifth type argument (#9295), and
+ * `testProgram` stops at four, so a record whose cells answer `Answer<State, Deliver>` does
  * not fit its parameter. The cells are the same functions and the runner calls them the same way;
  * the cast is over that one type argument and nothing else, and this is the only place in the suite
  * that writes it. Filed upstream as kamp-us/phoenix

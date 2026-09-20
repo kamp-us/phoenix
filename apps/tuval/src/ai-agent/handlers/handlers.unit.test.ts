@@ -22,6 +22,7 @@ import {
 	type AiAgentSessionState,
 	aiAgentSessionMachine,
 	isAiAgentSessionState,
+	pageCursorUnavailable,
 } from "../core/index.ts";
 import type {
 	ModelRef,
@@ -307,8 +308,15 @@ describe("the AI agent handlers under a process", () => {
 				yield* handle.dispatch({type: "page", before: "local:evicted", limit: 10});
 				assert.deepStrictEqual(probe.pages, []);
 				assert.isNull(sessionOf(handle).lastPage);
-				assert.isNull(sessionOf(handle).failure);
 				assert.isUndefined(lastOn(log, aiAgentPortNames.pageReply));
+				// Asking no backend is not answering nobody: the refusal is the window's banner, and
+				// answering `nothing` left the click with no page, no banner and no log line (#9514).
+				assert.deepStrictEqual(sessionOf(handle).pageOutcome, {
+					status: "refused",
+					failure: pageCursorUnavailable,
+				});
+				// A read that touched no turn settles none: `failure` is the turn's, not the page's.
+				assert.isNull(sessionOf(handle).failure);
 			}),
 		);
 	});
@@ -332,10 +340,14 @@ describe("the AI agent handlers under a process", () => {
 					const folded = yield* handle.dispatchFolded({type: "page", before, limit: 10});
 					assert.isTrue(isAiAgentSessionState(folded.summary.state));
 					if (!isAiAgentSessionState(folded.summary.state)) return;
-					assert.isNull(folded.summary.state.pageOutcome);
+					assert.deepStrictEqual(folded.summary.state.pageOutcome, {
+						status: "refused",
+						failure: pageCursorUnavailable,
+					});
 				}
 				assert.deepStrictEqual(probe.pages, []);
 				assert.isNull(sessionOf(handle).lastPage);
+				// The same invariant the test above pins: a refused page leaves the turn's failure alone.
 				assert.isNull(sessionOf(handle).failure);
 			}),
 		);
@@ -377,10 +389,14 @@ describe("the AI agent handlers under a process", () => {
 						const state = folded.summary.state;
 						assert.strictEqual(state.pageOutcome?.status, before === null ? "success" : "refused");
 						assert.isNotNull(state.lastPage);
-						if (before !== null) assert.strictEqual(state.failure?.reason, "unknown-cursor");
+						if (before !== null && state.pageOutcome?.status === "refused")
+							assert.strictEqual(state.pageOutcome.failure.reason, "unknown-cursor");
+						// The refusal rides `pageOutcome` alone, so it cannot outlive the request that
+						// raised it — `page` clears that field and a turn's own `failure` is untouched.
+						assert.isNull(state.failure);
 					}
 					assert.strictEqual(sessionOf(handle).pageOutcome?.status, "success");
-					assert.strictEqual(sessionOf(handle).failure?.reason, "unknown-cursor");
+					assert.isNull(sessionOf(handle).failure);
 				}),
 			);
 		},
