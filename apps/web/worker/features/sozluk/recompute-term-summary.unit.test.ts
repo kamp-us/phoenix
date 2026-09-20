@@ -15,7 +15,7 @@ const row = (over: Partial<TermSummaryDefRow> & {id: string}): TermSummaryDefRow
 });
 
 describe("recomputeTermSummary", () => {
-	it("empty slice → zeroed counts, null top, `now` fallback for the date edges", () => {
+	it("empty slice → zeroed counts, null top, the fallback for every date edge", () => {
 		const out = recomputeTermSummary([], "foo-bar", "Foo Bar", NOW);
 		expect(out).toEqual({
 			slug: "foo-bar",
@@ -26,6 +26,7 @@ describe("recomputeTermSummary", () => {
 			topDefinitionId: null,
 			excerpt: null,
 			firstAt: NOW,
+			lastActivityAt: NOW,
 			lastEditAt: NOW,
 		});
 	});
@@ -169,5 +170,72 @@ describe("recomputeTermSummary", () => {
 				storedFirstLetter(title),
 			);
 		}
+	});
+});
+
+/**
+ * `last_activity_at` is the lead column of the public `recent` order. It used to be written
+ * from the caller's clock, so the 6-hourly reconcile sweep re-dated every term and the
+ * homepage read every headword as at most six hours old (#9540). Every `fallback` here is a
+ * fixed `Date` and every pair of calls uses two DIFFERENT ones, so no assertion below can
+ * pass by two calls landing in the same millisecond.
+ */
+describe("recomputeTermSummary — lastActivityAt is content, not a clock (#9540)", () => {
+	const CREATED = new Date("2024-01-10T00:00:00.000Z");
+	const EDITED = new Date("2024-03-05T00:00:00.000Z");
+	const LATER_SWEEP = new Date("2024-09-09T09:09:09.000Z");
+	const defs = [row({id: "d1", score: 3, createdAt: CREATED, updatedAt: EDITED})];
+
+	it("is the newest `updatedAt ?? createdAt` across the live slice", () => {
+		const older = row({id: "d0", createdAt: CREATED, updatedAt: CREATED});
+		const out = recomputeTermSummary([older, ...defs], "term", "Term", NOW);
+		expect(out.lastActivityAt).toBe(EDITED);
+	});
+
+	it("a reconcile pass over unchanged definitions leaves it unchanged", () => {
+		const first = recomputeTermSummary(defs, "term", "Term", NOW);
+		const second = recomputeTermSummary(defs, "term", "Term", LATER_SWEEP);
+		expect(NOW.getTime()).not.toBe(LATER_SWEEP.getTime());
+		expect(second.lastActivityAt).toEqual(first.lastActivityAt);
+		expect(second.lastActivityAt).toBe(EDITED);
+	});
+
+	it("never takes the caller's clock while any definition row exists", () => {
+		for (const fallback of [NOW, LATER_SWEEP]) {
+			const out = recomputeTermSummary(defs, "term", "Term", fallback);
+			expect(out.lastActivityAt).not.toEqual(fallback);
+		}
+	});
+
+	it("a new definition with a later `createdAt` raises it to that instant", () => {
+		const added = new Date("2024-06-01T00:00:00.000Z");
+		const out = recomputeTermSummary(
+			[...defs, row({id: "d2", createdAt: added, updatedAt: null})],
+			"term",
+			"Term",
+			NOW,
+		);
+		expect(out.lastActivityAt).toBe(added);
+	});
+
+	it("raising an existing row's `updatedAt` raises it to that instant", () => {
+		const reEdited = new Date("2024-07-02T00:00:00.000Z");
+		const out = recomputeTermSummary(
+			[row({id: "d1", score: 3, createdAt: CREATED, updatedAt: reEdited})],
+			"term",
+			"Term",
+			NOW,
+		);
+		expect(out.lastActivityAt).toBe(reEdited);
+	});
+
+	// The write site hands the stored row's own `first_at` in as the fallback, so an empty
+	// term folds to the instant it already carries instead of advancing to the sweep's clock.
+	it("an empty term reports the fallback — the stored `first_at` at the write site", () => {
+		const storedFirstAt = new Date("2023-11-11T11:11:11.000Z");
+		const out = recomputeTermSummary([], "bos", "boş", storedFirstAt);
+		expect(out.lastActivityAt).toBe(storedFirstAt);
+		expect(out.firstAt).toBe(storedFirstAt);
+		expect(out.lastEditAt).toBe(storedFirstAt);
 	});
 });

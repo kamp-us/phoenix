@@ -122,19 +122,29 @@ export interface TermSummary {
 	topDefinitionId: string | null;
 	excerpt: string | null;
 	firstAt: Date;
+	/**
+	 * When the term last had content, so `TERM_SUMMARY_ORDERING.recent` means recent. It equals
+	 * `lastEditAt` by derivation — a vote or a maintenance sweep is not activity here — and the
+	 * two columns stay separate because `term_record` has carried both since #2558.
+	 */
+	lastActivityAt: Date;
 	lastEditAt: Date;
 }
 
 /**
  * `rows` MUST already be in term-page order `(score desc, created_at asc)` so `rows[0]`
- * is the top definition. `now` is the empty-slice fallback for `firstAt` / `lastEditAt`.
+ * is the top definition. `fallback` is the instant every date edge takes when no live
+ * definition can supply one: the term's OWN stored `first_at` where the `term_record` row
+ * already exists, and the caller's clock only where it does not (#9540). Passing that choice
+ * in as an input is what makes the fold convergent — an empty term re-folds to the row it
+ * already has instead of advancing to whatever clock the caller happened to hold.
  * See ADR 0082.
  */
 export const recomputeTermSummary = (
 	rows: ReadonlyArray<TermSummaryDefRow>,
 	slug: string,
 	title: string,
-	now: Date,
+	fallback: Date,
 ): TermSummary => {
 	const top = rows[0];
 	return {
@@ -147,8 +157,9 @@ export const recomputeTermSummary = (
 		totalScore: rows.reduce((s, d) => s + d.score, 0),
 		topDefinitionId: top?.id ?? null,
 		excerpt: top ? top.bodyExcerpt || excerpt(top.body) : null,
-		firstAt: earliestCreatedAt(rows) ?? now,
-		lastEditAt: latestEditAt(rows) ?? now,
+		firstAt: earliestCreatedAt(rows) ?? fallback,
+		lastActivityAt: latestEditAt(rows) ?? fallback,
+		lastEditAt: latestEditAt(rows) ?? fallback,
 	};
 };
 
@@ -505,7 +516,19 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.orderBy(desc(schema.definitionRecord.score), asc(schema.definitionRecord.createdAt)),
 			);
 
-			const summary = recomputeTermSummary(defs, slug, title, now);
+			// The fold's empty-term fallback is the stored row's own `first_at`, read here so the
+			// choice is an INPUT to the fold rather than a branch at the write site (#9540). A term
+			// with no live definitions therefore re-folds to the instant it already carries; `now`
+			// reaches the row only when there is no row yet.
+			const stored = yield* run((db) =>
+				db
+					.select({firstAt: schema.termRecord.firstAt})
+					.from(schema.termRecord)
+					.where(eq(schema.termRecord.slug, slug))
+					.get(),
+			);
+
+			const summary = recomputeTermSummary(defs, slug, title, stored?.firstAt ?? now);
 
 			// Summary upsert + its FTS dual-write in ONE batch so they move all-or-none
 			// (ADR 0080). Both items must be drizzle query builders, NOT `db.run(sql)`: a
@@ -523,7 +546,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						excerpt: summary.excerpt,
 						topDefinitionId: summary.topDefinitionId,
 						firstAt: summary.firstAt,
-						lastActivityAt: now,
+						lastActivityAt: summary.lastActivityAt,
 						lastEditAt: summary.lastEditAt,
 					})
 					.onConflictDoUpdate({
