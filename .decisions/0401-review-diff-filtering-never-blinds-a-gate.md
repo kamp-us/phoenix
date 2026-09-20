@@ -222,3 +222,23 @@ If accepted, with fields 2–4 landing as recommended and a placement ruling pic
   subject proves it") was false for `--diff-file`, which has no range to prove a census against;
   wording across the preview verb, its CLI help and the PR body is scoped to the PR and range
   subjects, while `--diff-file` reads bytes as given.
+- 2026-09-20 — second review round: the external reviewer's targeted source review of the same
+  PR found the protection still partial at head `7310dd6f`. A wildcard-led pattern such as a
+  `.ts` suffix glob written with a leading double-star segment carries no literal run, so the
+  literal-target arm never fires, and the probe arm cannot see it either because probes are
+  `probe.md`-shaped; the defect was reproduced at that head — `refusalFor` returned no refusal
+  for the pattern while it matched a governed path, and the preview derivation silently excluded
+  `governed/real.ts`. Documenting the granularity limit was ruled not to satisfy the promised
+  refusal contract. The fix lands in two halves. (1) The literal-target arm is replaced by a
+  segment-wise forced-literal-alignment check: a pattern is refused when it pins a governed
+  root's full path by literal segments alone (a leading double-star segment may pass through
+  consuming nothing; wildcard segments never consume a root segment), which catches the
+  double-star-prefixed forms the prefix-string run missed while still refusing to over-refuse
+  generic deep globs — a full hypothetical-intersection test would have refused the shipped
+  defaults, since a file with the right name could exist under any governed directory. (2) A
+  runtime backstop: preview, scope, and diff refuse whenever a path the filter actually excluded
+  lies under a governed root, which closes every remaining generic pattern over the real diff and
+  is what makes the contract complete — no governed path can be silently served from a filtered
+  read. Red-first discipline held: the new tests were written and shown failing at the old head
+  before the implementation landed, with the counts recorded by the orchestrator rather than
+  restated here.

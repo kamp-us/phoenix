@@ -10,9 +10,12 @@
  *
  * The refusal union is not declared here. `guard-trees.ts` composes the probe paths out of the
  * guards' own exported corpus constants and `.fabrika.jsonc`'s governed roots; this module refuses
- * a pattern on two arms: a probe match, or the pattern naming a governed tree literally — see
- * `refusalFor` for why the second arm exists beside the first, and what granularity limit it
- * still states honestly.
+ * a pattern on three defenses: the probe match arm, the forced literal-alignment arm (a pattern
+ * that pins a governed root's path segments in order, by literal name), and the runtime backstop —
+ * `previewOf` refuses when a path the filter actually excluded is governed. The contract is
+ * closed: no governed path can be silently served from a filtered read. A pattern that pins a
+ * governed root refuses when the exclusion set is assembled; anything less specific refuses at
+ * run time, when it actually carves governed content out of the read.
  */
 import {type ClassName, classOf, type Partition, partition} from "./classes.ts";
 import {headerPaths} from "./diff.ts";
@@ -152,14 +155,21 @@ export const effectiveExclusions = (
 };
 
 /**
- * A pattern refused because it matches a guard probe, or because it names a governed tree
- * literally. `guard` names the guard whose probe matched; a user pattern is corrected, a default
- * matching a probe is a spike bug and refuses all the same.
+ * A pattern the filter refuses on, from one of two origins: at the pattern level, a match against
+ * a guard probe or a forced alignment onto a governed root; at run time, a path the filter
+ * actually excluded lying under a governed root. `guard` names the guard behind the refusal — the
+ * probing guard, or the governed-roots guard when the refusal is an alignment or a backstop row.
+ * A user pattern is corrected, a default matching a probe is a spike bug and refuses all the same.
  */
 export interface FilterRefusal {
 	readonly pattern: string;
 	readonly guard: string;
 	readonly probe: string;
+	/**
+	 * Set when the refusal is an actually-excluded governed path (the runtime backstop) rather
+	 * than a pattern-level probe match; equals `probe` in that case.
+	 */
+	readonly excludedPath?: string;
 }
 
 /**
@@ -170,41 +180,62 @@ const governedRootOf = (probePath: string): string =>
 	probePath.endsWith("/probe.md") ? probePath.slice(0, -"probe.md".length) : probePath;
 
 /**
- * The pattern's leading literal path segments — everything before the first wildcard-carrying
- * segment, or the whole pattern when it carries no wildcard. Empty means the pattern is
- * wildcard-led (a leading double-star segment, or `*.ts`) and names no tree.
+ * The pattern's segments, normalized exactly as `patternToMatcher` normalizes them: trailing
+ * slashes trimmed, split on a slash, empty parts dropped.
  */
-const leadingLiteralRun = (pattern: string): string => {
-	const literals: string[] = [];
-	for (const part of pattern.split("/").filter((part) => part !== "")) {
-		if (part.includes("*")) break;
-		literals.push(part);
-	}
-	return literals.join("/");
-};
+const patternSegments = (pattern: string): ReadonlyArray<string> =>
+	pattern
+		.replace(/\/+$/, "")
+		.split("/")
+		.filter((part) => part !== "");
 
-/** Whether a literal path names the governed tree — the root itself, or under it. */
-const targetsGovernedRoot = (literals: string, root: string): boolean =>
+/** The governed root's segments — the same normalization, trailing-slash or bare alike. */
+const rootSegments = (root: string): ReadonlyArray<string> =>
 	root.endsWith("/")
-		? `${literals}/` === root || literals.startsWith(root) || root.startsWith(`${literals}/`)
-		: literals === root || literals.startsWith(`${root}/`);
+		? root
+				.slice(0, -1)
+				.split("/")
+				.filter((part) => part !== "")
+		: root.split("/").filter((part) => part !== "");
 
 /**
- * The refusal union, two arms:
+ * Whether the pattern FORCIBLY pins the root: every one of the root's segments is consumed in
+ * order by pattern segments that are pure literals — a double-star segment passes through
+ * consuming zero root segments, a wildcard-carrying segment never consumes one. Once the root's
+ * segments are exhausted the pattern may end or continue however it likes: a pinning pattern can
+ * only match paths under the root, so any continuation still pins it.
+ */
+const pinsRoot = (pattern: ReadonlyArray<string>, root: ReadonlyArray<string>): boolean => {
+	const walk = (patternIndex: number, rootIndex: number): boolean => {
+		if (rootIndex === root.length) return true;
+		const segment = pattern[patternIndex];
+		if (segment === undefined) return false;
+		if (segment === "**") return walk(patternIndex + 1, rootIndex);
+		if (segment.includes("*")) return false;
+		if (segment !== root[rootIndex]) return false;
+		return walk(patternIndex + 1, rootIndex + 1);
+	};
+	return walk(0, 0);
+};
+
+/**
+ * The refusal union, two pattern-level arms. The runtime backstop in `previewOf` closes the rest
+ * of the contract over the actual diff.
  *
  * **Probe match** — the pattern matches a probe path a governed root or guard actually reads.
  * Probe-granular, not pattern-algebraic, because a universe-wide suffix surface (leak-guard's
  * `*.md`) would otherwise intersect every directory exclusion and refuse the defaults.
  *
- * **Literal target** — the probe arm is match-granular, so a pattern that names a governed tree
- * literally (`governed/*.ts` against the `governed/` root) would slip past it while still carving
- * that tree out of the review's content. The literal run of the pattern is checked against every
- * governed root and refuses on contact. A wildcard-LED pattern (a leading double-star segment
- * such as a `.ts` suffix glob) still cannot be refused
- * without refusing every generic pattern — that is the stated granularity limit, and what bounds
- * it is visibility: every exclusion, whatever its pattern, is enumerated in each consumer's
- * `excluded` rows and `x-fabrika-excluded-path` headers, and the consumer split keeps every gate's
- * derivation on the raw list.
+ * **Forced literal alignment** — the probe arm is match-granular, so a pattern that pins a
+ * governed tree by name would slip past it while still carving that tree out of the review's
+ * content. The check is segment-wise because the old prefix-string run missed a pattern pinning
+ * the root from behind a leading double-star segment (a leading double-star segment then the
+ * root's own name matches the tree yet carries no literal prefix), and it is alignment-only
+ * because a full hypothetical-intersection check would refuse every generic deep glob — the
+ * shipped defaults included, since a file of the right name could exist under any governed
+ * directory. So this arm refuses only what the pattern forces; everything less specific is closed
+ * at run time by the governed-excluded backstop, which is complete over the actual diff and
+ * refuses the moment the filter actually excludes governed content — there the contract closes.
  */
 export const refusalFor = (
 	patterns: ReadonlyArray<ExclusionPattern>,
@@ -217,18 +248,55 @@ export const refusalFor = (
 			refusals.push({pattern, guard: probe.guard, probe: probe.path});
 			continue;
 		}
-		const literals = leadingLiteralRun(pattern);
-		if (literals === "") continue;
+		const segments = patternSegments(pattern);
 		const target = probes.find(
 			(candidate) =>
 				candidate.guard === "governedRoots" &&
-				targetsGovernedRoot(literals, governedRootOf(candidate.path)),
+				pinsRoot(segments, rootSegments(governedRootOf(candidate.path))),
 		);
 		if (target !== undefined) {
 			refusals.push({pattern, guard: target.guard, probe: target.path});
 		}
 	}
 	return refusals;
+};
+
+/**
+ * One path the filter actually excluded that lies under a governed root, with the pattern that
+ * excluded it — a runtime-backstop row.
+ */
+export interface GovernedExclusion {
+	readonly pattern: string;
+	readonly path: string;
+}
+
+/**
+ * The runtime backstop: which paths an exclusion pass actually carved out of governed content,
+ * and by which pattern. For each excluded path under a governed root — a trailing-slash root
+ * matches by prefix, a bare file root matches itself — the FIRST pattern in the set that matches
+ * it wins, in set order. A path under no governed root emits nothing. `previewOf` refuses on a
+ * non-empty result, which is what closes the refusal contract over the actual diff: the
+ * pattern-level arms refuse only what a pattern forces, and anything less specific that still
+ * carves governed content is caught here, on the paths that were really excluded.
+ */
+export const governedExcluded = (
+	excluded: ReadonlyArray<string>,
+	patterns: ReadonlyArray<ExclusionPattern>,
+	probes: ReadonlyArray<GuardProbe>,
+): ReadonlyArray<GovernedExclusion> => {
+	const roots = probes
+		.filter((probe) => probe.guard === "governedRoots")
+		.map((probe) => governedRootOf(probe.path));
+	const rows: GovernedExclusion[] = [];
+	for (const path of excluded) {
+		const underRoot = roots.some((root) =>
+			root.endsWith("/") ? path.startsWith(root) : path === root,
+		);
+		if (!underRoot) continue;
+		const hit = patterns.find(({pattern}) => matchPath(pattern, path));
+		if (hit !== undefined) rows.push({pattern: hit.pattern, path});
+	}
+	return rows;
 };
 
 /** The split one placement applies: the kept paths and the excluded ones, input order preserved. */
@@ -346,7 +414,9 @@ export type Preview =
  *
  * `before` partitions the KEPT paths only — an all-excluded diff derives zero classes and zero
  * namespaces. `after` partitions the FULL read — the namespace rows stand unchanged and the
- * excluded paths are enumerated beside them.
+ * excluded paths are enumerated beside them. If the split actually excluded a path under a
+ * governed root, the run refuses instead of previewing — the runtime backstop the pattern-level
+ * refusal arms leave the remainder of the contract to.
  */
 export const previewOf = (
 	diff: string,
@@ -360,6 +430,18 @@ export const previewOf = (
 	const sections = diffSections(diff);
 	const paths = sections.map((section) => section.path);
 	const split = applyPlacement(paths, patterns);
+	const governed = governedExcluded(split.excluded, patterns, probes);
+	if (governed.length > 0) {
+		return {
+			_tag: "Refused",
+			refusals: governed.map((row) => ({
+				pattern: row.pattern,
+				guard: "governedRoots",
+				probe: row.path,
+				excludedPath: row.path,
+			})),
+		};
+	}
 	const partitionSource = placement === "before" ? split.kept : paths;
 	const partitioned = partition(partitionSource);
 	const filtered = filterDiff(diff, split.excluded, placement, unexcluded);

@@ -67,6 +67,7 @@ import {
 	applyPlacement,
 	effectiveExclusions,
 	type FilterPlacement,
+	governedExcluded,
 	patternToMatcher,
 	refusalFor,
 } from "./filter-spike.ts";
@@ -260,7 +261,11 @@ export const runScope = (
 			const refused = refusalFor(effective.patterns, refusalProbes(roots.roots));
 			if (refused.length > 0) {
 				const detail = refused
-					.map((entry) => `"${entry.pattern}" matches the ${entry.guard} probe "${entry.probe}"`)
+					.map((entry) =>
+						entry.excludedPath !== undefined
+							? `"${entry.pattern}" excludes governed path "${entry.excludedPath}"`
+							: `"${entry.pattern}" matches the ${entry.guard} probe "${entry.probe}"`,
+					)
 					.join("; ");
 				return refuse(
 					GOVERNED_FILTER,
@@ -269,6 +274,22 @@ export const runScope = (
 				);
 			}
 			const split = applyPlacement(files, effective.patterns);
+			const governed = governedExcluded(
+				split.excluded,
+				effective.patterns,
+				refusalProbes(roots.roots),
+			);
+			if (governed.length > 0) {
+				return refuse(
+					GOVERNED_FILTER,
+					`${VERB}: the filter excludes governed content — ${governed
+						.map((row) => `"${row.pattern}" excludes governed path "${row.path}"`)
+						.join(
+							"; ",
+						)}. A filter that blinds a governed surface is refused, not narrowed; guard corpora are protected by the consumer split (guards read the raw path list).`,
+					diagnostics,
+				);
+			}
 			excluded = split.excluded;
 			unexcluded = effective.unexcluded;
 			partitionSource = options.filterPlacement === "before" ? split.kept : files;

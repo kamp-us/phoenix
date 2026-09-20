@@ -25,6 +25,7 @@ import {
 	effectiveExclusions,
 	type FilterPlacement,
 	filterDiff,
+	governedExcluded,
 	refusalFor,
 } from "./filter-spike.ts";
 import {refusalProbes} from "./guard-trees.ts";
@@ -163,7 +164,11 @@ export const runDiff = (
 			);
 			if (refused.length > 0) {
 				const detail = refused
-					.map((entry) => `"${entry.pattern}" matches the ${entry.guard} probe "${entry.probe}"`)
+					.map((entry) =>
+						entry.excludedPath !== undefined
+							? `"${entry.pattern}" excludes governed path "${entry.excludedPath}"`
+							: `"${entry.pattern}" matches the ${entry.guard} probe "${entry.probe}"`,
+					)
 					.join("; ");
 				return refuse(
 					GOVERNED_FILTER,
@@ -172,6 +177,22 @@ export const runDiff = (
 				);
 			}
 			const split = applyPlacement(listed.value, effective.patterns);
+			const governed = governedExcluded(
+				split.excluded,
+				effective.patterns,
+				refusalProbes(options.governedRoots ?? SHIPPED_GOVERNED_ROOTS),
+			);
+			if (governed.length > 0) {
+				return refuse(
+					GOVERNED_FILTER,
+					`${VERB}: the filter excludes governed content — ${governed
+						.map((row) => `"${row.pattern}" excludes governed path "${row.path}"`)
+						.join(
+							"; ",
+						)}. A filter that blinds a governed surface is refused, not narrowed; guard corpora are protected by the consumer split (guards read the raw path list).`,
+					diagnostics,
+				);
+			}
 			servedDiff = filterDiff(diff, split.excluded, options.filterPlacement, effective.unexcluded);
 			diagnostics.push(
 				`${VERB}: filter placement=${options.filterPlacement} excluded=${split.excluded.length} served=${listed.value.length - split.excluded.length}${effective.unexcluded.length > 0 ? ` unexcluded=${effective.unexcluded.length}` : ""} of ${listed.value.length} files — deliberate, not truncated.`,

@@ -11,6 +11,7 @@ import {
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
+	GOVERNED_FILTER,
 	INCOMPLETE_SCAN,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
@@ -412,5 +413,67 @@ diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain('"dist/**" is not a shipped default exclusion');
+	});
+});
+
+/**
+ * The runtime backstop.
+ *
+ * The pattern-level arms refuse only what a pattern forces; a leading-double-star suffix glob
+ * slips past both while still carving governed content out of the served diff. What closes the
+ * rest of the contract is the exclusion itself: when the split actually excluded a path under a
+ * governed root, the verb refuses instead of serving a diff that no longer holds everything. The
+ * governed roots ride options.governedRoots, read by the adapter exactly as the verb reads them.
+ */
+describe("runDiff refuses a filter that excludes governed content", () => {
+	const GOVERNED_DIFF = `diff --git a/governed/cart.ts b/governed/cart.ts
+--- a/governed/cart.ts
++++ b/governed/cart.ts
+@@ -1,1 +1,2 @@
++const items = read();
+diff --git a/src/cart.ts b/src/cart.ts
+--- a/src/cart.ts
++++ b/src/cart.ts
+@@ -1,1 +1,2 @@
++const extra = 1;
+`;
+	const governedRoots = ["governed/"];
+
+	/** The layer a governed-roots case runs over — the adapter hands the verb these roots. */
+	const runOverRoots = (
+		script: ReadonlyArray<Scripted>,
+		roots: ReadonlyArray<string>,
+		overrides: Partial<typeof options> = {},
+	) =>
+		Effect.runPromise(
+			Effect.provide(
+				runDiff({...options, ...overrides, governedRoots: roots}),
+				Layer.merge(fakeSeams(script).layer, unconfigured),
+			),
+		);
+
+	it("refuses on 21 when the split actually excluded a governed-rooted path", async () => {
+		const out = await runOverRoots(
+			green(GOVERNED_DIFF, {}, ["governed/cart.ts", "src/cart.ts"]),
+			governedRoots,
+			{
+				filterPlacement: "before",
+				exclude: "**/*.ts",
+			},
+		);
+		expect(out.code).toBe(GOVERNED_FILTER);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("the filter excludes governed content");
+		expect(out.stderr.join("\n")).toContain('"**/*.ts" excludes governed path "governed/cart.ts"');
+	});
+
+	it("serves a filter whose exclusions are all non-governed beside a declared governed root", async () => {
+		const out = await runOverRoots(green(), governedRoots, {
+			filterPlacement: "before",
+			exclude: "README.md",
+		});
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("x-fabrika-filter: placement=before excluded=1 served=1");
+		expect(out.stdout).not.toContain("excludes governed path");
 	});
 });

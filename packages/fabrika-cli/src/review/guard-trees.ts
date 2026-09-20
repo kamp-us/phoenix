@@ -13,9 +13,11 @@
  * universe-wide surface (leak-guard's `*.md` doc sweep) would refuse every directory exclusion,
  * including the spike's own defaults — probe granularity is the reading under which the mission's
  * default exclusion set and its refusal invariant are both satisfiable. Beside the probe arm,
- * `refusalFor` also refuses a pattern whose leading literal path names a governed tree outright —
- * the match-granular arm alone would let `governed/*.ts` carve the `governed/` tree out of the
- * review's content without ever touching `governed/probe.md`.
+ * `refusalFor` also refuses a pattern that forcibly aligns onto a governed root segment-wise, by
+ * literal name — including when the pinning sits behind a leading double-star segment, where a
+ * prefix-string check would miss it — and `previewOf`'s runtime backstop refuses the moment the
+ * filter actually excludes a path under a governed root, so a pattern too generic to refuse at
+ * the pattern level cannot silently carve governed content out of the read either.
  */
 import {MANIFEST} from "../guard/catalog-verb.ts";
 import {CI_CHANGES_SOURCE} from "../guard/change-detect.ts";

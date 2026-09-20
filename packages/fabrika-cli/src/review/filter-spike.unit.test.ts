@@ -14,6 +14,7 @@ import {
 	diffSections,
 	effectiveExclusions,
 	filterDiff,
+	governedExcluded,
 	matchPath,
 	previewOf,
 	refusalFor,
@@ -380,5 +381,115 @@ describe("a pattern naming a governed tree literally is refused", () => {
 				governedProbes,
 			),
 		).toEqual([]);
+	});
+
+	it("a double-star-led governed tree refuses — the root's name still pins it behind a glob", () => {
+		const refusals = refusalFor([{pattern: "**/governed/**", source: "caller"}], governedProbes);
+		expect(refusals).toHaveLength(1);
+	});
+
+	it("a double-star-led hidden governed root refuses the same way", () => {
+		const refusals = refusalFor([{pattern: "**/.claude/**", source: "caller"}], governedProbes);
+		expect(refusals).toHaveLength(1);
+	});
+
+	it("a double-star-led bare governed tree — no trailing glob — refuses", () => {
+		const refusals = refusalFor([{pattern: "**/governed", source: "caller"}], governedProbes);
+		expect(refusals).toHaveLength(1);
+	});
+
+	it("a wildcard-led suffix glob is not refused — the fence only refuses what a pattern forces", () => {
+		expect(refusalFor([{pattern: "**/*.ts", source: "caller"}], governedProbes)).toEqual([]);
+	});
+
+	it("the defaults stay allowed against the governed root alone", () => {
+		const rootProbe = [{guard: "governedRoots", path: "governed/probe.md", source: "test"}];
+		expect(refusalFor(DEFAULT_EXCLUSIONS, rootProbe)).toEqual([]);
+	});
+
+	it("a foreign literal prefix does not pin a governed root deeper in the pattern", () => {
+		const refusals = refusalFor(
+			[
+				{pattern: "packages/**/*.test.ts", source: "config"},
+				{pattern: "lib/**/governed/*.ts", source: "caller"},
+			],
+			governedProbes,
+		);
+		expect(refusals).toEqual([]);
+	});
+});
+
+describe("the governed runtime backstop", () => {
+	// governedRoots probes only: the file-level `probes` fixture carries the fanout guard's .ts
+	// probe, against which `**/*.ts` refuses at the probe arm and never reaches the backstop.
+	const backstopProbes = [{guard: "governedRoots", path: "governed/probe.md", source: "test"}];
+	const governedSection = [
+		"diff --git a/governed/real.ts b/governed/real.ts",
+		"--- a/governed/real.ts",
+		"+++ b/governed/real.ts",
+		"@@ -1 +1,2 @@",
+		"+export const governed = 1;",
+	].join("\n");
+	const ungovernedSection = [
+		"diff --git a/src/plain.ts b/src/plain.ts",
+		"--- a/src/plain.ts",
+		"+++ b/src/plain.ts",
+		"@@ -1 +1,2 @@",
+		"+export const plain = 1;",
+	].join("\n");
+
+	it("governedExcluded names each excluded governed path with its first matching pattern", () => {
+		expect(
+			governedExcluded(
+				["governed/real.ts", "src/a.ts"],
+				[{pattern: "**/*.ts", source: "caller"}],
+				probes,
+			),
+		).toEqual([{pattern: "**/*.ts", path: "governed/real.ts"}]);
+	});
+
+	it("governedExcluded returns nothing when no excluded path sits under a governed root", () => {
+		expect(
+			governedExcluded(["src/a.ts", "lib/b.ts"], [{pattern: "**/*.ts", source: "caller"}], probes),
+		).toEqual([]);
+	});
+
+	it("governedExcluded picks the first pattern in set order when two patterns exclude the path", () => {
+		const patterns = [
+			{pattern: "**/*.ts", source: "caller" as const},
+			{pattern: "governed/**", source: "caller" as const},
+		];
+		expect(governedExcluded(["governed/real.ts"], patterns, probes)).toEqual([
+			{pattern: "**/*.ts", path: "governed/real.ts"},
+		]);
+	});
+
+	it("previewOf refuses when the filter actually excluded a governed path, naming it", () => {
+		const preview = previewOf(
+			governedSection,
+			"before",
+			[{pattern: "**/*.ts", source: "caller"}],
+			backstopProbes,
+		);
+		expect(preview._tag).toBe("Refused");
+		if (preview._tag !== "Refused") return;
+		expect(preview.refusals).toEqual([
+			{
+				excludedPath: "governed/real.ts",
+				guard: "governedRoots",
+				pattern: "**/*.ts",
+				probe: "governed/real.ts",
+			},
+		]);
+	});
+
+	it("previewOf still previews when the excluded paths are ungoverned", () => {
+		const preview = previewOf(
+			ungovernedSection,
+			"before",
+			[{pattern: "**/*.ts", source: "caller"}],
+			backstopProbes,
+		);
+		expect(preview._tag).toBe("Preview");
 	});
 });

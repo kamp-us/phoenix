@@ -162,12 +162,17 @@ export const runPreview = (
 		const serve = (diff: string, provenance: ReadonlyArray<string>): VerbOutcome => {
 			const preview = previewOf(diff, placement, patterns, probes);
 			if (preview._tag === "Refused") {
+				const runtime = preview.refusals.some((entry) => entry.excludedPath !== undefined);
 				const detail = preview.refusals
-					.map((entry) => `"${entry.pattern}" matches the ${entry.guard} probe "${entry.probe}"`)
+					.map((entry) =>
+						entry.excludedPath !== undefined
+							? `"${entry.pattern}" excludes governed path "${entry.excludedPath}"`
+							: `"${entry.pattern}" matches the ${entry.guard} probe "${entry.probe}"`,
+					)
 					.join("; ");
 				return refuse(
 					GOVERNED_FILTER,
-					`${VERB}: exclusion pattern intersects a governed root — ${detail}. A filter that blinds a governed surface is refused, not narrowed; guard corpora are protected by the consumer split (guards read the raw path list).`,
+					`${VERB}: ${runtime ? "the filter excludes governed content" : "exclusion pattern intersects a governed root"} — ${detail}. A filter that blinds a governed surface is refused, not narrowed; guard corpora are protected by the consumer split (guards read the raw path list).`,
 					provenance,
 				);
 			}

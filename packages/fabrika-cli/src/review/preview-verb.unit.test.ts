@@ -548,3 +548,43 @@ diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
 		expect(out.stderr.at(-1)).toContain('"dist/**" is not a shipped default exclusion');
 	});
 });
+
+/**
+ * The runtime backstop, verb-level.
+ *
+ * previewOf refuses on its own when the split actually excluded a governed path — the
+ * pattern-level arms refuse only what a pattern forces, and a leading-double-star suffix glob
+ * slips past both. The verb's seat maps that refusal to GOVERNED_FILTER, and the detail words it
+ * through excludedPath, naming the path that was really carved out.
+ */
+describe("runPreview refuses a filter that excludes governed content", () => {
+	const GOVERNED_DIFF = `diff --git a/governed/cart.ts b/governed/cart.ts
+--- a/governed/cart.ts
++++ b/governed/cart.ts
+@@ -1,1 +1,2 @@
++const items = read();
+`;
+	const roots = ["governed/", ".fabrika.jsonc"];
+
+	it("refuses on 21 when the --diff-file's only section sits under a governed root", async () => {
+		const out = await runOverRoots([], roots, {
+			diffFile: diffOnDisk(GOVERNED_DIFF),
+			exclude: "**/*.ts",
+		});
+		expect(out.code).toBe(GOVERNED_FILTER);
+		expect(out.stdout).toBe("");
+		// `previewOf` refuses internally, so the verb's lead-in stays the pattern-level sentence and
+		// only the detail carries the runtime words — `excludedPath` marks the backstop row.
+		expect(out.stderr.join("\n")).toContain('"**/*.ts" excludes governed path "governed/cart.ts"');
+	});
+
+	it("lets the filter exclude non-governed paths beside a declared governed root", async () => {
+		const out = await runOverRoots([], roots, {
+			diffFile: diffOnDisk(),
+			exclude: "README.md",
+		});
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("excluded-path\tREADME.md");
+		expect(out.stdout).not.toContain("excludes governed path");
+	});
+});

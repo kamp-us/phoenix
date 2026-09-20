@@ -13,6 +13,7 @@ import {
 import type {ExecResult} from "../io/exec.ts";
 import {DECISIONS_ROOT} from "./classes.ts";
 import {
+	GOVERNED_FILTER,
 	INCOMPLETE_SCAN,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
@@ -736,5 +737,48 @@ describe("runScope's exclusion set reads .fabrika.jsonc", () => {
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain('"dist/**" is not a shipped default exclusion');
+	});
+});
+
+/**
+ * The runtime backstop.
+ *
+ * The pattern-level arms refuse only what a pattern forces (a probe match, a pin onto the root);
+ * a leading-double-star suffix glob slips past both while still carving governed content out of
+ * the read. What closes the rest of the contract is the exclusion itself: when the split actually
+ * excluded a path under a governed root, the verb refuses instead of scoping over a read that no
+ * longer holds everything.
+ */
+describe("runScope refuses a filter that excludes governed content", () => {
+	const roots = {governedRoots: ["governed/", ".fabrika.jsonc"]};
+	const configured = (config: Record<string, unknown>) =>
+		fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}});
+
+	it("refuses on 21 when the split actually excluded a governed-rooted path", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, filterPlacement: "after", exclude: "**/*.ts"}),
+				Layer.merge(
+					fakeSeams(over("governed/cart.ts", "src/cart.ts", "README.md")).layer,
+					configured(roots).layer,
+				),
+			),
+		);
+		expect(out.code).toBe(GOVERNED_FILTER);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("the filter excludes governed content");
+		expect(out.stderr.join("\n")).toContain('"**/*.ts" excludes governed path "governed/cart.ts"');
+	});
+
+	it("lets the filter exclude non-governed paths beside a declared governed root", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, filterPlacement: "after", exclude: "**/*.ts"}),
+				Layer.merge(fakeSeams(over("src/cart.ts", "README.md")).layer, configured(roots).layer),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("excluded-path\tsrc/cart.ts");
+		expect(out.stdout).not.toContain("excludes governed path");
 	});
 });
