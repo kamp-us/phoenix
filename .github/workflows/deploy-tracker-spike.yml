@@ -1,0 +1,78 @@
+name: deploy-tracker-spike
+
+# TEMPORARY — removed before this branch's PR is opened. Issue #9508's last acceptance
+# criterion asks for the new job's trigger behaviour confirmed against a deliberately-failed
+# run on a branch. deploy.yml's own push trigger is `main` only, and widening it would deploy
+# to the prod stage from a branch, so this file carries the two jobs verbatim over a fake
+# deploy whose result is a literal below.
+on:
+  push:
+    branches: ["build/9508-deploy-failure-tracker-9eb38e4e"]
+
+permissions:
+  contents: read
+
+jobs:
+  fake-deploy:
+    name: fake deploy
+    runs-on: ubuntu-latest
+    env:
+      SPIKE_RESULT: red
+    steps:
+      - name: Conclude as the spike says
+        run: |
+          set -euo pipefail
+          echo "spike result: ${SPIKE_RESULT}"
+          [ "${SPIKE_RESULT}" = "green" ]
+
+  deploy-failure-tracker:
+    name: report a red push-to-main run
+    if: failure() && github.event_name == 'push'
+    needs: [fake-deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+
+      - name: Open the deploy tracker, or comment on the one already open
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TRACKER_CONCLUSION: failure
+          TRACKER_WORKFLOW: ${{ github.workflow }}
+          TRACKER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TRACKER_HEAD_SHA: ${{ github.sha }}
+          TRACKER_BRANCH: ${{ github.ref_name }}
+          TRACKER_MENTION: usirin
+        run: node packages/fabrika-cli/src/ci/deploy-tracker-bin.ts
+
+  deploy-recovery:
+    name: close the deploy tracker on a green push to main
+    if: success() && github.event_name == 'push'
+    needs: [fake-deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+
+      - name: Close the deploy tracker, if one is open
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TRACKER_CONCLUSION: success
+          TRACKER_WORKFLOW: ${{ github.workflow }}
+          TRACKER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TRACKER_HEAD_SHA: ${{ github.sha }}
+          TRACKER_BRANCH: ${{ github.ref_name }}
+        run: node packages/fabrika-cli/src/ci/deploy-tracker-bin.ts
