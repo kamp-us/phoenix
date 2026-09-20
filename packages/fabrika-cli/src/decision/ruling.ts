@@ -32,9 +32,10 @@ export type DecisionTarget =
  * **The `type:decision` fence used to sit here, and it is gone on purpose.** A founder ruling lands
  * on whatever issue the work is on — a bug, a feature, an investigation — and refusing to record one
  * there left the ruling as prose no gate reads, which is the whole defect `review criteria`'s fold
- * closes. What a decision issue still has of its own is the *audience flip*: `ready-for:human` is
- * how triage parks a judgement call, and `rule-verb.ts` still flips it. On an issue that carries no
- * such park the flip is a no-op, so widening the target costs that path nothing.
+ * closes. What a decision issue keeps of its own is the *audience flip*: `ready-for:human` is how
+ * triage parks a judgement call, and only a `type:decision` earns the flip back. The fence moved
+ * from the target read to the flip in `rule-verb.ts` rather than lifting, because the widened
+ * recording would otherwise un-park any human-parked bug that carries a criteria block.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9517#issuecomment-5752597880
  */
@@ -141,6 +142,33 @@ export const scanRulings = (
 		all.push({ruling: found.value, by: comment.author, comment: comment.id});
 	}
 	return {all, standing: all.at(-1) ?? null, disregarded, unauthorized};
+};
+
+/**
+ * The latest moment any standing ruling was recorded, for a currency read to date a verdict against.
+ *
+ * **It is not {@link RulingScan.standing}'s stamp, and that is the whole point of the function.**
+ * `standing` is last by comment `updatedAt`, which is the decision audience's ordering: edit an
+ * older marker and it sorts last while still carrying its own older `at`, so a verdict written
+ * between the real newest ruling and that older stamp would read current. Taking the maximum over
+ * every marker closes it in the conservative direction.
+ *
+ * An unparseable stamp is returned as-is rather than skipped, so the caller's read answers UNKNOWN:
+ * a stamp nobody can date cannot be proven older than a verdict.
+ */
+export const newestRulingAt = (scan: RulingScan): string | null => {
+	let newest: string | null = null;
+	let newestInstant = Number.NEGATIVE_INFINITY;
+	for (const standing of scan.all) {
+		const at = standing.ruling.at;
+		const parsed = Date.parse(at);
+		if (Number.isNaN(parsed)) return at;
+		if (parsed >= newestInstant) {
+			newest = at;
+			newestInstant = parsed;
+		}
+	}
+	return newest;
 };
 
 /** The state a scan resolves to against the digest derived from the body as it now stands. */

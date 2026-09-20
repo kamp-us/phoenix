@@ -233,20 +233,47 @@ describe("runRule", () => {
 	});
 
 	/**
-	 * The flip is the decision path's alone. An issue that never carried the human park is already
-	 * where the label promises, so the run writes no label at all and still settles.
+	 * The case the widened subject put at risk: `audienceWrites` is unconditional in both
+	 * directions, so a flip that widened with the recording would strip a human park off a bug and
+	 * hand it to `build claim` as pickable. Fixturing the issue as already `ready-for:agent` would
+	 * pass for the wrong reason — `add` is false whenever that label is merely present.
 	 */
-	it("writes no audience label on an issue carrying no ready-for:human park", async () => {
+	it("leaves a type:bug's ready-for:human park exactly as it found it", async () => {
+		const parked = ["type:bug", "ready-for:human"];
 		const body = await marker();
-		const {calls} = await run([
-			[once(ISSUE_READ), issueRead(["type:bug", "ready-for:agent"])],
+		const {outcome, calls} = await run([
+			[once(ISSUE_READ), issueRead(parked)],
 			[COMMENTS, RULING_ONLY],
 			...acl,
 			[LABELS, taxonomy],
 			[POST, POSTED],
 			[GET_MARKER, {status: 200, body: JSON.stringify({body})}],
-			[ISSUE_READ, issueRead(["type:bug", "ready-for:agent"])],
 		]);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({
+			answer: "ruled",
+			audience: null,
+			observed: parked,
+		});
+		expect(wroteLabels(calls)).toBe(false);
+		// No taxonomy read either: that read exists to guard the POST this run never makes.
+		expect(calls.some((line) => LABELS.test(line))).toBe(false);
+	});
+
+	/**
+	 * The criteria guard sits on the flip, so off the decision path there is nothing for it to
+	 * guard: the founder's judgement is recorded whatever the bug's body looks like.
+	 */
+	it("records a ruling on a bug whose body carries no acceptance-criteria block", async () => {
+		const body = await marker(BODY_NO_CRITERIA);
+		const {outcome, calls} = await run([
+			[once(ISSUE_READ), issueRead(["type:bug", "ready-for:human"], BODY_NO_CRITERIA)],
+			[COMMENTS, RULING_ONLY],
+			...acl,
+			[POST, POSTED],
+			[GET_MARKER, {status: 200, body: JSON.stringify({body})}],
+		]);
+		expect(outcome.code).toBe(0);
 		expect(wroteLabels(calls)).toBe(false);
 	});
 

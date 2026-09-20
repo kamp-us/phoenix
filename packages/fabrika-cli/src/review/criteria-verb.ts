@@ -8,10 +8,8 @@
  * rather than reading as "there were none" — the wire module's discrimination carried to the fetch
  * seam.
  *
- * **The rulings half is why this verb is the gate's whole contract read.** A founder ruling arrives
- * as a comment, and a gate that read only the body graded a spec the founder had already moved: one
- * PR passed two independent reviews against ten criteria while three rulings sat on the issue
- * contradicting them. The comments are scanned through `../decision/standing-rulings.ts` — the same
+ * **The rulings half is why this verb is the gate's whole contract read**, and the defect it closes
+ * is told once, in `./graded-set.ts`. The comments are scanned through `../decision/standing-rulings.ts` — the same
  * roster-gated read `decision ruling` answers from, so an off-roster marker is not a ruling here
  * either — and folded with the body in `./graded-set.ts`, which is the only place the two meet.
  *

@@ -48,6 +48,7 @@ import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
 import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
+import {newestRulingAt} from "../decision/ruling.ts";
 import {standingRulings} from "../decision/standing-rulings.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
@@ -976,7 +977,7 @@ const proveVerdicts = (
 				deferred: [],
 			};
 		}
-		const rulingAt = ruled.scan.standing?.ruling.at ?? null;
+		const rulingAt = newestRulingAt(ruled.scan);
 		const read = yield* readNamespaceRows(
 			repo,
 			pr,

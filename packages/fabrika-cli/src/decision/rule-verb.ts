@@ -3,13 +3,18 @@
  * back to the agent lane.
  *
  * **The subject is any issue, and that is the newer half.** A founder ruling lands wherever the work
- * is; recorded as prose it changed nothing about what any gate graded, so a PR contradicting three
- * of them passed two independent reviews. Recorded through this verb it is a marker
- * `review criteria` folds into the graded set and `lane prove` dates a verdict against.
+ * is, and recorded as prose it changed nothing about what any gate graded — the defect
+ * `../review/graded-set.ts` tells. Recorded through this verb it is a marker `review criteria` folds
+ * into the graded set and `lane prove` dates a verdict against.
  * `--supersedes <k>` is how the ruling says which body criterion it replaces — the only mechanical
  * statement of contradiction there is, because no verb can read the prose and judge that itself.
- * The audience flip below is still the decision path's alone, and it is a no-op on an issue that
- * carries no `ready-for:human` park.
+ *
+ * **The audience flip did not widen with the subject, and the `type:decision` read below is what
+ * holds it back.** `audienceWrites` is unconditional in both directions, so a widened flip would
+ * strip `ready-for:human` off any parked bug that happens to carry a criteria block — recording a
+ * ruling would make a human-parked issue agent-pickable, and `build claim`'s audience axis is the
+ * fence that would stop firing. Off the decision path this verb writes the marker and leaves both
+ * audience labels exactly as it found them.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9517#issuecomment-5752597880
  *
@@ -61,7 +66,7 @@ import {
 	authorizationBody,
 	readAuthorization,
 } from "../authorization.ts";
-import {parseCitation} from "../build/scope-admission.ts";
+import {DECISION_TYPE_LABEL, parseCitation} from "../build/scope-admission.ts";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
 import {
 	addLabels,
@@ -151,16 +156,26 @@ const citedRuling = (cites: string, repo: string, issue: number): CitedRuling =>
 	return {_tag: "Cited", url, commentId: read.citation.commentId};
 };
 
+/** Whether the ruled issue is the one type whose audience this verb may move. */
+export const onDecisionPath = (labels: ReadonlyArray<string>): boolean =>
+	labels.includes(DECISION_TYPE_LABEL);
+
 /**
- * The label writes this run owes. The audience's answer holds only over a body a builder could grade
- * cold: a body whose acceptance-criteria block does not read writes neither label, whatever the
- * issue carries today.
+ * The label writes this run owes, which only a `type:decision` is ever owed.
+ *
+ * Two conditions, and neither is redundant. The type read is the fence the widened subject would
+ * otherwise have lifted: off the decision path there is no park to hand back and no audience to
+ * assert, so the answer is both-false however the issue is labelled. The criteria read then holds
+ * the flip to a body a builder could grade cold — `ready-for:agent` over a body with no block parks
+ * the lane at `build claim` exit 32 instead.
  */
 const flipWrites = (
 	labels: ReadonlyArray<string>,
 	criteria: AcceptanceCriteriaRead,
 ): {readonly add: boolean; readonly remove: boolean} =>
-	criteria._tag === "Found" ? audienceWrites(labels) : {add: false, remove: false};
+	onDecisionPath(labels) && criteria._tag === "Found"
+		? audienceWrites(labels)
+		: {add: false, remove: false};
 
 /** Why the flip was skipped, in the reader's own words plus the route that repairs the body. */
 const skippedFlip = (
@@ -388,6 +403,28 @@ export const runRule = <R = never>(
 			return refuse(
 				READBACK_MISMATCH,
 				`${VERB}: the marker posted but does not read back — the audience was not flipped, and the ruling needs a human eye.`,
+				notes,
+			);
+		}
+		// The audience answer belongs to the decision path only, so an issue off it is done at the
+		// marker: no flip to make, no criteria block to require, and both labels left as found.
+		if (!onDecisionPath(target.issue.labels)) {
+			notes.push(
+				`${VERB}: marker ${posted.value.id} posted and read back; #${options.number} is not ${DECISION_TYPE_LABEL}, so the audience was left exactly as it was found.`,
+			);
+			return answer(
+				JSON.stringify({
+					answer: "ruled",
+					issue: options.number,
+					digest: derived,
+					ruling: url,
+					supersedes,
+					by: viewer.value,
+					at,
+					comment: posted.value.id,
+					audience: null,
+					observed: target.issue.labels,
+				}),
 				notes,
 			);
 		}

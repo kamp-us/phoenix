@@ -95,8 +95,7 @@ The sixth column is `standing` or `superseded`: only a `standing` row is a verdi
 
 **The graded set is the body criteria PLUS every standing ruling on the issue, and `criteria` is the
 one verb that returns it.** A founder ruling arrives as a comment, and a gate that read only the body
-graded a spec the founder had already moved: one PR passed two independent reviews against ten
-criteria while three rulings sat on the issue contradicting them. Each row names its source in the
+graded a spec the founder had already moved. Each row names its source in the
 first column — `body` or `ruling` — and a `ruling` row carries the founder's own words plus the
 comment URL they were written in. Grade those rows exactly as you grade a body row. Where the two
 contradict, **the newest ruling is the spec**; a body row the ruling replaced prints `superseded` and
@@ -121,7 +120,7 @@ criteria.
 **A marked criterion is graded on the evidence it names, never on the diff alone.** A criterion may
 carry the outside-diff evidence marker — a trailing `[evidence: <source>]` naming where its proof
 lives, because the diff's bytes cannot settle it either way: a desk verified by hand, a checkpoint
-written before the fix, a runtime observation. `criteria` prints that source as a third column and
+written before the fix, a runtime observation. `criteria` prints that source as the row's last column and
 counts the marked rows on stderr, so you never have to recognise one in prose. For each marked row,
 go and read what the source names — the PR body's hand-verification section, the artifact, the
 comment — and grade on that. **Then name it in the verdict body**: say which criterion rested on
