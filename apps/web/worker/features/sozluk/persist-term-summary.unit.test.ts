@@ -48,8 +48,9 @@ const inertVote = Layer.succeed(Vote, {} as Context.Service.Shape<typeof Vote>);
 
 type Rendered = {sql: string; params: unknown[]};
 
-// Replays `run` results in call order, so the script depends on `editDefinition`'s
-// order: findFirst definition, update body, then the live-defs SELECT.
+// Replays `run` results in call order, so the script depends on the driven method's read
+// order — for `editDefinition`: findFirst definition, update body, the live-defs SELECT,
+// then the stored-row SELECT `persistTermSummary` takes for its empty-term fallback.
 function scriptedAccess(runResults: ReadonlyArray<unknown>): {
 	access: DrizzleAccess;
 	batched: Rendered[];
@@ -93,22 +94,36 @@ const editedDefinition = {
 };
 
 // Distinctive values, so each landed column is unambiguous in the rendered params.
+const FIRST_CREATED = new Date("2024-02-01T00:00:00.000Z");
+const LATEST_EDIT = new Date("2024-04-04T04:04:04.000Z");
+/** `integer(…, {mode: "timestamp"})` renders a `Date` as whole epoch seconds. */
+const sec = (d: Date) => Math.floor(d.getTime() / 1000);
+
 const def = (over: Partial<TermSummaryDefRow> & {id: string}): TermSummaryDefRow => ({
 	body: "body",
 	bodyExcerpt: "excerpt",
 	score: 0,
-	createdAt: new Date("2024-02-01T00:00:00.000Z"),
-	updatedAt: new Date("2024-02-01T00:00:00.000Z"),
+	createdAt: FIRST_CREATED,
+	updatedAt: FIRST_CREATED,
 	...over,
 });
 const liveDefs: TermSummaryDefRow[] = [
 	def({id: "top-def", score: 10, bodyExcerpt: "the winning excerpt"}),
-	def({id: "runner-up", score: 7, bodyExcerpt: "runner"}),
+	// The newest edit is NOT the top row, so the activity max is proven to range over the
+	// whole live slice rather than reading `rows[0]`.
+	def({id: "runner-up", score: 7, bodyExcerpt: "runner", updatedAt: LATEST_EDIT}),
 ];
+
+/** The stored row `persistTermSummary` reads for its empty-term fallback. */
+const storedRow = {firstAt: new Date("2023-11-11T11:11:11.000Z")};
+
+/** Every epoch-second-shaped param of a rendered statement — the date columns it wrote. */
+const epochParams = (params: ReadonlyArray<unknown>): Set<number> =>
+	new Set(params.filter((v): v is number => typeof v === "number" && v > 1_000_000_000));
 
 const renderUpsert = () =>
 	Effect.gen(function* () {
-		const {access, batched} = scriptedAccess([editedDefinition, {}, liveDefs]);
+		const {access, batched} = scriptedAccess([editedDefinition, {}, liveDefs, storedRow]);
 		yield* Effect.gen(function* () {
 			const sozluk = yield* Sozluk;
 			yield* sozluk.editDefinition({
@@ -167,6 +182,72 @@ describe("persistTermSummary — the recomputeTermSummary → term_record row-wr
 				upsert.sql,
 				/on conflict.*"first_letter" = excluded\.first_letter/s,
 				"the ON CONFLICT set carries first_letter",
+			);
+		}),
+	);
+
+	// `last_activity_at` used to be written from the caller's clock on both halves of the
+	// upsert, so the 6-hourly reconcile sweep re-dated every term and the homepage read each
+	// headword as at most six hours old (#9540).
+	it.effect("the derived lastActivityAt reaches the row, and no caller clock does", () =>
+		Effect.gen(function* () {
+			const batched = yield* renderUpsert();
+			const upsert = batched[0];
+			if (!upsert) return yield* Effect.die(new Error("no term_record statement was captured"));
+
+			assert.include(
+				upsert.params,
+				sec(LATEST_EDIT),
+				"last_activity_at is the newest `updatedAt ?? createdAt` of the live slice",
+			);
+			// The only dates the row can carry are the two the fold derived. `editDefinition`
+			// holds a wall clock, and this proves none of it reached a `term_record` column.
+			assert.deepStrictEqual(
+				epochParams(upsert.params),
+				new Set([sec(FIRST_CREATED), sec(LATEST_EDIT)]),
+				"first_at is the oldest createdAt; the activity/edit columns the newest edit",
+			);
+			assert.match(
+				upsert.sql,
+				/on conflict.*"last_activity_at" = excluded\.last_activity_at/s,
+				"the ON CONFLICT set takes the derived value, so an existing row converges too",
+			);
+		}),
+	);
+
+	// The sweep visits every term, including the ones with nothing live left. Its clock is the
+	// fold's fallback ONLY where no row exists, so here the row's own `first_at` is.
+	it.effect("a reconcile pass over an empty term advances neither first_at nor activity", () =>
+		Effect.gen(function* () {
+			const sweepNow = new Date("2026-09-20T18:00:25.000Z");
+			// `reconcileCaches`: the slug chunk, then per term the live-defs SELECT (empty) and
+			// the stored-row SELECT, then `recomputeSozlukStats`' three counts and its write.
+			const {access, batched} = scriptedAccess([
+				[{slug: SLUG, title: TITLE}],
+				[],
+				storedRow,
+				0,
+				1,
+				0,
+				{},
+			]);
+			const {scanned} = yield* Effect.gen(function* () {
+				const sozluk = yield* Sozluk;
+				return yield* sozluk.reconcileCaches(sweepNow);
+			}).pipe(Effect.provide(sozlukOver(access)));
+			assert.strictEqual(scanned, 1, "the sweep visited the one seeded term");
+
+			const upsert = batched[0];
+			if (!upsert) return yield* Effect.die(new Error("no term_record statement was captured"));
+			assert.notInclude(
+				upsert.params,
+				sec(sweepNow),
+				"the sweep's own clock reaches no date column of an existing row",
+			);
+			assert.deepStrictEqual(
+				epochParams(upsert.params),
+				new Set([sec(storedRow.firstAt)]),
+				"first_at, last_activity_at and last_edit_at all hold the row's stored first_at",
 			);
 		}),
 	);
