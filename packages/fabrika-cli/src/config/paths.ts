@@ -8,6 +8,7 @@
 
 import {Effect, type FileSystem, type Path} from "effect";
 import {CONFIG_PATH} from "./document.ts";
+import {reviewFilterExclusionsKey, reviewFilterUnexcludeKey} from "./keys/filter-exclusions.ts";
 import {governedRootsKey} from "./keys/governed-roots.ts";
 import {
 	cycleDocKey,
@@ -16,6 +17,7 @@ import {
 	type PathValue,
 	roadmapFileKey,
 } from "./keys/paths.ts";
+import {type ReviewSubsystem, reviewSubsystemsKey} from "./keys/review-subsystems.ts";
 import {
 	NO_UI_SURFACES,
 	prefixesOf,
@@ -251,3 +253,114 @@ export const uiCaptureOr = (
 
 /** The one sentence a verb prints when the declared list is empty — stated, never silent. */
 export const noUiSurfaces = (verb: string): string => `${verb}: ${NO_UI_SURFACES}.`;
+
+/** The declared subsystem constraints a review scopes onto the class rubrics. */
+export const readReviewSubsystems = (
+	cwd: string,
+): Effect.Effect<Read<ReadonlyArray<ReviewSubsystem>>, never, FileSystem.FileSystem | Path.Path> =>
+	readKey(cwd, reviewSubsystemsKey);
+
+/**
+ * The declared subsystem constraints, or the one refusal sentence its readers print.
+ *
+ * The same shape as {@link uiSurfacesOr} and for the same reason: the reader owns its exit code, so
+ * only the sentence is shared. The empty list resolves through this too — it is a declaration, not
+ * a refusal, and a reader that derives nothing from it says so itself rather than reading absence
+ * here.
+ */
+export type ReviewSubsystemsRead =
+	| {
+			readonly _tag: "Subsystems";
+			readonly subsystems: ReadonlyArray<ReviewSubsystem>;
+			readonly note: string;
+	  }
+	| {readonly _tag: "Refused"; readonly message: string};
+
+export const reviewSubsystemsOr = (
+	verb: string,
+	cwd: string,
+	consequence: string,
+): Effect.Effect<ReviewSubsystemsRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.map(readReviewSubsystems(cwd), (read) =>
+		read._tag === "Value"
+			? {_tag: "Subsystems" as const, subsystems: read.value, note: read.note}
+			: {
+					_tag: "Refused" as const,
+					message: `${verb}: ${CONFIG_PATH} is refused — ${read.reason.replace(/\.$/, "")}, so ${consequence}`,
+				},
+	);
+
+/**
+ * The two exclusion-set keys a filtering read assembles its set from, read the same way their
+ * sibling key readers read: the value, the sentence naming where it came from, or the one refusal
+ * sentence every filtering verb prints.
+ *
+ * One shared mapping because the two keys are the same question about two different arms — extend
+ * the set, or drop a default from it — and a third copy of the four-arm collapse is the drift the
+ * sibling accessors exist to prevent.
+ */
+const stringListOr = (
+	verb: string,
+	consequence: string,
+	read: Read<ReadonlyArray<string>>,
+):
+	| {readonly _tag: "List"; readonly values: ReadonlyArray<string>; readonly note: string}
+	| {readonly _tag: "Refused"; readonly message: string} =>
+	read._tag === "Value"
+		? {_tag: "List", values: read.value, note: read.note}
+		: {
+				_tag: "Refused",
+				message: `${verb}: ${CONFIG_PATH} is refused — ${read.reason.replace(/\.$/, "")}, so ${consequence}`,
+			};
+
+/** The globs a repo adds to the review diff filter's exclusion set. */
+export const readReviewFilterExclusions = (
+	cwd: string,
+): Effect.Effect<Read<ReadonlyArray<string>>, never, FileSystem.FileSystem | Path.Path> =>
+	readKey(cwd, reviewFilterExclusionsKey);
+
+export type ReviewFilterExclusionsRead =
+	| {
+			readonly _tag: "Exclusions";
+			readonly exclusions: ReadonlyArray<string>;
+			readonly note: string;
+	  }
+	| {readonly _tag: "Refused"; readonly message: string};
+
+export const reviewFilterExclusionsOr = (
+	verb: string,
+	cwd: string,
+	consequence: string,
+): Effect.Effect<ReviewFilterExclusionsRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.map(readReviewFilterExclusions(cwd), (read) => {
+		const mapped = stringListOr(verb, consequence, read);
+		return mapped._tag === "Refused"
+			? mapped
+			: {_tag: "Exclusions" as const, exclusions: mapped.values, note: mapped.note};
+	});
+
+/** The shipped defaults a repo removes from the review diff filter's exclusion set. */
+export const readReviewFilterUnexclude = (
+	cwd: string,
+): Effect.Effect<Read<ReadonlyArray<string>>, never, FileSystem.FileSystem | Path.Path> =>
+	readKey(cwd, reviewFilterUnexcludeKey);
+
+export type ReviewFilterUnexcludeRead =
+	| {
+			readonly _tag: "Unexclude";
+			readonly unexclude: ReadonlyArray<string>;
+			readonly note: string;
+	  }
+	| {readonly _tag: "Refused"; readonly message: string};
+
+export const reviewFilterUnexcludeOr = (
+	verb: string,
+	cwd: string,
+	consequence: string,
+): Effect.Effect<ReviewFilterUnexcludeRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.map(readReviewFilterUnexclude(cwd), (read) => {
+		const mapped = stringListOr(verb, consequence, read);
+		return mapped._tag === "Refused"
+			? mapped
+			: {_tag: "Unexclude" as const, unexclude: mapped.values, note: mapped.note};
+	});

@@ -19,6 +19,7 @@ import {
 	STALE_HEAD,
 	ZERO_SCOPE,
 } from "./codes.ts";
+import type {FilterPlacement} from "./filter-spike.ts";
 import {
 	BASE,
 	BASE_TIP,
@@ -45,6 +46,9 @@ const options = {
 	sha: null as string | null,
 	repo: null,
 	json: false,
+	/** ocr-port spike fields, null = off — the overrides below turn them on per case. */
+	filterPlacement: null as FilterPlacement | null,
+	exclude: null as string | null,
 	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
@@ -391,5 +395,346 @@ describe("runScope binds its file list to the commit it prints", () => {
 		expect(out.stderr.at(-1)).toBe(
 			"review scope: no git remote in this checkout serves o/r — the artifact cannot be bound to a commit, so what it shows is UNKNOWN.",
 		);
+	});
+});
+
+/**
+ * The additive-constraint rows.
+ *
+ * `reviewSubsystems` declares path globs whose matched files each carry a constraint text; the rows
+ * print between the class rows and the namespace rows. The whole block is opt-in: an absent or empty
+ * key must leave the emission exactly what it was before the key existed, which the byte-identity
+ * fence below pins.
+ */
+describe("runScope subsystem rows", () => {
+	const CART = "Totals are cents, never floats.";
+	const configured = (rows: ReadonlyArray<unknown>) =>
+		fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify({reviewSubsystems: rows})}});
+
+	// The fence the key exists behind: no declared subsystems, no changed emission — not one byte of
+	// stdout, and the JSON mirror carries no `subsystems` key at all.
+	it("leaves stdout byte-identical when the key is absent, the file has no keys, or the list is empty", async () => {
+		const plain = await run(happy());
+		const absentKey = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options}),
+				Layer.merge(
+					fakeSeams(happy()).layer,
+					fakeFs({files: {"/repo/.fabrika.jsonc": "{}"}}).layer,
+				),
+			),
+		);
+		const empty = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options}),
+				Layer.merge(fakeSeams(happy()).layer, configured([]).layer),
+			),
+		);
+		expect(absentKey.stdout).toBe(plain.stdout);
+		expect(empty.stdout).toBe(plain.stdout);
+	});
+
+	it("carries no subsystems key in the JSON when the list is empty", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, json: true}),
+				Layer.merge(fakeSeams(happy()).layer, configured([]).layer),
+			),
+		);
+		expect("subsystems" in JSON.parse(out.stdout)).toBe(false);
+	});
+
+	it("prints one subsystem row and its note per matching subsystem, between the class and namespace rows", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options}),
+				Layer.merge(
+					fakeSeams(happy()).layer,
+					configured([{pattern: "src/cart.ts", subsystem: "cart", constraint: CART}]).layer,
+				),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(
+			[
+				`scoped\t${HEAD}\tfixes:4287`,
+				"class\tcode\t1",
+				"class\tdoc\t1",
+				`subsystem\tcart\t1`,
+				`subsystem-note\tcart\t${CART}`,
+				"namespace\treview-code",
+				"namespace\treview-doc",
+				"self\tfalse",
+				"harness\tfalse",
+				"governance\tnot-required",
+				"",
+			].join("\n"),
+		);
+		expect(out.stderr.join("\n")).toContain(
+			"review scope: subsystem constraints derived over 1 row(s) — `reviewSubsystems` as declared in .fabrika.jsonc.",
+		);
+	});
+
+	it("sorts the rows by subsystem name, not by declaration order", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options}),
+				Layer.merge(
+					fakeSeams(happy()).layer,
+					configured([
+						{pattern: "src/**", subsystem: "zeta", constraint: "z"},
+						{pattern: "README.md", subsystem: "alpha", constraint: "a"},
+					]).layer,
+				),
+			),
+		);
+		const lines = out.stdout.split("\n");
+		expect(lines).toContain("subsystem\talpha\t1");
+		expect(lines).toContain("subsystem-note\talpha\ta");
+		expect(lines).toContain("subsystem\tzeta\t1");
+		expect(lines.indexOf("subsystem\talpha\t1")).toBeLessThan(lines.indexOf("subsystem\tzeta\t1"));
+	});
+
+	// Additive, never a partition: one path under two globs counts in BOTH rows — the opposite of
+	// the class map, which assigns each file exactly one class.
+	it("counts a path matching several patterns under each subsystem", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options}),
+				Layer.merge(
+					fakeSeams(happy()).layer,
+					configured([
+						{pattern: "src/**", subsystem: "source", constraint: "s"},
+						{pattern: "**/cart.ts", subsystem: "cart", constraint: CART},
+					]).layer,
+				),
+			),
+		);
+		expect(out.stdout).toContain("subsystem\tcart\t1");
+		expect(out.stdout).toContain("subsystem\tsource\t1");
+	});
+
+	it("prints no row for a subsystem whose pattern matched nothing", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options}),
+				Layer.merge(
+					fakeSeams(happy()).layer,
+					configured([
+						{pattern: "docs/**", subsystem: "absent", constraint: "never matched"},
+						{pattern: "README.md", subsystem: "docs", constraint: "d"},
+					]).layer,
+				),
+			),
+		);
+		expect(out.stdout).not.toContain("subsystem\tabsent");
+		expect(out.stdout).toContain("subsystem\tdocs\t1");
+	});
+
+	// The rows derive over the placement-respecting source, the content-delivery side of the
+	// consumer split — `before` narrows them with the kept paths, `after` derives over the full read.
+	it("derives over the filter placement's partition source, not the raw read", async () => {
+		const layer = Layer.merge(
+			fakeSeams(happy()).layer,
+			configured([{pattern: "src/**", subsystem: "cart", constraint: CART}]).layer,
+		);
+		const before = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, filterPlacement: "before", exclude: "src/cart.ts"}),
+				layer,
+			),
+		);
+		expect(before.stdout).not.toContain("subsystem\tcart");
+		const after = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, filterPlacement: "after", exclude: "src/cart.ts"}),
+				layer,
+			),
+		);
+		expect(after.stdout).toContain("subsystem\tcart\t1");
+	});
+
+	it("mirrors the rows in the JSON, named, counted, and carrying the constraint", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, json: true}),
+				Layer.merge(
+					fakeSeams(happy()).layer,
+					configured([{pattern: "README.md", subsystem: "docs", constraint: "d"}]).layer,
+				),
+			),
+		);
+		expect(JSON.parse(out.stdout).subsystems).toEqual([{name: "docs", files: 1, constraint: "d"}]);
+	});
+
+	it("refuses an undecodable list on 11 rather than partitioning over a value nobody read", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options}),
+				Layer.merge(
+					fakeSeams(happy()).layer,
+					configured([{pattern: "src/**", subsystem: "cart"}]).layer,
+				),
+			),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("is missing, empty, or not a string");
+	});
+});
+
+/**
+ * The exclusion set's config arms.
+ *
+ * `reviewFilterExclusions` extends the effective set, `reviewFilterUnexclude` removes a shipped
+ * default — and a removal is enumerated (`un-excluded` rows) so a narrowed filter is never silent,
+ * while an equal re-addition lifts the default out of the enumeration. With both keys empty the
+ * emission is byte-identical to a run that never read them, which the first fence pins.
+ */
+describe("runScope's exclusion set reads .fabrika.jsonc", () => {
+	const CHANGED = ["src/cart.ts", "pnpm-lock.yaml", "README.md"];
+	const placement = {filterPlacement: "after" as const, exclude: "src/cart.ts"};
+	const overChanged = over(...CHANGED);
+	const configured = (config: Record<string, unknown>) =>
+		fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}});
+
+	it("leaves stdout and stderr byte-identical when the keys are absent, the file empty, or both lists empty", async () => {
+		const plain = await run(overChanged, placement);
+		const braces = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, ...placement}),
+				Layer.merge(fakeSeams(overChanged).layer, configured({}).layer),
+			),
+		);
+		const empty = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, ...placement}),
+				Layer.merge(
+					fakeSeams(overChanged).layer,
+					configured({reviewFilterExclusions: [], reviewFilterUnexclude: []}).layer,
+				),
+			),
+		);
+		// stdout is identical across all three ground truths. stderr is identical across the two
+		// file-present ones; the no-file run's governance diagnostic already named the file's
+		// absence before these keys existed, so that sentence is not this key's to flatten.
+		expect(braces.stdout).toBe(plain.stdout);
+		expect(empty.stdout).toBe(plain.stdout);
+		expect(empty.stderr).toEqual(braces.stderr);
+		// The filter itself ran in all three: the CLI exclusion and the lockfile default excluded.
+		expect(plain.stdout).toContain("excluded\t2");
+		expect(plain.stdout).toContain("excluded-path\tsrc/cart.ts");
+		expect(plain.stdout).toContain("excluded-path\tpnpm-lock.yaml");
+		expect(plain.stdout).not.toContain("un-excluded");
+	});
+
+	it("extends the exclusion set with the declared globs", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, ...placement}),
+				Layer.merge(
+					fakeSeams(overChanged).layer,
+					configured({reviewFilterExclusions: ["README.md"]}).layer,
+				),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("excluded\t3");
+		expect(out.stdout).toContain("excluded-path\tREADME.md");
+		expect(out.stdout).not.toContain("un-excluded");
+	});
+
+	it("removes a default and enumerates it: served by the filter, named un-excluded, mirrored in the JSON", async () => {
+		const text = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, ...placement}),
+				Layer.merge(
+					fakeSeams(overChanged).layer,
+					configured({reviewFilterUnexclude: ["pnpm-lock.yaml"]}).layer,
+				),
+			),
+		);
+		expect(text.code).toBe(0);
+		expect(text.stdout).toContain("excluded\t1");
+		expect(text.stdout).toContain("un-excluded\t1");
+		expect(text.stdout).toContain("un-excluded-path\tpnpm-lock.yaml");
+		// The rows sit after the excluded ones.
+		const lines = text.stdout.split("\n");
+		expect(lines.indexOf("excluded\tpnpm-lock.yaml")).toBe(-1);
+		expect(lines.indexOf("un-excluded-path\tpnpm-lock.yaml")).toBeGreaterThan(
+			lines.indexOf("excluded-path\tsrc/cart.ts"),
+		);
+		const json = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, ...placement, json: true}),
+				Layer.merge(
+					fakeSeams(overChanged).layer,
+					configured({reviewFilterUnexclude: ["pnpm-lock.yaml"]}).layer,
+				),
+			),
+		);
+		expect(JSON.parse(json.stdout).unexcluded).toEqual({count: 1, paths: ["pnpm-lock.yaml"]});
+	});
+
+	it("does not enumerate a default an equal addition re-added — the re-addition is the later declaration", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, ...placement}),
+				Layer.merge(
+					fakeSeams(overChanged).layer,
+					configured({
+						reviewFilterExclusions: ["pnpm-lock.yaml"],
+						reviewFilterUnexclude: ["pnpm-lock.yaml"],
+					}).layer,
+				),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("excluded-path\tpnpm-lock.yaml");
+		expect(out.stdout).not.toContain("un-excluded");
+		const json = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, ...placement, json: true}),
+				Layer.merge(
+					fakeSeams(overChanged).layer,
+					configured({
+						reviewFilterExclusions: ["pnpm-lock.yaml"],
+						reviewFilterUnexclude: ["pnpm-lock.yaml"],
+					}).layer,
+				),
+			),
+		);
+		expect("unexcluded" in JSON.parse(json.stdout)).toBe(false);
+	});
+
+	it("refuses an undecodable exclusion key on 11, before any read the filter would turn on", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, ...placement}),
+				Layer.merge(
+					fakeSeams(overChanged).layer,
+					configured({reviewFilterExclusions: "src/**"}).layer,
+				),
+			),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(
+			"`reviewFilterExclusions` is not an array of pattern strings",
+		);
+	});
+
+	it("refuses a removal naming a non-default on 11 — only a default's exact pattern may be removed", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options, ...placement}),
+				Layer.merge(
+					fakeSeams(overChanged).layer,
+					configured({reviewFilterUnexclude: ["dist/**"]}).layer,
+				),
+			),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain('"dist/**" is not a shipped default exclusion');
 	});
 });

@@ -505,9 +505,26 @@ const preview = leafCommand(
 	"preview",
 	{
 		diffFile: Flag.string("diff-file").pipe(
+			Flag.optional,
 			Flag.withDescription(
 				"a unified diff on local disk to extract paths from (no PR, no network, no LLM)",
 			),
+		),
+		pr: Argument.integer("pr").pipe(
+			Argument.optional,
+			Argument.withDescription("the pull-request number to read instead of --diff-file"),
+		),
+		sha: boundShaFlag,
+		repo: repoFlag,
+		base: Flag.string("base").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"a range's base revision — reads the range's diff from its merge base, beside --tip",
+			),
+		),
+		tip: Flag.string("tip").pipe(
+			Flag.optional,
+			Flag.withDescription("the range's tip revision; --base and --tip come together"),
 		),
 		filterPlacement: filterPlacementFlag,
 		exclude: excludeFlag,
@@ -519,22 +536,44 @@ const preview = leafCommand(
 		),
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({diffFile, filterPlacement, exclude, emitDiff, json}) {
+	Effect.fn(function* ({
+		diffFile,
+		pr,
+		sha,
+		repo,
+		base,
+		tip,
+		filterPlacement,
+		exclude,
+		emitDiff,
+		json,
+	}) {
+		const placement = placementOf("preview", Option.getOrNull(filterPlacement));
+		if (placement && typeof placement === "object") {
+			yield* emit(placement);
+			return;
+		}
 		yield* emit(
 			yield* runPreview({
-				diffFile,
-				filterPlacement: Option.getOrNull(filterPlacement),
+				diffFile: Option.getOrNull(diffFile),
+				pr: Option.getOrNull(pr),
+				sha: Option.getOrNull(sha),
+				repo: Option.getOrNull(repo),
+				base: Option.getOrNull(base),
+				tip: Option.getOrNull(tip),
+				filterPlacement: placement,
 				exclude: Option.getOrNull(exclude),
 				emitDiff,
 				json,
 				cwd: process.cwd(),
+				env: process.env,
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Filtered path extraction for review diffs — no LLM, no write."),
 	Command.withDescription(
-		"Read a local unified diff and return its filtered path extraction: the matched paths, the excluded paths, the active class partition and the namespaces it derives, at the requested --filter-placement. `before` derives the partition over the kept paths only (an all-excluded diff derives zero namespaces); `after` derives over the full read and enumerates the excluded paths beside the rows. The defaults exclude pnpm-lock.yaml, **/__snapshots__/** and the generated-schema/build-output shapes; --exclude adds globs, and any pattern intersecting a governed root refuses at 21. --emit-diff prints the filtered diff with its `x-fabrika-filter` / `x-fabrika-excluded-path` header instead of the rows. No LLM invocation, no network write. Exits 10 (missing or off-vocabulary --filter-placement, or --emit-diff with --json), 11 (the diff file or .fabrika.jsonc could not be read), 21 (an exclusion pattern intersects governedRoots). Example: fabrika review preview --diff-file pr.diff --filter-placement=before --json",
+		"Read one subject's diff and return its filtered path extraction: the matched paths, the excluded paths, the active class partition and the namespaces it derives, at the requested --filter-placement. Subjects are mutually exclusive: --diff-file reads a local unified diff (no PR, no network); a pull-request number binds a head (optional --sha/--repo) and reads the PR's three-dot diff out of the object database exactly as review diff does; --base/--tip reads a range from its own merge base. `before` derives the partition over the kept paths only (an all-excluded diff derives zero namespaces); `after` derives over the full read and enumerates the excluded paths beside the rows. The defaults exclude pnpm-lock.yaml, **/__snapshots__/** and the generated-schema/build-output shapes; --exclude adds globs, and any pattern intersecting a governed root refuses at 21. Every subject proves completeness first — a diff carrying fewer files than git reports for the same range refuses at 13, so a deliberate exclusion can never masquerade as a truncation. --emit-diff prints the filtered diff with its `x-fabrika-filter` / `x-fabrika-excluded-path` header instead of the rows. No LLM invocation, no network write. Exits 10 (missing or off-vocabulary --filter-placement, --emit-diff with --json, no subject named, or two subjects at once), 7 (PR absent, closed, or zero changed files), 11 (a read the answer turns on failed — the diff file, .fabrika.jsonc, the PR read, or a git read), 12 (--sha is not the PR's head), 13 (a provably short diff), 21 (an exclusion pattern intersects governedRoots). Example: fabrika review preview --diff-file pr.diff --filter-placement=before --json",
 	),
 );
 

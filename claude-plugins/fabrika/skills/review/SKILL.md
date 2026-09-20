@@ -190,6 +190,16 @@ in the skill class, under `A-TOUCHED-SKILL-FILE-IS-READ-WHOLE` further down. Edi
 any prose surface: apply [`writing-for-agents`](../writing-for-agents/SKILL.md) verbatim, reading it
 inline as a reference, and state its outcome in that class's namespace.
 
+<!-- anchor: SUBSYSTEM-ROWS-ARE-ADDITIVE --> **The `subsystem` rows `scope` printed are additive
+constraints on the class rubric, never a replacement for it.** A repo may declare
+`reviewSubsystems` in `.fabrika.jsonc` — path globs whose matched files each carry a constraint
+text. `scope` prints one `subsystem` row per subsystem with matches, and the `subsystem-note` line
+under it carries that text verbatim. Grade every class exactly as its rubric says, then read each
+`subsystem-note` whose `subsystem` row covers files in your class and apply its constraint **on
+top**: the rows can add findings a rubric alone would not ask about, and they never relax, replace,
+or skip a rubric line. A path may match several subsystems, so one file can carry more than one
+constraint; a class whose files match none is graded by its rubric alone.
+
 **A diff touching fabrika's own two trees owes the portability check, in the doc class and the skill
 class alike.** When any changed file sits under `claude-plugins/fabrika/` or
 `packages/fabrika-cli/src/`, run it and read the verdict into those classes:

@@ -1,6 +1,14 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeSeams, type HttpReply, okOut, type Scripted} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeFs,
+	fakeSeams,
+	type HttpReply,
+	okOut,
+	type Scripted,
+	unconfigured,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	INCOMPLETE_SCAN,
@@ -10,6 +18,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {runDiff} from "./diff-verb.ts";
+import type {FilterPlacement} from "./filter-spike.ts";
 import {
 	binding,
 	DIFF,
@@ -55,6 +64,10 @@ const options = {
 	pr: 4321,
 	sha: null as string | null,
 	repo: null,
+	/** ocr-port spike fields, null = off — the overrides below turn them on per case. */
+	filterPlacement: null as FilterPlacement | null,
+	exclude: null as string | null,
+	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
@@ -62,7 +75,11 @@ const shell = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof option
 	const fake = fakeSeams(script);
 	return {
 		fake,
-		out: Effect.runPromise(Effect.provide(runDiff({...options, ...overrides}), fake.layer)),
+		// The config arms of the exclusion set are part of the verb's reads now, so every run stands
+		// on the unconfigured checkout unless a case layers a declared `.fabrika.jsonc` over it.
+		out: Effect.runPromise(
+			Effect.provide(runDiff({...options, ...overrides}), Layer.merge(fake.layer, unconfigured)),
+		),
 	};
 };
 
@@ -277,5 +294,123 @@ describe("runDiff binds its bytes to a commit", () => {
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("cannot resolve base main");
+	});
+});
+
+/**
+ * The exclusion set's config arms.
+ *
+ * `reviewFilterExclusions` extends the effective set, `reviewFilterUnexclude` removes a shipped
+ * default. A removal is stated twice — an `x-fabrika-unexcluded-path` line in the served diff's
+ * header and an `unexcluded=` count in the diagnostic — so a narrowed filter is never silent, and
+ * with both keys empty the served bytes are byte-identical to a run that never read them.
+ */
+describe("runDiff's exclusion set reads .fabrika.jsonc", () => {
+	const LOCK_DIFF = `diff --git a/src/cart.ts b/src/cart.ts
+--- a/src/cart.ts
++++ b/src/cart.ts
+@@ -10,2 +10,3 @@
+ const items = read();
++const extra = 1;
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -1,1 +1,2 @@
++  effect:
+`;
+	const placement = {filterPlacement: "before" as const, exclude: "README.md"};
+	const configured = (config: Record<string, unknown>) =>
+		Layer.merge(
+			fakeSeams(green()).layer,
+			fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}}).layer,
+		);
+
+	it("serves byte-identical bytes and the same diagnostic when the keys are absent, empty, or the file declares none", async () => {
+		const plain = await run(green(), placement);
+		const braces = await Effect.runPromise(
+			Effect.provide(runDiff({...options, ...placement}), configured({})),
+		);
+		const empty = await Effect.runPromise(
+			Effect.provide(
+				runDiff({...options, ...placement}),
+				configured({reviewFilterExclusions: [], reviewFilterUnexclude: []}),
+			),
+		);
+		expect(braces.stdout).toBe(plain.stdout);
+		expect(braces.stderr).toEqual(plain.stderr);
+		expect(empty.stdout).toBe(plain.stdout);
+		expect(empty.stderr).toEqual(plain.stderr);
+		// The filter itself ran in all three — one CLI exclusion, no un-excluded count anywhere.
+		expect(plain.stdout).toContain("x-fabrika-filter: placement=before excluded=1 served=1");
+		expect(plain.stdout).toContain("x-fabrika-excluded-path: README.md");
+		expect(plain.stdout).not.toContain("x-fabrika-unexcluded-path");
+		expect(plain.stderr.at(-1)).toContain("excluded=1 served=1 of 2 files");
+		expect(plain.stderr.at(-1)).not.toContain("unexcluded=");
+	});
+
+	it("extends the exclusion set with the declared globs", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDiff({...options, ...placement}),
+				Layer.merge(
+					fakeSeams(green()).layer,
+					fakeFs({
+						files: {
+							"/repo/.fabrika.jsonc": JSON.stringify({reviewFilterExclusions: ["**/cart.ts"]}),
+						},
+					}).layer,
+				),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("x-fabrika-filter: placement=before excluded=2 served=0");
+		expect(out.stdout).toContain("x-fabrika-excluded-path: src/cart.ts");
+		expect(out.stderr.at(-1)).toContain("excluded=2 served=0 of 2 files");
+	});
+
+	it("names a removed default in the header and the diagnostic, and serves its bytes", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDiff({...options, filterPlacement: "before", cwd: "/repo"}),
+				Layer.merge(
+					fakeSeams(green(LOCK_DIFF, {}, ["src/cart.ts", "pnpm-lock.yaml"])).layer,
+					fakeFs({
+						files: {
+							"/repo/.fabrika.jsonc": JSON.stringify({reviewFilterUnexclude: ["pnpm-lock.yaml"]}),
+						},
+					}).layer,
+				),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("x-fabrika-filter: placement=before excluded=0 served=2");
+		expect(out.stdout).toContain("x-fabrika-unexcluded-path: pnpm-lock.yaml");
+		expect(out.stdout).toContain("+  effect:");
+		expect(out.stderr.at(-1)).toContain("unexcluded=1");
+	});
+
+	it("refuses an undecodable exclusion key on 11", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDiff({...options, ...placement}),
+				configured({reviewFilterExclusions: "src/**"}),
+			),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(
+			"`reviewFilterExclusions` is not an array of pattern strings",
+		);
+	});
+
+	it("refuses a removal naming a non-default on 11 — only a default's exact pattern may be removed", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDiff({...options, ...placement}),
+				configured({reviewFilterUnexclude: ["dist/**"]}),
+			),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain('"dist/**" is not a shipped default exclusion');
 	});
 });

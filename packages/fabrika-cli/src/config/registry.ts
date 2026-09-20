@@ -19,12 +19,14 @@ import {containmentVocabularyKey} from "./keys/containment-vocabulary.ts";
 import {unreadableCodeownersKey} from "./keys/control-plane.ts";
 import {dependencyReconcilerKey} from "./keys/dependency-reconciler.ts";
 import {docLeakExemptKey} from "./keys/doc-leak-exempt.ts";
+import {reviewFilterExclusionsKey, reviewFilterUnexcludeKey} from "./keys/filter-exclusions.ts";
 import {governedRootsKey} from "./keys/governed-roots.ts";
 import {laneConcurrencyCapKey} from "./keys/lane-concurrency-cap.ts";
 import {machineryLapsKey} from "./keys/machinery-laps.ts";
 import {parkCauseKey} from "./keys/park-cause.ts";
 import {cycleDocKey, decisionsDirKey, roadmapFileKey} from "./keys/paths.ts";
 import {portabilityKey} from "./keys/portability.ts";
+import {reviewSubsystemsKey} from "./keys/review-subsystems.ts";
 import {surfaceDispositionsKey} from "./keys/surface-dispositions.ts";
 import {triageFacetsKey} from "./keys/triage-facets.ts";
 import {uiCaptureKey, uiSurfacesKey} from "./keys/ui-surfaces.ts";
@@ -49,6 +51,9 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(machineryLapsKey),
 	register(parkCauseKey),
 	register(portabilityKey),
+	register(reviewFilterExclusionsKey),
+	register(reviewFilterUnexcludeKey),
+	register(reviewSubsystemsKey),
 	register(roadmapFileKey),
 	register(surfaceDispositionsKey),
 	register(triageFacetsKey),

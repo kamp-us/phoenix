@@ -152,8 +152,9 @@ If accepted, with fields 2–4 landing as recommended and a placement ruling pic
   (`x-fabrika-filter: placement=… excluded=N served=M`, one `x-fabrika-excluded-path:` line per
   excluded path) strictly after its completeness proof; a read-only `review preview` verb shares
   the derivation with zero LLM turns; the refusal union narrows to `governedRoots` on a dedicated
-  exit code; new config-key fragments under `review.*` carry the defaults and the declared
-  extend-set.
+  exit code; new config-key fragments under `review.*` carry the defaults, the declared extend-set
+  and the removal list (`reviewFilterExclusions` / `reviewFilterUnexclude`), with a removal of a
+  default enumerated in the scope output (`un-excluded` rows) rather than silent.
 - **Does not change:** guards keep reading the raw path list — no gate's requirement derivation
   ever sees a filtered list; the acceptance-criteria gate and every namespace rule are untouched;
   unfiltered invocations are byte-identical to today's output.
@@ -192,3 +193,15 @@ If accepted, with fields 2–4 landing as recommended and a placement ruling pic
   17 → 21 (main took 17–20), the design guards' corpus paths updated to `packages/design/`, and
   the diff parser made CRLF-tolerant. The `--filter-placement` flag carries BOTH placements while
   field 1 stays open; the shipped default collapses to the placement the ruling picks.
+- 2026-09-20 — the PR came to carry all three of #9199's mechanisms, not only the filter. Baris
+  Eroglu directed the remainder land here with the placement still the maintainer's to rule:
+  `review preview` gained its parity subjects (a PR number with optional `--sha`/`--repo`, and
+  `--base`/`--tip`, each proving diff completeness before the filter exactly as `review diff`
+  does); mechanism 3 — until now held as a separate proposal — landed as the `reviewSubsystems`
+  config key, whose glob matches resolve over `review scope`'s output as additive
+  `subsystem` / `subsystem-note` constraint rows layered onto the class rubrics, matched by the
+  filter's own glob engine so a repo never learns two dialects; and the extend/remove surface
+  (`reviewFilterExclusions` / `reviewFilterUnexclude`) completed mechanism 1's config story, with
+  the `un-excluded` enumeration keeping a removal of a default visible and an equal-pattern
+  re-addition deterministically winning over a removal. With both keys absent, every consumer's
+  output is byte-identical to before they existed.

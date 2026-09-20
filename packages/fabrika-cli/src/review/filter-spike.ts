@@ -17,10 +17,10 @@
  */
 import {type ClassName, classOf, type Partition, partition} from "./classes.ts";
 
-/** One exclusion pattern, with where it came from — a default or the caller's `--exclude`. */
+/** One exclusion pattern, with where it came from — a default, a config key, or the caller's `--exclude`. */
 export interface ExclusionPattern {
 	readonly pattern: string;
-	readonly source: "default" | "caller";
+	readonly source: "default" | "config" | "caller";
 }
 
 /**
@@ -99,6 +99,57 @@ export const parseExcludeList = (csv: string): ReadonlyArray<ExclusionPattern> =
 		.map((entry) => entry.trim())
 		.filter((entry) => entry !== "")
 		.map((pattern) => ({pattern, source: "caller" as const}));
+
+/**
+ * The defaults the effective set dropped: every default whose pattern string no entry of the set
+ * carries. A default removed and re-added by the same pattern string is back in the set — the
+ * re-addition is the later, more specific declaration — so it does not appear here; the
+ * enumeration must never name a default the filter still applies.
+ */
+export const unexcludedDefaults = (
+	patterns: ReadonlyArray<ExclusionPattern>,
+): ReadonlyArray<string> =>
+	DEFAULT_EXCLUSIONS.map(({pattern}) => pattern).filter(
+		(pattern) => !patterns.some((entry) => entry.pattern === pattern),
+	);
+
+/** The assembled exclusion set: the patterns a run filters over, and the defaults it dropped. */
+export interface EffectiveExclusions {
+	readonly patterns: ReadonlyArray<ExclusionPattern>;
+	/** The removed defaults nothing re-added — enumerated, so a removal is never silent. */
+	readonly unexcluded: ReadonlyArray<string>;
+}
+
+/**
+ * The effective exclusion set: `(DEFAULT_EXCLUSIONS − removals) + config additions + CLI`, with one
+ * entry per pattern string and a deterministic order — defaults in declaration order, then config
+ * additions in declaration order, then the CLI's.
+ *
+ * A later declaration equal in string to an earlier entry is a duplicate, not an override; a
+ * duplicate that re-adds a removed default is exactly what lifts that default out of
+ * `unexcluded`. The refusal union of every filtering consumer runs over this set, so a config
+ * addition is refused on a guard-probe match exactly as a default or a CLI flag is.
+ */
+export const effectiveExclusions = (
+	configAdditions: ReadonlyArray<string>,
+	configRemovals: ReadonlyArray<string>,
+	cliExclude: string | null,
+): EffectiveExclusions => {
+	const removed = new Set(configRemovals);
+	const patterns: ExclusionPattern[] = [];
+	const add = (pattern: string, source: ExclusionPattern["source"]): void => {
+		if (patterns.some((entry) => entry.pattern === pattern)) return;
+		patterns.push({pattern, source});
+	};
+	for (const {pattern} of DEFAULT_EXCLUSIONS) {
+		if (!removed.has(pattern)) add(pattern, "default");
+	}
+	for (const pattern of configAdditions) add(pattern, "config");
+	if (cliExclude !== null) {
+		for (const {pattern} of parseExcludeList(cliExclude)) add(pattern, "caller");
+	}
+	return {patterns, unexcluded: unexcludedDefaults(patterns)};
+};
 
 /**
  * A pattern refused because it matches a guard probe. `guard` names the guard whose probe matched;
@@ -184,17 +235,25 @@ export const diffSections = (diff: string): ReadonlyArray<DiffSection> => {
  * The filtered diff: the machine-readable exclusion header, then the kept sections whole. The
  * header is what tells a deliberate exclusion apart from a truncation — the diff verbs' own
  * completeness proof runs on the UNFILTERED bytes and stays untouched by this module.
+ *
+ * `unexcluded` names the removed defaults the set carried, appended sorted after the excluded
+ * paths so a config removal is stated in the same header a caller already reads. Empty is the
+ * shipped shape: no removal, no lines, bytes identical to a run without the config keys.
  */
 export const filterDiff = (
 	diff: string,
 	excluded: ReadonlyArray<string>,
 	placement: FilterPlacement,
+	unexcluded: ReadonlyArray<string> = [],
 ): string => {
 	const excludedSet = new Set(excluded);
 	const served = diffSections(diff).filter((section) => !excludedSet.has(section.path));
 	const header = [
 		`x-fabrika-filter: placement=${placement} excluded=${excluded.length} served=${served.length}`,
 		...[...excluded].sort().map((path) => `x-fabrika-excluded-path: ${path}`),
+		...(unexcluded.length > 0
+			? [...unexcluded].sort().map((path) => `x-fabrika-unexcluded-path: ${path}`)
+			: []),
 	];
 	return [...header, "", ...served.map((section) => section.text)].join("\n");
 };
@@ -204,6 +263,8 @@ export interface PreviewResult {
 	/** The paths that survive the filter — the ones a reviewer would read. */
 	readonly matched_paths: ReadonlyArray<string>;
 	readonly excluded: ReadonlyArray<string>;
+	/** The removed defaults the set still lacks — carried so every emission enumerates the same list. */
+	readonly unexcluded: ReadonlyArray<string>;
 	readonly active_classes: Partition["classes"];
 	readonly namespaces: ReadonlyArray<string>;
 	readonly filtered_diff: string;
@@ -219,6 +280,11 @@ export type Preview =
  * The preview derivation, end to end, with no LLM and no network: split the diff's paths by the
  * exclusion set, derive the class partition at the requested placement, and filter the diff bytes.
  *
+ * The set is an {@link effectiveExclusions} product, so the removed defaults it still lacks are
+ * derived off the patterns themselves — a default is absent from an effective set exactly when it
+ * was removed and nothing re-added it — and carried onto the result and into the filtered diff's
+ * header.
+ *
  * `before` partitions the KEPT paths only — an all-excluded diff derives zero classes and zero
  * namespaces. `after` partitions the FULL read — the namespace rows stand unchanged and the
  * excluded paths are enumerated beside them.
@@ -231,18 +297,20 @@ export const previewOf = (
 ): Preview => {
 	const refusals = refusalFor(patterns, probes);
 	if (refusals.length > 0) return {_tag: "Refused", refusals};
+	const unexcluded = unexcludedDefaults(patterns);
 	const sections = diffSections(diff);
 	const paths = sections.map((section) => section.path);
 	const split = applyPlacement(paths, patterns);
 	const partitionSource = placement === "before" ? split.kept : paths;
 	const partitioned = partition(partitionSource);
-	const filtered = filterDiff(diff, split.excluded, placement);
+	const filtered = filterDiff(diff, split.excluded, placement, unexcluded);
 	return {
 		_tag: "Preview",
 		result: {
 			placement,
 			matched_paths: split.kept,
 			excluded: split.excluded,
+			unexcluded,
 			active_classes: partitioned.classes,
 			namespaces: partitioned.classes.map((entry) => `review-${entry.name as ClassName}`),
 			filtered_diff: filtered,

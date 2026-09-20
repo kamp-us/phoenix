@@ -9,14 +9,16 @@
  */
 import {execFileSync} from "node:child_process";
 import {readFileSync} from "node:fs";
+import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
-import {GOVERNED_FILTER, OFF_VOCABULARY} from "./codes.ts";
+import {GOVERNED_FILTER, OFF_VOCABULARY, PRECONDITION_UNKNOWN} from "./codes.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../..", import.meta.url));
 const FIXTURE = fileURLToPath(new URL("./__fixtures__/preview-sample.diff", import.meta.url));
+const ABSENT_DIFF = join(dirname(FIXTURE), "preview-absent.diff");
 
 // The first governed root the runtime itself will see — the refusal test proves the live union
 // against it instead of hardcoding a path that only exists in one repository.
@@ -148,5 +150,24 @@ describe("review preview", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 			"--json",
 		]);
 		expect(run.code).toBe(OFF_VOCABULARY);
+	});
+
+	it("the line grammar prints the rows without --json or --emit-diff", () => {
+		const run = fabrika(["--diff-file", FIXTURE, "--filter-placement=before"]);
+		expect(run.code).toBe(0);
+		expect(run.stdout.startsWith("preview\tbefore\n")).toBe(true);
+		expect(run.stdout).toContain("matched\t1");
+		expect(run.stdout).toContain("class\tcode\t1");
+		expect(run.stdout).toContain("namespace\treview-code");
+		expect(run.stdout).toContain("excluded\t2");
+		expect(run.stdout).toContain("excluded-path\tpnpm-lock.yaml");
+		expect(run.stdout).toContain("excluded-path\tsrc/__snapshots__/feature.snap");
+	});
+
+	it("an unreadable --diff-file refuses at 11 — never a permissive empty read", () => {
+		const run = fabrika(["--diff-file", ABSENT_DIFF, "--filter-placement=before"]);
+		expect(run.code).toBe(PRECONDITION_UNKNOWN);
+		expect(run.stdout).toBe("");
+		expect(run.stderr).toContain(`cannot read --diff-file "${ABSENT_DIFF}"`);
 	});
 });

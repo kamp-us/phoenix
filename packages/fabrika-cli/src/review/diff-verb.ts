@@ -12,8 +12,9 @@
  * number and no commit — see `head.ts` for why a SHA on the verdict is not the same thing as bytes
  * from that SHA.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {reviewFilterExclusionsOr, reviewFilterUnexcludeOr} from "../config/paths.ts";
 import {diffRange, diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {SHIPPED_GOVERNED_ROOTS} from "./classes.ts";
@@ -21,10 +22,9 @@ import {GOVERNED_FILTER, INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts
 import {filesInDiff} from "./diff.ts";
 import {
 	applyPlacement,
-	DEFAULT_EXCLUSIONS,
+	effectiveExclusions,
 	type FilterPlacement,
 	filterDiff,
-	parseExcludeList,
 	refusalFor,
 } from "./filter-spike.ts";
 import {refusalProbes} from "./guard-trees.ts";
@@ -44,12 +44,23 @@ export interface DiffOptions {
 	readonly exclude?: string | null;
 	/** The governed roots, read by the adapter's `governedRootsOr` — the union's config half. */
 	readonly governedRoots?: ReadonlyArray<string>;
+	/**
+	 * Where the exclusion set's own config arms are read, when the placement turns the filter on —
+	 * the checkout the caller stands in. The adapter hands no cwd, so this falls to the process's;
+	 * an absent or keyless `.fabrika.jsonc` there resolves the shipped empty arms and changes no
+	 * byte of the served diff.
+	 */
+	readonly cwd?: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
 export const runDiff = (
 	options: DiffOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const {pr} = options;
 		const bad = badNumber(VERB, "a pull-request number", pr);
@@ -118,15 +129,36 @@ export const runDiff = (
 		}
 		// ocr-port spike: the filter runs strictly AFTER the completeness proof above, so a deliberate
 		// exclusion can never masquerade as a short read — the header names what was left out on
-		// purpose. Refusal union derived per run from the guards' probes plus the governed roots.
+		// purpose. Refusal union derived per run over the EFFECTIVE set — defaults minus the config's
+		// removals, plus its additions, plus `--exclude` — against the guards' probes plus the
+		// governed roots the adapter read. A removed default nothing re-added is named in the served
+		// diff's header and in the diagnostic beside it, so a narrowed filter is never silent.
 		let servedDiff = diff;
 		if (options.filterPlacement != null) {
-			const patterns = [
-				...DEFAULT_EXCLUSIONS,
-				...(options.exclude == null ? [] : parseExcludeList(options.exclude)),
-			];
+			const root = options.cwd ?? process.cwd();
+			const filterExclusions = yield* reviewFilterExclusionsOr(
+				VERB,
+				root,
+				"which globs extend the exclusion set is UNKNOWN and the served diff would carry a set nobody derived.",
+			);
+			if (filterExclusions._tag === "Refused") {
+				return refuse(PRECONDITION_UNKNOWN, filterExclusions.message);
+			}
+			const filterUnexclude = yield* reviewFilterUnexcludeOr(
+				VERB,
+				root,
+				"which defaults the exclusion set drops is UNKNOWN and the served diff would carry a set nobody derived.",
+			);
+			if (filterUnexclude._tag === "Refused") {
+				return refuse(PRECONDITION_UNKNOWN, filterUnexclude.message);
+			}
+			const effective = effectiveExclusions(
+				filterExclusions.exclusions,
+				filterUnexclude.unexclude,
+				options.exclude ?? null,
+			);
 			const refused = refusalFor(
-				patterns,
+				effective.patterns,
 				refusalProbes(options.governedRoots ?? SHIPPED_GOVERNED_ROOTS),
 			);
 			if (refused.length > 0) {
@@ -139,10 +171,10 @@ export const runDiff = (
 					diagnostics,
 				);
 			}
-			const split = applyPlacement(listed.value, patterns);
-			servedDiff = filterDiff(diff, split.excluded, options.filterPlacement);
+			const split = applyPlacement(listed.value, effective.patterns);
+			servedDiff = filterDiff(diff, split.excluded, options.filterPlacement, effective.unexcluded);
 			diagnostics.push(
-				`${VERB}: filter placement=${options.filterPlacement} excluded=${split.excluded.length} served=${listed.value.length - split.excluded.length} of ${listed.value.length} files — deliberate, not truncated.`,
+				`${VERB}: filter placement=${options.filterPlacement} excluded=${split.excluded.length} served=${listed.value.length - split.excluded.length}${effective.unexcluded.length > 0 ? ` unexcluded=${effective.unexcluded.length}` : ""} of ${listed.value.length} files — deliberate, not truncated.`,
 			);
 		}
 		return answer(servedDiff, diagnostics);

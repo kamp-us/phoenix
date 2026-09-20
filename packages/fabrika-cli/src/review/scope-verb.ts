@@ -19,6 +19,12 @@
  * recomputed. `harness` is three compiled-in roots and answers a different question, so a reviewer
  * who read it as the governance requirement missed one on every decision-corpus-only diff.
  *
+ * The `subsystem` rows are a third derivation, additive where the classes partition: a repo may
+ * declare `reviewSubsystems` globs whose matched files each carry a constraint a reviewer applies on
+ * top of the class rubric, and a path matching several globs counts under each. The rows sit between
+ * the class rows and the namespace rows, sorted by subsystem name; an absent or empty key leaves the
+ * output byte-identical to what it was before the key existed.
+ *
  * The refusals are the point: the partition is total over **what was read**, so the verb exists to
  * make sure it is never run over less than everything. A PR GitHub reports as having zero changed
  * files reds on `7` (v1's `class-probe` read 0 files and classified `has-code` exit 0), and
@@ -36,7 +42,15 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {governedRootsOr, noUiSurfaces, uiSurfacesOr} from "../config/paths.ts";
+import type {ReviewSubsystem} from "../config/keys/review-subsystems.ts";
+import {
+	governedRootsOr,
+	noUiSurfaces,
+	reviewFilterExclusionsOr,
+	reviewFilterUnexcludeOr,
+	reviewSubsystemsOr,
+	uiSurfacesOr,
+} from "../config/paths.ts";
 import {diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -51,9 +65,9 @@ import {
 import {GOVERNED_FILTER, INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {
 	applyPlacement,
-	DEFAULT_EXCLUSIONS,
+	effectiveExclusions,
 	type FilterPlacement,
-	parseExcludeList,
+	patternToMatcher,
 	refusalFor,
 } from "./filter-spike.ts";
 import {refusalProbes} from "./guard-trees.ts";
@@ -65,6 +79,46 @@ const VERB = "review scope";
 
 /** The null token this group prints for a field with no value. One token, every verb. */
 export const NULL_TOKEN = "-";
+
+/** One subsystem row: how many files the subsystem's glob matched, and its constraint text. */
+export interface SubsystemRow {
+	readonly name: string;
+	readonly files: number;
+	readonly constraint: string;
+}
+
+/**
+ * The `subsystem` rows over one file list: per declared subsystem, its matched-file count and its
+ * constraint text.
+ *
+ * **Additive, never a partition.** The class map assigns each file exactly one class; these rows do
+ * the opposite — a path matching several patterns counts under each subsystem, because a constraint
+ * layers onto the class rubric rather than carving the diff up. A subsystem whose glob matches
+ * nothing prints no row, exactly as a class with no files does; and the rows sort by subsystem name
+ * so two runs cannot disagree about the order.
+ */
+export const subsystemRowsOf = (
+	files: ReadonlyArray<string>,
+	entries: ReadonlyArray<ReviewSubsystem>,
+): ReadonlyArray<SubsystemRow> => {
+	const matchers = entries.map((entry) => ({entry, test: patternToMatcher(entry.pattern)}));
+	const counts = new Map<string, number>();
+	for (const file of files) {
+		for (const {entry, test} of matchers) {
+			if (test.test(file)) counts.set(entry.subsystem, (counts.get(entry.subsystem) ?? 0) + 1);
+		}
+	}
+	// The subsystem names are unique (the decode refuses a duplicate), so one pass over the declared
+	// rows in declaration order and one sort is the whole ordering.
+	return entries
+		.filter((entry) => (counts.get(entry.subsystem) ?? 0) > 0)
+		.map((entry) => ({
+			name: entry.subsystem,
+			files: counts.get(entry.subsystem) ?? 0,
+			constraint: entry.constraint,
+		}))
+		.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+};
 
 export interface ScopeOptions {
 	readonly pr: number;
@@ -109,6 +163,31 @@ export const runScope = (
 		);
 		if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
 
+		const subsystems = yield* reviewSubsystemsOr(
+			VERB,
+			options.cwd,
+			"which paths carry an additive subsystem constraint is UNKNOWN and this partition would carry an answer nobody derived.",
+		);
+		if (subsystems._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, subsystems.message);
+
+		const filterExclusions = yield* reviewFilterExclusionsOr(
+			VERB,
+			options.cwd,
+			"which globs extend the exclusion set is UNKNOWN and this partition would carry an answer nobody derived.",
+		);
+		if (filterExclusions._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, filterExclusions.message);
+		}
+
+		const filterUnexclude = yield* reviewFilterUnexcludeOr(
+			VERB,
+			options.cwd,
+			"which defaults the exclusion set drops is UNKNOWN and this partition would carry an answer nobody derived.",
+		);
+		if (filterUnexclude._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, filterUnexclude.message);
+		}
+
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
@@ -146,6 +225,13 @@ export const runScope = (
 			surfaces.prefixes.length === 0
 				? noUiSurfaces(VERB)
 				: `${VERB}: ui derived over ${surfaces.prefixes.length} prefix(es) — ${surfaces.note}.`,
+			// Stated only when the key carries rows: an absent or empty list leaves this readout, and
+			// the whole emission below it, byte-identical to a repo that never declared the key.
+			...(subsystems.subsystems.length > 0
+				? [
+						`${VERB}: subsystem constraints derived over ${subsystems.subsystems.length} row(s) — ${subsystems.note}.`,
+					]
+				: []),
 		];
 		if (listed.set.disagreement !== null) diagnostics.push(listed.set.disagreement);
 		if (files.length === 0) {
@@ -158,16 +244,20 @@ export const runScope = (
 
 		// Review diff filtering: the exclusion split runs after the empty-read refusal above, and
 		// the placement decides what the partition derives over — `before` the kept paths, `after`
-		// the full read. The refusal union is `governedRoots`, derived per run; guard trigger trees
-		// stay documented and drift-loud by the golden test, not protected by refusal.
+		// the full read. The refusal union is the EFFECTIVE set — defaults minus the config's
+		// removals, plus its additions, plus `--exclude` — derived per run over `governedRoots`;
+		// guard trigger trees stay documented and drift-loud by the golden test, not protected by
+		// refusal. A removed default nothing re-added is enumerated beside the exclusion.
 		let excluded: ReadonlyArray<string> = [];
+		let unexcluded: ReadonlyArray<string> = [];
 		let partitionSource = files;
 		if (options.filterPlacement != null) {
-			const patterns = [
-				...DEFAULT_EXCLUSIONS,
-				...(options.exclude == null ? [] : parseExcludeList(options.exclude)),
-			];
-			const refused = refusalFor(patterns, refusalProbes(roots.roots));
+			const effective = effectiveExclusions(
+				filterExclusions.exclusions,
+				filterUnexclude.unexclude,
+				options.exclude ?? null,
+			);
+			const refused = refusalFor(effective.patterns, refusalProbes(roots.roots));
 			if (refused.length > 0) {
 				const detail = refused
 					.map((entry) => `"${entry.pattern}" matches the ${entry.guard} probe "${entry.probe}"`)
@@ -178,8 +268,9 @@ export const runScope = (
 					diagnostics,
 				);
 			}
-			const split = applyPlacement(files, patterns);
+			const split = applyPlacement(files, effective.patterns);
 			excluded = split.excluded;
+			unexcluded = effective.unexcluded;
 			partitionSource = options.filterPlacement === "before" ? split.kept : files;
 		}
 
@@ -187,6 +278,9 @@ export const runScope = (
 		const result = partitionWithUi(partitionSource, roots.roots, surfaces.prefixes);
 		const namespaces = shipNamespacesOf(result);
 		const routed = routedNamespacesOf(namespaces);
+		// The content-delivery side of the consumer split: the same placement-respecting source the
+		// class partition derives over, never the raw guard-side read.
+		const subsystemRows = subsystemRowsOf(partitionSource, subsystems.subsystems);
 		const governance = touchesGovernanceRoot(files, roots.roots) ? "required" : "not-required";
 		const issue = issueRefOf(pull.body);
 		if (json) {
@@ -202,10 +296,14 @@ export const runScope = (
 					scanned: result.scanned,
 					namespaces,
 					routed,
+					...(subsystemRows.length > 0 ? {subsystems: subsystemRows} : {}),
 					...(options.filterPlacement != null
 						? {
 								filter_placement: options.filterPlacement,
 								excluded: {count: excluded.length, paths: excluded},
+								...(unexcluded.length > 0
+									? {unexcluded: {count: unexcluded.length, paths: unexcluded}}
+									: {}),
 							}
 						: {}),
 				}),
@@ -216,13 +314,28 @@ export const runScope = (
 			[
 				`scoped\t${head.sha}\t${renderIssueRef(issue, NULL_TOKEN)}`,
 				...result.classes.map((entry) => `class\t${entry.name}\t${entry.files}`),
+				...subsystemRows.flatMap((row) => [
+					`subsystem\t${row.name}\t${row.files}`,
+					`subsystem-note\t${row.name}\t${row.constraint}`,
+				]),
 				...namespaces.map((namespace) => `namespace\t${namespace}`),
 				...routed.map((namespace) => `routed\t${namespace}`),
 				`self\t${flags.self}`,
 				`harness\t${flags.harness}`,
 				`governance\t${governance}`,
 				...(options.filterPlacement != null
-					? [`excluded\t${excluded.length}`, ...excluded.map((path) => `excluded-path\t${path}`)]
+					? [
+							`excluded\t${excluded.length}`,
+							...excluded.map((path) => `excluded-path\t${path}`),
+							// A removed default is the one exclusion nobody typed on this run's command line —
+							// enumerated so the narrowed filter is stated, and only when it narrowed.
+							...(unexcluded.length > 0
+								? [
+										`un-excluded\t${unexcluded.length}`,
+										...unexcluded.map((path) => `un-excluded-path\t${path}`),
+									]
+								: []),
+						]
 					: []),
 			].join("\n"),
 			diagnostics,

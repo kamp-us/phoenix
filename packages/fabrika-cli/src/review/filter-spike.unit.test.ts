@@ -11,10 +11,12 @@ import {
 	applyPlacement,
 	DEFAULT_EXCLUSIONS,
 	diffSections,
+	effectiveExclusions,
 	filterDiff,
 	matchPath,
 	previewOf,
 	refusalFor,
+	unexcludedDefaults,
 } from "./filter-spike.ts";
 
 const probes = [
@@ -110,6 +112,92 @@ describe("the diff filter", () => {
 		const filtered = filterDiff(diff, [], "after");
 		expect(filtered).toContain("x-fabrika-filter: placement=after excluded=0 served=2");
 	});
+
+	it("appends the un-excluded defaults, sorted, after the excluded paths", () => {
+		const filtered = filterDiff(diff, ["pnpm-lock.yaml"], "before", [
+			"**/__mutation__/**",
+			"**/__snapshots__/**",
+		]);
+		const lines = filtered.split("\n").slice(0, 4);
+		expect(lines).toEqual([
+			"x-fabrika-filter: placement=before excluded=1 served=1",
+			"x-fabrika-excluded-path: pnpm-lock.yaml",
+			"x-fabrika-unexcluded-path: **/__mutation__/**",
+			"x-fabrika-unexcluded-path: **/__snapshots__/**",
+		]);
+	});
+
+	it("carries no un-excluded lines when the list is empty — byte-identical to the shipped shape", () => {
+		const filtered = filterDiff(diff, ["pnpm-lock.yaml"], "before");
+		expect(filtered).toBe(filterDiff(diff, ["pnpm-lock.yaml"], "before", []));
+		expect(filtered).not.toContain("x-fabrika-unexcluded-path");
+	});
+});
+
+describe("the effective exclusion set", () => {
+	const LOCK = "pnpm-lock.yaml";
+	const SNAP = "**/__snapshots__/**";
+
+	it("is the defaults alone when both config arms are empty and no flag is given", () => {
+		const effective = effectiveExclusions([], [], null);
+		expect(effective.patterns).toEqual(DEFAULT_EXCLUSIONS);
+		expect(effective.unexcluded).toEqual([]);
+	});
+
+	it("extends the set with config additions, then the CLI's, each source tagged", () => {
+		const effective = effectiveExclusions(["dist/**", "coverage/**"], [], "*.gen.ts");
+		expect(effective.patterns.map(({pattern}) => pattern)).toEqual([
+			"pnpm-lock.yaml",
+			SNAP,
+			"**/__generated__/**",
+			"**/schema.graphql.generated",
+			"**/__mutation__/**",
+			"dist/**",
+			"coverage/**",
+			"*.gen.ts",
+		]);
+		expect(effective.patterns.at(-3)).toMatchObject({source: "config"});
+		expect(effective.patterns.at(-1)).toMatchObject({source: "caller"});
+		expect(effective.unexcluded).toEqual([]);
+	});
+
+	it("removes exactly the named default and enumerates it as un-excluded", () => {
+		const effective = effectiveExclusions([], [LOCK], null);
+		expect(effective.patterns.map(({pattern}) => pattern)).not.toContain(LOCK);
+		expect(effective.unexcluded).toEqual([LOCK]);
+	});
+
+	it("drops every named default, in the defaults' own declaration order", () => {
+		const effective = effectiveExclusions([], [SNAP, LOCK, "**/__mutation__/**"], null);
+		expect(effective.unexcluded).toEqual([LOCK, SNAP, "**/__mutation__/**"]);
+		expect(effective.patterns).toHaveLength(2);
+	});
+
+	it("lets an equal config addition re-add a removed default — and then it is not un-excluded", () => {
+		const effective = effectiveExclusions([LOCK], [LOCK], null);
+		expect(effective.patterns).toContainEqual({pattern: LOCK, source: "config"});
+		expect(effective.unexcluded).toEqual([]);
+	});
+
+	it("lets an equal CLI exclusion re-add a removed default the same way", () => {
+		const effective = effectiveExclusions([], [LOCK], LOCK);
+		expect(effective.patterns).toContainEqual({pattern: LOCK, source: "caller"});
+		expect(effective.unexcluded).toEqual([]);
+	});
+
+	it("dedupes by pattern string across every source, first declaration winning", () => {
+		const effective = effectiveExclusions([SNAP, "dist/**"], [], `${SNAP}, dist/**`);
+		expect(effective.patterns).toHaveLength(DEFAULT_EXCLUSIONS.length + 1);
+		expect(effective.patterns.filter(({pattern}) => pattern === SNAP)).toHaveLength(1);
+		expect(effective.patterns.filter(({pattern}) => pattern === "dist/**")).toHaveLength(1);
+		expect(effective.patterns.find(({pattern}) => pattern === SNAP)?.source).toBe("default");
+	});
+
+	it("derives the same un-excluded list the effective set's own absence proves", () => {
+		expect(unexcludedDefaults(DEFAULT_EXCLUSIONS)).toEqual([]);
+		expect(unexcludedDefaults(effectiveExclusions([], [LOCK], null).patterns)).toEqual([LOCK]);
+		expect(unexcludedDefaults(effectiveExclusions([LOCK], [LOCK], null).patterns)).toEqual([]);
+	});
 });
 
 describe("the preview derivation", () => {
@@ -170,5 +258,17 @@ describe("the preview derivation", () => {
 			probes,
 		);
 		expect(preview._tag).toBe("Refused");
+	});
+
+	it("carries the effective set's un-excluded defaults on the result and into the diff header", () => {
+		const effective = effectiveExclusions([], ["pnpm-lock.yaml"], null);
+		const preview = previewOf(diff, "after", effective.patterns, probes);
+		expect(preview._tag).toBe("Preview");
+		if (preview._tag !== "Preview") return;
+		expect(preview.result.unexcluded).toEqual(["pnpm-lock.yaml"]);
+		// The removal serves the lockfile section — and the header names the removal beside it.
+		expect(preview.result.excluded).toEqual([]);
+		expect(preview.result.filtered_diff).toContain("x-fabrika-unexcluded-path: pnpm-lock.yaml");
+		expect(preview.result.filtered_diff).toContain("+  effect:");
 	});
 });
