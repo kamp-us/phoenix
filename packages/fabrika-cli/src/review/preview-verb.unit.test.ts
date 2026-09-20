@@ -5,9 +5,6 @@
  * refusal matrix at the bottom pins the subject vocabulary: two subjects refuse, a PR-subject
  * modifier beside a headless subject refuses, and a range validates through `readRangeFlags`.
  */
-import {mkdtempSync, writeFileSync} from "node:fs";
-import {tmpdir} from "node:os";
-import {join} from "node:path";
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
@@ -17,7 +14,6 @@ import {
 	type HttpReply,
 	okOut,
 	type Scripted,
-	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
@@ -54,7 +50,7 @@ const options = {
 	repo: null as string | null,
 	base: null as string | null,
 	tip: null as string | null,
-	filterPlacement: "before" as string | null,
+	filterPlacement: "after" as string | null,
 	exclude: null as string | null,
 	emitDiff: false,
 	json: false,
@@ -67,7 +63,10 @@ const shell = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof option
 	return {
 		fake,
 		out: Effect.runPromise(
-			Effect.provide(runPreview({...options, ...overrides}), Layer.merge(fake.layer, unconfigured)),
+			Effect.provide(
+				runPreview({...options, ...overrides}),
+				Layer.merge(fake.layer, fakeFs({files: diffFiles}).layer),
+			),
 		),
 	};
 };
@@ -77,7 +76,8 @@ const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options>
 
 /** The layer a governed-roots case runs over: the declared roots replace the shipped defaults. */
 const overRoots = (roots: ReadonlyArray<string>) =>
-	fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify({governedRoots: roots})}}).layer;
+	fakeFs({files: {...diffFiles, "/repo/.fabrika.jsonc": JSON.stringify({governedRoots: roots})}})
+		.layer;
 
 const runOverRoots = (
 	script: ReadonlyArray<Scripted>,
@@ -91,10 +91,10 @@ const runOverRoots = (
 		),
 	);
 
-/** A unified diff at a real path — the `--diff-file` subject reads disk, not the fake FS. */
+const diffFiles: Record<string, string> = {};
 const diffOnDisk = (text: string = DIFF): string => {
-	const path = join(mkdtempSync(join(tmpdir(), "fabrika-preview-")), "sample.diff");
-	writeFileSync(path, text, "utf8");
+	const path = `/repo/sample-${Object.keys(diffFiles).length}.diff`;
+	diffFiles[path] = text;
 	return path;
 };
 
@@ -136,7 +136,7 @@ const rangeGreen = (
 
 /** The text rows `previewOf` derives over `DIFF` under the default exclusions — no path excluded. */
 const TWO_FILE_ROWS = [
-	"preview\tbefore",
+	"preview\tafter",
 	"matched\t2",
 	"class\tcode\t1",
 	"class\tdoc\t1",
@@ -433,7 +433,7 @@ diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
 `;
 	const PR_LOCK = prGreen(LOCK_DIFF, ["src/cart.ts", "pnpm-lock.yaml"]);
 	const configured = (config: Record<string, unknown>) =>
-		fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}}).layer;
+		fakeFs({files: {...diffFiles, "/repo/.fabrika.jsonc": JSON.stringify(config)}}).layer;
 
 	const runOverConfig = (
 		script: ReadonlyArray<Scripted>,
@@ -508,11 +508,11 @@ diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
 				reviewFilterExclusions: ["**/cart.ts"],
 				reviewFilterUnexclude: ["pnpm-lock.yaml"],
 			},
-			{diffFile: diffOnDisk(LOCK_DIFF), filterPlacement: "before", emitDiff: true},
+			{diffFile: diffOnDisk(LOCK_DIFF), filterPlacement: "after", emitDiff: true},
 		);
 		expect(out.code).toBe(0);
 		const lines = out.stdout.split("\n");
-		expect(lines[0]).toBe("x-fabrika-filter: placement=before excluded=1 served=1");
+		expect(lines[0]).toBe("x-fabrika-filter: placement=after excluded=1 served=1");
 		expect(lines[1]).toBe("x-fabrika-excluded-path: src/cart.ts");
 		expect(lines[2]).toBe("x-fabrika-unexcluded-path: pnpm-lock.yaml");
 		expect(out.stdout).toContain("+  effect:");
@@ -586,5 +586,45 @@ describe("runPreview refuses a filter that excludes governed content", () => {
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("excluded-path\tREADME.md");
 		expect(out.stdout).not.toContain("excludes governed path");
+	});
+});
+
+describe("preview requirement parity", () => {
+	it("uses configured UI prefixes and governed roots over all raw paths", async () => {
+		const changed = ["screens/View.tsx", "policy/rule.md", "pnpm-lock.yaml"];
+		const diff = changed.map((path) => `diff --git a/${path} b/${path}\n+changed`).join("\n");
+		const config = {
+			governedRoots: [".fabrika.jsonc", "policy/"],
+			uiSurfaces: [
+				{name: "screen", prefix: "screens/", mount: "/", command: "pnpm dev --port {{port}}"},
+			],
+		};
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runPreview({...options, pr: PR, json: true, exclude: "screens/**"}),
+				Layer.merge(
+					fakeSeams(prGreen(diff, changed)).layer,
+					fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}}).layer,
+				),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).namespaces).toEqual([
+			"review-code",
+			"review-doc",
+			"review-ui",
+			"governance",
+		]);
+		expect(JSON.parse(out.stdout).excluded.paths).toEqual(["screens/View.tsx", "pnpm-lock.yaml"]);
+	});
+	it("retains code review when all content is excluded", async () => {
+		const diff = "diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml\n+changed";
+		const out = await run(prGreen(diff, ["pnpm-lock.yaml"]), {pr: PR, json: true});
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			matched_paths: [],
+			namespaces: ["review-code"],
+			excluded: {count: 1, paths: ["pnpm-lock.yaml"]},
+		});
 	});
 });

@@ -39,9 +39,9 @@ export interface DiffOptions {
 	/** The head the caller scoped. `null` binds to the PR's live head instead of asserting one. */
 	readonly sha: string | null;
 	readonly repo: string | null;
-	/** ocr-port spike: `before`/`after` serve the filtered diff with its exclusion header; null = off. */
+	/** `after` serves the filtered diff with its exclusion header; null = off. */
 	readonly filterPlacement?: FilterPlacement | null;
-	/** ocr-port spike: comma-separated extra exclusion patterns, refused on a guard-probe match. */
+	/** comma-separated extra exclusion patterns, refused on a guard-probe match. */
 	readonly exclude?: string | null;
 	/** The governed roots, read by the adapter's `governedRootsOr` — the union's config half. */
 	readonly governedRoots?: ReadonlyArray<string>;
@@ -128,7 +128,7 @@ export const runDiff = (
 				diagnostics,
 			);
 		}
-		// ocr-port spike: the filter runs strictly AFTER the completeness proof above, so a deliberate
+		// the filter runs strictly AFTER the completeness proof above, so a deliberate
 		// exclusion can never masquerade as a short read — the header names what was left out on
 		// purpose. Refusal union derived per run over the EFFECTIVE set — defaults minus the config's
 		// removals, plus its additions, plus `--exclude` — against the guards' probes plus the

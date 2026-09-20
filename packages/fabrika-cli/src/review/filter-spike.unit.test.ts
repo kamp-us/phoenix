@@ -11,12 +11,15 @@ import {filesInDiff} from "./diff.ts";
 import {
 	applyPlacement,
 	DEFAULT_EXCLUSIONS,
+	previewOf as derivePreview,
 	diffSections,
+	type ExclusionPattern,
 	effectiveExclusions,
+	type FilterPlacement,
 	filterDiff,
+	type GuardProbe,
 	governedExcluded,
 	matchPath,
-	previewOf,
 	refusalFor,
 	unexcludedDefaults,
 } from "./filter-spike.ts";
@@ -31,7 +34,25 @@ const probes = [
 	{guard: "governedRoots", path: "governed/probe.md", source: "test"},
 ];
 
+const previewOf = (
+	diff: string,
+	placement: FilterPlacement,
+	patterns: ReadonlyArray<ExclusionPattern>,
+	probes: ReadonlyArray<GuardProbe>,
+) => derivePreview(diff, placement, patterns, probes, ["governed/"], []);
+
 describe("pattern matching", () => {
+	it("treats question marks literally without throwing", () => {
+		expect(matchPath("?", "?")).toBe(true);
+		expect(matchPath("a?b", "a?b")).toBe(true);
+		expect(matchPath("a?b", "ab")).toBe(false);
+		expect(matchPath("a?b", "b")).toBe(false);
+		expect(matchPath("?file.ts", "?file.ts")).toBe(true);
+		expect(matchPath("?file.ts", "file.ts")).toBe(false);
+		expect(matchPath("**/a?*.ts", "src/a?b.ts")).toBe(true);
+		expect(matchPath("**/a?*.ts", "src/ab.ts")).toBe(false);
+	});
+
 	it("an exact pattern matches only the exact path", () => {
 		expect(matchPath("pnpm-lock.yaml", "pnpm-lock.yaml")).toBe(true);
 		expect(matchPath("pnpm-lock.yaml", "packages/x/pnpm-lock.yaml")).toBe(false);
@@ -103,8 +124,8 @@ describe("the diff filter", () => {
 	});
 
 	it("drops excluded sections whole and names them in a machine-readable header", () => {
-		const filtered = filterDiff(diff, ["pnpm-lock.yaml"], "before");
-		expect(filtered).toContain("x-fabrika-filter: placement=before excluded=1 served=1");
+		const filtered = filterDiff(diff, ["pnpm-lock.yaml"], "after");
+		expect(filtered).toContain("x-fabrika-filter: placement=after excluded=1 served=1");
 		expect(filtered).toContain("x-fabrika-excluded-path: pnpm-lock.yaml");
 		expect(filtered).toContain("+export const a = 1;");
 		expect(filtered).not.toContain("+  effect:");
@@ -116,13 +137,13 @@ describe("the diff filter", () => {
 	});
 
 	it("appends the un-excluded defaults, sorted, after the excluded paths", () => {
-		const filtered = filterDiff(diff, ["pnpm-lock.yaml"], "before", [
+		const filtered = filterDiff(diff, ["pnpm-lock.yaml"], "after", [
 			"**/__mutation__/**",
 			"**/__snapshots__/**",
 		]);
 		const lines = filtered.split("\n").slice(0, 4);
 		expect(lines).toEqual([
-			"x-fabrika-filter: placement=before excluded=1 served=1",
+			"x-fabrika-filter: placement=after excluded=1 served=1",
 			"x-fabrika-excluded-path: pnpm-lock.yaml",
 			"x-fabrika-unexcluded-path: **/__mutation__/**",
 			"x-fabrika-unexcluded-path: **/__snapshots__/**",
@@ -130,8 +151,8 @@ describe("the diff filter", () => {
 	});
 
 	it("carries no un-excluded lines when the list is empty — byte-identical to the shipped shape", () => {
-		const filtered = filterDiff(diff, ["pnpm-lock.yaml"], "before");
-		expect(filtered).toBe(filterDiff(diff, ["pnpm-lock.yaml"], "before", []));
+		const filtered = filterDiff(diff, ["pnpm-lock.yaml"], "after");
+		expect(filtered).toBe(filterDiff(diff, ["pnpm-lock.yaml"], "after", []));
 		expect(filtered).not.toContain("x-fabrika-unexcluded-path");
 	});
 });
@@ -216,12 +237,12 @@ describe("the preview derivation", () => {
 		"+  effect:",
 	].join("\n");
 
-	it("placement `before`: the lockfile is excluded and the partition derives over kept paths only", () => {
-		const preview = previewOf(diff, "before", DEFAULT_EXCLUSIONS, probes);
+	it("the lockfile content is excluded while its required review remains", () => {
+		const preview = previewOf(diff, "after", DEFAULT_EXCLUSIONS, probes);
 		expect(preview._tag).toBe("Preview");
 		if (preview._tag !== "Preview") return;
 		expect(preview.result.matched_paths).toEqual(["src/a.ts"]);
-		expect(preview.result.active_classes).toEqual([{name: "code", files: 1}]);
+		expect(preview.result.active_classes).toEqual([{name: "code", files: 2}]);
 		expect(preview.result.namespaces).toEqual(["review-code"]);
 		expect(preview.result.excluded).toEqual(["pnpm-lock.yaml"]);
 		expect(preview.result.filtered_diff).toContain("x-fabrika-excluded-path: pnpm-lock.yaml");
@@ -236,7 +257,7 @@ describe("the preview derivation", () => {
 		expect(preview.result.matched_paths).toEqual(["src/a.ts"]);
 	});
 
-	it("placement `before` over an all-excluded diff: zero classes, zero namespaces", () => {
+	it("all-excluded content retains its required review", () => {
 		const lockOnly = [
 			"diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml",
 			"--- a/pnpm-lock.yaml",
@@ -244,18 +265,18 @@ describe("the preview derivation", () => {
 			"@@ -1 +1,2 @@",
 			"+  effect:",
 		].join("\n");
-		const preview = previewOf(lockOnly, "before", DEFAULT_EXCLUSIONS, probes);
+		const preview = previewOf(lockOnly, "after", DEFAULT_EXCLUSIONS, probes);
 		expect(preview._tag).toBe("Preview");
 		if (preview._tag !== "Preview") return;
 		expect(preview.result.matched_paths).toEqual([]);
-		expect(preview.result.active_classes).toEqual([]);
-		expect(preview.result.namespaces).toEqual([]);
+		expect(preview.result.active_classes).toEqual([{name: "code", files: 1}]);
+		expect(preview.result.namespaces).toEqual(["review-code"]);
 	});
 
 	it("refuses instead of previewing when a pattern blinds a guard", () => {
 		const preview = previewOf(
 			diff,
-			"before",
+			"after",
 			[...DEFAULT_EXCLUSIONS, {pattern: "governed/", source: "caller"}],
 			probes,
 		);
@@ -310,7 +331,7 @@ describe("git-quoted headers reach the filter", () => {
 	});
 
 	it("filterDiff keeps the quoted section when the plain one is excluded", () => {
-		const filtered = filterDiff(`${plainSection}\n${quotedSection}\n`, ["plain.md"], "before");
+		const filtered = filterDiff(`${plainSection}\n${quotedSection}\n`, ["plain.md"], "after");
 		expect(filtered).toContain("+new");
 		const enumerated = filtered
 			.split("\n")
@@ -467,7 +488,7 @@ describe("the governed runtime backstop", () => {
 	it("previewOf refuses when the filter actually excluded a governed path, naming it", () => {
 		const preview = previewOf(
 			governedSection,
-			"before",
+			"after",
 			[{pattern: "**/*.ts", source: "caller"}],
 			backstopProbes,
 		);
@@ -486,7 +507,7 @@ describe("the governed runtime backstop", () => {
 	it("previewOf still previews when the excluded paths are ungoverned", () => {
 		const preview = previewOf(
 			ungovernedSection,
-			"before",
+			"after",
 			[{pattern: "**/*.ts", source: "caller"}],
 			backstopProbes,
 		);

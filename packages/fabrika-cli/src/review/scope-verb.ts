@@ -85,6 +85,7 @@ export const NULL_TOKEN = "-";
 export interface SubsystemRow {
 	readonly name: string;
 	readonly files: number;
+	readonly paths: ReadonlyArray<string>;
 	readonly constraint: string;
 }
 
@@ -102,22 +103,13 @@ export const subsystemRowsOf = (
 	files: ReadonlyArray<string>,
 	entries: ReadonlyArray<ReviewSubsystem>,
 ): ReadonlyArray<SubsystemRow> => {
-	const matchers = entries.map((entry) => ({entry, test: patternToMatcher(entry.pattern)}));
-	const counts = new Map<string, number>();
-	for (const file of files) {
-		for (const {entry, test} of matchers) {
-			if (test.test(file)) counts.set(entry.subsystem, (counts.get(entry.subsystem) ?? 0) + 1);
-		}
-	}
-	// The subsystem names are unique (the decode refuses a duplicate), so one pass over the declared
-	// rows in declaration order and one sort is the whole ordering.
 	return entries
-		.filter((entry) => (counts.get(entry.subsystem) ?? 0) > 0)
-		.map((entry) => ({
-			name: entry.subsystem,
-			files: counts.get(entry.subsystem) ?? 0,
-			constraint: entry.constraint,
-		}))
+		.map((entry) => {
+			const matcher = patternToMatcher(entry.pattern);
+			const paths = files.filter((file) => matcher.test(file)).sort();
+			return {name: entry.subsystem, files: paths.length, paths, constraint: entry.constraint};
+		})
+		.filter((row) => row.files > 0)
 		.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 };
 
@@ -127,9 +119,9 @@ export interface ScopeOptions {
 	readonly sha: string | null;
 	readonly repo: string | null;
 	readonly json: boolean;
-	/** ocr-port spike: `before` filters then derives, `after` derives then marks, `null` = off. */
+	/** Filter content after requirement derivation; `null` leaves filtering off. */
 	readonly filterPlacement?: FilterPlacement | null;
-	/** ocr-port spike: comma-separated extra exclusion patterns, refused on a guard-probe match. */
+	/** comma-separated extra exclusion patterns, refused on a guard-probe match. */
 	readonly exclude?: string | null;
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
 	readonly cwd: string;
@@ -243,15 +235,9 @@ export const runScope = (
 			);
 		}
 
-		// Review diff filtering: the exclusion split runs after the empty-read refusal above, and
-		// the placement decides what the partition derives over — `before` the kept paths, `after`
-		// the full read. The refusal union is the EFFECTIVE set — defaults minus the config's
-		// removals, plus its additions, plus `--exclude` — derived per run over `governedRoots`;
-		// guard trigger trees stay documented and drift-loud by the golden test, not protected by
-		// refusal. A removed default nothing re-added is enumerated beside the exclusion.
+		// Filtering changes content delivery only; all requirements use the complete path list.
 		let excluded: ReadonlyArray<string> = [];
 		let unexcluded: ReadonlyArray<string> = [];
-		let partitionSource = files;
 		if (options.filterPlacement != null) {
 			const effective = effectiveExclusions(
 				filterExclusions.exclusions,
@@ -292,16 +278,13 @@ export const runScope = (
 			}
 			excluded = split.excluded;
 			unexcluded = effective.unexcluded;
-			partitionSource = options.filterPlacement === "before" ? split.kept : files;
 		}
 
-		const flags = partition(partitionSource);
-		const result = partitionWithUi(partitionSource, roots.roots, surfaces.prefixes);
+		const flags = partition(files);
+		const result = partitionWithUi(files, roots.roots, surfaces.prefixes);
 		const namespaces = shipNamespacesOf(result);
 		const routed = routedNamespacesOf(namespaces);
-		// The content-delivery side of the consumer split: the same placement-respecting source the
-		// class partition derives over, never the raw guard-side read.
-		const subsystemRows = subsystemRowsOf(partitionSource, subsystems.subsystems);
+		const subsystemRows = subsystemRowsOf(files, subsystems.subsystems);
 		const governance = touchesGovernanceRoot(files, roots.roots) ? "required" : "not-required";
 		const issue = issueRefOf(pull.body);
 		if (json) {
@@ -338,6 +321,7 @@ export const runScope = (
 				...subsystemRows.flatMap((row) => [
 					`subsystem\t${row.name}\t${row.files}`,
 					`subsystem-note\t${row.name}\t${row.constraint}`,
+					...row.paths.map((path) => `subsystem-path\t${row.name}\t${path}`),
 				]),
 				...namespaces.map((namespace) => `namespace\t${namespace}`),
 				...routed.map((namespace) => `routed\t${namespace}`),

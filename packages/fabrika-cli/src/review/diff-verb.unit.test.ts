@@ -319,7 +319,7 @@ diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
 @@ -1,1 +1,2 @@
 +  effect:
 `;
-	const placement = {filterPlacement: "before" as const, exclude: "README.md"};
+	const placement = {filterPlacement: "after" as const, exclude: "README.md"};
 	const configured = (config: Record<string, unknown>) =>
 		Layer.merge(
 			fakeSeams(green()).layer,
@@ -342,7 +342,7 @@ diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
 		expect(empty.stdout).toBe(plain.stdout);
 		expect(empty.stderr).toEqual(plain.stderr);
 		// The filter itself ran in all three — one CLI exclusion, no un-excluded count anywhere.
-		expect(plain.stdout).toContain("x-fabrika-filter: placement=before excluded=1 served=1");
+		expect(plain.stdout).toContain("x-fabrika-filter: placement=after excluded=1 served=1");
 		expect(plain.stdout).toContain("x-fabrika-excluded-path: README.md");
 		expect(plain.stdout).not.toContain("x-fabrika-unexcluded-path");
 		expect(plain.stderr.at(-1)).toContain("excluded=1 served=1 of 2 files");
@@ -364,7 +364,7 @@ diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
 			),
 		);
 		expect(out.code).toBe(0);
-		expect(out.stdout).toContain("x-fabrika-filter: placement=before excluded=2 served=0");
+		expect(out.stdout).toContain("x-fabrika-filter: placement=after excluded=2 served=0");
 		expect(out.stdout).toContain("x-fabrika-excluded-path: src/cart.ts");
 		expect(out.stderr.at(-1)).toContain("excluded=2 served=0 of 2 files");
 	});
@@ -372,7 +372,7 @@ diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
 	it("names a removed default in the header and the diagnostic, and serves its bytes", async () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runDiff({...options, filterPlacement: "before", cwd: "/repo"}),
+				runDiff({...options, filterPlacement: "after", cwd: "/repo"}),
 				Layer.merge(
 					fakeSeams(green(LOCK_DIFF, {}, ["src/cart.ts", "pnpm-lock.yaml"])).layer,
 					fakeFs({
@@ -384,7 +384,7 @@ diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
 			),
 		);
 		expect(out.code).toBe(0);
-		expect(out.stdout).toContain("x-fabrika-filter: placement=before excluded=0 served=2");
+		expect(out.stdout).toContain("x-fabrika-filter: placement=after excluded=0 served=2");
 		expect(out.stdout).toContain("x-fabrika-unexcluded-path: pnpm-lock.yaml");
 		expect(out.stdout).toContain("+  effect:");
 		expect(out.stderr.at(-1)).toContain("unexcluded=1");
@@ -457,7 +457,7 @@ diff --git a/src/cart.ts b/src/cart.ts
 			green(GOVERNED_DIFF, {}, ["governed/cart.ts", "src/cart.ts"]),
 			governedRoots,
 			{
-				filterPlacement: "before",
+				filterPlacement: "after",
 				exclude: "**/*.ts",
 			},
 		);
@@ -469,11 +469,11 @@ diff --git a/src/cart.ts b/src/cart.ts
 
 	it("serves a filter whose exclusions are all non-governed beside a declared governed root", async () => {
 		const out = await runOverRoots(green(), governedRoots, {
-			filterPlacement: "before",
+			filterPlacement: "after",
 			exclude: "README.md",
 		});
 		expect(out.code).toBe(0);
-		expect(out.stdout).toContain("x-fabrika-filter: placement=before excluded=1 served=1");
+		expect(out.stdout).toContain("x-fabrika-filter: placement=after excluded=1 served=1");
 		expect(out.stdout).not.toContain("excludes governed path");
 	});
 });

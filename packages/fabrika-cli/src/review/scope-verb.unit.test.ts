@@ -32,7 +32,7 @@ import {
 	paths,
 	pull,
 } from "./fixtures.test-support.ts";
-import {runScope} from "./scope-verb.ts";
+import {runScope, subsystemRowsOf} from "./scope-verb.ts";
 
 const PULL = /GET .*\/repos\/o\/r\/pulls\/4321$/;
 /** The unbound endpoint this verb no longer reads — scripted so a regression has a list to serve. */
@@ -463,6 +463,7 @@ describe("runScope subsystem rows", () => {
 				"class\tdoc\t1",
 				`subsystem\tcart\t1`,
 				`subsystem-note\tcart\t${CART}`,
+				`subsystem-path\tcart\tsrc/cart.ts`,
 				"namespace\treview-code",
 				"namespace\treview-doc",
 				"self\tfalse",
@@ -532,27 +533,19 @@ describe("runScope subsystem rows", () => {
 		expect(out.stdout).toContain("subsystem\tdocs\t1");
 	});
 
-	// The rows derive over the placement-respecting source, the content-delivery side of the
-	// consumer split — `before` narrows them with the kept paths, `after` derives over the full read.
-	it("derives over the filter placement's partition source, not the raw read", async () => {
-		const layer = Layer.merge(
-			fakeSeams(happy()).layer,
-			configured([{pattern: "src/**", subsystem: "cart", constraint: CART}]).layer,
-		);
-		const before = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options, filterPlacement: "before", exclude: "src/cart.ts"}),
-				layer,
-			),
-		);
-		expect(before.stdout).not.toContain("subsystem\tcart");
-		const after = await Effect.runPromise(
+	it("retains subsystem constraints when their matched content is excluded", async () => {
+		const out = await Effect.runPromise(
 			Effect.provide(
 				runScope({...options, filterPlacement: "after", exclude: "src/cart.ts"}),
-				layer,
+				Layer.merge(
+					fakeSeams(happy()).layer,
+					configured([{pattern: "src/**", subsystem: "cart", constraint: CART}]).layer,
+				),
 			),
 		);
-		expect(after.stdout).toContain("subsystem\tcart\t1");
+		expect(out.stdout).toContain("subsystem\tcart\t1");
+		expect(out.stdout).toContain("subsystem-path\tcart\tsrc/cart.ts");
+		expect(out.stdout).toContain("namespace\treview-code");
 	});
 
 	it("mirrors the rows in the JSON, named, counted, and carrying the constraint", async () => {
@@ -565,7 +558,9 @@ describe("runScope subsystem rows", () => {
 				),
 			),
 		);
-		expect(JSON.parse(out.stdout).subsystems).toEqual([{name: "docs", files: 1, constraint: "d"}]);
+		expect(JSON.parse(out.stdout).subsystems).toEqual([
+			{name: "docs", files: 1, paths: ["README.md"], constraint: "d"},
+		]);
 	});
 
 	it("refuses an undecodable list on 11 rather than partitioning over a value nobody read", async () => {
@@ -780,5 +775,57 @@ describe("runScope refuses a filter that excludes governed content", () => {
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("excluded-path\tsrc/cart.ts");
 		expect(out.stdout).not.toContain("excludes governed path");
+	});
+});
+
+describe("retained requirements with filtering", () => {
+	it("retains code review when every content path is excluded", async () => {
+		const out = await run(over("pnpm-lock.yaml"), {filterPlacement: "after", json: true});
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			scanned: 1,
+			namespaces: ["review-code"],
+			excluded: {count: 1, paths: ["pnpm-lock.yaml"]},
+		});
+	});
+	it("retains text, UI and governance requirements on a mixed diff", async () => {
+		const changed = [
+			"apps/site/src/View.tsx",
+			"README.md",
+			`${DECISIONS_ROOT}example.md`,
+			"pnpm-lock.yaml",
+		];
+		const read = (filterPlacement: FilterPlacement | null) =>
+			Effect.runPromise(
+				Effect.provide(
+					runScope({...options, json: true, filterPlacement, exclude: "apps/site/src/View.tsx"}),
+					Layer.merge(fakeSeams(over(...changed)).layer, uiConfigured),
+				),
+			);
+		const raw = await read(null);
+		const filtered = await read("after");
+		expect(filtered.code).toBe(0);
+		expect(JSON.parse(filtered.stdout).namespaces).toEqual(JSON.parse(raw.stdout).namespaces);
+		expect(JSON.parse(filtered.stdout).namespaces).toEqual([
+			"review-code",
+			"review-doc",
+			"review-ui",
+			"governance",
+		]);
+		expect(JSON.parse(filtered.stdout).excluded.count).toBe(2);
+	});
+	it("sorts matched subsystem paths and treats question marks literally", () => {
+		expect(
+			subsystemRowsOf(
+				["z.ts", "a.ts", "?.ts", "x.ts"],
+				[
+					{pattern: "*.ts", subsystem: "all", constraint: "check"},
+					{pattern: "?.ts", subsystem: "literal", constraint: "literal"},
+				],
+			),
+		).toEqual([
+			{name: "all", files: 4, paths: ["?.ts", "a.ts", "x.ts", "z.ts"], constraint: "check"},
+			{name: "literal", files: 1, paths: ["?.ts"], constraint: "literal"},
+		]);
 	});
 });

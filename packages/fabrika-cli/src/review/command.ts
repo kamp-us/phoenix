@@ -54,15 +54,10 @@ const prArg = Argument.integer("pr").pipe(
 	Argument.withDescription("the pull-request number to read"),
 );
 
-/**
- * The ocr-port spike's two flags (benchmarks/ocr-port/): where the exclusion set sits relative to
- * namespace derivation, and any extra exclusion globs beyond the defaults. Local experimental
- * surface — not part of the review contract.
- */
 const filterPlacementFlag = Flag.string("filter-placement").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		"review diff filtering: apply the exclusion set `before` or `after` namespace derivation; omitted, no filtering runs. Both placements stay selectable while the placement ruling is open",
+		"review diff filtering: use `after` to omit content while retaining every required review; omitted, no filtering runs",
 	),
 );
 
@@ -73,16 +68,16 @@ const excludeFlag = Flag.string("exclude").pipe(
 	),
 );
 
-/** The spike flag narrowed to its two-value vocabulary; off-vocabulary values refuse, never filter. */
+/** Omitted filtering and the supported placement are distinct inputs. */
 const placementOf = (
 	verb: string,
 	value: string | null,
 ): FilterPlacement | null | ReturnType<typeof refuse> =>
-	value === null || value === "before" || value === "after"
+	value === null || value === "after"
 		? value
 		: refuse(
 				OFF_VOCABULARY,
-				`review ${verb}: --filter-placement must be \`before\` or \`after\`, got "${value}"`,
+				`review ${verb}: --filter-placement must be \`after\`, got "${value}"`,
 			);
 
 /**
@@ -573,7 +568,7 @@ const preview = leafCommand(
 ).pipe(
 	Command.withShortDescription("Filtered path extraction for review diffs — no LLM, no write."),
 	Command.withDescription(
-		"Read one subject's diff and return its filtered path extraction: the matched paths, the excluded paths, the active class partition and the namespaces it derives, at the requested --filter-placement. Subjects are mutually exclusive: --diff-file reads a local unified diff (no PR, no network); a pull-request number binds a head (optional --sha/--repo) and reads the PR's three-dot diff out of the object database exactly as review diff does; --base/--tip reads a range from its own merge base. `before` derives the partition over the kept paths only (an all-excluded diff derives zero namespaces); `after` derives over the full read and enumerates the excluded paths beside the rows. The defaults exclude pnpm-lock.yaml, **/__snapshots__/** and the generated-schema/build-output shapes; --exclude adds globs, and any pattern intersecting a governed root refuses at 21. PR and range subjects prove diff completeness first — a served-file count short of the range's own path census refuses at 13, so a deliberate exclusion can never masquerade as a truncation; `--diff-file` reads the bytes exactly as given, with no range to prove a census against (its exclusions are still enumerated). --emit-diff prints the filtered diff with its `x-fabrika-filter` / `x-fabrika-excluded-path` header instead of the rows. No LLM invocation, no network write. Exits 10 (missing or off-vocabulary --filter-placement, --emit-diff with --json, no subject named, or two subjects at once), 7 (PR absent, closed, or zero changed files), 11 (a read the answer turns on failed — the diff file, .fabrika.jsonc, the PR read, or a git read), 12 (--sha is not the PR's head), 13 (a provably short diff), 21 (an exclusion pattern intersects governedRoots). Example: fabrika review preview --diff-file pr.diff --filter-placement=before --json",
+		"Read one subject's diff and return its filtered path extraction: the matched paths, the excluded paths, the active class partition and the namespaces it derives, at the requested --filter-placement. Subjects are mutually exclusive: --diff-file reads a local unified diff (no PR, no network); a pull-request number binds a head (optional --sha/--repo) and reads the PR's three-dot diff out of the object database exactly as review diff does; --base/--tip reads a range from its own merge base. `after` derives required text, UI and governance reviews over the full read and enumerates excluded paths beside those unchanged requirements, including all-excluded content. Filtering is optional for scope and diff; preview requires `after`. The defaults exclude pnpm-lock.yaml, **/__snapshots__/** and the generated-schema/build-output shapes; --exclude adds globs, and any pattern intersecting a governed root refuses at 21. PR and range subjects prove diff completeness first — a served-file count short of the range's own path census refuses at 13, so a deliberate exclusion can never masquerade as a truncation; `--diff-file` reads the bytes exactly as given, with no range to prove a census against (its exclusions are still enumerated). --emit-diff prints the filtered diff with its `x-fabrika-filter` / `x-fabrika-excluded-path` header instead of the rows. No LLM invocation, no network write. Exits 10 (missing or off-vocabulary --filter-placement, --emit-diff with --json, no subject named, or two subjects at once), 7 (PR absent, closed, or zero changed files), 11 (a read the answer turns on failed — the diff file, .fabrika.jsonc, the PR read, or a git read), 12 (--sha is not the PR's head), 13 (a provably short diff), 21 (an exclusion pattern intersects governedRoots). Example: fabrika review preview --diff-file pr.diff --filter-placement=after --json",
 	),
 );
 

@@ -21,19 +21,19 @@
  * (`un-excluded` rows, the `unexcluded` JSON field, the diff header) so a narrowed filter is
  * stated, never silent.
  *
- * Refusal mapping: a placement off the two-value vocabulary, two subjects at once, or a PR-subject
+ * Refusal mapping: a placement other than `after`, two subjects at once, or a PR-subject
  * modifier beside a subject that binds no head seats on `OFF_VOCABULARY` — a modifier that would
  * be silently ignored is refused instead; an exclusion pattern matching a governed root seats on
  * `GOVERNED_FILTER` (the hard invariant); an unreadable diff file, an unreadable git read, or a
  * subject that cannot be bound is `PRECONDITION_UNKNOWN` — never a permissive empty read.
  */
-import {readFileSync} from "node:fs";
-import {Effect, type FileSystem, type Path} from "effect";
+import {Effect, FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {
 	governedRootsOr,
 	reviewFilterExclusionsOr,
 	reviewFilterUnexcludeOr,
+	uiSurfacesOr,
 } from "../config/paths.ts";
 import {diffRange, diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -61,7 +61,7 @@ export interface PreviewOptions {
 	/** Subject three's two ends — together or neither; `--sha` never beside them (range-flags.ts). */
 	readonly base?: string | null;
 	readonly tip?: string | null;
-	/** `null` (flag omitted) is refused — the verb exists to compare the two placements. */
+	/** Preview requires an explicit `after`; scope and diff remain unfiltered when omitted. */
 	readonly filterPlacement: string | null;
 	/** Comma-separated extra patterns; blanks dropped. Refused when one matches a guard probe. */
 	readonly exclude: string | null;
@@ -85,13 +85,13 @@ export const runPreview = (
 		if (placement === null) {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --filter-placement is required — the verb compares \`before\` and \`after\` only`,
+				`${VERB}: --filter-placement is required — pass \`after\` to retain every required review`,
 			);
 		}
 		if (!isFilterPlacement(placement)) {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --filter-placement must be \`before\` or \`after\`, got "${placement}"`,
+				`${VERB}: --filter-placement must be \`after\`, got "${placement}"`,
 			);
 		}
 		if (options.emitDiff && options.json) {
@@ -127,6 +127,13 @@ export const runPreview = (
 		);
 		if (roots._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, roots.message);
 
+		const surfaces = yield* uiSurfacesOr(
+			VERB,
+			options.cwd,
+			"the required UI reviews are UNKNOWN without configured UI prefixes.",
+		);
+		if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
+
 		const filterExclusions = yield* reviewFilterExclusionsOr(
 			VERB,
 			options.cwd,
@@ -160,7 +167,7 @@ export const runPreview = (
 		 * narrowings only.
 		 */
 		const serve = (diff: string, provenance: ReadonlyArray<string>): VerbOutcome => {
-			const preview = previewOf(diff, placement, patterns, probes);
+			const preview = previewOf(diff, placement, patterns, probes, roots.roots, surfaces.prefixes);
 			if (preview._tag === "Refused") {
 				const runtime = preview.refusals.some((entry) => entry.excludedPath !== undefined);
 				const detail = preview.refusals
@@ -252,16 +259,11 @@ export const runPreview = (
 					`${VERB}: --sha and --repo are PR-subject modifiers — a --diff-file subject binds no head and no repository.`,
 				);
 			}
-			const read = yield* Effect.match(
-				Effect.try({
-					try: () => readFileSync(diffFile, "utf8"),
-					catch: (cause) => (cause instanceof Error ? cause.message : String(cause)),
-				}),
-				{
-					onFailure: (reason: string) => ({_tag: "Refused" as const, message: reason}),
-					onSuccess: (text: string) => ({_tag: "Loaded" as const, text}),
-				},
-			);
+			const fs = yield* FileSystem.FileSystem;
+			const read = yield* Effect.match(fs.readFileString(diffFile), {
+				onFailure: (cause) => ({_tag: "Refused" as const, message: String(cause)}),
+				onSuccess: (text: string) => ({_tag: "Loaded" as const, text}),
+			});
 			if (read._tag === "Refused") {
 				return refuse(
 					PRECONDITION_UNKNOWN,

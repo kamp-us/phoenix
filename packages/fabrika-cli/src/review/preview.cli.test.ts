@@ -30,11 +30,12 @@ const firstGovernedRoot = (() => {
 
 const fabrika = (
 	args: ReadonlyArray<string>,
+	verb = "preview",
 ): {readonly code: number; readonly stdout: string; readonly stderr: string} => {
 	try {
 		return {
 			code: 0,
-			stdout: execFileSync(process.execPath, [BIN, "review", "preview", ...args], {
+			stdout: execFileSync(process.execPath, [BIN, "review", verb, ...args], {
 				cwd: REPO_ROOT,
 				encoding: "utf8",
 				env: {...process.env, FABRIKA_SKIP_INFER: "1"},
@@ -50,27 +51,14 @@ const fabrika = (
 };
 
 describe("review preview", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	it("placement before: the lockfile and snapshot are excluded and only code survives the partition", () => {
-		const run = fabrika(["--diff-file", FIXTURE, "--filter-placement=before", "--json"]);
-		if (run.code !== 0) console.log("PREVIEW-CLI-STDERR:", run.stderr);
-		expect(run.code).toBe(0);
-		const parsed = JSON.parse(run.stdout) as {
-			placement: string;
-			matched_paths: string[];
-			excluded: {count: number; paths: string[]};
-			active_classes: Array<{name: string; files: number}>;
-			namespaces: string[];
-			filtered_diff_bytes: number;
-		};
-		expect(parsed.placement).toBe("before");
-		expect(parsed.matched_paths).toEqual(["src/feature.ts"]);
-		expect(parsed.excluded).toEqual({
-			count: 2,
-			paths: ["pnpm-lock.yaml", "src/__snapshots__/feature.snap"],
-		});
-		expect(parsed.active_classes).toEqual([{name: "code", files: 1}]);
-		expect(parsed.namespaces).toEqual(["review-code"]);
-		expect(parsed.filtered_diff_bytes).toBeGreaterThan(0);
+	it.each([
+		"scope",
+		"diff",
+		"preview",
+	])("%s rejects before filtering before reading a subject", (verb) => {
+		const run = fabrika(["4321", "--filter-placement=before"], verb);
+		expect(run.code).toBe(10);
+		expect(run.stderr).toContain("must be `after`");
 	});
 
 	it("placement after: the same diff keeps the full partition beside the excluded enumeration", () => {
@@ -91,9 +79,9 @@ describe("review preview", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	});
 
 	it("--emit-diff serves the header plus kept sections, never the excluded bytes", () => {
-		const run = fabrika(["--diff-file", FIXTURE, "--filter-placement=before", "--emit-diff"]);
+		const run = fabrika(["--diff-file", FIXTURE, "--filter-placement=after", "--emit-diff"]);
 		expect(run.code).toBe(0);
-		expect(run.stdout.startsWith("x-fabrika-filter: placement=before excluded=2 served=1\n")).toBe(
+		expect(run.stdout.startsWith("x-fabrika-filter: placement=after excluded=2 served=1\n")).toBe(
 			true,
 		);
 		expect(run.stdout).toContain("x-fabrika-excluded-path: pnpm-lock.yaml");
@@ -106,7 +94,7 @@ describe("review preview", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 		const run = fabrika([
 			"--diff-file",
 			FIXTURE,
-			"--filter-placement=before",
+			"--filter-placement=after",
 			"--exclude",
 			`${firstGovernedRoot}**`,
 		]);
@@ -120,7 +108,7 @@ describe("review preview", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 		const run = fabrika([
 			"--diff-file",
 			FIXTURE,
-			"--filter-placement=before",
+			"--filter-placement=after",
 			"--exclude",
 			"**/package.json",
 			"--json",
@@ -145,7 +133,7 @@ describe("review preview", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 		const run = fabrika([
 			"--diff-file",
 			FIXTURE,
-			"--filter-placement=before",
+			"--filter-placement=after",
 			"--emit-diff",
 			"--json",
 		]);
@@ -153,11 +141,11 @@ describe("review preview", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	});
 
 	it("the line grammar prints the rows without --json or --emit-diff", () => {
-		const run = fabrika(["--diff-file", FIXTURE, "--filter-placement=before"]);
+		const run = fabrika(["--diff-file", FIXTURE, "--filter-placement=after"]);
 		expect(run.code).toBe(0);
-		expect(run.stdout.startsWith("preview\tbefore\n")).toBe(true);
+		expect(run.stdout.startsWith("preview\tafter\n")).toBe(true);
 		expect(run.stdout).toContain("matched\t1");
-		expect(run.stdout).toContain("class\tcode\t1");
+		expect(run.stdout).toContain("class\tcode\t3");
 		expect(run.stdout).toContain("namespace\treview-code");
 		expect(run.stdout).toContain("excluded\t2");
 		expect(run.stdout).toContain("excluded-path\tpnpm-lock.yaml");
@@ -165,7 +153,7 @@ describe("review preview", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	});
 
 	it("an unreadable --diff-file refuses at 11 — never a permissive empty read", () => {
-		const run = fabrika(["--diff-file", ABSENT_DIFF, "--filter-placement=before"]);
+		const run = fabrika(["--diff-file", ABSENT_DIFF, "--filter-placement=after"]);
 		expect(run.code).toBe(PRECONDITION_UNKNOWN);
 		expect(run.stdout).toBe("");
 		expect(run.stderr).toContain(`cannot read --diff-file "${ABSENT_DIFF}"`);
