@@ -16,7 +16,7 @@
  * - **A shape that is not what was asked for is a failure, never an empty result.** Every read
  *   validates before anything interprets, because a 200 can carry something else entirely.
  */
-import {Effect} from "effect";
+import {Effect, Schema} from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import {execCapture} from "./exec.ts";
@@ -33,6 +33,7 @@ import {
 	restWrite,
 } from "./gh-api.ts";
 import {type Attempt, fail, ok, originRepo, type Shell} from "./git.ts";
+import {IssueDocument} from "./issue-document.ts";
 import {isRecord} from "./json.ts";
 
 /** A three-way probe: proven present, proven absent, or unreadable — never two of those fused. */
@@ -237,6 +238,35 @@ export const openIssuesWithLabelDetailed = (
 				return ok(rows);
 			}),
 		),
+	);
+
+/** @ruling https://github.com/kamp-us/phoenix/issues/6923 */
+export const issueDocuments = (
+	repo: string,
+	scope:
+		| {readonly state: "open"; readonly label?: string}
+		| {readonly state: "closed"; readonly since: string},
+): Shell<Attempt<ReadonlyArray<IssueDocument>>> =>
+	withToken((token) =>
+		Effect.gen(function* () {
+			const qualifier =
+				scope.state === "closed"
+					? `&since=${encodeURIComponent(scope.since)}`
+					: scope.label === undefined
+						? ""
+						: `&labels=${encodeURIComponent(scope.label)}`;
+			const read = yield* provenList(
+				token,
+				`repos/${repo}/issues?state=${scope.state}${qualifier}&sort=created&direction=asc`,
+			);
+			if (read._tag === "Failure") return read;
+			const decoded = yield* Schema.decodeUnknownEffect(Schema.Array(IssueDocument))(
+				withoutPullRequests(read.value),
+			).pipe(Effect.result);
+			return decoded._tag === "Failure"
+				? fail("GitHub returned malformed issue documents")
+				: ok(decoded.success);
+		}),
 	);
 
 /**

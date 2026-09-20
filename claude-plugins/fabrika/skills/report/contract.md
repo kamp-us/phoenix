@@ -191,164 +191,98 @@ own message — the fix is to send the body, not to mask a placeholder.
 
 ## `report dedup`
 
-**Invocation**
+Candidate retrieval is advisory. It supplies issues to inspect and never writes to the board.
+Runtime invocation, flags and exit codes are in `fabrika report dedup --help`.
 
-```
-fabrika report dedup --query "retry helper swallows the abort reason" [--label <name>] [--limit <n>] [--repo <owner/name>] [--json]
-```
+### Corpus and freshness
 
-**Inputs**
+Read the repository label set first. A missing intake label is exit 7; an unreadable label set
+is exit 27. Neither produces a negative answer over an undefined queue.
 
-| Flag | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `--query` | string | yes | — | the observation text — the title plus a few distinguishing keywords — to check for an already-open issue |
-| `--label` | string | no | `status:needs-triage` | the intake-queue label whose open issues form the read-after-write half of the check |
-| `--limit` | integer | no | `20` | the maximum number of candidates to print |
-| `--repo` | string | no | resolved (see Shared conventions) | the repository to search |
-| `--json` | boolean | no | `false` | emit the full result object instead of the line grammar |
+For a usable query, read the open intake queue live and read the issue corpus. The corpus contains
+all open issues, regardless of age, plus issues closed within `--closed-days`, default 14.
+Zero disables closed retrieval. The cutoff is inclusive and computed in UTC from the run's clock.
+The closed API read uses `since` one second before the cutoff to retain the inclusive boundary; admission uses each issue's `closed_at`,
+so an old closed issue edited yesterday stays outside the window. Pull requests are excluded.
+Both list reads follow pagination and refuse an incomplete walk or malformed issue document.
+Shared open-only search helpers used by other commands are unchanged.
 
-**Output** — the first line is the outcome token alone: `candidates`, `none`, or `indeterminate`.
-On `candidates`, one **tab-separated** line per entry follows — `<number>`, `<source>`, `<score>`,
-`<title>` — ranked by score descending, then by number descending, capped at `--limit`. `<source>`
-is `queue`, `search`, or `both`; `both` is the strongest duplicate signal. When the cap truncated
-the list, the scope line on stderr says so, because a caller handed exactly `--limit` rows cannot
-otherwise tell a full answer from a clipped one.
+Store titles and cleaned body excerpts, at most 800 characters, in a versioned local snapshot.
+The cache lives under `$XDG_CACHE_HOME/fabrika/dedup`, or `$HOME/.cache/fabrika/dedup` when XDG is
+unset, keyed by repository and closed window. Validate the version, repository, window and every
+issue before reuse. Reuse lasts less than five minutes from the start of the fetch; reject future
+clock values. `--refresh` bypasses reuse. Reapply the moving closed cutoff even on a cache hit.
 
-**All three outcomes are answers, and all three exit 0.** `none` is a proven negative — both sources
-were read and neither matched — and it is a printed token rather than empty stdout, because empty
-stdout is byte-identical to a verb that never ran.
+Missing, unreadable, invalid or expired cache causes a fresh corpus read. A failed refresh never
+falls back to stale rows. Publish through a unique temporary file and atomic rename; a cache
+write failure still returns the successfully fetched corpus with a diagnostic. Without a cache
+location, fetch each time and say so. Directory/file permissions are private to the current user.
 
-**`indeterminate` fires below a distinctiveness floor of two surviving tokens**, not only at zero.
-A query that tokenizes to nothing was never compared at all; a query that tokenizes to a single
-generic term is AND-joined into a match on everything or nothing, and neither result carries
-information about *this* observation. Reporting either as `none` is the degenerate-silence trap this
-token exists to close, so both land here. The floor is a design choice, stated so it is checkable:
-fewer than 2 surviving tokens ⇒ `indeterminate`.
+A cache hit is a bounded-age observation, not a guarantee of current issue state. The live queue
+can add or update rows, but changes outside that queue may take up to five minutes to appear.
+GitHub pagination proves the walk completed, not that concurrent changes formed one snapshot.
 
-With `--json`, one object with keys `outcome` (the token), `candidates` (array of
-`{number, source, score, title}`, empty unless `outcome` is `candidates`), `reason` (the
-explanatory string for `none` and `indeterminate`, else `null`), `tokens` (the ranking keywords),
-`searchTokens` (the narrower slice sent to the search query — `[]` on `indeterminate`, where neither
-source was read), `truncated` (boolean), `queueCount` and `searchCount`.
+### Ranking
 
-**Matching.** `--query` is lowercased and split on any run of non-letter, non-number characters over
-the **full Unicode letter class**, not ASCII — Turkish is a product-copy language in this repo, and
-an ASCII-only split shreds a Turkish stem into sub-threshold fragments and drops it entirely.
-Tokens shorter than 3 characters and stopwords in **both** repo languages are dropped; the
-remainder is deduped in first-seen order and capped at 12.
+Use the shared Unicode tokenizer and English/Turkish stopwords, retaining query words beyond the
+old twelve-word cap. Fewer than two distinct surviving words returns `indeterminate` without
+reading the queue or corpus. Preserve exact or five-character-prefix term matching.
 
-**Ranking and search get different lists.** Scoring counts how many query tokens a title carries, so
-more tokens sharpen it; GitHub AND-joins its search terms, so every added token narrows the result
-set toward zero. Ranking therefore gets all 12, while the search query gets only the **leading 4** —
-measured against a live board on 2026-08-28, where the collapse lands between 4 and 5 terms. The
-distinctiveness floor is evaluated against the ranking list, so narrowing the search send never
-pushes a usable query into `indeterminate`.
+Overlay live queue documents on cached documents by issue number and apply `--exclude` before
+ranking. Rank title-only and title-plus-excerpt documents independently with BM25, using k1=1.2
+and b=0.75. Term frequency counts occurrences; document frequency counts documents. Strip URLs
+and issue-number references from excerpts before truncation.
 
-A query token matches a title token on an exact hit or
-a shared prefix of at least 5 characters, which is what lets an agglutinative Turkish inflection
-match a bare stem without a morphological analyzer while staying off short English derivational
-overlaps. A queue row is kept only when its title overlaps (score > 0); a search row already matched
-server-side on title *or* body, so it is kept regardless.
+Take the top 20 positive matches from each ranking, union them, and add `1/(60 + rank)` for each
+list where a candidate appears. Ranks start at 1. Sort by fused score descending, then issue number
+descending. Apply the caller's `--limit` after fusion. Scores are retrieval scores, not duplicate
+probabilities. Queue presence is recorded as source metadata, not a confidence claim.
 
-**Exit status**
+### Answer
 
-| Code | Trigger |
-|---|---|
-| `0` | an outcome token was produced on stdout |
-| `1` | usage error, the target repo could not be resolved, or the verb failed to run |
-| `7` | `--label` does not exist in `--repo`, so the queue half would scan nothing |
-| `27` | the intake queue could not be read, so the outcome is UNKNOWN |
-| `28` | the search index could not be read, so the outcome is UNKNOWN |
+All three outcome tokens exit 0:
 
-`27` and `28` sit above the writing verbs' `3`-`11` band because they are this group's codes too, and
-a code means one thing per group: `3` is an empty stdin and `4` is a bad section set, whichever verb
-produced them.
+- `candidates`: at least one lexical match exists, even if `--limit 0` prints no rows.
+- `none`: no lexical match in the observed corpus and live queue. This does not prove no duplicate
+  exists under different wording or outside the closed window.
+- `indeterminate`: the query did not meet the two-word floor.
 
-**When both reads fail, exit `27`.** The queue is the load-bearing half — it is the one that catches
-an issue filed seconds ago — so its failure is the one reported, and the stderr line names both
-failures so neither is hidden by the precedence.
+Candidate lines have five tab-separated columns:
 
-**Errors**
-
-| Message (stderr) | Code | Kind |
-|---|---|---|
-| `report dedup: cannot read the label set of <repo>: <reason> — whether the <label> queue exists is UNKNOWN, and so is the outcome.` | 27 | refusal |
-| `report dedup: cannot read the <label> queue in <repo>: <reason> — the outcome is UNKNOWN, never "none".` | 27 | refusal |
-| `report dedup: cannot read the search index for <repo>: <reason> — the outcome is UNKNOWN, never "none".` | 28 | refusal |
-| `report dedup: <repo> has no "<label>" label — the queue half would scan nothing, so the outcome is UNKNOWN, never "none". Create the label, or pass the one this repo uses.` | 7 | refusal |
-| `report dedup: --query is empty.` | 1 | usage error |
-| `report dedup: --limit <n> is negative.` | 1 | usage error |
-| `report dedup: cannot resolve a target repo — set CLAUDE_PIPELINE_REPO, or run inside a checkout whose origin remote resolves.` | 1 | refusal |
-
-When the queue read fails and the search read fails together, the queue line carries
-` (the search index also failed: <reason>)` before its em dash.
-
-**Scope** — this verb **supplies an input; it does not judge**, so an empty result is a fact rather
-than a failed read, and it says so here once. The two halves are read for different reasons: the
-label queue is read-after-write consistent and catches an issue filed seconds ago, while the search
-index is eventually consistent — it lags fresh issues but reaches older open issues that have
-already left the queue. An empty intake queue is a normal state, so `none` at exit 0 is an answer;
-a queue or index that could not be read is exit 27 or 28 with **nothing** on stdout. The scope line
-goes to stderr on every run, naming both source counts, the ranking tokens, the narrower list
-actually sent to search when the two differ (`; sent to search: <tokens>`), and whether the list was
-truncated.
-
-**Examples**
-
-```
-$ fabrika report dedup --query "retry helper swallows the abort reason in the http worker"
-candidates
-9412	both	4	Abort reason lost when the worker retry helper re-wraps the request
-9413	search	2	http worker retries do not propagate cancellation
+```text
+<number>	<source>	<score>	<state>	<title>
 ```
 
-```
-$ fabrika report dedup --query "checkout address form loses focus after a field is saved"
-none
-```
+Source is `queue`, `index` or `both`; state is `open` or `closed`. Replace tabs and line breaks in
+titles with spaces so one issue stays on one line. A closed candidate does not establish that a
+current observation was fixed. The caller must read it and compare the actual behavior.
 
-```
-$ fabrika report dedup --query "the thing"
-indeterminate
-$ echo $?
-0
-```
+JSON contains `outcome`, `candidates`, `reason`, `tokens`, `truncated`, `retrievalTruncated`,
+`queueCount`, `indexCount`, `closedSince` and `cache`. Candidate objects contain the five named
+columns. `reason` is null for candidates, otherwise explanatory text. `cache` is
+`{source: "cache" | "fetched", ageMs: number}`. It and `closedSince` are null on a non-check;
+`closedSince` is also null for open-only runs. Source counts are before exclusion.
+The old GitHub-specific `searchTokens` and `searchCount` fields are replaced by this index scope.
 
-```
-$ fabrika report dedup --query "retry helper abort reason" --json
-{"outcome":"candidates","candidates":[{"number":9412,"source":"both","score":4,"title":"Abort reason lost when the worker retry helper re-wraps the request"}],"reason":null,"tokens":["retry","helper","abort","reason"],"searchTokens":["retry","helper","abort","reason"],"truncated":false,"queueCount":31,"searchCount":6}
-```
+`truncated` means the fused union exceeded `--limit`. `retrievalTruncated` means one of the two
+ranking lists exceeded its top-20 bound. Both appear separately in diagnostics. The scope line
+also names the repository, counts, closed cutoff, cache source/age, query tokens and exclusion.
 
-```
-$ fabrika report dedup --query "retry helper abort reason" --repo acme/nonexistent
-report dedup: cannot read the label set of acme/nonexistent: HTTP 404 — whether the status:needs-triage queue exists is UNKNOWN, and so is the outcome.
-$ echo $?
-27
-```
+A queue failure is exit 27 and an index failure is exit 28, with no stdout. If both fail, use 27
+and name both failures. Invalid arguments or unresolved repository are exit 1. Cache publication
+failure alone is a warning because the fetched corpus remains usable. No failure authorizes an
+empty `none`, and no result or failure authorizes automatic closure or blocking a filing.
 
-The label-set read runs before either source read, so it is the one an unreachable repo fails on —
-the queue message needs a repo whose labels *did* read.
+### Worked cases
 
-**Grounding**
-
-- This check is **advisory, not an oracle**. It never gates a filing, which is why every
-  outcome exits 0: a duplicate is cheap for triage to close, and a lost observation is gone. The
-  skill files on ambiguity.
-- v1's `intake-dedup check` prints one line per candidate and nothing else, so **its stdout is empty
-  when it finds no duplicate** — indistinguishable from a verb that never ran — and the count that
-  would disambiguate goes to stderr. Read it as the reason the outcome token exists here.
-- v1 also exits 0 with empty stdout when the query tokenizes to nothing, writing
-  `no usable keywords — nothing to check` to stderr. A degenerate non-check then reads to a caller
-  exactly like a clean one. `indeterminate` is that case promoted to an answer, and the
-  two-token floor extends it to the single-generic-term case v1 reports as a clean run.
-- An ASCII-only tokenizer shreds a non-ASCII stem into sub-threshold fragments and drops it, so the
-  search half silently runs on fewer keywords than the caller supplied. The Unicode split, the
-  two-language stoplist and the stem-prefix relaxation all answer that.
-- A proven outcome never shares an exit code with a failure to invoke, which is why an unreadable
-  source is 3 or 4 and never a printed `none`.
-- v1's `--exclude` flag is **not** carried here. It exists for the triage seam, where the issue being
-  deduped already exists and must not flag itself; this skill's dedup runs before its issue exists,
-  so the flag would have zero callers.
+- An issue titled "Networking" whose excerpt mentions "retry cancellation" is returned for
+  "worker retry cancellation", even though one query word is absent.
+- An old open issue remains eligible. An issue closed exactly at the cutoff is eligible; one
+  closed a millisecond before it is excluded, even if updated later.
+- A fresh cache plus a newly filed intake issue searches the new issue immediately. An expired
+  cache plus a failed API read returns UNKNOWN with no candidate output.
+- A matching issue from both title and body lists appears once. Excluding it happens before
+  either list's top-20 selection, so it cannot consume a candidate slot.
 
 ---
 
