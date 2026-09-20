@@ -1,0 +1,45 @@
+# TEMPORARY — removed before this PR merges. The second half of #9508's proof harness;
+# see `spike-9508-alpha.yml` for why it exists. Identical but for its own name, so a run
+# of this workflow must open and close its OWN alarm issue rather than touching alpha's.
+name: spike 9508 beta
+
+on:
+  push:
+    branches: [build/9508-deploy-failure-tracker-9eb38e4e]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-9508-beta-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fake-work:
+    name: the watched job
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - run: test "$(cat spike-9508-result)" = pass
+
+  main-alarm:
+    name: report this run to the main alarm
+    if: always() && github.event_name == 'push'
+    needs: [fake-work]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+
+      - name: Open, update or close this workflow's alarm
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || (contains(needs.*.result, 'skipped') && 'skipped' || 'success') }}
+        run: node packages/fabrika-cli/src/ci/main-alarm-bin.ts --result "$RUN_RESULT"
