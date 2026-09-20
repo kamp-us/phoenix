@@ -15,6 +15,8 @@
  *
  * The adapter and nothing else: it declares the flags, reads the machine facts the verbs do not
  * derive, runs the verb, and emits its outcome.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9508
  */
 
 import {Effect, Option} from "effect";

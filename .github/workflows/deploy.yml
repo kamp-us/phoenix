@@ -730,9 +730,12 @@ jobs:
       - name: Open, update or close this workflow's alarm
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          # One result for the whole run: any failed need is a red main, and a skipped need
-          # with nothing failed is a run that proved neither polarity, which the core no-ops.
+          # One result for the whole run: any failed need is a red main, and a cancelled or
+          # skipped need with nothing failed is a run that proved neither polarity, which the
+          # core no-ops. `cancelled` has to be its own arm rather than falling through to
+          # `success`: reading a cancelled deploy as green closes the standing alarm on a branch
+          # nothing proved healthy.
           # Passed through the environment rather than interpolated into the command, so the
           # expression's value is never part of the shell text.
-          RUN_RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || (contains(needs.*.result, 'skipped') && 'skipped' || 'success') }}
+          RUN_RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || (contains(needs.*.result, 'cancelled') && 'cancelled' || (contains(needs.*.result, 'skipped') && 'skipped' || 'success')) }}
         run: node packages/fabrika-cli/src/ci/main-alarm-bin.ts --result "$RUN_RESULT"
