@@ -40,12 +40,7 @@ import type {
 } from "@kampus/design";
 import type {ModelState, ThinkingState} from "../../ai-agent/core/index.ts";
 import type {Phase} from "../../ai-agent/events.ts";
-import {
-	type CommandRef,
-	type ModelRef,
-	sameModel,
-	type ThinkingLevel,
-} from "../../ai-agent/ports/index.ts";
+import type {CommandRef, ModelRef, ThinkingLevel} from "../../ai-agent/ports/index.ts";
 import {isWorking} from "./phase.ts";
 
 export interface ComposerHandlers {
@@ -272,7 +267,7 @@ export const composerBridge = (handlers: ComposerHandlers): ComposerBridge => {
 			if (
 				pending?.kind === "model" &&
 				next.current !== null &&
-				sameModel(next.current, pending.target)
+				refOf(composerModel(next.current), [pending.target]) !== null
 			) {
 				pending.resolve();
 				pending = null;
