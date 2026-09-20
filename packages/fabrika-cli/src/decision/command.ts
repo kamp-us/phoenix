@@ -66,7 +66,7 @@ const repoFlag = Flag.string("repo").pipe(
 );
 
 const issueArg = Argument.integer("number").pipe(
-	Argument.withDescription("the type:decision issue"),
+	Argument.withDescription("the issue the ruling is recorded on"),
 );
 
 const rule = leafCommand(
@@ -85,9 +85,15 @@ const rule = leafCommand(
 				"instead of --cites: a file quoting the founder's ruling verbatim, carrying an ISO-8601 date; posted as a comment on the issue and cited by the marker, never summarized",
 			),
 		),
+		supersedes: Flag.integer("supersedes").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the 1-based position of the body acceptance criterion this ruling replaces; the graded set then reports that row as superseded instead of grading it",
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({number, cites, authorization, repo}) {
+	Effect.fn(function* ({number, cites, authorization, supersedes, repo}) {
 		const ruling = rulingSource(cites, authorization);
 		if (ruling === null) {
 			yield* emit(
@@ -102,6 +108,7 @@ const rule = leafCommand(
 			yield* runRule({
 				number,
 				ruling,
+				supersedes: Option.getOrNull(supersedes),
 				repo: Option.getOrNull(repo),
 				env: process.env,
 				now: () => new Date(),
@@ -110,10 +117,10 @@ const rule = leafCommand(
 	}),
 ).pipe(
 	Command.withShortDescription(
-		"Record a founder ruling on a decision and hand it to the agent lane.",
+		"Record a founder ruling on an issue so every gate downstream grades it.",
 	),
 	Command.withDescription(
-		'Record a control-plane human\'s ruling on one type:decision issue: post a decision-ruled marker bound to a digest this verb derives itself over the issue body, read it back, and ONLY THEN flip the audience from ready-for:human to ready-for:agent, reported from a re-read rather than asserted. Exactly one flag names the ruling: --cites <url> when it is already a comment on the issue, or --authorization <file> when the founder gave it in conversation — that file is posted verbatim as a dated comment FIRST and the marker cites it, which is grill rule\'s shape, so a ruling the founder already made costs no comment to type. Prints {"answer":"ruled","issue":n,"digest":"…","ruling":"…","by":"…","at":"…","comment":n,"audience":"ready-for:agent","observed":[…]}. The marker is unconditional and the flip is not: a body carrying no readable ### Acceptance criteria block keeps its marker and stays on ready-for:human, because ready-for:agent promises a builder can grade it cold. Exits 1 (neither flag or both given, --cites is not an issue-comment URL for this repository and issue, or --authorization could not be read), 4 (the marker stands but the body carries no readable acceptance-criteria block, so the audience was not flipped — author or repair it with fabrika triage enrich/repair-criteria and re-run), 5 (the quoted authorization carries a machine-local path), 6 (it is a bare @ path reference), 7 (the issue is absent, is a pull request, is not a type:decision, the cited comment is not on it, or ready-for:agent is absent from the repository taxonomy), 8 (a write failed, or the issue could not be re-read — UNKNOWN), 9 (the marker or the audience does not read back), 11 (the roster, the comments or the invoking account could not be read — authority is UNKNOWN, never granted), 20 (proven: the invoking account is off the control-plane roster, or that roster names nobody), 21 (the quoted authorization is empty or carries no ISO-8601 date). Example: fabrika decision rule 9412 --authorization ruling.md',
+		'Record a control-plane human\'s ruling on one issue: post a decision-ruled marker bound to a digest this verb derives itself over the issue body, read it back, and ONLY THEN flip the audience from ready-for:human to ready-for:agent, reported from a re-read rather than asserted. The subject is any issue, not only a type:decision one — a founder ruling lands wherever the work is, and only a recorded one reaches a gate: `review criteria` folds every standing marker into the set it prints, and `lane prove` reads a verdict written before the newest ruling as no longer current. Exactly one flag names the ruling: --cites <url> when it is already a comment on the issue, or --authorization <file> when the founder gave it in conversation — that file is posted verbatim as a dated comment FIRST and the marker cites it, which is grill rule\'s shape, so a ruling the founder already made costs no comment to type. --supersedes <k> names the 1-based body criterion this ruling replaces, and it is the only mechanical statement of contradiction there is: no verb can read the prose and judge which row a ruling overturns, so the human recording it says. Prints {"answer":"ruled","issue":n,"digest":"…","ruling":"…","supersedes":k|null,"by":"…","at":"…","comment":n,"audience":"ready-for:agent","observed":[…]}. The marker is unconditional and the flip is not: a body carrying no readable ### Acceptance criteria block keeps its marker and stays on ready-for:human, because ready-for:agent promises a builder can grade it cold; on an issue carrying no ready-for:human park the flip is a no-op. Exits 1 (neither flag or both given, --cites is not an issue-comment URL for this repository and issue, --authorization could not be read, or --supersedes names no row of the block), 4 (the marker stands but the body carries no readable acceptance-criteria block, so the audience was not flipped — author or repair it with fabrika triage enrich/repair-criteria and re-run), 5 (the quoted authorization carries a machine-local path), 6 (it is a bare @ path reference), 7 (the issue is absent, is a pull request, the cited comment is not on it, or ready-for:agent is absent from the repository taxonomy), 8 (a write failed, or the issue could not be re-read — UNKNOWN), 9 (the marker or the audience does not read back), 11 (the roster, the comments or the invoking account could not be read — authority is UNKNOWN, never granted), 20 (proven: the invoking account is off the control-plane roster, or that roster names nobody), 21 (the quoted authorization is empty or carries no ISO-8601 date). Example: fabrika decision rule 9412 --authorization ruling.md --supersedes 3',
 	),
 );
 
@@ -124,9 +131,9 @@ const ruling = leafCommand(
 		yield* emit(yield* runRuling({number, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
-	Command.withShortDescription("Whether a decision carries a current founder ruling."),
+	Command.withShortDescription("Whether an issue carries a current founder ruling."),
 	Command.withDescription(
-		'Report whether a decision issue carries a current founder ruling: {"answer":"ruling","issue":n,"state":"current|stale|absent","by":…,"markerDigest":…,"derivedDigest":"…","ruling":…,"at":…,"comment":…,"audience":…,"disregarded":n,"unauthorized":n}. All three states exit 0 — a missing ruling is the answer, not a refusal. A marker whose author is off the control-plane roster is counted unauthorized and never stands; a drifted one is counted disregarded rather than dropped. Exits 1 (not an issue number, or no target repo), 7 (the issue is absent, is a pull request, or is not a type:decision), 11 (the roster or the comments could not be read — the state is UNKNOWN, not absent). Example: fabrika decision ruling 6569',
+		'Report whether an issue carries a current founder ruling: {"answer":"ruling","issue":n,"state":"current|stale|absent","by":…,"markerDigest":…,"derivedDigest":"…","ruling":…,"at":…,"comment":…,"audience":…,"disregarded":n,"unauthorized":n}. All three states exit 0 — a missing ruling is the answer, not a refusal. The state is the NEWEST marker\'s; `review criteria` is what prints every standing one folded with the body criteria. A marker whose author is off the control-plane roster is counted unauthorized and never stands; a drifted one is counted disregarded rather than dropped. Exits 1 (not an issue number, or no target repo), 7 (the issue is absent or is a pull request), 11 (the roster or the comments could not be read — the state is UNKNOWN, not absent). Example: fabrika decision ruling 6569',
 	),
 );
 
@@ -134,6 +141,6 @@ export const decisionCommand = Command.make("decision").pipe(
 	Command.withSubcommands([rule, ruling]),
 	Command.withShortDescription("Record and read founder rulings on type:decision issues."),
 	Command.withDescription(
-		"Record and read founder rulings on type:decision issues: a control-plane human's ruling becomes a marker comment bound to the issue body it ruled on, and that proven marker — never intent — is what flips the issue from ready-for:human to ready-for:agent so the normal build lane picks it up",
+		"Record and read founder rulings on issues: a control-plane human's ruling becomes a marker comment bound to the issue body it ruled on, and that proven marker — never intent — is what `review criteria` folds into the graded set, what `lane prove` dates a verdict against, and what flips a parked decision from ready-for:human to ready-for:agent so the normal build lane picks it up",
 	),
 );

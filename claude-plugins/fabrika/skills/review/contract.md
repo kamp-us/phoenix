@@ -23,7 +23,7 @@ Named because a spec that leaves the substrate open makes the implementer guess.
 |---|---|---|
 | `review scope` | the PR's head SHA, linked issue, artifact-class partition of its changed files, the namespace set that partition requires and which of those are routed to another gate, the `self` / `harness` flags, and whether the diff requires the `governance` namespace | partitioning paths against a fixed class map, deriving the merge gate's own required set from it, and failing closed on an empty file list is mechanical; what to do with each class is judgment |
 | `review diff` | the PR's diff bytes, with truncation refused rather than silently passed through | fetching and proving completeness is mechanical; reading the diff is the whole judgment layer |
-| `review criteria` | the linked issue's acceptance-criteria block, read through the registered `acceptance-criteria` wire format | fetch + registered parse + checkbox states are mechanical; grading a criterion is judgment |
+| `review criteria` | the set the review grades: the linked issue's acceptance-criteria block through the registered `acceptance-criteria` wire format, plus every standing ruling on that issue through the registered `decision-ruling` one, folded into one sourced list | fetch + registered parse + checkbox states + the roster-gated marker scan are mechanical; grading a criterion or a ruling is judgment |
 | `review ci` | the live CI check-run rollup at a head, fail-closed on incomplete enumeration | classifying check runs and proving the enumeration complete is mechanical; weighing a red check is judgment |
 | `review verdicts` | every verdict marker on the PR, per namespace, each with its `Current` / `Stale` / `Unbindable` binding against the live head and the content it bound | comment sweep + registered parse + `bindToContent` is mechanical; what a stale marker means for this round is judgment |
 | `review deviations` | the PR body's `## Deviations` section state (found / absent / malformed), its entries, and the Tier-M token scan over the diff | section detection and token scanning are mechanical; matching entry *substance* against findings is judgment (Tier R) |
@@ -78,10 +78,16 @@ the same tracked debt the sibling contracts carry.)
   it changes which judgment runs, not which namespaces are emitted, and v1's
   `review-trivial` already proved the mode needs no fourth namespace. Nothing mechanical is left
   once the fan-out is skipped.
-- **A second parser for the AC block or the verdict marker.** Both are registered wire formats
-  (`packages/fabrika-cli/src/wire/registry.ts`); `review criteria` and `review post` / `review
-  verdicts` import `read` / `emit` from `acceptance-criteria.ts` and `verdict-marker.ts`. A
-  hand-rolled marker regex is the incident the registry landed to end, and the drift with it.
+- **A second parser for the AC block, the ruling marker or the verdict marker.** All three are
+  registered wire formats (`packages/fabrika-cli/src/wire/registry.ts`); `review criteria` and
+  `review post` / `review verdicts` import `read` / `emit` from `acceptance-criteria.ts`,
+  `decision-ruling.ts` and `verdict-marker.ts`. A hand-rolled marker regex is the incident the
+  registry landed to end, and the drift with it.
+- **A second ruling format beside `decision-ruled`.** The read widened past `type:decision` rather
+  than minting a sibling key: one walk, one author gate, one scan, and every marker already on the
+  board keeps reading. A parallel mechanism would be two gates disagreeing about one comment.
+- **A second reading of who may rule.** The roster is `packages/fabrika-cli/src/ship/roster.ts`, the
+  same one the merge gate enforces and `decision rule` resolves at write time.
 - **A governance sweep.** The ADR contradiction sweep and gate-invariant preservation (v1
   `review-doc`'s sweep, `review-skill`'s rigor check 4) are the `governance` skill's, guarding
   from outside. The skill invokes it at the seam; this group computes nothing for it.
@@ -531,14 +537,54 @@ fabrika review criteria 4287 [--repo <owner/name>] [--json]
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
-**Output** — machine channel. First line: `criteria\t<count>`. Then one line per criterion —
-`<checked|open>\t<text>`, with a third `\t<evidence source>` column on a criterion carrying the
-outside-diff evidence marker and none on one that does not — the same line grammar
-`wire read --format acceptance-criteria` prints, because it **is** that read: the verb fetches the
-issue body and hands it to the registered format's `read`
-(`packages/fabrika-cli/src/wire/acceptance-criteria.ts`), importing the module. No second parser.
+**Output** — machine channel. First line: `criteria\t<count>` (the body rows). Second:
+`rulings\t<count>`. Then one line per row of the graded set —
+`<body|ruling>\t<open|checked|superseded>\t<text>`, with a fourth column carrying a body row's
+outside-diff evidence source or a ruling row's comment URL. Body rows come first in block order,
+ruling rows after them oldest first.
 
-With `--json`: `{"outcome":"criteria","issue":<n>,"count":<n>,"marked":<n>,"criteria":[{"text":…,"checked":…,"evidence":<source|null>}…]}`.
+Both halves are registered reads and there is **no second parser** on either: the verb fetches the
+issue body and hands it to `acceptance-criteria`'s `read`
+(`packages/fabrika-cli/src/wire/acceptance-criteria.ts`), and it fetches the issue's comments and
+hands each to `decision-ruling`'s (`packages/fabrika-cli/src/wire/decision-ruling.ts`), through the
+same roster-gated scan `decision ruling` answers from
+(`packages/fabrika-cli/src/decision/standing-rulings.ts`). The fold of the two is
+`packages/fabrika-cli/src/review/graded-set.ts`.
+
+With `--json`: `{"outcome":"criteria","issue":<n>,"count":<n>,"marked":<n>,"rulings":<n>,"superseded":<n>,"disregarded":<n>,"unauthorized":<n>,"danglingSupersedes":[<n>…],"criteria":[{"source":"body"|"ruling","state":"open"|"checked"|"superseded","text":…,"evidence":<source|null>,"ruling":<url|null>,"at":<stamp|null>,"supersedes":<n|null>}…]}`.
+
+**The rulings half is why this verb is the gate's whole contract read.** A founder ruling arrives as
+a comment, and a gate that read only the body graded a spec the founder had already moved: one PR
+passed two independent reviews against ten criteria while three rulings sat on the issue
+contradicting them. A ruling row carries the founder's own words, taken from the cited comment —
+which is on this same issue, so no extra fetch — collapsed to one line; where that comment is gone,
+the row carries its URL instead.
+
+**The marker's grammar** is `decision-ruling`'s, written only by `fabrika decision rule`:
+
+```
+decision-ruled: #<n> @ <12 lowercase hex> · ruling:<issue-comment url> · [supersedes:<k> · ]<ISO-8601 Z>
+```
+
+The digest binds the issue body that was ruled on; the `ruling:` field names the comment the ruling
+is written in, checked against this issue by the format's own read; `supersedes:<k>` is optional and
+names the **1-based** body criterion this ruling replaces.
+
+- **The author gate is the whole authority.** Posting a marker takes nothing but the ability to
+  comment, and the digest is derivable by anyone who can read the body — so the read resolves the
+  control-plane roster (`packages/fabrika-cli/src/ship/roster.ts`) and a conforming marker from an
+  off-roster author is **not** a standing ruling. It is counted in `unauthorized`, never dropped:
+  reporting it as "nobody ruled" tells the account that tried that it never did.
+- **A drifted marker is counted in `disregarded`**, for the same reason.
+- **The roster is resolved only when a conforming marker is standing there.** On an issue no comment
+  of which reaches for the key, the ACL's three reads answer nothing and are not made.
+- **Superseding is declared, never inferred.** No verb can read a ruling's prose and judge which
+  criterion it overturns, so the human recording it says. A `supersedes:<k>` naming a row the block
+  does not have lands in `danglingSupersedes` and on stderr — the founder's statement about which row
+  he replaced is reported rather than discarded.
+- **Ruling versus ruling is ordering, not a flag.** Rows print oldest first with their stamps, and
+  the gate's rule is that the newest wins where two contradict. Nothing marks an earlier ruling
+  retired.
 
 **A marked criterion is one the diff's bytes cannot settle either way**, and the marker names where
 its proof lives — `[evidence: <source>]`, the grammar owned by the wire format and written at mint
@@ -561,7 +607,11 @@ The state is reported on stderr as a notice so the caller sees it.
 | Code | Trigger |
 |---|---|
 | `7` | the issue is proven absent (404); **or** the body was read and the AC block is proven absent or malformed — reported with the wire distinction on stderr, never invented around |
-| `11` | the issue could not be read — whether a block exists is UNKNOWN |
+| `11` | the issue could not be read — whether a block exists is UNKNOWN; **or** the issue's comments or the control-plane roster could not be read — the graded set is UNKNOWN, never the body alone |
+
+**No new exit code.** The rulings half adds one more way to be UNKNOWN and it is the same fact `11`
+already names: a read that did not complete. Reporting "no ruling stands" off a roster that did not
+resolve is the fail-open direction this whole surface exists to close, one layer down.
 
 **`Absent` and `Malformed` share `7` but never share a message.** Both are fail-closed refusals
 of the same judgment ("there is no gradeable contract here"), and the skill's response to both is
@@ -577,6 +627,8 @@ fix the drift).
 | `review criteria: #<n> carries no acceptance-criteria block — absent: <wire reason>. Grade nothing; the contract is missing.` | 7 | refusal |
 | `review criteria: #<n>'s acceptance-criteria block is malformed: <wire reason> — a drifted heading is a defect to report, not "there were none".` | 7 | refusal |
 | `review criteria: cannot read #<n> in <repo>: <reason> — whether a block exists is UNKNOWN.` | 11 | refusal |
+| `review criteria: cannot read the comments on #<n>: <reason> — whether a ruling stands is UNKNOWN — the graded set is UNKNOWN, never the body alone.` | 11 | refusal |
+| `review criteria: cannot read the §CP boundary: <reason> — who may rule is unread, so whether a ruling stands is UNKNOWN — the graded set is UNKNOWN, never the body alone.` | 11 | refusal |
 
 **Scope** — one issue body, read as typed JSON (never `jq -r .body`, which errors on the control
 characters GitHub bodies carry and yields empty in a loop).
@@ -586,16 +638,29 @@ characters GitHub bodies carry and yields empty in a loop).
 ```
 $ fabrika review criteria 4287
 criteria	2
-open	the first retry delay equals `base`
-open	the retry guide documents the delay table
+rulings	0
+body	open	the first retry delay equals `base`
+body	open	the retry guide documents the delay table
 
 $ fabrika review criteria 8900
 criteria	2
-open	the stored-id migration runs on load
-open	a desk checkpointed under the old shape comes back whole	hand-verification on a real desk
+rulings	0
+body	open	the stored-id migration runs on load
+body	open	a desk checkpointed under the old shape comes back whole	hand-verification on a real desk
 review criteria: 1 of 2 criteria mark evidence outside the diff — grade each on the evidence it
 names, and name it in the verdict body:
   - "a desk checkpointed under the old shape comes back whole" — evidence: hand-verification on a real desk
+
+$ fabrika review criteria 9508
+criteria	2
+rulings	1
+body	open	the workflow opens the issue when the run fails
+body	superseded	the builder may judge the inline question for itself
+ruling	open	No inline decision logic in the workflow yaml — a unit-tested decision core with a thin relay.	https://github.com/<owner>/<repo>/issues/9508#issuecomment-5752332411
+review criteria: the graded set is 2 body criteria plus 1 standing ruling(s); 1 body row(s)
+superseded, 0 drifted marker(s) disregarded, 0 from an account off that roster.
+review criteria: grade the ruling rows as well as the body rows — where the two contradict, the
+newest ruling is the spec and a superseded body row is reported, not graded.
 ```
 
 **Grounding**
@@ -966,6 +1031,16 @@ review-ui	FAIL	77f61ce9	current	5460446728	superseded
 - `wire check` exits 0 on a stale PASS by construction (binding is deliberately not a property of
   the bytes); this verb is the caller-side half the type was designed for, so no consumer needs
   to fold the three outcomes to use them.
+
+**This column answers the tree and not the contract, and there is a second currency question it
+cannot see.** A verdict written before the newest standing ruling on the issue graded a spec that has
+since moved: it binds this head, it may still bind this head's content, and it never read the ruling.
+`fabrika lane prove` asks that second question on the `PASS` arm — it reads the issue's standing
+rulings through the same roster-gated scan `review criteria` folds, and rows a verdict written before
+the newest one `stale`, so a `PASS` cannot carry a lane past a ruling nobody graded
+(`packages/fabrika-cli/src/lane/ruling-currency.ts`). A stamp that will not read is `unknown`, never
+current. The park arm asks nothing of it: a park is refused only by a FAIL that still binds, and a
+ruling cannot make one bind harder.
 
 ---
 

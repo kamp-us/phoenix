@@ -1,5 +1,5 @@
 /**
- * What ruling already stands on a decision issue, and the target read both verbs share.
+ * What ruling already stands on an issue, and the target read both verbs share.
  *
  * Who *may* rule is `../ship/roster.ts` — one control-plane read, the same one `plan approve`
  * resolves, so this group cannot drift from the ACL the merge gate enforces.
@@ -14,7 +14,6 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {DECISION_TYPE_LABEL} from "../build/scope-admission.ts";
 import {type CommentRecord, getIssue, type IssueRecord} from "../io/issues.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {type DecisionRuling, read as readRuling, rules} from "../wire/decision-ruling.ts";
@@ -25,12 +24,21 @@ export type DecisionTarget =
 	| {readonly _tag: "Decision"; readonly issue: IssueRecord};
 
 /**
- * The issue this group acts on, proven to be a decision issue before anything else runs.
+ * The issue this group acts on, proven to be an issue before anything else runs.
  *
- * An unreadable issue is `11` and a proven non-decision is `7`; folding the two would let a 502 read
- * as "that is not a decision", which is the fail-open direction for an authority verb.
+ * An unreadable issue is `11` and a proven absence (or a pull request) is `7`; folding the two would
+ * let a 502 read as "that is not there", which is the fail-open direction for an authority verb.
+ *
+ * **The `type:decision` fence used to sit here, and it is gone on purpose.** A founder ruling lands
+ * on whatever issue the work is on — a bug, a feature, an investigation — and refusing to record one
+ * there left the ruling as prose no gate reads, which is the whole defect `review criteria`'s fold
+ * closes. What a decision issue still has of its own is the *audience flip*: `ready-for:human` is
+ * how triage parks a judgement call, and `rule-verb.ts` still flips it. On an issue that carries no
+ * such park the flip is a no-op, so widening the target costs that path nothing.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9517#issuecomment-5752597880
  */
-export const requireDecision = (
+export const requireRulable = (
 	verb: string,
 	repo: string,
 	number: number,
@@ -58,15 +66,6 @@ export const requireDecision = (
 				outcome: refuse(NO_TARGET, `${verb}: ${repo}#${number} is a pull request, not an issue.`),
 			};
 		}
-		if (!found.value.labels.includes(DECISION_TYPE_LABEL)) {
-			return {
-				_tag: "Refused" as const,
-				outcome: refuse(
-					NO_TARGET,
-					`${verb}: #${number} is not a ${DECISION_TYPE_LABEL} — refusing to record a ruling on it.`,
-				),
-			};
-		}
 		return {_tag: "Decision" as const, issue: found.value};
 	});
 
@@ -80,6 +79,15 @@ export interface StandingRuling {
 }
 
 export interface RulingScan {
+	/**
+	 * Every conforming marker naming this issue whose author the roster resolved, oldest first.
+	 *
+	 * The decision audience only ever asked whether *a* ruling stands, so {@link RulingScan.standing}
+	 * answered it. A graded set needs the whole sequence: three rulings landed on one issue while its
+	 * lane ran, the third reversing the second, and a reviewer handed only the newest cannot see that
+	 * the second was ever in force — nor that the first still is.
+	 */
+	readonly all: ReadonlyArray<StandingRuling>;
 	/** The newest conforming marker naming this issue, or `null` when none does. */
 	readonly standing: StandingRuling | null;
 	/**
@@ -116,7 +124,7 @@ export const scanRulings = (
 	const ordered = [...comments].sort((a, b) =>
 		a.updatedAt === b.updatedAt ? a.id - b.id : a.updatedAt < b.updatedAt ? -1 : 1,
 	);
-	let standing: StandingRuling | null = null;
+	const all: StandingRuling[] = [];
 	let disregarded = 0;
 	let unauthorized = 0;
 	for (const comment of ordered) {
@@ -130,9 +138,9 @@ export const scanRulings = (
 			unauthorized += 1;
 			continue;
 		}
-		standing = {ruling: found.value, by: comment.author, comment: comment.id};
+		all.push({ruling: found.value, by: comment.author, comment: comment.id});
 	}
-	return {standing, disregarded, unauthorized};
+	return {all, standing: all.at(-1) ?? null, disregarded, unauthorized};
 };
 
 /** The state a scan resolves to against the digest derived from the body as it now stands. */

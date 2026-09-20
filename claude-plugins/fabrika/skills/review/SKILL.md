@@ -93,6 +93,22 @@ terminal either, so carry them into the verdict you reach at the end rather than
 The sixth column is `standing` or `superseded`: only a `standing` row is a verdict in force, and a
 `superseded` one is a round already answered, printed so the record shows it.
 
+**The graded set is the body criteria PLUS every standing ruling on the issue, and `criteria` is the
+one verb that returns it.** A founder ruling arrives as a comment, and a gate that read only the body
+graded a spec the founder had already moved: one PR passed two independent reviews against ten
+criteria while three rulings sat on the issue contradicting them. Each row names its source in the
+first column — `body` or `ruling` — and a `ruling` row carries the founder's own words plus the
+comment URL they were written in. Grade those rows exactly as you grade a body row. Where the two
+contradict, **the newest ruling is the spec**; a body row the ruling replaced prints `superseded` and
+is reported rather than graded, so it never silently vanishes. A marker from an account off the
+control-plane roster is not a ruling and is counted on stderr, never dropped, and so is a drifted
+one — read those counts.
+
+**A verdict older than the newest standing ruling is not current, and `lane prove` says so.** It
+binds a head and it may still bind that head's content, and it graded a contract that has since
+moved — so a `PASS` cannot ride it past a ruling it never read. That is not a finding about the
+reviewer who wrote it; it is a round the ruling reopened.
+
 **An epic tail has one fallback, and it is bounded by when the epic was planned.** `plan-epic` writes
 an `### Acceptance criteria` block onto the epic body beside the ledger, so `criteria <epic>` and
 `append-criterion <epic>` serve a tail exactly as they serve any other issue. An epic planned before

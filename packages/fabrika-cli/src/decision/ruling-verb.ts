@@ -13,7 +13,7 @@ import {READY_FOR_AGENT, READY_FOR_HUMAN} from "../triage/audience.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {bodyDigest} from "./digest.ts";
-import {requireDecision, scanRulings, stateOf} from "./ruling.ts";
+import {requireRulable, scanRulings, stateOf} from "./ruling.ts";
 
 const VERB = "decision ruling";
 
@@ -34,7 +34,7 @@ export const runRuling = (
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
 
-		const target = yield* requireDecision(VERB, repo, options.number);
+		const target = yield* requireRulable(VERB, repo, options.number);
 		if (target._tag === "Refused") return target.outcome;
 
 		const roster = yield* controlPlaneRoster(repo);

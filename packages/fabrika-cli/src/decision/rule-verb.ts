@@ -1,6 +1,17 @@
 /**
- * `decision rule` — record a control-plane human's ruling on one `type:decision` issue and hand the
- * issue back to the agent lane.
+ * `decision rule` — record a control-plane human's ruling on one issue, and hand a parked decision
+ * back to the agent lane.
+ *
+ * **The subject is any issue, and that is the newer half.** A founder ruling lands wherever the work
+ * is; recorded as prose it changed nothing about what any gate graded, so a PR contradicting three
+ * of them passed two independent reviews. Recorded through this verb it is a marker
+ * `review criteria` folds into the graded set and `lane prove` dates a verdict against.
+ * `--supersedes <k>` is how the ruling says which body criterion it replaces — the only mechanical
+ * statement of contradiction there is, because no verb can read the prose and judge that itself.
+ * The audience flip below is still the decision path's alone, and it is a no-op on an issue that
+ * carries no `ready-for:human` park.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9517#issuecomment-5752597880
  *
  * The gap this closes: triage routes a decision to `ready-for:human` because its deliverable is a
  * judgement, and once the founder has made that judgement in a comment there is no path back. The
@@ -73,6 +84,8 @@ import {
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {type AcceptanceCriteriaRead, read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {
+	type CriterionIndex,
+	criterionIndex,
 	emit,
 	markedIssue,
 	RULING_GRAMMAR,
@@ -93,7 +106,7 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {bodyDigest} from "./digest.ts";
-import {requireDecision} from "./ruling.ts";
+import {requireRulable} from "./ruling.ts";
 
 const VERB = "decision rule";
 
@@ -178,6 +191,14 @@ export type RulingSource<R = never> =
 export interface RuleOptions<R = never> {
 	readonly number: number;
 	readonly ruling: RulingSource<R>;
+	/**
+	 * The 1-based body criterion this ruling replaces, or `null` where it replaces none.
+	 *
+	 * The position is the human's statement and the verb's only check is that the block has such a
+	 * row: no verb can read a founder's prose and judge which criterion it overturns, and one that
+	 * guessed would silently retire a row a reviewer still owes.
+	 */
+	readonly supersedes: number | null;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly now: () => Date;
@@ -209,7 +230,7 @@ export const runRule = <R = never>(
 				: null;
 		if (quote?._tag === "Refused") return quote.outcome;
 
-		const target = yield* requireDecision(VERB, repo, options.number);
+		const target = yield* requireRulable(VERB, repo, options.number);
 		if (target._tag === "Refused") return target.outcome;
 
 		// Only the cited shape has a comment to locate: the quoted one posts its own, below.
@@ -280,6 +301,24 @@ export const runRule = <R = never>(
 		}
 
 		const criteria = readCriteria(target.issue.body);
+		let supersedes: CriterionIndex | null = null;
+		if (options.supersedes !== null) {
+			if (criteria._tag !== "Found") {
+				return refuse(
+					FAILED,
+					`${VERB}: --supersedes ${options.supersedes} names a row of #${options.number}'s acceptance-criteria block and that block does not read — a ruling cannot replace a criterion nobody can point at. Nothing was written.`,
+					notes,
+				);
+			}
+			supersedes = criterionIndex(options.supersedes);
+			if (supersedes === null || supersedes > criteria.value.length) {
+				return refuse(
+					FAILED,
+					`${VERB}: --supersedes ${options.supersedes} is not a row of #${options.number}'s block, which has ${criteria.value.length} — the position is 1-based. Nothing was written.`,
+					notes,
+				);
+			}
+		}
 		const audience = flipWrites(target.issue.labels, criteria);
 		if (audience.add) {
 			// Only the label this run would POST is guarded: it is the POST that mints an unknown
@@ -328,7 +367,7 @@ export const runRule = <R = never>(
 			);
 		}
 
-		const body = emit({issue, digest, ruling: url, at});
+		const body = emit({issue, digest, ruling: url, supersedes, at});
 		const posted = yield* createComment(repo, options.number, body);
 		if (posted._tag === "Failure") {
 			return refuse(
@@ -402,6 +441,7 @@ export const runRule = <R = never>(
 				issue: options.number,
 				digest: derived,
 				ruling: url,
+				supersedes,
 				by: viewer.value,
 				at,
 				comment: posted.value.id,
