@@ -9,13 +9,13 @@
  * them — a deliberate exclusion a reader can tell apart from a truncation.
  *
  * The refusal union is not declared here. `guard-trees.ts` composes the probe paths out of the
- * guards' own exported corpus constants and `.fabrika.jsonc`'s governed roots; this module only
- * knows how to refuse a pattern that matches a probe. A pattern is refused when it could match a
- * path a guard actually reads — probe-granular, not pattern-algebraic, because a universe-wide
- * suffix surface (leak-guard's `*.md`) would otherwise intersect every directory exclusion and
- * refuse the spike's own defaults.
+ * guards' own exported corpus constants and `.fabrika.jsonc`'s governed roots; this module refuses
+ * a pattern on two arms: a probe match, or the pattern naming a governed tree literally — see
+ * `refusalFor` for why the second arm exists beside the first, and what granularity limit it
+ * still states honestly.
  */
 import {type ClassName, classOf, type Partition, partition} from "./classes.ts";
+import {headerPaths} from "./diff.ts";
 
 /** One exclusion pattern, with where it came from — a default, a config key, or the caller's `--exclude`. */
 export interface ExclusionPattern {
@@ -152,8 +152,9 @@ export const effectiveExclusions = (
 };
 
 /**
- * A pattern refused because it matches a guard probe. `guard` names the guard whose probe matched;
- * a user pattern is corrected, a default matching a probe is a spike bug and refuses all the same.
+ * A pattern refused because it matches a guard probe, or because it names a governed tree
+ * literally. `guard` names the guard whose probe matched; a user pattern is corrected, a default
+ * matching a probe is a spike bug and refuses all the same.
  */
 export interface FilterRefusal {
 	readonly pattern: string;
@@ -161,6 +162,50 @@ export interface FilterRefusal {
 	readonly probe: string;
 }
 
+/**
+ * The governed root behind its probe path: a directory root probes as `<root>probe.md`, a bare
+ * file root probes as itself — the same composition `guard-trees.ts`'s `governedRootProbes` makes.
+ */
+const governedRootOf = (probePath: string): string =>
+	probePath.endsWith("/probe.md") ? probePath.slice(0, -"probe.md".length) : probePath;
+
+/**
+ * The pattern's leading literal path segments — everything before the first wildcard-carrying
+ * segment, or the whole pattern when it carries no wildcard. Empty means the pattern is
+ * wildcard-led (a leading double-star segment, or `*.ts`) and names no tree.
+ */
+const leadingLiteralRun = (pattern: string): string => {
+	const literals: string[] = [];
+	for (const part of pattern.split("/").filter((part) => part !== "")) {
+		if (part.includes("*")) break;
+		literals.push(part);
+	}
+	return literals.join("/");
+};
+
+/** Whether a literal path names the governed tree — the root itself, or under it. */
+const targetsGovernedRoot = (literals: string, root: string): boolean =>
+	root.endsWith("/")
+		? `${literals}/` === root || literals.startsWith(root) || root.startsWith(`${literals}/`)
+		: literals === root || literals.startsWith(`${root}/`);
+
+/**
+ * The refusal union, two arms:
+ *
+ * **Probe match** — the pattern matches a probe path a governed root or guard actually reads.
+ * Probe-granular, not pattern-algebraic, because a universe-wide suffix surface (leak-guard's
+ * `*.md`) would otherwise intersect every directory exclusion and refuse the defaults.
+ *
+ * **Literal target** — the probe arm is match-granular, so a pattern that names a governed tree
+ * literally (`governed/*.ts` against the `governed/` root) would slip past it while still carving
+ * that tree out of the review's content. The literal run of the pattern is checked against every
+ * governed root and refuses on contact. A wildcard-LED pattern (a leading double-star segment
+ * such as a `.ts` suffix glob) still cannot be refused
+ * without refusing every generic pattern — that is the stated granularity limit, and what bounds
+ * it is visibility: every exclusion, whatever its pattern, is enumerated in each consumer's
+ * `excluded` rows and `x-fabrika-excluded-path` headers, and the consumer split keeps every gate's
+ * derivation on the raw list.
+ */
 export const refusalFor = (
 	patterns: ReadonlyArray<ExclusionPattern>,
 	probes: ReadonlyArray<GuardProbe>,
@@ -170,6 +215,17 @@ export const refusalFor = (
 		const probe = probes.find((candidate) => matchPath(pattern, candidate.path));
 		if (probe !== undefined) {
 			refusals.push({pattern, guard: probe.guard, probe: probe.path});
+			continue;
+		}
+		const literals = leadingLiteralRun(pattern);
+		if (literals === "") continue;
+		const target = probes.find(
+			(candidate) =>
+				candidate.guard === "governedRoots" &&
+				targetsGovernedRoot(literals, governedRootOf(candidate.path)),
+		);
+		if (target !== undefined) {
+			refusals.push({pattern, guard: target.guard, probe: target.path});
 		}
 	}
 	return refusals;
@@ -200,10 +256,13 @@ export interface DiffSection {
 }
 
 /**
- * The diff's per-file sections. The path is read off the `diff --git a/… b/…` header unquoted —
- * git quotes non-ASCII and special-character paths, and the spike's benchmark diffs are plain
- * ASCII, so a quoted header is out of the spike's stated bound (`../review/diff.ts` handles the
- * quoted forms for the count proof).
+ * The diff's per-file sections, kept whole so a filtered diff stays a well-formed unified diff.
+ *
+ * Headers parse through `./diff.ts`'s `headerPaths` — the SAME grammar the completeness proof
+ * counts with, quoted C-style forms included (`core.quotePath` escapes a non-ASCII or
+ * special-character path as `"a/na\303\257ve.md"`, and the two sides quote independently). One
+ * header grammar is what keeps this section split and the proof's file count from ever disagreeing
+ * about how many files a diff carries: the section paths are the counted paths, decoded.
  */
 export const diffSections = (diff: string): ReadonlyArray<DiffSection> => {
 	const sections: DiffSection[] = [];
@@ -218,11 +277,11 @@ export const diffSections = (diff: string): ReadonlyArray<DiffSection> => {
 		}
 	};
 	for (const line of lines) {
-		const header = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
-		if (header !== null) {
+		const paths = headerPaths(line);
+		if (paths !== null) {
 			flush();
 			current = [line];
-			path = header[2] ?? header[1] ?? null;
+			path = paths.after === "" ? paths.before : paths.after;
 		} else if (current !== null) {
 			current.push(line);
 		}

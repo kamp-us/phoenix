@@ -12,7 +12,10 @@
  * pattern is refused when it could match one of those. An algebraic intersection test against a
  * universe-wide surface (leak-guard's `*.md` doc sweep) would refuse every directory exclusion,
  * including the spike's own defaults — probe granularity is the reading under which the mission's
- * default exclusion set and its refusal invariant are both satisfiable.
+ * default exclusion set and its refusal invariant are both satisfiable. Beside the probe arm,
+ * `refusalFor` also refuses a pattern whose leading literal path names a governed tree outright —
+ * the match-granular arm alone would let `governed/*.ts` carve the `governed/` tree out of the
+ * review's content without ever touching `governed/probe.md`.
  */
 import {MANIFEST} from "../guard/catalog-verb.ts";
 import {CI_CHANGES_SOURCE} from "../guard/change-detect.ts";

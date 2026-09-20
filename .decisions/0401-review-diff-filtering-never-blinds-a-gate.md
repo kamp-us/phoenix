@@ -205,3 +205,20 @@ If accepted, with fields 2–4 landing as recommended and a placement ruling pic
   the `un-excluded` enumeration keeping a removal of a default visible and an equal-pattern
   re-addition deterministically winning over a removal. With both keys absent, every consumer's
   output is byte-identical to before they existed.
+- 2026-09-20 — review-round defects at PR head `cb0b1909`: Baris Eroglu's reviewer agent found
+  three, all reproduced against that head and fixed failing-tests-first — nine new tests in the
+  filter-spike suite, eight red before the fixes, all green after. (1) Git-quoted C-style diff
+  headers (`diff --git "a/na\303\257ve.md" "b/na\303\257ve.md"`) fell through the filter's
+  section splitter, whose regex matched only bare-form headers — a quoted first section vanished,
+  and a quoted section after an excluded one was glued to it and silently dropped unenumerated;
+  the splitter now parses headers through `./diff.ts`'s exported `headerPaths` — the same grammar
+  the completeness proof counts with — so quoted and bare forms are one population and section
+  counts cannot drift from the census. (2) A pattern naming a governed tree literally (e.g.
+  `governed/*.ts`) slipped past the probe-granular refusal, which refuses only patterns matching
+  the probe path — `governed/real.ts` was still excludable; `refusalFor` gains a literal-target
+  arm (the pattern's leading literal run tested against each governed root's prefix relation),
+  and wildcard-led patterns (`**/*.ts`) stay out of scope by a stated granularity limit, bounded
+  by the excluded-path enumeration and the consumer split. (3) The completeness claim ("every
+  subject proves it") was false for `--diff-file`, which has no range to prove a census against;
+  wording across the preview verb, its CLI help and the PR body is scoped to the PR and range
+  subjects, while `--diff-file` reads bytes as given.

@@ -8,13 +8,15 @@
  * `review diff` does; `--base`/`--tip` names a range (`./range-flags.ts`), whose diff is taken
  * from the range's own merge base — the same commit `./content-binding.ts` digests.
  *
- * **A short read never reaches the filter.** Every subject proves completeness the same way:
- * `./diff.ts`'s `filesInDiff` against `diffRangePaths` over ONE range, both operands from git, so
- * a diff carrying fewer files than git lists for the same range refuses `INCOMPLETE_SCAN` before
- * the exclusion set is applied — a deliberate exclusion can never masquerade as a truncation, and
- * the `x-fabrika-filter`, `x-fabrika-excluded-path` and `x-fabrika-unexcluded-path` headers name
- * only what was left out on purpose. The set itself is the effective one: the shipped defaults,
- * minus what `.fabrika.jsonc`'s `reviewFilterUnexclude` removes, plus what its
+ * **A short read never reaches the filter.** The PR and range subjects prove completeness the
+ * same way before the filter runs: `./diff.ts`'s `filesInDiff` against `diffRangePaths` over ONE
+ * range, both operands from git, so a diff carrying fewer files than git lists for the same range
+ * refuses `INCOMPLETE_SCAN` before the exclusion set is applied — there a deliberate exclusion
+ * can never masquerade as a truncation. The `--diff-file` subject reads its bytes exactly as
+ * given — there is no range to prove a census against — yet its exclusions are still enumerated,
+ * and the `x-fabrika-filter`, `x-fabrika-excluded-path` and `x-fabrika-unexcluded-path` headers
+ * still name only what was left out on purpose. The set itself is the effective one: the shipped
+ * defaults, minus what `.fabrika.jsonc`'s `reviewFilterUnexclude` removes, plus what its
  * `reviewFilterExclusions` and `--exclude` add — a removed default nothing re-added is enumerated
  * (`un-excluded` rows, the `unexcluded` JSON field, the diff header) so a narrowed filter is
  * stated, never silent.
@@ -153,8 +155,9 @@ export const runPreview = (
 		/**
 		 * The subject-independent tail: the governed-filter refusal, then the three emission arms,
 		 * each carrying the subject's provenance on stderr. `previewOf` runs the refusal union
-		 * strictly after the completeness proof every subject has already passed above, so the
-		 * exclusion headers answer for deliberate narrowings only.
+		 * strictly after the completeness proof the PR and range subjects have already passed above
+		 * — `--diff-file` carries none to pass — so the exclusion headers answer for deliberate
+		 * narrowings only.
 		 */
 		const serve = (diff: string, provenance: ReadonlyArray<string>): VerbOutcome => {
 			const preview = previewOf(diff, placement, patterns, probes);
@@ -215,9 +218,11 @@ export const runPreview = (
 		};
 
 		/**
-		 * The completeness proof every subject runs before its bytes reach the filter — the same
-		 * operands `review diff` proves with: `filesInDiff` against `diffRangePaths` over ONE range,
-		 * both counts from git, so a short read refuses rather than serving a prefix as the whole.
+		 * The completeness proof the PR and range subjects run before their bytes reach the filter —
+		 * the same operands `review diff` proves with: `filesInDiff` against `diffRangePaths` over
+		 * ONE range, both counts from git, so a short read refuses rather than serving a prefix as
+		 * the whole. `--diff-file` runs none: its bytes are read exactly as given, with no range to
+		 * prove a census against.
 		 */
 		const shortRead = (
 			diff: string,

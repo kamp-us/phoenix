@@ -7,6 +7,7 @@
  * still sit in the guards' sources; this file proves what the filter does about them.
  */
 import {describe, expect, it} from "vitest";
+import {filesInDiff} from "./diff.ts";
 import {
 	applyPlacement,
 	DEFAULT_EXCLUSIONS,
@@ -270,5 +271,114 @@ describe("the preview derivation", () => {
 		expect(preview.result.excluded).toEqual([]);
 		expect(preview.result.filtered_diff).toContain("x-fabrika-unexcluded-path: pnpm-lock.yaml");
 		expect(preview.result.filtered_diff).toContain("+  effect:");
+	});
+});
+
+describe("git-quoted headers reach the filter", () => {
+	// `naïve` arrives octal-escaped inside git's C-style quoting (`core.quotePath`, on by default):
+	// the header line carries `"a/na\303\257ve file.md"`, not `a/naïve file.md`.
+	const quotedSection = [
+		'diff --git "a/na\\303\\257ve file.md" "b/na\\303\\257ve file.md"',
+		"index 3333333..4444444 100644",
+		'--- "a/na\\303\\257ve file.md"',
+		'+++ "b/na\\303\\257ve file.md"',
+		"@@ -1 +1 @@",
+		"-old",
+		"+new",
+	].join("\n");
+	const plainSection = [
+		"diff --git a/plain.md b/plain.md",
+		"index 1111111..2222222 100644",
+		"--- a/plain.md",
+		"+++ b/plain.md",
+		"@@ -1 +1 @@",
+		"-a",
+		"+b",
+	].join("\n");
+	const DECODED = "na\u00efve file.md";
+
+	it("a quoted first section parses whole, its path decoded", () => {
+		const sections = diffSections(`${quotedSection}\n${plainSection}\n`);
+		expect(sections.map((section) => section.path)).toEqual([DECODED, "plain.md"]);
+		expect(sections[0]?.text).toContain("+new");
+	});
+
+	it("the section count matches the completeness proof's count", () => {
+		const diff = `${plainSection}\n${quotedSection}\n`;
+		expect(diffSections(diff).length).toBe(filesInDiff(diff));
+	});
+
+	it("filterDiff keeps the quoted section when the plain one is excluded", () => {
+		const filtered = filterDiff(`${plainSection}\n${quotedSection}\n`, ["plain.md"], "before");
+		expect(filtered).toContain("+new");
+		const enumerated = filtered
+			.split("\n")
+			.filter((line) => line.startsWith("x-fabrika-excluded-path: "));
+		expect(enumerated).toEqual(["x-fabrika-excluded-path: plain.md"]);
+	});
+
+	it("previewOf excludes a quoted path by its decoded name and enumerates it", () => {
+		const preview = previewOf(
+			`${plainSection}\n${quotedSection}\n`,
+			"after",
+			[{pattern: DECODED, source: "caller"}],
+			probes,
+		);
+		expect(preview._tag).toBe("Preview");
+		if (preview._tag !== "Preview") return;
+		expect(preview.result.excluded).toEqual([DECODED]);
+		expect(preview.result.filtered_diff).not.toContain("+new");
+		expect(preview.result.filtered_diff).toContain("x-fabrika-excluded-path: na\u00efve file.md");
+	});
+
+	it("a mixed header — one side quoted, one bare — parses", () => {
+		const mixed = [
+			'diff --git a/plain.ts "b/renamed later.md"',
+			"index 5555555..6666666 100644",
+			"--- a/plain.ts",
+			'+++ "b/renamed later.md"',
+			"@@ -1 +1 @@",
+			"-x",
+			"+y",
+		].join("\n");
+		const sections = diffSections(`${mixed}\n`);
+		expect(sections.map((section) => section.path)).toEqual(["renamed later.md"]);
+	});
+});
+
+describe("a pattern naming a governed tree literally is refused", () => {
+	const governedProbes = [
+		{guard: "governedRoots", path: "governed/probe.md", source: "test"},
+		{guard: "governedRoots", path: ".claude/probe.md", source: "test"},
+		{guard: "governedRoots", path: ".fabrika.jsonc", source: "test"},
+	];
+
+	it("a wildcard pattern carrying the governed tree as a literal refuses", () => {
+		const refusals = refusalFor([{pattern: "governed/*.ts", source: "caller"}], governedProbes);
+		expect(refusals).toHaveLength(1);
+		expect(refusals[0]?.guard).toBe("governedRoots");
+	});
+
+	it("a deeper literal path under a governed root refuses", () => {
+		const refusals = refusalFor(
+			[{pattern: ".claude/skills/**/*.ts", source: "config"}],
+			governedProbes,
+		);
+		expect(refusals).toHaveLength(1);
+	});
+
+	it("a bare governed-tree prefix refuses", () => {
+		const refusals = refusalFor([{pattern: "governed", source: "caller"}], governedProbes);
+		expect(refusals).toHaveLength(1);
+	});
+
+	it("the defaults and a non-governed file path stay allowed", () => {
+		expect(refusalFor(DEFAULT_EXCLUSIONS, governedProbes)).toEqual([]);
+		expect(
+			refusalFor(
+				[{pattern: "packages/epic-ledger/package.json", source: "caller"}],
+				governedProbes,
+			),
+		).toEqual([]);
 	});
 });
