@@ -18,8 +18,14 @@ import {
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
 import type {AgentEvent, Phase} from "../events.ts";
-import {groupBytes, nestedLimitsFor} from "../history/index.ts";
-import {isNestedItem, Mode, type PermissionDecision, type TranscriptItem} from "../ports/index.ts";
+import {groupBytes, nestedLimitsFor, noticeLimitsFor} from "../history/index.ts";
+import {
+	isNestedItem,
+	isNoticeItem,
+	Mode,
+	type PermissionDecision,
+	type TranscriptItem,
+} from "../ports/index.ts";
 import {aiAgentSessionMachine} from "./machine.ts";
 import type {AiAgentSessionCmd, AiAgentSessionMsg} from "./messages.ts";
 import {isAiAgentSessionState} from "./snapshot.ts";
@@ -29,6 +35,7 @@ const ITEM_LIMIT = 8;
 const BYTE_LIMIT = 4_000;
 const SENT_AT = 1_700_000_000_000;
 const NESTED_LIMIT = nestedLimitsFor({items: ITEM_LIMIT, bytes: BYTE_LIMIT});
+const NOTICE_LIMIT = noticeLimitsFor({items: ITEM_LIMIT, bytes: BYTE_LIMIT});
 
 /**
  * Longest run of rows one spawned worker emits before the generator ends it.
@@ -248,9 +255,18 @@ describe("driving random messages through the table", () => {
 	it("never grows the tail past the planner's bounds", () => {
 		for (const seed of seeds) {
 			const {state} = drive(seed, 200);
-			const own = state.transcript.items.filter((item) => !isNestedItem(item));
+			// The conversation's own rows are what the bounds are spent on: a worker's rows and the
+			// session's notices each answer to a ceiling of their own (#8814, #9514).
+			const own = state.transcript.items.filter(
+				(item) => !isNestedItem(item) && !isNoticeItem(item),
+			);
+			const notices = state.transcript.items.filter(isNoticeItem);
 			expect({seed, items: own.length <= ITEM_LIMIT}).toEqual({seed, items: true});
 			expect({seed, bytes: groupBytes(own) <= BYTE_LIMIT}).toEqual({seed, bytes: true});
+			expect({seed, notices: notices.length <= NOTICE_LIMIT.items}).toEqual({
+				seed,
+				notices: true,
+			});
 		}
 	});
 

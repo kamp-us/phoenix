@@ -177,6 +177,45 @@ export const newestBackendItemId = (items: ReadonlyArray<TranscriptItem>): ItemI
 export const isNestedItem = (item: TranscriptItem): boolean => item.parentId !== undefined;
 
 /**
+ * Whether this row is a session notice rather than a turn of the conversation — a top-level
+ * `system` item, which is what a backend raises about the session instead of inside it.
+ *
+ * Nested notices are a worker's, and answer to the nested ceiling instead: a notice the agent
+ * raised and one a spawned worker raised are bounded separately or the two ceilings overlap.
+ */
+export const isNoticeItem = (item: TranscriptItem): boolean =>
+	!isNestedItem(item) && item.kind === "system";
+
+/**
+ * Whether a page cursor can be minted from this row — and, read as its negation, whether a window
+ * holding only rows like it can be paged from at all.
+ *
+ * Rows no backend's history read can resolve are the ones it refuses: a cursor minted from one
+ * comes back `cursor-not-found` and the window shows the unknown-cursor banner instead of a page
+ * (#8814). A `system` notice and a nested worker's row are live-only by construction — a stored
+ * session holds the conversation's own turns, and neither class is one: the Claude CLI writes a
+ * worker's frames to a `subagents/agent-*.jsonl` sidecar rather than the session file, and a task
+ * notice is minted from an SDK notification that was never a message at all.
+ *
+ * The partial arm is read through `in` rather than off the assistant kind, for the reason
+ * `../core/state.ts`'s `holdsPartialItem` is: reasoning grows a partial row of its own now (#8288),
+ * and a third kind that grows one must not need this predicate edited to stay off the cursor.
+ *
+ * It lives on the port rather than in `../history/cursor.ts` because the window planner asks the
+ * same question the cursor does: a window whose rows all fail this test renders and then refuses
+ * every page off it, which is the empty `claude-session` window of #9514. One definition, so the
+ * planner cannot drift from the cursor it is planning for.
+ */
+export const anchorsCursor = (item: TranscriptItem): boolean =>
+	!(
+		(item.kind === "user" && item.local === true) ||
+		item.kind === "system" ||
+		isNestedItem(item) ||
+		item.id.startsWith("local:") ||
+		("partial" in item && item.partial === true)
+	);
+
+/**
  * Every string one row is known by: its own id, and the `alias` its backend gave it for the other
  * id space when it keys its live tail and its history reads differently (#8032).
  */

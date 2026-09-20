@@ -1690,7 +1690,9 @@ describe("page completion observations", () => {
 			);
 			expect(state.lastPage).toEqual(page);
 		}
-		expect(state.failure).toEqual(failure);
+		// A page read settles no turn and stains none: `pageOutcome` carries the refusal and
+		// `failure` is left where the turn put it, so no success has a stale `PAGE_ERROR` to clear.
+		expect(state.failure).toBeNull();
 		expect(loadCheckpoint(JSON.parse(JSON.stringify(state)), "/repo").pageOutcome).toBeNull();
 		const {pageOutcome: _outcome, ...legacy} = state;
 		expect(loadCheckpoint(legacy, "/repo").phase).toBe("idle");

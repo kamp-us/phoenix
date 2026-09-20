@@ -19,7 +19,7 @@ import {
 	toolItem,
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
-import {type ChatRow, chatRows} from "../../shell/chat/rows.ts";
+import {type ChatRow, chatRows, olderPageRequest} from "../../shell/chat/rows.ts";
 import {aiAgentSessionMachine} from "../core/machine.ts";
 import type {AiAgentSessionCmd, AiAgentSessionMsg} from "../core/messages.ts";
 import {type AiAgentSessionState, initialState, restore} from "../core/state.ts";
@@ -141,6 +141,55 @@ describe("a checkpoint whose tail is all passengers and notices", () => {
 			kind: "older",
 			items: state.transcript.omitted.items,
 		});
+	});
+});
+
+/**
+ * #9514: the same defect one step further along. The desk's checkpoint held 40 top-level notices,
+ * no worker rows and no turn, and not one of them existed in the session store under any id — so
+ * `rebaseOnStore` found no anchor, appended the whole notice tail behind the store's history, and
+ * the re-plan picked the notices again. The window came back holding one collapsed line, and
+ * "Load earlier messages" had no row to mint a cursor from.
+ */
+describe("a checkpoint whose tail is notices the store has never seen", () => {
+	const NOTICES = 40;
+	const strandedNotices: ReadonlyArray<TranscriptItem> = Array.from({length: NOTICES}, (_, index) =>
+		systemItem(`stranded-${index}`, `task progress ${index}`),
+	);
+	const history: ReadonlyArray<TranscriptItem> = [
+		...olderRows.slice(0, 8),
+		userItem("u-last", "the question they are reading"),
+		assistantItem("a-last", "the answer they are reading"),
+	];
+	const stranded: AiAgentSessionState = {
+		...initialState(CWD),
+		phase: "ready",
+		sessionId: SESSION,
+		transcript: {
+			items: [...strandedNotices],
+			omitted: {items: STALE_OMITTED, bytes: 4_000_000, reason: "item-limit"},
+		},
+	};
+
+	it("renders nothing before the refill — the defect, stated", () => {
+		expect(contentRows(rowsFor(restore(stranded)))).toEqual([]);
+	});
+
+	it("comes back holding the store's own turns", () => {
+		const state = resumed(stranded, history);
+		const ids = contentRows(rowsFor(state)).flatMap((row) =>
+			row.kind === "item" ? [row.item.id] : [],
+		);
+		expect(ids.slice(-2)).toEqual(["u-last", "a-last"]);
+		expect(state.transcript.items.filter((item) => item.kind === "system").length).toBeLessThan(
+			NOTICES,
+		);
+	});
+
+	it("leaves a cursor the older-page request can be minted from", () => {
+		const request = olderPageRequest(rowsFor(resumed(stranded, history)));
+		expect(request).not.toBeNull();
+		expect(request?.before).toBe(history[0]?.id);
 	});
 });
 

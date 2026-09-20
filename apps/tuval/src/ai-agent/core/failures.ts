@@ -71,6 +71,21 @@ export const promptUnqueued = (why: string): AgentFailure => ({
 	detail: `the queued message was not sent: ${why}`,
 });
 
+/**
+ * No row the window is holding can anchor a page, so "Load earlier messages" has nothing to ask for.
+ *
+ * It wears the page call's own tag and the `unknown-cursor` reason every backend raises for a
+ * cursor its history cannot resolve, so the window renders the banner it already renders for one
+ * (`shell/chat/ChatWindow.tsx`). Answering `nothing` instead left the click silent — no page, no
+ * refusal, no log line — which is how a window that could not be paged read as a window nobody had
+ * clicked (#9514).
+ */
+export const pageCursorUnavailable: AgentFailure = {
+	tag: PAGE_ERROR,
+	reason: "unknown-cursor",
+	detail: "no message in this window can anchor a page of older messages",
+};
+
 export const unknownRequest = (request: string): AgentFailure => ({
 	tag: UNKNOWN_REQUEST,
 	reason: null,

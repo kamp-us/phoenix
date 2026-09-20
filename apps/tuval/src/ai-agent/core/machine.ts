@@ -414,8 +414,20 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 				noCmds,
 			],
 
-			pageRefused: (state, msg) =>
-				failed({...state, pageOutcome: {status: "refused", failure: msg.failure}}, msg.failure),
+			/**
+			 * A page read is not a turn, so its refusal settles none and stains none.
+			 *
+			 * Routed through `failed` it did both: a click on "Load earlier messages" while the model
+			 * was still writing marked that reply final and closed the turn under it, which is a live
+			 * session rewritten by a read that touched nothing. `pageOutcome` is the whole record —
+			 * `shell/chat/ChatWindow.tsx` reads the refusal off it and nothing else, and `page` clears
+			 * it on the next request — so a refused read leaves `failure` alone rather than parking a
+			 * `PAGE_ERROR` there that no surface renders and no later success retires (#9514).
+			 */
+			pageRefused: (state, msg) => [
+				{...state, pageOutcome: {status: "refused", failure: msg.failure}},
+				noCmds,
+			],
 
 			/**
 			 * Asking the backend to stop is not the backend having stopped (#8007).
