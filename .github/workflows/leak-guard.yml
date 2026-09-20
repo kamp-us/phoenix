@@ -123,9 +123,6 @@ jobs:
     name: regression tests for this workflow's step
     runs-on: ubuntu-latest
     steps:
-      # Runs the step harness against this very file: replays the advancing-main
-      # incident (#4508, run 34000979042), covers all three event paths, legitimate
-      # empty diffs, scanner-failure propagation, and pins the two defect shapes.
       - uses: actions/checkout@v4.2.2
 
       - run: bash .github/workflows/leak-guard-step.test.sh
