@@ -15,6 +15,7 @@ import {authClient, clearBearerToken, useSession} from "./auth/client";
 import {useMe} from "./auth/useMe";
 import {useBildirimUnread} from "./components/bildirim/useBildirimUnread";
 import {DivanSubnavLayout} from "./components/divan/DivanSubnavLayout";
+import {DIVAN_PATH, DIVAN_RAPORLAR_PATH} from "./components/divan/divanSection";
 import {useDivanAccess} from "./components/divan/useDivanAccess";
 import {useDivanPendingCount} from "./components/divan/useDivanPendingCount";
 import {AppShell, Main} from "./components/layout/AppShell";
@@ -323,7 +324,7 @@ function LayoutContent() {
 				: undefined,
 			karma: selfKarma,
 			caylakMeter: meterEligible && meterStanding ? caylakMeter(meterStanding) : undefined,
-			divanTo: showDivan ? "/divan" : undefined,
+			divanTo: showDivan ? DIVAN_PATH : undefined,
 			divanCount: showDivan ? divanCount : undefined,
 			bildirim: bildirimOn && isSignedIn ? {to: "/bildirimler", unread: bildirimUnread} : undefined,
 		}),
@@ -446,7 +447,17 @@ export function App() {
 		<Route key="sozluk-letter" path="/sozluk/harf/:letter" element={<SozlukLetter />} />,
 		<Route key="sozluk-slug" path="/sozluk/:slug" element={<SozlukTermPage />} />,
 	];
-	const divanRoutes = [<Route key="divan" path="/divan" element={<DivanPage />} />];
+	// The section is a path segment, not page state (#8776), so both divan panes are
+	// addressable by URL. `raporlar` is still gated on the server's `isModerator` inside the
+	// page — the route only names which section the reader asked for.
+	const divanRoutes = [
+		<Route key="divan" path={DIVAN_PATH} element={<DivanPage />} />,
+		<Route
+			key="divan-raporlar"
+			path={DIVAN_RAPORLAR_PATH}
+			element={<DivanPage section="raporlar" />}
+		/>,
+	];
 	return (
 		<ThemeProvider>
 			<LocaleProvider>
