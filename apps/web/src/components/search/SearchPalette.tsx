@@ -24,7 +24,7 @@ const ALL_RESULTS = "all-results";
 const RECENT_PREFIX = "recent:";
 const DEFAULT_PREFIX = "default:";
 
-export function SearchPalette() {
+export function SearchPalette({storage = browserStorage()}: {storage?: Storage}) {
 	const {open, setOpen} = useSearchPalette();
 	const navigate = useNavigate();
 	const location = useLocation();
@@ -42,10 +42,10 @@ export function SearchPalette() {
 		location.pathname === "/search" ? (new URLSearchParams(location.search).get("q") ?? "") : "";
 	useEffect(() => {
 		setQuery(open ? urlQuery : "");
-		setRecentSearches(open ? readSearchHistory(browserStorage()) : []);
+		setRecentSearches(open ? readSearchHistory(storage) : []);
 		// `urlQuery` is deliberately not a dependency: it seeds the field at the open seam and
 		// must not overwrite what the reader has typed since.
-	}, [open]);
+	}, [open, storage]);
 
 	const scopes = useMemo(
 		() => [
@@ -147,7 +147,7 @@ export function SearchPalette() {
 			return;
 		}
 		const target = searchTarget(query);
-		if (target) setRecentSearches(rememberSearch(browserStorage(), query));
+		if (target) setRecentSearches(rememberSearch(storage, query));
 		if (item.value === ALL_RESULTS) {
 			if (target) {
 				setOpen(false);
