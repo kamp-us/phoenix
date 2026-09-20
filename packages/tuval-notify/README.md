@@ -339,9 +339,10 @@ from the window's side. There is nothing here to leak.
 **How the window gets to the browser.** The row carries
 `renderer: {kind: "module", ref: "@kampus/tuval-notify/window"}` and the desk's page imports that
 specifier itself at boot ([ADR 0359](https://github.com/kamp-us/phoenix/blob/main/.decisions/0359-tuval-window-renderer-is-a-module-specifier.md)).
-The other route — an authored `window` field on `defineProgram` — does not work for a package: it
-seats the renderer in a map inside the *kernel* process, which the browser tab cannot reach
-(phoenix [#8811](https://github.com/kamp-us/phoenix/issues/8811), open).
+There is no other route. A window declared inline on the authored record would seat the renderer in
+a map inside the *kernel* process, which the browser tab cannot reach, so that key is gone
+(phoenix [#8811](https://github.com/kamp-us/phoenix/issues/8811),
+[#8946](https://github.com/kamp-us/phoenix/issues/8946)).
 
 **What that asks of your config, and it is not nothing.** The page resolves the specifier from the
 config module that declared the row, not from the app (phoenix #8262). So `@kampus/tuval-notify`

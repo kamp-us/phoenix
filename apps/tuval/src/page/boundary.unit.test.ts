@@ -17,7 +17,8 @@
  * a module in this tree is named to the page and is a spelling nothing else uses, so scanning the
  * source for one finds every window a row can declare without this file holding a register that a
  * new window's author has to remember to edit. A module a *package* ships is out of this walk's
- * reach and carries its own guard beside its own source (`packages/tuval-notify/src/state.ts`).
+ * reach and carries its own guard beside its own source
+ * (`packages/tuval-notify/src/state.unit.test.ts`).
  *
  * Only runtime edges count: an `import type` is erased by the bundler and reaches nothing.
  */

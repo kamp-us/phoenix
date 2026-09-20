@@ -25,7 +25,7 @@ compiled by one entry of `FIELD_COMPILERS` in
 | `commands` | `spells` | [`commands.ts`](../apps/tuval/src/authoring/commands.ts) |
 | `key` cell in `update` | `takesKeys` | [`keys.ts`](../apps/tuval/src/authoring/keys.ts) |
 | `title` / `status` | the two self-report out-ports | [`view.ts`](../apps/tuval/src/authoring/view.ts) |
-| `renderer` | `renderer` — a module specifier, straight through | `define-program.ts` |
+| `renderer` | `renderer` — a module specifier, straight through | [`define-program.ts`](../apps/tuval/src/authoring/define-program.ts) |
 | `resume` | `resume` | [`resume.ts`](../apps/tuval/src/authoring/resume.ts) |
 
 The row is a plain object, so **anything the table above does not cover is reached by spreading the
