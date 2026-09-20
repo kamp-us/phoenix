@@ -129,7 +129,9 @@ of one repository are two desks with no shared state
 `project.json` naming the path it was derived from, so a key reads back. A project needs zero files
 to be a project; `<project>/.tuval/` is a config directory and may hold `tuval.config.ts` and
 nothing else. State an older build left under `<project>/.tuval` is moved into the home-dir key on
-the next boot, once, and the boot line says what it moved.
+the next boot, once, and the boot line says what it moved. A second line names what it left behind:
+an entry the home-dir key already holds under that name is never written over, so the copy in the
+project stays there, read by nothing, for you to delete.
 
 ```
 tuval: booted — 3 program(s), 6 spell(s) registered from …/apps/tuval/.tuval/tuval.config.ts; 3 process(es) live, 0 restored from ~/.tuval/projects/-Users-you-code-phoenix-apps-tuval
@@ -962,7 +964,8 @@ it with `1013`.
 
 **`PiSessionHost`** is the seam. Above it, only protocol values; below it, the real `AgentSession`
 and its JSONL `SessionManager` — the transcript lands in the desk's own store, at
-`<state dir>/pi-sessions`, whatever cwd the session works in. Everything crossing that seam is projected, never cast, per
+`<state dir>/pi-sessions`, whatever cwd the session works in. Everything crossing that seam is
+projected, never cast, per
 [`.patterns/strict-wire-schema-projection.md`](../../.patterns/strict-wire-schema-projection.md).
 `makeScriptedHost` in `fixtures.ts` is the same seam with no model behind it, which is what lets
 the whole wire suite run in the unit tier.

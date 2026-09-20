@@ -27,6 +27,7 @@ import {ProcessId} from "../process/process.ts";
 import type {AnyProgram} from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
+import {scratchHome} from "../scratch-home.ts";
 import {applyMsg, initialState, type ShellMsg} from "./core/index.ts";
 import type {ServeDeskOptions} from "./host/index.ts";
 import {applyKeysConfig, defaultPrefixTable} from "./keys/index.ts";
@@ -44,6 +45,9 @@ import {
 	withShellFeatures,
 } from "./program.ts";
 import {WindowId} from "./window/index.ts";
+
+/** The scratch home every boot in this file runs under. */
+const home = scratchHome("shell-program");
 
 /** The box's own config module — the user-owned surface the shell is registered through. */
 const boxConfig = fileURLToPath(new URL("../../.tuval/tuval.config.ts", import.meta.url));
@@ -112,7 +116,7 @@ describe("the shell as a program row", () => {
 		"is registered through the user-owned config module and spawns as a lone root",
 		() =>
 			Effect.gen(function* () {
-				const {kernel: context} = yield* boot({global: boxConfig, project: freshProject()});
+				const {kernel: context} = yield* boot({global: boxConfig, project: freshProject(), home});
 				const registered = yield* Registry.use((registry) => registry.resolve(shellId)).pipe(
 					Effect.provideContext(context),
 				);
@@ -445,7 +449,7 @@ describe("the boot path's one prefix table", () => {
 		"carries a config-set table through to the value the bin hands `serveDesk`",
 		() =>
 			Effect.gen(function* () {
-				const booted = yield* boot({global: reboundConfig, project: freshProject()});
+				const booted = yield* boot({global: reboundConfig, project: freshProject(), home});
 				// The one expression `src/bin.ts` builds around the reported table.
 				const options = {
 					kernel: booted.kernel,
@@ -462,7 +466,7 @@ describe("the boot path's one prefix table", () => {
 		"leaves a config that names no table on the default, on both sides",
 		() =>
 			Effect.gen(function* () {
-				const booted = yield* boot({global: boxConfig, project: freshProject()});
+				const booted = yield* boot({global: boxConfig, project: freshProject(), home});
 				assert.deepStrictEqual(booted.keyTable, defaultPrefixTable);
 				assert.deepStrictEqual(shellPrefixTable([row()]), booted.keyTable);
 			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),

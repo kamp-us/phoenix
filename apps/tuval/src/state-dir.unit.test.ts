@@ -39,6 +39,28 @@ describe("the project key", () => {
 		assert.notStrictEqual(projectKey("/a-b/c"), projectKey("/a/b/c"));
 	});
 
+	it("keeps a dash beside a separator apart from one on the other side of it", () => {
+		// The shape the first encoding lost: escaping a dash to a longer run of dashes leaves a run
+		// ambiguous between the two productions, and both of these collided on `-a---b`.
+		assert.notStrictEqual(projectKey("/a-/b"), projectKey("/a/-b"));
+		assert.notStrictEqual(projectKey("/x/-y"), projectKey("/x-/y"));
+	});
+
+	it("is injective over every short path built from a separator, a dash and an underscore", () => {
+		// An exhaustive proof of ADR 0402 rule 4 over the alphabet that can collide at all: the
+		// escape's own two characters, the separator, and one ordinary character to carry them.
+		const alphabet = ["a", "-", "_", "/"];
+		const paths: Array<string> = [];
+		const extend = (path: string, left: number) => {
+			paths.push(path);
+			if (left === 0) return;
+			for (const char of alphabet) extend(path + char, left - 1);
+		};
+		extend("/", 5);
+		const keys = new Set(paths.map((path) => projectKey(path)));
+		assert.strictEqual(keys.size, paths.length);
+	});
+
 	it("spends one folder name on a path, never a nested tree", () => {
 		assert.notInclude(projectKey("/Users/someone/code/phoenix"), "/");
 	});
@@ -47,6 +69,14 @@ describe("the project key", () => {
 		const long = `/${"segment/".repeat(60)}`;
 		assert.isAtMost(Buffer.byteLength(projectKey(long)), 255);
 		assert.notStrictEqual(projectKey(long), projectKey(`${long}other`));
+	});
+
+	it("elides on a marker no escape can emit, so an elided key is never a plain one", () => {
+		// A head cut through an escape pair would leave a lone `_`, and `__` before the digest reads
+		// as a plain escaped underscore instead of the elision marker.
+		const key = projectKey(`/${"-".repeat(300)}`);
+		assert.match(key, /_[0-9a-f]{32}$/);
+		assert.notInclude(key, "__");
 	});
 
 	it("puts every project's state under one home-dir tree, and the sessions inside that", () => {

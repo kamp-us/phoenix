@@ -15,6 +15,7 @@
  * than the runner's default 130.
  */
 
+import {homedir} from "node:os";
 import {dirname} from "node:path";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Cause, Console, Effect, Exit, Option, Runtime} from "effect";
@@ -69,6 +70,9 @@ const tuval = Command.make(
 		const {report, kernel, keyTable, moduleRenderers, features} = yield* boot({
 			global: Option.getOrElse(config, defaultGlobalConfig),
 			project: Option.getOrElse(project, () => process.cwd()),
+			// The one boot that means the operator's own home dir. Every other call site names a
+			// scratch one, which is why `BootOptions.home` is required rather than defaulted here.
+			home: homedir(),
 		}).pipe(
 			Effect.catch((error) =>
 				Console.error(`tuval: refusing to boot — ${error.message}`).pipe(

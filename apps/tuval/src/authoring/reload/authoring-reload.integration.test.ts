@@ -27,6 +27,7 @@ import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {type Booted, boot, projectDir} from "../../boot.ts";
 import {Processes} from "../../process/Processes.ts";
 import {type ProcessHandle, ProcessId} from "../../process/process.ts";
+import {scratchHome} from "../../scratch-home.ts";
 import {
 	DESK_NODE,
 	type DeclaredReview,
@@ -36,6 +37,9 @@ import {
 	SINK_NODE,
 	VERDICT,
 } from "./fixtures/names.ts";
+
+/** The scratch home every boot in this file runs under. */
+const home = scratchHome("authoring-reload");
 
 const configModule = fileURLToPath(new URL("./fixtures/reviewing-desk.ts", import.meta.url));
 
@@ -121,7 +125,7 @@ const runFirstBoot = (
 	declaration: string,
 ): Effect.Effect<FirstRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
-		const booted = yield* boot({global: configModule, project});
+		const booted = yield* boot({global: configModule, project, home});
 		const {desk, review: target, sink} = yield* nodes(booted);
 		yield* review(desk, target, FIRST_PR);
 		const beforeReload = stateOf<ReviewState>(target);
@@ -154,7 +158,7 @@ const runFromTheCheckpoint = (
 	project: string,
 ): Effect.Effect<SecondRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
-		const booted = yield* boot({global: configModule, project});
+		const booted = yield* boot({global: configModule, project, home});
 		const {desk, review: target, sink} = yield* nodes(booted);
 		const restored = stateOf<ReviewState>(target);
 		const heardOnArrival = stateOf<{readonly heard: ReadonlyArray<string>}>(sink).heard;
@@ -190,7 +194,7 @@ const runWithAResumeThatEmits = (
 	declaration: string,
 ): Effect.Effect<Exit.Exit<unknown, unknown>, never, FileSystem.FileSystem> => {
 	declare(declaration, {reviewing: RELOADED_PR, resumeEmits: true});
-	return Effect.exit(boot({global: configModule, project}).pipe(Effect.scoped));
+	return Effect.exit(boot({global: configModule, project, home}).pipe(Effect.scoped));
 };
 
 const run = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Scope.Scope>) =>

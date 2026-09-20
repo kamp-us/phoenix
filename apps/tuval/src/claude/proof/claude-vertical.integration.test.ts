@@ -34,6 +34,7 @@ import {
 import {boot, projectDir} from "../../boot.ts";
 import {PI_SESSION_PROGRAM} from "../../pi/renderer-ref.ts";
 import {ProcessId} from "../../process/process.ts";
+import {scratchHome} from "../../scratch-home.ts";
 import {
 	activeWorkspace,
 	type ShellMsg,
@@ -86,6 +87,9 @@ import {
 	TOOL_ITEM,
 } from "./script.ts";
 
+/** The scratch home every boot in this file runs under. */
+const home = scratchHome("claude-vertical");
+
 const TIMEOUT = 180_000;
 
 const configModule = fileURLToPath(new URL("./desk.ts", import.meta.url));
@@ -108,7 +112,7 @@ const freshProject = (): string => {
  * app stopping, which is what the restart case does.
  */
 const bootDesk = Effect.fn("claudeVertical.bootDesk")(function* (project: string) {
-	const booted = yield* boot({global: configModule, project});
+	const booted = yield* boot({global: configModule, project, home});
 	const server = yield* serveDesk({kernel: booted.kernel, port: 0, table: defaultPrefixTable});
 	const entries = yield* readEntries.pipe(Effect.provideContext(booted.kernel));
 	return {booted, server, entries};

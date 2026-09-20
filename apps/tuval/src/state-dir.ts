@@ -8,17 +8,18 @@
  * `tuval.config.ts` out of it, and `adoptInProjectState` below lifts everything else out of it once
  * and leaves that module behind.
  *
- * The home dir is a parameter everywhere for the same reason it is one on `defaultGlobalConfig`: a
- * test must be able to point it at a temp dir rather than write into the operator's own.
+ * The home dir is a required parameter everywhere here, never defaulted: a caller that named none
+ * would resolve the operator's own home, and a test or proof that did so would write a desk's
+ * manifest, checkpoints and session files into it. The two callers that mean the real home dir say
+ * so — `src/bin.ts` and `PiAiAgent`'s store fallback.
  */
 
 import {createHash} from "node:crypto";
-import {homedir} from "node:os";
 import {join, sep} from "node:path";
 import {Context, Effect, FileSystem, Layer, type PlatformError, Schema} from "effect";
 
 /** The home dir's `.tuval`: the global config module's home, and the root of every project's state. */
-export const homeTuvalDir = (home: string = homedir()): string => join(home, ".tuval");
+export const homeTuvalDir = (home: string): string => join(home, ".tuval");
 
 /**
  * The most bytes a key may spend on one directory name. `NAME_MAX` is 255 on every filesystem this
@@ -29,15 +30,35 @@ const KEY_MAX_BYTES = 200;
 /** How many hex characters of the path's digest an elided key carries. */
 const DIGEST_CHARS = 32;
 
-/** The longest prefix of `text` that fits in `bytes`, never splitting a code point. */
-const clip = (text: string, bytes: number): string => {
+/** The character that leads an escape pair, and is therefore never itself a plain character. */
+const ESCAPE = "_";
+
+/**
+ * One path character as its production: a literal `-` and a literal `_` each become `_` plus a
+ * marker, and everything else stands for itself. A separator is not a character here — `projectKey`
+ * emits `-` for one — so the only thing that can produce a `-` is a separator, which is what makes
+ * the code prefix-free.
+ */
+const escapeChar = (char: string): string =>
+	char === "-" || char === ESCAPE ? `${ESCAPE}${char}` : char;
+
+/**
+ * The longest prefix of an escaped key that fits in `bytes`, never splitting a code point and never
+ * splitting an escape pair. A head cut mid-pair would end on a lone `_`, and the digest joined
+ * after it would then read as a plain escaped `_` rather than as the elision marker.
+ */
+const clip = (escaped: string, bytes: number): string => {
+	const chars = [...escaped];
 	let out = "";
 	let used = 0;
-	for (const char of text) {
-		const size = Buffer.byteLength(char);
+	for (let at = 0; at < chars.length; at += 1) {
+		const lead = chars[at] ?? "";
+		const unit = lead === ESCAPE ? lead + (chars[at + 1] ?? "") : lead;
+		const size = Buffer.byteLength(unit);
 		if (used + size > bytes) break;
-		out += char;
+		out += unit;
 		used += size;
+		if (unit.length > lead.length) at += 1;
 	}
 	return out;
 };
@@ -46,20 +67,30 @@ const clip = (text: string, bytes: number): string => {
  * A project checkout's absolute path as one directory name.
  *
  * The shape is Claude Code's — the path is the key and the key is a folder name — with the one
- * thing its plain substitution does not give: two distinct paths are two distinct names. A
- * separator becomes `-` and a literal `-` in the path becomes `--`, so `/a-b/c` and `/a/b/c` encode
- * apart rather than colliding on `-a-b-c`. The escape is injective, which is the rule ADR 0402's
- * rule 4 states; decoding is never needed, because `project.json` inside the directory records the
- * path the key came from.
+ * thing its plain substitution does not give: two distinct paths are two distinct names, which is
+ * ADR 0402's rule 4. A separator becomes `-`, a literal `-` becomes `_-` and a literal `_` becomes
+ * `__`, so `/a-b/c` and `/a/b/c` encode apart rather than colliding on `-a-b-c`.
+ *
+ * The escape is injective because the code is prefix-free, read left to right: a `-` can only have
+ * come from a separator, since no production puts one anywhere but first; a `_` always opens a pair
+ * and its second character says which literal it was. Escaping a run of dashes to a longer run of
+ * dashes is what an earlier encoding did, and that is exactly what is not decidable — `/a-/b` and
+ * `/a/-b` both produced `-a---b`. Decoding is never run, because `project.json` inside the
+ * directory records the path the key came from; the property is what the encoding owes.
  *
  * A path too long to spend on one filename is elided to a fitting head plus a digest of the whole
- * path, which keeps distinct paths distinct for the reason a content address does.
+ * path, which keeps distinct paths distinct for the reason a content address does. The digest is
+ * joined on a single `_` followed by a hex character — a sequence no escape emits, since a `_` in
+ * an escaped key is always followed by `-` or `_` — so an elided key can never equal a plain one.
  */
 export const projectKey = (project: string): string => {
-	const escaped = project.replaceAll("-", "--").split(sep).join("-");
+	const escaped = project
+		.split(sep)
+		.map((segment) => [...segment].map(escapeChar).join(""))
+		.join("-");
 	if (Buffer.byteLength(escaped) <= KEY_MAX_BYTES) return escaped;
 	const digest = createHash("sha256").update(project).digest("hex").slice(0, DIGEST_CHARS);
-	return `${clip(escaped, KEY_MAX_BYTES - DIGEST_CHARS - 1)}-${digest}`;
+	return `${clip(escaped, KEY_MAX_BYTES - DIGEST_CHARS - 1)}${ESCAPE}${digest}`;
 };
 
 /**
@@ -67,7 +98,7 @@ export const projectKey = (project: string): string => {
  * so they are two directories and share nothing (ADR 0402 rule 5); a moved checkout is a new key
  * and an empty desk (rule 6).
  */
-export const homeStateDir = (project: string, home: string = homedir()): string =>
+export const homeStateDir = (project: string, home: string): string =>
 	join(homeTuvalDir(home), "projects", projectKey(project));
 
 /**

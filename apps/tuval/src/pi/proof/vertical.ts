@@ -31,12 +31,16 @@ import {Processes} from "../../process/Processes.ts";
 import type {ProcessHandle} from "../../process/process.ts";
 import {ProcessId} from "../../process/process.ts";
 import {ProgramId} from "../../registry/program.ts";
+import {scratchHome} from "../../scratch-home.ts";
 import {activeWorkspace, type ShellState, windowIds} from "../../shell/core/index.ts";
 import {windows} from "../../shell/layout/index.ts";
 import {shellNode} from "../../shell/program.ts";
 import {WindowId} from "../../shell/window/index.ts";
 import {PI_SESSION_PROGRAM} from "../renderer-ref.ts";
 import {PROJECT_ROOT_VAR} from "./names.ts";
+
+/** The scratch home every boot in this file runs under. */
+const home = scratchHome("pi-vertical-proof");
 
 /** `apps/tuval` — `index.html`'s home, and so the page server's root, as `src/bin.ts` computes it. */
 export const appRoot = dirname(dirname(dirname(import.meta.dirname)));
@@ -81,7 +85,7 @@ export interface ChattedVertical {
 export const bootChattedVertical = Effect.fn("tuval.proof.bootChattedVertical")(
 	function* (options: {readonly prompts: ReadonlyArray<string>}) {
 		const project = freshProject();
-		const {kernel} = yield* boot({global: configModule, project});
+		const {kernel} = yield* boot({global: configModule, project, home});
 
 		// The shell opens it, not this file: `window.open` is the picker's own route
 		// (`../../shell/picker/open.ts`), so the process the page then offers is one a founder's

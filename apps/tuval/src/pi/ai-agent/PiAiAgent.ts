@@ -33,6 +33,7 @@
  */
 
 import {readdirSync} from "node:fs";
+import {homedir} from "node:os";
 import {dirname, join} from "node:path";
 import {getAgentDir, ModelRuntime, SessionManager} from "@earendil-works/pi-coding-agent";
 import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
@@ -157,7 +158,8 @@ export interface PiAiAgentOptions {
  * `cwd`: that is the write into a foreign repository ADR 0402 bans.
  */
 const storeOf = (options: PiAiAgentOptions): string =>
-	options.sessionDir ?? piSessionStore(homeStateDir(options.projectRoot ?? process.cwd()));
+	options.sessionDir ??
+	piSessionStore(homeStateDir(options.projectRoot ?? process.cwd(), homedir()));
 
 type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
 

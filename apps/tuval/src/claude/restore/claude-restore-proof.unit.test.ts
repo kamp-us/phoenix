@@ -36,6 +36,7 @@ import type {
 import {type Booted, boot, projectDir} from "../../boot.ts";
 import {Processes} from "../../process/Processes.ts";
 import {type ProcessHandle, ProcessId} from "../../process/process.ts";
+import {scratchHome} from "../../scratch-home.ts";
 import {
 	AGENT_NODE,
 	afterTheCut,
@@ -48,6 +49,9 @@ import {
 	SWITCHED_TO,
 	WINDOW_NODE,
 } from "./fixtures/claude-desk.ts";
+
+/** The scratch home every boot in this file runs under. */
+const home = scratchHome("claude-restore");
 
 const configModule = fileURLToPath(new URL("./fixtures/claude-desk.ts", import.meta.url));
 
@@ -187,7 +191,7 @@ interface SecondRun {
  */
 const runToTheCut = (project: string): Effect.Effect<FirstRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
-		const booted = yield* boot({global: configModule, project});
+		const booted = yield* boot({global: configModule, project, home});
 		const {agent, window} = yield* handlesOf(booted);
 		yield* until("the session to open", () => sessionOf(agent).sessionId !== null);
 
@@ -243,7 +247,7 @@ const runFromTheCheckpoint = (
 	project: string,
 ): Effect.Effect<SecondRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
-		const booted = yield* boot({global: configModule, project});
+		const booted = yield* boot({global: configModule, project, home});
 		const {agent, window} = yield* handlesOf(booted);
 		const restored = sessionOf(agent);
 

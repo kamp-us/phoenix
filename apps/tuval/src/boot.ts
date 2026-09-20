@@ -204,11 +204,12 @@ export interface BootOptions {
 	/** The project directory. Its `.tuval/` holds the project config layer, and no state. */
 	readonly project: string;
 	/**
-	 * The home dir this desk's state hangs under. A parameter for the reason it is one on
-	 * `defaultGlobalConfig`: a test must be able to point it at a temp dir rather than write into
-	 * the operator's own.
+	 * The home dir this desk's state hangs under. Required, not defaulted: a boot that named none
+	 * would write this desk's manifest, checkpoints and Pi session files into the operator's own
+	 * `~/.tuval`, which is what every test and proof here must not do. `src/bin.ts` is the one
+	 * caller that names the real home dir.
 	 */
-	readonly home?: string;
+	readonly home: string;
 }
 
 export interface BootReport {

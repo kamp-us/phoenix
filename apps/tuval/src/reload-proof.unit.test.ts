@@ -25,6 +25,10 @@ import {SpellSet} from "./commands/spell-set.ts";
 import type {DeclaredConfig} from "./config-fixtures/reloadable.ts";
 import {CallId} from "./protocol/ids.ts";
 import {PROTOCOL_VERSION, SpellCall} from "./protocol/messages.ts";
+import {scratchHome} from "./scratch-home.ts";
+
+/** The scratch home every boot in this file runs under. */
+const home = scratchHome("reload-proof");
 
 const reloadable = fileURLToPath(new URL("./config-fixtures/reloadable.ts", import.meta.url));
 
@@ -75,7 +79,7 @@ const bootReloadable = Effect.fnUntraced(function* () {
 	const declaration = join(freshDir("tuval-declared-"), "config.json");
 	declare(declaration, first);
 	process.env.TUVAL_RELOAD_FIXTURE = declaration;
-	const booted = yield* boot({global: reloadable, project});
+	const booted = yield* boot({global: reloadable, project, home});
 	return {booted, declaration};
 });
 

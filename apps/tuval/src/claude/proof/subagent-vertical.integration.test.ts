@@ -36,6 +36,7 @@ import type {ReactElement} from "react";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import {boot, projectDir} from "../../boot.ts";
 import {ProcessId} from "../../process/process.ts";
+import {scratchHome} from "../../scratch-home.ts";
 import {type ChatView, initialChatView} from "../../shell/chat/index.ts";
 import {
 	activeWorkspace,
@@ -68,6 +69,9 @@ import {
 	finishFrameOf,
 	spawnCallIds,
 } from "./two-subagents.ts";
+
+/** The scratch home every boot in this file runs under. */
+const home = scratchHome("subagent-vertical");
 
 installDomShims();
 
@@ -124,7 +128,7 @@ const freshProject = (): string => {
 };
 
 const bootDesk = Effect.fn("subagentVertical.bootDesk")(function* (project: string) {
-	const booted = yield* boot({global: configModule, project});
+	const booted = yield* boot({global: configModule, project, home});
 	const server = yield* serveDesk({kernel: booted.kernel, port: 0, table: defaultPrefixTable});
 	const entries = yield* readEntries.pipe(Effect.provideContext(booted.kernel));
 	return {booted, server, entries};
