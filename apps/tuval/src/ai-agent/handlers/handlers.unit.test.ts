@@ -22,6 +22,7 @@ import {
 	type AiAgentSessionState,
 	aiAgentSessionMachine,
 	isAiAgentSessionState,
+	pageCursorUnavailable,
 } from "../core/index.ts";
 import type {
 	ModelRef,
@@ -307,8 +308,10 @@ describe("the AI agent handlers under a process", () => {
 				yield* handle.dispatch({type: "page", before: "local:evicted", limit: 10});
 				assert.deepStrictEqual(probe.pages, []);
 				assert.isNull(sessionOf(handle).lastPage);
-				assert.isNull(sessionOf(handle).failure);
 				assert.isUndefined(lastOn(log, aiAgentPortNames.pageReply));
+				// Asking no backend is not answering nobody: the refusal is the window's banner, and
+				// answering `nothing` left the click with no page, no banner and no log line (#9514).
+				assert.deepStrictEqual(sessionOf(handle).failure, pageCursorUnavailable);
 			}),
 		);
 	});
@@ -332,11 +335,13 @@ describe("the AI agent handlers under a process", () => {
 					const folded = yield* handle.dispatchFolded({type: "page", before, limit: 10});
 					assert.isTrue(isAiAgentSessionState(folded.summary.state));
 					if (!isAiAgentSessionState(folded.summary.state)) return;
-					assert.isNull(folded.summary.state.pageOutcome);
+					assert.deepStrictEqual(folded.summary.state.pageOutcome, {
+						status: "refused",
+						failure: pageCursorUnavailable,
+					});
 				}
 				assert.deepStrictEqual(probe.pages, []);
 				assert.isNull(sessionOf(handle).lastPage);
-				assert.isNull(sessionOf(handle).failure);
 			}),
 		);
 	});

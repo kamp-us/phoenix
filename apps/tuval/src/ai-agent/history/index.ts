@@ -28,8 +28,10 @@ export {isRefusal, type PlanRefusal} from "./refusal.ts";
 export {boundToolOutput, droppedResultBytes, type RawToolItem} from "./tool-output.ts";
 export {
 	nestedLimitsFor,
+	noticeLimitsFor,
 	planTranscriptWindow,
 	TRANSCRIPT_NESTED_ALLOWANCE,
+	TRANSCRIPT_NOTICE_SHARE,
 	TRANSCRIPT_WINDOW_BYTE_LIMIT,
 	TRANSCRIPT_WINDOW_ITEM_LIMIT,
 	type TranscriptWindow,

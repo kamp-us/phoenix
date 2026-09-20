@@ -16,7 +16,7 @@
  */
 
 import {
-	isNestedItem,
+	anchorsCursor,
 	type TranscriptItem,
 	type TranscriptPayload,
 	type WindowOmission,
@@ -24,10 +24,12 @@ import {
 import {
 	type GroupWeight,
 	groupTranscript,
+	isShedItem,
 	itemBytes,
 	locateCursor,
+	type ShedClasses,
 	type TranscriptGroup,
-	withoutNested,
+	withoutPassengers,
 } from "./groups.ts";
 import type {PlanRefusal} from "./refusal.ts";
 
@@ -54,6 +56,35 @@ export const nestedLimitsFor = (limits: GroupWeight): GroupWeight => ({
 	bytes: limits.bytes * TRANSCRIPT_NESTED_ALLOWANCE,
 });
 
+/**
+ * What share of a bound the session's notices may spend.
+ *
+ * A notice costs nothing against the conversation's own bound (`weighGroup`), so it needs a ceiling
+ * of its own or a run of them is an unbounded rendered tail — the same trade #8814 struck for a
+ * worker's rows, in the other direction: a worker's rows are hidden behind a slot and get room to
+ * spare, notices render inline and get a quarter. At the shipped bound that is ten notices, which
+ * is more than `chatRows` shows expanded in one collapsed run and far under the forty that emptied
+ * a window of its conversation (#9514).
+ */
+export const TRANSCRIPT_NOTICE_SHARE = 1 / 4;
+
+export const noticeLimitsFor = (limits: GroupWeight): GroupWeight => ({
+	items: Math.max(1, Math.floor(limits.items * TRANSCRIPT_NOTICE_SHARE)),
+	bytes: Math.max(1, Math.floor(limits.bytes * TRANSCRIPT_NOTICE_SHARE)),
+});
+
+/** The live window's passenger ceilings, derived from the conversation's own bound. */
+export const windowPassengersFor = (own: GroupWeight): Omit<TakeLimits, "own"> => ({
+	nested: nestedLimitsFor(own),
+	notices: noticeLimitsFor(own),
+});
+
+/** A page's, which drop no notice: a hole here is history no later page can tile over. */
+export const pagePassengersFor = (own: GroupWeight): Omit<TakeLimits, "own"> => ({
+	nested: nestedLimitsFor(own),
+	notices: "own",
+});
+
 export interface TranscriptWindow extends TranscriptPayload {
 	readonly kind: "window";
 	/** Index of the window's oldest item in the slice it was planned over, oldest-first. */
@@ -71,6 +102,11 @@ export interface WindowOptions {
 	readonly itemLimit?: number;
 	readonly byteLimit?: number;
 }
+
+export const plus = (left: GroupWeight, right: GroupWeight): GroupWeight => ({
+	items: left.items + right.items,
+	bytes: left.bytes + right.bytes,
+});
 
 /** Which bound refuses this much more here, in the vocabulary `WindowOmission` speaks. */
 export const stoppedBy = (
@@ -116,10 +152,20 @@ export const itemIndexOf = (
 export const bytesOf = (items: ReadonlyArray<TranscriptItem>): number =>
 	items.reduce((total, item) => total + itemBytes(item), 0);
 
-/** The two ceilings a walk answers to: the agent's own rows, and the workers' rows riding along. */
+/**
+ * The ceilings a walk answers to: the conversation's own rows, a spawned worker's rows riding
+ * along, and what the session's notices answer to.
+ *
+ * `notices: "own"` is the page walk's answer and means they are charged to the conversation's own
+ * bound, exactly as they were before they had a bucket. A page is the only way back to history a
+ * reader has, and a walk that puts a row down leaves a hole consecutive pages cannot tile over —
+ * so the shedding ceiling is the live window's alone, where the rows it drops are still reachable
+ * by paging.
+ */
 export interface TakeLimits {
 	readonly own: GroupWeight;
 	readonly nested: GroupWeight;
+	readonly notices: GroupWeight | "own";
 }
 
 /** What one walk kept, where it started, and what it put down on the way. */
@@ -135,15 +181,22 @@ export interface TakenGroups {
 /**
  * Walk older from `boundary`, taking whole groups until a ceiling refuses one.
  *
- * The one walk both bounds run, because the nested ceiling is the kind of rule that gets applied in
- * one copy of a loop and forgotten in the other — and the copy that forgets it is unbounded.
+ * The one walk both bounds run, because a passenger ceiling is the kind of rule that gets applied
+ * in one copy of a loop and forgotten in the other — and the copy that forgets it is unbounded.
  *
- * A ceiling reached does not evict the group: it puts the group's nested passengers down and keeps
- * the agent's own rows, so a spawn can never cost the operator a turn (#8814) while the tail stays
- * bounded at both ceilings. Only a group that was all passengers ends the walk, having nothing left
- * to keep. The newest group in range is the exception to every one of these, carried whole: an
- * empty tail is not a refusal, so `foldItem` would commit it and the live transcript would collapse
- * (#8031).
+ * A ceiling reached does not evict the group: it puts that class of passenger down and keeps the
+ * conversation's own rows, so neither a spawn (#8814) nor a run of notices (#9514) can cost the
+ * operator a turn while the tail stays bounded at every ceiling. A group left with nothing but the
+ * passengers a ceiling refused is stepped over rather than kept, and the walk goes on past it while
+ * the window still holds no row a page cursor can be minted from.
+ *
+ * That last clause is the invariant the three reports of an unreadable window all reduce to: a
+ * window whose every row fails `anchorsCursor` renders as one collapsed line and then refuses every
+ * page off itself, so the operator can neither read the session nor walk back into it (#9514,
+ * #8031, #8814). So the own bound, like the newest group, yields to it: a window carries whatever
+ * it must to hold one anchor. The newest group in range is still the exception to every ceiling,
+ * carried whole — an empty tail is not a refusal, so `foldItem` would commit it and the live
+ * transcript would collapse (#8031).
  */
 export const takeGroups = (
 	history: ReadonlyArray<TranscriptItem>,
@@ -153,37 +206,53 @@ export const takeGroups = (
 ): TakenGroups => {
 	const kept: Array<ReadonlyArray<TranscriptItem>> = [];
 	const shed: Array<ReadonlyArray<TranscriptItem>> = [];
+	const riding = limits.notices !== "own";
 	let spent: GroupWeight = {items: 0, bytes: 0};
-	let carried: GroupWeight = {items: 0, bytes: 0};
+	let nested: GroupWeight = {items: 0, bytes: 0};
+	let notices: GroupWeight = {items: 0, bytes: 0};
+	let anchored = false;
 	let start = itemIndexOf(history, groups, boundary);
 	let reason: WindowOmission["reason"] = "none";
 	for (let index = boundary - 1; index >= 0; index -= 1) {
 		const group = groups[index];
 		if (group === undefined) break;
 		const newest = kept.length === 0;
-		const stop = stoppedBy(group.weight, spent, limits.own);
-		if (stop !== null && !newest) {
+		const own = riding ? group.weight : plus(group.weight, group.notices);
+		const stop = stoppedBy(own, spent, limits.own);
+		if (stop !== null && !newest && anchored) {
 			reason = stop;
 			break;
 		}
-		const nestedStop = newest ? null : stoppedBy(group.nested, carried, limits.nested);
-		const members = nestedStop === null ? group.items : withoutNested(group);
+		const nestedStop = newest ? null : stoppedBy(group.nested, nested, limits.nested);
+		const noticeStop =
+			newest || limits.notices === "own" ? null : stoppedBy(group.notices, notices, limits.notices);
+		const shedding: ShedClasses = {nested: nestedStop !== null, notices: noticeStop !== null};
+		const refused = nestedStop ?? noticeStop;
+		const members = withoutPassengers(group, shedding);
 		if (members === null) {
-			reason = nestedStop ?? reason;
-			break;
+			reason = refused ?? reason;
+			// Nothing of this group survived its ceilings, and which ceiling refused it decides
+			// whether the walk ends. A worker's rows end it (#8814): they are the slot's, and the
+			// operator's tail already has what it came for. A run of notices does not — the
+			// conversation the bound exists to carry is behind it, and stopping here is how a window
+			// that meant to stop notices evicting turns would have evicted them itself. Stepping
+			// over puts the group down inside the range, so it is counted in `shed` and never again
+			// by the drop.
+			if (nestedStop !== null && anchored) break;
+			shed.unshift(group.items);
+			start = group.start;
+			continue;
 		}
-		if (nestedStop !== null && group.nested.items > 0) {
-			shed.unshift(group.items.filter(isNestedItem));
-			reason = nestedStop;
+		const putDown = group.items.filter((item) => isShedItem(item, shedding));
+		if (putDown.length > 0) {
+			shed.unshift(putDown);
+			reason = refused ?? reason;
 		}
 		kept.unshift(members);
-		spent = {items: spent.items + group.weight.items, bytes: spent.bytes + group.weight.bytes};
-		if (nestedStop === null) {
-			carried = {
-				items: carried.items + group.nested.items,
-				bytes: carried.bytes + group.nested.bytes,
-			};
-		}
+		spent = plus(spent, own);
+		if (!shedding.nested) nested = plus(nested, group.nested);
+		if (riding && !shedding.notices) notices = plus(notices, group.notices);
+		anchored = anchored || members.some(anchorsCursor);
 		start = group.start;
 	}
 	return {items: kept.flat(), start, shed: shed.flat(), reason};
@@ -203,7 +272,7 @@ export const planTranscriptWindow = (
 	if (typeof boundary !== "number") return boundary;
 
 	const own: GroupWeight = {items: itemLimit, bytes: byteLimit};
-	const taken = takeGroups(history, groups, boundary, {own, nested: nestedLimitsFor(own)});
+	const taken = takeGroups(history, groups, boundary, {own, ...windowPassengersFor(own)});
 	const dropped = history.slice(0, taken.start);
 	return {
 		kind: "window",

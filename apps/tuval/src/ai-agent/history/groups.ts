@@ -6,7 +6,7 @@
  * a pure fold over the item union — model-blind, and the only shape both bounds below reason about.
  */
 
-import {byteLength, isNestedItem, type TranscriptItem} from "../ports/index.ts";
+import {byteLength, isNestedItem, isNoticeItem, type TranscriptItem} from "../ports/index.ts";
 
 export type NonEmpty<A> = readonly [A, ...Array<A>];
 
@@ -22,12 +22,15 @@ export interface TranscriptGroup {
 	/** Index of the group's first item in the slice it was folded from, oldest-first. */
 	readonly start: number;
 	/**
-	 * What this group weighs against the bounds: its own rows, never the nested worker's rows riding
-	 * with them. A subagent's rows are carried by its slot and hidden from the transcript
-	 * (`shell/chat/rows.ts`), so charging the bounds for them evicts the operator's own turns to
-	 * make room for rows nothing renders — a few spawns and the visible tail is empty (#8814). They
-	 * still travel in `items`, because a window with the subagent list off folds them under the call
-	 * that spawned them.
+	 * What this group weighs against the bounds: the conversation's own rows, never a passenger
+	 * class riding with them. A subagent's rows are carried by its slot and hidden from the
+	 * transcript (`shell/chat/rows.ts`), so charging the bounds for them evicts the operator's own
+	 * turns to make room for rows nothing renders — a few spawns and the visible tail is empty
+	 * (#8814). A session notice costs the same nothing for the same reason: `chatRows` merges a run
+	 * of them into one collapsed row, so forty notices charged as forty turns spent a whole window's
+	 * budget on a single rendered line and left no conversation in it (#9514). Both still travel in
+	 * `items`, because a window renders them — the notice as that collapsed row, a worker's rows
+	 * folded under the call that spawned them when the subagent list is off.
 	 */
 	readonly weight: GroupWeight;
 	/**
@@ -37,6 +40,11 @@ export interface TranscriptGroup {
 	 * on a rendered tail instead of moving it (#8814).
 	 */
 	readonly nested: GroupWeight;
+	/**
+	 * What the session notices in this group weigh, against the ceiling `noticeLimitsFor` sets —
+	 * the same bargain the nested rows get, for the same reason they get it (#9514).
+	 */
+	readonly notices: GroupWeight;
 }
 
 /** One item's weight against the byte bound: its wire form, which is what a transport pays for. */
@@ -50,17 +58,34 @@ const weigh = (items: ReadonlyArray<TranscriptItem>): GroupWeight => ({
 	bytes: groupBytes(items),
 });
 
-/** A group's rows split by whose they are: the agent's own, and the workers' riding with them. */
+/**
+ * A group's rows split three ways: the conversation's own, the workers' riding with them, and the
+ * session's notices. The two passenger classes each answer to a ceiling of their own, so a group
+ * weighs each of them apart from the turns the bounds exist to keep.
+ */
 export const weighGroup = (
 	items: ReadonlyArray<TranscriptItem>,
-): Pick<TranscriptGroup, "weight" | "nested"> => ({
-	weight: weigh(items.filter((item) => !isNestedItem(item))),
+): Pick<TranscriptGroup, "weight" | "nested" | "notices"> => ({
+	weight: weigh(items.filter((item) => !isNestedItem(item) && !isNoticeItem(item))),
 	nested: weigh(items.filter(isNestedItem)),
+	notices: weigh(items.filter(isNoticeItem)),
 });
 
-/** The same group with its nested passengers put down, or `null` when they were all it carried. */
-export const withoutNested = (group: TranscriptGroup): NonEmpty<TranscriptItem> | null => {
-	const [head, ...tail] = group.items.filter((item) => !isNestedItem(item));
+/** Which passenger classes a walk is putting down at this group. */
+export interface ShedClasses {
+	readonly nested: boolean;
+	readonly notices: boolean;
+}
+
+export const isShedItem = (item: TranscriptItem, shed: ShedClasses): boolean =>
+	(shed.nested && isNestedItem(item)) || (shed.notices && isNoticeItem(item));
+
+/** The same group with those passengers put down, or `null` when they were all it carried. */
+export const withoutPassengers = (
+	group: TranscriptGroup,
+	shed: ShedClasses,
+): NonEmpty<TranscriptItem> | null => {
+	const [head, ...tail] = group.items.filter((item) => !isShedItem(item, shed));
 	return head === undefined ? null : [head, ...tail];
 };
 

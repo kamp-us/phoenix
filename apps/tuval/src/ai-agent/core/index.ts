@@ -9,6 +9,7 @@ export {
 	MODEL_UNSUPPORTED,
 	PAGE_ERROR,
 	PROMPT_ERROR,
+	pageCursorUnavailable,
 	promptQueueFull,
 	promptUnqueued,
 	START_ERROR,

@@ -33,6 +33,7 @@ import {
 	type AiAgentSessionSub,
 	foldEvent,
 	initialState,
+	pageCursorUnavailable,
 	START_ERROR,
 	type WindowLimits,
 } from "../core/index.ts";
@@ -348,7 +349,8 @@ export const aiAgentHandlers = <RIn = never>(
 				if (agent === null) return [{type: "pageRefused", failure: noSession}] satisfies Follow;
 				const held = yield* readSession;
 				const cursor = pageCursor(held?.transcript.items ?? [], cmd.before);
-				if (cursor.kind === "unavailable") return nothing;
+				if (cursor.kind === "unavailable")
+					return [{type: "pageRefused", failure: pageCursorUnavailable}] satisfies Follow;
 				const answered = yield* Effect.result(agent.page(cursor.before, cmd.limit));
 				if (Result.isFailure(answered))
 					return [{type: "pageRefused", failure: failureOf(answered.failure)}] satisfies Follow;

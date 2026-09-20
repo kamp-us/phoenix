@@ -4,13 +4,22 @@ import {
 	nestedUnder,
 	randomStream,
 	randomTranscript,
+	systemItem,
 	toolItem,
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
-import {isTranscriptPayload, type TranscriptItem} from "../ports/index.ts";
+import {
+	anchorsCursor,
+	isNestedItem,
+	isNoticeItem,
+	isTranscriptPayload,
+	type TranscriptItem,
+} from "../ports/index.ts";
+import {pageCursor} from "./cursor.ts";
 import {groupTranscript, itemBytes} from "./groups.ts";
 import {
 	nestedLimitsFor,
+	noticeLimitsFor,
 	planTranscriptWindow,
 	TRANSCRIPT_WINDOW_BYTE_LIMIT,
 	TRANSCRIPT_WINDOW_ITEM_LIMIT,
@@ -131,6 +140,70 @@ describe("the live-tail window", () => {
 	});
 });
 
+/**
+ * #9514: the founder's desk restored a `claude-session` window holding forty top-level notices and
+ * not one turn. Each notice had cost a full item slot, so the forty spent the whole bound, and no
+ * row left in the window could anchor a page — the transcript rendered as one collapsed line and
+ * "Load earlier messages" did nothing.
+ */
+describe("a tail of session notices", () => {
+	const NOTICES = 48;
+	const exchanges = [
+		userItem("u1", "first question"),
+		assistantItem("a1", "first answer"),
+		userItem("u2", "second question"),
+		assistantItem("a2", "second answer"),
+		userItem("u3", "third question"),
+		assistantItem("a3", "third answer"),
+	];
+	const history = [
+		...exchanges,
+		...Array.from({length: NOTICES}, (_unused, index) => systemItem(`n${index}`, "task progress")),
+	];
+
+	it("never spends the whole window, so the conversation survives under it", () => {
+		const plan = planTranscriptWindow(history);
+		expect(plan.kind).toBe("window");
+		if (plan.kind !== "window") return;
+
+		expect(NOTICES).toBeGreaterThan(TRANSCRIPT_WINDOW_ITEM_LIMIT);
+		expect(plan.items.filter((item) => !isNoticeItem(item)).map((item) => item.id)).toEqual(
+			exchanges.map((item) => item.id),
+		);
+		expect(plan.items.filter(isNoticeItem).length).toBeLessThanOrEqual(
+			noticeLimitsFor({
+				items: TRANSCRIPT_WINDOW_ITEM_LIMIT,
+				bytes: TRANSCRIPT_WINDOW_BYTE_LIMIT,
+			}).items,
+		);
+		expect(plan.items.length + plan.omitted.items).toBe(history.length);
+	});
+
+	it("leaves a row the page cursor can be minted from, so Load earlier has something to ask", () => {
+		const plan = planTranscriptWindow(history);
+		expect(plan.kind).toBe("window");
+		if (plan.kind !== "window") return;
+
+		const oldest = plan.items[0];
+		expect(oldest).toBeDefined();
+		if (oldest === undefined) return;
+		// The oldest loaded row is the cursor the shell mints from (`shell/chat/rows.ts`'s
+		// `olderPageRequest`), so that is the one the click depends on.
+		expect(pageCursor(plan.items, oldest.id)).toEqual({kind: "page", before: oldest.id});
+	});
+
+	it("still carries the newest notice when the notices are all there is", () => {
+		const noticesOnly = history.slice(exchanges.length);
+		const plan = planTranscriptWindow(noticesOnly);
+		expect(plan.kind).toBe("window");
+		if (plan.kind !== "window") return;
+
+		expect(plan.items.length).toBeGreaterThan(0);
+		expect(plan.items.at(-1)?.id).toBe(noticesOnly.at(-1)?.id);
+		expect(plan.items.length + plan.omitted.items).toBe(noticesOnly.length);
+	});
+});
+
 describe("the window refuses rather than cutting", () => {
 	const history = [userItem("u1"), assistantItem("a1"), toolItem("t1"), userItem("u2")];
 
@@ -170,43 +243,67 @@ describe("the window refuses rather than cutting", () => {
 });
 
 describe("the window holds both bounds over random transcripts", () => {
-	it("holds both bounds except over the newest group, and never splits one, across 200 seeds", () => {
+	/** The conversation's own rows: what the item and byte bounds are spent on (#9514). */
+	const conversation = (items: ReadonlyArray<TranscriptItem>) =>
+		items.filter((item) => !isNestedItem(item) && !isNoticeItem(item));
+
+	it("holds both bounds except over the group that earns the window, across 200 seeds", () => {
 		const failures: Array<string> = [];
 		for (let seed = 1; seed <= 200; seed += 1) {
 			const random = randomStream(seed * 7919);
 			const history = randomTranscript(seed, {groups: 4 + random.int(14)});
 			const itemLimit = 1 + random.int(20);
 			const byteLimit = 200 + random.int(4_000);
+			const noticeLimit = noticeLimitsFor({items: itemLimit, bytes: byteLimit});
 			const plan = planTranscriptWindow(history, {itemLimit, byteLimit});
 			if (plan.kind !== "window") {
 				failures.push(`seed ${seed}: refused ${plan.reason}`);
 				continue;
 			}
 			const ids = plan.items.map((item) => item.id);
-			const tail = history.slice(plan.start).map((item) => item.id);
-			const newest = groupTranscript(history).at(-1);
-			const newestIds = (newest?.items ?? []).map((item) => item.id);
-			// The newest group is the excepted one: a window that is exactly it may sit over either
-			// bound, and a window carrying anything older than it may not.
-			const exceptedByNewest = JSON.stringify(ids) === JSON.stringify(newestIds);
+			// Two groups may sit over a bound and only they: the newest, carried whole so the tail is
+			// never empty (#8031), and the oldest, which the walk takes to bring the window the
+			// cursor-eligible row it owes (#9514). Everything between them is bounded, which is what
+			// dropping the oldest group leaves behind.
+			const bounded = groupTranscript(plan.items)
+				.slice(1)
+				.flatMap((group) => group.items);
 			if (ids.length === 0) failures.push(`seed ${seed}: empty window over a live tail`);
-			if (!exceptedByNewest && plan.items.length > itemLimit)
-				failures.push(`seed ${seed}: ${ids.length} > ${itemLimit}`);
-			if (!exceptedByNewest && bytesOf(plan.items) > byteLimit)
+			if (conversation(bounded).length > itemLimit)
+				failures.push(`seed ${seed}: ${conversation(bounded).length} > ${itemLimit}`);
+			if (bytesOf(conversation(bounded)) > byteLimit)
 				failures.push(`seed ${seed}: over the byte bound`);
-			if (JSON.stringify(ids) !== JSON.stringify(tail)) {
-				failures.push(`seed ${seed}: window is not the newest tail`);
-			}
+			const notices = plan.items.filter(isNoticeItem);
+			if (notices.length > noticeLimit.items && notices.length > 1)
+				failures.push(`seed ${seed}: ${notices.length} notices > ${noticeLimit.items}`);
+			// The invariant the empty window was missing: while the input holds a row a page cursor
+			// can be minted from, the planned window holds one too.
+			if (history.some(anchorsCursor) && !plan.items.some(anchorsCursor))
+				failures.push(`seed ${seed}: no row in the window can anchor a page`);
+			// The window is the newest tail, minus the notices its own ceiling put down inside it.
+			const tail = history.slice(plan.start);
+			const missing = tail.filter((item) => !ids.includes(item.id));
+			if (
+				JSON.stringify(ids) !==
+				JSON.stringify(tail.filter((item) => ids.includes(item.id)).map((item) => item.id))
+			)
+				failures.push(`seed ${seed}: window is not the newest tail in order`);
+			if (missing.some((item) => !isNoticeItem(item)))
+				failures.push(`seed ${seed}: window is missing a row no ceiling put down`);
+			// A group is in or out whole, counting a notice the ceiling put down as out of it.
 			const split = groupTranscript(history).some((group) => {
 				const inside = group.items.filter((item) => ids.includes(item.id)).length;
-				return inside !== 0 && inside !== group.items.length;
+				const whole = group.items.filter(
+					(item) => !isNoticeItem(item) || ids.includes(item.id),
+				).length;
+				return inside !== 0 && inside !== whole;
 			});
 			if (split) failures.push(`seed ${seed}: split an atomic group`);
-			const dropped = history.slice(0, plan.start);
-			if (plan.omitted.items !== dropped.length || plan.omitted.bytes !== bytesOf(dropped)) {
-				failures.push(`seed ${seed}: omission metadata does not match what was dropped`);
-			}
-			if ((plan.omitted.reason === "none") !== (dropped.length === 0)) {
+			if (plan.items.length + plan.omitted.items !== history.length)
+				failures.push(`seed ${seed}: omission metadata does not account for every row`);
+			if (plan.omitted.bytes !== bytesOf(history) - bytesOf(plan.items))
+				failures.push(`seed ${seed}: omitted bytes do not match what was left out`);
+			if ((plan.omitted.reason === "none") !== (plan.omitted.items === 0)) {
 				failures.push(`seed ${seed}: omission reason disagrees with the drop`);
 			}
 		}

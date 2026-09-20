@@ -414,8 +414,19 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 				noCmds,
 			],
 
-			pageRefused: (state, msg) =>
-				failed({...state, pageOutcome: {status: "refused", failure: msg.failure}}, msg.failure),
+			/**
+			 * A page read is not a turn, so its refusal settles none.
+			 *
+			 * Routed through `failed` it did: a click on "Load earlier messages" while the model was
+			 * still writing marked that reply final and closed the turn under it, which is a live
+			 * session rewritten by a read that touched nothing. The window still renders the refusal
+			 * — `pageOutcome` and `failure` are what the banner reads — and the turn goes on being a
+			 * turn until an event of its own ends it (#9514).
+			 */
+			pageRefused: (state, msg) => [
+				{...state, pageOutcome: {status: "refused", failure: msg.failure}, failure: msg.failure},
+				noCmds,
+			],
 
 			/**
 			 * Asking the backend to stop is not the backend having stopped (#8007).
