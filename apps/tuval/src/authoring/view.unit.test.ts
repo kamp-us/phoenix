@@ -4,7 +4,6 @@ import {expect} from "vitest";
 import {PortNotWired} from "../ports/errors.ts";
 import {NodeId} from "../ports/graph.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
-import {ProcessId} from "../process/process.ts";
 import {
 	latching,
 	noSelfReport,
@@ -16,12 +15,10 @@ import {
 	TITLE_PORT,
 } from "../process/self-report.ts";
 import type {AnyProgram} from "../registry/program.ts";
-import {testProcess} from "../shell/window/fixtures.ts";
-import {WindowId} from "../shell/window/index.ts";
 import {type ArrivalEvent, defineProgram} from "./define-program.ts";
 import {emit} from "./effect.ts";
 import {type InPortDecl, port} from "./port.ts";
-import {authoredWindowRenderers, type ProgramEvent} from "./view.ts";
+import type {ProgramEvent} from "./view.ts";
 
 const Count = Schema.Number;
 
@@ -172,7 +169,7 @@ describe("authoring.view title and status", () => {
 	);
 });
 
-/** What a window's `send` accepts for a program with one in-port and one event of its own. */
+/** What a window's dispatch accepts for a program with one in-port and one event of its own. */
 type CounterEvents = ProgramEvent<
 	{ticks: InPortDecl<number>},
 	{nudge: (state: CounterState) => readonly [CounterState, []]}
@@ -185,6 +182,11 @@ const arrivalSends: Sends<ArrivalEvent<"ticks", number>> = true;
 const strangerSends: Sends<{readonly type: "unheard"}> = false;
 
 describe("authoring.view window", () => {
+	/**
+	 * The row carries the specifier the author wrote and nothing derived from the id: the page
+	 * imports that module itself, so there is no compiled seat for a reference to point at
+	 * (#8946, ADR 0359).
+	 */
 	const windowed = defineProgram({
 		id: "view/windowed",
 		ports: {ticks: port.in(Count)},
@@ -193,38 +195,15 @@ describe("authoring.view window", () => {
 			ticks: (state, event) => [{count: state.count + event.payload}, []],
 			nudge: (state: CounterState) => [state, []],
 		},
-		window: ({state, send}) => {
-			send({type: "nudge"});
-			return `count ${state.count}`;
-		},
+		renderer: {kind: "module", ref: "/src/demo/module-window.tsx"},
 	});
 
-	it("names the row's renderer reference off the program id, so no author writes one", () => {
-		expect(windowed.renderer).toEqual({kind: "host-native", ref: "view/windowed/window"});
+	it("carries the module reference the author wrote, and leaves the field off without one", () => {
+		expect(windowed.renderer).toEqual({kind: "module", ref: "/src/demo/module-window.tsx"});
 		expect(silent.renderer).toBeUndefined();
 	});
 
-	it("seats a renderer under that reference, built at the reference's own kind", () => {
-		const renderer = authoredWindowRenderers()["view/windowed/window"];
-		expect(renderer?.kind).toBe("host-native");
-		expect(renderer?.render).toBeTypeOf("function");
-	});
-
-	it.effect("answers the author's view over the state, with `send` bound to the host", () => {
-		const renderer = authoredWindowRenderers()["view/windowed/window"];
-		assert.isDefined(renderer);
-		return Effect.gen(function* () {
-			const process = yield* testProcess<CounterState>(ProcessId.make("p-1"), {count: 0});
-			const host = yield* process.window(WindowId.make("w-1"), null);
-			const view = renderer.render(host) as (state: CounterState) => string;
-			assert.strictEqual(view({count: 7}), "count 7");
-			// `send` forks the dispatch, so the Msg lands on the next turn rather than in this frame.
-			yield* Effect.yieldNow;
-			assert.deepStrictEqual(process.inbox(), [{type: "nudge"}]);
-		});
-	});
-
-	it("types `send` against this program's own events and refuses any other", () => {
+	it("types a window's dispatch against this program's own events and refuses any other", () => {
 		// Each `=` below is the claim, checked by `tsc` over this file
 		// (`.patterns/unconditional-test-assertions.md`, "the type-level sibling").
 		expect([ownEventSends, arrivalSends, strangerSends]).toEqual([true, true, false]);

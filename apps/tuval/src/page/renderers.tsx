@@ -51,7 +51,6 @@ import type {AnyInspectorRenderer} from "../shell/desk/index.ts";
 import type {PageAttachment} from "../shell/transport/browser.ts";
 import type {WindowHost} from "../shell/window/index.ts";
 import {windowRenderer} from "../shell/window/index.ts";
-import {authoredPageRenderers} from "./authored-windows.tsx";
 import {Pending, type ReadableRenderer, readsState, useProcessState} from "./readable-state.tsx";
 import {
 	reading,
@@ -278,10 +277,12 @@ export type OpenProcess = (processId: string) => void;
  * predicate over the state it reads, which is what the `ReadableRenderer` type asks for. A renderer
  * put here unguarded does not typecheck, so the rule holds at the table and not by review (#8157).
  *
- * It is named apart from the merge below because the merge rests on these keys staying clear of the
- * authored ones, and a key set nothing can read is a key set no test can check.
+ * It is the whole of the page's compiled table. A program that ships its own window names it by
+ * module specifier instead, and `./boot.tsx` merges those loaded modules over this (ADR 0359); the
+ * inline `window` key that used to seat a second compiled half here is gone, because the compiler
+ * that seated it runs in the kernel process and never in this tab (#8946).
  */
-export const pageOwnRenderers = (
+export const pageRenderers = (
 	call: SpellCaller,
 	openProcess: OpenProcess,
 ): Readonly<Record<string, ReadableRenderer>> => {
@@ -314,26 +315,6 @@ export const pageOwnRenderers = (
 		),
 	};
 };
-
-/**
- * The whole table the page answers a row's reference with: every window an author has compiled
- * (`./authored-windows.tsx`) and every renderer this module names.
- *
- * The authored half is read at call time rather than held as a constant, so a table rebuilt after a
- * hot reload carries the window the author just re-compiled. This module's own keys are written
- * after them, and that precedence is the way round it has to be: the inverse would let an authored
- * program capture a page window by picking an id. It costs an author nothing only while the two key
- * sets stay disjoint — an authored reference always ends in `AUTHORED_WINDOW_SUFFIX` and no key
- * above does — and `./authored-windows.unit.test.tsx` checks that rather than this comment being
- * the whole guarantee.
- */
-export const pageRenderers = (
-	call: SpellCaller,
-	openProcess: OpenProcess,
-): Readonly<Record<string, ReadableRenderer>> => ({
-	...authoredPageRenderers(),
-	...pageOwnRenderers(call, openProcess),
-});
 
 /**
  * Every desk-inspector renderer the page knows, by the reference a program row names it with. It is

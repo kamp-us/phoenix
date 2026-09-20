@@ -9,7 +9,7 @@
  * someone might want it: a name added to this file is a name this package then owes.
  *
  * **The compilers are not public.** `compilePorts`, `compileCommands`, `compileResume`,
- * `compileWindow`, `FIELD_COMPILERS`, `fillArgs`, `argContext`, `resolveSpawnTarget`,
+ * `FIELD_COMPILERS`, `fillArgs`, `argContext`, `resolveSpawnTarget`,
  * `resolveOwnProcess` and the rest of the kernel-facing half of these modules stay reachable only
  * by relative path from inside `src/`. They are how a row is built, not how one is written, and
  * `defineProgram` is the whole of the seam between the two.
@@ -49,6 +49,8 @@
  * `../process/Processes.ts` and `../commands/core/process.ts`, both `node:crypto` importers, so a
  * flat barrel carrying both halves would drag the kernel chain into every page-side import. Two
  * doors is what keeps the browser-side one clean, and the same test walks both to say so.
+ * `ModuleWindowRef` is the one window name on *this* door, and it belongs here rather than there:
+ * it is the specifier a program writes on its own row, which is a kernel-side file (#8946).
  *
  * The payload vocabulary a shaped arg is declared over is not here either: it is its own module
  * with its own boundary test (`../ai-agent/ports/index.ts`, `@kampus/tuval/ai-agent/ports`), held
@@ -83,6 +85,7 @@ export {
 	type AuthoredProgram,
 	defineProgram,
 	type EventHandler,
+	type ModuleWindowRef,
 	program,
 	type RequestArrivalEvent,
 } from "./define-program.ts";

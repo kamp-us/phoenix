@@ -1121,7 +1121,6 @@ export const worktree = (fill: WorktreeFill): AnyProgram => {
 					(typeof authored)["ports"],
 					(typeof authored)["update"],
 					WorktreeCommands,
-					unknown,
 					WorktreeEffect
 				>({
 					id: authored.id,
@@ -1139,7 +1138,6 @@ export const worktree = (fill: WorktreeFill): AnyProgram => {
 					(typeof authored)["ports"],
 					(typeof authored)["update"],
 					WorktreeCommands,
-					unknown,
 					WorktreeEffect
 				>({
 					...authored,

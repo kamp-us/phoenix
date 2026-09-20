@@ -11,8 +11,9 @@
  * the dead `interpret` Demlik demands and the host never reads (#7576).
  *
  * **`FIELD_COMPILERS` is the extension seam this epic's field children share.** One row field per
- * key, one key per line: `commands`, the `key` opt-in and the `title`/`status`/`window` children
- * each add their own line and none edits another's; `define-program.unit.test.ts` holds that shape.
+ * key, one key per line: `commands`, the `key` opt-in, the `title`/`status` children and the
+ * `renderer` reference each add their own line and none edits another's;
+ * `define-program.unit.test.ts` holds that shape.
  *
  * Everything the layer does not sugar is still reachable, because the row is a plain object:
  * `{...defineProgram({...}), restorable, checkpointWorthy}`. `configChanged` is one of those, and
@@ -63,6 +64,7 @@ import type {
 	PortSchema,
 	ProgramCore,
 	Receiver,
+	RendererRef,
 } from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
 import {
@@ -101,9 +103,7 @@ import {
 } from "./port.ts";
 import {type AuthoredResume, compileResume} from "./resume.ts";
 import {
-	type AuthoredWindow,
 	compileDerivedLines,
-	compileWindow,
 	type DerivedLine,
 	initialSelfReport,
 	isSelfReportPort,
@@ -189,13 +189,22 @@ export type UpdateTable<S, D extends PortDecls, U, X = never> = {
 					: EventHandler<S, any, X>;
 };
 
+/**
+ * A window reference an authored program may name. It is `RendererRef` with `kind` fixed at
+ * `"module"`: the other three kinds name a renderer compiled into some shell's own table, which an
+ * installed program has no way to add itself to, so they are not a program's to declare (ADR 0359,
+ * #8946).
+ */
+export interface ModuleWindowRef extends RendererRef {
+	readonly kind: "module";
+}
+
 /** What a user writes. Nothing on it names Demlik, Effect, Scope or the row's seven generics. */
 export interface AuthoredProgram<
 	S,
 	D extends PortDecls,
 	U,
 	C extends CommandArgTypes = Record<string, never>,
-	Out = unknown,
 	X = never,
 > {
 	readonly id: string;
@@ -239,8 +248,18 @@ export interface AuthoredProgram<
 	readonly title?: DerivedLine<S>;
 	/** One short line saying how it is doing, on `status@1`, by the same rule. */
 	readonly status?: DerivedLine<S>;
-	/** This program's window, as a function of its own state and a `send` into its own events. */
-	readonly window?: AuthoredWindow<S, D, U, Out>;
+	/**
+	 * Where a desk finds this program's window: a module specifier the page imports itself
+	 * (ADR 0359). `kind` is `"module"` and nothing else, because this module is compiled by Node
+	 * inside the kernel process and a browser tab can reach nothing it compiled — a window a program
+	 * declared inline here would have to be loaded through this file, and this file reaches
+	 * `node:crypto` (#8946, ruled 2026-09-20).
+	 *
+	 * The specifier is the package's own window entry (`@kampus/tuval-notify/window`) or, for a
+	 * module in this tree, a root-relative path (`/src/demo/module-window.tsx`). Absent leaves the
+	 * field off the row, which is how a headless program stays one.
+	 */
+	readonly renderer?: ModuleWindowRef;
 	/**
 	 * What this program is sent when it comes back from a checkpoint (`./resume.ts`). A restored
 	 * process starts on its loaded state with no Cmds, so this is its only way back into the world.
@@ -258,7 +277,7 @@ export interface AuthoredProgram<
 	readonly placement?: Placement;
 }
 
-export type AnyAuthoredProgram = AuthoredProgram<any, any, any, any, any, any>;
+export type AnyAuthoredProgram = AuthoredProgram<any, any, any, any, any>;
 
 /**
  * Every key of `A` that `T` does not declare, typed `never` — what an authored record is checked
@@ -281,7 +300,7 @@ export type NoStrayFields<A, T> = {
  * `pr: (state: State, event: ArrivalEvent<"pr", number>): Answer<State> => [...]` on every cell.
  *
  * This is the call site that was missing. It runs nothing and changes nothing — it answers its
- * argument — so the parameter's type is the entire mechanism: `AuthoredProgram<S, D, U, C, Out, X>`
+ * argument — so the parameter's type is the entire mechanism: `AuthoredProgram<S, D, U, C, X>`
  * is what contextually types the literal, and the same generics that make `defineProgram` infer a
  * cell's event from the port that feeds it make this infer it too.
  *
@@ -302,7 +321,7 @@ export type NoStrayFields<A, T> = {
  * hand back a `ports`, `commands` and `title` that are all possibly-`undefined` — a binding worse
  * to read than the one it replaces. Taking the argument as `A & AuthoredProgram<…>` infers both
  * halves from the one literal: the intersection's second member is the inference site for `S`, `D`,
- * `U`, `C`, `Out` and the contextual type the cells are written against, while `A` captures the
+ * `U`, `C` and the contextual type the cells are written against, while `A` captures the
  * literal's own shape and carries the present fields through. A plain `A extends AuthoredProgram<…>`
  * does not work — measured at this pin, constraint-only inference leaves `S`, `D` and `U` on their
  * defaults, and every cell is an implicit `any` again.
@@ -310,7 +329,7 @@ export type NoStrayFields<A, T> = {
  * **`A` disables TypeScript's excess-property check, so `NoStrayFields` replaces it.** Inferring
  * `A` from the literal makes every field the author wrote a known property of the target, and an
  * excess-property check only fires against a property the target does not declare — so without the
- * third member a misspelled `titel`, `stat` or `windw` was accepted here and silently dropped at
+ * third member a misspelled `titel`, `stat` or `renderr` was accepted here and silently dropped at
  * the compiled row, while the same literal written straight into `defineProgram({...})` was refused
  * with TS2561. `NoStrayFields` types every key of `A` that `AuthoredProgram` does not declare as
  * `never`, which refuses it at the field that carries it.
@@ -324,14 +343,11 @@ export const program = <
 	D extends PortDecls = Record<string, never>,
 	U = unknown,
 	C extends CommandArgTypes = Record<string, never>,
-	Out = unknown,
 	X = never,
 	A = unknown,
 >(
-	authored: A &
-		AuthoredProgram<S, D, U, C, Out, X> &
-		NoStrayFields<A, AuthoredProgram<S, D, U, C, Out, X>>,
-): A & AuthoredProgram<S, D, U, C, Out, X> => authored;
+	authored: A & AuthoredProgram<S, D, U, C, X> & NoStrayFields<A, AuthoredProgram<S, D, U, C, X>>,
+): A & AuthoredProgram<S, D, U, C, X> => authored;
 
 /** What every field compiler is handed beside the authored record: the id and the compiled ports. */
 export interface CompileContext {
@@ -659,7 +675,7 @@ export const FIELD_COMPILERS = {
 	takesKeys: (authored) => compileTakesKeys(authored),
 	resume: (authored) => compileResume(authored),
 	derivedLines: (authored) => compileDerivedLines(authored),
-	renderer: (authored, context) => compileWindow(authored, context),
+	renderer: (authored) => authored.renderer,
 	capabilities: (authored) => authored.capabilities ?? NO_CAPABILITIES,
 	identity: (authored) => compileIdentity(authored),
 	placement: (authored) => authored.placement ?? LOCAL,
@@ -687,10 +703,9 @@ export const defineProgram = <
 	D extends PortDecls = Record<string, never>,
 	U = unknown,
 	C extends CommandArgTypes = Record<string, never>,
-	Out = unknown,
 	X = never,
 >(
-	authored: AuthoredProgram<S, D, U, C, Out, X>,
+	authored: AuthoredProgram<S, D, U, C, X>,
 ): AnyProgram => {
 	const id = ProgramId.make(authored.id);
 	const context: CompileContext = {

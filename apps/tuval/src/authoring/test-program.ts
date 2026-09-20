@@ -114,9 +114,8 @@ export const testProgram = <
 	D extends PortDecls = Record<string, never>,
 	U = unknown,
 	C extends CommandArgTypes = Record<string, never>,
-	Out = unknown,
 >(
-	authored: AuthoredProgram<S, D, U, C, Out>,
+	authored: AuthoredProgram<S, D, U, C>,
 ): ProgramRun<S, D, U, C> => {
 	const program = authored as AnyAuthoredProgram;
 	const cells = withSelfReport(program, program.update) as Readonly<Record<string, Cell>>;
