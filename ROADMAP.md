@@ -55,6 +55,7 @@ flowchart TD
 		camp_tuval_first_slice_fast_follows["Tuval first slice - fast follows"]:::active
 		camp_tuval_programs["Tuval programs"]:::active
 		camp_epic_planning["Epic planning"]:::paused
+		camp_production_ready_kamp_us["Production-ready kamp.us"]:::active
 	end
 	ext_3642["#3642"]:::external
 	ext_3833["#3833"]:::external
@@ -123,6 +124,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Tuval first slice - fast follows | #54 | active |
 | Tuval programs | #55 | active |
 | Epic planning | #56 | paused |
+| Production-ready kamp.us | #57 | active |
 
 **Tuval programs** carries the new Tuval scope after the first slice shipped: the program authoring API (#8716) and the desk showing kernel children (#8715). **Tuval first slice - fast follows** remains open and active for follow-up repairs discovered during Tuval work, including when its backlog is temporarily empty. Completing the current issues does not close this campaign; closure requires an explicit founder decision.
 

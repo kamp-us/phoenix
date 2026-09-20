@@ -395,10 +395,16 @@ jobs:
         run: |
           set -o pipefail
           pnpm --filter ${{ matrix.pnpm-name }} exec alchemy deploy --stage "$STAGE" --yes | tee deploy.log
-          # alchemy has no structured URL output, so scrape the worker URL it
-          # prints (`url: 'https://…workers.dev'`). `set -o pipefail` keeps the
-          # deploy's exit code through the `tee` so a failed deploy still fails.
-          echo "url=$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' deploy.log | tail -1)" >> "$GITHUB_OUTPUT"
+          # alchemy has no structured URL output, so scrape the `url:` key of the
+          # summary object it prints. Match on that key, NOT on a `*.workers.dev`
+          # host (#9507): a stage bound to a custom domain prints only the domain
+          # (`url: 'https://phoenix.kamp.us', domains: [ 'phoenix.kamp.us' ]`), so a
+          # host-shaped pattern scraped nothing on prod and fed the health gate an
+          # empty URL. A preview stage has no custom domain and prints its
+          # workers.dev host on the same key, so one pattern serves both.
+          # `set -o pipefail` keeps the deploy's exit code through the `tee` so a
+          # failed deploy still fails.
+          echo "url=$(sed -nE "s|^[[:space:]]*url: '(https://[^']+)'.*|\1|p" deploy.log | tail -1)" >> "$GITHUB_OUTPUT"
         env:
           CI: "true"
           # ENVIRONMENT comes from the "Resolve deploy ENVIRONMENT from stage" step above

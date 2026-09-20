@@ -4,7 +4,10 @@
  */
 
 import {describe, expect, it} from "vitest";
+import {foldEvent} from "../../ai-agent/core/fold.ts";
+import {initialState} from "../../ai-agent/core/state.ts";
 import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
+import {fixtureEventFrames} from "../../claude/history/fixtures/events.ts";
 import {
 	elapsedLabel,
 	runningSubagents,
@@ -218,5 +221,41 @@ describe("subagentPhrase", () => {
 		expect(`The ${subagentPhrase("explorer", 3)} is still running.`).toBe(
 			"The 3-worker explorer subagent is still running.",
 		);
+	});
+});
+
+/**
+ * The list over a real background spawn, which is the shape it used to draw nothing for (#9506).
+ *
+ * Synthetic slots prove what the list does with a slot; only the captured frames prove there is a
+ * slot to draw. So this folds `background-subagent-turn.json` through the same mapping and core the
+ * window's process runs and asks the list after every frame.
+ */
+describe("runningSubagents over a captured background spawn", () => {
+	const SPAWN = "toolu_000000000000000000000001";
+
+	/** The list model after each frame in turn, folded exactly as the live session folds it. */
+	const perFrame = () => {
+		const seen: Array<ReturnType<typeof runningSubagents>> = [];
+		let state = initialState("/repo");
+		for (const events of fixtureEventFrames("background-subagent-turn", {at: 1_700_000_000_000})) {
+			state = events.reduce((carried, event) => foldEvent(carried, event, {}), state);
+			seen.push(runningSubagents(state.subagents));
+		}
+		return seen;
+	};
+
+	it("draws the worker's row for every frame between the launch answer and the notification", () => {
+		const seen = perFrame();
+		expect(seen).toHaveLength(3);
+		for (const model of seen.slice(0, 2)) {
+			expect(model.rows.map((row) => row.id)).toEqual([SPAWN]);
+			expect(model.rows[0]).toMatchObject({type: "Explore", status: "running", current: false});
+			expect(model.more).toBe(0);
+		}
+	});
+
+	it("drops the row once the notification ends the worker (Q2)", () => {
+		expect(perFrame().at(-1)).toEqual({rows: [], more: 0});
 	});
 });

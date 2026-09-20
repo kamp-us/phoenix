@@ -288,9 +288,10 @@ describe("the mode switch", () => {
 	});
 
 	it("shows the current mode and dispatches setMode for another", async () => {
-		const {process} = await open(
-			withTranscript([userItem("u1", "go")], {modes: modes(["plan", "build"], "plan")}),
-		);
+		const state = withTranscript([userItem("u1", "go")], {
+			modes: modes(["plan", "build"], "plan"),
+		});
+		const {process} = await open(state);
 		const trigger = await picker();
 		expect(trigger.textContent).toContain("plan");
 
@@ -298,6 +299,12 @@ describe("the mode switch", () => {
 		await click(await screen.findByRole("menuitemradio", {name: "build"}));
 		await waitFor(() => expect(process.inbox().length).toBe(1));
 		expect(process.inbox()[0]).toEqual({type: "setMode", mode: "build"});
+		expect(trigger.getAttribute("aria-busy")).toBe("true");
+		expect(trigger.getAttribute("disabled")).not.toBeNull();
+		await act(async () => {
+			await Effect.runPromise(process.commit({...state, modes: modes(["plan", "build"], "build")}));
+		});
+		await waitFor(() => expect(trigger.getAttribute("aria-busy")).toBeNull());
 	});
 
 	it("names itself unselected, not loading, when modes are offered but none is current", async () => {
@@ -371,6 +378,9 @@ describe("the composer's model picker", () => {
 		const {process} = await open(state);
 		const trigger = await picker();
 		await waitFor(() => expect(trigger.getAttribute("disabled")).toBeNull());
+		await click(trigger);
+		await click(await screen.findByRole("menuitemradio", {name: "claude-sonnet-5"}));
+		await waitFor(() => expect(trigger.getAttribute("aria-busy")).toBe("true"));
 		// What the layer's `model` event folds into state, which is the only thing that moves the
 		// selected row: the pick itself never writes it, so a refused switch shows the old one.
 		await act(async () => {
@@ -384,6 +394,20 @@ describe("the composer's model picker", () => {
 		await waitFor(() =>
 			expect(screen.getByRole("button", {name: "model: claude-sonnet-5"})).toBeTruthy(),
 		);
+		expect(trigger.getAttribute("aria-busy")).toBeNull();
+	});
+});
+
+describe("the project resources control", () => {
+	it("surfaces that Tuval cannot change project resources instead of claiming success", async () => {
+		await open(withTranscript([userItem("u1", "go")]));
+		await click(
+			await screen.findByRole("button", {name: "Project resources and delivery settings"}),
+		);
+		await click(await screen.findByRole("menuitemradio", {name: "skip resources"}));
+		expect(
+			await screen.findByText("Project resources cannot be changed for this agent."),
+		).toBeTruthy();
 	});
 });
 

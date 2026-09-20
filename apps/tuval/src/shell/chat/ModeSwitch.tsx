@@ -26,9 +26,11 @@ import type {Mode} from "../../ai-agent/ports/index.ts";
 export function ModeSwitch({
 	modes,
 	onSetMode,
+	pending = false,
 }: {
 	readonly modes: ModeState;
 	readonly onSetMode: (mode: Mode) => void;
+	readonly pending?: boolean;
 }): ReactElement | null {
 	if (modes.available.length === 0) return null;
 	const items: AgentSettingItem[] = modes.available.map((mode) => ({value: mode, label: mode}));
@@ -38,7 +40,8 @@ export function ModeSwitch({
 				label="Mode"
 				items={items}
 				{...(modes.current === null ? {} : {value: modes.current})}
-				disabled={modes.available.length < 2}
+				disabled={pending || modes.available.length < 2}
+				loading={pending}
 				onValueChange={(value) => {
 					// `Mode` is branded, and the picker answers in plain strings — so the picked value is
 					// looked up in the offered list rather than cast. A value that is not on offer is a

@@ -32,6 +32,8 @@ export interface SettingMenuProps {
 	readonly held?: PickerItem;
 	readonly onValueChange: (value: string) => void;
 	readonly disabled?: boolean;
+	/** The host accepted a pick and is waiting for the agent to confirm it. */
+	readonly loading?: boolean;
 }
 
 /**
@@ -46,6 +48,7 @@ export function SettingMenu({
 	held,
 	onValueChange,
 	disabled,
+	loading = false,
 }: SettingMenuProps) {
 	const t = useDesignT();
 	const [open, setOpen] = useState(false);
@@ -101,6 +104,7 @@ export function SettingMenu({
 					className="kp-agent-chat__picker-trigger"
 					aria-label={`${label}: ${selectedName}`}
 					disabled={disabled || !operable}
+					loading={loading}
 				>
 					{selected?.icon ? <Icon icon={selected.icon} size={14} /> : null}
 					<span>{selected?.label ?? unselectedName}</span>
