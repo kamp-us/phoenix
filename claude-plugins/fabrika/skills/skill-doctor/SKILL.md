@@ -14,18 +14,15 @@ Vendored from [Warp Skill Doctor](https://github.com/warpdotdev/common-skills/tr
 (MIT). Which files are upstream's and which are fabrika's — and the re-copy, never edit rule —
 lives in [`PROVENANCE.md`](PROVENANCE.md).
 
-**Inert on arrival, by design.** Two things this skill needs are later children of
-[#8035](https://github.com/kamp-us/phoenix/issues/8035), and until they land a run on phoenix
-produces a report over zero sessions:
+**Inert on arrival, by design.** Two capabilities this skill needs are not built yet, and until
+they land a run under the opencode harness produces a report over zero sessions:
 
 - The upstream collectors read Claude Code, Codex, Warp (plus Pi, Grok Build, ZCode) — not
-  opencode, the harness phoenix runs under. The opencode collector is
-  [#8049](https://github.com/kamp-us/phoenix/issues/8049); until it lands, `--harness claude`
-  sees only what a Claude-Code-shaped home contains.
+  opencode. Until an opencode collector lands, `--harness claude` sees only what a
+  Claude-Code-shaped home contains.
 - Skill discovery defaults to `.agents/skills`, `.claude/skills`, `.codex/skills`; fabrika's
   corpus lives at `claude-plugins/fabrika/skills`, so every invocation below passes
-  `--skills-dir` explicitly until [#8051](https://github.com/kamp-us/phoenix/issues/8051)
-  makes that the default.
+  `--skills-dir` explicitly until that root is discovered by default.
 
 ## 1 — Collect sessions into the results directory
 
@@ -41,8 +38,8 @@ python claude-plugins/fabrika/skills/skill-doctor/scripts/collect_sessions.py --
 
 **Done when** the collector prints `sessions sampled` and
 `claude-plugins/fabrika/skills/skill-doctor/results/run/inventory.json` exists. A run that
-samples zero sessions on phoenix is the expected inert state above, not a failure — say so and
-stop.
+samples zero sessions under an unsupported harness is the expected inert state above, not a
+failure — say so and stop.
 
 ## 2 — Score every sampled session against both rubrics
 
@@ -78,14 +75,14 @@ local: transcripts, inventories, `report.json`, and `report.html` all embed tran
 content and machine-local paths. **Never commit, attach, or paste them**; the report's finding
 text is the only thing that may be quoted, redacted, in a decision or issue that needs it. The
 rendered report currently carries upstream's branding and share affordances — it is
-internal-only until [#8052](https://github.com/kamp-us/phoenix/issues/8052) re-brands it and
-[#8054](https://github.com/kamp-us/phoenix/issues/8054) rules its share posture.
+internal-only until it is re-branded and its share posture is ruled.
 
 ## Terminal vocabulary
 
 - `REPORTED` — the renderer exited `0` and the grade is on screen. The report stays internal
   per the boundary above.
-- `NO-SESSIONS` — the collector sampled zero sessions. Expected on phoenix until #8049; a
-  correct stopping point, not a failure. Name the harness you ran and the window you gave it.
+- `NO-SESSIONS` — the collector sampled zero sessions. Expected while the harness this setup
+  runs under has no collector; a correct stopping point, not a failure. Name the harness you
+  ran and the window you gave it.
 - `COLLECTOR-REFUSED` — the collector exited non-zero naming its inputs. Fix the named input
   and run it again; a non-zero exit is unknown, never "nothing collected".

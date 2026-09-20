@@ -1,6 +1,6 @@
 # `/skill-doctor` — derived skill contract
 
-**Skill:** [`skill-doctor`](SKILL.md) · **Landing child:** [#8048](https://github.com/kamp-us/phoenix/issues/8048) · **Date:** 2026-09-06
+**Skill:** [`skill-doctor`](SKILL.md) · **Date:** 2026-09-06
 
 The skill vendored from [Warp Skill Doctor](https://github.com/warpdotdev/common-skills/tree/main/.agents/skills/skill-doctor)
 (MIT, upstream @ `b811c243`) runs its own Python scripts directly; fabrika adds no verb group for
@@ -26,10 +26,10 @@ python claude-plugins/fabrika/skills/skill-doctor/scripts/collect_sessions.py --
 
 | Flag | Meaning |
 |---|---|
-| `--harness` | `auto` (default), `all`, `claude`, `codex`, or `warp`. Pi, Grok Build and ZCode were added upstream at `369eb54`; opencode is **absent** — [#8049](https://github.com/kamp-us/phoenix/issues/8049) adds it. |
+| `--harness` | `auto` (default), `all`, `claude`, `codex`, or `warp`. Pi, Grok Build and ZCode were added upstream at `369eb54`; opencode is **absent** until a collector for it is written. |
 | `--claude-home` | Root of a Claude-Code-shaped `projects/` tree to read instead of the harness's own Claude home. The skill points it at the results directory so nothing outside the gitignored tree is written or assumed. |
 | `--repo` | The checkout whose sessions are in scope, matched against each session's recorded working directory. |
-| `--skills-dir` | Extra project-skills root for detection. Required here — fabrika's corpus at `claude-plugins/fabrika/skills` is outside the three roots upstream auto-discovers; [#8051](https://github.com/kamp-us/phoenix/issues/8051) removes the need. |
+| `--skills-dir` | Extra project-skills root for detection. Required here — fabrika's corpus at `claude-plugins/fabrika/skills` is outside the three roots upstream auto-discovers, and the flag is how it is reached until that root is discovered by default. |
 | `--days` / `--max-sessions` | The sampling window and cap. The skill body fixes `45` and `20` as its standing window. |
 | `--all-conversations`, `--include-global-skills`, `--per-skill`, `--no-skill` | Sampling and detection modifiers; the skill body never passes them. |
 
@@ -104,7 +104,6 @@ page (the `assets/` bundle is its rendering payload). **Everything under
 `claude-plugins/fabrika/skills/skill-doctor/results/` is machine-local** — gitignored, never
 committed, never attached to an issue or PR — because transcripts, inventories, and the rendered
 page all embed transcript-derived content and absolute local paths. The rendered page currently
-carries upstream's branding and a share button; it is internal-only until
-[#8052](https://github.com/kamp-us/phoenix/issues/8052) re-brands it and
-[#8054](https://github.com/kamp-us/phoenix/issues/8054) rules the share posture. Findings text,
+carries upstream's branding and a share button; it is internal-only until it is re-branded and
+its share posture is ruled. Findings text,
 redacted, is the only quotable surface.

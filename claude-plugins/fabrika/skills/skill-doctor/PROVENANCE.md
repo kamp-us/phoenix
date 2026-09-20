@@ -5,7 +5,7 @@ Imported verbatim from [`warpdotdev/common-skills`](https://github.com/warpdotde
 See [`LICENSE`](LICENSE).
 
 - Upstream commit pinned: `b811c24365ae` (2026-09-03, "Stream complete skill-doctor
-  session files (#92)") — the latest commit touching `.agents/skills/skill-doctor` at
+  session files") — the latest commit touching `.agents/skills/skill-doctor` at
   import time (2026-09-06).
 - **Re-copy, never edit in place.** Every file listed as byte-exact below is upstream's; a
   change to any of them is made upstream and re-copied here, or it silently breaks the re-sync
@@ -39,17 +39,14 @@ upstream at the pinned commit.
 |---|---|
 | `SKILL.md` | Fabrika routing and orientation surface (conventions §1/§2). States what the skill is, when to fire it, the step flow with literal commands, and pointers into `contract.md` by section. |
 | `contract.md` | The derived contract: collector flags, scoring contract, report artifacts — read by section via `fabrika wire doc-section`. |
-| `scripts/test_fabrika_conformance.py` | Fabrika packaging conformance tests (#8048): doc-level checks that the authored surface carries session scoping, the scoring contract, failed-conversation-only edit gating, section addressability, and the documented limitations. Doc-level only — upstream behavior is the baseline target's job. |
+| `scripts/test_fabrika_conformance.py` | Fabrika packaging conformance tests: doc-level checks that the authored surface carries session scoping, the scoring contract, failed-conversation-only edit gating, section addressability, and the documented limitations. Doc-level only — upstream behavior is the baseline target's job. |
 | `PROVENANCE.md` | This file: the byte-exact/editable split and the re-sync procedure. |
 
-Later epic children extend the fabrika-authored surface or land new byte-exact re-copies —
-[#8049](https://github.com/kamp-us/phoenix/issues/8049) (opencode collector),
-[#8050](https://github.com/kamp-us/phoenix/issues/8050) (portability patch),
-[#8051](https://github.com/kamp-us/phoenix/issues/8051) (corpus discovery),
-[#8052](https://github.com/kamp-us/phoenix/issues/8052) (report re-branding). A child that finds
-itself editing a byte-exact file must stop: either the change is upstreamed and re-copied at a new
-pinned commit (this table updated with it), or the deviation is a decision that lands in the epic's
-record first.
+Later work extends the fabrika-authored surface or lands new byte-exact re-copies — an opencode
+collector, a portability patch, corpus discovery, report re-branding. Anyone who finds
+themselves editing a byte-exact file must stop: either the change is upstreamed and re-copied at a new
+pinned commit (this table updated with it), or the deviation is a decision that lands in the decision
+corpus first.
 
 ## Re-sync procedure
 

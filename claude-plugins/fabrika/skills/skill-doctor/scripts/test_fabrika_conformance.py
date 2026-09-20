@@ -94,15 +94,20 @@ class SectionAddressability(unittest.TestCase):
 
 
 class DocumentedLimitations(unittest.TestCase):
-    """The inert-on-arrival gaps are named with their owning children."""
+    """The inert-on-arrival gaps are named in prose, portably.
+
+    The skill ships to any repository, so the gaps are named by what is missing rather
+    than by a ticket number that resolves in one repository only.
+    """
 
     def test_skill_names_the_two_arrival_gaps(self):
-        self.assertIn("#8049", SKILL)
-        self.assertIn("#8051", SKILL)
+        self.assertIn("Inert on arrival", SKILL)
+        self.assertIn("opencode", SKILL)
+        self.assertIn("--skills-dir", SKILL)
 
     def test_contract_documents_the_missing_opencode_collector(self):
         self.assertIn("opencode", CONTRACT)
-        self.assertIn("#8049", CONTRACT)
+        self.assertIn("**absent**", CONTRACT)
 
 
 class PlainLiteralCommands(unittest.TestCase):
