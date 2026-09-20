@@ -251,4 +251,37 @@ describe("persistTermSummary — the recomputeTermSummary → term_record row-wr
 			);
 		}),
 	);
+
+	// The one arm where the caller's clock legitimately reaches `term_record`: no live
+	// definition to derive from AND no stored row to fall back on, which is a term whose
+	// row does not exist yet. `reconcileCaches` drives it here because it takes its clock
+	// as an argument, so the landed instant is a fixed date rather than a wall clock.
+	it.effect("a term with no stored row takes the caller's now on every date column", () =>
+		Effect.gen(function* () {
+			const sweepNow = new Date("2026-09-20T18:00:25.000Z");
+			// Same read order as the empty-term pass above, with the stored-row SELECT
+			// returning nothing instead of a row.
+			const {access, batched} = scriptedAccess([
+				[{slug: SLUG, title: TITLE}],
+				[],
+				undefined,
+				0,
+				1,
+				0,
+				{},
+			]);
+			yield* Effect.gen(function* () {
+				const sozluk = yield* Sozluk;
+				return yield* sozluk.reconcileCaches(sweepNow);
+			}).pipe(Effect.provide(sozlukOver(access)));
+
+			const upsert = batched[0];
+			if (!upsert) return yield* Effect.die(new Error("no term_record statement was captured"));
+			assert.deepStrictEqual(
+				epochParams(upsert.params),
+				new Set([sec(sweepNow)]),
+				"first_at, last_activity_at and last_edit_at all hold the caller's now",
+			);
+		}),
+	);
 });
