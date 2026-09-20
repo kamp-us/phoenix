@@ -353,7 +353,7 @@ type Authored = ReturnType<typeof notifyProgram>;
 /**
  * The row, as a config writes it: `notify({target: {kind: "ntfy", topic: "…"}})`.
  *
- * Two halves, and both are R12.1's (#9295). The **type** half is `defineProgram`'s sixth argument:
+ * Two halves, and both are R12.1's (#9295). The **type** half is `defineProgram`'s fifth argument:
  * `Deliver` is named only in a cell's answer, which is not a place inference reaches, so the whole
  * argument list is stated once here. The **runtime** half is the spread: the compiled row's
  * `handlers` record is open, the actor dispatches an effect to it by the effect's own `type`

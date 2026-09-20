@@ -351,7 +351,7 @@ raw row is reachable by spread"* (kamp-us/phoenix#8716, R12.1).
 kamp-us/phoenix#9295 shipped that seam, and this package is on it. The Sub, the `Effect.runFork`
 bridge and the `Fiber.interrupt` disposer are gone.
 
-**Two halves, both written here.** The type half is `defineProgram`'s sixth type argument, which
+**Two halves, both written here.** The type half is `defineProgram`'s fifth type argument, which
 widens `Answer<State, X>` to the effects this program's cells may answer:
 
 ```ts

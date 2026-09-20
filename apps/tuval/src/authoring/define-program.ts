@@ -691,7 +691,7 @@ export const FIELD_COMPILERS = {
  *
  * ```ts
  * const update = {go: (s: State): Answer<State, Run> => [s, [run("ls")]]};
- * const row = defineProgram<State, typeof ports, typeof update, Commands, unknown, Run>({…});
+ * const row = defineProgram<State, typeof ports, typeof update, Commands, Run>({…});
  * const program = {...row, handlers: {...row.handlers, run: runHandler}};
  * ```
  *

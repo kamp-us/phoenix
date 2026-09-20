@@ -229,7 +229,7 @@ compiled row by spread, under the effect's own `type` string — which is the ke
 on.
 
 ```ts
-const row = defineProgram<NotifyState, Ports, Update, Commands, unknown, Deliver>({…});
+const row = defineProgram<NotifyState, Ports, Update, Commands, Deliver>({…});
 return {...row, handlers: {...row.handlers, deliver: deliverHandler(liveTransport(target, io), now)}};
 ```
 

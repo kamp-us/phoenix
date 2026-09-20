@@ -31,7 +31,7 @@
  * `interpret` and a Sub only observes (`.patterns/tea/tea-discipline.md`, invariant 3), so running
  * `git worktree add` from one was a disclosed violation held open for want of a seam: *"Effect
  * appears only when a user writes their own effect handler; the raw row is reachable by spread"*
- * (kamp-us/phoenix#8716, R12.1). kamp-us/phoenix#9295 shipped it — `defineProgram`'s sixth type
+ * (kamp-us/phoenix#8716, R12.1). kamp-us/phoenix#9295 shipped it — `defineProgram`'s fifth type
  * argument widens `Answer<S, X>` to the author's own effect, and `{...row, handlers: {...row.handlers,
  * …}}` is where its handler goes — so the Sub, the `Effect.runFork` bridge and the `Fiber.interrupt`
  * disposer are all gone. The reducer never moved: it was pure TEA before and it is pure TEA now.
@@ -458,7 +458,7 @@ export interface Reconcile {
 	}>;
 }
 
-/** `defineProgram`'s sixth type argument, and the key set the spread handlers answer. */
+/** `defineProgram`'s fifth type argument, and the key set the spread handlers answer. */
 export type WorktreeEffect = Provision | Teardown | Reconcile;
 
 export const provisionEffect = (plan: ProvisionPlan): Provision => ({
@@ -1103,7 +1103,7 @@ const firstLine = (text: string): string => (text.split("\n")[0] ?? "").trim();
  * With no `job` the row declares no args at all: `defineProgram` fills every declared arg, and a
  * declared-but-unfilled one is a crash at config load rather than a program that simply provisions.
  *
- * **And the spread is the seam.** `defineProgram`'s sixth type argument says which effects this
+ * **And the spread is the seam.** `defineProgram`'s fifth type argument says which effects this
  * program's cells may answer; the handler for each of them comes from `{...row.handlers, …}` here
  * and from nowhere else, because the compiler returns before any spread exists and so refuses
  * nothing (kamp-us/phoenix#9295). An effect with no handler is skipped silently by the actor — the
