@@ -34,19 +34,25 @@ set each session's cwd by hand — costs a manual step per session and gives the
 that is not the code.
 
 [#9515](https://github.com/kamp-us/phoenix/issues/9515) carried the question, and the founder ruled
-it in four comments on 2026-09-20 PT. This record is those rulings written down; it decides nothing
-they left open.
+it in four comments on 2026-09-20 PT. Rules 1 to 6 below are those rulings written down.
+
+**Rule 7 is not.** #9515 asked whether state already sitting under `<project>/.tuval` is migrated,
+still honoured where it is found, or dropped, and none of the four rulings picks one of the three.
+The pick to migrate, and the Banned bullet that forbids a read fallback afterwards, are this
+record's own call on the logic of ruling 2 — flagged for veto here the way ruling 3's derived
+consequence was flagged and then confirmed. Read rule 7 as the record's, not the founder's, until
+he says otherwise.
 
 - [Ruling 1](https://github.com/kamp-us/phoenix/issues/9515#issuecomment-5752393670): *"yes but it
   should also allow project config as well. i basically wanna be able to use my home folder config
   on my work computer, but my personal projects should and will have their own program setups. so
   both should be supported for maximum portability."*
 - [Ruling 2](https://github.com/kamp-us/phoenix/issues/9515#issuecomment-5752402420): *"i think imo
-  the state should always live in the home folder."*
+  the state should always live in the home folder"*
 - [Ruling 3](https://github.com/kamp-us/phoenix/issues/9515#issuecomment-5752403867), on whether two
-  worktrees of one repo share a desk: *"very similar to how claude code does it."*
+  worktrees of one repo share a desk: *"very similar to how claude code does it"*
 - [Ruling 4](https://github.com/kamp-us/phoenix/issues/9515#issuecomment-5752418546), confirming the
-  consequence ruling 3 was read to carry: *"moved checkout starting fresh is fine."*
+  consequence ruling 3 was read to carry: *"moved checkout starting fresh is fine"*
 
 Ruling 3's model is observable. Claude Code keeps one directory per project under a `projects`
 directory in its own home-dir tree, each named from that project's absolute path with the
@@ -92,7 +98,9 @@ the checkout's absolute path; a project directory holds a config module or nothi
 7. **Existing in-project state owes a one-time move, per machine.** Where boot finds state under
    `<project>/.tuval`, it moves it once into that project's home-dir key and leaves the config
    module behind. After that lands, this repository's `.gitignore` rule for `apps/tuval/.tuval/*`
-   goes, because no repository needs an ignore rule for Tuval state any more.
+   goes, because no repository needs an ignore rule for Tuval state any more. **This rule is the
+   record's own and no ruling picked it** — see Context, and the Banned bullet below that goes with
+   it.
 
 **Banned.**
 
