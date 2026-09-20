@@ -3,8 +3,12 @@
 Local, untracked experiment for [kamp-us/phoenix discussion #7319](https://github.com/kamp-us/phoenix/discussions/7319)
 (comment [18202118](https://github.com/kamp-us/phoenix/discussions/7319#discussioncomment-18202118):
 "we should import this skill directly into fabrika since it's license is MIT").
-Nothing in this experiment was staged, committed, pushed, or published; every artifact stayed
+At experiment time, nothing was staged, committed, pushed, or published; every artifact stayed
 on this machine under `benchmarks/warp-skill-doctor-import-poc/`.
+
+Documentation correction, 2026-09-20: section 10 now records the historical adapter's
+omission of error-only tool results. The adapter and recorded measurements are unchanged.
+No session run or score validation was performed for this correction.
 
 ## 1. Upstream commit SHA evaluated
 
@@ -110,18 +114,20 @@ The upstream collectors themselves found **0 phoenix sessions** across their sup
 sources (claude 0 in window; codex 0 phoenix of 293, newest 2026-06-05; warp absent) —
 confirmed by a real upstream dry-run before any adaptation. Because upstream has **no
 opencode collector** and its Step-0 startup gate does not list opencode, the run used a
-discovery/configuration-only adaptation (pre-authorized by the brief): a translation shim
+source adaptation (pre-authorized by the brief): a translation shim
 (`results/opencode_adapter.py`, outside the imported skill) converts the real opencode
 SQLite rows into Claude-Code-shaped JSONL under a temporary claude-home; the **unmodified**
 upstream collector then parses those files with its real Claude Code code path. Sampling,
 stats, transcript condensing, rubrics, scoring, aggregation, and rendering are all upstream's.
 No simulator was substituted; without the shim the correct outcome was BLOCKED at
-"no eligible real sessions via supported sources" — the shim is the documented
-discovery-only adaptation, and this limitation is the experiment's central finding.
+"no eligible real sessions via supported sources". The shim also loses error-only
+tool results, as documented in section 10; upstream parsing does not restore them.
 
 ## 7. Skill Doctor's actual scores
 
-Upstream's verbatim aggregation over the two scored sessions:
+Recorded upstream aggregation over the two adapted sessions follows. These values
+have not been rerun or validated for error fidelity. Omitted failure results may
+affect judging and the failed-conversation filter; their effect on these scores is unknown.
 
 - raw_efficiency = 0.8 (both `mostly_efficient`) → **efficiency = 0.90** (curve 0.5+0.5·s)
 - raw_code_quality = 0.6 (`block` 0.2, `approve` 1.0) → **code_quality = 0.80**
@@ -189,18 +195,22 @@ REPORT_DIR recipe) is POSIX and would need a Windows path on this machine; `--sk
 must be passed because fabrika's skills path is nonstandard for this repo. The 1.16 MB
 `pierre-diffs.js` bundle is heavy for a plugin checkout but required by the renderer.
 
-**Correctness.** Three caveats on this experiment's scores: (1) the transcripts scored are
-an adapter's translation of opencode's store into Claude-Code shape — faithful (tool calls,
-patched file names, outputs, errors all preserved; verified by SHA-verified byte-exact
-upstream parsing and a mid-run adapter fix for the `patch.files` list-vs-dict mistake) but
-not a first-party collector, so harness-specific semantics (e.g. opencode `question` tool →
-adapter passes through as generic tool) are approximated; (2) the sampled set is 2
+**Correctness, corrected 2026-09-20.** Three caveats on this experiment's scores:
+(1) the historical [adapter](results/opencode_adapter.py) reads `state.output` and emits
+a `tool_result` only when that output is not `None`. It never reads `state.error`.
+An OpenCode failure stored only in `state.error` therefore becomes a tool call without
+its failure result. The earlier claim that all errors were preserved was wrong.
+Byte-exact upstream files and successful parsing do not establish translation fidelity.
+The adapter also approximates harness-specific semantics, such as passing the OpenCode
+`question` tool through as a generic tool. (2) The sampled set is 2
 conversations, both from 2026-08-31, one of which is the experiment itself — the coverage
 and quality numbers are a floor-of-one-machine evidence base, not a robust measurement;
 (3) the executing harness (opencode) is outside upstream's supported-harnesses startup
 gate — upstream itself would have refused this run; we proceeded under the brief's
-pre-authorized discovery-only adaptation. The scores are real Skill Doctor outputs over
-real local history, but they inherit all three caveats.
+pre-authorized source adaptation. The scores remain the recorded Skill Doctor outputs
+over that incomplete translation of real local history. This correction preserves the
+historical adapter and measurements; neither session run was repeated or validated for
+error fidelity. The number of omitted failures and their effect on the scores are unknown.
 
 ## 11. Recommendation
 
@@ -225,7 +235,8 @@ out-of-band help.
    `text`/`tool`/`patch`), and add `opencode` to `references/supported-harnesses.md`'s
    startup gate + collector table with source-override flags. Without this the skill is
    inert on phoenix's actual harness. The PoC adapter (`results/opencode_adapter.py`) is a
-   working reference for the shape mapping.
+   partial reference for the shape mapping; its missing error-result mapping must not
+   be treated as evidence of complete failure preservation.
 2. **Fix the Windows encoding bug** (3 × `read_text()` in `test_render_report.py`, plus
    defensive `encoding="utf-8"` on every read in `collect_sessions.py`) — or document
    `PYTHONUTF8=1` as a requirement; upstreaming the fix is preferable.
@@ -264,8 +275,8 @@ No staged files (`git diff --cached` empty), no tracked-file modifications
 **INCONCLUSIVE-leaning-positive, recommendation: revise before import.** The success
 criteria that could be met were met — the real upstream Skill Doctor was imported
 byte-exact into fabrika shape, it analyzed 2 real phoenix-local opencode sessions through
-its own unmodified pipeline (via a documented, pre-authorized discovery-only shim for the
-unsupported source), all outputs and proposed edits stayed local under
+its own unmodified pipeline (via a documented, pre-authorized shim with incomplete
+failure evidence), all outputs and proposed edits stayed local under
 `benchmarks/warp-skill-doctor-import-poc/results/`, no skill edits were proposed (none
 cleared upstream's own gate), and the evidence is sufficient to decide: the direct import
 is worthwhile **after** the revisions in §12 — chiefly the opencode collector, without

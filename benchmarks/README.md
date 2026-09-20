@@ -30,8 +30,11 @@ End-to-end pipeline, re-verified 2026-09-06: opencode→Claude-Code adapter (2 r
 local sessions) → unmodified upstream collector (2 sampled, 27 skills found) →
 rubric judging → upstream aggregation → `render_report.py`. Result: **B+
 (overall 0.88)** — efficiency 0.90, code quality 0.80, skill coverage 1.0 —
-identical to the original 2026-08-31 run. The score rests on 2 sessions and is
-directional only, not a measurement of the corpus.
+identical to the original 2026-08-31 run. These are recorded historical outputs,
+not validated grades of the corpus. The adapter omits error-only tool results;
+see the [fidelity correction](warp-skill-doctor-import-poc/REPORT.md#10-privacy-portability-and-correctness-problems).
+Neither two-session run has been rerun or validated for error fidelity in this
+documentation repair. The score's sensitivity to omitted failures is unknown.
 
 ## Status
 

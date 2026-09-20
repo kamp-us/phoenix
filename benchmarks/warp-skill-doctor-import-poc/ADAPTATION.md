@@ -129,6 +129,12 @@ environment. Each is evidence for the production-import decision.
   upstream pipeline's. The adapter is a translation shim for one unsupported *source*,
   not a replacement scorer.
 - **Behavior change:** none to the imported files. The adapter is invoked, never merged.
+- **Fidelity correction, 2026-09-20:** the historical adapter reads `state.output` but
+  not `state.error`, so error-only tool results are omitted. The unchanged upstream
+  pipeline receives incomplete failure evidence. The adapter and historical scores
+  remain unchanged; no session rerun or error-fidelity validation was performed for
+  this correction. See [REPORT.md section 10](REPORT.md#10-privacy-portability-and-correctness-problems)
+  for the effect this has on the score claims.
 
 ### B4. Python interpreter availability
 
