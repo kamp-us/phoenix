@@ -17,7 +17,7 @@ jobs:
     name: fake deploy
     runs-on: ubuntu-latest
     env:
-      SPIKE_RESULT: red
+      SPIKE_RESULT: red # second red run — proves one issue, one comment
     steps:
       - name: Conclude as the spike says
         run: |
