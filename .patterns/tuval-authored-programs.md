@@ -24,11 +24,64 @@ compiled by one entry of `FIELD_COMPILERS` in
 | `args` | `args` | [`args.ts`](../apps/tuval/src/authoring/args.ts) |
 | `commands` | `spells` | [`commands.ts`](../apps/tuval/src/authoring/commands.ts) |
 | `key` cell in `update` | `takesKeys` | [`keys.ts`](../apps/tuval/src/authoring/keys.ts) |
-| `title` / `status` / `window` | `renderer` + the self-report out-ports | [`view.ts`](../apps/tuval/src/authoring/view.ts) |
+| `title` / `status` | the two self-report out-ports | [`view.ts`](../apps/tuval/src/authoring/view.ts) |
+| `renderer` | `renderer` — a module specifier, straight through | [`define-program.ts`](../apps/tuval/src/authoring/define-program.ts) |
 | `resume` | `resume` | [`resume.ts`](../apps/tuval/src/authoring/resume.ts) |
 
 The row is a plain object, so **anything the table above does not cover is reached by spreading the
 compiled row**: `{...defineProgram({...}), restorable, checkpointWorthy, configChanged}`.
+
+## Giving a program a window
+
+**A window is a separate browser module, named on the row by module specifier, and there is no
+other way.** `defineProgram` is compiled by Node inside the kernel process, and the desk is a
+browser tab that can reach nothing it compiled — so a program declaring its window inline never
+painted from a config, and the key that let one try is gone
+([#8946](https://github.com/kamp-us/phoenix/issues/8946),
+[ADR 0359](../.decisions/0359-tuval-window-renderer-is-a-module-specifier.md)).
+
+```ts
+// counter-state.ts — a leaf: it imports nothing, and both halves below import it.
+export type CounterState = {readonly count: number};
+export const isCounterState = (value: unknown): value is CounterState => /* … */ true;
+
+// counter.ts — the program. Reaches the kernel, and that is fine: the page never loads it.
+export const counterProgram = program({
+	id: "counter",
+	init: (): CounterState => ({count: 0}),
+	update: {bump: (state: CounterState) => [{count: state.count + 1}, []]},
+	renderer: {kind: "module", ref: "@you/counter/window"},
+});
+
+// window.tsx — the module the page imports. `default` is the renderer, `admits` the predicate.
+import type {ProgramEvent} from "@kampus/tuval/window";
+import {windowRenderer, type WindowHost} from "@kampus/tuval/window";
+import {type CounterState, isCounterState} from "./counter-state.ts";
+import type {counterProgram} from "./counter.ts"; // types only — erased by the bundler
+
+export const admits = isCounterState;
+type Event = ProgramEvent<Record<string, never>, (typeof counterProgram)["update"]>;
+export default windowRenderer("module", (host: WindowHost<CounterState, Event>) => /* … */ null);
+```
+
+`ref` is the window's own package entry for an installed program, resolved from the config module
+that declared the row (#8262), or a root-relative path for a module in this tree
+(`/src/demo/module-window.tsx`).
+
+**A window shares state with its program two ways, and both are in the block above.** A value the
+window needs at runtime — a predicate, a view function, an event constructor — lives in a leaf file
+that imports nothing, and both halves import that. A *type* crosses by `import type`, which a
+bundler erases before it can follow anything. What a window must never do is import its program's
+file for a value: that file calls `defineProgram`, whose graph reaches `node:crypto`, and Vite
+externalizes the builtin so the first property read throws where the window should be.
+
+The worked shape in this tree is
+[`demo/module-counter.ts`](../apps/tuval/src/demo/module-counter.ts) with
+[`demo/module-window.tsx`](../apps/tuval/src/demo/module-window.tsx) over
+[`demo/counter-state.ts`](../apps/tuval/src/demo/counter-state.ts);
+`apps/tuval/src/page/boundary.unit.test.ts` walks every in-tree window module at each run, so
+breaking the rule reds a test rather than a browser tab. A package's own window carries its own
+walk beside its own source — `packages/tuval-notify/src/state.unit.test.ts` is the shape.
 
 ## The two lifecycle fields, and why they are written differently
 

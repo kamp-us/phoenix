@@ -65,7 +65,7 @@ type Authored = ReturnType<typeof worktreeProgram>;
 /**
  * The same record with its `update` narrowed back to the six kernel effects.
  *
- * `testProgram` is typed at `AuthoredProgram<S, D, U, C, Out>` — five arguments, so the author's
+ * `testProgram` is typed at `AuthoredProgram<S, D, U, C>` — four arguments, so the author's
  * own effect type sits on its `never` default (`apps/tuval/src/authoring/test-program.ts`) — and a
  * program that answers an effect of its own therefore does not fit its signature, though the run
  * itself is entirely agnostic: it puts whatever a cell answered into `effects` and reads none of

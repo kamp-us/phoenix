@@ -28,7 +28,6 @@
 		"src/page/renderers.tsx",
 		"src/page/proof/no-recovery.tsx",
 		"src/page/attached-desk.unit.test.tsx",
-		"src/page/authored-windows.unit.test.tsx",
 		"src/page/readable-state.unit.test.tsx",
 		"src/page/session-transcript-window.unit.test.tsx",
 		"src/claude/proof/subagent-vertical.integration.test.ts",

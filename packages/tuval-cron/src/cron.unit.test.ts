@@ -578,10 +578,10 @@ describe("more than one cron in a config", () => {
 
 describe("cron's window", () => {
 	it("names a module renderer on the row, which is the only kind a page can load", () => {
-		// `defineProgram` compiles an authored `window` into a `host-native` reference whose renderer
-		// is seated in a map inside the kernel process — unreachable from the browser tab that has to
-		// mount it (kamp-us/phoenix #8811, open). A `kind: "module"` reference is the route that
-		// crosses: the page resolves the specifier itself at boot (ADR 0359).
+		// A `kind: "module"` reference is the only kind that crosses: the page resolves the specifier
+		// itself at boot (ADR 0359). A window declared inline on the authored record would be seated
+		// in a map inside the kernel process, unreachable from the browser tab that has to mount it —
+		// so that key no longer exists (phoenix #8811, #8946).
 		const row = cron({...options, job: session()});
 		expect(row.renderer).toEqual({
 			kind: "module",

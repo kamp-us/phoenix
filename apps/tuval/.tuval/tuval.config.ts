@@ -1,11 +1,12 @@
 // This project's Tuval config. This file is yours: boot loads it over your global
 // ~/.tuval/tuval.config.ts, registers every program row in `programs`, and launches `graph`. A row
-// is a `Program` (src/registry/program.ts); the eight in the box today are the shell (#7558), the
+// is a `Program` (src/registry/program.ts); the nine in the box today are the shell (#7558), the
 // demo counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the
-// agy chat session (#8184), the codex chat session (#8600) and the AI-agent session list (#8102).
-// One more row sits behind a flag in the `features` block below, default-off, so a desk booted
-// today carries the eight: the worked `pr-review` example (#8734) behind `prReviewExample`. Flip
-// that line and restart the desk to get the row, its graph node and its spells.
+// agy chat session (#8184), the codex chat session (#8600), the AI-agent session list (#8102) and
+// the module-window demo (#8946). One more row sits behind a flag in the `features` block below,
+// default-off, so a desk booted today carries the nine: the worked `pr-review` example (#8734)
+// behind `prReviewExample`. Flip that line and restart the desk to get the row, its graph node and
+// its spells.
 // The shape is `TuvalConfigInput` (src/config.ts), version 1.
 //
 // The shell is registered here and nowhere else — it is a program row like any other, so dropping
@@ -35,6 +36,7 @@ import {codexSession} from "../src/codex/program.ts";
 import {ClientId, type Scope as SpellScope, WorkspaceId} from "../src/commands/spell.ts";
 import type {TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
+import {moduleCounter} from "../src/demo/module-counter.ts";
 import {piSessionProgram, projectRootOf} from "../src/pi/program.ts";
 import {ProcessId} from "../src/process/process.ts";
 import {wiredShellEffects} from "../src/shell/host/index.ts";
@@ -98,6 +100,10 @@ export default {
 		// Windowed and, like the four sessions above, unplanned — nothing needs it running until you
 		// want to read it. Open it from the picker, or `window:open ai-agent-sessions`.
 		sessionListProgram(),
+		// The in-tree demo of a program that ships its own window (ADR 0359, #8946): its row names a
+		// module specifier, the page imports that module itself at boot, and pressing a key in the
+		// window counts. Unplanned — `window:open module-counter`, or pick it from an empty window.
+		moduleCounter(),
 	],
 	features,
 	graph: {

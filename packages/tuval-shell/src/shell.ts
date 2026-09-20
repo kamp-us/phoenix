@@ -354,14 +354,7 @@ export const shell = (
 	const authored = shellProgram(options);
 	// `Run` is named only in a cell's *answer*, which is not a place inference reaches, so the whole
 	// argument list is stated once (#9294).
-	const row = defineProgram<
-		ShellState,
-		ShellPorts,
-		ShellUpdate,
-		Record<string, never>,
-		unknown,
-		Run
-	>({
+	const row = defineProgram<ShellState, ShellPorts, ShellUpdate, Record<string, never>, Run>({
 		...authored,
 		label: `${authored.id} (${basename(options.cwd)})`,
 	});

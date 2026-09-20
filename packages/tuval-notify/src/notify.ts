@@ -353,7 +353,7 @@ type Authored = ReturnType<typeof notifyProgram>;
 /**
  * The row, as a config writes it: `notify({target: {kind: "ntfy", topic: "…"}})`.
  *
- * Two halves, and both are R12.1's (#9295). The **type** half is `defineProgram`'s sixth argument:
+ * Two halves, and both are R12.1's (#9295). The **type** half is `defineProgram`'s fifth argument:
  * `Deliver` is named only in a cell's answer, which is not a place inference reaches, so the whole
  * argument list is stated once here. The **runtime** half is the spread: the compiled row's
  * `handlers` record is open, the actor dispatches an effect to it by the effect's own `type`
@@ -377,7 +377,6 @@ export const notify = (options: NotifyOptions, transport?: Layer.Layer<Transport
 		Authored["ports"],
 		Authored["update"],
 		{readonly send: {readonly text: string}},
-		unknown,
 		Deliver
 	>({
 		...authored,
@@ -390,14 +389,15 @@ export const notify = (options: NotifyOptions, transport?: Layer.Layer<Transport
 	return {
 		...row,
 		/**
-		 * The window, named rather than declared. `defineProgram` compiles an authored `window` field
-		 * into a `host-native` reference and seats the renderer in a map *inside the kernel process* —
-		 * which a browser tab cannot reach (phoenix #8811). A `kind: "module"` reference is what the
+		 * The window, named rather than declared. A `kind: "module"` reference is the only kind the
 		 * page can act on: it imports the specifier itself at boot (ADR 0359), and `./window.tsx` is
-		 * what answers it.
+		 * what answers it. A window declared inline on the authored record would be seated in a map
+		 * *inside the kernel process*, which a browser tab cannot reach — so that key no longer
+		 * exists (phoenix #8811, #8946).
 		 *
-		 * Spread onto the row rather than passed to `defineProgram`, because `renderer` is not a field
-		 * the authoring surface takes — `FIELD_COMPILERS` owns that key and computes it from `window`.
+		 * Still spread onto the row rather than passed to `defineProgram`, which now takes a
+		 * `renderer` of its own: this row is assembled by spread already, and one place to read the
+		 * window off beats two.
 		 */
 		renderer: NOTIFY_WINDOW_REF,
 		handlers: {
