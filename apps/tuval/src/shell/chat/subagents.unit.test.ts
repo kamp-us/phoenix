@@ -3,14 +3,11 @@
  * what order, how many the tail collapses into — is decided here, so it is proven here.
  */
 
-import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {describe, expect, it} from "vitest";
 import {foldEvent} from "../../ai-agent/core/fold.ts";
 import {initialState} from "../../ai-agent/core/state.ts";
 import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
-import {toAgentEvents} from "../../claude/history/events.ts";
-import {loadFixture} from "../../claude/history/fixtures/load.ts";
-import {emptyMapping} from "../../claude/history/map.ts";
+import {fixtureEventFrames} from "../../claude/history/fixtures/events.ts";
 import {
 	elapsedLabel,
 	runningSubagents,
@@ -236,17 +233,13 @@ describe("subagentPhrase", () => {
  */
 describe("runningSubagents over a captured background spawn", () => {
 	const SPAWN = "toolu_000000000000000000000001";
-	const frames = loadFixture("background-subagent-turn") as ReadonlyArray<SDKMessage>;
 
 	/** The list model after each frame in turn, folded exactly as the live session folds it. */
 	const perFrame = () => {
 		const seen: Array<ReturnType<typeof runningSubagents>> = [];
-		let mapping = emptyMapping;
 		let state = initialState("/repo");
-		for (const one of frames) {
-			const step = toAgentEvents(one, mapping, {at: 1_700_000_000_000});
-			mapping = step.mapping;
-			state = step.events.reduce((carried, event) => foldEvent(carried, event, {}), state);
+		for (const events of fixtureEventFrames("background-subagent-turn", {at: 1_700_000_000_000})) {
+			state = events.reduce((carried, event) => foldEvent(carried, event, {}), state);
 			seen.push(runningSubagents(state.subagents));
 		}
 		return seen;

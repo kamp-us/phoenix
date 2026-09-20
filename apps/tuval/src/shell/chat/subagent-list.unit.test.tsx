@@ -9,7 +9,6 @@
  * `./subagents.unit.test.ts`, and the row-level removal in `./rows.unit.test.ts`.
  */
 
-import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {act, render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
@@ -19,9 +18,7 @@ import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/i
 import {initialState} from "../../ai-agent/core/state.ts";
 import type {SubagentSlot} from "../../ai-agent/ports/index.ts";
 import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
-import {toAgentEvents} from "../../claude/history/events.ts";
-import {loadFixture} from "../../claude/history/fixtures/load.ts";
-import {emptyMapping} from "../../claude/history/map.ts";
+import {fixtureEventFrames} from "../../claude/history/fixtures/events.ts";
 import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
 import {testProcess} from "../window/fixtures.ts";
@@ -280,15 +277,11 @@ describe("a subagent's rows in the agent window", () => {
 describe("the window over a captured background spawn", () => {
 	/** The session state as of frame `upTo`, folded exactly as the live session folds it. */
 	const stateAfter = (upTo: number): AiAgentSessionState => {
-		const frames = loadFixture("background-subagent-turn") as ReadonlyArray<SDKMessage>;
-		let mapping = emptyMapping;
-		let state = initialState("/repo");
-		for (const one of frames.slice(0, upTo)) {
-			const step = toAgentEvents(one, mapping, {at: STARTED_AT});
-			mapping = step.mapping;
-			state = step.events.reduce((carried, event) => foldEvent(carried, event, {}), state);
-		}
-		return state;
+		const frames = fixtureEventFrames("background-subagent-turn", {at: STARTED_AT});
+		return frames
+			.slice(0, upTo)
+			.flat()
+			.reduce((carried, event) => foldEvent(carried, event, {}), initialState("/repo"));
 	};
 
 	it("draws the worker's row while it runs, where it used to draw nothing", async () => {
