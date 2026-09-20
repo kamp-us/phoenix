@@ -17,7 +17,7 @@ jobs:
     name: fake deploy
     runs-on: ubuntu-latest
     env:
-      SPIKE_RESULT: red # second red run — proves one issue, one comment
+      SPIKE_RESULT: green # the recovery run — proves the close path
     steps:
       - name: Conclude as the spike says
         run: |
