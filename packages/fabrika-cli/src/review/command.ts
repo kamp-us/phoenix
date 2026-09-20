@@ -12,7 +12,6 @@
 import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
-import {governedRootsOr} from "../config/paths.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
@@ -144,17 +143,6 @@ const diff = leafCommand(
 			yield* emit(placement);
 			return;
 		}
-		// The governed roots are read here, adapter-side, because the diff verb itself stays a pure
-		// git read — the union is the caller's config, not the diff's.
-		const roots = yield* governedRootsOr(
-			"review diff",
-			process.cwd(),
-			"the filter refusal union is UNKNOWN without the governed roots.",
-		);
-		if (roots._tag === "Refused") {
-			yield* emit({code: 11, stdout: "", stderr: [roots.message]});
-			return;
-		}
 		yield* emit(
 			yield* runDiff({
 				pr,
@@ -162,7 +150,7 @@ const diff = leafCommand(
 				repo: Option.getOrNull(repo),
 				filterPlacement: placement,
 				exclude: Option.getOrNull(exclude),
-				governedRoots: roots.roots,
+				cwd: process.cwd(),
 				env: process.env,
 			}),
 		);

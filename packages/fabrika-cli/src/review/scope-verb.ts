@@ -163,24 +163,6 @@ export const runScope = (
 		);
 		if (subsystems._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, subsystems.message);
 
-		const filterExclusions = yield* reviewFilterExclusionsOr(
-			VERB,
-			options.cwd,
-			"which globs extend the exclusion set is UNKNOWN and this partition would carry an answer nobody derived.",
-		);
-		if (filterExclusions._tag === "Refused") {
-			return refuse(PRECONDITION_UNKNOWN, filterExclusions.message);
-		}
-
-		const filterUnexclude = yield* reviewFilterUnexcludeOr(
-			VERB,
-			options.cwd,
-			"which defaults the exclusion set drops is UNKNOWN and this partition would carry an answer nobody derived.",
-		);
-		if (filterUnexclude._tag === "Refused") {
-			return refuse(PRECONDITION_UNKNOWN, filterUnexclude.message);
-		}
-
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
@@ -239,6 +221,23 @@ export const runScope = (
 		let excluded: ReadonlyArray<string> = [];
 		let unexcluded: ReadonlyArray<string> = [];
 		if (options.filterPlacement != null) {
+			const filterExclusions = yield* reviewFilterExclusionsOr(
+				VERB,
+				options.cwd,
+				"which globs extend the exclusion set is UNKNOWN and this partition would carry an answer nobody derived.",
+			);
+			if (filterExclusions._tag === "Refused") {
+				return refuse(PRECONDITION_UNKNOWN, filterExclusions.message);
+			}
+
+			const filterUnexclude = yield* reviewFilterUnexcludeOr(
+				VERB,
+				options.cwd,
+				"which defaults the exclusion set drops is UNKNOWN and this partition would carry an answer nobody derived.",
+			);
+			if (filterUnexclude._tag === "Refused") {
+				return refuse(PRECONDITION_UNKNOWN, filterUnexclude.message);
+			}
 			const effective = effectiveExclusions(
 				filterExclusions.exclusions,
 				filterUnexclude.unexclude,

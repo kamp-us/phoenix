@@ -829,3 +829,35 @@ describe("retained requirements with filtering", () => {
 		]);
 	});
 });
+
+describe("unfiltered scope ignores unused filter configuration", () => {
+	it.each([
+		{reviewFilterExclusions: "src/**"},
+		{reviewFilterUnexclude: ["not-a-default"]},
+	])("preserves unfiltered output but refuses enabled filtering for %j", async (config) => {
+		const read = (filterPlacement: FilterPlacement | null) =>
+			Effect.runPromise(
+				Effect.provide(
+					runScope({...options, filterPlacement}),
+					Layer.merge(
+						fakeSeams(happy()).layer,
+						fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}}).layer,
+					),
+				),
+			);
+		const baseline = await Effect.runPromise(
+			Effect.provide(
+				runScope(options),
+				Layer.merge(
+					fakeSeams(happy()).layer,
+					fakeFs({files: {"/repo/.fabrika.jsonc": "{}"}}).layer,
+				),
+			),
+		);
+		const unfiltered = await read(null);
+		const filtered = await read("after");
+		expect(unfiltered).toEqual(baseline);
+		expect(filtered.code).toBe(PRECONDITION_UNKNOWN);
+		expect(filtered.stdout).toBe("");
+	});
+});

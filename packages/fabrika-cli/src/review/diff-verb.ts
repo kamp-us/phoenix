@@ -14,10 +14,13 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {reviewFilterExclusionsOr, reviewFilterUnexcludeOr} from "../config/paths.ts";
+import {
+	governedRootsOr,
+	reviewFilterExclusionsOr,
+	reviewFilterUnexcludeOr,
+} from "../config/paths.ts";
 import {diffRange, diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {SHIPPED_GOVERNED_ROOTS} from "./classes.ts";
 import {GOVERNED_FILTER, INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {filesInDiff} from "./diff.ts";
 import {
@@ -43,11 +46,11 @@ export interface DiffOptions {
 	readonly filterPlacement?: FilterPlacement | null;
 	/** comma-separated extra exclusion patterns, refused on a guard-probe match. */
 	readonly exclude?: string | null;
-	/** The governed roots, read by the adapter's `governedRootsOr` — the union's config half. */
+	/** Explicit roots for callers with a proven config read; otherwise read only when filtering. */
 	readonly governedRoots?: ReadonlyArray<string>;
 	/**
 	 * Where the exclusion set's own config arms are read, when the placement turns the filter on —
-	 * the checkout the caller stands in. The adapter hands no cwd, so this falls to the process's;
+	 * the checkout the caller stands in; omitted cwd falls to the process's;
 	 * an absent or keyless `.fabrika.jsonc` there resolves the shipped empty arms and changes no
 	 * byte of the served diff.
 	 */
@@ -132,11 +135,22 @@ export const runDiff = (
 		// exclusion can never masquerade as a short read — the header names what was left out on
 		// purpose. Refusal union derived per run over the EFFECTIVE set — defaults minus the config's
 		// removals, plus its additions, plus `--exclude` — against the guards' probes plus the
-		// governed roots the adapter read. A removed default nothing re-added is named in the served
+		// governed roots. A removed default nothing re-added is named in the served
 		// diff's header and in the diagnostic beside it, so a narrowed filter is never silent.
 		let servedDiff = diff;
 		if (options.filterPlacement != null) {
 			const root = options.cwd ?? process.cwd();
+			let roots = options.governedRoots;
+			if (roots === undefined) {
+				const loaded = yield* governedRootsOr(
+					VERB,
+					root,
+					"the filter refusal union is UNKNOWN without the governed roots.",
+				);
+				if (loaded._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, loaded.message);
+				roots = loaded.roots;
+			}
+
 			const filterExclusions = yield* reviewFilterExclusionsOr(
 				VERB,
 				root,
@@ -158,10 +172,7 @@ export const runDiff = (
 				filterUnexclude.unexclude,
 				options.exclude ?? null,
 			);
-			const refused = refusalFor(
-				effective.patterns,
-				refusalProbes(options.governedRoots ?? SHIPPED_GOVERNED_ROOTS),
-			);
+			const refused = refusalFor(effective.patterns, refusalProbes(roots));
 			if (refused.length > 0) {
 				const detail = refused
 					.map((entry) =>
@@ -177,11 +188,7 @@ export const runDiff = (
 				);
 			}
 			const split = applyPlacement(listed.value, effective.patterns);
-			const governed = governedExcluded(
-				split.excluded,
-				effective.patterns,
-				refusalProbes(options.governedRoots ?? SHIPPED_GOVERNED_ROOTS),
-			);
+			const governed = governedExcluded(split.excluded, effective.patterns, refusalProbes(roots));
 			if (governed.length > 0) {
 				return refuse(
 					GOVERNED_FILTER,

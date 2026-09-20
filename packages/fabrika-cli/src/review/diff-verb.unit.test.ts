@@ -477,3 +477,46 @@ diff --git a/src/cart.ts b/src/cart.ts
 		expect(out.stdout).not.toContain("excludes governed path");
 	});
 });
+
+describe("diff reads filter configuration only when filtering", () => {
+	it.each([
+		{reviewFilterExclusions: "src/**"},
+		{reviewFilterUnexclude: ["not-a-default"]},
+		{governedRoots: []},
+	])("ignores unused malformed configuration %j", async (config) => {
+		const read = (filterPlacement: FilterPlacement | null) =>
+			Effect.runPromise(
+				Effect.provide(
+					runDiff({...options, filterPlacement}),
+					Layer.merge(
+						fakeSeams(green()).layer,
+						fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}}).layer,
+					),
+				),
+			);
+		const baseline = await run(green());
+		const unfiltered = await read(null);
+		const filtered = await read("after");
+		expect(unfiltered).toEqual(baseline);
+		expect(filtered.code).toBe(PRECONDITION_UNKNOWN);
+		expect(filtered.stdout).toBe("");
+	});
+	it("serves unfiltered content when config is unreadable, but refuses filtering", async () => {
+		const read = (filterPlacement: FilterPlacement | null) =>
+			Effect.runPromise(
+				Effect.provide(
+					runDiff({...options, filterPlacement}),
+					Layer.merge(
+						fakeSeams(green()).layer,
+						fakeFs({files: {"/repo/.fabrika.jsonc": "{}"}, unreadable: ["/repo/.fabrika.jsonc"]})
+							.layer,
+					),
+				),
+			);
+		const baseline = await run(green());
+		const unfiltered = await read(null);
+		const filtered = await read("after");
+		expect(unfiltered).toEqual(baseline);
+		expect(filtered.code).toBe(PRECONDITION_UNKNOWN);
+	});
+});
