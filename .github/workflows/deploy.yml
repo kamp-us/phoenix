@@ -675,20 +675,27 @@ jobs:
               }
             }
 
-  # ─── The workflow's own failure hook (#9508) ─────────────────────────────────────────────
+  # ─── The workflow's own red, reported (#9508) ────────────────────────────────────────────
   #
-  # Everything above this line runs on both triggers; these two jobs are the push-to-main
-  # half only, and they exist because a post-merge run reports to nobody. The `deploy` job
-  # failed on 8 consecutive main pushes over 3 days and the only trace was a red check on
-  # each commit — no issue, no ping. A preview stage carries no custom domain, so the failing
-  # step passed on every pull request and failed only on the prod run: the PR gates cannot
-  # structurally cover this, which is why the workflow has to report itself.
+  # Everything above this line runs on both triggers; this job is the push-to-main half only,
+  # and it exists because a post-merge run reports to nobody. The `deploy` job failed on 8
+  # consecutive main pushes over 3 days and the only trace was a red check on each commit —
+  # no issue, no ping. A preview stage carries no custom domain, so the failing step passed on
+  # every pull request and failed only on the prod run: the PR gates cannot structurally cover
+  # this, which is why the workflow has to report itself.
   #
-  # THE DEDUP IS THE POINT: 8 reds in a row must produce 1 issue and 7 comments. The key is
-  # the `<!-- deploy-failure-tracker -->` body marker plus the `deploy-failure-tracker`
-  # label, never title text, and the lookup is author-constrained to `github-actions[bot]`
-  # the way the `Comment preview URL` step above is (#3740). Both live in the pure core at
-  # packages/fabrika-cli/src/ci/deploy-tracker.ts; these jobs only supply the run's facts.
+  # THE DEDUP IS THE POINT: 8 reds in a row must produce 1 issue and 7 comments. The key is a
+  # body marker carrying THIS workflow's own file name plus the configured label, never title
+  # text, and the lookup is author-constrained to `github-actions[bot]` the way the `Comment
+  # preview URL` step above is (#3740). Both live in the pure core at
+  # packages/fabrika-cli/src/ci/main-alarm.ts; this job only supplies the run's facts. The
+  # per-workflow marker is what lets release-please.yml call the same bin without the two
+  # closing each other's alarms.
+  #
+  # ONE JOB UNDER `if: always()`, not a red job beside a green one: the result is an argument,
+  # so a skipped `deploy` (the dependabot arm) reaches the bin as `skipped` and decides
+  # nothing, where two polarity-fenced jobs would both be skip-propagated away and the standing
+  # alarm would miss its close.
   #
   # NO `pnpm install` HERE, deliberately. This is the notification path for a build that just
   # broke, so it must not depend on the install that may be what broke. The bin is a
@@ -696,22 +703,22 @@ jobs:
   # to the REST API over `fetch` with the default GITHUB_TOKEN — the same constraint, and the
   # same shape, as `ci-required`'s bare bin in ci.yml.
   #
-  # Workflow-level `permissions:` stays `contents: read`; each job below restates its own
+  # Workflow-level `permissions:` stays `contents: read`; the job below restates its own
   # block, which REPLACES the default, the way `changes` and `deploy` already do.
   #
-  # The two jobs cannot race: the workflow-level `concurrency` group is `deploy-<ref>` with
+  # Runs cannot race: the workflow-level `concurrency` group is `deploy-<ref>` with
   # `cancel-in-progress: false`, so runs on `main` serialize and a later push never reads the
   # board before an earlier push has written it.
-  deploy-failure-tracker:
-    name: report a red push-to-main run
-    # `failure()` is true when any job in `needs` failed; the `push` term is what keeps every
-    # `pull_request` run out, since a preview deploy's redness is already on the PR.
-    if: failure() && github.event_name == 'push'
+  main-alarm:
+    name: report this run to the main alarm
+    # The `push` term is what keeps every `pull_request` run out, since a preview deploy's
+    # redness is already on the PR. The core re-checks GITHUB_EVENT_NAME for the same reason.
+    if: always() && github.event_name == 'push'
     needs: [changes, app-roster, deploy]
     runs-on: ubuntu-latest
     permissions:
-      contents: read # checkout, for the bin
-      issues: write # open the tracker, or comment on the standing one
+      contents: read # checkout, for the bin and for `.fabrika.jsonc`
+      issues: write # open the alarm, comment on the standing one, or close it
       actions: read # read this run's job list, to name which job went red
     steps:
       - uses: actions/checkout@v4.2.2
@@ -720,43 +727,12 @@ jobs:
         with:
           node-version-file: package.json
 
-      - name: Open the deploy tracker, or comment on the one already open
+      - name: Open, update or close this workflow's alarm
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          TRACKER_CONCLUSION: failure
-          TRACKER_WORKFLOW: ${{ github.workflow }}
-          TRACKER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          TRACKER_HEAD_SHA: ${{ github.sha }}
-          TRACKER_BRANCH: ${{ github.ref_name }}
-          # Who gets woken is this repository's fact, not the core's: the bin warns and omits
-          # the mention line when this is blank rather than writing a bare `@`.
-          TRACKER_MENTION: usirin
-        run: node packages/fabrika-cli/src/ci/deploy-tracker-bin.ts
-
-  # The other half of the same hook: a green push-to-main run closes the tracker its reds
-  # opened. With none open this is a no-op that exits 0 — the recovery path must never red a
-  # run that had nothing to recover from, which is every ordinary green.
-  deploy-recovery:
-    name: close the deploy tracker on a green push to main
-    if: success() && github.event_name == 'push'
-    needs: [changes, app-roster, deploy]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read # checkout, for the bin
-      issues: write # comment on the tracker and close it
-    steps:
-      - uses: actions/checkout@v4.2.2
-
-      - uses: actions/setup-node@v4.4.0
-        with:
-          node-version-file: package.json
-
-      - name: Close the deploy tracker, if one is open
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          TRACKER_CONCLUSION: success
-          TRACKER_WORKFLOW: ${{ github.workflow }}
-          TRACKER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          TRACKER_HEAD_SHA: ${{ github.sha }}
-          TRACKER_BRANCH: ${{ github.ref_name }}
-        run: node packages/fabrika-cli/src/ci/deploy-tracker-bin.ts
+          # One result for the whole run: any failed need is a red main, and a skipped need
+          # with nothing failed is a run that proved neither polarity, which the core no-ops.
+          # Passed through the environment rather than interpolated into the command, so the
+          # expression's value is never part of the shell text.
+          RUN_RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || (contains(needs.*.result, 'skipped') && 'skipped' || 'success') }}
+        run: node packages/fabrika-cli/src/ci/main-alarm-bin.ts --result "$RUN_RESULT"

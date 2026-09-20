@@ -9,9 +9,9 @@
  *
  * Two members of the group are not verbs but bare entry points, each because its job installs no
  * dependencies and an Effect CLI command would put the whole dependency tree on its critical path:
- * `ci-required` (`./required-bin.ts`), the always-on aggregator, and the deploy tracker
- * (`./deploy-tracker-bin.ts`), which reports a red post-merge deploy and so must not depend on the
- * install that may be what broke.
+ * `ci-required` (`./required-bin.ts`), the always-on aggregator, and the main alarm
+ * (`./main-alarm-bin.ts`), which reports a red push to the default branch and so must not depend on
+ * the install that may be what broke.
  *
  * The adapter and nothing else: it declares the flags, reads the machine facts the verbs do not
  * derive, runs the verb, and emits its outcome.

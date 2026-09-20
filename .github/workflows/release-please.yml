@@ -382,60 +382,43 @@ jobs:
   # blocked, it just stops. So a failed run files itself into the intake queue triage
   # already drains, and updates that same issue on every later failure.
   #
-  # It is a SEPARATE job that checks nothing out, installs nothing, and runs no repo
-  # code — deliberately, and this is the whole point of the job boundary. The job above
-  # now needs `actions/checkout` and `pnpm install --frozen-lockfile` before it can run a
-  # repo verb, so an alarm living inside it dies with the very failures it exists
-  # to report: a bad lockfile on `main` reds the install and takes the alarm down with
-  # it, leaving the run red and silent again. Nothing here depends on the repo, so the
-  # alarm survives every failure class of the job it watches, including one that leaves
-  # no checkout at all.
+  # It is a SEPARATE job from the one above — deliberately, and this is the whole point of
+  # the job boundary. That job needs `actions/checkout` and `pnpm install --frozen-lockfile`
+  # before it can run a repo verb, so an alarm living inside it dies with the very failures
+  # it exists to report: a bad lockfile on `main` reds the install and takes the alarm down
+  # with it, leaving the run red and silent again.
   #
-  # The cost is that the dedup lookup is `gh` rather than `intake-dedup check`, which
-  # this job cannot execute. The decision stays the same exact-title equality either
-  # way: the search only narrows candidates, and `jq` picks the one whose title matches
-  # byte for byte (ADR 0228 — relay an answer, never derive the decision). A missed
-  # match costs one duplicate issue, which triage closes; a lost alarm is the failure
-  # this job exists to end (ADR 0181), so every refusal here falls toward filing.
+  # The decision it used to hand-roll now lives in one tested core shared with deploy.yml
+  # (packages/fabrika-cli/src/ci/main-alarm.ts, #9508). Two hand-rolled alarms with
+  # different dedup rules was the duplication that ruling ended: this one keyed on exact
+  # title equality and never closed on green, while deploy.yml's keyed on a body marker and
+  # did. The marker carries this workflow's own file name, so the two workflows keep
+  # separate alarm issues rather than closing each other's.
+  #
+  # Checkout + setup-node and NO `pnpm install`: the bin's whole runtime graph is relative
+  # plain-TS modules that node type-strips, so the alarm still survives every failure class
+  # of the job it watches — including the bad-lockfile one, which is an install fault and
+  # not a checkout fault.
   alarm:
-    name: file the red run where triage sees it
+    name: report this run to the main alarm
     needs: release-please
-    if: failure()
+    # `always()` because this job now owns the green path too: a successful run closes the
+    # alarm its reds opened, which the old failure-only job could never do.
+    if: always() && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
-      issues: write
+      contents: read # checkout, for the bin and for `.fabrika.jsonc`
+      issues: write # open the alarm, comment on the standing one, or close it
+      actions: read # read this run's job list, to name which job went red
     steps:
-      - env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ALARM_TITLE: release-please.yml is failing on pushes to main
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -uo pipefail
+      - uses: actions/checkout@v4.2.2
 
-          {
-            echo "\`release-please.yml\` failed on \`main\` at commit \`$GITHUB_SHA\`."
-            echo
-            echo "Failing run: $RUN_URL"
-            echo
-            echo "Release automation is down while this is red: no version derivation, no changelog"
-            echo "grooming on any standing Release PR, and nothing to merge, so no package can ship."
-          } > "$RUNNER_TEMP/alarm.md"
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
 
-          candidates=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 50 \
-            --search "\"$ALARM_TITLE\" in:title" --json number,title)
-          status=$?
-          if [ "$status" -ne 0 ]; then
-            echo "::warning::the open-issue lookup exited $status — filing a fresh alarm rather than risking a lost one."
-            candidates='[]'
-          fi
-
-          existing=$(printf '%s' "$candidates" \
-            | jq -r --arg title "$ALARM_TITLE" 'map(select(.title == $title)) | .[0].number // empty')
-
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" \
-              --body-file "$RUNNER_TEMP/alarm.md"
-          else
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ALARM_TITLE" \
-              --label status:needs-triage --body-file "$RUNNER_TEMP/alarm.md"
-          fi
+      - name: Open, update or close this workflow's alarm
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_RESULT: ${{ needs.release-please.result }}
+        run: node packages/fabrika-cli/src/ci/main-alarm-bin.ts --result "$RUN_RESULT"
