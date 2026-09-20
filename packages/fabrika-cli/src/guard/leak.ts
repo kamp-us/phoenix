@@ -114,6 +114,10 @@ export const DOC_SELF_EXEMPT = [
 	"/skills/write-code/scripts/verify-fail-closed.sh",
 	// Its Lineage section names the sibling-repo clones this repo was rebuilt from.
 	"/CLAUDE.md",
+	// A byte-exact vendored upstream reference under skill-doctor's re-copy-never-edit rule: it
+	// documents where each supported harness keeps its session history, so the home-dir shapes are
+	// the subject matter. The file may not be edited here, so the exemption is the only route.
+	"/skills/skill-doctor/references/supported-harnesses.md",
 ] as const;
 
 const normalize = (path: string): string => path.replace(/\\/g, "/");
