@@ -259,6 +259,9 @@ export const takeGroups = (
 		const noticeStop =
 			newest || limits.notices === "own" ? null : stoppedBy(group.notices, notices, limits.notices);
 		const shedding: ShedClasses = {nested: nestedStop !== null, notices: noticeStop !== null};
+		// Both ceilings can refuse one group, and then the nested one is the reason recorded and the
+		// arm the break below is taken on. A group carrying a worker's rows is that worker's, and
+		// #8814's rule is the stricter of the two, so the tie goes to it rather than to the notices.
 		const refused = nestedStop ?? noticeStop;
 		const members = withoutPassengers(group, shedding);
 		if (members === null) {

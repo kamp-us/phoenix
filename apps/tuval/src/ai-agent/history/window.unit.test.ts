@@ -42,6 +42,15 @@ describe("the live-tail window", () => {
 	it("declares both bounds", () => {
 		expect(TRANSCRIPT_WINDOW_ITEM_LIMIT).toBe(40);
 		expect(TRANSCRIPT_WINDOW_BYTE_LIMIT).toBe(256_000);
+		// The notice ceiling is a share of the item bound, so it moves whenever that bound does. Ten
+		// is the number `noticeLimitsFor`'s docblock reasons about; asserted here so moving the bound
+		// has to move the docblock with it rather than leaving it stale.
+		expect(
+			noticeLimitsFor({
+				items: TRANSCRIPT_WINDOW_ITEM_LIMIT,
+				bytes: TRANSCRIPT_WINDOW_BYTE_LIMIT,
+			}).items,
+		).toBe(10);
 	});
 
 	it("carries a whole short transcript with nothing omitted", () => {
