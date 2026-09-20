@@ -1,16 +1,29 @@
 /**
- * The decision-ruling marker — the comment a human on the control plane posts to record that a
- * `type:decision` issue has been ruled, so the normal build lane picks it up instead of a driver
- * hand-driving it — the same marker mechanism `./plan-approval.ts` uses, over a decision issue
- * rather than an epic.
+ * The ruling marker — the comment a human on the control plane posts to record that an issue has
+ * been ruled on, so every gate downstream grades the ruling rather than only the body it was written
+ * against — the same marker mechanism `./plan-approval.ts` uses, over an issue rather than an epic.
  *
  *     decision-ruled: #8 @ a1b2c3d4e5f6 · ruling:https://github.com/o/r/issues/8#issuecomment-9 · 2026-08-20T05:11:02Z
+ *     decision-ruled: #8 @ a1b2c3d4e5f6 · ruling:… · supersedes:3 · 2026-08-20T05:11:02Z
+ *
+ * **The subject is any issue, and the key's `decision-` is history rather than scope.** The format
+ * was minted for `type:decision` issues, where the ruling flips the audience; it now also carries a
+ * founder ruling landing on a `type:bug` or `type:feature` issue mid-lane, which is what
+ * `review criteria` folds into the graded set. Widening the read rather than minting a sibling key
+ * is deliberate: one walk, one author gate, one scan — and every marker already on the board keeps
+ * reading. Renaming the key would strand those.
  *
  * **One mechanism, two surfaces.** The binding half is `./issue-marker.ts`, the same walk
  * `./plan-approval.ts` reads through — `#<n> @ <digest>`, the number carried in the bytes so a quoted
- * marker cannot travel onto another issue. What is this format's own is the subject and the tail: the
- * number is a decision issue rather than an epic, the digest binds the **issue body that was ruled
- * on** rather than a ledger scope, and one extra field names the comment the ruling is written in.
+ * marker cannot travel onto another issue. What is this format's own is the tail: the digest binds
+ * the **issue body that was ruled on** rather than a ledger scope, one field names the comment the
+ * ruling is written in, and an optional field names the body criterion this ruling replaces.
+ *
+ * **`supersedes` is the only mechanical statement of contradiction there is.** No verb can read a
+ * founder's prose and judge which acceptance criterion it overturns, and one that guessed would
+ * silently drop a row a reviewer still owes. So the human recording the ruling says which row it
+ * replaces, by its 1-based position in the body's block, and the graded set reports that row as
+ * superseded rather than dropping it. A marker naming none contradicts nothing and adds a row.
  *
  * **The ruling field is why this marker is worth more than a label.** A builder that picks the issue
  * up reads the founder's own words at the URL the marker names, rather than inferring the choice from
@@ -50,11 +63,19 @@ import {
 export type {MarkerTime} from "./grill-marker.ts";
 export {type MarkedIssue, type ScopeDigest, scopeDigest} from "./issue-marker.ts";
 
-/** The key that names these bytes. Never widened — a second meaning would need a second format. */
+/**
+ * The key that names these bytes.
+ *
+ * Kept at `decision-ruled` after the subject widened past `type:decision`: the key is what every
+ * landed marker on the board carries, so renaming it would un-rule every decision already ruled.
+ */
 export const KEY = "decision-ruled";
 
-/** The token that opens the ruling field, so the tail's two fields are told apart by name. */
+/** The token that opens the ruling field, so the tail's fields are told apart by name. */
 export const RULING_PREFIX = "ruling:";
+
+/** The token that opens the optional superseded-criterion field. */
+export const SUPERSEDES_PREFIX = "supersedes:";
 
 declare const RULING_URL: unique symbol;
 
@@ -81,11 +102,24 @@ export const rulingIssue = (url: RulingUrl): number => Number(RULING_URL_RE.exec
 export const rulingComment = (url: RulingUrl): number =>
 	Number(RULING_URL_RE.exec(url)?.[2] ?? "0");
 
+declare const CRITERION_INDEX: unique symbol;
+
+/**
+ * The body criterion a ruling replaces: its 1-based position in the issue's acceptance-criteria
+ * block. Positive by construction, so "supersedes the zeroth row" has no inhabitant.
+ */
+export type CriterionIndex = number & {readonly [CRITERION_INDEX]: true};
+
+export const criterionIndex = (raw: number): CriterionIndex | null =>
+	Number.isInteger(raw) && raw > 0 ? (raw as CriterionIndex) : null;
+
 export interface DecisionRuling {
 	readonly issue: MarkedIssue;
 	readonly digest: ScopeDigest;
 	/** Always recorded on {@link DecisionRuling.issue} — the read refuses any other. */
 	readonly ruling: RulingUrl;
+	/** The body criterion this ruling replaces, or `null` where it contradicts none. */
+	readonly supersedes: CriterionIndex | null;
 	readonly at: MarkerTime;
 }
 
@@ -135,6 +169,22 @@ export const read = (artifact: string): DecisionRulingRead => {
 			evidence,
 		);
 	}
+	// The optional field sits between the ruling and the stamp, so a marker that carries none reads
+	// exactly as it always did — which is what keeps every landed marker readable.
+	const carriesSupersedes =
+		afterRuling.length > 1 && (afterRuling[0] ?? "").trim().startsWith(SUPERSEDES_PREFIX);
+	let supersedes: CriterionIndex | null = null;
+	if (carriesSupersedes) {
+		const token = (afterRuling.shift() ?? "").trim().slice(SUPERSEDES_PREFIX.length).trim();
+		supersedes = /^[0-9]+$/.test(token) ? criterionIndex(Number(token)) : null;
+		if (supersedes === null) {
+			return malformed(
+				`"${token}" is not a criterion position — expected the 1-based row of the body criterion this ruling replaces`,
+				evidence,
+			);
+		}
+	}
+
 	const at = markerTime(afterRuling.join(FIELD_SEPARATOR));
 	if (at === null) {
 		return malformed(
@@ -142,12 +192,19 @@ export const read = (artifact: string): DecisionRulingRead => {
 			evidence,
 		);
 	}
-	return {_tag: "Found", value: {issue: bound.issue, digest: bound.digest, ruling, at}};
+	return {
+		_tag: "Found",
+		value: {issue: bound.issue, digest: bound.digest, ruling, supersedes, at},
+	};
 };
 
 /** Compose the marker's first line. Round-trips through {@link read}. */
-export const emit = ({issue, digest, ruling, at}: DecisionRuling): string =>
-	emitIssueMarker(KEY, issue, digest, [`${RULING_PREFIX}${ruling}`, at]);
+export const emit = ({issue, digest, ruling, supersedes, at}: DecisionRuling): string =>
+	emitIssueMarker(KEY, issue, digest, [
+		`${RULING_PREFIX}${ruling}`,
+		...(supersedes === null ? [] : [`${SUPERSEDES_PREFIX}${supersedes}`]),
+		at,
+	]);
 
 /**
  * Whether this marker rules `issue` **as `derived` now stands**.
@@ -163,6 +220,7 @@ export const renderRuling = (ruling: DecisionRuling): NonEmptyReadonlyArray<stri
 	`issue\t${ruling.issue}`,
 	`digest\t${ruling.digest}`,
 	`ruling\t${ruling.ruling}`,
+	...(ruling.supersedes === null ? [] : [`supersedes\t${ruling.supersedes}`]),
 	`at\t${ruling.at}`,
 ];
 
@@ -170,7 +228,7 @@ export type DecisionRulingFields =
 	| {readonly _tag: "Fields"; readonly ruling: DecisionRuling}
 	| {readonly _tag: "Unusable"; readonly reason: string};
 
-const KEYS = ["issue", "digest", "ruling", "at"] as const;
+const KEYS = ["issue", "digest", "ruling", "supersedes", "at"] as const;
 
 /** Parse `wire emit`'s stdin into a ruling. Every rejection is a refusal, never a default. */
 export const parseFields = (fields: string): DecisionRulingFields => {
@@ -205,6 +263,19 @@ export const parseFields = (fields: string): DecisionRulingFields => {
 			reason: `the ruling is recorded on #${rulingIssue(ruling)} but the marker would bind #${issue} — a ruling on another issue rules nothing here`,
 		};
 	}
+	const supersedesToken = (seen.get("supersedes") ?? "").trim();
+	const supersedes =
+		supersedesToken === ""
+			? null
+			: /^[0-9]+$/.test(supersedesToken)
+				? criterionIndex(Number(supersedesToken))
+				: null;
+	if (supersedesToken !== "" && supersedes === null) {
+		return {
+			_tag: "Unusable",
+			reason: `"${supersedesToken}" is not a criterion position — expected the 1-based row of the body criterion this ruling replaces`,
+		};
+	}
 	const at = markerTime(seen.get("at") ?? "");
 	if (at === null) {
 		return {
@@ -212,7 +283,7 @@ export const parseFields = (fields: string): DecisionRulingFields => {
 			reason: `"${seen.get("at") ?? ""}" is not an ISO-8601 UTC timestamp — expected a Z-suffixed instant`,
 		};
 	}
-	return {_tag: "Fields", ruling: {issue, digest, ruling, at}};
+	return {_tag: "Fields", ruling: {issue, digest, ruling, supersedes, at}};
 };
 
 /** The registry row's byte-level `emit`, bound to this module's typed core. */

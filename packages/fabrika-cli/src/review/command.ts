@@ -117,9 +117,11 @@ const criteria = leafCommand(
 		yield* emit(yield* runCriteria({issue, repo: Option.getOrNull(repo), json, env: process.env}));
 	}),
 ).pipe(
-	Command.withShortDescription("Read an issue's acceptance-criteria block."),
+	Command.withShortDescription(
+		"Read the graded set: an issue's criteria plus its standing rulings.",
+	),
 	Command.withDescription(
-		"Read an issue's acceptance-criteria block through the registered `acceptance-criteria` wire format — no second parser. First stdout line is `criteria\\t<count>`, then one `<checked|open>\\t<text>` line per criterion, with a third `\\t<evidence source>` column on a criterion carrying the outside-diff evidence marker `[evidence: <source>]` and none on one that does not; the marked rows are also counted and quoted on stderr. A closed issue is read anyway, with a notice on stderr. Exits 7 (issue absent, or the block is proven absent or malformed — the two are distinguished on stderr, never invented around), 11 (the issue could not be read — whether a block exists is UNKNOWN). Example: fabrika review criteria 4287",
+		"Read the set a review grades — the issue's acceptance-criteria block through the registered `acceptance-criteria` wire format, plus every standing ruling on that issue through the registered `decision-ruling` one. No second parser on either side. First stdout line is `criteria\\t<count>` (the body rows), then `rulings\\t<count>`, then one `<body|ruling>\\t<open|checked|superseded>\\t<text>` line per row — body rows in block order, ruling rows after them oldest first — with a fourth column carrying a body row's outside-diff evidence source or a ruling row's comment URL. A ruling row's text is the founder's own words at that comment, collapsed to one line. A ruling recorded with `decision rule --supersedes <k>` marks body row k `superseded`: it is reported and not graded, never dropped. A conforming marker from an account off the control-plane roster is not a ruling and is counted, not dropped; so is a drifted one. The marked-evidence rows are also counted and quoted on stderr. A closed issue is read anyway, with a notice on stderr. Exits 7 (issue absent, or the block is proven absent or malformed — the two are distinguished on stderr, never invented around), 11 (the issue could not be read — whether a block exists is UNKNOWN; or the roster or the comments could not be read — the graded set is UNKNOWN, never the body alone). Example: fabrika review criteria 4287",
 	),
 );
 

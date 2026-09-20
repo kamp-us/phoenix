@@ -60,7 +60,7 @@ arrives owing a migration nobody planned.
 | `graduate-emitted` | [`packages/fabrika-cli/src/wire/graduate-emitted.ts`](../../../packages/fabrika-cli/src/wire/graduate-emitted.ts) | `graduate` | `graduate` |
 | `came-from` | [`packages/fabrika-cli/src/wire/came-from.ts`](../../../packages/fabrika-cli/src/wire/came-from.ts) | `grilling`, `prototyping` | `grilling`, `wayfinding` |
 | `plan-approval` | [`packages/fabrika-cli/src/wire/plan-approval.ts`](../../../packages/fabrika-cli/src/wire/plan-approval.ts) | `check-epic-plan` | `check-epic-plan` |
-| `decision-ruling` | [`packages/fabrika-cli/src/wire/decision-ruling.ts`](../../../packages/fabrika-cli/src/wire/decision-ruling.ts) | `adr` | `build`, `triage` |
+| `decision-ruling` | [`packages/fabrika-cli/src/wire/decision-ruling.ts`](../../../packages/fabrika-cli/src/wire/decision-ruling.ts) | `adr` | `build`, `triage`, `review` |
 | `routed-elsewhere` | [`packages/fabrika-cli/src/wire/routed-elsewhere.ts`](../../../packages/fabrika-cli/src/wire/routed-elsewhere.ts) | `review-ui` | `ship`, `operate` |
 <!-- fabrika:wire-index:end -->
 
@@ -313,20 +313,29 @@ comment on it — so an off-roster marker reads `absent` however fresh its diges
 ### `decision-ruling`
 
 This is the same mechanism as `plan-approval` over a second surface, and it reuses that format's
-binding walk rather than restating it: a control-plane human's ruling on one `type:decision` issue,
-carried as a marker comment on the issue, with the number and a digest in the bytes for the same two
-reasons. What differs is the subject and one extra field. The digest binds the **issue body** that
-was ruled on, so a re-scoped question no longer inherits its ruling; and the marker names the comment
-the ruling is actually written in, which is what makes it worth more than a label — a builder picking
-the issue up reads that human's own words at that URL instead of inferring the choice from a thread,
-and it is the value `build claim --cites` takes. The URL is checked against the issue the
-marker binds, in the read, because a ruling recorded on another issue rules nothing here and
-admitting one would let a single comment unlock every decision on the board. The marker is what
-`decision rule` proves before it flips the issue from `ready-for:human` to `ready-for:agent` — that
-ordering is the point, since a flip written ahead of a proven marker leaves a decision reading
-pickable with no recorded ruling behind it. The proven marker earns the flip and does not compel it:
-a ruled issue whose body carries no readable `### Acceptance criteria` block keeps its marker and
-stays on `ready-for:human`, because `ready-for:agent` promises a builder can grade the issue cold.
+binding walk rather than restating it: a control-plane human's ruling on **any** issue, carried as a
+marker comment on the issue, with the number and a digest in the bytes for the same two reasons.
+What differs is the subject and two extra fields. The digest binds the **issue body** that was ruled
+on, so a re-scoped question no longer inherits its ruling; the marker names the comment the ruling is
+actually written in, which is what makes it worth more than a label — a builder picking the issue up
+reads that human's own words at that URL instead of inferring the choice from a thread, and it is the
+value `build claim --cites` takes; and the optional `supersedes:<k>` names the **1-based** body
+acceptance criterion the ruling replaces, which is the only mechanical statement of contradiction
+there is, since no verb can read the prose and judge which row a ruling overturns. The URL is checked
+against the issue the marker binds, in the read, because a ruling recorded on another issue rules
+nothing here and admitting one would let a single comment unlock every decision on the board.
+
+The marker's subject widened because a ruling that reaches no gate is prose: `review criteria` folds
+every standing one into the set a reviewer grades, and `lane prove` reads a verdict written before
+the newest ruling as no longer current. **The audience flip did not widen with it.** On a
+`type:decision` the marker is still what `decision rule` proves before it flips the issue from
+`ready-for:human` to `ready-for:agent` — that ordering is the point, since a flip written ahead of a
+proven marker leaves a decision reading pickable with no recorded ruling behind it — and even there
+the proven marker earns the flip without compelling it: a ruled decision whose body carries no
+readable `### Acceptance criteria` block keeps its marker and stays on `ready-for:human`, because
+`ready-for:agent` promises a builder can grade the issue cold. On every other issue type the marker
+lands and both `ready-for:` labels are left exactly as they were found, so recording a ruling never
+makes a human-parked issue agent-pickable.
 
 ### `routed-elsewhere`
 
