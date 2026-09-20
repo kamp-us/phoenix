@@ -3,8 +3,8 @@
  * than a copy of them.
  *
  * A copy passes every test that consumes it, which is why the 93-versus-179-byte `PLAIN_DOC` drift
- * lived unnoticed (#5362). So each case below induces a mismatch and asserts it reds: bytes that
- * disagree with the file, a fixture that moved, and a fixture that reads as nothing.
+ * lived unnoticed. So each case below induces a mismatch and asserts it reds: bytes that disagree
+ * with the file, a fixture that moved, and a fixture that reads as nothing.
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";

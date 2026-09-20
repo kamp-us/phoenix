@@ -1,5 +1,5 @@
 /**
- * The shell's Cmds, run against the kernel. `unwiredShellEffects` (`../program.ts`) drops all eight;
+ * The shell's Cmds, run against the kernel. `unwiredShellEffects` (`../program.ts`) drops all nine;
  * this is the set that does the work, and it is what `.tuval/tuval.config.ts` registers the shell
  * row with.
  *
@@ -8,7 +8,7 @@
  * kernel context beside its `ProcessPorts` (`../../launch/launch.ts`), which is the one seam a
  * program row's requirements can be satisfied through.
  *
- * Three of the eight stay inert here, and each for a stated reason rather than a shrug. The two
+ * Three of the nine stay inert here, and each for a stated reason rather than a shrug. The two
  * prefix-timer Cmds belong to whoever is showing the desk: a kernel handler returns its follow-ups
  * and cannot dispatch one a second later, and the snapshot already carries the armed window's
  * length, so the surface runs the countdown off state alone (`../ui/Desk.tsx`). `openCommandLine` is
@@ -23,7 +23,7 @@ import type {ProcessTable} from "../../process/ProcessTable.ts";
 import {ProcessId} from "../../process/process.ts";
 import {ProgramId} from "../../registry/program.ts";
 import type {Registry} from "../../registry/Registry.ts";
-import {attachProcess, openProgram, runPickerIntent} from "../picker/index.ts";
+import {attachProcess, openProgram, runPickerIntent, runProcessRemoval} from "../picker/index.ts";
 import type {ShellEffects} from "../program.ts";
 import {WindowId} from "../window/index.ts";
 
@@ -79,11 +79,17 @@ export const wiredShellEffects = ({
 			[],
 		),
 	openProgram: (cmd) =>
-		runPickerIntent(openProgram(WindowId.make(cmd.windowId), ProgramId.make(cmd.programId)), {
-			shellProcessId,
-		}),
+		runPickerIntent(
+			openProgram(WindowId.make(cmd.windowId), ProgramId.make(cmd.programId), cmd.session),
+			{shellProcessId, ...(cmd.view === undefined ? {} : {view: cmd.view})},
+		),
 	attachProcess: (cmd) =>
 		runPickerIntent(attachProcess(WindowId.make(cmd.windowId), ProcessId.make(cmd.processId)), {
 			shellProcessId,
+			...(cmd.view === undefined ? {} : {view: cmd.view}),
+		}),
+	removeProcess: (cmd) =>
+		runProcessRemoval(WindowId.make(cmd.windowId), ProcessId.make(cmd.processId), {
+			...(cmd.view === undefined ? {} : {view: cmd.view}),
 		}),
 });

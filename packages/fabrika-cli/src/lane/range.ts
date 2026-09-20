@@ -2,16 +2,15 @@
  * The one commit range an epic run's child built, read off this tree's refs and object database.
  *
  * Off the tree rather than off a search index because a child's work is never published: nothing on
- * GitHub knows it exists until the epic's single PR opens at the tail (ADR 0285). The branch is
+ * GitHub knows it exists until the epic's single PR opens at the tail. The branch is
  * nominated by `build branch`'s own grammar (`../build/lane.ts`'s `childLaneBranches`, never a second
  * regex) and the range is then the evidence — a branch is only a name until commits naming this
  * child sit on it.
  *
  * **This answers what the tree says; the exit code is the caller's.** `lane prove` reads the answer
- * as a proof and `lane brief` hands the same two endpoints to the reviewer it dispatches, so the two
- * verbs cannot name different ranges for one child — the defect that let a brief print
- * `epic/<n>..HEAD`, which the *spawned* shell re-resolved in its own worktree to an empty range
- * (#6023).
+ * as a proof and `lane brief` hands the same two endpoints to the reviewer it dispatches, so the
+ * two verbs cannot name different ranges for one child — the defect that let a brief print
+ * `epic/<n>..HEAD`, which the *spawned* shell re-resolved in its own worktree to an empty range.
  */
 
 import {Effect} from "effect";
@@ -65,11 +64,11 @@ export const DEEPEN_REMEDY = "run `git fetch --deepen=25` in this tree and re-ru
 /**
  * Where `tip` left the assembly branch — the near end of the range its reviewer measured.
  *
- * Not `epic/<n>`'s tip. That tip moves under every child as its siblings land, and once this child's
- * own commits land on it the `epic/<n>..branch` range empties, which reads as "cut and never built
- * on" and deadlocks the lane (#5984). The fork point survives both: the commits stay the same
- * through the drift, and the diff the digest is taken over stays the diff the verdict was bound to
- * (ADR 0276), so `bindRange` still answers `Current` after integration.
+ * Not `epic/<n>`'s tip. That tip moves under every child as its siblings land, and once this
+ * child's own commits land on it the `epic/<n>..branch` range empties, which reads as "cut and
+ * never built on" and deadlocks the lane. The fork point survives both: the commits stay the same
+ * through the drift, and the diff the digest is taken over stays the diff the verdict was bound to,
+ * so `bindRange` still answers `Current` after integration.
  *
  * Two reads, because the merge base alone stops answering the moment the tip is contained in the
  * epic branch — it is then the tip itself. The second read recovers the epic branch as it stood
@@ -93,7 +92,7 @@ const forkPoint = (epicTip: string, tip: string): Shell<Attempt<string>> =>
  *
  * A boundary commit is parentless to every traversal, so `merge-base`, `rev-list` and
  * `--is-ancestor` all answer as if the history stopped there and none of them errors — a brief once
- * measured a 3-commit child at 58 commits off exactly this (#6343). A two-dot `git diff` compares
+ * measured a 3-commit child at 58 commits off exactly this. A two-dot `git diff` compares
  * trees and stays right throughout, which is why the wrong count reads as a range. Only a shallow
  * clone can be in this state, so the read is skipped entirely on a complete one.
  */

@@ -1,6 +1,6 @@
 /**
  * The pure rule behind `guard catalog-guard check`, ported from the v1 CLI's
- * `catalog-guard.unit.test.ts` (#2737) — a `catalog:`/`workspace:` ref passes, a hardcoded version
+ * `catalog-guard.unit.test.ts` — a `catalog:`/`workspace:` ref passes, a hardcoded version
  * is a violation, an allowlisted exception passes, and the line-locator survives the npm names that
  * broke it. Scope and the fail-closed floor are covered in `catalog-verb.unit.test.ts`.
  */
@@ -116,7 +116,7 @@ describe("the reports", () => {
 		expect(cleanSummary(VERB, 4)).toContain("all deps in 4 workspace manifests are");
 	});
 
-	it("names each offender, the #535 root cause and the catalog fix", () => {
+	it("names each offender, the root cause and the catalog fix", () => {
 		const report = violationReport(
 			VERB,
 			[{path: "packages/a/package.json", field: "dependencies", name: "bar", value: "^1.2.3"}],
@@ -125,7 +125,7 @@ describe("the reports", () => {
 		expect(report).toContain("1 dependency pin");
 		expect(report).toContain("of 3 manifests scanned");
 		expect(report).toContain("packages/a/package.json: dependencies `bar` pins `^1.2.3`");
-		expect(report).toContain("#535");
+		expect(report).toContain("breaks frozen-lockfile CI");
 		expect(report).toContain("pnpm-workspace.yaml");
 	});
 });

@@ -1,7 +1,7 @@
 ---
 id: 0341
 title: A twice-failed epic review is a park, not the end of the run
-status: accepted
+status: amended-in-part by [0378](0378-driver-seat-on-a-spent-repair-budget.md)
 date: 2026-08-29
 tags: [fabrika, lane, pipeline, state-machine, epics]
 ---

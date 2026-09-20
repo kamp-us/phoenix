@@ -23,7 +23,7 @@ import * as Schema from "effect/Schema";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 // Dies rather than failing, keeping this seam's `E` channel `never` as callers require.
-class SentryCaptureError extends Schema.TaggedErrorClass<SentryCaptureError>()(
+class SentryCaptureError extends Schema.TaggedError<SentryCaptureError>()(
 	"web/SentryCaptureError",
 	{cause: Schema.Defect()},
 ) {}

@@ -10,6 +10,7 @@ import {
 	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {PULL_FILES_CAP} from "../io/pulls.ts";
 import {SHIPPED_GOVERNED_ROOTS} from "../review/classes.ts";
 import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
@@ -59,11 +60,11 @@ const permission = (level: string): HttpReply => ({
 const NO_REVIEWS = [REVIEWS, reviewPage()] as const;
 
 /** The default two-file diff, under no governance root — the floor stays off unless a test asks. */
-const ORDINARY = [FILES, served(files("apps/web/src/a.ts", "apps/web/src/b.ts"))] as const;
+const ORDINARY = [FILES, served(files("apps/site/src/a.ts", "apps/site/src/b.ts"))] as const;
 /** A fabrika-tree diff: `claude-plugins/` is one of the shipped governance roots. */
 const FABRIKA_TREE = [
 	FILES,
-	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/web/src/b.ts")),
+	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/site/src/b.ts")),
 ] as const;
 
 const options = {
@@ -197,7 +198,7 @@ describe("runGate", () => {
 		expect(out.stdout).toContain("ns\treview-code\tstale\tmarker");
 	});
 
-	it("drops an unauthorized author's marker rather than counting it (ADR 0055)", async () => {
+	it("drops an unauthorized author's marker rather than counting it", async () => {
 		const out = await run([
 			[PULL, served(pull({comments: 1}))],
 			[COMMENTS, served(comments({id: 1, body: marker("review-code", "PASS", HEAD)}))],
@@ -228,7 +229,7 @@ describe("runGate", () => {
 		expect(out.stdout).toContain("ns\treview-code\tpass\treview-fold");
 	});
 
-	it("treats a §CP advisory carrying a [FAIL] row as fail and says so (ADR 0226)", async () => {
+	it("treats a §CP advisory carrying a [FAIL] row as fail and says so", async () => {
 		const out = await run(
 			[
 				[PULL, served(pull({comments: 1}))],
@@ -244,7 +245,7 @@ describe("runGate", () => {
 			{cp: true},
 		);
 		expect(out.stdout).toContain("ns\treview-code\tfail\tadvisory");
-		expect(out.stderr.some((line) => line.includes("an invalid emission (ADR 0226)"))).toBe(true);
+		expect(out.stderr.some((line) => line.includes("an invalid emission"))).toBe(true);
 	});
 
 	it("refuses an off-vocabulary --require on 10", async () => {
@@ -298,9 +299,9 @@ describe("runGate", () => {
 		);
 	});
 
-	// ADR 0316. `review-ui` is the one namespace whose emit path cannot answer a PR that renders
-	// nothing — `render` refuses zero surfaces, `post` refuses without captures — so the class
-	// `ship scope` raises off a path test named a namespace nothing legal could fill (#6376).
+	// `review-ui` is the one namespace whose emit path cannot answer a PR that renders nothing —
+	// `render` refuses zero surfaces, `post` refuses without captures — so the class `ship scope`
+	// raises off a path test named a namespace nothing legal could fill.
 	it("resolves review-ui as routed from a head-bound routed-elsewhere record, and satisfies", async () => {
 		const out = await run(
 			[
@@ -341,7 +342,7 @@ describe("runGate", () => {
 		expect(out.stdout).toBe([`gate\tblocked\t${HEAD}`, "ns\tgovernance\tabsent\t-", ""].join("\n"));
 	});
 
-	it("refuses a route from an author below write+ — the ADR 0055 ACL binds it as it binds a verdict", async () => {
+	it("refuses a route from an author below write+ — the ACL binds it as it binds a verdict", async () => {
 		const out = await run(
 			[
 				[PULL, served(pull({comments: 1}))],
@@ -406,27 +407,59 @@ describe("runGate", () => {
 		expect(out.code).toBe(ZERO_SCOPE);
 	});
 
-	it("refuses a truncated changed-file read on 13 — the floor may not rest on it", async () => {
+	// The declared count is computed against a base GitHub cached at the last push, so a list short of
+	// it is a stale second opinion rather than a truncated read. It used to refuse at 13 and strand
+	// the enqueue with no act available to clear it.
+	it("reports a file list short of the declared count and still gates (#9322)", async () => {
 		const out = await run([
-			[PULL, served(pull({changedFiles: 9}))],
-			[FILES, served(files("claude-plugins/fabrika/skills/ship/SKILL.md"))],
+			[PULL, served(pull({changedFiles: 9, comments: 1}))],
+			[COMMENTS, commentsServed({id: 1, body: marker("review-code", "PASS", HEAD)})],
+			[ACL, permission("write")],
+			[FILES, served(files("apps/site/src/a.ts"))],
 		]);
-		expect(out.code).toBe(INCOMPLETE_SCAN);
-		expect(out.stdout).toBe("");
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`gate\tsatisfied\t${HEAD}`);
+		expect(out.stderr.join("\n")).toContain(
+			"GitHub's file list for #4321 holds 1 paths against the 9 its own pull-request record declares",
+		);
 	});
 
-	it("refuses a zero-file diff on 7 — a conjunction over an empty diff proves nothing", async () => {
+	// The empty read is the seat that survives the retirement, and it is driven by the list rather
+	// than the declared count: a zero can never render as a satisfied conjunction.
+	it("refuses an empty file list on 7 even where the record declares files (#9322)", async () => {
 		const out = await run([
-			[PULL, served(pull({changedFiles: 0}))],
+			[PULL, served(pull({changedFiles: 9}))],
 			[FILES, served(files())],
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain(
+			"ship gate: PR #4321 has zero changed files — a conjunction over an empty diff proves nothing.",
+		);
+	});
+
+	// The ceiling is the truncation pagination cannot catch: GitHub stops serving files at 3000 and
+	// ends the Link chain there exactly as a complete read ends. The retired count arm caught this
+	// case by accident; `capped` catches it on purpose.
+	it("refuses a file list at the 3000-file ceiling on 13 (#9322)", async () => {
+		const out = await run([
+			[PULL, served(pull({changedFiles: PULL_FILES_CAP}))],
+			[
+				FILES,
+				served(files(...Array.from({length: PULL_FILES_CAP}, (_, i) => `apps/site/src/f${i}.ts`))),
+			],
+		]);
+		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain(
+			"ship gate: GitHub's file list for #4321 came back at its 3000-file ceiling, so the list is provably partial — refusing to derive the required floor from a capped read.",
+		);
 	});
 });
 
-// The #5036 unit: `--require` was caller-asserted end to end, so a fabrika-tree PR shipped with no
-// governance verdict simply by never passing the flag. The floor is what makes that unrepresentable.
-describe("runGate — the governance floor (#5036)", () => {
+// `--require` was caller-asserted end to end, so a governance-root PR shipped with no governance
+// verdict simply by never passing the flag. The floor is what makes that unrepresentable.
+describe("runGate — the governance floor", () => {
 	it("requires governance on a fabrika-tree diff the caller never asked to gate on it", async () => {
 		const out = await run(
 			[
@@ -525,7 +558,7 @@ describe("requiredWithFloor", () => {
 	it("leaves an ordinary diff's required set untouched", () => {
 		const result = requiredWithFloor(
 			["review-code"],
-			["apps/web/src/a.ts"],
+			["apps/site/src/a.ts"],
 			SHIPPED_GOVERNED_ROOTS,
 		);
 		expect(result.required).toEqual(["review-code"]);
@@ -534,7 +567,7 @@ describe("requiredWithFloor", () => {
 });
 
 /**
- * The content binding at the gate (ADR 0276) — the four readings of a verdict whose head has moved.
+ * The content binding at the gate — the four readings of a verdict whose head has moved.
  *
  * The cheap case to write would be "an identical digest passes". The three that pay for the change
  * are its neighbours, and each is asserted here against the SAME moved head, so nothing but the
@@ -545,7 +578,7 @@ describe("requiredWithFloor", () => {
  */
 describe("runGate — staleness is the content question", () => {
 	const BASE = "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736";
-	/** Ahead of {@link BASE}, so the digest is proven to be taken over the branch point (#5770). */
+	/** Ahead of {@link BASE}, so the digest is proven to be taken over the branch point. */
 	const BASE_TIP = "5a4b3c2d1e0f98877665544332211000ffeeddcc";
 	/** The digest of RAW below, written out so the fixture cannot agree with the code by calling it. */
 	const DIGEST = "65ebe421b3c0";

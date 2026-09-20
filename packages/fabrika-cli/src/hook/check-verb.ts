@@ -1,5 +1,5 @@
 /**
- * `hook check` — the verb the fabrika hook surface's one declared hook runs.
+ * `hook check` reads the SessionStart envelope; usage collection is a separate hook.
  *
  * It answers a single question: did a fabrika hook fire, and did the harness hand it an envelope
  * fabrika can read? That is a small answer on purpose. It is the surface's own proof, so it must not
@@ -7,7 +7,7 @@
  *
  * The answer is a **positive token**, never silence: a verb whose success is empty stdout is
  * byte-identical to a verb that never ran (cli-interface-convention rule 2). The scope it judged goes
- * to stderr on every path, so a verdict is never reported over unstated scope (ADR 0092).
+ * to stderr on every path, so a verdict is never reported over unstated scope.
  */
 import {Effect} from "effect";
 import type {StdinRead} from "../io/stdin.ts";

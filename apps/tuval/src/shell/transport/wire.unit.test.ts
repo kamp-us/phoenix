@@ -5,8 +5,15 @@
  */
 
 import {Duration, Option} from "effect";
-import {describe, expect, it} from "vitest";
+import {assert, describe, expect, it} from "vitest";
 import type {ProcessId} from "../../process/process.ts";
+import {CallId} from "../../protocol/ids.ts";
+import {
+	PROTOCOL_VERSION,
+	SpellCall,
+	SpellReplyError,
+	SpellReplyOk,
+} from "../../protocol/messages.ts";
 import type {ProgramId} from "../../registry/program.ts";
 import type {TableRow} from "../../table/row.ts";
 import {defaultPrefixTable} from "../keys/table.ts";
@@ -20,12 +27,16 @@ import {
 	decodeClientFrame,
 	decodeServerFrame,
 	encodeFrame,
+	frameKind,
 	fromWirePrefixTable,
 	fromWireRow,
 	KEYS_KIND,
 	PROCESS_STATE_KIND,
 	REGISTRY_KIND,
 	type ServerFrame,
+	SPELL_CALL_KIND,
+	SPELL_REPLY_KIND,
+	spellReplyFrame,
 	TABLE_KIND,
 	tableFrame,
 	toWirePrefixTable,
@@ -40,12 +51,25 @@ const row: TableRow = {
 	parentId: Option.some(processId("root")),
 	ports: {ticks: {kind: "count/v1", direction: "out"}},
 	stateSummary: {lifecycle: "running", revision: 3},
+	title: Option.some("shell"),
+	status: Option.none(),
 };
+
+const callId = CallId.make("call-1");
+
+const call = new SpellCall({
+	type: "spell.call",
+	version: PROTOCOL_VERSION,
+	id: callId,
+	path: ["session", "list"],
+	args: {},
+});
 
 const clientFrames: ReadonlyArray<ClientFrame> = [
 	{kind: ATTACH_KIND, processId: processId("counter")},
 	{kind: DETACH_KIND, processId: processId("counter")},
 	{kind: DISPATCH_KIND, seq: 0, processId: processId("counter"), msg: {type: "tick"}},
+	{kind: SPELL_CALL_KIND, call},
 ];
 
 const serverFrames: ReadonlyArray<ServerFrame> = [
@@ -80,6 +104,26 @@ const serverFrames: ReadonlyArray<ServerFrame> = [
 	},
 	{kind: REGISTRY_KIND, programs: []},
 	{kind: KEYS_KIND, table: toWirePrefixTable(defaultPrefixTable)},
+	{
+		kind: SPELL_REPLY_KIND,
+		reply: new SpellReplyOk({
+			type: "spell.reply",
+			version: PROTOCOL_VERSION,
+			id: callId,
+			ok: true,
+			result: {sessions: [], unreadable: []},
+		}),
+	},
+	{
+		kind: SPELL_REPLY_KIND,
+		reply: new SpellReplyError({
+			type: "spell.reply",
+			version: PROTOCOL_VERSION,
+			id: callId,
+			ok: false,
+			error: {tag: "tuval/commands/UnknownSpell", message: "no spell there", path: ["nope"]},
+		}),
+	},
 ];
 
 describe("the transport wire", () => {
@@ -135,6 +179,16 @@ describe("the transport wire", () => {
 			decodeServerFrame(
 				JSON.stringify({kind: KEYS_KIND, table: {...defaultPrefixTable, bindings: []}}),
 			),
+			// The two spell frames are admitted by the protocol's own schemas, so a call with no path and
+			// a reply naming no protocol version are refused there rather than here.
+			decodeClientFrame(JSON.stringify({kind: SPELL_CALL_KIND, call: {...call, path: []}})),
+			decodeClientFrame(JSON.stringify({kind: SPELL_CALL_KIND})),
+			decodeServerFrame(
+				JSON.stringify({
+					kind: SPELL_REPLY_KIND,
+					reply: {type: "spell.reply", version: 2, id: callId, ok: true, result: null},
+				}),
+			),
 		]).toEqual([
 			{_tag: "Undecodable", reason: "not-json"},
 			{_tag: "Undecodable", reason: "unknown-kind"},
@@ -145,7 +199,70 @@ describe("the transport wire", () => {
 			{_tag: "Undecodable", reason: "malformed-payload"},
 			{_tag: "Undecodable", reason: "malformed-payload"},
 			{_tag: "Undecodable", reason: "malformed-payload"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
 		]);
+	});
+
+	it("a reply whose result is absent round trips: JSON cannot carry a Void spell's `undefined`", () => {
+		// What `succeeded` builds for every authored spell, whose `result` is `Schema.Void`
+		// (`../../authoring/commands.ts`): `result: undefined`, which `JSON.stringify` drops. The key
+		// comes back absent, and the page reads absent as "completed, returned nothing" (#9365).
+		const frame = spellReplyFrame(
+			new SpellReplyOk({
+				type: "spell.reply",
+				version: PROTOCOL_VERSION,
+				id: callId,
+				ok: true,
+				result: undefined,
+			}),
+		);
+		const text = encodeFrame(frame);
+		expect(JSON.parse(text).reply).not.toHaveProperty("result");
+
+		const decoded = decodeServerFrame(text);
+		assert(decoded._tag === "Frame", `expected a frame, got ${JSON.stringify(decoded)}`);
+		assert(decoded.frame.kind === SPELL_REPLY_KIND);
+		const reply = decoded.frame.reply;
+		assert(reply.ok);
+		expect(reply).toBeInstanceOf(SpellReplyOk);
+		expect("result" in reply).toBe(false);
+		expect(reply.result).toBeUndefined();
+	});
+
+	it("names the kind of a frame it refused, and `unknown` for a text that claims none", () => {
+		expect([
+			frameKind(encodeFrame({kind: ATTACH_KIND, processId: processId("counter")})),
+			frameKind(JSON.stringify({kind: SPELL_REPLY_KIND, reply: {}})),
+			frameKind(JSON.stringify({kind: 7})),
+			frameKind("{not json"),
+			frameKind("[]"),
+		]).toEqual([ATTACH_KIND, SPELL_REPLY_KIND, "unknown", "unknown", "unknown"]);
+	});
+
+	it("`ok` picks the reply's arm, and the other arm's payload does not come out with it", () => {
+		const mixed = (ok: boolean) =>
+			decodeServerFrame(
+				JSON.stringify({
+					kind: SPELL_REPLY_KIND,
+					reply: {
+						type: "spell.reply",
+						version: PROTOCOL_VERSION,
+						id: callId,
+						ok,
+						result: {sessions: []},
+						error: {tag: "t", message: "m"},
+					},
+				}),
+			);
+		const replyOf = (decoded: ReturnType<typeof decodeServerFrame>) => {
+			assert(decoded._tag === "Frame" && decoded.frame.kind === SPELL_REPLY_KIND);
+			return decoded.frame.reply;
+		};
+		const yes = replyOf(mixed(true));
+		const no = replyOf(mixed(false));
+		expect([yes.ok, "error" in yes, no.ok, "result" in no]).toEqual([true, false, false, false]);
 	});
 
 	it("each end refuses the other end's frames: the kinds do not overlap", () => {

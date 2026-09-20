@@ -1,8 +1,8 @@
 /**
  * The `triage enrich` envelope: how a body is composed, and how a prior enrichment is recognised.
  *
- * **Detection is a marker the verb writes, not a shape it infers** (founder ruling on #4866,
- * 2026-08-08, option (b)). The two shape-based detectors that preceded it were mode-scoped and keyed
+ * **Detection is a marker the verb writes, not a shape it infers**, ruled on 2026-08-08. The two
+ * shape-based detectors that preceded it were mode-scoped and keyed
  * on disjoint literals, so a re-run in the *other* mode matched neither, fell through to "first
  * enrichment ⇒ wrap", and nested the whole existing envelope — provenance boundary included — inside
  * a fresh block, compounding per run. A marker is one rule and is mode-independent, so that class
@@ -42,6 +42,29 @@ export const MARKER_RE = /^<!-- fabrika:enriched issue=(\d+) mode=(rewrite|wrap)
 
 export const renderMarker = (issue: number, mode: EnrichMode): string =>
 	`<!-- fabrika:enriched issue=${issue} mode=${mode} -->`;
+
+/**
+ * The `[start, end]` line span of the preserved brief, or `null` when the body carries no marker.
+ *
+ * Both bounds are inclusive line indices: `start` is the marker line, `end` the `</details>` that
+ * closes the block below it — or `start` again where the closer is missing, which is an empty span
+ * rather than a swallowed rest-of-body.
+ *
+ * It lives here rather than beside either caller because the envelope is this module's shape: the
+ * marker is the boundary. Every verb that resolves a region in an epic body needs the bound — a
+ * heading that resolves *inside* the preserved brief is content, not this run's anchor — and two
+ * copies of that rule is two answers about which bytes are safe to overwrite.
+ */
+export const preservedEnvelope = (
+	lines: ReadonlyArray<string>,
+): {readonly start: number; readonly end: number} | null => {
+	const start = lines.findIndex((line) => MARKER_RE.test(line.trim()));
+	if (start === -1) return null;
+	const closing = lines.findIndex(
+		(line, index) => index > start && line.trim().toLowerCase() === "</details>",
+	);
+	return {start, end: closing === -1 ? start : closing};
+};
 
 export type Detection =
 	/** No enrichment of *this* issue is present, so the whole body is the original to preserve. */
@@ -112,7 +135,7 @@ const EPIC_HEADER = "## Epic — awaiting plan";
 /**
  * The authored region — everything above the marker — for one mode and one caller's stdin.
  *
- * Exported because it is the slice a producer's own read-back runs over (ADR 0288 §1): it is the
+ * Exported because it is the slice a producer's own read-back runs over: it is the
  * composed body's leading bytes, template headings and separators included, so a section the
  * envelope demoted is visible; and it stops above the marker, so the preserved original — foreign
  * bytes this verb redacts rather than judges — stays out of reach. `composeBody` below is the law

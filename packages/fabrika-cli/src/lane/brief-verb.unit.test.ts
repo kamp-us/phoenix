@@ -12,9 +12,17 @@ import {
 	type Scripted,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {EPIC_RULES, EPIC_TAIL_RULES, RULES, read as readBrief} from "../wire/lane-brief.ts";
-import {runBrief} from "./brief-verb.ts";
 import {
+	EPIC_RULES,
+	EPIC_TAIL_REPAIR_RULES,
+	EPIC_TAIL_RULES,
+	RULES,
+	read as readBrief,
+} from "../wire/lane-brief.ts";
+import {runBrief} from "./brief-verb.ts";
+import {seedClasses} from "./class-seed.ts";
+import {
+	BRIEFED_VERB_ABSENT,
 	ISSUE_UNRESOLVED,
 	LANE_ABSENT,
 	LANE_UNREADABLE,
@@ -29,8 +37,8 @@ import {emitMachine} from "./emit.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 
 const ROOT = ".fabrika/lanes";
-const ISSUE_URL = "https://github.com/o/r/issues/5751";
-const PR_URL = "https://github.com/o/r/pull/5790";
+const ISSUE_URL = "https://forge.example/o/r/issues/5751";
+const PR_URL = "https://forge.example/o/r/pull/5790";
 const TITLE = "the operator hand-writes every spawn prompt";
 
 const ISSUE_READ = /^GET .*\/repos\/o\/r\/issues\/5751$/;
@@ -138,8 +146,8 @@ const lane = (
 	});
 
 const EPIC = 5800;
-const EPIC_URL = "https://github.com/o/r/issues/5800";
-const CHILD_URL = "https://github.com/o/r/issues/5828";
+const EPIC_URL = "https://forge.example/o/r/issues/5800";
+const CHILD_URL = "https://forge.example/o/r/issues/5828";
 const EPIC_ISSUE_READ = /^GET .*\/repos\/o\/r\/issues\/5800$/;
 const EPIC_CHILD_READ = /^GET .*\/repos\/o\/r\/issues\/5828$/;
 
@@ -152,7 +160,7 @@ const CHILD_MESSAGE = "feat(lane): resolve the child's range (#5828)";
 const REV = (rev: string) =>
 	new RegExp(`^git rev-parse --verify --quiet ${rev.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}\\^`);
 const BRANCHES = /^git for-each-ref --format=%\(refname:short\) refs\/heads$/;
-/** The shallow probe every range read takes before it trusts an ancestry answer (#6343). */
+/** The shallow probe every range read takes before it trusts an ancestry answer. */
 const COMPLETE_CLONE = [/^git rev-parse --is-shallow-repository$/, okOut("false\n")] as const;
 const LOG_RANGE = /^git log --format=/;
 
@@ -179,9 +187,14 @@ const locating = (
  * a brief arm keyed to a shape the emitter does not produce would pass its own test and refuse the
  * live lane.
  */
-const epicLane = (events: ReadonlyArray<readonly [string, string]>) => {
+const epicLane = (
+	// A third element rides the classes a reviewer relayed on that event — the only way the tail's
+	// `class:ui` arm is ever reached, since a tail's context seeds no class.
+	events: ReadonlyArray<readonly [string, string, ReadonlyArray<string>?]>,
+	childClasses: ReadonlyArray<string> = [],
+) => {
 	const emitted = emitMachine(EPIC, "## Dependencies\n\n- phase 1: #5828\n", [
-		{number: 5828, state: "open", stateReason: null},
+		{number: 5828, state: "open", stateReason: null, classes: childClasses},
 	]);
 	if (emitted._tag !== "Emitted") throw new Error(`the epic fixture did not emit: ${emitted._tag}`);
 	return fakeFs({
@@ -191,11 +204,12 @@ const epicLane = (events: ReadonlyArray<readonly [string, string]>) => {
 				events.length === 0
 					? null
 					: `${events
-							.map(([task, event]) =>
+							.map(([task, event, classes]) =>
 								JSON.stringify({
 									task,
 									event: `${task.toUpperCase()}.${event}`,
 									at: "2026-08-17T00:00:00Z",
+									...(classes === undefined ? {} : {classes}),
 								}),
 							)
 							.join("\n")}\n`,
@@ -204,9 +218,9 @@ const epicLane = (events: ReadonlyArray<readonly [string, string]>) => {
 };
 
 /**
- * A non-phoenix entrypoint on purpose: every brief these tests read back is the shape a repo that
+ * An out-of-tree entrypoint on purpose: every brief these tests read back is the shape a repo that
  * *installs* fabrika gets, so a path bound back to `packages/fabrika-cli/` fails here rather than in
- * a consuming repo's maiden run (#6012).
+ * a consuming repo's maiden run.
  */
 const ENTRY = "/checkout/node_modules/@kampus/fabrika-cli/dist/bin.js";
 
@@ -276,6 +290,36 @@ describe("lane brief", () => {
 		expect(readBrief(out.stdout)).toMatchObject({
 			_tag: "Found",
 			value: {state: "build:ui", shell: "ui-builder", ground: {_tag: "Pull", pr: null}},
+		});
+	});
+
+	/**
+	 * The seed's whole point: the class stands at the FIRST `WIP`, off the document, with no event
+	 * carrying it. Before a producer existed this lane built in the plain `builder` and reached
+	 * `build:ui` only after a `review-ui` FAIL had raised the class off a diff.
+	 */
+	it("briefs ui-builder off the SEEDED document, on a first WIP that names no class", async () => {
+		const seed = seedClasses(coderTemplateText(), ["ui"]);
+		if (seed._tag !== "Seeded") throw new Error(`the seed fixture did not seed: ${seed._tag}`);
+		const fs = fakeFs({
+			files: {
+				[`${ROOT}/5751/workflow.json`]: seed.text,
+				[`${ROOT}/5751/events.jsonl`]: `${JSON.stringify({
+					task: "issue",
+					event: "ISSUE.WIP",
+					at: "2026-08-17T00:00:00Z",
+				})}\n`,
+			},
+		});
+		const out = await run(fs, [
+			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+			[PR_CLOSERS, closingPulls()],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {state: "build:ui", shell: "ui-builder"},
 		});
 	});
 
@@ -404,7 +448,7 @@ describe("lane brief", () => {
 		const out = await run(
 			fs,
 			[
-				[CHILD_READ, issuePayload(5729, "https://github.com/o/r/issues/5729")],
+				[CHILD_READ, issuePayload(5729, "https://forge.example/o/r/issues/5729")],
 				[PR_CLOSERS, closingPulls()],
 			],
 			{lane: "5680", task: "issue_5729"},
@@ -413,7 +457,7 @@ describe("lane brief", () => {
 		expect(out.code).toBe(0);
 		expect(readBrief(out.stdout)).toMatchObject({
 			_tag: "Found",
-			value: {lane: "5680", task: "issue_5729", issue: "https://github.com/o/r/issues/5729"},
+			value: {lane: "5680", task: "issue_5729", issue: "https://forge.example/o/r/issues/5729"},
 		});
 	});
 
@@ -468,7 +512,7 @@ describe("lane brief", () => {
 		expect(out.stderr.join("\n")).toContain("this fabrika's own package root is not on disk");
 	});
 
-	it("refuses a resolved entrypoint node cannot run — a binstub reaching the brief is #5679 again", async () => {
+	it("refuses a resolved entrypoint node cannot run — a binstub must never reach the brief", async () => {
 		const binstub = "/checkout/node_modules/.bin/fabrika";
 		const out = await run(lane("5751", ["WIP"]), [], {
 			entrypoint: {_tag: "Entrypoint", entrypoint: binstub},
@@ -499,7 +543,7 @@ describe("lane brief", () => {
 		expect(out.stdout).toBe("");
 	});
 
-	it("resolves a `Part of #5751` PR the closing edge cannot see — the lane-5981 shape (#6179)", async () => {
+	it("resolves a `Part of #5751` PR the closing edge cannot see — the open-but-not-closing shape", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
 			[PR_CLOSERS, closingPulls()],
@@ -522,7 +566,7 @@ describe("lane brief", () => {
 			[/^GET .*\/repos\/o\/r\/pulls\/5790$/, pullPayload(5790, PR_URL, "Part of #5751.\n")],
 			[
 				/^GET .*\/repos\/o\/r\/pulls\/5791$/,
-				pullPayload(5791, "https://github.com/o/r/pull/5791", "Part of #5751.\n"),
+				pullPayload(5791, "https://forge.example/o/r/pull/5791", "Part of #5751.\n"),
 			],
 		]);
 
@@ -533,7 +577,7 @@ describe("lane brief", () => {
 	it("refuses several open PRs, naming every candidate", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
-			...linked(5751, [5790, PR_URL], [5791, "https://github.com/o/r/pull/5791"]),
+			...linked(5751, [5790, PR_URL], [5791, "https://forge.example/o/r/pull/5791"]),
 		]);
 
 		expect(out.code).toBe(PR_AMBIGUOUS);
@@ -568,6 +612,24 @@ describe("lane brief on an epic lane", () => {
 		);
 		return {out, calls: seams.calls, requests: seams.requests};
 	};
+
+	/** The epic half of the same proof: the class is on the emitted child, not on any event. */
+	it("briefs a `class:ui` child's FIRST WIP to ui-builder, off the emitted document", async () => {
+		const {out} = await runEpic(
+			epicLane([["issue_5828", "WIP"]], ["ui"]),
+			[
+				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+			],
+			{task: "issue_5828"},
+		);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {task: "issue_5828", state: "build:ui", shell: "ui-builder"},
+		});
+	});
 
 	it("briefs a child's build on the epic branch, resolving no PR at all", async () => {
 		const {out, calls, requests} = await runEpic(
@@ -710,9 +772,74 @@ describe("lane brief on an epic lane", () => {
 				ground: {_tag: "Tail", pr: PR_URL, epic: EPIC_URL},
 			},
 		});
-		// The tail's brief names where each child's build-deviations disclosure lives (#5903).
+		// The tail's brief names where each child's build-deviations disclosure lives.
 		expect(out.stdout).toContain(EPIC_TAIL_RULES);
 		expect(out.stdout).not.toContain(EPIC_RULES);
+	});
+
+	/**
+	 * The creditor cell's dispatch. Every child hands its `review-ui` to the tail, so the tail is
+	 * where the rendered gate actually runs — and until the emitted tail carried the cell there was
+	 * no sanctioned way to fire it: the driver of one live epic hand-composed a ui-reviewer spawn off
+	 * the tail's own `review` brief with the `shell:` line swapped, which `operate` otherwise forbids.
+	 */
+	it("briefs the ui-reviewer on a tail sitting in review:ui, over that same one PR", async () => {
+		const {out} = await runEpic(
+			epicLane([
+				["issue_5828", "WIP"],
+				["issue_5828", "DONE"],
+				["issue_5828", "PASS"],
+				["issue_5828", "DONE"],
+				["epic_5800", "PASS", ["ui"]],
+			]),
+			[[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)], ...linked(EPIC, [5890, PR_URL])],
+			{task: "epic_5800"},
+		);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {
+				task: "epic_5800",
+				state: "review:ui",
+				shell: "ui-reviewer",
+				issue: EPIC_URL,
+				ground: {_tag: "Tail", pr: PR_URL, epic: EPIC_URL},
+			},
+		});
+		expect(out.stdout).toContain(EPIC_TAIL_RULES);
+	});
+
+	// `lane brief` used to fall through to a `Pull` ground for any build state, so the builder sent
+	// to repair the assembly was told no branch at all.
+	it("briefs the tail's repair on the assembly branch as well as the run's one PR", async () => {
+		const {out} = await runEpic(
+			epicLane([
+				["issue_5828", "WIP"],
+				["issue_5828", "DONE"],
+				["issue_5828", "PASS"],
+				["issue_5828", "DONE"],
+				["epic_5800", "FAIL"],
+			]),
+			[[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)], ...linked(EPIC, [5890, PR_URL])],
+			{task: "epic_5800"},
+		);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {
+				task: "epic_5800",
+				state: "build",
+				shell: "builder",
+				issue: EPIC_URL,
+				ground: {_tag: "TailRepair", pr: PR_URL, epic: EPIC_URL, branch: "epic/5800"},
+			},
+		});
+		expect(out.stdout).toContain("branch: epic/5800");
+		// The repair round's own rules: whose shell moves the branch, and merge over rebase.
+		expect(out.stdout).toContain(EPIC_TAIL_REPAIR_RULES);
+		expect(out.stdout).not.toContain(EPIC_TAIL_RULES);
 	});
 
 	it("keeps the tail's zero-PR refusal — a run with no PR is a real ambiguity", async () => {
@@ -742,7 +869,7 @@ describe("lane brief on an epic lane", () => {
 			]),
 			[
 				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
-				...linked(EPIC, [5890, PR_URL], [5891, "https://github.com/o/r/pull/5891"]),
+				...linked(EPIC, [5890, PR_URL], [5891, "https://forge.example/o/r/pull/5891"]),
 			],
 			{task: "epic_5800"},
 		);
@@ -763,5 +890,73 @@ describe("lane brief on an epic lane", () => {
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stdout).toBe("");
+	});
+
+	/**
+	 * A checkout of fabrika's own repo, where the entrypoint is repo-relative and therefore resolves
+	 * inside the shell's worktree — the one shape whose tree the assembly branch decides.
+	 */
+	const IN_TREE = {
+		_tag: "Entrypoint",
+		entrypoint: "packages/fabrika-cli/src/bin.ts",
+	} as EntrypointRead;
+	const EPIC_TREE = "0d4f2a6c8e1b3d5f7a9c2e4b6d8f0a2c4e6b8d0f";
+	const LS_TREE = /^git ls-tree --full-tree --name-only /;
+	const REPORT_MODULE = "packages/fabrika-cli/src/lane/report-verb.ts";
+
+	const readingBranch = (holds: boolean): ReadonlyArray<Scripted> => [
+		[REV("epic/5800"), okOut(`${EPIC_TREE}\n`)],
+		[LS_TREE, okOut(holds ? `${REPORT_MODULE}\n` : "")],
+	];
+
+	it("refuses a child build when the assembly branch does not carry a lane verb the brief names", async () => {
+		const {out} = await runEpic(
+			epicLane([["issue_5828", "WIP"]]),
+			[
+				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+				...readingBranch(false),
+			],
+			{task: "issue_5828", entrypoint: IN_TREE},
+		);
+
+		expect(out.code).toBe(BRIEFED_VERB_ABSENT);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("`lane report`");
+		// The refusal carries the remedy, so the driver is not left to infer why the brief stopped.
+		expect(out.stderr.join("\n")).toContain("fabrika lane refresh 5800");
+	});
+
+	it("briefs a child build unchanged when the branch carries every lane verb the brief names", async () => {
+		const {out} = await runEpic(
+			epicLane([["issue_5828", "WIP"]]),
+			[
+				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+				...readingBranch(true),
+			],
+			{task: "issue_5828", entrypoint: IN_TREE},
+		);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {ground: {_tag: "Epic", epic: EPIC_URL, branch: "epic/5800"}},
+		});
+		expect(out.stdout).toContain("fabrika: packages/fabrika-cli/src/bin.ts");
+	});
+
+	it("leaves the branch unread for an installed entrypoint it cannot carry", async () => {
+		const {out, calls} = await runEpic(
+			epicLane([["issue_5828", "WIP"]]),
+			[
+				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+			],
+			{task: "issue_5828"},
+		);
+
+		expect(out.code).toBe(0);
+		expect(calls.some((call) => call.startsWith("git "))).toBe(false);
 	});
 });

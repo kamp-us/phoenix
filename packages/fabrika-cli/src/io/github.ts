@@ -1,10 +1,10 @@
 /**
- * The GitHub half of the in-flight read: which open pull requests already claim a `.decisions/` id.
+ * The GitHub half of the in-flight read: which open pull requests already claim a decision-record id.
  *
  * Reads go through the `gh-api` client's REST leg and **never GraphQL** — the org's Projects-classic
  * integration errors out GraphQL issue queries — and **every list read pages**: a pull request that
- * adds its `.decisions/` file past file #100 still claims its number (#725), so a single unpaginated
- * page is a silently short answer, not a shorter one.
+ * adds its record file past the first page of its file list still claims its number, so a single
+ * unpaginated page is a silently short answer, not a shorter one.
  *
  * Both reads below validate the SHAPE of what arrived before anything interprets it, and refuse a
  * payload that is not it. That discipline predates the port and survives it: a permissive read would
@@ -17,7 +17,7 @@ import {authed, pagedWithLinkProof} from "./gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "./git.ts";
 import {isRecord} from "./json.ts";
 
-/** A `.decisions/NNNN[a]-slug.md` path an open pull request adds. */
+/** A `<corpus-dir>/NNNN[a]-slug.md` path an open pull request adds. */
 export interface ClaimedId {
 	readonly id: string;
 	readonly file: string;
@@ -35,7 +35,7 @@ const FILE_STATUS = new Set([
 	"unchanged",
 ]);
 
-/** The record id a `.decisions/NNNN[a]-slug.md` path claims, or `null` for any other path. */
+/** The record id a `<dir>/NNNN[a]-slug.md` path claims, or `null` for any other path. */
 export const claimedIdOf = (path: string, dir: string): {id: string; file: string} | null => {
 	const prefix = `${dir.replace(/\/+$/, "")}/`;
 	if (!path.startsWith(prefix)) return null;
@@ -63,7 +63,7 @@ export const openPullRequests = (repo: string): Shell<Attempt<ReadonlyArray<numb
 		}),
 	);
 
-/** The `.decisions/` ids one open pull request ADDS, paged over its file list. */
+/** The decision-record ids one open pull request ADDS, paged over its file list. */
 export const idsClaimedByPr = (
 	repo: string,
 	pr: number,

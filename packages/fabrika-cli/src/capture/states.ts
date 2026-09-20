@@ -1,6 +1,6 @@
 /**
  * The closed vocabulary of `<route>:<state>` variants a capture can actually put on screen, and the
- * mechanism each one carries (#7051, #7398).
+ * mechanism each one carries.
  *
  * The list is short on purpose. `plan.ts` has always parsed a state off a surface token, but
  * parsing one is not rendering one: a state with no mechanism captures the default pixels under a
@@ -11,12 +11,12 @@
  * Every realized state today is a seeded session, and **the state names the tier it renders at**,
  * because a tier is an audience: a surface whose whole point is that it renders below yazar — a
  * çaylak nudge, a pre-promotion prompt — cannot be judged from a yazar's pixels, and the shot comes
- * back clean showing the state the PR did not add (#7398). Each identity is provisioned direct-D1
- * by `preview-seed test-account`, never by a worker route, and each shot proves the tier it
- * actually rendered at before it is recorded.
+ * back clean showing the state the PR did not add. Each identity is provisioned direct against the
+ * database by `preview-seed test-account`, never by a worker route, and each shot proves the tier
+ * it actually rendered at before it is recorded.
  *
- * `auth` keeps naming the yazar+moderator identity #7051 shipped, so every invocation written
- * against that ticket still means what it said.
+ * `auth` keeps naming the top-tier identity it named when it shipped, so every invocation already
+ * written against it still means what it said.
  */
 import {parseSurfaceSpec} from "./plan.ts";
 
@@ -72,5 +72,18 @@ export const stateOf = (surface: string): string | null => {
 		return parseSurfaceSpec(surface).state;
 	} catch {
 		return null;
+	}
+};
+
+/**
+ * The route a surface token names, through the one parser for the same reason {@link stateOf} is.
+ * A token the grammar rejects is answered whole, so the refusal a caller reads stays
+ * `buildCapturePlan`'s rather than a thrown defect from a route read taken ahead of it.
+ */
+export const routeOf = (surface: string): string => {
+	try {
+		return parseSurfaceSpec(surface).route;
+	} catch {
+		return surface;
 	}
 };

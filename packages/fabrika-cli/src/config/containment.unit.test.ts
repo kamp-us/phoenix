@@ -38,7 +38,7 @@ describe("containmentRefusal", () => {
 
 	it("passes a pattern wider than its values — that width is cleanup range, not a defect", () => {
 		// `^p\d+$` owns `p3`, which no declared priority produces, so a priority retired from the
-		// vocabulary is still reconciled away. Refusing this would refuse phoenix's own config.
+		// vocabulary is still reconciled away. Refusing this would refuse the shipped vocabulary itself.
 		expect(containmentRefusal(KEY, [facet({values: ["p0"]})])).toBeNull();
 	});
 

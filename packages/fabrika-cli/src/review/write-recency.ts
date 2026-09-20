@@ -15,8 +15,8 @@
  * so a cosmetic touch of the older verdict would silently re-crown it, and invisibly, since
  * `updated_at` is not rendered anywhere a human reads.
  *
- * The bytes are ADR 0058 / v1's `Verdict-written:` line, reimplemented here and never called
- * (ADR 0238) — the same relationship `./advisory.ts` has to ADR 0151's carrier. They must stay
+ * The bytes are v1's `Verdict-written:` line, reimplemented here and never called — the same
+ * relationship `./advisory.ts` has to the advisory carrier. They must stay
  * byte-identical, because v1's `verdict-match.ts` is the
  * consumer that resolves which verdict a gate acts on; `./write-recency.unit.test.ts` pins the
  * emitted line against that consumer's own matcher so the interop cannot drift unnoticed.
@@ -59,8 +59,8 @@ export const withWrittenAt = (body: string, iso: string): string => {
  * The write time a body stamps on itself, or `null` for an unstamped one.
  *
  * Read over the live region alone, then the LAST match within it. Both halves are load-bearing: the
- * live-region slice keeps an archived verdict's older stamp from re-crowning a superseded round
- * (#7247), and taking the last match keeps a verdict whose prose quotes an earlier stamp resolving
+ * live-region slice keeps an archived verdict's older stamp from re-crowning a superseded round,
+ * and taking the last match keeps a verdict whose prose quotes an earlier stamp resolving
  * to its own.
  */
 export const writtenAtOf = (body: string): string | null => {

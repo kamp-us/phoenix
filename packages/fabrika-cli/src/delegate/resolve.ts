@@ -8,12 +8,11 @@
  * **No branch is both silent and wrong.** No repo root at all runs the global with no warning,
  * deliberately, so global-only invocations still work. A repo root whose local install is missing or
  * corrupt runs the global too, but *says so loudly* — that pairing is the whole design: tiers that
- * can only be right or loudly absent are fine; tiers that can be quietly wrong are the defect
- * (#4784). One tier used to be quietly wrong against that rule and is now a refusal: a copy invoked
- * out of a *different repository* is not a global install, and delegating it answered from a tree
- * the caller never named (#4956). What counts as different is
- * [`repository.ts`](./repository.ts)'s to decide — a working tree of the same repository is not
- * (#5679).
+ * can only be right or loudly absent are fine; tiers that can be quietly wrong are the defect.
+ * One tier used to be quietly wrong against that rule and is now a refusal: a copy invoked out of a
+ * *different repository* is not a global install, and delegating it answered from a tree the caller
+ * never named. What counts as different is [`repository.ts`](./repository.ts)'s to decide — a
+ * working tree of the same repository is not.
  */
 import {Effect} from "effect";
 import {ChildProcess, type ChildProcessSpawner} from "effect/unstable/process";
@@ -76,8 +75,8 @@ export const resolve = ({selfPackageRoot, origin, repoRoot, local}: ResolveInput
 	if (local.install.packageRoot === selfPackageRoot)
 		return {_tag: "run-here", why: "the repo-local install is this copy"};
 	// The refusal is placed here, on the delegate branch alone, so the two loud branches above keep
-	// their behaviour and their text exactly (#4956). The boundary it enforces is the repository,
-	// unprovable-refuses included — see ADR 0287.
+	// their behaviour and their text exactly. The boundary it enforces is the repository rather than
+	// the checkout, and an identity that cannot be proven refuses rather than delegates.
 	if (origin._tag === "other-repository")
 		return {
 			_tag: "refuse-foreign-checkout",
@@ -186,7 +185,7 @@ export interface SpawnInput {
  * `handleErrnoException`; `effect`'s `PlatformError.SystemError.message`). This walks the chain and
  * takes the *error* rather than a message string precisely so no caller can read the wrong level
  * again — matching the top-level message compiled fine, passed a pure-function test, and made the
- * signalled branch dead code on every real signal death (#4792). A chain that stops matching must
+ * signalled branch dead code on every real signal death. A chain that stops matching must
  * read as "could not tell", never as a clean exit.
  */
 const SIGNAL_MESSAGE = /receipt of signal: '([A-Z0-9]+)'/;

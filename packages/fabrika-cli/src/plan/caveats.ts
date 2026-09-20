@@ -2,10 +2,10 @@
  * The advisory caveats `plan verdict` records beside the verdict — a closed set of kinds, and a
  * model-authored tail.
  *
- * **Caveats annotate; they never block.** There is no code path from a caveat to a polarity (ADR 0047
- * D2), and **no verb reads a caveat back as input** — it is a note for a human, never a signal a lane
- * consumes. That is what makes the free-prose tail a bounded exception to the closed-vocabulary rule
- * rather than a hole in it: the *kind* is closed and checked, the tail is inert.
+ * **Caveats annotate; they never block.** There is no code path from a caveat to a polarity, and **no
+ * verb reads a caveat back as input** — it is a note for a human, never a signal a lane consumes.
+ * That is what makes the free-prose tail a bounded exception to the closed-vocabulary rule rather
+ * than a hole in it: the *kind* is closed and checked, the tail is inert.
  */
 
 export const CAVEAT_KINDS = [

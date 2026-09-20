@@ -5,14 +5,15 @@
  * **A SHA on a verdict is a label; bytes provably read out of that commit are the immunity.** The
  * platform's PR endpoints take a pull-request number and no commit at all, so a push landing between
  * scoping and reading serves the *new* head's bytes under the *old* head's SHA — a well-formed,
- * confident verdict over code nobody judged (#5117, the #4482 class one layer down). The post-time
+ * confident verdict over code nobody judged. The post-time
  * re-resolve cannot close it: it fires after the judging, and a rewind that lands back on the
  * recorded SHA passes it clean.
  *
- * **This is the READ binding, and it is not what a verdict survives on.** The distinction is easy to
- * lose and ADR 0276 turns on it: what is resolved here is which commit this run's bytes come out of,
- * which is unchanged. Whether a verdict formed over those bytes is still in force *after the head
- * moves* is a separate question, answered by the content digest taken over this same range
+ * **This is the READ binding, and it is not what a verdict survives on.** The distinction is easy
+ * to lose and the content binding turns on it: what is resolved here is which commit this run's
+ * bytes come out of, which is unchanged. Whether a verdict formed over those bytes is still in
+ * force *after the head moves* is a separate question, answered by the content digest taken over
+ * this same range
  * (`./content-binding.ts`) — a head move alone no longer settles it.
  *
  * The binding is therefore taken **here, before the read**, and every read downstream of it goes
@@ -34,7 +35,7 @@ import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, STALE_HEAD} from "./codes.ts";
  *
  * **`baseTip` and `mergeBase` are different commits, and the difference is not intermittent.** Under
  * a moving base branch `origin/<baseRef>` runs ahead of the point this branch diverged from, so a
- * value read as "the base" while it holds the branch tip is wrong by construction (#5770). They are
+ * value read as "the base" while it holds the branch tip is wrong by construction. They are
  * two fields rather than one so that no caller can take the wrong one silently: a range, a point
  * read and a printed base all mean the merge base, and the tip is only what derives it.
  */
@@ -70,7 +71,7 @@ const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.star
  *
  * 1. An explicit `--sha` must be **the PR's head**. A caller reading at a head the PR has moved past
  *    is judging a tree the platform no longer offers, and `review post` would refuse the verdict
- *    anyway — refusing here means it refuses *before* a human spends a review on it (ADR 0058).
+ *    anyway — refusing here means it refuses *before* a human spends a review on it.
  * 2. This checkout must serve the target repository, or nothing local can witness the commit.
  * 3. The commit must be **present in the object database after fetching `pull/<pr>/head`**, and
  *    `git rev-parse` must resolve it to itself. That second half is not ceremony: a local ref or tag
@@ -78,7 +79,7 @@ const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.star
  *    wrong tree.
  * 4. The base must resolve too, since a diff is a range and an unresolvable end makes it UNKNOWN —
  *    and so must the merge base of that tip and this head, because *that* is the end every caller
- *    downstream means by "base" (#5770).
+ *    downstream means by "base".
  */
 export const bindHead = (
 	verb: string,
@@ -105,7 +106,7 @@ export const bindHead = (
 					_tag: "Refused" as const,
 					outcome: refuse(
 						STALE_HEAD,
-						`${verb}: PR #${pr}'s head is ${pull.headSha}, not ${shaped} — the tree you scoped is not the one under review; re-scope at ${pull.headSha} (ADR 0058).`,
+						`${verb}: PR #${pr}'s head is ${pull.headSha}, not ${shaped} — the tree you scoped is not the one under review; re-scope at ${pull.headSha}.`,
 					),
 				};
 			}
@@ -148,7 +149,7 @@ export const bindHead = (
  * The stderr line that says which commit the answer was read out of. Evidence, on every answer.
  *
  * The `(base …)` clause names the **merge base** — what every reader of this line has always taken
- * it for. Printing the branch tip there cost three agents a hand-correction each in one lane (#5770).
+ * it for. Printing the branch tip there cost three agents a hand-correction each in one lane.
  */
 export const boundLine = (verb: string, head: BoundHead): string =>
 	`${verb}: bound to ${head.sha} (base ${head.mergeBase}) — read from the object database, nothing checked out.`;

@@ -13,11 +13,11 @@
  * this module differs from the tracked one only in taking its project root from the environment
  * and planning no graph node.
  *
- * The scope names a workspace and no window, so a tool `spawn` starts a **root** process rather
- * than a child of the Claude one: the kernel resolves a parent from the caller's window through
- * `WindowIndex`, and no shell owns one yet
- * ([#7894](https://github.com/kamp-us/phoenix/issues/7894)). The delegation the scripted variant
- * proves is parented, because it stands that index up itself (`./kernel-tools.ts`).
+ * The scope names a workspace and no window, which is every config row's shape: the window a tool
+ * `spawn` is parented from reaches the bridge at the open instead, as `CallingWindow`
+ * ([#8758](https://github.com/kamp-us/phoenix/issues/8758)). This variant serves a real shell, so
+ * a row opened into a window through the picker is parented by the live index. The scripted variant
+ * has no desk and stands its own index up (`./kernel-tools.ts`).
  */
 
 import {ClientId, WorkspaceId} from "../../commands/spell.ts";
@@ -48,7 +48,13 @@ export default {
 				client: ClientId.make("claude-real-cli-proof"),
 			},
 		}),
-		piSessionProgram({cwd: root}),
+		piSessionProgram({
+			cwd: root,
+			scope: {
+				workspace: WorkspaceId.make("default"),
+				client: ClientId.make("claude-real-cli-proof"),
+			},
+		}),
 	],
 	graph: {nodes: [shellGraphNode]},
 } satisfies TuvalConfigInput;

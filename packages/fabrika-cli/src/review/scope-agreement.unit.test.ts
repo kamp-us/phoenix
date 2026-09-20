@@ -5,16 +5,17 @@
  * review, the pulls API for ship) and print different surrounding fields, so nothing but a test that
  * runs *both* catches them drifting. While only the ship side derived `ui`, a reviewer on a rendered
  * diff was told `review-code` was the whole bar, PASSed, and `ship gate` then refused a `review-ui`
- * namespace nobody had routed — one wasted ship dispatch and a park per PR (#6664).
+ * namespace nobody had routed — one wasted ship dispatch and a park per PR.
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, type Scripted, unconfigured} from "../fakes.test-support.ts";
+import {fakeSeams, type HttpReply, type Scripted, uiConfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	branchRules,
 	CODEOWNERS,
 	ENV,
+	LINKED_WORKTREE,
 	repositoryServed,
 	files as shipFiles,
 	pull as shipPull,
@@ -25,10 +26,10 @@ import {runScope as runReviewScope} from "./scope-verb.ts";
 
 /** One mixed diff: a worker source file, a doc, and a rendered surface beside its own test. */
 const CHANGED = [
-	"apps/web/worker/cart.ts",
+	"apps/site/worker/cart.ts",
 	"README.md",
-	"apps/web/src/components/layout/Topbar.tsx",
-	"apps/web/src/components/layout/Topbar.test.tsx",
+	"apps/site/src/components/layout/Topbar.tsx",
+	"apps/site/src/components/layout/Topbar.test.tsx",
 ] as const;
 
 const served = (result: ExecResult): HttpReply => ({status: 200, body: result.stdout});
@@ -62,15 +63,26 @@ const reviewScope = (...changed: ReadonlyArray<string>) =>
 					...binding(),
 					[PATHS_AT(), paths(...changed)],
 				]).layer,
-				unconfigured,
+				uiConfigured,
 			),
 		),
 	);
 
+/**
+ * `caller: "shipper"` with the worktree read scripted, because that is the run whose answer the
+ * review side has to agree with — a `relay` seat would compare against a read no shipper performs.
+ */
 const shipScope = (...changed: ReadonlyArray<string>) =>
 	Effect.runPromise(
 		Effect.provide(
-			runShipScope({pr: 4321, repo: null, json: false, cwd: "/repo", env: ENV}),
+			runShipScope({
+				pr: 4321,
+				repo: null,
+				json: false,
+				cwd: "/repo",
+				env: ENV,
+				caller: "shipper",
+			}),
 			Layer.merge(
 				fakeSeams([
 					[PULL, served(shipPull({changedFiles: changed.length}))],
@@ -78,8 +90,9 @@ const shipScope = (...changed: ReadonlyArray<string>) =>
 					[OWNERS, {status: 200, body: CODEOWNERS}],
 					[RULES, served(branchRules("pull_request"))],
 					[REPO, repositoryServed()],
+					LINKED_WORKTREE,
 				] as ReadonlyArray<Scripted>).layer,
-				unconfigured,
+				uiConfigured,
 			),
 		),
 	);
@@ -103,7 +116,7 @@ describe("review scope and ship scope over one file list", () => {
 	});
 
 	it("routes nothing when the diff raises no ui class", async () => {
-		const review = await reviewScope("apps/web/worker/cart.ts");
+		const review = await reviewScope("apps/site/worker/cart.ts");
 
 		expect(review.stdout).not.toContain("routed\t");
 		expect(namespaceRows(review.stdout)).toEqual(["review-code"]);

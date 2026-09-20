@@ -62,7 +62,7 @@ export interface ActorHandle<S, M extends {type: string}, E = never> {
 	readonly getState: () => S;
 	/** Resolves once nothing is pending on the transition tail. */
 	readonly idle: Effect.Effect<void>;
-	/** Drain, close every Sub, flush the last save. Runs on scope close; idempotent. */
+	/** Drain, close every Sub, checkpoint the last worthy state. Runs on scope close; idempotent. */
 	readonly stop: Effect.Effect<void>;
 }
 
@@ -151,6 +151,16 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 	const supervision = normalizeSupervision(definition.supervision);
 	const onError = definition.onError ?? defaultOnError;
 	const onCommit = definition.onCommit;
+	const checkpointWorthy = definition.checkpointWorthy;
+
+	/**
+	 * The one write path to the store, so a state the program calls not-checkpoint-worthy is
+	 * unreachable from every save site rather than from the commit alone (#8170).
+	 */
+	const checkpoint = (next: S): Effect.Effect<void, StoreError> =>
+		store === undefined || checkpointWorthy?.(next) === false
+			? Effect.void
+			: storeSave(store, next);
 
 	let state: S;
 	let gate: Gate = "open";
@@ -410,12 +420,19 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 		if (firstError !== null) return yield* Effect.die(firstError);
 	});
 
+	/**
+	 * This commit's publication, owed to the world however its Cmds settle: by the time a handler
+	 * runs the state is applied and checkpointed. Before #8538 the publication sat after
+	 * `runInterpret` in the same error channel, so one failing handler aborted the commit before it
+	 * and the process's public revision froze at 0 while its state went on advancing.
+	 */
+	const published = onCommit === undefined ? Effect.void : Effect.suspend(() => onCommit(state));
+
 	const commit = Effect.fn("Tuval.host.commit")(function* (next: S, cmds: readonly C[]) {
 		state = next;
-		if (store) yield* storeSave(store, next);
+		yield* checkpoint(next);
 		yield* reconcile();
-		yield* runInterpret(cmds);
-		if (onCommit) yield* onCommit(state);
+		yield* runInterpret(cmds).pipe(Effect.ensuring(published));
 	});
 
 	const isMisaddressed = (msg: M): boolean => {
@@ -491,7 +508,7 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 		manualSubs.clear();
 		keyedSubs.clear();
 		yield* closeSub(subsScope);
-		if (store) yield* storeSave(store, state).pipe(Effect.catchCause(reportCause("stop-save")));
+		yield* checkpoint(state).pipe(Effect.catchCause(reportCause("stop-save")));
 	}).pipe(
 		Effect.ensuring(Effect.sync(() => void stopped.openUnsafe())),
 		Effect.withSpan("Tuval.host.stop"),
@@ -506,13 +523,13 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 	const loaded = store ? store.migrate(yield* storeLoad(store)) : null;
 	const [initial, initCmds] = machine.init(loaded, ctx);
 	state = initial;
-	if (store) yield* storeSave(store, state);
+	yield* checkpoint(state);
 	yield* Scope.addFinalizer(scope, stop);
 	yield* tail.withPermits(1)(
 		Effect.gen(function* () {
 			yield* reconcile();
 			yield* runInterpret(initCmds);
-			if (onCommit) yield* onCommit(state);
+			yield* published;
 		}),
 	);
 

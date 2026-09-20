@@ -4,7 +4,6 @@ import {type BoardState, classify, seatResidue, sessionsByNonce, subjectsFor} fr
 
 const BRANCH = `build/4312-editor-focus-loss-${NONCE}`;
 const PATH = "/trees/agent-a9bd";
-const BASE = "origin/main";
 
 const subject = (branch = BRANCH, path = PATH) => {
 	const [only] = subjectsFor(4312, [{path, branch}]);
@@ -51,7 +50,7 @@ describe("classify — the terminal-ticket license", () => {
 	});
 
 	it("releases a terminal ticket's worktree WITHOUT reading dirtiness — dirty is not a refusal", () => {
-		// The founder's ruling on #6610: an agent routinely leaves a worktree dirty after its ticket
+		// The ruling behind the predicate: an agent routinely leaves a worktree dirty after its ticket
 		// merged, so dirtiness is a false negative for "work in progress". The predicate takes no
 		// dirtiness input at all, which is what makes that unrepresentable rather than merely unused.
 		expect(Object.keys(board())).not.toContain("dirty");
@@ -64,7 +63,7 @@ describe("classify — the terminal-ticket license", () => {
 		const verdict = classify(subject(), board({sessionByNonce: {[NONCE]: "s-9f2e"}}), NOBODY);
 
 		expect(verdict._tag).toBe("Hold");
-		expect(verdict._tag === "Hold" && verdict.because).toMatch(/#4312 is open/);
+		expect(verdict._tag === "Hold" && verdict.because).toMatch("#4312 is open");
 	});
 });
 
@@ -108,31 +107,34 @@ describe("classify / seatResidue — the unclaimed-lane license", () => {
 		expect(classify(subject(), held, NOBODY)._tag).toBe("Hold");
 	});
 
-	it("releases an unclaimed subject whose tree is clean and whose branch is level with the base", () => {
-		const verdict = seatResidue(subject(), {uncommitted: 0, commitsPastBase: 0, base: BASE});
+	it("releases an unclaimed subject whose tree is clean and strands no commit", () => {
+		const verdict = seatResidue(subject(), {uncommitted: 0, strandedCommits: 0});
 
 		expect(verdict).toMatchObject({_tag: "Release", license: "lane-unclaimed"});
+		expect(verdict._tag === "Release" && verdict.because).toMatch(/named by a ref that outlives/);
 	});
 
 	it("holds an unclaimed subject holding uncommitted work, naming the count that blocked it", () => {
-		const verdict = seatResidue(subject(), {uncommitted: 3, commitsPastBase: 0, base: BASE});
+		const verdict = seatResidue(subject(), {uncommitted: 3, strandedCommits: 0});
 
 		expect(verdict._tag).toBe("Hold");
 		expect(verdict._tag === "Hold" && verdict.because).toMatch(/3 uncommitted path\(s\)/);
 	});
 
-	it("holds an unclaimed subject whose branch carries commits past the base, naming the base", () => {
-		const verdict = seatResidue(subject(), {uncommitted: 0, commitsPastBase: 2, base: BASE});
+	it("holds a tree carrying commits no ref reaches — a detached HEAD's orphans", () => {
+		const verdict = seatResidue(subject(), {uncommitted: 0, strandedCommits: 2});
 
 		expect(verdict._tag).toBe("Hold");
-		expect(verdict._tag === "Hold" && verdict.because).toMatch(/2 commit\(s\) past origin\/main/);
+		expect(verdict._tag === "Hold" && verdict.because).toMatch(
+			/2 commit\(s\) no branch, remote-tracking ref or tag reaches/,
+		);
 	});
 
 	it("names BOTH counts when a tree carries both — there is no second read to find the other", () => {
-		const verdict = seatResidue(subject(), {uncommitted: 1, commitsPastBase: 4, base: BASE});
+		const verdict = seatResidue(subject(), {uncommitted: 1, strandedCommits: 4});
 
 		expect(verdict._tag === "Hold" && verdict.because).toMatch(
-			/1 uncommitted path\(s\) and 4 commit\(s\) past origin\/main/,
+			/1 uncommitted path\(s\) and 4 commit\(s\) no branch, remote-tracking ref or tag reaches/,
 		);
 	});
 });
@@ -159,7 +161,7 @@ describe("sessionsByNonce", () => {
 		expect(map).toEqual({[NONCE]: "s-9f2e", [SIBLING_NONCE]: "s-9f2e"});
 	});
 
-	it("counts no unauthorized marker — content is not authority (ADR 0055)", () => {
+	it("counts no unauthorized marker — content is not authority", () => {
 		expect(sessionsByNonce([{token: LANE_TOKEN, session: "s-9f2e", authorized: false}])).toEqual(
 			{},
 		);

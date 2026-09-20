@@ -4,7 +4,7 @@
  *
  * The read ORDER is asserted by the requests the verb issues: the sweep narrows at the endpoint,
  * each shortlisted issue is re-read singly for the parent link the list omits, and the ACL is
- * resolved per comment author, fail-closed (ADR 0055).
+ * resolved per comment author, fail-closed.
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
@@ -40,7 +40,7 @@ const PITCH = [
 	"## Pitch",
 	"",
 	"**Problem:** yazars cannot find last week's definition.",
-	"**Arc:** sözlük discovery",
+	"**Arc:** product search discovery",
 	"**Appetite:** 2 cycles",
 	"**Rabbit-holes:** full-text ranking",
 	"**No-gos:** a second search backend",
@@ -159,7 +159,7 @@ describe("runPitchGuard — the backlog sweep", () => {
 		expect(report).toContain("the FOUNDER approves it");
 	});
 
-	it("refuses an approval from below write+ — an unverifiable one never counts (ADR 0055)", async () => {
+	it("refuses an approval from below write+ — an unverifiable one never counts", async () => {
 		const {outcome} = await run([
 			[SWEEP, sweep({number: 11})],
 			[ONE(11), one({number: 11})],
@@ -181,7 +181,7 @@ describe("runPitchGuard — the backlog sweep", () => {
 		expect(outcome.stderr.join("\n")).toContain("not from a write+ collaborator");
 	});
 
-	it("reds 7 on an empty sweep — a vacuous pass would hide every unpitched bet (ADR 0092)", async () => {
+	it("reds 7 on an empty sweep — a vacuous pass would hide every unpitched bet", async () => {
 		const {outcome} = await run([[SWEEP, EMPTY]]);
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.join("\n")).toContain("ZERO lane-entering issues");

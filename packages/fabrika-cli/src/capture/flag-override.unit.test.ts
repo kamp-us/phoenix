@@ -12,9 +12,9 @@ const PREVIEW = "https://pr-4321-web.example.test";
 
 describe("parseFlagOperands", () => {
 	it("reads a <key>=<on|off> pair into the value the preview is asked to force", () => {
-		expect(parseFlagOperands(["phoenix-welcome=on", "phoenix-flags-probe=off"])).toEqual({
+		expect(parseFlagOperands(["app-welcome=on", "app-flags-probe=off"])).toEqual({
 			_tag: "Forced",
-			flags: {"phoenix-welcome": true, "phoenix-flags-probe": false},
+			flags: {"app-welcome": true, "app-flags-probe": false},
 		});
 	});
 
@@ -23,11 +23,11 @@ describe("parseFlagOperands", () => {
 	});
 
 	it.each([
-		["phoenix-welcome", "no = separating the key from its value"],
+		["app-welcome", "no = separating the key from its value"],
 		["=on", '"" is not a flag key'],
-		["-phoenix=on", '"-phoenix" is not a flag key'],
-		["phoenix welcome=on", '"phoenix welcome" is not a flag key'],
-		["phoenix;welcome=on", '"phoenix;welcome" is not a flag key'],
+		["-app=on", '"-app" is not a flag key'],
+		["app welcome=on", '"app welcome" is not a flag key'],
+		["app;welcome=on", '"app;welcome" is not a flag key'],
 	])("refuses %s rather than guessing at it", (token, reason) => {
 		expect(parseFlagOperands([token])).toEqual({_tag: "Malformed", token, reason});
 	});
@@ -39,18 +39,18 @@ describe("parseFlagOperands", () => {
 		"ON",
 		"",
 	])("refuses %s as a value — the vocabulary is on|off and nothing else", (value) => {
-		expect(parseFlagOperands([`phoenix-welcome=${value}`])).toEqual({
+		expect(parseFlagOperands([`app-welcome=${value}`])).toEqual({
 			_tag: "Malformed",
-			token: `phoenix-welcome=${value}`,
+			token: `app-welcome=${value}`,
 			reason: `"${value}" is not on or off`,
 		});
 	});
 
 	it("refuses a key forced twice — last-wins would drop an operand nobody hears about", () => {
-		expect(parseFlagOperands(["phoenix-welcome=on", "phoenix-welcome=off"])).toEqual({
+		expect(parseFlagOperands(["app-welcome=on", "app-welcome=off"])).toEqual({
 			_tag: "Malformed",
-			token: "phoenix-welcome=off",
-			reason: '"phoenix-welcome" is forced more than once',
+			token: "app-welcome=off",
+			reason: '"app-welcome" is forced more than once',
 		});
 	});
 
@@ -69,15 +69,15 @@ describe("parseFlagOperands", () => {
 
 describe("overrideCookies", () => {
 	it("writes the worker's wire value, which parseOverrideCookie reads back verbatim", () => {
-		const [cookie] = overrideCookies(PREVIEW, {"phoenix-welcome": true});
+		const [cookie] = overrideCookies(PREVIEW, {"app-welcome": true});
 		expect(cookie).toEqual({
 			name: FLAG_OVERRIDE_COOKIE,
-			value: encodeURIComponent(JSON.stringify({"phoenix-welcome": true})),
+			value: encodeURIComponent(JSON.stringify({"app-welcome": true})),
 			url: PREVIEW,
 			secure: true,
 		});
 		expect(JSON.parse(decodeURIComponent(cookie?.value ?? ""))).toEqual({
-			"phoenix-welcome": true,
+			"app-welcome": true,
 		});
 	});
 
@@ -87,7 +87,7 @@ describe("overrideCookies", () => {
 	 * stores nothing — so the override cannot outlive the gate run.
 	 */
 	it("carries no expiry, so its whole lifetime is the capture context's", () => {
-		const [cookie] = overrideCookies(PREVIEW, {"phoenix-welcome": true});
+		const [cookie] = overrideCookies(PREVIEW, {"app-welcome": true});
 		expect(Object.keys(cookie ?? {}).sort()).toEqual(["name", "secure", "url", "value"]);
 	});
 
@@ -116,11 +116,11 @@ describe("flagProbeBody", () => {
 });
 
 describe("readOverrideProof", () => {
-	const forced = {"phoenix-welcome": true};
+	const forced = {"app-welcome": true};
 	const body = (flags: Record<string, unknown>) => JSON.stringify({flags});
 
 	it("answers Forced when every key came back at the value it was forced to", () => {
-		expect(readOverrideProof(200, body({"phoenix-welcome": true}), forced)).toEqual({
+		expect(readOverrideProof(200, body({"app-welcome": true}), forced)).toEqual({
 			_tag: "Forced",
 		});
 	});
@@ -132,12 +132,12 @@ describe("readOverrideProof", () => {
 	});
 
 	it.each([
-		[500, body({"phoenix-welcome": true}), "probe answered 500"],
+		[500, body({"app-welcome": true}), "probe answered 500"],
 		[200, "not json", "probe body is not JSON"],
 		[200, "null", "probe body is not an evaluation object"],
 		[200, JSON.stringify({}), "probe body names no flags"],
-		[200, body({}), 'probe left "phoenix-welcome" unevaluated'],
-		[200, body({"phoenix-welcome": "on"}), 'probe left "phoenix-welcome" unevaluated'],
+		[200, body({}), 'probe left "app-welcome" unevaluated'],
+		[200, body({"app-welcome": "on"}), 'probe left "app-welcome" unevaluated'],
 	])("keeps an unreadable probe UNKNOWN rather than folding it into Inert", (status, raw, reason) => {
 		expect(readOverrideProof(status, raw, forced)).toEqual({_tag: "Unreadable", reason});
 	});

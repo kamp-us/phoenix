@@ -56,9 +56,16 @@ export interface Empty {
 /** What a `readProcess` subscription emits. `ProcessGone` is terminal for that process id. */
 export type ProcessView<S> = ProcessLive<S> | ProcessGone;
 
-/** The Msg reached the process. Whether its handlers then succeeded is read back through `readProcess`. */
+/**
+ * The Msg reached the process. Whether its handlers then succeeded is read back through
+ * `readProcess` — except for the one thing only the dispatcher can ask: what *this* Msg left
+ * behind. `view` is the process's public state once the Msg was applied, so a caller learns its own
+ * Msg's answer without racing the state stream, which runs on its own fiber (#8274). Absent when
+ * the host has no state to report — an in-process double, a row already dropped.
+ */
 export interface Delivered {
 	readonly _tag: "Delivered";
+	readonly view?: {readonly revision: number; readonly state: unknown};
 }
 
 /**

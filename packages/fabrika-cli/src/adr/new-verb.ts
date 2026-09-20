@@ -55,7 +55,7 @@ export const scaffold = (
 		const {id, slug, dir, status, date} = options;
 		// A malformed id or slug is a usage error, so it exits 1 with the rest of them — `adr resolve`
 		// already refuses a non-four-digit id there, and one fact on two numbers is the defect the
-		// group table ends (#5294).
+		// group table ends.
 		if (!isFourDigitId(id)) {
 			return {
 				_tag: "Refused",

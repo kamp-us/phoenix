@@ -1,5 +1,8 @@
 # Feature services
 
+This pattern applies to `apps/web/worker`. Tuval and operational CLI packages have
+different storage and runtime owners; use the [shared index](index.md) for those tasks.
+
 Each feature directory in phoenix exposes **one** `Context.Service` — a flat record of domain methods that the resolver layer yields. Reads and writes sit together. The service depends on a `Drizzle` service that holds the singleton drizzle builder.
 
 See also [effect-context-service.md](./effect-context-service.md) for service-definition mechanics, [effect-errors.md](./effect-errors.md) for the error model, and [effect-fn-tracing.md](./effect-fn-tracing.md) for the method shape.
@@ -62,7 +65,7 @@ Infra-failure policy is a domain-boundary decision. A feature service destructur
 
 Why here and not at the call sites: the typed `DrizzleError` channel had **zero typeful consumers** — nothing caught, retried, or matched it; every one of ~64 fate-handler call sites uniformly piped `orDieDrizzle`, which meant the transport layer named the persistence tech everywhere while exercising a single policy that belongs to the domain.
 
-The trade-off, recorded: callers lose the *option* of typeful infra handling (e.g. a typed retry on `DrizzleError`) — an option nothing used. If a future caller genuinely needs to observe infra failures, defects remain reachable (`Effect.sandbox` / `Effect.catchAllDefect`), or that one method can reintroduce a typed infra error deliberately. The die happens per `run`/`batch` call (the Drizzle call sites), not as a blanket wrap around whole methods — future domain errors keep flowing through method bodies untouched.
+The trade-off, recorded: callers lose the *option* of typeful infra handling (e.g. a typed retry on `DrizzleError`) — an option nothing used. If a future caller genuinely needs to observe infra failures, defects remain reachable (`Effect.sandbox` / `Effect.catchDefect`), or that one method can reintroduce a typed infra error deliberately. The die happens per `run`/`batch` call (the Drizzle call sites), not as a blanket wrap around whole methods — future domain errors keep flowing through method bodies untouched.
 
 `worker/features/domain-error-boundary.unit.test.ts` pins the rule per service: a type-level sweep proves no method's `E` contains `DrizzleError`, plus one exact-domain-union pin per service.
 
@@ -72,10 +75,11 @@ The trade-off, recorded: callers lose the *option* of typeful infra handling (e.
 
 The service earns its keep by:
 
-- Constructing the drizzle builder once per request.
+- Constructing the drizzle builder once at worker initialization.
 - Giving feature services one uniform call pattern for all drizzle operations.
 - Centralizing the promise → Effect boundary so feature code is fully Effect-native.
-- Being trivially swappable for tests that want an in-memory drizzle.
+- Allowing unit tests to substitute `DrizzleAccess` without a database, as described
+  in [effect-testing.md](effect-testing.md).
 
 ### House rule: `Effect.tryPromise` always uses object notation
 

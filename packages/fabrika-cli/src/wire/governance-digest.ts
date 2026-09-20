@@ -5,7 +5,7 @@
  *     ## Governance readout
  *
  *     ```governance-digest
- *     row	0398	tension	sits against ADR 0173 on whether a pending check blocks admission
+ *     row	0398	tension	sits against record 0173 on whether a pending check blocks admission
  *     ```
  *
  * Producer `governance readout`, consumer the front door. Three fields per row: the decision id, one
@@ -16,8 +16,8 @@
  * vocabulary is closed and free prose is confined to that one field.
  *
  * **The digest gates nothing.** There is no polarity here and no code that means "the corpus is in a
- * bad state": a digest that could red would be the human gate the #4927 ruling retired, wearing a new
- * name.
+ * bad state": a digest that could red would be a human gate wearing a new name, and this readout is
+ * not one.
  */
 
 import type {NonEmptyReadonlyArray, WireEmit, WireRead, WireReadLines} from "./format.ts";

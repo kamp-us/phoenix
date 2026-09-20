@@ -1,7 +1,7 @@
 /**
- * The `pitch-guard` decision (#3963, founder ruling #3909): what counts as lane-entering work, the
- * tolerant five-field read, the fail-closed approval resolution, the two zero-scope forks (a backlog
- * sweep reds per ADR 0092, one out-of-scope issue passes), the report, and the seat each verdict
+ * The `pitch-guard` decision: what counts as lane-entering work, the tolerant five-field read, the
+ * fail-closed approval resolution, the two zero-scope forks (a backlog sweep reds, one out-of-scope
+ * issue passes), the report, and the seat each verdict
  * takes on the guard exit taxonomy. No IO — the board read is crossed in `./pitch-verb.ts`.
  */
 import {describe, expect, it} from "vitest";
@@ -32,7 +32,7 @@ const GOOD_PITCH = [
 	"## Pitch",
 	"",
 	"**Problem:** yazars cannot find a definition they wrote last week.",
-	"**Arc:** sözlük discovery",
+	"**Arc:** product search discovery",
 	"**Appetite:** 2 cycles",
 	"**Rabbit-holes:** full-text ranking",
 	"**No-gos:** a second search backend",
@@ -48,7 +48,7 @@ const APPROVED = approval("pitch-approved: appetite 2 cycles · 2026-08-18T00:00
 
 const candidate = (over: Partial<Candidate> = {}): Candidate => ({
 	number: 4312,
-	title: "sözlük search",
+	title: "product search",
 	labels: ["status:triaged", "type:feature"],
 	hasParent: false,
 	body: GOOD_PITCH,
@@ -106,7 +106,7 @@ describe("pitchSection", () => {
 	it("reads the section from its heading to the next heading of any level", () => {
 		const body = `${GOOD_PITCH}\n\n### Acceptance criteria\n\n- Problem: not a pitch field`;
 		const section = pitchSection(body);
-		expect(section).toContain("sözlük discovery");
+		expect(section).toContain("product search discovery");
 		expect(section).not.toContain("not a pitch field");
 	});
 
@@ -198,7 +198,7 @@ describe("resolveApproval", () => {
 		expect(resolveApproval([approval("looks good to me")], 2)).toEqual({_tag: "none"});
 	});
 
-	it("refuses a marker from below write+ — an unverifiable approval never counts (ADR 0055)", () => {
+	it("refuses a marker from below write+ — an unverifiable approval never counts", () => {
 		expect(resolveApproval([approval("pitch-approved: appetite 2 cycles", false)], 2)).toEqual({
 			_tag: "unauthorized",
 		});
@@ -266,7 +266,7 @@ describe("judge", () => {
 		});
 	});
 
-	it("reds an empty BACKLOG sweep — a vacuous pass would hide every unpitched bet (ADR 0092)", () => {
+	it("reds an empty BACKLOG sweep — a vacuous pass would hide every unpitched bet", () => {
 		expect(judge([], BACKLOG)).toEqual({pass: false, reason: "zero-scope", scope: BACKLOG});
 	});
 
@@ -274,7 +274,7 @@ describe("judge", () => {
 		expect(judge([], issueScope(9))).toMatchObject({pass: true, scanned: 0});
 	});
 
-	it("refuses an empty ISSUE scope in a repo with no scoping labels (#4272)", () => {
+	it("refuses an empty ISSUE scope in a repo with no scoping labels", () => {
 		expect(judge([], issueScope(9, ABSENT))).toMatchObject({
 			pass: false,
 			reason: "vocabulary-absent",
@@ -303,12 +303,12 @@ describe("renderReport", () => {
 	});
 
 	it("names the fail-closed reason on an empty backlog sweep", () => {
-		expect(renderReport(judge([], BACKLOG))).toContain("ADR 0092");
+		expect(renderReport(judge([], BACKLOG))).toContain("fail-closed");
 	});
 
 	it("names every offender and prints the draft/approve remedy once", () => {
 		const report = renderReport(judge([candidate({comments: []})], BACKLOG));
-		expect(report).toContain("#4312 sözlük search");
+		expect(report).toContain("#4312 product search");
 		expect(report).toContain("the FOUNDER approves it");
 		expect(report).toContain(".glossary/TERMS.md");
 	});

@@ -5,9 +5,20 @@ import {compile} from "../../ports/compile.ts";
 import {IncompatibleRoute} from "../../ports/errors.ts";
 import type {Graph} from "../../ports/graph.ts";
 import {NodeId} from "../../ports/graph.ts";
+import {statusPort, titlePort} from "../../process/self-report.ts";
 import {ProgramId} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
-import {agentPorts, mode, permission, prompt, transcript, transcriptPage} from "./ports.ts";
+import {
+	agentPorts,
+	mode,
+	permission,
+	prompt,
+	result,
+	status,
+	title,
+	transcript,
+	transcriptPage,
+} from "./ports.ts";
 
 const rows = [agentSide, windowSide];
 const registry = Registry.layer(rows);
@@ -23,28 +34,46 @@ const to = (node: string, port: string) => ({node: NodeId.make(node), port});
 const compiled = (graph: Graph) => Effect.provide(compile(graph), registry);
 const refusal = (graph: Graph) => Effect.flip(Effect.provide(compile(graph), registry));
 
-describe("the five AI agent ports", () => {
-	it("declares five ports, each with its own kind", () => {
+/** The ends a port is played from: one for a one-way port, two for a two-way one. */
+const endsOf = (port: (typeof agentPorts)[number]) =>
+	"ends" in port ? Object.values(port.ends) : [port];
+
+describe("the ports a Tuval AI agent row declares", () => {
+	it("declares eight ports, each with its own kind", () => {
 		expect(agentPorts.map((port) => port.name)).toEqual([
 			"transcript",
 			"transcript-page",
 			"prompt",
 			"permission",
 			"mode",
+			"result",
+			"title",
+			"status",
 		]);
-		expect(new Set(agentPorts.map((port) => port.kind)).size).toBe(5);
+		expect(new Set(agentPorts.map((port) => port.kind)).size).toBe(8);
 	});
 
-	it("declares a bounded queue on every port, inbound and by default", () => {
+	// The two generic ones are the kernel's, carried rather than restated: a copied kind string is
+	// how one program's title stops routing to a board that takes every other program's (#8715).
+	it("carries the kernel's own kind and predicate onto title and status", () => {
+		expect(title.kind).toBe(titlePort.kind);
+		expect(status.kind).toBe(statusPort.kind);
+		expect(title.outbound().accepts("claude-session · Opus 5 · phoenix")).toBe(true);
+		expect(status.is(42)).toBe(false);
+	});
+
+	it("declares a bounded queue on every end of every port, inbound and by default", () => {
 		for (const port of agentPorts) {
 			expect(Number.isInteger(port.bound.capacity)).toBe(true);
 			expect(port.bound.capacity).toBeGreaterThan(0);
-			expect(port.inbound()).toMatchObject({
-				kind: port.kind,
-				direction: "in",
-				bound: port.bound,
-			});
-			expect(port.outbound()).toMatchObject({kind: port.kind, direction: "out"});
+			for (const end of endsOf(port)) {
+				expect(end.inbound()).toMatchObject({
+					kind: port.kind,
+					direction: "in",
+					bound: port.bound,
+				});
+				expect(end.outbound()).toMatchObject({kind: port.kind, direction: "out"});
+			}
 		}
 	});
 
@@ -54,12 +83,61 @@ describe("the five AI agent ports", () => {
 		expect(tighter.kind).toBe(prompt.kind);
 	});
 
-	it("carries each port's own predicate onto both directions", () => {
+	it("carries a one-way port's own predicate onto both directions", () => {
 		expect(
 			transcript.outbound().accepts({items: [], omitted: {items: 0, bytes: 0, reason: "none"}}),
 		).toBe(true);
-		expect(prompt.inbound().accepts({text: "go"})).toBe(true);
+		expect(prompt.inbound().accepts({text: "go", key: "k1", timestamp: 1})).toBe(true);
 		expect(prompt.inbound().accepts({items: []})).toBe(false);
+		expect(result.outbound().accepts({text: "done", items: [], ok: true})).toBe(true);
+		expect(result.outbound().accepts({text: "done", items: []})).toBe(false);
+	});
+});
+
+/**
+ * The three two-way kinds, each end admitting one direction (#8235). The wrong direction is a
+ * payload the kind itself carries, so the union predicate says yes and only the end says no —
+ * which is the whole point: the refusal happens at the send, where the caller reads it.
+ */
+describe("what each end of a two-way port admits", () => {
+	const page = {
+		kind: "page",
+		items: [],
+		omitted: {items: 0, bytes: 0, reason: "none"},
+		next: null,
+	};
+	const pageRequest = {kind: "request", before: null, limit: 20};
+	const decision = {kind: "decision", request: "r-1", decision: "allow-once"};
+	const pending = {kind: "pending", requests: {}};
+	const set = {kind: "set", mode: "plan"};
+	const state = {kind: "state", current: null, available: []};
+
+	const crossings = [
+		{
+			takes: "transcript-page request",
+			end: transcriptPage.ends.request,
+			right: pageRequest,
+			wrong: page,
+		},
+		{takes: "transcript-page page", end: transcriptPage.ends.page, right: page, wrong: pageRequest},
+		{takes: "permission decision", end: permission.ends.decision, right: decision, wrong: pending},
+		{takes: "permission pending", end: permission.ends.pending, right: pending, wrong: decision},
+		{takes: "mode set", end: mode.ends.set, right: set, wrong: state},
+		{takes: "mode state", end: mode.ends.state, right: state, wrong: set},
+	];
+
+	it.each(crossings)("the $takes end takes its own direction and no other", (crossing) => {
+		const {end, right, wrong} = crossing;
+		expect(end.inbound().accepts(right)).toBe(true);
+		expect(end.inbound().accepts(wrong)).toBe(false);
+		expect(end.outbound().accepts(right)).toBe(true);
+		expect(end.outbound().accepts(wrong)).toBe(false);
+	});
+
+	it("admits the wrong direction on the kind itself, so only the end refuses it", () => {
+		expect(transcriptPage.is(page) && transcriptPage.is(pageRequest)).toBe(true);
+		expect(permission.is(pending) && permission.is(decision)).toBe(true);
+		expect(mode.is(state) && mode.is(set)).toBe(true);
 	});
 });
 

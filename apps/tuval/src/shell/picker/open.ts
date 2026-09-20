@@ -9,17 +9,22 @@
  * handle and no throw to catch.
  */
 
+import {randomUUID} from "node:crypto";
 import {Context, Effect} from "effect";
-import {ProcessPorts} from "../../ports/ProcessPorts.ts";
+import {SessionOpening} from "../../ai-agent/opening.ts";
+import {CallingWindow} from "../../commands/scope.ts";
+import {WindowId as CallWindowId} from "../../commands/spell.ts";
+import {NodeId} from "../../ports/graph.ts";
+import {ProcessPorts, unwired} from "../../ports/ProcessPorts.ts";
 import {Processes} from "../../process/Processes.ts";
 import {ProcessTable} from "../../process/ProcessTable.ts";
-import type {ProcessId} from "../../process/process.ts";
+import {ProcessId} from "../../process/process.ts";
 import {type AnyProgram, type ProgramId, takesForwardedKeys} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import type {ShellMsg} from "../core/machine.ts";
-import type {WindowId} from "../window/host.ts";
+import type {ViewState, WindowId} from "../window/host.ts";
 import {showsInAWindow} from "./entries.ts";
-import type {PickerIntent} from "./intent.ts";
+import type {PickerIntent, ProgramOpening} from "./intent.ts";
 import {
 	type PickerRefusal,
 	processGone,
@@ -27,25 +32,31 @@ import {
 	spawnFailed,
 	unknownProgram,
 } from "./refusal.ts";
-import {mountPicker, type PickerView, withRefusal} from "./view.ts";
+import {asPickerView, withRefusal} from "./view.ts";
 
 export interface PickerOptions {
 	/** The process every program the picker opens is spawned under — the shell's own. */
 	readonly shellProcessId: ProcessId;
 	/**
-	 * The view a refusal is written back over. The picker route passes its live view so a refused
-	 * choice leaves the highlight where the user put it; the command line has none and omits it.
+	 * The window's own view slot, unnarrowed, as the state the Cmd left carries it (`../core/machine.ts`).
+	 * A refusal is written back over it, so a refused choice keeps the highlight where the user put it
+	 * and keeps the process `<c-b> w` left behind — otherwise the first refusal on a picker is what
+	 * throws away the way back (#8265). The command line has no slot and omits it.
 	 */
-	readonly view?: PickerView;
+	readonly view?: ViewState;
 }
 
-/** A refusal reaches the user as the window's view: the picker is still mounted and re-renders. */
-const refuse = (
+/**
+ * A refusal reaches the user as the window's view: the picker is still mounted and re-renders. The
+ * one declaration for every kernel handler that refuses into a window — `./remove.ts` is the other —
+ * so a refused removal and a refused open leave the window in the same shape.
+ */
+export const refuse = (
 	windowId: WindowId,
-	options: PickerOptions,
+	view: ViewState | undefined,
 	refusal: PickerRefusal,
 ): ReadonlyArray<ShellMsg> => [
-	{type: "window.setView", windowId, view: withRefusal(options.view ?? mountPicker(), refusal)},
+	{type: "window.setView", windowId, view: withRefusal(asPickerView(view), refusal)},
 ];
 
 /**
@@ -64,29 +75,50 @@ const open = Effect.fn("Tuval.Picker.open")(function* (
 	windowId: WindowId,
 	programId: ProgramId,
 	options: PickerOptions,
+	opening: ProgramOpening | undefined,
 ) {
 	const registry = yield* Registry;
 	const processes = yield* Processes;
 
 	const row = yield* Effect.result(registry.resolve(programId));
-	if (row._tag === "Failure") return refuse(windowId, options, unknownProgram(programId));
-	if (!showsInAWindow(row.success)) return refuse(windowId, options, programHeadless(programId));
+	if (row._tag === "Failure") return refuse(windowId, options.view, unknownProgram(programId));
+	if (!showsInAWindow(row.success))
+		return refuse(windowId, options.view, programHeadless(programId));
 
-	// A picker-opened program may require kernel services, and this is where they arrive: the shell
-	// process's own context is the kernel one `launch` handed it (`src/boot.ts`), so the child gets
-	// the same. `Effect.context()` reads the running fiber's whole services map (`effect` rc.112,
-	// `internal/effect.ts`), which is why nothing here has to name what it passes on.
+	// A picker-opened program may require kernel services, and this is where they arrive: this
+	// handler is sealed to the shell process's own spawn set, which is the kernel one `launch`
+	// handed it (`src/boot.ts`), so `Effect.context()` reads exactly that and the child gets the
+	// same. Passing the context on is the whole grant — a handler resolves its spawn set and
+	// nothing else (#7972), so what is dropped here is dropped for good.
 	//
 	// `ProcessPorts` is the one thing dropped rather than passed: a port binding emits from *this*
-	// node, so handing it down would send the child's payloads out of the shell's own ports. Removing
-	// it leaves the child with none, where restore overrides the inherited one with an un-wired
-	// `ProcessPorts` of its own (`src/durability/restore.ts`).
-	const services = Context.omit(ProcessPorts)(yield* Effect.context());
+	// node, so handing it down would send the child's payloads out of the shell's own ports. The
+	// child gets one of its own below.
+	const inherited = Context.omit(ProcessPorts)(yield* Effect.context());
+	// Minted here rather than by `Processes.spawn` — same value, one call earlier — because the
+	// ports below have to know which process they emit from.
+	const id = ProcessId.make(randomUUID());
+	// The child's own ports, put back after the omit above, the way `restore` puts one back
+	// (`src/durability/restore.ts`). `unwired` because the graph owns no route to a picker-opened
+	// process: an emit fails `PortNotWired` naming this child, where before the handler seal (#7972)
+	// a row declaring `ProcessPorts` silently emitted out of the shell's.
+	const opened = Context.add(inherited, ProcessPorts, unwired(NodeId.make(id)));
+	// The window this open is for, which is the one fact only this handler holds: a row's own scope
+	// is written down inside `boot`, before any window exists, so a program that calls the kernel
+	// gets its window here or nowhere (#8758). The kernel re-resolves the caller's process from it,
+	// so without it every `spawn` an agent row's tools issue lands as a root. Added to every open,
+	// not only an agent row's: the window a process was opened into is not an agent fact.
+	const shown = Context.add(opened, CallingWindow, {window: CallWindowId.make(windowId)});
+	// The other thing added rather than inherited. An open carrying a session is the first send on a
+	// row the operator picked out of the session list, and the child has to come up resuming that
+	// session instead of booting a second one beside it (epic #8070, ruling 2). The agent row's
+	// `aiAgent.boot` handler is the only reader (`../../ai-agent/handlers/index.ts`).
+	const services = opening === undefined ? shown : Context.add(shown, SessionOpening, opening);
 	const spawned = yield* Effect.result(
-		processes.spawn(programId, {parent: options.shellProcessId, services}),
+		processes.spawn(programId, {id, parent: options.shellProcessId, services}),
 	);
 	return spawned._tag === "Failure"
-		? refuse(windowId, options, spawnFailed(programId, spawned.failure.message))
+		? refuse(windowId, options.view, spawnFailed(programId, spawned.failure.message))
 		: bind(windowId, spawned.success.id, row.success);
 });
 
@@ -99,12 +131,12 @@ const attach = Effect.fn("Tuval.Picker.attach")(function* (
 	const registry = yield* Registry;
 
 	const row = yield* Effect.result(table.get(processId));
-	if (row._tag === "Failure") return refuse(windowId, options, processGone(processId));
+	if (row._tag === "Failure") return refuse(windowId, options.view, processGone(processId));
 
 	// A running headless process has no renderer to mount, so binding it would blank the window.
 	const program = yield* Effect.result(registry.resolve(row.success.programId));
 	return program._tag === "Failure" || !showsInAWindow(program.success)
-		? refuse(windowId, options, programHeadless(row.success.programId))
+		? refuse(windowId, options.view, programHeadless(row.success.programId))
 		: bind(windowId, processId, program.success);
 });
 
@@ -117,5 +149,5 @@ export const runPickerIntent = (
 	options: PickerOptions,
 ): Effect.Effect<ReadonlyArray<ShellMsg>, never, Registry | Processes | ProcessTable> =>
 	intent._tag === "OpenProgram"
-		? open(intent.windowId, intent.programId, options)
+		? open(intent.windowId, intent.programId, options, intent.opening)
 		: attach(intent.windowId, intent.processId, options);

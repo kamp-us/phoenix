@@ -17,9 +17,17 @@
  * The scan runs over the body's *contract* region, not its bytes end to end: a fenced code block
  * and a `<details>` appendix are both out of reach (see {@link scanHeadings}).
  *
- * v1's `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` §2 is where the semantics
- * come from — read as prior art, never called (ADR 0238). Its reviewer-append provenance tag
- * (`<!-- ac:review-code … -->`) is deliberately not carried here.
+ * A criterion may carry the **outside-diff evidence marker** — a trailing `[evidence: <source>]`
+ * naming where the proof of that criterion lives when the diff's bytes cannot settle it either way:
+ * a hand-verification section, a pre-fix artifact, a runtime observation. `triage` writes it at mint
+ * time and `review` reads it back; the marker is parsed out of {@link AcceptanceCriterion.text} into
+ * its own field, so a grader grades the sentence and routes on the field rather than pattern-matching
+ * prose. A marker whose keyword drifted in case, or whose source is blank, is `Malformed` for the
+ * same reason a drifted heading is: the defect must never be reported as the fact.
+ *
+ * An older pipeline's intake-format doc is where the semantics come from — read as prior art,
+ * never called, so no code path here depends on a tree that is gone. Its reviewer-append provenance
+ * tag (`<!-- ac:review-code … -->`) is deliberately not carried here.
  */
 
 import type {
@@ -46,11 +54,120 @@ export const criterionText = (raw: string): CriterionText | null => {
 	return value === "" ? null : (value as CriterionText);
 };
 
-/** One criterion and whether it is checked off. The field type of this format. */
+declare const EVIDENCE_SOURCE: unique symbol;
+
+/**
+ * Where a marked criterion's proof lives, trimmed and non-blank.
+ *
+ * Branded for the same reason {@link CriterionText} is: a marker naming no source is the whole defect
+ * this field exists to catch, and a `Found` carrying one would hand `review` a criterion that claims
+ * outside-diff evidence and points at nothing. The read refuses it; the brand is what makes that
+ * refusal the only way to build one.
+ */
+export type EvidenceSource = string & {readonly [EVIDENCE_SOURCE]: true};
+
+export const evidenceSource = (raw: string): EvidenceSource | null => {
+	const value = raw.trim();
+	return value === "" ? null : (value as EvidenceSource);
+};
+
+/** One criterion, whether it is checked off, and where its proof lives. The field type of this format. */
 export interface AcceptanceCriterion {
 	readonly text: CriterionText;
 	readonly checked: boolean;
+	/**
+	 * The outside-diff evidence marker's source, or `null` for an ordinary criterion the diff is
+	 * expected to discharge on its own. `null` is not "unknown": it is the proven absence of a
+	 * marker, and it is what keeps today's grading rule in force for every unmarked row.
+	 */
+	readonly evidence: EvidenceSource | null;
 }
+
+/** The marker's canonical keyword. Spelling and case are both part of it. */
+export const EVIDENCE_KEYWORD = "evidence";
+
+/**
+ * A trailing HTML comment — machinery appended beside a criterion, never part of what it says.
+ *
+ * The evidence marker is the last thing an *author* writes, so it is matched after any such comment
+ * is set aside and restored above it. Stated generically rather than against `review`'s own
+ * provenance tag: this module carries no knowledge of that tag (see the docblock), and a rule that
+ * named it would be a second definition of it.
+ *
+ * The body is `(?:[^-]|-(?!->))*` rather than a lazy `[\s\S]*?` because this runs over criterion text
+ * that came out of an issue body, which is externally authored. Under the lazy form a `-` could be
+ * consumed either by the body or by a repetition's `-->`, so `"<!--" + "--><!--".repeat(n)` backtracks
+ * exponentially and the parser never returns — the one failure this module cannot report. Each
+ * alternative here matches exactly one character and the two sets are disjoint, so every byte is
+ * consumed one way only and the scan is linear.
+ */
+const TRAILING_COMMENTS = /(?:\s*<!--(?:[^-]|-(?!->))*-->)+\s*$/;
+
+/** The marker as an author may write it — keyword captured as typed, so a case drift is visible. */
+const EVIDENCE_TAIL = /\[[ \t]*([A-Za-z]+)[ \t]*:([^\]]*)\][ \t]*$/;
+
+/** A criterion line split into what it says and where its proof lives. */
+export type EvidenceSplit =
+	| {
+			readonly _tag: "Split";
+			readonly text: string;
+			readonly evidence: EvidenceSource | null;
+	  }
+	/** A marker is there and unusable — the keyword drifted, or it names no source. */
+	| {readonly _tag: "Unusable"; readonly reason: string};
+
+/**
+ * Split the outside-diff evidence marker off a criterion's text.
+ *
+ * Wider than the conforming form on purpose, exactly as {@link reachesForBlock} is: a bracketed tail
+ * whose keyword is `evidence` in any case is *reaching for* this marker, so `[Evidence: …]` is a
+ * defect that gets named rather than a tail that silently stays prose. A bracketed tail whose
+ * keyword is anything else is ordinary text and is left alone.
+ */
+export const splitEvidence = (raw: string): EvidenceSplit => {
+	const comments = TRAILING_COMMENTS.exec(raw);
+	const suffix = comments?.[0] ?? "";
+	const head = suffix === "" ? raw : raw.slice(0, raw.length - suffix.length);
+	const tail = EVIDENCE_TAIL.exec(head.trimEnd());
+	if (tail === null) return {_tag: "Split", text: raw, evidence: null};
+	const keyword = tail[1] ?? "";
+	if (keyword.toLowerCase() !== EVIDENCE_KEYWORD) return {_tag: "Split", text: raw, evidence: null};
+	if (keyword !== EVIDENCE_KEYWORD) {
+		return {
+			_tag: "Unusable",
+			reason: `the outside-diff evidence marker's keyword has drifted — "${keyword}", expected "${EVIDENCE_KEYWORD}"`,
+		};
+	}
+	const source = evidenceSource(tail[2] ?? "");
+	if (source === null) {
+		return {
+			_tag: "Unusable",
+			reason: `the outside-diff evidence marker names no source — "[${EVIDENCE_KEYWORD}: <where the proof lives>]" is the grammar`,
+		};
+	}
+	const trimmed = head.trimEnd();
+	return {
+		_tag: "Split",
+		text: `${trimmed.slice(0, trimmed.length - (tail[0] ?? "").length).trimEnd()}${suffix.trimEnd()}`,
+		evidence: source,
+	};
+};
+
+/**
+ * A criterion's text with its evidence marker removed, or unchanged where it carries none.
+ *
+ * For a caller holding raw criterion bytes it did not read through this module — `review append`'s
+ * read-back compares what it sent against what the reader answered, and the reader has already split
+ * the marker off.
+ */
+export const withoutEvidenceMarker = (raw: string): string => {
+	const split = splitEvidence(raw);
+	return split._tag === "Split" ? split.text : raw;
+};
+
+/** Compose one criterion's line text: what it says, then its marker where it carries one. */
+export const renderCriterionText = ({text, evidence}: AcceptanceCriterion): string =>
+	evidence === null ? text : `${text} [${EVIDENCE_KEYWORD}: ${evidence}]`;
 
 export type AcceptanceCriteriaRead = WireRead<NonEmptyReadonlyArray<AcceptanceCriterion>>;
 
@@ -60,7 +177,7 @@ export type AcceptanceCriteriaRead = WireRead<NonEmptyReadonlyArray<AcceptanceCr
  *
  * A criterion's *text* cannot locate its own lines once it wraps: the text is the joined sentence
  * while the checkbox line carries only its first segment, so a caller matching one against the
- * other finds nothing and reads that as "no such row" (#5716). Anything writing beside a criterion
+ * other finds nothing and reads that as "no such row". Anything writing beside a criterion
  * takes the span from here instead of re-deriving the wrapping rule at the call site.
  */
 export interface CriterionSpan {
@@ -112,7 +229,7 @@ const DETAILS_CLOSE = /^[ \t]*<\/details>[ \t]*$/;
 /**
  * A line that opens a GFM block of its own beside the item — a plain bullet, an ordered-list marker,
  * a blockquote, or a thematic break. Each leaves the item's paragraph in the render exactly as the
- * next checkbox item does, so each closes the open criterion here (#5596). Tested after
+ * next checkbox item does, so each closes the open criterion here. Tested after
  * {@link CHECKBOX_ITEM}, which owns the task-list forms this would otherwise swallow.
  */
 const BLOCK_STARTER =
@@ -174,7 +291,7 @@ export interface RegionLine {
  * `authored region + marker + preserved original`, and the preserved original is kept verbatim
  * inside a `<details>` block — so a legacy `## Acceptance criteria` buried there used to be a
  * candidate, and the composed body read `Malformed` (drifted heading) or `Malformed` (two
- * conforming headings) over an authored block that was clean (#5852). A collapsed block is an
+ * conforming headings) over an authored block that was clean. A collapsed block is an
  * appendix, never the contract: it renders folded shut, so nothing a grader must read lives in it.
  * Skipping it here rather than at compose time is what covers the bodies already wrapped — the
  * board's whole enriched corpus — and not only the ones wrapped from now on.
@@ -249,7 +366,7 @@ const driftReason = (heading: Heading): string => {
  *
  * A `<details>` opener ends the section for the same reason {@link scanHeadings} skips inside one:
  * the collapsed block is an appendix. Without it, a preserved original that opens on checkbox lines
- * before its first heading has them read back as criteria the author never wrote (#5852).
+ * before its first heading has them read back as criteria the author never wrote.
  *
  * Exported for `triage repair-criteria`, which rewrites item shape inside exactly the extent this
  * reader grades — the same reason {@link scanHeadings} is exported.
@@ -281,7 +398,7 @@ export const sectionOf = (
  * A criterion that wraps onto a second physical line is still *one* criterion: GitHub's own `gfm`
  * render puts both lines inside one `<li class="task-list-item">`, joined by a `<br>`. A reader
  * that kept only line one therefore handed every grader a shorter contract than the author wrote,
- * and said nothing about it — which is the defect this rule closes (#5572). The loss landed on the
+ * and said nothing about it — which is the defect this rule closes. The loss landed on the
  * qualifiers and the "must not" clauses, because those are the half of a criterion that wraps.
  *
  * A line closes the open criterion when the CommonMark render also treats it as leaving the item's
@@ -293,7 +410,7 @@ export const sectionOf = (
  * 3. a fence delimiter, and every line inside the fence it opens,
  * 4. any other line that opens a block of its own — a plain bullet, an ordered-list marker, a
  *    blockquote, a thematic break ({@link BLOCK_STARTER}). Joining those swallowed a sibling block's
- *    prose into the contract, the same defect pointing the other way (#5596),
+ *    prose into the contract, the same defect pointing the other way,
  * 5. the heading that ends the section — {@link sectionOf} already cuts there, so the loop ends.
  *
  * Only a line that continues the item's own paragraph — the wrap this rule exists for — is appended.
@@ -331,10 +448,11 @@ const malformed = (reason: string, evidence: string): WireMalformed => ({
  * {@link read} is this answer with the spans dropped, so there is one scanner and one wrapping rule
  * for both — a second one would be a second definition of "criterion".
  *
- * Which block is served when a body carries more than one is ADR 0326's rules 3–5: the **last**
- * conforming block is the contract, because amend-never-rewrite appends a re-scope below the
- * original; a candidate that misses the spelling *below* the served block is `Malformed` rather than
- * dropped, and one above it stays dropped. The selection lives here and nowhere else (ADR 0241).
+ * Which block is served when a body carries more than one: the **last** conforming block is the
+ * contract, because amend-never-rewrite appends a re-scope below the original; a candidate that
+ * misses the spelling *below* the served block is `Malformed` rather than dropped, and one above it
+ * stays dropped. The selection lives here and nowhere else, because a second copy of it is a second
+ * answer to "which block is the contract".
  *
  * `Found` is unreachable with zero criteria — the only `return` that produces it is guarded by the
  * emptiness check below and the type would reject it regardless.
@@ -372,24 +490,36 @@ export const readSpans = (body: string): AcceptanceCriteriaSpans => {
 	const criteria: CriterionSpan[] = [];
 	let open: OpenCriterion | null = null;
 	let openFence: string | null = null;
-	const close = (): void => {
-		if (open === null) return;
-		const text = criterionText(joinContinuations(open.parts));
+	// `close` answers the unusable evidence marker rather than recording it, so every one of its call
+	// sites below refuses where the defect is found. A flag set inside the closure would be a second
+	// state to keep in step with `open`, and the walk has enough of those.
+	const close = (): WireMalformed | null => {
+		if (open === null) return null;
+		const joined = joinContinuations(open.parts);
+		const split = splitEvidence(joined);
+		if (split._tag === "Unusable") {
+			const at = `line ${open.firstLine + 1}: "${joined}"`;
+			open = null;
+			return malformed(split.reason, at);
+		}
+		const text = criterionText(split.text);
 		if (text !== null) {
 			criteria.push({
-				criterion: {text, checked: open.checked},
+				criterion: {text, checked: open.checked, evidence: split.evidence},
 				firstLine: open.firstLine,
 				lastLine: open.lastLine,
 			});
 		}
 		open = null;
+		return null;
 	};
 
 	for (const [offset, line] of sectionOf(lines, heading).entries()) {
 		const at = heading.line + offset;
 		const item = CHECKBOX_ITEM.exec(line);
 		if (item !== null) {
-			close();
+			const closed = close();
+			if (closed !== null) return closed;
 			const text = criterionText(item[2] ?? "");
 			if (text === null) {
 				return malformed(
@@ -411,11 +541,13 @@ export const readSpans = (body: string): AcceptanceCriteriaSpans => {
 			const marker = fence[1] ?? "";
 			if (openFence === null) openFence = marker;
 			else if (openFence === marker) openFence = null;
-			close();
+			const closed = close();
+			if (closed !== null) return closed;
 			continue;
 		}
 		if (openFence !== null || line.trim() === "" || BLOCK_STARTER.test(line)) {
-			close();
+			const closed = close();
+			if (closed !== null) return closed;
 			continue;
 		}
 		if (open !== null) {
@@ -423,7 +555,8 @@ export const readSpans = (body: string): AcceptanceCriteriaSpans => {
 			open.lastLine = at;
 		}
 	}
-	close();
+	const closed = close();
+	if (closed !== null) return closed;
 
 	const [head, ...rest] = criteria;
 	if (head === undefined) {
@@ -443,9 +576,11 @@ export const read = (body: string): AcceptanceCriteriaRead => {
 	return {_tag: "Found", value: [head.criterion, ...rest.map((span) => span.criterion)]};
 };
 
-/** Compose criteria into the block's bytes. Round-trips through {@link read}. */
+/** Compose criteria into the block's bytes. Round-trips through {@link read}, marker included. */
 export const emit = (criteria: NonEmptyReadonlyArray<AcceptanceCriterion>): string => {
-	const items = criteria.map(({checked, text}) => `- [${checked ? "x" : " "}] ${text}`);
+	const items = criteria.map(
+		(criterion) => `- [${criterion.checked ? "x" : " "}] ${renderCriterionText(criterion)}`,
+	);
 	return `${"#".repeat(HEADING_LEVEL)} ${HEADING_TEXT}\n\n${items.join("\n")}\n`;
 };
 
@@ -467,14 +602,22 @@ export const parseFields = (fields: string): AcceptanceFields => {
 		const line = raw.trim();
 		if (line === "") continue;
 		const match = FIELD_LINE.exec(line);
-		const text = criterionText(match?.[2] ?? "");
+		const split = splitEvidence(match?.[2] ?? "");
+		if (split._tag === "Unusable") {
+			return {_tag: "Unusable", reason: `line ${index + 1}: ${split.reason} — "${line}"`};
+		}
+		const text = criterionText(split.text);
 		if (text === null) {
 			return {
 				_tag: "Unusable",
 				reason: `line ${index + 1} carries a checkbox marker and no criterion text: "${line}"`,
 			};
 		}
-		criteria.push({text, checked: (match?.[1] ?? " ").toLowerCase() === "x"});
+		criteria.push({
+			text,
+			checked: (match?.[1] ?? " ").toLowerCase() === "x",
+			evidence: split.evidence,
+		});
 	}
 	const [head, ...rest] = criteria;
 	if (head === undefined) {
@@ -483,13 +626,21 @@ export const parseFields = (fields: string): AcceptanceFields => {
 	return {_tag: "Fields", criteria: [head, ...rest]};
 };
 
-/** One `<state>\t<text>` line per criterion — the `wire read` answer for this format. */
+/**
+ * One `<state>\t<text>` line per criterion — the `wire read` answer for this format — with a third
+ * `\t<evidence source>` column on a marked criterion and none on an unmarked one.
+ *
+ * The column is conditional rather than a placeholder on every row because the marker is rare and
+ * the two-column row is what every reader of this answer already parses: a placeholder would put a
+ * literal in the evidence position of rows that have no evidence, which is the shape a consumer
+ * reads as "the evidence is `-`".
+ */
 export const renderCriteria = (
 	criteria: NonEmptyReadonlyArray<AcceptanceCriterion>,
 ): NonEmptyReadonlyArray<string> => {
 	const [head, ...rest] = criteria;
-	const line = ({checked, text}: AcceptanceCriterion): string =>
-		`${checked ? "checked" : "open"}\t${text}`;
+	const line = ({checked, text, evidence}: AcceptanceCriterion): string =>
+		`${checked ? "checked" : "open"}\t${text}${evidence === null ? "" : `\t${evidence}`}`;
 	return [line(head), ...rest.map(line)];
 };
 

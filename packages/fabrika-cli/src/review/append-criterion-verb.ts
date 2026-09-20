@@ -1,21 +1,32 @@
 /**
- * `review append-criterion` — append one reviewer-authored acceptance criterion under ADR 0079's
+ * `review append-criterion` — append one reviewer-authored acceptance criterion under
  * four fences.
  *
  * The fences run in this order and each is a refusal, never a warning:
  *
- * 1. **ACL-gated, fail-closed** (ADR 0055) — below `write`, or *any* ACL lookup failure, refuses on
+ * 1. **ACL-gated, fail-closed** — below `write`, or *any* ACL lookup failure, refuses on
  *    `14`. Authority comes from the ACL check, never from the text being plausible.
  * 2. **Append-only** — the new body is the old plus exactly one row, proven by a diff guard before
  *    the PATCH is sent (`./append.ts`).
- * 3. **Frozen at ADR 0079's round K**, read from `../retry-budget.ts`'s `CAP_ROUND` — at or past
+ * 3. **Frozen at round K**, read from `../retry-budget.ts`'s `CAP_ROUND` — at or past
  *    the freeze the verb posts the escalation comment and appends nothing. Append-rate stays
- *    bounded by fix-rate; a finding raised at the freeze routes to a human.
+ *    bounded by fix-rate: the finding never becomes a graded criterion. It is not thereby lost —
+ *    the comment carries `./append.ts`'s escalation tag, and `build verdicts` folds it into the
+ *    next repair round's findings, so the round reads it without a driver hand-writing a pointer
+ *    into a spawn prompt. A human is reached only where the round budget is spent, which is
+ *    the repair loop's own escalation and not this fence's.
  * 4. **In-scope-only is the caller's** — the trace-to-stated-goal test is judgment. What this verb
  *    contributes is the provenance tag, which is what makes a routed row auditable afterwards.
  *
  * v1's `reviewer-append-ac.sh` was mandated at four call sites and called at none — a first-class
  * verb is the difference between a fence and a fence description.
+ *
+ * **The subject is a PR or a commit range, and the fences do not move between them.** An epic child
+ * has no pull request mid-run, so `--base`/`--tip` name what the round was judged over exactly as
+ * they do for `review post`; all four fences run on that form unchanged, and the only
+ * thing that differs is what the provenance tag can name (`./append.ts`).
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9058#issuecomment-5625309255
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -25,16 +36,26 @@ import type {StdinRead} from "../io/stdin.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
-import {appendOnly, criterionRow, grewByOne, insertAfterLastCriterion} from "./append.ts";
+import {
+	appendOnly,
+	type CriterionProvenance,
+	criterionRow,
+	escalationTag,
+	grewByOne,
+	insertAfterLastCriterion,
+	provenanceSubject,
+} from "./append.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
 import {
 	ACL_DENIED,
 	APPEND_ONLY,
+	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
+import {readRangeFlags} from "./range-flags.ts";
 import {badNumber, resolveTargetRepo} from "./target.ts";
 
 const VERB = "review append-criterion";
@@ -52,7 +73,9 @@ const SURFACE: AuthoredSurface = {
 
 export interface AppendCriterionOptions {
 	readonly issue: number;
-	readonly pr: number;
+	readonly pr: number | null;
+	readonly base: string | null;
+	readonly tip: string | null;
 	readonly round: number;
 	readonly repo: string | null;
 	readonly json: boolean;
@@ -60,24 +83,65 @@ export interface AppendCriterionOptions {
 	readonly stdin: Effect.Effect<StdinRead>;
 }
 
+type SubjectRead =
+	| {readonly _tag: "Subject"; readonly provenance: CriterionProvenance}
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+/**
+ * Which subject these flags name, or the refusal that says why they name none.
+ *
+ * `--pr` and a range are alternatives, never a pair: a row tagged with both would claim two
+ * different things about where the finding came from, and a caller that passed the epic's tail PR
+ * beside the range it actually read would get the plausible-but-wrong tag written silently.
+ */
+const readSubject = (options: AppendCriterionOptions): SubjectRead => {
+	const ranged = readRangeFlags(VERB, {base: options.base, tip: options.tip, sha: null});
+	if (ranged._tag === "Refused") return ranged;
+	if (ranged._tag === "Ranged") {
+		return options.pr === null
+			? {_tag: "Subject", provenance: {_tag: "Ranged", range: ranged.range}}
+			: {
+					_tag: "Refused",
+					outcome: refuse(
+						OFF_VOCABULARY,
+						`${VERB}: --pr does not combine with --base/--tip — a round is judged over one subject, and the tag names it.`,
+					),
+				};
+	}
+	if (options.pr === null) {
+		return {
+			_tag: "Refused",
+			outcome: refuse(
+				OFF_VOCABULARY,
+				`${VERB}: name the subject the round was judged over — --pr on a pull request, --base/--tip on an epic child's range.`,
+			),
+		};
+	}
+	const bad = badNumber(VERB, "a pull-request number", options.pr);
+	return bad !== null
+		? {_tag: "Refused", outcome: bad}
+		: {_tag: "Subject", provenance: {_tag: "Pull", pr: options.pr}};
+};
+
 const unreadable = (what: string, reason: string): VerbOutcome =>
 	refuse(PRECONDITION_UNKNOWN, `${VERB}: cannot read ${what}: ${reason} — nothing was written.`);
 
 const aclRefusal = (repo: string): VerbOutcome =>
 	refuse(
 		ACL_DENIED,
-		`${VERB}: token resolves below write on ${repo}, or the ACL could not be read — refusing the append (ADR 0055, fail-closed).`,
+		`${VERB}: token resolves below write on ${repo}, or the ACL could not be read — refusing the append (fail-closed).`,
 	);
 
 export const runAppendCriterion = (
 	options: AppendCriterionOptions,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const {issue, pr, round, json} = options;
+		const {issue, round, json} = options;
 		const badIssue = badNumber(VERB, "an issue number", issue);
 		if (badIssue !== null) return badIssue;
-		const badPr = badNumber(VERB, "a pull-request number", pr);
-		if (badPr !== null) return badPr;
+		const subject = readSubject(options);
+		if (subject._tag === "Refused") return subject.outcome;
+		const provenance = subject.provenance;
 		const badRound = badNumber(VERB, "a review round", round);
 		if (badRound !== null) return badRound;
 
@@ -127,12 +191,13 @@ export const runAppendCriterion = (
 		const before = block.value;
 
 		// Fence 3 — frozen at the cap round. The escalation lands and the AC does not; both are exit-0
-		// answers, discriminated by the stdout token.
+		// answers, discriminated by the stdout token. The tag is what a later round finds the comment
+		// by: the prose around it is for the human who opens the issue, and no reader parses it.
 		if (round >= CAP_ROUND) {
 			const escalated = yield* createComment(
 				repo,
 				issue,
-				`review append-criterion: a finding from PR #${pr}'s round ${round} was NOT appended — the acceptance-criteria fence is frozen at round ${CAP_ROUND} (ADR 0079). Routing it to a human instead.\n\n${authored.text}`,
+				`review append-criterion: a finding from ${provenanceSubject(provenance)}'s round ${round} was NOT appended — the acceptance-criteria fence is frozen at round ${CAP_ROUND}, so it never became a graded criterion. It is on record here: \`build verdicts\` folds it into the next repair round's findings, so that round repairs it without becoming answerable for it. A human is asked only once the round budget is spent.\n\n${authored.text}\n\n${escalationTag(provenance, round)}`,
 			);
 			if (escalated._tag === "Failure") {
 				return refuse(
@@ -158,8 +223,8 @@ export const runAppendCriterion = (
 		// Fence 2 — append-only, proven twice before anything is sent: against the old bytes, and
 		// against what the registered format reads back out of the composed body. The three ways it
 		// can fail refuse on the same code and say different things: one refusal covering all three
-		// left a caller unable to tell a fence hit from an anchor the verb never found (#5716).
-		const row = criterionRow(authored.text, pr, round);
+		// left a caller unable to tell a fence hit from an anchor the verb never found.
+		const row = criterionRow(authored.text, provenance, round);
 		const composition = insertAfterLastCriterion(target.value.body, row);
 		if (composition._tag === "NoAnchor") {
 			return refuse(

@@ -5,19 +5,27 @@
  * dispose Subs, flush, refuse later dispatches — is the host's shutdown protocol registered as the
  * actor's Scope finalizer (`make` in `../host/actor.ts`); this slice only closes the Scope, and a
  * parent's close reaches every descendant because `Scope.fork` closes children with the parent.
+ *
+ * `remove` is stop's durable counterpart (#9446): the founder ruled that removing a process forgets
+ * it and its descendants for good, so it drops the checkpoint first and closes the Scope second.
+ * That order is the whole guarantee — a Scope closed ahead of a failed manifest write would leave a
+ * process gone from the table and still queued for the next `restore`, which is the half-forgotten
+ * state this exists to make unwritable.
  */
 
 import {randomUUID} from "node:crypto";
 import type {Cmd, Store, Sub, Subscribe} from "@demlik/tea";
-import {Context, Effect, Exit, Layer, Option, PubSub, Scope, Stream} from "effect";
+import {Context, Effect, Exit, Layer, Option, PubSub, Scope, Semaphore, Stream} from "effect";
 import {Checkpoints, type OpenError} from "../durability/Checkpoints.ts";
 import {type ActorHandle, make as makeActor} from "../host/actor.ts";
 import type {ActorDefinition, CoreMachine, Dispatch} from "../host/definition.ts";
 import {subscribeDisposerBridge} from "../host/demlik-bridges.ts";
+import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import type {ProgramNotFound} from "../registry/errors.ts";
 import type {AnyProgram, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
-import {HandlerFailed, ProcessNotFound} from "./errors.ts";
+import {ForgetRefused, HandlerFailed, ProcessIsPlanned, ProcessNotFound} from "./errors.ts";
+import {PlannedProcesses} from "./PlannedProcesses.ts";
 import {ProcessTable} from "./ProcessTable.ts";
 import {
 	type Lifecycle,
@@ -26,15 +34,27 @@ import {
 	type ProcessHandle,
 	ProcessId,
 	type ProcessRow,
+	type StateSummary,
 } from "./process.ts";
 import {ProcessSelf} from "./self.ts";
+import {
+	latching,
+	noSelfReport,
+	type SelfReport,
+	type SelfReportPort,
+	seedSelfReport,
+	TITLE_PORT,
+} from "./self-report.ts";
 
 export interface SpawnOptions {
 	readonly parent?: ProcessId;
 	/** Restore's: the id the process was checkpointed under. A fresh spawn mints its own. */
 	readonly id?: ProcessId;
 	/**
-	 * Provided to this process's handlers: the services its program's `R` names, per process.
+	 * Exactly what this process's handlers resolve: the services its program's `R` names, per
+	 * process. Not a floor — a handler is sealed to this set, so a service the fiber that
+	 * dispatched holds and this set does not is not resolvable inside the handler (#7972). A
+	 * spawner that wants to pass its own context on says so, the way `shell/picker/open.ts` does.
 	 * Never optional — a spawner with nothing to give says so with `Context.empty()`. Omission
 	 * used to be silent, and `restore` took it, so a restored process's first handler died on a
 	 * missing service one boot later (#7789).
@@ -49,6 +69,12 @@ export interface SpawnOptions {
  */
 export type SpawnError = ProgramNotFound | ProcessNotFound | OpenError | HandlerFailed;
 
+/**
+ * Every way a `remove` refuses, and each one leaves the process exactly as it found it: unknown to
+ * the table, declared by the config graph, or durably un-forgettable.
+ */
+export type RemoveError = ProcessNotFound | ProcessIsPlanned | ForgetRefused;
+
 export class Processes extends Context.Service<
 	Processes,
 	{
@@ -57,6 +83,14 @@ export class Processes extends Context.Service<
 			options: SpawnOptions,
 		) => Effect.Effect<ProcessHandle, SpawnError>;
 		readonly stop: (id: ProcessId) => Effect.Effect<void, ProcessNotFound>;
+		/**
+		 * Forget the process durably, then stop it — the desk's `remove` and the authored `stop`
+		 * effect's one operation. Its subtree goes with it both ways: the checkpoint's descendants are
+		 * dropped by `Checkpoints.forget`, and the live ones by the Scope close. A process the config
+		 * graph declares is refused outright, and so is one whose durable write fails; in both cases
+		 * the process is still running and still in the manifest when the failure arrives.
+		 */
+		readonly remove: (id: ProcessId) => Effect.Effect<void, RemoveError>;
 		/**
 		 * The live handle for one id, or none. `ProcessTable.get` answers with the public row; this
 		 * answers with the thing that can be dispatched into, which is what the shell's `forwardKey`
@@ -70,8 +104,11 @@ export class Processes extends Context.Service<
 	 * `Processes` and `ProcessTable` over one map. The layer's Scope is the root every root process
 	 * forks from, so closing the layer stops every process (`LLMS.md` "Writing Effect services").
 	 */
-	static readonly layer: Layer.Layer<Processes | ProcessTable, never, Registry | Checkpoints> =
-		Layer.effectContext(makeServices());
+	static readonly layer: Layer.Layer<
+		Processes | ProcessTable | PlannedProcesses,
+		never,
+		Registry | Checkpoints
+	> = Layer.effectContext(makeServices());
 }
 
 interface Entry {
@@ -112,6 +149,40 @@ type ErasedDefinition = ActorDefinition<
 	ErasedSubscribe
 >;
 
+/**
+ * Every key effect keeps its own runtime under is namespaced `effect/…` — the clock, the scheduler
+ * and its yield knobs, the loggers and log level, the tracer and its parent span, and `Scope`
+ * (rc.112: `Context.Reference("effect/Clock")` and friends in `src/internal/effect.ts`,
+ * `src/Scheduler.ts`, `src/Tracer.ts`, `src/Scope.ts`). Tuval's own services are namespaced
+ * `tuval/…` by `Context.Service`, so the prefix is the line between "what a spawner grants" and
+ * "how the fiber runs".
+ */
+const EFFECT_RUNTIME_PREFIX = "effect/";
+
+/**
+ * The seal: a handler resolves exactly the set its spawn was given, never that set merged over
+ * whatever the fiber that dispatched happened to carry (#7972). `Effect.provideContext` is
+ * `updateContext(self, Context.merge(context))` (rc.112, `src/internal/effect.ts:2197`), which
+ * makes the spawn set a floor; `Effect.updateContext` sets the fiber context outright at the same
+ * seam and restores it on exit (rc.112, `src/internal/effect.ts:2073`).
+ *
+ * effect's own runtime rides through, because `FiberImpl.setContext` re-derives the scheduler,
+ * clock, log level, stack frame, tracer and parent span from the context on every replace (rc.112,
+ * `src/internal/effect.ts:709`): dropping those would silently reset a handler's clock and logger
+ * to the process defaults, and would take a sub handler's `Scope` — the one the host forks for it
+ * (`../host/actor.ts`) — with them. Everything the runtime does not own is the spawn set's alone.
+ */
+const sealed =
+	(services: Context.Context<never>) =>
+	<A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+		Effect.updateContext(self, (ambient: Context.Context<R>) => {
+			const runtime = new Map<string, unknown>();
+			for (const [key, value] of ambient.mapUnsafe) {
+				if (key.startsWith(EFFECT_RUNTIME_PREFIX)) runtime.set(key, value);
+			}
+			return Context.merge(Context.makeUnsafe<R>(runtime), services);
+		});
+
 const toDefinition = (
 	program: AnyProgram,
 	store: Store<unknown>,
@@ -131,7 +202,7 @@ const toDefinition = (
 				Effect.mapError(
 					(cause) => new HandlerFailed({programId: program.id, cmdType: cmd.type, cause}),
 				),
-				Effect.provideContext(services),
+				sealed(services),
 			);
 	}
 	// Kept for the erasure, not for `subFailure` — the row's own type carries the policy now
@@ -158,7 +229,7 @@ const toDefinition = (
 				Effect.mapError(
 					(cause) => new HandlerFailed({programId: program.id, cmdType: sub.type, cause}),
 				),
-				Effect.provideContext(services),
+				sealed(services),
 			);
 	}
 	return {
@@ -168,6 +239,7 @@ const toDefinition = (
 		name: program.id,
 		machine: core,
 		store,
+		...(program.checkpointWorthy === undefined ? {} : {checkpointWorthy: program.checkpointWorthy}),
 		ctx: {},
 		interpret: handlers,
 		subscribe,
@@ -181,6 +253,9 @@ function makeServices() {
 		const checkpoints = yield* Checkpoints;
 		const root = yield* Effect.scope;
 		const live = new Map<ProcessId, Entry>();
+		// The graph-declared ids, written by `launch` through `PlannedProcesses` and read by `remove`
+		// off this same set — the way `ProcessTable` reads the map above.
+		const planned = new Set<ProcessId>();
 		const changes = yield* PubSub.unbounded<ProcessChange>();
 		yield* Scope.addFinalizer(root, PubSub.shutdown(changes));
 		const publish = (change: ProcessChange) => Effect.asVoid(PubSub.publish(changes, change));
@@ -202,18 +277,40 @@ function makeServices() {
 			const scope = yield* Scope.fork(parent?.scope ?? root);
 			let lifecycle: Lifecycle = "running";
 			let revision = 0;
+			let report = noSelfReport;
 			// Assigned once the actor is up; a commit before then (boot's own) is not the row's.
 			let row: ProcessRow | undefined;
 			// Read late on purpose: the definition that closes over this is built before the actor
 			// exists, and a handler only ever calls it once the actor is running.
 			let readState: () => unknown = () => undefined;
-			// What handlers actually get: the spawner's context plus this process's own `ProcessSelf`.
-			// Never `options.services` directly — spawn is the one place `ProcessSelf` is provided, so
-			// no caller and no `restore` has to know it exists (#7603).
-			const handlerServices = Context.add(options.services, ProcessSelf, {
+			// What handlers actually get, and under the seal it is all they get: the spawner's set
+			// plus this process's own `ProcessSelf`. Never `options.services` directly — spawn is the
+			// one place `ProcessSelf` is provided, so no caller and no `restore` has to know it
+			// exists (#7603), and `id` rides along here for the same reason: every spawn path — the
+			// graph's launcher, the picker, an ad-hoc spawn, a restore — mints or carries the id at
+			// this one call, so a handler's `self` is a free read on all four (#8757). The spawner's
+			// `Scope` is dropped on the way in: a spawner that passes its whole context on carries
+			// one, and the seal would let it beat the Scope the host forks for a sub handler. A
+			// handler that wants this process's own reads `ProcessSelf`.
+			const granted = Context.add(Context.omit(Scope.Scope)(options.services), ProcessSelf, {
+				id,
 				scope,
 				state: () => readState(),
 			});
+			// The latch is the kernel's, so it wraps whichever `ProcessPorts` the spawner bound — the
+			// graph's wiring, an ad-hoc spawn's latches, or `unwired` — and `title@1`/`status@1` read
+			// back the same on all three (`./self-report.ts`). A spawner that bound none has nothing to
+			// wrap: that process cannot emit at all.
+			const spawnerPorts = Context.getOption(granted, ProcessPorts);
+			const record = (port: SelfReportPort, line: string) => {
+				report =
+					port === TITLE_PORT
+						? {...report, title: Option.some(line)}
+						: {...report, status: Option.some(line)};
+			};
+			const handlerServices = Option.isNone(spawnerPorts)
+				? granted
+				: Context.add(granted, ProcessPorts, latching(program, spawnerPorts.value, record));
 
 			yield* Scope.addFinalizer(
 				scope,
@@ -235,6 +332,8 @@ function makeServices() {
 					programId,
 					parentId,
 					version: program.identity.version,
+					...(program.migrations === undefined ? {} : {migrations: program.migrations}),
+					...(program.restorable === undefined ? {} : {restorable: program.restorable}),
 				});
 				return yield* makeActor(toDefinition(program, checkpoint.store, handlerServices, onCommit));
 			}).pipe(
@@ -242,6 +341,12 @@ function makeServices() {
 				Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))),
 			);
 			readState = actor.getState;
+			// The latch only ever records what this process emitted, and a restored one emits nothing:
+			// a rehydrating `init` may answer no Cmds and the authored `update` publishes a derived
+			// line only on the transition that moves it, so a stable title would read back as absent
+			// forever (#8812). Seeding it off the state the actor actually booted on covers both arms
+			// at once — a fresh boot's `init` derives the same lines from that same state.
+			seedSelfReport(program, actor.getState(), record);
 			yield* Scope.addFinalizer(
 				scope,
 				Effect.sync(() => {
@@ -249,19 +354,27 @@ function makeServices() {
 				}),
 			);
 
-			row = {
-				id,
-				programId,
-				parentId,
-				ports: program.ports,
-				stateSummary: () => ({lifecycle, revision, state: actor.getState()}),
-			};
+			const stateSummary = (): StateSummary => ({lifecycle, revision, state: actor.getState()});
+			const selfReport = (): SelfReport => report;
+			row = {id, programId, parentId, ports: program.ports, stateSummary, selfReport};
+			// Every fold this process is asked for from outside runs alone, so a summary read beside
+			// one is that fold's and not a later one's. The actor's own tail serialises the transition
+			// but releases before `dispatch` waits out the follow-ups, which is the window a caller
+			// reading state after its dispatch used to lose its Msg's answer in (#8274).
+			const folds = yield* Semaphore.make(1);
 			const handle: ProcessHandle = {
 				id,
 				programId,
 				parentId: row.parentId,
 				scope,
-				dispatch: actor.dispatch,
+				dispatch: (msg) => folds.withPermits(1)(actor.dispatch(msg)),
+				dispatchFolded: (msg) =>
+					folds.withPermits(1)(
+						Effect.map(Effect.exit(actor.dispatch(msg)), (settled) => ({
+							settled,
+							summary: stateSummary(),
+						})),
+					),
 				getState: actor.getState,
 				stop: Scope.close(scope, Exit.void),
 			};
@@ -275,6 +388,16 @@ function makeServices() {
 			yield* Scope.close(entry.scope, Exit.void);
 		});
 
+		const remove = Effect.fn("Tuval.Processes.remove")(function* (id: ProcessId) {
+			const entry = yield* lookup(id);
+			if (planned.has(id)) return yield* new ProcessIsPlanned({id});
+			// Durable half first, and nothing is closed until it has landed. The refusal carries the
+			// store's own failure so a caller can say why, and says in its own message that the
+			// process it names is still running.
+			yield* Effect.mapError(checkpoints.forget(id), (cause) => new ForgetRefused({id, cause}));
+			yield* Scope.close(entry.scope, Exit.void);
+		});
+
 		const table = ProcessTable.of({
 			list: Effect.sync(() => [...live.values()].map((entry) => entry.row)),
 			get: (id) => Effect.map(lookup(id), (entry) => entry.row),
@@ -284,8 +407,15 @@ function makeServices() {
 		const handleOf = (id: ProcessId) =>
 			Effect.sync(() => Option.fromNullishOr(live.get(id)?.handle));
 
-		return Context.make(Processes, {spawn, stop, handle: handleOf}).pipe(
+		return Context.make(Processes, {spawn, stop, remove, handle: handleOf}).pipe(
 			Context.add(ProcessTable, table),
+			Context.add(PlannedProcesses, {
+				declare: (ids) =>
+					Effect.sync(() => {
+						for (const id of ids) planned.add(id);
+					}),
+				isPlanned: (id) => Effect.sync(() => planned.has(id)),
+			}),
 		);
 	});
 }

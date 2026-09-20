@@ -1,7 +1,7 @@
 /**
  * Reading one task's leaf state out of `lane status`'s answer.
  *
- * The recipe verb relays the lane's own fold rather than re-folding the log itself (ADR 0228), so
+ * The recipe verb relays the lane's own fold rather than re-folding the log itself, so
  * what it holds is the status verb's stdout — a `stateValue` that is either a bare terminal name or
  * `{phase: {task: leaf}}` with future phases as the string `"waiting"`. Turning that back into one
  * task's leaf is the only derivation this file does, and it is pure so the ambiguity cases are

@@ -1,5 +1,5 @@
 /**
- * The end-to-end half of the `NODE_PATH` containment rule (#5768), spawned because the defect only
+ * The end-to-end half of the `NODE_PATH` containment rule, spawned because the defect only
  * exists in a real process: `NODE_PATH` is baked into `Module.globalPaths` when a process loads, so
  * no in-test mutation reproduces it.
  *

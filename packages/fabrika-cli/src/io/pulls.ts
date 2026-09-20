@@ -1,7 +1,7 @@
 /**
  * The pull-request surface the `review` verbs read and write: one PR's metadata, its changed-file
- * list, its diff bytes, the check runs at a commit, the invoking token's identity and repository
- * permission, and the comment edit an upsert needs.
+ * list, its diff bytes, the paths that changed between two commits, the check runs at a commit, the
+ * invoking token's identity and repository permission, and the comment edit an upsert needs.
  *
  * The `issues.ts` disciplines hold here — every list read paged, absent split from unreadable
  * through {@link Existence}, and a shape that is not what was asked for treated as a failure rather
@@ -15,6 +15,7 @@
 import {Effect} from "effect";
 import {
 	type Api,
+	attemptOf,
 	authed,
 	authedExistence,
 	existenceOf,
@@ -29,6 +30,25 @@ import {
 import {type Attempt, fail, ok, type Shell} from "./git.ts";
 import type {Existence} from "./issues.ts";
 import {isRecord} from "./json.ts";
+
+/**
+ * Whether a PR can merge into its base, as three values rather than a boolean.
+ *
+ * GitHub computes `mergeable` lazily, so the single-PR GET returns `null` with
+ * `mergeable_state: "unknown"` while the background job runs. That is the platform declining to
+ * answer, and a two-valued type has nowhere to put it but the clean arm — which is the whole
+ * defect: a conflicting PR then reads as one nobody has to fix. `ship`'s landing verbs poll the
+ * same fact through `../ship/mergeability.ts`; a caller that only *reports* the state takes the one
+ * read this record already carries.
+ */
+export type PullMergeability = "mergeable" | "conflicting" | "unknown";
+
+/** The single-PR GET's `mergeable` / `mergeable_state` pair, judged. A `null` is `unknown`. */
+const mergeabilityOf = (value: Record<string, unknown>): PullMergeability => {
+	const state = typeof value.mergeable_state === "string" ? value.mergeable_state : "";
+	if (typeof value.mergeable !== "boolean" || state === "" || state === "unknown") return "unknown";
+	return value.mergeable ? "mergeable" : "conflicting";
+};
 
 export interface PullRecord {
 	readonly number: number;
@@ -45,9 +65,15 @@ export interface PullRecord {
 	readonly draft: boolean;
 	/** Merged is not derivable from `state`: a merged PR reads `closed` (`ship reconcile`'s `landed`). */
 	readonly merged: boolean;
+	/**
+	 * The commit the merge produced on the base branch, or `null` where the board published none —
+	 * an unmerged PR has one by construction, and a merged one can lack it while the platform is
+	 * still computing it. The evidence a `lane settle` landing names.
+	 */
+	readonly mergeCommitSha: string | null;
 	/** The base branch — whose queue regime, never this PR's history, decides `ship disarm`'s policy. */
 	readonly baseRef: string;
-	/** Whether a merge intent is currently parked on the PR (ADR 0198's armed state). */
+	/** Whether a merge intent is currently parked on the PR — the armed state `ship disarm` clears. */
 	readonly autoMerge: boolean;
 	/** The PR's author — the §CP cardinality table's `sole owner authored the PR` arm. */
 	readonly authorLogin: string;
@@ -55,6 +81,8 @@ export interface PullRecord {
 	readonly assignees: ReadonlyArray<string>;
 	/** The platform's own last-activity stamp — one operand of the strand age. */
 	readonly updatedAt: string;
+	/** Whether the PR can merge into its base, with the platform's uncomputed read kept as `unknown`. */
+	readonly mergeability: PullMergeability;
 }
 
 const toPullRecord = (value: unknown): PullRecord | null => {
@@ -73,6 +101,10 @@ const toPullRecord = (value: unknown): PullRecord | null => {
 		comments: typeof comments === "number" ? comments : 0,
 		draft: value.draft === true,
 		merged: value.merged === true,
+		mergeCommitSha:
+			typeof value.merge_commit_sha === "string" && value.merge_commit_sha !== ""
+				? value.merge_commit_sha
+				: null,
 		baseRef: isRecord(base) && typeof base.ref === "string" ? base.ref : "",
 		autoMerge: isRecord(value.auto_merge),
 		authorLogin: isRecord(user) && typeof user.login === "string" ? user.login : "",
@@ -82,6 +114,7 @@ const toPullRecord = (value: unknown): PullRecord | null => {
 				)
 			: [],
 		updatedAt: typeof value.updated_at === "string" ? value.updated_at : "",
+		mergeability: mergeabilityOf(value),
 	};
 };
 
@@ -101,11 +134,26 @@ export const getPullRequest = (repo: string, pr: number): Shell<Existence<PullRe
 	);
 
 /**
+ * GitHub's own ceiling on a pull request's `files` array: "Responses include a maximum of 3000
+ * files" ([REST, "List pull requests
+ * files"](https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#list-pull-requests-files)).
+ *
+ * The ceiling is reached through ordinary paging, and the last page's Link header ends as a
+ * complete read ends — so {@link listPullFiles}'s exhaustion proof holds over a list the platform
+ * has already truncated. That is why the ceiling is a named constant a caller checks rather than a
+ * case pagination catches.
+ */
+export const PULL_FILES_CAP = 3000;
+
+/**
  * Every changed path on the PR, paged.
  *
  * Read as typed JSON rather than through a `--jq .filename` projection: the count of entries is the
  * completeness proof, and a filter that errored mid-stream on one odd entry would shorten the list
  * silently — which is the truncation the caller is trying to detect.
+ *
+ * Exhaustion is this read's only completeness proof and it does not reach {@link PULL_FILES_CAP}:
+ * a caller that derives anything over the list owes that ceiling its own check.
  */
 export const listPullFiles = (repo: string, pr: number): Shell<Attempt<ReadonlyArray<string>>> =>
 	authed((token) =>
@@ -122,6 +170,90 @@ export const listPullFiles = (repo: string, pr: number): Shell<Attempt<ReadonlyA
 			}
 			return ok(files);
 		}),
+	);
+
+/**
+ * GitHub's own ceiling on a comparison's `files` array: "it includes up to 300 changed files for
+ * the entire comparison" ([REST, "Compare two
+ * commits"](https://docs.github.com/en/rest/commits/commits?apiVersion=2022-11-28#compare-two-commits)).
+ * The cap is over the whole comparison rather than per page, so paging past page one adds no file —
+ * it only drops the list, which the same paragraph says is served on page one alone.
+ */
+export const COMPARE_FILE_CAP = 300;
+
+/**
+ * How the two commits stand to each other, in the platform's own vocabulary
+ * ([REST, "Compare two
+ * commits"](https://docs.github.com/en/rest/commits/commits?apiVersion=2022-11-28#compare-two-commits)).
+ *
+ * `identical` and `ahead` are the two where `base` is an ancestor of `head`, and so the two where
+ * the served symmetric difference is also the branch range `base..head`.
+ */
+export type CompareStatus = "identical" | "ahead" | "behind" | "diverged";
+
+const COMPARE_STATUSES: ReadonlyArray<string> = ["identical", "ahead", "behind", "diverged"];
+
+/** A comparison's changed paths, beside the two facts that say what the list is a list of. */
+export interface CompareRead {
+	readonly files: ReadonlyArray<string>;
+	/**
+	 * Which range the served `files` actually describe.
+	 *
+	 * A caller asking for `base..head` gets that set only on `identical` or `ahead`; on `behind` or
+	 * `diverged` the same 200 carries the difference from the merge base instead, which can only be
+	 * a *subset* of what changed since `base`. Carrying the status is what lets that caller refuse
+	 * rather than read the narrower list as the wider one.
+	 */
+	readonly status: CompareStatus;
+	/**
+	 * True when the list reached {@link COMPARE_FILE_CAP}.
+	 *
+	 * The compare response declares no total, so a full list and a capped one are the same 300
+	 * entries and the caller cannot tell them apart. That is the whole reason this is a field rather
+	 * than a silent `length` check: a comparison of exactly 300 files reads as capped, which costs a
+	 * refusal nobody needed, and the alternative costs a derivation over unknown scope.
+	 */
+	readonly capped: boolean;
+}
+
+/**
+ * Every path that changed between two commits, with its completeness proof and its range proof.
+ *
+ * The platform serves a three-dot comparison — `base...head` is the symmetric difference from the
+ * merge base, not `git log base..head`. The two coincide only where `base` is an ancestor of
+ * `head`, which a branch is *not* guaranteed to be: a force-push leaves the abandoned head
+ * resolvable and diverged from the new one. So {@link CompareRead.status} rides beside the files,
+ * and a caller that meant `base..head` reads it before reading them.
+ */
+export const compareFiles = (
+	repo: string,
+	base: string,
+	head: string,
+): Shell<Attempt<CompareRead>> =>
+	authed((token) =>
+		restCall(token, {method: "GET", path: `repos/${repo}/compare/${base}...${head}`}).pipe(
+			Effect.map((outcome) =>
+				attemptOf(outcome, (body) => {
+					if (!isRecord(body) || !Array.isArray(body.files)) {
+						return fail("GitHub answered 200 but its output carries no comparison file list");
+					}
+					const files: string[] = [];
+					for (const value of body.files) {
+						if (!isRecord(value) || typeof value.filename !== "string") {
+							return fail("GitHub answered 200 but one comparison entry is not a changed file");
+						}
+						files.push(value.filename);
+					}
+					if (typeof body.status !== "string" || !COMPARE_STATUSES.includes(body.status)) {
+						return fail(
+							"GitHub answered 200 but its comparison declares no status, so which range its file list describes is unknown",
+						);
+					}
+					const status = body.status as CompareStatus;
+					return ok({files, status, capped: files.length >= COMPARE_FILE_CAP});
+				}),
+			),
+		),
 	);
 
 /** The unified diff bytes, served by the platform's diff media type. */
@@ -150,9 +282,9 @@ export interface CheckRun {
 	 * The check-run's `output.title`, which is how a run says *why* it concluded as it did.
 	 *
 	 * `null` for a run that published no output — most runs do not, and a title nobody wrote must not
-	 * read as an empty one. `ship floor --publish-check` writes a title per row of ADR 0318's table,
-	 * and `review/governance-owed.ts` reads that title back to tell a stale floor from an unresolved
-	 * one, which the name/status/conclusion triple cannot distinguish (#7441).
+	 * read as an empty one. `ship floor --publish-check` writes one title per floor outcome, and
+	 * `review/governance-owed.ts` reads that title back to tell a stale floor from an unresolved
+	 * one, which the name/status/conclusion triple cannot distinguish.
 	 */
 	readonly title: string | null;
 }
@@ -281,7 +413,7 @@ export const patchComment = (repo: string, id: number, body: string): Shell<Atte
  * fresh PR. A caller proving a PR traces to an issue reads each candidate's own record and its own
  * body; what this narrows is how many records that costs.
  *
- * **Why this survives #5850's retirement of the same read.** {@link pullsClosing} replaced it
+ * **Why this survives the retirement of the same read elsewhere.** {@link pullsClosing} replaced it
  * everywhere the question is "which PR closes this issue", and is authoritative there — an edge, not
  * an index, so it has no lag. It is built from closing keywords, so it cannot see a `Part of #N` PR
  * — the body shape `build --partial` emits for an epic child, and the normal shape for a lane task
@@ -319,7 +451,7 @@ export const searchOpenPulls = (
 /**
  * Which pull requests a caller counts. `open` is every caller that acts *on* a PR; `open-or-merged`
  * is the one that asks whether a PR reached the end of the merge queue, where the clearing case is a
- * merged and therefore closed PR (#6717).
+ * merged and therefore closed PR.
  */
 export type PullScope = "open" | "open-or-merged";
 
@@ -344,7 +476,7 @@ const CLOSERS_QUERY =
  *
  * v1 asked `search/issues` for `<issue> in:body`, which matches any prose quoting the number: a PR
  * closing a different issue but naming this one in a table came back as a candidate, and the
- * caller's several-hits refusal then parked a lane that had exactly one real PR (#5805). The edge
+ * caller's several-hits refusal then parked a lane that had exactly one real PR. The edge
  * read here is the one GitHub builds from a closing keyword, so a mention is not a hit and
  * "several" means what the caller needs it to mean — two PRs each declaring they close this issue.
  *
@@ -462,4 +594,157 @@ export const pullsForBranch = (
 			}
 			return ok(out);
 		}),
+	);
+
+/**
+ * One open pull request sitting on a base branch: exactly what judging its staleness and moving it
+ * needs, which is the number to address and the head to compare and to guard the write with.
+ */
+export interface BasePull {
+	readonly number: number;
+	readonly headSha: string;
+}
+
+/**
+ * Every OPEN pull request whose base ref is `base`, paged.
+ *
+ * The mirror of {@link pullsForBranch}, which asks the other question: that one takes a head and
+ * reads any state, because "what pull request does this work sit on" is often about a closed one.
+ * This one takes a base and reads open only — a closed pull request schedules nothing and a merged
+ * one has nothing left to run, so widening the state would hand a caller rows it must drop again.
+ */
+export const openPullsForBase = (
+	repo: string,
+	base: string,
+): Shell<Attempt<ReadonlyArray<BasePull>>> =>
+	authed((token) =>
+		Effect.gen(function* () {
+			const page = yield* pagedWithLinkProof(
+				token,
+				`repos/${repo}/pulls?state=open&base=${encodeURIComponent(base)}`,
+			);
+			if (page._tag === "Failure") return page;
+			if (!page.value.exhausted) {
+				return fail(`the open pull request list for base \`${base}\` was not read to its end`);
+			}
+			const out: BasePull[] = [];
+			for (const value of page.value.entries) {
+				const headNode = isRecord(value) ? value.head : null;
+				const sha = isRecord(headNode) && typeof headNode.sha === "string" ? headNode.sha : null;
+				if (!isRecord(value) || typeof value.number !== "number" || sha === null) {
+					return fail("GitHub answered 200 but one entry is not a pull request");
+				}
+				out.push({number: value.number, headSha: sha});
+			}
+			return ok(out);
+		}),
+	);
+
+/** How a head stands to a base right now, in the platform's vocabulary and its own count. */
+export interface BaseStanding {
+	readonly status: CompareStatus;
+	/**
+	 * Commits the base holds and the head does not — what makes the head's last CI run stale.
+	 *
+	 * Read by `lane retrigger`, which prints it on the row for each child it moved: the status alone
+	 * says a child was behind, and this says by how much, which is what tells a driver whether the
+	 * base drifted by one commit or by a hundred.
+	 */
+	readonly behindBy: number;
+}
+
+/**
+ * Where a pull request's head stands against its base, with no file list in the answer.
+ *
+ * Separate from {@link compareFiles} because it asks a different question and pays a different
+ * price: a staleness read wants the envelope's `status` and `behind_by` and nothing else, so it
+ * takes `per_page=1` rather than walking up to {@link COMPARE_FILE_CAP} entries per pull request.
+ * Both fields sit on the envelope and do not page, so the narrowed page changes no answer here.
+ *
+ * The pull request record's own `base.sha` cannot serve: the platform freezes it at the commit the
+ * PR was opened against, so a PR whose base has since moved a hundred commits still reads its
+ * original sha there. This comparison is the read that answers against the base as it stands now.
+ */
+export const compareStanding = (
+	repo: string,
+	base: string,
+	head: string,
+): Shell<Attempt<BaseStanding>> =>
+	authed((token) =>
+		restCall(token, {
+			method: "GET",
+			path: `repos/${repo}/compare/${base}...${head}?per_page=1`,
+		}).pipe(
+			Effect.map((outcome) =>
+				attemptOf(outcome, (body) => {
+					if (!isRecord(body)) {
+						return fail("GitHub answered 200 but its output is not a comparison");
+					}
+					if (typeof body.status !== "string" || !COMPARE_STATUSES.includes(body.status)) {
+						return fail(
+							"GitHub answered 200 but its comparison declares no status, so where the head stands against the base is unknown",
+						);
+					}
+					if (typeof body.behind_by !== "number") {
+						return fail(
+							"GitHub answered 200 but its comparison declares no behind_by, so how far the head trails the base is unknown",
+						);
+					}
+					return ok({status: body.status as CompareStatus, behindBy: body.behind_by});
+				}),
+			),
+		),
+	);
+
+/**
+ * What the platform did with a branch-update request: accepted it, declined it, or never answered.
+ *
+ * `Accepted` is the documented 202 and it is not a landing — the endpoint serves "Updating pull
+ * request branch." and performs the merge asynchronously, so a caller proves the merge by watching
+ * the head move, never by reading this tag. `Declined` is the 422 the endpoint documents for every
+ * validation failure it has: a conflict and a stale `expected_head_sha` share that one status and
+ * the page names no field that tells them apart, so the reason travels verbatim and the split is
+ * the caller's to prove by re-reading the head ([REST, "Update a pull request
+ * branch"](https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#update-a-pull-request-branch)).
+ */
+export type BranchUpdate =
+	| {readonly _tag: "Accepted"}
+	| {readonly _tag: "Declined"; readonly reason: string}
+	| {readonly _tag: "Unreadable"; readonly reason: string};
+
+/**
+ * Merge a pull request's base into its head branch through the platform's own update endpoint.
+ *
+ * `expectedHeadSha` is the concurrency guard that endpoint documents: the update is refused rather
+ * than applied when the head is no longer the commit the caller read. Passing it keeps the write
+ * addressed to the pull request the caller judged stale, instead of to whatever landed since.
+ */
+export const updatePullBranch = (
+	repo: string,
+	pr: number,
+	expectedHeadSha: string,
+): Shell<BranchUpdate> =>
+	Effect.map(
+		authed((token) =>
+			Effect.map(
+				restCall(token, {
+					method: "PUT",
+					path: `repos/${repo}/pulls/${pr}/update-branch`,
+					body: {expected_head_sha: expectedHeadSha},
+				}),
+				(outcome): Attempt<BranchUpdate> => {
+					if (outcome._tag === "Unreachable") {
+						return ok({_tag: "Unreadable", reason: outcome.reason});
+					}
+					if (outcome.status === 202) return ok({_tag: "Accepted"});
+					return ok(
+						outcome.status === 422
+							? {_tag: "Declined", reason: refusalText(outcome)}
+							: {_tag: "Unreadable", reason: refusalText(outcome)},
+					);
+				},
+			),
+		),
+		(attempt): BranchUpdate =>
+			attempt._tag === "Failure" ? {_tag: "Unreadable", reason: attempt.reason} : attempt.value,
 	);

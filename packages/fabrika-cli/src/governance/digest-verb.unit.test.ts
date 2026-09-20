@@ -17,7 +17,7 @@ const RESOLVE = [
 ] as const;
 const SHALLOW = [/^git rev-parse --is-shallow-repository$/, okOut("false\n")] as const;
 const TREE = [
-	new RegExp(`^git ls-tree -r --name-only -z ${BASE_SHA}$`),
+	new RegExp(`^git ls-tree -r --full-tree --name-only -z ${BASE_SHA}$`),
 	okOut(`${PATH}\0.decisions/0238-fabrika-reimplements-v1.md\0src/cart.ts\0`),
 ] as const;
 const LOG = [
@@ -79,7 +79,7 @@ describe("runDigest", () => {
 		);
 	});
 
-	it("reports `status:` verbatim rather than interpreting it (#4388)", async () => {
+	it("reports `status:` verbatim rather than interpreting it", async () => {
 		const out = await run([...happy.slice(0, 8), [SHOW[0], okOut(record("0240", "proposed"))]]);
 		expect(out.stdout).toContain("\tproposed\t");
 	});
@@ -131,7 +131,7 @@ describe("runDigest", () => {
 		const out = await run([REMOTES, FETCH, RESOLVE, SHALLOW, [TREE[0], okOut("src/cart.ts\0")]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe(
-			"governance digest: scanned .decisions, 0 decision records — refusing to answer (ADR 0092).",
+			"governance digest: scanned .decisions, 0 decision records — refusing to answer.",
 		);
 	});
 

@@ -1,11 +1,10 @@
 /**
  * `ledger edges` — write the epic's `## Dependencies` block into GitHub's native `blocked_by` graph.
  *
- * ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes that graph the one
- * carrier of blockedness, and both build gates read only it. A plan whose dependencies live in prose
- * alone therefore admits a child it has already declared blocked — epic #6595 let a child gated behind
- * an open, unruled decision through `build claim` on `scanned 0 blocked_by edges` (#6616). This verb
- * closes that gap by writing the edges the block owes.
+ * That graph is the one carrier of blockedness, and both build gates read only it. A plan whose
+ * dependencies live in prose alone therefore admits a child it has already declared blocked — an epic
+ * planned that way let a child gated behind an open, unruled decision through `build claim` on
+ * `scanned 0 blocked_by edges`. This verb closes that gap by writing the edges the block owes.
  *
  * **It reads the epic's own body, never this run's staged topology**, so it reconciles an epic planned
  * by an earlier run exactly as it reconciles one written a moment ago. The board is what the gates
@@ -15,6 +14,11 @@
  * an edge nobody's plan names is left alone. A `blocked_by` list may carry edges no ledger authored —
  * a human's, another epic's — and deleting one because this block does not name it would silently
  * unblock work on the strength of a document that was never the carrier.
+ *
+ * **The confirming re-read only runs when something was POSTed.** On the idempotent path the first
+ * read already proved every required edge present, so re-reading can only convert a transient GitHub
+ * blip into `WRITE_UNKNOWN` over zero writes — a code whose whole meaning is "edges were POSTed and
+ * cannot be confirmed".
  */
 
 import {Effect} from "effect";
@@ -80,6 +84,16 @@ const readGraph = (
 		return {_tag: "Graph" as const, edges};
 	});
 
+const reconciled = (epic: number, required: number, written: number): string =>
+	JSON.stringify({
+		answer: "reconciled",
+		epic,
+		required,
+		already: required - written,
+		written,
+		verified: true,
+	});
+
 const missingFrom = (
 	graph: ReadonlyMap<number, ReadonlySet<number>>,
 	required: ReadonlyArray<RequiredEdge>,
@@ -109,7 +123,7 @@ export const runEdges = (
 		if (topology._tag === "Absent" || topology.edges.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
-				`${VERB}: #${epic.number} declares no topology — refusing to answer over zero scope (ADR 0092).`,
+				`${VERB}: #${epic.number} declares no topology — refusing to answer over zero scope.`,
 				notes,
 			);
 		}
@@ -123,6 +137,12 @@ export const runEdges = (
 		);
 		if (before._tag === "Refused") return before.outcome;
 		const missing = missingFrom(before.edges, required);
+
+		// Nothing to POST means nothing to confirm — `before` already proved every required edge on
+		// the graph, so a second read here can only turn a healthy graph into an UNKNOWN nobody owes.
+		if (missing.length === 0) {
+			return answer(reconciled(epic.number, required.length, 0), [...notes, scanned]);
+		}
 
 		const prerequisites = [...new Set(missing.map((edge) => edge.prerequisite))].sort(
 			(a, b) => a - b,
@@ -186,15 +206,5 @@ export const runEdges = (
 			);
 		}
 
-		return answer(
-			JSON.stringify({
-				answer: "reconciled",
-				epic: epic.number,
-				required: required.length,
-				already: required.length - missing.length,
-				written: missing.length,
-				verified: true,
-			}),
-			[...notes, scanned],
-		);
+		return answer(reconciled(epic.number, required.length, missing.length), [...notes, scanned]);
 	});

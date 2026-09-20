@@ -50,7 +50,7 @@ describe("planning a worktree from a WorktreeCreate payload", () => {
 });
 
 describe("the PATH the git child runs under", () => {
-	it("prepends the standard toolchain dirs, since a stripped PATH makes bootstrap-deps clean-SKIP", () => {
+	it("prepends the standard toolchain dirs, since a stripped PATH makes the install clean-SKIP", () => {
 		expect(toolchainPath("/usr/bin", "/home/x").split(":")).toEqual([
 			"/opt/homebrew/bin",
 			"/usr/local/bin",
@@ -89,7 +89,7 @@ describe("the environment the git child runs under", () => {
 	});
 
 	/**
-	 * phoenix's `origin` is SSH-only, so a fetch with no agent socket has no credential path at all —
+	 * An SSH-only `origin` leaves a fetch with no agent socket no credential path at all —
 	 * and the hook is the only way any worktree gets created once it is declared.
 	 */
 	it("forwards the ssh-agent channel, so the fetch against an SSH-only origin can authenticate", () => {

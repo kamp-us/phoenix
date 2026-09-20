@@ -1,6 +1,6 @@
 /**
  * Whether the repo defines the labels a board guard's scope is cut from — the fact that separates
- * "this issue is not in scope" from "this repo never adopted the taxonomy" (#4272).
+ * "this issue is not in scope" from "this repo never adopted the taxonomy".
  *
  * Without it a per-issue seam check reports clean forever having checked nothing: every issue takes
  * the not-in-scope fork, and the guard's silence reads as a pass. Both board guards that scope by

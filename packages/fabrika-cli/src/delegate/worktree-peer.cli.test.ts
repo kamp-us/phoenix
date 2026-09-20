@@ -1,5 +1,5 @@
 /**
- * The end-to-end half of the worktree-peer delegation (#5679): a real process, invoked exactly the
+ * The end-to-end half of the worktree-peer delegation: a real process, invoked exactly the
  * way the defect is met.
  *
  * The copy on `PATH` is a `pnpm link --global` of the primary checkout, so an agent standing in a

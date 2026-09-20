@@ -1,6 +1,6 @@
 /**
  * The end-to-end half of the foreign-checkout refusal: a real process, invoked exactly the way the
- * defect was met (#4956).
+ * defect was met.
  *
  * A reviewer gating a PR runs from an isolated worktree and invokes the head's `bin.ts` **by path**.
  * The cwd then sits in a different checkout, whose own install answers instead — silently, with a

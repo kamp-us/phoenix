@@ -3,21 +3,18 @@
  * picker, and for the same reason: everything the page decides is decided here, in a pure function
  * a test drives with no DOM, and the components below bind the answer to elements verbatim.
  *
- * One thing here looks like duplication and is not. `surfaceKey` runs the shell's own `route`
- * (`../keys/router.ts`) a second time, on the page, over the prefix snapshot the kernel sent. The
- * core runs it too and answers with Cmds — but Cmds are the kernel's, and the transport carries no
- * Cmd frame (`../transport/wire.ts`): a page learns state, never instructions. So the two effects
- * a *surface* owns — opening the command line and forwarding a key into the focused window's
- * renderer — are derived here, deliberately
- * ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)). Both sides call
- * the one pure `route`, and the `PrefixTable` they call it over is one table because the kernel
- * sends it; that they answer alike is held by `./key-agreement.unit.test.ts`, not by argument.
+ * Nothing here routes a key. The kernel is the only router and the page does what its answer says
+ * (`./press.ts`, `./Desk.tsx`, #8274); the one thing this module asks `route` is `shellOwnsKey` —
+ * whose key it is, which decides the default action and the text-entry gate at the press and cannot
+ * wait for a round trip. That question is answered through the same `route` over the same table the
+ * kernel sent ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)), so it
+ * cannot part company with the kernel about which key arms the prefix.
  */
 
 import {Duration} from "effect";
 import type {ShellState, Workspace} from "../core/index.ts";
 import {activeWorkspace} from "../core/index.ts";
-import type {CommandName, Key, PrefixState, PrefixTable} from "../keys/index.ts";
+import type {Key, PrefixState, PrefixTable} from "../keys/index.ts";
 import {idle, route} from "../keys/index.ts";
 import type {LayoutNode, WindowId as LayoutWindowId, NodeId, StackNode} from "../layout/index.ts";
 import {WindowId} from "../window/index.ts";
@@ -39,30 +36,15 @@ export const routerPrefix = (state: ShellState): PrefixState =>
 		: idle;
 
 /**
- * What the *surface* must do about one key, beside always dispatching `keys.press`. Three arms and
- * no fourth: a key either opens the command line, belongs to the focused window's renderer, or is
- * the shell's own business and nothing the page does about it.
+ * Is this key the shell's, whatever holds DOM focus? tmux's rule, and the whole of #8270: the
+ * prefix is the one key a pane never gets, and once it is armed every key of the sequence is the
+ * shell's too. Everything else typed into a text entry belongs to the text entry.
+ *
+ * Asked of the same `route` the surface routes with, so the two can never disagree about which key
+ * arms the prefix — a second reading of `table.prefix` here is how that drift starts.
  */
-export type SurfaceKeyAnswer =
-	| {readonly _tag: "OpenCommandLine"}
-	| {readonly _tag: "ToWindow"; readonly key: string}
-	/** A named command the page does not implement, or an armed/pending/unbound prefix. */
-	| {readonly _tag: "Shell"; readonly command: CommandName | null};
-
-export const surfaceKey = (
-	table: PrefixTable,
-	prefix: PrefixState,
-	event: Key,
-): SurfaceKeyAnswer => {
-	const answer = route(table, prefix, event);
-	if (answer._tag === "ToWindow") return {_tag: "ToWindow", key: answer.key};
-	if (answer._tag === "Command") {
-		return String(answer.name) === COMMAND_LINE_COMMAND
-			? {_tag: "OpenCommandLine"}
-			: {_tag: "Shell", command: answer.name};
-	}
-	return {_tag: "Shell", command: null};
-};
+export const shellOwnsKey = (table: PrefixTable, prefix: PrefixState, event: Key): boolean =>
+	prefix._tag === "Armed" || route(table, prefix, event)._tag === "Arm";
 
 /** The status line, as text. Every field is read off the snapshot; the page stores none of it. */
 export interface StatusFrame {

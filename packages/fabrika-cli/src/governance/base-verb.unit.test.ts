@@ -131,7 +131,7 @@ describe("runBase", () => {
 		);
 	});
 
-	// The resolve moved into the binding (#5770), so the failure arrives wearing this verb's own tail
+	// The resolve moved into the binding, so the failure arrives wearing this verb's own tail
 	// rather than `bindHead`'s — the entry precedes `binding()` because the first match wins.
 	it("refuses an unresolvable merge base on 11", async () => {
 		const out = await run([
@@ -156,7 +156,7 @@ describe("runBase", () => {
 		const fake = fakeSeams(happy);
 		await Effect.runPromise(Effect.provide(runBase(options), fake.layer));
 		expect(fake.calls.some((call) => call.startsWith("git checkout"))).toBe(false);
-		expect(fake.calls).toContain(`git ls-tree -r --name-only -z ${MERGE_BASE}`);
+		expect(fake.calls).toContain(`git ls-tree -r --full-tree --name-only -z ${MERGE_BASE}`);
 		expect(fake.calls).toContain(`git rev-parse --verify --quiet ${HEAD}^{commit}`);
 	});
 });
@@ -201,7 +201,7 @@ describe("runBase over a range", () => {
 	});
 
 	// The whole point of the range form: a fence that fell back to the tip would open exactly on the
-	// child range that edits it (#6064).
+	// child range that edits it.
 	it("refuses an unresolvable merge base on 11, never falling back to the tip", async () => {
 		const out = await run([[MERGE_BASE_OF(), errOut("fatal: no merge base")]], ranged);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -260,6 +260,6 @@ describe("runBase over a range", () => {
 		await Effect.runPromise(Effect.provide(runBase({...options, ...ranged}), fake.layer));
 		expect(fake.requests).toEqual([]);
 		expect(fake.calls.some((call) => call.startsWith("git checkout"))).toBe(false);
-		expect(fake.calls).toContain(`git ls-tree -r --name-only -z ${RANGE_MERGE_BASE}`);
+		expect(fake.calls).toContain(`git ls-tree -r --full-tree --name-only -z ${RANGE_MERGE_BASE}`);
 	});
 });

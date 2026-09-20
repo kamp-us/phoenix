@@ -38,6 +38,8 @@ export const counterRow: ProcessRow = {
 	parentId: null,
 	ports: {increment: {kind: "count", direction: "in"}},
 	stateSummary: {lifecycle: "running", revision: 3},
+	title: null,
+	status: null,
 	recency: 2,
 };
 

@@ -103,7 +103,7 @@ describe("runNote", () => {
 		const leaky = await run(happy(), {
 			stdin: Effect.succeed<StdinRead>({
 				_tag: "Text",
-				text: "the capture is at ~/code/phoenix/shot.png\n",
+				text: "the capture is at ~/code/repo/shot.png\n",
 			}),
 		});
 		expect(leaky.outcome.code).toBe(LEAKED_PATH);

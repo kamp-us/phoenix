@@ -95,6 +95,7 @@ export const account = {
 	"profile.page.loading": "loading…",
 	"profile.page.error": "the profile could not be loaded: {code}",
 	"profile.header.statsError": "stats could not be loaded",
+	"profile.header.statsLoading": "loading stats…",
 	"profile.standing.yazar": "yazar",
 	"profile.standing.caylak": "çaylak",
 	"profile.stat.definitions": "definitions",
@@ -195,4 +196,10 @@ export const account = {
 	"ui.draftRestore.text": "you have a saved draft. want to restore it?",
 	"ui.draftRestore.restore": "restore the draft",
 	"ui.draftRestore.dismiss": "ignore",
+	"ui.diff": "diff of {path}",
+	"ui.markdown.table": "table",
+	"ui.markdown.code": "code block",
+	"ui.markdown.diagram": "diagram",
+	"ui.markdown.diagram.source": "diagram source",
+	"ui.markdown.diagram.error": "the diagram could not be drawn: {reason}",
 } satisfies Record<AccountKey, string>;

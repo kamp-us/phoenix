@@ -8,8 +8,8 @@ import {
 
 const ctx: AnnotateContext = {
 	members: [
-		{name: "@kampus/worker-relevance", dir: "packages/worker-relevance"},
-		{name: "@kampus/web", dir: "apps/web"},
+		{name: "@example/lib", dir: "packages/lib"},
+		{name: "@example/site", dir: "apps/site"},
 	],
 	root: "/repo",
 };
@@ -17,11 +17,11 @@ const ctx: AnnotateContext = {
 describe("parseDiagnostic — the turbo-prefixed plain form (what CI actually emits)", () => {
 	// Verbatim from a real `pnpm turbo run typecheck` failure.
 	const line =
-		"@kampus/worker-relevance:typecheck: src/__probe.ts(1,14): error TS2322: Type 'number' is not assignable to type 'string'.";
+		"@example/lib:typecheck: src/__probe.ts(1,14): error TS2322: Type 'number' is not assignable to type 'string'.";
 
 	it("re-roots the package-relative path onto the package dir", () => {
 		expect(parseDiagnostic(line, ctx)).toEqual({
-			file: "packages/worker-relevance/src/__probe.ts",
+			file: "packages/lib/src/__probe.ts",
 			line: 1,
 			column: 14,
 			severity: "error",
@@ -32,7 +32,7 @@ describe("parseDiagnostic — the turbo-prefixed plain form (what CI actually em
 
 	it("renders the workflow command GitHub turns into an inline annotation", () => {
 		expect(renderWorkflowCommand(parseDiagnostic(line, ctx)!)).toBe(
-			"::error file=packages/worker-relevance/src/__probe.ts,line=1,col=14::TS2322: Type 'number' is not assignable to type 'string'.",
+			"::error file=packages/lib/src/__probe.ts,line=1,col=14::TS2322: Type 'number' is not assignable to type 'string'.",
 		);
 	});
 });
@@ -46,9 +46,9 @@ describe("parseDiagnostic — the other shapes tsc can emit", () => {
 
 	it("accepts the pretty `path:line:col - error` form", () => {
 		expect(
-			parseDiagnostic("@kampus/web:typecheck: src/a.tsx:9:2 - error TS2551: Nope.", ctx),
+			parseDiagnostic("@example/site:typecheck: src/a.tsx:9:2 - error TS2551: Nope.", ctx),
 		).toEqual({
-			file: "apps/web/src/a.tsx",
+			file: "apps/site/src/a.tsx",
 			line: 9,
 			column: 2,
 			severity: "error",
@@ -64,8 +64,8 @@ describe("parseDiagnostic — the other shapes tsc can emit", () => {
 	});
 
 	it("makes an absolute path repo-relative", () => {
-		expect(parseDiagnostic("/repo/apps/web/src/a.ts(1,1): error TS1: x", ctx)?.file).toBe(
-			"apps/web/src/a.ts",
+		expect(parseDiagnostic("/repo/apps/site/src/a.ts(1,1): error TS1: x", ctx)?.file).toBe(
+			"apps/site/src/a.ts",
 		);
 	});
 
@@ -83,10 +83,10 @@ describe("parseDiagnostic — the other shapes tsc can emit", () => {
 describe("parseDiagnostic — non-diagnostic lines are not diagnostics", () => {
 	const nonDiagnostics = [
 		"",
-		"@kampus/web:typecheck: > tsgo -p tsconfig.json",
+		"@example/site:typecheck: > tsgo -p tsconfig.json",
 		"Found 3 errors in 2 files.",
 		" Tasks:    0 successful, 1 total",
-		"@kampus/web:typecheck: cache bypass, force executing 81ed80673ef6",
+		"@example/site:typecheck: cache bypass, force executing 81ed80673ef6",
 		"::error file=x,line=1,col=1::already an annotation",
 	];
 
@@ -128,17 +128,17 @@ describe("renderWorkflowCommand — workflow-command escaping", () => {
 
 describe("annotationsFor — whole-output mapping", () => {
 	const output = [
-		"@kampus/worker-relevance:typecheck: cache bypass",
-		"@kampus/worker-relevance:typecheck: src/a.ts(1,2): error TS2322: bad.",
-		"@kampus/worker-relevance:typecheck: src/a.ts(1,2): error TS2322: bad.",
-		"@kampus/web:typecheck: src/b.ts(3,4): error TS2304: worse.",
+		"@example/lib:typecheck: cache bypass",
+		"@example/lib:typecheck: src/a.ts(1,2): error TS2322: bad.",
+		"@example/lib:typecheck: src/a.ts(1,2): error TS2322: bad.",
+		"@example/site:typecheck: src/b.ts(3,4): error TS2304: worse.",
 		" Tasks:    0 successful, 2 total",
 	].join("\n");
 
 	it("emits one annotation per distinct diagnostic, in first-seen order", () => {
 		expect(annotationsFor(output, ctx)).toEqual([
-			"::error file=packages/worker-relevance/src/a.ts,line=1,col=2::TS2322: bad.",
-			"::error file=apps/web/src/b.ts,line=3,col=4::TS2304: worse.",
+			"::error file=packages/lib/src/a.ts,line=1,col=2::TS2322: bad.",
+			"::error file=apps/site/src/b.ts,line=3,col=4::TS2304: worse.",
 		]);
 	});
 
@@ -148,35 +148,35 @@ describe("annotationsFor — whole-output mapping", () => {
 	it("attributes unprefixed lines to the package whose group header opened them", () => {
 		const esc = String.fromCharCode(27);
 		const grouped = [
-			`${esc}[;31m@kampus/worker-relevance:typecheck${esc}[;0m`,
+			`${esc}[;31m@example/lib:typecheck${esc}[;0m`,
 			"> tsgo -p tsconfig.json",
 			"src/__probe.ts(1,14): error TS2322: Type 'number' is not assignable to type 'string'.",
-			"::group::@kampus/web:typecheck",
+			"::group::@example/site:typecheck",
 			"src/app.tsx(7,3): error TS2304: Cannot find name 'z'.",
 			"::endgroup::",
 			"src/root.ts(1,1): error TS2307: Cannot find module 'q'.",
 		].join("\n");
 
 		expect(annotationsFor(grouped, ctx)).toEqual([
-			"::error file=packages/worker-relevance/src/__probe.ts,line=1,col=14::TS2322: Type 'number' is not assignable to type 'string'.",
-			"::error file=apps/web/src/app.tsx,line=7,col=3::TS2304: Cannot find name 'z'.",
+			"::error file=packages/lib/src/__probe.ts,line=1,col=14::TS2322: Type 'number' is not assignable to type 'string'.",
+			"::error file=apps/site/src/app.tsx,line=7,col=3::TS2304: Cannot find name 'z'.",
 			"::error file=src/root.ts,line=1,col=1::TS2307: Cannot find module 'q'.",
 		]);
 	});
 
 	it("a per-line prefix still wins over the enclosing group", () => {
 		const mixed = [
-			"::group::@kampus/web:typecheck",
-			"@kampus/worker-relevance:typecheck: src/a.ts(1,1): error TS1: x",
+			"::group::@example/site:typecheck",
+			"@example/lib:typecheck: src/a.ts(1,1): error TS1: x",
 		].join("\n");
 		expect(annotationsFor(mixed, ctx)).toEqual([
-			"::error file=packages/worker-relevance/src/a.ts,line=1,col=1::TS1: x",
+			"::error file=packages/lib/src/a.ts,line=1,col=1::TS1: x",
 		]);
 	});
 
 	it("a clean typecheck produces no annotations", () => {
 		expect(
-			annotationsFor("@kampus/web:typecheck: > tsgo -p tsconfig.json\n Tasks: 2 successful", ctx),
+			annotationsFor("@example/site:typecheck: > tsgo -p tsconfig.json\n Tasks: 2 successful", ctx),
 		).toEqual([]);
 	});
 });

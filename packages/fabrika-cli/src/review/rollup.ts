@@ -3,7 +3,7 @@
  *
  * `cancelled` is bucketed **red** on purpose: a cancelled check proved nothing, and "proved nothing"
  * must not read green. An unrecognised conclusion string is red for the same reason — a conclusion
- * this module has never seen is the one case where a permissive default is guaranteed wrong (#4552).
+ * this module has never seen is the one case where a permissive default is guaranteed wrong.
  */
 export type Rollup = "green" | "red" | "pending";
 
@@ -12,7 +12,7 @@ export type Rollup = "green" | "red" | "pending";
  *
  * Structural rather than `CheckRun`, because `ship`'s own reader rolls up through here too
  * (`ShipCheckRun`, which carries an id and a check-suite join `review` has no use for). A field one
- * reader adds for itself would otherwise become a requirement on every other (#7441).
+ * reader adds for itself would otherwise become a requirement on every other.
  */
 export interface RollupRun {
 	readonly status: string;
@@ -49,7 +49,7 @@ export const rollupOf = (runs: ReadonlyArray<RollupRun>): Rollup => {
 };
 
 /**
- * The known-informational check names — ADR 0061's **denylist, fail-safe to blocking**.
+ * The known-informational check names — a **denylist, fail-safe to blocking**.
  *
  * A check reaches this list by being named here and nowhere else: the default is that a new check
  * gates, so a preview-deploy flake added tomorrow blocks until someone decides otherwise. v1
@@ -63,7 +63,7 @@ export const isInformational = (name: string): boolean =>
 /**
  * A check that is queued and has never started. Half of the wedge test — the other half is the
  * dwell, which only a caller watching the clock can supply: running and wedged look identical in a
- * single sample, and only one of them is a human's problem (#3999).
+ * single sample, and only one of them is a human's problem.
  */
 export const isStalled = (run: {
 	readonly status: string;

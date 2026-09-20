@@ -1,11 +1,15 @@
 /**
  * The pending permission requests, one card each.
  *
- * The card list is driven straight off `state.permissions` — the core drops a request the moment
- * its `answer` Msg lands (`../../ai-agent/core/machine.ts`), so a card disappears because the state
- * no longer holds it and never because this component remembers having answered. That is what makes
- * two windows over one process agree: they render the same map, and either one's answer clears it
- * from both.
+ * The card list is driven straight off `state.permissions`, and a card leaves it on the
+ * confirmation of its answer rather than on the click that answered it (#8006) — so a disappearing
+ * card means the agent settled the request, never that a decision has been sent. Answering marks
+ * the card instead, and every window over the process renders the same mark from the same shared
+ * state: whichever one clicks, both stop offering the buttons.
+ *
+ * An `unresolved` card offers no second answer. Its first answer may or may not have been applied,
+ * so another click would be a retry of an authorization nobody asked to repeat; only the agent's
+ * own resolution clears it.
  *
  * Each card is a named `region`: `Card` renders as a `section` labelled by its own visible title, so
  * a screen reader's landmark list distinguishes two pending requests instead of listing two unnamed
@@ -16,7 +20,7 @@
 import {Button, Card, Input} from "@kampus/design";
 import type {ReactElement} from "react";
 import {useCallback, useId, useState} from "react";
-import type {PermissionDecision, PermissionRequest} from "../../ai-agent/ports/index.ts";
+import type {PendingPermission, PermissionDecision} from "../../ai-agent/ports/index.ts";
 
 export interface PermissionAnswer {
 	readonly request: string;
@@ -24,17 +28,45 @@ export interface PermissionAnswer {
 	readonly message?: string;
 }
 
+const decisionLabel: Readonly<Record<PermissionDecision, string>> = {
+	"allow-once": "Allow once",
+	"allow-always": "Allow always",
+	deny: "Deny",
+};
+
+/** What the card says about an answer that has left but not landed. `open` says nothing. */
+function ProgressLine({
+	progress,
+}: {
+	readonly progress: PendingPermission["progress"];
+}): ReactElement | null {
+	if (progress.status === "open") return null;
+	const decision = decisionLabel[progress.decision];
+	return progress.status === "answering" ? (
+		<p className="tuval-chat-permission-progress" data-status="answering" role="status">
+			Sending “{decision}” — waiting for the agent to confirm it.
+		</p>
+	) : (
+		<p className="tuval-chat-permission-progress" data-status="unresolved" role="alert">
+			“{decision}” was not confirmed and may or may not have been applied. Only the agent can settle
+			this request now.
+		</p>
+	);
+}
+
 function PermissionCard({
 	id,
-	request,
+	pending,
 	onAnswer,
 }: {
 	readonly id: string;
-	readonly request: PermissionRequest;
+	readonly pending: PendingPermission;
 	readonly onAnswer: (answer: PermissionAnswer) => void;
 }): ReactElement {
 	const titleId = useId();
 	const [message, setMessage] = useState("");
+	const {request, progress} = pending;
+	const open = progress.status === "open";
 	const answer = useCallback(
 		(decision: PermissionDecision) => {
 			const trimmed = message.trim();
@@ -45,7 +77,12 @@ function PermissionCard({
 		[id, message, onAnswer],
 	);
 	return (
-		<Card as="section" className="tuval-chat-permission" aria-labelledby={titleId}>
+		<Card
+			as="section"
+			className="tuval-chat-permission"
+			aria-labelledby={titleId}
+			data-status={progress.status}
+		>
 			<h3 id={titleId} className="tuval-chat-permission-title">
 				{request.title}
 			</h3>
@@ -55,26 +92,41 @@ function PermissionCard({
 			<Input
 				label="Message (optional)"
 				value={message}
+				disabled={!open}
 				onChange={(event) => setMessage(event.currentTarget.value)}
 			/>
 			<div className="tuval-chat-permission-actions">
-				<Button type="button" variant="primary" size="sm" onClick={() => answer("allow-once")}>
-					Allow once
+				<Button
+					type="button"
+					variant="primary"
+					size="sm"
+					disabled={!open}
+					onClick={() => answer("allow-once")}
+				>
+					{decisionLabel["allow-once"]}
 				</Button>
 				{request.offersAlways ? (
 					<Button
 						type="button"
 						variant="secondary"
 						size="sm"
+						disabled={!open}
 						onClick={() => answer("allow-always")}
 					>
-						Allow always
+						{decisionLabel["allow-always"]}
 					</Button>
 				) : null}
-				<Button type="button" variant="danger" size="sm" onClick={() => answer("deny")}>
-					Deny
+				<Button
+					type="button"
+					variant="danger"
+					size="sm"
+					disabled={!open}
+					onClick={() => answer("deny")}
+				>
+					{decisionLabel.deny}
 				</Button>
 			</div>
+			<ProgressLine progress={progress} />
 		</Card>
 	);
 }
@@ -88,15 +140,15 @@ export function PermissionCards({
 	permissions,
 	onAnswer,
 }: {
-	readonly permissions: Readonly<Record<string, PermissionRequest>>;
+	readonly permissions: Readonly<Record<string, PendingPermission>>;
 	readonly onAnswer: (answer: PermissionAnswer) => void;
 }): ReactElement | null {
 	const entries = Object.entries(permissions);
 	if (entries.length === 0) return null;
 	return (
 		<div className="tuval-chat-permissions">
-			{entries.map(([id, request]) => (
-				<PermissionCard key={id} id={id} request={request} onAnswer={onAnswer} />
+			{entries.map(([id, pending]) => (
+				<PermissionCard key={id} id={id} pending={pending} onAnswer={onAnswer} />
 			))}
 		</div>
 	);

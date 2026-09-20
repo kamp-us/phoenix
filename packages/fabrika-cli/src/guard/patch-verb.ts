@@ -1,12 +1,10 @@
 /**
  * `guard patch-guard check` — every maintained `pnpm patch` carries a registered behavior-pinning
- * test (ADR 0038's forcing function), ported off v1's `patch-guard check` (epic #5720).
+ * test — the forcing function behind the patch discipline.
  *
  * The verb is the IO boundary: read `patchedDependencies` out of `pnpm-workspace.yaml`, walk the
  * test tree gathering `@patch-pin:` markers, hand both to the pure rule in `./patch.ts`, seat the
- * answer on the group's exit taxonomy. v1 collapsed every red onto `1`; here an empty patch set
- * (`7`, ADR 0092), a failed read (`11`) and a real unpinned patch (`12`) are three numbers, because
- * their remedies are three different things.
+ * answer on the group's exit taxonomy. See `guard patch-guard check --help` for exit codes.
  */
 
 import {Effect, type FileSystem, Path} from "effect";
@@ -106,13 +104,13 @@ const judge = (
 		const target = path.join(root, WORKSPACE);
 		if (!(yield* exists(target))) {
 			return zeroScope(
-				`${VERB}: ${root}/${WORKSPACE} does not exist — the guard found no maintained patch to check at all, fail-closed (ADR 0092). Is the repo root correct?`,
+				`${VERB}: ${root}/${WORKSPACE} does not exist — the guard found no maintained patch to check at all, fail-closed. Is the repo root correct?`,
 			);
 		}
 		const patched = parsePatchedDependencies(yield* readFile(target));
 		if (patched.length === 0) {
 			return zeroScope(
-				`${VERB}: found ZERO patchedDependencies in ${WORKSPACE} — fail-closed (ADR 0092). Is the repo root correct, or did the workspace file move?`,
+				`${VERB}: found ZERO patchedDependencies in ${WORKSPACE} — fail-closed. Is the repo root correct, or did the workspace file move?`,
 			);
 		}
 		const markers = yield* gatherMarkers(root, root);

@@ -11,8 +11,9 @@
 import type {SpellBridgeApi} from "../../commands/bridge/index.ts";
 import type {SpellPath, Scope as SpellScope} from "../../commands/spell.ts";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, TranscriptItem} from "../ports/index.ts";
-import type {TransportError} from "./errors.ts";
+import type {CommandRef, Mode, ModelRef, ThinkingLevel, TranscriptItem} from "../ports/index.ts";
+import type {ListError, StartError, TransportError} from "./errors.ts";
+import type {SessionSummary} from "./sessions.ts";
 
 /** One spell a turn calls: the path and the args, exactly as they cross the wire. */
 export interface ScriptedRequest {
@@ -63,6 +64,22 @@ export interface ScriptedModes {
 	readonly available: ReadonlyArray<Mode>;
 }
 
+/** What this scripted backend offers a picker. A script with nothing to pick names an empty list. */
+export interface ScriptedModels {
+	readonly current: ModelRef | null;
+	readonly available: ReadonlyArray<ModelRef>;
+}
+
+/**
+ * What this scripted backend offers the thinking picker. A script standing for the Claude window
+ * names the five effort levels; one standing for a Pi session on a model that does not reason names
+ * `off` alone (#8062).
+ */
+export interface ScriptedThinking {
+	readonly current: ThinkingLevel | null;
+	readonly available: ReadonlyArray<ThinkingLevel>;
+}
+
 export interface AgentScript {
 	readonly sessionId: string;
 	/**
@@ -77,8 +94,30 @@ export interface AgentScript {
 	 */
 	readonly resumed?: ReadonlyArray<AgentEvent>;
 	readonly modes: ScriptedModes;
+	readonly models: ScriptedModels;
+	/**
+	 * What this scripted backend offers the slash-command picker, announced by `start`. Absent is a
+	 * backend with no commands — the shape every fixture written before #8060 stands for.
+	 */
+	readonly commands?: ReadonlyArray<CommandRef>;
+	/**
+	 * What this script's session store holds, in any order — `listSessions` sorts. Absent is a store
+	 * with nothing in it, which is a truthful empty list rather than a backend that could not look;
+	 * a `ListError` here is that second case, and is how a test reaches the failure branch.
+	 */
+	readonly sessions?: ReadonlyArray<SessionSummary> | ListError;
+	readonly thinking: ScriptedThinking;
 	/** One entry per prompt, consumed in order. */
 	readonly turns: ReadonlyArray<ScriptedTurn>;
+	/**
+	 * When set, `start` fails with this instead of opening the session, and it keeps failing for
+	 * the life of the layer.
+	 *
+	 * A script that refuses every open is how a test proves a call reached no session: the store
+	 * reads — `listSessions` and `sessionTranscript` — answer off this script either way, so one
+	 * that answers under a refusing `start` is one that never went near the transport (#8233).
+	 */
+	readonly startRefusal?: StartError;
 	/**
 	 * Which turn a *resumed* session's next prompt replays. A resumed session is one an earlier run
 	 * already spent turns on, and this layer's turn cursor lives in the build it hands back, so a

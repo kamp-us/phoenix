@@ -1,14 +1,6 @@
 /**
- * The one exit table all fifteen `build` verbs allocate from, so a code means one thing across this
- * group whichever verb produced it.
- *
- * **The overlap with `report` is re-exported, never re-typed** — the discipline `review/codes.ts`
- * states in full: an aligning group *imports* the base's constant, so a drift is unrepresentable
- * rather than merely detectable. This group shares nine seats over `3`-`11` and adds its own `13`-`24`
- * for facts about the lane — the tree, the claim, the commit, the push, the validators, and the two
- * admission axes — that no writing verb has.
- *
- * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
+ * Exit allocations for build. See ./command.ts help for caller semantics.
+ * Shared meanings stay imported so their values cannot drift.
  */
 
 import {
@@ -23,40 +15,24 @@ import {
 	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
 } from "../exit-codes.ts";
 
-/** Stdin was read and held nothing. Distinct from a read that failed, which is `1`. */
 export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
-/** A required section is missing, malformed, empty, or out of place — authored, or derived from. */
 export const BAD_SECTIONS = SHARED_BAD_SECTIONS;
-/** The authored text carries a machine-local path, unredacted. */
 export const LEAKED_PATH = SHARED_LEAKED_PATH;
-/** The authored text is a bare `@` path reference — not redactable, so a second code. */
 export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
-/**
- * Zero scope: the target is **proven** absent (404) or closed, or there is nothing to judge.
- *
- * *Proven* is the operative word, and the split against {@link PRECONDITION_UNKNOWN} is the one the
- * whole group rests on: a 404 is a verdict about the repository, a 5xx is a verdict about nothing.
- * No verb fuses them, and no message here is worded "does not exist, or is not readable".
- */
+/** An absent target is proven; a failed read must use PRECONDITION_UNKNOWN. */
 export const ZERO_SCOPE = SHARED_NO_TARGET;
-/** A write was attempted and its outcome could not be proven — UNKNOWN, deliberately not `1`. */
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
-/** The write landed but the read-back does not match; the artifact exists and needs a human. */
 export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
-/** A value off its closed vocabulary, or a classification claim where none is permitted. */
 export const OFF_VOCABULARY = SHARED_CLASSIFIED;
-/** A required read or validator execution failed — nothing was written, no outcome is proven. */
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /**
  * `12` is a **retired seat, deliberately left empty.** It was "not in a linked worktree", and the
- * 2026-08-13 ruling on #5386 dropped fabrika's opinion on where a lane runs. Nothing is renumbered
+ * 2026-08-13 ruling dropped fabrika's opinion on where a lane runs. Nothing is renumbered
  * into it: a reader of an old transcript must not find `12` meaning something new.
  */
 
-/** Proven: the tree was dirty at a `--require-clean` open. An unauthored hunk is not ours (#2666). */
 export const DIRTY_TREE = 13;
-/** Proven: the checked-out branch does not belong to this lane's claim (the lane-identity rule). */
 export const WRONG_LANE = 14;
 /**
  * Proven: this session does not hold the claim — lost, foreign, or none exists at all.
@@ -66,16 +42,12 @@ export const WRONG_LANE = 14;
  * reader; the code deliberately does not, because the caller's action is identical.
  */
 export const CLAIM_NOT_MINE = 15;
-/** Proven: the issue is blocked — the open dependency edge is named on stderr. */
 export const BLOCKED = 16;
-/** Proven: the push completed but the remote ref did not move. */
 export const REF_NOT_MOVED = 17;
-/** Proven: this tree's validation is red. */
 export const VALIDATION_RED = 18;
-/** Refused: the requested push is unsafe (detached HEAD, or non-fast-forward without a lease). */
 export const UNSAFE_PUSH = 19;
 /**
- * Proven: not admitted on the **scope axis** — out of scope (ADR 0245, repointed by ADR 0304).
+ * Proven: not admitted on the **scope axis** — out of scope.
  *
  * Campaign membership and nothing else. It is a sibling of {@link AUDIENCE_NOT_AGENT}, not the same
  * question: the two have different remedies, so they never collapse onto one code. Nor does either
@@ -83,7 +55,6 @@ export const UNSAFE_PUSH = 19;
  * and `21` are *proven* refusals, while a read that failed has proven nothing.
  */
 export const OUT_OF_SCOPE = 20;
-/** Proven: not admitted on the **audience axis** — the `ready-for:` label is not agent, or absent (#4780). */
 export const AUDIENCE_NOT_AGENT = 21;
 /**
  * Proven: every changed file falls outside all three surfaces' validators — nothing is checkable.
@@ -91,7 +62,7 @@ export const AUDIENCE_NOT_AGENT = 21;
  * A *proven* refusal like `20`/`21`, not a borrowed {@link PRECONDITION_UNKNOWN}: the diff read
  * succeeded and the classification is complete, so the fact established is about the tree, not about
  * a read that failed. Its own seat because the caller's remedy is unique — widen no surface, split
- * the diff or extend a validator (#5229).
+ * the diff or extend a validator.
  */
 export const UNCLASSIFIED_DIFF = 22;
 /**
@@ -100,7 +71,7 @@ export const UNCLASSIFIED_DIFF = 22;
  * A *proven* refusal about the two commits, so it sits with `17`/`19`/`20`/`21` and never on
  * {@link PRECONDITION_UNKNOWN}, which is reserved for a read that failed. Its own seat rather than
  * `19`'s because the remedy differs: `19` says "pass the lease", this one says "rebase, or say you
- * mean it" — collapsing them would make the fix instruction ambiguous (#5222).
+ * mean it" — collapsing them would make the fix instruction ambiguous.
  *
  * Overlapping `epic`'s own `23` is the same safe overlap `20`/`21` already rely on — the rule is
  * `plan/codes.ts`'s: import a code when two groups prove the *same* fact, and an exit code is
@@ -115,7 +86,7 @@ export const HEAD_DROPS_REMOTE = 23;
  * fix is git's own refusal (an empty index, a hook that blocked) rather than anything about a ref.
  * It is never {@link WRITE_UNKNOWN}: HEAD was re-read and compared, so the absence is *proven*, and
  * fusing "no commit exists" with "a commit may exist" is the fusion this group refuses everywhere
- * else (#5484).
+ * else.
  */
 export const COMMIT_NOT_CREATED = 24;
 /**
@@ -126,11 +97,9 @@ export const COMMIT_NOT_CREATED = 24;
  * caller's next move is the same either way: get authority, then re-run. Its own seat rather than a
  * borrowed `21`: that code is about the *issue's* audience label, and this one is about who may hold
  * founder authority — the remedies share nothing. It is never {@link PRECONDITION_UNKNOWN}: the
- * config, the memberships and the ACL were read in full, so the refusal is a fact about the account
- * (#5959; the ACL clause is ADR 0055's).
+ * config, the memberships and the ACL were read in full, so the refusal is a fact about the account.
  */
 export const GRANT_UNAUTHORIZED = 25;
-/** Proven: the quoted authorization is empty or undated — a bare stamp is void (#4938). */
 export const AUTHORIZATION_VOID = 26;
 /**
  * Proven: the grant is recorded on the PR and the local lane did not take it.
@@ -145,7 +114,7 @@ export const AUTHORIZATION_VOID = 26;
 export const LOCAL_LANE_UNWRITTEN = 29;
 /**
  * Proven: not admitted on the **type axis** — the deliverable is not a pull request a build lane
- * produces (#5490).
+ * produces.
  *
  * The third sibling of {@link OUT_OF_SCOPE} and {@link AUDIENCE_NOT_AGENT}, and seated apart from
  * both for the reason they are seated apart from each other: the remedy is unlike either. `20` says
@@ -157,11 +126,11 @@ export const LOCAL_LANE_UNWRITTEN = 29;
  */
 export const TYPE_NOT_BUILDABLE = 30;
 /**
- * Proven: the claim's mode and the child's standing range verdict disagree (#6386).
+ * Proven: the claim's mode and the child's standing range verdict disagree.
  *
  * Two directions, one seat, because one fact is established either way — *this number's build state
  * is not what the claim says it is*. A fresh claim refuses on any standing verdict, `PASS` as well as
- * `FAIL` (#6715); `--resume` refuses on a child holding no `FAIL`. That is unlike every neighbouring
+ * `FAIL`; `--resume` refuses on a child holding no `FAIL`. That is unlike every neighbouring
  * seat: `20`/`21`/`30` are about whether an issue may be built at all, and this one is about whether
  * it has been built already. The route out is not uniform — a `FAIL` has a repair lane, a `PASS` has
  * only the epic driver's fold — so each refusal line names its own.
@@ -173,7 +142,7 @@ export const TYPE_NOT_BUILDABLE = 30;
 export const PRIOR_BUILD_MISMATCH = 31;
 /**
  * Proven: not admitted on the **criteria axis** — the issue's body carries no readable
- * `### Acceptance criteria` block, so there is no contract to build against (#6554).
+ * `### Acceptance criteria` block, so there is no contract to build against.
  *
  * The fourth sibling of {@link OUT_OF_SCOPE}, {@link AUDIENCE_NOT_AGENT} and
  * {@link TYPE_NOT_BUILDABLE}, seated apart from all three because the remedy is unlike any of them:
@@ -191,7 +160,7 @@ export const NO_ACCEPTANCE_CRITERIA = 32;
  * Proven: a working tree still holds this number's lane branch, and the board licenses no release.
  *
  * A *proven* refusal about the board — the ticket is not terminal and no authorized adopt marker
- * says the holding lane's session is gone (ADR 0323) — so it never borrows
+ * says the holding lane's session is gone — so it never borrows
  * {@link PRECONDITION_UNKNOWN}, which is for a read that failed. Its own seat rather than
  * {@link WRONG_LANE}'s: `14` says *you* are standing in the wrong tree, and this says another tree
  * is standing where you need to be, with the board declining to move it.
@@ -205,6 +174,32 @@ export const WORKTREE_HELD = 33;
  * `15` is about the caller's own claim, and this verb runs against a branch its lane never cut, so
  * whether the caller holds anything is not the question. The remedy is unlike every neighbour's —
  * the live lane re-claims through `build resume-child`, and until some authorized marker carries a
- * candidate's lane nonce there is nothing to rename (ADR 0324).
+ * candidate's lane nonce there is nothing to rename.
  */
 export const SURVIVOR_UNATTESTED = 34;
+/**
+ * Proven: the replacement disclosure drops a standing entry the marker still owes.
+ *
+ * A *proven* refusal about two artifacts both read in full — the standing marker's disclosure and
+ * the section on stdin — so it never borrows {@link PRECONDITION_UNKNOWN}. Its own seat rather than
+ * {@link BAD_SECTIONS}'s: `4` says the bytes on stdin are not a section, and this says they are a
+ * perfectly well-formed section that discloses less than the round before it. The remedies share
+ * nothing — `4` is a rewrite of the grammar, this is carrying an entry forward — and a `4` here
+ * would send an author to re-read a shape that was never wrong.
+ */
+export const DISCLOSURE_INCOMPLETE = 35;
+/**
+ * Proven: a lane branch that already exists does not contain the base this run resolved.
+ *
+ * A *proven* refusal about two commits both read in full — the fetched base and the branch's merge
+ * base with it — so it never borrows {@link PRECONDITION_UNKNOWN}. Its own seat rather than
+ * {@link WRONG_LANE}'s: `14` says the checked-out branch belongs to another lane, and this says the
+ * branch is this lane's own and was cut somewhere else. The remedy is unlike any neighbour's, and it
+ * is a git act rather than a verb: rebase the branch onto the base, or delete it when it carries
+ * nothing worth keeping. `build retire-branch` is NOT the route — it renames *superseded* branches
+ * out of `build/`, so over the one branch a `36` describes it answers `none` and renames nothing,
+ * and over two it seats the survivor on the nonce the live claim carries, which is the offending
+ * branch itself. The fact this code states is the one an epic child cut off the trunk had nobody to
+ * state: the idempotent re-run cannot be the recovery when the re-run is what hides the wrong base.
+ */
+export const BASE_MISMATCH = 36;

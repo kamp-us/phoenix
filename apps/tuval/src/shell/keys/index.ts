@@ -16,6 +16,7 @@ export {
 export {
 	type DisallowedModifierError,
 	type DuplicateModifierError,
+	FOCUS_LIST_KEY,
 	type InvalidKeyError,
 	type Key,
 	type KeyParseError,
@@ -30,8 +31,10 @@ export {
 	type Binding,
 	CommandName,
 	defaultPrefixTable,
+	type KeyFeatures,
 	type KeysConfig,
 	normalizeSequence,
 	type PrefixTable,
+	prefixTableFor,
 	type UnreadableSequenceError,
 } from "./table.ts";

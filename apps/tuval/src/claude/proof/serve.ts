@@ -60,7 +60,15 @@ const proof = Command.make(
 
 		const booted = yield* boot({global: configModule, project});
 		const transport = yield* serveDesk({kernel: booted.kernel, port: 0, table: defaultPrefixTable});
-		const page = yield* servePage({root: appRoot, transport, port: pagePort}).pipe(Effect.orDie);
+		// The booted flags ride to the page for the same reason they do in `src/bin.ts`: this harness
+		// is the one desk a founder can turn a flag on in and look at, so a run that dropped them
+		// would render the flags-off window whatever their config says (#8439).
+		const page = yield* servePage({
+			root: appRoot,
+			transport,
+			port: pagePort,
+			features: booted.features,
+		}).pipe(Effect.orDie);
 		yield* Console.log(`claude-real proof: project ${project}`);
 		yield* Console.log(`claude-real proof: desk at ${page.url}`);
 		yield* Console.log(

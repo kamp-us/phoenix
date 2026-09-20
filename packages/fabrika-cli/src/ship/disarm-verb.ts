@@ -1,9 +1,9 @@
 /**
- * `ship disarm` — the four-site merge-intent lifecycle (ADR 0198), read-back-verified.
+ * `ship disarm` — the four-site merge-intent lifecycle, read-back-verified.
  *
  * **Fail-closed at every indeterminate probe, and the direction is chosen per probe:** an unreadable
  * armed-state reads *armed* (clearing a never-armed intent is a no-op; leaving a parked one is an
- * ungated enqueue — #3700's one-second window), and an unreadable queue regime reads
+ * ungated enqueue the moment the queue opens), and an unreadable queue regime reads
  * *queue-governed* (so a failed read cannot grant the pre-queue keep). The regime is the **base
  * branch's**, never this PR's queue history: a per-PR proxy exempts exactly the parked intent this
  * verb exists to clear.
@@ -26,7 +26,7 @@ import {badNumber, resolveTargetRepo} from "./target.ts";
 
 const VERB = "ship disarm";
 
-/** The four ADR 0198 lifecycle sites. The policy differs per site; the vocabulary does not. */
+/** The four merge-intent lifecycle sites. The policy differs per site; the vocabulary does not. */
 export const SITES = ["preflight", "refuse", "post-enqueue", "ejected"] as const;
 export type Site = (typeof SITES)[number];
 

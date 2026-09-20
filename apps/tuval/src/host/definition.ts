@@ -111,6 +111,16 @@ export type ActorDefinition<
 	readonly interpret: I;
 	readonly subscribe: B;
 	readonly store?: Store<S>;
+	/**
+	 * Whether this state is worth a checkpoint, asked at every save site — commit's, boot's and
+	 * stop's. `false` writes nothing, so a run of mid-turn states costs no disk at all and the next
+	 * state the program calls worthy is the flush; the write the flush skipped is never owed, since
+	 * a state answering `false` is one no restore may read back (#8170).
+	 *
+	 * Total and cheap: it runs inside the transition tail on every commit. A definition omitting it
+	 * saves every state, which is what every program did before.
+	 */
+	readonly checkpointWorthy?: (state: S) => boolean;
 	readonly supervision?: Supervision<S, M>;
 	readonly onError?: OnError;
 	/**

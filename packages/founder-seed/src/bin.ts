@@ -16,10 +16,9 @@ import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {listFounderTuples, makeSeedDb, seedFounders} from "./seed.ts";
 
 /** A D1 REST call (seed/list over the query API) rejected — network/HTTP fault. */
-class D1RestError extends Schema.TaggedErrorClass<D1RestError>()(
-	"@kampus/founder-seed/D1RestError",
-	{cause: Schema.Defect()},
-) {}
+class D1RestError extends Schema.TaggedError<D1RestError>()("@kampus/founder-seed/D1RestError", {
+	cause: Schema.Defect(),
+}) {}
 
 const databaseIdFlag = Flag.string("database-id").pipe(
 	Flag.withDescription("the target stage's D1 database UUID"),

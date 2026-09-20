@@ -7,13 +7,20 @@ export type {
 	AgentEvent,
 	ItemEvent,
 	ModeEvent,
+	ModelEvent,
 	PermissionEvent,
 	PermissionResolvedEvent,
 	Phase,
 	PhaseEvent,
+	ThinkingEvent,
 	UsageEvent,
 } from "../events.ts";
 export {
+	InterruptError,
+	type InterruptReason,
+	ListError,
+	type ListReason,
+	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
 	type PageReason,
@@ -21,6 +28,9 @@ export {
 	type PromptReason,
 	StartError,
 	type StartReason,
+	ThinkingUnsupported,
+	TranscriptError,
+	type TranscriptReason,
 	TransportError,
 	type TransportReason,
 	UnknownRequest,
@@ -29,16 +39,26 @@ export {ScriptedAiAgent} from "./ScriptedAiAgent.ts";
 export type {
 	AgentScript,
 	ScriptedAnswer,
+	ScriptedModels,
 	ScriptedModes,
 	ScriptedPlan,
 	ScriptedRequest,
 	ScriptedSpells,
+	ScriptedThinking,
 	ScriptedTurn,
 } from "./script.ts";
 export {
+	newestFirst,
+	type SessionDraft,
+	type SessionSummary,
+	sessionSummary,
+} from "./sessions.ts";
+export {
+	type ResumeTarget,
 	type StartedSession,
 	type StartOptions,
 	type TranscriptPage,
+	type TranscriptQuery,
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
 } from "./TuvalAiAgent.ts";

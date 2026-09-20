@@ -96,7 +96,7 @@ describe("runFile", () => {
 			number: 4732,
 			url: "https://example.test/issues/4732",
 			label: "status:needs-triage",
-			// ADR 0308: `redactions` is an evidence-array collapsed to a per-class tally; empty means
+			// `redactions` is an evidence-array collapsed to a per-class tally; empty means
 			// the empty object, exactly as an empty array meant "nothing was masked".
 			redactions: {},
 		});
@@ -181,7 +181,7 @@ describe("runFile", () => {
 	});
 
 	/**
-	 * ADR 0308: the answer channel carries one count per leak class — each hit's `line <n>, <class>`
+	 * The answer channel carries one count per leak class — each hit's `line <n>, <class>`
 	 * note is already on the notes channel, so per-row `{line, class}` objects there were a second
 	 * copy of a diagnostic.
 	 */

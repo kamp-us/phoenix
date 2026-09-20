@@ -4,7 +4,7 @@
  * The disciplines `./gh-api.ts` states hold here too, restated because this module is where a
  * reader lands: **the status is read before the bytes are interpreted** — a 404 body is not a
  * manifest — and **every failure is data**, because a registry that cannot be reached has to refuse
- * the pin rather than answer with a stale guess (#7007).
+ * the pin rather than answer with a stale guess.
  */
 import {Cause, Duration, Effect} from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
@@ -34,7 +34,7 @@ export const npmHttpTimeoutSeconds = (): number => {
  * The current published release of one package — the version its registry `latest` dist-tag names.
  *
  * The transport requirement is erased here the way every adapter in this package erases it, so verb
- * annotations carry no HTTP seat (ADR 0315); a test that provides a scripted client still exercises
+ * annotations carry no HTTP seat; a test that provides a scripted client still exercises
  * the seam production runs on.
  */
 export const latestPublishedVersion = (packageName: string): Effect.Effect<Attempt<string>> =>
@@ -44,7 +44,7 @@ export const latestPublishedVersion = (packageName: string): Effect.Effect<Attem
 				`${REGISTRY_ROOT}/${encodeURIComponent(packageName)}/latest`,
 			);
 			// Read once per exchange: the bound that is applied and the bound a refusal reports must
-			// be the same number even if the env moves between the two reads (#7048's standard).
+			// be the same number even if the env moves between the two reads.
 			const boundSeconds = npmHttpTimeoutSeconds();
 			const startedAtMs = Date.now();
 			const outcome = yield* Effect.catch(
@@ -58,7 +58,7 @@ export const latestPublishedVersion = (packageName: string): Effect.Effect<Attem
 					),
 					// The bound covers the WHOLE exchange — connect through final body byte. Below
 					// flatMap(read) it would spare a stalled body stream, which dies exactly as hard
-					// as a black-holed connect (#7025 criterion 4).
+					// as a black-holed connect.
 					Effect.timeout(Duration.seconds(boundSeconds)),
 				),
 				(error: unknown) =>

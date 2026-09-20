@@ -1,7 +1,7 @@
 /**
  * The routed-elsewhere record — a gate saying, at one head, that it owes this PR no verdict.
  *
- *     routed-elsewhere: review-ui @ 03135b91 — nothing under apps/web/src renders differently
+ *     routed-elsewhere: review-ui @ 03135b91 — nothing under apps/site/src renders differently
  *
  * Three fields: the **namespace** the record resolves, the **head SHA** the emitter inspected, and
  * the clause saying *why* nothing was owed. It is not a verdict and deliberately carries no
@@ -10,11 +10,11 @@
  * passed", which is the one thing the `review-ui` group's evidence-required emit path exists to
  * prevent.
  *
- * **Why the format exists (ADR 0316).** `ship scope` raises the `ui` class off a path test that
- * cannot see whether pixels moved, so a PR whose only `apps/web/src/**` change is a docblock
- * requires a `review-ui` verdict — and `review-ui`'s emit path structurally cannot produce one:
+ * **Why the format exists.** `ship scope` raises the `ui` class off a path test that
+ * cannot see whether pixels moved, so a PR whose only change under a declared `uiSurfaces` prefix is
+ * a docblock requires a `review-ui` verdict — and `review-ui`'s emit path structurally cannot produce one:
  * `render` refuses zero surfaces, `post` requires a capture set. The namespace was unfillable and
- * `ship gate` blocks on absence (#3944), so such a PR was permanently unshippable (#6376). This
+ * `ship gate` blocks on absence, so such a PR was permanently unshippable. This
  * record is the sanctioned way to fill it: an attested, ACL-checked, head-bound "nothing renders
  * here".
  *
@@ -131,7 +131,6 @@ export const readNamespaced = (artifact: string, namespace: string): RoutedElsew
 export const emit = ({namespace, sha, clause: text}: RoutedElsewhere): string =>
 	`${KEY}: ${namespace} @ ${sha} ${CLAUSE_SEPARATOR} ${text}\n`;
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderRecord = (record: RoutedElsewhere): NonEmptyReadonlyArray<string> => [
 	`namespace\t${record.namespace}`,
 	`sha\t${record.sha}`,

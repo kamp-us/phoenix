@@ -1,9 +1,9 @@
 # Capture provenance — the golden hook envelopes beside this file
 
-ADR [0180](../../../../../.decisions/0180-capture-real-runtime-artifact-before-coding.md) makes the
-captured payload the only ground truth for anything the runtime emits, and this file is what lets a
-reviewer tell a captured payload from a hand-authored one **without the authoring session**. Read it
-before trusting any fixture here; a fixture with no provenance beside it is an assertion, not evidence.
+A captured payload is the only ground truth for anything the runtime emits, and this file is what
+lets a reviewer tell a captured payload from a hand-authored one **without the authoring session**.
+Read it before trusting any fixture here; a fixture with no provenance beside it is an assertion,
+not evidence.
 
 | Fixture | Harness event | Matcher | Capture |
 | --- | --- | --- | --- |
@@ -32,9 +32,8 @@ throwaway capture session in a temp directory and name no person or machine.
 `PreToolUse` (matcher `Bash`). The probe tool call was `echo capture-probe`. The bytes below each
 fixture's first line are the raw stdin the harness wrote to that sink, byte for byte.
 
-**Where the record lives:** the capture was posted to
-[#5074](https://github.com/kamp-us/phoenix/issues/5074) (comment `5233372828`) before either fixture
-was written, so the raw envelope is readable outside this repo too.
+**Where the record lives:** the raw bytes were posted to the authoring repository's issue tracker
+(comment `5233372828`) before either fixture was written.
 
 <a id="capture-2--the-spawn-envelopes"></a>
 ## Capture 2 — the spawn envelopes
@@ -47,15 +46,14 @@ file whose `hooks` block registered `{"type": "command", "command": "cat > <sink
 the subagent ever running. Run 1's prompt asked for the `model` parameter `"opus"`; run 2's asked for
 no model at all — the two branches the spawn decision has to tell apart.
 
-**Where the record lives:** the raw bytes were posted to
-[#5075](https://github.com/kamp-us/phoenix/issues/5075) (comment `5233974204`) before either fixture
-was written.
+**Where the record lives:** the raw bytes were posted to the authoring repository's issue tracker
+(comment `5233974204`) before either fixture was written.
 
 **Two things this capture settles that a hand-authored envelope gets wrong.** A spawn's `tool_name`
 is **`Agent`**, not `Task` — the matcher is `Task` and it fired, but the envelope says `Agent`, so a
 guard filtering on `tool_name === "Task"` would never run. And the model arrives as the harness alias
-**`opus`**, never the canonical `claude-opus-4-8` — which is the fact the alias map in
-[`../../models.ts`](../../models.ts) exists for.
+**`opus`**, never the canonical `claude-opus-4-8`. The alias map that used this evidence is retired;
+the captured envelopes remain a record of what the harness sent.
 
 <a id="capture-3--the-worktreecreate-envelope"></a>
 ## Capture 3 — the `WorktreeCreate` envelope
@@ -97,6 +95,6 @@ fail-closed every worktree spawn crew-wide (#2925). Those presences and absences
 ## The limit, stated rather than implied
 
 These fixtures freeze what 2.1.226 emitted on one machine on one day. Nothing in this repo can detect
-the harness changing its envelope — no gate executes the real harness (ADR 0180's own premise). A test
+the harness changing its envelope — no gate in this repo executes the real harness. A test
 over a stale fixture goes green. Re-capture, by the method above, is the only way to refresh it, and a
 re-capture updates this file in the same commit.

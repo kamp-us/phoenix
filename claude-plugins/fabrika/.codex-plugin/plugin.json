@@ -1,0 +1,14 @@
+{
+	"name": "fabrika",
+	"version": "0.1.0",
+	"description": "Shared Fabrika pipeline skills over deterministic CLI verbs.",
+	"skills": "./skills/",
+	"interface": {
+		"displayName": "Fabrika",
+		"shortDescription": "Build, review and ship through verified CLI verbs",
+		"longDescription": "Shared stage skills with a Codex dispatch adapter that isolates lane tasks in dedicated git worktrees. Requires the Fabrika CLI and an initialized repository.",
+		"category": "Productivity",
+		"capabilities": ["Read", "Write"],
+		"defaultPrompt": ["Use Fabrika to operate the requested issue lane."]
+	}
+}

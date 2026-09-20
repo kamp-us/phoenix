@@ -6,10 +6,8 @@
  * group's, because each refusal names one correctable thing in its own verb's words. A second leak
  * predicate that drifts from the first is worse than either alone.
  *
- * Four outcomes, and the first two must never collapse: an **unread** pipe is UNKNOWN and seats on
- * `1`, a **read-but-empty** one is a proven `3`. A body that IS a path is `6` rather than `5` because
- * the fixes are opposite — the loop on a leak is *rewrite and resend*, and on a body that is a path
- * that loop never terminates.
+ * An unread pipe cannot prove empty input. A body that is a path cannot be repaired by
+ * rewriting a leaked path inside it, so the two refusals must stay distinct.
  */
 
 import type {StdinRead} from "../io/stdin.ts";

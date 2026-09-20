@@ -1,22 +1,22 @@
 /**
  * The deterministic rendered-vs-golden visual diff (pure core). This is the
- * DIFF half of calibration B (#2945): it produces the *signal* — a structured
+ * DIFF half of the calibration: it produces the *signal* — a structured
  * per-surface deviation (magnitude + the differing regions) — never the verdict.
- * The judgment escalation ("is this deviation acceptable?") is the review child's;
+ * The judgment escalation ("is this deviation acceptable?") is the review gate's;
  * here we only measure, deterministically, so the same two images always yield
  * the same result (the AC the review gate anchors on).
  *
- * Flake-canon split (the map, #2945): the capture-time half of the canon —
+ * Flake-canon split: the capture-time half of the canon —
  * animations disabled, reduced-motion, `document.fonts.ready` awaited, srgb
  * forced, seeded data + frozen clock — is enforced when the bytes are RENDERED
- * (the render harness / capture options, #2963), so it is out of this pure core.
+ * (the render harness / capture options), so it is out of this pure core.
  * The DIFF-time half of the canon lives here: known-dynamic regions are MASKED out
  * of the comparison (`DiffOptions.masks`) so a legitimately-varying region (a
  * relative timestamp, an avatar) never reads as a deviation.
  *
  * Operates on already-decoded rasters (RGBA row-major) so it needs no PNG codec
  * and stays a pure, unit-tested total function; decoding candidate/golden PNG
- * bytes into a `RasterImage` is the caller's/render-child's boundary (#2961).
+ * bytes into a `RasterImage` is the caller's boundary.
  */
 
 /** An axis-aligned rectangle in device pixels — a mask input or a diff region output. */

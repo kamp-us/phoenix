@@ -5,8 +5,8 @@
  * refusal it can print verbatim — so the four resolution arms collapse here once instead of at each
  * call site. **`Malformed` and `Unknown` both refuse**: a value nobody could decode and a file
  * nobody could read are equally not an answer, and neither may fall back to the shipped default it
- * did not resolve to. Falling back is how a typo in `.fabrika.jsonc` silently restores phoenix's own
- * values in a repo that is not phoenix.
+ * did not resolve to. Falling back is how a typo in `.fabrika.jsonc` silently restores the shipped
+ * defaults in a repo that declared something else.
  *
  * Per key rather than a whole-surface read: a verb that needs the standing lanes has no business
  * refusing over a malformed `cycleDoc` it never opens. The whole-config gate that *does* refuse on

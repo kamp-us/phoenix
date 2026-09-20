@@ -24,12 +24,22 @@ pnpm test             # both tiers (vitest)
 pnpm test:unit        # the unit tier
 pnpm test:integration # the slow tier: a real Pi AgentSession on a real loopback socket, no creds
 pnpm typecheck
+pnpm proof:board      # the process board in a real browser, on fixture rows — see "Paint proofs"
 pnpm proof:chat       # the chat window in a real browser, on fixtures — see "Paint proofs"
+pnpm proof:picker     # the window picker, open and filtering, in a real browser — see "Paint proofs"
 pnpm proof:pi-vertical   # the Pi vertical in a real browser, on Pi's faux provider — free
 pnpm proof:claude-real   # the Claude vertical on the REAL CLI — the founder's run, spends tokens
 ```
 
 ### Paint proofs
+
+`pnpm proof:pi-window` also serves `/inspector.html`: the production agent inspector over an
+in-memory process. `window.inspectorProof.update(cost, input, output)` commits a usage snapshot
+through its normal subscription, so a browser can compare repeated digit substitutions and
+digit-count growth at a narrow viewport. The fixture opens no backend or model. Cost and token
+rows use tabular figures; session/directory text keeps its wrapping and ordinary typography.
+Equal digit advances stabilize same-length substitutions, not the total width of a growing number
+or a currency value whose existing formatter changes its fraction length.
 
 Both test tiers run in jsdom, which has no layout: a claim about what the chat window *paints* —
 a diff column's width, a disclosure indicator's size, whether a portaled listbox resolves its
@@ -37,8 +47,60 @@ tokens — cannot be made there, and a report of a browser run whose harness was
 be checked by anyone (#7610). So the harness ships. `pnpm proof:chat` serves
 `src/shell/chat/proof/`: two chat windows over one in-memory process, on the same fixtures the unit
 tier uses, with a tool call of each shape, a pending permission card and three modes. It boots no
-kernel, opens no socket and imports no agent code, so what it proves is paint and keyboard and
-nothing else. Pass `--port <n>` when the default is taken.
+kernel or agent session, so the default page proves paint and keyboard only. Pass `--port <n>`
+when the default is taken.
+
+`pnpm proof:board` serves `src/shell/board/proof/`: the process board over five fixture rows —
+an agent with both generic ports, its child, a grandchild that publishes neither, a demo counter
+and a stopping shell — nested three deep, so the tile rhythm, the nesting and where a long status
+line wraps are visible somewhere a jsdom test cannot look. It is the page the design gate captures
+as the `tuval-board` surface. The rows are a still life: a board that spawned a process on a timer
+would capture differently on every run, and what the entry animation *does* is the unit tier's.
+
+`pnpm proof:picker` serves `src/shell/picker/proof/`: two empty windows through the real
+`WindowView`, one holding the picker as `<c-b> w` leaves it and one holding the same picker with
+`co` already in its `/` filter, so both sections are narrowed and the match count is on the page.
+It is the page the design gate captures as the `tuval-picker` surface, and it exists because the
+picker is two gestures deep on the real desk while `fabrika ui render` drives a bare route — without
+it the gate cannot reach the state it is asked to judge (#8450). No kernel, no registry, no socket:
+the entries are literals, and what the keys *do* is the unit tier's.
+
+The same server's `/session-refusal` fixture mounts the production read-only transcript with a
+missing-folder row beside a refused initial read, using the page's stylesheet entry. Both keep
+Back usable and omit the composer. The refused read's existing retry lands an empty readable
+transcript, which offers the composer again. The fixture supplies answers locally; it opens no
+kernel or agent. Session-open and page transcript tests cover send plans and socket-read recovery.
+
+The same harness has four paging routes: `/paging-local`, `/paging-partial`, `/paging-completed`
+and `/paging-prepended`. Each scrolls the real `ChatWindow` with shipped styles. The last route
+checks that a prepend retains the **same DOM row** for the oldest local echo, aligns it to the
+transcript's top border, and leaves the other window's history cursor untouched. It does not assert
+an unchanged pixel offset: the initial “Load earlier messages” row disappears. Twenty labelled,
+layout-only local echoes supply scroll height without supplying an eligible history cursor.
+
+These routes call the Node-side [paging replay](src/claude/proof/paging-replay.ts): real
+`ClaudeAiAgent` over the existing captured `streaming-turn` events, a scripted SDK/store and
+`KernelBridge.scripted`. It pauses after the first text delta, checks that both local and partial
+cursors cause zero store reads, then adds completed assistant frames and pages through the live
+message id's stored alias. The captured assistant frames are re-enveloped as stored rows, as in
+the existing turn regression; this is not a live JSONL read. The browser receives that completed
+replay as JSON and supplies its page through a scripted `WindowHost` with `Delivered.view`.
+There is no kernel, transport, Claude CLI, login or provider spend in this proof. Shared-handler
+and real Pi integration coverage remain separate.
+
+`window.pagingProof` exposes the run time, read counts, dispatched cursor and DOM-anchor result for
+builder inspection. A bounded open request keeps the declared capture's network-idle wait behind
+the DOM assertions; a failed assertion raises a page error, never a success-shaped screenshot.
+The four routes are first-render proof scenarios, not new product routes.
+
+The same server's `/effort.html` is the fresh-Claude effort proof: its Node endpoint runs the
+real `ClaudeAiAgent` and core fold against the scripted SDK catalog/context response, then hands
+the emitted initial-open state to the actual `ChatWindow` through an in-memory window host.
+No model is configured, the active row is not first, and no prompt or selection precedes the
+render. `/effort-offered.html` also opens the actual effort menu without selecting an item.
+`/initial-effort.json` exposes the run timestamp, duration, events and recorded control calls.
+This proves the layer-to-component state and paint, **not** the real CLI, login, kernel transport
+or model execution; the in-memory host records UI dispatches without executing them.
 
 `pnpm dev` runs `node src/bin.ts`, an Effect CLI (`effect/unstable/cli`) over the pure `boot`.
 Node strips the TypeScript itself, so the kernel has no build step. Boot loads your config layers
@@ -66,18 +128,22 @@ tuval: process shell program=shell parent=- ports=- state=running@0
 tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0
 tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0
 tuval: transport on 127.0.0.1:58319
-tuval: desk at http://127.0.0.1:5173/
+tuval: desk at http://localhost:5173/ — 127.0.0.1 and [::1]
 tuval: running — Ctrl-C stops and checkpoints
 count 1
 count 2
 ```
 
 Those are two ports on purpose — the socket and the page bind separately — and the transport admits
-the page's origin as it starts, so the browser's attach goes through (#7560).
+the page's origin as it starts, so the browser's attach goes through (#7560). The desk answers
+`localhost` on both loopback addresses, so it cannot be shadowed by another program holding the same
+port on the family it did not bind; a `--page-port` either family has taken refuses the start and
+names that address (ADR [0370](../../.decisions/0370-desk-serves-localhost-on-both-loopback-families.md)).
 
 Open that URL and the desk is yours by keyboard: `<c-b> |` and `<c-b> -` split, `<c-b> h/j/k/l`
 walk focus, `<c-b> N` makes a workspace and `<c-b> <c-h>` / `<c-b> <c-l>` walk them, `<c-b> z`
-zooms, and `<c-b> :` opens the command line — `window:open log` fills the focused window with a demo
+zooms, `<c-b> w` puts the focused window back on the picker with its process still running, and
+`<c-b> :` opens the command line — `window:open log` fills the focused window with a demo
 program. With the prefix unarmed every key belongs to the focused window's process.
 
 Beside the shell (below), the box holds the demo counter and log (`src/demo/`, #7517): the counter
@@ -135,6 +201,103 @@ tuval: refusing to boot — config module /path/to/tuval.config.ts: module threw
 tuval: refusing to boot — config module /path/to/tuval.config.ts: not a v1 config at graph: Expected object
 ```
 
+## The public API
+
+`@kampus/tuval` stays `"private": true` — whether it publishes to npm is a distribution
+commitment, and #8943 leaves it to the founder. What it now declares is an `exports` map, so a
+package that resolves this one through the workspace (or a `git:` checkout) has a specifier to
+write instead of a relative path into `src/`. Four doors, and they are the whole surface:
+
+| Subpath | What it carries |
+|---|---|
+| `@kampus/tuval/authoring` | `defineProgram`, `port`, `programArgs`, `Program`, the effect constructors (`spawn`, `send`, `ask`, `reply`, `emit`, `stop`), `testProgram`, `HostHandlers`, and the types an authored `update` annotates itself with. `src/authoring/index.ts` says at length what is on it and what is deliberately not. |
+| `@kampus/tuval/ai-agent/ports` | The AI-agent port vocabulary — `PromptPayloadSchema`, `TurnResultSchema` and the rest of `src/ai-agent/ports/index.ts`. It stays its own door because its `boundary.unit.test.ts` holds it closed over `effect` plus the kernel's program row, and folding it into the authoring door would make one surface owe two stabilities. |
+| `@kampus/tuval/window` | The window half — `windowRenderer` and `WindowHost` for a `kind: module` window, and the `AuthoredWindow` / `WindowView` types the `window` field on an authored record is written against. Its own door because its closure is browser-safe and `./authoring`'s is not. |
+| `@kampus/tuval/sessions` | The shipped session rows a *config* fills a shaped arg with — `claudeSession`, `codexSession`, and the `WorkspaceId` / `ClientId` constructors a row's `scope` is built from. |
+
+A kernel-side program looks like this — the same shape `src/authoring/example/pr-review.ts`
+has in-tree, with the specifiers an outside consumer writes:
+
+```ts
+import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import {type Answer, type ArrivalEvent, defineProgram, emit, port, Program, programArgs, type Reply, send, type ShapeSource, spawn} from "@kampus/tuval/authoring";
+```
+
+and its config hands the shaped arg a real row:
+
+```ts
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval/sessions";
+```
+
+### An effect of your own
+
+The six kernel effects are what every program gets for free. A program that has real work to do — a
+shell command, an HTTP call, a git worktree — names its own effect type and supplies the handler
+that runs it, which is R12.1 of #8716 and is reachable from an authored `update` as of #9294. Two
+halves, both written by the author: the type goes on `defineProgram` as its last type argument, and
+the handler goes onto the compiled row by spread. That handler is a `HostHandlers` handler, so it
+answers `Effect.Effect<ReadonlyArray<Msg>>` — its follow-up Msgs as a *list*, one entry or none,
+never a bare Msg.
+
+```ts
+type Run = {readonly type: "run"; readonly command: string};
+type Ran = {readonly type: "ran"; readonly output: string};
+
+const run = (command: string): Run => ({type: "run", command});
+const ran = (output: string): Ran => ({type: "ran", output});
+
+const update = {
+	go: (state: State): Answer<State, Run> => [state, [run("git status")]],
+	ran: (state: State, event: Ran): Answer<State, Run> => [{...state, output: event.output}, []],
+};
+
+const row = defineProgram<State, typeof ports, typeof update, Commands, unknown, Run>({
+	id: "runner",
+	ports,
+	init: (): State => ({output: null}),
+	update,
+});
+
+export const runner: AnyProgram = {
+	...row,
+	handlers: {
+		...row.handlers,
+		run: (cmd: Run) => Effect.map(shell(cmd.command), (output) => [ran(output)]),
+	},
+};
+```
+
+The type argument list is stated in full because `Run` appears only in a cell's *answer*, which is
+not a place inference can reach; a program naming no effect of its own writes none of it and keeps
+every default, so `Answer<State>` stays the six effects and a typo'd effect is still refused at
+compile. The handler comes from the spread and from nowhere else — `defineProgram` cannot see one
+added after it returns, so an effect the row has no handler for is skipped silently by the actor
+rather than refused at definition.
+
+The kernel is not on any of them: the compilers (`compilePorts`, `compileCommands`, `fillArgs`,
+`FIELD_COMPILERS`, `compileWindow`, …) stay reachable only by relative path from inside `src/`.
+
+`./authoring` and `./window` are two doors rather than one because only one of them is
+browser-safe: the kernel-side barrel reaches `src/process/Processes.ts` and
+`src/commands/core/process.ts`, both `node:crypto` importers, while `./window`'s whole value-import
+closure is five modules and reaches no `node:` builtin and no package but `effect`.
+`src/authoring/window-closure.unit.test.ts` walks both at every run, so the day an import changes
+that, a test says so rather than a browser does. (#8946 is a different chain: a window module
+importing its *own program's* file, which reaches the kernel through `define-program.ts`. Nothing
+on `./window` makes that import safe.)
+
+`src/authoring/public-surface.unit.test.ts` is the other proof: it reaches the API through the
+specifiers above and nothing else, writes a program, and fills its shaped arg with a shipped row.
+
+The first consumer outside this package is `@kampus/tuval-cron`, a scheduler program written on
+`@kampus/tuval/authoring` and installed into a desk by naming its row in a config. It used to ship
+in-tree under `apps/tuval/src/cron/`; once the doors above existed there was no reason for a
+product feature to live in the kernel, so it moved out to `packages/tuval-cron` (#9408) and this
+package kept only the kernel behaviours it drove (#8955, #8959, #9221, #9229, #9230, #9250) and the
+tests that prove them. It is a sibling package rather than another repo now, and it is still an
+outside consumer in the sense this door cares about: it reaches this package through the published
+specifiers above and never by relative path.
+
 ## Spells
 
 A spell is one command anything can call by path: `window close`, `spell list`, `process spawn`.
@@ -143,6 +306,21 @@ result, and the Effect that runs it — so the same definition is what the comma
 against, what a key binding compiles to, and what a program calls over the wire. The kernel
 registers its own list at boot (`help`, `spell list`, `spell describe`, `process spawn`,
 `process send`, `process read`), and boot reports the total beside the program count.
+
+Open the palette with Cmd+K or Ctrl+K to discover registered program and core commands alongside
+shell shortcuts such as `window close`. Tab completes a selection; Enter runs it through the
+attached kernel. Success closes the palette and a refusal stays beneath its input. Escape closes
+it and returns focus. The `<c-b> :` command line also runs registered paths and keeps their actual
+result or refusal visible. Existing shell names such as `window:open log` retain their behavior.
+
+Use the program's registered prefix when asking for help: `help shell window close`,
+`help "shell window close"` and `help shell.window.close` describe the same command.
+`spell describe` accepts those three path forms too. Discovery follows committed catalogue
+replacements and reconnection without reloading the page.
+
+The ordinary-program browser proof runs with `pnpm test:browser commands.spec.ts` from this
+package. Its deterministic counter has proof-only tick/read/refuse commands; it verifies real
+state changes through both surfaces and captures results, refusals and help descriptions.
 
 A program row declares its own in a `spells` field, and each one is registered under the program's
 id, so `echo`'s `repeat` is `echo repeat` and no program can collide with another or with the
@@ -296,11 +474,14 @@ const inbox = yield* wiring.inbox({node: "c", port: "ticks"});
 ```
 
 `compile` runs over registry rows before any process exists and refuses the graph there: a route
-whose source kind does not match its target kind (`IncompatibleRoute`, naming both kinds and both
-program ids), a route naming a port a program does not declare in that direction
-(`UndeclaredPort`), a route to a node the graph does not declare, a parent the graph does not
-declare before the child (`UnknownParent`), a duplicate node id, or an in-port whose capacity is
-not a positive integer. `open` builds one queue per in-port at its declared bound and delivers
+whose two ends do not fit — payload fit when both ends publish a payload schema, equal kinds when
+either publishes none, raised as `IncompatibleRoute` naming both kinds, both program ids and the
+`reason` it refused
+([ADR 0395](../../.decisions/0395-a-graph-route-compiles-on-payload-fit-not-on-kind.md)); a route
+naming a port a program does not declare in that direction (`UndeclaredPort`), a route to a node
+the graph does not declare, a parent the graph does not declare before the child
+(`UnknownParent`), a duplicate node id, or an in-port whose capacity is not a positive integer.
+`open` builds one queue per in-port at its declared bound and delivers
 each `emit` to every routed target in authoring order, so a compatible route delivers in order.
 The slice never imports `src/process/`.
 
@@ -519,6 +700,25 @@ renderer, the picker for an empty window, a placeholder for a gone process. The 
 marked twice over — a heavier border, and a glyph plus `aria-current` in its title row — because no
 state here may be carried by colour alone.
 
+**A window's title is its process's own line.** `windowTitle` (`src/shell/ui/window-title.ts`) reads
+the newest value the process published on its generic `title@1` out-port, latched by the kernel and
+carried on the process row, and renders it as-is: a Claude session reads
+`claude-session · Opus 5 · phoenix` because the AI-agent program published that string, not because
+the shell composed it — the shell reads nothing AI-specific (ruling R8.1 on
+[#8715](https://github.com/kamp-us/phoenix/issues/8715)). The AI-agent program composes it as
+`program · model · cwd` (`src/ai-agent/self-report.ts`, ruling R3.1), leaving out any segment it
+cannot fill — a session that has not heard its model yet reads `claude-session · phoenix`. The
+program segment is the row's `identity.program`, which defaults to the row id, so it is the id and
+not a display name: nothing on a row carries a shorter one, and `label` (`src/registry/program.ts`)
+is the picker's name and is not read here
+([#8722](https://github.com/kamp-us/phoenix/issues/8722) narrowed it there deliberately). A program
+re-emitting `title@1` mid-turn moves the title with no remount, a process that published no title is
+named by its program, and the empty and gone windows keep the strings they have. The process id
+moved to the desk inspector's
+heading (ruling R3.1). All of it ships behind the default-off `windowTitles` flag
+([#8721](https://github.com/kamp-us/phoenix/issues/8721)); off, every window is `process <uuid>`
+again and the inspector carries no id.
+
 There is one **application-level** keyboard listener, on the document, and it is the only thing that
 dispatches `keys.press`. Two elements read their own keys and neither is a second shell listener:
 the command line's input, and each `Separator`, whose arrow-key resizing the library attaches per
@@ -550,9 +750,17 @@ exactly one effect per new key; and a dropped socket whose re-attach shows the s
 a key that reaches its process. The shape and its two rules are
 [`.patterns/tuval-shell-assembly.md`](../../.patterns/tuval-shell-assembly.md).
 
-Two things the page cannot do yet, both because the wire carries rows and no registry listing: its
-picker offers running processes only (open by name through `prefix : window:open <program>`), and its
-renderer table is keyed by program id rather than by the `renderer` reference a row declares.
+The renderer table is keyed by the `renderer` reference a row declares, and a row may point that
+reference outside the tree: `renderer: {kind: "module", ref: "@csirin/tuval-calc/window"}` names a
+module the page loads at boot, whose `default` export is a `windowRenderer("module", …)` and whose
+`admits` export is the predicate over the state it reads. A program installed with `pnpm add` and
+registered as one row is then whole — its kernel half runs from the row and its window is found by
+the same string. The specifier resolves from the config module that declared the row, the same base
+Node used for the row itself, so the package lives beside your own `tuval.config.ts` and is never a
+dependency of Tuval; a specifier that resolves from neither that config nor the page root refuses the
+page at boot naming that config, and a module that loads into something else is the placeholder's
+sentence. The why and the failure shapes are
+[ADR 0359](../../.decisions/0359-tuval-window-renderer-is-a-module-specifier.md).
 
 ## The two entry points
 
@@ -576,6 +784,38 @@ handshake and the server, `src/shell/picker/browser.ts` leaves out `open.ts` and
 it. A new Node-only module goes in `index.ts`, never `browser.ts`. The shape and the reasons are
 [`.patterns/tuval-shell-assembly.md`](../../.patterns/tuval-shell-assembly.md).
 
+## The static root
+
+`public/` is Vite's default `publicDir`, resolved against the `root` that `servePage` in
+`src/page/dev-server.ts` already hands `createServer`. It is served at `/` with no config change:
+the dev server runs `configFile: false` and `publicDir` needs none, so nothing on
+`PageServerOptions` mentions it and nothing should. It holds the tab icon and only the tab icon —
+`favicon-16.png`, `favicon-32.png`, `favicon-192.png` and `apple-touch-icon.png`, each rendered at
+its own size and linked from `index.html` with a `sizes` attribute so the browser selects a cut
+rather than squashing one. That is why no SVG icon is declared: the mark is line art, and a browser
+scaling one weight down to a 16px tab closes the gaps between the branches into a blob. Each cut
+carries the mark's own near-black plate rather than a transparent ground, so one file reads on a
+light tab strip and on the dark desk alike.
+
+None of those four is editable. `brand/tree-mark.svg` is the source they are cut from — the kamp.us
+tree mark as the founder supplied it, adopted in
+[#8144](https://github.com/kamp-us/phoenix/issues/8144) and the reference form from here on. The
+supplied file was a raster; it is traced to vector here so a size is *re-rendered* rather than
+resampled, which is what stops a further size being a downscale of a downscale. A new size is one
+`rsvg-convert` at that size; a shape change is an edit to the SVG and a re-cut of all four.
+
+The drawing is unchanged — the trace is of the supplied artwork, branch work and root flare intact,
+not a redrawn substitute. An earlier pass on this branch did substitute a simplified mark, and that
+was reverted: establishing a source of truth is not licence to redesign the thing it is a source of.
+
+One cut carries a render-time override, and only one. The mark is dense line art, and at 16px every
+stroke lands under a device pixel — rendered flat, the whole canopy comes out anti-aliased mid-tone
+with no pixel reaching full colour, which reads as a faint smudge rather than a tree. The 16px cut
+is therefore rendered with a `stroke-width` on the path group, which widens each stroke enough to
+carry solid colour: 0 pixels at full red become 62, while the interior plate gaps that make it read
+as a canopy survive. Nothing about the geometry changes. The larger cuts need no override, because
+at 32px and up the strokes already cover whole pixels.
+
 ## The AI agent slice
 
 `src/ai-agent/` is the backend-blind half of running an AI agent as a Tuval program. Nothing under
@@ -597,7 +837,12 @@ declared data rather than hiding in a layer.
 layer. It holds no Effect and names no backend: each Cmd is the name of work a handler performs, and
 the Sub is the name of the layer's event stream. Every refusal is data — a prompt outside `ready`, an
 answer to a card nobody raised, a mode the agent does not offer each record an `AgentFailure` and
-emit no Cmd, so the window renders the refusal instead of a crash taking the process with it.
+emit no Cmd, so the window renders the refusal instead of a crash taking the process with it. A
+permission card is the one piece of that state with a lifetime of its own: answering marks it
+`answering` and it leaves only on a confirmation naming the same raising of it, so a card that
+disappears means the agent settled the request rather than that a decision was sent
+([#8006](https://github.com/kamp-us/phoenix/issues/8006)). A confirmation that never comes leaves it
+`unresolved`, which offers no second answer — the authorization may already stand.
 
 **The handlers.** `src/ai-agent/handlers/` is the one generic handler set. Each handler yields the
 service and calls one of its members; a layer's typed error becomes a `failed` Msg carrying the tag
@@ -613,7 +858,10 @@ buried in a handler, and only `start` and the reconnect that repeats it are retr
 `transcript`, `transcript-page`, `prompt`, `permission`, `mode` — each with one nominal kind, one
 payload predicate and one queue bound. Every payload is model-blind: no model name, cost, token
 count, session id or backend type appears on one. A program playing both ends of a two-way port
-names each end locally, and `compile` matches on the kind, so a cross-kind route still refuses.
+(`transcript-page`, `permission`, `mode`) names each end locally, and those three publish no payload
+schema, so `compile` matches them on the kind and a cross-kind route still refuses. The one-way
+ports publish the `Schema` their predicate was written from, so their routes are compiled on payload
+fit instead ([ADR 0395](../../.decisions/0395-a-graph-route-compiles-on-payload-fit-not-on-kind.md)).
 
 **The history.** `src/ai-agent/history/` is pure and imports no Effect, no socket and no other
 `ai-agent/` directory but `ports/`. The window is the live tail only — the newest whole exchanges
@@ -623,13 +871,48 @@ whole exchanges only, and Tuval keeps no second copy.
 
 **The row.** `aiAgentProgram` (`src/ai-agent/program.ts`) assembles all of it into one program row:
 the core, the eight port keys, the `receive` translations, the handlers and the Sub. A caller varies
-`layer`, `cwd` and the identity. Two layers fill it today: `PiAiAgent.layer` was the first, and
-`ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`) is the second — a
-`Layer<TuvalAiAgent, never, KernelBridge>` over the Claude Agent SDK, never-failing, asking only for
-the kernel-tools bridge the row provides. The `claude-session` row that wires it into the config
+`layer`, `cwd` and the identity. Four backends fill it today: `PiAiAgent.layer`,
+`CodexAiAgent.layer`, `ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`) and
+`AgyAiAgent.layer` (`src/agy/ai-agent/AgyAiAgent.ts`). The first three are a
+`Layer<TuvalAiAgent, never, KernelBridge>` — never-failing, asking only for the kernel-tools bridge
+the row provides; agy reaches no kernel tool, so its layer asks for nothing
+(`src/agy/program.ts`). The `claude-session` row that wires it into the config
 graph is [#7623](https://github.com/kamp-us/phoenix/issues/7623).
 
 Shape and rationale: [tuval-program-row-effects.md](../../.patterns/tuval-program-row-effects.md).
+
+## Codex
+
+`codex-session` implements the same `TuvalAiAgent` interface as Pi and Claude. It uses
+Tuval's shared chat window, inspector, session list and kernel spawn/send/read tools.
+The tracked config registers it without launching it at boot. Open it from the picker
+or run `window:open codex-session` in the palette.
+
+Install the Codex CLI and use its existing login. This implementation was tested against
+**codex-cli 0.153.4**. Custom configs import `codexSession` from `src/codex/program.ts`
+and supply the same `cwd` and `scope` values as the Claude row. Its optional `codex`
+settings include `mode`, `model` and `streamPartialReplies`.
+
+Modes are `read-only` and `workspace-write`, both with approvals enabled. Codex's own
+catalog supplies models and thinking levels, including `ultra` where offered. Permanent
+permission grants and terminal slash-command discovery are not advertised. Partial
+replies are off by default.
+
+New sessions use legacy history because the installed CLI refuses its paginated-history
+methods. Existing paginated sessions can fail to load rather than show false empty history:
+[8464](https://github.com/kamp-us/phoenix/issues/8464). A new legacy session has no persisted
+history before its first user message.
+
+```bash
+pnpm exec vitest run --project unit src/codex
+pnpm exec vitest run --project integration src/codex
+TUVAL_CODEX_PROTOCOL_TEST=1 pnpm exec vitest run --project integration src/codex/codex-cli.integration.test.ts
+```
+
+The last command runs the installed CLI with a temporary `CODEX_HOME`. It checks settings,
+empty history and Tuval tool calls without model generation or your credentials. Real model
+replies, approvals and nonempty history still need a live check.
+See [tuval-codex.md](../../.patterns/tuval-codex.md) for the protocol and lifetime rules.
 
 ## The Pi loopback server
 
@@ -701,14 +984,30 @@ not-found and the reacquire run against the loopback server on Pi's faux provide
 
 ## The Pi AI agent layer
 
-`src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a `Layer<TuvalAiAgent>` and
-requires nothing (founder ruling 4, [#7570](https://github.com/kamp-us/phoenix/issues/7570)):
-building it inside the process's scope stands up Pi's model runtime, the `PiSessionHost` over it,
-one loopback server and one client, and closing that scope closes the client, the server and every
-session exactly once. A process therefore holds no Pi value of its own — `PiAiAgentOptions` carries
-plain strings, and `agentDir` is the only path it usually sets. Nothing on that surface is a Pi
-type, and the per-launch token is unwrapped once, into the transport factory's closure, and reaches
-no event, no method's answer and no log line.
+`src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a
+`Layer<TuvalAiAgent, never, KernelBridge | Features>`, never-failing, asking for two of Tuval's own
+services and no Pi type in either channel. `KernelBridge` is what the row's three kernel tools call
+through, provided by the row from its own scope the way the Claude and Codex rows provide it (ruling
+R9.1 on [#8715](https://github.com/kamp-us/phoenix/issues/8715)); `Features` is the merged flag
+record the row's spawner hands over
+([#8595](https://github.com/kamp-us/phoenix/issues/8595)). Founder ruling 4
+([#7570](https://github.com/kamp-us/phoenix/issues/7570)) is what puts the runtime inside the layer,
+and it required nothing at all until those two landed; what the ruling guards is unchanged, since
+both are Tuval services. Building it inside the process's scope stands up Pi's model runtime, the
+`PiSessionHost` over it, one loopback server and one client, and closing that scope closes the
+client, the server and every session exactly once. A process therefore holds no Pi value of its own
+— `PiAiAgentOptions` carries plain strings, and `agentDir` is the only path it usually sets. Nothing
+on that surface is a Pi type, and the per-launch token is unwrapped once, into the transport
+factory's closure, and reaches no event, no method's answer and no log line.
+
+**The three kernel tools.** `spawn`, `send` and `read` reach a Pi session as plain `customTools` on
+`createAgentSession`, at those bare names — a third adapter over the one `KernelBridge`, where
+Claude's is an in-process MCP server and Codex's an HTTP one (`src/pi/tools.ts`,
+[#8720](https://github.com/kamp-us/phoenix/issues/8720)). They ship behind the default-off
+`piKernelTools` flag; off, the host passes no `customTools` key and opens exactly the session it
+opened before. Pi has no error flag on a tool result, so a bridge refusal is a rejected `execute`,
+which is what the agent loop renders as the model's tool error. The `pi-subagents` extension and its
+own flag are untouched by any of it.
 
 `start({cwd, resume?})` is the caller's, not the layer's, so restore is "rebuild the layer, then
 `start({cwd, resume: sessionId})`" — and that same call is the only way back after a drop. A dropped
@@ -738,9 +1037,10 @@ through a user's config module (`desk.ts`) with `ScriptedAiAgent.layer` where th
 and `pi-session` beside it on Pi's own faux provider. It calls no model API and spends nothing, so
 `pnpm test:integration` runs it and so does CI. Five cases: the picker opening a Claude chat under
 the shell with a tool row that runs and settles, one permission card answered and one mode switched;
-Pi and Claude side by side with process-table rows that differ only by program id and state summary;
-a restart that brings the transcript back with the cut turn interrupted; a dropped socket re-attached;
-and a child spawned through the three kernel tools, prompted with `send` and read back with `read`.
+Pi and Claude side by side with process-table rows that differ only by program id, state summary and
+self-report; a restart that brings the transcript back with the cut turn interrupted; a dropped
+socket re-attached; and a child spawned through the three kernel tools, prompted with `send` and
+read back with `read`.
 
 `pnpm proof:claude-real` is the real-CLI variant, and it is **local only — the founder's own run, on
 their own Claude Code login, spending real tokens.** No workflow reaches it and none may: it boots
@@ -752,9 +1052,10 @@ split. The evidence is a comment on [#7625](https://github.com/kamp-us/phoenix/i
 the SDK and CLI versions the start log printed, and whether the resumed CLI re-asked for a tool call
 left unanswered.
 
-Two seams the scripted variant has to stand up for itself, both because no shell owns them yet.
+Two seams the scripted variant has to stand up for itself, both because it serves no desk.
 `kernel-tools.ts` builds a `WindowIndex` so a tool `spawn` is parented by the Claude process — the
-kernel resolves a parent from the caller's window and `boot` leaves that index empty (#7894). And
+kernel resolves a parent from the caller's window, which under a real desk is the one the picker
+handed the process at the open (`CallingWindow`, #8758) and here is named directly. And
 `late.ts` hands the real variant's config module a `SpellBridge` that does not exist when the loader
 evaluates it (#7958). Both are the proof's own scaffolding; neither writes anything under `src/ai-agent/` or
 changes what a row is.

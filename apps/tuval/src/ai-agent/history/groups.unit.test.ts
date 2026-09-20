@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {
 	assistantItem,
+	compactionItem,
 	randomTranscript,
 	systemItem,
 	toolItem,
@@ -27,6 +28,21 @@ describe("atomic groups", () => {
 	it("stands a session notice alone, so it splits nothing around it", () => {
 		const history = [userItem("u1"), assistantItem("a1"), systemItem("s1"), userItem("u2")];
 		expect(groupTranscript(history).map((group) => group.items.length)).toEqual([2, 1, 1]);
+	});
+
+	it("stands a mid-stream compaction marker alone rather than absorbing it into the turn before it", () => {
+		const history = [
+			userItem("u1"),
+			assistantItem("a1"),
+			compactionItem("c1"),
+			userItem("u2"),
+			assistantItem("a2"),
+		];
+		expect(groupTranscript(history).map((group) => group.items.map((item) => item.id))).toEqual([
+			["u1", "a1"],
+			["c1"],
+			["u2", "a2"],
+		]);
 	});
 
 	it("opens an orphan group for a turn with no prompt before it", () => {

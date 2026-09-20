@@ -26,7 +26,11 @@ import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, type FileSystem, Queue, Result, Schema, Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
+import {
+	type AiAgentSessionMsg,
+	type AiAgentSessionState,
+	promptItemId,
+} from "../../ai-agent/core/index.ts";
 import {boot, projectDir} from "../../boot.ts";
 import {PI_SESSION_PROGRAM} from "../../pi/renderer-ref.ts";
 import {ProcessId} from "../../process/process.ts";
@@ -241,11 +245,14 @@ const pickerPress = (
 	switch (answer._tag) {
 		case "Moved":
 		case "Cleared":
+		case "Filtering":
 			return {type: "window.setView", windowId: windowId as never, view: answer.view};
 		case "Chose":
 			return answer.intent._tag === "OpenProgram"
 				? {type: "window.open", windowId: windowId as never, programId: answer.intent.programId}
 				: {type: "window.attach", windowId: windowId as never, processId: answer.intent.processId};
+		case "Removing":
+			return {type: "process.remove", windowId: windowId as never, processId: answer.processId};
 		case "Ignored":
 			return null;
 	}
@@ -264,7 +271,7 @@ const openFromThePicker = Effect.fn("claudeVertical.openFromThePicker")(function
 	for (let step = 0; step < at; step += 1) {
 		const moved = pickerPress(windowId, entries, view, "j");
 		assert.isNotNull(moved, "the picker moved its highlight");
-		view = {cursor: view.cursor + 1, refusal: null};
+		view = {...view, cursor: step + 1, refusal: null};
 		yield* desk.send(moved as ShellMsg);
 	}
 	const chosen = pickerPress(windowId, entries, view, "<enter>");
@@ -629,7 +636,7 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 	);
 
 	it.live(
-		"runs Pi in one split and Claude in the other under one shell, with table rows that differ only by program id and state summary",
+		"runs Pi in one split and Claude in the other under one shell, with table rows that differ only by program id, state summary and self-report",
 		() =>
 			run(
 				Effect.gen(function* () {
@@ -691,20 +698,37 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 						pi.ports,
 						"the two rows declare different ports, so a projection could tell them apart by shape",
 					);
-					// The row's whole surface, minus the two axes a reader is allowed to tell them apart by
+					// The row's whole surface, minus the axes a reader is allowed to tell them apart by
 					// and the id every process has. Nothing may be left over: a row that grew a
 					// program-specific field would land here and redden.
+					//
+					// `title`/`status` are latched values, not shape (#8718): the kernel holds whatever
+					// each process last said on its own `title@1`/`status@1`, and each says it when its
+					// own session opens. The `ports` assertion above already proves both programs
+					// declare the pair, and this snapshot is taken the moment both rows exist — Claude's
+					// session has been up for several steps by then and Pi's has just spawned, so one
+					// side reads `some` and the other `none` for no reason but the clock. Comparing them
+					// would assert two sessions open in lockstep, which nothing promises.
 					const {
 						id: _claudeId,
 						programId: _claudeProgram,
 						stateSummary: _claudeState,
+						title: _claudeTitle,
+						status: _claudeStatus,
 						...restOfClaude
 					} = claude;
-					const {id: _piId, programId: _piProgram, stateSummary: _piState, ...restOfPi} = pi;
+					const {
+						id: _piId,
+						programId: _piProgram,
+						stateSummary: _piState,
+						title: _piTitle,
+						status: _piStatus,
+						...restOfPi
+					} = pi;
 					assert.deepStrictEqual(
 						restOfClaude,
 						restOfPi,
-						"a Pi row and a Claude row differ by something other than program id and state summary",
+						"a Pi row and a Claude row differ by something other than program id, state summary and self-report",
 					);
 				}),
 			),
@@ -803,7 +827,7 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 							);
 							assert.strictEqual(
 								restored.interrupted,
-								"a3",
+								promptItemId(PROMPT_3_KEY),
 								"the cut turn came back unmarked, so no window could offer the resend",
 							);
 
@@ -969,6 +993,22 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 								(entry: TableRow) => entry.id === spawned.process,
 							) as TableRow;
 
+							// An unstamped prompt is refused at the send (#7991). Asserted here because the
+							// alternative is the failure this case used to have: a delivered nobody could
+							// act on, and a poll below that runs to the test's own timeout.
+							const unstamped = yield* callTool("send", () =>
+								tools.handlers.send({
+									process: spawned.process,
+									port: "prompt",
+									payload: {text: CHILD_PROMPT, key: "child-unstamped"},
+								}),
+							);
+							assert.strictEqual(
+								unstamped.isError,
+								true,
+								"the child's prompt port took a payload carrying no timestamp",
+							);
+
 							const sent = answered(
 								yield* callTool("send", () =>
 									tools.handlers.send({
@@ -977,7 +1017,7 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 										payload: {text: CHILD_PROMPT, key: "child-1", timestamp: Date.now()},
 									}),
 								),
-							) as {readonly delivered: boolean};
+							) as {readonly delivered: boolean; readonly evicted: number};
 
 							// `read` answers the port's current value, so it is polled rather than waited on:
 							// the transcript is published before the prompt lands and again after the reply.
@@ -1002,11 +1042,15 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 								);
 							});
 
-							return {child, claudeId: opened.processId, delivered: sent.delivered, transcript};
+							return {child, claudeId: opened.processId, sent, transcript};
 						}),
 					);
 					noLiveHttp(calls);
-					assert.isTrue(result.delivered, "the child's prompt port refused the payload");
+					assert.deepStrictEqual(
+						result.sent,
+						{delivered: true, evicted: 0},
+						"the child's prompt port refused the payload or dropped an earlier one",
+					);
 					assert.strictEqual(result.child.programId, CHILD_PROGRAM);
 					assert.strictEqual(
 						result.child.parentId._tag === "Some" ? result.child.parentId.value : null,

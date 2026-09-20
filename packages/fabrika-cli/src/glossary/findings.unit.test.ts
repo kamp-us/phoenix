@@ -81,7 +81,7 @@ describe("findDefects", () => {
 		]);
 	});
 
-	// One term, one register, one row (#4465).
+	// One term, one register, one row.
 	it("reports a key declared in both registers as cross-register", () => {
 		const table = `## S
 
@@ -161,7 +161,7 @@ describe("findDefects", () => {
 		]);
 	});
 
-	// #6433: `Empty` is the no-citations answer whatever the corpus, so it can never be a finding.
+	// `Empty` is the no-citations answer whatever the corpus, so it can never be a finding.
 	it("reports no citation finding when nothing was cited", () => {
 		const findings = findDefects({
 			registers: [

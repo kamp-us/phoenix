@@ -38,6 +38,28 @@ interface ItemBase {
 	readonly id: ItemId;
 	/** Epoch milliseconds. A wall-clock number, so no backend clock type reaches the window. */
 	readonly timestamp: number;
+	/**
+	 * The id of the tool call this item ran *inside*, when a backend nests calls — an agent-spawning
+	 * tool whose worker prompts, reasons and calls tools of its own. Absent means the item is the
+	 * agent's own, which is every item a backend with no nesting concept ever emits.
+	 *
+	 * On the base rather than on the tool kind alone: a nested worker's prose is as much the worker's
+	 * as its calls are, and a window handed the tag on calls only cannot tell a worker's reply or
+	 * reasoning from the agent's own.
+	 */
+	readonly parentId?: ItemId;
+	/**
+	 * The other id this same row is known by, when a backend keys its live tail and its history
+	 * reads in two id spaces. Absent means the row has one identity, which is every row a backend
+	 * with a single id space emits.
+	 *
+	 * It exists because the page/tail stitch (`shell/chat/rows.ts`) has to decide whether a page
+	 * copy and a tail row are one turn, and on Pi they never share an `id`: the live tail is keyed
+	 * positionally over the context messages, the history page by the stored session entry
+	 * (`pi/ai-agent/entries.ts`). The backend that holds both spaces states the join here rather
+	 * than the window guessing at one from text (#8032).
+	 */
+	readonly alias?: ItemId;
 }
 
 /**
@@ -50,11 +72,19 @@ export interface UserItem extends ItemBase {
 	readonly local?: boolean;
 }
 
-/** `interrupted` marks a turn the operator cut short; the resend is a fresh prompt, not a retry. */
+/**
+ * `interrupted` marks a turn the operator cut short; the resend is a fresh prompt, not a retry.
+ *
+ * `partial` marks text still being written. A backend re-upserts this same id as the reply grows
+ * and leaves the marker off the last upsert, so absent means final and a reader needs no second
+ * field to tell a finished reply from one mid-flight. Nothing about which backend is writing
+ * reaches the flag: the window learns "still growing" once, for every agent program (#8142).
+ */
 export interface AssistantItem extends ItemBase {
 	readonly kind: "assistant";
 	readonly text: string;
 	readonly interrupted?: boolean;
+	readonly partial?: boolean;
 }
 
 export interface ToolItem extends ItemBase {
@@ -65,12 +95,105 @@ export interface ToolItem extends ItemBase {
 	readonly status: ToolStatus;
 }
 
-export interface SystemItem extends ItemBase {
-	readonly kind: "system";
+/**
+ * The agent's reasoning for one turn, as content and nothing else.
+ *
+ * Model-blind like every other item: no provider signature, no redaction flag, no effort level.
+ * `ports/thinking.ts` is the effort-level *control* and has nothing to do with this row.
+ *
+ * `partial` is `AssistantItem`'s marker and carries exactly its contract: absent means final, and a
+ * backend re-upserts this same id as the reasoning grows. Reasoning streams before the answer does,
+ * so a window that reads the marker on one kind reads it on both without learning a second field.
+ */
+export interface ThinkingItem extends ItemBase {
+	readonly kind: "thinking";
+	readonly text: string;
+	readonly partial?: boolean;
+}
+
+/**
+ * The session compacted its context here, and `text` is the line the marker is labelled with.
+ *
+ * Its own kind rather than a `SystemItem` so a window can draw a boundary where the earlier turns
+ * went, instead of one more line of session prose the reader scrolls past.
+ */
+export interface CompactionItem extends ItemBase {
+	readonly kind: "compaction";
 	readonly text: string;
 }
 
-export type TranscriptItem = UserItem | AssistantItem | ToolItem | SystemItem;
+/**
+ * One backend notice, collapsed: `text` is the line always shown, `detail` the body a window may
+ * fold away.
+ *
+ * Every notice a backend raises — status, a hook firing or failing, a local command's output, a
+ * refusal, a rate limit — lands in this one shape. There is deliberately no field naming which of
+ * those it was: a per-subtype field would put the backend's own vocabulary on the port, and the
+ * SDK alone has some fifteen subtypes that would each want one.
+ */
+export interface SystemItem extends ItemBase {
+	readonly kind: "system";
+	readonly text: string;
+	readonly detail?: string;
+	/**
+	 * The subagent slot this notice reports on, when it reports on one — the id of the spawning
+	 * call, which is what `SubagentSlot` is keyed by. A window offers it as the way into that
+	 * worker's own rows, so a notice that only names an outcome still reaches the report behind it.
+	 *
+	 * Model-blind: it is the port's own slot id, not a backend's task handle, and a notice about
+	 * nothing a slot was opened for carries none.
+	 */
+	readonly subagent?: ItemId;
+}
+
+export type TranscriptItem =
+	| UserItem
+	| AssistantItem
+	| ToolItem
+	| SystemItem
+	| ThinkingItem
+	| CompactionItem;
+
+/**
+ * The newest row in a tail that a backend minted, or `null` when the tail holds none.
+ *
+ * The operator's own turn is recorded locally on send under an id no layer has ever seen
+ * (`../core/fold.ts`'s `promptItem`), so it cannot be a boundary a layer suppresses at: this walks
+ * back past every still-unechoed local turn to the last row the session itself produced.
+ */
+export const newestBackendItemId = (items: ReadonlyArray<TranscriptItem>): ItemId | null => {
+	for (let index = items.length - 1; index >= 0; index -= 1) {
+		const item = items[index];
+		if (item !== undefined && !(item.kind === "user" && item.local === true)) return item.id;
+	}
+	return null;
+};
+
+/**
+ * Whether this row is a nested worker's rather than the agent's own — the `parentId` tag read as a
+ * predicate, so the bounds and the page cursor ask the question in one place instead of each
+ * spelling the field test.
+ */
+export const isNestedItem = (item: TranscriptItem): boolean => item.parentId !== undefined;
+
+/**
+ * Every string one row is known by: its own id, and the `alias` its backend gave it for the other
+ * id space when it keys its live tail and its history reads differently (#8032).
+ */
+export const itemIds = (item: TranscriptItem): ReadonlyArray<ItemId> =>
+	item.alias === undefined ? [item.id] : [item.id, item.alias];
+
+/**
+ * Whether `named` reaches this row under *either* of its ids — the identity join every reader that
+ * meets a live row and a stored one performs, in one place rather than a copy per seam.
+ *
+ * Hand-rolled per caller it was written as an `id`-only test twice, and both times the join silently
+ * matched nothing on a two-id-space backend: the cut-reply mark named no paged row (#9046) and the
+ * resume's held range recognised no history row, which appended a second copy of the whole tail
+ * (#9061).
+ */
+export const isNamedItem = (named: ReadonlySet<string>, item: TranscriptItem): boolean =>
+	itemIds(item).some((id) => named.has(id));
 
 /** One tool result may spend this many bytes of the window; the rest is omission metadata. */
 export const TOOL_RESULT_BYTE_LIMIT = 8_000;
@@ -110,8 +233,17 @@ export const isJsonValue = (value: unknown): value is JsonValue => {
 
 const isId = (value: unknown): value is ItemId => typeof value === "string" && value.length > 0;
 
+/** An absent flag and a `false` one say the same thing; anything else is not a flag at all. */
+const isOptionalFlag = (value: unknown): boolean =>
+	value === undefined || typeof value === "boolean";
+
+const isOptionalId = (value: unknown): boolean => value === undefined || isId(value);
+
 export const isNonNegativeInteger = (value: unknown): boolean =>
 	typeof value === "number" && Number.isInteger(value) && value >= 0;
+
+export const isPositiveInteger = (value: unknown): boolean =>
+	isNonNegativeInteger(value) && (value as number) >= 1;
 
 const isToolResult = (value: unknown): value is ToolResult =>
 	Predicate.isObject(value) &&
@@ -122,22 +254,37 @@ const isToolResult = (value: unknown): value is ToolResult =>
 
 const statuses: ReadonlySet<string> = new Set<ToolStatus>(["running", "ok", "error"]);
 
-/** The port predicate for one item: identity, clock, kind, and the tool result's own bound. */
+/**
+ * The port predicate for one item: identity, clock, parent tag, second identity, kind, and the tool
+ * result's own bound. The tags are read once ahead of the switch, because every kind may carry them.
+ */
 export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
-	if (!Predicate.isObject(value) || !isId(value.id) || !Number.isFinite(value.timestamp))
+	if (
+		!Predicate.isObject(value) ||
+		!isId(value.id) ||
+		!Number.isFinite(value.timestamp) ||
+		!isOptionalId(value.parentId) ||
+		!isOptionalId(value.alias)
+	)
 		return false;
 	switch (value.kind) {
 		case "user":
+			return typeof value.text === "string" && isOptionalFlag(value.local);
+		case "system":
 			return (
 				typeof value.text === "string" &&
-				(value.local === undefined || typeof value.local === "boolean")
+				(value.detail === undefined || typeof value.detail === "string") &&
+				isOptionalId(value.subagent)
 			);
-		case "system":
+		case "compaction":
 			return typeof value.text === "string";
+		case "thinking":
+			return typeof value.text === "string" && isOptionalFlag(value.partial);
 		case "assistant":
 			return (
 				typeof value.text === "string" &&
-				(value.interrupted === undefined || typeof value.interrupted === "boolean")
+				isOptionalFlag(value.interrupted) &&
+				isOptionalFlag(value.partial)
 			);
 		case "tool":
 			return (
@@ -154,3 +301,81 @@ export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
 
 export const isTranscriptItems = (value: unknown): value is ReadonlyArray<TranscriptItem> =>
 	Array.isArray(value) && value.every(isTranscriptItem);
+
+/**
+ * The same union as an Effect `Schema`, so a row built from these ports can publish what each port
+ * carries and a `Program.shape` check can read it structurally (#8887). A predicate cannot be
+ * compared with another predicate; a schema canonicalised through `Schema.toJsonSchemaDocument`
+ * can, and that is the whole of why this exists.
+ *
+ * The predicates above are still what the kernel routes on, and this is deliberately *not* a second
+ * implementation of them: `isToolResult` also enforces `TOOL_RESULT_BYTE_LIMIT`, a bound no JSON
+ * Schema expresses, so the schema is the shape and the predicate is the shape plus that bound.
+ * `transcript-item.unit.test.ts` pins that the two agree on every item kind.
+ *
+ * `ItemId`'s brand is dropped here on purpose: a port schema's encoded form must equal its decoded
+ * form (`PortCodec` in `../../authoring/port.ts`), which a branded string is not, and an id is a
+ * string on the wire either way.
+ */
+export const JsonValueSchema: Schema.Codec<JsonValue, JsonValue, never, unknown> = Schema.suspend(
+	(): Schema.Codec<JsonValue, JsonValue, never, unknown> =>
+		Schema.Union([
+			Schema.Null,
+			Schema.Boolean,
+			Schema.Number,
+			Schema.String,
+			Schema.Array(JsonValueSchema),
+			Schema.Record(Schema.String, JsonValueSchema),
+		]),
+);
+
+export const ToolResultSchema = Schema.Struct({
+	text: Schema.String,
+	omitted: Schema.Struct({bytes: Schema.Number}),
+});
+
+/** Every kind carries these four; `parentId` and `alias` are absent on a row with one identity. */
+const itemBase = {
+	id: Schema.String,
+	timestamp: Schema.Number,
+	parentId: Schema.optionalKey(Schema.String),
+	alias: Schema.optionalKey(Schema.String),
+};
+
+export const TranscriptItemSchema = Schema.Union([
+	Schema.Struct({
+		...itemBase,
+		kind: Schema.Literal("user"),
+		text: Schema.String,
+		local: Schema.optionalKey(Schema.Boolean),
+	}),
+	Schema.Struct({
+		...itemBase,
+		kind: Schema.Literal("assistant"),
+		text: Schema.String,
+		interrupted: Schema.optionalKey(Schema.Boolean),
+		partial: Schema.optionalKey(Schema.Boolean),
+	}),
+	Schema.Struct({
+		...itemBase,
+		kind: Schema.Literal("thinking"),
+		text: Schema.String,
+		partial: Schema.optionalKey(Schema.Boolean),
+	}),
+	Schema.Struct({...itemBase, kind: Schema.Literal("compaction"), text: Schema.String}),
+	Schema.Struct({
+		...itemBase,
+		kind: Schema.Literal("system"),
+		text: Schema.String,
+		detail: Schema.optionalKey(Schema.String),
+		subagent: Schema.optionalKey(Schema.String),
+	}),
+	Schema.Struct({
+		...itemBase,
+		kind: Schema.Literal("tool"),
+		name: Schema.String,
+		input: JsonValueSchema,
+		result: ToolResultSchema,
+		status: Schema.Literals(["running", "ok", "error"]),
+	}),
+]);

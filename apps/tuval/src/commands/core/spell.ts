@@ -12,6 +12,7 @@ import {RegistryDescription, SpellDescription} from "../../protocol/registry-des
 import {UnknownSpell} from "../errors.ts";
 import {didYouMean} from "../parse/did-you-mean.ts";
 import {SpellRegistry} from "../registry.ts";
+import {RestParameter} from "../rest-parameter.ts";
 import {defineSpell} from "../spell.ts";
 import {segmentsOf} from "./help.ts";
 
@@ -30,7 +31,7 @@ export const spellList = defineSpell({
 export const spellDescribe = defineSpell({
 	path: ["spell", "describe"],
 	describe: "Describe one spell, including the schema of its parameters.",
-	params: Schema.Struct({path: Schema.String}),
+	params: Schema.Struct({path: RestParameter}),
 	result: SpellDescription,
 	execute: Effect.fn("Tuval.Spells.spellDescribe")(function* (args: {readonly path: string}) {
 		const registry = yield* SpellRegistry;

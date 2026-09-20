@@ -50,7 +50,14 @@ export {
 	type SpellRow,
 	type SpellSource,
 } from "./registry.ts";
-export {type Client, resolveScope, WindowIndex, type WindowPlacement} from "./scope.ts";
+export {RestParameter} from "./rest-parameter.ts";
+export {
+	CallingWindow,
+	type Client,
+	resolveScope,
+	WindowIndex,
+	type WindowPlacement,
+} from "./scope.ts";
 export {
 	type AnySpell,
 	ClientId,

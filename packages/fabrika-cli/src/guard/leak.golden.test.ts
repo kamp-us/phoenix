@@ -1,10 +1,9 @@
 /**
- * The gate's half of the doc-leak vocabulary pin (ADR 0251).
+ * The gate's half of the doc-leak vocabulary pin.
  *
  * `build check --surface prose` predicts this gate in-tree from its own copy of the path shapes in
  * `../build/doc-leaks.ts`, and the two copies must carry the same bytes or the predictor and the
- * gate disagree on real files — #3506 is the recorded incident where exactly that drifted with
- * nothing red. Both sides now live in this package, but they stay separate modules because they
+ * gate disagree on real files — the two copies have drifted apart before with nothing red. Both sides now live in this package, but they stay separate modules because they
  * answer different questions: the predictor scans markdown only and reads its exemptions from
  * `.fabrika.jsonc`, while the gate also scans a shell surface and carries its own self-exempt list.
  * So the fixture stays the arbiter, read at test time and never imported.

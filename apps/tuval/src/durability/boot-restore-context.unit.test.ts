@@ -10,12 +10,12 @@
  * `Processes`, `ProcessTable`, `Registry`) — narrow the context `boot.ts` restores under and the
  * second boot dies with `Service not found: tuval/SpellBridge`.
  *
- * The narrowing has to be of both routes at once, because `boot.ts` carries the kernel on two:
- * `restore`'s `services` argument, and the ambient `Effect.provideContext(kernel)` around the call.
- * `Effect.provideContext` merges into the fiber's context rather than replacing it
- * (`effect` `src/internal/effect.ts`'s `provideContext`, `updateContext(self, Context.merge(…))`),
- * so a handler that misses the argument still resolves off the ambient and each route masks the
- * other. That a spawner's `services` is a floor rather than the set is #7972's, not this test's.
+ * The narrowing is of `restore`'s `services` argument, and of nothing else, because that argument
+ * is the only route the kernel has into a restored process's handlers: a handler is sealed to its
+ * spawn set (#7972), and `boot.ts` no longer calls `restore` under the kernel as an ambient too.
+ * It used to be both, and each route masked the other — `Effect.provideContext` merges into the
+ * fiber's context rather than replacing it — so this proof could only red against a narrowing of
+ * the two at once, and could not say which one `boot.ts` had got wrong.
  */
 
 import {mkdirSync, mkdtempSync, realpathSync, rmSync} from "node:fs";
@@ -58,8 +58,8 @@ const handleOf = (id: ProcessId) =>
 /**
  * The first boot: nothing is planned and nothing is checkpointed, so the probe is spawned the way
  * the picker spawns one — under no node — and marked twice, which is the state the next boot has
- * to find. Its handler is never reached here: `SpawnedProcesses` hands a spawn its ports and
- * nothing else, so `mark` is deliberately a Msg that emits no Cmd.
+ * to find. Its handler is never reached here, because `mark` is deliberately a Msg that emits no
+ * Cmd: what this boot has to leave behind is a checkpoint, not a resolved service.
  */
 const firstBoot = (project: string) =>
 	Effect.gen(function* () {

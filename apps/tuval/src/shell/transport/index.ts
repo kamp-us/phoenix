@@ -15,6 +15,7 @@ export {
 	registryFrame,
 	type ServeOptions,
 	type SocketSession,
+	type SpellChannel,
 	serve,
 	type TransportServer,
 } from "./server.ts";

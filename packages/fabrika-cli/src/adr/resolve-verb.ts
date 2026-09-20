@@ -2,13 +2,14 @@
  * `adr resolve` — resolve ids to their real filename and state against a fetched base ref.
  *
  * `live` and `landed` split presence from authority, and the split is the point: presence alone is
- * what a caller wrongly reads as citable, and 36 of the 233 records on `main` are present and not
- * live. `in-flight` is a distinct state so a caller can refuse to cite a pull request that may
- * never merge (#4296), and the `detail` column carries the frontmatter `status:` verbatim so a
- * withdrawn or superseded record reads as such at the moment of citation (#4338).
+ * what a caller wrongly reads as citable, and a corpus of any size carries records that are present
+ * and not live. `in-flight` is a distinct state so a caller can refuse to cite a pull request that
+ * may never merge, and the `detail` column carries the frontmatter `status:` verbatim so a withdrawn or
+ * superseded record reads as such at the moment of citation.
  *
- * The filename is printed rather than derived: a slug is not derivable from a title — 0048 is
- * `ship-it-merge-actor`, not `single-merge-authority` — so a guessed slug is a dead link (#1777).
+ * The filename is printed rather than derived: a slug is not derivable from a title — a record
+ * titled "one merge authority" can be filed as `ship-it-merge-actor` — so a guessed slug is a dead
+ * link.
  */
 import {Effect} from "effect";
 import {originRepo, type Shell} from "../io/git.ts";

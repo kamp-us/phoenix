@@ -1,6 +1,6 @@
 /**
  * `ci annotate` — a pass-through filter that re-emits each tsc diagnostic as a GitHub `::error`
- * workflow command, so a failing CI typecheck lands inline on the PR diff (#3873).
+ * workflow command, so a failing CI typecheck lands inline on the PR diff.
  *
  *   pnpm typecheck | node packages/fabrika-cli/src/bin.ts ci annotate
  *
@@ -8,12 +8,8 @@
  * The outcome shape buffers stdout to the end, and the whole point here is that the CI log stays
  * live while the typecheck runs — withholding it until EOF would make a long typecheck look hung.
  *
- * Two contracts it must never break:
- *
- *   - **It always exits 0.** It is a reporter, not a gate. The typecheck's redness rides on the
- *     producer's own exit code through `set -o pipefail`; exiting non-zero here would only mask
- *     which side failed, and doing so on its own parse trouble would turn a green typecheck red.
- *   - **It never swallows a line.** Whatever came in goes back out, unmodified, first.
+ * The producer owns the gate result through `pipefail`; this reporter must not fail the step
+ * it reports on or swallow an input line.
  */
 
 import {Effect, type FileSystem, type Path} from "effect";

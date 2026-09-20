@@ -18,9 +18,11 @@ import {
 	PROOF_AMBIGUOUS,
 	PROOF_CONTRADICTED,
 	PROOF_IN_FLIGHT,
+	ROUTE_UNDERIVED,
 } from "./codes.ts";
 import {coderTemplateText, coderWorkflow} from "./fixtures.test-support.ts";
-import {runProve} from "./prove-verb.ts";
+import {proveDispatched, runProve} from "./prove-verb.ts";
+import {loadLane} from "./store.ts";
 
 const ROOT = ".fabrika/lanes";
 const WORKFLOW = `${ROOT}/5747/workflow.json`;
@@ -56,7 +58,7 @@ const closingPulls = (...numbers: ReadonlyArray<number>): HttpReply =>
 						pageInfo: {hasNextPage: false, endCursor: null},
 						nodes: numbers.map((number) => ({
 							number,
-							url: `https://github.com/o/r/pull/${number}`,
+							url: `https://forge.example/o/r/pull/${number}`,
 							state: "OPEN",
 						})),
 					},
@@ -69,23 +71,45 @@ const logLine = (event: string, at: string, classes?: ReadonlyArray<string>): st
 	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at, ...(classes === undefined ? {} : {classes})})}\n`;
 
 /**
- * The lane in `build` (one WIP), in `review` (WIP then DONE), or in `review:ui` — which is the same
- * path with `ui` standing from the `WIP`, so the `PASS` out of `review` took the class-guarded arm.
+ * The declaration the `ui` class is derived over, in every lane fixture below. `uiSurfaces`'
+ * shipped default is the empty list, which raises no class at all — right for a repo that declared
+ * nothing, and no ground for a test about that class.
  */
-const laneAt = (state: "build" | "review" | "review:ui") =>
+const UI_CONFIG = {
+	"/repo/.fabrika.jsonc": JSON.stringify({
+		uiSurfaces: [
+			{name: "web", prefix: "apps/site/src/", mount: "/", command: "pnpm dev --port {{port}}"},
+		],
+	}),
+};
+
+/**
+ * The lane at one of the leaves the reads below are taken from: `queued` (no event yet), `build`
+ * (one WIP), `review` (WIP then DONE), `review:ui` — the same path with `ui` standing from the
+ * `WIP`, so the `PASS` out of `review` took the class-guarded arm — or the `blocked` park.
+ */
+const laneAt = (state: "queued" | "build" | "review" | "review:ui" | "blocked") =>
 	fakeFs({
 		files: {
+			...UI_CONFIG,
 			[WORKFLOW]: coderTemplateText(),
-			[LOG]:
-				state === "build"
-					? logLine("WIP", "2026-08-16T01:00:00Z")
-					: state === "review"
-						? logLine("WIP", "2026-08-16T01:00:00Z") + logLine("DONE", "2026-08-16T02:00:00Z")
-						: logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]) +
-							logLine("DONE", "2026-08-16T02:00:00Z") +
-							logLine("PASS", "2026-08-16T03:00:00Z"),
+			[LOG]: LOGS[state],
 		},
 	});
+
+const WIP_LINE = logLine("WIP", "2026-08-16T01:00:00Z");
+const DONE_LINE = logLine("DONE", "2026-08-16T02:00:00Z");
+
+const LOGS: Readonly<Record<"queued" | "build" | "review" | "review:ui" | "blocked", string>> = {
+	queued: "",
+	build: WIP_LINE,
+	review: WIP_LINE + DONE_LINE,
+	"review:ui":
+		logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]) +
+		DONE_LINE +
+		logLine("PASS", "2026-08-16T03:00:00Z"),
+	blocked: WIP_LINE + logLine("BLOCKED", "2026-08-16T02:00:00Z"),
+};
 
 /**
  * The same lane in `review`, on a machine whose `review` `PASS` targets `ship` outright — no
@@ -108,6 +132,7 @@ const laneWithNoUiArm = () => {
 	delete states["review:ui"];
 	return fakeFs({
 		files: {
+			...UI_CONFIG,
 			[WORKFLOW]: JSON.stringify(document),
 			[LOG]: logLine("WIP", "2026-08-16T01:00:00Z") + logLine("DONE", "2026-08-16T02:00:00Z"),
 		},
@@ -147,7 +172,7 @@ const issue = (labels: ReadonlyArray<string>): HttpReply =>
 		body: "",
 		state: "open",
 		labels: labels.map((name) => ({name})),
-		html_url: "https://github.com/o/r/issues/5747",
+		html_url: "https://forge.example/o/r/issues/5747",
 	});
 
 const run = (
@@ -191,6 +216,9 @@ describe("lane prove — the two events that carry a claim", () => {
 			issue: 5747,
 			evidence: {kind: "open-pull", pr: 4318},
 		});
+		// A `SHIPPED-PR` stands on a pull request, so it takes the `done:diagnosis` fallthrough and
+		// still folds to `review`.
+		expect(out.diagnosis).toBe(false);
 	});
 
 	it("proves a review PASS when every derived namespace passes at the live head", async () => {
@@ -213,7 +241,7 @@ describe("lane prove — the two events that carry a claim", () => {
 });
 
 /**
- * Lane 5661's shape (#6112): a reviewer that reported `UNKNOWN` on a malformed criteria heading and
+ * One lane's shape: a reviewer that reported `UNKNOWN` on a malformed criteria heading and
  * then landed three FAILs at head had no cell left for its real terminal, and the ledger read a wait
  * on a human over a PR that needed a repair round. The park is a claim like any other now — that the
  * run reached no verdict — and one FAIL that still binds is what falsifies it.
@@ -225,7 +253,7 @@ describe("lane prove — a reviewer's park, refused only by a FAIL that still bi
 		{filename: "packages/fabrika-cli/src/lane/prove.ts"},
 	]);
 
-	it("refuses the park lane 5661 recorded, naming every FAIL that still binds at the head", async () => {
+	it("refuses the park that lane recorded, naming every FAIL that still binds at the head", async () => {
 		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
@@ -360,10 +388,10 @@ describe("lane prove — a reviewer's park, refused only by a FAIL that still bi
 });
 
 describe("lane prove — the ui class, derived exactly as `ship scope` derives it", () => {
-	const UI_FILE = served([{filename: "apps/web/src/routes/pano.tsx"}]);
+	const UI_FILE = served([{filename: "apps/site/src/routes/page.tsx"}]);
 
 	/**
-	 * The deadlock #6664/#6793 closed. This `PASS` **is** the arm into `review:ui`, so requiring
+	 * The deadlock this floor closed. This `PASS` **is** the arm into `review:ui`, so requiring
 	 * `review-ui` of it required a verdict from the cell it had not entered — every rendered-surface
 	 * lane needed a hand-spawned ui reviewer to get out. The next case is the floor that replaces it.
 	 */
@@ -389,7 +417,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 	});
 
 	/**
-	 * The floor the deferral must not lift (ADR 0320). Same rendered head, same cell — but no class
+	 * The floor the deferral must not lift. Same rendered head, same cell — but no class
 	 * relayed, so the machine's `class:ui` arm does not hold and this `PASS` walks to `ship`. There
 	 * is no later cell to defer to, so `review-ui` is owed here and the lane is held.
 	 */
@@ -474,11 +502,68 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
-			[FILES, served([{filename: "apps/web/src/routes/pano.test.tsx"}])],
+			[FILES, served([{filename: "apps/site/src/routes/page.test.tsx"}])],
 			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
 		]);
 
 		const out = await run(laneAt("review"), seams, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
+			{namespace: "review-code", state: "pass", commentId: 1},
+		]);
+		expect(JSON.parse(out.stdout).evidence.deferred).toEqual([]);
+	});
+
+	/**
+	 * The lane the ruling below is about: `triage apply --class ui` stamped the ticket, the boot
+	 * verb seeded it, the `WIP` relayed it — and the fix turned out text-only. The stamp is a fact
+	 * about the ticket and this head raises no rendered file, so the round it routes into is one no
+	 * changed file asks for.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
+	 */
+	const TEXT_ONLY = served([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]);
+
+	const uiStampedInReview = () =>
+		fakeFs({
+			files: {
+				...UI_CONFIG,
+				[WORKFLOW]: coderTemplateText(),
+				[LOG]: logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]) + DONE_LINE,
+			},
+		});
+
+	it("refuses a ui-stamped lane's PASS over a text-only head, rather than routing a rendered round", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, TEXT_ONLY],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await run(uiStampedInReview(), seams, "PASS");
+
+		expect(out.code).toBe(ROUTE_UNDERIVED);
+		expect(out.stderr.join("\n")).toContain("no file of this head asks for that round");
+		expect(out.stderr.join("\n")).toContain("review scope 4318");
+	});
+
+	/**
+	 * The same lane, the same head, with the classes the head raises relayed over the stamp — the
+	 * whole remedy the refusal above names. The `PASS` walks to `ship` and owes `review-code` alone.
+	 */
+	it("proves that same PASS once the head's own classes are relayed, owing review-code only", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, TEXT_ONLY],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await run(uiStampedInReview(), seams, "PASS", ["code"]);
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
@@ -499,7 +584,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
 					{
 						id: 2,
-						body: `routed-elsewhere: review-ui @ ${HEAD} — nothing under apps/web/src renders differently`,
+						body: `routed-elsewhere: review-ui @ ${HEAD} — nothing rendered changes`,
 					},
 				),
 			],
@@ -513,6 +598,31 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			{namespace: "review-ui", state: "routed", commentId: 2},
 		]);
 		expect(out.stderr.join("\n")).toContain("is routed rather than judged");
+		// The route is disclosed rather than left for a later reader to re-derive off the board:
+		// `lane report` records it on the event line so a `PASS` earned on a route never reads as one
+		// a rendered gate gave.
+		expect(JSON.parse(out.stdout).evidence.routed).toEqual(["review-ui"]);
+	});
+
+	it("discloses no route on a head every required namespace was actually judged at", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, UI_FILE],
+			[
+				PR_COMMENTS,
+				comments(
+					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
+					{id: 2, body: `review-ui: PASS @ ${HEAD} — the render is right`},
+				),
+			],
+		]);
+
+		const out = await run(laneAt("review:ui"), seams, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(Object.hasOwn(JSON.parse(out.stdout).evidence, "routed")).toBe(false);
 	});
 
 	it("holds the same lane when the route was attested at a head the branch has moved past", async () => {
@@ -527,7 +637,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
 					{
 						id: 2,
-						body: "routed-elsewhere: review-ui @ deadbeefcafe — nothing under apps/web/src renders differently",
+						body: "routed-elsewhere: review-ui @ deadbeefcafe — nothing rendered changes",
 					},
 				),
 			],
@@ -551,7 +661,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
 					{
 						id: 2,
-						body: `routed-elsewhere: review-ui @ ${HEAD} — nothing under apps/web/src renders differently`,
+						body: `routed-elsewhere: review-ui @ ${HEAD} — nothing rendered changes`,
 						createdAt: "2026-01-01T00:00:00Z",
 					},
 					{
@@ -711,7 +821,7 @@ describe("lane prove — the union of the two nomination reads", () => {
 	});
 });
 
-describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
+describe("lane prove — the §CP advisory carrier", () => {
 	const CODEOWNERS = /^GET \S+\/repos\/o\/r\/contents\/\.github\/CODEOWNERS\?ref=main$/;
 	const CONFIG = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
 	const advisory = (rows = ""): string =>
@@ -725,7 +835,7 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory()})],
-			[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"}],
+			[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @acme/control-plane\n"}],
 		]);
 
 		const out = await run(laneAt("review"), seams, "PASS");
@@ -745,7 +855,7 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory()})],
-			[CODEOWNERS, {status: 200, body: "/claude-plugins/ @kamp-us/control-plane\n"}],
+			[CODEOWNERS, {status: 200, body: "/claude-plugins/ @acme/control-plane\n"}],
 		]);
 
 		const out = await run(laneAt("review"), seams, "PASS");
@@ -762,13 +872,13 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory("\n- [FAIL] the guard is bypassed\n")})],
-			[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"}],
+			[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @acme/control-plane\n"}],
 		]);
 
 		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_CONTRADICTED);
-		expect(out.stderr.join("\n")).toContain("invalid emission (ADR 0226)");
+		expect(out.stderr.join("\n")).toContain("invalid emission; treated as fail");
 	});
 
 	it("refuses an advisory bound to a head the PR has moved past as in-flight, not proven", async () => {
@@ -779,7 +889,7 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: stale})],
-			[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"}],
+			[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @acme/control-plane\n"}],
 		]);
 
 		const out = await run(laneAt("review"), seams, "PASS");
@@ -804,7 +914,7 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 		expect(out.stderr.join("\n")).toContain(".github/CODEOWNERS");
 	});
 
-	it("still refuses a failed boundary read when the repo's config says ship (ADR 0220 §4)", async () => {
+	it("still refuses a failed boundary read when the repo's config says ship", async () => {
 		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
@@ -833,6 +943,56 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(seams.requests.some((line) => CODEOWNERS.test(line))).toBe(false);
+	});
+});
+
+describe("lane prove — the walk question, asked before the claim", () => {
+	it("answers not-walkable for a PASS out of the blocked park, reading nothing", async () => {
+		const seams = fakeSeams([]);
+
+		const out = await run(laneAt("blocked"), seams, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			proof: "not-walkable",
+			event: "PASS",
+			task: "issue",
+			state: "blocked",
+		});
+		// The park walks UNBLOCKED alone, so the stderr names what the leaf does walk rather than
+		// leaving a driver to read "nothing to prove" as "the PASS checks out".
+		expect(out.stderr.join("\n")).toContain("UNBLOCKED");
+		expect(seams.log).toEqual([]);
+	});
+
+	it("answers not-walkable for the ledger's own namespaced ISSUE.PASS spelling", async () => {
+		const seams = fakeSeams([]);
+
+		const out = await run(laneAt("review"), seams, "ISSUE.PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "not-walkable", event: "ISSUE.PASS"});
+		expect(seams.log).toEqual([]);
+	});
+
+	it("answers not-walkable for an event name outside the machine altogether", async () => {
+		const seams = fakeSeams([]);
+
+		const out = await run(laneAt("review"), seams, "BANANA");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "not-walkable", event: "BANANA"});
+		expect(seams.log).toEqual([]);
+	});
+
+	it("keeps not-required for an event the leaf walks and that owes no artifact", async () => {
+		const seams = fakeSeams([]);
+
+		const out = await run(laneAt("queued"), seams, "WIP");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "not-required", state: "queued"});
+		expect(seams.log).toEqual([]);
 	});
 });
 
@@ -866,6 +1026,9 @@ describe("lane prove — what it does not claim, and what it never writes", () =
 			proof: "proven",
 			evidence: {kind: "diagnosis", commentId: 900},
 		});
+		// The routing fact `lane report` relays onto the line, and the machine's `done:diagnosis` arm
+		// reads: this arm is the only one that answers it, so nothing a shell reports can set it.
+		expect(out.diagnosis).toBe(true);
 	});
 
 	it("refuses a no-PR DONE whose only comment predates the build", async () => {
@@ -896,7 +1059,7 @@ describe("lane prove — what it does not claim, and what it never writes", () =
 });
 
 /**
- * The epic-lane arms (ADR 0285): a child opens no PR, so its `DONE` stands on the commits its branch
+ * The epic-lane arms: a child opens no PR, so its `DONE` stands on the commits its branch
  * adds over the epic branch and its `PASS` on a range-bound verdict on the child issue. The tail is
  * the one PR, and reaches the same arms a single-issue lane always has.
  */
@@ -930,6 +1093,7 @@ const landed = (child: number, hour: number): string =>
 const epicLaneAt = (state: "build" | "review" | "tail") =>
 	fakeFs({
 		files: {
+			...UI_CONFIG,
 			[EPIC_WORKFLOW]: epicWorkflowText(),
 			[EPIC_LOG]:
 				state === "tail"
@@ -970,7 +1134,7 @@ const literally = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g,
 const REV = (rev: string) =>
 	new RegExp(`^git rev-parse --verify --quiet ${literally(rev)}\\^\\{commit\\}$`);
 const BRANCHES = /^git for-each-ref --format=%\(refname:short\) refs\/heads$/;
-/** The shallow probe every range read takes before it trusts an ancestry answer (#6343). */
+/** The shallow probe every range read takes before it trusts an ancestry answer. */
 const COMPLETE_CLONE = [/^git rev-parse --is-shallow-repository$/, okOut("false\n")] as const;
 const LOG_RANGE = /^git log --format=/;
 const MERGE_BASE = /^git merge-base /;
@@ -998,7 +1162,7 @@ const GOVERNED_RAW = CHILD_RAW + rawRecord(".github/workflows/ci.yml");
 const GOVERNED_DIGEST = digestOf(GOVERNED_RAW);
 
 /** The same child range, plus one rendered frontend surface — the `ui` class beside `code`. */
-const UI_RAW = CHILD_RAW + rawRecord("apps/web/src/routes/pano.tsx");
+const UI_RAW = CHILD_RAW + rawRecord("apps/site/src/routes/page.tsx");
 const UI_DIGEST = digestOf(UI_RAW);
 
 /** The git reads that locate the one child branch and the range it adds. */
@@ -1055,6 +1219,9 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 				naming: 1,
 			},
 		});
+		// A `BUILT-NO-PR` opens no PR either, and this is where it parts from an investigation: its
+		// proof is the range, so the diagnosis arm never runs and the child still folds to `review`.
+		expect(out.diagnosis).toBe(false);
 		expect(seams.requests).toEqual([]);
 	});
 
@@ -1078,7 +1245,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 
 	it("proves a child DONE after its commits have landed on the epic branch", async () => {
 		// The merge base of a contained tip IS that tip, so the range only survives integration if the
-		// verb recovers the epic branch as it stood before the merge that took the child in (#5984).
+		// verb recovers the epic branch as it stood before the merge that took the child in.
 		const seams = fakeSeams([
 			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
@@ -1251,8 +1418,8 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	});
 
 	it("digests the range the reviewer measured once the child has been integrated", async () => {
-		// The binding is content and only content (ADR 0276), so an integrated child's PASS reads
-		// `Current` only while prove diffs the same two endpoints the marker was posted over (#5984).
+		// The binding is content and only content, so an integrated child's PASS reads
+		// `Current` only while prove diffs the same two endpoints the marker was posted over.
 		const seams = fakeSeams([
 			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
@@ -1285,7 +1452,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 		expect(out.stderr.join("\n")).toContain("review-code (absent)");
 	});
 
-	// The append the range path lands (#7411) is the shape this reader meets on every repair round:
+	// The append the range path lands is the shape this reader meets on every repair round:
 	// one comment carrying the live verdict on its first line and every retired one below the fence.
 	// The marker walk takes the first non-blank line, so the fresh verdict is the one in force — a
 	// reader that scanned the whole body would find the archived FAIL and contradict a passing child.
@@ -1398,10 +1565,10 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 		fakeSeams([...locating(), [RAW, okOut(UI_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
 
 	/**
-	 * The deadlock #7041 closed, and the other seam of the one #6664 closed for a single lane. No
+	 * The deadlock this rule closed, and the other seam of the one closed for a single lane. No
 	 * cell of a child's region routes to `review:ui` and no verb of this CLI posts `review-ui` at
 	 * range scope, so requiring it of a ui-bearing child asked for a verdict nothing could ever
-	 * write — epic #6767's tracer C sat at exit 23 until a human integrated it by hand. The bar is
+	 * write — a tracer child sat at exit 23 until a human integrated it by hand. The bar is
 	 * not dropped: it moves to the tail, whose one PR carries these same rendered files.
 	 */
 	it("proves a ui child's PASS with no review-ui verdict at child scope at all", async () => {
@@ -1443,7 +1610,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 		}
 	});
 
-	/** Criterion 3 of #7041: a child whose range renders nothing derives no `review-ui` to subtract. */
+	/** A child whose range renders nothing derives no `review-ui` to subtract. */
 	it("defers nothing on a child whose range raises no ui class", async () => {
 		const seams = proving({id: 1, body: rangeMarker("PASS", CHILD_DIGEST)});
 
@@ -1484,15 +1651,73 @@ describe("lane prove — the epic tail keeps the PR arms", () => {
 		});
 		expect(seams.calls.some((line) => BRANCHES.test(line))).toBe(false);
 	});
+
+	/**
+	 * Where the ui-bearing child's deferral lands. The child hands `review-ui` on rather than
+	 * dropping it, so the tail — whose one PR carries those same rendered files — must still refuse
+	 * without it, at a head a preview exists for.
+	 */
+	it("still owes review-ui on the tail's own rendered head, so the child's deferral moved the gate", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull({body: "Fixes #4300\n\n## Deviations\nNone.\n"})],
+			[FILES, served([{filename: "apps/site/src/routes/page.tsx"}])],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await runEpic(epicLaneAt("tail"), seams, "PASS", "epic_4300");
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.stderr.join("\n")).toContain("review-ui (absent)");
+	});
+
+	/**
+	 * The tail's own split, and the other half of the deferral above. The emitted tail now carries
+	 * `review:ui` behind a `class:ui` arm, so a tail PASS relaying that class routes into it and
+	 * hands the rendered namespace to the cell that will prove it — the same read a single-issue
+	 * lane has always taken, reached by the one lane shape that could not take it. Without the cell
+	 * the whole `review-ui` set piled onto `review`, every tail PASS refused at exit 23, and the run
+	 * could not park honestly either, because `review` is an active state no stale sweep reads.
+	 */
+	it("defers the tail's review-ui into review:ui when the PASS relays the ui class", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull({body: "Fixes #4300\n\n## Deviations\nNone.\n"})],
+			[FILES, served([{filename: "apps/site/src/routes/page.tsx"}])],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runProve({
+					root: ROOT,
+					lane: "4300",
+					event: "PASS",
+					task: "epic_4300",
+					classes: ["ui"],
+					pr: null,
+					repo: null,
+					cwd: "/repo",
+					env: {CLAUDE_PIPELINE_REPO: "o/r"},
+				}),
+				Layer.mergeAll(epicLaneAt("tail").layer, seams.layer),
+			),
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence).toMatchObject({deferred: ["review-ui"]});
+	});
 });
 
 /**
- * The ship stage's closure read, off the PR the event names (#7457).
+ * The ship stage's closure read, off the PR the event names.
  *
  * Every board here stubs **both** nomination reads to return nothing, which is what production
- * looks like for the case ADR 0343 exists to catch: a merged `Part of #N` is a node in neither half
- * of the union. So an arm that answers at all answers off the named PR, and the `Partial` arm that
- * could never fire while the nominator was the reader now does.
+ * looks like for the case the `Partial` arm exists to catch: a merged `Part of #N` is a node in
+ * neither half of the union. So an arm that answers at all answers off the named PR, and the arm
+ * that could never fire while the nominator was the reader now does.
  */
 describe("lane prove — the ship stage's closure, read off the PR the event names", () => {
 	const shipLane = () =>
@@ -1514,7 +1739,7 @@ describe("lane prove — the ship stage's closure, read off the PR the event nam
 	const merged = (body: string): HttpReply =>
 		pull({state: "closed", merged: true, body: `${body}\n\n## Deviations\nNone.\n`});
 
-	const PR_URL = "https://github.com/o/r/pull/4318";
+	const PR_URL = "https://forge.example/o/r/pull/4318";
 
 	it("answers `partial` for a merged body carrying `Part of #N` and no closing keyword", async () => {
 		const seams = fakeSeams([...blindNominator, [PULL, merged("Part of #5747")]]);
@@ -1552,7 +1777,7 @@ describe("lane prove — the ship stage's closure, read off the PR the event nam
 	/**
 	 * An unread board no longer refuses the terminal. Recording the `DONE` with no `partial` leaves
 	 * the line nominable by `lane reconcile`, where a refusal would strand the shipper over a merge
-	 * that really landed (ADR 0351).
+	 * that really landed.
 	 */
 	it("answers `unknown` with no `partial` where the PR read fails", async () => {
 		const seams = fakeSeams([...blindNominator, [PULL, GATEWAY]]);
@@ -1564,4 +1789,34 @@ describe("lane prove — the ship stage's closure, read off the PR the event nam
 		expect(out.partial).toBe(null);
 		expect(out.landed).toEqual([]);
 	});
+});
+
+it("rechecks dispatched build evidence against captured build state after the ledger moved to review", async () => {
+	const snapshot = await Effect.runPromise(
+		loadLane({root: ROOT, lane: "5747"}).pipe(Effect.provide(laneAt("build").layer)),
+	);
+	if (snapshot._tag !== "Loaded") throw new Error("fixture did not load");
+	const seams = fakeSeams([
+		[CLOSERS, closingPulls()],
+		[SEARCH, nominated()],
+		[ISSUE, issue(["type:feature"])],
+		[ISSUE_COMMENTS, comments()],
+	]);
+	const result = await Effect.runPromise(
+		proveDispatched(
+			{
+				root: ROOT,
+				lane: "5747",
+				event: "DONE",
+				task: "issue",
+				classes: null,
+				pr: null,
+				repo: "o/r",
+				cwd: "/repo",
+				env: {},
+			},
+			snapshot,
+		).pipe(Effect.provide(Layer.mergeAll(laneAt("review").layer, seams.layer))),
+	);
+	expect(result.code).toBe(PROOF_ABSENT);
 });

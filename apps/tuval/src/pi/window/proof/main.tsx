@@ -23,7 +23,7 @@ import {type TestProcess, testProcess} from "../../../shell/window/fixtures.ts";
 import {WindowId} from "../../../shell/window/index.ts";
 import {piChatWindow} from "../PiChatWindow.tsx";
 import {piSession, usageOf} from "../pi-window.testing.ts";
-import "../../../shell/ui/tokens.css";
+import "../../../page/styles.ts";
 import "./proof.css";
 
 const MODEL = "anthropic/claude-sonnet-4-5-20250929";

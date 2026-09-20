@@ -22,7 +22,8 @@ import type {AiAgentProgram} from "../ai-agent/program.ts";
 import type {TuvalAiAgent} from "../ai-agent/service/index.ts";
 import type {SpellBridge} from "../commands/bridge/index.ts";
 import type {PortSchema, Program} from "../registry/program.ts";
-import {claudeSession, claudeSessionLayer} from "./program.ts";
+import type {ClaudeSessionSettings} from "./config.ts";
+import {type ClaudeSessionProgram, claudeSession, claudeSessionLayer} from "./program.ts";
 
 /**
  * The row's four private types, read back off the program type it actually returns. Reading them
@@ -59,7 +60,15 @@ describe("what the row hands the factory", () => {
 
 describe("the row's own type", () => {
 	it("is the generic program type over SpellBridge, so no SDK type is reachable through it", () => {
-		expectTypeOf(claudeSession).returns.toEqualTypeOf<AiAgentProgram<SpellBridge>>();
+		expectTypeOf(claudeSession).returns.toEqualTypeOf<ClaudeSessionProgram>();
+		expectTypeOf<ClaudeSessionProgram>().toMatchTypeOf<AiAgentProgram<SpellBridge>>();
+	});
+
+	// The one field the row adds over the generic program (#7952). Pinned exactly, because it is
+	// what a reloaded row of the same id is diffed against: a Claude-shaped type reaching the row
+	// would reach it here first.
+	it("adds the decoded config and nothing else", () => {
+		expectTypeOf<ClaudeSessionProgram["settings"]>().toEqualTypeOf<ClaudeSessionSettings>();
 	});
 
 	it("carries the generic state, Msg, Cmd and Sub, which name nothing Claude-shaped", () => {

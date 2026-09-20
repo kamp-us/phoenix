@@ -31,7 +31,7 @@ describe("shortDescriptionDefects", () => {
 /**
  * The coverage guard: a leaf shipped with no short description silently falls back to its full
  * contract paragraph in the group's `SUBCOMMANDS` list, which is the defect back again on the next
- * verb (#5208). Reds instead.
+ * verb. Reds instead.
  *
  * It reads `shortDescription` off the `Command`'s runtime shape — the same deliberately-confined
  * idiom `./excess-operand.unit.test.ts` uses, a plain widening assignment and never a cast, so a
@@ -57,7 +57,7 @@ describe("every registered leaf verb carries a short list-row description", () =
 	const groups: ReadonlyArray<DescribedCommand> = registeredGroups;
 	const verbs = groups.flatMap((group) => leaves(group, ["fabrika"]));
 
-	it("finds leaf verbs at all — fail closed on zero scope (ADR 0092)", () => {
+	it("finds leaf verbs at all — fail closed on zero scope", () => {
 		expect(verbs.length).toBeGreaterThan(0);
 	});
 
@@ -77,12 +77,12 @@ describe("every registered leaf verb carries a short list-row description", () =
 
 /**
  * The same guard one level up: a group with no short description falls back to its full paragraph
- * as its row in root `fabrika --help`, which is the root index #5372 found unreadable — 110–261
+ * as its row in root `fabrika --help`, which is what made that index unreadable — 110–261
  * characters per row across 23 groups.
  *
  * `eval` is the one group this slice could not author: `packages/fabrika-cli/src/eval/` was held by
- * a live lane (PR #5441) rewriting the same file, so it is listed as pending rather than edited
- * across that lane. The listing is self-retiring — the pending assertion below reds the moment
+ * a live lane rewriting the same file, so it is listed as pending rather than edited across that
+ * lane. The listing is self-retiring — the pending assertion below reds the moment
  * `eval` gains its short description, so the entry has to be removed rather than remembered.
  */
 describe("every registered verb group carries a short list-row description", () => {
@@ -96,7 +96,7 @@ describe("every registered verb group carries a short list-row description", () 
 	const groups: ReadonlyArray<DescribedGroup> = registeredGroups;
 	const isPending = (group: DescribedGroup) => PENDING_GROUPS.includes(group.name);
 
-	it("finds groups at all — fail closed on zero scope (ADR 0092)", () => {
+	it("finds groups at all — fail closed on zero scope", () => {
 		expect(groups.length).toBeGreaterThan(0);
 	});
 

@@ -4,7 +4,7 @@
  * **The second landing path, not a flag on the first.** `ship enqueue` carries no merge-method flag
  * by construction, because a method alongside the queue arm conflicts with the queue and no-ops the
  * enqueue silently at exit 0. That argument is about a queue-governed base and says nothing about a
- * base with no queue — where, before this verb, `ship` could land nothing at all (#6018). So the
+ * base with no queue — where, before this verb, `ship` could land nothing at all. So the
  * method surface lives here, on the path where the queue is *proven absent*, and `ship enqueue`
  * still has none.
  *
@@ -46,6 +46,8 @@ const VERB = "ship merge";
 export interface MergeOptions {
 	readonly pr: number;
 	readonly sha: string;
+	/** The wall-clock an indefinite `mergeable` gets to settle before it is called UNKNOWN. */
+	readonly mergeabilitySeconds: number;
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -108,7 +110,7 @@ export const runMerge = (
 			`${VERB}: ${pull.baseRef} is not queue-governed and ${repo} permits ${method} — landing directly.`,
 		];
 
-		const mergeability = yield* readDefiniteMergeability(repo, pr);
+		const mergeability = yield* readDefiniteMergeability(repo, pr, options.mergeabilitySeconds);
 		if (mergeability._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -119,11 +121,11 @@ export const runMerge = (
 		if (mergeability._tag === "Indefinite") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: #${pr}'s mergeable_state is still indefinite after ${mergeability.polls} polls — mergeability is UNKNOWN, never green; nothing was merged.`,
+				`${VERB}: #${pr}'s mergeable_state is still indefinite after ${mergeability.polls} polls over ${mergeability.seconds}s — mergeability is UNKNOWN, never green; nothing was merged.`,
 				diagnostics,
 			);
 		}
-		// Both landing verbs refuse a definite not-mergeable read here (#6902): the endpoint would
+		// Both landing verbs refuse a definite not-mergeable read here: the endpoint would
 		// reject this call with a rejection indistinguishable from a write whose outcome nobody knows,
 		// and the queue arm would be accepted and then parked.
 		if (!mergeability.value.mergeable) {

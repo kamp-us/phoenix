@@ -11,9 +11,9 @@
  * **A session is not a lane.** One triage fan-out routinely runs several triagers under one
  * `CLAUDE_CODE_SESSION_ID`, so a marker stamped with the session alone cannot tell two of them
  * apart: on 2026-08-18 two siblings each read a same-session marker back as their own and both
- * resolved `won`, then both wrote the issue (#6132). Every claimant therefore names itself as a
- * {@link Caller} — the same identity the `build` namespace resolves ownership against (#6037) — and
- * a same-session marker under a different lane nonce is somebody else's.
+ * resolved `won`, then both wrote the issue. Every claimant therefore names itself as a
+ * {@link Caller} — the same identity the `build` namespace resolves ownership against — and a
+ * same-session marker under a different lane nonce is somebody else's.
  *
  * Keeping the resolution here rather than in the verb is what makes the losing and the ambiguous
  * branches testable without a network: the verb supplies markers, a clock and a caller, and
@@ -134,7 +134,7 @@ const MARKER_SUFFIX = " -->";
  * The marker literal for one lane. One line, no surrounding prose — matched back by prefix.
  *
  * The `lane=` field is what a sibling lane of the same session reads back as *not* its own; a marker
- * without it is a pre-#6132 claim, which every lane now treats as another claimant's.
+ * without it is a session-only claim, which every lane now treats as another claimant's.
  */
 export const markerBody = (caller: {readonly session: string; readonly nonce: string}): string =>
 	`${MARKER_PREFIX}${caller.session}${LANE_KEY}${caller.nonce}${MARKER_SUFFIX}`;
@@ -173,9 +173,9 @@ const LANE_RE = /\slane=(\S*)/;
 /**
  * The lane nonce stamped on `body`, or `null` when the marker carries no `lane=` field at all.
  *
- * `null` is the pre-#6132 marker — a claimant that named a session and nothing else. It is read as a
- * distinct claimant rather than as a wildcard: a marker no live lane can prove is its own must lose
- * a race to the lane that can, and it ages out on the same TTL as any other.
+ * `null` is the session-only marker — a claimant that named a session and nothing else. It is read
+ * as a distinct claimant rather than as a wildcard: a marker no live lane can prove is its own must
+ * lose a race to the lane that can, and it ages out on the same TTL as any other.
  */
 export const laneOf = (body: string): string | null => {
 	if (sessionOf(body) === null) return null;
@@ -189,7 +189,7 @@ export const laneOf = (body: string): string | null => {
 export interface Marker {
 	readonly id: number;
 	readonly session: string;
-	/** The lane nonce the marker names, or `null` for a pre-#6132 session-only marker. */
+	/** The lane nonce the marker names, or `null` for a session-only marker. */
 	readonly lane: string | null;
 	/** GitHub's `created_at` — the ordering key, never a timestamp from the caller-supplied body. */
 	readonly createdAt: string;
@@ -225,7 +225,7 @@ export const instantOf = (iso: string): number | null => {
  *
  * A constant rather than a flag: `triage claim --ttl-minutes 240` posted a marker the five mutating
  * verbs stopped honouring at 60, because they age a marker they did not place and the marker carries
- * no TTL of its own. That is the fail-open case #5644 exists to close, so the flag went and one
+ * no TTL of its own. That is the fail-open case the constant closes, so the flag went and one
  * reading stands. Widening it means widening it here, for placer and reader alike.
  */
 export const DEFAULT_TTL_MINUTES = 60;
@@ -259,9 +259,9 @@ export interface ResolveInput {
  * named none?
  *
  * A `Lane` caller matches on the pair, which is the whole fix: two lanes of one session read each
- * other's markers as foreign. An `AnySession` caller is the pre-#6132 identity, kept for the readers
- * that have not adopted a nonce, and named rather than defaulted so the session-only rule cannot
- * come back by omission.
+ * other's markers as foreign. An `AnySession` caller is the session-only identity, kept for the
+ * readers that have not adopted a nonce, and named rather than defaulted so the session-only rule
+ * cannot come back by omission.
  */
 export const namesCaller = (marker: Marker, caller: Caller): boolean =>
 	marker.session === caller.session &&
@@ -284,7 +284,7 @@ export type LiveMarkers =
  * Split out of {@link resolveClaim} because two questions need it and only one of them is a race:
  * `triage claim` asks who won, and the mutating verbs ask whether any live marker names a session
  * other than theirs — a question `resolveClaim` cannot answer, since a caller holding no marker of
- * its own resolves {@link ClaimResolution} to `MineAbsent` however many competitors are live (#5644).
+ * its own resolves {@link ClaimResolution} to `MineAbsent` however many competitors are live.
  */
 export const liveMarkers = ({
 	markers,

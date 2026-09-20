@@ -1,6 +1,6 @@
 ---
 name: glossary
-description: "Maintain the repo's canonical vocabulary registers — `.glossary/TERMS.md` (domain nouns) and `.glossary/LANGUAGE.md` (architecture vocabulary). Trigger on \"/glossary\", \"update the glossary\", \"add a term\", \"what does X canonically mean here\", \"bootstrap the vocabulary\" — and reach for it whenever a name gets coined, redefined, or disambiguated in work you are already doing, even when nobody asks. Not the sözlük product feature, and not an architecture audit."
+description: "Maintain the repo's canonical vocabulary registers — `.glossary/TERMS.md` (domain nouns) and `.glossary/LANGUAGE.md` (architecture vocabulary). Trigger on \"/glossary\", \"update the glossary\", \"add a term\", \"what does X canonically mean here\", \"bootstrap the vocabulary\" — and reach for it whenever a name gets coined, redefined, or disambiguated in work you are already doing, even when nobody asks. Not a product feature that happens to be a dictionary, and not an architecture audit."
 ---
 
 # glossary
@@ -159,7 +159,7 @@ before merge — concurrent lanes derive the same one — so a row citing an unm
 dead link the day it lands. Resolve the citation rather than assuming it:
 
 ```bash
-fabrika adr resolve 0240
+fabrika adr resolve 9240
 ```
 
 Cite only `live` or `landed`. On `in-flight` or `absent`, end on `HELD-UNMERGED-ADR` and say which

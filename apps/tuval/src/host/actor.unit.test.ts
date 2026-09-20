@@ -295,4 +295,109 @@ describe("host actor", () => {
 				);
 			}),
 	);
+
+	describe("checkpointWorthy", () => {
+		type Streaming = {readonly text: string; readonly partial: boolean};
+		type Delta = {readonly type: "delta"; readonly chunk: string} | {readonly type: "done"};
+
+		const streaming: CoreMachine<Streaming, Delta, never, never, NoCtx> = {
+			init: (loaded) => [loaded ?? {text: "", partial: false}, []],
+			update: {
+				delta: (state, msg) => [{text: state.text + msg.chunk, partial: true}, []],
+				done: (state) => [{...state, partial: false}, []],
+			},
+		};
+
+		const streamer = (saves: Streaming[], name: string) =>
+			make(
+				defineActor({
+					name,
+					machine: streaming,
+					store: recordingStore(saves),
+					checkpointWorthy: (state) => !state.partial,
+					interpret: {},
+					subscribe: {},
+				}),
+			);
+
+		it.effect("writes nothing mid-turn, and the Msg that ends the turn flushes", () =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const saves: Streaming[] = [];
+					const actor = yield* streamer(saves, "test/worthy-flush");
+					assert.deepStrictEqual(saves, [{text: "", partial: false}]);
+
+					for (const chunk of ["a", "b", "c", "d"]) {
+						yield* actor.dispatch({type: "delta", chunk});
+					}
+					assert.strictEqual(saves.length, 1);
+
+					yield* actor.dispatch({type: "done"});
+					// Asserted after the dispatch returns, which is the flush claim: the turn cannot be
+					// reported done while its own state is still only in memory.
+					assert.deepStrictEqual(saves, [
+						{text: "", partial: false},
+						{text: "abcd", partial: false},
+					]);
+				}),
+			),
+		);
+
+		it.effect("stops without writing the partial a turn cut short left in state", () =>
+			Effect.gen(function* () {
+				const saves: Streaming[] = [];
+				yield* Effect.scoped(
+					Effect.gen(function* () {
+						const actor = yield* streamer(saves, "test/worthy-stop-mid-turn");
+						yield* actor.dispatch({type: "delta", chunk: "half"});
+						assert.deepStrictEqual(actor.getState(), {text: "half", partial: true});
+					}),
+				);
+				assert.deepStrictEqual(saves, [{text: "", partial: false}]);
+			}),
+		);
+
+		it.effect("still writes the boot save and the stop-path save when the state is worthy", () =>
+			Effect.gen(function* () {
+				const saves: Streaming[] = [];
+				yield* Effect.scoped(
+					Effect.gen(function* () {
+						const actor = yield* streamer(saves, "test/worthy-boot-and-stop");
+						yield* actor.dispatch({type: "delta", chunk: "hi"});
+						yield* actor.dispatch({type: "done"});
+					}),
+				);
+				assert.deepStrictEqual(saves, [
+					{text: "", partial: false},
+					{text: "hi", partial: false},
+					{text: "hi", partial: false},
+				]);
+			}),
+		);
+
+		it.effect("saves every state when the definition declares no predicate", () =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const saves: State[] = [];
+					const actor = yield* make(
+						defineActor({
+							name: "test/worthy-absent",
+							machine: counterMachine([]),
+							store: recordingStore(saves),
+							interpret: {notify: () => Effect.succeed<Msg>({type: "acked"})},
+							subscribe: {},
+						}),
+					);
+					yield* actor.dispatch({type: "start", runId: "r1"});
+					yield* actor.dispatch({type: "tick"});
+					assert.deepStrictEqual(saves, [
+						{type: "idle", count: 0},
+						{type: "running", runId: "r1", count: 0, acks: 0},
+						{type: "running", runId: "r1", count: 1, acks: 0},
+						{type: "running", runId: "r1", count: 1, acks: 1},
+					]);
+				}),
+			),
+		);
+	});
 });

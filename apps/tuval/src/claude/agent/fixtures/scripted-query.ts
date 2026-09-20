@@ -4,8 +4,8 @@
  *
  * It replays golden fixtures (`../../history/fixtures/PROVENANCE.md`) rather than hand-written
  * envelopes, and it records the control calls the layer makes — `close`, `interrupt`,
- * `setPermissionMode` — plus the `Options` it was opened with. That record is the assertion surface
- * for everything the layer is supposed to hand the SDK.
+ * `setPermissionMode`, `setModel` — plus the `Options` it was opened with. That record is the
+ * assertion surface for everything the layer is supposed to hand the SDK.
  *
  * It also models the one thing the SDK owns that a scripted generator otherwise would not: the
  * subprocess. Constructing the query calls the `spawnClaudeCodeProcess` on the `Options` it was
@@ -14,11 +14,17 @@
  */
 
 import type {
+	AccountInfo,
+	EffortLevel,
+	ListSessionsOptions,
+	ModelInfo,
 	Options,
 	PermissionMode,
 	SDKMessage,
+	SDKSessionInfo,
 	SDKUserMessage,
 	SessionMessage,
+	SlashCommand,
 	SpawnedProcess,
 } from "@anthropic-ai/claude-agent-sdk";
 import type {AgentSdk, AgentSession} from "../sdk.ts";
@@ -29,6 +35,11 @@ export interface ScriptedQuery extends AgentSession {
 	readonly say: (message: SDKMessage) => void;
 	/** End the generator. A run that never sent a `result` is a subprocess that died mid-turn. */
 	readonly stop: () => void;
+	/**
+	 * Make the message iterator itself throw, which is the transport failing rather than the session
+	 * ending — the one arm `stop` cannot script, and the only way into `streamFailed` (#8010).
+	 */
+	readonly fail: (cause: unknown) => void;
 	readonly record: QueryRecord;
 }
 
@@ -36,6 +47,11 @@ export interface QueryRecord {
 	readonly options: Options;
 	readonly prompts: Array<SDKUserMessage>;
 	readonly modes: Array<string>;
+	/** Every model the layer switched to, in order, so a test asserts the live call was made. */
+	readonly models: Array<string | undefined>;
+	/** Every effort level the layer applied, in order, for the same reason (#8062). */
+	readonly efforts: Array<EffortLevel | null>;
+	readonly contextReads: Array<{detail: "summary"}>;
 	closes: number;
 	interrupts: number;
 	readonly child: SpawnedProcess | null;
@@ -54,6 +70,32 @@ export interface ScriptedBehaviour {
 	 * takes the handshake down with it, exactly as tearing a real query down does.
 	 */
 	readonly endsAtOnce?: boolean;
+	/** What `supportedModels()` answers. Absent is a CLI that offers none, which is the old shape. */
+	readonly models?: ReadonlyArray<ModelInfo>;
+	readonly runningModel?: string;
+	readonly contextFails?: Error;
+	/** A `setModel` the CLI refuses. The call is still recorded, so a test sees it was attempted. */
+	readonly modelSwitchFails?: Error;
+	/** An `applyFlagSettings` the CLI refuses, recorded the same way. */
+	readonly effortSwitchFails?: Error;
+	/** A `supportedModels()` that throws, which is a session with no picker rather than no session. */
+	readonly catalogFails?: Error;
+	/** What `supportedCommands()` answers. Absent is a CLI that offers none. */
+	readonly commands?: ReadonlyArray<SlashCommand>;
+	/** A `supportedCommands()` that throws — a session with no slash picker, not a failed open. */
+	readonly commandsFail?: Error;
+	/**
+	 * An `interrupt()` the CLI refuses, recorded the same way a refused `setModel` is. The SDK's own
+	 * rejection carries no account of why (`sdk.d.ts`, `Query.interrupt`), which is what makes the
+	 * layer's reading of its own turn state the input the fold routes on (ADR 0356).
+	 */
+	readonly interruptFails?: Error;
+	/**
+	 * What the handshake reports as the logged-in account. The default is the empty object, which is
+	 * the shape a login with no organization and no plan answers with — so a test that wants the
+	 * inspector's account row has to say so.
+	 */
+	readonly account?: AccountInfo;
 }
 
 export const scriptedQuery = (
@@ -64,6 +106,7 @@ export const scriptedQuery = (
 	const buffered: Array<SDKMessage> = behaviour.deferOpening === true ? [] : [...opening];
 	let waiting: ((message: SDKMessage | null) => void) | null = null;
 	let stopped = false;
+	let thrown: {readonly cause: unknown} | null = null;
 
 	const child =
 		params.options.spawnClaudeCodeProcess === undefined
@@ -79,6 +122,9 @@ export const scriptedQuery = (
 		options: params.options,
 		prompts: [],
 		modes: [],
+		models: [],
+		efforts: [],
+		contextReads: [],
 		closes: 0,
 		interrupts: 0,
 		child,
@@ -89,8 +135,8 @@ export const scriptedQuery = (
 	// request (`sdk.mjs`, `performCleanup`). The `catch` is the SDK's own guard against an unhandled
 	// rejection on a query nobody asked the handshake of.
 	let refuseHandshake: ((cause: unknown) => void) | null = null;
-	const handshake = new Promise<unknown>((resolve, reject) => {
-		if (behaviour.endsAtOnce !== true) resolve({commands: [], agents: [], models: []});
+	const handshake = new Promise<{readonly account: AccountInfo}>((resolve, reject) => {
+		if (behaviour.endsAtOnce !== true) resolve({account: behaviour.account ?? {}});
 		refuseHandshake = reject;
 	});
 	handshake.catch(() => {});
@@ -130,6 +176,7 @@ export const scriptedQuery = (
 	async function* stream(): AsyncGenerator<SDKMessage, void> {
 		while (true) {
 			const message = await next();
+			if (thrown !== null) throw thrown.cause;
 			if (message === null) return;
 			yield message;
 		}
@@ -142,10 +189,32 @@ export const scriptedQuery = (
 		initializationResult: () => handshake,
 		interrupt: async () => {
 			record.interrupts += 1;
+			if (behaviour.interruptFails !== undefined) throw behaviour.interruptFails;
 			return undefined;
 		},
 		setPermissionMode: async (mode: PermissionMode) => {
 			record.modes.push(mode);
+		},
+		setModel: async (model?: string) => {
+			record.models.push(model);
+			if (behaviour.modelSwitchFails !== undefined) throw behaviour.modelSwitchFails;
+		},
+		applyFlagSettings: async (settings: {effortLevel: EffortLevel | null}) => {
+			record.efforts.push(settings.effortLevel);
+			if (behaviour.effortSwitchFails !== undefined) throw behaviour.effortSwitchFails;
+		},
+		getContextUsage: async (options: {detail: "summary"}) => {
+			record.contextReads.push(options);
+			if (behaviour.contextFails !== undefined) throw behaviour.contextFails;
+			return {model: behaviour.runningModel ?? params.options.model ?? ""};
+		},
+		supportedModels: async () => {
+			if (behaviour.catalogFails !== undefined) throw behaviour.catalogFails;
+			return behaviour.models ?? [];
+		},
+		supportedCommands: async () => {
+			if (behaviour.commandsFail !== undefined) throw behaviour.commandsFail;
+			return behaviour.commands ?? [];
 		},
 		close: () => {
 			record.closes += 1;
@@ -158,6 +227,11 @@ export const scriptedQuery = (
 		stop: () => {
 			stopped = true;
 			abandonHandshake();
+			deliver(null);
+		},
+		fail: (cause: unknown) => {
+			thrown = {cause};
+			stopped = true;
 			deliver(null);
 		},
 		record,
@@ -173,27 +247,58 @@ export interface ScriptedSdk {
 	readonly opened: Array<ScriptedQuery>;
 	/** The `getSessionMessages` calls, in order. */
 	readonly reads: Array<{sessionId: string; dir: string | undefined}>;
+	/**
+	 * The `listSessions` calls, in order, each holding the options it was given. An `undefined`
+	 * entry is the layer passing none, which is what leaves `includeProgrammatic` at its default.
+	 */
+	readonly lists: Array<ListSessionsOptions | undefined>;
 }
 
 export interface ScriptedSdkOptions extends ScriptedBehaviour {
 	/** The messages a fresh `query()` puts on its stream, in order. */
 	readonly opening: ReadonlyArray<SDKMessage>;
-	/** What `getSessionMessages` answers. Absent answers an empty session, which is the resume miss. */
+	/**
+	 * What `getSessionMessages` answers. Absent answers an empty array, which at the pin is both an
+	 * existing session with no rows and one the store does not hold — `sessions` is what tells the
+	 * two apart (#8131).
+	 */
 	readonly rows?: ReadonlyArray<SessionMessage>;
 	/** A read that throws instead of answering. */
 	readonly readFails?: Error;
+	/**
+	 * A `query()` that throws rather than handing back a session — the SDK's own arm for a CLI it
+	 * could not spawn, which is where its `errorClass` stamps arrive (#8010).
+	 */
+	readonly openFails?: Error;
+	/**
+	 * Which open, counting from one, `openFails` throws on; absent, every open throws it. A run that
+	 * opens, tears down and then fails to reopen is the only way to reach the layer's between-sessions
+	 * state, and it needs the second open alone to fail.
+	 */
+	readonly openFailsAt?: number;
+	/** What `listSessions` answers. Absent is a store holding none, which is a truthful empty list. */
+	readonly sessions?: ReadonlyArray<SDKSessionInfo>;
+	/** A listing that throws — a store that would not open, not a store with nothing in it. */
+	readonly listFails?: Error;
 	readonly version?: string;
 }
 
 export const scriptedSdk = (options: ScriptedSdkOptions): ScriptedSdk => {
 	const opened: Array<ScriptedQuery> = [];
 	const reads: Array<{sessionId: string; dir: string | undefined}> = [];
+	const lists: Array<ListSessionsOptions | undefined> = [];
+	let opens = 0;
 	return {
 		opened,
 		reads,
+		lists,
 		sdk: {
 			version: options.version ?? "0.0.0-scripted",
 			query: (params) => {
+				opens += 1;
+				if (options.openFails !== undefined && (options.openFailsAt ?? opens) === opens) {
+					throw options.openFails;
+				}
 				const query = scriptedQuery(params, options.opening, options);
 				opened.push(query);
 				return query;
@@ -202,6 +307,11 @@ export const scriptedSdk = (options: ScriptedSdkOptions): ScriptedSdk => {
 				reads.push({sessionId, dir: read.dir});
 				if (options.readFails !== undefined) throw options.readFails;
 				return options.rows ?? [];
+			},
+			listSessions: async (list) => {
+				lists.push(list);
+				if (options.listFails !== undefined) throw options.listFails;
+				return options.sessions ?? [];
 			},
 		},
 	};

@@ -15,7 +15,7 @@ export const LANGUAGE_PATH = "/repo/.glossary/LANGUAGE.md";
 /** Two sections, five rows, one planted duplicate key and one citation to resolve. */
 export const TERMS = `# repo domain vocabulary (TERMS)
 
-Prose that mentions #3227). as a bare hash, which is not a heading.
+Prose that mentions #7). as a bare hash, which is not a heading.
 
 ## Core / shape
 

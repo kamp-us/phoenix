@@ -1,10 +1,10 @@
 /**
  * `capClearAuthors` — who may clear one extra repair round on a PR.
  *
- * Founder-ruled 2026-08-18 on #5959: the grant-author set is repo configuration, not a compiled-in
- * "founder" concept. Its shipped default is the empty set — **nobody may grant** — which is the one
- * default this key can have: a set that filled itself in on an absent file would widen who holds
- * founder authority in every repo that never declared it.
+ * The grant-author set is repo configuration, not a compiled-in "founder" concept. Its shipped
+ * default is the empty set — **nobody may grant** — which is the one default this key can have: a
+ * set that filled itself in on an absent file would widen who holds founder authority in every repo
+ * that never declared it.
  */
 
 import type {Decoded, KeyGroup} from "../key-group.ts";
@@ -33,9 +33,9 @@ export const grantAuthorEntry = (entry: string): GrantAuthor | null => {
 /**
  * The author-set decoder, parameterized by the key raising the refusal.
  *
- * Shared because `campaignAuthors` decodes the identical grammar (ADR 0294 binds the second key to
- * the first's shape *and* its authority clause), and a hand-copied second regex pair is free to
- * drift from the one every refusal message quotes.
+ * Shared because `campaignAuthors` decodes the identical grammar — the same entry shape and the
+ * same narrowing-over-the-live-ACL clause — and a hand-copied second regex pair is free to drift
+ * from the one every refusal message quotes.
  */
 export const decodeGrantAuthors = (
 	key: string,

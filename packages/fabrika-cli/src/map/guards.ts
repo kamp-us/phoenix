@@ -59,7 +59,7 @@ export const targetRepo = (
 
 /**
  * Every text this group sends to GitHub is leak-scanned before the write — bodies, comments, and the
- * issue titles `map open` and `map ticket` compose (#3086: the title is scanned, not only the body).
+ * issue titles `map open` and `map ticket` compose — the title is scanned, not only the body.
  *
  * **The base's `5` reads "…and `--redact` was not given"; no `map` verb offers `--redact`**, so here
  * it fires on any machine-local path unconditionally. The condition narrows; the meaning does not.

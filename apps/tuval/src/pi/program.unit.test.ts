@@ -15,10 +15,17 @@ import {pathToFileURL} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer, Redacted} from "effect";
 import {afterAll, expect} from "vitest";
-import {type AiAgentSessionState, isAiAgentSessionState} from "../ai-agent/core/index.ts";
+import {
+	type AiAgentSessionState,
+	initialState,
+	isAiAgentSessionState,
+} from "../ai-agent/core/index.ts";
+import {ItemId, type TranscriptItem} from "../ai-agent/ports/index.ts";
+import {AI_AGENT_INSPECTOR_REF} from "../ai-agent/renderer-ref.ts";
 import {checkpointFields} from "../ai-agent/restore/index.ts";
 import {ScriptedAiAgent} from "../ai-agent/service/index.ts";
 import {projectConfig} from "../boot.ts";
+import {ClientId, type Scope as SpellScope, WorkspaceId} from "../commands/spell.ts";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
 import {Processes} from "../process/Processes.ts";
@@ -26,10 +33,15 @@ import {ProcessId} from "../process/process.ts";
 import {ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {programEntries, showsInAWindow} from "../shell/picker/entries.ts";
-import {PI_SESSION_PROGRAM, piSessionProgram, projectRootOf} from "./program.ts";
+import {
+	PI_SESSION_PROGRAM,
+	type PiSessionProgramOptions,
+	piSessionProgram,
+	projectRootOf,
+} from "./program.ts";
 import {PI_CHAT_WINDOW_REF} from "./renderer-ref.ts";
 import {makeScriptedHost} from "./server/fixtures.ts";
-import {PiServerService} from "./server/index.ts";
+import {type AgentSessionHostOptions, PiServerService} from "./server/index.ts";
 
 const tempDirs: string[] = [];
 
@@ -45,10 +57,18 @@ const tempProject = (): string => {
 
 const CWD_UNDER_TEST = tempProject();
 
+/** The scope a row built without a substitute layer names; nothing here reaches a kernel through it. */
+const PROBE_SCOPE = {
+	workspace: WorkspaceId.make("default"),
+	client: ClientId.make("pi-program-test"),
+} satisfies SpellScope;
+
 const script = {
 	sessionId: "pi-program-test",
 	history: [],
 	modes: {current: null, available: []},
+	models: {current: null, available: []},
+	thinking: {current: null, available: []},
 	interrupt: [],
 	turns: [],
 };
@@ -68,8 +88,20 @@ describe("the pi-session program row", () => {
 		assert.strictEqual(declared.id, ProgramId.make(PI_SESSION_PROGRAM));
 		assert.strictEqual(declared.identity.program, PI_SESSION_PROGRAM);
 		assert.deepStrictEqual(declared.placement, {host: "local"});
-		assert.deepStrictEqual(declared.capabilities, []);
+		// The row claims `process-control` because it now really does spawn: its three kernel tools
+		// reach the kernel through `KernelBridge` (#8720), the same claim the Claude and Codex rows make.
+		assert.deepStrictEqual(declared.capabilities, [
+			{
+				family: "process-control",
+				detail: "spawns, sends to and reads other processes through the three kernel tools",
+			},
+		]);
 		assert.deepStrictEqual(declared.renderer, PI_CHAT_WINDOW_REF);
+		assert.deepStrictEqual(
+			declared.inspector,
+			AI_AGENT_INSPECTOR_REF,
+			"a row declaring no inspector leaves the desk with nothing to paint for a Pi session",
+		);
 		assert.isFunction(declared.resume, "a restored Pi session has no way back without a resume");
 	});
 
@@ -96,6 +128,40 @@ describe("the pi-session program row", () => {
 			assert.isNull((state as AiAgentSessionState).sessionId);
 		}).pipe(Effect.scoped, Effect.provide(kernel(CWD_UNDER_TEST))),
 	);
+
+	it("lets a desk config ask for the reply as it is written", () => {
+		const pi = {streamPartialText: true} satisfies NonNullable<PiSessionProgramOptions["pi"]>;
+		// The key a config writes is the host's own option, not a second flag beside it: this is the
+		// whole config path, since the row spreads `pi` straight onto `PiAiAgent.layer`'s options.
+		const forwarded: Pick<AgentSessionHostOptions, "streamPartialText"> = pi;
+		assert.strictEqual(forwarded.streamPartialText, true);
+		assert.strictEqual(
+			piSessionProgram({cwd: tempProject(), pi, scope: PROBE_SCOPE}).id,
+			ProgramId.make(PI_SESSION_PROGRAM),
+		);
+	});
+
+	/**
+	 * #8170's rule, inherited rather than restated: `aiAgentProgram` sets
+	 * `checkpointWorthy: (state) => !holdsPartialItem(state)`, so a Pi reply mid-flight is a state
+	 * the row refuses to write the moment `itemOf` marks it partial.
+	 */
+	it("writes no checkpoint while a reply is still being written", () => {
+		const declared = row(tempProject());
+		const base = initialState(CWD_UNDER_TEST);
+		const holding = (item: TranscriptItem): AiAgentSessionState => ({
+			...base,
+			transcript: {...base.transcript, items: [item]},
+		});
+		const settled = {
+			kind: "assistant",
+			id: ItemId.make("item-1"),
+			timestamp: 11,
+			text: "hi there",
+		} as const satisfies TranscriptItem;
+		assert.isFalse(declared.checkpointWorthy?.(holding({...settled, partial: true})));
+		assert.isTrue(declared.checkpointWorthy?.(holding(settled)));
+	});
 
 	it("reads the project root back off the config module's own location", () => {
 		const project = tempProject();

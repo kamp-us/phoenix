@@ -17,6 +17,7 @@ moved.
 | File | What is in it |
 |---|---|
 | [`spell.ts`](../apps/tuval/src/commands/spell.ts) | `Spell`, `defineSpell`, `SpellPath`, `Scope`, `renderPath`, the `WindowId` / `WorkspaceId` / `ClientId` brands |
+| [`rest-parameter.ts`](../apps/tuval/src/commands/rest-parameter.ts) | `RestParameter`, the explicit final free-text parameter schema, and its wire annotation key |
 | [`registry.ts`](../apps/tuval/src/commands/registry.ts) | `buildRegistry`, `SpellRegistry`, `SpellRow`, `SpellNode`, `RegistryTable`, `lookupRow`, `describeSpell` |
 | [`spell-set.ts`](../apps/tuval/src/commands/spell-set.ts) | `SpellSet`: the table and the key bindings compiled against it, in one cell |
 | [`scope.ts`](../apps/tuval/src/commands/scope.ts) | `WindowIndex`, `WindowPlacement`, `Client`, `resolveScope` |
@@ -91,6 +92,12 @@ the core list by accident.
 direction and the runtime dependency stays one way: `commands/` reaches into `registry/`, never the
 reverse.
 
+An authored program writes that list as a `commands` record instead of hand-rolling spells
+([`authoring/commands.ts`](../apps/tuval/src/authoring/commands.ts)): the key is the command's own
+path, the declared `args` schema becomes the spell's `params`, and `run` becomes its `execute`,
+returning the effect vocabulary the compiler interprets through the row's own handlers. The author
+writes no group — the prefix above is composed here, from the row's id, and nowhere else.
+
 ## The registry
 
 `buildRegistry({core, programs})` in
@@ -101,23 +108,25 @@ the core spell list and the program rows, and it produces a `RegistryTable`:
   registered at exactly its path.
 - `rows`, the flat list `list` and `describe` read.
 
-Registration is the one place a spell can be refused, and there are two refusals. Two spells
+Registration is the one place a spell can be refused. Two spells
 claiming one path fail with `DuplicateSpellPath`. A spell whose `params` has no JSON Schema form
 fails with `SpellNotDescribable`: `Schema.toJsonSchemaDocument` throws at the pin, and rendering
 happens here, at registration, so a spell nobody can describe never enters the table and describing
-a registered one cannot throw. Both name the path and the source (`describeSource` renders "the core
+a registered one cannot throw. Invalid rest declarations also fail as `SpellNotDescribable`, before
+bindings or snapshots can consume them. Both failures name the path and the source (`describeSource` renders "the core
 spell list" or `program "<id>"`).
 
-`SpellRegistry` is a `Context.Service` over one `Ref` holding the table:
+`SpellRegistry` is a `Context.Service` over one `SubscriptionRef` holding the table:
 
 | Member | Answers |
 |---|---|
 | `lookup(path)` | the `SpellRow`, or `SpellNotFound` |
 | `list` | every `SpellRow` |
 | `describe` | every row as a `SpellDescription` |
+| `changes` | current descriptions first, then each committed whole replacement |
 | `swap(table)` | replaces the whole table |
 
-Every read is a single `Ref.get` and `swap` is a single `Ref.set`, so a config reload replaces every
+Every read is a single `SubscriptionRef.get` and `swap` is a single `SubscriptionRef.set`, so a config reload replaces every
 program's spells at once and no reader ever walks a half-replaced table.
 
 `lookupRow(table, path)` is the trie walk itself, exported so the registry, the binding compiler
@@ -193,6 +202,28 @@ resolve to a declared class.
 `AnySpell` erases each spell's requirements, so nothing checks that the runtime carries what a
 registered spell needs. The composition root that builds the registry owes those services.
 
+## A spell that reads the disk
+
+The session list ([`ai-agent/session-list.ts`](../apps/tuval/src/ai-agent/session-list.ts)) is the
+first spell in the tree whose answer comes off the filesystem, and it is shaped by two rules the
+rest of the spell path does not enforce.
+
+**A slow spell carries its own bound.** Nothing on the spell path has a timeout, deadline or
+duration budget, and the executor will wait on `execute` for as long as it runs. So a spell that
+walks a store wraps its own work in `Effect.timeout` and turns the overrun into a tagged error of
+its own — the executor then reads that `_tag` and the caller gets a `SpellReplyError` instead of a
+call that never answers.
+
+**A requirement the row cannot name is filled from the built kernel.** A program row is constructed
+by a config module, before any kernel exists, so a spell cannot close over kernel services; and
+`AnySpell` erases its requirements, so nothing checks them either. `src/boot.ts` is the composition
+root that owes them. Most are ordinary layers inside the kernel merge (`shellDispatchKernel`), but a
+spell whose work *builds another program row's layer* needs the whole kernel context as a value —
+the same one `Processes.spawn` takes as `services`. That one is added to the context after it is
+built (`Context.add(built, Tag, fromKernel(built))`), because a layer inside the merge would be
+asking for the merge it is part of. The service's tag still rides `Kernel`, so dropping the
+provider is a compile error at `start` rather than a defect at the first call.
+
 ## Key bindings
 
 A binding is written the way a person types it (`"window close"`), and a key router needs
@@ -224,12 +255,12 @@ into an error on the next compile — which is why nothing calls `compileBinding
 ## The set boot holds
 
 `SpellSet` ([`spell-set.ts`](../apps/tuval/src/commands/spell-set.ts)) is the registry table, the
-config's key sources and the bindings compiled from them, held in **one** `Ref` and written in one
-`Ref.set`. Two cells would be two states to keep in step, and keeping them in step is the whole
+config's key sources and the bindings compiled from them, held in **one** `SubscriptionRef` and written in one
+`SubscriptionRef.set`. Two cells would be two states to keep in step, and keeping them in step is the whole
 job: a binding is only ever as valid as the table it was compiled against.
 
 Its layer hands out `SpellSet` **and** `SpellRegistry`, both reading that one cell, so a reader's
-single `Ref.get` sees both halves of one config. Every write goes through the same private step,
+single `SubscriptionRef.get` sees both halves of one config. Every write goes through the same private step,
 which compiles the bindings against the table it is about to store:
 
 | Entry | What it does |
@@ -287,6 +318,37 @@ literals, which is the check the kernel would make anyway, made here so a page r
 accept what the kernel rejects. It also refuses a token with no parameter left to bind to, with
 `no further arguments`.
 
+### A final parameter that consumes remaining words
+
+Declare `RestParameter` from
+[`rest-parameter.ts`](../apps/tuval/src/commands/rest-parameter.ts) as the final field of a spell's
+`Schema.Struct`; wrap it in `Schema.optionalKey` when omission is allowed. It is a string schema
+annotated with `x-command-rest: true`. No other trailing string becomes rest implicitly.
+
+The registry renders that annotation using Effect's `includeAnnotationKey` option, whitelisting
+only this vendor key in addition to Effect's standard metadata. This follows
+[`Schema.ToJsonSchemaOptions.includeAnnotationKey` at rc.112](https://github.com/Effect-TS/effect/blob/effect%404.0.0-rc.112/packages/effect/src/Schema.ts)
+(see also [LLMS.md, Defining schemas and domain models](https://github.com/Effect-TS/effect/blob/main/LLMS.md#defining-schemas-and-domain-models)).
+The protocol's open JSON Schema nodes preserve it across serialization, including optional fields.
+
+`readParams` carries it as `ParamSpec.rest`. A declared rest field must be last and describe a
+string without literal choices; an invalid declaration throws `InvalidRestParameter` when the
+index is built. Registration performs the same validation inside its existing failure channel.
+
+Once a positional token or `name=value` binding starts rest capture, every following token is
+content, including another `name=value`. Earlier required parameters must already have been
+supplied; addressing rest by name does not make them optional. Token values are joined with one
+space: quoted internal whitespace, escaped characters and dots retain their meaning. Separator
+whitespace between tokens is normalized, and trailing separators add no text. The caret remains in
+the rest slot after a separator; completion offers no candidates there, even when the parameter's
+name would normally select live values.
+
+`help` and `spell describe` opt their path into rest. They retain `segmentsOf` to resolve dotted
+and whitespace-separated paths to the same command; the generic parser does not normalize dots
+in arbitrary text. [`parse/rest.unit.test.ts`](../apps/tuval/src/commands/parse/rest.unit.test.ts)
+exercises declaration refusals, the wire round trip, completion, unchanged non-rest refusals and
+the three path spellings through the real discovery handlers.
+
 `parse(input, registry, snapshot)` ([`parse/parse.ts`](../apps/tuval/src/commands/parse/parse.ts))
 answers one of three (the second parameter is named `registry` and its type is `SpellIndex`):
 
@@ -311,7 +373,8 @@ properties of that rendering are load-bearing, all read off `Schema.toJsonSchema
 arrives as `{"type": "string", "enum": [...]}`; and a `Schema.Class` params, or any
 identifier-annotated struct, renders its root as `{"$ref": "#/$defs/<name>"}` with the object itself
 under the document's `definitions`, so the root ref is followed once before the properties are read.
-Everything else is read defensively, because the module is total.
+Unannotated input is read defensively. Explicit invalid rest declarations throw
+`InvalidRestParameter`; registration catches that refusal before publishing the description.
 
 `describeExpected(param)` renders one slot: `<name>`, or the literals joined by `|`.
 
@@ -377,6 +440,14 @@ spells as one list.
   `SpawnedProcesses` service retains the handle of every process it spawns, because the process
   table exposes rows and no dispatch; `send` and `read` answer `UnknownProcess` for a process this
   service did not spawn.
+
+  `SpawnedProcesses` also carries the answer path, which is not a spell and is reachable from no
+  spell's params: `ask` puts a payload on a request port and holds, against a correlation it mints,
+  where the answer goes; `answer` spends one correlation, checks the payload against that port's own
+  output schema, and hands it to the asking process; and `spawn`'s `on` record turns a named child
+  out-port into one of the spawner's own events. All three land through `deliver`
+  ([`process/inbox.ts`](../apps/tuval/src/process/inbox.ts)), which needs only a live handle — so an
+  answer reaches any process, not only one these spells spawned.
 
 ### The bridge
 
@@ -537,7 +608,7 @@ answers a bound key, a typed line, `help`, and an agent's bridge.
 | [`shell/commands/row.ts`](../apps/tuval/src/shell/commands/row.ts) | `ShellCommand`, `defineCommand`, `CommandPath`, `commandName`, `commandPath`, `parameterNames` |
 | [`shell/commands/table.ts`](../apps/tuval/src/shell/commands/table.ts) | `shellCommands`, `commandFor`, `commandNames`, `resolveVerb`, `verbSpellings`, `msgForCommandName` |
 | [`shell/commands/line.ts`](../apps/tuval/src/shell/commands/line.ts) | `readCommandLine`, `CommandLineResult` |
-| [`shell/commands/errors.ts`](../apps/tuval/src/shell/commands/errors.ts) | `CommandRefusal` and its five arms, `refusalMessage` |
+| [`shell/commands/errors.ts`](../apps/tuval/src/shell/commands/errors.ts) | `CommandRefusal`, `refusalMessage` |
 | [`shell/commands/spells.ts`](../apps/tuval/src/shell/commands/spells.ts) | `shellSpells`, `CommandDispatched` |
 | [`shell/commands/dispatch.ts`](../apps/tuval/src/shell/commands/dispatch.ts) | `ShellDispatch` |
 
@@ -558,12 +629,13 @@ calls it — so a key press and a typed line run the same row. It answers `null`
 an argument, because a key sequence has nowhere to carry one, and the core leaves that name as a
 `runCommand` Cmd.
 
-`readCommandLine` lexes with this framework's `tokenize` and suggests with its `didYouMean`, then
-binds the tokens positionally in `Schema.Struct` declaration order and decodes them against the
-row's real schema through `Schema.decodeUnknownResult`. That is the difference from `parse` above:
-the palette's parser binds argument *text* and leaves the decode to the executor, so its refusal
-names a position; this one has the schema in hand, so its refusal names the row and the parameter.
-A verb resolves as the full name, else the `window:` row of that name, else an unambiguous last
+For a recognized shell row, `readCommandLine` lexes with this framework's `tokenize`, binds the
+tokens positionally in `Schema.Struct` declaration order, and decodes them against the row's real
+schema through `Schema.decodeUnknownResult`. This shell branch has the schema in hand, so its
+refusal names the row and the parameter. The options overload routes non-shell input through the
+shared `parse`, which binds argument text and leaves decoding to the executor; see
+[Live command discovery and the command line](#live-command-discovery-and-the-command-line).
+A shell verb resolves as the full name, else the `window:` row of that name, else an unambiguous last
 segment — `open` is claimed by both `window:open` and `command:open`, and the `window:` step is what
 keeps `:open counter` readable rather than a guess.
 
@@ -665,7 +737,105 @@ mint. An `ok: false` keeps the palette open with the kernel's own words under th
 `ok: true` closes it.
 
 **Who supplies the registry and runs the call** is
-[`shell/ui/PaletteHost.tsx`](../apps/tuval/src/shell/ui/PaletteHost.tsx): it describes the shell's
-own rows as `SpellDescription`s, builds the `Snapshot` the completion engine reads, and — until the
-page-to-kernel spell transport lands — decodes a call against the row's real `params` and dispatches
-its Msg, exactly as `readCommandLine` does with a typed line.
+[`shell/ui/PaletteHost.tsx`](../apps/tuval/src/shell/ui/PaletteHost.tsx). It combines the page's live
+registry descriptions with familiar shell shortcuts. A registered shell row appears once at its
+short address (`window close`); its live description and parameter schema remain authoritative.
+Shortcuts win an exact path collision. Only a shortcut gains the shell prefix when called;
+ordinary-program and core commands keep their actual registered addresses. A socket-less fixture
+falls back to the static shell table and refuses calls without a kernel.
+
+The host rebuilds the index and completion snapshot on catalogue replacement. Removed commands
+leave discovery, and attachment replacement interrupts pending waiters and rejects old replies.
+The kernel executor supplies the actual result or refusal. Palette ranking, Tab completion,
+placement and focus restoration remain in the existing palette components. The browser journey in
+[`page/proof/commands.spec.ts`](../apps/tuval/src/page/proof/commands.spec.ts) boots a deterministic
+counter, invokes it through both surfaces, verifies its real state and all six help/describe path
+forms, then removes a command and reconnects without reloading the page.
+
+## A window that calls a spell
+
+A spell answered on demand — the session list, one page of a session's transcript — reaches the
+surface through the page's socket rather than through a state frame, and the two live instances are
+[`page/session-list.ts`](../apps/tuval/src/page/session-list.ts) and
+[`page/session-transcript.ts`](../apps/tuval/src/page/session-transcript.ts). Both are the same three
+pieces, and the split is what keeps the surface provable.
+
+**A pure call/read pair per spell, under `page/`.** One function builds the `SpellCall` and mints its
+`CallId`; one takes that call and a reply and answers `null` when the reply's id is another call's,
+a refusal when the result does not decode, and the value otherwise. The `null` is the load-bearing
+arm: a page holds several calls open on one socket, so "not my reply" has to stay distinguishable
+from "mine, and it is empty" — collapsing them shows one window another's answer.
+
+**The address is the program-prefixed one, and `protocol/` spells both.** The registry keys a row's
+spell under `[programId, ...path]` ([`commands/registry.ts`](../apps/tuval/src/commands/registry.ts)),
+so a call carrying the spell's bare path reaches nothing and the kernel answers `UnknownSpell`. Each
+protocol module therefore exports the row's own path *and* the whole call path
+(`SESSION_LIST_PATH` / `SESSION_LIST_CALL_PATH`,
+`SESSION_TRANSCRIPT_PATH` / `SESSION_TRANSCRIPT_CALL_PATH`), and the page sends the second. **A
+scripted socket in a test is a registry, not a router with a default arm**: it answers the addresses
+the kernel really registers and refuses everything else the way the kernel does. A fixture that parks
+any unrecognised path passes a mis-addressed call, which is how #8238's bare `session.transcript`
+cleared a whole rendered suite and failed on a real desk.
+
+**A hook the renderer calls, bound at the table.** The window declares a source type
+(`SessionListSource`, `TranscriptSource`) and takes it as an option; the default asks nobody, so a
+fixture or a socket-less surface renders the same waiting path a real one does.
+[`page/renderers.tsx`](../apps/tuval/src/page/renderers.tsx) binds the real one, closed over that
+page's `call`. **The binding is the step that gets forgotten**: a source left unbound is a window
+that reads forever while every unit around it passes, which is what #8238 repaired — so the test that
+covers a source mounts the renderer out of `pageRenderers` rather than passing a stub, and asserts on
+the calls the scripted socket received.
+
+**The hook is mounted per subject, never called conditionally.** A window showing one of several
+things calls the source from a child component whose whole life is that subject, keyed on it. That is
+two rules in one: hooks stay unconditional, which React requires, and picking a second subject
+unmounts the first read rather than folding its landed pages into the new one's history.
+
+**Retry and paging are attempts, not new inputs.** A read that can be asked for again — a retry, the
+next page — carries a counter beside its arguments, because two consecutive requests can legitimately
+carry the same ones: a retry asks for exactly the cursor that failed. Without the counter the effect's
+dependencies do not move and no call leaves. The landed answer is checked against the attempt it was
+sent for, so a superseded call's reply is dropped rather than folded (#8280, #8238).
+
+**The fold is pure and lives beside the codec.** Where an answer accumulates —
+`session-transcript.ts`'s `landedPage` — the state machine is a total function from the held state
+and one landing to the next, so every rule the surface owes (older items before held ones, an id
+already on screen never repeated, a failed page leaving the history and the cursor alone) is a unit
+test with no DOM in it. The hook holds that value and renders it; it decides nothing.
+
+## Live command discovery and the command line
+
+`SpellRegistry.changes` projects descriptions from the same cell that lookup reads. Under
+`SpellSet.layer`, that cell also owns the compiled bindings: `SubscriptionRef.updateEffect` holds
+its semaphore across compilation and publishes only the completed value. The standalone registry
+uses the same replaying interface. A rejected reload writes nothing. This follows the pinned Effect
+rc.112 `SubscriptionRef.ts` implementations of `make`, `changes`, `set`, and `updateEffect`;
+`commands/registry-changes.unit.test.ts` and `commands/spell-set.unit.test.ts` prove replacements
+and concurrent binding coherence.
+
+`serveDesk` supplies this stream to the transport. Each socket runs its own subscription in its
+session scope and receives a `tuval/transport/spell-registry/v1` frame at attachment and after
+committed replacements. Wire admission decodes `RegistryDescription` and checks explicit rest
+metadata through `readParams`; optional fields and JSON Schema annotations survive unchanged.
+`PageAttachment.spells` emits no catalogue before a valid frame arrives.
+
+The page’s `useSpellRegistry` owns the subscription and associates each value with its attachment.
+Replacement hides the old catalogue immediately; closing the socket clears it and stops the pump.
+`AttachedDesk` threads descriptions into `Desk`, which shares the existing desk-to-protocol
+projection in `command-snapshot.ts` with the palette.
+
+`readCommandLine(input, options)` first resolves the shell row, including its aliases. A recognized
+shell row returns its existing Msg or refusal; invalid arguments never fall through. Only an
+unknown shell verb reaches `parse` over the live index. Its complete answer becomes a protocol
+`SpellCall`, carrying the actual registered path, a fresh correlation id, and the focused window.
+The kernel owns scope resolution and argument decoding. For example, the real shell registry
+exposes `shell window close`, so `help shell window close`, `help "shell window close"`, and
+`help shell.window.close` describe that same registered command.
+
+`CommandLine` dispatches successful shell reads and closes as before. Program calls stay open to
+show their actual JSON result or typed refusal. Repeated Enter while pending sends one call; edits
+invalidate the pending display before another submission. Attachment changes and unmount interrupt
+the local waiter and prevent its reply overwriting newer state. Interruption does not undo a command
+the kernel already received. Escape closes the prompt. The socket/routing proof is
+`shell/proof/command-line.integration.test.ts`; the rendered lifecycle proofs are
+`shell/ui/command-line.unit.test.tsx` and `page/spell-registry.unit.test.tsx`.

@@ -4,7 +4,7 @@
  *
  * The verbs are exported as namespaces, not flattened: a name means one thing inside its group and
  * carries no cross-group uniqueness obligation, so flattening would collide two groups' tables.
- * Within a group the codes come from one `<group>/codes.ts` (#5294).
+ * Within a group the codes come from one `<group>/codes.ts`.
  */
 export * as BaseRef from "./adr/base-ref.ts";
 export * as AdrCodes from "./adr/codes.ts";
@@ -24,5 +24,7 @@ export * as Exec from "./io/exec.ts";
 export * as Fs from "./io/fs.ts";
 export * as Git from "./io/git.ts";
 export * as GitHub from "./io/github.ts";
+export * as UsageLedger from "./spend/usage-ledger.ts";
+export * as UsageRecords from "./spend/usage-record.ts";
 export * as Verb from "./verb.ts";
 export {VERSION} from "./version.ts";

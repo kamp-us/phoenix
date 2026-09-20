@@ -6,7 +6,7 @@ import * as codes from "./codes.ts";
 const GROUP_DIR = fileURLToPath(new URL(".", import.meta.url));
 
 /**
- * The defect this group shipped, pinned from both ends (#5294): a verb that seats its own numeral,
+ * The defect this group shipped, pinned from both ends: a verb that seats its own numeral,
  * and a number that carries more than one meaning. Run against the pre-fix verb modules the first
  * assertion reports fifteen declarations across five files — including `NO_SUBJECT` twice, on two
  * numbers.
@@ -16,7 +16,7 @@ describe("the `adr` group allocates from one table", () => {
 		expect(verbLocalCodesIn(GROUP_DIR)).toEqual([]);
 	});
 
-	it("finds codes at all, so no assertion below passes over an empty table (ADR 0092)", () => {
+	it("finds codes at all, so no assertion below passes over an empty table", () => {
 		expect(allocatedCodes(codes).size).toBeGreaterThan(0);
 	});
 

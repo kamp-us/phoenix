@@ -1,16 +1,27 @@
 /**
- * Two real processes racing one lane ledger — the probabilistic half of #5994's evidence.
+ * Two real processes racing one lane ledger — the probabilistic half of the lock's evidence.
  *
  * The deterministic half (a scripted held lock refuses CONCURRENT_WRITE with the log untouched)
  * lives in [`append-lock.unit.test.ts`](append-lock.unit.test.ts). What that tier cannot prove is
  * that two live processes launched against the same ledger actually interleave badly enough for
  * the guard to matter, and that when they do, the outcome stays coherent: every appended line
- * parses, every exit is one of the three legal seats (won / machine-refused / lock-refused), and a
- * machine-refused event never reaches the log.
+ * parses, every exit is one of the three legal seats (won / machine-refused / lock-refused), and an
+ * event that did not win never reaches the log.
+ *
+ * A fourth seat used to sit beside those, and its retirement is why the set here is narrower than
+ * the one the first ruling below widened. A writer's first load runs before the lock on purpose,
+ * and on a fresh lane `events.jsonl` does not exist yet, so `loadLane` read a `NotFound` and then
+ * probed the path to tell "absent" from "unreadable" — two instants. A winner appending in between flipped the
+ * probe, and the loser reported `LANE_UNREADABLE` about a log that was genuinely absent when it
+ * read. `loadLane` now decides that split off the read's own failure, so the probe cannot
+ * contradict it and no writer in this race can reach `LANE_UNREADABLE`.
  *
  * The children run this checkout's own `src/bin.ts` under node's type stripping — no build step on
  * the gate path. Collision frequency depends on real scheduling, so the invariants are asserted
  * across repeated pairs rather than trusting one lucky race.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9138#issuecomment-5702162985
+ * @ruling https://github.com/kamp-us/phoenix/issues/9315
  */
 import {execFile} from "node:child_process";
 import {existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync} from "node:fs";
@@ -54,7 +65,7 @@ const spawnTransition = async (root: string): Promise<Run> => {
 	}
 };
 
-describe("two concurrent lane writers stay coherent (#5994)", {
+describe("two concurrent lane writers stay coherent", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
 	const root = join(mkdtempSync(join(tmpdir(), "lane-race-")), "checkout");
@@ -62,7 +73,7 @@ describe("two concurrent lane writers stay coherent (#5994)", {
 	const logPath = join(lanesRoot, "42", "events.jsonl");
 
 	beforeAll(() => {
-		// The ground guard needs a repo marker; `.fabrika` itself is one (#6212).
+		// The ground guard needs a repo marker; `.fabrika` itself is one.
 		mkdirSync(join(root, ".fabrika"), {recursive: true});
 		mkdirSync(join(lanesRoot, "42"), {recursive: true});
 		writeFileSync(join(lanesRoot, "42", "workflow.json"), coderTemplateText());
@@ -80,6 +91,8 @@ describe("two concurrent lane writers stay coherent (#5994)", {
 
 			for (const r of runs) {
 				// 0 won · 12 the machine refused it against the true state · 40 the lock said wait longer.
+				// 11 is NOT among them: the loser's pre-lock read of an absent log now proves that absence
+				// off its own NotFound, so a winner appending mid-window no longer answers UNKNOWN.
 				expect([0, 12, 40]).toContain(r.code);
 				if (r.code === 0) expect(() => JSON.parse(r.stdout)).not.toThrow();
 			}

@@ -6,9 +6,9 @@
  * instead of trusting it.
  *
  * The two collapses this verb refuses are v1's worst: **pending is not absent** (reporting it absent
- * invents a CI gap, #3913) and a **failed read is not absent** (a 503 body reported as "no
- * run-evidence bundle" for a bundle present the whole time, #3716 — which is why the fetch checks
- * the zip magic number rather than trusting the file's name).
+ * invents a CI gap) and a **failed read is not absent** (a 503 body reported as "no run-evidence
+ * bundle" leaves a bundle that was present the whole time reading as missing — which is why the
+ * fetch checks the zip magic number rather than trusting the file's name).
  *
  * `failed` is the fifth state and is deliberately not folded into `unknown`: a bundle that binds
  * this head and attests a failing run is the most *definite* answer this verb can produce, while
@@ -40,19 +40,18 @@ import {
 
 const VERB = "ship evidence";
 
-/** The producer, named by ADR 0054's own contract rather than discovered by a heuristic. */
+/** The producer, named by the bundle contract itself rather than discovered by a heuristic. */
 const PRODUCER_WORKFLOW = "run-evidence.yml";
 const ARTIFACT_NAME = "run-evidence";
 const SCHEMA_VERSION = 1;
 
 /**
  * The one word a bundle's `checks[]` entry carries when it attests a passing run — the PRODUCER's
- * vocabulary (ADR 0054 §3; `crabbox-manifest`'s `deriveChecks` writes `pass`/`fail`), never
- * GitHub's check-conclusion vocabulary, which no bundle ever contains. Reading the bundle against
- * the wrong vocabulary made every passing check count as failing, so no bundle could attest a
- * passing run and every ship deadlocked on green evidence (#5563). Anything else — including a
- * word GitHub would call passing — reads as failing, the same fail-closed posture the check-run
- * rollup takes on an unrecognized conclusion (#4552).
+ * vocabulary — the manifest writer emits `pass`/`fail` — never GitHub's check-conclusion
+ * vocabulary, which no bundle ever contains. Read the bundle against the wrong vocabulary and every
+ * passing check counts as failing, so no bundle can attest a passing run and every ship deadlocks on
+ * green evidence. Anything else — including a word GitHub would call passing — reads as failing, the
+ * same fail-closed posture the check-run rollup takes on an unrecognized conclusion.
  */
 const PASSING_STATUS = "pass";
 
@@ -63,7 +62,7 @@ const PASSING_STATUS = "pass";
  * Artifact listing lags the run's own completion, so "completed, zero artifacts" is two different
  * facts wearing one shape: a producer that published nothing, and a producer whose upload has not
  * surfaced yet. Without a window they collapse, and the collapse lands on the wrong side of the
- * pending-is-not-absent law (#3913) — a listing lag reported as a CI gap. The clock is the **local
+ * pending-is-not-absent law — a listing lag reported as a CI gap. The clock is the **local
  * clock at read time**, compared against the run's own `completed_at`; both are named in the
  * contract so a reader can re-derive which side of the line a run fell on.
  */
@@ -86,10 +85,10 @@ const PARKED_CONCLUSION = "action_required";
 /**
  * Pick the producer run when a head carries several.
  *
- * A Release PR's head carries two after #6759: the `pull_request` run GitHub parks on the bot's
+ * A Release PR's head carries two: the `pull_request` run GitHub parks on the bot's
  * branch, and the dispatched one that actually runs. A first match decides that on GitHub's
  * undocumented return order for `runs?head_sha=`, and losing the tie reads `absent` at a head whose
- * bundle exists — the exact symptom #6759 kills. So a parked run never wins over one that is not
+ * bundle exists — the exact symptom this kills. So a parked run never wins over one that is not
  * parked. It is still returned when it is all there is, so the `lookup` line names the run behind
  * the `absent` rather than nothing.
  */
@@ -115,7 +114,7 @@ export interface Manifest {
  * The manifest's shape, validated positively.
  *
  * `checks[]` entries carry a **string `status`**, not a boolean `pass` — the wire shape is the
- * producer's, and a parser written against prose that said "boolean" reads everything falsy (#4392).
+ * producer's, and a parser written against prose that said "boolean" reads everything falsy.
  */
 export const readManifest = (text: string): Manifest | null => {
 	const parsed = parseJson(text);
@@ -155,7 +154,7 @@ export const runEvidence = (
 		const repo = resolved.repo;
 
 		const unreadable = (what: string, reason: string): string =>
-			`${VERB}: cannot read ${what} for ${bound}: ${reason} — whether a bundle exists is UNKNOWN, never "absent" (#3716).`;
+			`${VERB}: cannot read ${what} for ${bound}: ${reason} — whether a bundle exists is UNKNOWN, never "absent".`;
 
 		const target = yield* resolvePull(VERB, repo, pr, {
 			unknownMessage: (reason) => unreadable("the pull request", reason),
@@ -178,7 +177,7 @@ export const runEvidence = (
 			status: string | null,
 			checks: ReadonlyArray<ManifestCheck>,
 		): VerbOutcome => {
-			// `checks` is an evidence-array under ADR 0308: the skill routes off the five states alone,
+			// `checks` is an evidence array: the skill routes off the five states alone,
 			// and the names behind a non-passing tally are already on the notes channel below.
 			const tally = reasonHistogram(checks, (check) => check.status);
 			return json
@@ -203,7 +202,7 @@ export const runEvidence = (
 			return refuse(PRECONDITION_UNKNOWN, unreadable("the workflow inventory", producer.reason));
 		}
 		if (producer._tag === "Absent") {
-			// The foreign-repo degradation (ADR 0086) — confirmed by a SUCCESSFUL inventory read, which
+			// The foreign-repo degradation — confirmed by a SUCCESSFUL inventory read, which
 			// is what makes it a fact about the repository rather than a failed lookup wearing a state.
 			diagnostics.push(`${VERB}: no ${PRODUCER_WORKFLOW} in ${repo} — no producer, so no bundle.`);
 			return emit("absent", null, null, null, []);

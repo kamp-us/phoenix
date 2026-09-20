@@ -1,14 +1,14 @@
 /**
- * `guard decisions-index validate` — ported off v1's `decisions-index validate` (epic #5720).
+ * `guard decisions-index validate` — ported off v1's `decisions-index validate`.
  *
  * The verb is the IO boundary and nothing else: list the decision corpus, read each record, hand
  * them to the pure rule in `./decisions-number.ts`, seat the answer on the group's exit taxonomy.
  *
- * Where the corpus is comes from `decisionsDir` (#6433), the same resolver `adr` and `governance`
+ * Where the corpus is comes from `decisionsDir`, the same resolver `adr` and `governance`
  * read, so a repo that keeps its records elsewhere is scanned rather than reported empty.
  *
- * v1's other three modes did not come with it: `generate`/`check` served a committed
- * `.decisions/index.md` that ADR 0126 deleted, and `compact`/`next` are `fabrika adr`'s
+ * v1's other three modes did not come with it: `generate`/`check` served a committed corpus index
+ * that a later decision deleted, and `compact`/`next` are `fabrika adr`'s
  * (`../adr/`), not a guard's. `validate` is the whole of what CI ran.
  */
 
@@ -49,7 +49,7 @@ const judge = (
 		const dir = path.join(root, corpus);
 		if (!(yield* exists(dir))) {
 			return zeroScope(
-				`${VERB}: ${corpus}/ does not exist under ${root} — the guard read no records at all, fail-closed (ADR 0092). Is the repo root correct?`,
+				`${VERB}: ${corpus}/ does not exist under ${root} — the guard read no records at all, fail-closed. Is the repo root correct?`,
 			);
 		}
 		// A name that leads with a digit and ends `.md` is a record or a MALFORMED one, and both are
@@ -58,7 +58,7 @@ const judge = (
 		const names = (yield* readDir(dir)).filter(isRecordCandidate).sort();
 		if (names.length === 0) {
 			return zeroScope(
-				`${VERB}: ${corpus}/ holds ZERO decision records — the guard compared no numbers, fail-closed (ADR 0092).`,
+				`${VERB}: ${corpus}/ holds ZERO decision records — the guard compared no numbers, fail-closed.`,
 			);
 		}
 		const files: Array<DecisionFile> = [];
@@ -78,7 +78,7 @@ const judge = (
 			"",
 			"An ADR's number lives on two axes — the filename prefix and the frontmatter `id` — and they",
 			"must name the same record, or a number collision hides behind whichever axis still differs",
-			"(the #1471 class, the ADR 0074 number lock). Renumber the newer record and rename its file.",
+			"(the collision class this number lock exists to catch). Renumber the newer record and rename its file.",
 		].join("\n");
 		return violation(
 			report,
@@ -88,7 +88,7 @@ const judge = (
 						atFile(
 							"error",
 							`${corpus}/${file}`,
-							`${describeDefect(defect).trim()} — the ADR number lock (ADR 0074) requires the filename prefix and the frontmatter \`id\` to name one record, uniquely. Fix: renumber the newer record and rename its file to match.`,
+							`${describeDefect(defect).trim()} — the ADR number lock requires the filename prefix and the frontmatter \`id\` to name one record, uniquely. Fix: renumber the newer record and rename its file to match.`,
 						),
 					),
 				),

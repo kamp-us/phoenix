@@ -51,12 +51,12 @@ describe("AgentChatInput production bridge", () => {
 		render(<AgentChatInput bridge={agentChatInputBridge} />);
 		const input = await screen.findByLabelText("Pi'ye mesaj yaz");
 
-		expect(await screen.findByText("Pi hazır · GPT-5")).toBeTruthy();
+		expect(await screen.findByRole("button", {name: "model: GPT-5"})).toBeTruthy();
 		fireEvent.change(input, {target: {value: "/rev"}});
 		expect(await screen.findByRole("option", {name: /\/skill:review/i})).toBeTruthy();
 
 		fireEvent.change(input, {target: {value: "Merhaba Pi"}});
-		fireEvent.click(screen.getByRole("button", {name: /gönder/i}));
+		fireEvent.click(screen.getByRole("button", {name: /^gönder$/i}));
 
 		await waitFor(() => {
 			expect(fetch).toHaveBeenCalledWith(

@@ -8,7 +8,7 @@
  * and it does so without a checkout: a test that shelled out to a real repository would be asserting
  * against that repository's history rather than against the spec.
  *
- * The bytes are read FROM the fixture files, never copied beside them (#5362). A copy is a fact that
+ * The bytes are read FROM the fixture files, never copied beside them. A copy is a fact that
  * goes stale without telling anyone — `PLAIN_DOC` shipped 93 bytes against a 179-byte file and
  * nothing red — so the file on disk is the one source, and a fixture that moved or emptied fails the
  * read loudly rather than scripting the seam with nothing.
@@ -24,8 +24,8 @@ export const FIXTURES = "packages/fabrika-cli/test-fixtures/write-pattern";
 
 /**
  * An empty read is a failed read, never fixture bytes — `""` scripted onto the seam satisfies every
- * assertion vacuously (ADR 0092). Kept separate from the read so the refusal is provable without an
- * empty file in the tree.
+ * assertion vacuously, and a clean pass over nothing is what a fail-closed check exists to forbid.
+ * Kept separate from the read so the refusal is provable without an empty file in the tree.
  */
 export const nonEmptyFixture = (relativePath: string, bytes: string): string => {
 	if (bytes.trim() === "") {

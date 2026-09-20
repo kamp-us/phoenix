@@ -40,7 +40,7 @@ describe("runChangeDetectGuard", () => {
 		const outcome = await run({files: {[CI]: API_MODE}});
 		expect(outcome.code).toBe(VIOLATION);
 		expect(outcome.stdout).toBe("");
-		expect(outcome.stderr.join("\n")).toContain("#3245");
+		expect(outcome.stderr.join("\n")).toContain("transient API-HTML blip");
 	});
 
 	it("annotates ci.yml under Actions", async () => {
@@ -55,7 +55,7 @@ describe("runChangeDetectGuard", () => {
 		expect(outcome.stderr.some((l) => l.startsWith("::"))).toBe(false);
 	});
 
-	// ADR 0092's floor: no ci.yml means nothing was compared, which cannot be reported clean.
+	// The fail-closed floor: no ci.yml means nothing was compared, which cannot be reported clean.
 	it("fails closed when ci.yml is absent", async () => {
 		const outcome = await run({files: {}});
 		expect(outcome.code).toBe(ZERO_SCOPE);

@@ -7,11 +7,7 @@
  * the discipline `../triage/codes.ts` and `../ui/codes.ts` state in full: an import makes a drift
  * unrepresentable where a copied number makes it merely detectable.
  *
- * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
- *
- * **`7` and `11` are this group's load-bearing pair.** `7` is a fact about a *caller-supplied* path
- * — it was named explicitly and is not there. `11` is a *failed read*. An implicitly-resolved roster
- * holding zero skills is neither: it is `empty` at exit `0`, a fact the caller acts on.
+ * Each verb's `--help` describes its refusal conditions; the constants below name shared meanings.
  */
 
 import {
@@ -31,7 +27,7 @@ export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 export const LEAKED_PATH = SHARED_LEAKED_PATH;
 /** The authored content is a bare `@` path reference — not redactable, so a second code. */
 export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
-/** Zero scope: an **explicitly passed** `--skills-dir` is proven absent (ADR 0092). */
+/** Zero scope: an **explicitly passed** `--skills-dir` is proven absent, so the verb fails closed. */
 export const ZERO_SCOPE = SHARED_NO_TARGET;
 /** The write itself failed — whether anything landed is UNKNOWN. Re-read before retrying. */
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;

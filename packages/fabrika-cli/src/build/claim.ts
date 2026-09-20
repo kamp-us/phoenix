@@ -3,17 +3,17 @@
  * before it touches a number.
  *
  * One comment-marker race on the issue: post a marker carrying this session's token, re-read the
- * markers, and the **earliest authorized** one wins. The shape is ADR 0115's, re-implemented rather
- * than called (ADR 0238).
+ * markers, and the **earliest authorized** one wins. The protocol is implemented here rather than
+ * shelled out to another tool's claim helper — this module derives the verdict, it does not relay one.
  *
  * **Ownership turns on the whole token, never on the session id alone.** A session is not a lane: one
  * driver session routinely runs several builders at once, and each mints its own token. Deciding
  * `Mine` on `parsed.session === session` reads as the obvious simplification — it is indistinguishable
  * under one lane per session — and it told the second lane it held the first lane's claim, so both ran
- * the same repair and both pushed (#6037). The asking lane therefore names itself, as a {@link Caller},
+ * the same repair and both pushed. The asking lane therefore names itself, as a {@link Caller},
  * and a same-session marker under a different nonce is `Foreign`.
  *
- * **Authorization comes from repository permissions, never from the marker's text** (ADR 0055). A
+ * **Authorization comes from repository permissions, never from the marker's text.** A
  * marker whose author resolves below `write` is counted and reported, and never wins — otherwise the
  * race is decided by whoever is willing to type the winning string. A permission read that *fails* is
  * UNKNOWN, never a demotion: v1 silently demoted an authorized author on a transient read failure
@@ -35,14 +35,14 @@ import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {CLAIM_NOT_MINE, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {nonceOf, parseToken} from "./lane.ts";
 
-/** The permissions that authorize a marker — the ADR 0055 `write+` set. */
+/** The permissions that authorize a marker — the `write+` set. */
 const AUTHORIZED = new Set(["admin", "maintain", "write"]);
 
 /**
  * One claim namespace: the marker line's leading word, and the token's leading segment.
  *
  * Two namespaces race on the same issue and never see each other — `build-claim:`/`build:` for a
- * builder, `lane-claim:`/`lane:` for the `operate` driver that spawns it (#5761). That separation is
+ * builder, `lane-claim:`/`lane:` for the `operate` driver that spawns it. That separation is
  * the whole reason the grammar is a value: the marker's regex is *derived* from the keyword and the
  * prefix, so a namespace cannot ship a writer and a reader that disagree, and a driver holding a
  * lane claim on issue N cannot lock its own builder out of N.
@@ -90,8 +90,8 @@ export interface ClaimOverride {
  *
  * The override rides on its **own line** rather than in the marker line: ownership turns on the token
  * alone, and a reason appended inline would be a free-text field inside the one line the resolver
- * parses. On a second line the escape hatch leaves the trace ADR 0245 asks for and the marker grammar
- * is untouched.
+ * parses. On a second line the escape hatch leaves the trace an admission override owes and the marker
+ * grammar is untouched.
  */
 export const composeMarker = (
 	token: string,
@@ -137,7 +137,7 @@ export interface ClaimMarker {
  * The succession marker: `build-adopt: <dead-session> by <token> · <ISO> · reason: <text>`.
  *
  * A driver session dies and its builders' claim markers stay on the board; the successor names the
- * dead session here and `build release` then answers `Mine` for its claim (ADR 0295). The keyword is
+ * dead session here and `build release` then answers `Mine` for its claim. The keyword is
  * derived from the namespace's prefix for the same reason the claim marker's is derived from its
  * keyword — a namespace cannot ship a writer and a reader that disagree.
  *
@@ -181,6 +181,20 @@ export const readAdoptMarker = (
 	return reason === "" ? null : {adopted: m[1], token: m[2], reason};
 };
 
+/** What a marker's place on the thread turns on. */
+interface Posted {
+	readonly commentId: number;
+	readonly createdAt: string;
+}
+
+/**
+ * The one total order the marker lists sort on, and the one the adopt fence reads a marker's place
+ * in. `created_at` is GitHub's own field rather than the marker line's timestamp, so a claimant
+ * cannot compose its way to an earlier place; the comment id breaks a same-second tie.
+ */
+const byAge = (a: Posted, b: Posted): number =>
+	a.createdAt === b.createdAt ? a.commentId - b.commentId : a.createdAt < b.createdAt ? -1 : 1;
+
 /** Every adopt marker of `grammar` in a comment list, oldest first, ties broken by comment id. */
 export const adoptMarkersIn = (
 	comments: ReadonlyArray<CommentRecord>,
@@ -198,9 +212,7 @@ export const adoptMarkersIn = (
 			});
 		}
 	}
-	return [...markers].sort((a, b) =>
-		a.createdAt === b.createdAt ? a.commentId - b.commentId : a.createdAt < b.createdAt ? -1 : 1,
-	);
+	return [...markers].sort(byAge);
 };
 
 /** Every claim marker of `grammar` in a comment list, oldest first, ties broken by comment id. */
@@ -220,19 +232,17 @@ export const markersIn = (
 			});
 		}
 	}
-	return [...markers].sort((a, b) =>
-		a.createdAt === b.createdAt ? a.commentId - b.commentId : a.createdAt < b.createdAt ? -1 : 1,
-	);
+	return [...markers].sort(byAge);
 };
 
 /**
  * Which lane is asking — the identity every ownership question is answered against.
  *
  * `Lane` is the real one: a session plus the nonce of the token that lane holds, which is what
- * separates two builders of one session. `AnySession` is the pre-#6037 identity, kept only for the
- * claim namespaces that have not adopted a lane nonce (the `lane:` driver claim, and the epic claims
- * the `plan` and `ledger` groups take); it is a named opt-in precisely so the session-only rule cannot
- * come back as a default.
+ * separates two builders of one session. `AnySession` is the older session-only identity, kept only
+ * for the claim namespaces that have not adopted a lane nonce (the `lane:` driver claim, and the epic
+ * claims the `plan` and `ledger` groups take); it is a named opt-in precisely so the session-only
+ * rule cannot come back as a default.
  */
 export type Caller =
 	| {
@@ -300,10 +310,16 @@ export const requireCallerToken = (
 };
 
 /**
- * Who holds the claim — four outcomes, and no two of them fold.
+ * Who holds the claim — five outcomes, and no two of them fold.
  *
  * `Mine` carries the adopt marker when the claim came through succession rather than directly, so
  * `release` can retract both comments; `adopt` is `null` on the ordinary path.
+ *
+ * `AdoptOnly` is the succession whose claim marker is already gone: this lane's own adopt stands on
+ * the thread with nothing left to adopt. It is not a claim and no mutating verb may read it as one,
+ * but it is this lane's own comment, so `release` is the verb that retracts it. Folding it into
+ * `Unclaimed` is what made the marker unreachable — `release` answered "nothing to retract" while the
+ * adopt fence went on counting it, so the sanctioned succession never terminated.
  */
 export type Ownership =
 	| {readonly _tag: "Mine"; readonly marker: ClaimMarker; readonly adopt: AdoptMarker | null}
@@ -313,6 +329,7 @@ export type Ownership =
 			/** The winner is another lane of the caller's own session — a wrong lane, not a wrong session. */
 			readonly sameSession: boolean;
 	  }
+	| {readonly _tag: "AdoptOnly"; readonly adopt: AdoptMarker}
 	| {readonly _tag: "Unclaimed"}
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
@@ -354,10 +371,10 @@ const permissionReader = (repo: string) => {
  * stderr — content is not authority, but an ignored marker should still be visible.
  *
  * A winning marker held by another session is `Foreign` **unless** an authorized adopt marker on the
- * same number names that session and hands it to the asking lane (ADR 0295). An adopt is read
+ * same number names that session and hands it to the asking lane. An adopt is read
  * against the same `namesCaller` test the ordinary win is, so succession confers the claim on
- * exactly the lane its `by <token>` names and never re-widens ownership back to a whole session
- * (#6060). The adopt is read only on that branch, so the ordinary path costs exactly what it did.
+ * exactly the lane its `by <token>` names and never re-widens ownership back to a whole session.
+ * The adopt is read only on that branch, so the ordinary path costs exactly what it did.
  */
 export const resolveOwnership = (
 	repo: string,
@@ -408,23 +425,54 @@ export const resolveOwnership = (
 			break;
 		}
 		if (winner === null) {
+			// No claim marker survives, so there is no claim to confer — but an adopt this lane wrote may
+			// still stand, and only the lane its `by <token>` names may retract it. Answering `Unclaimed`
+			// without this read is what stranded it: nothing could retract it, and the fence below still
+			// counted it, so adopt → release → claim looped forever.
+			const strandedAdopts: AdoptMarker[] = [];
+			for (const adopt of adoptMarkersIn(listed.value, grammar)) {
+				if (!namesCaller(adopt.token)) continue;
+				const permission = yield* authorizationOf(adopt.author);
+				if (permission._tag === "Unknown") {
+					return {
+						ownership: {_tag: "Unknown" as const, reason: permission.reason},
+						unauthorized,
+						unauthorizedAdopts: strandedAdopts,
+					};
+				}
+				if (permission._tag === "Unauthorized") {
+					strandedAdopts.push(adopt);
+					continue;
+				}
+				return {
+					ownership: {_tag: "AdoptOnly" as const, adopt},
+					unauthorized,
+					unauthorizedAdopts: strandedAdopts,
+				};
+			}
 			return {
 				ownership: {_tag: "Unclaimed" as const},
 				unauthorized,
-				unauthorizedAdopts: [],
+				unauthorizedAdopts: strandedAdopts,
 			};
 		}
 		const parsed = parseToken(winner.token, grammar.prefix);
 		const sameSession = parsed !== null && parsed.session === caller.session;
 		const unauthorizedAdopts: AdoptMarker[] = [];
 		if (namesCaller(winner.token)) {
-			// ADOPT-FENCE (#7010): the winning marker names this lane, but an authorized adopt marker
+			// ADOPT-FENCE: the winning marker names this lane, but an authorized adopt marker
 			// handing that session's claim to a DIFFERENT lane means succession already happened —
 			// the resumed "dead" lane reads Foreign, never Mine, so one succession can never answer
 			// Mine to two lanes.
 			for (const adopt of adoptMarkersIn(listed.value, grammar)) {
 				if (parsed === null || adopt.adopted !== parsed.session) continue;
 				if (namesCaller(adopt.token)) continue;
+				// A succession adopts a claim that already stands, so an adopt older than the winning
+				// marker adopted some earlier claim and says nothing about this one. Without the
+				// ordering read, one stray adopt naming the caller's own session fenced every marker
+				// that session would ever post on the number, and each fresh claim lost to it under a
+				// new nonce.
+				if (byAge(adopt, winner) < 0) continue;
 				const permission = yield* authorizationOf(adopt.author);
 				if (permission._tag === "Unknown") {
 					return {
@@ -449,9 +497,16 @@ export const resolveOwnership = (
 				unauthorizedAdopts,
 			};
 		}
+		// The conferral arm of the same rule: the winning marker names another lane, and an authorized
+		// adopt of that lane's session naming this one hands the claim over. It reads the SAME
+		// ordering as the fence above — an adopt older than the winning marker adopted an earlier
+		// claim and confers nothing over this one. Reading it either way round is what let one
+		// succession answer Mine to two lanes over a single marker, and a release under the heir's
+		// token then delete a marker the other lane still held.
 		for (const adopt of adoptMarkersIn(listed.value, grammar)) {
 			if (parsed === null || adopt.adopted !== parsed.session) continue;
 			if (!namesCaller(adopt.token)) continue;
+			if (byAge(adopt, winner) < 0) continue;
 			const permission = yield* authorizationOf(adopt.author);
 			if (permission._tag === "Unknown") {
 				return {
@@ -479,7 +534,7 @@ export const resolveOwnership = (
 
 /** One claim marker on a thread, with the authority question already answered for it. */
 export interface Claimant extends ClaimMarker {
-	/** Whether the author's repository permission authorizes the marker (ADR 0055). */
+	/** Whether the author's repository permission authorizes the marker. */
 	readonly authorized: boolean;
 }
 
@@ -510,7 +565,7 @@ export type Claimants =
  *
  * {@link resolveOwnership} answers "is this mine", which is the only question the protocol needed
  * while every asker held a claim. A driver arriving after a session limit killed its builders holds
- * none, and had no way to ask which issues those dead lanes left claimed (#6771) — `confirm` requires
+ * none, and had no way to ask which issues those dead lanes left claimed — `confirm` requires
  * a token of the caller's own session, and `claim` would answer only by racing a marker of its own.
  *
  * Unlike `resolveOwnership`, which stops at the first authorized marker because the winner is all it
@@ -519,7 +574,7 @@ export type Claimants =
  * stranded set half-named. The ACL reader is memoized, so a thread of one author still costs one read.
  *
  * It reads and returns. Nothing here clears a claim, and nothing infers one from absence: the two
- * clearances are `build release` and `build adopt` (ADR 0295).
+ * clearances are `build release` and `build adopt`.
  */
 export const readClaimants = (
 	repo: string,
@@ -586,7 +641,7 @@ export type Held =
 	| {
 			readonly _tag: "Held";
 			readonly marker: ClaimMarker;
-			/** Non-null when this lane holds through succession — what the run key keys on (#7010). */
+			/** Non-null when this lane holds through succession — what the run key keys on. */
 			readonly adopt: AdoptMarker | null;
 			readonly notes: ReadonlyArray<string>;
 	  };
@@ -630,6 +685,18 @@ export const requireClaim = (
 				outcome: refuse(
 					CLAIM_NOT_MINE,
 					`${verb}: no claim exists on #${number} — nothing to confirm; run "fabrika build claim ${number}" first.`,
+					notes,
+				),
+			};
+		}
+		if (ownership._tag === "AdoptOnly") {
+			return {
+				_tag: "Refused" as const,
+				ownership,
+				notes,
+				outcome: refuse(
+					CLAIM_NOT_MINE,
+					`${verb}: #${number} carries this lane's adopt marker (comment ${ownership.adopt.commentId}) and no claim — an adoption is not a claim; run "fabrika build release ${number} --token ${ownership.adopt.token}" to retract it, then claim.`,
 					notes,
 				),
 			};

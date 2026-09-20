@@ -231,11 +231,14 @@ const pickerPress = (
 	switch (answer._tag) {
 		case "Moved":
 		case "Cleared":
+		case "Filtering":
 			return {type: "window.setView", windowId: windowId as never, view: answer.view};
 		case "Chose":
 			return answer.intent._tag === "OpenProgram"
 				? {type: "window.open", windowId: windowId as never, programId: answer.intent.programId}
 				: {type: "window.attach", windowId: windowId as never, processId: answer.intent.processId};
+		case "Removing":
+			return {type: "process.remove", windowId: windowId as never, processId: answer.processId};
 		case "Ignored":
 			return null;
 	}
@@ -333,7 +336,7 @@ describe("the Tuval shell, end to end", () => {
 				for (let step = 0; step < logAt; step++) {
 					const msg = pickerPress(left, app.entries, view, "j");
 					assert.isNotNull(msg);
-					view = {cursor: view.cursor + 1, refusal: null};
+					view = {...view, cursor: step + 1, refusal: null};
 					yield* desk.send(msg as ShellMsg);
 				}
 				const chosen = pickerPress(left, app.entries, view, "<enter>");

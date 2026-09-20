@@ -1,7 +1,7 @@
 /**
  * Does this element read its own keys? Two surfaces need the same answer and must not drift: the
- * desk skips a press typed into one (`./Desk.tsx`), and the picker declines to pull DOM focus off
- * one (`./PickerView.tsx`).
+ * desk leaves it the presses the shell does not own (`./Desk.tsx`, `shellOwnsKey` in `./frame.ts`),
+ * and the picker declines to pull DOM focus off one (`./PickerView.tsx`).
  */
 export const isTextEntry = (target: EventTarget | null | undefined): boolean => {
 	if (

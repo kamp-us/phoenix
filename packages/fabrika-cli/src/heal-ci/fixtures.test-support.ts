@@ -8,6 +8,7 @@
 import type {HttpReply} from "../fakes.test-support.ts";
 import {okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {HEAD} from "../ship/fixtures.test-support.ts";
 
 const API = "https:\\/\\/api\\.github\\.com";
 
@@ -23,7 +24,7 @@ export {
 } from "../ship/fixtures.test-support.ts";
 
 /**
- * The nine reads this group makes over the HTTP client, matched on `METHOD url` (ADR 0315).
+ * The nine reads this group makes over the HTTP client, matched on `METHOD url`.
  *
  * `RUN` ends on the run id so it cannot also match `runs/<id>/jobs` — two patterns that overlap are
  * a script whose second entry is unreachable, and the answer would come from whichever is listed
@@ -136,6 +137,11 @@ export const runsAtHead = (
 				status: row.status ?? "completed",
 				conclusion: row.conclusion === undefined ? "failure" : row.conclusion,
 				completed_at: "2026-08-08T00:00:00Z",
+				// The run parser requires provenance, because gate coverage is decided from it. Nothing
+				// in this group judges coverage, so the rows carry the shape the platform sends and no
+				// case here turns it.
+				event: "pull_request",
+				head_sha: HEAD,
 			})),
 		}),
 	);

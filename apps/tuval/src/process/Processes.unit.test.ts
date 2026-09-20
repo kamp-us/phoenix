@@ -2,11 +2,13 @@ import {type Cmd, defineMachine, type Sub, subId} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer, Option, Scope} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
-import {memoryStores} from "../durability/stores.ts";
+import {snapshotAt, watchingStores} from "../durability/fixtures.ts";
+import {type CheckpointStores, memoryStores} from "../durability/stores.ts";
 import {ProgramNotFound} from "../registry/errors.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
-import {ProcessNotFound} from "./errors.ts";
+import {ForgetRefused, ProcessIsPlanned, ProcessNotFound} from "./errors.ts";
+import {PlannedProcesses} from "./PlannedProcesses.ts";
 import {Processes} from "./Processes.ts";
 import {ProcessTable} from "./ProcessTable.ts";
 import {ProcessId} from "./process.ts";
@@ -338,6 +340,177 @@ describe("Processes", () => {
 				assert.strictEqual(row.stateSummary().revision, 3);
 			}),
 		);
+	});
+
+	/**
+	 * Removal (#9446): the durable forget, then the Scope. The order is the whole guarantee, so it is
+	 * asserted as an order — the store's writes and the process's own Sub disposal land in one log,
+	 * and the Sub closes with the Scope.
+	 */
+	describe("remove", () => {
+		const withStores = <A, E>(
+			rows: ReadonlyArray<AnyProgram>,
+			stores: CheckpointStores,
+			body: Effect.Effect<A, E, Processes | ProcessTable | Checkpoints | PlannedProcesses>,
+		) =>
+			body.pipe(
+				Effect.provide(
+					Processes.layer.pipe(
+						Layer.provideMerge(Checkpoints.layer(stores)),
+						Layer.provideMerge(Registry.layer(rows)),
+					),
+				),
+			);
+
+		it.effect("writes the durable forget before it closes the process Scope", () => {
+			const probe: Probe = {log: [], reduced: 0};
+			const watched = watchingStores(probe.log);
+			return withStores(
+				[counterProgram(probe)],
+				watched.stores,
+				Effect.gen(function* () {
+					const processes = yield* Processes;
+					const checkpoints = yield* Checkpoints;
+					const table = yield* ProcessTable;
+					const handle = yield* processes.spawn(counter, {services: Context.empty()});
+					yield* handle.dispatch({type: "start", runId: "a"});
+					probe.log.length = 0;
+
+					yield* processes.remove(handle.id);
+
+					assert.deepStrictEqual(probe.log, [
+						`snapshot:drop:${handle.id}`,
+						"manifest:save",
+						"sub:stop:a",
+					]);
+					assert.deepStrictEqual(yield* checkpoints.list, []);
+					assert.deepStrictEqual(yield* table.list, []);
+					assert.isNull(yield* snapshotAt(watched.stores, handle.id));
+				}),
+			);
+		});
+
+		it.effect(
+			"leaves a process whose durable write failed running, dispatchable and listed",
+			() => {
+				const probe: Probe = {log: [], reduced: 0};
+				const watched = watchingStores(probe.log);
+				return withStores(
+					[counterProgram(probe)],
+					watched.stores,
+					Effect.gen(function* () {
+						const processes = yield* Processes;
+						const checkpoints = yield* Checkpoints;
+						const table = yield* ProcessTable;
+						const handle = yield* processes.spawn(counter, {services: Context.empty()});
+						yield* handle.dispatch({type: "start", runId: "a"});
+						watched.refuseManifestSave = true;
+
+						const refused = yield* Effect.flip(processes.remove(handle.id));
+
+						assert.instanceOf(refused, ForgetRefused);
+						assert.strictEqual(refused.id, handle.id);
+						assert.strictEqual(
+							refused.message,
+							`process "${handle.id}" was not removed: its durable forget failed, so the process is still running and still in the manifest`,
+						);
+						watched.refuseManifestSave = false;
+						assert.deepStrictEqual(
+							(yield* table.list).map((row) => row.id),
+							[handle.id],
+						);
+						assert.deepStrictEqual(
+							(yield* checkpoints.list).map((entry) => entry.id),
+							[handle.id as string],
+						);
+						yield* handle.dispatch({type: "tick"});
+						assert.strictEqual((handle.getState() as State).count, 1);
+						assert.notInclude(probe.log, "sub:stop:a");
+					}),
+				);
+			},
+		);
+
+		it.effect("refuses a graph-declared process, naming the config as the way to remove it", () => {
+			const probe: Probe = {log: [], reduced: 0};
+			const watched = watchingStores(probe.log);
+			return withStores(
+				[counterProgram(probe)],
+				watched.stores,
+				Effect.gen(function* () {
+					const processes = yield* Processes;
+					const checkpoints = yield* Checkpoints;
+					const table = yield* ProcessTable;
+					const planned = yield* PlannedProcesses;
+					const id = ProcessId.make("shell");
+					const handle = yield* processes.spawn(counter, {id, services: Context.empty()});
+					yield* planned.declare([id]);
+
+					const refused = yield* Effect.flip(processes.remove(handle.id));
+
+					assert.instanceOf(refused, ProcessIsPlanned);
+					assert.strictEqual(
+						refused.message,
+						'process "shell" is declared by the config graph, so boot would start it again; edit the config to remove it',
+					);
+					assert.deepStrictEqual(
+						(yield* table.list).map((row) => row.id),
+						[id],
+					);
+					assert.deepStrictEqual(
+						(yield* checkpoints.list).map((entry) => entry.id),
+						[id as string],
+					);
+				}),
+			);
+		});
+
+		it.effect("is ProcessNotFound for an id no live process carries, and forgets nothing", () => {
+			const probe: Probe = {log: [], reduced: 0};
+			const watched = watchingStores(probe.log);
+			return withStores(
+				[counterProgram(probe)],
+				watched.stores,
+				Effect.gen(function* () {
+					const processes = yield* Processes;
+					const checkpoints = yield* Checkpoints;
+					const handle = yield* processes.spawn(counter, {services: Context.empty()});
+
+					const refused = yield* Effect.flip(processes.remove(ProcessId.make("nobody")));
+
+					assert.instanceOf(refused, ProcessNotFound);
+					assert.deepStrictEqual(
+						(yield* checkpoints.list).map((entry) => entry.id),
+						[handle.id as string],
+					);
+				}),
+			);
+		});
+
+		it.effect("stop is unchanged: the manifest row and the snapshot both survive it", () => {
+			const probe: Probe = {log: [], reduced: 0};
+			const watched = watchingStores(probe.log);
+			return withStores(
+				[counterProgram(probe)],
+				watched.stores,
+				Effect.gen(function* () {
+					const processes = yield* Processes;
+					const checkpoints = yield* Checkpoints;
+					const handle = yield* processes.spawn(counter, {services: Context.empty()});
+					yield* handle.dispatch({type: "start", runId: "a"});
+					yield* handle.dispatch({type: "tick"});
+
+					yield* processes.stop(handle.id);
+
+					assert.include(probe.log, "sub:stop:a");
+					assert.deepStrictEqual(
+						(yield* checkpoints.list).map((entry) => entry.id),
+						[handle.id as string],
+					);
+					assert.isNotNull(yield* snapshotAt(watched.stores, handle.id));
+				}),
+			);
+		});
 	});
 
 	it.effect(

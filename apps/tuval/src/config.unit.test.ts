@@ -2,7 +2,8 @@ import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
-import {ConfigLoadError, loadConfigModule, loadLayeredConfig} from "./config.ts";
+import {ConfigLoadError, DeclaredFeatures, loadConfigModule, loadLayeredConfig} from "./config.ts";
+import {featuresDefault} from "./features.ts";
 import {NodeId} from "./ports/graph.ts";
 import {ProgramId} from "./registry/program.ts";
 
@@ -29,6 +30,7 @@ describe("loadConfigModule", () => {
 				const config = yield* loadConfigModule(fixture("two-rows"));
 				assert.deepStrictEqual(config, {
 					version: 1,
+					features: {},
 					programs: [{id: "a"}, {id: "b"}],
 					graph: {nodes: []},
 					keys: {},
@@ -41,6 +43,7 @@ describe("loadConfigModule", () => {
 			const config = yield* loadConfigModule(fixture("with-graph"));
 			assert.deepStrictEqual(config, {
 				version: 1,
+				features: {},
 				programs: [{id: "a"}],
 				graph: {nodes: [{id: NodeId.make("n"), program: ProgramId.make("a"), on: []}]},
 				keys: {},
@@ -94,6 +97,131 @@ describe("loadConfigModule", () => {
 	);
 });
 
+describe("the feature flags", () => {
+	it.effect("are stated by nobody in a module that declares none", () =>
+		Effect.gen(function* () {
+			const config = yield* loadConfigModule(fixture("two-rows"));
+			assert.deepStrictEqual(config.features, {});
+		}),
+	);
+
+	it.effect("read back as the module wrote them", () =>
+		Effect.gen(function* () {
+			const config = yield* loadConfigModule(fixture("features-on"));
+			assert.deepStrictEqual(config.features, {subagentList: true});
+		}),
+	);
+
+	// A flag at a time, not a block at a time: a project layer that names one flag must not put every
+	// flag the global layer turned on back to its default.
+	it.effect("merge project over global one flag at a time", () =>
+		Effect.gen(function* () {
+			const merged = yield* layered(fixture("features-on"), fixture("two-rows"));
+			assert.deepStrictEqual(merged.features, {
+				subagentList: true,
+				piSubagents: true,
+				piKernelTools: false,
+				kernelChildren: false,
+				windowTitles: false,
+				processBoard: false,
+				prReviewExample: false,
+				processRemove: false,
+			});
+		}),
+	);
+
+	// The direction that costs something: `subagentList` defaults on, so an operator turning it off
+	// is a layer stating `false` over a `true` default, and a merge folding the layers the other way
+	// round would silently ignore them.
+	it.effect("let a layer that states a flag off win over the on default", () =>
+		Effect.gen(function* () {
+			const global = yield* layered(fixture("features-off"), fixture("two-rows"));
+			assert.deepStrictEqual(global.features, {
+				subagentList: false,
+				piSubagents: true,
+				piKernelTools: false,
+				kernelChildren: false,
+				windowTitles: false,
+				processBoard: false,
+				prReviewExample: false,
+				processRemove: false,
+			});
+			const project = yield* layered(fixture("two-rows"), fixture("features-off"));
+			assert.deepStrictEqual(project.features, {
+				subagentList: false,
+				piSubagents: true,
+				piKernelTools: false,
+				kernelChildren: false,
+				windowTitles: false,
+				processBoard: false,
+				prReviewExample: false,
+				processRemove: false,
+			});
+			const overGlobalOn = yield* layered(fixture("features-on"), fixture("features-off"));
+			assert.deepStrictEqual(overGlobalOn.features, {
+				subagentList: false,
+				piSubagents: true,
+				piKernelTools: false,
+				kernelChildren: false,
+				windowTitles: false,
+				processBoard: false,
+				prReviewExample: false,
+				processRemove: false,
+			});
+		}),
+	);
+
+	// A key the schema does not declare is a key the decode drops, so a flag missing from
+	// `DeclaredFeatures` reads as a config that stated nothing (#8595).
+	it.effect("keep a stated piSubagents rather than dropping it at the decode", () =>
+		Effect.gen(function* () {
+			const config = yield* loadConfigModule(fixture("pi-subagents-off"));
+			assert.deepStrictEqual(config.features, {piSubagents: false});
+		}),
+	);
+
+	it.effect("let a layer turn piSubagents off against its on default", () =>
+		Effect.gen(function* () {
+			const global = yield* layered(fixture("pi-subagents-off"), fixture("two-rows"));
+			assert.deepStrictEqual(global.features, {...featuresDefault, piSubagents: false});
+			const project = yield* layered(fixture("two-rows"), fixture("pi-subagents-off"));
+			assert.deepStrictEqual(project.features, {...featuresDefault, piSubagents: false});
+			const overGlobalOn = yield* layered(fixture("pi-subagents-on"), fixture("pi-subagents-off"));
+			assert.deepStrictEqual(overGlobalOn.features, {...featuresDefault, piSubagents: false});
+		}),
+	);
+
+	it.effect("keep a stated piKernelTools rather than dropping it at the decode", () =>
+		Effect.gen(function* () {
+			const config = yield* loadConfigModule(fixture("pi-kernel-tools-on"));
+			assert.deepStrictEqual(config.features, {piKernelTools: true});
+		}),
+	);
+
+	it.effect("let a layer turn piKernelTools on against its off default", () =>
+		Effect.gen(function* () {
+			const global = yield* layered(fixture("pi-kernel-tools-on"), fixture("two-rows"));
+			assert.deepStrictEqual(global.features, {...featuresDefault, piKernelTools: true});
+			const project = yield* layered(fixture("two-rows"), fixture("pi-kernel-tools-on"));
+			assert.deepStrictEqual(project.features, {...featuresDefault, piKernelTools: true});
+			const overGlobalOn = yield* layered(
+				fixture("pi-kernel-tools-on"),
+				fixture("pi-kernel-tools-off"),
+			);
+			assert.deepStrictEqual(overGlobalOn.features, {...featuresDefault, piKernelTools: false});
+		}),
+	);
+
+	// The derivation is what makes a hand-listed key impossible to forget, and this is the assertion
+	// that reds if it is ever unwound back to a literal (#8595, #8783).
+	it("declare exactly the keys featuresDefault carries", () => {
+		assert.deepStrictEqual(
+			Object.keys(DeclaredFeatures.fields).sort(),
+			Object.keys(featuresDefault).sort(),
+		);
+	});
+});
+
 describe("loadLayeredConfig", () => {
 	it.effect(
 		"merges the project layer over the global one by program id and node id, global order first",
@@ -102,6 +230,17 @@ describe("loadLayeredConfig", () => {
 				const config = yield* layered(fixture("global-layer"), fixture("project-layer"));
 				assert.deepStrictEqual(config, {
 					programs: [{id: "a"}, {id: "b", core: "project"}],
+					features: {
+						subagentList: true,
+						piSubagents: true,
+						piKernelTools: false,
+						kernelChildren: false,
+						windowTitles: false,
+						processBoard: false,
+						prReviewExample: false,
+						processRemove: false,
+					},
+					moduleRenderers: [],
 					graph: {
 						nodes: [
 							{id: NodeId.make("n"), program: ProgramId.make("b"), on: []},
@@ -122,18 +261,51 @@ describe("loadLayeredConfig", () => {
 			const missing = fixture("does-not-exist");
 			assert.deepStrictEqual(yield* layered(missing, fixture("with-graph")), {
 				programs: [{id: "a"}],
+				features: {
+					subagentList: true,
+					piSubagents: true,
+					piKernelTools: false,
+					kernelChildren: false,
+					windowTitles: false,
+					processBoard: false,
+					prReviewExample: false,
+					processRemove: false,
+				},
+				moduleRenderers: [],
 				graph: {nodes: [{id: NodeId.make("n"), program: ProgramId.make("a"), on: []}]},
 				keys: [{file: `project ${layerName("with-graph")}`, bindings: {}}],
 				sources: [fixture("with-graph")],
 			});
 			assert.deepStrictEqual(yield* layered(fixture("two-rows"), missing), {
 				programs: [{id: "a"}, {id: "b"}],
+				features: {
+					subagentList: true,
+					piSubagents: true,
+					piKernelTools: false,
+					kernelChildren: false,
+					windowTitles: false,
+					processBoard: false,
+					prReviewExample: false,
+					processRemove: false,
+				},
+				moduleRenderers: [],
 				graph: {nodes: []},
 				keys: [{file: `global ${layerName("two-rows")}`, bindings: {}}],
 				sources: [fixture("two-rows")],
 			});
 			assert.deepStrictEqual(yield* layered(missing, missing), {
 				programs: [],
+				features: {
+					subagentList: true,
+					piSubagents: true,
+					piKernelTools: false,
+					kernelChildren: false,
+					windowTitles: false,
+					processBoard: false,
+					prReviewExample: false,
+					processRemove: false,
+				},
+				moduleRenderers: [],
 				graph: {nodes: []},
 				keys: [],
 				sources: [],
@@ -151,6 +323,23 @@ describe("loadLayeredConfig", () => {
 				},
 			]);
 		}),
+	);
+
+	it.effect(
+		"names each module renderer beside the layer module that declared it, project origin winning",
+		() =>
+			Effect.gen(function* () {
+				const global = fixture("module-renderer-global");
+				const project = fixture("module-renderer-project");
+				const config = yield* layered(global, project);
+				assert.deepStrictEqual(config.moduleRenderers, [
+					{ref: "@global/win/window", origin: global},
+					// Row `b` is declared in both layers; the project row replaced the global one in
+					// place, so the specifier resolves from the project config, not the global one.
+					{ref: "@shared/win/window", origin: project},
+					{ref: "@project/win/window", origin: project},
+				]);
+			}),
 	);
 
 	it.effect("still refuses a layer that exists and is broken", () =>

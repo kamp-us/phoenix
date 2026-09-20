@@ -1,13 +1,13 @@
 /**
- * Read a committed golden real-payload fixture verbatim (ADR 0180).
+ * Read a committed golden real-payload fixture verbatim.
  *
  * A hook handler's contract is defined by the runtime and only observable at execution, so its test
  * asserts against a *captured* payload committed as a fixture — never a hand-authored shape. The
  * bytes this returns are the same bytes fed to the handler's stdin, so the fixture, not inline test
  * code, is the assertion path's input.
  *
- * Reimplemented rather than reused: v1's CLI has the same helper, and ADR 0238 bans
- * calling v1 — the scar is duplicated as behaviour, not as a dependency.
+ * Reimplemented rather than reused: v1's CLI has the same helper, and calling into v1 is banned —
+ * the scar is duplicated as behaviour, not as a dependency.
  *
  * The raw `node:fs`/`node:url` is deliberate: this is test-only scaffolding whose whole point is the
  * real committed file on disk, and `fileURLToPath` has no `Path` equivalent — both sit on

@@ -28,6 +28,13 @@ import {defineConfig} from "vitest/config";
 // it here keeps the config and the threaded value provably equal (the module is import-side-effect free).
 import {HOOK_TIMEOUT_MS} from "./tests/integration/_edge-ready.ts";
 
+// Local runs share one developer machine with each other and with the pre-push hook; CI gives a run
+// the whole runner, so only the local side is capped (#8119). Vitest's own default is
+// `availableParallelism() - 1`, which on a 12-core box is 11 forks *per run* — three build lanes
+// reached 74-87 workers and load average 218. `undefined` on CI falls through to that default, so
+// the integration tier keeps its full per-file-stage width where it matters.
+const maxWorkers = process.env.CI ? undefined : 2;
+
 export default defineConfig({
 	// The `client` project below renders `*.test.tsx` through React's JSX runtime,
 	// so the JSX transform must be present — this config is loaded standalone
@@ -136,7 +143,7 @@ export default defineConfig({
 					// (EPIPE on the inherited pipe).
 					fileParallelism: true,
 					disableConsoleIntercept: true,
-					// No fork cap: ADR 0104 step 7 (#1027) collapsed the per-run deploy
+					// No fork cap on CI: ADR 0104 step 7 (#1027) collapsed the per-run deploy
 					// surface from ~24 ephemeral `it-*` stages to ~6 — one shared
 					// `globalSetup` deploy plus the 6 by-design dedicated files
 					// (fate-live-posts / fts-backfill / search-error-vs-empty, plus
@@ -151,7 +158,10 @@ export default defineConfig({
 					// shared worker over HTTP. The retired fork cap of 4 (#1010) only
 					// existed to throttle the ~24 concurrent create/destroy storm that raced
 					// CF's eventually-consistent registry; that storm is structurally gone, so
-					// uncapped `fileParallelism` no longer races it.
+					// uncapped `fileParallelism` no longer races it. A local run is capped at 2
+					// anyway — see `maxWorkers` above; that cap is about the developer's machine,
+					// not about the registry.
+					maxWorkers,
 					// Vitest 4 requires a distinct `sequence.groupOrder` per project;
 					// ordering integration before unit keeps the projects from interleaving.
 					sequence: {groupOrder: 0},
@@ -164,6 +174,7 @@ export default defineConfig({
 					// tests — the `.unit` infix is a label, no separate `include` entry
 					// needed.
 					name: "unit",
+					maxWorkers,
 					// Plus the pure-logic `*.unit.test.ts` of the integration harness
 					// substrate (e.g. `_stage-name`) — they deploy nothing, so they run
 					// here, not in the integration tier's forks pool.
@@ -193,6 +204,7 @@ export default defineConfig({
 					// `jsdom` document. Worker-side tiers are untouched: the `unit` glob is
 					// `*.test.ts` (never `.tsx`), so a file lands in exactly one tier.
 					name: "client",
+					maxWorkers,
 					include: ["src/**/*.test.tsx"],
 					environment: "jsdom",
 					setupFiles: ["./tests/client/setup.ts"],

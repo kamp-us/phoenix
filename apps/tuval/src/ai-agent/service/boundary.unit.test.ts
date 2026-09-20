@@ -12,24 +12,46 @@ import {join} from "node:path";
 import type {Effect, Stream} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, PermissionDecision} from "../ports/index.ts";
 import type {
+	CommandRef,
+	Mode,
+	ModelRef,
+	PermissionDecision,
+	ThinkingLevel,
+} from "../ports/index.ts";
+import type {
+	ListError,
+	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
 	PromptError,
 	StartError,
+	ThinkingUnsupported,
+	TranscriptError,
 	TransportError,
 	UnknownRequest,
 } from "./errors.ts";
+import type {SessionSummary} from "./sessions.ts";
 import type {
 	StartedSession,
 	StartOptions,
 	TranscriptPage,
+	TranscriptQuery,
 	TuvalAiAgentApi,
 } from "./TuvalAiAgent.ts";
 
+/**
+ * The founder's seven grew to eight on #7981, to nine on #8060, to ten on #8062, to eleven on
+ * #8097 and to twelve on #8233. The first three are one act: he wants the agent's model, its slash
+ * commands and its thinking level reachable from the chat composer, and a picker over a generic
+ * window has to reach them through the generic interface — so `setModel`, `commands` and
+ * `setThinkingLevel` are those three members. The last two are the store's own pair: every session
+ * on his machine listed from one program whatever backend started it (`listSessions`), and one of
+ * those sessions read without opening it (`sessionTranscript`). Both pins below count twelve, so
+ * each growth reads as the deliberate act it was rather than as drift.
+ */
 describe("the TuvalAiAgent surface", () => {
-	it("carries the founder's seven members, each at its declared type", () => {
+	it("carries the seven and the five that followed, at their declared types", () => {
 		expectTypeOf<TuvalAiAgentApi["start"]>().toEqualTypeOf<
 			(options: StartOptions) => Effect.Effect<StartedSession, StartError>
 		>();
@@ -43,18 +65,63 @@ describe("the TuvalAiAgent surface", () => {
 		expectTypeOf<TuvalAiAgentApi["setMode"]>().toEqualTypeOf<
 			(mode: Mode) => Effect.Effect<void, ModeUnsupported>
 		>();
+		expectTypeOf<TuvalAiAgentApi["setModel"]>().toEqualTypeOf<
+			(model: ModelRef) => Effect.Effect<void, ModelUnsupported>
+		>();
+		expectTypeOf<TuvalAiAgentApi["commands"]>().toEqualTypeOf<
+			Effect.Effect<ReadonlyArray<CommandRef>>
+		>();
+		expectTypeOf<TuvalAiAgentApi["setThinkingLevel"]>().toEqualTypeOf<
+			(level: ThinkingLevel) => Effect.Effect<void, ThinkingUnsupported>
+		>();
 		expectTypeOf<TuvalAiAgentApi["page"]>().toEqualTypeOf<
 			(before: string | null, limit: number) => Effect.Effect<TranscriptPage, PageError>
+		>();
+		expectTypeOf<TuvalAiAgentApi["sessionTranscript"]>().toEqualTypeOf<
+			(query: TranscriptQuery) => Effect.Effect<TranscriptPage, TranscriptError>
+		>();
+		expectTypeOf<TuvalAiAgentApi["listSessions"]>().toEqualTypeOf<
+			Effect.Effect<ReadonlyArray<SessionSummary>, ListError>
 		>();
 		expectTypeOf<TuvalAiAgentApi["events"]>().toEqualTypeOf<
 			Stream.Stream<AgentEvent, TransportError>
 		>();
 	});
 
-	it("has exactly those seven members and no eighth", () => {
+	it("has exactly those twelve members and no thirteenth", () => {
 		expectTypeOf<keyof TuvalAiAgentApi>().toEqualTypeOf<
-			"start" | "prompt" | "interrupt" | "answer" | "setMode" | "page" | "events"
+			| "start"
+			| "prompt"
+			| "interrupt"
+			| "answer"
+			| "setMode"
+			| "setModel"
+			| "commands"
+			| "setThinkingLevel"
+			| "page"
+			| "sessionTranscript"
+			| "listSessions"
+			| "events"
 		>();
+	});
+
+	/**
+	 * The listing's own boundary. `SDKSessionInfo` and pi's `SessionInfo` disagree on field names,
+	 * on optionality and on whether a time is a `Date`, so an exact pin here is what refuses either
+	 * of them reaching the port. The same pin holds the five absent-able fields absent-able, which
+	 * is the no-plausible-zero rule the row depends on.
+	 */
+	it("returns a summary that names no backend and can leave five fields absent", () => {
+		expectTypeOf<SessionSummary>().toEqualTypeOf<{
+			readonly sessionId: string;
+			readonly lastModified: number;
+			readonly backend: string;
+			readonly title?: string | undefined;
+			readonly firstPrompt?: string | undefined;
+			readonly folder?: string | undefined;
+			readonly branch?: string | undefined;
+			readonly messageCount?: number | undefined;
+		}>();
 	});
 });
 

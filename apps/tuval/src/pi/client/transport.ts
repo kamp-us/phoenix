@@ -1,5 +1,5 @@
 /**
- * The `ByteTransport` the 0.84.3 pin does not export. Pi ships a Unix-socket factory
+ * The `ByteTransport` the pin does not export. Pi ships a Unix-socket factory
  * (`@earendil-works/pi-client/unix`) and nothing over a WebSocket, and Node 26 ships the WebSocket
  * *client* as a global while `ws` supplies only the server half the loopback listener uses — so the
  * dial side is ours. Hand-derived from the spike's `play.ts` (#7469, founder gist); nothing is
@@ -18,7 +18,8 @@ import type {
 	ByteTransportFactory,
 	ByteTransportHandlers,
 } from "@earendil-works/pi-client";
-import {DEFAULT_MAX_FRAME_LENGTH} from "@earendil-works/pi-protocol";
+import type {FrameOptions, ServerEvent, SplitFrames} from "../wire/index.ts";
+import {createServerFrameSplitter, DEFAULT_MAX_FRAME_LENGTH} from "../wire/index.ts";
 
 /** Four frames of slack, the bound the pin's own Unix transport defaults to. */
 export const DEFAULT_MAX_PENDING_BYTES = DEFAULT_MAX_FRAME_LENGTH * 4;
@@ -30,7 +31,7 @@ export interface WebSocketTransportOptions {
 }
 
 /**
- * Creates fresh connected WebSocket transports for `PiClient` connection attempts. The factory is
+ * Creates fresh connected WebSocket transports for `Client` connection attempts. The factory is
  * re-invoked on every `connect`/`reconnect`, so it holds no socket of its own.
  */
 export const webSocketTransportFactory = (
@@ -65,7 +66,7 @@ const openWebSocket = (
 		let terminal = false;
 
 		// Exactly one terminal handler, and only after the transport was handed over: before that,
-		// the failure belongs to the factory's promise, which is where `PiClient` is waiting.
+		// the failure belongs to the factory's promise, which is where `Client` is waiting.
 		const terminate = (fail: (error: Error) => void, error: Error): void => {
 			if (terminal) return;
 			terminal = true;
@@ -150,3 +151,38 @@ class WebSocketByteTransport implements ByteTransport {
 		this.#socket.close();
 	}
 }
+
+/**
+ * Wraps a factory so Tuval's session stream is taken off the byte stream before `Client` decodes
+ * it, and hands each update to `onEvent`.
+ *
+ * `Client` has no route for a `service_update` it did not subscribe to itself — see
+ * `createServerFrameSplitter` in the wire seam for why Tuval does not subscribe through it. The
+ * split is per connection because the splitter is a stateful frame decoder, and the factory is
+ * re-invoked per dial, which is exactly the lifetime one needs.
+ */
+export const withSessionEvents = (
+	factory: ByteTransportFactory,
+	onEvent: (event: ServerEvent) => void,
+	options: FrameOptions = {},
+): ByteTransportFactory => {
+	return async (handlers) => {
+		const splitter = createServerFrameSplitter(options);
+		return factory({
+			...handlers,
+			onData: (chunk) => {
+				let split: SplitFrames;
+				try {
+					split = splitter.push(chunk);
+				} catch (error) {
+					// A frame this side cannot read is the same terminal condition `Client` would
+					// reach on it, reported through the one handler it is waiting on.
+					handlers.onError(error instanceof Error ? error : new Error(String(error)));
+					return;
+				}
+				for (const event of split.events) onEvent(event);
+				for (const frame of split.forward) handlers.onData(frame);
+			},
+		});
+	};
+};

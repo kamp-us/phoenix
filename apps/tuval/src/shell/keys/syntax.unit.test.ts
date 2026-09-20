@@ -6,7 +6,7 @@
 
 import {Result} from "effect";
 import {describe, expect, it} from "vitest";
-import {normalize, parse, parseSequence, stringify} from "./syntax.ts";
+import {FOCUS_LIST_KEY, normalize, parse, parseSequence, stringify} from "./syntax.ts";
 
 const value = <A, E>(result: Result.Result<A, E>): A | E => Result.merge(result);
 
@@ -465,5 +465,25 @@ describe("parse()", () => {
 				message: "<S-greater>: Unusable modifier with single-character keys: S",
 			});
 		});
+	});
+});
+
+/**
+ * The key a command mints (#8407). Its whole guarantee is that the grammar refuses it, so no press
+ * and no config binding can produce it and a renderer reading it knows where it came from.
+ */
+describe("FOCUS_LIST_KEY", () => {
+	it("is a spelling the grammar refuses, so nothing a keyboard does can mint it", () => {
+		expect(value(parse(FOCUS_LIST_KEY))).toEqual({
+			_tag: "InvalidKeyError",
+			key: FOCUS_LIST_KEY,
+			message: `Invalid key: ${FOCUS_LIST_KEY}`,
+		});
+		expect(Result.isFailure(normalize(FOCUS_LIST_KEY))).toBe(true);
+	});
+
+	it("is not what any key event stringifies to", () => {
+		expect(stringify({key: FOCUS_LIST_KEY})).not.toBe(FOCUS_LIST_KEY);
+		expect(stringify({key: "a"})).not.toBe(FOCUS_LIST_KEY);
 	});
 });

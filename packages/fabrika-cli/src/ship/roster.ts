@@ -5,20 +5,19 @@
  * `./codeowners.ts` + `./github.ts` pair `ship cp-approval` uses. **One ACL module, not three.** A
  * second reading of "who is on the control plane" would drift from the one the merge gate enforces,
  * and drift here is an approval nobody with authority gave. It lives beside the merge gate rather
- * than under the group that reached for it first, because both `plan approve` (ADR 0289) and
- * `decision rule` resolve it and neither owns it.
+ * than under the group that reached for it first, because both `plan approve` and `decision rule`
+ * resolve it and neither owns it.
  *
- * The one collapse this module refuses to make is #4223's: a roster that could not be read is
+ * The one collapse this module refuses to make: a roster that could not be read is
  * `Unknown`, never an empty roster and never a permissive one. An empty roster is a *proven* fact and
  * a separate answer.
  *
  * **What the roster proves, exactly.** That the invoking token (on a write) or a marker's author (on
  * a read) is an account the control-plane owners resolve to. It does not prove a human typed the
- * command; nothing mechanical can, and the residue is the same one `build clear` carries. ADR 0289
- * asks for a human on `@kamp-us/control-plane`, and this is the mechanical half of that. The
- * founder's grilling-Q1 ruling on epic #5843 keeps the driver-records-the-ruling pattern inside that
- * half rather than outside it: a driver writing on his behalf posts from a roster account, so its
- * marker is honoured for the same reason a founder-typed one is.
+ * command; nothing mechanical can, and the residue is the same one `build clear` carries. The rule
+ * asks for a human behind the control-plane owner, and this is the mechanical half of that. A driver
+ * recording a decision on that human's behalf posts from a roster account, so its marker is honoured
+ * for the same reason a human-typed one is.
  */
 
 import {Effect} from "effect";
@@ -42,8 +41,8 @@ export type RosterRead =
  * The control-plane roster on `repo`'s default branch.
  *
  * The ref is the default branch rather than a PR's base, because an issue has no branch — the
- * boundary is still read off a ref nobody in this run controls, which is the property #981 is about.
- * An individual `@login` owner IS a roster entry and needs no team read (#6299).
+ * boundary is still read off a ref nobody in this run controls, which is the whole property. An
+ * individual `@login` owner IS a roster entry and needs no team read.
  */
 export const controlPlaneRoster = (
 	repo: string,

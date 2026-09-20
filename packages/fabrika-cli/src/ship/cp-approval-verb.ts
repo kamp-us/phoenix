@@ -1,28 +1,45 @@
 /**
- * `ship cp-approval` — the ADR 0175 cardinality discharge, transcribed.
+ * `ship cp-approval` — the §CP approval cardinality discharge, transcribed.
  *
- * Identical single-owner PRs merged in one run and were refused in another while this was judgment
- * (#2435). The case table ended that, and this verb **is** that table: roster cardinality in, one of
+ * Identical single-owner PRs merged in one run and were refused in another while this was judgment.
+ * The case table ended that, and this verb **is** that table: roster cardinality in, one of
  * `discharge` / `stop` / `n/a` out, every signal bound to `--sha`.
  *
  * The roster is the union of every owner the boundary's control-plane rows name — GitHub's own
  * any-listed-owner semantics. A team is expanded through the members endpoint; an individual
  * `@login` owner is already a roster entry and no roster is read for it, which is what lets a repo
- * with no org behind it discharge the gate at all (#6299).
+ * with no org behind it discharge the gate at all.
  *
  * The two collapses this verb refuses to make are the ones v1 shipped. A failed read is never
- * `stop` and never "awaiting approval" (#4223) — it is `11`. And head-binding is checked here,
- * always, rather than delegated to the ruleset's `dismiss_stale_reviews_on_push`: #3769 is a live
- * counterexample where a patch-changing push survived dismissal.
+ * `stop` and never "awaiting approval" — it is `11`. And head-binding is checked here, always,
+ * rather than delegated to the ruleset's `dismiss_stale_reviews_on_push`, which has been seen to
+ * leave a patch-changing push's approval undismissed.
+ *
+ * **The §CP classification is taken over the enumerated file list, not over GitHub's `changed_files`.**
+ * A list short of that declared count used to refuse at `13`, and this verb gates the control-plane
+ * discharge, so the refusal left a §CP merge with no act available to clear it. The count is the
+ * stale side — GitHub computes it against a base cached at the PR's last push.
+ * {@link platformFileSet} owns that argument; the disagreement leaves as a `scanned` line.
+ *
+ * **The empty-list refusal below is new, and it is what the retired arm used to cover by accident.**
+ * `classify` over no files answers `not-control-plane`, so a zero would have rendered as a discharged
+ * §CP boundary rather than as an unread one. The other `13` this verb keeps for that list is the
+ * endpoint's own 3000-file ceiling (`PULL_FILES_CAP`), where the Link chain ends as a complete read
+ * ends: a control-plane path could sit in the part the platform never served. Its `13` refusals on
+ * unexhausted review and comment pagination are untouched — those are the platform's own exhaustion
+ * proofs, not a count comparison.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {listComments} from "../io/issues.ts";
 import {listPullFiles} from "../io/pulls.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {readBoundary} from "./boundary.ts";
 import {classify, controlPlaneOwnersOf, splitTeam} from "./codeowners.ts";
-import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {behindBase, listReviews, listTeamMembers} from "./github.ts";
 import {
 	badNumber,
@@ -49,7 +66,7 @@ export interface CpApprovalOptions {
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
-/** Latest-per-author, computed **after** the pages are joined — never per page (#725's class). */
+/** Latest-per-author, computed **after** the pages are joined — never per page. */
 export const latestPerAuthor = <A extends {login: string; submittedAt: string}>(
 	reviews: ReadonlyArray<A>,
 ): ReadonlyArray<A> => {
@@ -78,7 +95,7 @@ export const runCpApproval = (
 		const repo = resolved.repo;
 
 		const unreadable = (what: string, reason: string): string =>
-			`${VERB}: cannot read ${what}: ${reason} — the discharge is UNRESOLVED, not "awaiting approval" (#4223).`;
+			`${VERB}: cannot read ${what}: ${reason} — the discharge is UNRESOLVED, not "awaiting approval".`;
 		const unknownRead = (what: string, reason: string, extra: ReadonlyArray<string> = []) =>
 			refuse(PRECONDITION_UNKNOWN, unreadable(what, reason), extra);
 
@@ -89,16 +106,40 @@ export const runCpApproval = (
 		if (target._tag === "Refused") return target.outcome;
 		const pull = target.pull;
 
-		const listed = yield* listPullFiles(repo, pr);
-		if (listed._tag === "Failure") return unknownRead(`#${pr}'s changed files`, listed.reason);
-		const files = listed.value;
+		const listed = platformFileSet(
+			VERB,
+			`#${pr}`,
+			pull.changedFiles,
+			yield* listPullFiles(repo, pr),
+		);
+		if (listed._tag === "Unreadable") {
+			return unknownRead(`#${pr}'s changed files`, listed.reason);
+		}
+		const files = listed.set.files;
 		const diagnostics = [
 			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared`),
+			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
 		];
-		if (files.length < pull.changedFiles) {
+		// `classify` over no files answers `not-control-plane`, so an empty list would emit a discharged
+		// boundary over a diff nobody read. With the declared count no longer refusing, this is the seat
+		// that keeps a zero from rendering as `n/a`.
+		if (files.length === 0) {
+			return refuse(
+				ZERO_SCOPE,
+				`${VERB}: PR #${pr} has zero changed files — whether it crosses the §CP boundary is unanswerable.`,
+				diagnostics,
+			);
+		}
+		// The ceiling is the one truncation the enumeration cannot rule out on its own: the endpoint
+		// stops serving files there and ends its Link chain as a complete read ends.
+		if (listed.set.capped) {
 			return refuse(
 				INCOMPLETE_SCAN,
-				`${VERB}: received ${files.length} of ${pull.changedFiles} changed files — refusing the partial sweep.`,
+				platformCapLine(
+					VERB,
+					`#${pr}`,
+					"a control-plane path could sit in the part the platform never served.",
+				),
 				diagnostics,
 			);
 		}
@@ -113,7 +154,7 @@ export const runCpApproval = (
 		const behind = drift._tag === "Ok" ? drift.value : 0;
 		if (behind > 0) {
 			diagnostics.push(
-				`${VERB}: base-drift: head is ${behind} commits behind ${pull.baseRef} — rebase, re-gate and re-bank BEFORE soliciting an approval, or the rebase destroys it (#4477).`,
+				`${VERB}: base-drift: head is ${behind} commits behind ${pull.baseRef} — rebase, re-gate and re-bank BEFORE soliciting an approval, or the rebase destroys it.`,
 			);
 		}
 
@@ -130,7 +171,7 @@ export const runCpApproval = (
 		}
 
 		// An individual `@login` owner IS a roster entry, so it is added directly. Only a team needs
-		// the members endpoint — which a personal repo has no org to serve at all (#6299).
+		// the members endpoint — which a personal repo has no org to serve at all.
 		const roster = new Set<string>();
 		for (const owner of controlPlaneOwnersOf(rows)) {
 			const split = splitTeam(owner);
@@ -146,7 +187,7 @@ export const runCpApproval = (
 		}
 		diagnostics.push(scannedLine(VERB, roster.size, "control-plane owner"));
 		// An EMPTY roster is a fact — a proven stop. An UNREADABLE one refused above; the two never
-		// fold, which is exactly the collapse #4223 shipped.
+		// fold, and folding them is the collapse that reports a failed read as awaiting approval.
 		if (roster.size === 0) return emit("stop", "zero-owners", 0);
 
 		const soleOwner = roster.size === 1 ? ([...roster][0] ?? null) : null;

@@ -3,14 +3,15 @@
  *
  * Two documents declare fabrika hooks and both are read here, because rule 5 binds a declared
  * command wherever it is written: `claude-plugins/fabrika/hooks.json` is the **plugin** surface,
- * which travels to every adopting repo, and phoenix's own `.claude/settings.json` carries the one
- * event the plugin surface may not (ADR 0337). They share this shape exactly, so one reader serves
- * both — what differs is which events each may declare, which the golden test asserts per document.
+ * which travels to every adopting repo, and a repo's own `.claude/settings.json` carries the one
+ * event the plugin surface may not — that event is declared only where the repo guarantees the
+ * toolchain it needs. They share this shape exactly, so one reader serves both — what differs is
+ * which events each may declare, which the golden test asserts per document.
  *
  * This exists so the declaration is checked as *data* rather than by a reviewer's eye. The rules are
  * not restated here — they are cli-interface-convention rule 5 (a plain literal command string, and
- * the literal is `fabrika`) and rule 6 (fabrika calls nothing outside fabrika, ADR 0238). What this
- * module adds is the machine-checkable form of each.
+ * the literal is `fabrika`) and rule 6 (fabrika calls nothing outside fabrika). What this module
+ * adds is the machine-checkable form of each.
  *
  * {@link declaredHooks} is also what binds the surface's test to the surface itself: the golden test
  * runs the argv it reads *out of the committed declaration*, so a test that passes can never be
@@ -50,8 +51,8 @@ const SHELL_CONSTRUCTS: ReadonlyArray<readonly [RegExp, string]> = [
 /**
  * Rule 6's reach, as strings a fabrika hook command may never name.
  *
- * The v1 verb package was the list's other member until its tree was deleted (#6100); the plugin
- * name stays because `claude-plugins/kampus-pipeline/` is still on disk and still nameable.
+ * The retired predecessor pipeline's plugin name is the one member left. Its tree is gone, but a
+ * declaration can still name it, so the refusal outlives the code it refuses.
  */
 const OUTSIDE_FABRIKA: ReadonlyArray<string> = ["kampus-pipeline"];
 
@@ -65,7 +66,7 @@ const asRecord = (value: unknown): Record<string, unknown> | undefined =>
  *
  * Tolerant of shape by design: anything that is not a well-formed hook entry contributes no row, so
  * a malformed document reads as **zero hooks** — which every caller must treat as a failure rather
- * than as a pass (ADR 0092). The callers here do; this function does not decide it.
+ * than as a pass. The callers here do; this function does not decide it.
  */
 export const declaredHooks = (document: unknown): ReadonlyArray<DeclaredHook> => {
 	const root = asRecord(document);

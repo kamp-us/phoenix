@@ -3,7 +3,7 @@
  * in the group compares by.
  *
  * The whole first cell is one key. Splitting a parenthetical into an alias is the defect that
- * produced three false duplicates the last time it was attempted (#4206) — a parenthetical in this
+ * produced three false duplicates the last time it was attempted — a parenthetical in this
  * corpus is a disambiguating qualifier, not a synonym — so `tag` and `Database (tag)` are different
  * terms that *overlap*, and resolving that overlap is the skill's judgement, not this module's.
  */
@@ -22,9 +22,9 @@ export const BOTH: ReadonlyArray<RegisterName> = ["terms", "language"];
 /**
  * The comparison key for a first cell.
  *
- * Lowercasing is `toLocaleLowerCase`, which is Unicode-aware rather than `[a-z]`-restricted: `Sözlük`
- * and `sözlük` are one key, and `Geçit` is not silently dropped the way v1's ASCII tokenizer dropped
- * every Turkish product noun (#4481).
+ * Lowercasing is `toLocaleLowerCase`, which is Unicode-aware rather than `[a-z]`-restricted:
+ * `Çekirdek` and `çekirdek` are one key, and `Düğüm` is not silently dropped the way v1's ASCII
+ * tokenizer dropped every non-ASCII product noun.
  */
 export const normalizeKey = (cell: string): string =>
 	cell
@@ -98,7 +98,7 @@ export type ParseResult =
 
 /**
  * A heading the section list is read from. The space after the hashes is required by the markdown
- * spec and is load-bearing: `TERMS.md` carries a prose line beginning `#3227).`, and a scan for `^#`
+ * spec and is load-bearing: `TERMS.md` carries a prose line with a bare `#7).` in it, and a `^#` scan
  * reports it as a phantom section.
  */
 const SECTION_HEADING = /^##[ \t]+(\S.*)$/;

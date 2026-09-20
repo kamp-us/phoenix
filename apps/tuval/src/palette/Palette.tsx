@@ -139,6 +139,7 @@ export function Palette({
 	const retype = useCallback((next: string) => {
 		setLine(next);
 		setError(null);
+		setPending(null);
 	}, []);
 
 	const accept = useCallback(

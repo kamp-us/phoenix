@@ -1,19 +1,7 @@
 /**
- * The one exit table the three `review-ui` verbs allocate from, so a code means one thing across
- * this group whichever verb produced it.
- *
- * **The seats it shares with `report` are re-exported, never re-typed** — the discipline
- * `review/codes.ts` states and the reason `ALIGNED_GROUPS` can check it: a restated numeral is a
- * second source that drifts silently, an import cannot. Nine seats are shared here (`3`-`11`); `12`
- * and up are this group's own.
- *
- * Because these seats are the base's by identity, this group also **imports** the two generic
- * guards the `review` group parameterized — `review/target.ts`'s PR precondition and
- * `review/authored.ts`'s stdin/leak guard — rather than copying them: both seat exactly these
- * numbers, and a second copy of a fail-closed guard is a second chance to fold *absent* into
- * *unreadable*.
- *
- * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
+ * Exit allocations for review-ui. See ./command.ts help for caller semantics.
+ * Shared meanings stay imported so their values cannot drift.
+ * Shared allocations also let this group reuse ../review/target.ts and ../review/authored.ts guards.
  */
 
 import {
@@ -28,65 +16,48 @@ import {
 	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
 } from "../exit-codes.ts";
 
-/** Stdin was read and held nothing. Distinct from a read that failed, which is `1`. */
 export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 /**
  * A required file this group derives from is absent, does not parse, or violates its schema — a
- * capture set's `manifest.json`, or `design-harness.json` at the tier-choice read.
+ * capture set's `manifest.json`, or the declared `uiCapture` at the tier-choice read.
  *
  * The base's section seat, widened to the whole-file rule the `ui` group states: a document read
  * for a decision is read whole, and a half-read one decides nothing.
  */
 export const MALFORMED_DOCUMENT = SHARED_BAD_SECTIONS;
-/** The **authored** text carries a machine-local path. This group offers no `--redact`. */
 export const LEAKED_PATH = SHARED_LEAKED_PATH;
-/** The authored text is a bare `@` path reference — not redactable, so a second code. */
 export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
-/**
- * Zero scope: the target is **proven absent (404)**, or the PR is closed.
- *
- * The same declared widening the `review` group makes — a closed PR is provably not reviewable
- * scope. *Proven* is the operative word: a 404 is a fact about the repository, an unreachable
- * GitHub is not a fact about anything and lands on {@link PRECONDITION_UNKNOWN}.
- */
+/** An absent target is proven; a failed read must use PRECONDITION_UNKNOWN. */
 export const ZERO_SCOPE = SHARED_NO_TARGET;
-/** A write was attempted and its outcome could not be proven — UNKNOWN, deliberately not `1`. */
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
-/** The write landed but the read-back does not match. The artifact exists and needs a human. */
 export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
-/** A semantic refusal on a value or a body: off a closed vocabulary, or a marker-shaped note. */
 export const OFF_VOCABULARY = SHARED_CLASSIFIED;
-/** A required read or execution failed — no outcome is proven, and nothing was written. */
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /**
  * Refused, proven: the artifact is not the PR's current tree.
  *
- * One meaning binds the two triggers — the live head moved past `--sha` at post time, or the
- * preview's deployed head is not the live head at render time — because *the pixels or the marker
- * would bind a tree that is not the PR*, and the caller's move is identical either way: re-render,
- * re-review at the live head (ADR 0058).
+ * One meaning binds the three triggers — the live head moved past `--sha` at post time, the
+ * preview's deployed head is not the live head at render time, or a route's `--verified-at`
+ * hand-verification predates a `ui`-class change in the range to `--sha` — because *the pixels or
+ * the marker would bind a tree that is not the PR*, and the caller's move is identical every time:
+ * re-render, re-run, re-review at the live head.
  */
 export const STALE_TREE = 12;
-/** Proven: at least one surface threw an uncaught page error — the render is red (#2594). */
 export const RENDER_CRASHED = 13;
-/** Proven: at least one surface is unreachable — status ≥ 400 or a failed navigation. */
 export const SURFACE_UNREACHABLE = 14;
-/** Proven: a capture was produced but is invalid — zero bytes, undecodable, or zero area. */
 export const INVALID_CAPTURE = 15;
-/** Proven: no preview deployment exists for this PR — the skill's CANT-SEE route (#4305). */
 export const NO_PREVIEW = 16;
-/** Proven: at least one evidence upload or its verification failed — **nothing was posted**. */
 export const UPLOAD_FAILED = 17;
 /**
  * Refused: this post would retire a standing verdict of the OPPOSITE polarity at the same head, and
  * `--supersede` was not passed.
  *
  * Its own seat rather than {@link OFF_VOCABULARY}, because nothing about the arguments is off any
- * vocabulary — the write is legitimate and one flag away. What it costs is the record: on PR #7081 a
- * FAIL became a PASS with nothing showing a gate had blocked, and GitHub keeps no comment-body
- * history to recover it from (#7247). Nothing is posted on this refusal — the evidence uploads of
- * step 4 have already run by then, which is a spent upload rather than a landed verdict.
+ * vocabulary — the write is legitimate and one flag away. What it costs is the record: a standing
+ * FAIL silently became a PASS with nothing showing a gate had blocked, and the host keeps no
+ * comment-body history to recover it from. Nothing is posted on this refusal — the evidence
+ * uploads of step 4 have already run by then, which is a spent upload rather than a landed verdict.
  */
 export const SUPERSEDES_VERDICT = 18;
 /**
@@ -97,7 +68,19 @@ export const SUPERSEDES_VERDICT = 18;
  * this one is decided against the recorded artifact rather than against a probe the preview
  * answered — the readback is the same shape as `INVALID_CAPTURE`'s, one question further on. A shot
  * at the wrong width is a valid PNG of a layout nobody asked about, and recording it under a
- * viewport label would make the narrow half of the design law answerable from desktop pixels
- * (#7706).
+ * viewport label would make the narrow half of the design law answerable from desktop pixels.
  */
 export const WRONG_VIEWPORT = 19;
+/**
+ * Refused, proven: the text review this route rests on is not a standing PASS at the record's head.
+ *
+ * Two triggers, one meaning and one caller move — the `review-code` verdict in force at `--sha` is a
+ * FAIL, or a route resting on a hand-verification has no text verdict binding that head at all.
+ * Either way the `routed-elsewhere` clause would assert a PASS nobody formed, and the format carries
+ * no polarity for a later reader to tell a true assertion from a false one. Its own seat rather than
+ * {@link STALE_TREE}: nothing here is stale — the tree is the one the reviewer read, and what is
+ * missing is the other gate's verdict over it.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9196#issuecomment-5688739893
+ */
+export const TEXT_REVIEW_UNMET = 20;

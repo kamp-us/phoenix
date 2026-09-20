@@ -2,7 +2,7 @@
  * The append-only composition: where the new row goes, and the two guards that prove nothing else
  * moved.
  *
- * The guards are the fence, not a formality. ADR 0079's whole point is that a reviewer-authored
+ * The guards are the fence, not a formality. The whole point is that a reviewer-authored
  * criterion **adds** to the contract and never rewrites it — v1's `reviewer-append-ac.sh` was
  * mandated at four call sites and called at none, so the fence existed only as a description. Here
  * the composed body is checked twice before it is sent, and the two checks read it through
@@ -11,14 +11,125 @@
  * A composition that inserted the row somewhere the parser does not see it passes the first and reds
  * on the second, which is the whole reason both exist.
  */
-import {type AcceptanceCriterion, readSpans} from "../wire/acceptance-criteria.ts";
+import type {CommitRange} from "../io/git.ts";
+import {
+	type AcceptanceCriterion,
+	readSpans,
+	withoutEvidenceMarker,
+} from "../wire/acceptance-criteria.ts";
+import {parseRange, renderRange} from "../wire/range-verdict-marker.ts";
+import type {HeadSha} from "../wire/verdict-marker.ts";
 
-/** The provenance tag ADR 0079 requires — what makes a routed row auditable after the fact. */
-export const provenanceTag = (pr: number, round: number): string =>
-	`<!-- ac:review pr:#${pr} round:${round} -->`;
+/**
+ * What the round was judged over — the half of the provenance tag that is not the round number.
+ *
+ * An epic child has no pull request mid-run, so the subject there is the commit range the
+ * reviewer read, spelled exactly as `range-verdict-marker.ts` spells it so a later reader resolves
+ * one range against `lane prove`'s verdicts and this row with the same bytes.
+ */
+export type CriterionProvenance =
+	| {readonly _tag: "Pull"; readonly pr: number}
+	| {readonly _tag: "Ranged"; readonly range: CommitRange<HeadSha>};
 
-export const criterionRow = (text: string, pr: number, round: number): string =>
-	`- [ ] ${text.trim()} ${provenanceTag(pr, round)}`;
+/**
+ * The one tag grammar, written under two kinds: `ac:review` on a row that landed, `ac:escalated`
+ * on a finding the freeze turned away.
+ *
+ * Both kinds say the same two things — which subject the round was judged over, and which round —
+ * so they share one composer and one pattern builder. A second hand-typed grammar would drift the
+ * first time the subject gains a spelling, which is exactly how the `range:` half came to be
+ * invisible to a `pr:#`-only reader.
+ */
+const tagBody = (kind: string, provenance: CriterionProvenance, round: number): string =>
+	provenance._tag === "Pull"
+		? `${kind} pr:#${provenance.pr} round:${round}`
+		: `${kind} range:${renderRange(provenance.range)} round:${round}`;
+
+const tagPattern = (kind: string): RegExp =>
+	new RegExp(`<!--\\s*${kind}\\s+(?:pr:#(\\d+)|range:(\\S+?))\\s+round:(\\d+)\\s*-->`, "i");
+
+/** The provenance tag — what makes a routed row auditable after the fact. */
+export const provenanceTag = (provenance: CriterionProvenance, round: number): string =>
+	`<!-- ${tagBody("ac:review", provenance, round)} -->`;
+
+/**
+ * The escalation tag — what makes a finding the freeze turned away findable by a later round.
+ *
+ * Fence 3 posts the finding as a comment and appends no row, so the only thing that can carry it
+ * forward is the comment itself. Without a tag that comment is prose a reader has to recognise, and
+ * a repair lane driven past the freeze read a criteria block that did not contain the round it was
+ * dispatched to repair. With it, `build verdicts` folds the finding beside the gate rows.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9058#issuecomment-5625309255
+ */
+export const escalationTag = (provenance: CriterionProvenance, round: number): string =>
+	`<!-- ${tagBody("ac:escalated", provenance, round)} -->`;
+
+const PROVENANCE_TAG = tagPattern("ac:review");
+const ESCALATION_TAG = tagPattern("ac:escalated");
+
+/** One reviewer-routed row's provenance: what it was judged over, and on which round. */
+export interface RoutedRow {
+	readonly provenance: CriterionProvenance;
+	readonly round: number;
+}
+
+const readTag = (pattern: RegExp, text: string): RoutedRow | null => {
+	const matched = pattern.exec(text);
+	if (matched === null) return null;
+	const round = Number.parseInt(matched[3] ?? "", 10);
+	if (!Number.isInteger(round)) return null;
+	if (matched[1] !== undefined) {
+		return {provenance: {_tag: "Pull", pr: Number.parseInt(matched[1], 10)}, round};
+	}
+	const range = parseRange(matched[2] ?? "");
+	return range === null ? null : {provenance: {_tag: "Ranged", range}, round};
+};
+
+/** The provenance {@link criterionRow} wrote into `text`, or `null` when it carries no tag. */
+export const readProvenanceTag = (text: string): RoutedRow | null => readTag(PROVENANCE_TAG, text);
+
+/**
+ * The escalation {@link escalationTag} wrote into a comment body, or `null` when it carries none.
+ *
+ * Read by `build verdicts` over the comments on the issue the round's subject serves, which is what
+ * gives fence 3's escalation a reader on the repair path.
+ */
+export const readEscalationTag = (text: string): RoutedRow | null => readTag(ESCALATION_TAG, text);
+
+/** `text` without the tag — what a refusal quotes, so the row reads as the reviewer wrote it. */
+export const withoutProvenanceTag = (text: string): string =>
+	text.replace(PROVENANCE_TAG, "").trim();
+
+/** Either side may be abbreviated, so two revisions match on whichever is the shorter prefix. */
+const sameRevision = (a: string, b: string): boolean => a.startsWith(b) || b.startsWith(a);
+
+/**
+ * Whether two provenances name one subject.
+ *
+ * The range ends are compared prefix-tolerantly, matching `review post`'s own upsert key: a caller
+ * that appended under `9f2c1ab` and posts under the full forty would otherwise read as two subjects,
+ * and the row it routed would be invisible to the round that routed it.
+ */
+export const sameSubject = (a: CriterionProvenance, b: CriterionProvenance): boolean =>
+	a._tag === "Pull" && b._tag === "Pull"
+		? a.pr === b.pr
+		: a._tag === "Ranged" &&
+			b._tag === "Ranged" &&
+			sameRevision(a.range.base, b.range.base) &&
+			sameRevision(a.range.tip, b.range.tip);
+
+/** How a refusal or an escalation names the subject in prose. */
+export const provenanceSubject = (provenance: CriterionProvenance): string =>
+	provenance._tag === "Pull"
+		? `PR #${provenance.pr}`
+		: `the range ${renderRange(provenance.range)}`;
+
+export const criterionRow = (
+	text: string,
+	provenance: CriterionProvenance,
+	round: number,
+): string => `- [ ] ${text.trim()} ${provenanceTag(provenance, round)}`;
 
 export type Composition =
 	| {readonly _tag: "Composed"; readonly body: string}
@@ -33,7 +144,7 @@ export type Composition =
  * section carries checkboxes of its own, and appending to the wrong one puts the row outside the
  * block every future read parses. Taking the span rather than matching the criterion's text is what
  * makes a wrapped last criterion locatable at all: its text is the joined sentence, which appears on
- * no single line (#5716). Inserting after the span's last line — not its checkbox line — is what
+ * no single line. Inserting after the span's last line — not its checkbox line — is what
  * keeps the new row a sibling instead of one more continuation of the row above it.
  */
 export const insertAfterLastCriterion = (body: string, row: string): Composition => {
@@ -122,4 +233,7 @@ export const grewByOne = (
 		(criterion, index) =>
 			after[index]?.text === criterion.text && after[index]?.checked === criterion.checked,
 	) &&
-	(after[before.length]?.text ?? "").includes(added.trim());
+	// `added` is the caller's raw bytes and `after`'s text came back through the wire reader, which
+	// has already split any outside-diff evidence marker into its own field — so the comparand has
+	// to lose the marker too, or a row appended with one reads back as a row that was never written.
+	(after[before.length]?.text ?? "").includes(withoutEvidenceMarker(added.trim()).trim());

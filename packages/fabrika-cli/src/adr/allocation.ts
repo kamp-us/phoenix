@@ -1,17 +1,23 @@
 /**
- * The one read that turns `.decisions/` into a free id — shared by `adr next` and `adr mint`.
+ * The one read that turns the decision corpus into a free id — shared by `adr next` and `adr mint`.
  *
  * It lives apart from either verb because both must fail on exactly the same reads for exactly the
- * same reasons: a second copy of this ladder is a second place for one of the four UNKNOWN branches
+ * same reasons: a second copy of this ladder is a second place for one of the five UNKNOWN branches
  * to quietly become an answer, and an allocator that answers over a half-read set mints a duplicate.
  * The caller supplies its own verb name so a refusal names the command the operator actually ran.
+ *
+ * Three sets, read in cost order: the base ref, then this clone's branch refs (local and
+ * remote-tracking alike), then GitHub's open pull requests. The branch walk is what sees an epic child's mint before any pull request exists
+ * (`branch-claims.ts`).
  */
 import {Effect} from "effect";
 import {originRepo, type Shell} from "../io/git.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {loadInFlight, loadMerged} from "./base-ref.ts";
+import {loadBranchClaims} from "./branch-claims.ts";
 import {
 	BASE_UNFETCHABLE,
+	BRANCH_CLAIMS_UNKNOWN,
 	DIR_UNREADABLE,
 	IN_FLIGHT_UNKNOWN,
 	ORIGIN_REPO_UNRESOLVABLE,
@@ -89,6 +95,19 @@ export const resolveAllocation = (request: AllocationRequest): Shell<AllocationO
 			};
 		}
 
+		// Walked before the in-flight read so a failing local git walk refuses without first spending a
+		// full pull-request enumeration on an answer that is already UNKNOWN.
+		const branch = yield* loadBranchClaims(merged.value.sha, dir);
+		if (branch._tag === "Err") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					BRANCH_CLAIMS_UNKNOWN,
+					`${verb}: cannot walk this clone's branch refs against ${merged.value.sha}: ${branch.reason} — the ids claimed on unpublished branches are UNKNOWN, never "nothing claimed".`,
+				),
+			};
+		}
+
 		const inFlight = yield* loadInFlight(repo, dir);
 		if (inFlight._tag === "Err") {
 			const e = inFlight.error;
@@ -106,6 +125,7 @@ export const resolveAllocation = (request: AllocationRequest): Shell<AllocationO
 		const allocation = allocate(
 			merged.value.ids,
 			inFlight.value.map((r) => r.id),
+			branch.value.map((r) => r.id),
 		);
 
 		return {
@@ -113,7 +133,7 @@ export const resolveAllocation = (request: AllocationRequest): Shell<AllocationO
 			value: {
 				allocation,
 				baseSha: merged.value.sha,
-				scope: `${verb}: scanned ${dir} at ${merged.value.sha}, ${merged.value.files.length} decision records; ${allocation.inFlight.length} id(s) in flight across the open pull requests of ${repo}.`,
+				scope: `${verb}: scanned ${dir} at ${merged.value.sha}, ${merged.value.files.length} decision records; ${allocation.inFlight.length} id(s) in flight across the open pull requests of ${repo}; ${allocation.branchClaims.length} id(s) claimed on branch refs with no pull request.`,
 			},
 		};
 	});

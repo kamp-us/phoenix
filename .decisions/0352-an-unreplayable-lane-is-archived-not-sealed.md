@@ -1,7 +1,7 @@
 ---
 id: 0352
 title: An unreplayable lane is archived, not sealed
-status: accepted
+status: amended-in-part by [0389](0389-a-bricked-lane-is-archived-while-its-issue-is-open.md)
 date: 2026-09-04
 ---
 
@@ -75,3 +75,42 @@ without the `UNBLOCKED` that cap exists to force. That is the guard, not an over
 - `lane migrate`'s unsafe refusal now names `lane archive` as the route for a closed, unreplayable
   lane, in place of "decide each unsafe lane's state by hand".
 - Two exit codes are added to the lane table: `49` the issue is open, `50` the log replays.
+
+## Amendment — 2026-09-10: a generated machine is not UNKNOWN, it is the only machine
+
+[#7947](https://github.com/kamp-us/phoenix/issues/7947). This record's line "a machine no candidate
+can be built for is UNKNOWN at exit `11`" was written wider than the fact under it, and every
+finished epic lane met the wide half: `lane emit` generates a per-epic machine that binds no
+committed template, so `graftContext` answers `Foreign` and no candidate exists — and the verb read
+that as UNKNOWN and refused at `11` on a log its own machine had just folded cleanly.
+
+A `Foreign` answer is a proven fact, not a gap: it says this lane has exactly one machine, and the
+fold that already ran is the whole judgement. So a generated machine that folds its log answers
+`Replays` and is refused at `50` — nothing to move — and one that refuses its log stays
+`Unreplayable` through `current` and stays archivable. UNKNOWN at `11` now covers only a template
+that could not be grafted, a grafted candidate that does not compile, and the reads (lane, template,
+destination, board) that could fail.
+
+Neither gate moves. Both still hold or nothing moves, and no lane's archivability changed — only the
+sentence the operator is handed for a lane that was never archivable.
+
+## Amendment — 2026-09-10: the closed-issue gate is retired
+
+[#8922](https://github.com/kamp-us/phoenix/issues/8922), ruled by the founder and recorded as ADR
+[0389](0389-a-bricked-lane-is-archived-while-its-issue-is-open.md). The closed-issue gate above —
+and this record's line that it "is not negotiable" — is retired. A lane whose log will never replay
+and whose issue is still open had **no** route out: repair needs the replay that is broken, `lane
+settle` needs a board closure, and this verb refused. The seat stayed held and the only remedy left
+was hand-deleting an append-only log.
+
+The replay gate already carries what the closure gate was protecting. A log no machine can fold is a
+lane nobody can drive — every verb refuses it at exit `4` — so an archive can never hide live work
+whatever the issue reads. `lane archive` now turns on the replay judgement alone, and 0389 adds what
+the open-issue arm needs beside it: the issue's live `lane-claim` marker is retracted as part of the
+move, and a claim the caller does not name refuses at `31` rather than being swept.
+
+Two consequences here move with it. Exit `49` is now `lane settle`'s alone, and the chore-lane
+refusal at `19` goes with the gate that produced it — a chore key names no issue, so it had nothing
+to prove and now has nothing to refuse. Nothing else in this record moves: the archive still moves
+the record aside and never rewrites it, the archived root is still a sibling of the swept one, and
+`50` still refuses a replaying log.

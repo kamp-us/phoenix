@@ -1,6 +1,5 @@
 /**
- * `guard design-inventory check` / `generate` — ported off v1's `design-inventory` (epic
- * #5720).
+ * `guard design-inventory check` / `generate` — ported off v1's `design-inventory`.
  *
  * The verb is the IO boundary: read the annotated `packages/design/src` primitives, build the inventory
  * through the pure core in `./design-inventory.ts`, then either compare it against the committed
@@ -38,7 +37,7 @@ import {
 const CHECK_VERB = "guard design-inventory check";
 const GENERATE_VERB = "guard design-inventory generate";
 
-/** The primitives directory the inventory is extracted from (ADR 0194). */
+/** The primitives directory the inventory is extracted from. */
 const COMPONENTS_DIR = "packages/design/src";
 
 export interface DesignInventoryOptions {
@@ -75,7 +74,7 @@ const readComponentSources = (
 	});
 
 const zeroScopeReport = (verb: string): string =>
-	`${verb}: scanned ZERO annotated primitives under ${COMPONENTS_DIR} — fail-closed (ADR 0092). Is the repo root correct, or did the @component convention drop?`;
+	`${verb}: scanned ZERO annotated primitives under ${COMPONENTS_DIR} — fail-closed. Is the repo root correct, or did the @component convention drop?`;
 
 const judge = (
 	root: string,
@@ -103,7 +102,7 @@ const judge = (
 				atFile(
 					"error",
 					INVENTORY_ARTIFACT,
-					`the descriptive inventory is stale against the JSDoc on ${COMPONENTS_DIR} (ADR 0194). Fix: regenerate it with \`fabrika ${GENERATE_VERB}\` and commit.`,
+					`the descriptive inventory is stale against the JSDoc on ${COMPONENTS_DIR}. Fix: regenerate it with \`fabrika ${GENERATE_VERB}\` and commit.`,
 				),
 			]),
 		);
@@ -143,7 +142,7 @@ export const runDesignInventoryGenerate = (
 		if (!isDescriptiveWriteTarget(INVENTORY_ARTIFACT)) {
 			return emitVerdict(
 				unknown(
-					`${GENERATE_VERB}: refused to write ${INVENTORY_ARTIFACT} — only the descriptive inventory is writable here, never ${NORMATIVE_MANIFEST} (ADR 0194).`,
+					`${GENERATE_VERB}: refused to write ${INVENTORY_ARTIFACT} — only the descriptive inventory is writable here, never ${NORMATIVE_MANIFEST}.`,
 				),
 				options.env,
 			);

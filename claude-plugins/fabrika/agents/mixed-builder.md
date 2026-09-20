@@ -9,5 +9,6 @@ An agent shell: the **mixed builder** is a spawn target that exists so a driver 
 fabrika `build` and `build-ui` skills together, with both already in context. The shell names the
 actor and never the skills it loads, so the `mixed-builder` shell runs `build` and `build-ui`. Every
 step, rubric and terminal token is the skills'. Read them there, and read each skill's composition
-clause for how the two apply to one diff (ADR
-[0319](../../../.decisions/0319-skill-composition-via-shell-skills-list.md)).
+clause for how the two apply to one diff: one agent carrying both skills builds the whole ticket and
+the diff's class picks the law per file, so the ticket is never split in two and neither skill
+invokes the other mid-run.

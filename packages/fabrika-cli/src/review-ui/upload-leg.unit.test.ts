@@ -1,6 +1,6 @@
 /**
- * The verify probe's pure core: the request it builds and the statuses it accepts. Both are the
- * #6520 fix — the probe used to be built with no authorization header, so GitHub answered `404` on
+ * The verify probe's pure core: the request it builds and the statuses it accepts. Both exist
+ * because the probe used to be built with no authorization header, so GitHub answered `404` on
  * every healthy upload and no `review-ui` verdict could post.
  */
 import {describe, expect, it} from "@effect/vitest";

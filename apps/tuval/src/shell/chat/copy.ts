@@ -32,6 +32,12 @@ const messages: Readonly<Record<DesignCatalogKey, string>> = {
 	"ui.draftRestore.text": "You have a saved draft. Restore it?",
 	"ui.draftRestore.restore": "restore the draft",
 	"ui.draftRestore.dismiss": "dismiss",
+	"ui.diff": "diff of {path}",
+	"ui.markdown.table": "table",
+	"ui.markdown.code": "code block",
+	"ui.markdown.diagram": "diagram",
+	"ui.markdown.diagram.source": "diagram source",
+	"ui.markdown.diagram.error": "The diagram could not be drawn: {reason}",
 	"admin.agent.label": "Agent composer",
 	"admin.agent.scope": "this window only",
 	"admin.agent.compose.label": "Write a message to the agent",
@@ -42,6 +48,8 @@ const messages: Readonly<Record<DesignCatalogKey, string>> = {
 	"admin.agent.image.add": "Add an image",
 	"admin.agent.settings": "Agent settings",
 	"admin.agent.picker.loading": "loading",
+	"admin.agent.picker.none": "none selected",
+	"admin.agent.picker.empty": "none offered",
 	"admin.agent.setting.model": "model",
 	"admin.agent.setting.thinking": "thinking effort",
 	"admin.agent.select.model": "Agent model",
@@ -67,6 +75,7 @@ const messages: Readonly<Record<DesignCatalogKey, string>> = {
 	"admin.agent.thinking.high": "high",
 	"admin.agent.thinking.xhigh": "very high",
 	"admin.agent.thinking.max": "maximum",
+	"admin.agent.thinking.ultra": "ultra",
 	"admin.agent.stop": "stop",
 	"admin.agent.send": "send",
 	"admin.agent.queue": "queue",
@@ -75,12 +84,6 @@ const messages: Readonly<Record<DesignCatalogKey, string>> = {
 	"admin.agent.status.ready": "The agent is ready",
 	"admin.agent.status.readyWithModel": "The agent is ready · {model}",
 	"admin.agent.status.unavailable": "The agent is unavailable",
-	"admin.agent.hint.send": "send",
-	"admin.agent.hint.newline": "new line",
-	"admin.agent.hint.command": "command",
-	"admin.agent.hint.file": "file",
-	"admin.agent.hint.pasteImage": "paste an image",
-	"admin.agent.hint.addOrPasteImage": "add or paste an image",
 	"admin.agent.inspector": "Inspector",
 	"admin.agent.activity.title": "activity",
 	"admin.agent.activity.empty": "The agent's replies and tool activity show up here.",
@@ -126,6 +129,40 @@ const messages: Readonly<Record<DesignCatalogKey, string>> = {
 	"admin.agent.error.extension": "The agent extension could not be answered.",
 };
 
+/**
+ * What the composer's placeholder says while this window's view slot shows a subagent (#8466).
+ *
+ * A subagent has no session of its own to address — Q6 on #8384 read
+ * `@anthropic-ai/claude-agent-sdk` 0.3.259 and found a sidechain is driven through its parent — so
+ * the composer is disabled there rather than silently sending somewhere the operator is not
+ * reading. The field is where the reason belongs: it is the control the operator reached for.
+ */
+export const subagentViewPlaceholder =
+	"Prompts go to the main agent — go back to its transcript to send (the row above, or Escape).";
+
+/**
+ * What the view slot's live region says about the composer (#8635).
+ *
+ * The placeholder above is the reason the field gives for being off, and a disabled textarea is
+ * neither focusable nor in the tab order — so a screen-reader operator never reaches it and hears
+ * the composer vanish with no reason given. This sentence carries the same reason on the one
+ * surface that is announced, and takes the composer's own `disabled` predicate so the two cannot
+ * say different things.
+ */
+export const composerStateAnnouncement = (disabled: boolean): string =>
+	disabled ? `The composer is off here. ${subagentViewPlaceholder}` : "The composer is on.";
+
+/**
+ * What a slot's label says about the workers it holds, or `null` when there is nothing to say.
+ *
+ * A fan-out is one slot over many workers (founder ruling 2026-09-09 on #8664), and this count is
+ * the only thing on the row telling a reader that its line, its elapsed and its tokens are all of
+ * them together. One worker draws nothing: a "1 workers" on every ordinary row would be noise on
+ * the common case to serve the rare one.
+ */
+export const workerCountLabel = (workers: number): string | null =>
+	workers <= 1 ? null : `${workers} workers`;
+
 const PLACEHOLDER = /\{(\w+)\}/g;
 
 /**
@@ -143,3 +180,14 @@ export const tuvalDesignTranslate: DesignTranslate = (key, params) => {
 
 /** The table itself, so a test can walk every key the package declares. */
 export const tuvalDesignMessages = messages;
+
+/**
+ * The same catalog with the composer's placeholder swapped for the subagent-view hint. A second
+ * translate rather than a prop on the composer: the placeholder is the package's own copy, read
+ * through `DesignTranslationProvider`, and that provider is the injection point the package
+ * publishes for exactly this.
+ */
+export const tuvalSubagentViewTranslate: DesignTranslate = (key, params) =>
+	key === "admin.agent.compose.placeholder"
+		? subagentViewPlaceholder
+		: tuvalDesignTranslate(key, params);

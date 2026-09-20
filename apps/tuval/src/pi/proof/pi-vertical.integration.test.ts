@@ -205,11 +205,14 @@ const pickerPress = (
 	switch (answer._tag) {
 		case "Moved":
 		case "Cleared":
+		case "Filtering":
 			return {type: "window.setView", windowId: windowId as never, view: answer.view};
 		case "Chose":
 			return answer.intent._tag === "OpenProgram"
 				? {type: "window.open", windowId: windowId as never, programId: answer.intent.programId}
 				: {type: "window.attach", windowId: windowId as never, processId: answer.intent.processId};
+		case "Removing":
+			return {type: "process.remove", windowId: windowId as never, processId: answer.processId};
 		case "Ignored":
 			return null;
 	}
@@ -227,7 +230,7 @@ const openPiFromThePicker = Effect.fn("piVertical.openPiFromThePicker")(function
 	for (let step = 0; step < at; step += 1) {
 		const moved = pickerPress(windowId, entries, view, "j");
 		assert.isNotNull(moved, "the picker moved its highlight");
-		view = {cursor: view.cursor + 1, refusal: null};
+		view = {...view, cursor: step + 1, refusal: null};
 		yield* desk.send(moved as ShellMsg);
 	}
 	const chosen = pickerPress(windowId, entries, view, "<enter>");

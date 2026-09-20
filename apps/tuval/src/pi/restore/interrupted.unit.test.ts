@@ -1,11 +1,11 @@
 /**
  * What a `pi-session` checkpoint taken mid-reply comes back as.
  *
- * This is a unit test rather than a stage of the proof beside it because a Pi turn cannot be cut
- * from a test today: a stop taken while one is in flight never returns (#7896), and mid-turn state
- * is unobservable anyway, since a Cmd handler runs inside the actor's serial step so nothing folds
- * until `prompt` resolves (#7852). So the checkpoint is written here, exactly as the store would
- * have held it, and the rule under test is the one the spawner applies to it.
+ * This is a unit test rather than a stage of the proof beside it because mid-turn state is
+ * unobservable from there: a Cmd handler runs inside the actor's serial step, so nothing folds
+ * until `prompt` resolves (#7852). The stop itself returns mid-turn — `../ai-agent/teardown.unit.test.ts`
+ * pins that (#7896). So the checkpoint is written here, exactly as the store would have held it,
+ * and the rule under test is the one the spawner applies to it.
  */
 
 import {assert, describe, it} from "@effect/vitest";
@@ -41,11 +41,28 @@ const cutMidReply: AiAgentSessionState = {
 		omitted: {items: 0, bytes: 0, reason: "none"},
 	},
 	interrupted: null,
-	usage: {model: "faux/faux-1", inputTokens: 10, outputTokens: 4, cost: 0},
+	// Nothing cut before this turn, so the record is empty and the restore is what fills it.
+	cutReplies: [],
+	interruption: null,
+	usage: {model: "faux/faux-1", turns: {"item-1": {inputTokens: 10, outputTokens: 4, cost: 0}}},
+	agentVersion: "0.42.0",
+	// Pi reports no account: it is a Claude handshake fact, and the slot stays empty for a layer
+	// that has no such thing to say.
+	account: null,
 	permissions: {},
+	permissionsRaised: 0,
 	modes: {current: null, available: []},
+	models: {current: null, available: []},
+	commands: [],
+	thinking: {current: null, available: []},
 	lastPrompt: "read the readme",
+	sends: [{key: "send-0", state: "pending", turn: "unstarted"}],
+	queued: [],
 	lastPage: null,
+	pageOutcome: null,
+	subagents: {},
+	// The turn this checkpoint was cut in the middle of never finished, so it published no result.
+	result: null,
 	failure: null,
 };
 
@@ -53,7 +70,7 @@ describe("a pi-session checkpoint written mid-reply", () => {
 	it("comes back idle, with the cut turn marked so a window can offer the resend", () => {
 		const restored = restoreSession(cutMidReply);
 		assert.strictEqual(restored.phase, "idle");
-		assert.strictEqual(restored.interrupted, "item-1" as ItemId);
+		assert.strictEqual(restored.interrupted, "item-0" as ItemId);
 		const cut = restored.transcript.items.at(-1);
 		assert.isTrue(
 			cut?.kind === "assistant" && cut.interrupted === true,

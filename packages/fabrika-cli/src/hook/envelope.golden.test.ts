@@ -1,5 +1,5 @@
 /**
- * The fabrika hook surface, proven end to end against captured real payloads (ADR 0180).
+ * The fabrika hook surface, proven end to end against captured real payloads.
  *
  * Three things have to hold together for the surface to be real, and this file refuses to let any
  * one of them be assumed:
@@ -9,21 +9,25 @@
  *      this repo's own, never out of a literal here — so a test that passes cannot be exercising a
  *      verb the declaration does not name (the false-green this campaign keeps paying for). Which
  *      events each document may carry is asserted per document, because that split is a decision
- *      (ADR 0337) and not a filing convenience.
+ *      and not a filing convenience.
  *   2. The **bytes** are the captured ones. `__fixtures__/*.golden.json` are what Claude Code
  *      really wrote to a hook's stdin; `__fixtures__/PROVENANCE.md` says how, per build. A
- *      hand-authored envelope in the assertion path is the anti-pattern ADR 0180 exists for — v1's
- *      spawn-guard test hand-authored a `PreToolUse` envelope and so never knew the harness sends
- *      `prompt_id`, `permission_mode` and `effort`.
+ *      hand-authored envelope in the assertion path is what the capture rule exists to stop — the
+ *      predecessor's spawn-guard test hand-authored a `PreToolUse` envelope and so never knew the
+ *      harness sends `prompt_id`, `permission_mode` and `effort`.
  *   3. The **shape** is pinned by exact key set, presences and absences both. A subset check would
  *      pass against the fabricated shape too, which is the litmus the pattern doc sets.
  */
 import {spawnSync} from "node:child_process";
+import {mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {loadGoldenPayload, readGoldenFixture} from "../golden-fixture.ts";
+import {readUsageLedger} from "../spend/usage-ledger.ts";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
-import {MALFORMED_ENVELOPE, WRONG_EVENT} from "./codes.ts";
+import {GROUND_UNKNOWN, MALFORMED_ENVELOPE, WRONG_EVENT} from "./codes.ts";
 import {argvOf, declaredHooks, violations} from "./declaration.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
@@ -72,7 +76,7 @@ const runDeclared = (
 };
 
 describe("the committed hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	it("declares at least one hook — a surface with zero rows is never a pass (ADR 0092)", () => {
+	it("declares at least one hook — a surface with zero rows is never a pass", () => {
 		expect(surface.length).toBeGreaterThan(0);
 	});
 
@@ -80,23 +84,109 @@ describe("the committed hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 		expect(violations(surface)).toEqual([]);
 	});
 
-	it("declares every hook on an event whose real envelope is committed beside this test", () => {
-		expect([...new Set(surface.map((hook) => hook.event))].sort()).toEqual(["SessionStart"]);
+	it("requires captured-input coverage for every declared handler", () => {
+		expect([...new Set(surface.map((hook) => hook.command))].sort()).toEqual([
+			"fabrika hook check",
+			"fabrika hook claude-spend",
+			"fabrika hook pre-bash",
+		]);
+		expect(
+			[
+				...new Set(
+					surface.filter((hook) => hook.command === "fabrika hook check").map((hook) => hook.event),
+				),
+			].sort(),
+		).toEqual(["SessionStart"]);
+		expect(
+			surface.every((hook) =>
+				["fabrika hook check", "fabrika hook claude-spend", "fabrika hook pre-bash"].includes(
+					hook.command,
+				),
+			),
+		).toBe(true);
+		expect(
+			surface.filter((hook) => hook.command === "fabrika hook pre-bash").map((hook) => hook.event),
+		).toEqual(["PreToolUse"]);
 	});
 
 	/**
 	 * The plugin travels to every adopting repo, and a `WorktreeCreate` hook preempts git worktree
 	 * creation wherever it is declared — with no fail-open form, since the harness reads even the
-	 * convention's never-ran codes as a creation failure. So that event lives in phoenix's own
-	 * settings and may never be declared here (ADR 0337, ADR 0250).
+	 * convention's never-ran codes as a creation failure. So that event lives in a repo's own
+	 * settings, where its toolchain is guaranteed, and may never be declared here.
 	 */
 	it("declares no provider event on the plugin surface, which adopting repos inherit", () => {
 		expect(surface.filter((hook) => hook.event.startsWith("Worktree"))).toEqual([]);
 	});
 });
 
+describe("the declared usage collector, run against captured envelopes", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
+	it.each([
+		["SessionStart", "__fixtures__/session-start.payload.golden.json"],
+		["SubagentStop", "../spend/claude/fixtures/subagent-stop.payload.golden.json"],
+	])("collects from the captured %s key set", (event, fixture) => {
+		const declared = surface.find(
+			(row) => row.event === event && row.command === "fabrika hook claude-spend",
+		);
+		expect(declared).toBeDefined();
+		if (!declared) throw new Error(`missing collector on ${event}`);
+		const captured = loadGoldenPayload(import.meta.url, fixture);
+		expect(captured.hook_event_name).toBe(event);
+		const dir = mkdtempSync(join(tmpdir(), "claude-captured-hook-"));
+		try {
+			const transcript = join(dir, "root.jsonl");
+			const child = join(dir, "child.jsonl");
+			const input = {...captured, cwd: dir, transcript_path: transcript};
+			if ("agent_transcript_path" in input) input.agent_transcript_path = child;
+			expect(Object.keys(input).sort()).toEqual(Object.keys(captured).sort());
+			const message = {
+				id: "captured-root",
+				role: "assistant",
+				model: "fixture-model",
+				usage: {input_tokens: 2, output_tokens: 3},
+				content: [{type: "tool_use", id: "spawn-child", name: "Agent"}],
+			};
+			writeFileSync(
+				transcript,
+				JSON.stringify({
+					type: "assistant",
+					sessionId: captured.session_id,
+					message,
+				}),
+			);
+			if (captured.agent_id) {
+				writeFileSync(
+					child,
+					JSON.stringify({
+						type: "assistant",
+						sessionId: captured.session_id,
+						agentId: captured.agent_id,
+						message: {...message, id: "captured-child", content: []},
+					}),
+				);
+				writeFileSync(join(dir, "child.meta.json"), JSON.stringify({toolUseId: "spawn-child"}));
+			}
+			const result = runDeclared(declared.command, JSON.stringify(input));
+			expect(result.code, result.stderr).toBe(0);
+			expect(Object.keys(JSON.parse(result.stdout))).toEqual(["systemMessage"]);
+			expect(result.stderr).not.toContain("invalid hook payload");
+			expect(result.stderr).not.toContain("collector failed");
+			const rows = readUsageLedger(
+				readFileSync(join(dir, ".fabrika/spend-ledger.jsonl"), "utf8"),
+			).records.filter((row) => row.kind === "measurement");
+			expect(rows.map((row) => row.response)).toEqual(
+				captured.agent_id ? ["captured-root", "captured-child"] : ["captured-root"],
+			);
+		} finally {
+			rmSync(dir, {recursive: true, force: true});
+		}
+	});
+});
+
 describe("this repo's own hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	it("declares at least one hook — a surface with zero rows is never a pass (ADR 0092)", () => {
+	it("declares at least one hook — a surface with zero rows is never a pass", () => {
 		expect(repoSurface.length).toBeGreaterThan(0);
 	});
 
@@ -120,13 +210,61 @@ describe("this repo's own hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_M
 	/**
 	 * 600s, not the harness default. The budget is the whole reason the hook exists: `git worktree
 	 * add` fires lefthook's `post-checkout` install, which is far slower than the ~13s the harness's
-	 * default worktree path allows (ADR 0178).
+	 * default worktree path allows.
 	 */
 	it("gives the provisioning install a budget the install can finish inside", () => {
 		const settings = JSON.parse(readGoldenFixture(import.meta.url, SETTINGS_JSON)) as {
 			hooks: {WorktreeCreate: Array<{hooks: Array<{timeout?: number}>}>};
 		};
 		expect(settings.hooks.WorktreeCreate[0]?.hooks[0]?.timeout).toBe(600);
+	});
+
+	/**
+	 * The plugin-source sync is declared here and not on the plugin surface, for the same reason the
+	 * provider above is: it moves a checkout, and which checkout a marketplace is registered against
+	 * is a fact only the adopting repo knows. A plugin declaration would carry that mutation into
+	 * every repo that installs fabrika.
+	 */
+	it("carries the plugin-source sync on SessionStart, with a budget a fetch fits in", () => {
+		const declared = declaredOn("SessionStart", repoSurface);
+		expect(declared.command).toBe("fabrika hook plugin-sync");
+		const settings = JSON.parse(readGoldenFixture(import.meta.url, SETTINGS_JSON)) as {
+			hooks: {SessionStart: Array<{hooks: Array<{timeout?: number}>}>};
+		};
+		expect(settings.hooks.SessionStart[0]?.hooks[0]?.timeout).toBe(120);
+	});
+});
+
+describe("the plugin-source sync, run against the captured envelopes", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
+	const declared = declaredOn("SessionStart", repoSurface);
+
+	/**
+	 * The captured `cwd` is the throwaway directory the envelope was captured in, which is under no
+	 * clone — so this run proves the arm that matters most for a hook that moves a checkout: over
+	 * ground it cannot read, it refuses and moves nothing, rather than falling back to its own cwd.
+	 * That is also why `--dry-run` is passed: the assertion must hold without the flag doing the work.
+	 */
+	it("refuses over a cwd that belongs to no clone, rather than moving the tree it is standing in", () => {
+		const run = runDeclared(
+			declared.command,
+			readGoldenFixture(import.meta.url, "__fixtures__/session-start.payload.golden.json"),
+			["--dry-run"],
+		);
+		expect(run.code).toBe(GROUND_UNKNOWN);
+		expect(run.stdout).toBe("");
+		expect(run.stderr).toContain("names no clone whose primary worktree this verb can read");
+	});
+
+	it("refuses an envelope for an event it does not judge, rather than syncing from it", () => {
+		const run = runDeclared(
+			declared.command,
+			readGoldenFixture(import.meta.url, "__fixtures__/worktree-create.payload.golden.json"),
+			["--dry-run"],
+		);
+		expect(run.code).toBe(WRONG_EVENT);
+		expect(run.stdout).toBe("");
 	});
 });
 
@@ -178,6 +316,37 @@ describe("the WorktreeCreate provider, run against the captured envelope", {
 	});
 });
 
+describe("the pre-bash guard, run against the captured Bash envelope", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
+	const declared = declaredOn("PreToolUse");
+
+	/**
+	 * The capture's `cwd` is a throwaway directory under no working tree, which is the arm that
+	 * matters most for a hook consulted on every Bash call: where there is nothing to escape from,
+	 * the answer carries no permission decision at all.
+	 */
+	it("allows the captured command, and puts no permission decision on the wire", () => {
+		const run = runDeclared(
+			declared.command,
+			readGoldenFixture(import.meta.url, "__fixtures__/pre-tool-use.payload.golden.json"),
+		);
+
+		expect(run.code).toBe(0);
+		expect(JSON.parse(run.stdout)).not.toHaveProperty("hookSpecificOutput");
+	});
+
+	it("refuses an envelope for an event it does not judge, rather than deciding from it", () => {
+		const run = runDeclared(
+			declared.command,
+			readGoldenFixture(import.meta.url, "__fixtures__/session-start.payload.golden.json"),
+		);
+
+		expect(run.code).toBe(WRONG_EVENT);
+		expect(run.stdout).toBe("");
+	});
+});
+
 describe("the declared hook, run against the captured envelope", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
@@ -205,8 +374,8 @@ describe("the declared hook, run against the captured envelope", {
 
 	/**
 	 * The litmus the pattern doc sets: the test must FAIL against a fabricated contract. This is the
-	 * exact shape v1's spawn-guard test hand-authored — plausible, and missing three fields the
-	 * harness really sends plus the two every envelope carries.
+	 * exact shape the predecessor's spawn-guard test hand-authored — plausible, and missing three
+	 * fields the harness really sends plus the two every envelope carries.
 	 */
 	it("refuses a hand-authored envelope of the shape a doc-assumed contract would produce", () => {
 		const fabricated = JSON.stringify({
@@ -224,6 +393,30 @@ describe("the declared hook, run against the captured envelope", {
 describe("the captured envelope shape, pinned by exact key set", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
+	it("SubagentStop preserves the recorded child identity and transcript fields", () => {
+		const payload = loadGoldenPayload(
+			import.meta.url,
+			"../spend/claude/fixtures/subagent-stop.payload.golden.json",
+		);
+		expect(Object.keys(payload).sort()).toEqual([
+			"agent_id",
+			"agent_transcript_path",
+			"agent_type",
+			"background_tasks",
+			"cwd",
+			"effort",
+			"hook_event_name",
+			"last_assistant_message",
+			"permission_mode",
+			"prompt_id",
+			"session_crons",
+			"session_id",
+			"stop_hook_active",
+			"transcript_path",
+		]);
+		expect(payload.agent_id).toBe("aa2a9583f18c0b8fe");
+		expect(payload.hook_event_name).toBe("SubagentStop");
+	});
 	it("SessionStart carries these keys and no others", () => {
 		const payload = loadGoldenPayload(
 			import.meta.url,
@@ -236,7 +429,7 @@ describe("the captured envelope shape, pinned by exact key set", {
 		expect(payload.source).toBe("startup");
 	});
 
-	it("PreToolUse carries these keys and no others — including the three v1's fabricated envelope missed", () => {
+	it("PreToolUse carries these keys and no others — including the three a fabrication missed", () => {
 		const payload = loadGoldenPayload(
 			import.meta.url,
 			"__fixtures__/pre-tool-use.payload.golden.json",
@@ -268,7 +461,7 @@ describe("the captured envelope shape, pinned by exact key set", {
 		expect(payload.hook_event_name).toBe("PreToolUse");
 		// A `Task|Workflow` matcher fires, but the harness then sends `tool_name: "Agent"` — a hook
 		// keyed on `tool_name === "Task"` would never fire. Kept as the captured record of that gap
-		// even though fabrika declares no PreToolUse hook today (ADR 0331).
+		// even though fabrika declares no PreToolUse hook today.
 		expect(payload.tool_name).toBe("Agent");
 		expect(payload.tool_input).toMatchObject({subagent_type: "general-purpose", model: "opus"});
 	});
@@ -284,8 +477,8 @@ describe("the captured envelope shape, pinned by exact key set", {
 	/**
 	 * The two fields a doc-assumed contract invents are what this pins. The harness sends `name`, a
 	 * slug — never `worktree_path` and never `base_ref` — so the path is *constructed* and the base
-	 * is the hook's own call. v1 shipped a handler built to the invented shape and it fail-closed
-	 * every worktree spawn (#2925).
+	 * is the hook's own call. A handler built to the invented shape shipped once and fail-closed
+	 * every worktree spawn.
 	 */
 	it("WorktreeCreate carries these keys and no others — `name`, not `worktree_path`", () => {
 		const payload = loadGoldenPayload(

@@ -151,7 +151,7 @@ export const readGrillAnswer = (stdout: string): GrillAnswer | undefined => {
  * The trail of `source`, resolved through the reader its kind belongs to.
  *
  * Zero decisions is a **fact** — the trail reads `empty`. A read that could not complete is `11`,
- * never an empty trail (ADR 0092).
+ * never an empty trail: a proven negative over nothing read is fail-open.
  */
 export const deriveTrail = (
 	verb: string,

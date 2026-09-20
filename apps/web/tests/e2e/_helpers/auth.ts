@@ -60,42 +60,83 @@ export async function signUp(page: Page, opts?: Partial<Credentials>): Promise<C
 	return {email, password, name};
 }
 
+const GATE_CLEAR_TIMEOUT_MS = 10_000;
+const GATE_POLL_MS = 100;
+// The confirm arm is a local React re-render, so it lands in milliseconds. Kept well under the
+// gate wait because the `setup` project's whole test budget is 15s: the two waits must be able to
+// run back to back and still leave the gate's own diagnostic room to print.
+const CONFIRM_ARM_TIMEOUT_MS = 2_000;
+
 /**
- * Complete the username bootstrap gate if it's up. A fresh Pasaport user has `username = NULL`, so
+ * Wait for the bootstrap gate to come down, and name WHY when it does not. <UsernameBootstrap>
+ * leaves the heading mounted on a rejected `setUsername`, on a local rule rejection and on an
+ * `onComplete` that never re-reads `username`, and only the rendered `.kp-auth__error` alert tells
+ * the first two apart from the third — watching the heading alone reports all three as one
+ * indistinguishable timeout (#8659).
+ */
+async function expectGateCleared(page: Page): Promise<void> {
+	const heading = page.getByRole("heading", {name: /kullanıcı adını seç/i});
+	const alert = page.locator(".kp-auth__error");
+	const deadline = Date.now() + GATE_CLEAR_TIMEOUT_MS;
+
+	for (;;) {
+		if ((await heading.count()) === 0) return;
+		if ((await alert.count()) > 0) {
+			const reason = (await alert.first().innerText()).trim();
+			throw new Error(
+				`username bootstrap refused the handle: "${reason}" — the gate stayed up because ` +
+					`setUsername or the local username rule rejected it, not because the submit was slow.`,
+			);
+		}
+		if (Date.now() >= deadline) {
+			throw new Error(
+				`username bootstrap gate still mounted after ${GATE_CLEAR_TIMEOUT_MS}ms with no ` +
+					`.kp-auth__error rendered — nothing rejected the handle, so either the submit never ` +
+					`committed or onComplete resolved without the layout re-reading username.`,
+			);
+		}
+		await page.waitForTimeout(GATE_POLL_MS);
+	}
+}
+
+/**
+ * Complete the username bootstrap gate for a fresh account. A new user has `username = NULL`, so
  * the Layout replaces the page content with <UsernameBootstrap> — specs that sign up and then
  * assert page content must clear this first or they see the form.
  *
  * The double click is #1888 AC4: an *unedited* prefill only ARMS confirm on the first click and
  * commits on the second, while an edited value commits on click one (so the second click is
- * skipped). Specs that need a specific handle drive the gate themselves and are unaffected.
+ * skipped). Which arm applies is decided by the handle this helper itself fills, never probed from
+ * the page: `needsConfirm` is `value === prefill && !confirmed`, and a fresh gate mounts with
+ * `confirmed = false`, so submitting the prefill back needs two clicks and any other handle needs
+ * one. Specs that need a specific handle drive the gate themselves and are unaffected.
  */
 export async function completeBootstrap(page: Page): Promise<void> {
 	const input = page.locator("input#bootstrap-username");
-	// The gate mounts only after `useMe` resolves (async over fate), so a
-	// point-in-time visibility check races the fetch. Wait for it to appear; if
-	// it never does within the window, assume the user is already bootstrapped.
-	try {
-		await expect(input).toBeVisible({timeout: 10_000});
-	} catch {
-		return;
-	}
+	// Every caller just signed up: an absent gate is failed setup, never a completed account.
+	await expect(input).toBeVisible({timeout: 10_000});
 	const prefilled = await input.inputValue();
-	const handle =
-		prefilled && prefilled.length >= 3
-			? prefilled
-			: `e2e${Date.now().toString(36)}${randomUUID().slice(0, 4)}`;
+	const submitsThePrefill = prefilled.length >= 3;
+	const handle = submitsThePrefill
+		? prefilled
+		: `e2e${Date.now().toString(36)}${randomUUID().slice(0, 4)}`;
 	await input.fill(handle);
 
 	// Select by the stable submit class, NOT the label: the label now varies
 	// ("bu adı onayla" while confirm is armed vs "devam et" otherwise, #1888 AC4).
 	const submit = page.locator("button[type='submit'].kp-auth__submit");
-	const heading = page.getByRole("heading", {name: /kullanıcı adını seç/i});
 
 	await submit.click();
-	if (await heading.isVisible().catch(() => false)) {
+	if (submitsThePrefill) {
+		// The first click only armed confirm. Manti renders the field's hint as `<id>-hint`, and
+		// <UsernameBootstrap> passes the confirm hint exactly while `needsConfirm` holds, so the
+		// hint leaving the DOM is the app's own proof that React committed the arm.
+		await expect(page.locator("#bootstrap-username-hint")).toHaveCount(0, {
+			timeout: CONFIRM_ARM_TIMEOUT_MS,
+		});
 		await submit.click();
 	}
-	await expect(heading).toHaveCount(0, {timeout: 10_000});
+	await expectGateCleared(page);
 }
 
 /**

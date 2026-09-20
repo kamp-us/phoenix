@@ -2,6 +2,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, linkNext, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {PULL_FILES_CAP} from "../io/pulls.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {latestPerAuthor, runCpApproval} from "./cp-approval-verb.ts";
 import {CODEOWNERS, comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
@@ -13,7 +14,7 @@ const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4321\/comments\?/;
 const OWNERS = /contents\/\.github\/CODEOWNERS/;
 const CONFIG = /contents\/\.fabrika\.jsonc/;
 const COMPARE = /\/repos\/o\/r\/compare\//;
-const ROSTER = /\/orgs\/kamp-us\/teams\/control-plane\/members/;
+const ROSTER = /\/orgs\/acme\/teams\/control-plane\/members/;
 const REVIEWS = /\/repos\/o\/r\/pulls\/4321\/reviews/;
 
 const members = (...logins: ReadonlyArray<string>): HttpReply => ({
@@ -88,7 +89,7 @@ describe("runCpApproval", () => {
 		const out = await run(
 			[
 				[PULL, served(pull())],
-				[FILES, served(files("apps/web/src/App.tsx", "README.md"))],
+				[FILES, served(files("apps/site/src/App.tsx", "README.md"))],
 			],
 			[
 				[OWNERS, OWNED],
@@ -248,7 +249,7 @@ describe("runCpApproval", () => {
 				[FILES, CP_FILES],
 			],
 			[
-				[OWNERS, {status: 200, body: "/.github/ @kamp-us/control-plane @outsider\n"}],
+				[OWNERS, {status: 200, body: "/.github/ @acme/control-plane @outsider\n"}],
 				[COMPARE, behind(0)],
 				[ROSTER, members("usirin")],
 				[REVIEWS, reviewPage([{login: "outsider", state: "APPROVED", commit: HEAD}])],
@@ -272,7 +273,7 @@ describe("runCpApproval", () => {
 		expect(out.stdout).toBe("cp-approval\tstop\tzero-owners\n");
 	});
 
-	it("refuses a failed boundary read on 11 whatever the repo's config says (ADR 0220 §4)", async () => {
+	it("refuses a failed boundary read on 11 whatever the repo's config says", async () => {
 		const out = await run(
 			[
 				[PULL, served(pull())],
@@ -305,11 +306,11 @@ describe("runCpApproval", () => {
 		expect(out.stderr.at(-1)).toContain('the discharge is UNRESOLVED, not "awaiting approval"');
 	});
 
-	it("notices base drift so the approval is not spent on a head that must move (#4477)", async () => {
+	it("notices base drift so the approval is not spent on a head that must move", async () => {
 		const out = await run(
 			[
 				[PULL, served(pull())],
-				[FILES, served(files("apps/web/src/App.tsx", "README.md"))],
+				[FILES, served(files("apps/site/src/App.tsx", "README.md"))],
 			],
 			[
 				[OWNERS, OWNED],
@@ -321,15 +322,61 @@ describe("runCpApproval", () => {
 		).toBe(true);
 	});
 
-	it("refuses a truncated file sweep on 13", async () => {
+	// The declared count is GitHub's own, computed against a base cached at the last push, so a list
+	// short of it proved nothing about completeness. It used to refuse at 13 at the §CP discharge,
+	// which left a control-plane merge with no act available to clear it.
+	it("reports a file list short of the declared count and still discharges (#9322)", async () => {
 		const out = await run(
 			[
 				[PULL, served(pull({changedFiles: 9}))],
 				[FILES, served(files("README.md"))],
 			],
+			[[OWNERS, OWNED]],
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("cp-approval\tn/a\tnot-control-plane\n");
+		expect(out.stderr.join("\n")).toContain(
+			"GitHub's file list for #4321 holds 1 paths against the 9 its own pull-request record declares",
+		);
+	});
+
+	// `classify` over no files answers `not-control-plane`, so without this seat a zero would render
+	// as a discharged §CP boundary rather than as a diff nobody read.
+	it("refuses an empty file list on 7 rather than answering n/a (#9322)", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull({changedFiles: 9}))],
+				[FILES, served(files())],
+			],
+			[],
+		);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"ship cp-approval: PR #4321 has zero changed files — whether it crosses the §CP boundary is unanswerable.",
+		);
+	});
+
+	// The ceiling is the truncation pagination cannot catch: GitHub stops serving files at 3000 and
+	// ends the Link chain there exactly as a complete read ends.
+	it("refuses a file list at the 3000-file ceiling on 13 (#9322)", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull({changedFiles: PULL_FILES_CAP}))],
+				[
+					FILES,
+					served(
+						files(...Array.from({length: PULL_FILES_CAP}, (_, i) => `apps/site/src/f${i}.ts`)),
+					),
+				],
+			],
 			[],
 		);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"ship cp-approval: GitHub's file list for #4321 came back at its 3000-file ceiling, so the list is provably partial — a control-plane path could sit in the part the platform never served.",
+		);
 	});
 
 	it("refuses a closed PR on 7 — nothing to discharge", async () => {

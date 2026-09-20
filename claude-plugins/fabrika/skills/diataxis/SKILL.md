@@ -33,12 +33,12 @@ Ask both about the reader at the moment they open the page:
 Cross the two and four modes fall out. Every page serves exactly one at a time; picking one is the
 whole discipline.
 
-| Mode | Reader is | Shape | Its fabrika/phoenix home |
+| Mode | Reader is | Shape | Where it lives in a repo |
 | --- | --- | --- | --- |
 | **Tutorial** | studying, by doing | a guided lesson followed start to finish, guaranteed to work, concrete over complete | an onboarding walkthrough, a "build your first X" |
 | **How-to** | working, on a goal | an ordered recipe to one real result; assumes competence and omits what a working reader knows | `DEVELOPMENT.md` recipes, a runbook, an adoption guide |
-| **Reference** | working, needs a fact | a dry, complete, look-it-up account of the machinery, structured to match the code | `.glossary/`, `claude-plugins/fabrika/docs/`, a verb or binding table |
-| **Explanation** | studying, wants to understand | a discussion of *why* — context, trade-offs, the roads not taken | `.decisions/` ADRs, the *why* half of a `.patterns/` doc |
+| **Reference** | working, needs a fact | a dry, complete, look-it-up account of the machinery, structured to match the code | a glossary, the plugin's `docs/`, a verb or binding table |
+| **Explanation** | studying, wants to understand | a discussion of *why* — context, trade-offs, the roads not taken | the repo's decision records, the *why* half of a pattern doc |
 
 One line each, and each line is a test the page either passes or fails:
 
@@ -98,6 +98,6 @@ intrudes, and the **split** — which content moves to which surface. A page tha
 - **Pages, not code comments.** Inline comments belong to
   [`deslop-comments`](../deslop-comments/SKILL.md).
 - **Name it, do not rewrite it.** Splitting a mixed page is authoring work with its own issue.
-- **Structure, not language.** Mode is a property of reader-need and page shape. Product copy stays
-  Turkish, technical surfaces stay English, and both classify identically
-  ([`.glossary/LANGUAGE.md`](../../../../.glossary/LANGUAGE.md) is canonical).
+- **Structure, not language.** Mode is a property of reader-need and page shape. A page written in
+  the repo's product language and a page written in its technical language classify identically; the
+  repo's own glossary rules which surface takes which language.

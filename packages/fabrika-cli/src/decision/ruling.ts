@@ -106,7 +106,7 @@ export interface RulingScan {
  * however fresh its digest. Empty means nobody may rule here, so nothing stands.
  *
  * Ordered by `updatedAt` and then by id, never by `createdAt`: a marker edited after a later one was
- * posted is the newer statement, and only the write stamp says so (#4200).
+ * posted is the newer statement, and only the write stamp says so.
  */
 export const scanRulings = (
 	comments: ReadonlyArray<CommentRecord>,

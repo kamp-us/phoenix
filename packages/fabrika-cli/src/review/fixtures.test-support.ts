@@ -9,6 +9,8 @@ import type {ExecResult} from "../io/exec.ts";
 
 export const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 export const OLD_HEAD = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
+/** The issue {@link pull}'s default body closes — the number every linked-issue case asserts. */
+export const LINKED_ISSUE = 4287;
 /** The commit this branch left the base branch at — every bound range's other end. */
 export const BASE = "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736";
 /**
@@ -16,7 +18,7 @@ export const BASE = "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736";
  *
  * The two are kept distinct on purpose. A fixture where the branch tip and the merge base are the
  * same commit cannot tell a verb that reports the tip from one that reports the branch point — which
- * is the whole of #5770. Every test that binds a head therefore runs against a moved main.
+ * is the whole point. Every test that binds a head therefore runs against a moved main.
  */
 export const BASE_TIP = "5a4b3c2d1e0f98877665544332211000ffeeddcc";
 
@@ -36,7 +38,7 @@ export const pull = (shape: PullShape = {}): ExecResult =>
 			state: shape.state ?? "open",
 			head: {sha: shape.head ?? HEAD},
 			base: {ref: shape.baseRef ?? "main"},
-			body: shape.body ?? "does a thing\n\nFixes #4287\n\n## Deviations\n\nNone.\n",
+			body: shape.body ?? `does a thing\n\nFixes #${LINKED_ISSUE}\n\n## Deviations\n\nNone.\n`,
 			changed_files: shape.changedFiles ?? 2,
 			comments: shape.comments ?? 0,
 		}),
@@ -58,11 +60,11 @@ export const PATHS_AT = (base: string = BASE, head: string = HEAD): RegExp =>
 export const paths = (...names: ReadonlyArray<string>): ExecResult =>
 	okOut(names.map((n) => `${n}\0`).join(""));
 
-/** The bound `--raw` read the content binding digests (ADR 0276). */
+/** The bound `--raw` read the content binding digests. */
 export const RAW_AT = (base: string = BASE, head: string = HEAD): RegExp =>
 	range(base, head, " --raw --abbrev=40 -z");
 
-/** The same read limited to the paths a range verdict judged — the re-derivation read (#5825). */
+/** The same read limited to the paths a range verdict judged — the re-derivation read. */
 export const RAW_ONTO = (base: string, state: string, ...judged: ReadonlyArray<string>): RegExp =>
 	range(base, state, " --raw --abbrev=40 -z", ` -- ${judged.join(" ")}`);
 
@@ -88,7 +90,7 @@ export const CONTENT = "7af166f42fdb";
  *
  * One helper because both read verbs bind identically: two hand-written copies are two chances for a
  * test to prove a binding the other verb does not make. `tip` defaults ahead of `base`, so every
- * caller of this helper is bound under a moved main (#5770).
+ * caller of this helper is bound under a moved main.
  */
 export const binding = (
 	sha: string = HEAD,
@@ -106,7 +108,7 @@ export const binding = (
 	[/^git rev-parse --verify --quiet origin\/main\^\{commit\}$/, okOut(`${tip}\n`)],
 	[new RegExp(`^git merge-base ${tip} ${sha}$`), okOut(`${base}\n`)],
 	// The content binding's own read, in the binding script because every verb that binds a head then
-	// digests that same range (ADR 0276); a per-test copy is how two tests come to digest differently.
+	// digests that same range; a per-test copy is how two tests come to digest differently.
 	[RAW_AT(base, sha), okOut(RAW)],
 ];
 
@@ -144,22 +146,35 @@ export const inventory = (...paths: ReadonlyArray<string>): ExecResult =>
 		}),
 	);
 
+/** One workflow run as a fixture declares it — `null` on a provenance field omits it entirely. */
+export interface RunAtHeadRow {
+	readonly path: string;
+	readonly name?: string;
+	readonly status?: string;
+	readonly event?: string | null;
+	readonly headSha?: string | null;
+}
+
 /**
  * The workflow runs recorded at one head, each naming the workflow it came from.
  *
- * A bare path is the common case: a completed run whose `name` is its own path, which is all gate
- * coverage reads. The object form is for a caller that needs the two fields coverage ignores — the
- * workflow's `name:`, and a run still in flight (`review ci`'s governance-floor discriminator).
+ * A bare path is the common case: a completed `pull_request` run at {@link HEAD} whose `name` is its
+ * own path — the shape that covers a gate. The object form is for a caller that needs a field the
+ * bare one fixes: the workflow's `name:`, a run still in flight (`review ci`'s governance-floor
+ * discriminator), or the provenance a coverage case turns — another event, another head, or none.
  */
-export const runsAtHead = (
-	...entries: ReadonlyArray<string | {path: string; name?: string; status?: string}>
-): ExecResult =>
+export const runsAtHead = (...entries: ReadonlyArray<string | RunAtHeadRow>): ExecResult =>
 	okOut(
 		JSON.stringify({
 			total_count: entries.length,
 			workflow_runs: entries.map((entry, index) => {
-				const row = typeof entry === "string" ? {path: entry} : entry;
+				const row: RunAtHeadRow = typeof entry === "string" ? {path: entry} : entry;
 				const status = row.status ?? "completed";
+				// A run defaults to the one provenance that establishes coverage — a `pull_request`
+				// event at {@link HEAD} — so a case for the absence of it has to say so, and `null`
+				// is how it does: the field leaves the payload rather than arriving empty.
+				const event = row.event === undefined ? "pull_request" : row.event;
+				const headSha = row.headSha === undefined ? HEAD : row.headSha;
 				return {
 					id: index + 1,
 					name: row.name ?? row.path,
@@ -169,6 +184,8 @@ export const runsAtHead = (
 					status,
 					conclusion: status === "completed" ? "success" : null,
 					completed_at: status === "completed" ? "2026-08-08T00:00:00Z" : null,
+					...(event === null ? {} : {event}),
+					...(headSha === null ? {} : {head_sha: headSha}),
 				};
 			}),
 		}),
@@ -199,7 +216,7 @@ diff --git a/README.md b/README.md
 --- a/README.md
 +++ b/README.md
 @@ -1,1 +1,2 @@
- # phoenix
+ # demo
 +a line
 `;
 

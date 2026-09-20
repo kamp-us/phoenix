@@ -2,7 +2,7 @@
  * The claim-marker read every mutating `triage` verb runs, as scripted comment pages.
  *
  * Shared rather than repeated per verb because the guard is one module, so a test that disagrees
- * with another about the marker's shape would be testing the fixture (#5644).
+ * with another about the marker's shape would be testing the fixture.
  *
  * The TTL is measured against the real clock, so the two ages are written as timestamps far either
  * side of any run rather than as an injected `now` no verb accepts: {@link LIVE} cannot age out and
@@ -27,7 +27,7 @@ export const EXPIRED = "2020-01-01T00:00:00Z";
  * One comments page carrying a claim marker per row.
  *
  * `lane` defaults to a per-row nonce rather than to the caller's: a fixture that silently handed
- * every marker one lane would make a sibling-lane race look like a re-entry (#6132). A row naming a
+ * every marker one lane would make a sibling-lane race look like a re-entry. A row naming a
  * lane explicitly is how a test writes "this marker is that lane's".
  */
 export const claimPage = (
@@ -52,6 +52,32 @@ export const claimPage = (
 /** The default every existing test gets: the issue carries no claim marker at all. */
 export const UNCLAIMED: Scripted = [COMMENTS, {status: 200, body: "[]"}];
 
+/** The issue read whose `comments` field is the denominator `listCommentsReconciled` divides by. */
+export const ISSUE_READ = /GET .*\/issues\/\d+$/;
+
+/**
+ * The issue payload behind the reconciled comment read, declaring `count` comments.
+ *
+ * `declaring()` with no argument omits the field entirely, which reads back as `0` and fences
+ * nothing — the shape every test that says nothing about counts wants, since a list is never short
+ * of zero.
+ */
+export const declaring = (count?: number): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: 4312,
+		title: "t",
+		body: "b",
+		state: "open",
+		labels: [],
+		html_url: "https://example.test/issues/4312",
+		...(count === undefined ? {} : {comments: count}),
+	}),
+});
+
+/** The countless issue read appended behind every script, so no test must know the read happens. */
+export const COUNTLESS: Scripted = [ISSUE_READ, declaring()];
+
 /** Both seams off one script, with the unclaimed comments page appended as the last resort. */
 export type GuardedSeams = ReturnType<typeof fakeSeams>;
 
@@ -59,10 +85,12 @@ export type GuardedSeams = ReturnType<typeof fakeSeams>;
  * Both seams scripted on `script`, with the unclaimed comments page appended as the last resort.
  *
  * Appended rather than prepended so a test that scripts its own comments page still wins: the fakes
- * resolve each call by the first pattern that matches.
+ * resolve each call by the first pattern that matches. {@link COUNTLESS} rides along for the same
+ * reason — the claim read reconciles its list against the issue's own count, and a test that has
+ * nothing to say about counts should not have to script that read.
  */
 export const guardedShell = (script: ReadonlyArray<Scripted>): GuardedSeams =>
-	fakeSeams([...script, UNCLAIMED]);
+	fakeSeams([...script, UNCLAIMED, COUNTLESS]);
 
 /** The directory a triage verb under test is standing in. Its config is the one the load reads. */
 export const CWD = "/repo";

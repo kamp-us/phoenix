@@ -5,14 +5,14 @@
  * Pi's own types stop at the port's implementation, never at its callers.
  */
 
+import {Context, type Effect} from "effect";
 import type {
 	ModelMetadata,
 	ModelRef,
 	SessionPhase,
 	ThinkingLevel,
 	TranscriptItem,
-} from "@earendil-works/pi-protocol";
-import {Context, type Effect} from "effect";
+} from "../wire/index.ts";
 import type {SessionCallFailed, SessionOpenFailed} from "./errors.ts";
 
 /** Everything a `session_snapshot` needs that the session itself owns. */

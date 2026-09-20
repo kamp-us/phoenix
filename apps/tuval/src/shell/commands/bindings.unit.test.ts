@@ -5,8 +5,8 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {applyKeysConfig, CommandName, defaultPrefixTable} from "../keys/index.ts";
-import {commandFor} from "./table.ts";
+import {applyKeysConfig, CommandName, defaultPrefixTable, prefixTableFor} from "../keys/index.ts";
+import {commandFor, commandIndexFor} from "./table.ts";
 
 /** Every command name a table binds, in table order. */
 const boundNames = (table: typeof defaultPrefixTable): ReadonlyArray<string> =>
@@ -34,6 +34,39 @@ describe("the default prefix table against the command table", () => {
 	});
 });
 
+/**
+ * The feature-gated half (#8867). A gated binding and its row are two lists keyed on one flag, so
+ * the pair either both exist or neither does — a gate applied to one and not the other is a key
+ * that names nothing, which is exactly what this file exists to catch.
+ */
+describe("a feature-gated binding against its own gated table", () => {
+	const on = {processBoard: true, processRemove: false};
+	const off = {processBoard: false, processRemove: false};
+
+	it("adds the board chord and its row together when the flag is on", () => {
+		const table = prefixTableFor(defaultPrefixTable, on);
+		const index = commandIndexFor(on);
+		expect(boundNames(table)).toContain("desk:board-toggle");
+		expect(index.commandFor("desk:board-toggle")).toBeDefined();
+		expect(boundNames(table).filter((name) => index.commandFor(name) === undefined)).toEqual([]);
+	});
+
+	it("has neither the chord nor the row when the flag is off", () => {
+		const table = prefixTableFor(defaultPrefixTable, off);
+		expect(table).toEqual(defaultPrefixTable);
+		expect(boundNames(table)).not.toContain("desk:board-toggle");
+		expect(commandIndexFor(off).commandFor("desk:board-toggle")).toBeUndefined();
+	});
+
+	it("binds a sequence the ungated table leaves free", () => {
+		const added = prefixTableFor(defaultPrefixTable, on).bindings.filter(
+			(binding) => !defaultPrefixTable.bindings.includes(binding),
+		);
+		expect(added.map((binding) => binding.sequence)).toEqual(["p"]);
+		expect(defaultPrefixTable.bindings.map((binding) => binding.sequence)).not.toContain("p");
+	});
+});
+
 describe("a table naming a row that is not there", () => {
 	it("is caught, whether the name is a typo or a row nobody wrote", () => {
 		const drifted = applyKeysConfig(defaultPrefixTable, {
@@ -43,9 +76,39 @@ describe("a table naming a row that is not there", () => {
 			],
 		});
 		expect(drifted._tag).toBe("Success");
-		expect(drifted._tag === "Success" ? dangling(drifted.success) : null).toEqual([
-			"window:quit",
+		// Sorted, because merge order is not the claim: `w` replaces a default in place while `q`
+		// appends, so binding either sequence to a shipped row would rewrite this list's order.
+		expect(drifted._tag === "Success" ? [...dangling(drifted.success)].sort() : null).toEqual([
 			"windo:close",
+			"window:quit",
 		]);
+	});
+});
+
+/**
+ * The removal row's gate (#9447). It is the one gated row with no binding, so the pair the board's
+ * flag keeps — a chord and a row together — is here a row and no chord at all: the id has nowhere to
+ * ride on a key sequence, and `x` is taken by `window:close`, which the epic's no-gos protect.
+ */
+describe("a feature-gated row with no binding", () => {
+	const on = {processBoard: false, processRemove: true};
+	const off = {processBoard: false, processRemove: false};
+
+	it("adds the row and no sequence, so the grammar is the one it was", () => {
+		expect(commandIndexFor(on).commandFor("process:remove")).toBeDefined();
+		expect(prefixTableFor(defaultPrefixTable, on)).toEqual(defaultPrefixTable);
+		expect(boundNames(prefixTableFor(defaultPrefixTable, on))).not.toContain("process:remove");
+	});
+
+	it("has no row with the flag off either, so nothing names it anywhere", () => {
+		expect(commandIndexFor(off).commandFor("process:remove")).toBeUndefined();
+	});
+
+	it("leaves `x` bound to window:close, whichever way the flag is set", () => {
+		for (const features of [on, off]) {
+			const table = prefixTableFor(defaultPrefixTable, features);
+			const onX = table.bindings.filter((binding) => binding.sequence === "x");
+			expect(onX.map((binding) => String(binding.command))).toEqual(["window:close"]);
+		}
 	});
 });

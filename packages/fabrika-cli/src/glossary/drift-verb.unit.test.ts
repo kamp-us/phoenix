@@ -19,8 +19,8 @@ const shell = (
 ) =>
 	fakeShell([
 		[/git log -n 1 --format=%H %ct/, okOut("abc1234 1700000000\n")],
-		[/git ls-files/, okOut("apps/web/src/index.ts\n")],
-		[/git show --name-only/, okOut("src/capture/ledger.ts\napps/web/x.ts\n")],
+		[/git ls-files/, okOut("src/app/index.ts\n")],
+		[/git show --name-only/, okOut("src/capture/ledger.ts\nsrc/app/x.ts\n")],
 		[/git log --reverse/, okOut(log)],
 		...extra,
 	]);
@@ -78,7 +78,7 @@ describe("runDrift", () => {
 	});
 
 	// v1 defaulted the pathspec to a literal `apps packages`, so a repo with another layout got a
-	// permanently empty diff that read as "no drift" (#4776). A pathspec matching nothing is a red.
+	// permanently empty diff that read as "no drift". A pathspec matching nothing is a red.
 	it("reds on a --paths that matched 0 tracked files, rather than reporting clean", async () => {
 		const out = await run(
 			populated(),
@@ -91,7 +91,7 @@ describe("runDrift", () => {
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"glossary drift: --paths no/such/dir matched 0 tracked files — refusing to report a clean sweep of nothing (ADR 0092).",
+			"glossary drift: --paths no/such/dir matched 0 tracked files — refusing to report a clean sweep of nothing.",
 		);
 	});
 

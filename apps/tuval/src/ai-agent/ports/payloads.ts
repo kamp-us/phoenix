@@ -1,5 +1,5 @@
 /**
- * What travels on each of the five AI agent ports, and the predicate that admits it.
+ * What travels on each of the six AI agent ports, and the predicate that admits it.
  *
  * A port is a nominal kind plus a payload predicate (#7512) — not a schema system — so each
  * payload here is a plain type with a hand-written predicate, the shape `src/ports/` routes on.
@@ -14,7 +14,20 @@ import {
 	isTranscriptItems,
 	type JsonValue,
 	type TranscriptItem,
+	TranscriptItemSchema,
 } from "./transcript-item.ts";
+
+/**
+ * A payload as a row may publish it beside its predicate: no service requirements and an encoded
+ * form equal to the decoded one, because the `accepts` the kernel routes on is `Schema.is` of
+ * exactly this (`../../registry/program.ts`, `PortPayloadSchema`).
+ *
+ * The schemas below exist so a shipped row's ports can be read structurally by a `Program.shape`
+ * check (#8887). They describe the payload and nothing else; the predicates beside them stay the
+ * routing check, and where a predicate enforces more than a shape — a byte bound — it is the
+ * predicate that is authoritative, never this.
+ */
+type PayloadSchema<T> = Schema.Codec<T, T, never, unknown>;
 
 /** What a window bound left out, and why. `none` is the whole tail, nothing dropped. */
 export interface WindowOmission {
@@ -44,6 +57,48 @@ export interface TranscriptPayload {
 
 export const isTranscriptPayload = (value: unknown): value is TranscriptPayload =>
 	Predicate.isObject(value) && isTranscriptItems(value.items) && isWindowOmission(value.omitted);
+
+export const WindowOmissionSchema = Schema.Struct({
+	items: Schema.Number,
+	bytes: Schema.Number,
+	reason: Schema.Literals(["none", "item-limit", "byte-limit"]),
+});
+
+export const TranscriptPayloadSchema = Schema.Struct({
+	items: Schema.Array(TranscriptItemSchema),
+	omitted: WindowOmissionSchema,
+});
+
+/**
+ * `result` — one finished turn, as whatever consumes an agent's answer reads it (R19.3 on #8715).
+ *
+ * `text` is the reply a caller would quote and `items` is the same turn whole, because the two
+ * answer different questions: a parent program routing an answer onward wants the line, and one
+ * judging what the turn *did* needs the tool calls under it. `ok` is the turn ending with nothing
+ * refused — a turn that failed or was cut short still lands here, marked, because a consumer that
+ * never hears about a failed turn waits for a payload that is not coming.
+ *
+ * It carries no session id: a port already names the process it came out of, and a payload
+ * restating that would be a second identity for a reader to reconcile.
+ */
+export interface TurnResult {
+	readonly text: string;
+	readonly items: ReadonlyArray<TranscriptItem>;
+	readonly ok: boolean;
+}
+
+export const isTurnResult = (value: unknown): value is TurnResult =>
+	Predicate.isObject(value) &&
+	typeof value.text === "string" &&
+	isTranscriptItems(value.items) &&
+	typeof value.ok === "boolean";
+
+/** What `result` publishes, so a shape naming a reviewer's answer can be compared with it (#8887). */
+export const TurnResultSchema = Schema.Struct({
+	text: Schema.String,
+	items: Schema.Array(TranscriptItemSchema),
+	ok: Schema.Boolean,
+});
 
 /**
  * `transcript-page` — a request for older history and the page that answers it. `before` is the
@@ -77,26 +132,54 @@ export const isTranscriptPagePayload = (value: unknown): value is TranscriptPage
 };
 
 /**
+ * The two directions of `transcript-page`, each with a predicate that admits only its own.
+ *
+ * The union predicate above says what the *kind* carries; an end of the port takes one direction,
+ * and these are what its `accepts` check is built from (#8235). Refusing at the send is what makes
+ * a wrong-direction payload an error the caller reads, rather than a `delivered: true` followed by
+ * a refusal only a rendering window ever sees — the same move #7991 made for `prompt`.
+ */
+export type TranscriptPageRequest = Extract<TranscriptPagePayload, {readonly kind: "request"}>;
+export type TranscriptPageReply = Extract<TranscriptPagePayload, {readonly kind: "page"}>;
+
+export const isTranscriptPageRequest = (value: unknown): value is TranscriptPageRequest =>
+	isTranscriptPagePayload(value) && value.kind === "request";
+
+export const isTranscriptPageReply = (value: unknown): value is TranscriptPageReply =>
+	isTranscriptPagePayload(value) && value.kind === "page";
+
+/**
  * `prompt` — one turn of operator text. `key` is the idempotency key: a second prompt carrying a
  * key the session already saw is dropped rather than re-sent, so a transport retry is free while
  * a deliberate resend mints a new key.
  *
- * Both `key` and `timestamp` are optional on the wire and refused by the receiver when absent
- * (`program.ts`), because the payload predicate is the port's compatibility contract and a field
- * required there is a sender this end can no longer read at all.
+ * Both fields are required here, and that is a reversal (#7991). They used to be optional so an
+ * older sender stayed readable, but the receiver refused an unstamped prompt anyway (`program.ts`)
+ * — into a `failed` Msg only a rendering window can see. So the optionality bought no sender
+ * anything: their turn never ran either way, and the caller read `delivered: true`. Required, the
+ * kernel's own `accepts` check refuses at the send, which is the error the Claude `send` tool
+ * already promises. The kind stays `@1` because the set of payloads that ever produced a turn is
+ * unchanged; only the moment of refusal moved.
  */
 export interface PromptPayload {
 	readonly text: string;
-	readonly key?: string;
+	readonly key: string;
 	/** Epoch milliseconds, stamped by the sender: the turn's clock, since the core reads none. */
-	readonly timestamp?: number;
+	readonly timestamp: number;
 }
 
 export const isPromptPayload = (value: unknown): value is PromptPayload =>
 	Predicate.isObject(value) &&
 	typeof value.text === "string" &&
-	(value.key === undefined || typeof value.key === "string") &&
-	(value.timestamp === undefined || Number.isFinite(value.timestamp));
+	typeof value.key === "string" &&
+	Number.isFinite(value.timestamp);
+
+/** What `prompt` publishes, so a shape naming what it sends a reviewer can be compared with it. */
+export const PromptPayloadSchema: PayloadSchema<PromptPayload> = Schema.Struct({
+	text: Schema.String,
+	key: Schema.String,
+	timestamp: Schema.Number,
+});
 
 /** One card the window renders while the program waits for an answer. */
 export interface PermissionRequest {
@@ -117,12 +200,37 @@ const decisions: ReadonlySet<string> = new Set<PermissionDecision>([
 ]);
 
 /**
+ * How far one card's answer has got. A card leaves the pending set on its confirmation and not on
+ * the click that answered it (#8006), so `answering` is the state a window renders while the
+ * decision is out and `unresolved` is the one it renders when that answer's outcome is unknown.
+ *
+ * `unresolved` offers no second answer: the authorization may have been applied, so re-sending one
+ * is a retry nobody asked for. Only the backend's own `permission-resolved` clears it.
+ */
+export type PermissionProgress =
+	| {readonly status: "open"}
+	| {readonly status: "answering"; readonly decision: PermissionDecision}
+	| {readonly status: "unresolved"; readonly decision: PermissionDecision};
+
+/** One card the window renders, how far its answer has got, and which raising of its id it is. */
+export interface PendingPermission {
+	readonly request: PermissionRequest;
+	/**
+	 * Which request this session has raised, counting from one. A confirmation names it, so an
+	 * answer whose reply arrives after its card was settled cannot clear a later card that happens
+	 * to carry the same request id.
+	 */
+	readonly seq: number;
+	readonly progress: PermissionProgress;
+}
+
+/**
  * `permission` — the pending set outbound, keyed by request id, and one answer inbound. A program
  * that never prompts emits an empty `pending` and is done; it declares the port all the same, so
  * the window's wiring does not change per program.
  */
 export type PermissionPayload =
-	| {readonly kind: "pending"; readonly requests: Readonly<Record<string, PermissionRequest>>}
+	| {readonly kind: "pending"; readonly requests: Readonly<Record<string, PendingPermission>>}
 	| {
 			readonly kind: "decision";
 			readonly request: string;
@@ -138,13 +246,26 @@ export const isPermissionRequest = (value: unknown): value is PermissionRequest 
 	isJsonValue(value.input) &&
 	typeof value.offersAlways === "boolean";
 
+const isProgress = (value: unknown): value is PermissionProgress =>
+	Predicate.isObject(value) &&
+	(value.status === "open" ||
+		((value.status === "answering" || value.status === "unresolved") &&
+			typeof value.decision === "string" &&
+			decisions.has(value.decision)));
+
+export const isPendingPermission = (value: unknown): value is PendingPermission =>
+	Predicate.isObject(value) &&
+	isPermissionRequest(value.request) &&
+	isNonNegativeInteger(value.seq) &&
+	isProgress(value.progress);
+
 export const isPermissionPayload = (value: unknown): value is PermissionPayload => {
 	if (!Predicate.isObject(value)) return false;
 	switch (value.kind) {
 		case "pending":
 			return (
 				Predicate.isObject(value.requests) &&
-				Object.values(value.requests).every(isPermissionRequest)
+				Object.values(value.requests).every(isPendingPermission)
 			);
 		case "decision":
 			return (
@@ -158,6 +279,16 @@ export const isPermissionPayload = (value: unknown): value is PermissionPayload 
 			return false;
 	}
 };
+
+/** The two directions of `permission`: one answer inbound, the pending set outbound. */
+export type PermissionAnswer = Extract<PermissionPayload, {readonly kind: "decision"}>;
+export type PermissionPendingSet = Extract<PermissionPayload, {readonly kind: "pending"}>;
+
+export const isPermissionAnswer = (value: unknown): value is PermissionAnswer =>
+	isPermissionPayload(value) && value.kind === "decision";
+
+export const isPermissionPendingSet = (value: unknown): value is PermissionPendingSet =>
+	isPermissionPayload(value) && value.kind === "pending";
 
 /** A mode a program offers. The names are the program's own; the window only lists them. */
 export const Mode = Schema.String.pipe(Schema.brand("tuval/ai-agent/Mode"));
@@ -188,3 +319,13 @@ export const isModePayload = (value: unknown): value is ModePayload => {
 			return false;
 	}
 };
+
+/** The two directions of `mode`: one set inbound, the current mode and its list outbound. */
+export type ModeSet = Extract<ModePayload, {readonly kind: "set"}>;
+export type ModeState = Extract<ModePayload, {readonly kind: "state"}>;
+
+export const isModeSet = (value: unknown): value is ModeSet =>
+	isModePayload(value) && value.kind === "set";
+
+export const isModeState = (value: unknown): value is ModeState =>
+	isModePayload(value) && value.kind === "state";

@@ -7,9 +7,9 @@
  * runs them — where the tree goes, what the child's `PATH` must carry — is decided here, where a
  * unit test can drive it.
  *
- * Two facts this module encodes are captured, not assumed (ADR 0180): the payload carries `cwd` and
- * `name` and **no** `worktree_path` or `base_ref`, and the path is therefore *constructed* rather
- * than read. `__fixtures__/worktree-create.payload.golden.json` is the capture.
+ * Two facts this module encodes are captured, not assumed: the payload carries `cwd` and `name` and
+ * **no** `worktree_path` or `base_ref`, and the path is therefore *constructed* rather than read.
+ * `__fixtures__/worktree-create.payload.golden.json` is the capture.
  */
 
 /** Where a hook-provisioned worktree goes, and the repo the git commands run in. */
@@ -46,10 +46,10 @@ export const worktreePathFor = (repoRoot: string, name: string): string =>
  * `FETCH_HEAD` is one file in the shared `.git` dir and every parallel spawn fetches against the same
  * clone, so one spawn reads it while a sibling's fetch has it truncated and the read returns nothing.
  * Measured on git 2.40.1 in this repo's `worktree-base.git.test.ts` fixture: 12 of 320 concurrent
- * fetch-then-resolve pairs lost the base that way (#6081). Serializing the pair would fix it too, but
- * a per-spawn name removes the shared write instead of taking turns at it.
+ * fetch-then-resolve pairs lost the base that way. Serializing the pair would fix it too, but a
+ * per-spawn name removes the shared write instead of taking turns at it.
  *
- * A per-spawn *name* left a shared *directory*, which is a second race (#7428). `git update-ref -d`
+ * A per-spawn *name* left a shared *directory*, which is a second race. `git update-ref -d`
  * deletes the loose ref and then walks upward removing every parent it just emptied — but its walk
  * has a floor: `try_remove_empty_parents` in git's `refs/files-backend.c` advances its pointer past
  * the refname's first **two** components — the `for (i = 0; i < 2; i++)` loop commented
@@ -106,8 +106,8 @@ export const dropBaseRefArgs = (baseRef: string): ReadonlyArray<string> => [
  * `fatal: failed to read .git/worktrees/<name>/commondir`.
  *
  * The name in each diagnostic is the *sibling's* worktree, never the failing spawn's own, which is
- * what separates these from a genuine failure naming the tree it was asked to build. #6081's
- * per-spawn base ref fixed neither, because neither is about what the base is named.
+ * what separates these from a genuine failure naming the tree it was asked to build. The per-spawn
+ * base ref fixed neither, because neither is about what the base is named.
  *
  * **Each arm has two sources** — both measured in `worktree-concurrency.git.test.ts`, each with the
  * git it was measured on:
@@ -119,8 +119,8 @@ export const dropBaseRefArgs = (baseRef: string): ReadonlyArray<string> => [
  *    heals on its own is git's own business and moves between versions: on git 2.40.1 it never does
  *    — a re-run of the identical fetch fails identically for as long as the directory is there —
  *    while on git 2.55.0, this repo's CI runner, the second fetch succeeds. It is the shape the
- *    #7331 report measured in production, where every failing fetch named one worktree — the first
- *    spawn's, whose own add had failed earlier in the same run.
+ *    original report measured in production, where every failing fetch named one worktree — the
+ *    first spawn's, whose own add had failed earlier in the same run.
  *
  * So the recovery is {@link pruneWorktreesArgs} *and* a bounded re-attempt, never a re-attempt
  * alone: prune clears the dead sibling's leftover on both gits measured, where a bare re-attempt
@@ -163,10 +163,46 @@ export const concurrencyArm = (diagnostic: string): ConcurrencyArm | null =>
 export const pruneWorktreesArgs: ReadonlyArray<string> = ["worktree", "prune"];
 
 /**
+ * How the sweep re-enters this CLI, and how much of the spawn it may spend.
+ *
+ * Reap before the fetch and add: a full volume can refuse the add, so freeing disk after that
+ * refusal is a spawn too late.
+ * @ruling https://github.com/kamp-us/phoenix/issues/7990
+ *
+ * It is a **child process** rather than a call into `runReap`, for the one thing a child gives that
+ * a call does not: `cwd`. This package's git seam runs every command in the process's own cwd, and a
+ * hook's cwd is the harness's business, while the sweep must read *this repository's*
+ * registrations — the ones the envelope's `cwd` names. `process.execPath` and this process's own
+ * entrypoint keep it the same build of the CLI the hook is running from.
+ *
+ * Neither bound is arbitrary. `--limit` is small because each removal deletes a tree carrying its own
+ * installed dependencies rather than shared ones, and the spawn waits on it; the timeout is a fraction of the
+ * git children's own 540s, because the fetch and the add still have to fit inside the hook's 600s
+ * budget after it. A sweep that overruns either is cut off, which costs a few reclaimed trees and
+ * nothing else — `build reap` journals each removal as it happens, so what it did before the cut is
+ * still on disk, and its verdicts are re-derived from scratch on the next spawn.
+ *
+ * **Nothing it answers can refuse the spawn.** A reclaimer is not a provisioner: a failed sweep
+ * leaves the disk exactly as it found it, and turning that into a blocked spawn would convert a
+ * housekeeping miss into the total stop this whole mechanism exists to prevent.
+ */
+export const REAP_LIMIT = 4;
+export const REAP_TIMEOUT_SECONDS = 120;
+
+export const reapArgs = (entry: string): ReadonlyArray<string> => [
+	entry,
+	"build",
+	"reap",
+	"--execute",
+	"--limit",
+	String(REAP_LIMIT),
+];
+
+/**
  * Attempts and delays for that recovery. Bounded, and **no lock is taken**: `git worktree add` fires
- * the `post-checkout` dependency install (ADR 0109 §3), so serialising it would serialise every
- * parallel spawn behind one ~10s install — the constraint #6081 already recorded. A loser prunes and
- * waits out the live window instead of taking a turn at a lock.
+ * the `post-checkout` dependency install, so serialising it would serialise every parallel spawn
+ * behind one ~10s install. A loser prunes and waits out the live window instead of taking a turn at
+ * a lock.
  */
 export const RECOVERY_ATTEMPTS = 5;
 
@@ -190,7 +226,7 @@ export const isCommitId = (candidate: string): boolean => COMMIT_ID.test(candida
  *
  * Every arm is fail-closed on purpose: the verb's caller is the harness, a refusal there blocks the
  * spawn, and a spawn that never happens is strictly better than one landing in a tree this hook
- * could not fully build (ADR 0092).
+ * could not fully build.
  */
 export const planWorktree = (payload: Record<string, unknown>): PlanRead => {
 	const repoRoot = typeof payload.cwd === "string" ? payload.cwd.trim() : "";
@@ -214,15 +250,15 @@ export const planWorktree = (payload: Record<string, unknown>): PlanRead => {
 /**
  * The standard toolchain locations, prepended to whatever `PATH` the hook inherited.
  *
- * This is the whole reason provisioning works at all. `git worktree add` fires lefthook's
- * `post-checkout` `bootstrap-deps`, and that hook **clean-SKIPs at exit 0** when it finds no
- * corepack, no pinned pnpm and no npm on `PATH` (ADR 0109 §3) — which is precisely the harness's
- * PATH-stripped `git worktree add` exec env (#787–#789). A skip there is silent, so the tree is
- * created, adopted, and useless. Prepending the OS-standard bin dirs is what lets the install run.
+ * This is the whole reason provisioning works at all. `git worktree add` fires the repo's
+ * `post-checkout` dependency install, and that hook **clean-SKIPs at exit 0** when it finds no
+ * corepack, no pinned pnpm and no npm on `PATH` — which is precisely the harness's PATH-stripped
+ * `git worktree add` exec env. A skip there is silent, so the tree is created, adopted, and useless.
+ * Prepending the OS-standard bin dirs is what lets the install run.
  *
- * OS/standard dirs only, never a per-machine volta/fnm shim — ADR 0109's prohibition. The inherited
- * `PATH` is kept **last** rather than dropped, so a machine whose toolchain lives somewhere else
- * still resolves it.
+ * OS/standard dirs only, never a per-machine volta/fnm shim, which would bind a tree's provisioning
+ * to one operator's setup. The inherited `PATH` is kept **last** rather than dropped, so a machine
+ * whose toolchain lives somewhere else still resolves it.
  */
 const STANDARD_BIN_DIRS: ReadonlyArray<string> = [
 	"/opt/homebrew/bin",
@@ -247,7 +283,7 @@ export const toolchainPath = (inherited: string | undefined, home: string | unde
 	return ordered.join(":");
 };
 
-/** What `bootstrap-deps` needs: the pnpm/corepack store under `HOME`, and a stable locale. */
+/** What the install needs: the pnpm/corepack store under `HOME`, and a stable locale. */
 const INSTALL_KEYS: ReadonlyArray<string> = [
 	"HOME",
 	"LANG",
@@ -258,8 +294,8 @@ const INSTALL_KEYS: ReadonlyArray<string> = [
 ];
 
 /**
- * What `git fetch origin` needs. phoenix's `origin` is SSH-only — `url.git@github.com:.insteadof`
- * rewrites every HTTPS remote — so with no agent socket the fetch has no credential path at all.
+ * What `git fetch origin` needs. An `origin` can be SSH-only — an `insteadof` rewrite turns every
+ * HTTPS remote into SSH — so with no agent socket the fetch has no credential path at all.
  */
 const CREDENTIAL_KEYS: ReadonlyArray<string> = [
 	"SSH_AUTH_SOCK",
@@ -286,7 +322,7 @@ const nonInteractiveSsh = (inherited: string | undefined): string => {
  * Nothing is inherited implicitly (`execRecord` sets `extendEnv: false`), so what is not here does
  * not reach the children. Two jobs are served: the install's store and locale, and the fetch's
  * credentials — which are forwarded *and* pinned non-interactive, so a credential miss refuses at
- * `BASE_FETCH_FAILED` in seconds rather than hanging out the child timeout (ADR 0337).
+ * `BASE_FETCH_FAILED` in seconds rather than hanging out the child timeout.
  */
 export const childEnv = (
 	source: Readonly<Record<string, string | undefined>>,

@@ -11,14 +11,14 @@
  *     status / parse failure is CAUGHT and degraded to `{hostedUrl: null,
  *     uploadError}`.
  *
- * The upload is DISPLAY-ONLY and out of the decision path (ADR 0165): the gate
+ * The upload is DISPLAY-ONLY and out of the decision path: the gate
  * judges the LOCAL captured bytes (`localPath`) regardless of whether hosting
  * succeeds. A failed upload loses the hosted evidence embed, never the judged
  * image and never the verdict.
  *
  * LOAD-BEARING NOTE — `uploads.github.com/user-attachments/assets` is an
  * UNDOCUMENTED GitHub endpoint (its web-composer internal API), recorded as a
- * known durability risk in ADR 0165 ("Evidence hosting"). It works with a user
+ * known durability risk. It works with a user
  * token today but can change or break without notice. The `uploadError` fallback
  * below is an acceptance criterion, unit-tested, NOT a TODO.
  */
@@ -106,7 +106,7 @@ export const PNG_CONTENT_TYPE = "image/png";
  * PURE: the upload endpoint URL for one asset.
  *
  * LOAD-BEARING — the endpoint's real parameter contract, probed against the live
- * endpoint (#3738), since it is undocumented (ADR 0165) and cannot be grounded in
+ * endpoint, since it is undocumented and cannot be grounded in
  * any published source:
  *
  *   - `repository_id` — required; omitting it is a 404.
@@ -155,8 +155,8 @@ export interface UploadAssetOptions {
  * Impure: POST the PNG bytes to the undocumented user-attachments endpoint and
  * classify the response. Error channel is `never` — any HttpClient failure
  * (network, non-2xx, body-read) is caught and degraded to `{hostedUrl: null,
- * uploadError}`, matching the display-only, out-of-decision-path contract of ADR
- * 0165.
+ * uploadError}`, matching the display-only, out-of-decision-path contract this repo's own
+ * decision corpus sets for it.
  */
 export const uploadAsset = (
 	opts: UploadAssetOptions,

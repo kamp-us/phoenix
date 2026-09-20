@@ -15,6 +15,7 @@
  */
 import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
+import type {HttpClient} from "effect/unstable/http";
 import {adrCommand} from "./adr/command.ts";
 import {buildCommand} from "./build/command.ts";
 import {campaignCommand} from "./campaign/command.ts";
@@ -47,7 +48,13 @@ import {uiCommand} from "./ui/command.ts";
 import {wireCommand} from "./wire/command.ts";
 
 /** A registered verb group: a top-level `Command` whose name is the `fabrika <name>` selector. */
-export type VerbGroup = Command.Command<any, any, object, unknown, NodeServices.NodeServices>;
+export type VerbGroup = Command.Command<
+	any,
+	any,
+	object,
+	unknown,
+	NodeServices.NodeServices | HttpClient.HttpClient
+>;
 
 /** The registered groups, in the order they list under `--help`. */
 export const registeredGroups: ReadonlyArray<VerbGroup> = [

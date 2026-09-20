@@ -1,7 +1,7 @@
 /**
  * `--help` is the recipe adapter's public contract. `unpark` is the one verb here that takes a lanes
  * root, and it must tell the same derivation story `lane`'s flag tells — a flag advertising a bare
- * cwd-relative default is how an operator learns the wrong resolution rule (#7380).
+ * cwd-relative default is how an operator learns the wrong resolution rule.
  */
 import {describe, expect, it} from "vitest";
 import type {CommandNode} from "../unknown-subcommand.ts";
@@ -34,7 +34,7 @@ const flagHelp = (leaf: DescribedCommand): string => {
 	return (leaf.config?.flags ?? []).map(text).join(" ");
 };
 
-describe("recipe unpark's repository-root help contract (#7380)", () => {
+describe("recipe unpark's repository-root help contract", () => {
 	it("advertises the repository-owned --root default the lane group's flag carries", () => {
 		const help = flagHelp(leafNamed("unpark"));
 
@@ -48,5 +48,15 @@ describe("recipe unpark's repository-root help contract (#7380)", () => {
 
 		expect(description).toContain("derive the default lanes root");
 		expect(description).toContain("unreadable repository identity is UNKNOWN at 11");
+	});
+
+	// The `parkCause` read is a second derivation off the owning repository, and it refuses on 11
+	// alone — a cwd in no repository reads the shipped declaration at itself. A description claiming
+	// 39 for it would send an operator to fix a root the read never touched.
+	it("names the owning-repository parkCause read and claims no exit it cannot produce", () => {
+		const description = leafNamed("unpark").description ?? "";
+
+		expect(description).toContain("read from the `.fabrika.jsonc` of the repository that OWNS");
+		expect(description).toContain("`parkCause` read ahead of it never exits here");
 	});
 });

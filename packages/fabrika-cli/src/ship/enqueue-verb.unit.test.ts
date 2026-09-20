@@ -2,6 +2,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import {
+	BASE_CONFLICTED,
 	PRECONDITION_UNKNOWN,
 	PROVEN_NOT_IN_STATE,
 	STALE_HEAD,
@@ -52,7 +53,22 @@ const timeline = (...rows: ReadonlyArray<{event: string; at: string}>): HttpRepl
 	body: JSON.stringify(rows.map((row) => ({event: row.event, created_at: row.at}))),
 });
 
-const options = {pr: 4321, sha: HEAD, repo: null, json: false, env: ENV};
+/**
+ * The shipped mergeability window is 60s of real backoff, so every test scripts a short one.
+ *
+ * 4s is two waits of 2s, which is the smallest window that still exercises the re-read loop — a
+ * window of 0 would prove only that one read happened.
+ */
+const MERGEABILITY_SECONDS = 4;
+
+const options = {
+	pr: 4321,
+	sha: HEAD,
+	mergeabilitySeconds: MERGEABILITY_SECONDS,
+	repo: null,
+	json: false,
+	env: ENV,
+};
 
 const both = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
 	const seams = fakeSeams(script);
@@ -134,21 +150,54 @@ describe("runEnqueue", () => {
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"ship enqueue: #4321's mergeable_state is still indefinite after 3 polls — mergeability is UNKNOWN, never green; nothing was armed.",
+			"ship enqueue: #4321's mergeable_state is still indefinite after 2 polls over 4s — mergeability is UNKNOWN, never green; nothing was armed.",
 		);
 		expect(scripted.seams.requests.some((line) => /graphql/.test(line))).toBe(false);
 	}, 20_000);
 
-	it("refuses on 16 when a definite read says dirty — the arm would park (#6902)", async () => {
+	// The window, not the read path, is what left a conflicted PR refusing as UNKNOWN. GitHub computes
+	// `mergeable` in a background job the first read only STARTS, so the conflict arrives on a later
+	// read of the same endpoint — and before this, three polls 2s apart gave it 6s.
+	// @ruling https://github.com/kamp-us/phoenix/issues/9032
+	it("re-reads past an indefinite value and lands the conflict the later read carries", async () => {
+		const scripted = both([
+			livePull(),
+			[once(MERGEABILITY), mergeability({mergeable: null, mergeableState: "unknown"})],
+			[MERGEABILITY, mergeability({mergeable: false, mergeableState: "dirty"})],
+		]);
+		const out = await scripted.outcome;
+		expect(out.code).toBe(BASE_CONFLICTED);
+		expect(out.stderr.at(-1)).toContain("mergeable_state: dirty");
+		expect(out.stderr.at(-1)).not.toContain("indefinite");
+		expect(scripted.seams.requests.some((line) => /graphql/.test(line))).toBe(false);
+	}, 20_000);
+
+	// The two definite not-mergeable refusals are two codes because the lane charges them to two
+	// budgets: a moved base is machinery, everything else is the repair round retries bound.
+	it("refuses on 21 when a definite read says dirty — the base moved, not the head", async () => {
 		const scripted = both([
 			livePull(),
 			[MERGEABILITY, mergeability({mergeable: false, mergeableState: "dirty"})],
 		]);
 		const out = await scripted.outcome;
+		expect(out.code).toBe(BASE_CONFLICTED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"ship enqueue: #4321's base moved under it and the merge conflicts (mergeable_state: dirty) — a definite read; nothing was armed. The re-review is owed: the moved base moves the merge-base blob every verdict's content digest covers, so route to repair against a rebased head.",
+		);
+		expect(scripted.seams.requests.some((line) => /graphql/.test(line))).toBe(false);
+	});
+
+	it("refuses on 16 when a definite read is not mergeable for any other reason (#6902)", async () => {
+		const scripted = both([
+			livePull(),
+			[MERGEABILITY, mergeability({mergeable: false, mergeableState: "blocked"})],
+		]);
+		const out = await scripted.outcome;
 		expect(out.code).toBe(PROVEN_NOT_IN_STATE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"ship enqueue: #4321 is not mergeable (mergeable_state: dirty) — a definite read; nothing was armed.",
+			"ship enqueue: #4321 is not mergeable (mergeable_state: blocked) — a definite read; nothing was armed.",
 		);
 		expect(scripted.seams.requests.some((line) => /graphql/.test(line))).toBe(false);
 	});

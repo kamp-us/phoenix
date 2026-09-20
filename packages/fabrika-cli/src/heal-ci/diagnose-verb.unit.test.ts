@@ -6,9 +6,11 @@ import {
 	type HttpReply,
 	linkNext,
 	type Scripted,
+	uiConfigured,
 	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {PULL_FILES_CAP} from "../io/pulls.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {runDiagnose} from "./diagnose-verb.ts";
 import {
@@ -71,6 +73,9 @@ const options = {
 	dwellMinutes: 45,
 	wedgeDwellMinutes: 20,
 	driftCommits: 10,
+	// Zero, so the fixtures answer in one read: the backoff window is `ship`'s, proved in
+	// `../ship/mergeability.unit.test.ts`, and re-spending it here would buy a minute of sleeping.
+	mergeabilitySeconds: 0,
 	repo: null,
 	json: false,
 	cwd: "/repo",
@@ -84,7 +89,7 @@ const green = (name = "ci-required") => ({name, status: "completed", conclusion:
 const script = (overrides: ReadonlyArray<Scripted> = []): ReadonlyArray<Scripted> => [
 	...overrides,
 	[PULL, reply(pull({updatedAt: PUSHED}))],
-	[FILES, reply(files("apps/web/worker/a.ts", "apps/web/worker/b.ts"))],
+	[FILES, reply(files("apps/site/worker/a.ts", "apps/site/worker/b.ts"))],
 	[CHECK_RUNS, reply(checkRuns(1, [green()]))],
 	[WORKFLOWS, reply(workflows("active"))],
 	[RUN_COUNT, reply(runsTotal(3))],
@@ -137,14 +142,14 @@ describe("runDiagnose answers", () => {
 		);
 	});
 
-	// #6376: this verb is the second resolver of the same question `ship gate` answers. A PR the
+	// This verb is the second resolver of the same question `ship gate` answers. A PR the
 	// gate calls satisfied must not classify `ungated` here, or the healer dispatches it back to a
 	// review whose namespace no sanctioned path can fill — the loop the route exists to close.
 	it("counts a head-bound routed-elsewhere record as a filled review-ui namespace", async () => {
-		const out = await run(
+		const out = await runWith(
 			script([
 				[PULL, reply(pull({updatedAt: PUSHED, comments: 2, changedFiles: 1}))],
-				[FILES, reply(files("apps/web/src/flags/shell-keys.ts"))],
+				[FILES, reply(files("apps/site/src/flags/shell-keys.ts"))],
 				[
 					COMMENTS,
 					reply(
@@ -158,6 +163,7 @@ describe("runDiagnose answers", () => {
 					),
 				],
 			]),
+			uiConfigured,
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("gates\tsatisfied\t2/2");
@@ -165,10 +171,10 @@ describe("runDiagnose answers", () => {
 	});
 
 	it("re-opens the namespace when the route binds a head that has moved", async () => {
-		const out = await run(
+		const out = await runWith(
 			script([
 				[PULL, reply(pull({updatedAt: PUSHED, comments: 2, changedFiles: 1}))],
-				[FILES, reply(files("apps/web/src/flags/shell-keys.ts"))],
+				[FILES, reply(files("apps/site/src/flags/shell-keys.ts"))],
 				[
 					COMMENTS,
 					reply(
@@ -182,6 +188,7 @@ describe("runDiagnose answers", () => {
 					),
 				],
 			]),
+			uiConfigured,
 		);
 		expect(out.stdout).toContain("gates\tblocked\t1/2");
 	});
@@ -232,6 +239,29 @@ describe("runDiagnose answers", () => {
 		expect(out.stdout.split("\n")[0]).toBe(`stall\tcheck-surface\t${HEAD}\t35`);
 	});
 
+	it("reports conflicted above check-surface — no merge ref is why the contexts are absent", async () => {
+		const out = await run(
+			script([
+				[PULL, reply(pull({mergeable: false, mergeableState: "dirty", updatedAt: PUSHED}))],
+				[RULES, rules("ci-required", "code-scanning/codeql")],
+			]),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`stall\tconflicted\t${HEAD}\t35`);
+		expect(out.stderr.join("\n")).toContain("conflicts with main");
+	});
+
+	it("skips the conflict arm on an indefinite mergeability, leaving the class it had", async () => {
+		const out = await run(
+			script([
+				[PULL, reply(pull({mergeable: null, mergeableState: "unknown", updatedAt: PUSHED}))],
+				[RULES, rules("ci-required", "code-scanning/codeql")],
+			]),
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`stall\tcheck-surface\t${HEAD}\t35`);
+		expect(out.stderr.join("\n")).toContain("INDEFINITE");
+	});
+
 	it("skips the surface arm on an unprobeable protection surface rather than passing it", async () => {
 		const out = await run(
 			script([
@@ -246,7 +276,7 @@ describe("runDiagnose answers", () => {
 		expect(out.stderr.join("\n")).toContain("UNPROBEABLE");
 	});
 
-	it("declares arm 6's unimplemented half on stderr rather than letting the class read whole", async () => {
+	it("declares arm 7's unimplemented half on stderr rather than letting the class read whole", async () => {
 		const out = await run(script([[PULL, reply(pull({assignees: ["usirin"]}))]]));
 		expect(out.code).toBe(0);
 		expect(out.stderr.join("\n")).toContain("UNIMPLEMENTED");
@@ -330,6 +360,53 @@ describe("runDiagnose refuses rather than guessing a class", () => {
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain('UNKNOWN, never "attended"');
+	});
+
+	// Both sides are GitHub's here, and the record's count is the stale one — it is computed against
+	// a base cached at the last push. This used to refuse at 13, on the verb an operator reaches for
+	// when a PR is already stuck.
+	it("reports a file list short of the declared count and still classifies (#9322)", async () => {
+		const out = await run(script([[PULL, reply(pull({changedFiles: 9, updatedAt: PUSHED}))]]));
+		expect(out.code).toBe(0);
+		expect(out.stderr.join("\n")).toContain(
+			"GitHub's file list for #4321 holds 2 paths against the 9 its own pull-request record declares",
+		);
+	});
+
+	// The empty list is the seat that survives the retirement: it raises no namespace and touches no
+	// governance root, so every classification downstream would read clean over a diff nobody read.
+	it("refuses an empty file list on 7 even where the record declares files (#9322)", async () => {
+		const out = await run(
+			script([
+				[PULL, reply(pull({changedFiles: 9, updatedAt: PUSHED}))],
+				[FILES, reply(files())],
+			]),
+		);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(
+			"PR #4321 has zero changed files — refusing to classify a stall over an empty diff",
+		);
+	});
+
+	// The ceiling is the truncation pagination cannot catch: GitHub stops serving files at 3000 and
+	// ends the Link chain there exactly as a complete read ends, so every classification below would
+	// run over a diff the platform cut short.
+	it("refuses a file list at the 3000-file ceiling on 13 (#9322)", async () => {
+		const out = await run(
+			script([
+				[PULL, reply(pull({changedFiles: PULL_FILES_CAP, updatedAt: PUSHED}))],
+				[
+					FILES,
+					reply(files(...Array.from({length: PULL_FILES_CAP}, (_, i) => `apps/site/src/f${i}.ts`))),
+				],
+			]),
+		);
+		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(
+			"heal-ci diagnose: GitHub's file list for #4321 came back at its 3000-file ceiling, so the list is provably partial — refusing to classify a stall over a diff the platform cut short.",
+		);
 	});
 
 	it("refuses a short comment enumeration on 13", async () => {

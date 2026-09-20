@@ -2,11 +2,11 @@
  * `governance digest` — the decision records that landed in a window, each with its id, title,
  * status, landing commit and the anchor delta of that commit's own diff.
  *
- * **`none` is a proven answer at exit 0** — the window was walked and nothing landed in it. Empty
- * stdout would be byte-identical to a verb that never ran, which is v1's `adr-sweep.sh` scar.
+ * An empty window still needs an explicit answer; silence is indistinguishable from a run that
+ * never happened. See ./command.ts help for the digest output.
  *
  * **The `status` field is reported, never interpreted.** Nine records on `main` read `proposed` while
- * being enforced at a live gate (#4388), so a consumer that treats `proposed` as "not law" is reading
+ * being enforced at a live gate, so a consumer that treats `proposed` as "not law" is reading
  * a claim as an observation. The verb prints what is there and the skill judges what it means.
  *
  * **This verb ranks nothing.** Tension and blast radius are the two ruled ranking dimensions and both
@@ -78,8 +78,7 @@ export const runDigest = (
 		const dir = options.dir.replace(/\/+$/, "");
 
 		// The base is FETCHED before it is walked: a stale checkout is how withdrawn doctrine gets
-		// applied after its withdrawal (#4338) and how four seats declared a merged ADR nonexistent
-		// (#4163).
+		// applied after its withdrawal, and how a landed decision record reads as nonexistent.
 		const base = yield* fetchAndResolve(options.base);
 		if (base._tag === "Failure") {
 			return refuse(
@@ -107,7 +106,7 @@ export const runDigest = (
 			if (inside !== undefined) {
 				return refuse(
 					INCOMPLETE_SCAN,
-					`${VERB}: the history is shallow and its boundary at ${inside} falls inside the window — refusing a partial landing list (#3999's class).`,
+					`${VERB}: the history is shallow and its boundary at ${inside} falls inside the window — refusing a partial landing list.`,
 				);
 			}
 		}
@@ -125,7 +124,7 @@ export const runDigest = (
 		if (corpus.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
-				`${VERB}: scanned ${dir}, 0 decision records — refusing to answer (ADR 0092).`,
+				`${VERB}: scanned ${dir}, 0 decision records — refusing to answer.`,
 			);
 		}
 

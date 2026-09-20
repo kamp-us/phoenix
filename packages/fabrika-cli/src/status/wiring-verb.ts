@@ -4,18 +4,17 @@
  * Every other verb in this group answers about something the CLI reads. This one answers about the
  * *other half*: the plugin that carries the skills. A repo can have the CLI installed and answering
  * while no fabrika skill can load in a session there, and until this verb existed nothing said so —
- * demlik ran that way for two days (kamp-us/demlik#26, #6443).
+ * an adopting repo ran that way for two days before anyone noticed.
  *
  * **The gating fact is `enabledPlugins`, and the marketplace source is the key's own suffix.** A
  * Claude Code `enabledPlugins` key is `plugin@marketplace`, so one entry names both halves the
  * wiring needs; a bare `fabrika` key names no source and never resolves. `extraKnownMarketplaces`
- * is deliberately not read: ADR 0273's 2026-08-16 amendment records that Claude Code never
- * registers a project-scope `extraKnownMarketplaces` block (verified live on #5705), so a repo
- * carrying one is no more wired than a repo without, and treating it as evidence would green a
- * session that loads nothing.
+ * is deliberately not read: Claude Code never registers a project-scope `extraKnownMarketplaces`
+ * block — verified against a live install — so a repo carrying one is no more wired than a repo
+ * without, and treating it as evidence would green a session that loads nothing.
  *
- * **It detects and writes nothing.** Creating the file is `status bootstrap`'s registry work
- * (epic #5979); a probe that repaired what it measured could never report the state it found.
+ * **It detects and writes nothing.** Creating the file is `status bootstrap`'s registry work; a
+ * probe that repaired what it measured could never report the state it found.
  */
 
 import {Effect, type FileSystem, type Path, Result} from "effect";

@@ -14,15 +14,19 @@ import {counterId, counterProgram} from "../../demo/counter.ts";
 import {logId, logProgram} from "../../demo/log.ts";
 import {Checkpoints} from "../../durability/Checkpoints.ts";
 import {memoryStores} from "../../durability/stores.ts";
+import {launch} from "../../launch/launch.ts";
+import {compile} from "../../ports/compile.ts";
 import type {PayloadRejected, PortNotWired} from "../../ports/errors.ts";
+import {type Graph, NodeId} from "../../ports/graph.ts";
 import {ProcessPorts} from "../../ports/ProcessPorts.ts";
+import {open} from "../../ports/wiring.ts";
 import {ProcessNotFound} from "../../process/errors.ts";
 import {Processes} from "../../process/Processes.ts";
 import {ProcessTable} from "../../process/ProcessTable.ts";
 import {ProcessId} from "../../process/process.ts";
 import {CallId} from "../../protocol/ids.ts";
 import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../../protocol/messages.ts";
-import {type AnyProgram, type Program, ProgramId} from "../../registry/program.ts";
+import {type AnyProgram, type PortBound, type Program, ProgramId} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {SpellExecutor} from "../executor.ts";
 import {SpellRegistry} from "../registry.ts";
@@ -40,7 +44,7 @@ type Say = {readonly type: "say"; readonly word: string};
 const echoId = ProgramId.make("echo");
 
 /** The fixture the demo pair does not offer: one program with both an in-port and an out-port. */
-const echoProgram = (): AnyProgram =>
+const echoProgram = (bound: PortBound = {capacity: 4, overflow: "suspend"}): AnyProgram =>
 	({
 		id: echoId,
 		core: defineMachine<EchoState, EchoMsg, Say, never, unknown>({
@@ -58,7 +62,7 @@ const echoProgram = (): AnyProgram =>
 				kind: WORD_KIND,
 				direction: "in",
 				accepts: isWord,
-				bound: {capacity: 4, overflow: "suspend"},
+				bound,
 			},
 			echoed: {kind: WORD_KIND, direction: "out", accepts: isWord},
 		},
@@ -89,6 +93,19 @@ const echoProgram = (): AnyProgram =>
 		ProcessPorts
 	>;
 
+/**
+ * `echo` under one named overflow at capacity 1: the three bounds side by side, so a proof over an
+ * eviction and a proof that the other two never evict read the same fixture (#7971).
+ */
+const boundedEchoId = (overflow: PortBound["overflow"]): ProgramId =>
+	ProgramId.make(`echo-${overflow}`);
+
+const boundedEchoProgram = (overflow: PortBound["overflow"]): AnyProgram => {
+	const base = echoProgram({capacity: 1, overflow});
+	const id = boundedEchoId(overflow);
+	return {...base, id, identity: {...base.identity, program: id, digest: `sha256:${id}`}};
+};
+
 const deafId = ProgramId.make("deaf");
 
 /**
@@ -105,6 +122,34 @@ const deafProgram = (): AnyProgram => {
 	};
 };
 
+const earId = ProgramId.make("ear");
+
+/**
+ * An in-port and nothing else. The graph below needs a target for `echo`'s out-port that does not
+ * itself emit, so every route in it is wired and no emit fails for a reason the case is not about.
+ */
+const earProgram = (): AnyProgram =>
+	({
+		id: earId,
+		core: defineMachine<EchoState, EchoMsg, never, never, unknown>({
+			init: (loaded) => [loaded ?? {heard: []}, []],
+			update: {hear: (state, msg) => [{heard: [...state.heard, msg.word]}, []]},
+		}),
+		ports: {
+			words: {
+				kind: WORD_KIND,
+				direction: "in",
+				accepts: isWord,
+				bound: {capacity: 4, overflow: "suspend"},
+			},
+		},
+		receive: {words: (word: string): EchoMsg => ({type: "hear", word})},
+		handlers: {},
+		capabilities: [],
+		identity: {package: "@kampus/tuval", program: "ear", version: "1.0.0", digest: "sha256:ear"},
+		placement: {host: "local"},
+	}) satisfies Program<EchoState, EchoMsg, never, never, unknown, never, never>;
+
 const workspace = WorkspaceId.make("ws-1");
 const agentWindow = WindowId.make("w-1");
 const caller = ProcessId.make("p-1");
@@ -120,6 +165,10 @@ const rows: ReadonlyArray<AnyProgram> = [
 	logProgram({write: () => Effect.void}),
 	echoProgram(),
 	deafProgram(),
+	boundedEchoProgram("sliding"),
+	boundedEchoProgram("dropping"),
+	boundedEchoProgram("suspend"),
+	earProgram(),
 ];
 
 const kernel = SpawnedProcesses.layer({readTimeout: "1 second"}).pipe(
@@ -203,7 +252,7 @@ describe("the process spells", () => {
 			const sent = succeeded(
 				yield* invoke(["process", "send"], {process: spawned, port: "words", payload: "hi"}),
 			);
-			assert.deepStrictEqual(sent, {delivered: true});
+			assert.deepStrictEqual(sent, {delivered: true, evicted: 0});
 
 			const read = succeeded(
 				yield* invoke(["process", "read"], {process: spawned, port: "echoed"}),
@@ -323,10 +372,187 @@ describe("the process spells", () => {
 			for (const payload of ["one", "two", "three"]) {
 				assert.deepStrictEqual(
 					succeeded(yield* invoke(["process", "send"], {process: spawned, port: "words", payload})),
-					{delivered: true},
+					{delivered: true, evicted: 0},
 				);
 			}
 		}).pipe(Effect.provide(app)),
+	);
+
+	it.effect("a sliding in-port that displaced nothing reports no eviction", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			const spawned = yield* spawnThrough(boundedEchoId("sliding"));
+
+			const sent = succeeded(
+				yield* invoke(["process", "send"], {process: spawned, port: "words", payload: "one"}),
+			);
+			assert.deepStrictEqual(sent, {delivered: true, evicted: 0});
+		}).pipe(Effect.provide(app)),
+	);
+
+	it.effect("a sliding in-port at capacity reports the payload it took off to make room", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			const spawned = yield* spawnThrough(boundedEchoId("sliding"));
+
+			// The port holds one, and the pump's take is released on a scheduled task rather than
+			// inside the offer — so the second send lands on a full queue, which slides "one" out.
+			yield* invoke(["process", "send"], {process: spawned, port: "words", payload: "one"});
+			const sent = succeeded(
+				yield* invoke(["process", "send"], {process: spawned, port: "words", payload: "two"}),
+			);
+			assert.deepStrictEqual(sent, {delivered: true, evicted: 1});
+		}).pipe(Effect.provide(app)),
+	);
+
+	it.effect("a dropping in-port at capacity refuses the payload and evicts nothing", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			const spawned = yield* spawnThrough(boundedEchoId("dropping"));
+
+			const first = succeeded(
+				yield* invoke(["process", "send"], {process: spawned, port: "words", payload: "one"}),
+			);
+			const second = succeeded(
+				yield* invoke(["process", "send"], {process: spawned, port: "words", payload: "two"}),
+			);
+			assert.deepStrictEqual(first, {delivered: true, evicted: 0});
+			assert.deepStrictEqual(second, {delivered: false, evicted: 0});
+		}).pipe(Effect.provide(app)),
+	);
+
+	it.effect("a suspending in-port waits for room and evicts nothing", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			const spawned = yield* spawnThrough(boundedEchoId("suspend"));
+
+			for (const payload of ["one", "two"]) {
+				assert.deepStrictEqual(
+					succeeded(yield* invoke(["process", "send"], {process: spawned, port: "words", payload})),
+					{delivered: true, evicted: 0},
+				);
+			}
+		}).pipe(Effect.provide(app)),
+	);
+});
+
+/**
+ * The graph the #8944 cases run on: a node whose program has both port directions, a bounded one
+ * beside it, and an ear for both to emit into so no route is missing. Node ids are the process ids,
+ * which is the whole reason a spell can name a planned process at all.
+ */
+const echoNode = NodeId.make("echo-node");
+const slidingNode = NodeId.make("sliding-node");
+const earNode = NodeId.make("ear-node");
+
+const graph: Graph = {
+	nodes: [
+		{id: echoNode, program: echoId, on: [{port: "echoed", to: {node: earNode, port: "words"}}]},
+		{
+			id: slidingNode,
+			program: boundedEchoId("sliding"),
+			on: [{port: "echoed", to: {node: earNode, port: "words"}}],
+		},
+		{id: earNode, program: earId, on: []},
+	],
+};
+
+const launchGraph = Effect.gen(function* () {
+	const compiled = yield* compile(graph);
+	const launched = yield* launch(compiled, yield* open(compiled));
+	return new Map(launched.map((process) => [process.node, process.handle]));
+});
+
+/**
+ * The spells over a process the config graph launched, which answered `UnknownProcess` for every
+ * one of these until #8944 folded `launch`'s own table into `SpawnedProcesses`. Nothing here spawns
+ * through `process spawn`: the ids are node ids off the graph, which is what an author writes in
+ * `.tuval/tuval.config.ts` and what a command's own-process resolution hands the spell.
+ */
+describe("the process spells reach a graph-launched process (#8944)", () => {
+	it.effect("send lands on a planned node's in-port and read answers its out-port", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			yield* launchGraph;
+
+			const sent = succeeded(
+				yield* invoke(["process", "send"], {process: echoNode, port: "words", payload: "hi"}),
+			);
+			assert.deepStrictEqual(sent, {delivered: true, evicted: 0});
+
+			const read = succeeded(
+				yield* invoke(["process", "read"], {process: echoNode, port: "echoed"}),
+			);
+			assert.deepStrictEqual(read, {empty: false, value: "HI"});
+		}).pipe(Effect.scoped, Effect.provide(app)),
+	);
+
+	// `it.live` because the arrival crosses two pumps — the send's, then the route's — and each is a
+	// forked fiber the spell's reply does not wait on, so the assertion needs a real clock.
+	it.live("the route out of that same out-port still carries the payload to its target", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			const handles = yield* launchGraph;
+			const ear = handles.get(earNode);
+			assert.isDefined(ear);
+			yield* invoke(["process", "send"], {process: echoNode, port: "words", payload: "hi"});
+			// The latch is what `read` answers; the route is what the graph does with the same emit,
+			// and adopting the node must not cost it either half.
+			const heard = () => (ear?.getState() as EchoState).heard;
+			for (let attempt = 0; attempt < 200 && heard().length === 0; attempt++) {
+				yield* Effect.sleep("5 millis");
+			}
+			assert.deepStrictEqual(heard(), ["HI"]);
+		}).pipe(Effect.scoped, Effect.provide(app)),
+	);
+
+	it.effect("a planned node's in-port refuses a payload its own predicate rejects", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			yield* launchGraph;
+			const error = failure(
+				yield* invoke(["process", "send"], {process: echoNode, port: "words", payload: 42}),
+			);
+			assert.strictEqual(error?.tag, "tuval/commands/PortRefused");
+			assert.include(error?.message ?? "", WORD_KIND);
+		}).pipe(Effect.scoped, Effect.provide(app)),
+	);
+
+	it.effect("a planned node's sliding bound reports what it took off to make room", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			yield* launchGraph;
+			yield* invoke(["process", "send"], {process: slidingNode, port: "words", payload: "one"});
+			const sent = succeeded(
+				yield* invoke(["process", "send"], {process: slidingNode, port: "words", payload: "two"}),
+			);
+			assert.deepStrictEqual(sent, {delivered: true, evicted: 1});
+		}).pipe(Effect.scoped, Effect.provide(app)),
+	);
+
+	it.effect("a planned node that stopped leaves no entry behind", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			const handles = yield* launchGraph;
+			yield* handles.get(echoNode)!.stop;
+			const error = failure(
+				yield* invoke(["process", "send"], {process: echoNode, port: "words", payload: "hi"}),
+			);
+			assert.strictEqual(error?.tag, "tuval/commands/UnknownProcess");
+			assert.strictEqual(error?.message, `no live process "${echoNode}"`);
+		}).pipe(Effect.scoped, Effect.provide(app)),
+	);
+
+	it.effect("an id no live process carries is still UnknownProcess, and says only that", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			yield* launchGraph;
+			const error = failure(
+				yield* invoke(["process", "send"], {process: "nobody", port: "words", payload: "hi"}),
+			);
+			assert.strictEqual(error?.tag, "tuval/commands/UnknownProcess");
+			assert.strictEqual(error?.message, 'no live process "nobody"');
+		}).pipe(Effect.scoped, Effect.provide(app)),
 	);
 });
 

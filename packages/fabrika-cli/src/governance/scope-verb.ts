@@ -8,15 +8,21 @@
  *
  * Zero changed files is a refusal, never `not-required`: the whole value of a `not-required` answer is
  * that it was computed over everything (v1's `class-probe` read 0 files and classified `has-code` at
- * exit 0 — #4060). The file list is read at the **bound commit** and the head printed is that same
- * commit, because the list is the derivation's only input (#5117).
+ * exit 0). The file list is read at the **bound commit** and the head printed is that same
+ * commit, because the list is the derivation's only input.
  *
- * **With `--base`/`--tip` the subject is a range instead of a pull request (#6064).** An epic child
- * has no PR mid-run (ADR 0285), so without that form §1 of the skill is unrunnable on what ADR 0293
- * makes the normal path for every `claude-plugins/**` child — and `self`, which only this verb
- * derives, is the self fence's own precondition. Both modes read the same three-dot range and refuse
- * the same three ways: unreadable is UNKNOWN, empty and provably short are refusals, and none of the
- * three is ever `not-required`.
+ * **On the pull-request path that list is the local three-dot read, and GitHub's `changed_files` is
+ * reported beside it rather than refused on.** The read is {@link readLocalFileSet}, shared with
+ * `review scope` and `governance guards`; its docblock carries why a count GitHub computes against a
+ * cached base is not a floor. Zero is the one shortfall git alone establishes, and it still refuses.
+ *
+ * **With `--base`/`--tip` the subject is a range instead of a pull request.** An epic child
+ * has no PR mid-run, so without that form §1 of the skill is unrunnable on the range form that is
+ * the normal path for every `claude-plugins/**` child — and `self`, which only this verb
+ * derives, is the self fence's own precondition. Both modes read the same three-dot range: unreadable
+ * is UNKNOWN and empty is a refusal on either path, and neither is ever `not-required`. The
+ * provably-short refusal survives on the range path alone, because there the second count is another
+ * read of the same git range rather than GitHub's answer about it.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -28,6 +34,7 @@ import {
 	diffRangeStatuses,
 	listTreePaths,
 } from "../io/git.ts";
+import {readLocalFileSet} from "../review/local-file-set.ts";
 import {rangeMergeBase, readRangeFlags} from "../review/range-flags.ts";
 import {badNumber, openPull, resolveTargetRepo} from "../review/target.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -80,6 +87,13 @@ interface Subject {
 	readonly named: string;
 	/** The evidence line every answer and every later refusal carries. */
 	readonly bound: string;
+	/**
+	 * The count-disagreement line this subject owes the diagnostics, or `null`.
+	 *
+	 * Only the pull-request path can carry one: a range's second count is another read of the same
+	 * git range, so a shortfall there is a truncated read and refuses above rather than reporting.
+	 */
+	readonly disagreement: string | null;
 }
 
 type Resolved =
@@ -106,7 +120,7 @@ const pullSubject = (
 			requireOpen: true,
 			closedReason: "nothing to derive.",
 			requireFiles: true,
-			emptyReason: "refusing to derive over an empty diff (ADR 0092).",
+			emptyReason: "refusing to derive over an empty diff.",
 			unknownMessage: (reason) =>
 				`${VERB}: cannot read PR #${pr} in ${repo}: ${reason} — whether the namespace is required is UNKNOWN, never "not-required".`,
 		});
@@ -117,33 +131,41 @@ const pullSubject = (
 		if (bound._tag === "Refused") return {_tag: "Refused" as const, outcome: bound.outcome};
 		const head = bound.head;
 
-		const listed = yield* diffRangeStatuses(head.mergeBase, head.sha);
-		if (listed._tag === "Failure") {
+		// The local three-dot list IS the file set, and GitHub's `changed_files` is reported beside it
+		// rather than refused on — see `readLocalFileSet` for why that count is not a floor.
+		const listed = yield* readLocalFileSet(
+			VERB,
+			`#${pr}`,
+			{base: head.mergeBase, tip: head.sha},
+			pull.changedFiles,
+			diffRangeStatuses,
+		);
+		if (listed._tag === "Unreadable") {
 			return refused(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot read the changed files of #${pr} at ${head.sha}: ${listed.reason} — ${UNKNOWN_TAIL}`,
 			);
 		}
-		if (listed.value.length < pull.changedFiles) {
-			// The contract seats a short read on `13` explicitly, and this stays the fail-closed
-			// direction even where git and GitHub legitimately disagree — git pairs a rename into one
-			// path where GitHub counts two (#5154), so a rename-only PR refuses here rather than
-			// deriving from a list it cannot prove complete.
+		// Empty is the one shortfall git alone establishes, and it is a refusal in both modes: the
+		// whole value of a `not-required` answer is that it was computed over everything. The PR's own
+		// `changedFiles` already refused a zero above, so this is the range disagreeing with it.
+		if (listed.set.files.length === 0) {
 			return refused(
-				INCOMPLETE_SCAN,
-				`${VERB}: ${head.sha} carries ${listed.value.length} of the ${pull.changedFiles} files #${pr} declares — refusing to derive from a short read (#3999).`,
+				ZERO_SCOPE,
+				`${VERB}: ${head.mergeBase}...${head.sha} changes no path — refusing to derive over an empty diff.`,
 				[boundLine(VERB, head)],
 			);
 		}
 		return {
 			_tag: "Subject" as const,
 			subject: {
-				changed: listed.value,
+				changed: listed.set.files,
 				treeSha: head.sha,
 				base: head.mergeBase,
 				declared: pull.changedFiles,
 				named: head.sha,
 				bound: boundLine(VERB, head),
+				disagreement: listed.set.disagreement,
 			},
 		};
 	});
@@ -192,14 +214,14 @@ const rangeSubject = (
 		if (declared.value.length === 0) {
 			return refused(
 				ZERO_SCOPE,
-				`${VERB}: ${named} changes no path — refusing to derive over an empty diff (ADR 0092).`,
+				`${VERB}: ${named} changes no path — refusing to derive over an empty diff.`,
 				[bound],
 			);
 		}
 		if (listed.value.length < declared.value.length) {
 			return refused(
 				INCOMPLETE_SCAN,
-				`${VERB}: ${named} carries ${listed.value.length} of the ${declared.value.length} files its ends change — refusing to derive from a short read (#3999).`,
+				`${VERB}: ${named} carries ${listed.value.length} of the ${declared.value.length} files its ends change — refusing to derive from a short read.`,
 				[bound],
 			);
 		}
@@ -212,6 +234,7 @@ const rangeSubject = (
 				declared: declared.value.length,
 				named,
 				bound,
+				disagreement: null,
 			},
 		};
 	});
@@ -264,7 +287,7 @@ export const runScope = (
 			resolved = yield* pullSubject(options, pr);
 		}
 		if (resolved._tag === "Refused") return withNotice(resolved.outcome);
-		const {changed, treeSha, base, declared, named, bound} = resolved.subject;
+		const {changed, treeSha, base, declared, named, bound, disagreement} = resolved.subject;
 
 		const tree = yield* listTreePaths(treeSha);
 		if (tree._tag === "Failure") {
@@ -290,6 +313,7 @@ export const runScope = (
 						`${VERB}: root ${root} is absent in this repository — the derivation covered ${present.length} of ${governedRoots.length} roots.`,
 				),
 			`${VERB}: partitioned ${changed.length} of the ${declared} declared changed files at ${named} across ${governedRoots.length} roots.`,
+			...(disagreement === null ? [] : [disagreement]),
 			NOT_CP_NOTICE,
 		];
 

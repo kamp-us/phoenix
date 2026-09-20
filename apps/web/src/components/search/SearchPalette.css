@@ -1,0 +1,13 @@
+/* The palette hangs from a fixed line near the top instead of centring. Centred, every answer
+   that lengthens or shortens the list moved the search field a reader is typing into; anchored,
+   the field stays put and only the list below it grows. The design package already anchors the
+   palette this way below 40rem, so this extends the same rule to wider screens for this caller. */
+[data-scope="dialog"][data-part="positioner"]:has(.kp-search-palette) {
+	align-items: flex-start;
+	padding-top: max(var(--s-3), 12dvh);
+}
+/* The dialog content centres itself with an auto margin, which would override the positioner's
+   alignment above; only its block axis is released, so horizontal centring is untouched. */
+[data-scope="dialog"][data-part="content"].kp-search-palette {
+	margin-block: 0;
+}

@@ -34,6 +34,7 @@ const baseFlag = Flag.string("base").pipe(
 );
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit one JSON object on stdout instead of the line grammar"),
 );
 
@@ -87,7 +88,7 @@ const anchor = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether the dependency version a doc declares still matches."),
 	Command.withDescription(
-		'Whether the dependency version a doc declares still matches what the workspace pins, compared byte for byte with no semver interpretation. Prints `anchor <matched|moved|malformed|unpinned|unanchored|unborn> <declared> <moved> <unpinned> <malformed>` then one `pkg` line per declaration — every outcome at exit 0. A line that claims an anchor and does not parse is `malformed`, never absent. Exits 11 (the base could not be fetched, or the doc or manifest could not be read — every pin is UNKNOWN, never "unpinned"), 12 (no doc for the slug). Example: fabrika pattern anchor worker-queue-retry',
+		'Whether the dependency version a doc declares still matches what the workspace pins, compared byte for byte across default and named catalogs. A declared dependency with conflicting pins refuses at exit 11; unrelated conflicts do not block an answer. Prints `anchor <matched|moved|malformed|unpinned|unanchored|unborn> <declared> <moved> <unpinned> <malformed>` then one `pkg` line per declaration — every outcome at exit 0. A line that claims an anchor and does not parse is `malformed`, never absent. Exits 11 (the base could not be fetched, or the doc or manifest could not be read — every pin is UNKNOWN, never "unpinned"), 12 (no doc for the slug). Example: fabrika pattern anchor worker-queue-retry',
 	),
 );
 
@@ -154,7 +155,7 @@ const create = leafCommand(
 ).pipe(
 	Command.withShortDescription("Scaffold a new pattern doc from the canonical template."),
 	Command.withDescription(
-		"Scaffold <dir>/<slug>.md for a current pattern, or a prospective pattern with --decision. Optional --source-repo inspection derives a canonical origin, full HEAD commit, relevant package version and representative source/test/docs paths without serializing the local path; use --source-package when a monorepo is ambiguous. Writes exactly one file. Exits 8 (write UNKNOWN), 13 (target exists), 17 (source evidence refused). Example: fabrika pattern new worker-queue-retry --decision https://github.com/acme/repo/issues/1 --source-repo ../acme --source-package acme-queue",
+		"Scaffold <dir>/<slug>.md for a current pattern, or a prospective pattern with --decision. Optional --source-repo inspection derives a canonical origin, full HEAD commit, relevant package version and representative source/test/docs paths without serializing the local path; use --source-package when a monorepo is ambiguous. Writes exactly one file. Exits 8 (write UNKNOWN), 13 (target exists), 17 (source evidence refused). Example: fabrika pattern new worker-queue-retry --decision https://forge.example/acme/repo/issues/1 --source-repo ../acme --source-package acme-queue",
 	),
 );
 

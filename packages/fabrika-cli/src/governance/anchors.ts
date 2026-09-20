@@ -8,12 +8,12 @@
  * copy drifted from the guards silently and nothing checked it. Anchors cannot rot while the guards
  * move, because they move with them.
  *
- * **Why a block comparison exists at all (#5514).** The diff walk below can only see an anchor whose
+ * **Why a block comparison exists at all.** The diff walk below can only see an anchor whose
  * *own line* is in the diff, and it compares only the text trailing the tag on that line. Anchors in
  * this corpus are inline — `<!-- anchor: NAME --> **Claim.** …` — and the claim wraps over several
  * more lines, so a rewrite of those continuation lines left the anchor line byte-identical, produced
  * no sighting at all, and the verb answered `no-anchor-change` over a guarantee that had in fact been
- * reworded (PR #5501). {@link scanAnchorBlocks} compares each anchor's whole paragraph at both
+ * reworded. {@link scanAnchorBlocks} compares each anchor's whole paragraph at both
  * commits, so what it sees does not depend on the shape of the diff.
  *
  * What the scan still cannot see is stated rather than implied: a guard weakened in prose carrying no
@@ -31,7 +31,7 @@ const INLINE_CODE = /`[^`]*`/g;
  * of the pattern*, not an anchor. Without this the scan counts the governance skill's own sentence
  * describing the tag as a twelfth anchor of eleven, which inflates the `anchors-in-reach` denominator
  * and would report a phantom `modified` the day that sentence is reworded — both landing on the
- * self-editing PR the fence exists for (#5199).
+ * self-editing PR the fence exists for.
  *
  * The blanking is length-preserving on purpose: every index into the masked text is an index into the
  * original, so a caller matches here and still slices the real bytes. Position, not line-start, is the
@@ -158,13 +158,13 @@ const COMMENT_CLOSE = "*/";
 const COMMENT_DECORATION = /^\s*(?:\/\*+|\*(?!\/))\s?/;
 
 /**
- * Which lines sit inside a block comment — the frame the anchor's paragraph is written in (#5514).
+ * Which lines sit inside a block comment — the frame the anchor's paragraph is written in.
  *
  * Half the guarded corpus writes its anchored claims in TypeScript docblocks, where every continuation
  * line begins with a star. Read as markdown that star is a new list item, so {@link BLOCK_BREAK} fired
  * on the line immediately after every `.ts` anchor and its block was truncated to the tag's own line —
  * 80 anchors counted in the `anchors-in-reach` denominator and structurally unable to contribute to
- * the numerator, which is the shape #5514 exists to remove.
+ * the numerator, which is the shape this frame resolution exists to remove.
  *
  * The two cases are only distinguishable by *frame*, never by the line: `* a bullet` and a docblock's
  * `* a continuation` are the same bytes. So the frame is resolved once per file here, and a
@@ -221,7 +221,7 @@ const normalize = (text: string): string => text.replace(/\s+/g, " ").trim();
  *
  * A tag that does NOT open its line still gets a block: the text trailing it on that one line, which
  * is exactly what the diff walk has always compared. So this is a fence on the *widening*, never a
- * narrowing of what was already covered (#5514).
+ * narrowing of what was already covered.
  */
 const OPENS_LINE = /^[\s>]*(?:(?:[-*+]|\d+[.)])\s+)?$/;
 

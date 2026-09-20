@@ -12,7 +12,7 @@
  * is the whole job.
  */
 
-import {Context, Effect, Layer, SynchronizedRef} from "effect";
+import {Context, Effect, Layer, Stream, SubscriptionRef} from "effect";
 import type {AnyProgram} from "../registry/program.ts";
 import {type BindingSource, type CompiledBindings, compileBindings} from "./bindings/index.ts";
 import {type DuplicateSpellPath, type SpellNotDescribable, SpellNotFound} from "./errors.ts";
@@ -73,31 +73,34 @@ const make = Effect.fn("Tuval.SpellSet.make")(function* (input: SpellSetInput) {
 		input.keys,
 	);
 	// One cell, so the single write in `install` is the only way either half changes and a reader's
-	// single read sees both halves of one config. It is a `SynchronizedRef` so an update that
+	// single read sees both halves of one config. It is a `SubscriptionRef` so an update that
 	// has to compile first can hold the cell while it does.
-	const cell = yield* SynchronizedRef.make<SpellSetState>(initial);
-	const install = (state: SpellSetState) => SynchronizedRef.set(cell, state);
+	const cell = yield* SubscriptionRef.make<SpellSetState>(initial);
+	const install = (state: SpellSetState) => SubscriptionRef.set(cell, state);
 
 	const registry = SpellRegistry.of({
 		lookup: (path) =>
-			Effect.flatMap(SynchronizedRef.get(cell), (state) => {
+			Effect.flatMap(SubscriptionRef.get(cell), (state) => {
 				const row = lookupRow(state.table, path);
 				return row === undefined
 					? Effect.fail(new SpellNotFound({path: renderPath(path)}))
 					: Effect.succeed(row);
 			}),
-		list: Effect.map(SynchronizedRef.get(cell), (state) => state.table.rows),
-		describe: Effect.map(SynchronizedRef.get(cell), (state) => state.table.rows.map(describeSpell)),
+		list: Effect.map(SubscriptionRef.get(cell), (state) => state.table.rows),
+		describe: Effect.map(SubscriptionRef.get(cell), (state) => state.table.rows.map(describeSpell)),
+		changes: Stream.map(SubscriptionRef.changes(cell), (state) =>
+			state.table.rows.map(describeSpell),
+		),
 		// The registry's own `swap` recompiles the bindings against the table it is installing, so
 		// even this narrower entry cannot leave the two halves disagreeing.
-		// `SynchronizedRef.updateEffect` holds the cell's semaphore across the compile, so this is
+		// `SubscriptionRef.updateEffect` holds the cell's semaphore across the compile, so this is
 		// one write and not a read, a compile and a later write a concurrent reload could land
 		// inside (#7752).
-		swap: (table) => SynchronizedRef.updateEffect(cell, (state) => build(table, state.keys)),
+		swap: (table) => SubscriptionRef.updateEffect(cell, (state) => build(table, state.keys)),
 	});
 
 	const set = SpellSet.of({
-		read: SynchronizedRef.get(cell),
+		read: SubscriptionRef.get(cell),
 		reload: Effect.fn("Tuval.SpellSet.reload")(function* (next: SpellSetInput) {
 			const table = yield* buildRegistry({core: next.core, programs: next.programs});
 			yield* install(yield* build(table, next.keys));

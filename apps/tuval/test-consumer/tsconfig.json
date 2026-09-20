@@ -1,0 +1,17 @@
+{
+	"extends": "../../../tsconfig.json",
+	"compilerOptions": {
+		"noEmit": false,
+		"declaration": true,
+		"emitDeclarationOnly": true,
+		"allowImportingTsExtensions": true,
+		"rootDir": "..",
+		"outDir": "./node_modules/.tmp/dts",
+		"declarationDir": "./node_modules/.tmp/dts",
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"jsx": "react-jsx",
+		"types": ["node"],
+		"exactOptionalPropertyTypes": false
+	},
+	"include": ["program.ts"]
+}

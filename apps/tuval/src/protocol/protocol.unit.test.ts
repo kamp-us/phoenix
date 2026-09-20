@@ -3,6 +3,7 @@ import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Option, Schema} from "effect";
+import {TITLE_KIND, TITLE_PORT} from "../process/self-report.ts";
 import type {CapabilityRequest as KernelCapabilityRequest} from "../registry/program.ts";
 import type {TableRow} from "../table/row.ts";
 import {
@@ -282,6 +283,15 @@ describe("Snapshot.registry", () => {
 });
 
 describe("Snapshot.processes", () => {
+	const projected = (row: TableRow) => ({
+		...row,
+		// `recency` is desk state the kernel stamps at spawn, so the projection adds it to the row.
+		recency: 2,
+		parentId: Option.getOrNull(row.parentId),
+		title: Option.getOrNull(row.title),
+		status: Option.getOrNull(row.status),
+	});
+
 	it("decodes a projected process-table row", () => {
 		const row: TableRow = {
 			id: fixtures.counterProcess,
@@ -289,10 +299,27 @@ describe("Snapshot.processes", () => {
 			parentId: Option.none(),
 			ports: {increment: {kind: "count", direction: "in"}},
 			stateSummary: {lifecycle: "running", revision: 3},
+			title: Option.none(),
+			status: Option.none(),
 		};
-		// `recency` is desk state the kernel stamps at spawn, so the projection adds it to the row.
-		const wire = {...row, parentId: Option.getOrNull(row.parentId), recency: 2};
+		const wire = projected(row);
 		assert.deepStrictEqual(Schema.decodeUnknownSync(ProcessRow)(wire), wire);
+	});
+
+	it("carries the two latest self-report lines", () => {
+		const row: TableRow = {
+			id: fixtures.counterProcess,
+			programId: fixtures.counterRow.programId,
+			parentId: Option.none(),
+			ports: {[TITLE_PORT]: {kind: TITLE_KIND, direction: "out"}},
+			stateSummary: {lifecycle: "running", revision: 3},
+			title: Option.some("counter · 3"),
+			status: Option.some("counting"),
+		};
+		const wire = projected(row);
+		const decoded = Schema.decodeUnknownSync(ProcessRow)(wire);
+		assert.strictEqual(decoded.title, "counter · 3");
+		assert.strictEqual(decoded.status, "counting");
 	});
 });
 

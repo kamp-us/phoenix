@@ -3,11 +3,11 @@
  * renders nothing.
  *
  * `ship scope` raises the `ui` class off a path test, and a path test cannot see whether pixels
- * moved. So a PR whose only `apps/web/src/**` change is a docblock requires a `review-ui` verdict
- * that this group structurally cannot produce — `render` refuses zero surfaces, `post` requires a
- * capture set — and `ship gate` blocks on the absence forever (#6376). This verb records the
+ * moved. So a PR whose only change under a declared `uiSurfaces` prefix is a docblock requires a
+ * `review-ui` verdict that this group structurally cannot produce — `render` refuses zero surfaces,
+ * `post` requires a capture set — and `ship gate` blocks on the absence forever. This verb records the
  * missing half instead of manufacturing the verdict: an attested, head-bound "nothing here
- * renders", which `ship gate` resolves as `routed` (ADR 0316).
+ * renders", which `ship gate` resolves as `routed`.
  *
  * **It is not a second verdict path, and three things keep it from becoming one.** The bytes are
  * their own wire format with no polarity, so a route can never be read as a PASS. The record is
@@ -17,22 +17,56 @@
  *
  * The one mechanical precondition is that the PR actually raises the class: routing a namespace the
  * diff never derived resolves nothing and leaves a record claiming a question nobody asked.
- * Deriving it re-uses `review/classes.ts`'s own `isUiSurface` rather than a second predicate — the
- * refusal must bind the exact rule that raised the class, or the two drift and this verb refuses on
- * a PR the gate is meanwhile blocking.
+ * Deriving it re-uses `review/classes.ts`'s own `isUiSurface`, over the same declared `uiSurfaces`
+ * prefixes the gate raised the class from, rather than a second predicate — the refusal must bind
+ * the exact rule that raised the class, or the two drift and this verb refuses on a PR the gate is
+ * meanwhile blocking.
+ *
+ * The file set that runs over is the `pulls/<n>/files` enumeration read through
+ * {@link platformFileSet}, so the `changed_files` the pull-request record declares is reported as a
+ * disagreement line and never refused on — that count is computed against a base cached at the last
+ * push, and refusing on it stranded the lane with no act available to clear it. Two shapes still
+ * refuse, because neither leaves a ui count anybody read: an **empty** list, and one at the
+ * endpoint's own file ceiling, which can only ever shrink that count.
  *
  * Whether the diff renders anything is the *skill's* judgment over `review diff`'s refusal-guarded
- * bytes, and it stays there. No verb decides it: that was candidate 2 on #6376, rejected because a
+ * bytes, and it stays there. No verb decides it: that was a rejected candidate, because a
  * second path heuristic is the first one's defect relocated.
+ *
+ * **Where the route rests on a hand-verification instead of a render, this verb also judges whether
+ * that evidence is still current.** `--verified-at` names the head the hand-verification ran at, and
+ * the evidence stands exactly when no file in the range to `--sha` raises the `ui` class — the same `isUiSurface` over the same prefixes, never a second predicate.
+ * Two shapes leave that range unread rather than clear: a comparison at GitHub's file ceiling, and
+ * one whose two heads have diverged, where the platform answers from their merge base instead. Both
+ * are UNKNOWN.
+ * Left off, the range is never read and the route behaves as it always did: a prose-only diff under
+ * a declared prefix rests on the body alone and has no head to compare against.
+ *
+ * **The record also rests on the text gate's verdict, so this verb reads that too.** The `review-code`
+ * verdict in force at `--sha` is a precondition: a standing FAIL refuses the route outright, and a
+ * route resting on a hand-verification refuses when no text verdict binds that head at all, because
+ * the clause the interim exception prescribes asserts the conjunction. A prose-only route asserts
+ * nothing about the text lane, so an absent verdict there is stated on stderr rather than refused.
+ * The reader is `review verdicts`'s and the ordering `ship gate`'s — see `./text-verdict.ts`.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9196#issuecomment-5688739893
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {createComment, getComment, listComments} from "../io/issues.ts";
-import {listPullFiles, patchComment, viewerLogin} from "../io/pulls.ts";
+import {
+	COMPARE_FILE_CAP,
+	compareFiles,
+	listPullFiles,
+	patchComment,
+	viewerLogin,
+} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "../review/authored.ts";
 import {isUiSurface} from "../review/classes.ts";
+import {headContentFor} from "../review/head-content.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -46,10 +80,12 @@ import {
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	STALE_TREE,
+	TEXT_REVIEW_UNMET,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {NAMESPACE} from "./post-verb.ts";
+import {standingTextVerdict, TEXT_NAMESPACE, textClaims} from "./text-verdict.ts";
 
 const VERB = "review-ui route";
 
@@ -67,6 +103,15 @@ export interface RouteOptions {
 	readonly sha: string;
 	/** The one-line why, carried on the record's first line. */
 	readonly clause: string;
+	/**
+	 * The head a hand-verification standing in for the render ran at, or `null` where the route
+	 * rests on no such evidence — a prose-only diff under a `uiSurfaces` prefix rests on the body
+	 * alone and has no head to compare. Given one, the range to {@link sha} decides whether the
+	 * evidence is still evidence of the tree being attested.
+	 */
+	readonly verifiedAt: string | null;
+	/** This repo's `uiSurfaces` prefixes, resolved by the caller off the tree it stands in. */
+	readonly uiPrefixes: ReadonlyArray<string>;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly stdin: Effect.Effect<StdinRead>;
@@ -103,6 +148,13 @@ export const runRoute = (
 				`${VERB}: --clause is blank — a route with no stated reason records nothing a reader can check.`,
 			);
 		}
+		const verified = options.verifiedAt === null ? null : headSha(options.verifiedAt);
+		if (options.verifiedAt !== null && verified === null) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --verified-at "${options.verifiedAt}" is not a head SHA — expected 7–40 hex characters.`,
+			);
+		}
 
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
@@ -115,7 +167,7 @@ export const runRoute = (
 			requireOpen: true,
 			closedReason: "a route on a closed PR resolves nothing.",
 			requireFiles: true,
-			emptyReason: "a route over an empty diff resolves nothing (ADR 0092).",
+			emptyReason: "a route over an empty diff resolves nothing.",
 			unknownMessage: (reason) =>
 				`${VERB}: cannot read the PR for #${pr}: ${reason} — nothing was posted.`,
 		});
@@ -126,28 +178,50 @@ export const runRoute = (
 		if (!prefixMatch(live, inspected)) {
 			return refuse(
 				STALE_TREE,
-				`${VERB}: the live head is ${live}, not ${inspected} — the diff you read is gone; re-read at ${live} (ADR 0058).`,
+				`${VERB}: the live head is ${live}, not ${inspected} — the diff you read is gone; re-read at ${live}.`,
 			);
 		}
 
-		const listed = yield* listPullFiles(repo, pr);
-		if (listed._tag === "Failure") return unreadable("the changed-file list", pr, listed.reason);
 		const declared = target.pull.changedFiles;
-		const ui = listed.value.filter(isUiSurface);
+		// The enumeration is the file set and `changed_files` is a second opinion beside it —
+		// `platformFileSet` carries why, and the seats it leaves to this verb are the two below.
+		const listed = platformFileSet(VERB, `#${pr}`, declared, yield* listPullFiles(repo, pr));
+		if (listed._tag === "Unreadable") return unreadable("the changed-file list", pr, listed.reason);
+		const files = listed.set.files;
+		const ui = files.filter((file) => isUiSurface(file, options.uiPrefixes));
 		const diagnostics = [
 			scannedLine(
 				VERB,
-				listed.value.length,
+				files.length,
 				"changed file",
 				`${declared} declared; ${ui.length} raise the ui class`,
 			),
+			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
 		];
-		// A truncated list can only ever *shrink* the ui count, so the zero-scope refusal below would
-		// fire on a PR whose class the gate is meanwhile raising. UNKNOWN, never a derivation.
-		if (listed.value.length < declared) {
+		// Zero is the shortfall the enumeration alone establishes, and with the declared count no
+		// longer refusing it is the only seat left: the zero-class refusal below would then answer
+		// "nothing renders" over a diff nobody read.
+		if (files.length === 0) {
+			return refuse(
+				ZERO_SCOPE,
+				`${VERB}: GitHub served no changed files for #${pr} against the ${declared} its own pull-request record declares — refusing to derive the ui class from a diff nobody read.`,
+				diagnostics,
+			);
+		}
+		// The ceiling is the one truncation the enumeration cannot rule out on its own, and a
+		// truncated list can only ever *shrink* the ui count, so the zero-class refusal below would
+		// fire on a PR whose class the gate is meanwhile raising. Seated at PRECONDITION_UNKNOWN
+		// rather than the `13` the `ship` verbs use: `13` is RENDER_CRASHED in this group's table,
+		// and this verb already answers UNKNOWN for its other capped platform read, the
+		// `--verified-at` comparison below.
+		if (listed.set.capped) {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: received ${listed.value.length} of ${declared} changed files — refusing to derive the ui class from a truncated read.`,
+				platformCapLine(
+					VERB,
+					`#${pr}`,
+					"a ui-class file could sit in the part the platform never served.",
+				),
 				diagnostics,
 			);
 		}
@@ -159,6 +233,104 @@ export const runRoute = (
 			);
 		}
 
+		// The clause's other half. `ship gate` reads the two namespaces independently, so a route over
+		// a standing text FAIL merges nothing wrong — what it costs is a permanent record asserting a
+		// PASS nobody formed, which the polarity-free wire format gives a later reader no way to
+		// falsify. One comments read serves this and the upsert below.
+		const comments = yield* listComments(repo, pr);
+		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
+		diagnostics.push(scannedLine(VERB, comments.value.length, "comment"));
+		const claims = textClaims(comments.value);
+		const headContent = yield* headContentFor(
+			VERB,
+			repo,
+			pr,
+			target.pull,
+			options.sha,
+			claims,
+			inspected,
+		);
+		diagnostics.push(...headContent.diagnostics);
+		const text = standingTextVerdict(claims, inspected, headContent.digest);
+		diagnostics.push(
+			scannedLine(
+				VERB,
+				claims.length,
+				`${TEXT_NAMESPACE} claim`,
+				text === null
+					? `none in force at ${inspected}`
+					: `${text.polarity} at ${text.sha} via the ${text.carrier} carrier`,
+			),
+		);
+		if (text !== null && text.polarity === "FAIL") {
+			return refuse(
+				TEXT_REVIEW_UNMET,
+				`${VERB}: ${TEXT_NAMESPACE} stands FAIL at ${inspected} (comment ${text.commentId}) — this record would assert a text PASS that is not there; repair the finding and route at the head the text gate passes.`,
+				diagnostics,
+			);
+		}
+		// Absence refuses exactly where the record claims a PASS: a route resting on a
+		// hand-verification stands in for the render under an interim exception whose prescribed
+		// clause names both halves. A prose-only route claims neither, so it says so instead.
+		if (text === null && verified !== null) {
+			return refuse(
+				TEXT_REVIEW_UNMET,
+				`${VERB}: no standing ${TEXT_NAMESPACE} verdict binds ${inspected}, and a route resting on a hand-verification asserts one — land the text verdict first, and read what stands with fabrika review verdicts ${pr}.`,
+				diagnostics,
+			);
+		}
+		if (text === null) {
+			diagnostics.push(
+				`${VERB}: no standing ${TEXT_NAMESPACE} verdict binds ${inspected} — this record rests on the diff alone and asserts nothing about the text lane.`,
+			);
+		}
+
+		if (verified !== null) {
+			const range = `${verified}..${inspected}`;
+			const compared = yield* compareFiles(repo, verified, inspected);
+			if (compared._tag === "Failure") {
+				return unreadable(`the range ${range}`, pr, compared.reason);
+			}
+			// A three-dot compare answers from the merge base, so its file list is the range asked
+			// for only where the hand-verification's head is an ancestor of --sha. A repair's
+			// force-push leaves that head resolvable but diverged, and the served list then hides
+			// every ui-class file changed on the abandoned side — the one shape where re-verifying
+			// matters most. Unread, never cleared.
+			if (compared.value.status !== "identical" && compared.value.status !== "ahead") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: ${verified} is ${compared.value.status} of ${inspected}, not an ancestor — the comparison answers from their merge base, so ${range} was never read. Re-run the hand-verification at ${inspected}.`,
+					diagnostics,
+				);
+			}
+			const spent = compared.value.files.filter((file) => isUiSurface(file, options.uiPrefixes));
+			diagnostics.push(
+				scannedLine(
+					VERB,
+					compared.value.files.length,
+					"file",
+					`changed in ${range}; ${spent.length} raise the ui class`,
+				),
+			);
+			// The compare declares no total, so a capped list can only ever *hide* a ui-class file —
+			// the same asymmetry the truncated changed-file read above refuses on. UNKNOWN, never a
+			// range the evidence is then cleared over.
+			if (compared.value.capped) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: the comparison over ${range} came back at GitHub's ${COMPARE_FILE_CAP}-file ceiling — refusing to clear the hand-verification against a capped read.`,
+					diagnostics,
+				);
+			}
+			if (spent.length > 0) {
+				return refuse(
+					STALE_TREE,
+					`${VERB}: ${spent.join(", ")} raise the ui class in ${range} — the hand-verification at ${verified} is spent; re-run it at ${inspected}.`,
+					diagnostics,
+				);
+			}
+		}
+
 		const composed = `${emitRecord({namespace: NAMESPACE, sha: inspected, clause})}\n${authored.text.replace(/\n+$/, "")}\n`;
 		const leaked = leakRefusal(SURFACE, composed);
 		if (leaked !== null) return leaked;
@@ -167,9 +339,6 @@ export const runRoute = (
 		// would leave `ship gate` picking between two claims about one question.
 		const me = yield* viewerLogin;
 		if (me._tag === "Failure") return unreadable("the authenticated user", pr, me.reason);
-		const comments = yield* listComments(repo, pr);
-		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
-		diagnostics.push(scannedLine(VERB, comments.value.length, "comment"));
 		const mine = comments.value
 			.filter(
 				(comment) =>
@@ -204,7 +373,7 @@ export const runRoute = (
 			);
 		}
 
-		// The write call's own echo is not evidence (#3173).
+		// The write call's own echo is not evidence.
 		const back = yield* getComment(repo, landed.id);
 		if (back._tag === "Failure") {
 			return refuse(
@@ -238,6 +407,8 @@ export const runRoute = (
 				namespace: NAMESPACE,
 				sha: inspected,
 				uiFiles: ui.length,
+				verifiedAt: verified,
+				textReview: text === null ? "absent" : "pass",
 				upsert: mine === undefined ? "created" : "edited",
 				commentUrl: landed.url,
 			}),

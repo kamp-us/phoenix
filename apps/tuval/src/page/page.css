@@ -1,7 +1,7 @@
 /*
  * The page around the desk: the document's own box, and the two demo renderers' rows. Every colour
- * and every size is a role token from `../shell/ui/tokens.css` — nothing here reaches under the role
- * layer (`design-system-manifest.md`).
+ * and every size is a role token from `@kampus/design` — nothing here reaches under the role layer
+ * (`design-system-manifest.md`).
  */
 
 html,
@@ -28,18 +28,14 @@ body {
  */
 .tuval-attach-reason {
 	color: var(--text-muted);
-	font:
-		var(--t-mono) ui-monospace,
-		monospace;
+	font: var(--t-mono);
 }
 
 .tuval-demo {
 	display: flex;
 	flex-direction: column;
 	gap: var(--s-2);
-	font:
-		var(--t-mono) ui-monospace,
-		monospace;
+	font: var(--t-mono);
 }
 
 .tuval-demo p {
@@ -50,21 +46,47 @@ body {
 	color: var(--text-muted);
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
-	font:
-		var(--t-meta) system-ui,
-		sans-serif;
+	font: var(--t-meta);
 }
 
 /* A sentence and an empty-state line, so `--text-muted` for the same reason as the reason above. */
 .tuval-demo-hint {
 	color: var(--text-muted);
-	font:
-		var(--t-meta) system-ui,
-		sans-serif;
+	font: var(--t-meta);
 }
 
 .tuval-demo-lines {
 	margin: 0;
 	padding-inline-start: var(--s-4);
 	color: var(--text-secondary);
+}
+
+/*
+ * The connection banner (`./AttachedDesk.tsx`). It overlays the desk rather than displacing it: a
+ * reconnect must not reflow every window the founder is reading, and the desk under it is the last
+ * state the kernel sent, not a placeholder. `--surface-raised` over `--border-strong` is the same
+ * raised-chrome pair the status line uses, so it reads as chrome and not as one more window.
+ */
+.tuval-connection {
+	position: fixed;
+	inset-block-start: var(--s-2);
+	inset-inline: var(--s-4);
+	z-index: 2;
+	margin: 0;
+	padding: var(--s-2) var(--s-3);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-md);
+	background: var(--surface-raised);
+	color: var(--text-secondary);
+	font: var(--t-body-sm);
+	text-align: center;
+}
+
+.tuval-connection strong {
+	color: var(--text-primary);
+}
+
+/* The refusal is terminal, so it takes the accent border the desk gives anything it wants read. */
+.tuval-connection-refused {
+	border-color: var(--accent);
 }

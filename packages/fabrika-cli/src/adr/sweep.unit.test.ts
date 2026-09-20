@@ -39,7 +39,7 @@ describe("tokenize", () => {
 
 describe("citedIds", () => {
 	it("reads every four-digit reference", () => {
-		expect([...citedIds("see ADR 0092 and [0126](0126-x.md)")]).toEqual(["0092", "0126"]);
+		expect([...citedIds("cites 0092 and [0126](0126-x.md)")]).toEqual(["0092", "0126"]);
 	});
 });
 

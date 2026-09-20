@@ -6,6 +6,7 @@ import {
 	COMMENTS,
 	CWD,
 	claimPage,
+	declaring,
 	EXPIRED,
 	guardedShell,
 	LIVE,
@@ -396,6 +397,8 @@ describe("runPark", () => {
 	it("refuses when the read-back itself fails", async () => {
 		const out = await run([
 			[once(ISSUE), issue(["status:triaged"], null)],
+			// the guard's reconciled comment read takes its denominator off a second issue read
+			[once(ISSUE), declaring()],
 			[ISSUE, UNREADABLE],
 			[LABELS, VOCABULARY],
 			[COMMENT, POSTED],
@@ -420,7 +423,7 @@ describe("runPark", () => {
 	});
 });
 
-/** #5644: the claim protocol only holds if the mutating verbs re-read it. */
+/** The claim protocol only holds if the mutating verbs re-read it. */
 describe("runPark — the target guard", () => {
 	const MINE = "session-mine";
 	const THEIRS = "session-theirs";

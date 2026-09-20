@@ -1,12 +1,14 @@
-import {Effect} from "effect";
+import {NodeCrypto} from "@effect/platform-node";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {NO_TARGET, QUEUE_UNREADABLE, SEARCH_UNREADABLE} from "./codes.ts";
 import {runDedup} from "./dedup-verb.ts";
+import {IndexSnapshot} from "./index-cache.ts";
 
 const LABELS = /repos\/o\/r\/labels/;
-const QUEUE = /repos\/o\/r\/issues\?state=open/;
-const SEARCH = /search\/issues/;
+const QUEUE = /repos\/o\/r\/issues\?state=open&labels=/;
+const SEARCH = /repos\/o\/r\/issues\?state=open&sort=/;
 
 /** A label-set page: the endpoint answers `[{name}]`, not one name per line. */
 const labelSet = (...names: ReadonlyArray<string>): HttpReply => ({
@@ -16,20 +18,16 @@ const labelSet = (...names: ReadonlyArray<string>): HttpReply => ({
 
 const issueRows = (...rows: ReadonlyArray<readonly [number, string]>): HttpReply => ({
 	status: 200,
-	body: JSON.stringify(rows.map(([number, title]) => ({number, title}))),
+	body: JSON.stringify(
+		rows.map(([number, title]) => ({number, title, body: "", state: "open", closed_at: null})),
+	),
 });
 
-/** The search index answers a `{total_count, items}` envelope. */
-const searchHits = (...rows: ReadonlyArray<readonly [number, string]>): HttpReply => ({
-	status: 200,
-	body: JSON.stringify({
-		total_count: rows.length,
-		items: rows.map(([number, title]) => ({number, title})),
-	}),
-});
+const searchHits = issueRows;
 
 const options = {
 	query: "retry helper swallows the abort reason",
+	closedDays: 0,
 	label: "status:needs-triage",
 	limit: 20,
 	repo: null,
@@ -39,28 +37,30 @@ const options = {
 };
 
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
-	Effect.runPromise(Effect.provide(runDedup({...options, ...overrides}), fakeSeams(script).layer));
+	Effect.runPromise(
+		Effect.provide(
+			runDedup({...options, ...overrides}),
+			Layer.mergeAll(fakeSeams(script).layer, fakeFs({}).layer, NodeCrypto.layer),
+		),
+	);
 
 const labelsOk = [LABELS, labelSet("status:needs-triage", "type:bug", "p0")] as const;
 
-/** #7213's reported query, whose twelve AND-joined terms matched nothing. */
+/** The reported query whose twelve AND-joined terms matched nothing. */
 const LONG_QUERY =
 	"review render seed authenticated notification rows state suffix reserved unimplemented exit capture";
-
-const searchQuery = (requests: ReadonlyArray<string>): string =>
-	decodeURIComponent(requests.find((call) => SEARCH.test(call)) ?? "");
 
 describe("runDedup", () => {
 	it("exits 0 with a ranked candidates list", async () => {
 		const out = await run([
 			labelsOk,
 			[QUEUE, issueRows([4312, "Abort reason lost when the retry helper re-wraps the request"])],
-			[SEARCH, searchHits([4088, "http worker retries do not propagate cancellation"])],
+			[SEARCH, searchHits([4088, "retry worker does not propagate cancellation"])],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe("candidates");
 		expect(out.stdout).toContain("4312\tqueue\t");
-		expect(out.stdout).toContain("4088\tsearch\t");
+		expect(out.stdout).toContain("4088\tindex\t");
 	});
 
 	it("--exclude drops the issue being deduped from both sources, so it cannot flag itself", async () => {
@@ -83,7 +83,7 @@ describe("runDedup", () => {
 		const out = await run([labelsOk, [QUEUE, issueRows()], [SEARCH, searchHits()]]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("none\n");
-		expect(out.stderr.join("\n")).toContain("both sources were read");
+		expect(out.stderr.join("\n")).toContain("no lexical matches");
 	});
 
 	it("exits 0 on indeterminate below the two-token floor", async () => {
@@ -102,7 +102,12 @@ describe("runDedup", () => {
 
 	it("never reads either source once the label is proven absent", async () => {
 		const seams = fakeSeams([[LABELS, labelSet("type:bug")]]);
-		await Effect.runPromise(Effect.provide(runDedup(options), seams.layer));
+		await Effect.runPromise(
+			Effect.provide(
+				runDedup(options),
+				Layer.mergeAll(seams.layer, fakeFs({}).layer, NodeCrypto.layer),
+			),
+		);
 		expect(seams.requests.some((c) => QUEUE.test(c) || SEARCH.test(c))).toBe(false);
 	});
 
@@ -163,76 +168,86 @@ describe("runDedup", () => {
 		const payload = JSON.parse(out.stdout);
 		expect(payload.outcome).toBe("candidates");
 		expect(payload.queueCount).toBe(1);
-		expect(payload.searchCount).toBe(0);
+		expect(payload.indexCount).toBe(0);
 		expect(payload.tokens).toContain("retry");
 		expect(out.stderr.join("")).not.toContain('"outcome"');
 	});
 
-	it("sends ONLY the leading slice to the AND-joined search query (#7213)", async () => {
-		const seams = fakeSeams([labelsOk, [QUEUE, issueRows()], [SEARCH, searchHits()]]);
-		await Effect.runPromise(Effect.provide(runDedup({...options, query: LONG_QUERY}), seams.layer));
-		const sent = searchQuery(seams.requests);
-		expect(sent).toContain("is:open review render seed authenticated");
-		expect(sent).not.toContain("notification");
-	});
-
-	it("still ranks against the FULL token list, so narrowing does not blunt scoring", async () => {
-		const out = await run(
-			[labelsOk, [QUEUE, issueRows([4312, LONG_QUERY])], [SEARCH, searchHits()]],
-			{query: LONG_QUERY},
+	it("finds a body-only match despite misleading leading words, without GitHub search", async () => {
+		const seams = fakeSeams([
+			labelsOk,
+			[QUEUE, issueRows()],
+			[
+				SEARCH,
+				{
+					status: 200,
+					body: JSON.stringify([
+						{
+							number: 7051,
+							title: "Interaction coverage",
+							body: "notification state capture",
+							state: "open",
+							closed_at: null,
+						},
+					]),
+				},
+			],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDedup({...options, query: LONG_QUERY, json: true}),
+				Layer.mergeAll(seams.layer, fakeFs({}).layer, NodeCrypto.layer),
+			),
 		);
-		expect(out.stdout).toContain("4312\tqueue\t12\t");
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).candidates[0].number).toBe(7051);
+		expect(seams.requests.some((call) => call.includes("search/issues"))).toBe(false);
 	});
 
-	it("retrieves a search row an over-long AND-join would have lost", async () => {
-		// Scripted to answer only the NARROWED query: a twelve-term send falls through to the
-		// unscripted 500 and refuses, so the row can only be reached by the slice.
-		const narrowOnly = /search\/issues\?q=[^"]*authenticated(?!.*notification)/;
+	it("reports closed state and the actual window in JSON and lines", async () => {
+		const closed = {
+			number: 42,
+			title: "retry helper",
+			body: "",
+			state: "closed",
+			closed_at: new Date().toISOString(),
+		};
+		const script = [
+			labelsOk,
+			[QUEUE, issueRows()],
+			[SEARCH, issueRows()],
+			[/state=closed/, {status: 200, body: JSON.stringify([closed])}],
+		] as const;
+		const json = await run(script, {closedDays: 14, json: true});
+		expect(json.code).toBe(0);
+		expect(JSON.parse(json.stdout)).toMatchObject({
+			candidates: [{number: 42, state: "closed"}],
+			cache: {source: "fetched", ageMs: 0},
+			indexCount: 1,
+		});
+		expect(JSON.parse(json.stdout).closedSince).toMatch(/^\d{4}-/);
+		const line = await run(script, {closedDays: 14});
+		expect(line.stdout).toContain("\tclosed\tretry helper");
+	});
+
+	it("refuses an unreadable closed source rather than publishing a partial index", async () => {
 		const out = await run(
 			[
 				labelsOk,
 				[QUEUE, issueRows()],
-				[
-					narrowOnly,
-					searchHits([7051, "review-ui default-state captures leave interaction states unjudged"]),
-				],
+				[SEARCH, issueRows()],
+				[/state=closed/, {status: 503, body: "{}"}],
 			],
-			{query: LONG_QUERY},
+			{closedDays: 14},
 		);
-		expect(out.code).toBe(0);
-		expect(out.stdout.split("\n")[0]).toBe("candidates");
-		expect(out.stdout).toContain("7051\tsearch\t");
+		expect(out.code).toBe(SEARCH_UNREADABLE);
+		expect(out.stdout).toBe("");
 	});
 
-	it("names the tokens actually SENT to search on the scope line when they differ", async () => {
-		const out = await run([labelsOk, [QUEUE, issueRows()], [SEARCH, searchHits()]], {
-			query: LONG_QUERY,
-		});
-		expect(out.stderr[0]).toContain("sent to search: review, render, seed, authenticated");
-	});
-
-	it("says nothing about a narrowed send when the whole list went to search", async () => {
-		const out = await run([labelsOk, [QUEUE, issueRows()], [SEARCH, searchHits()]], {
-			query: "retry helper abort reason",
-		});
-		expect(out.stderr[0]).not.toContain("sent to search");
-	});
-
-	it("--json carries the two lists apart", async () => {
-		const out = await run([labelsOk, [QUEUE, issueRows()], [SEARCH, searchHits()]], {
-			query: LONG_QUERY,
-			json: true,
-		});
-		const payload = JSON.parse(out.stdout);
-		expect(payload.tokens).toHaveLength(12);
-		expect(payload.searchTokens).toEqual(["review", "render", "seed", "authenticated"]);
-	});
-
-	it("evaluates the indeterminate floor against the RANKING list, never the narrowed slice", async () => {
-		const out = await run([labelsOk, [QUEUE, issueRows()], [SEARCH, searchHits()]], {
-			query: LONG_QUERY,
-		});
-		expect(out.stdout.split("\n")[0]).toBe("none");
+	it.each([-1, 36501])("refuses invalid closed window %s", async (closedDays) => {
+		const out = await run([], {closedDays});
+		expect(out.code).toBe(1);
+		expect(out.stdout).toBe("");
 	});
 
 	it("says on stderr when the cap truncated the list", async () => {
@@ -241,7 +256,7 @@ describe("runDedup", () => {
 			limit: 2,
 		});
 		expect(out.stdout.split("\n").filter((l) => l !== "")).toHaveLength(3);
-		expect(out.stderr[0]).toContain("TRUNCATED");
+		expect(out.stderr.join("\n")).toContain("TRUNCATED");
 	});
 
 	it("refuses an empty --query as a usage error", async () => {
@@ -255,4 +270,28 @@ describe("runDedup", () => {
 		expect(out.code).toBe(1);
 		expect(out.stderr.at(-1)).toContain("CLAUDE_PIPELINE_REPO");
 	});
+});
+
+it("reads the live queue even on a cache hit and overlays a new report", async () => {
+	const cached = new IndexSnapshot({
+		version: 1,
+		repo: "o/r",
+		closedDays: 0,
+		fetchedAt: Date.now(),
+		issues: [],
+	});
+	const fs = fakeFs({files: {"/cache/fabrika/dedup/o%2Fr-0.json": JSON.stringify(cached)}});
+	const seams = fakeSeams([labelsOk, [QUEUE, issueRows([999, "retry helper"])]]);
+	const out = await Effect.runPromise(
+		Effect.provide(
+			runDedup({...options, json: true, env: {...options.env, XDG_CACHE_HOME: "/cache"}}),
+			Layer.mergeAll(fs.layer, seams.layer, NodeCrypto.layer),
+		),
+	);
+	expect(out.code).toBe(0);
+	expect(JSON.parse(out.stdout)).toMatchObject({
+		candidates: [{number: 999, source: "queue"}],
+		cache: {source: "cache"},
+	});
+	expect(seams.requests).toHaveLength(2);
 });

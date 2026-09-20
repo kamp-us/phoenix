@@ -86,7 +86,7 @@ describe("runLogs reads every failing gating context, not the first", () => {
 		expect(out.stdout).toBe(`logs\t0\t${HEAD}\n`);
 	});
 
-	it("excludes an informational context before anything is fetched (ADR 0061)", async () => {
+	it("excludes an informational context before anything is fetched", async () => {
 		const out = await run([
 			[PULL, reply(pull())],
 			[CHECK_RUNS, reply(checkRuns(1, [failed("deploy (web)")]))],

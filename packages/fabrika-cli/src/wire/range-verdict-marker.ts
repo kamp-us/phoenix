@@ -4,10 +4,10 @@
  *     review-child: PASS range:9f2c1ab..03135b9 content:2f1a9c4e0b7d — every criterion met
  *
  * A child's local review judges what its branch adds over the epic branch point, and its verdict
- * lands on the child issue (verdicts live on GitHub, ADR 0283). The two SHAs it names stop being
+ * lands on the child issue, where verdicts live. The two SHAs it names stop being
  * the epic branch's history the moment the range is merged in, so the durable claim is the
  * **content digest**, not the range — and the range is what tells a later reader which paths that
- * digest was taken over (`../review/content-binding.ts`, ADR 0276 + #5825).
+ * digest was taken over (`../review/content-binding.ts`).
  *
  * **The content field is mandatory here, and optional in `./verdict-marker.ts`.** That is not an
  * inconsistency: a PR-scoped marker whose digest is absent falls back to head equality, which is the
@@ -221,7 +221,6 @@ export const parseFields = (fields: string): RangeVerdictMarkerFields => {
 	return {_tag: "Fields", marker: {namespace, polarity, range: {base, tip}, content, clause: text}};
 };
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderMarker = (marker: RangeVerdictMarker): NonEmptyReadonlyArray<string> => [
 	`namespace\t${marker.namespace}`,
 	`polarity\t${marker.polarity}`,

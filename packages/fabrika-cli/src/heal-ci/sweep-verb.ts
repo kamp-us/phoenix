@@ -2,21 +2,20 @@
  * `heal-ci sweep` — every open PR classified with its strand age, the scheduled surface.
  *
  * **This verb writes nothing.** It files no issue, assigns nobody and spawns nothing: a detector
- * converts a strand into claimable work and normal pull adopts it (ADR 0205, founder ruling #3532).
+ * converts a strand into claimable work and normal pull adopts it.
  *
  * A board report with an unnamed hole in it is the false completeness this verb exists to prevent,
  * so a single unclassifiable PR fails the whole sweep rather than being silently dropped, and a
  * rate limit exhausted mid-scan refuses with nothing partial emitted.
  *
- * Each row is `pr\t<number>\t<token>\t<age>\t<head>\t<lane>`. The lane is `lane.ts`'s lookup off the
- * class, emitted here so the scheduled workflow relays the note's arrow instead of deriving one in
- * its `run:` block (ADR 0228) — it used to hardcode `nobody` on every row (#7209).
+ * The lane comes from ./lane.ts so the scheduled workflow relays the route instead of deriving it
+ * in shell. See ./command.ts help for the row format.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveCi} from "../config/ci-producer.ts";
-import {governedRootsOr} from "../config/paths.ts";
+import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
 import {resolveTargetRepo, scannedLine} from "../ship/target.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -35,6 +34,8 @@ export interface SweepOptions {
 	readonly dwellMinutes: number;
 	readonly wedgeDwellMinutes: number;
 	readonly driftCommits: number;
+	/** Passed through to each classification: the lazy `mergeable` job's re-read window. */
+	readonly mergeabilitySeconds: number;
 	readonly repo: string | null;
 	readonly json: boolean;
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
@@ -66,6 +67,13 @@ export const runSweep = (
 			'no PR on this board can be classified, and a sweep with a hole in it is never "attended".',
 		);
 		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
+
+		const surfaces = yield* uiSurfacesOr(
+			VERB,
+			options.cwd,
+			'no PR on this board can be classified, and a sweep with a hole in it is never "attended".',
+		);
+		if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
 
 		const listed = yield* listOpenPulls(repo);
 		if (listed._tag === "Failure") {
@@ -101,7 +109,15 @@ export const runSweep = (
 					notices,
 				);
 			}
-			const result = yield* diagnoseOne(repo, row.number, "", options, governed.roots, ci);
+			const result = yield* diagnoseOne(
+				repo,
+				row.number,
+				"",
+				options,
+				governed.roots,
+				surfaces.prefixes,
+				ci,
+			);
 			scanned += 1;
 			if (result._tag === "Refused") {
 				return refuse(

@@ -31,7 +31,7 @@ describe("the governance exit table", () => {
 		expect(governance.INCOMPLETE_SCAN).toBe(review.INCOMPLETE_SCAN);
 		// The supersede refusal must be ONE number across both verbs: `governance post --base/--tip`
 		// and `review post --base/--tip` are one module, so a private seat here would give a caller
-		// two codes for a refusal produced by a single line of code (#7411).
+		// two codes for a refusal produced by a single line of code.
 		expect(governance.SUPERSEDES_VERDICT).toBe(review.SUPERSEDES_VERDICT);
 	});
 

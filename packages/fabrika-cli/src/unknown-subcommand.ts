@@ -1,6 +1,6 @@
 /**
  * Resolve `fabrika <token> …` against the command tree before the Effect CLI runner sees it, so an
- * unresolvable path is refused instead of answered (#4822).
+ * unresolvable path is refused instead of answered.
  *
  * The runner cannot do this itself. `Command.runWith` processes **action flags** (step 5) before it
  * inspects accumulated **parse errors** (step 6), and `--help` is an action flag — so a `--help`
@@ -27,7 +27,7 @@
 export interface CommandNode {
 	readonly name: string;
 	readonly alias: string | undefined;
-	readonly hidden: boolean;
+	readonly unlisted: boolean;
 	readonly subcommands: ReadonlyArray<{readonly commands: ReadonlyArray<CommandNode>}>;
 }
 
@@ -57,10 +57,10 @@ const subcommandIndex = (node: CommandNode): ReadonlyMap<string, CommandNode> =>
 	return index;
 };
 
-/** What a node offers: hidden subcommands are withheld so a typo cannot reveal one (same parser). */
+/** What a node offers: unlisted subcommands are withheld so a typo cannot reveal one (same parser). */
 const offered = (node: CommandNode): ReadonlyArray<string> =>
 	node.subcommands.flatMap((group) =>
-		group.commands.filter((sub) => !sub.hidden).map((sub) => sub.name),
+		group.commands.filter((sub) => !sub.unlisted).map((sub) => sub.name),
 	);
 
 /**

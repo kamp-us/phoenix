@@ -1,6 +1,6 @@
 /**
  * `fabrika --version` reports what shipped. The derivation is the only thing that can regress,
- * so that is what these assertions read (#5714).
+ * so that is what these assertions read.
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";

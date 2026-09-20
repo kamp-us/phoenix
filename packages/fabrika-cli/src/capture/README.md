@@ -1,61 +1,53 @@
 # @kampus/fabrika-cli/capture
 
 The **Playwright-capture + GitHub user-attachments upload** helper the
-`review-design` gate drives (ADR
-[0165](../../../../.decisions/0165-review-design-gate.md), epic
-[#1966](https://github.com/kamp-us/phoenix/issues/1966)).
+`review-design` gate drives.
 
 It is the mechanical leg of the design gate: given a UI PR's **existing per-PR
 preview deploy** URL and the changed surfaces to shoot, it drives a headless
 chromium to screenshot each surface, writes the PNG bytes to disk, uploads them
 to GitHub so they can be embedded as evidence in the SHA-bound verdict comment,
 and returns one record per surface. It **does not** judge the images (that is the
-`review-design` skill, [#2246](https://github.com/kamp-us/phoenix/issues/2246)),
-and it **does not** serve the app — it captures over the preview the pipeline
-already stood up.
+`review-design` skill), and it **does not** serve the app — it captures over the
+preview the pipeline already stood up.
 
 ## Why it lives in fabrika
 
-It was `packages/design-capture`, a private phoenix package. The founder ruled
-(on [#5061](https://github.com/kamp-us/phoenix/issues/5061), moved by
-[#5063](https://github.com/kamp-us/phoenix/issues/5063)) that it moves here, because
+It began as a private package in the repo that grew it. It moved here because
 `build-ui` and `review-ui` are factory tooling every adopter repo runs — and every one of
-them would otherwise need a dependency on a phoenix-published package to get the machinery
-the skills call. One release train, fabrika's.
+them would otherwise need a dependency on someone else's published package to get the
+machinery the skills call. One release train, fabrika's.
 
-**What the same ruling keeps per-repo is the data**, and none of it moved. The line is sharp:
-anything naming a *host* or a *credential* belongs to the consuming repo — the blessed golden
-bytes, the store they are PUT to and GET from, the pointer that names them
-(`packages/design-capture/golden-pointer.json` in phoenix, path unchanged), and the harness
-config. phoenix never blessed a surface, so it carries no store half today — its
-`@kampus/design-capture` package held one and was deleted unused
-([#6346](https://github.com/kamp-us/phoenix/issues/6346)); the pointer path above is still what
-this package probes for. Machinery is shared; goldens are a repo's own taste.
+**What stays per-repo is the data**, and none of it moved. The line is sharp:
+anything naming a *host* or a *credential* belongs to the consuming repo — the blessed
+golden bytes, the store they are PUT to and GET from, the pointer file that names them,
+and the harness config. A repo that has never blessed a surface carries no store half at
+all; the pointer path is what this package probes for. Machinery is shared; goldens are a
+repo's own taste.
 
-That split is also load-bearing for *installability*, not only taste: this package is published,
-and a published artifact may depend only on what a clean registry resolves (ADR
-[0201](../../../../.decisions/0201-pipeline-tenant-phoenix-first.md) §3, enforced by
-`publish-isolation-guard`). phoenix's depo client is private, so storing bytes is an injected
-`StoreLeg` here — the shape, never the store.
+That split is also load-bearing for *installability*, not only taste: this package is
+published, and a published artifact may depend only on what a clean registry resolves —
+so a dependency on a consuming repo's private package would not resolve at all. An asset
+store is therefore an injected `StoreLeg` here — the shape, never the store.
 
 ## Why it exists
 
-ADR 0162 made the four design pillars — performance · cohesiveness · usability ·
-accessibility — standing law; ADR 0165 made `review-design` the gate that checks
-every UI PR against that law by *looking at the rendered screen*. A text-diff
-review can't see a missing focus ring, off-grid spacing, or a sub-36px tap
-target. This package is the "render it and grab the pixels" half: it produces the
-screenshots the reviewer agent (Claude, multimodal) judges, and hosts them so a
-human can see the evidence behind the verdict.
+The four design pillars — performance · cohesiveness · usability · accessibility
+— are standing law, and `review-design` is the gate that checks every UI PR
+against that law by *looking at the rendered screen*. A text-diff review can't
+see a missing focus ring, off-grid spacing, or a sub-36px tap target. This
+package is the "render it and grab the pixels" half: it produces the screenshots
+the reviewer agent (Claude, multimodal) judges, and hosts them so a human can see
+the evidence behind the verdict.
 
-## The module contract (the seam #2246 codes against)
+## The module contract (the seam the gate codes against)
 
 ```ts
 import {captureAndUpload, hostedUrls} from "@kampus/fabrika-cli/capture";
 
 const records = yield* captureAndUpload({
-  previewUrl: "https://pr-123.web.kamp.us",          // from the preview-deploy bot comment
-  surfaces: [{surface: "/sozluk:empty", route: "/sozluk", state: "empty"}],
+  previewUrl: "https://pr-123.preview.example.com",  // from the preview-deploy bot comment
+  surfaces: [{surface: "/catalog:empty", route: "/catalog", state: "empty"}],
   outDir: "/tmp/shots",                              // where the PNG bytes land (localPath root)
   repositoryId: 1234177275,                          // gh api repos/OWNER/REPO --jq .id
   token: process.env.GITHUB_TOKEN!,                  // write access to the target repo
@@ -65,7 +57,7 @@ const records = yield* captureAndUpload({
 //   • localPath  — ALWAYS present on a successful capture: the PNG the gate JUDGES
 //   • hostedUrl  — the GitHub asset URL to embed, or null when the upload fell back
 //   • uploadError — the diagnostic when the fallback fired, else null
-//   • pageErrors — runtime errors thrown into the page during THIS render (#2594):
+//   • pageErrors — runtime errors thrown into the page during THIS render:
 //       [{ kind: "pageerror" | "console.error", text }] — a `pageerror` (uncaught
 //       exception) hard-fails the gate; a `console.error` is advisory
 ```
@@ -77,16 +69,16 @@ const records = yield* captureAndUpload({
 - `hostedUrls(records)` projects just the hosted URLs (drops the fallbacks).
 - `resolvePreviewUrl(commentBody, app = "web")` resolves an app's preview base
   from the sticky `<!-- preview-deploy -->` comment, keyed off the per-app
-  `<!-- preview-deploy:web -->` anchor (deploy.yml / ci.yml). **Keyed off the app
-  anchor, not the first `workers.dev` URL** — a blind first-match would return the
-  wrong app's URL the moment a second app's preview line appears.
+  `<!-- preview-deploy:web -->` anchor the deploy workflow writes. **Keyed off the
+  app anchor, not the first URL in the block** — a blind first-match would return
+  the wrong app's URL the moment a second app's preview line appears.
 - `readPreviewAnnouncement(commentBody, app)` reads the same block for a caller that
   must **bind the preview to a head**: it returns the URL *and* the deployed head SHA,
-  is domain-agnostic (an adopter's preview is not on `workers.dev`), and splits
+  is domain-agnostic (an adopter's preview is on its own host), and splits
   `Malformed` from `NoApp` so an unreadable announcement can never resolve to "no
   preview". `announcedApps` / `isPreviewAnnouncement` are its two probes. The
   `review-ui render` verb refuses on the SHA mismatch: pixels of an old tree must not
-  bind a new head (ADR 0058).
+  bind a new head.
 - `validateCaptureBytes(pngBytes)` is the capture-validity check — zero bytes,
   undecodable, or zero area — over the PNG header alone (`decodePngHeader`), so it stays
   pure and codec-free. A capture nobody can open is not evidence.
@@ -94,7 +86,7 @@ const records = yield* captureAndUpload({
 Pure cores also exported for reuse/testing: `parseSurfaceSpec`,
 `buildCapturePlan`, `joinPreviewUrl`, `surfaceFileName`, `mergeRecord`,
 `parseUploadResponse`, `uploadEndpoint`, `renderCrashFailure` / `isRenderCrash` /
-`toPageError` (the render-exception gate decision, #2594), and the viewport
+`toPageError` (the render-exception gate decision), and the viewport
 constants (`DESKTOP_VIEWPORT` 1280×800, `MOBILE_VIEWPORT` 390×844,
 `DEFAULT_VIEWPORT`).
 
@@ -107,38 +99,35 @@ still carries `localPath` — the gate has bytes to judge **exactly** when hosti
 fails. (This is the correctness fix over an earlier shape that dropped the image
 on the fallback path.)
 
-## A thrown render exception fails the gate — regardless of the pixels (#2594)
+## A thrown render exception fails the gate — regardless of the pixels
 
 A single screenshot only sees pixels, so a mount/init race that throws on a "bad
-tick" but renders fine on a "good tick" (the `@kampus/composer` read-only
-null-editor `TypeError`, #2593) slipped past the visual prohibitions and reached
-live. So the capture render **listens for page errors** across the whole
-navigation window (`page.on("pageerror" | "console")`, attached before `goto`) and
-returns them per surface as `pageErrors`. An uncaught exception (`kind:
-"pageerror"`) is a **hard FAIL** for the `review-design` gate; a `console.error` is
-**advisory** (dev console.error is noisy — React key/prop warnings — so failing on
-it would trip the gate on benign output). The pure decision core
-(`renderCrashFailure`) is unit-tested against the #2593 crash class; the `capture`
-bin also prints a `render FAILED — …` summary to stderr when any surface threw.
+tick" but renders fine on a "good tick" slips past the visual prohibitions and
+reaches live — a read-only editor that dereferences a null instance is the class.
+So the capture render **listens for page errors** across the whole navigation
+window (`page.on("pageerror" | "console")`, attached before `goto`) and returns
+them per surface as `pageErrors`. An uncaught exception (`kind: "pageerror"`) is a
+**hard FAIL** for the `review-design` gate; a `console.error` is **advisory** (dev
+console.error is noisy — React key/prop warnings — so failing on it would trip the
+gate on benign output). The pure decision core (`renderCrashFailure`) is
+unit-tested against that crash class; the `capture` bin also prints a
+`render FAILED — …` summary to stderr when any surface threw.
 
 ## The golden-baseline seam (store · resolve · deterministic diff)
 
 Beyond capture+upload, this package is the **golden-baseline substrate** the
 generation loop and the `review-design` gate both anchor to — one notion of
-"golden", never two ([#2960](https://github.com/kamp-us/phoenix/issues/2960), epic
-[#2955](https://github.com/kamp-us/phoenix/issues/2955)). The storage design is ADR
-[0183](../../../../.decisions/0183-golden-screen-storage-depo-git-pointer.md): **golden
-bytes live in depo** (content-addressed, immutable — ADR
-[0144](../../../../.decisions/0144-depo-internal-asset-cdn.md)); git carries only a tiny
-**pointer**. No golden PNG is ever committed.
+"golden", never two. The storage design is fixed: **golden bytes live in a
+content-addressed, immutable asset store**; git carries only a tiny **pointer**.
+No golden PNG is ever committed.
 
 - **golden pointer** — a committed `golden-pointer.json` mapping each surface-id
   (the same `<route>[:state]` capture spec) to its current golden
   `{ sha256, blessedDate, intent }`. A re-bless is a one-line diff; history never
-  bloats with binaries. This is the migrations-guard committed-baseline + `bless`
-  idiom (ADR 0108): the pointer file is the audited baseline, and depo's write-once
+  bloats with binaries. This is the committed-baseline + `bless` idiom a migrations
+  guard uses: the pointer file is the audited baseline, and the store's write-once
   immutability IS the "explicit update, never silent overwrite" guarantee — a
-  re-bless is a **new sha256 → new depo URL → a pointer move**, never an in-place
+  re-bless is a **new sha256 → new store URL → a pointer move**, never an in-place
   overwrite.
 
 ```ts
@@ -151,11 +140,11 @@ import {
 import {resolveGoldenBytes, storeGolden} from "<consuming repo's golden store>";
 
 // store (bless-time): PUT the approved bytes, get the sha the pointer records
-const {sha256, url} = yield* storeGolden({apiKey, pngBytes});   // needs DoormanClient
+const {sha256, url} = yield* storeGolden({apiKey, pngBytes});   // needs the store client
 
-// resolve (diff-time): pointer → depo URL → bytes
-const pointer = loadGoldenPointer("packages/design-capture/golden-pointer.json");
-const golden = yield* resolveGoldenBytes(pointer, "/sozluk:empty");  // needs HttpClient
+// resolve (diff-time): pointer → store URL → bytes
+const pointer = loadGoldenPointer("path/to/golden-pointer.json");
+const golden = yield* resolveGoldenBytes(pointer, "/catalog:empty");  // needs HttpClient
 
 // diff: candidate vs golden — the SIGNAL, not the verdict
 const result = diffRasters(goldenRaster, candidateRaster, {
@@ -172,69 +161,66 @@ const result = diffRasters(goldenRaster, candidateRaster, {
 - `diffRasters(golden, candidate, {masks, channelThreshold})` is the **deterministic
   diff** — same inputs always yield the same result. It returns a **structured
   per-surface result** (deviation `magnitude` in [0, 1] + the differing `regions` as
-  bounding boxes), **not a bare boolean**: this is the diff half of calibration B
-  ([#2945](https://github.com/kamp-us/phoenix/issues/2945)); the accept/redline
-  *judgment* is the `review-design` child's, not this core.
+  bounding boxes), **not a bare boolean**: the accept/redline *judgment* is the
+  `review-design` gate's, not this core.
 - **Flake-canon split.** The capture-time canon (animations off, reduced-motion,
   `document.fonts.ready`, srgb, seeded data + frozen clock) is enforced when the
-  bytes are *rendered* (the render harness, #2963). The **diff-time** canon lives
+  bytes are *rendered*, in the render harness. The **diff-time** canon lives
   here: known-dynamic regions are **masked** out of the compare so a legitimately
   varying region never reads as a deviation. `diffRasters` operates on **decoded RGBA
   rasters**, so it needs no PNG codec and stays pure/unit-tested; decoding golden +
-  candidate PNG bytes into a `RasterImage` is the render child's boundary (#2961).
+  candidate PNG bytes into a `RasterImage` is the render caller's boundary.
 - The pure cores — `golden-pointer.ts` (resolve/bless), `golden-diff.ts`
   (determinism/masking/regions), `golden-fs.ts` (pointer round-trip) — are
-  unit-tested per `.patterns/effect-testing.md`.
+  unit-tested.
 
-### Re-bless via the CLI (the audited pointer move)
+### Re-bless via a CLI (the audited pointer move)
 
-The `bin.ts` invocations below were phoenix's v1 `design-capture` CLI, deleted unused in
-[#6346](https://github.com/kamp-us/phoenix/issues/6346). They stay here as the worked shape of
-each operation — the argv a consuming repo's own bin has to reproduce over these cores.
+The invocations below are the worked shape of each operation — the argv a consuming
+repo's own bin has to reproduce over these cores.
 
 ```bash
-# after the founder approves a surface's candidate in the PR gallery comment,
-# and its bytes are already PUT to depo (the no-re-render guard, ADR 0183 §5):
-node packages/design-capture/src/bin.ts golden-bless \
-  --surface "/sozluk:empty" \
-  --sha256 <64-hex depo content-address of the approved bytes> \
-  --intent "sözlük empty state — initial bless"
+# after the operator approves a surface's candidate in the PR gallery comment,
+# and its bytes are already PUT to the store (the no-re-render guard):
+<bin> golden-bless \
+  --surface "/catalog:empty" \
+  --sha256 <64-hex content-address of the approved bytes> \
+  --intent "catalog empty state — initial bless"
 ```
 
-`golden-bless` is pure + fs (the golden analogue of migrations-guard's `baseline`):
+`golden-bless` is pure + fs (the golden analogue of a migrations guard's `baseline`):
 it records the **approved** sha into the committed pointer — it never re-renders or
-re-stores bytes, so "what the founder saw" and "what gets committed" are provably the
-same content address (ADR 0183 §5).
+re-stores bytes, so "what the operator saw" and "what gets committed" are provably the
+same content address.
 
-## The candidate-render step (`render-candidates`, #2961)
+## The candidate-render step (`render-candidates`)
 
-The candidate-render step produces the small set of candidate screens the founder
-blesses in one sitting (epic #2955 story 1, ADR 0183 §5). It renders the
-**founder-decided priority surfaces, in order** — global shell + product subnav
-(`/sozluk`), sözlük term page (`/sozluk/:slug`), pano feed (`/pano`) — over a
-**flag-forced preview deploy**, PUTs each candidate's bytes to depo, and emits a
-**candidate set** staged for blessing. It does **not** bless — blessing is the
-founder's step (#2962); this step stops at "a deterministic candidate set exists."
+The candidate-render step produces the small set of candidate screens an operator
+blesses in one sitting. It renders the **priority surfaces, in order** — the ones
+`PRIORITY_SURFACES` names — over a **flag-forced preview deploy**, PUTs each
+candidate's bytes to the store, and emits a **candidate set** staged for blessing.
+It does **not** bless — blessing is the operator's step; this step stops at "a
+deterministic candidate set exists."
 
-- **`priority-surfaces.ts`** (pure) — `PRIORITY_SURFACES` is the ordered founder set;
-  `resolvePrioritySurfaces({termSlug})` substitutes the term route's `:slug` and
+- **`priority-surfaces.ts`** (pure) — `PRIORITY_SURFACES` is the ordered set;
+  `resolvePrioritySurfaces({termSlug})` substitutes the parameterized route's `:slug` and
   yields concrete capture surfaces in order, failing closed on an unfilled param,
   non-contiguous order, or a duplicate surface-id.
 - **`candidate-set.ts`** (pure) — `assembleCandidateSet` folds the resolved surfaces
   against their rendered-and-stored artifacts into the `CandidateSet` the blessing
   surface consumes; `serializeCandidateSet` / `parseCandidateSet` are its JSON
   boundary. Each `CandidateScreen` carries its surface-id (the golden-pointer key) +
-  the **exact depo `sha256`** of the rendered bytes — the ADR 0183 §5 no-re-render
+  the **exact store `sha256`** of the rendered bytes — the no-re-render
   anchor: the bless later moves the pointer to that same `sha256`, no re-render.
 - **`candidate-render.ts`** (thin Effect) — `renderCandidateSet` drives the reused
-  capture leg (the same flake canon `review-design` uses) + the depo store leg over
+  capture leg (the same flake canon `review-design` uses) + the store leg over
   the priority set. Both impure legs are injected seams, so the whole orchestration is
-  unit-tested with fakes — no browser, no depo.
+  unit-tested with fakes — no browser, no store.
 
 ```bash
 # render the priority surfaces over a flag-forced preview into a candidate set:
-KAMPUS_TOKEN=<pasaport apiKey> node packages/design-capture/src/bin.ts render-candidates \
-  --preview-url https://pr-123.web.kamp.us \
+STORE_TOKEN=<api key> <bin> render-candidates \
+  --preview-url https://pr-123.preview.example.com \
   --term-slug amortisman \
   --out /tmp/candidates \
   --flag "golden-screens=on" \
@@ -242,25 +228,24 @@ KAMPUS_TOKEN=<pasaport apiKey> node packages/design-capture/src/bin.ts render-ca
 ```
 
 Prints the serialized candidate set on stdout (and to `--emit` if given) — the input
-the blessing surface (#2962) consumes. `--flag "<key>=on|off"` records the forced flag
+the blessing surface consumes. `--flag "<key>=on|off"` records the forced flag
 state as provenance; this step **consumes** an already-flag-forced preview, it does not
-force flags (that mechanism is emitted separately, #2955). The depo pasaport apiKey
-resolves via `--token`, else `KAMPUS_TOKEN`, else `~/.config/kampus/token` (ADR 0045).
+force flags. The store's api key resolves from the bin's own token flag, then its
+environment variable, then the consuming repo's token file.
 
-## The blessing surface (`golden-gallery` + `golden-bless-set`, #2962)
+## The blessing surface (`golden-gallery` + `golden-bless-set`)
 
 The blessing surface is the **human-in-the-loop bless → commit path** on top of the
-candidate set (#2961) and the golden pointer (#2960) — epic #2955 stories 2/9, ADR
-0183 §5. The founder takes a candidate set, blesses/redlines it down to the small
-golden set (~5–8 screens), and the approved candidates are committed as golden
-baselines. It renders **no** new bytes: a bless is a **pointer move** to the exact
-`sha256` the founder saw in the gallery (the ADR 0183 §5 no-re-render guard).
+candidate set and the golden pointer. The operator takes a candidate set,
+blesses/redlines it down to the small golden set (~5–8 screens), and the approved
+candidates are committed as golden baselines. It renders **no** new bytes: a bless
+is a **pointer move** to the exact `sha256` the operator saw in the gallery.
 
 - **`blessing-surface.ts`** (pure) —
-  - `renderBlessingGallery(set)` emits the founder-facing GitHub gallery comment
-    (option a): one section per candidate in founder order, embedding the depo URL at
+  - `renderBlessingGallery(set)` emits the operator-facing GitHub gallery comment:
+    one section per candidate in set order, embedding the store URL at
     full resolution, plus a copy-paste **decision template** (`<surfaceId>
-    approve|redline` per line) the founder marks. The placeholder ships un-defaulted, so
+    approve|redline` per line) the operator marks. The placeholder ships un-defaulted, so
     a copy without editing fails loud rather than silently blessing.
   - `parseBlessDecisions(text)` reads the filled-in template (ignoring blanks, `#`
     comments, and ``` fences) into `{surfaceId, verdict}` decisions.
@@ -268,19 +253,19 @@ baselines. It renders **no** new bytes: a bless is a **pointer move** to the exa
     golden-pointer move: it blesses each **approved** surface to the `sha256` it carries
     **in the set** (never a decision-supplied value — the no-re-render guard is
     structural), leaves **redlined** ones out, and fails closed on an unaddressed
-    candidate, an unknown surface, or a duplicate decision. A re-bless (story 9) is the
+    candidate, an unknown surface, or a duplicate decision. A re-bless is the
     same fold over the existing pointer — an explicit committed update to the new sha,
     never a silent overwrite; a redline leaves an existing golden untouched (it is "not
     re-blessed", not "removed").
 
 ```bash
-# 1. render the gallery comment from a candidate set, post it on the PR for the founder:
-node packages/design-capture/src/bin.ts golden-gallery \
+# 1. render the gallery comment from a candidate set, post it on the PR for the operator:
+<bin> golden-gallery \
   --set /tmp/candidates/candidate-set.json > gallery.md
 
-# 2. the founder copies the decision template, marks each surface approve|redline into
+# 2. the operator copies the decision template, marks each surface approve|redline into
 #    decisions.txt, then commit the blessed set into the golden pointer:
-node packages/design-capture/src/bin.ts golden-bless-set \
+<bin> golden-bless-set \
   --set /tmp/candidates/candidate-set.json \
   --decisions decisions.txt
 ```
@@ -293,8 +278,7 @@ of the single-surface `golden-bless`; both are pure + fs and never re-render byt
 
 The upload POSTs the PNG bytes to
 **`uploads.github.com/user-attachments/assets`** — GitHub's **undocumented**
-web-composer internal API (ADR 0165, "Evidence hosting"; depo / ADR 0144 was
-dropped in favor of it). It works with a user token today but is a recorded
+web-composer internal API. It works with a user token today but is a recorded
 **durability risk**: it can change or break without notice. This package treats
 the endpoint as **load-bearing-but-fragile**, not a silent dependency:
 
@@ -311,16 +295,15 @@ the endpoint as **load-bearing-but-fragile**, not a silent dependency:
 
 The technique originates from a public gist
 (<https://gist.github.com/MrDHat/b9c008dbe8d387832c0321fac697bcf2>); it is
-described self-containedly here and in ADR 0165 so neither depends on that gist
-surviving.
+described self-containedly here so nothing depends on that gist surviving.
 
 ## CLI
 
 ```bash
 # from the repo root
-GITHUB_TOKEN=<token> node packages/design-capture/src/bin.ts capture \
-  --preview-url https://pr-123.web.kamp.us \
-  --surface "/sozluk" --surface "/sozluk:empty" \
+GITHUB_TOKEN=<token> <bin> capture \
+  --preview-url https://pr-123.preview.example.com \
+  --surface "/catalog" --surface "/catalog:empty" \
   --out /tmp/shots \
   --repo-id 1234177275
 ```
@@ -330,9 +313,8 @@ judge (`localPath`) and embed (`hostedUrl`). `$GITHUB_TOKEN` is read as a
 redacted config, never passed as a flag.
 
 The bin needs the chromium browser binary installed
-(`pnpm --filter @kampus/web exec playwright install chromium`, the same binary
-the e2e suite uses) — the pure core and the unit tests need neither a browser nor
-the network.
+(`pnpm exec playwright install chromium`, the same binary the e2e suite uses) —
+the pure core and the unit tests need neither a browser nor the network.
 
 ## Tests
 

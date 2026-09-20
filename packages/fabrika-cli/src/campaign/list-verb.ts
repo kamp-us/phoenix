@@ -1,10 +1,10 @@
 /**
  * `campaign list` — the `## Campaigns` rows, parsed, optionally narrowed to one state.
  *
- * **Zero rows is a fact at exit `0`, not ADR 0092's red.** An absent table and an empty one are one
- * well-formed default: nothing declared means the dispatch fence is off, not closed (founder ruling
- * on #5011, carried onto this surface by ADR 0304). A judging verb would refuse here; this one
- * supplies an input, and its empty answer is true.
+ * **Zero rows is a fact at exit `0`, not the zero-scope red a judging verb owes.** An absent table
+ * and an empty one are one well-formed default: nothing declared means the dispatch fence is off,
+ * not closed. A judging verb would refuse here; this one supplies an input, and its empty answer is
+ * true.
  *
  * **`none` means no row survived, never "nothing is active".** A table whose every row is `paused`
  * prints those rows — someone opened each one and the file says so. The dispatch question is

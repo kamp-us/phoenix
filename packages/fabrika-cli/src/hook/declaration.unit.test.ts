@@ -48,7 +48,7 @@ describe("violations enforce rules 5 and 6 as data", () => {
 		expect(violations(declaredHooks(oneHook(command))).length).toBeGreaterThan(0);
 	});
 
-	it("refuses a command naming anything under kampus-pipeline (rule 6, ADR 0238)", () => {
+	it("refuses a command naming a pipeline outside fabrika (rule 6)", () => {
 		const found = violations(declaredHooks(oneHook("fabrika hook kampus-pipeline")));
 		expect(found.map((v) => v.reason)).toContainEqual(expect.stringContaining("rule 6"));
 	});

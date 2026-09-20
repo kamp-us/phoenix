@@ -1,9 +1,9 @@
 /**
  * The one exit table every `spend` verb allocates from, so a code means one thing across the group.
  *
- * `spend read` and `spend rollup` already drew the same distinctions — an input that is not there, an
- * input that could not be read, an input read in full that carries nothing — they just spelled them
- * as seven per-verb constants on two overlapping number lines (#5294). The names below are the
+ * `spend read` and `spend rollup` already drew the same distinctions — an input that is not there,
+ * an input that could not be read, an input read in full that carries nothing — they just spelled
+ * them as seven per-verb constants on two overlapping number lines. The names below are the
  * group's, so a caller reading `$?` gets the fact without first asking which verb produced it; the
  * stderr line still names the transcript or the ledger.
  *
@@ -16,7 +16,7 @@
  * found nothing billed. Collapsing any pair would hand a caller a total it cannot trust.
  *
  * `0`, `1` and `127` are reserved by the interface convention (`../verb.ts`). No code here varies
- * with the size of a spend — epic #4779's no-gate ruling.
+ * with the size of a spend: a spend verb reports a measurement, it never gates on one.
  */
 
 import {

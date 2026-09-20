@@ -96,6 +96,7 @@ export const account = {
 	"profile.page.loading": "yükleniyor…",
 	"profile.page.error": "profil yüklenemedi: {code}",
 	"profile.header.statsError": "istatistikler yüklenemedi",
+	"profile.header.statsLoading": "istatistikler yükleniyor…",
 	"profile.standing.yazar": "yazar",
 	"profile.standing.caylak": "çaylak",
 	"profile.stat.definitions": "tanım",
@@ -196,6 +197,12 @@ export const account = {
 	"ui.draftRestore.text": "kaydedilmiş bir taslağın var. geri yüklemek ister misin?",
 	"ui.draftRestore.restore": "taslağı geri yükle",
 	"ui.draftRestore.dismiss": "yoksay",
+	"ui.diff": "{path} dosyasının değişiklik farkı",
+	"ui.markdown.table": "tablo",
+	"ui.markdown.code": "kod bloğu",
+	"ui.markdown.diagram": "diyagram",
+	"ui.markdown.diagram.source": "diyagram kaynağı",
+	"ui.markdown.diagram.error": "diyagram çizilemedi: {reason}",
 };
 
 /** `tr` is the source of truth for the key set; `en/account.ts` is checked against this. */

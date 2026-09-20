@@ -37,20 +37,20 @@ const IN_SYNC = `# Roadmap
 
 | Arc | Milestone | State |
 |-----|-----------|-------|
-| Four Pillars | #17 | active |
-| Geçit | #24 | queued |
+| Four Pillars | #7 | active |
+| Geçit | #4 | queued |
 
 ## Campaigns
 
 | Campaign | Milestone | State |
 |----------|-----------|-------|
-| Mentor Audit | #27 | active |
+| Mentor Audit | #2 | active |
 `;
 
 const PROJECTION = milestones(
-	[17, "open", "Four Pillars"],
-	[24, "open", "Geçit"],
-	[27, "open", "Mentor Audit campaign"],
+	[7, "open", "Four Pillars"],
+	[4, "open", "Geçit"],
+	[2, "open", "Mentor Audit campaign"],
 );
 
 const run = (
@@ -81,10 +81,10 @@ describe("runRoadmapGuard", () => {
 
 | Arc | Milestone | State |
 |-----|-----------|-------|
-| Now | #17 | active |
-| Shipped | #10 | done |
+| Now | #7 | active |
+| Shipped | #1 | done |
 `),
-			[[MILESTONES, milestones([17, "open", "Now"], [10, "closed", "Shipped"])]],
+			[[MILESTONES, milestones([7, "open", "Now"], [1, "closed", "Shipped"])]],
 		);
 		expect(out.code).toBe(0);
 	});
@@ -95,16 +95,16 @@ describe("runRoadmapGuard", () => {
 
 | Arc | Milestone | State |
 |-----|-----------|-------|
-| Now | #17 | active |
-| Also now | #24 | active |
+| Now | #7 | active |
+| Also now | #4 | active |
 `),
-			[[MILESTONES, milestones([17, "open", "Now"], [24, "open", "Also"], [42, "open", "Orphan"])]],
+			[[MILESTONES, milestones([7, "open", "Now"], [4, "open", "Also"], [5, "open", "Orphan"])]],
 		);
 		expect(out.code).toBe(VIOLATION);
 		expect(out.stdout).toBe("");
 		const report = out.stderr.join("\n");
 		expect(report).toContain("[I2] expected exactly ONE active arc, found 2");
-		expect(report).toContain('[I3] open milestone #42 ("Orphan")');
+		expect(report).toContain('[I3] open milestone #5 ("Orphan")');
 	});
 
 	it("annotates each finding on ROADMAP.md under Actions", async () => {
@@ -113,9 +113,9 @@ describe("runRoadmapGuard", () => {
 
 | Arc | Milestone | State |
 |-----|-----------|-------|
-| Zombie | #17 | active |
+| Zombie | #7 | active |
 `),
-			[[MILESTONES, milestones([17, "closed", "Retired"])]],
+			[[MILESTONES, milestones([7, "closed", "Retired"])]],
 			{...ENV, GITHUB_ACTIONS: "true"},
 		);
 		expect(out.code).toBe(VIOLATION);
@@ -132,12 +132,12 @@ describe("runRoadmapGuard", () => {
 		expect(out.stderr.some((line) => line.startsWith("::"))).toBe(false);
 	});
 
-	// ADR 0092's floor, on both sides of the check.
+	// The fail-closed floor, on both sides of the check.
 	it("fails closed on a ROADMAP.md with no arc rows", async () => {
 		const out = await run(roadmap("# Roadmap\n\nNo tables yet.\n"), [[MILESTONES, PROJECTION]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).toContain("fail-closed (ADR 0092, I4)");
+		expect(out.stderr.join("\n")).toContain("fail-closed (I4)");
 	});
 
 	it("fails closed when the repo has no milestones at all", async () => {
@@ -173,7 +173,7 @@ describe("runRoadmapGuard", () => {
 		const out = await run(roadmap(IN_SYNC), [
 			[
 				MILESTONES,
-				{status: 200, body: JSON.stringify([{number: 17, state: "ajar", title: "Four Pillars"}])},
+				{status: 200, body: JSON.stringify([{number: 7, state: "ajar", title: "Four Pillars"}])},
 			],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -187,7 +187,7 @@ describe("runRoadmapGuard", () => {
 		expect(out.stderr.join("\n")).toContain("cannot resolve a target repo");
 	});
 
-	// The guard and the scope fence must validate one file (#6296). A guard pinned to `ROADMAP.md`
+	// The guard and the scope fence must validate one file. A guard pinned to `ROADMAP.md`
 	// while `build pick` reads the declared one is a key with two answers.
 	it("validates the file `roadmapFile` names, not its own literal", async () => {
 		const out = await run(

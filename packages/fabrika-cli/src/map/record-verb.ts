@@ -137,10 +137,10 @@ export const runRecord = (
 		// interrupted run leaves the answer recorded against a still-open ticket — the state the close
 		// order deliberately chooses. Re-reading the map and re-running against its new digest finishes
 		// the close instead of appending the answer a second time, which is what makes that state
-		// re-runnable rather than a hand-repair (#5550). The match is the citation THIS run carries, so
-		// a sibling ticket forked to the same grilling session cannot resume on the other's entry
-		// (#5637). The recorded entry stands as written: a wrong answer is retracted in the open with a
-		// new entry, never overwritten by a re-run (#4227).
+		// re-runnable rather than a hand-repair. The match is the citation THIS run carries, so a sibling
+		// ticket forked to the same grilling session cannot resume on the other's entry. The recorded
+		// entry stands as written: a wrong answer is retracted in the open with a new entry, never
+		// overwritten by a re-run.
 		const recordedAlready = decisionRecorded(found.value.body, options.ticket, citation);
 		if (recordedAlready !== undefined) {
 			const resumeScope = `${VERB}: ${repo}, #${options.ticket}'s answer is already on #${options.map} — resuming the close.`;
@@ -214,7 +214,7 @@ export const runRecord = (
 		// The proof hangs off the authority the entry will carry, not off the branch that composed it:
 		// the fork marker is a property of the ticket, while a `Ruled` row asserts the founder ruled,
 		// and that claim is the reader's to confirm on every path. Reading it here is what makes an
-		// unverified `Ruled` entry unreachable — the non-forked branch recorded one verbatim (#5584).
+		// unverified `Ruled` entry unreachable — the non-forked branch recorded one verbatim.
 		if (authority._tag === "Ruled") {
 			const ruling = yield* requireRuling(
 				VERB,

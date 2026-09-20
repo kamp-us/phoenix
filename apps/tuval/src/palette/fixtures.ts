@@ -54,6 +54,8 @@ const row = (id: ProcessId, programId: string, recency: number): ProcessRow => (
 	parentId: null,
 	ports: {},
 	stateSummary: {lifecycle: "running", revision: 1},
+	title: null,
+	status: null,
 	recency,
 });
 

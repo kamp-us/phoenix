@@ -14,7 +14,7 @@ evidence each token rests on are one lookup away, its section named by the verb'
 `fabrika wire doc-section --heading "heal-ci diagnose" < <skill-base>/contract.md`, and likewise
 for each of the other verbs.
 
-You answer one question: **why is this pull request not moving?** Red CI is one answer of ten.
+You answer one question: **why is this pull request not moving?** Red CI is one answer of eleven.
 
 The failure that matters is **mistaking "not failing" for "attended"**. A PR that is green,
 unclaimed and ungated is stranded exactly as hard as a red one — it just has nobody to notice.
@@ -54,6 +54,7 @@ this skill runs until you hold one. Then take exactly the row your token names:
 | `attended` | end the run | something is acting — an owner inside the dwell, a live queue entry, an armed intent, or CI still running |
 | `not-open` | end the run | draft, closed or merged: a draft is its author's to finish, a merged one already went |
 | `wedged` | step 5 | a gating check queued that never started |
+| `conflicted` | step 7 | it conflicts with its base, so no merge ref exists and no required context can run |
 | `check-surface` | step 5 | a required context no run produces — it cannot go green whoever attends it |
 | `red` | step 3 | a gating check failed |
 | `linkage-refused` | step 6 | correct PR; the merge seam refuses its issue-reference grammar |
@@ -89,9 +90,8 @@ the body there is yours. Then post it, typing that path out literally —
 **Never capture the allocation into a shell variable and never redirect through one.** Command
 substitution and a variable the verifier cannot resolve are each on their own enough for a
 worktree-isolated shell to refuse the line, so a fence built that way does not run for the agent it
-is written for (ADR
-[0235](../../../../.decisions/0235-fences-carry-zero-expansions.md)). A redirect whose target is the
-literal path carries no expansion and runs.
+is written for — a fence carries zero expansions. A redirect whose target is the literal path
+carries no expansion and runs.
 
 **Naming a lane is not dispatching it.** The note's arrow names *whose work this is* so a puller
 can recognise it; it summons nobody. The arrow is a **lookup with no judgment in it**, so two runs
@@ -104,14 +104,15 @@ over one strand write the same word. The lookup is total over every class that g
 | `gated-unshipped` | **ship** | every namespace passes and nothing is armed |
 | `claim-stale` | **author** when the claim holder is this PR's author, **human** when anyone else | the holder is who stopped |
 | `linkage-refused` | **author** when nobody holds it, **build** when a lane does | step 6's two arms, picked by the holder |
+| `conflicted` | **build** | step 7 — the rebase is a repair round on a branch, and every PR here is agent-authored |
 | `wedged` · `check-surface` | **human** | step 5 — the cancel lever and a required-context change are an operator's |
 | `blocked-human` | **human** | step 6 — correctly waiting on a person |
 | `red` | **nobody** | step 3 routes a red off its log signature, and the class alone carries none |
 
 The scheduled sweep relays this rather than repeating it: `sweep` emits the lane as its row's sixth
 column, off [`lane.ts`](../../../../packages/fabrika-cli/src/heal-ci/lane.ts)'s lookup over the same
-table. The workflow printed a hardcoded `nobody` on every row until #7209 — on `ungated` and
-`gated-unshipped` that told every reader the board's own detector had found nothing for anyone to do.
+table. A workflow that hardcodes `nobody` on every row instead tells every reader, on `ungated` and
+`gated-unshipped` alike, that the board's own detector found nothing for anyone to do.
 
 **The arrow is a lane, never a person, and the login always goes in the body.** The six words are a
 closed set with no seat for a login, so a named individual reaches the reader through the note's
@@ -152,8 +153,8 @@ and treating one as healable is how a non-failure stalled a mergeable PR.
 `pull_request` workflow builds the prospective merge of head into base and labels the runs with the
 head SHA, so a `logic` red naming a symbol or a line nobody can find at the head is still a real
 failure of the tree that must merge — the head being clean disproves nothing, and reclassifying on
-that basis is how a correct FAIL gets filed as a gate misreading its own SHA
-([#6794](https://github.com/kamp-us/phoenix/issues/6794)). Route it to repair as the `logic` it is;
+that basis is how a correct FAIL gets filed as a gate misreading its own SHA. Route it to repair as
+the `logic` it is;
 reproducing it against that ref is the repair lane's step, stated with its citation and worked
 example in [`build`'s Repair section](../build/SKILL.md#repair).
 
@@ -195,6 +196,10 @@ operator's, and a bounded run cannot supervise the retry it would trigger.
 If `surface` answers `unprobeable` it could not read the protection surface at all. That is a fact
 about your permissions, not about the repository — say so, and never report the PR surface-clean.
 
+**A surface with *every* required context absent is the one reading to distrust here**, and
+`diagnose` has already told you which of the two it is: a conflicted PR produces no merge ref and
+therefore no run for anything, which is `conflicted` at step 7 and not a settings gap at all.
+
 ## 6 — When the PR is correct and the seam refuses it
 
 **`linkage-refused`** — the PR is right and the shipper will decline it on grammar. A revert
@@ -217,10 +222,28 @@ recipe-clearable: `fabrika recipe unpark <lane-key> --task <task>` proves whethe
 moved — it relays `ship reconcile`, so only `landed` or `ejected` clears — and on a clear it records
 the `UNBLOCKED` and the fresh conclusive read in one event. Exit `13` is the queue genuinely not
 having moved, and the park stands. Run it when you work the row rather than routing a human, and a
-stall self-heals on the next scheduled pass (ADR
-[0313](../../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)). `sweep` itself still
-writes nothing on its own authority — the verb is yours to run on the row you are working, never the
-sweep's to run over the board.
+stall self-heals on the next scheduled pass — a queue dwell is a wait, not a park. `sweep` itself
+still writes nothing on its own authority — the verb is yours to run on the row you are working,
+never the sweep's to run over the board.
+
+## 7 — When the base moved out from under it
+
+**`conflicted`** — the merge of this head into its base conflicts. GitHub builds no
+`refs/pull/<n>/merge` for a conflicted PR, so no `pull_request` workflow ever fires and **every**
+required context sits absent. That looks exactly like `check-surface` from the check surface alone,
+and the two want opposite repairs: one is a repository-settings change with an operator's name on
+it, this one is a rebase. The arm above `check-surface` is what keeps a conflicted PR out of the
+operator's queue.
+
+Name it and stop — the terminal is `ROUTED — build`. **You never rebase, merge or push**: this
+skill owns no branch and checks out nothing (§CAPABILITIES), and a rebase is a repair round on the
+branch, which is `build`'s. Post the class with `fabrika heal-ci note` exactly as §2 does and end.
+
+`diagnose` reads this fact through `ship`'s own mergeability poll, so the two verbs never disagree
+about one PR. GitHub computes `mergeable` lazily, so a first read routinely answers "not computed
+yet": that is re-read across `--mergeability-seconds` and, still indefinite at the end of it,
+**skips the arm with a stderr notice rather than firing it**. An indefinite read is not a conflict,
+and reporting one would send a healthy PR to a rebase nobody owes.
 
 ## Sweep — the scheduled surface
 
@@ -292,8 +315,8 @@ comment history before it creates: exit `14` means this strand is already record
 head, nothing was posted, and the run ends on whichever terminal it was already headed for. That is
 how "a NEW comment every time" and "one note per strand" are both true — a new comment per
 *classification*, not per caller. The clause is not optional politeness: two sweeps three minutes
-apart left up to six identical notes on one pull request because the routed path posted bare
-(#7209). Four do not, each for a stated reason: `ATTENDED` and `NOT-OPEN` (no strand to record),
+apart left up to six identical notes on one pull request because the routed path posted bare. Four
+do not, each for a stated reason: `ATTENDED` and `NOT-OPEN` (no strand to record),
 `SWEPT` (board-level — `note` takes a PR number, and the sweep writes nothing), and `UNKNOWN` (you
 hold no answer, and a note asserting one would be the confident-wrong record this skill prevents).
 

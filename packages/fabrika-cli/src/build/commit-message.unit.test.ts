@@ -4,6 +4,7 @@ import {
 	foreignRefsIn,
 	isLaneScratchLeaf,
 	issueRefsIn,
+	landingRefsIn,
 	leafOf,
 	quotedBlock,
 	redact,
@@ -28,8 +29,46 @@ describe("issueRefsIn", () => {
 	});
 });
 
+describe("landingRefsIn", () => {
+	it("reads the subject's trailing (#<n>), the shape `build commit`'s convention writes", () => {
+		expect(landingRefsIn("fix(report): state the guarantee (#4789)")).toEqual([4789]);
+	});
+
+	it("reads a line-anchored closing or association trailer", () => {
+		expect(landingRefsIn("feat(guide): the front door\n\nCloses #6004\nPart of #5817\n")).toEqual([
+			6004, 5817,
+		]);
+	});
+
+	// The shape `lane integrate` writes onto `epic/<N>`, read off git's own default merge message.
+	it("reads the child number out of the merge subject integrate produces", () => {
+		expect(
+			landingRefsIn("Merge branch 'build/4312-editor-focus-loss-c4367b0b' into epic/4300"),
+		).toEqual([4312]);
+	});
+
+	it("reads a replayed ref too, which carries the child branch with its slashes flattened", () => {
+		expect(
+			landingRefsIn(
+				"Merge branch 'replay/build-4312-editor-focus-loss-c4367b0b-onto-abc1234' into epic/4300",
+			),
+		).toEqual([4312]);
+	});
+
+	// The defect this predicate exists to close: `issueRefsIn` reads a landing from both.
+	it("reads no landing from an incidental or a negating mention", () => {
+		expect(landingRefsIn("refactor(tracer): rework the helper; does not touch #6008")).toEqual([]);
+		expect(landingRefsIn("chore(build): drop the change that would have closed #6008")).toEqual([]);
+	});
+
+	// Recognition runs one way only, so a shape it does not know is silence, never a landing.
+	it("reads no landing from a shape it does not recognise", () => {
+		expect(landingRefsIn("wip on #6008")).toEqual([]);
+	});
+});
+
 describe("foreignRefsIn", () => {
-	// The incident's own commit: the borrowed message named #4789 while the lane served #5437.
+	// The incident's own commit: the borrowed message named an issue the lane had never served.
 	it("names the borrowed message's issue, which the lane never held (#5484)", () => {
 		expect(
 			foreignRefsIn(

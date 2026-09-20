@@ -26,6 +26,10 @@ export interface TableRow {
 	readonly parentId: Option.Option<ProcessId>;
 	readonly ports: Readonly<Record<string, PortDeclaration>>;
 	readonly stateSummary: TableStateSummary;
+	/** The newest line the process said on `title@1`, latched by the kernel (`../process/self-report.ts`). */
+	readonly title: Option.Option<string>;
+	/** The newest line it said on `status@1`. Both are `none` for a program declaring neither port. */
+	readonly status: Option.Option<string>;
 }
 
 export type TableEventKind = "spawned" | "stopped" | "state-changed";
@@ -38,6 +42,7 @@ export interface TableEvent {
 
 export const toTableRow = (row: ProcessRow): TableRow => {
 	const {lifecycle, revision} = row.stateSummary();
+	const {title, status} = row.selfReport();
 	const ports: Record<string, PortDeclaration> = {};
 	for (const [name, port] of Object.entries(row.ports)) {
 		ports[name] = {kind: port.kind, direction: port.direction};
@@ -48,6 +53,8 @@ export const toTableRow = (row: ProcessRow): TableRow => {
 		parentId: row.parentId,
 		ports,
 		stateSummary: {lifecycle, revision},
+		title,
+		status,
 	};
 };
 
@@ -72,7 +79,9 @@ export const isTableRow = (value: unknown): value is TableRow =>
 	Option.isOption(value.parentId) &&
 	Predicate.isObjectOrArray(value.ports) &&
 	Object.values(value.ports).every(isPortDeclaration) &&
-	isStateSummary(value.stateSummary);
+	isStateSummary(value.stateSummary) &&
+	Option.isOption(value.title) &&
+	Option.isOption(value.status);
 
 /** The port predicate: the wire is nominal kind plus predicate, and this is the predicate. */
 export const isTableEvent = (value: unknown): value is TableEvent =>

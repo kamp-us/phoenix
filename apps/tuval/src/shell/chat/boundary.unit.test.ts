@@ -25,11 +25,15 @@ import type {ChatView} from "./view.ts";
  * the rule this file exists to hold.
  */
 const chatViewFitsTheSlot: ViewState = {
+	pinned: true,
 	scroll: 0,
 	draft: "",
+	outgoing: [],
 	cursor: null,
 	atOldest: false,
 	expanded: [],
+	unfolded: [],
+	viewing: null,
 } satisfies ChatView;
 
 /**
@@ -38,6 +42,7 @@ const chatViewFitsTheSlot: ViewState = {
  * later declaration may widen an interface.
  */
 interface ChatViewAsInterface {
+	readonly pinned: boolean;
 	readonly scroll: number;
 	readonly draft: string;
 	readonly cursor: string | null;
@@ -45,11 +50,13 @@ interface ChatViewAsInterface {
 	readonly expanded: ReadonlyArray<string>;
 }
 const asInterface = {
+	pinned: true,
 	scroll: 0,
 	draft: "",
 	cursor: null,
 	atOldest: false,
 	expanded: [],
+	unfolded: [],
 } as ChatViewAsInterface;
 // @ts-expect-error — an interface-shaped view record is not a `Schema.Json` member, so no window
 // could hold it and `ChatView` must not become one.
@@ -98,11 +105,15 @@ const importLines = (source: string): ReadonlyArray<string> =>
 describe("chat window boundary", () => {
 	it("the view slot admits this window's record and refuses an interface-shaped one", () => {
 		expect(chatViewFitsTheSlot).toEqual({
+			pinned: true,
 			scroll: 0,
 			draft: "",
+			outgoing: [],
 			cursor: null,
 			atOldest: false,
 			expanded: [],
+			unfolded: [],
+			viewing: null,
 		});
 		expect(interfaceMisfitsTheSlot).toBe(asInterface);
 		expect(isWindowRenderer).toBe(true);
@@ -154,11 +165,25 @@ describe("chat window boundary", () => {
 		expect(written.filter(([, tag]) => tag === undefined || !declared.has(tag))).toEqual([]);
 	});
 
-	it("every agent import is type-only, so no agent code reaches the browser bundle", () => {
+	it("agent runtime imports admit only the pure snapshot predicate, cut-reply re-mark, identity join and cursor decision", () => {
+		// The third exception is `remarkCutReplies`, and it is the same class as the first two: a total
+		// function over transcript rows, no service and no machine behind it. The window needs it where
+		// the store's rows enter it — a page-back carries the bare copy of a reply the operator cut, and
+		// the session's record is the only thing that knows better (#8985). Addressed at `core/state.ts`
+		// rather than the barrel so this adds nothing to the graph `core/snapshot.ts` already pulls in.
+		// The fourth is `itemIds` / `isNamedItem`: the same class again, and off the ports barrel this
+		// file's type imports already pull in — that barrel re-exports types and pure predicates only.
+		const admitted = [
+			'import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";',
+			'import {remarkCutReplies} from "../../ai-agent/core/state.ts";',
+			'import {isNamedItem, itemIds} from "../../ai-agent/ports/index.ts";',
+		];
 		const offenders = sourceFiles().flatMap(([name, source]) =>
 			importLines(source)
 				.filter((line) => line.includes("ai-agent/"))
+				.filter((line) => !line.includes('"../../ai-agent/history/cursor.ts"'))
 				.filter((line) => !/^import type\b/.test(line))
+				.filter((line) => !admitted.includes(line))
 				.map((line) => `${name}: ${line.trim()}`),
 		);
 		expect(offenders).toEqual([]);

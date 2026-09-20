@@ -6,27 +6,35 @@
  * write-recency line under it), leak-scan the assembled comment, upsert **one comment per
  * namespace**, and read it back unconditionally from live PR state.
  *
- * Every one of those is a scar. #3173's hand-rolled `gh api` emit posted a literal path and
+ * Every one of those is a scar. A hand-rolled `gh api` emit posted a literal path and
  * self-reported a false PASS, which is why the read-back re-fetches instead of trusting a carried
  * variable. The namespace set is recomputed rather than trusted because v1 got "a gate never emits
  * another gate's marker" free from one-skill-per-namespace and this owner does not. The `12` refusal
  * is `bindToHead`'s `Stale` arm applied at the write seam, where its absence costs the most. And the
  * marker is the comment's **literal first line** — a second marker stacked on line 2 is un-anchored,
- * resolves its namespace empty, and fail-closes a substantively-passing PR (the PR #2456 stall).
+ * resolves its namespace empty, and fail-closes a substantively-passing PR.
  *
  * The head re-resolve runs **before** the recompute, and the recompute reads at the bound commit
- * (`head.ts`, #5122). `12` labels the tree; only the binding makes the derived set provably that
+ * (`head.ts`). `12` labels the tree; only the binding makes the derived set provably that
  * tree's — the two are separate reads, and a force-push that rewinds back onto `--sha` passes `12`
  * clean while the PR-number file endpoint serves some other head's list.
  *
  * The upsert **appends**: a matched comment keeps its prior verdict verbatim below
  * `./supersede.ts`'s fence and the fresh verdict takes the first line, because GitHub keeps no
- * comment-body history and a PATCH over a verdict is that verdict gone (#7247). A post that would
+ * comment-body history and a PATCH over a verdict is that verdict gone. A post that would
  * retire a standing verdict of the opposite polarity is `17` until `--supersede` says so out loud.
  *
- * With `--base`/`--tip` the verb runs the range-scoped path instead (`./range-post.ts`, #5935): the
+ * With `--base`/`--tip` the verb runs the range-scoped path instead (`./range-post.ts`): the
  * positional is the child issue, the marker is `../wire/range-verdict-marker.ts`'s, and the same
  * namespace rule is asked of the range's own changed paths.
+ *
+ * **A `PASS` carries one obligation the six steps do not: `--round`, and the `18` fence under it.**
+ * A reviewer that routes an in-scope finding appends it as an acceptance criterion, and that row
+ * binds the *next* cycle — so a `PASS` on the round that appended it is the one terminal it cannot
+ * survive: the lane folds to `ship`, the PR merges, the issue auto-closes, and the finding is gone
+ * with an artifact behind it that reads as correct. `./appended-this-round.ts` is that read, and it
+ * runs on both subjects — a PR here, a child's range on the ranged arm — because a child's reviewer
+ * routes findings the same way.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -47,18 +55,23 @@ import {
 	clause as toClause,
 } from "../wire/verdict-marker.ts";
 import {emitAdvisory, readAdvisory, reviewedHeadLine} from "./advisory.ts";
+import {type CriterionProvenance, provenanceSubject} from "./append.ts";
+import {type AppendedRead, appendedThisRound} from "./appended-this-round.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
-import {namespacesOf, partition} from "./classes.ts";
+import {issueRefsOf, namespacesOf, partition} from "./classes.ts";
 import {
+	APPENDED_THIS_ROUND,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	STALE_HEAD,
 	SUPERSEDES_VERDICT,
+	UNNAMED_EVIDENCE,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {contentDigestAt} from "./content-binding.ts";
 import {bindHead, boundLine} from "./head.ts";
+import {evidenceOwed, type OwedRead, quoteRows} from "./outside-diff-evidence.ts";
 import {runRangePost} from "./range-post.ts";
 import {compose as supersedeWith} from "./supersede.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
@@ -81,11 +94,11 @@ export interface PostOptions {
 	readonly pr: number;
 	readonly namespace: string;
 	readonly polarity: string;
-	/** Required in PR mode; refused in range mode, where content is the only binding (ADR 0276). */
+	/** Required in PR mode; refused in range mode, where content is the only binding. */
 	readonly sha: string | null;
 	readonly clause: string;
 	readonly carrier: string;
-	/** The two ends of a range-scoped verdict (#5935) — both or neither. */
+	/** The two ends of a range-scoped verdict — both or neither. */
 	readonly base: string | null;
 	readonly tip: string | null;
 	readonly repo: string | null;
@@ -96,6 +109,16 @@ export interface PostOptions {
 	readonly now: Effect.Effect<number>;
 	/** The explicit acknowledgement that this verdict retires one of the opposite polarity. */
 	readonly supersede: boolean;
+	/**
+	 * Which review round this verdict is the terminal of — required on a `PASS`, ignored on a `FAIL`.
+	 *
+	 * It is the reviewer's own number, the same one `review append-criterion --round` was handed, and
+	 * it is an operand rather than something this verb derives because the two have to be the *same*
+	 * number for the `18` fence to mean anything: a round counted here from the PR's verdict history
+	 * and a round written into a row by the caller are two claims that can disagree, and the
+	 * disagreement would read as a clean pass.
+	 */
+	readonly round: number | null;
 }
 
 interface Posted {
@@ -120,7 +143,7 @@ const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.star
  * is the one a re-derivation drops, which fires this refusal on every clean run.
  *
  * The **advisory** carrier cannot go through the format: its first line deliberately withholds the
- * SHA, so `read` calls it `Malformed` by design (ADR 0111). It is verified through its own two
+ * SHA, so `read` calls it `Malformed` by design. It is verified through its own two
  * anchors instead — the advisory first line and the canonical `Reviewed-head:` body line — and then
  * through the same whole-comment comparison.
  */
@@ -172,18 +195,17 @@ const mismatchOf = (
  * step 5's upsert-match key.
  *
  * The key is per-carrier because the two carriers anchor on different bytes, and neither read can
- * stand in for the other. An advisory withholds the SHA from its first line by design (ADR 0111), so
+ * stand in for the other. An advisory withholds the SHA from its first line by design, so
  * `read` calls it `Malformed` and a marker-only match never finds a prior advisory: every §CP re-post
- * created a second comment, against the one-namespace-one-comment invariant this step exists for
- * (#4992). Matching per carrier also keeps the pair disjoint in the other direction — a marker post
+ * created a second comment, against the one-namespace-one-comment invariant this step exists for.
+ * Matching per carrier also keeps the pair disjoint in the other direction — a marker post
  * never edits an advisory comment, and vice versa.
  *
  * The head dimension makes a re-gate at a moved head append instead of overwrite: a verdict is
  * SHA-bound, so a new head's verdict is a different fact, not a revision, and PATCHing the prior
  * head's comment destroys the only record of what was true over that tree. Both carriers can be
- * keyed on it — the marker binds its head on line 1, the advisory on its `Reviewed-head:` line
- * (ADR 0151), which `readAdvisory` already requires. ADR 0213 refined rule 2's uniqueness key and
- * named this half as still open; #4007 closed it in v1.
+ * keyed on it — the marker binds its head on line 1, the advisory on the `Reviewed-head:` line
+ * `readAdvisory` already requires.
  */
 const carriesNamespaceAt = (
 	body: string,
@@ -207,7 +229,7 @@ const carriesNamespaceAt = (
  * The polarity a standing comment's marker carries, or `null` when it carries none to compare.
  *
  * `null` for the advisory carrier by construction: an advisory line withholds every field but the
- * namespace (ADR 0151), and the carrier is a PASS-only path anyway, so there is no flip to announce.
+ * namespace, and the carrier is a PASS-only path anyway, so there is no flip to announce.
  */
 const polarityOfMarker = (body: string, carrier: Carrier): Polarity | null => {
 	if (carrier === "advisory") return null;
@@ -221,6 +243,70 @@ const unreadableMessage = (what: string, pr: number, reason: string): string =>
 
 const unreadable = (what: string, pr: number, reason: string): VerbOutcome =>
 	refuse(PRECONDITION_UNKNOWN, unreadableMessage(what, pr, reason));
+
+/**
+ * The `18` fence, and the `11` it fails closed to — the refusal this round's own append earns.
+ *
+ * `null` lets the post through. Every other answer is a refusal, because the two states this read
+ * can be in that are not "no row" are "a row is there" and "whether a row is there is unknown", and
+ * only the first has a polarity to fix. Nothing is written on either.
+ */
+const appendedRefusal = (
+	read: AppendedRead,
+	provenance: CriterionProvenance,
+	round: number,
+	diagnostics: ReadonlyArray<string>,
+): VerbOutcome | null => {
+	if (read._tag === "None") return null;
+	if (read._tag === "Unreadable") {
+		return refuse(
+			PRECONDITION_UNKNOWN,
+			`${VERB}: cannot read #${read.issue}, which would carry a criterion appended on ${provenanceSubject(provenance)}'s round ${round}: ${read.reason} — whether this PASS strands one is UNKNOWN; nothing was posted.`,
+			diagnostics,
+		);
+	}
+	const quoted = read.rows.map((row) => `  - "${row}"`).join("\n");
+	const what =
+		read.rows.length === 1 ? "an acceptance criterion" : `${read.rows.length} acceptance criteria`;
+	return refuse(
+		APPENDED_THIS_ROUND,
+		`${VERB}: round ${round} appended ${what} to #${read.issue} from ${provenanceSubject(provenance)}:\n${quoted}\nAn appended row binds the NEXT cycle, and a PASS has none — the lane folds to ship, the PR merges, and #${read.issue} closes with the row unread. This round owes --polarity FAIL. Nothing was posted.`,
+		diagnostics,
+	);
+};
+
+/**
+ * The `19` fence, and the `11` it fails closed to — the refusal a `PASS` earns by grading a marked
+ * criterion on nothing.
+ *
+ * Shaped exactly like {@link appendedRefusal}: `null` lets the post through, and the only two other
+ * states this read can be in are "a marked row is uncited" and "whether one is uncited is unknown".
+ * Nothing is written on either.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9200
+ */
+const evidenceRefusal = (
+	read: OwedRead,
+	diagnostics: ReadonlyArray<string>,
+): VerbOutcome | null => {
+	if (read._tag === "None") return null;
+	if (read._tag === "Unreadable") {
+		return refuse(
+			PRECONDITION_UNKNOWN,
+			`${VERB}: cannot read #${read.issue}, whose contract would mark criteria this verdict owes evidence for: ${read.reason} — whether this PASS grades one on nothing is UNKNOWN; nothing was posted.`,
+			diagnostics,
+		);
+	}
+	const what =
+		read.missing.length === 1
+			? "an acceptance criterion marks"
+			: `${read.missing.length} acceptance criteria mark`;
+	return refuse(
+		UNNAMED_EVIDENCE,
+		`${VERB}: on #${read.issue}, ${what} evidence outside the diff and this body names none:\n${quoteRows(read.missing)}\nA marked criterion is graded on the evidence it names, never on the diff alone — so name what each one rested on, or post --polarity FAIL naming the missing evidence. Nothing was posted.`,
+		diagnostics,
+	);
+};
 
 export const runPost = (
 	options: PostOptions,
@@ -247,8 +333,20 @@ export const runPost = (
 		if (carrier === "advisory" && polarity === "FAIL") {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --carrier advisory is a PASS path only (ADR 0226) — post the FAIL marker instead.`,
+				`${VERB}: --carrier advisory is a PASS path only — post the FAIL marker instead.`,
 			);
+		}
+		// A PASS is the terminal an appended row cannot survive, so it is the one polarity that has to
+		// say which round it ends. A FAIL routes into a next cycle either way and owes no number.
+		if (polarity === "PASS" && options.round === null) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --round is required on a PASS — a PASS ends the cycle, and the round is what says whether this one appended a criterion that would die with it.`,
+			);
+		}
+		if (options.round !== null) {
+			const badRound = badNumber(VERB, "a review round", options.round);
+			if (badRound !== null) return badRound;
 		}
 		const clause = toClause(options.clause);
 		if (clause === null) {
@@ -258,7 +356,7 @@ export const runPost = (
 			);
 		}
 
-		// Range mode (#5935): the positional is the child issue, and content is the only binding, so
+		// Range mode: the positional is the child issue, and content is the only binding, so
 		// --sha and the advisory carrier — both head-scoped ideas — are refused rather than ignored.
 		const ranged = options.base !== null || options.tip !== null;
 		if (ranged && (options.base === null || options.tip === null)) {
@@ -270,13 +368,13 @@ export const runPost = (
 		if (ranged && options.sha !== null) {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --sha does not combine with --base/--tip — a range verdict binds content, not a head (ADR 0276).`,
+				`${VERB}: --sha does not combine with --base/--tip — a range verdict binds content, not a head.`,
 			);
 		}
 		if (ranged && carrier === "advisory") {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --carrier advisory is a PR-scoped path (ADR 0151) — a range verdict has no advisory carrier.`,
+				`${VERB}: --carrier advisory is a PR-scoped path — a range verdict has no advisory carrier.`,
 			);
 		}
 		if (!ranged && options.sha === null) {
@@ -302,6 +400,23 @@ export const runPost = (
 					OFF_VOCABULARY,
 					`${VERB}: --${flag} "${raw}" is not a revision — expected 7–40 hex characters.`,
 				);
+			}
+			// The epic-child arm of the same fence. A child's reviewer routes its findings with
+			// `--base`/`--tip` too, so a `pr:#`-only read here would leave exactly one subject able to
+			// pair an append with a PASS — and a child's PASS folds the range into the epic's tail.
+			if (polarity === "PASS" && options.round !== null) {
+				const routed: CriterionProvenance = {_tag: "Ranged", range: {base, tip}};
+				const appended = yield* appendedThisRound(repo, [pr], routed, options.round);
+				const refusal = appendedRefusal(appended, routed, options.round, []);
+				if (refusal !== null) return refusal;
+			}
+			// The `19` fence on the child arm. A child's contract marks criteria exactly as any other
+			// issue's does, and its range verdict is the one record the epic tail folds, so a PASS that
+			// cites no evidence for a marked row loses it at the same seam a PR's would.
+			if (polarity === "PASS") {
+				const owed = yield* evidenceOwed(repo, [pr], authored.text);
+				const refusal = evidenceRefusal(owed, []);
+				if (refusal !== null) return refusal;
 			}
 			return yield* runRangePost(
 				{
@@ -354,7 +469,7 @@ export const runPost = (
 		if (!prefixMatch(live, inspected)) {
 			return refuse(
 				STALE_HEAD,
-				`${VERB}: the live head is ${live}, not ${inspected} — the tree you judged is gone; re-review at ${live} (ADR 0058).`,
+				`${VERB}: the live head is ${live}, not ${inspected} — the tree you judged is gone; re-review at ${live}.`,
 			);
 		}
 
@@ -366,8 +481,8 @@ export const runPost = (
 		if (listed._tag === "Failure") return unreadable("the changed-file list", pr, listed.reason);
 		const derived = namespacesOf(partition(listed.value));
 		// The content binding is taken at the SAME bound commit the class set is derived at, so the
-		// digest the verdict carries is provably over the range it judged and not over a later read
-		// (ADR 0276). A digest that cannot be computed refuses the post: a marker silently emitted
+		// digest the verdict carries is provably over the range it judged and not over a later read.
+		// A digest that cannot be computed refuses the post: a marker silently emitted
 		// without one is head-bound forever, and nothing downstream could tell that apart from a
 		// deliberate head-only verdict.
 		const content = yield* contentDigestAt(head.mergeBase, head.sha);
@@ -377,7 +492,7 @@ export const runPost = (
 		const diagnostics = [
 			boundLine(VERB, head),
 			scannedLine(VERB, listed.value.length, "changed file"),
-			`${VERB}: content ${content.value} — the digest of ${head.mergeBase}...${head.sha} this verdict survives on (ADR 0276).`,
+			`${VERB}: content ${content.value} — the digest of ${head.mergeBase}...${head.sha} this verdict survives on.`,
 		];
 		if (!derived.includes(namespace)) {
 			return refuse(
@@ -387,7 +502,34 @@ export const runPost = (
 			);
 		}
 
-		// Step 3 — compose through the wire format, or through the ADR 0151 advisory shape.
+		// The `18` fence, ahead of every byte this verb composes: whether this PASS is legal at all is
+		// a question about the round, not about the comment, and the answer costs a write nothing.
+		// The issue set is every issue the body names — closing keywords AND `Part of`, because a
+		// `--partial` PR's reviewer appends to the issue it is part of, and a closing-only read would
+		// let that row die exactly the way this refusal exists to stop.
+		if (polarity === "PASS" && options.round !== null) {
+			const routed: CriterionProvenance = {_tag: "Pull", pr};
+			const linked = issueRefsOf(target.pull.body).referenced;
+			const appended = yield* appendedThisRound(repo, linked, routed, options.round);
+			const refusal = appendedRefusal(appended, routed, options.round, diagnostics);
+			if (refusal !== null) return refusal;
+		}
+
+		// The `19` fence, over the same issue set and for the same reason the `18` fence reads it: a
+		// marked criterion may sit on whichever issue the round was graded against, and a `--partial`
+		// PR's contract is the one it is `Part of`. It runs without `--round` because owing the
+		// evidence is a fact about the contract, not about which round this is.
+		if (polarity === "PASS") {
+			const owed = yield* evidenceOwed(
+				repo,
+				issueRefsOf(target.pull.body).referenced,
+				authored.text,
+			);
+			const refusal = evidenceRefusal(owed, diagnostics);
+			if (refusal !== null) return refusal;
+		}
+
+		// Step 3 — compose through the wire format, or through the advisory shape.
 		const firstLine =
 			carrier === "advisory"
 				? emitAdvisory(namespace, clause)
@@ -418,7 +560,7 @@ export const runPost = (
 		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
 		// The NEWEST match, by write-recency — the same end of the order the resolver reads from. The
 		// list arrives oldest-first, so taking the first match edited the comment least likely to be
-		// in force, and the edit landed where nobody reads (#5048).
+		// in force, and the edit landed where nobody reads.
 		const mine = latestByWriteRecency(
 			comments.value.filter(
 				(comment) =>
@@ -428,7 +570,7 @@ export const runPost = (
 		);
 
 		// The prior verdict is never replaced, only pushed below the fence — GitHub keeps no
-		// comment-body history, so a PATCH over it is the record gone (#7247). A polarity flip is the
+		// comment-body history, so a PATCH over it is the record gone. A polarity flip is the
 		// one case that also needs saying out loud, because it is the flip that decides the merge.
 		const standing = mine === undefined ? null : polarityOfMarker(mine.body, carrier);
 		if (standing !== null && standing !== polarity && !options.supersede) {
@@ -461,7 +603,7 @@ export const runPost = (
 		}
 		const upsert = mine === undefined ? "created" : "superseded";
 
-		// Step 6 — read it back from live state. The write call's own echo is not evidence (#3173).
+		// Step 6 — read it back from live state. The write call's own echo is not evidence.
 		const back = yield* getComment(repo, landed.id);
 		const mismatch =
 			back._tag === "Failure"

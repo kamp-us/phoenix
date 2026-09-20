@@ -8,7 +8,7 @@ import * as Schema from "effect/Schema";
 import {expectTypeOf, vi} from "vitest";
 import {PANO_FEED_CACHE_TAG, panoFeedCacheFor} from "./feed-cache.ts";
 
-class FlushRejected extends Schema.TaggedErrorClass<FlushRejected>()("test/FlushRejected", {
+class FlushRejected extends Schema.TaggedError<FlushRejected>()("test/FlushRejected", {
 	cause: Schema.Unknown,
 }) {}
 
@@ -17,7 +17,9 @@ interface PurgeCall {
 }
 
 /** `waitUntil` collects the scheduled promises so a test can `flush` the deferred work. */
-function makeHarness(opts?: {purge?: (options: {tags: string[]}) => Promise<unknown>}) {
+function makeHarness(opts?: {
+	purge?: (options: {tags: string[]}) => Promise<CachePurgeResult | undefined>;
+}) {
 	const purges: Array<PurgeCall> = [];
 	const scheduled: Array<Promise<unknown>> = [];
 	const cache = panoFeedCacheFor({
@@ -25,7 +27,7 @@ function makeHarness(opts?: {purge?: (options: {tags: string[]}) => Promise<unkn
 			opts?.purge ??
 			((options) => {
 				purges.push({tags: options.tags});
-				return Promise.resolve({success: true});
+				return Promise.resolve({success: true, errors: []});
 			}),
 		waitUntil: (promise) => {
 			scheduled.push(promise);
@@ -76,11 +78,43 @@ it.effect("a rejecting purge cannot fail the calling effect", () => {
 	);
 });
 
+it("an accepted purge does not log a failure", async () => {
+	const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+	try {
+		const {cache, flush} = makeHarness({
+			purge: async () => ({success: true, errors: []}),
+		});
+		await Effect.runPromise(cache.purge());
+		await flush();
+		assert.strictEqual(errorSpy.mock.calls.length, 0);
+	} finally {
+		errorSpy.mockRestore();
+	}
+});
+
+it("a resolved purge refusal is logged without failing the committed mutation", async () => {
+	const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+	const errors = [{code: 429, message: "purge rate limit"}];
+	try {
+		const {cache, flush} = makeHarness({
+			purge: async () => ({success: false, errors}),
+		});
+		const exit = await Effect.runPromise(Effect.exit(cache.purge()));
+		assert.isTrue(Exit.isSuccess(exit));
+		await flush();
+		assert.deepStrictEqual(errorSpy.mock.calls, [
+			[`pano feed cache purge tag:${PANO_FEED_CACHE_TAG} refused`, errors],
+		]);
+	} finally {
+		errorSpy.mockRestore();
+	}
+});
+
 it.effect("a synchronously-throwing execution context is swallowed too", () =>
 	Effect.gen(function* () {
 		let attempts = 0;
 		const cache = panoFeedCacheFor({
-			purge: () => Promise.resolve(),
+			purge: () => Promise.resolve(undefined),
 			waitUntil: () => {
 				attempts += 1;
 				// biome-ignore lint/plugin: throw is in a nested plain closure (test stub), not the Effect.gen body — lexical matcher can't exempt

@@ -10,7 +10,7 @@ const rec = (id: string, status: string): string =>
 const THREE_LINKS =
 	"amended-in-part by [0025](0025-split-livedo-connection-topic.md), [0028](0028-effect-durable-object-model.md), [0037](0037-unified-void-aligned-live-do.md)";
 
-const dir = ".decisions";
+const dir = ".records";
 const files = {
 	[`${dir}/0126-ambient-adr-discovery.md`]: rec("0126", "accepted"),
 	[`${dir}/0023-live-views-sse-livedo.md`]: rec("0023", THREE_LINKS),
@@ -32,7 +32,7 @@ describe("runRelate — supersede", () => {
 		const out = await run(io, {...supersede, id: "0126", by: "0240"});
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
-			".decisions/0126-ambient-adr-discovery.md\tsuperseded by [0240](0240-only-landed-adrs-may-be-cited.md)\n",
+			".records/0126-ambient-adr-discovery.md\tsuperseded by [0240](0240-only-landed-adrs-may-be-cited.md)\n",
 		);
 		expect(io.written.get(`${dir}/0126-ambient-adr-discovery.md`)).toContain(
 			"status: superseded by [0240](0240-only-landed-adrs-may-be-cited.md)",
@@ -47,7 +47,7 @@ describe("runRelate — supersede", () => {
 	it("refuses when <id> has no record", async () => {
 		const out = await run(fs(), {...supersede, id: "9998", by: "0240"});
 		expect(out.code).toBe(NO_SUBJECT);
-		expect(out.stderr.at(-1)).toBe("adr supersede: no record for id 9998 under .decisions.");
+		expect(out.stderr.at(-1)).toBe("adr supersede: no record for id 9998 under .records.");
 	});
 
 	it("refuses a dead --by link and writes nothing", async () => {
@@ -56,7 +56,7 @@ describe("runRelate — supersede", () => {
 		expect(out.code).toBe(NO_BY);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"adr supersede: no record for --by id 9999 under .decisions — refusing to write a dead link.",
+			"adr supersede: no record for --by id 9999 under .records — refusing to write a dead link.",
 		);
 		expect(io.written.size).toBe(0);
 	});
@@ -112,7 +112,7 @@ describe("runRelate — amend-in-part", () => {
 		const out = await run(io, {...amend, id: "0023", by: "0240"});
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
-			`.decisions/0023-live-views-sse-livedo.md\t${THREE_LINKS}, [0240](0240-only-landed-adrs-may-be-cited.md)\n`,
+			`.records/0023-live-views-sse-livedo.md\t${THREE_LINKS}, [0240](0240-only-landed-adrs-may-be-cited.md)\n`,
 		);
 		const written = io.written.get(`${dir}/0023-live-views-sse-livedo.md`) ?? "";
 		for (const id of ["0025", "0028", "0037", "0240"]) expect(written).toContain(`[${id}]`);
@@ -158,7 +158,7 @@ describe("runRelate — amend-in-part", () => {
 	it("--json carries the before and after status", async () => {
 		const out = await run(fs(), {...amend, id: "0126", by: "0240", json: true});
 		expect(JSON.parse(out.stdout)).toEqual({
-			path: ".decisions/0126-ambient-adr-discovery.md",
+			path: ".records/0126-ambient-adr-discovery.md",
 			id: "0126",
 			by: "0240",
 			statusBefore: "accepted",

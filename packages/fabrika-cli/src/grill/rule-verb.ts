@@ -3,8 +3,10 @@
  *
  * The four clauses are conjunctive and any miss resolves to *not recorded*, never to a warning: the
  * invoking token resolves `write+` at the ACL, the question exists, its round digests, and the
- * quoted authorization is present and dated. A bare stamp is void (#4938), which is why
- * `--authorization` is required rather than inferred.
+ * quoted authorization is present and dated. A bare stamp is void, which is why
+ * `--authorization` is required rather than inferred. That last clause is `../authorization.ts`'s,
+ * shared with `decision rule` so the two verbs cannot drift on what a quoted authority has to
+ * survive.
  *
  * **Write ordering is an invariant, not an implementation detail.** The authorization comment lands
  * first and the marker second: an interrupted run that wrote the marker first would leave a void
@@ -22,16 +24,18 @@
  *
  * **What `ruled` proves, exactly.** That a `write+` account posted a marker binding this question's
  * current text, with a dated authorization comment beside it. It does not prove the quoted
- * authorization is a truthful record of what the founder said; nothing mechanical can, and #4441 is
- * open on it.
+ * authorization is a truthful record of what the founder said, and nothing mechanical can: a
+ * relayed ruling is indistinguishable from a fabricated one at the point it is recorded.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8857#issuecomment-5625302485
  */
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {authorizationBody, readAuthorization} from "../authorization.ts";
 import {createComment, getComment, listComments, resolveRepo} from "../io/issues.ts";
 import {permissionFor, viewerLogin} from "../io/pulls.ts";
 import {normalizeForReadback} from "../report/compose.ts";
-import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {questionId, stampOf} from "../wire/grill-marker.ts";
 import * as grillRuling from "../wire/grill-ruling.ts";
@@ -53,7 +57,6 @@ import {
 import {digestRound} from "./round.ts";
 import {
 	AUTHORIZED,
-	ISO_DATE,
 	questionIndex,
 	resolveSession,
 	retirements,
@@ -90,41 +93,18 @@ export const runRule = <R = never>(
 		}
 		const repo = repoAttempt.value;
 
-		const read = yield* options.authorization;
-		if (read._tag === "Failed") {
-			return refuse(
-				FAILED,
-				`grill rule: could not read --authorization ${authorizationPath}: ${read.reason} — the authorization is UNKNOWN, never empty.`,
-			);
-		}
-		const quoted = read.text;
-		if (quoted.trim() === "") {
-			return refuse(
-				AUTHORIZATION_ABSENT,
-				`grill rule: --authorization ${authorizationPath} is empty — a ruling with no quoted authorization is void (#4938).`,
-			);
-		}
-		if (!ISO_DATE.test(quoted)) {
-			return refuse(
-				AUTHORIZATION_ABSENT,
-				`grill rule: --authorization ${authorizationPath} carries no ISO-8601 date — the authorization must be dated.`,
-			);
-		}
-		if (isBareAtReference(quoted)) {
-			return refuse(
-				BARE_AT_PATH,
-				"grill rule: the authorization is a bare @ path reference — not redactable, refusing to post it.",
-			);
-		}
-		const leaks = scanBody(quoted);
-		const firstLeak = leaks.leaks[0];
-		if (firstLeak !== undefined) {
-			return refuse(
-				LEAKED_PATH,
-				`grill rule: the authorization carries a machine-local path: ${firstLeak.text} — refusing to post it.`,
-				renderLeaks(leaks.leaks),
-			);
-		}
+		const quote = readAuthorization(
+			"grill rule",
+			"ruling",
+			authorizationPath,
+			yield* options.authorization,
+			{
+				absent: AUTHORIZATION_ABSENT,
+				bareAt: BARE_AT_PATH,
+				leaked: LEAKED_PATH,
+			},
+		);
+		if (quote._tag === "Refused") return quote.outcome;
 
 		const viewer = yield* viewerLogin;
 		if (viewer._tag === "Failure") {
@@ -223,8 +203,7 @@ export const runRule = <R = never>(
 			);
 		}
 
-		const authorizationBody = quoted.trim().endsWith("\n") ? quoted.trim() : `${quoted.trim()}\n`;
-		const authorizationComment = yield* createComment(repo, session, authorizationBody);
+		const authorizationComment = yield* createComment(repo, session, authorizationBody(quote.text));
 		if (authorizationComment._tag === "Failure") {
 			return refuse(
 				WRITE_UNKNOWN,

@@ -4,8 +4,17 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {CommandName, defaultPrefixTable, type Key, type PrefixTable} from "../keys/index.ts";
+import {commandIndexFor} from "../commands/index.ts";
+import {
+	CommandName,
+	defaultPrefixTable,
+	FOCUS_LIST_KEY,
+	type Key,
+	type PrefixTable,
+	prefixTableFor,
+} from "../keys/index.ts";
 import {findWindow, windows} from "../layout/index.ts";
+import {mountPicker} from "../picker/view.ts";
 import {applyMsg, cellsFor, initialState, type ShellCmd, type ShellMsg} from "./machine.ts";
 import {activeWorkspace, type ShellState, windowIds} from "./state.ts";
 
@@ -41,16 +50,20 @@ describe("shell core: the reducer's cells", () => {
 		expect(Object.keys(cellsFor(table)).sort()).toEqual([
 			"command.open",
 			"config.reload",
+			"desk.board.close",
+			"desk.board.toggle",
 			"desk.inspector.toggle",
 			"keys.press",
 			"layout.resize",
 			"layout.zoom",
 			"prefix.repeatLapsed",
+			"process.remove",
 			"window.attach",
 			"window.bind",
 			"window.close",
 			"window.focus",
 			"window.focusDirection",
+			"window.forwardKey",
 			"window.open",
 			"window.setView",
 			"window.split",
@@ -69,7 +82,7 @@ describe("shell core: the reducer's cells", () => {
 		expect(focusedProcess(state)).toBeNull();
 		expect(state.order).toEqual([state.activeWorkspace]);
 		expect(state.prefix).toEqual({armed: false});
-		expect(state.desk).toEqual({inspectorOpen: false});
+		expect(state.desk).toEqual({inspectorOpen: false, boardOpen: false});
 	});
 });
 
@@ -103,7 +116,58 @@ describe("shell core: the desk inspector", () => {
 	it("survives a checkpoint round trip, like the rest of the shell's state", () => {
 		const opened = fold(initialState(), {type: "desk.inspector.toggle"});
 		const restored = JSON.parse(JSON.stringify(opened)) as ShellState;
-		expect(restored.desk).toEqual({inspectorOpen: true});
+		expect(restored.desk).toEqual({inspectorOpen: true, boardOpen: false});
+	});
+});
+
+/**
+ * The board's overlay (#8867). It is desk-level like the inspector, and its chord is feature-gated,
+ * so the cells are driven over the gated table the flag builds rather than over the default one.
+ */
+describe("shell core: the process board", () => {
+	const gated = prefixTableFor(defaultPrefixTable, {processBoard: true});
+	const gatedCells = cellsFor(gated, commandIndexFor({processBoard: true, processRemove: false}));
+	const run = (state: ShellState, ...msgs: readonly ShellMsg[]): ShellState =>
+		msgs.reduce(
+			(acc, msg) =>
+				(gatedCells[msg.type] as (s: ShellState, m: ShellMsg) => readonly [ShellState, unknown])(
+					acc,
+					msg,
+				)[0],
+			state,
+		);
+
+	it("desk.board.toggle pulls the board up and puts it away", () => {
+		const [opened] = apply(initialState(), {type: "desk.board.toggle"});
+		const [closed, cmds] = apply(opened, {type: "desk.board.toggle"});
+
+		expect([opened.desk.boardOpen, closed.desk.boardOpen]).toEqual([true, false]);
+		expect(cmds).toEqual([]);
+	});
+
+	it("desk.board.close closes an open board and leaves a closed one alone", () => {
+		const opened = fold(initialState(), {type: "desk.board.toggle"});
+		expect(apply(opened, {type: "desk.board.close"})[0].desk.boardOpen).toBe(false);
+		expect(apply(initialState(), {type: "desk.board.close"})[0].desk.boardOpen).toBe(false);
+	});
+
+	it("the chord opens it, and the same chord closes it again", () => {
+		const opened = run(initialState(), prefix, press("p"));
+		const closed = run(opened, prefix, press("p"));
+
+		expect([opened.desk.boardOpen, closed.desk.boardOpen]).toEqual([true, false]);
+	});
+
+	it("holds its state across a workspace switch, like every desk-level surface", () => {
+		const opened = run(initialState(), {type: "desk.board.toggle"});
+		const created = run(opened, {type: "workspace.create"});
+		expect(created.desk.boardOpen).toBe(true);
+	});
+
+	it("makes `p` an unbound sequence when the flag is off, and opens nothing", () => {
+		const [routed] = apply(fold(initialState(), prefix), press("p"));
+		expect(routed.desk.boardOpen).toBe(false);
+		expect(routed.lastPress?.outcome._tag).toBe("Consumed");
 	});
 });
 
@@ -203,6 +267,106 @@ describe("shell core: windows", () => {
 		expect(cmds).toEqual([]);
 	});
 
+	it("window.bind drops the view slot the last thing in the window left (#8083, #8265)", () => {
+		const state = initialState();
+		const window = active(state).focused;
+		const filled = fold(
+			state,
+			{type: "window.setView", view: {cursor: 3, refusal: null, previous: null}},
+			{type: "window.bind", processId: "process-pi"},
+		);
+		expect(filled.views[window]).toBeUndefined();
+	});
+
+	it("window.unbind mounts a fresh picker naming the process it detached (#8083, #8265)", () => {
+		const state = initialState();
+		const window = active(state).focused;
+		const filled = fold(state, {type: "window.bind", processId: "process-pi"});
+
+		const [unbound] = apply(filled, {type: "window.unbind"});
+		expect(focusedProcess(unbound)).toBeNull();
+		expect(unbound.views[window]).toEqual(mountPicker("process-pi"));
+		expect(windowIds(active(unbound))).toEqual(windowIds(active(filled)));
+	});
+
+	it("window.unbind on a window holding no process changes nothing at all (#8083)", () => {
+		const empty = fold(initialState(), {type: "window.setView", view: {cursor: 2, refusal: null}});
+		expect(apply(empty, {type: "window.unbind"})[0]).toBe(empty);
+		expect(apply(empty, {type: "window.unbind", windowId: "window-nope"})[0]).toBe(empty);
+	});
+
+	it("window.attach with no split takes the target window over", () => {
+		const state = fold(initialState(), {type: "window.setView", view: {scroll: 7}});
+		const target = active(state).focused;
+
+		const [after, cmds] = apply(state, {type: "window.attach", processId: "p-9"});
+
+		expect(windowIds(active(after))).toEqual(windowIds(active(state)));
+		expect(cmds).toEqual([
+			{type: "attachProcess", windowId: target, processId: "p-9", view: {scroll: 7}},
+		]);
+	});
+
+	// The sub-agent list's kernel row (#8719): the row promises its own window, so the attach must
+	// not land on the window whose list was activated — that is the parent's own transcript.
+	it("window.attach with a split lands the process in a fresh window, not the target's", () => {
+		const state = fold(initialState(), {type: "window.setView", view: {scroll: 7}});
+		const parent = active(state).focused;
+
+		const [after, cmds] = apply(state, {
+			type: "window.attach",
+			processId: "p-9",
+			split: "horizontal",
+		});
+
+		const opened = active(after).focused;
+		expect(opened).not.toBe(parent);
+		expect(windowIds(active(after))).toEqual([parent, opened]);
+		// No `view`: the fresh window holds no slot, so the child does not inherit the parent's.
+		expect(cmds).toEqual([{type: "attachProcess", windowId: opened, processId: "p-9"}]);
+		// The parent keeps its own window and its own view slot.
+		expect(after.views[parent]).toEqual({scroll: 7});
+	});
+
+	// #9447. Two routes reach this cell — the `d` key and `process:remove <id>` — and both arrive as
+	// this one Msg, so the cell is the whole of what the desk does about a removal.
+	it("process.remove asks for the removal over the focused window and its slot", () => {
+		const state = fold(initialState(), {type: "window.setView", view: {cursor: 2, refusal: null}});
+		const target = active(state).focused;
+
+		const [after, cmds] = apply(state, {type: "process.remove", processId: "p-9"});
+
+		// Nothing about the desk changes: the row leaves the picker when the process leaves the table.
+		expect(after).toBe(state);
+		expect(cmds).toEqual([
+			{
+				type: "removeProcess",
+				windowId: target,
+				processId: "p-9",
+				view: {cursor: 2, refusal: null},
+			},
+		]);
+	});
+
+	it("process.remove refuses a window this workspace does not hold", () => {
+		const state = initialState();
+		expect(
+			apply(state, {type: "process.remove", processId: "p-9", windowId: "window-nope"}),
+		).toEqual([state, []]);
+	});
+
+	it("window.attach refuses a window this workspace does not hold, split or not", () => {
+		const state = initialState();
+		for (const msg of [
+			{type: "window.attach", processId: "p-9", windowId: "window-nope"},
+			{type: "window.attach", processId: "p-9", windowId: "window-nope", split: "horizontal"},
+		] satisfies readonly ShellMsg[]) {
+			const [after, cmds] = apply(state, msg);
+			expect(after).toEqual(state);
+			expect(cmds).toEqual([]);
+		}
+	});
+
 	it("window.setView writes the focused window's slot and refuses an unknown window", () => {
 		const state = initialState();
 		const [viewed] = apply(state, {type: "window.setView", view: {scroll: 3, wrap: true}});
@@ -290,6 +454,61 @@ describe("shell core: keys", () => {
 			},
 		]);
 		expect(after.prefix).toEqual({armed: false});
+	});
+
+	/**
+	 * The whole route the chord takes (#8407): the router resolves `<c-b> a` to a command name, the
+	 * command table turns that name into `window.forwardKey`, and its cell hands the focused window a
+	 * key no keyboard can produce. Read here rather than at the window, because the claim is that the
+	 * three tables agree — a component test could pass with the binding missing entirely.
+	 */
+	it("<c-b> a mints the focus-list key and hands it to the focused window", () => {
+		const bound = fold(initialState(), {
+			type: "window.bind",
+			processId: "process-agent",
+			takesKeys: true,
+		});
+		const [after, cmds] = apply(fold(bound, prefix), press("a"));
+
+		expect(cmds).toEqual([
+			{
+				type: "forwardKey",
+				processId: "process-agent",
+				windowId: active(bound).focused,
+				key: FOCUS_LIST_KEY,
+			},
+		]);
+		// The answer the page reads, and the half that reaches the *renderer* — where a list's focus
+		// lives. Without it the chord would end at the process and never move anything on screen.
+		expect(after.lastPress?.outcome).toEqual({_tag: "ToWindow", key: FOCUS_LIST_KEY});
+		expect(after.prefix).toEqual({armed: false});
+	});
+
+	it("answers the page the same key even where there is no process to forward it to", () => {
+		const bound = fold(initialState(), {type: "window.bind", processId: "process-agent"});
+		const [after, cmds] = apply(fold(bound, prefix), press("a"));
+
+		expect(cmds).toEqual([]);
+		expect(after.lastPress?.outcome).toEqual({_tag: "ToWindow", key: FOCUS_LIST_KEY});
+	});
+
+	it("a bare `a` is the window's own key and mints nothing", () => {
+		const bound = fold(initialState(), {
+			type: "window.bind",
+			processId: "process-agent",
+			takesKeys: true,
+		});
+		const [after, cmds] = apply(bound, press("a"));
+
+		expect(cmds).toEqual([
+			{
+				type: "forwardKey",
+				processId: "process-agent",
+				windowId: active(bound).focused,
+				key: "a",
+			},
+		]);
+		expect(after.lastPress?.outcome).toEqual({_tag: "ToWindow", key: "a"});
 	});
 
 	it("a window whose program never declared keys is forwarded none (#7973)", () => {

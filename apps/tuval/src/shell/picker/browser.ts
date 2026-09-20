@@ -18,8 +18,10 @@ export {
 	readEntries,
 	showsInAWindow,
 } from "./entries.ts";
+export {type PickerFilter, visibleEntries} from "./filter.ts";
 export {
 	type PickerAnnouncement,
+	type PickerFilterFrame,
 	type PickerFrame,
 	type PickerFrameOptions,
 	type PickerGroup,
@@ -42,18 +44,27 @@ export {
 	isPickerRefusal,
 	type PickerRefusal,
 	processGone,
+	processPlanned,
 	programHeadless,
 	refusalMessage,
+	removeFailed,
 	spawnFailed,
 	unknownProgram,
 	unreadableCommand,
 } from "./refusal.ts";
 export {
+	asPickerView,
 	cursorOf,
 	highlighted,
 	mountPicker,
+	noPickerKeyFeatures,
 	type PickerKeyAnswer,
+	type PickerKeyFeatures,
+	type PickerPointer,
 	type PickerView,
 	pickerKey,
+	pickerPointer,
+	visibleFor,
+	withFilter,
 	withRefusal,
 } from "./view.ts";

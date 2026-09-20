@@ -104,7 +104,7 @@ describe("relateCopy", () => {
 		});
 	});
 
-	/** The defect #5679 names: the copy on `PATH` lives in the primary, the cwd is in a worktree. */
+	/** The defect: the copy on `PATH` lives in the primary, the cwd is in a worktree. */
 	it("reads two working trees of ONE repository as same-repository", async () => {
 		const of = primary("main");
 		const lane = worktree(of, "lane");

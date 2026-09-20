@@ -4,13 +4,14 @@
  * Every fabrika hook meets the harness here and nowhere else, so this is the one module that says
  * what an envelope *is*. The four fields it requires are not a guess and not a doc summary: they are
  * the keys present in **both** captured envelopes committed beside this file
- * (`__fixtures__/PROVENANCE.md`), which is what ADR 0180 makes the ground truth. Everything else the
- * harness sends is per-event and stays untyped here — a hook that needs `tool_input` reads it off
- * {@link Envelope.fields}, and the golden test is where the per-event key sets are pinned.
+ * (`__fixtures__/PROVENANCE.md`) — captured bytes, which are this contract's only ground truth.
+ * Everything else the harness sends is per-event and stays untyped here — a hook that needs
+ * `tool_input` reads it off {@link Envelope.fields}, and the golden test is where the per-event key
+ * sets are pinned.
  *
  * The read is **total and three-way**: an envelope, a proven non-envelope, or an unread fd 0. Those
- * are three different claims and none of them may collapse into another (ADR 0092) — the shape v1's
- * fd-0 reader already learned the hard way (`../io/stdin.ts`).
+ * are three different claims and none of them may collapse into another — the shape the
+ * predecessor's fd-0 reader already learned the hard way (`../io/stdin.ts`).
  */
 
 /** The fields every captured envelope carries, whatever event produced it. */

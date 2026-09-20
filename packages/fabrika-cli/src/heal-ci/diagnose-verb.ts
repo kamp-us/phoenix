@@ -7,6 +7,23 @@
  *
  * The reads are exposed as {@link diagnoseOne} so `heal-ci sweep` classifies through this same chain
  * rather than a second one.
+ *
+ * **The changed-file read is one exception to that, and it reports rather than refuses.** GitHub's
+ * `changed_files` on the pull-request record is computed against a base cached at the last push, so
+ * a file list short of it says nothing about the list's completeness — and this is the verb an
+ * operator reaches for when a PR is already stuck, which is the worst place to keep a refusal a
+ * stuck PR can trigger. The disagreement leaves as a notice
+ * ({@link platformFileSet}); an **empty** list still refuses, because every classification
+ * downstream would otherwise read clean over a diff nothing was read from. The check-run shortfall
+ * below is a different proof and still refuses: `total_count` and the enumerated runs come from one
+ * read of one endpoint, so a shortfall there really is a truncated page.
+ *
+ * **The changed-file read keeps one `13` of its own, the endpoint's ceiling.** `pulls/<n>/files`
+ * serves at most 3000 files (`PULL_FILES_CAP`) and ends its Link chain normally there, so the
+ * pagination proof passes over a list GitHub already truncated. That is a fact about the read
+ * itself, not two counts disagreeing, and every classification below derives from the file set.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -14,7 +31,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type Producer, producerFor, resolveCi} from "../config/ci-producer.ts";
 import type {Resolution} from "../config/key-group.ts";
 import type {CiSurface} from "../config/keys/ci.ts";
-import {governedRootsOr} from "../config/paths.ts";
+import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {
 	commitExists,
@@ -24,6 +41,7 @@ import {
 	permissionFor,
 } from "../io/pulls.ts";
 import {partitionWithUi, shipNamespacesOf, touchesGovernanceRoot} from "../review/classes.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {inForce, ROUTABLE} from "../ship/gate-verb.ts";
 import {
@@ -48,7 +66,7 @@ import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRoute} from "../wire/routed-elsewhere.ts";
 import {read as readMarker} from "../wire/verdict-marker.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {commitPushedAt} from "./github.ts";
+import {commitPushedAt, readBaseConflict} from "./github.ts";
 import {type LaneToken, laneFor} from "./lane.ts";
 import {type Link, linkOf, renderLink} from "./link.ts";
 import {type CiToken, classifyStall, type StallToken, strandAgeMinutes} from "./stall.ts";
@@ -56,7 +74,7 @@ import {compare, readDeclared} from "./surface.ts";
 
 const VERB = "heal-ci diagnose";
 
-/** The permission levels ADR 0055 counts as an authorized verdict author. */
+/** The permission levels that count as an authorized verdict author. */
 const AUTHORIZED = new Set(["admin", "maintain", "write"]);
 
 /**
@@ -64,7 +82,7 @@ const AUTHORIZED = new Set(["admin", "maintain", "write"]);
  *
  * Two carriers fill a namespace and this verb must read both, because it resolves the same question
  * `ship gate` does: a PR the gate calls satisfied must not classify here as `ungated` and get
- * re-dispatched to a review that cannot fill the namespace (#6376). `ROUTABLE` is imported from the
+ * re-dispatched to a review that cannot fill the namespace. `ROUTABLE` is imported from the
  * gate rather than restated, so the one-namespace fence has one home.
  */
 const claimOf = (
@@ -88,7 +106,7 @@ const claimOf = (
 	}
 	const route = readRoute(comment.body);
 	if (route._tag !== "Found" || route.value.namespace !== ROUTABLE) return null;
-	// Head-bound with no content binding, exactly as the gate binds it (ADR 0316): a push voids the
+	// Head-bound with no content binding, exactly as the gate binds it: a push voids the
 	// route, so the namespace re-opens rather than staying resolved across a rewrite.
 	return {
 		namespace: route.value.namespace,
@@ -103,6 +121,8 @@ export interface DiagnoseParams {
 	readonly dwellMinutes: number;
 	readonly wedgeDwellMinutes: number;
 	readonly driftCommits: number;
+	/** How long GitHub's lazy `mergeable` job is re-read before the conflict arm is skipped. */
+	readonly mergeabilitySeconds: number;
 	readonly now: number;
 }
 
@@ -185,6 +205,8 @@ export const diagnoseOne = (
 	params: DiagnoseParams,
 	/** This repo's `governedRoots`, resolved once by the caller — a sweep reads the config once. */
 	governedRoots: ReadonlyArray<string>,
+	/** This repo's `uiSurfaces` prefixes, resolved once by the caller for the same reason. */
+	uiPrefixes: ReadonlyArray<string>,
 	/** This repo's `ci`, resolved once by the caller for the same reason. */
 	ci: Resolution<CiSurface>,
 ): Effect.Effect<
@@ -237,14 +259,36 @@ export const diagnoseOne = (
 			outcome: refuse(code, reason, notices),
 		});
 
-		const filed = yield* listPullFiles(repo, pr);
-		if (filed._tag === "Failure") {
+		const filed = platformFileSet(
+			VERB,
+			`#${pr}`,
+			pull.changedFiles,
+			yield* listPullFiles(repo, pr),
+		);
+		if (filed._tag === "Unreadable") {
 			return refused(PRECONDITION_UNKNOWN, unreadable("the changed files", pr, filed.reason));
 		}
-		if (filed.value.length < pull.changedFiles) {
+		if (filed.set.disagreement !== null) notices.push(filed.set.disagreement);
+		const changed = filed.set.files;
+		// Zero is the shortfall the enumeration alone establishes, and with the declared count no
+		// longer refusing it is the only seat left: an empty list raises no namespace and touches no
+		// governance root, so every classification below would read clean over a diff nobody read.
+		if (changed.length === 0) {
+			return refused(
+				ZERO_SCOPE,
+				`${VERB}: PR #${pr} has zero changed files — refusing to classify a stall over an empty diff.`,
+			);
+		}
+		// The ceiling is the one truncation the enumeration cannot rule out on its own: the endpoint
+		// stops serving files there and ends its Link chain as a complete read ends.
+		if (filed.set.capped) {
 			return refused(
 				INCOMPLETE_SCAN,
-				short(filed.value.length, pull.changedFiles, "changed files"),
+				platformCapLine(
+					VERB,
+					`#${pr}`,
+					"refusing to classify a stall over a diff the platform cut short.",
+				),
 			);
 		}
 
@@ -285,7 +329,37 @@ export const diagnoseOne = (
 		const wedged = stranded.length > 0 && headAgeMinutes >= params.wedgeDwellMinutes;
 		if (stranded.length > 0) {
 			notices.push(
-				`${VERB}: stranded past the dwell: ${stranded.join(", ")} — the cancel-and-rerun lever is an operator's (#3999).`,
+				`${VERB}: stranded past the dwell: ${stranded.join(", ")} — the cancel-and-rerun lever is an operator's.`,
+			);
+		}
+
+		const open = pull.state === "open" && !pull.draft && !pull.merged;
+		// Read before the protection surface because the conflict arm sits above the surface arm: a
+		// conflicted PR has no `refs/pull/<n>/merge` for any required context to run against, so the
+		// surface read below would report every one of them absent and name a settings gap that is not
+		// there.
+		//
+		// Not read at all where arm 1 already takes the PR. GitHub computes `mergeable` for open pull
+		// requests, so a closed or merged one stays indefinite however long it is polled — a live run
+		// spent the whole 60s window on a closed PR for a fact the chain then never consulted, and a
+		// sweep pays that per PR that closed between its list read and its classification.
+		const conflict = open ? yield* readBaseConflict(repo, pr, params.mergeabilitySeconds) : null;
+		if (conflict !== null && conflict._tag === "Unreadable") {
+			return refused(PRECONDITION_UNKNOWN, unreadable("the mergeability", pr, conflict.reason));
+		}
+		// An uncomputed `mergeable` is the platform declining to answer, so the arm is skipped rather
+		// than passed — the same shape arm 4 takes on an unprobeable protection surface. A PR arm 1
+		// already takes is skipped the same way, on a fact nobody read.
+		const conflicted =
+			conflict === null || conflict._tag === "Indefinite" ? null : conflict._tag === "Conflicted";
+		if (conflict !== null && conflict._tag === "Indefinite") {
+			notices.push(
+				`${VERB}: GitHub had not computed #${pr}'s mergeability after ${conflict.seconds}s — the conflict axis is INDEFINITE, so the conflict arm is skipped, never passed.`,
+			);
+		}
+		if (conflicted === true) {
+			notices.push(
+				`${VERB}: #${pr} conflicts with ${pull.baseRef} — no merge ref exists, so every required context reads absent for that reason and not a surface gap.`,
 			);
 		}
 
@@ -305,7 +379,7 @@ export const diagnoseOne = (
 			declared._tag === "Unprobeable" ? null : compare(declared.contexts, gating).token === "gap";
 		if (declared._tag === "Unprobeable") {
 			notices.push(
-				`${VERB}: cannot read ${pull.baseRef}'s protection surface at this token's permission — the check-surface axis is UNPROBEABLE, so arm 3 is skipped, never passed.`,
+				`${VERB}: cannot read ${pull.baseRef}'s protection surface at this token's permission — the check-surface axis is UNPROBEABLE, so arm 4 is skipped, never passed.`,
 			);
 		}
 
@@ -344,7 +418,7 @@ export const diagnoseOne = (
 			return refused(PRECONDITION_UNKNOWN, unreadable("the base comparison", pr, drift.reason));
 		}
 
-		const required = shipNamespacesOf(partitionWithUi(filed.value, governedRoots));
+		const required = shipNamespacesOf(partitionWithUi(changed, governedRoots, uiPrefixes));
 		const authorized = new Map<string, boolean>();
 		const candidates: Array<{
 			readonly namespace: string;
@@ -387,13 +461,13 @@ export const diagnoseOne = (
 		const linkageRefused =
 			required.length > 0 && link.kind === "other" && !pull.draft && pull.state === "open";
 
-		// Arm 6, REST-only: the contract's unresolved-thread half has no REST form and the group takes
+		// Arm 7, REST-only: the contract's unresolved-thread half has no REST form and the group takes
 		// no GraphQL carve, so what is derivable is a live CHANGES_REQUESTED review — the contract's
 		// non-`Bot` qualifier scopes the thread clause, not this one — and a control-plane diff with no
-		// approval at this head. The narrowing is disclosed at runtime below, the way arm 3's skip is:
+		// approval at this head. The narrowing is disclosed at runtime below, the way arm 4's skip is:
 		// a half-evaluated axis a caller cannot see is indistinguishable from one that passed.
 		notices.push(
-			`${VERB}: the unresolved-thread clause has no REST form under this group's no-GraphQL rule — that half of the arm-6 axis is UNIMPLEMENTED, so blocked-human is derived from reviews alone, never from threads.`,
+			`${VERB}: the unresolved-thread clause has no REST form under this group's no-GraphQL rule — that half of the arm-7 axis is UNIMPLEMENTED, so blocked-human is derived from reviews alone, never from threads.`,
 		);
 		const decisive = reviewed.value.reviews
 			.filter((review) => prefixMatch(review.commitId, bound))
@@ -403,7 +477,7 @@ export const diagnoseOne = (
 		for (const review of decisive)
 			if (!byAuthor.has(review.login)) byAuthor.set(review.login, review.state);
 		const changesRequested = [...byAuthor.values()].includes("CHANGES_REQUESTED");
-		const controlPlane = touchesGovernanceRoot(filed.value, governedRoots);
+		const controlPlane = touchesGovernanceRoot(changed, governedRoots);
 		const approved = [...byAuthor.values()].includes("APPROVED");
 		const humanBlocked = changesRequested || (controlPlane && !approved);
 
@@ -435,8 +509,9 @@ export const diagnoseOne = (
 
 		const queue = queueStateOf(timeline.value.events);
 		const verdict = classifyStall({
-			open: pull.state === "open" && !pull.draft && !pull.merged,
+			open,
 			wedged,
+			conflicted,
 			surfaceGap,
 			ci: token,
 			linkageRefused,
@@ -546,12 +621,20 @@ export const runDiagnose = (
 		);
 		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
 
+		const surfaces = yield* uiSurfacesOr(
+			VERB,
+			options.cwd,
+			'the required namespace set is UNKNOWN, never "attended".',
+		);
+		if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
+
 		const result = yield* diagnoseOne(
 			resolved.repo,
 			options.pr,
 			options.sha,
 			options,
 			governed.roots,
+			surfaces.prefixes,
 			yield* resolveCi(options.cwd),
 		);
 		if (result._tag === "Refused") return result.outcome;

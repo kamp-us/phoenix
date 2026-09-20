@@ -1,14 +1,14 @@
 /**
- * A repo that declines `decisionsDir`, end to end: what `adr`, `governance`, the ADR number guard
- * and `glossary check` do about it.
+ * A repo that declines `decisionsDir`, end to end: what `adr`, `governance`, the decision-number
+ * guard and `glossary check` do about it.
  *
  * The behaviour only exists at the process boundary — each verb resolves the key from the **cwd**
  * it is run in, so an in-process test would have to fake the one thing under test. Four spawns:
- * per the ruling (R11.1 on #5603) `adr` refuses to write and `governance`'s contradiction half
- * refuses rather than answering `no-overlap` over a corpus that does not exist, and per #6433
- * `guard decisions-index validate` skips on exit 0 rather than reporting the ADR 0092 zero-scope
- * red at a repo whose config is valid, while `glossary check` reports clean over a register that
- * cites nothing rather than a finding the repo could only clear by keeping a corpus.
+ * `adr` refuses to write and `governance`'s contradiction half refuses rather than answering
+ * `no-overlap` over a corpus that does not exist; `guard decisions-index validate` skips on exit 0
+ * rather than reporting a zero-scope red at a repo whose config is valid, while `glossary check`
+ * reports clean over a register that cites nothing rather than a finding the repo could only clear
+ * by keeping a corpus.
  *
  * No spawn reaches the network: each answers at the config read, ahead of any `gh` call.
  */
@@ -65,14 +65,13 @@ describe("a repo that keeps no decision corpus", {timeout: SUBPROCESS_TEST_TIMEO
 		expect(out.stdout).toBe("");
 		expect(out.stderr).toContain("declines `decisionsDir`");
 		// This verb does carry `--dir`, so the remedy clause is true here — it is the reference the
-		// two flagless/differently-flagged callers below must not inherit (#6433).
+		// two flagless/differently-flagged callers below must not inherit.
 		expect(out.stderr).toContain("Point --dir at a corpus to read one anyway.");
 		expect(readdirSync(root)).toEqual([".fabrika.jsonc"]);
 	});
 
-	// The whole point of #6433: an ADR 0092 red here would make a valid config a permanent CI
-	// failure, and its wording ("Is the repo root correct?") would send the reader after a defect
-	// that is not there.
+	// A zero-scope red here would make a valid config a permanent CI failure, and its wording
+	// ("Is the repo root correct?") would send the reader after a defect that is not there.
 	it("skips `guard decisions-index validate` on exit 0 rather than reporting zero scope", () => {
 		// --root because the fixture is a bare directory with no `package.json` for root discovery
 		// to find, and this test is about the config read, not about that walk.
@@ -80,7 +79,7 @@ describe("a repo that keeps no decision corpus", {timeout: SUBPROCESS_TEST_TIMEO
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("declines `decisionsDir`");
 		// `--root` is this verb's only flag; there is no override to point anywhere, so the skip
-		// message must offer none rather than send the reader after `adr`'s `--dir` (#6433).
+		// message must offer none rather than send the reader after `adr`'s `--dir`.
 		expect(out.stdout).not.toContain("Point ");
 		expect(out.stderr).toBe("");
 	});

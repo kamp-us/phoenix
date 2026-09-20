@@ -2,11 +2,38 @@ import {describe, expect, it} from "vitest";
 import {
 	budgetWith,
 	capReached,
+	capWith,
 	effectiveBudget,
 	effectiveCap,
 	grantedRounds,
 } from "./cap-clearance.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "./retry-budget.ts";
+
+describe("clearances against the declared cap", () => {
+	it("honours a legacy lane's round below the current PR cap exactly once", () => {
+		expect(CAP_ROUND).toBe(4);
+		expect(budgetWith(2, [3])).toBe(3);
+		expect(budgetWith(2, [3, 3])).toBe(3);
+		expect(budgetWith(2, [3, 4])).toBe(4);
+		expect(effectiveCap([3])).toBe(CAP_ROUND);
+	});
+
+	it.each([
+		0,
+		-1,
+		2,
+		2.5,
+		Number.NaN,
+		Number.POSITIVE_INFINITY,
+	])("ignores invalid or premature round %s on a legacy lane", (round) =>
+		expect(budgetWith(2, [round])).toBe(2));
+
+	it("filters against a higher declared cap and keeps valid higher grants", () => {
+		expect(capWith(6, [4, 5])).toBe(6);
+		expect(capWith(6, [6, 6])).toBe(7);
+		expect(budgetWith(5, [7])).toBe(7);
+	});
+});
 
 describe("grantedRounds", () => {
 	it("counts distinct rounds, so a double-posted grant reads as one and not two", () => {
@@ -47,9 +74,9 @@ describe("capReached", () => {
 	});
 
 	/**
-	 * The grant a founder stamps past the declared cap is the one #6137 found inert: with the cap
-	 * tallied as `CAP_ROUND + grants` it landed exactly ON the new cap and bought nothing, so #6122
-	 * sat with an honoured clearance and no round to build.
+	 * The grant a founder stamps past the declared cap used to be inert: with the cap tallied as
+	 * `CAP_ROUND + grants` it landed exactly ON the new cap and bought nothing, so the lane sat with
+	 * an honoured clearance and no round to build.
 	 */
 	it.each([
 		CAP_ROUND,
@@ -64,8 +91,8 @@ describe("capReached", () => {
 });
 
 /**
- * The two enforcement sites must spend one grant identically, which is the defect #5959 names: a
- * lane-driven repair froze while `build verdicts` said the budget remained. The lane's guard fires
+ * The two enforcement sites must spend one grant identically. When they did not, a lane-driven
+ * repair froze while `build verdicts` said the budget remained. The lane's guard fires
  * on the Nth FAIL when `retries` has reached `maxRetries`, and `retries` at that moment is the round
  * count minus one — so the two agree exactly when `effectiveBudget` and `effectiveCap` move together.
  */

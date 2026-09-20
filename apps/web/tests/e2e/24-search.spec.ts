@@ -24,10 +24,16 @@ const SEED_TERM_TITLE = "merhaba dünya";
 const SEARCH_TERM_SLUG = "isik";
 const SEARCH_TERM_TITLE = "ışık";
 
+/**
+ * The topbar's search is a trigger for the ⌘K palette (ADR 0186): open it, type, and take the
+ * palette's trailing "all results" row to the results page. Enter is not used: it selects the
+ * palette's active row, which becomes the first term once its debounced read lands, so what
+ * Enter would open depends on timing.
+ */
 async function topbarSearch(page: import("@playwright/test").Page, query: string): Promise<void> {
-	const search = page.locator(".kp-topbar__search input[name='q']");
-	await search.fill(query);
-	await search.press("Enter");
+	await page.locator("#topbar-search").click();
+	await page.getByRole("dialog").getByRole("combobox").fill(query);
+	await page.getByRole("option", {name: `"${query}" için tüm sonuçlar`}).click();
 }
 
 test.describe("Search (/search)", () => {

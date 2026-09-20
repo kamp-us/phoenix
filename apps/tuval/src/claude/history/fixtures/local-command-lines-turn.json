@@ -1,0 +1,12 @@
+{
+	"type": "user",
+	"uuid": "00000000-0000-4000-8000-000000000062",
+	"session_id": "00000000-0000-4000-8000-000000000061",
+	"message": {
+		"role": "user",
+		"content": "<local-command-stdout>Shift+Enter is natively supported in Kitty.\n\nNo configuration needed. Just use Shift+Enter to add newlines.</local-command-stdout>"
+	},
+	"parent_tool_use_id": null,
+	"parent_agent_id": null,
+	"timestamp": "2026-06-10T05:50:46.734Z"
+}

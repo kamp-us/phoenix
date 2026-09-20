@@ -21,7 +21,8 @@ the whole prop cross-product a hand-written test would enumerate one case at a t
 
 Three files, one responsibility each:
 
-- **`registry.tsx`** — classifies every runtime export of `packages/design/src/index.ts` as
+- **`registry.tsx`** — classifies every runtime export the package publishes — the barrel
+  `packages/design/src/index.ts` plus each component subpath entry — as
   `interactive` / `presentational` / `deferred`, with an arbitrary for the first
   two.
 - **`posture.ts`** — the per-invariant `enforced` / `warning` posture map (the
@@ -41,10 +42,17 @@ catching by hand becomes a permanent guardrail. Never assert a geometry/paint fa
 in jsdom; that is a false gate.
 
 **2. Fail-closed auto-coverage.** The coverage test asserts the registry's key set
-**equals** the barrel's runtime export set (symmetric difference empty). A new
+**equals** the package's runtime export set (symmetric difference empty). A new
 primitive that no one classified — or a stale entry for a removed one — **fails the
 gate** (ADR [0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md)), so the
-covered set tracks `packages/design/src/index.ts` and never silently goes stale. `deferred` is a
+covered set tracks what the package publishes and never silently goes stale.
+
+That set is the barrel **plus every component subpath entry**. A component sits on its own entry so
+a consumer can code-split it — `Diff` pulls `@pierre/diffs` and Shiki, and a barrel edge is one no
+bundler can cut — and being off the barrel is a packaging fact, not an exemption from this gate. The
+entries are listed in `a11y-pbt.test.tsx`'s `SUBPATH_ENTRIES` so they can be imported statically, and
+a second case checks that list against `package.json`'s own `exports`: a new entry nobody adds there
+reds instead of quietly leaving its component uncovered. `deferred` is a
 reasoned, reason-carrying parking spot (Manti machine primitives needing required
 `items`/`trigger`/`content` props or a portal interaction; form controls whose name
 comes from a composed label prop), not an escape hatch.
@@ -79,8 +87,9 @@ Three things that pass are worth copying:
 
 ## Adding a primitive
 
-Add its export to `packages/design/src/index.ts`, then classify it in `registry.tsx` — the coverage
-test fails until you do. If it renders standalone with a valid prop arbitrary, make
+Add its export to `packages/design/src/index.ts` — or, if it is heavy enough to want code-splitting,
+to its own `exports` entry plus `a11y-pbt.test.tsx`'s `SUBPATH_ENTRIES` — then classify it in
+`registry.tsx`. The coverage test fails until you do. If it renders standalone with a valid prop arbitrary, make
 it `interactive` (with a `selector` for its control) or `presentational`; if it needs
 composition/portal/provider context to be representative, make it `deferred` with the
 reason. Keep arbitraries generating only **valid** props — the harness asserts that a

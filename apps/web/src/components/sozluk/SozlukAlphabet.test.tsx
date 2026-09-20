@@ -31,6 +31,28 @@ describe("SozlukAlphabet — A–Z index ARIA (#2169)", () => {
 		expect(a?.tagName.toLowerCase()).toBe("a");
 	});
 
+	it("ends the strip with Q, W and X — links like every other letter (#9425)", () => {
+		const {container} = renderAlphabet({});
+		const letters = Array.from(container.querySelectorAll(".kp-sozluk-alphabet__letter"));
+		const tail = letters.slice(-4);
+		expect(tail.map((el) => el.textContent)).toEqual(["z", "q", "w", "x"]);
+		// A link, an href to its own page and the same spelled-out name: the treatment every
+		// Turkish letter already gets, so nothing about the strip distinguishes the three.
+		expect(tail.map((el) => el.tagName.toLowerCase())).toEqual(["a", "a", "a", "a"]);
+		expect(tail.map((el) => el.getAttribute("href"))).toEqual([
+			"/sozluk/harf/z",
+			"/sozluk/harf/q",
+			"/sozluk/harf/w",
+			"/sozluk/harf/x",
+		]);
+		expect(tail.map((el) => el.getAttribute("aria-label"))).toEqual([
+			"Z harfi",
+			"Q harfi",
+			"W harfi",
+			"X harfi",
+		]);
+	});
+
 	it("uppercases the letter name in Turkish locale (i → İ, not I)", () => {
 		const {container} = renderAlphabet({});
 		const labels = Array.from(container.querySelectorAll(".kp-sozluk-alphabet__letter")).map((el) =>

@@ -28,7 +28,7 @@ export const CLEAN_TREE_DIGEST = sha256OfText("");
 /**
  * A temp root of the shape a real machine hands out — one the leak scanner recognises, unlike
  * {@link TMP_ROOT}. It is what a masking test must sit on: a workspace under `/tmp-root` is not a
- * leak, so it cannot prove the refusal #5553 named.
+ * leak, so it cannot prove that a composed body masks the machine-local paths it transcribes.
  */
 export const LEAKY_TMP_ROOT = "/var/folders/z9/t0000000";
 export const LEAKY_WORKSPACE = workspacePath(LEAKY_TMP_ROOT, NONCE);

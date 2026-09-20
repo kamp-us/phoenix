@@ -4,43 +4,61 @@
  * "Artifacts over self-reports" was the retired epic conductor's standing rule, enforced by reading
  * the git graph. This is the lane machine's counterpart, and which artifact it reads is the task's
  * own shape: a single-issue lane and an epic run's tail are contradicted by an open PR tracing to
- * the task's issue and the verdicts on it (ADR 0283 — that ordering is GitHub's, never the local
- * ledger's); an epic run's child opens no PR at all (ADR 0285), so its `DONE` is contradicted by the
+ * the task's issue and the verdicts on it (that ordering is the board's, never the local
+ * ledger's); an epic run's child opens no PR at all, so its `DONE` is contradicted by the
  * commits its branch adds over the epic branch, read off this tree, and its `PASS` by a range-bound
- * verdict on the child issue that still binds the content it judged (ADR 0276).
+ * verdict on the child issue that still binds the content it judged.
  *
  * A reviewer's park out of a review cell is read here too, and it is the one claim that runs the
  * other way: it asserts the run reached no verdict, so a still-binding `FAIL` refuses it and every
- * unreadable half lets it through (`proveParkUncontradicted`, #6112).
+ * unreadable half lets it through (`proveParkUncontradicted`).
  *
- * **It writes nothing.** The proof sits beside `lane transition` rather than inside it so the
- * append path stays pure, offline and byte-identical on refusal; what makes it non-optional is its
- * two callers, which each run it first and record only on its exit 0 — `operate` step 3 for the
- * operator's own append, and `lane report` for a shell recording its own terminal token.
+ * **It writes nothing**, and it is not optional. Both appending verbs run this read themselves and
+ * refuse on its codes with the log byte-identical — `lane report` for a shell recording its own
+ * terminal token, `lane transition` for the driver's own records. It stays a verb of its own so a
+ * caller can ask what the proof says without recording anything.
  *
  * Every refusal names what it looked for, and the failing readings stay on their own codes because
  * their remedies are opposite: nothing there, not finished yet, says the other thing, several
  * candidates. The four are the artifact-independent vocabulary, so the range arms allocate no new
  * seat — what a caller must do about "the artifact is not there" does not change with its kind.
  *
+ * **At exit 0 there are three answers, and a driver routes on which one came back.** `proven` says
+ * the artifact is there. `not-required` says the machine walks this event out of this leaf and the
+ * event claims nothing a read could falsify — record it. `not-walkable` says the machine would not
+ * walk it at all: an event name no state of this lane's machine holds a cell for (the ledger's own
+ * namespaced `ISSUE.PASS` is the one a driver reaches for) or a recognised event this leaf owes no
+ * cell (a `PASS` out of a `blocked` park, which walks `UNBLOCKED` alone). The third used to answer
+ * `not-required` too, so a driver who ran the read before the `UNBLOCKED` that reopens the lane got
+ * a green that had checked nothing — and the two readings shared one exit code, with the difference
+ * living only in a stdout field. The walk question is the machine's own ({@link walkOf}), so a lane
+ * whose workflow renames its events or its states answers it off itself.
+ *
  * Both verdict arms answer with the namespaces they subtracted from this cell's bar
  * ({@link ProofOutcome}), because the caller records that on the event line: which cell still owes
- * the rendered verdict is not re-derivable from a bare `PASS` (#7041).
+ * the rendered verdict is not re-derivable from a bare `PASS`.
+ *
+ * The outcome also names which of the three answers it gave ({@link ProofLabel}), because an exit of
+ * `0` here is two different facts: `proven` is the artifact saying so, and `not-required` is nothing
+ * having been claimed. A caller that may act only on the first — `lane recover`, which records the
+ * event a killed shell owed — would otherwise have to re-parse this verb's own stdout to tell them
+ * apart, so the label is derived here, once, in the module that writes those bytes.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
-import {governedRootsOr} from "../config/paths.ts";
+import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
 import {getIssue, listComments} from "../io/issues.ts";
+import {isRecord, parseJson} from "../io/json.ts";
 import {getPullRequest, listPullFiles} from "../io/pulls.ts";
-import {readAdvisory} from "../review/advisory.ts";
+import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
 import {partitionWithUi, ROUTED_NAMESPACES, shipNamespacesOf} from "../review/classes.ts";
 import {bindRange, contentDigestAt, rangeContentAt} from "../review/content-binding.ts";
 import {bindHead} from "../review/head.ts";
 import {CODEOWNERS_PATH, readBoundary} from "../ship/boundary.ts";
 import {classify} from "../ship/codeowners.ts";
 import {ROUTABLE} from "../ship/gate-verb.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
 import {readNamespaced as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
@@ -51,9 +69,10 @@ import {
 	PROOF_AMBIGUOUS,
 	PROOF_CONTRADICTED,
 	PROOF_IN_FLIGHT,
+	ROUTE_UNDERIVED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
-import {foldLog, nextLeaf, resolveTask} from "./fold.ts";
+import {foldLog, resolveTask, walkOf} from "./fold.ts";
 import {nominatePulls} from "./nominate.ts";
 import {
 	claimOf,
@@ -73,7 +92,7 @@ import {
 } from "./prove.ts";
 import {type ChildRange, DEEPEN_REMEDY, locateRange} from "./range.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
-import {type LaneRef, loadLane} from "./store.ts";
+import {type LaneRef, type LoadedLane, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane prove";
 
@@ -93,15 +112,17 @@ export interface ProveOptions extends LaneRef {
 	readonly task: string | null;
 	/**
 	 * The lane classes the caller is about to record, exactly as `lane report` validated them —
-	 * `null` leaves the classes already standing alone, the fold's own rule (ADR 0317). They are an
+	 * `null` leaves the classes already standing alone, the fold's own rule. They are an
 	 * input here because they pick the arm the event takes, and the arm picks which cell owes the
-	 * routed namespace (#6664).
+	 * routed namespace. That is also why `null` is not free once a head exists: the standing set is
+	 * the ticket's, and an arm it picks that the head derives nothing for refuses at
+	 * {@link ROUTE_UNDERIVED}.
 	 */
 	readonly classes: ReadonlyArray<string> | null;
 	/**
 	 * The PR URL the caller is about to record on the event line, the shipper's own `--pr`. The
 	 * ship stage's closure is read off exactly this PR, so a `DONE` recorded with no ref reads
-	 * `unknown` rather than being nominated for (#7457).
+	 * `unknown` rather than being nominated for.
 	 */
 	readonly pr: string | null;
 	readonly repo: string | null;
@@ -123,37 +144,97 @@ const unreadable = (what: string, reason: string): VerbOutcome =>
  * `deferred` rides the outcome rather than only the stdout JSON because `lane report` records it on
  * the event line: a `PASS` proven over a set short one namespace is a different fact from a `PASS`
  * proven over the whole one, and a ledger that cannot tell them apart cannot say later which cell
- * still owes the rendered verdict (#7041). It is what was *actually* subtracted — the claim's
+ * still owes the rendered verdict. It is what was *actually* subtracted — the claim's
  * candidate set intersected with what the diff or the range derives — so it is empty on every event
  * whose bar was whole, and the field is absent from the log line there.
  *
  * `partial` rides it for the same reason and answers a different question: whether the merge behind a
  * ship's `DONE` left its issue undischarged. It is a routing fact rather than a proof — the `DONE`
  * still claims no artifact — so it refuses nothing and only tells the caller which arm of the
- * `merge:partial` guard this event takes (ADR 0343).
+ * `merge:partial` guard this event takes.
  *
  * It is `null` on every event whose closure nobody read, which is every event but the ship-stage
  * `DONE`. `false` and `null` route the fold identically and are different facts to a reader: `false`
  * is a board read that said the merge closed its issue, `null` is no read at all. Collapsing them
  * left `lane reconcile` unable to tell a confirmed closure from an unread one, so it re-read every
- * closing merge on every sweep (ADR 0351).
+ * closing merge on every sweep.
  *
  * `landed` is that `partial`'s evidence: the merged pull requests the read judged, empty on every
  * event whose closure nobody read. It rides the line beside the polarity because the polarity alone
  * cannot say which reader wrote it, and a `false` off the old nominator and a `false` off a real
- * board read route a later sweep in opposite directions (#7457).
+ * board read route a later sweep in opposite directions.
  */
 export interface ProofOutcome extends VerbOutcome {
 	readonly deferred: ReadonlyArray<string>;
+	/**
+	 * The required namespaces this proof stood on a **route** for rather than a verdict — empty on
+	 * every proof that read no head and on every head whose namespaces were all judged.
+	 *
+	 * It rides the outcome for `deferred`'s reason and answers the question `deferred` cannot: a
+	 * `PASS` proven over a namespace nobody judged, because a head-bound `routed-elsewhere` record
+	 * says the PR owes it no verdict, is a different fact from one proven over a namespace that
+	 * passed. `lane report` records it on the event line, so a reader can tell the two apart later
+	 * without re-reading the board — which is exactly what the hand-recorded `PASS` lines that
+	 * cleared this park by hand could not say (see {@link ROUTED_NAMESPACES}).
+	 *
+	 * It is never a polarity. A routed namespace holds no verdict at either sign, and nothing here
+	 * or downstream promotes one into a `PASS` marker.
+	 */
+	readonly routed: ReadonlyArray<string>;
 	readonly partial: boolean | null;
 	readonly landed: ReadonlyArray<number>;
+	/**
+	 * Whether this `DONE` was proven off a diagnosis comment rather than a pull request — the
+	 * `done:diagnosis` guard's whole input, and the one thing that tells an investigation's terminal
+	 * from a `SHIPPED-PR` or a `BUILT-NO-PR`, all three of which report the same `DONE` event.
+	 *
+	 * It is the prover's answer rather than the shell's word, which is the point: it is set on the
+	 * no-PR arm alone, so nothing a spawn reports can route a lane past its review.
+	 */
+	readonly diagnosis: boolean;
+	/**
+	 * Which of the three answers this verb gave, as a value rather than as bytes a caller re-parses —
+	 * `null` on every refusal, where the code is the answer and stdout is empty by construction.
+	 *
+	 * An exit of `0` is two different facts here and a caller acting on the proof has to tell them
+	 * apart: `proven` says the artifact says so, `not-required` says nothing was claimed and the
+	 * event may simply be recorded, and `uncontradicted` says a negative claim met no contradiction.
+	 * `lane recover` records only on the first, so collapsing them would have it append a `DONE` out
+	 * of a cell that asserts nothing. The label is derived here, in the module that writes that
+	 * stdout, so no other module has to know the shape of this verb's answer.
+	 */
+	readonly proof: ProofLabel | null;
 }
+
+/** The three shapes this verb's stdout takes at exit 0. */
+export type ProofLabel = "proven" | "not-required" | "uncontradicted";
+
+const LABELS: ReadonlyArray<ProofLabel> = ["proven", "not-required", "uncontradicted"];
+
+/**
+ * The label off this verb's own answer.
+ *
+ * `null` on a refusal and on any answer whose shape this reader does not recognise — never a guess.
+ * A caller that may only act on `proven` then reads an unrecognised answer as "not that", which is
+ * the conservative arm: the worst an unreadable label costs is a lane left where it was.
+ */
+export const proofLabelOf = (outcome: VerbOutcome): ProofLabel | null => {
+	if (outcome.code !== ANSWER) return null;
+	const parsed = parseJson(outcome.stdout);
+	if (!isRecord(parsed)) return null;
+	const raw = parsed.proof;
+	return typeof raw === "string" && (LABELS as ReadonlyArray<string>).includes(raw)
+		? (raw as ProofLabel)
+		: null;
+};
 
 /** What one arm answers with before {@link runProve} normalises each absent field, once, for all. */
 type ProofAnswer = VerbOutcome & {
 	readonly deferred?: ReadonlyArray<string>;
+	readonly routed?: ReadonlyArray<string>;
 	readonly partial?: boolean;
 	readonly landed?: ReadonlyArray<number>;
+	readonly diagnosis?: boolean;
 };
 
 const seat = (proof: Exclude<Proof, {_tag: "Proven"}>, diagnostics: ReadonlyArray<string>) => {
@@ -176,8 +257,11 @@ export const runProve = (
 	Effect.map(prove(options), (outcome) => ({
 		...outcome,
 		deferred: outcome.deferred ?? [],
+		routed: outcome.routed ?? [],
 		partial: outcome.partial ?? null,
 		landed: outcome.landed ?? [],
+		diagnosis: outcome.diagnosis ?? false,
+		proof: proofLabelOf(outcome),
 	}));
 
 /**
@@ -187,13 +271,14 @@ export const runProve = (
  */
 const prove = (
 	options: ProveOptions,
+	snapshot?: Extract<LoadedLane, {_tag: "Loaded"}>,
 ): Effect.Effect<
 	ProofAnswer,
 	never,
 	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > =>
 	Effect.gen(function* () {
-		const loaded = yield* loadLane(options);
+		const loaded = snapshot ?? (yield* loadLane(options));
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
 		const task = resolveTask(loaded.lane, options.task);
 		if (task._tag === "Unresolved") return refuse(TASK_UNKNOWN, `${VERB}: ${task.reason}`);
@@ -204,7 +289,17 @@ const prove = (
 		const leaf = fold.states[taskId]?.type ?? "";
 		const event = options.event.toUpperCase();
 		const role = roleOf(taskId, epicOf(Object.keys(loaded.lane.tasks)));
-		const routing = nextLeaf(loaded.lane, fold.states, taskId, event, options.classes);
+		// Asked before the claim, because a claim derived from a leaf the event cannot leave is a
+		// claim about a world this event will never reach. `not-required` says "the machine walks this
+		// and it owes no artifact"; an unwalkable event owes the caller the other answer.
+		const walk = walkOf(loaded.lane, fold.states, taskId, event, options.classes);
+		if (walk._tag === "Unknown" || walk._tag === "NoCell") {
+			return answer(
+				JSON.stringify({proof: "not-walkable", event, task: taskId, state: leaf}, null, 2),
+				[`${VERB}: ${walk.why} — nothing here proves it, and the machine will refuse it.`],
+			);
+		}
+		const routing = walk._tag === "Walks" ? walk.next : null;
 		const claim = claimOf(event, leaf, role, routing);
 		if (claim._tag === "None") {
 			if (event === "DONE" && role._tag !== "Child" && SHIP_STATES.includes(leaf)) {
@@ -279,6 +374,18 @@ const prove = (
 			]);
 		}
 
+		const surfaces = yield* uiSurfacesOr(
+			VERB,
+			options.cwd,
+			"the required namespace set is UNKNOWN, and a set short one namespace would prove an event nobody gated.",
+		);
+		if (surfaces._tag === "Refused") {
+			if (!park) return refuse(LANE_UNREADABLE, surfaces.message);
+			return uncontradicted(event, taskId, issue, null, [
+				`${VERB}: the declared UI surfaces did not read, so the derived namespace set is UNKNOWN and nothing could contradict the park — it stands.`,
+			]);
+		}
+
 		if (claim._tag === "RangeVerdict") {
 			return yield* proveRangeVerdicts(
 				repo,
@@ -287,6 +394,7 @@ const prove = (
 				taskId,
 				event,
 				governed.roots,
+				surfaces.prefixes,
 				claim.defers,
 			);
 		}
@@ -368,6 +476,7 @@ const prove = (
 				event,
 				diagnostics,
 				governed.roots,
+				surfaces.prefixes,
 			);
 		}
 		return yield* proveVerdicts(
@@ -378,6 +487,7 @@ const prove = (
 			event,
 			diagnostics,
 			governed.roots,
+			surfaces.prefixes,
 			claim.defers,
 		);
 	});
@@ -390,15 +500,15 @@ const prove = (
  * could falsify, and refusing one would leave a shipper with no legal terminal over a merge that
  * really did land. It cannot refuse on an unread board either: a read that failed answers `unknown`
  * and records **no** `partial`, which leaves the line nominable by `lane reconcile` rather than
- * stranding the shipper (ADR 0343, ADR 0351).
+ * stranding the shipper.
  *
- * **The closure is read off the PR this very event names, never off the nominator** (#7457). The
+ * **The closure is read off the PR this very event names, never off the nominator**. The
  * shipper hands the merged PR's URL to `lane report --pr`, and it is relayed here as
  * {@link ProveOptions.pr}; `./closure.ts` reads that one PR and judges its body, exactly as
  * `lane reconcile` reads the PR a recorded line names. Nominating was structurally unable to see
  * the subject: a merged `Part of #N` is a node in neither half of the union — the closing edge is
- * built from closing keywords and the search half is `is:open` — so the `Partial` arm ADR 0343
- * added never once fired, and every partial merge still folded its lane to a terminal over an open
+ * built from closing keywords and the search half is `is:open` — so the `Partial` arm the machine
+ * declares never once fired, and every partial merge still folded its lane to a terminal over an open
  * issue.
  *
  * An answered read names the merged PRs it stood on, and `lane report` records them beside the
@@ -431,7 +541,7 @@ const readClosure = (
 					),
 					[
 						`${VERB}: ${why} — nothing to prove, record it.`,
-						`${VERB}: ${read.reason}, so whether this merge discharged #${issue} is UNKNOWN — the line records no \`partial\`, and \`lane reconcile\` reads it again (ADR 0351).`,
+						`${VERB}: ${read.reason}, so whether this merge discharged #${issue} is UNKNOWN — the line records no \`partial\`, and \`lane reconcile\` reads it again.`,
 					],
 				),
 			};
@@ -439,7 +549,7 @@ const readClosure = (
 		const closure = read.closure;
 		const note =
 			closure._tag === "Partial"
-				? `${VERB}: ${closure.prs.map((pr) => `#${pr}`).join(", ")} merged carrying "Part of #${issue}" and no closing keyword, so #${issue} is not discharged — the lane goes round rather than folding to its terminal (ADR 0343).`
+				? `${VERB}: ${closure.prs.map((pr) => `#${pr}`).join(", ")} merged carrying "Part of #${issue}" and no closing keyword, so #${issue} is not discharged — the lane goes round rather than folding to its terminal.`
 				: `${VERB}: ${closure.why}, so this ${event} folds the lane exactly as it always did.`;
 		return {
 			...answer(
@@ -472,7 +582,7 @@ interface Traced {
 /**
  * The open PRs linking this issue, nominated by `./nominate.ts` — the union `lane brief` and
  * `recipe unpark` resolve their PR through too, so the three verbs cannot disagree about which PR a
- * lane owns (#6179). What that union is, and why the edge is read before the index, lives there.
+ * lane owns. What that union is, and why the edge is read before the index, lives there.
  *
  * The one thing this verb adds is the ruling on the sidebar link: a PR linked through GitHub's
  * Development panel rather than a keyword in its body is on the edge and is still not a proof here,
@@ -503,6 +613,10 @@ const traceOpenPull = (
  * The no-PR arm: `build`'s `SUCCESS-NO-PR`, which is a legal `DONE` and must not read as an unproven
  * one. It is not taken on the spawn's word either — the two artifacts are the `type:investigation`
  * label and a diagnosis comment written after the task entered build.
+ *
+ * It is the only arm that answers `diagnosis: true`, which is what the machine's `done:diagnosis`
+ * guard routes an investigation's terminal on — so the routing rests on the same two artifacts the
+ * proof does, and a `SHIPPED-PR` or a `BUILT-NO-PR` reporting the identical `DONE` reaches it never.
  */
 const proveNoPull = (
 	repo: string,
@@ -512,7 +626,7 @@ const proveNoPull = (
 	entries: ReadonlyArray<{readonly task: string; readonly at: string}>,
 	diagnostics: ReadonlyArray<string>,
 	unlinked: string,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<ProofAnswer, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const found = yield* getIssue(repo, issue);
 		if (found._tag === "Unknown") return unreadable(`issue #${issue}`, found.reason);
@@ -541,20 +655,23 @@ const proveNoPull = (
 				looked,
 			);
 		}
-		return answer(
-			JSON.stringify(
-				{
-					proof: "proven",
-					event,
-					task: taskId,
-					issue,
-					evidence: {kind: "diagnosis", commentId: diagnosis.commentId},
-				},
-				null,
-				2,
+		return {
+			...answer(
+				JSON.stringify(
+					{
+						proof: "proven",
+						event,
+						task: taskId,
+						issue,
+						evidence: {kind: "diagnosis", commentId: diagnosis.commentId},
+					},
+					null,
+					2,
+				),
+				looked,
 			),
-			looked,
-		);
+			diagnosis: true,
+		};
 	});
 
 /**
@@ -564,17 +681,25 @@ const proveNoPull = (
  * appends the `governance` floor — so the bar this proves against is the same object the merge gate
  * enforces rather than a second reading of it.
  *
- * `defers` is the one subtraction, and it is a routing fact rather than a relaxation: it is non-empty
- * only where this lane's own machine takes the deferred namespace's event into the cell that owes it,
- * so a subtraction can never outlive the round it hands the work to (ADR 0320). Demanding `review-ui`
- * of the very `PASS` that enters `review:ui` demanded a verdict from a cell the lane had not reached
- * (#6664/#6793); demanding it of a `PASS` that walks to `ship` is the floor, and it still stands.
+ * `defers` is the one subtraction, and it is a routing fact rather than a relaxation: it is
+ * non-empty only where this lane's own machine takes the deferred namespace's event into the cell
+ * that owes it, so a subtraction can never outlive the round it hands the work to. Demanding
+ * `review-ui` of the very `PASS` that enters `review:ui` demanded a verdict from a cell the lane
+ * had not reached; demanding it of a `PASS` that walks to `ship` is the floor, and it still stands.
  * `ship gate` re-derives the full set at the merge either way.
  *
+ * **A deferral this head derives nothing for is refused rather than taken.** The head decides which
+ * classes a review round owes, so once one exists the standing set has to come from it; a `ui`
+ * stamp that outlived a text-only fix routes the `PASS` into a rendered round the diff cannot fill,
+ * and the rendered gate then parks the lane on a person. That read comes back `Underived`, and the
+ * remedy on the refusal is the relay.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
+ *
  * On a control-plane PR the reviewer's PASS arrives through the §CP advisory carrier by design —
- * no first-line marker, the head in the body (ADR 0111/0226) — so a marker-only read would row it
+ * no first-line marker, the head in the body — so a marker-only read would row it
  * `absent` and hold the lane at `PROOF_IN_FLIGHT` forever. The advisory is read exactly as
- * `ship gate`'s `candidateOf` reads it: head-bound with no content binding (ADR 0276), a `[FAIL]`
+ * `ship gate`'s `candidateOf` reads it: head-bound with no content binding, a `[FAIL]`
  * row treated as fail (an invalid emission, reported) — and admitted only after the diff itself
  * classifies control-plane through the shipped `classify` over CODEOWNERS at the PR's base ref,
  * never a caller assertion. On any other PR a marker-less comment stays no verdict.
@@ -582,18 +707,19 @@ const proveNoPull = (
  * The third carrier is the `routed-elsewhere` record, read for `ROUTABLE` alone and admitted for
  * the reason `ship gate` admits it: `review-ui`'s emit path cannot answer a diff that renders
  * nothing, so requiring the namespace without reading the route would hold such a lane at `review`
- * with no work left that could free it (ADR 0316). It is read exactly as `candidateOf` reads it —
+ * with no work left that could free it. It is read exactly as `candidateOf` reads it —
  * head-bound, no content binding, one namespace.
  *
  * The read stops at the rows. Which bar is asked of them is the caller's, because the two bars are
  * opposite: a `PASS` must clear {@link foldNamespaces}'s floor, a park must only survive
- * {@link foldPark}'s single contradiction (#6112).
+ * {@link foldPark}'s single contradiction.
  */
 const readNamespaceRows = (
 	repo: string,
 	pr: number,
 	diagnostics: ReadonlyArray<string>,
 	roots: ReadonlyArray<string>,
+	uiPrefixes: ReadonlyArray<string>,
 	defers: ReadonlyArray<string>,
 ): Effect.Effect<HeadRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
@@ -610,9 +736,15 @@ const readNamespaceRows = (
 		if (files._tag === "Failure") {
 			return {_tag: "Unread" as const, what: `the changed files of #${pr}`, reason: files.reason};
 		}
-		const derived = shipNamespacesOf(partitionWithUi(files.value, roots));
+		const derived = shipNamespacesOf(partitionWithUi(files.value, roots, uiPrefixes));
 		const deferred = derived.filter((namespace) => defers.includes(namespace));
 		const required = derived.filter((namespace) => !defers.includes(namespace));
+
+		// The head is what decides the round, so a deferral this head derives nothing for is not a
+		// deferral at all — it is the boot-time class still routing after a head exists to replace it.
+		if (defers.length > 0 && deferred.length === 0) {
+			return {_tag: "Underived" as const, head, defers, derived};
+		}
 
 		const commented = yield* listComments(repo, pr);
 		if (commented._tag === "Failure") {
@@ -620,7 +752,7 @@ const readNamespaceRows = (
 		}
 
 		// Newest write stamp wins per namespace — the same ordering key `ship gate` folds on, because
-		// a FAIL upserted after a PASS must win (#4200).
+		// a FAIL upserted after a PASS must win.
 		const latest = new Map<string, Claim>();
 		const stamps = new Map<string, string>();
 		const advisories: {readonly claim: Claim; readonly stamp: string}[] = [];
@@ -656,8 +788,8 @@ const readNamespaceRows = (
 						polarity: "ROUTED",
 						commentId: comment.id,
 						sha: route.sha,
-						// Head-bound, never content-bound (ADR 0316) — a push re-opens the question, so the
-						// route takes the pre-0276 binding and can never gain survival it did not earn.
+						// Head-bound, never content-bound — a push re-opens the question, so a
+						// route can never gain survival it did not earn.
 						content: null,
 					},
 					comment.updatedAt,
@@ -669,12 +801,12 @@ const readNamespaceRows = (
 				advisories.push({
 					claim: {
 						namespace: advisory.namespace,
-						// ADR 0226 makes the advisory carrier PASS-only; a [FAIL] row inside one is an
-						// invalid emission — treated as fail below, never read as a pass.
-						polarity: /\[FAIL\]/.test(comment.body) ? "FAIL" : "PASS",
+						// An invalid [FAIL] emission inside an advisory is treated as fail below,
+						// never read as a pass — the carrier's own predicate, one copy.
+						polarity: advisoryPolarity(comment.body),
 						commentId: comment.id,
 						sha: advisory.sha,
-						// The advisory withholds a content binding by design (ADR 0276) — head-bound only.
+						// The advisory withholds a content binding by design — head-bound only.
 						content: null,
 					},
 					stamp: comment.updatedAt,
@@ -689,11 +821,11 @@ const readNamespaceRows = (
 			...diagnostics,
 			...deferred.map(
 				(namespace) =>
-					`${VERB}: ${namespace} on #${pr} is owed by the cell this event routes into, not by this one — the event being proven is that arm, so requiring it here is the deadlock #6664 closed.`,
+					`${VERB}: ${namespace} on #${pr} is owed by the cell this event routes into, not by this one — the event being proven is that arm, so requiring it here is a deadlock.`,
 			),
 			...unrouted.map(
 				(namespace) =>
-					`${VERB}: #${pr} derives ${namespace} and this event routes into no cell that could fill it, so it is required here — relay the class \`review scope\` printed (\`lane report … --class ui\`) if this lane's machine carries the rendered round (ADR 0320).`,
+					`${VERB}: #${pr} derives ${namespace} and this event routes into no cell that could fill it, so it is required here — relay the class \`review scope\` printed (\`lane report … --class ui\`) if this lane's machine carries the rendered round.`,
 			),
 		];
 		if (advisories.length > 0) {
@@ -710,7 +842,7 @@ const readNamespaceRows = (
 				for (const {claim, stamp} of advisories) {
 					if (claim.polarity === "FAIL") {
 						notes.push(
-							`${VERB}: #${pr} carries a §CP advisory with a [FAIL] row — an invalid emission (ADR 0226); treated as fail, report it.`,
+							`${VERB}: #${pr} carries a §CP advisory with a [FAIL] row — an invalid emission; treated as fail, report it.`,
 						);
 					}
 					const seen = stamps.get(claim.namespace);
@@ -718,7 +850,7 @@ const readNamespaceRows = (
 					stamps.set(claim.namespace, stamp);
 					latest.set(claim.namespace, claim);
 					notes.push(
-						`${VERB}: ${claim.namespace} on #${pr} is advisory-carried (§CP, ADR 0111) — head-bound at ${claim.sha}, no content binding (ADR 0276).`,
+						`${VERB}: ${claim.namespace} on #${pr} is advisory-carried (§CP) — head-bound at ${claim.sha}, no content binding.`,
 					);
 				}
 			} else {
@@ -731,10 +863,10 @@ const readNamespaceRows = (
 		for (const claim of claims) {
 			if (claim.polarity !== "ROUTED") continue;
 			notes.push(
-				`${VERB}: ${claim.namespace} on #${pr} is routed rather than judged — a routed-elsewhere record at ${claim.sha} states this PR owes no verdict (ADR 0316).`,
+				`${VERB}: ${claim.namespace} on #${pr} is routed rather than judged — a routed-elsewhere record at ${claim.sha} states this PR owes no verdict.`,
 			);
 		}
-		// A verdict survives a head move only through the content it bound (ADR 0276), so the digest
+		// A verdict survives a head move only through the content it bound, so the digest
 		// is computed exactly when a head-only read would call a content-bearing verdict stale.
 		let digest: string | null = null;
 		if (
@@ -784,7 +916,17 @@ type HeadRead =
 			readonly notes: ReadonlyArray<string>;
 	  }
 	| {readonly _tag: "Unread"; readonly what: string; readonly reason: string}
-	| {readonly _tag: "Gone"; readonly what: string};
+	| {readonly _tag: "Gone"; readonly what: string}
+	/**
+	 * The event routes into a cell this head owes nothing — the standing class is the ticket's, not
+	 * the head's. `derived` is what the head actually raises, so the refusal can name the relay.
+	 */
+	| {
+			readonly _tag: "Underived";
+			readonly head: string;
+			readonly defers: ReadonlyArray<string>;
+			readonly derived: ReadonlyArray<string>;
+	  };
 
 const proveVerdicts = (
 	repo: string,
@@ -794,16 +936,33 @@ const proveVerdicts = (
 	event: string,
 	diagnostics: ReadonlyArray<string>,
 	roots: ReadonlyArray<string>,
+	uiPrefixes: ReadonlyArray<string>,
 	defers: ReadonlyArray<string>,
 ): Effect.Effect<ProofAnswer, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, defers);
+		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, uiPrefixes, defers);
 		if (read._tag === "Unread") return {...unreadable(read.what, read.reason), deferred: []};
 		if (read._tag === "Gone") {
 			return {...seat({_tag: "Absent", what: read.what}, diagnostics), deferred: []};
 		}
+		if (read._tag === "Underived") {
+			return {
+				...refuse(
+					ROUTE_UNDERIVED,
+					`${VERB}: the classes standing over "${taskId}" route this ${event} into the cell that owes ${read.defers.join(", ")}, and #${pr} at ${read.head} derives ${read.derived.join(", ")} — no file of this head asks for that round.`,
+					[
+						...diagnostics,
+						`${VERB}: relay the classes this head raises instead of the ones the ticket booted with — \`review scope ${pr}\` prints one \`class\` row each, and \`lane report … --class <name>\` replaces the standing set.`,
+					],
+				),
+				deferred: [],
+			};
+		}
 		const proof = foldNamespaces(read.rows, `#${pr}`);
 		if (proof._tag !== "Proven") return {...seat(proof, read.notes), deferred: []};
+		// Read off the rows the fold just accepted rather than off the required set: only a row the
+		// proof actually stood on is evidence, and a namespace that merely *could* be routed is not.
+		const routed = read.rows.filter((row) => row.state === "routed").map((row) => row.namespace);
 		return {
 			...answer(
 				JSON.stringify(
@@ -818,6 +977,7 @@ const proveVerdicts = (
 							head: read.head,
 							namespaces: read.rows,
 							deferred: read.deferred,
+							...(routed.length === 0 ? {} : {routed}),
 						},
 					},
 					null,
@@ -826,19 +986,20 @@ const proveVerdicts = (
 				read.notes,
 			),
 			deferred: read.deferred,
+			routed,
 		};
 	});
 
 /**
  * The park arm: a reviewer's `BLOCKED` out of a review cell, refused by a still-binding `FAIL` and
- * by nothing else (#6112).
+ * by nothing else.
  *
  * A park's whole point is that it routes to a human, so **every** unreadable half answers
  * `uncontradicted` rather than a refusal: an absent PR, a board read that failed, a namespace set
  * that could not be derived. Holding a park because the board could not be read would strand the
  * lane in the one state whose exit nobody could take — the shell has already stopped, and there is
  * no later round to re-read in. What the arm removes is the opposite error, and only it: a run that
- * posted a dispatchable FAIL and then recorded a park anyway, which is how lane 5661's ledger read
+ * posted a dispatchable FAIL and then recorded a park anyway, which is how one lane's ledger read
  * `blocked` over three current-head FAILs with no cell left for the real terminal.
  *
  * It stands on the **whole** derived set — nothing is deferred to a later cell — because a FAIL in
@@ -852,13 +1013,15 @@ const proveParkUncontradicted = (
 	event: string,
 	diagnostics: ReadonlyArray<string>,
 	roots: ReadonlyArray<string>,
+	uiPrefixes: ReadonlyArray<string>,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, []);
+		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, uiPrefixes, []);
 		if (read._tag !== "Rows") {
 			return uncontradicted(event, taskId, issue, pr, [
 				...diagnostics,
-				`${VERB}: ${read._tag === "Unread" ? `cannot read ${read.what}: ${read.reason}` : read.what} — a park is refused only by a FAIL that still binds, so an unread board leaves it recordable.`,
+				// A park defers nothing, so `Underived` is unreachable here and reads as an unread board.
+				`${VERB}: ${read._tag === "Unread" ? `cannot read ${read.what}: ${read.reason}` : read._tag === "Gone" ? read.what : "the head's derived set did not settle"} — a park is refused only by a FAIL that still binds, so an unread board leaves it recordable.`,
 			]);
 		}
 		const proof = foldPark(read.rows, `#${pr}`);
@@ -921,8 +1084,8 @@ const located = (
  * One namespace's newest range-scoped claim, before the binding question is asked of it.
  *
  * Two carriers, two bindings, so the union rather than a nullable `content`: a range verdict binds
- * the digest its reviewer judged (ADR 0276), a `routed-elsewhere` record binds the tip it was
- * attested at and nothing else (ADR 0316). A field that could hold either would let the wrong
+ * the digest its reviewer judged, a `routed-elsewhere` record binds the tip it was
+ * attested at and nothing else. A field that could hold either would let the wrong
  * binding be asked of a claim silently.
  */
 type RangeClaim =
@@ -946,15 +1109,15 @@ type RangeClaim =
  *
  * The required namespaces are derived from the range's own changed paths through the same
  * `ship scope` pair the PR arm uses, minus `defers` — the one subtraction, taken exactly as the PR
- * arm takes it, and here always the routed set: a child opens no PR (ADR 0285) and no verb can post
+ * arm takes it, and here always the routed set: a child opens no PR and no verb can post
  * a `review-ui` verdict at range scope, so requiring it held every ui-bearing child at exit 23 with
- * no cell and no verb that could ever free it (#7041). Which cell then owes it is not bookkeeping —
+ * no cell and no verb that could ever free it. Which cell then owes it is not bookkeeping —
  * one epic run is one branch and one PR, so the tail PR's own diff carries every rendered file the
  * child's range added, and the tail's `PASS` derives, requires and proves it at a head a preview
  * exists for. A child whose range renders nothing derives the namespace nowhere, so the subtraction
- * is a no-op on its bar and on its notes. See ADR 0340.
+ * is a no-op on its bar and on its notes.
  *
- * What binds is content and only content (ADR 0276): the two
+ * What binds is content and only content: the two
  * SHAs a range marker names stop being history the moment the range merges into the epic branch, so
  * `bindRange` compares the digest the reviewer recorded against the digest this range carries now —
  * a verdict written over a sibling's range, or over a tip the builder has since moved past, reads
@@ -964,9 +1127,9 @@ type RangeClaim =
  * counted into the diagnostics instead of dropped: a verdict posted in the wrong format is the one
  * failure that would otherwise present as "the reviewer never ran".
  *
- * A `routed-elsewhere` record resolves `ROUTABLE` here too — a child's `apps/web/src` diff can
+ * A `routed-elsewhere` record resolves `ROUTABLE` here too — a child's rendered-surface diff can
  * render nothing exactly as a PR's can — and it binds the range's **tip**, not the range digest.
- * The record's format is head-bound by construction (ADR 0316) and carries no digest to compare, so
+ * The record's format is head-bound by construction and carries no digest to compare, so
  * the tip is the one object name the tree it attested has; every push moves it and voids the route.
  */
 const proveRangeVerdicts = (
@@ -976,6 +1139,7 @@ const proveRangeVerdicts = (
 	taskId: string,
 	event: string,
 	roots: ReadonlyArray<string>,
+	uiPrefixes: ReadonlyArray<string>,
 	defers: ReadonlyArray<string>,
 ): Effect.Effect<ProofAnswer, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
@@ -987,7 +1151,7 @@ const proveRangeVerdicts = (
 		if (content._tag === "Failure") {
 			return {...unreadable(`the content ${range} changes`, content.reason), deferred: []};
 		}
-		const derived = shipNamespacesOf(partitionWithUi(content.value.paths, roots));
+		const derived = shipNamespacesOf(partitionWithUi(content.value.paths, roots, uiPrefixes));
 		const deferred = derived.filter((namespace) => defers.includes(namespace));
 		const required = derived.filter((namespace) => !defers.includes(namespace));
 
@@ -997,7 +1161,7 @@ const proveRangeVerdicts = (
 		}
 
 		// Newest write stamp wins per namespace — the ordering the PR arm folds on, for the reason it
-		// folds on it: a FAIL upserted after a PASS must win (#4200).
+		// folds on it: a FAIL upserted after a PASS must win.
 		const latest = new Map<string, RangeClaim>();
 		const stamps = new Map<string, string>();
 		const malformed: string[] = [];
@@ -1066,12 +1230,12 @@ const proveRangeVerdicts = (
 			`${VERB}: ${range} changes ${content.value.paths.length} path(s) at content ${content.value.digest} and derives ${derived.join(", ")}; read ${commented.value.length} comment(s) on #${issue}.`,
 			...deferred.map(
 				(namespace) =>
-					`${VERB}: ${namespace} is owed by epic #${epic}'s tail, not by this child — a child opens no PR (ADR 0285) and no verb posts ${namespace} at range scope, so the tail PR carrying this range proves it at a head a preview exists for (#7041).`,
+					`${VERB}: ${namespace} is owed by epic #${epic}'s tail, not by this child — a child opens no PR and no verb posts ${namespace} at range scope, so the tail PR carrying this range proves it at a head a preview exists for.`,
 			),
 			...claims.map((claim) =>
 				claim._tag === "Verdict"
 					? `${VERB}: ${claim.namespace} claims ${claim.polarity} over range ${claim.range} bound to content ${claim.content}.`
-					: `${VERB}: ${claim.namespace} is routed rather than judged — a routed-elsewhere record at ${claim.sha} states this range owes no verdict (ADR 0316).`,
+					: `${VERB}: ${claim.namespace} is routed rather than judged — a routed-elsewhere record at ${claim.sha} states this range owes no verdict.`,
 			),
 			...malformed.map(
 				(reason) =>
@@ -1107,3 +1271,9 @@ const proveRangeVerdicts = (
 			deferred,
 		};
 	});
+
+/** Re-read live evidence against the state captured before a dispatched child reported. */
+export const proveDispatched = (
+	options: ProveOptions,
+	snapshot: Extract<LoadedLane, {_tag: "Loaded"}>,
+) => prove(options, snapshot);

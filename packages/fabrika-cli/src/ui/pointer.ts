@@ -3,12 +3,12 @@
  * {"sha256": "<hex>"}}}`, the bytes resolving as `GET <store>/<sha256>.png`.
  *
  * An unreadable pointer is **never** an empty blessed set. v1's probe resolved a failed read to zero
- * blessed surfaces with `|| true` (#4501), which reads to a caller as "nothing to compare against"
- * — the fail-open this parser and its `4`/`11` seats exist to refuse.
+ * blessed surfaces with `|| true`, which reads to a caller as "nothing to compare against" — the
+ * fail-open this parser and its `4`/`11` seats exist to refuse.
  *
- * Entry fields beyond `sha256` (phoenix's shipped file carries `blessedDate` and `intent`, ADR 0183
- * §2) are carried by the repo, not by this contract, so they parse and are ignored rather than
- * refused. A pointer that names surfaces without a `store` is malformed: the bytes are unreachable,
+ * Entry fields beyond `sha256` (a repo's own file may carry a blessing date or an intent note) are
+ * carried by the repo, not by this contract, so they parse and are ignored rather than refused. A
+ * pointer that names surfaces without a `store` is malformed: the bytes are unreachable,
  * and answering "blessed" for a golden nothing can fetch would be worse than refusing.
  */
 import {isSha256Hex} from "../capture/golden-pointer.ts";

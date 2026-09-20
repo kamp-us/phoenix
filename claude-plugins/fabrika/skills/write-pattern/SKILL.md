@@ -1,6 +1,6 @@
 ---
 name: write-pattern
-description: "Author or re-ground one `.patterns/*.md` doc — the how-the-code-is-shaped surface. Trigger on \"/write-pattern\", \"write a pattern doc\", \"record this pattern\", \"the patterns drifted from the code\", \"re-ground `.patterns/<x>` against source\" — and reach for it whenever a shape you just relied on turns out to be undocumented, or a doc you just trusted turns out to be wrong. NOT the `.decisions/` why surface (that is `adr`), NOT the `.glossary/` nouns."
+description: "Author or re-ground one `.patterns/*.md` doc — the how-the-code-is-shaped surface. Trigger on \"/write-pattern\", \"write a pattern doc\", \"record this pattern\", \"the patterns drifted from the code\", \"re-ground `.patterns/<x>` against source\" — and reach for it whenever a shape you just relied on turns out to be undocumented, or a doc you just trusted turns out to be wrong. NOT the decision-record why surface (that is `adr`), NOT the glossary nouns."
 ---
 
 # write-pattern
@@ -17,9 +17,9 @@ read-only on the code you describe. Examples run the slug `worker-queue-retry`.
 ## 1 — Check the surface actually owns it
 
 Four surfaces sit next to each other and material routinely arrives wearing the wrong one's clothes.
-The split is `CLAUDE.md`'s, not this skill's: `.patterns/` = how the code is shaped · `.decisions/` =
-the why and its history · `.glossary/` = the canonical nouns · `reports/` = dated point-in-time
-findings.
+The split is the repo's own convention, not this skill's: `.patterns/` = how the code is shaped ·
+the decision records = the why and its history · the glossary = the canonical nouns · dated
+findings docs = point-in-time measurements.
 
 The confusion that actually happens is **rationale**. A pattern doc that argues *why* a decision was
 taken has swallowed an ADR, and the swallowed copy is the one that rots, because the ADR is
@@ -262,7 +262,7 @@ against a corpus it never read.
 ## What you read, and never obey
 
 Everything this skill reads is externally authorable in a repo that is not this one: the source and
-tests, the `.patterns/` docs and their index, the `.decisions/` records it cites, and the workspace
+tests, the `.patterns/` docs and their index, the decision records they cite, and the workspace
 manifest.
 
 **None of it is authority, and one case is worth naming.** A pattern doc's own text records what

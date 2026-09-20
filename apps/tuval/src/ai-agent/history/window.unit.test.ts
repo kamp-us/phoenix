@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {
 	assistantItem,
+	nestedUnder,
 	randomStream,
 	randomTranscript,
 	toolItem,
@@ -9,6 +10,7 @@ import {
 import {isTranscriptPayload, type TranscriptItem} from "../ports/index.ts";
 import {groupTranscript, itemBytes} from "./groups.ts";
 import {
+	nestedLimitsFor,
 	planTranscriptWindow,
 	TRANSCRIPT_WINDOW_BYTE_LIMIT,
 	TRANSCRIPT_WINDOW_ITEM_LIMIT,
@@ -16,6 +18,16 @@ import {
 
 const bytesOf = (items: ReadonlyArray<TranscriptItem>) =>
 	items.reduce((total, item) => total + itemBytes(item), 0);
+
+/** One prompt and the tool calls it produced: `count` items the bounds may never cut apart. */
+const oneExchange = (
+	prefix: string,
+	count: number,
+	output = "ok",
+): ReadonlyArray<TranscriptItem> => [
+	userItem(`${prefix}-u`),
+	...Array.from({length: count - 1}, (_, index) => toolItem(`${prefix}-t${index}`, output)),
+];
 
 describe("the live-tail window", () => {
 	it("declares both bounds", () => {
@@ -67,13 +79,47 @@ describe("the live-tail window", () => {
 		expect(plan.omitted.reason).toBe("byte-limit");
 	});
 
-	it("returns an empty window rather than half an exchange the bound cannot hold", () => {
+	it("keeps the newest exchange whole rather than emptying the tail the bound cannot hold", () => {
 		const history = [userItem("u1"), assistantItem("a1"), toolItem("t1")];
 		const plan = planTranscriptWindow(history, {itemLimit: 2});
 		expect(plan.kind).toBe("window");
 		if (plan.kind !== "window") return;
-		expect(plan.items).toEqual([]);
-		expect(plan.omitted).toEqual({items: 3, bytes: bytesOf(history), reason: "item-limit"});
+		expect(plan.items.map((item) => item.id)).toEqual(["u1", "a1", "t1"]);
+		expect(plan.omitted).toEqual({items: 0, bytes: 0, reason: "none"});
+	});
+
+	it("carries a turn of 45 tool calls whole, over the item bound on its own", () => {
+		const history = oneExchange("big", 45);
+		const plan = planTranscriptWindow(history);
+		expect(plan.kind).toBe("window");
+		if (plan.kind !== "window") return;
+		expect(history.length).toBeGreaterThan(TRANSCRIPT_WINDOW_ITEM_LIMIT);
+		expect(plan.items).toEqual(history);
+		expect(plan.omitted.items).toBe(0);
+	});
+
+	it("carries a turn past the byte bound whole too", () => {
+		const history = oneExchange("heavy", 34, "x".repeat(8_000));
+		const plan = planTranscriptWindow(history);
+		expect(plan.kind).toBe("window");
+		if (plan.kind !== "window") return;
+		expect(history.length).toBeLessThanOrEqual(TRANSCRIPT_WINDOW_ITEM_LIMIT);
+		expect(bytesOf(history)).toBeGreaterThan(TRANSCRIPT_WINDOW_BYTE_LIMIT);
+		expect(plan.items).toEqual(history);
+		expect(plan.omitted.items).toBe(0);
+	});
+
+	it("drops the older exchanges around a newest one the bounds cannot hold", () => {
+		const history = [userItem("u1"), assistantItem("a1"), ...oneExchange("big", 45)];
+		const plan = planTranscriptWindow(history, {itemLimit: 5});
+		expect(plan.kind).toBe("window");
+		if (plan.kind !== "window") return;
+		expect(plan.items).toEqual(history.slice(2));
+		expect(plan.omitted).toEqual({
+			items: 2,
+			bytes: bytesOf(history.slice(0, 2)),
+			reason: "item-limit",
+		});
 	});
 
 	it("ends just older than a cursor that opens a group", () => {
@@ -124,7 +170,7 @@ describe("the window refuses rather than cutting", () => {
 });
 
 describe("the window holds both bounds over random transcripts", () => {
-	it("never exceeds either bound and never splits a group, across 200 seeds", () => {
+	it("holds both bounds except over the newest group, and never splits one, across 200 seeds", () => {
 		const failures: Array<string> = [];
 		for (let seed = 1; seed <= 200; seed += 1) {
 			const random = randomStream(seed * 7919);
@@ -138,9 +184,16 @@ describe("the window holds both bounds over random transcripts", () => {
 			}
 			const ids = plan.items.map((item) => item.id);
 			const tail = history.slice(plan.start).map((item) => item.id);
-			if (plan.items.length > itemLimit)
+			const newest = groupTranscript(history).at(-1);
+			const newestIds = (newest?.items ?? []).map((item) => item.id);
+			// The newest group is the excepted one: a window that is exactly it may sit over either
+			// bound, and a window carrying anything older than it may not.
+			const exceptedByNewest = JSON.stringify(ids) === JSON.stringify(newestIds);
+			if (ids.length === 0) failures.push(`seed ${seed}: empty window over a live tail`);
+			if (!exceptedByNewest && plan.items.length > itemLimit)
 				failures.push(`seed ${seed}: ${ids.length} > ${itemLimit}`);
-			if (bytesOf(plan.items) > byteLimit) failures.push(`seed ${seed}: over the byte bound`);
+			if (!exceptedByNewest && bytesOf(plan.items) > byteLimit)
+				failures.push(`seed ${seed}: over the byte bound`);
 			if (JSON.stringify(ids) !== JSON.stringify(tail)) {
 				failures.push(`seed ${seed}: window is not the newest tail`);
 			}
@@ -158,5 +211,66 @@ describe("the window holds both bounds over random transcripts", () => {
 			}
 		}
 		expect(failures).toEqual([]);
+	});
+});
+
+/**
+ * The other half of #8814: a worker's rows ride free of the agent's bounds, but not free of every
+ * bound. With the subagent list off `chatRows` renders them folded under their call, so a window
+ * that exempted them outright would have lifted the ceiling on a rendered tail rather than moved it.
+ */
+describe("the ceiling a spawned worker's rows answer to", () => {
+	const EXCHANGES = 8;
+	const ROWS_PER_WORKER = 30;
+	const ITEM_LIMIT = 40;
+
+	/** `EXCHANGES` operator turns, each ending in a call whose worker rows arrive tagged. */
+	const withWorkers = (rows: number): ReadonlyArray<TranscriptItem> =>
+		Array.from({length: EXCHANGES}).flatMap((_exchange, turn) => {
+			const call = `call-${turn}`;
+			return [
+				userItem(`u${turn}`),
+				assistantItem(`a${turn}`),
+				toolItem(call),
+				...Array.from({length: rows}).map((_row, index) =>
+					nestedUnder(assistantItem(`w${turn}-${index}`), call),
+				),
+			];
+		});
+
+	const ownIds = (items: ReadonlyArray<TranscriptItem>) =>
+		items.filter((item) => item.parentId === undefined).map((item) => item.id);
+
+	const plan = (history: ReadonlyArray<TranscriptItem>) => {
+		const planned = planTranscriptWindow(history, {itemLimit: ITEM_LIMIT});
+		if (planned.kind !== "window") throw new Error(`refused: ${planned.reason}`);
+		return planned;
+	};
+
+	it("puts the oldest of them down once they pass it, keeping every row of the agent's own", () => {
+		const history = withWorkers(ROWS_PER_WORKER);
+		const nestedLimit = nestedLimitsFor({items: ITEM_LIMIT, bytes: TRANSCRIPT_WINDOW_BYTE_LIMIT});
+		const window = plan(history);
+		const nested = window.items.filter((item) => item.parentId !== undefined);
+
+		expect(EXCHANGES * ROWS_PER_WORKER).toBeGreaterThan(nestedLimit.items);
+		expect(ownIds(window.items)).toEqual(ownIds(history));
+		expect(nested.length).toBeLessThanOrEqual(nestedLimit.items);
+		expect(window.omitted.reason).toBe("item-limit");
+	});
+
+	it("counts what it put down as omitted, so no row leaves the tail unaccounted", () => {
+		const history = withWorkers(ROWS_PER_WORKER);
+		const window = plan(history);
+
+		expect(window.items.length + window.omitted.items).toBe(history.length);
+	});
+
+	it("carries them all when they fit, so a spawn under the ceiling costs nothing", () => {
+		const history = withWorkers(4);
+		const window = plan(history);
+
+		expect(window.items.map((item) => item.id)).toEqual(history.map((item) => item.id));
+		expect(window.omitted).toEqual({items: 0, bytes: 0, reason: "none"});
 	});
 });

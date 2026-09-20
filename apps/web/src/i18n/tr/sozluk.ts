@@ -33,11 +33,25 @@ export const sozluk = {
 	"sozluk.home.popular": "en çok oylananlar",
 	"sozluk.home.popularWindow": "tüm zamanlar",
 	"sozluk.home.noTerms": "henüz terim yok.",
-	// The letter filter runs over the loaded FIRST PAGE, never the corpus, so both messages name
-	// that scope. Never "<letter> harfinde terim yok": a reader filtering "k" over five loaded
-	// rows may be sitting atop fifty un-loaded k-terms (#1669).
-	"sozluk.home.letterEmpty": '"{letter}" harfiyle başlayan terim ilk sayfada yok.',
-	"sozluk.home.pageEmpty": "ilk sayfada terim yok.",
+
+	// The letter page (#9267) reads the WHOLE corpus for its letter, server-side, so it is the
+	// first sözlük surface allowed to say "<letter> harfinde terim yok" — the #1669 ban held
+	// only while a letter view was five loaded rows filtered client-side.
+	"sozluk.letter.title": "{letter} harfi",
+	"sozluk.letter.crumbRoot": "sözlük",
+	"sozluk.letter.loading": "yükleniyor…",
+	"sozluk.letter.loadFailed": "harf sayfası yüklenemedi: {code}",
+	// Two count messages, because the page knows two different facts. With no next page the
+	// loaded rows ARE the letter's whole set, so the plain count is true; while a `daha fazla`
+	// button is still there, the letter holds more than the page has, so the copy says what it
+	// counted rather than claiming a total the page never read (#9267).
+	"sozluk.letter.termCount.one": "{count} terim",
+	"sozluk.letter.termCount.other": "{count} terim",
+	"sozluk.letter.termCountLoaded.one": "{count} terim yüklendi",
+	"sozluk.letter.termCountLoaded.other": "{count} terim yüklendi",
+	"sozluk.letter.empty": '"{letter}" harfiyle başlayan terim yok.',
+	"sozluk.letter.emptyHint": "ilk tanımı sen yazarak bu harfi açabilirsin.",
+	"sozluk.letter.loadMore": '"{letter}" harfinden daha fazla terim yükle',
 
 	"sozluk.term.crumbRoot": "sözlük",
 	"sozluk.term.firstAt": "ilk: {date}",
@@ -97,6 +111,17 @@ export const sozluk = {
 	"search.postCount.other": "{count} gönderi",
 	"search.noTerms": "terim bulunamadı.",
 	"search.noPosts": "gönderi bulunamadı.",
+
+	"search.palette.title": "kamp.us'ta ara",
+	"search.palette.placeholder": "bir şeyler ara…",
+	"search.palette.empty": "eşleşen bir şey bulamadık.",
+	"search.palette.scope.sozluk": "sözlük başlığı",
+	"search.palette.scope.pano": "pano konusu",
+	"search.palette.scopeHint": "tüyo",
+	"search.palette.allResults": '"{query}" için tüm sonuçlar',
+	"search.palette.legend.move": "gezin",
+	"search.palette.legend.open": "aç",
+	"search.palette.legend.close": "kapat",
 };
 
 /** `tr` is the source of truth for the key set; `en/sozluk.ts` is checked against this. */

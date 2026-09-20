@@ -21,6 +21,7 @@ describe("resolvePreview", () => {
 		assert.deepStrictEqual(resolution, {
 			_tag: "Resolved",
 			value: {app: "web", url: WEB, deployedSha: "abc1234"},
+			apps: ["web"],
 		});
 	});
 
@@ -33,6 +34,9 @@ describe("resolvePreview", () => {
 		assert.deepStrictEqual(resolvePreview([comment(1, body)], "web"), {
 			_tag: "Resolved",
 			value: {app: "web", url: WEB, deployedSha: "abc1234"},
+			// Every app the announcement carries, not the chosen one alone: a caller shooting a surface
+			// has to know which apps were deployed at all.
+			apps: ["api", "web"],
 		});
 	});
 
@@ -57,6 +61,7 @@ describe("resolvePreview", () => {
 		assert.deepStrictEqual(resolvePreview([newer, older], null), {
 			_tag: "Resolved",
 			value: {app: "web", url: WEB, deployedSha: "abc1234"},
+			apps: ["web"],
 		});
 	});
 });

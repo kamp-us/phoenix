@@ -4,9 +4,26 @@
  * One module, because every verb in the group reads the same PR shape — a per-test literal is how
  * two tests come to disagree about what the platform returns.
  */
-import type {HttpReply} from "../fakes.test-support.ts";
+import type {HttpReply, Scripted} from "../fakes.test-support.ts";
 import {okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+
+/**
+ * `git rev-parse --git-dir --git-common-dir` as git answers it in a linked worktree — two different
+ * paths, which is the whole fact `standingInLinkedWorktree` reads.
+ *
+ * Shared rather than re-typed per file because `ship scope`'s own tests and the `review`/`ship`
+ * agreement test both run a `shipper`-seated scope read, and an unscripted command falls back to a
+ * failure — so a file that forgets this row does not fail on the fact it is testing, it refuses `11`
+ * before reaching it.
+ *
+ * Script it **last**, so a test wanting git's other two answers puts its own row first and wins the
+ * first-match lookup.
+ */
+export const LINKED_WORKTREE: Scripted = [
+	/^git rev-parse/,
+	{ok: true, stdout: "/repo/.git/worktrees/ship-4321\n/repo/.git\n", reason: ""},
+];
 
 export const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 export const OTHER_HEAD = "9fe12ab04f5a6b7c8d9e0f1a2b3c4d5e6f708192";
@@ -30,6 +47,9 @@ export interface PullShape {
 	readonly updatedAt?: string;
 }
 
+/** The issue the fixture pull request links. Held as a number so no fixture spells a bare `#NNNN`. */
+export const LINKED_ISSUE = 4287;
+
 export const pull = (shape: PullShape = {}): ExecResult =>
 	okOut(
 		JSON.stringify({
@@ -37,7 +57,7 @@ export const pull = (shape: PullShape = {}): ExecResult =>
 			state: shape.state ?? "open",
 			head: {sha: shape.head ?? HEAD},
 			base: {ref: shape.base ?? "main"},
-			body: shape.body ?? "does a thing\n\nFixes #4287\n",
+			body: shape.body ?? `does a thing\n\nFixes #${LINKED_ISSUE}\n`,
 			changed_files: shape.changedFiles ?? 2,
 			comments: shape.comments ?? 0,
 			draft: shape.draft ?? false,
@@ -51,12 +71,33 @@ export const pull = (shape: PullShape = {}): ExecResult =>
 		}),
 	);
 
+/**
+ * The same pull request as the **issues** endpoint serves it — a PR is an issue there.
+ *
+ * `listCommentsReconciled` divides its comment list by this payload's own `comments` field, never
+ * the pulls payload's, so a test that says something about comment completeness scripts this read
+ * rather than {@link pull}'s. Omitting the count omits the field, which reads back as `0` and
+ * fences nothing: no list is short of zero.
+ */
+export const pullAsIssue = (shape: {comments?: number} = {}): ExecResult =>
+	okOut(
+		JSON.stringify({
+			number: 4321,
+			title: "t",
+			body: "b",
+			state: "open",
+			labels: [],
+			html_url: "https://example.test/issues/4321",
+			...(shape.comments === undefined ? {} : {comments: shape.comments}),
+		}),
+	);
+
 export const files = (...names: ReadonlyArray<string>): ExecResult =>
 	okOut(JSON.stringify(names.map((filename) => ({filename}))));
 
 export const CODEOWNERS = `# a boundary
-/.github/    @kamp-us/control-plane
-/packages/demo-cli/src/*  @kamp-us/control-plane
+/.github/    @acme/control-plane
+/packages/demo-cli/src/*  @acme/control-plane
 /packages/demo-cli/src/tools/
 `;
 
@@ -107,24 +148,30 @@ export const workflows = (
 		}),
 	);
 
+/** One Actions run as a fixture declares it — `null` on a provenance field omits it entirely. */
+export interface RunRow {
+	readonly id: number;
+	readonly workflowId?: number;
+	readonly checkSuiteId?: number | null;
+	readonly status?: string;
+	readonly conclusion?: string | null;
+	/** Which workflow produced the run — one of the gate-coverage read's three inputs. */
+	readonly path?: string;
+	/** What created the run, and which commit it carries — the other two. */
+	readonly event?: string | null;
+	readonly headSha?: string | null;
+}
+
 /**
  * The Actions run list at one head: the declared total, and the rows a caller cares to enumerate.
  *
  * The total and the rows are separate arguments because they answer separate questions — the
  * `no-runs` discriminator reads only the first, supersession only the second.
+ *
+ * A row defaults to the provenance that covers a gate — a `pull_request` run at {@link HEAD} — so a
+ * coverage case states the turn it makes, and `null` omits the field rather than emptying it.
  */
-export const runsTotal = (
-	total: number,
-	rows: ReadonlyArray<{
-		id: number;
-		workflowId?: number;
-		checkSuiteId?: number | null;
-		status?: string;
-		conclusion?: string | null;
-		/** Which workflow produced the run — the gate-coverage read's only input. */
-		path?: string;
-	}> = [],
-): ExecResult =>
+export const runsTotal = (total: number, rows: ReadonlyArray<RunRow> = []): ExecResult =>
 	okOut(
 		JSON.stringify({
 			total_count: total,
@@ -137,6 +184,8 @@ export const runsTotal = (
 				status: row.status ?? "completed",
 				conclusion: row.conclusion === undefined ? "success" : row.conclusion,
 				completed_at: "2026-08-08T00:00:00Z",
+				...(row.event === null ? {} : {event: row.event ?? "pull_request"}),
+				...(row.headSha === null ? {} : {head_sha: row.headSha ?? HEAD}),
 			})),
 		}),
 	);
@@ -198,12 +247,12 @@ export const threadPage = (
 export const issue = (labels: ReadonlyArray<string> = []): ExecResult =>
 	okOut(
 		JSON.stringify({
-			number: 4287,
+			number: LINKED_ISSUE,
 			title: "t",
 			body: "b",
 			state: "open",
 			labels: labels.map((name) => ({name})),
-			html_url: "https://example.test/issues/4287",
+			html_url: `https://example.test/issues/${LINKED_ISSUE}`,
 			milestone: null,
 		}),
 	);
@@ -257,7 +306,7 @@ export const MERGE_COMMIT = "5c7d1e930a2b4f6d8e0c1a3b5d7f9e1c3a5b7d9f";
 /**
  * The environment every ship verb test hands its verb.
  *
- * `GITHUB_TOKEN` is here because the GitHub client takes a credential as an argument (ADR 0315) and
+ * `GITHUB_TOKEN` is here because the GitHub client takes a credential as an argument and
  * resolves it from this environment — without it a test would fall through to a `gh auth token`
  * spawn and read the developer's own login, which is exactly the inherited state the scripted seams
  * exist to remove.

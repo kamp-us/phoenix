@@ -52,7 +52,7 @@ export const makeReportCatalog = (
 	entries: ReadonlyArray<ReportDefinition>,
 ): Layer.Layer<ReportCatalog> => Layer.succeed(ReportCatalog, {entries});
 
-export class ReportNotFound extends Schema.TaggedErrorClass<ReportNotFound>()(
+export class ReportNotFound extends Schema.TaggedError<ReportNotFound>()(
 	"@kampus/anka-ops/ReportNotFound",
 	{
 		id: Schema.String,

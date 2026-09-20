@@ -13,9 +13,9 @@
  *
  * - `pull_request` — `base_ref` is the target branch; the basis is `origin/<base_ref>...HEAD`.
  * - `merge_group` — `base_ref` is EMPTY on the batched ref, so the basis is the queue's
- *   `merge_group.base_sha` (ADR 0132), which yields the files the batch adds vs `main`.
+ *   `merge_group.base_sha`, which yields the files the batch adds vs `main`.
  * - `workflow_dispatch` — both are empty; a dispatch carries a ref, not a base. The dispatched ref
- *   targets the default branch, and the three-dot range resolves that to the merge-base (#5718).
+ *   targets the default branch, and the three-dot range resolves that to the merge-base.
  * - `push` to the default branch — there is no baseline at all, and that is deliberate: the whole
  *   tree is in scope, so a violation already on `main` keeps redding until someone clears it.
  *

@@ -14,9 +14,9 @@ test.describe("SozlukHome (/sozluk)", () => {
 		// masthead — the page paints neither a second time.
 		await expect(page.getByRole("button", {name: /yeni tanım/i})).toBeVisible();
 		await expect(page.locator(".kp-sozluk-alphabet")).toBeVisible();
-		// Each non-empty letter is a navigable link to `/sozluk?harf=<letter>` (#693):
+		// Each non-empty letter is a navigable link to `/sozluk/harf/<letter>` (#693, #9267):
 		// at least one such link renders (the index isn't all-inert).
-		const links = page.locator('.kp-sozluk-alphabet__letter[href*="harf="]');
+		const links = page.locator('.kp-sozluk-alphabet__letter[href*="/sozluk/harf/"]');
 		expect(await links.count()).toBeGreaterThan(0);
 	});
 
@@ -29,23 +29,18 @@ test.describe("SozlukHome (/sozluk)", () => {
 	});
 
 	// There is no typed-query filter test: that search folded into the global ⌘K `ara`
-	// (#2995, covered by 24-search.spec.ts), leaving only the letter filter below.
+	// (#2995, covered by 24-search.spec.ts). The letter itself is a page of its own now
+	// (#9267) — 33-sozluk-letter walks it; this only proves the home hands off to it.
 
-	test("clicking an alphabet letter navigates to ?harf= and filters the recent column", async ({
-		page,
-	}) => {
-		const firstLetter = page.locator('.kp-sozluk-alphabet__letter[href*="harf="]').first();
-		const letter = (await firstLetter.textContent())?.trim().toLowerCase() ?? "";
+	test("clicking an alphabet letter leaves the home for that letter's page", async ({page}) => {
+		const firstLetter = page.locator('.kp-sozluk-alphabet__letter[href*="/sozluk/harf/"]').first();
+		const letter = (await firstLetter.textContent())?.trim() ?? "";
 		await firstLetter.click();
-		await expect(page).toHaveURL(new RegExp(`[?&]harf=${encodeURIComponent(letter)}(&|$)`));
+		await expect(page).toHaveURL(new RegExp(`/sozluk/harf/${encodeURIComponent(letter)}$`));
 		const activeLetter = page.locator(".kp-sozluk-alphabet__letter.is-active");
 		await expect(activeLetter).toHaveAttribute("aria-current", "page");
 		await expect(activeLetter).toHaveText(letter);
-		// Either rows remain (all starting with that letter), or the column is empty.
-		const titles = await page.locator(".kp-sozluk-term-row__title").allTextContents();
-		for (const t of titles) {
-			expect(t.toLowerCase().startsWith(letter)).toBe(true);
-		}
+		await expect(page.locator(".kp-sozluk-home__title")).toHaveCount(0);
 	});
 });
 

@@ -10,7 +10,7 @@
  * **One `captureShots` call per surface**, which costs a browser launch per surface and buys the
  * thing the contract requires: per-surface outcomes. A single batched call fails the whole effect on
  * the first bad shot, so a mixed set could report at most one surface's fate and the rest would go
- * unenumerated — the "judged nothing, found nothing wrong" shape (#3925) in a different disguise.
+ * unenumerated — the "judged nothing, found nothing wrong" shape in a different disguise.
  */
 import {Effect} from "effect";
 import {SESSION_PROBE_PATH} from "../capture/auth.ts";
@@ -38,7 +38,7 @@ const UNREACHABLE_FLOOR = 400;
  * Matched as an ALLOW-LIST on purpose: an unrecognised message falls to `Failed` (UNKNOWN), so a
  * new failure mode in the capture module degrades to "could not tell" and can never become a proven
  * accusation against the PR — a reviewer with no chromium installed must not be told a surface is
- * dark-flagged or routeless (#4493).
+ * dark-flagged or routeless.
  */
 const NAVIGATION_FAILURE_PREFIX = "failed to capture ";
 

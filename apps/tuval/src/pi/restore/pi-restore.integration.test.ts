@@ -23,7 +23,11 @@ import {Effect, type FileSystem, Option, type Scope} from "effect";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {type AiAgentSessionState, isAiAgentSessionState} from "../../ai-agent/core/index.ts";
 import {aiAgentPortNames} from "../../ai-agent/handlers/index.ts";
-import type {TranscriptPagePayload, TranscriptPayload} from "../../ai-agent/ports/index.ts";
+import type {
+	TranscriptItem,
+	TranscriptPagePayload,
+	TranscriptPayload,
+} from "../../ai-agent/ports/index.ts";
 import type {Arrival} from "../../ai-agent/restore/fixtures/window.ts";
 import {type Booted, boot, projectDir} from "../../boot.ts";
 import {Processes} from "../../process/Processes.ts";
@@ -60,17 +64,32 @@ const payloadsOn = (arrivals: ReadonlyArray<Arrival>, port: string): ReadonlyArr
 	arrivals.filter((arrival) => arrival.port === port).map((arrival) => arrival.payload);
 
 /** The tail as the window last saw it. Everything the proof reads about the transcript comes off this. */
-const rendered = (window: ProcessHandle): ReadonlyArray<string> => {
+const tailOf = (window: ProcessHandle): ReadonlyArray<TranscriptItem> => {
 	const last = payloadsOn(arrivalsOf(window), aiAgentPortNames.transcript).at(-1);
-	return ((last as TranscriptPayload | undefined)?.items ?? []).map(
-		(item) => `${item.kind}:${item.id}`,
-	);
+	return (last as TranscriptPayload | undefined)?.items ?? [];
 };
 
-const textsIn = (window: ProcessHandle): ReadonlyArray<string> => {
-	const last = payloadsOn(arrivalsOf(window), aiAgentPortNames.transcript).at(-1);
-	return ((last as TranscriptPayload | undefined)?.items ?? []).flatMap((item) =>
+const rendered = (window: ProcessHandle): ReadonlyArray<string> =>
+	tailOf(window).map((item) => `${item.kind}:${item.id}`);
+
+const textsIn = (window: ProcessHandle): ReadonlyArray<string> =>
+	tailOf(window).flatMap((item) =>
 		item.kind === "user" || item.kind === "assistant" ? [item.text] : [],
+	);
+
+/**
+ * A turn is over when its own prompt sits on the tail with a finished reply after it.
+ *
+ * The outcome is the only thing a poll can read here: `prompting` is transient, and once #8517
+ * compiled pi-protocol's validators a whole turn could finish between two 10 ms polls, so the wait
+ * that sampled the phase spun its full budget on a turn that had already landed (#8564).
+ */
+const answered = (window: ProcessHandle, text: string): boolean => {
+	const items = tailOf(window);
+	const asked = items.findLastIndex((item) => item.kind === "user" && item.text === text);
+	return (
+		asked >= 0 &&
+		items.slice(asked + 1).some((item) => item.kind === "assistant" && item.partial !== true)
 	);
 };
 
@@ -159,11 +178,12 @@ interface ThirdRun {
  * Boot, run two turns — a plain one and one through the tool loop — and stop. Closing the scope is
  * the stop: the host drains, closes its Subs and flushes the last save (`../../host/actor.ts`).
  *
- * Between turns, not during one. A stop taken while a Pi turn is in flight never returns (#7896),
- * and mid-turn state is unobservable from here anyway, because a Cmd handler runs inside the
- * actor's serial step (`host/actor.ts`'s `runInterpret`) so nothing folds until `prompt` resolves
- * (#7852). The interrupted marker is therefore proven on a checkpoint, in `interrupted.unit.test.ts`
- * beside this file, rather than by cutting a live Pi turn.
+ * Between turns, not during one. Mid-turn state is unobservable from here: a Cmd handler runs
+ * inside the actor's serial step (`host/actor.ts`'s `runInterpret`), so nothing folds until
+ * `prompt` resolves (#7852). The interrupted marker is therefore proven on a checkpoint, in
+ * `interrupted.unit.test.ts` beside this file, rather than by cutting a live Pi turn. The stop
+ * itself is no longer the obstacle it was — a mid-turn close returns, and
+ * `../ai-agent/teardown.unit.test.ts` pins that (#7896).
  */
 const runFirstBoot = (project: string): Effect.Effect<FirstRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
@@ -173,29 +193,30 @@ const runFirstBoot = (project: string): Effect.Effect<FirstRun, unknown, FileSys
 			phase: sessionOf(agent).phase,
 			failure: sessionOf(agent).failure,
 			items: sessionOf(agent).transcript.items.map((item) => item.kind),
+			tail: rendered(window),
 		});
 		yield* until("the Pi session to open", () => sessionOf(agent).sessionId !== null, seen);
 		yield* until("the session to be ready", () => sessionOf(agent).phase === "ready", seen);
 
-		// Each turn is waited out on what it wrote, not on the phase settling back to `ready`: a Pi
-		// turn can end with the core still at `prompting`, because `ready` is only emitted when a
-		// pushed snapshot's phase differs from the last one and the snapshot that would carry it can
-		// be coalesced away (#7897). The tail is the deterministic signal.
-		const assistants = () =>
-			sessionOf(agent).transcript.items.filter((item) => item.kind === "assistant").length;
+		const turn = (what: string, text: string, key: string) =>
+			Effect.gen(function* () {
+				yield* say(window, text, key);
+				yield* until(`${what} to be answered`, () => answered(window, text), seen);
+			});
 
-		yield* say(window, "read the readme", "k1");
-		yield* until("the first turn's reply", () => assistants() >= 1, seen);
+		yield* turn("the first turn", "read the readme", "k1");
 		yield* quiet(window);
-
-		yield* say(window, "now run the tool", "k2");
-		yield* until(
-			"the tool turn's row and its follow-up reply",
-			() =>
-				assistants() >= 3 && sessionOf(agent).transcript.items.some((item) => item.kind === "tool"),
-			seen,
+		assert.isTrue(
+			sessionOf(agent).transcript.items.some((item) => item.kind === "assistant"),
+			"the first turn settled with no reply in the tail",
 		);
+
+		yield* turn("the tool turn", "now run the tool", "k2");
 		yield* quiet(window);
+		assert.isTrue(
+			sessionOf(agent).transcript.items.some((item) => item.kind === "tool"),
+			"the tool turn settled with no tool row in the tail",
+		);
 
 		const state = sessionOf(agent);
 		assert.isNotNull(state.sessionId, "the first run never opened a session");
@@ -222,6 +243,7 @@ const runFromTheCheckpoint = (
 			phase: sessionOf(agent).phase,
 			failure: sessionOf(agent).failure,
 			items: sessionOf(agent).transcript.items.map((item) => item.kind),
+			tail: rendered(window),
 		});
 		yield* until(
 			"the kernel's own resume to settle",
@@ -247,12 +269,12 @@ const runFromTheCheckpoint = (
 
 		const before = new Set(rendered(window));
 		yield* say(window, "and once more", "k3");
-		yield* until(
-			"the new turn's reply",
-			() => textsIn(window).includes("and once more") && rendered(window).length > before.size + 1,
-			seen,
-		);
+		yield* until("the new turn to be answered", () => answered(window, "and once more"), seen);
 		yield* quiet(window);
+		assert.isTrue(
+			textsIn(window).includes("and once more"),
+			"the new turn settled without the prompt reaching the window",
+		);
 
 		return {
 			restored,

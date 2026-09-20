@@ -1,0 +1,12 @@
+{
+	"type": "user",
+	"uuid": "00000000-0000-4000-8000-000000000060",
+	"session_id": "00000000-0000-4000-8000-000000000061",
+	"message": {
+		"role": "user",
+		"content": "<local-command-stdout>Set model to \u001b[1mFable 5\u001b[22m and saved as your default for new sessions</local-command-stdout>"
+	},
+	"parent_tool_use_id": null,
+	"parent_agent_id": null,
+	"timestamp": "2026-07-24T06:56:27.863Z"
+}

@@ -11,7 +11,7 @@
  * switch — which is the shared window's control, not one this binding adds.
  */
 
-import type {AiAgentSessionState, UsageTotals} from "../../ai-agent/core/index.ts";
+import type {AiAgentSessionState, UsageLedger} from "../../ai-agent/core/index.ts";
 import {initialState} from "../../ai-agent/core/state.ts";
 import {Mode} from "../../ai-agent/ports/index.ts";
 import {assistantItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
@@ -27,11 +27,9 @@ export const usageOf = (usage: {
 	readonly cost: number;
 	readonly input: number;
 	readonly output: number;
-}): UsageTotals => ({
+}): UsageLedger => ({
 	model: usage.model,
-	cost: usage.cost,
-	inputTokens: usage.input,
-	outputTokens: usage.output,
+	turns: {"turn-1": {cost: usage.cost, inputTokens: usage.input, outputTokens: usage.output}},
 });
 
 export const claudeSessionState = (

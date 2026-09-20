@@ -50,7 +50,7 @@ const rows: ReadonlyArray<TermRow> = [
 
 const TermStoreLive = Layer.succeed(TermStore, {rows});
 
-class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
+class BodyRequired extends Schema.TaggedError<BodyRequired>()(
 	"test/BodyRequired",
 	{message: Schema.String},
 	{[FateWireCode]: "BODY_REQUIRED"},

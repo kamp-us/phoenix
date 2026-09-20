@@ -118,13 +118,13 @@ describe("scanWorkspaceMembers", () => {
 			files: {
 				[WORKSPACE]: workspace(["packages/*", "apps/*"]),
 				[`${ROOT}/packages/a/package.json`]: "{}",
-				[`${ROOT}/apps/web/package.json`]: "{}",
+				[`${ROOT}/apps/site/package.json`]: "{}",
 			},
-			dirs: {[`${ROOT}/packages`]: ["a"], [`${ROOT}/apps`]: ["web"]},
-			directories: [`${ROOT}/packages`, `${ROOT}/packages/a`, `${ROOT}/apps`, `${ROOT}/apps/web`],
+			dirs: {[`${ROOT}/packages`]: ["a"], [`${ROOT}/apps`]: ["site"]},
+			directories: [`${ROOT}/packages`, `${ROOT}/packages/a`, `${ROOT}/apps`, `${ROOT}/apps/site`],
 		});
 		expect(Exit.isSuccess(exit) && exit.value.members.map((m) => m.dir)).toEqual([
-			"apps/web",
+			"apps/site",
 			"packages/a",
 		]);
 	});
@@ -134,7 +134,8 @@ describe("scanWorkspaceMembers", () => {
 		expect(Exit.isSuccess(exit) && exit.value.members).toEqual([]);
 	});
 
-	// The vacuous pass ADR 0092 forbids: an unreadable directory answered as "no members" is
+	// The vacuous pass a fail-closed guard forbids: an unreadable directory answered as "no
+	// members" is
 	// indistinguishable from a workspace that genuinely holds none, and they take opposite branches.
 	it("FAILS on an unreadable member directory instead of resolving to an empty scan", async () => {
 		const exit = await scan(

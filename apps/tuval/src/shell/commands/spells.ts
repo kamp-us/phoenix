@@ -13,7 +13,7 @@ import {Effect, Schema} from "effect";
 import {type AnySpell, defineSpell} from "../../commands/spell.ts";
 import {ShellDispatch} from "./dispatch.ts";
 import type {AnyShellCommand} from "./row.ts";
-import {shellCommands} from "./table.ts";
+import {type ShellCommandFeatures, shellCommands, shellCommandsFor} from "./table.ts";
 
 /**
  * What a run answers with: the Msg type it dispatched. A caller cannot read the desk from a reply —
@@ -36,5 +36,13 @@ const toSpell = (command: AnyShellCommand): AnySpell =>
 		capabilities: [],
 	});
 
-/** Every command row as a spell, in table order. `shellProgram` declares this as its `spells`. */
+/** Every ungated command row as a spell, in table order. `shellProgram` declares this as its `spells`. */
 export const shellSpells: ReadonlyArray<AnySpell> = shellCommands.map(toSpell);
+
+/**
+ * The same, over the rows these flags leave standing. A gated row that is off is not registered at
+ * all, so `help`, `spell describe` and the palette answer about it exactly as they answer about a
+ * row nobody wrote (#8867).
+ */
+export const shellSpellsFor = (features: ShellCommandFeatures): ReadonlyArray<AnySpell> =>
+	shellCommandsFor(features).map(toSpell);

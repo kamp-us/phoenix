@@ -11,6 +11,8 @@ export {
 } from "./attach.ts";
 export {CommandLine, type CommandLineProps} from "./CommandLine.tsx";
 export {Desk, type DeskProps} from "./Desk.tsx";
+export {DeskInspector, type DeskInspectorProps} from "./DeskInspector.tsx";
+export {type DeskTables, deskSnapshotOf, noDeskTables} from "./desk-snapshot.ts";
 export {ErrorBoundary, type ErrorBoundaryProps} from "./ErrorBoundary.tsx";
 export {
 	type ForwardedKey,
@@ -24,20 +26,29 @@ export {
 	panelWindows,
 	routerPrefix,
 	type StatusFrame,
-	type SurfaceKeyAnswer,
 	sameLayout,
+	shellOwnsKey,
 	statusFrame,
-	surfaceKey,
 	zoomedWindow,
 } from "./frame.ts";
+export {
+	INITIAL_INPUT_MODALITY,
+	INPUT_MODALITY_ATTRIBUTE,
+	type InputModality,
+	inputModalityAround,
+	inputModalityHandlers,
+} from "./input-modality.ts";
 export {LayoutView, type LayoutViewProps} from "./LayoutView.tsx";
 export {
 	boundMount,
 	type MountResolver,
 	noRenderer,
+	type ProcessName,
 	type ReactWindowRenderer,
 	type WindowMount,
 } from "./mount.ts";
-export {asPickerView, PickerView, type PickerViewProps} from "./PickerView.tsx";
+export {PickerView, type PickerViewProps} from "./PickerView.tsx";
+export {type KeyPress, type KeyReply, refused, replyIn, replyOf} from "./press.ts";
 export {StatusLine, type StatusLineProps} from "./StatusLine.tsx";
 export {WindowView, type WindowViewProps} from "./WindowView.tsx";
+export {windowTitle} from "./window-title.ts";

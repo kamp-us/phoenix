@@ -20,6 +20,7 @@ import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
+import {MERGEABILITY_WINDOW_SECONDS} from "../ship/mergeability.ts";
 import {runClassify} from "./classify-verb.ts";
 import {runDiagnose} from "./diagnose-verb.ts";
 import {runLogs} from "./logs-verb.ts";
@@ -39,6 +40,7 @@ const repoFlag = Flag.string("repo").pipe(
 );
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
@@ -70,6 +72,19 @@ const driftFlag = Flag.integer("drift-commits").pipe(
 	),
 );
 
+/**
+ * The window GitHub's lazy `mergeable` job gets before the conflict arm is skipped as indefinite.
+ *
+ * The default is `ship`'s, imported rather than restated: both groups wait on the one background job,
+ * and two defaults would be two answers about one pull request.
+ */
+const mergeabilitySecondsFlag = Flag.integer("mergeability-seconds").pipe(
+	Flag.withDefault(MERGEABILITY_WINDOW_SECONDS),
+	Flag.withDescription(
+		"how long an indefinite `mergeable` is re-read before the conflict arm is skipped; 0 reads once and never re-reads",
+	),
+);
+
 const diagnose = leafCommand(
 	"diagnose",
 	{
@@ -78,10 +93,20 @@ const diagnose = leafCommand(
 		dwellMinutes: dwellFlag,
 		wedgeDwellMinutes: wedgeDwellFlag,
 		driftCommits: driftFlag,
+		mergeabilitySeconds: mergeabilitySecondsFlag,
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({pr, sha, dwellMinutes, wedgeDwellMinutes, driftCommits, repo, json}) {
+	Effect.fn(function* ({
+		pr,
+		sha,
+		dwellMinutes,
+		wedgeDwellMinutes,
+		driftCommits,
+		mergeabilitySeconds,
+		repo,
+		json,
+	}) {
 		yield* emit(
 			yield* runDiagnose({
 				pr,
@@ -89,6 +114,7 @@ const diagnose = leafCommand(
 				dwellMinutes,
 				wedgeDwellMinutes,
 				driftCommits,
+				mergeabilitySeconds,
 				repo: Option.getOrNull(repo),
 				json,
 				cwd: process.cwd(),
@@ -100,7 +126,7 @@ const diagnose = leafCommand(
 ).pipe(
 	Command.withShortDescription("One PR's stall class, with the evidence that proves it."),
 	Command.withDescription(
-		"Classify one PR through an ordered, total predicate chain and print the evidence. First stdout line is `stall\\t<token>\\t<head-sha>\\t<age-minutes>` where the token is one of attended, ungated, gated-unshipped, claim-stale, red, check-surface, linkage-refused, blocked-human, wedged, not-open; then the fixed evidence lines owner, gates, ci, queue, link and facts, each present always. Every one of those tokens is an ANSWER at exit 0, including not-open. Where the protection surface is unprobeable the check-surface arm is skipped with a stderr notice rather than passed — a permission the token lacks never reads as a surface that is clean. The blocked-human arm is likewise narrowed and says so on stderr every run: its unresolved-thread clause has no REST form and this group takes no GraphQL carve, so blocked-human is derived from reviews alone and a PR blocked only by an unresolved thread reads as whatever the later arms make of it. Exits 7 (the PR is proven absent, or --sha names no commit on it), 11 (the PR, its comments, its check runs, its verdicts, its timeline or its base could not be read — the stall class is UNKNOWN, never attended), 13 (an enumeration is provably short of its declared count, or the timeline read never reached a terminal page). Example: fabrika heal-ci diagnose 4321",
+		"Classify one PR through an ordered, total predicate chain and print the evidence. First stdout line is `stall\\t<token>\\t<head-sha>\\t<age-minutes>` where the token is one of attended, ungated, gated-unshipped, claim-stale, red, check-surface, conflicted, linkage-refused, blocked-human, wedged, not-open; then the fixed evidence lines owner, gates, ci, queue, link and facts, each present always. Every one of those tokens is an ANSWER at exit 0, including not-open. The conflicted arm fires above check-surface: a PR that conflicts with its base has no merge ref, so every required context reads absent for that reason rather than a settings gap, and its repair is a rebase. GitHub computes mergeable lazily, so an indefinite read is re-read across --mergeability-seconds and, still indefinite at the end of it, skips the conflict arm with a stderr notice rather than firing it. Where the protection surface is unprobeable the check-surface arm is skipped with a stderr notice rather than passed — a permission the token lacks never reads as a surface that is clean. The blocked-human arm is likewise narrowed and says so on stderr every run: its unresolved-thread clause has no REST form and this group takes no GraphQL carve, so blocked-human is derived from reviews alone and a PR blocked only by an unresolved thread reads as whatever the later arms make of it. The changed-file list is the one read that reports rather than refuses on a count disagreement: GitHub computes the pull-request record's `changed_files` against a base it cached at the last push, and this is the verb an operator reaches for when a PR is already stuck. Exits 7 (the PR is proven absent, --sha names no commit on it, or the enumerated changed-file list is empty), 11 (the PR, its mergeability, its comments, its check runs, its verdicts, its timeline or its base could not be read — the stall class is UNKNOWN, never attended), 13 (the changed-file list came back at GitHub's 3000-file ceiling, where the Link header ends as a complete read ends, so the classification would run over a provably partial diff; or the comment, check-run or timeline enumeration is provably short of its declared count; or the timeline read never reached a terminal page). Example: fabrika heal-ci diagnose 4321",
 	),
 );
 
@@ -118,11 +144,13 @@ const sweep = leafCommand(
 			),
 		),
 		includeAttended: Flag.boolean("include-attended").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("emit attended rows too, rather than only the stalled ones"),
 		),
 		dwellMinutes: dwellFlag,
 		wedgeDwellMinutes: wedgeDwellFlag,
 		driftCommits: driftFlag,
+		mergeabilitySeconds: mergeabilitySecondsFlag,
 		repo: repoFlag,
 		json: jsonFlag,
 	},
@@ -133,6 +161,7 @@ const sweep = leafCommand(
 		dwellMinutes,
 		wedgeDwellMinutes,
 		driftCommits,
+		mergeabilitySeconds,
 		repo,
 		json,
 	}) {
@@ -144,6 +173,7 @@ const sweep = leafCommand(
 				dwellMinutes,
 				wedgeDwellMinutes,
 				driftCommits,
+				mergeabilitySeconds,
 				repo: Option.getOrNull(repo),
 				json,
 				cwd: process.cwd(),
@@ -155,7 +185,7 @@ const sweep = leafCommand(
 ).pipe(
 	Command.withShortDescription("Every open PR classified with its strand age."),
 	Command.withDescription(
-		"Classify every open pull request through `heal-ci diagnose`'s shared predicate chain and emit the stalled ones, ordered by strand age descending with ties broken by ascending PR number. First stdout line is `swept\\t<scanned>\\t<stalled>` — both counts always, so a zero-stall answer carries the scope it rests on rather than standing as a bare claim — then one `pr\\t<number>\\t<token>\\t<age>\\t<head>\\t<lane>` line per emitted PR, the lane being the note's arrow looked up off the class (build|review|ship|author|human|nobody) so a caller relays it instead of deriving one. This verb writes nothing: it files no issue, assigns nobody and spawns nothing (ADR 0205). A PR that closed between the list read and its classification stays in the scanned count and leaves the stalled one. Exits 11 (the open-PR list or a per-PR read failed, or the rate limit was exhausted mid-sweep — the sweep is UNKNOWN, never a shorter list), 13 (the enumeration never reached a terminal page, or the open-PR count exceeds --limit). Example: fabrika heal-ci sweep --min-age-minutes 30",
+		"Classify every open pull request through `heal-ci diagnose`'s shared predicate chain and emit the stalled ones, ordered by strand age descending with ties broken by ascending PR number. First stdout line is `swept\\t<scanned>\\t<stalled>` — both counts always, so a zero-stall answer carries the scope it rests on rather than standing as a bare claim — then one `pr\\t<number>\\t<token>\\t<age>\\t<head>\\t<lane>` line per emitted PR, the lane being the note's arrow looked up off the class (build|review|ship|author|human|nobody) so a caller relays it instead of deriving one. Each classification re-reads an indefinite mergeability across --mergeability-seconds, so a board of PRs GitHub has not computed yet costs that window per PR; 0 reads once and skips the conflict arm instead. This verb writes nothing: it files no issue, assigns nobody and spawns nothing. A PR that closed between the list read and its classification stays in the scanned count and leaves the stalled one. Exits 11 (the open-PR list or a per-PR read failed, or the rate limit was exhausted mid-sweep — the sweep is UNKNOWN, never a shorter list), 13 (the enumeration never reached a terminal page, or the open-PR count exceeds --limit). Example: fabrika heal-ci sweep --min-age-minutes 30",
 	),
 );
 
@@ -206,7 +236,7 @@ const logs = leafCommand(
 ).pipe(
 	Command.withShortDescription("The failed-job log text for every failing gating context."),
 	Command.withDescription(
-		"Read the failed-job log for EVERY failing gating context at a head, not the first — an N-context red is N routed actions (claude-plugins/fabrika/skills/heal-ci/contract.md §heal-ci logs). First stdout line is `logs\\t<count>\\t<sha>`, then per context a `==== context <name> job <id> bytes <k> truncated <bool> ====` header, the log bytes, and an `==== end <name> ====` terminator, which is the framing `heal-ci classify` splits on. `logs 0 <sha>` is a proven answer: nothing gating is failing here. Informational contexts are excluded before anything is fetched (ADR 0061), truncation is declared rather than silent, and a failing context with no workflow job behind it is emitted with an empty body rather than failing the whole read. Exits 7 (the PR or --sha commit is proven absent, or --context names no failing gating context here), 11 (the check runs, run list or a job log could not be read — UNKNOWN, never empty), 13 (an enumeration is provably short), 15 (the platform reports the run's logs expired, which no retry changes). Example: fabrika heal-ci logs 4322 --sha 9fe12ab0",
+		"Read the failed-job log for EVERY failing gating context at a head, not the first — an N-context red is N routed actions. First stdout line is `logs\\t<count>\\t<sha>`, then per context a `==== context <name> job <id> bytes <k> truncated <bool> ====` header, the log bytes, and an `==== end <name> ====` terminator, which is the framing `heal-ci classify` splits on. `logs 0 <sha>` is a proven answer: nothing gating is failing here. Informational contexts gate nothing and are excluded before anything is fetched, truncation is declared rather than silent, and a failing context with no workflow job behind it is emitted with an empty body rather than failing the whole read. Exits 7 (the PR or --sha commit is proven absent, or --context names no failing gating context here), 11 (the check runs, run list or a job log could not be read — UNKNOWN, never empty), 13 (an enumeration is provably short), 15 (the platform reports the run's logs expired, which no retry changes). Example: fabrika heal-ci logs 4322 --sha 9fe12ab0",
 	),
 );
 

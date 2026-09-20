@@ -81,12 +81,12 @@ describe("runNudge", () => {
 		expect(out.stdout).toBe(`nudged\t${HEAD}\n`);
 	});
 
-	it("refuses on 16 when runs already exist at the head — it re-derives, it does not trust (#4816)", async () => {
+	it("refuses on 16 when runs already exist at the head — it re-derives, it does not trust", async () => {
 		const scripted = both([[PULL, served(pull())]], [[RUNS, served(checkRuns(14, []))]]);
 		const out = await scripted.outcome;
 		expect(out.code).toBe(PROVEN_NOT_IN_STATE);
 		expect(out.stderr.at(-1)).toBe(
-			`ship nudge: #4321 is not in the dropped-trigger state (14 check runs exist at ${HEAD}) — refusing to touch it (#4816).`,
+			`ship nudge: #4321 is not in the dropped-trigger state (14 check runs exist at ${HEAD}) — refusing to touch it.`,
 		);
 		expect(scripted.seams.requests.some((line) => line.startsWith("PATCH"))).toBe(false);
 	});

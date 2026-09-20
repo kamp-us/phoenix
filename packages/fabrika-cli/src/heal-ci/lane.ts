@@ -6,7 +6,7 @@
  * (`SKILL.md` §2, anchor `NEVER-DISPATCH`). Two runs over one strand must write the same word, so
  * this is pure and lives beside `stall.ts` rather than in whichever caller composes the line —
  * the scheduled sweep hardcoded `nobody` on every row and told every reader the detector had found
- * nothing for anyone to do, on the two classes the skill exists to catch (#7209).
+ * nothing for anyone to do, on the two classes the skill exists to catch.
  *
  * Each arm is the lane the skill's own step for that class names. Where the class alone cannot name
  * one — a `red` needs the log classification step 3 runs, which no classifier ran here — the answer
@@ -41,6 +41,10 @@ export const laneFor = (token: StallToken, facts: LaneFacts): LaneToken => {
 		// holder is what picks between them, so this stays a lookup rather than becoming a choice.
 		case "linkage-refused":
 			return facts.ownerLogin === null ? "author" : "build";
+		// §7: the repair is a rebase, which is a repair round on a branch — `build`'s, not a person's.
+		// Every PR on this board is agent-authored, so `author` would name a lane that does not exist.
+		case "conflicted":
+			return "build";
 		// §5: the cancel-and-rerun lever and a required-context change are both an operator's.
 		case "wedged":
 		case "check-surface":

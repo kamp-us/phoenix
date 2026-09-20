@@ -43,3 +43,16 @@ body {
 	min-inline-size: 0;
 	min-block-size: 0;
 }
+
+.proof-paging {
+	block-size: 100%;
+	min-block-size: 0;
+}
+
+.proof-paging-header {
+	padding: var(--s-3);
+}
+
+.proof-paging > .proof-desk {
+	flex: 1;
+}

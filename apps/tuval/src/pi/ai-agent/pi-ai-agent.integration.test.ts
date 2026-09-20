@@ -15,7 +15,8 @@ import type {ByteTransport, ByteTransportFactory} from "@earendil-works/pi-clien
 import {ModelRuntime} from "@earendil-works/pi-coding-agent";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Queue, Redacted, Stream} from "effect";
-import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
+import {pageCursor} from "../../ai-agent/history/cursor.ts";
+import {ItemId, type TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {
 	type AgentEvent,
 	StartError,
@@ -92,8 +93,31 @@ const droppable = (url: string): {factory: ByteTransportFactory; drop: () => voi
 };
 
 /**
+ * How many model turns have run.
+ *
+ * `prompt` returns at the send rather than at the turn's end (#8018), so a settled call is no
+ * longer a settled turn and a test that reads history or sends again has to wait for one. The faux
+ * provider counts its own calls, which is a read off nobody's stream — the drains below own the
+ * events, and a second consumer of that one queue would take frames from them.
+ */
+const turnsRan = (faux: ReturnType<typeof fauxProvider>, calls: number) =>
+	Effect.gen(function* () {
+		for (let attempt = 0; attempt < 200 && faux.state.callCount < calls; attempt += 1) {
+			yield* Effect.sleep("50 millis");
+		}
+		assert.strictEqual(
+			faux.state.callCount,
+			calls,
+			`timed out waiting for ${calls} model turn(s) to run`,
+		);
+		// The session appends the turn to its JSONL and pushes the closing snapshot after the model
+		// call returns, so the count leads both by a tick.
+		yield* Effect.sleep(SETTLE);
+	});
+
+/**
  * Everything the agent has pushed so far. The layer's queue is unbounded and buffers from `start`,
- * so a subscription taken after a settled prompt still sees the whole run in order — which makes
+ * so a subscription taken after a settled turn still sees the whole run in order — which makes
  * this a drain rather than a race.
  */
 const drain = (agent: TuvalAiAgentApi) =>
@@ -122,10 +146,16 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				assert.isNotEmpty(started.sessionId);
 
 				yield* agent.prompt("read the readme", "key-1");
+				yield* turnsRan(faux, 2);
 				const events = yield* drain(agent);
 
 				assert.deepEqual(
-					events.slice(0, 3),
+					events.slice(0, 5).map((event) => event.kind),
+					["phase", "mode", "model", "thinking", "phase"],
+					"start advertises the mode, model and thinking lists before settling on ready",
+				);
+				assert.deepEqual(
+					[events[0], events[1], events[4]],
 					[
 						{kind: "phase", phase: "starting"},
 						{kind: "mode", current: null, available: []},
@@ -133,6 +163,27 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 					],
 					"start advertises no modes and settles on ready",
 				);
+				// The offered set is the server's own `hello` catalog, so the session's model is one of
+				// the rows the picker would list rather than a name this test invents.
+				const announced = events[2];
+				assert.strictEqual(announced?.kind, "model");
+				if (announced?.kind === "model") {
+					assert.isNotNull(announced.current);
+					assert.includeDeepMembers(
+						[...announced.available],
+						announced.current === null ? [] : [announced.current],
+						"the session's model is one the catalog offers",
+					);
+				}
+
+				// The thinking set is the *model's* row in that same catalog, so it is read off the
+				// wire rather than named here — a non-reasoning model offers `off` alone (#8062).
+				const levels = events[3];
+				assert.strictEqual(levels?.kind, "thinking");
+				if (levels?.kind === "thinking") {
+					assert.isNotEmpty(levels.available);
+					assert.include([...levels.available], levels.current);
+				}
 
 				const kinds = new Set(items(events).map((item) => item.kind));
 				assert.isTrue(
@@ -178,9 +229,39 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 			return Effect.gen(function* () {
 				const agent = yield* TuvalAiAgent;
 				yield* agent.start({cwd});
+				// One at a time: the page walk below reads the JSONL these turns write, and three
+				// concurrent sends would race each other into it.
 				yield* agent.prompt("first question");
+				yield* turnsRan(faux, 1);
 				yield* agent.prompt("second question");
+				yield* turnsRan(faux, 2);
 				yield* agent.prompt("third question");
+				yield* turnsRan(faux, 3);
+
+				const live = items(yield* drain(agent));
+				const local: TranscriptItem = {
+					kind: "user",
+					id: ItemId.make("local:third-send"),
+					text: "third question",
+					timestamp: Date.now(),
+					local: true,
+				};
+				for (const kind of ["user", "assistant"] as const) {
+					const row = live.findLast((item) => item.kind === kind);
+					assert.isDefined(row, `the real host emitted a live ${kind}`);
+					if (row === undefined) return;
+					assert.match(row.id, /^item-\d+$/, "cursor comes from the live host, never page(null)");
+					const cursor = pageCursor([local, row], local.id);
+					assert.strictEqual(cursor.kind, "page");
+					if (cursor.kind !== "page") return;
+					const initial = yield* agent.page(cursor.before, 2);
+					assert.deepStrictEqual(
+						initial.items.map((item) => (item.kind === "user" ? item.text : item.kind)),
+						["second question", "assistant"],
+						`a local oldest row followed by a live ${kind} loads the older exchange`,
+					);
+					assert.strictEqual(local.id, "local:third-send");
+				}
 
 				const newest = yield* agent.page(null, 2);
 				assert.isTrue(newest.hasMore, "three exchanges do not fit in a two-item page");
@@ -201,8 +282,32 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 					"the next page walks older, still oldest-first",
 				);
 
+				const reply = newest.items.find((item) => item.kind === "assistant");
+				assert.isDefined(reply);
+				if (reply === undefined) return;
+				const fromReply = yield* agent.page(reply.id, 2);
+				assert.deepStrictEqual(
+					fromReply,
+					older,
+					"a local prompt's stored reply selects the same exchange boundary",
+				);
+
 				const oldest = yield* agent.page(older.items[0]?.id ?? null, 2);
-				assert.isFalse(oldest.hasMore, "the walk reaches the beginning of the session");
+				assert.deepStrictEqual(
+					oldest.items.map((item) => (item.kind === "user" ? item.text : item.kind)),
+					["first question", "assistant"],
+					"the oldest exchange is still a whole one",
+				);
+
+				// Pi records the model and the thinking level before the first turn, so the head of a
+				// real session's history is those two notices rather than the first question (#8152).
+				const opening = yield* agent.page(oldest.items[0]?.id ?? null, 2);
+				assert.deepStrictEqual(
+					opening.items.map((item) => (item.kind === "system" ? item.text : item.kind)),
+					[`Model set to ${MODEL.provider}/${MODEL.id}`, "Thinking set to off"],
+					"the session's own opening entries reach the window as notices",
+				);
+				assert.isFalse(opening.hasMore, "the walk reaches the beginning of the session");
 			}).pipe(
 				Effect.scoped,
 				Effect.provide(aiAgentOverHost({model: MODEL}).pipe(Layer.provide(hostLayer(cwd, faux)))),
@@ -230,19 +335,24 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 					const started = yield* owner.start({cwd});
 					const stream = yield* Stream.toQueue(owner.events, {capacity: "unbounded"});
 					yield* owner.prompt("first question");
+					yield* turnsRan(faux, 1);
 
 					yield* Effect.gen(function* () {
 						const intruder = yield* TuvalAiAgent;
-						const locked = yield* Effect.flip(intruder.start({cwd, resume: started.sessionId}));
+						const locked = yield* Effect.flip(
+							intruder.start({cwd, resume: {sessionId: started.sessionId, holdsTranscript: false}}),
+						);
 						assert.instanceOf(locked, StartError);
 						assert.strictEqual(locked.reason, "session-locked");
 
-						const missing = yield* Effect.flip(intruder.start({cwd, resume: "no-such-session"}));
+						const missing = yield* Effect.flip(
+							intruder.start({cwd, resume: {sessionId: "no-such-session", holdsTranscript: false}}),
+						);
 						assert.strictEqual(missing.reason, "session-not-found");
 					}).pipe(
 						Effect.provide(
 							aiAgentOverClient({model: MODEL}).pipe(
-								Layer.provide(PiClientService.layerWebSocket({url})),
+								Layer.provide(PiClientService.layerWebSocket({url, serverId: server.serverId})),
 							),
 						),
 					);
@@ -272,9 +382,13 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 					);
 
 					// The way back in re-dials and reacquires the same session by id.
-					const resumed = yield* owner.start({cwd, resume: started.sessionId});
+					const resumed = yield* owner.start({
+						cwd,
+						resume: {sessionId: started.sessionId, holdsTranscript: false},
+					});
 					assert.strictEqual(resumed.sessionId, started.sessionId);
 					yield* owner.prompt("second question");
+					yield* turnsRan(faux, 2);
 					const after = yield* drain(owner);
 					assert.isTrue(
 						items(after).some((item) => item.kind === "user" && item.text === "first question"),
@@ -283,7 +397,12 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				}).pipe(
 					Effect.provide(
 						aiAgentOverClient({model: MODEL}).pipe(
-							Layer.provide(PiClientService.layer({transportFactory: socket.factory})),
+							Layer.provide(
+								PiClientService.layer({
+									transportFactory: socket.factory,
+									serverId: server.serverId,
+								}),
+							),
 						),
 					),
 				);

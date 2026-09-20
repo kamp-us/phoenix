@@ -50,13 +50,13 @@ const tree = (lanes: ReadonlyArray<LaneFixture>, extra: FakeFsOptions = {}) => {
  */
 const sweep = (
 	fs: ReturnType<typeof fakeFs>,
-	options: {roots?: ReadonlyArray<string>; olderThanMinutes?: number; now?: string} = {},
+	options: {roots?: ReadonlyArray<string>; olderThanMinutes?: number | null; now?: string} = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runStale({
 				roots: options.roots ?? [DEFAULT_LANES_ROOT],
-				olderThanMinutes: options.olderThanMinutes ?? 60,
+				olderThanMinutes: options.olderThanMinutes ?? null,
 				now: options.now ?? NOW,
 				claims: null,
 			}),
@@ -75,7 +75,7 @@ const sweepWithClaims = (
 		Effect.provide(
 			runStale({
 				roots: options.roots ?? [DEFAULT_LANES_ROOT],
-				olderThanMinutes: 60,
+				olderThanMinutes: null,
 				now: NOW,
 				claims: (number) =>
 					Effect.sync(() => {
@@ -115,10 +115,11 @@ describe("lane stale", () => {
 				verdict: "stale",
 				ageMinutes: 76,
 				lastEventAt: minutesAgo(76),
+				budgetMinutes: 40,
 			},
 		]);
 		expect(answer.summary.stale).toBe(1);
-		expect(out.stderr.join("\n")).toContain("5829 (76m)");
+		expect(out.stderr.join("\n")).toContain("5829 (76m of 40m)");
 	});
 
 	it("reports a recently moved lane as moving", async () => {

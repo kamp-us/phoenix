@@ -70,8 +70,8 @@ the deciding is done and the writing is all that is left, so claim it and transc
 ruling into the ADR or amendment it names, nothing more. **The citation goes inside the artifact you
 write** — the ADR or amendment names the ruling comment's URL in its own text, so it lands in the
 diff, which is a surface `review diff` serves; free prose in the PR body is read by no verb, so a URL
-that lives only there is invisible to every gate. Name it in the PR body as well, for the merge
-record (ADR [0300](../../../../.decisions/0300-a-cited-ruling-makes-a-decision-buildable.md)).
+that lives only there is invisible to every gate. Name it in the PR body as well, so the merge
+record carries the citation too.
 **With no citable ruling comment the refusal stands exactly as it reads above.** You never judge a
 decision settled yourself: "this looks settled" is not a citation, a converged thread is not a
 citation, and a gap the ruling left open goes back to the founder rather than getting filled here.
@@ -79,15 +79,16 @@ citation, and a gap the ruling left open goes back to the founder rather than ge
 citation does not lift, so the issue still has to carry `ready-for:agent`. Two things stamp it:
 triage, when it first reads a decision that already carries a ruling comment — its
 [`--ready-for` routing](../triage/SKILL.md) owns that call, not this skill — and
-`fabrika decision rule <n> --cites <url>`, which a control-plane human runs on a decision that is
-already parked. On `ready-for:human` the claim is exit `21` and step 2's rule holds unchanged: end
-the run naming the code, and name that verb as the way back in — a control-plane human runs it, never
-you, and never an override on your own authority, however good the citation.
+`fabrika decision rule <n>`, which a control-plane human runs on a decision that is already parked —
+`--cites <url>` over a comment that is already there, `--authorization <file>` over a ruling given in
+conversation, from a file quoting it verbatim and dated. On `ready-for:human` the claim is exit `21`
+and step 2's rule holds unchanged: end the run naming the code, and name that verb as the way back
+in — a control-plane human runs it, never you, and never an override on your own authority, however
+good the citation.
 
 **Composition — what holds when `build-ui` is loaded beside this skill.** A shell's `skills:` list is
 its capability set, so a shell preloading both carries both construction laws and a mixed-deliverable
-ticket routes to it whole (ADR
-[0319](../../../../.decisions/0319-skill-composition-via-shell-skills-list.md)). Under that co-load
+ticket routes to it whole. Under that co-load
 the rendered-visual refusal above does not fire: claim the ticket and build all of it. **The diff's
 class picks the law per file** — a text file builds under this skill, a ui-class file under
 `build-ui`'s — and **`fabrika ui manifest` stays mandatory before any ui-class file is touched**.
@@ -116,29 +117,39 @@ fabrika build claim $issue_or_pr_number
 
 `won` prints your token. **Keep it — it is your lane's name, and every later verb takes it as
 `--token`**; a session runs several lanes at once, so without it a verb can only tell that *some*
-lane of this session holds the number, which is how two lanes both ran one repair (#6037). `lost`
-names the winner — that lane is theirs, back off, including when the winner shares your session. Exit
+lane of this session holds the number, which is how two lanes both ran one repair. `lost`
+names the winner — that lane is theirs, back off, including when the winner shares your session.
+**One arm opens that loss, and the refusal prints it.** A marker outlives the session that posted
+it, so a driver killed mid-claim strands its number indefinitely; where the winning marker's session
+is provably gone, `fabrika build adopt <n> --session <its session id> --reason "<why>"` then
+`fabrika build release <n> --token <the token adopt prints>` clears the stranded claim and a fresh
+`build claim` wins normally. **Provably gone is read, never inferred from silence** —
+`fabrika build claims stale` lists every claim standing past a horizon, and it calls no session dead
+either: the succession is attested on the board with your reason on it, so post one you would defend
+and back off otherwise. The refusal withholds that route when the winner is a sibling lane of your
+own session, because `build adopt` refuses your own session and there is nothing there to adopt.
+Exit
 `20` (out of scope) or `21` (audience not agent) means the fence refused before writing any marker,
 including on a number handed straight to you: end the run naming the code, and **never override on
 your own authority**. Exit `16` is the blockedness gate that runs after those two: the issue's
 native `blocked_by` graph still names an open blocker the parent epic's assembly branch does not
 already carry, every one of them is on stderr, and no override reaches it — end `BACKED-OFF` and
 take the next candidate. A blocker whose work landed on `epic/<N>` is discharged here exactly as
-`build eligible` discharges it, so the two never disagree about one edge (#7035). `--override "<reason>"
+`build eligible` discharges it, so the two never disagree about one edge. `--override "<reason>"
 --override-lane "<lane>"` (both flags required) is the operator's act, taken only when they ask for
 it in so many words, and the reason it records is theirs, not a rationale you compose.
 
 Exit `30` (type not buildable) is the third refusal, and it is the step-1 rule with teeth rather
 than a new one: the verb now reads the issue's type itself, so a `type:decision` or `type:epic`
-handed straight to you is refused before any marker, whatever labels it carries (#5490). **It is not
+handed straight to you is refused before any marker, whatever labels it carries. **It is not
 overridable, and the remedy is on the refusal line.** An epic goes to `--purpose plan` or
 `--purpose gate`, which claim it exactly as before. A decision opens on
 `--cites <ruling-comment-url>` — the comment URL is checked against this repository and this issue,
 and the verb can prove no more than that, so citing a comment that does not rule anything is a lie
 the tool cannot catch and you must not tell. Passing `--cites` on a decision whose audience is still
 `ready-for:human` lands on `21`, because the citation opens the type axis and nothing else — the
-route back in is `fabrika decision rule <n> --cites <url>`, run by a control-plane human, as step 1
-says.
+route back in is `fabrika decision rule <n> --cites <url>` — or `--authorization <file>` over a
+ruling given in conversation — run by a control-plane human, as step 1 says.
 
 Exit `32` (no acceptance criteria) is the fourth refusal, and it is the one you are most likely to
 meet: the verb reads the issue's body itself, so a body with no readable `### Acceptance criteria`
@@ -167,6 +178,15 @@ fabrika build issue $issue_or_pr_number
 
 That is the issue body and its acceptance criteria, off the verb, never off memory.
 
+**A criterion whose `evidence` field is not `null` is telling you the diff cannot settle it, and
+that row's proof is yours to write.** The field names where the proof lives — a hand-verification,
+a pre-fix artifact, a runtime observation — and stderr quotes every marked row so you cannot miss
+one. Do that verification and write what you observed into the PR body, naming the source the
+criterion named: `review post` refuses a `PASS` whose verdict body cites no evidence for a marked
+criterion (exit `19`), so a row you left unevidenced costs the lane a repair round on a PR that is
+otherwise fine. An `evidence` of `null` is the proven absence of a marker, and that row is
+discharged by the diff exactly as it always was.
+
 **Neither `absent` nor `malformed` is a token you build past.** The verb's three tokens are
 three different facts, and only `found` is a contract: `absent` says no heading reaches for the
 block, `malformed` says one drifted, and in both cases nothing downstream can grade a PR — so
@@ -177,7 +197,7 @@ cannot fix an issue body.
 criteria axis is the fourth axis of the shared admission test, beside scope, type and audience, so
 it refuses on `32` at the claim seam before any branch, commit or write — the pool and the
 by-number route (an operator naming a lane, `operate`, a resume) hit the one fence rather than the
-pool alone (#6554).
+pool alone.
 
 **The one lane that does see a token here is a repair lane, and it does not back off.** The axis
 binds a fresh build claim and nothing else, and a repair claim is exempt on purpose: refusing it
@@ -199,23 +219,44 @@ write an issue body; a human or triage does. Release the claim
 
 Check any falsifiable claim the body makes against the source before building on it — a summary of a
 contract is not the contract. Name the surface you are on — **code** (compiled/tested text), **prose**
-(docs, ADRs, briefs), **plan** (a ledger with topology), or **workflows** (`.github/workflows/**`,
-which reads under [`code.md`](references/code.md)'s rubric) — and read the matching rubric file in
+(docs, decision records, briefs), **plan** (a ledger with topology), **workflows** (`.github/workflows/**`,
+which reads under [`code.md`](references/code.md)'s rubric), or **skill** (agent-facing text under
+`claude-plugins/*/skills/`, which reads [`skill.md`](references/skill.md)'s rubric and, being
+markdown, validates under `prose`) — and read the matching rubric file in
 [`references/`](references/) before writing. Done when every acceptance criterion maps to
 something you can point at.
 
-**When the change alters what a fabrika verb prints, the surface is wider than the file you opened.**
-That grammar is hand-copied into six places and nothing compares them, so a sweep scoped to the
-directory you started in leaves a copy that still reads as true — three consecutive repair rounds
-died that way on one child (#6482). The list is
-[`.patterns/verb-output-pin-surfaces.md`](../../../../.patterns/verb-output-pin-surfaces.md); walk it
-and land every surface in this PR.
+**When a fabrika verb's contract changes, update it with the implementation in the same PR.**
+Read [command documentation ownership](../../docs/interface-convention.md#command-documentation-ownership)
+before changing what a verb prints. Update the help callers use, the contract requirements and
+examples affected, and any skill step whose next action changes. Done when each changed fact has
+an owner, retained pointers resolve, and the caller can still read and act on the answer.
 
 ## 4 — Branch, build, verify in this tree
 
 ```bash
 fabrika build branch $issue_or_pr_number --slug editor-focus-loss --token <claim-token>
 ```
+
+**The base is the verb's to pick, and that line is complete without one.** It reads the issue's own
+parent and cuts an epic child off the run's assembly branch `epic/<parent>`, a proven-standalone
+issue off `origin/main`, and refuses rather than guessing when either read fails — so never hand it
+`--base` to "make sure" a child lands on the epic branch. It says which base it used and where that
+came from on stderr; read that line instead of re-deriving it. Pass `--base` only when you mean a
+ref the derivation would not pick, and expect it to be honoured verbatim — qualified against `origin`
+when it names no remote, because every base is fetched and none is read off a local ref.
+
+**The answer names the commit, so prove the cut off it rather than off a `git merge-base` of your
+own.** A create-mode success prints a second line — `cut build/… off origin/epic/7497 at <sha>.`, or
+`… already existed and carries origin/epic/7497 at <sha>` on a re-run — and that line beside the base
+note above it is the whole proof that this branch stands where the lane needs it. A re-run over a
+branch that does **not** carry the base refuses on `36` instead of switching to it, naming the commit
+the two actually share: that branch was cut off something else, or the base has moved since. **Clear
+a `36` with git, never with a verb** — the refusal spells out the one `git rebase --onto` that moves
+the branch onto the base, and deleting the branch is the other way out when it carries nothing you
+need; `build retire-branch` cannot do it, because the branch a `36` names is never the superseded one
+it retires. Four builders on one epic run each caught a wrong base by hand because the verb named
+none; none of that is yours to redo.
 
 Construct. Match the surrounding artifact's idiom; for code: domain logic in domain objects,
 invalid states unrepresentable. Before the first `build branch` cut, re-run
@@ -229,9 +270,12 @@ dir, so every worktree of this clone shares one stack: between your push and you
 lane's entry becomes `stash@{0}`, and your pop restores their files into your tree and drops their
 commit, reporting success either way. `git -C "$WT" stash push` is correctly scoped and still writes
 the shared stack, so scoping is no defence. To get a clean tree for a baseline run, commit to your
-lane branch and `reset` back to it, or read the baseline from a second checkout. The hazard and its
-recovery path are in
-[`.patterns/worktree-agent-constraints.md`](../../../../.patterns/worktree-agent-constraints.md).
+lane branch and `reset` back to it, or read the baseline from a second checkout. If a pop has
+already eaten a sibling's entry, `git reflog stash` will not name the dropped commit — a clean pop
+deletes it from the stash reflog as it drops. The dropped commit itself survives its expiry window,
+so lift the files out of it with `git fsck --unreachable | grep commit` to list the candidates,
+`git show --stat <sha>` to identify the right one, and
+`git restore --source=<sha> --worktree -- <paths>` to put them back.
 
 Scratch files go only where this prints:
 
@@ -239,8 +283,42 @@ Scratch files go only where this prints:
 fabrika build scratch $issue_or_pr_number --slug notes --token <claim-token>
 ```
 
-Then validate **in this tree, cache bypassed** — a green borrowed from another checkout's cache is
-the false green this verb exists to refuse. Hand it the surface you named in step 3; it
+**What it prints is a directory, so a scratch *tree* roots there too — not only a file.** The
+session scratchpad is shared across a session's lanes, so any name a builder picks inside it is
+unlocked shared state. The case that bit is a hand-verification desk — the local app instance a
+builder stands up and drives by hand when no reviewer can render the surface: two lanes both put one
+at a fixed `desk` leaf, and the second one's rebuild deleted the first one's live desk mid-run, with
+no lock and no error. So allocate that desk's root with `--slug desk` and put the whole tree under
+it — the project directory the desk opens, the scratch agent home it runs under, the app's process
+checkpoints and the driver scripts. The allocated path is keyed on this lane's claim nonce, which is
+what makes it a name no concurrent lane writes.
+
+<!-- anchor: STAGE-THE-BODY-RATHER-THAN-TRIM-IT --> **That verb is also how a body the harness
+refuses to carry reaches a verb — staged, never trimmed.** Four verbs below take their body on a
+heredoc — `build commit`, `build deviations`, `build pr` and `build note` — and a heredoc puts the
+whole body inside the one command string a worktree-isolated shell's verifier grades. Past a size,
+and on some content below any size, it refuses with a containment message that names neither. Read
+as a containment fault, that refusal costs the lane a round and then the disclosure itself: a
+`## Deviations` section cut to fit a shell reads downstream as a lane that deviated less. **So do
+not cut the body** — stage it. The three steps, the measured triggers and the one shape a bounded
+append still refuses are fixed for every group in
+[skill-conventions §4](../../docs/skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed);
+what a builder needs beyond them is here.
+
+Allocate with the fence above, giving `--slug` the body's own name — `commit-message`,
+`deviations`, `pr-body`, `note` — so one lane's four bodies do not overwrite each other, and none of
+them lands on the `notes` slug. Treat the returned path as the staging directory: first run
+`mkdir -p <allocated-directory>` with that literal absolute path. Put the body in a leaf file
+named `body.md` inside it. Write that file's absolute path literally in each bounded
+`cat >> <allocated-directory>/body.md` append and in the verb's input redirect:
+`fabrika build pr $issue_or_pr_number < <allocated-directory>/body.md`.
+The bytes arrive on stdin exactly
+as the heredoc would have delivered them, so each verb makes every refusal it always makes — the commit's
+read-back, the `## Deviations` shape, the leak scan — and the allocated path is machine-local, so a
+body quoting it reds at `5`. Send staged commit messages through the same stdin redirect.
+
+Then validate **in this tree** — a green borrowed from another checkout is the false green this verb
+exists to refuse. Hand it the surface you named in step 3; it
 refuses a surface the diff contradicts.
 
 ```bash
@@ -248,6 +326,21 @@ fabrika build check --surface code
 ```
 
 Loop construct → check until green. `red` rows name the diagnostics; fix them here, in this tree.
+
+**Run the unit tests of the areas your diff touches, never the package's whole suite.** For a
+change under `packages/fabrika-cli` those areas are the `src/<area>` directories the diff changed — a
+diff in `src/build` and `src/lane` runs those two and nothing else. Several lanes build on one
+machine at once, so a lane that runs the full `fabrika-cli` suite spends every sibling's CPU
+re-proving code its diff never reached, and CI runs that suite against the merge ref anyway.
+
+**Every run also sweeps the shipped local-tree guards, whatever the surface**, so a guard that would
+red in CI reds here first. A passing member is named in the green's `ran` as `guard <name> <leaf>`; a
+failing one reds the whole run on `18` and the failing line names it — fix that guard's finding like
+any other red. A member that **refused** — zero scope, or a read it could not make — lands in the
+green's `skipped` array as `<name> (<reason>)` and on stderr. **A skip is not a pass**: it says CI's
+own gate will answer that one, so read the line rather than treating the green as covering it.
+Membership is a property each guard declares beside its own registration, so there is no list here to
+keep in step with it and none to pass on the command line.
 
 A green names the files it did not read in `unvalidated`. When that list holds a file class another
 surface validates, run `build check` again there: markdown beside your code — the common case — goes
@@ -271,9 +364,7 @@ fix(build): one line saying what changed (#<n>)
 EOF
 ```
 
-Send the message on stdin. The alternative is a leaf under `fabrika build scratch`; any other path is
-refused, because a path outside the allocator has no per-lane key — that is how a lane commits a
-stale message belonging to another lane, with nothing failing anywhere. Exit `9`
+Send the message on stdin, using the staged file redirect above when needed. Exit `9`
 means the commit exists and carries a message you did not write: amend it and re-run, do not push.
 Exit `4` means your message names an issue this lane holds no claim on — a related reference belongs
 in the PR body, not the merge record.
@@ -301,7 +392,7 @@ deviation, each stating all four fields:
 ```markdown
 ## Deviations
 
-- **Out-of-scope change** — **Said:** #4312 names the editor only. **Did:** also fixed the same
+- **Out-of-scope change** — **Said:** the issue names the editor only. **Did:** also fixed the same
   focus steal in the comment box. **Why:** both call the one `refocus()` helper this changes.
   **Disposition:** stated here.
 ```
@@ -310,9 +401,9 @@ An optional bold class lead (`Scope narrowing`, `Governing-ADR departure`, `Know
 unfixed`, `Declined guidance`, `Guard or gate bypassed`, `Pre-existing test or fixture changed`,
 `Out-of-scope change`) routes the entry; the gate matches an entry's substance, never its label. A
 prose bullet with no fields is refused by `build pr` at the point you write it — that refusal used
-to arrive a whole review round later, and could not say what was wrong (#5566).
+to arrive a whole review round later, and could not say what was wrong.
 
-**An epic child opens no PR, and its disclosure surface moves with that** (#5903). When your spawn
+**An epic child opens no PR, and its disclosure surface moves with that.** When your spawn
 brief carries the epic rules — you build on a branch cut from the assembly branch, and steps 5's
 push and PR are not yours — the same `## Deviations` section lands as a `build-deviations` marker
 comment on the child issue instead. One verb posts it, and it takes the section on stdin exactly as
@@ -330,8 +421,32 @@ The verb composes the `build-deviations: #<n>` line from the number you gave it,
 section through the wire format before writing anything, and reads the landed comment back from live
 issue state. **Never post this marker with a raw `gh issue comment`** — that appends, so a repair
 round leaves two markers, and the reader refuses two conforming headings as undecidable, which is an
-UNKNOWN the tail review cannot pass (#6691). Re-run the verb on every round: it edits the standing
+UNKNOWN the tail review cannot pass. Re-run the verb on every round: it edits the standing
 marker in place.
+
+**On every round after the first, the section you send is the whole range's disclosure, not the
+round's.** Editing in place means what you send *replaces* what stands, so the entries the round
+before yours disclosed — still true of the range a reviewer grades — leave with your rewrite unless
+you carry them. Read what stands first, and build this round's section out of it:
+
+```bash
+fabrika build scratch <n> --slug deviations --token <claim-token>
+```
+
+Create the returned directory and use a file named `body.md` inside it, with the absolute paths
+written literally in each command:
+
+```bash
+mkdir -p <allocated-directory>
+fabrika build deviations <n> --token <claim-token> --standing > <allocated-directory>/body.md
+```
+
+That prints the standing `## Deviations` section, or nothing when yours is the first round. Edit
+that allocated file: keep every entry still true, add this round's, and **retire an entry by restating it
+with a `Disposition` that says what became of it** — `corrected — the revert in <sha> removes it`,
+never by deleting the bullet. Entries match on `Said`, so revise `Did`, `Why` and `Disposition`
+freely. Send the result on stdin as above; a section that drops a standing entry is exit `35`,
+naming each one.
 
 The epic-tail review reads every landed child's comment from there, so a child with nothing to
 disclose still posts the checked `None.` — an absent comment reads as "never considered it", not as
@@ -351,7 +466,9 @@ EOF
 ```
 
 The verb is the guard: it refuses leaks, stray closing keywords, a Deviations section the review
-gate would read as malformed, and reads back what landed. Then hand off and release:
+gate would read as malformed, and reads back what landed. When the harness refuses the fence above —
+or the `build deviations` and `build note` fences beside it — the body is staged and redirected
+rather than trimmed, under `build scratch` in step 4. Then hand off and release:
 
 ```bash
 fabrika build note $issue_or_pr_number --token <claim-token> <<'EOF'
@@ -365,7 +482,8 @@ fabrika build release $issue_or_pr_number --token <claim-token>
 removed, findings filed via `/report`; closing the issue is triage's, not yours); `BUILT-NO-PR` (an
 epic child under the epic rules — your commit landed on the branch you cut from the assembly branch
 and the `build-deviations` marker is posted on the child issue; branch left local, unpushed, for the
-epic driver to fold); `BACKED-OFF` (claim lost, blocked, or no readable contract — branch removed,
+epic driver to fold); `BACKED-OFF` (claim lost with no succession open to it, blocked, or no
+readable contract — branch removed,
 nothing written); `ESCALATED` (repair cap reached — branch left pushed at its last verified head,
 escalation note posted);
 `STOPPED` (isolation, a denied tool call, or verdict UNKNOWN — branch left local, state named). An
@@ -382,15 +500,16 @@ that refusal is a human saying they decide this one, and re-making the identical
 different tool, a script or a shell command spends the decision without ever asking for it. So do
 not re-attempt it. Stop where you stand, quote the denied action verbatim in a `fabrika build note`
 so the driver reads it before anything is pushed, and end `STOPPED` — `lane report` maps that token
-to a `BLOCKED` event, which is already the routing a denial wants, so no sixth terminal is needed
-(#5685). The content being legitimate changes nothing: a change nobody could have refused and a
+to a `BLOCKED` event, which is already the routing a denial wants, so no sixth terminal is needed.
+The content being legitimate changes nothing: a change nobody could have refused and a
 bypass read the same in the transcript, which is the whole reason the denial is worth reporting.
 
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
 step is the verb — pass back the `lane`, `root` and `task` its `## Task` section carries, and the
 token→event map is the verb's code; the event lands on the lane's own ledger with the PR as its
-evidence (#5736). `<fabrika>` is that same section's `fabrika:` entrypoint, the one path this repo's
-verbs actually run from (#6012):
+evidence. `<fabrika>` is that same section's `fabrika:` entrypoint, the one path this repo's
+verbs actually run from — a lane that guesses at a global binstub instead runs a different build of
+the CLI than the driver did:
 
 ```bash
 node <fabrika> lane report <lane> --root <root> --task <task> --token SHIPPED-PR --pr <pr-url>
@@ -399,7 +518,7 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token SHIPPED-PR
 `--task` names which task of the lane your terminal addresses, and it is not optional wherever a
 lane has more than one — every epic run. The verb resolves a missing one only on a single-task lane
 and otherwise refuses at exit `13` before it appends anything, so a report that omits it records
-nothing (#6084).
+nothing.
 
 `--pr` whenever the terminal names one; `--comment` for the diagnosis comment behind a
 `SUCCESS-NO-PR`; a `BUILT-NO-PR` carries neither, because its evidence is the commits themselves.
@@ -415,7 +534,7 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token STOPPED --
 
 That cause is the whole difference between a park `recipe unpark` clears itself and one that spends
 a person: the recipe table keys on it, so a `BLOCKED` carrying none is novel by construction and
-routes to a human `UNBLOCKED` (#6480, #6590). The vocabulary is closed and lives in code
+routes to a human `UNBLOCKED`. The vocabulary is closed and lives in code
 ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts));
 `lane report --help` prints it, and a token outside it is exit `35` with the log unappended, so
 there is none to compose and none to guess. Omitting one stays legal and stays right for a stop no
@@ -459,15 +578,41 @@ admitted; the two-subject
 `build tree` proof below re-proves that membership after the branch is resumed.
 
 **Step 1's refusal of a `type:decision` is about picking one up fresh, and it does not reach here.**
-An ADR PR is served by a decision issue, and repairing it is the ordinary path: the claim admits it
-with no flag and no `--override`, and says so on its purpose line (#5914) — no citation needed, since
+A decision-record PR is served by a decision issue, and repairing it is the ordinary path: the claim
+admits it with no flag and no `--override`, and says so on its purpose line — no citation needed, since
 the PR being in flight is already the proof a ruling was transcribed. Everything else still refuses —
 the same decision issue claimed by its own number reads its own audience label and is `21` on a
 `ready-for:human`, and the scope fence binds this claim exactly as it binds a build.
 
 The fold is the only entry: paginated, current-head, per-gate — polarity visible, round count
-included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer, but an
-UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**. The budget is the
+included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer **about the
+gates**, but an UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**.
+
+**Read `escalatedFindings` beside the rows: those are findings too, and they are not in the
+contract.** Past the acceptance-criteria freeze a reviewer may no longer append, so its finding lands
+as a tagged comment on the issue and the criteria block you read at step 3 does not contain it. The
+fold carries each one's full text, so fix them exactly as you fix a FAIL row's — and do not go
+looking for them in the criteria, where they will never be. The freeze is deliberate: a finding here
+enters no contract and no later round grades it, so nothing here widens the spec.
+
+**The fold has no resolved state, so on any round after the first, read each escalation against the
+tree before you treat it as unfixed.** A row is selected by its tag naming this PR, and nothing
+marks it repaired — no gate grades it, so no PASS ever retires it — which means an escalation an
+earlier cleared round already fixed comes back in this round's fold reading exactly like a new one.
+Check the code before you change it: where the fix is already in, say so in your `build note`
+naming the round that landed it, and leave the tree alone. Re-fixing a settled finding is how a
+repair round spends its budget undoing work the PR already carries.
+
+**Read the fold's `mergeability` beside its rows, because no gate emits a FAIL for a conflict.**
+`conflicting` says the PR cannot merge into its base, and that is real repair work an all-PASS fold
+would otherwise let you read as nothing to do — so a fold with no rows is not a no-work answer over
+a conflicting PR. `unknown` is GitHub not having computed the field yet, never a clean read: treat
+it as unproven and re-run. Who clears the conflict is **not ruled** — neither fixing it in this lane
+nor handing it on is this skill's instruction — so what you owe is that the conflict leaves the
+lane named: state it in your `build note` and in your terminal report, and never end a round
+claiming there was nothing to fix.
+
+The budget is the
 fold's own `capReached` field, never a number you carry: on `true`, end `ESCALATED` and post the
 escalation via `fabrika build note <repair-pr> --token <claim-token>` instead of another push.
 
@@ -492,16 +637,21 @@ conflicted. Neither case makes the red false; both mean you have not reproduced 
 The shape that puts you here carries no textual conflict to warn you: a branch renames a symbol
 while main adds call sites on the old name, git merges both sides clean, and the merged file defines
 the new name and calls the old one. It is invisible in the head blob and invisible in the diff, and
-it exists only in the merge ref. Epic #6629's PR #6690 spent a whole repair round filing that
-correct FAIL as a gate misreading its own SHA
-([#6794](https://github.com/kamp-us/phoenix/issues/6794)).
+it exists only in the merge ref. One epic's PR spent a whole repair round filing that correct FAIL
+as a gate misreading its own SHA, because the builder checked the head, found the symbol clean, and
+never fetched the merge.
 
-**A founder can clear one more round, and you read that through the same field.** The clearance is
+**Someone else can clear one more round, and you read that through the same field.** The clearance is
 data on the PR — an authorized account records it with `fabrika build clear`, and the fold counts it,
 so `capReached: false` beside a `clearances` row *is* the granted round and you simply build it. What
 you never do is grant one: `build clear` is the operator's verb, it refuses an account outside the
 repo's configured set or below `write` at the ACL, and an escalation is your whole move when the cap
-is reached. One grant is one
+is reached. **Escalate to the driver, not to the founder** — a spent budget is machinery routed to
+the lane's own driver, and the grant is theirs to record on their own diagnosis: one `lane clear`,
+which grants this PR's round and the lane's in one act, whether or not the lane has a pull request.
+Your move is the same either way,
+and reading a founder into it is what used to park a lane on a person nobody had asked. One grant is
+one
 round — it survives the push it permits, and the next FAIL round spends it, so a second round needs a
 second grant. Before the branch mutation, re-run `build confirm <repair-pr> --token <claim-token>`
 and `build tree --require-clean`; then resume and arm the complete repair proof:
@@ -527,22 +677,24 @@ naming each one addressed, then release with `fabrika build release <repair-pr> 
 <claim-token>`. Exit `23` on that push means your head **drops commits the PR already published** —
 `build branch --resume` again so you rebuild on the published head, never
 `--drop-remote-commits`, which is for a rewrite you actually intend. The fold's `frozenCriteria`
-rows are the review-appended criteria past the freeze — note them, do not chase them.
+rows are the review-appended criteria past the freeze — note them, do not chase them. Its
+`escalatedFindings` rows are the opposite call: they never became criteria, and they are this
+round's work — each one you verify is still unfixed, because nothing retires a row from that fold.
 
 **When the whole fix is the PR body, the route is `fabrika build pr-body <pr>` and nothing else.**
 The recurring one is a FAIL reading `deviations malformed`: the head does not need to move, so a
 push is the wrong tool and a raw `gh` call runs none of the guards `build pr` runs on a create. This
 verb runs all of them over the rewrite — leak scan, the `## Deviations` shape, the closing-keyword
-target read off the PR's own head branch, the classification check — and reads the landed body back
-(#5618). Re-send the corrected body on stdin, then answer the finding in a `fabrika build note` and
+target read off the PR's own head branch, the classification check — and reads the landed body back.
+Re-send the corrected body on stdin, then answer the finding in a `fabrika build note` and
 release; no commit, no `build check`, no `build push`.
 
 **An epic child is repaired too, and it is the one repair that names an issue rather than a PR.** A
-child opens no PR (ADR 0285), so its verdicts are range-bound comments on the child issue and there
+child opens no PR, so its verdicts are range-bound comments on the child issue and there
 is no head to resume from. `build claim` reads those verdicts on every fresh build-purpose claim, and
 **any standing verdict refuses it on `31`**, naming every one of them, because building it fresh
-re-implements work a reviewer already graded — which cost two whole lanes on epic #5631, and on one
-of them produced two divergent implementations of a single criterion (#6386). Only the way out
+re-implements work a reviewer already graded — which cost one epic two whole lanes, and on one
+of them produced two divergent implementations of a single criterion. Only the way out
 differs by polarity, and the refusal line says which one you are on.
 
 On a standing `FAIL` there is a repair to take, and **one verb is the whole entry** — do not assemble
@@ -561,7 +713,7 @@ ownership on the branch you are now standing on. Its answer carries the `token` 
 this lane takes as `--token` and the `branch` it left you on. Then `verdicts --issue` is your own
 read: it prints the findings this round is for, and it changes nothing.
 
-**The order is the tool's now, not yours** (#7187). A resumed builder read this same section when it
+**The order is the tool's now, not yours.** A resumed builder read this same section when it
 stated the order in prose, ran the armed proof before the checkout anyway, refused its own generic
 branch on exit `14` and parked the whole epic without changing a file. So do not type the steps
 individually to "check" one of them, and never move the armed proof ahead of the checkout: there is
@@ -575,13 +727,24 @@ that same lane with `fabrika build resume-child <n> --token <token>`. **The toke
 re-run** — a bare `resume-child <n>` over a held claim mints a second one, loses the earliest-wins
 tiebreak to your own prior claim and refuses on `15`.
 
+**A `type:decision` child is repaired through the same entry, and it needs its ruling named.** The
+claim step's type axis binds here exactly as it binds a fresh claim, so an uncited decision child
+stops the entry at `30` — pass the ruling on `fabrika build resume-child <n> --cites <url>` and the
+entry carries it to that step and nowhere else. The refusal's own line prints the grammar, the URL
+has to name this repository and this child, and citing one buys nothing but that type: a malformed
+or foreign URL is `1` at the claim step, and no citation makes an epic or an out-of-scope child
+admissible. **Never assemble the five steps by hand to get a citation in** — that is the ordering
+hazard this entry retired, and the flag is the whole reason it no longer forces the choice. On a
+`--token` continuation you drop the citation: the claim answers off the standing marker, so the
+ruling is asked for on first entry only.
+
 `--resume` is checked against the board, not trusted: on a child holding no standing `FAIL` the claim
 step refuses on `31`, so the entry can never be run past the fence. `--resume-lane` **re-keys** the
 branch the prior lane built on to this claim's nonce instead of cutting a second one — two branches
 carrying one child's commits is the range `lane prove` calls underivable. **A clone already in that
 state has one move, and it is yours to take**: `fabrika build retire-branch <n>` renames the
 superseded branches out of `build/` — never deletes them — so one carrying branch is left and the
-range locates (ADR [0324](../../../../.decisions/0324-retire-superseded-lane-branch.md)). It picks
+range locates, and the superseded commits stay reachable under their new name. It picks
 the survivor off the board, so it refuses on `34` rather than guess when no authorized claim marker
 carries a candidate's lane nonce, and on `33` when a worktree still holds a branch it would rename,
 naming `fabrika build retire` as the act that clears that hold.
@@ -594,10 +757,16 @@ and report that terminal with `--cause worktree-holds-branch`, the park this exa
 `recipe unpark` can clear it without a person. From
 there the loop is the ordinary one minus the publishing half: fix, `build
 check`, `build commit`, no push and no PR, then the `build-deviations` comment and `BUILT-NO-PR`.
-There is no cap clearance on this path — a grant is recorded against a PR's base branch — so a child
-at its cap escalates to the operator.
+**That comment discloses this child's whole `base..tip` range, not the commits this round added** —
+so run `build deviations <n> --standing` before you author it, judge every entry it prints against
+the range as it now stands, and send back all of them plus your own. The verb refuses a section that
+drops one.
+`build clear` is not the door on this path — it is pull-request-keyed from its first line, and a
+child opens none — so a child at its cap escalates to the driver, whose `lane clear` records the
+grant against the lane's own log instead. That is still not yours to run: you escalate, the driver
+diagnoses, and a granted round arrives as a fresh spawn.
 
-**A standing `PASS` refuses the same way and has no repair route** (#6715). That child is built,
+**A standing `PASS` refuses the same way and has no repair route.** That child is built,
 graded and waiting on the epic driver's fold, so `--resume` is not the answer — it refuses on `31`
 too, saying to drop the flag. Nothing here is yours to build: report the refusal, and the fold and
 the close are the driver's. `--override` reaches neither polarity; this was never a scope question.

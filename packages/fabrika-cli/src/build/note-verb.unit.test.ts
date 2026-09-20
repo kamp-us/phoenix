@@ -24,7 +24,7 @@ import {
 } from "./fixtures.test-support.ts";
 import {headStamp, runNote} from "./note-verb.ts";
 
-/** The write permission the marker's author holds — what authorizes a claim (ADR 0055). */
+/** The write permission the marker's author holds — what authorizes a claim. */
 const WRITE = served({permission: "write"});
 
 const IS_PULL = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4310$/;
@@ -44,7 +44,7 @@ const CLAIMED: ReadonlyArray<Scripted> = [
 	[PERM, WRITE],
 ];
 
-const POSTED = served({id: 512346, html_url: "https://github.com/o/r/pull/4310#c"}, 201);
+const POSTED = served({id: 512346, html_url: "https://example.test/o/r/pull/4310#c"}, 201);
 
 const options = {
 	number: 4310,

@@ -1,11 +1,11 @@
 /**
  * `hook worktree-create`'s **whole** provisioning sequence, `git worktree add` included, against
- * real git in a throwaway clone (#7331).
+ * real git in a throwaway clone.
  *
  * `worktree-base.git.test.ts` beside this file judges the base resolution and deliberately keeps the
- * add out of its loop, because the add carries faults #6081 did not claim to fix. This file is those
- * faults: the two administrative-state arms {@link concurrencyArm} names, and the recovery that
- * clears them.
+ * add out of its loop, because the add carries faults the base-resolution fix never covered. This
+ * file is those faults: the two administrative-state arms {@link concurrencyArm} names, and the
+ * recovery that clears them.
  *
  * **What this file exercises is the derivation, not the Effect wrapper** — the same split
  * `worktree-base.git.test.ts` documents. The loop in {@link provision} is the shape
@@ -14,7 +14,7 @@
  * imported from the module under test rather than restated, so a change to any of them moves this
  * file too.
  *
- * **The demonstration is injected, not raced for, and that is the point.** The report behind #7331
+ * **The demonstration is injected, not raced for, and that is the point.** The original report
  * read the arm out of a timing race, and a test that waits for one is a test that hangs on the
  * machine where it never fires. The state is reproduced directly instead — the exact
  * administrative directory a failed `git worktree add` leaves — so the fault fires on every git
@@ -38,8 +38,8 @@
  *  - on git 2.40.1, macOS: the placeholder HEAD closes before `post-checkout`, so the live window
  *    never spans the install.
  *
- * **What the production trace can retain (acceptance criterion 7).** Nothing here confirms the six
- * `fail: git fetch origin main` entries the #7331 report read out of the hook trace, and what this
+ * **What the production trace can retain.** Nothing here confirms the six `fail: git fetch origin
+ * main` entries the original report read out of the hook trace, and what this
  * change can promise is bounded by the `WorktreeCreate` contract — quoted verbatim in
  * `claude-plugins/fabrika/docs/hook-surface.md` under *`WorktreeCreate` — a provider hook, left
  * undeclared*. That entry gives stdout one meaning, the worktree path, and says of the rest only
@@ -131,8 +131,8 @@ interface Spawn {
  * the worktree — the four commands the verb runs, in the verb's order.
  *
  * `attempts` is what makes this the pre-fix or the fixed sequence. At 1 it is exactly what shipped
- * before #7331 and every arm is terminal; at {@link RECOVERY_ATTEMPTS} it is the recovery the verb
- * now performs, prune included, and nothing else about the sequence differs.
+ * before the recovery landed and every arm is terminal; at {@link RECOVERY_ATTEMPTS} it is the
+ * recovery the verb now performs, prune included, and nothing else about the sequence differs.
  */
 const provision = async (
 	clone: string,

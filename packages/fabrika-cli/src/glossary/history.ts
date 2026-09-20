@@ -38,7 +38,7 @@ export const lastCommitTouching = (path: string): Shell<Attempt<CommitStamp>> =>
 			: ok({sha, when: Number.parseInt(when ?? "0", 10)});
 	});
 
-/** The tracked files `paths` matches. Zero matches is an answer the caller reds on (ADR 0092). */
+/** The tracked files `paths` matches. Zero matches is an answer the caller reds on. */
 export const trackedFiles = (paths: ReadonlyArray<string>): Shell<Attempt<ReadonlyArray<string>>> =>
 	Effect.gen(function* () {
 		const run = yield* execCapture("git", ["ls-files", ...pathspec(paths)]);

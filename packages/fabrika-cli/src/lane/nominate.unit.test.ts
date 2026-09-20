@@ -1,5 +1,5 @@
 /**
- * The shared candidate nominator, and the deadlock it was extracted to end (#6179): `lane prove`
+ * The shared candidate nominator, and the deadlock it was extracted to end: `lane prove`
  * proving a `DONE` off a `Part of #N` PR that `lane brief` then refused to see.
  */
 import {resolve} from "node:path";
@@ -17,8 +17,8 @@ import {runProve} from "./prove-verb.ts";
 const ROOT = ".fabrika/lanes";
 const ISSUE = 5751;
 const PR = 5790;
-const PR_URL = `https://github.com/o/r/pull/${PR}`;
-const ISSUE_URL = `https://github.com/o/r/issues/${ISSUE}`;
+const PR_URL = `https://forge.example/o/r/pull/${PR}`;
+const ISSUE_URL = `https://forge.example/o/r/issues/${ISSUE}`;
 const ENTRY = "/checkout/node_modules/@kampus/fabrika-cli/dist/bin.js";
 
 const CLOSERS = /^POST .*\/graphql$/;
@@ -37,7 +37,7 @@ const closingEdge = (...numbers: ReadonlyArray<number>): HttpReply =>
 						pageInfo: {hasNextPage: false, endCursor: null},
 						nodes: numbers.map((number) => ({
 							number,
-							url: `https://github.com/o/r/pull/${number}`,
+							url: `https://forge.example/o/r/pull/${number}`,
 							state: "OPEN",
 						})),
 					},
@@ -49,7 +49,7 @@ const closingEdge = (...numbers: ReadonlyArray<number>): HttpReply =>
 const nominatedBy = (...numbers: ReadonlyArray<number>): HttpReply =>
 	served({total_count: numbers.length, items: numbers.map((number) => ({number}))});
 
-/** The lane-5981 / lane-6610 shape: an open PR that links the issue without closing it. */
+/** An open PR that links the issue without closing it. */
 const partOfPull = served({
 	number: PR,
 	state: "open",
@@ -145,7 +145,7 @@ describe("the shared candidate nominator", () => {
 	});
 });
 
-describe("the `Part of #N` sequence that used to deadlock (#6179)", () => {
+describe("the `Part of #N` sequence that used to deadlock", () => {
 	/** The one board both verbs read, with the PR linking the issue through its body alone. */
 	const board: ReadonlyArray<Scripted> = [
 		[CLOSERS, closingEdge()],

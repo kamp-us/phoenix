@@ -4,15 +4,17 @@
  * Kept out of the layer so the whole of what reaches the SDK is assertable without a subprocess:
  * `queryOptionsOf` is a pure function of the config, the tool server and the environment.
  *
- * `pathToClaudeCodeExecutable` is deliberately never set. The CLI the SDK spawns is the `claude` on
- * `PATH`, and SDK/CLI drift is accepted for this slice (founder ruling on #7580) — the `start` log
- * line names both versions so a drifted pair is visible in the transcript rather than silent.
+ * `pathToClaudeCodeExecutable` is deliberately never set, so the SDK launches the CLI it bundles
+ * ("Uses the built-in executable if not specified", `sdk.d.ts` at the `0.3.259` pin) rather than
+ * whatever `claude` is on `PATH` — the two routinely differ. SDK/CLI drift is accepted for this
+ * slice (founder ruling on #7580) — the `start` log line names both versions so a drifted pair is
+ * visible in the transcript rather than silent.
  */
 
 import {userInfo} from "node:os";
 import type {McpServerConfig, Options, PermissionMode} from "@anthropic-ai/claude-agent-sdk";
 import type {Mode} from "../../ai-agent/ports/index.ts";
-import {TUVAL_SERVER_NAME, type TuvalToolServer} from "../tools/index.ts";
+import {TUVAL_SERVER_NAME} from "../tools/index.ts";
 import type {AgentSdk} from "./sdk.ts";
 import type {SpawnClaudeCodeProcess} from "./subprocess.ts";
 
@@ -34,9 +36,16 @@ export interface ClaudeAiAgentOptions {
 	 */
 	readonly allowedTools: ReadonlyArray<string>;
 	readonly model?: string;
+	/**
+	 * Whether the session asks the SDK for `stream_event` frames, so a reply lands on the transcript
+	 * as it is written rather than whole. Default-off: turning it on changes what a turn's finished
+	 * `assistant` frame carries (`sdk.d.ts`, `SDKAssistantMessage` — with partials on, `content`
+	 * "typically holds the single block this message delivers and `stop_reason` is still null").
+	 */
+	readonly streamPartialReplies?: boolean;
 	/** The SDK seam. Absent is the real SDK; a test hands in a scripted `Query`. */
 	readonly sdk?: AgentSdk;
-	/** Absent leaves the SDK's own local spawn, which is what runs the `claude` on `PATH`. */
+	/** Absent leaves the SDK's own local spawn, which is what runs its bundled CLI. */
 	readonly spawn?: SpawnClaudeCodeProcess;
 	/**
 	 * The id a fresh session opens under. Absent mints a v4 UUID, which is what a run does; a test
@@ -97,10 +106,19 @@ export type SessionChoice =
 	| {readonly kind: "fresh"; readonly sessionId: string}
 	| {readonly kind: "resume"; readonly sessionId: string};
 
+/**
+ * The two things a query needs off the tool server: the binding it mounts, and the wire names
+ * `allowedTools` must list. A `TuvalToolServer` is one; nothing here reads its handlers.
+ */
+export interface ServerBinding {
+	readonly server: McpServerConfig;
+	readonly wireNames: ReadonlyArray<string>;
+}
+
 export interface QueryOptionsInput {
 	readonly cwd: string;
 	readonly session: SessionChoice;
-	readonly server: TuvalToolServer;
+	readonly server: ServerBinding;
 	readonly canUseTool: NonNullable<Options["canUseTool"]>;
 	readonly env: Record<string, string | undefined>;
 	readonly spawn?: SpawnClaudeCodeProcess | undefined;
@@ -120,6 +138,12 @@ export const queryOptionsOf = (
 		mcpServers: servers,
 		canUseTool: input.canUseTool,
 		env: input.env,
+		includePartialMessages: options.streamPartialReplies === true,
+		// Without it the SDK forwards a worker's tool frames alone (`sdk.d.ts`, `Options
+		// .forwardSubagentText`: "only tool_use/tool_result blocks from subagents are emitted") — enough
+		// for a heartbeat, and not enough for a slot's last line, which is the whole of what a running
+		// row says a worker is doing (#8427, folded into #8405).
+		forwardSubagentText: true,
 		...(input.session.kind === "fresh"
 			? {sessionId: input.session.sessionId}
 			: {resume: input.session.sessionId}),

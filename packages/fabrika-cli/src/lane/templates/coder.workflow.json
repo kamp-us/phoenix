@@ -5,7 +5,7 @@
 		"id": "coder",
 		"initial": "pipeline",
 		"context": {
-			"issue": { "retries": 0, "maxRetries": 2, "classes": [] }
+			"issue": { "retries": 0, "maxRetries": 3, "classes": [], "laps": 0, "maxLaps": 16 }
 		},
 		"states": {
 			"pipeline": {
@@ -25,14 +25,33 @@
 							},
 							"build": {
 								"on": {
-									"ISSUE.DONE": "review",
-									"ISSUE.BLOCKED": "blocked"
+									"ISSUE.DONE": [
+										{ "target": "diagnosed", "guard": "done:diagnosis" },
+										{ "target": "review" }
+									],
+									"ISSUE.BLOCKED": "blocked",
+									"ISSUE.LAP": [
+										{
+											"target": "build",
+											"guard": "lapsRemaining",
+											"actions": "incrementLaps"
+										},
+										{ "target": "human:machinery-stall" }
+									]
 								}
 							},
 							"build:ui": {
 								"on": {
 									"ISSUE.DONE": "review",
-									"ISSUE.BLOCKED": "blocked"
+									"ISSUE.BLOCKED": "blocked",
+									"ISSUE.LAP": [
+										{
+											"target": "build:ui",
+											"guard": "lapsRemaining",
+											"actions": "incrementLaps"
+										},
+										{ "target": "human:machinery-stall" }
+									]
 								}
 							},
 							"review": {
@@ -42,13 +61,21 @@
 										{ "target": "ship" }
 									],
 									"ISSUE.BLOCKED": "blocked",
+									"ISSUE.LAP": [
+										{
+											"target": "review",
+											"guard": "lapsRemaining",
+											"actions": "incrementLaps"
+										},
+										{ "target": "human:machinery-stall" }
+									],
 									"ISSUE.FAIL": [
 										{
 											"target": "build",
 											"guard": "retriesRemaining",
 											"actions": "incrementRetries"
 										},
-										{ "target": "frozen" }
+										{ "target": "human:budget-spent" }
 									]
 								}
 							},
@@ -56,18 +83,35 @@
 								"on": {
 									"ISSUE.PASS": "ship",
 									"ISSUE.BLOCKED": "blocked",
+									"ISSUE.LAP": [
+										{
+											"target": "review:ui",
+											"guard": "lapsRemaining",
+											"actions": "incrementLaps"
+										},
+										{ "target": "human:machinery-stall" }
+									],
 									"ISSUE.FAIL": [
 										{
 											"target": "build:ui",
 											"guard": "retriesRemaining",
 											"actions": "incrementRetries"
 										},
-										{ "target": "frozen" }
+										{ "target": "human:budget-spent" }
 									]
 								}
 							},
 							"ship": {
 								"on": {
+									"ISSUE.LAP": [
+										{ "target": "build", "guard": "lap:base-conflicted" },
+										{
+											"target": "ship",
+											"guard": "lapsRemaining",
+											"actions": "incrementLaps"
+										},
+										{ "target": "human:machinery-stall" }
+									],
 									"ISSUE.DONE": [
 										{ "target": "queued", "guard": "merge:partial" },
 										{ "target": "shipped" }
@@ -80,12 +124,20 @@
 											"guard": "retriesRemaining",
 											"actions": "incrementRetries"
 										},
-										{ "target": "frozen" }
+										{ "target": "human:budget-spent" }
 									]
 								}
 							},
 							"ship:queued": {
 								"on": {
+									"ISSUE.LAP": [
+										{
+											"target": "ship",
+											"guard": "lapsRemaining",
+											"actions": "incrementLaps"
+										},
+										{ "target": "human:machinery-stall" }
+									],
 									"ISSUE.DONE": [
 										{ "target": "queued", "guard": "merge:partial" },
 										{ "target": "shipped" }
@@ -105,7 +157,7 @@
 											"guard": "retriesRemaining",
 											"actions": "incrementRetries"
 										},
-										{ "target": "frozen" }
+										{ "target": "human:budget-spent" }
 									]
 								}
 							},
@@ -124,14 +176,20 @@
 									"ISSUE.UNBLOCKED": "hist"
 								}
 							},
-							"hist": { "type": "history" },
-							"shipped": { "type": "final" },
-							"frozen": {
+							"human:machinery-stall": {
+								"on": {
+									"ISSUE.UNBLOCKED": "hist"
+								}
+							},
+							"human:budget-spent": {
 								"type": "final",
 								"on": {
 									"ISSUE.UNBLOCKED": "hist"
 								}
-							}
+							},
+							"hist": { "type": "history" },
+							"shipped": { "type": "final" },
+							"diagnosed": { "type": "final" }
 						}
 					}
 				},

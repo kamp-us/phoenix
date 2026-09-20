@@ -1,14 +1,18 @@
 /**
  * @vitest-environment jsdom
  *
- * The property-based a11y pass over the one region this child builds.
+ * The property-based a11y pass over the one region this backend contributes.
  *
- * `@kampus/design`'s harness covers a primitive in isolation; it does not cover what an app builds
- * out of one (`.patterns/property-based-a11y.md`), and both extra lines are `MetaRow` compositions
- * with Tuval's own text in them. So `runEnforcedInvariants` runs here, scoped to
- * `.tuval-claude-extras` alone: the rest of the window is #7604/#7610's and has its own pass
- * (`../../shell/chat/chat-a11y.unit.test.tsx`), and widening the scope here would red this gate on
- * somebody else's defect — the composer's `role="combobox"` textarea (#7876) is exactly that.
+ * That region moved with #8190: the Claude window's usage and session lines went to the desk
+ * inspector the `claude-session` row now declares, so this pass follows it and scans
+ * `.tuval-agent-inspector` over Claude session states. The window itself is #7604/#7610's and has
+ * its own pass (`../../shell/chat/chat-a11y.unit.test.tsx`); widening the scope here would red this
+ * gate on somebody else's defect — the composer's `role="combobox"` textarea (#7876) is exactly
+ * that.
+ *
+ * The renderer is shared with Pi, and so is this scan — but the *states* are not, which is why this
+ * pass stays beside the Claude row rather than folding into the Pi one: a Claude session id is a
+ * uuid the SDK mints and its models are named differently.
  *
  * Only the jsdom-decidable invariants run, as upstream: contrast and tap-target are `warning`
  * posture because jsdom applies no CSS and has no layout, and asserting either would be a false
@@ -23,12 +27,11 @@ import fc from "fast-check";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
+import {AiAgentInspector} from "../../ai-agent/window/index.ts";
 import {ProcessId} from "../../process/process.ts";
-import {type ChatView, initialChatView} from "../../shell/chat/index.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
 import {testProcess} from "../../shell/window/fixtures.ts";
-import {WindowId} from "../../shell/window/index.ts";
-import {claudeChatWindow} from "./ClaudeChatWindow.tsx";
+import {type AnyWindowHost, WindowId} from "../../shell/window/index.ts";
 import {claudeSessionState, usageOf} from "./claude-window.testing.ts";
 
 installDomShims();
@@ -55,7 +58,7 @@ const usageArb = fc.record({
 	output: fc.nat({max: 5_000_000}),
 });
 
-/** A session id and a cwd are both operator-visible strings the window does not get to shape. */
+/** A session id and a cwd are both operator-visible strings the panel does not get to shape. */
 const sessionArb = fc.record({
 	sessionId: fc.oneof(fc.constant(null), fc.uuid(), fc.string({minLength: 1, maxLength: 60})),
 	cwd: fc.constantFrom("/", "/tmp/project", "/a/very/long/path/that/keeps/going/for/a/while/here"),
@@ -65,19 +68,15 @@ const violationsFor = async (state: AiAgentSessionState): Promise<ReadonlyArray<
 	const process = await Effect.runPromise(
 		testProcess<AiAgentSessionState, AiAgentSessionMsg>(ProcessId.make("p1"), state),
 	);
-	const host = await Effect.runPromise(
-		process.window<ChatView>(WindowId.make("w1"), initialChatView),
-	);
-	const rendered = render(
-		claudeChatWindow({scrollCommitMs: 0, scrollToFn: () => undefined}).render(host) as ReactElement,
-	);
-	await screen.findByRole("log", {name: "Transcript"});
-	const region = rendered.container.querySelector<HTMLElement>(".tuval-claude-extras");
+	const host = await Effect.runPromise(process.window(WindowId.make("w1"), {selected: null}));
+	const rendered = render(AiAgentInspector.render(host as AnyWindowHost) as ReactElement);
+	await screen.findByRole("group", {name: "Agent session"});
+	const region = rendered.container.querySelector<HTMLElement>(".tuval-agent-inspector");
 	const found = region === null ? [] : await runEnforcedInvariants(region, presentational);
 	rendered.unmount();
 	// A missing region is a failure, not a vacuous pass: the scan below would be empty either way.
 	return region === null
-		? ["missing: the window rendered no .tuval-claude-extras region"]
+		? ["missing: the row rendered no .tuval-agent-inspector region"]
 		: found.map((violation) => `${violation.id}: ${violation.detail}`);
 };
 
@@ -85,7 +84,7 @@ const violationsFor = async (state: AiAgentSessionState): Promise<ReadonlyArray<
 // milliseconds and carries its own timeout; Vitest's 5s default times it out in a loaded run.
 const SLOW = 60_000;
 
-describe("the two extra lines hold the enforced pillar-4 invariants", () => {
+describe("a Claude session's inspector holds the enforced pillar-4 invariants", () => {
 	it(
 		"over generated models, costs and token counts",
 		async () => {

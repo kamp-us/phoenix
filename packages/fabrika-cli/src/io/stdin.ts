@@ -6,15 +6,16 @@
  * (§"The bright line" — fd 0 stays a raw read at the boundary; `Stdio.stdin` is a
  * considered-and-declined stream swap, not a missing service). **No `effect` import here**, for the
  * same reason: the retry loop needs a native `try/catch` around each `readSync`, which is banned
- * inside Effect control flow (#2736). The CLI adapter lifts {@link readStdin} into an effect, and
+ * inside Effect control flow. The CLI adapter lifts {@link readStdin} into an effect, and
  * the verbs take that effect as an option — so a test drives the `EAGAIN` and TTY paths without a
  * real descriptor.
  *
  * **`Text("")` and `Failed` are different answers and must never collapse.** A non-blocking pipe
  * throws `EAGAIN` before its producer writes, and swallowing that to `""` makes an unread pipe
- * byte-identical to an empty one — the caller then decides over evidence it never saw (#3924, and
- * ADR 0092's zero-scope fail-open). Reimplemented here rather than reused: ADR 0238 bans calling
- * v1, so its scar is duplicated as behaviour, not as a dependency.
+ * byte-identical to an empty one — the caller then decides over evidence it never saw, which is the
+ * same fail-open a guard commits when it answers over zero scope. The read is implemented here
+ * rather than imported from an older tree, so the lesson is duplicated as behaviour, not as a
+ * dependency.
  */
 import {readSync} from "node:fs";
 

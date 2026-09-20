@@ -52,8 +52,8 @@ const noFloorCheck: ReadonlyArray<Scripted> = [
  * Whether one recorded request WROTE a check-run — the fence this module must never trip.
  *
  * Every method that is not a GET counts. `ship floor --publish-check` creates with POST and rewrites
- * with PATCH, so a POST-shaped fence would let a PATCH-shaped fabricated conclusion straight through
- * (#6161).
+ * with PATCH, so a POST-shaped fence would let a PATCH-shaped fabricated conclusion straight
+ * through.
  */
 const writesCheckRun = (call: string): boolean =>
 	call.includes("check-runs") && !call.startsWith("GET ");
@@ -93,9 +93,9 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 		expect(seams.requests.some((call) => RERUN.test(call))).toBe(true);
 		// The re-fire re-runs `ship floor` in CI. Nothing here WRITES a check-run — the read above is
 		// how this module learns the floor's state, and the green a PR ends up with is one the job
-		// derived for itself (#5585). The fence is every method that is not a GET, not `POST` alone:
+		// derived for itself. The fence is every method that is not a GET, not `POST` alone:
 		// `ship floor --publish-check` rewrites a held row with `PATCH /check-runs/{id}`, so a
-		// method-specific fence would let the PATCH-shaped fabrication through (#6161).
+		// method-specific fence would let the PATCH-shaped fabrication through.
 		expect(seams.requests.some(writesCheckRun)).toBe(false);
 	});
 
@@ -128,8 +128,8 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 		expect(seams.requests.some((call) => RERUN.test(call))).toBe(false);
 	});
 
-	// The job now succeeds whenever it PUBLISHED an answer, so its green says nothing about the floor
-	// (#6161). A pending check-run beside a green job is the ordinary "no verdict yet" state, and it is
+	// The job succeeds whenever it PUBLISHED an answer, so its green says nothing about the floor.
+	// A pending check-run beside a green job is the ordinary "no verdict yet" state, and it is
 	// exactly the state this module exists to clear.
 	it("re-fires a green job whose check-run is still pending", async () => {
 		const {assertion, seams} = await withCalls([
@@ -151,7 +151,7 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 	});
 
 	// GitHub bumps `run_attempt` a beat after it accepts the dispatch, and calling that beat UNKNOWN
-	// sent three agents to `heal-ci` over re-fires that had taken and went green untouched (#5982).
+	// sent three agents to `heal-ci` over re-fires that had taken and went green untouched.
 	it("reads a same-id run that is running again as a re-fire to wait on, not UNKNOWN", async () => {
 		const {assertion, seams} = await withCalls([
 			[once(RUN), workflowRun({id: FLOOR, attempt: 1})],
@@ -175,8 +175,18 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 		expect(assertion).toEqual({_tag: "Restarting", run: FLOOR, status: "queued"});
 	});
 
-	it("answers NoRun when the repository runs no floor at this head", async () => {
-		expect(await assert(listed({id: 1, name: "ci"}))).toEqual({_tag: "NoRun"});
+	it("answers NoRun carrying how many runs the head did list", async () => {
+		expect(await assert(listed({id: 1, name: "ci"}, {id: 2, name: "leak-guard"}))).toEqual({
+			_tag: "NoRun",
+			runsAtHead: 2,
+		});
+	});
+
+	it("answers NoRun carrying zero when the head lists no run of any name", async () => {
+		expect(await assert([[RUNS, {status: 200, body: runsAtHead(0, []).stdout}]])).toEqual({
+			_tag: "NoRun",
+			runsAtHead: 0,
+		});
 	});
 });
 
@@ -236,6 +246,26 @@ describe("floorLine says what the caller must do next", () => {
 			"may still need a re-fire",
 		);
 		expect(floorLine("governance post", {_tag: "InFlight", run: FLOOR})).toContain("re-read");
+	});
+
+	// The head this ticket was filed from listed 31 runs while its floor run existed, so any line
+	// concluding a cause over a run-carrying head is false there. The count narrows the read; it
+	// never explains it.
+	it("states the empty filter over a head that carries runs, and concludes no cause", () => {
+		const line = floorLine("governance post", {_tag: "NoRun", runsAtHead: 30});
+		expect(line).toContain("30 run(s)");
+		expect(line).toContain("unproven");
+		expect(line).toContain("re-read");
+		expect(line).not.toContain("did not fire");
+		expect(line).not.toContain("not installed");
+		expect(floorToken({_tag: "NoRun", runsAtHead: 30})).toBe("no-run");
+	});
+
+	it("calls an empty run list unproven rather than an absent floor", () => {
+		const line = floorLine("governance post", {_tag: "NoRun", runsAtHead: 0});
+		expect(line).toContain("no workflow run at all");
+		expect(line).toContain("unproven");
+		expect(line).not.toContain("not installed");
 	});
 
 	it("tells a restarting re-fire to wait on its run rather than escalate", () => {

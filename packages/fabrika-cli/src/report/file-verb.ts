@@ -214,7 +214,7 @@ export const runFile = (
 		}
 
 		// A create call's own response is the server echoing the request; a fresh read is the only
-		// evidence the issue is in the queue (#3173).
+		// evidence the issue is in the queue.
 		const mismatch = readbackMismatch(yield* getIssue(repo, created.value.number), label, body);
 		if (mismatch !== null) {
 			return refuse(

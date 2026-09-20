@@ -267,3 +267,14 @@ export const normalize = (keyString: string): Result.Result<string, KeyParseErro
  */
 export const parseSequence = (keySequence: string): ReadonlyArray<string> | null =>
 	keySequence.match(/<[^<>\s]+>|[\s\S]|^$/g);
+
+/**
+ * The key `window:focus-list` mints (#8407). A binding names a command and a command names a Msg, so
+ * a chord cannot address a renderer directly; the command forwards this string to the focused window
+ * instead, and a window that draws a list moves focus into it.
+ *
+ * It is deliberately a spelling `parse` refuses — no chord may hold a `-` in its key — so neither a
+ * press nor a config binding can ever mint it, and a renderer comparing against it cannot be fooled
+ * by something the operator typed. `syntax.unit.test.ts` pins that refusal.
+ */
+export const FOCUS_LIST_KEY = "<focus-list>";

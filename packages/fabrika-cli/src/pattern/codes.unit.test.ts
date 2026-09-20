@@ -7,13 +7,14 @@ import * as codes from "./codes.ts";
 const GROUP_DIR = fileURLToPath(new URL(".", import.meta.url));
 
 describe("the `pattern` group allocates from one table", () => {
-	// `adr` shipped a `NO_SUBJECT` in two verb files on two numbers (#5294). An imported and a
-	// declared export are indistinguishable once a module is loaded, so this reads the source.
+	// The `adr` group once shipped a `NO_SUBJECT` in two verb files on two different numbers. An
+	// imported and a declared export are indistinguishable once a module is loaded, so this reads
+	// the source.
 	it("leaves no verb module seating a code of its own", () => {
 		expect(verbLocalCodesIn(GROUP_DIR)).toEqual([]);
 	});
 
-	it("finds codes at all, so no assertion below passes over an empty table (ADR 0092)", () => {
+	it("finds codes at all, so no assertion below passes over an empty table", () => {
 		expect(allocatedCodes(codes).size).toBeGreaterThan(0);
 	});
 
@@ -30,7 +31,7 @@ describe("the `pattern` group allocates from one table", () => {
  * The five gaps, each pinned to the reason it is a gap rather than an oversight — and `7` above all.
  * No verb here judges over a corpus, so none has a vacuous pass to prevent: an empty or absent doc
  * directory is a fact reported at exit `0`, and refusing there would leave a repo adopting fabrika
- * unable to write its first pattern doc on the documented path (#5254).
+ * unable to write its first pattern doc on the documented path.
  */
 describe("the deliberate gaps stay gaps", () => {
 	it("seats nothing on 3 through 7", () => {

@@ -5,7 +5,7 @@
  * "Close the query and terminate the underlying process"). The one place a consumer can observe it
  * is `Options.spawnClaudeCodeProcess`, which replaces the spawn outright. So this wraps a spawner
  * the row supplied rather than installing one: with no spawner the SDK's own local spawn stands,
- * which is what runs the `claude` on `PATH`, and the exit reason is simply unknown.
+ * which is what runs its bundled CLI, and the exit reason is simply unknown.
  *
  * Nothing here spawns anything. The wrapper registers one `exit` listener and records what it
  * hears, which is the whole of what a `TransportError`'s detail needs.

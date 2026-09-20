@@ -21,6 +21,7 @@ import {
 	getIssue,
 	issueTimeline,
 	listComments,
+	listCommentsReconciled,
 	listLabels,
 	listMilestones,
 	listOpenIssues,
@@ -93,21 +94,21 @@ const issue = (fields: Record<string, unknown>) => ({
 describe("the credential is an argument to every request, never something a request path guesses", () => {
 	it("sends the resolved token as the authorization header", async () => {
 		const http = scripted([[/issues\/7/, {status: 200, body: issue({})}]]);
-		await against(getIssue("kamp-us/phoenix", 7), http);
-		expect(http.calls[0]).toBe("GET https://api.github.com/repos/kamp-us/phoenix/issues/7");
+		await against(getIssue("o/r", 7), http);
+		expect(http.calls[0]).toBe("GET https://api.github.com/repos/o/r/issues/7");
 	});
 
 	it("refuses naming both env vars when nothing resolves one, and issues no request", async () => {
 		delete process.env.GITHUB_TOKEN;
 		const http = scripted([]);
-		const result = await against(listLabels("kamp-us/phoenix"), http);
+		const result = await against(listLabels("o/r"), http);
 		expect(result).toEqual({_tag: "Failure", reason: NO_TOKEN});
 		expect(http.calls).toEqual([]);
 	});
 
 	it("seats an unresolvable credential on Unknown for an Existence read, never on Absent", async () => {
 		delete process.env.GITHUB_TOKEN;
-		const result = await against(getIssue("kamp-us/phoenix", 7), scripted([]));
+		const result = await against(getIssue("o/r", 7), scripted([]));
 		expect(result._tag).toBe("Unknown");
 	});
 });
@@ -127,7 +128,7 @@ describe("getIssue carries the two facets a read-back cannot prove from labels",
 				},
 			],
 		]);
-		const result = await against(getIssue("kamp-us/phoenix", 7), http);
+		const result = await against(getIssue("o/r", 7), http);
 		expect(result).toMatchObject({
 			_tag: "Present",
 			value: {milestone: 44, stateReason: "not_planned"},
@@ -138,7 +139,7 @@ describe("getIssue carries the two facets a read-back cannot prove from labels",
 		const http = scripted([
 			[/issues\/7/, {status: 200, body: issue({state_reason: null, milestone: null})}],
 		]);
-		const result = await against(getIssue("kamp-us/phoenix", 7), http);
+		const result = await against(getIssue("o/r", 7), http);
 		expect(result).toMatchObject({_tag: "Present", value: {milestone: null, stateReason: null}});
 	});
 
@@ -146,25 +147,25 @@ describe("getIssue carries the two facets a read-back cannot prove from labels",
 		const http = scripted([
 			[/issues\/7/, {status: 200, body: issue({user: {login: "some-account"}})}],
 		]);
-		const result = await against(getIssue("kamp-us/phoenix", 7), http);
+		const result = await against(getIssue("o/r", 7), http);
 		expect(result).toMatchObject({_tag: "Present", value: {author: "some-account"}});
 	});
 
 	it("reads a missing author as the empty login, which is never an operator account", async () => {
 		const http = scripted([[/issues\/7/, {status: 200, body: issue({})}]]);
-		const result = await against(getIssue("kamp-us/phoenix", 7), http);
+		const result = await against(getIssue("o/r", 7), http);
 		expect(result).toMatchObject({_tag: "Present", value: {author: ""}});
 	});
 
 	it("splits a proven 404 from a status nobody can read a verdict off", async () => {
 		const missing = await against(
-			getIssue("kamp-us/phoenix", 7),
+			getIssue("o/r", 7),
 			scripted([[/issues\/7/, {status: 404, body: {message: "Not Found"}}]]),
 		);
 		expect(missing).toEqual({_tag: "Absent"});
 
 		const unreadable = await against(
-			getIssue("kamp-us/phoenix", 7),
+			getIssue("o/r", 7),
 			scripted([[/issues\/7/, {status: 502, body: {message: "Bad gateway"}}]]),
 		);
 		expect(unreadable._tag).toBe("Unknown");
@@ -172,7 +173,7 @@ describe("getIssue carries the two facets a read-back cannot prove from labels",
 
 	it("refuses a 200 whose body is not an issue rather than reading it positionally", async () => {
 		const result = await against(
-			getIssue("kamp-us/phoenix", 7),
+			getIssue("o/r", 7),
 			scripted([[/issues\/7/, {status: 200, body: {message: "Not Found"}}]]),
 		);
 		expect(result._tag).toBe("Unknown");
@@ -182,7 +183,7 @@ describe("getIssue carries the two facets a read-back cannot prove from labels",
 		const http = scripted([
 			[/issues\/7/, {status: 200, body: issue({parent: {number: 4304, title: "the epic"}})}],
 		]);
-		const result = await against(getIssue("kamp-us/phoenix", 7), http);
+		const result = await against(getIssue("o/r", 7), http);
 		expect(result).toMatchObject({
 			_tag: "Present",
 			value: {parent: {_tag: "Parent", number: 4304}},
@@ -196,12 +197,12 @@ describe("getIssue carries the two facets a read-back cannot prove from labels",
 				{
 					status: 200,
 					body: issue({
-						parent_issue_url: "https://api.github.com/repos/kamp-us/phoenix/issues/4304",
+						parent_issue_url: "https://api.github.com/repos/o/r/issues/4304",
 					}),
 				},
 			],
 		]);
-		const result = await against(getIssue("kamp-us/phoenix", 7), http);
+		const result = await against(getIssue("o/r", 7), http);
 		expect(result).toMatchObject({
 			_tag: "Present",
 			value: {parent: {_tag: "Parent", number: 4304}},
@@ -212,13 +213,13 @@ describe("getIssue carries the two facets a read-back cannot prove from labels",
 		const http = scripted([
 			[/issues\/7/, {status: 200, body: issue({parent_issue_url: "https://example.invalid/x"})}],
 		]);
-		const result = await against(getIssue("kamp-us/phoenix", 7), http);
+		const result = await against(getIssue("o/r", 7), http);
 		expect(result).toMatchObject({_tag: "Present", value: {parent: {_tag: "Unnamed"}}});
 	});
 
 	it("reads an issue carrying neither key as parentless", async () => {
 		const http = scripted([[/issues\/7/, {status: 200, body: issue({})}]]);
-		const result = await against(getIssue("kamp-us/phoenix", 7), http);
+		const result = await against(getIssue("o/r", 7), http);
 		expect(result).toMatchObject({_tag: "Present", value: {parent: {_tag: "None"}}});
 	});
 });
@@ -322,17 +323,17 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 				{
 					status: 200,
 					body: [
-						{number: 24, title: "Geçit"},
+						{number: 24, title: "first release"},
 						{number: 44, title: "fabrika campaign"},
 					],
 				},
 			],
 		]);
-		const result = await against(listOpenMilestones("kamp-us/phoenix"), http);
+		const result = await against(listOpenMilestones("o/r"), http);
 		expect(result).toEqual({
 			_tag: "Ok",
 			value: [
-				{number: 24, title: "Geçit"},
+				{number: 24, title: "first release"},
 				{number: 44, title: "fabrika campaign"},
 			],
 		});
@@ -342,7 +343,7 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 
 	it("listOpenMilestones refuses rather than returning a short list when the read fails", async () => {
 		const result = await against(
-			listOpenMilestones("kamp-us/phoenix"),
+			listOpenMilestones("o/r"),
 			scripted([[/milestones/, {status: 502, body: {message: "Bad gateway"}}]]),
 		);
 		expect(result._tag).toBe("Failure");
@@ -350,8 +351,8 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 
 	it("listOpenMilestones refuses a 200 whose entries are not milestones", async () => {
 		const result = await against(
-			listOpenMilestones("kamp-us/phoenix"),
-			scripted([[/milestones/, {status: 200, body: [{number: "24", title: "Geçit"}]}]]),
+			listOpenMilestones("o/r"),
+			scripted([[/milestones/, {status: 200, body: [{number: "24", title: "first release"}]}]]),
 		);
 		expect(result._tag).toBe("Failure");
 	});
@@ -418,26 +419,26 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 				/&page=1$/,
 				{
 					status: 200,
-					body: [comment(1, "usirin", "first")],
+					body: [comment(1, "ada", "first")],
 					headers: linkNext("https://api.github.com/next"),
 				},
 			],
-			[/&page=2$/, {status: 200, body: [comment(2, "cansirin", "second")]}],
+			[/&page=2$/, {status: 200, body: [comment(2, "noor", "second")]}],
 		]);
-		const result = await against(listComments("kamp-us/phoenix", 4831), http);
+		const result = await against(listComments("o/r", 4831), http);
 		expect(result).toEqual({
 			_tag: "Ok",
 			value: [
 				{
 					id: 1,
-					author: "usirin",
+					author: "ada",
 					createdAt: "2026-08-03T09:28:41Z",
 					updatedAt: "2026-08-03T10:00:00Z",
 					body: "first",
 				},
 				{
 					id: 2,
-					author: "cansirin",
+					author: "noor",
 					createdAt: "2026-08-03T09:28:41Z",
 					updatedAt: "2026-08-03T10:00:00Z",
 					body: "second",
@@ -448,15 +449,15 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 
 	it("carries a body holding a control character, which `--jq -r` could not", async () => {
 		const http = scripted([
-			[/comments/, {status: 200, body: [{id: 1, user: {login: "usirin"}, body: "a\nb"}]}],
+			[/comments/, {status: 200, body: [{id: 1, user: {login: "ada"}, body: "a\nb"}]}],
 		]);
-		const result = await against(listComments("kamp-us/phoenix", 1), http);
+		const result = await against(listComments("o/r", 1), http);
 		expect(result).toMatchObject({_tag: "Ok", value: [{body: "a\nb"}]});
 	});
 
 	it("refuses on an entry that is not a comment", async () => {
 		const result = await against(
-			listComments("kamp-us/phoenix", 1),
+			listComments("o/r", 1),
 			scripted([[/comments/, {status: 200, body: [{message: "Not Found"}]}]]),
 		);
 		expect(result._tag).toBe("Failure");
@@ -468,7 +469,7 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 			body: [],
 			headers: linkNext("https://api.github.com/next"),
 		});
-		const result = await against(listComments("kamp-us/phoenix", 1), http);
+		const result = await against(listComments("o/r", 1), http);
 		expect(result._tag).toBe("Failure");
 		expect(result).toMatchObject({reason: expect.stringContaining("not the whole list")});
 		expect(http.calls).toHaveLength(PAGE_CAP);
@@ -484,8 +485,8 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 	});
 
 	/**
-	 * #6690's finding 1: these reads used to hand their entries on without the exhaustion flag, so a
-	 * walk that stopped at the cap answered a short list as a clean `Ok`. Each of them seats a proven
+	 * A read that hands its entries on without the exhaustion flag lets a walk that stopped at the
+	 * cap answer a short list as a clean `Ok`. Each of them seats a proven
 	 * negative — "no duplicate", "no twin", "this label is not in the taxonomy" — and a short list
 	 * there is a wrong answer rather than a short one.
 	 */
@@ -525,7 +526,7 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 describe("removeLabel splits `it is gone` from `I could not remove it`", () => {
 	it("reports false — not a failure — when the label was already absent", async () => {
 		const result = await against(
-			removeLabel("kamp-us/phoenix", 1, "status:needs-triage"),
+			removeLabel("o/r", 1, "status:needs-triage"),
 			scripted([[/labels/, {status: 404, body: {message: "Label does not exist"}}]]),
 		);
 		expect(result).toEqual({_tag: "Ok", value: false});
@@ -533,7 +534,7 @@ describe("removeLabel splits `it is gone` from `I could not remove it`", () => {
 
 	it("fails on any other error — an unreachable GitHub is not a removal", async () => {
 		const result = await against(
-			removeLabel("kamp-us/phoenix", 1, "status:needs-triage"),
+			removeLabel("o/r", 1, "status:needs-triage"),
 			scripted([[/labels/, {status: 502, body: {message: "Bad gateway"}}]]),
 		);
 		expect(result._tag).toBe("Failure");
@@ -541,9 +542,9 @@ describe("removeLabel splits `it is gone` from `I could not remove it`", () => {
 
 	it("escapes the label name into the path", async () => {
 		const http = scripted([[/labels/, {status: 200, body: []}]]);
-		await against(removeLabel("kamp-us/phoenix", 1, "type:bug"), http);
+		await against(removeLabel("o/r", 1, "type:bug"), http);
 		expect(http.calls[0]).toBe(
-			"DELETE https://api.github.com/repos/kamp-us/phoenix/issues/1/labels/type%3Abug",
+			"DELETE https://api.github.com/repos/o/r/issues/1/labels/type%3Abug",
 		);
 	});
 });
@@ -551,32 +552,32 @@ describe("removeLabel splits `it is gone` from `I could not remove it`", () => {
 describe("the writes send the fields the API needs, in the form it accepts", () => {
 	it("addLabels adds rather than replaces, and issues no request for an empty list", async () => {
 		const http = scripted([[/labels/, {status: 200, body: []}]]);
-		await against(addLabels("kamp-us/phoenix", 1, ["type:bug", "p1"]), http);
-		expect(http.calls[0]).toBe("POST https://api.github.com/repos/kamp-us/phoenix/issues/1/labels");
+		await against(addLabels("o/r", 1, ["type:bug", "p1"]), http);
+		expect(http.calls[0]).toBe("POST https://api.github.com/repos/o/r/issues/1/labels");
 		expect(JSON.parse(http.bodies[0] ?? "{}")).toEqual({labels: ["type:bug", "p1"]});
 
 		const empty = scripted([]);
-		const result = await against(addLabels("kamp-us/phoenix", 1, []), empty);
+		const result = await against(addLabels("o/r", 1, []), empty);
 		expect(result._tag).toBe("Ok");
 		expect(empty.calls).toEqual([]);
 	});
 
 	it("setMilestone sends the number as a number, which is what homes an issue", async () => {
 		const http = scripted([[/issues\/1/, {status: 200, body: issue({})}]]);
-		await against(setMilestone("kamp-us/phoenix", 1, 44), http);
-		expect(http.calls[0]).toBe("PATCH https://api.github.com/repos/kamp-us/phoenix/issues/1");
+		await against(setMilestone("o/r", 1, 44), http);
+		expect(http.calls[0]).toBe("PATCH https://api.github.com/repos/o/r/issues/1");
 		expect(JSON.parse(http.bodies[0] ?? "{}")).toEqual({milestone: 44});
 	});
 
 	it('clearMilestone sends a JSON null, not the string "null"', async () => {
 		const http = scripted([[/issues\/1/, {status: 200, body: issue({})}]]);
-		await against(clearMilestone("kamp-us/phoenix", 1), http);
+		await against(clearMilestone("o/r", 1), http);
 		expect(JSON.parse(http.bodies[0] ?? "{}")).toEqual({milestone: null});
 	});
 
 	it("closeNotPlanned states the reason — a bare close reads as completed", async () => {
 		const http = scripted([[/issues\/1/, {status: 200, body: issue({})}]]);
-		await against(closeNotPlanned("kamp-us/phoenix", 1), http);
+		await against(closeNotPlanned("o/r", 1), http);
 		expect(JSON.parse(http.bodies[0] ?? "{}")).toEqual({
 			state: "closed",
 			state_reason: "not_planned",
@@ -585,7 +586,7 @@ describe("the writes send the fields the API needs, in the form it accepts", () 
 
 	it("closeCompleted states the opposite reason on the same endpoint", async () => {
 		const http = scripted([[/issues\/1/, {status: 200, body: issue({})}]]);
-		await against(closeCompleted("kamp-us/phoenix", 1), http);
+		await against(closeCompleted("o/r", 1), http);
 		expect(JSON.parse(http.bodies[0] ?? "{}")).toEqual({
 			state: "closed",
 			state_reason: "completed",
@@ -594,17 +595,17 @@ describe("the writes send the fields the API needs, in the form it accepts", () 
 
 	it("patchIssueBody writes the body field — a `title` here would overwrite the title", async () => {
 		const http = scripted([[/issues\/7/, {status: 200, body: issue({})}]]);
-		await against(patchIssueBody("kamp-us/phoenix", 7, "enriched-body-text"), http);
-		expect(http.calls[0]).toBe("PATCH https://api.github.com/repos/kamp-us/phoenix/issues/7");
+		await against(patchIssueBody("o/r", 7, "enriched-body-text"), http);
+		expect(http.calls[0]).toBe("PATCH https://api.github.com/repos/o/r/issues/7");
 		expect(JSON.parse(http.bodies[0] ?? "{}")).toEqual({body: "enriched-body-text"});
 	});
 
 	it("deleteComment targets the id it was given — an off-by-one deletes someone else's", async () => {
 		const http = scripted([[/comments/, {status: 200, body: {}}]]);
-		const result = await against(deleteComment("kamp-us/phoenix", 5170139674), http);
+		const result = await against(deleteComment("o/r", 5170139674), http);
 		expect(result._tag).toBe("Ok");
 		expect(http.calls[0]).toBe(
-			"DELETE https://api.github.com/repos/kamp-us/phoenix/issues/comments/5170139674",
+			"DELETE https://api.github.com/repos/o/r/issues/comments/5170139674",
 		);
 	});
 
@@ -616,7 +617,7 @@ describe("the writes send the fields the API needs, in the form it accepts", () 
 					status: 200,
 					body: {
 						id: 7,
-						user: {login: "usirin"},
+						user: {login: "ada"},
 						body: "ruling text",
 						created_at: "2026-08-23T00:00:00Z",
 						updated_at: "2026-08-23T01:00:00Z",
@@ -624,12 +625,12 @@ describe("the writes send the fields the API needs, in the form it accepts", () 
 				},
 			],
 		]);
-		const result = await against(getCommentRecord("kamp-us/phoenix", 7), http);
+		const result = await against(getCommentRecord("o/r", 7), http);
 		expect(result).toEqual({
 			_tag: "Ok",
 			value: {
 				id: 7,
-				author: "usirin",
+				author: "ada",
 				createdAt: "2026-08-23T00:00:00Z",
 				updatedAt: "2026-08-23T01:00:00Z",
 				body: "ruling text",
@@ -642,7 +643,7 @@ describe("the writes send the fields the API needs, in the form it accepts", () 
 			const http = scripted([
 				[/comments\/8/, {status: 200, body: {id: 8, user, body: "mystery bytes"}}],
 			]);
-			const result = await against(getCommentRecord("kamp-us/phoenix", 8), http);
+			const result = await against(getCommentRecord("o/r", 8), http);
 			expect(result._tag).toBe("Failure");
 			if (result._tag === "Failure") {
 				expect(result.reason).toContain("no readable author login");
@@ -713,7 +714,7 @@ describe("openQueueIssues", () => {
 				},
 			],
 		]);
-		const result = await against(openQueueIssues("kamp-us/phoenix", "status:needs-triage"), http);
+		const result = await against(openQueueIssues("o/r", "status:needs-triage"), http);
 		expect(result).toEqual({
 			_tag: "Ok",
 			value: [
@@ -794,7 +795,7 @@ describe("issueTimeline", () => {
 				},
 			],
 		]);
-		const result = await against(issueTimeline("kamp-us/phoenix", 4831), http);
+		const result = await against(issueTimeline("o/r", 4831), http);
 		expect(result).toEqual({
 			_tag: "Ok",
 			value: [
@@ -806,7 +807,7 @@ describe("issueTimeline", () => {
 
 	it("refuses on a read that failed — an empty timeline would read as `no twin exists`", async () => {
 		const result = await against(
-			issueTimeline("kamp-us/phoenix", 1),
+			issueTimeline("o/r", 1),
 			scripted([[/timeline/, {status: 502, body: {message: "Bad gateway"}}]]),
 		);
 		expect(result._tag).toBe("Failure");
@@ -823,6 +824,126 @@ describe("repoDefaultBranch", () => {
 		const result = await against(
 			repoDefaultBranch("o/r"),
 			scripted([[/repos/, {status: 200, body: {}}]]),
+		);
+		expect(result._tag).toBe("Failure");
+	});
+});
+
+/**
+ * The claim protocol resolves over this read, so a list short of what exists is not a small answer —
+ * it is the wrong one: a `triage claim` once saw one comment, missed a marker that had been live
+ * for three minutes, and answered `won` for a lane that had already lost.
+ */
+describe("listCommentsReconciled", () => {
+	const LIST = /GET .*\/issues\/7\/comments\?/;
+	const ISSUE = /GET .*\/issues\/7$/;
+
+	/** Fires on the first matching call only, so two reads of one URL can answer differently. */
+	const once = (pattern: RegExp): RegExp => {
+		const re = new RegExp(pattern.source);
+		let fired = false;
+		re.test = (input: string) => {
+			if (fired || !RegExp.prototype.test.call(re, input)) return false;
+			fired = true;
+			return true;
+		};
+		return re;
+	};
+
+	const comment = (id: number) => ({id, user: {login: "agent"}, created_at: "", updated_at: ""});
+	const page = (...ids: ReadonlyArray<number>): Reply => ({status: 200, body: ids.map(comment)});
+	const declaring = (count?: number): Reply => ({
+		status: 200,
+		body: issue(count === undefined ? {} : {comments: count}),
+	});
+
+	const before = {
+		attempts: process.env.FABRIKA_COMMENT_SCAN_ATTEMPTS,
+		delay: process.env.FABRIKA_COMMENT_SCAN_DELAY_MS,
+	};
+
+	beforeEach(() => {
+		process.env.FABRIKA_COMMENT_SCAN_DELAY_MS = "0";
+		process.env.FABRIKA_COMMENT_SCAN_ATTEMPTS = "2";
+	});
+
+	afterEach(() => {
+		for (const [name, value] of [
+			["FABRIKA_COMMENT_SCAN_ATTEMPTS", before.attempts],
+			["FABRIKA_COMMENT_SCAN_DELAY_MS", before.delay],
+		] as const) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
+	});
+
+	it("answers on the first read when the list is as long as the issue's own count", async () => {
+		const result = await against(
+			listCommentsReconciled("o/r", 7),
+			scripted([
+				[LIST, page(1, 2)],
+				[ISSUE, declaring(2)],
+			]),
+		);
+		expect(result).toMatchObject({_tag: "Ok", value: {declared: 2, reads: 1}});
+	});
+
+	it("re-reads a list the declared count proves short, and answers once the two agree", async () => {
+		const result = await against(
+			listCommentsReconciled("o/r", 7),
+			scripted([
+				[once(LIST), page(1)],
+				[LIST, page(1, 2)],
+				[ISSUE, declaring(2)],
+			]),
+		);
+		expect(result).toMatchObject({_tag: "Ok", value: {declared: 2, reads: 2}});
+		expect((result as {value: {comments: ReadonlyArray<unknown>}}).value.comments).toHaveLength(2);
+	});
+
+	it("refuses a shortfall that survives every attempt, never handing the short list on", async () => {
+		const result = await against(
+			listCommentsReconciled("o/r", 7),
+			scripted([
+				[LIST, page(1)],
+				[ISSUE, declaring(2)],
+			]),
+		);
+		expect(result._tag).toBe("Failure");
+		expect((result as {reason: string}).reason).toContain("received 1 of 2 declared comment(s)");
+		expect((result as {reason: string}).reason).toContain("after 2 read(s)");
+	});
+
+	/** A comment deleted between the two reads produces this, and extra markers only add caution. */
+	it("does not fence a list longer than the count the later issue read declares", async () => {
+		const result = await against(
+			listCommentsReconciled("o/r", 7),
+			scripted([
+				[LIST, page(1, 2)],
+				[ISSUE, declaring(1)],
+			]),
+		);
+		expect(result).toMatchObject({_tag: "Ok", value: {declared: 1, reads: 1}});
+	});
+
+	it("proves nothing on a payload carrying no count — an absent denominator fences neither way", async () => {
+		const result = await against(
+			listCommentsReconciled("o/r", 7),
+			scripted([
+				[LIST, page(1)],
+				[ISSUE, declaring()],
+			]),
+		);
+		expect(result).toMatchObject({_tag: "Ok", value: {declared: 0, reads: 1}});
+	});
+
+	it("carries the issue read's own refusal rather than resolving over an unread count", async () => {
+		const result = await against(
+			listCommentsReconciled("o/r", 7),
+			scripted([
+				[LIST, page(1)],
+				[ISSUE, {status: 502, body: {message: "Bad gateway"}}],
+			]),
 		);
 		expect(result._tag).toBe("Failure");
 	});

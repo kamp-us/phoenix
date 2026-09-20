@@ -1,10 +1,10 @@
 # `/heal-ci` — derived CLI contract
 
-**Skill:** [`heal-ci`](SKILL.md) · **Authoring brief:** [#4717](https://github.com/kamp-us/phoenix/issues/4717) · **Date:** 2026-08-10
+**Skill:** [`heal-ci`](SKILL.md) · **Date:** 2026-08-10
 
 These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `heal-ci`
 subcommand. (The skill directory and the CLI group are both `heal-ci`, so every invocation reads
-as a sentence — `fabrika heal-ci diagnose 4321`. One skill, one group; the mapping is stated here
+as a sentence — `fabrika heal-ci diagnose 9412`. One skill, one group; the mapping is stated here
 once. `review-ui` is the shipped precedent for a hyphenated group name.) At the time of writing
 the sibling groups are `adr`, `build`, `epic`, `eval`, `grill`, `hook`, `ledger`, `map`, `plan`,
 `report`, `review`, `review-ui`, `ship`, `spend`, `status`, `triage`, `ui` and `wire` — though
@@ -13,22 +13,21 @@ that list grows most weeks, so read
 The [CLI interface convention](../../docs/cli-interface-convention.md) governs these verbs; where
 this spec and that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill**
-([ADR 0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). Every verb
-below is implemented from scratch. v1's `heal-ci` (392 lines, 10 scripts) and the nine
-`pipeline-cli` tools the brief's field 4 names were read for their semantics and their scars —
-each Grounding section names what the v1 counterpart gets wrong and what this spec does instead —
-but no clause defers to one, and none is invoked.
+**`fabrika` calls the predecessor `pipeline-cli` nowhere, and neither does the skill** — fabrika
+reimplements what it replaces and never invokes it. Every verb below is implemented from scratch.
+The predecessor `heal-ci` (392 lines, 10 scripts) and the nine `pipeline-cli` tools it replaces were
+read for their semantics and their scars — each Grounding section names what the v1 counterpart gets
+wrong and what this spec does instead — but no clause defers to one, and none is invoked.
 
 **Substrate.** Effect CLI verbs on the `@effect/platform-node` seam the sibling groups use.
 GitHub access is `gh api` REST throughout, per
-[skill conventions §11](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql) —
+[the skill conventions' "GitHub access is REST, never GraphQL"](../../docs/skill-conventions.md) —
 **this group takes no GraphQL carve and no porcelain carve.** Every read specified below has a
 REST form, because the one read that does not — review-thread **resolution** state, whose
 `isResolved` lives only on GraphQL `reviewThreads` — is specified out of this group's scope rather
-than carved for (see the out-of-scope entry below and arm 6 of `diagnose`). `ship`'s two carves
+than carved for (see the out-of-scope entry below and arm 7 of `diagnose`). `ship`'s two carves
 (review-thread resolution; auto-merge arming) therefore stay `ship`'s. Named because a spec that
-leaves the substrate open makes the implementer guess (#4734).
+leaves the substrate open makes the implementer guess.
 
 ## Verb inventory
 
@@ -49,16 +48,14 @@ Each is a real proposal someone could make again. (Conventions §7 homes these i
 `.out-of-scope/`, which no fabrika skill has bootstrapped yet; until it exists they live inline,
 the same tracked debt the sibling contracts carry.)
 
-- **A second answer to any CI-enforced question.** `ci-required` is the always-on required status
-  context ([`.github/workflows/ci.yml`](../../../../.github/workflows/ci.yml), job `ci-required`,
-  which the merge queue awaits on the `merge_group` ref). `leak-guard.yml` and `gitleaks.yml` gate
-  landed content. A fabrika copy of any of these could only agree redundantly or contradict an
-  enforced verdict (ADR 0238). Every verb here reads those gates' **results**; none recomputes
+- **A second answer to any CI-enforced question.** The repo's own always-on required status context
+  is the one the merge queue awaits on the `merge_group` ref, and its leak and secret-scanning
+  workflows gate landed content. A fabrika copy of any of these could only agree redundantly or
+  contradict an enforced verdict. Every verb here reads those gates' **results**; none recomputes
   their judgment.
 - **A gate verdict of any kind, or a route standing in for one.** This skill is explicitly outside
-  the SHA-bound verdict contract
-  (ADR 0058), so no verb emits a verdict marker or a `routed-elsewhere` record — it reads both and
-  writes neither — and this spec requests **no widening** of
+  the SHA-bound verdict contract, so no verb emits a verdict marker or a `routed-elsewhere`
+  record — it reads both and writes neither — and this spec requests **no widening** of
   `NAMESPACE` / `NAMESPACE_PREFIXES` in
   [`wire/verdict-marker.ts`](../../../../packages/fabrika-cli/src/wire/verdict-marker.ts) or of
   `SHIP_NAMESPACES` in
@@ -66,34 +63,38 @@ the same tracked debt the sibling contracts carry.)
   member of those closed sets today and does not need to be. A later session reaching for the
   widening should read this bullet first.
 - **A merge-blocking check, a required context, or anything that can red a PR.** The explicit
-  no-go on both #5307 and #5328. Every artifact this group produces is a comment, a filed issue,
+  no-go. Every artifact this group produces is a comment, a filed issue,
   or a rerun request.
 - **A wedge-clearing verb** (cancel the stranded check, re-run it). The lever mutates CI runs this
   lane does not own, and a bounded run cannot supervise the retry it triggers — both halves of the
-  #3999 ruling. `diagnose` reports `wedged` and names the contexts; the lever is an operator's.
+  ruling that settled it. `diagnose` reports `wedged` and names the contexts; the lever is an
+  operator's to pull.
 - **A check-surface *repair* verb** (arm, rename or disarm a required context). That is a
-  repository-settings mutation with a human's name on it, and #3377 is what arming a required
-  check wrong costs: the entire merge queue wedged. `surface` diagnoses and stops.
+  repository-settings mutation with a human's name on it, and arming a required check wrong has cost
+  a whole wedged merge queue. `surface` diagnoses and stops.
+- **A conflict-clearing verb** (rebase, merge the base in, force-push). `diagnose` classifies a
+  conflicted PR as `conflicted` and arrows it at `build`, and that is the whole move: clearing the
+  conflict is a branch mutation, and this group owns no branch and checks out nothing.
 - **A dispatch or adoption verb.** A detector converts a strand into claimable work; an engine
-  never free-scan-adopts (ADR 0205, founder ruling #3532). No verb here assigns, claims, or
-  spawns a lane, and `sweep` writes nothing at all.
+  never free-scan-adopts, so no verb here assigns, claims, or spawns a lane and `sweep` writes
+  nothing at all.
 - **A tracking-issue minter for an unlinked PR.** A conversation-authored doc or ADR PR may
-  legitimately carry no linked issue (ADR 0075), and minting one to satisfy a link guard is
-  banned outright (#4820 triage). `diagnose` reads linkage as a fact, never as a requirement.
+  legitimately carry no linked issue, and minting one to satisfy a link guard is banned outright.
+  `diagnose` reads linkage as a fact, never as a requirement.
 - **A new issue-reference token.** `linkage-refused` names the state; it proposes no grammar.
   Triage ruled the fix is widening what `Part of #N` is stated to cover, and that `Re: #N`,
-  `Refs`, `See` and a bare `#N` stay banned everywhere (#5353).
+  `Refs`, `See` and a bare `#N` stay banned everywhere.
 - **A recurrence / flaky-signature ledger.** "This signature has failed six times this week" is a
   scheduled, cross-run concern with its own storage question; this group answers about one head.
   `sweep` is a stateless re-scan, not a history.
-- **A local reproduction, install, build or test run.** §RO in the skill. #4185, #4136 and #4131
-  are three incidents where the healing action was itself the damage.
-- **An agent-honoured hold.** A hold is label-triggered and platform-enforced, cause-agnostic
-  (#5352 founder ruling); a shipper- or healer-read label is the losing side of that fork.
+- **A local reproduction, install, build or test run.** §RO in the skill. Three separate incidents
+  had the healing action turn out to be the damage.
+- **An agent-honoured hold.** A hold is label-triggered and platform-enforced and cause-agnostic; a
+  shipper- or healer-read label is the losing side of that fork.
 - **Detecting a PR blocked *solely* by an unresolved human review thread.** Resolution state is
   GraphQL-only (`reviewThreads.isResolved`; REST `pulls/{n}/comments` carries no resolved flag), so
-  reading it would need this group's own GraphQL carve. Founder-ruled option 1 on #5511: narrow the
-  axis, keep the no-carve substrate. `diagnose` arm 6 therefore fires on REST-derivable human blocks
+  reading it would need this group's own GraphQL carve. The ruling was to narrow the axis and keep
+  the no-carve substrate. `diagnose` arm 7 therefore fires on REST-derivable human blocks
   only — a live `CHANGES_REQUESTED` review at the head, or a control-plane diff with no approval at
   the head — and a PR whose *only* block is an open human thread reads as some other class. The door
   stays open: if a real stranded PR is ever blocked solely that way, the narrow read-only
@@ -120,12 +121,10 @@ computes no second verdict on any of them.
 
 ### The name and routing situation
 
-At authoring time v1's `heal-ci` was still the live project-level skill at
-`claude-plugins/kampus-pipeline/skills/`, so the name resolved ambiguously while both existed
-([#4761](https://github.com/kamp-us/phoenix/issues/4761)). The cutover has since happened: the v1
-plugin tree is deleted (ADR
-[0303](../../../../.decisions/0303-retire-kampus-pipeline-plugin.md), #5937), `heal-ci` resolves
-uniquely to this skill, and it is reached as `/fabrika:heal-ci`.
+At authoring time the predecessor `heal-ci` was still a live project-level skill under its own
+plugin, so the name resolved ambiguously while both existed. The cutover has since happened: that
+plugin tree is deleted, `heal-ci` resolves uniquely to this skill, and it is reached as
+`/fabrika:heal-ci`.
 
 This spec closes the counterpart gap `ship`'s contract records: *"the skill routes red CI to
 `heal-ci`, and no fabrika counterpart exists yet"*. Once these verbs are implemented, `ship checks`
@@ -231,8 +230,7 @@ The `3`–`11` seats are **imported from
 [`report/codes.ts`](../../../../packages/fabrika-cli/src/report/codes.ts)** and `12`/`13` from
 [`review/codes.ts`](../../../../packages/fabrika-cli/src/review/codes.ts) — the import-not-restate
 idiom `ship/codes.ts` already ships — never re-typed as numerals and never read off a sibling
-`contract.md`, because the checked-in `/report` contract is behind its own binary on `7` and `11`
-(#4752).
+`contract.md`, because the checked-in `/report` contract is behind its own binary on `7` and `11`.
 
 | Code | Meaning | Verbs that can return it |
 |---|---|---|
@@ -272,7 +270,7 @@ or at a closed PR, and a note whose `<pr>:<class>:<head>` key the PR already car
 the verb proved and declined on, which is neither `7` (the target exists) nor `11` (nothing failed) —
 and both are refusals that are *successes*, since nothing was mutated. It is v1's most important scar
 made structural, and §S19 below is why it must live in the verb rather than in the caller: the note's
-copy of the guard lived in a workflow's `run:` block and covered exactly that one caller (#7209).
+copy of the guard lived in a workflow's `run:` block and covered exactly that one caller.
 `15` exists because "GitHub has expired these logs" is a *verdict* about a run — permanent,
 actionable, and a different remedy from a transport failure — and folding it into `11` would tell
 the caller to retry a read that can never succeed.
@@ -303,8 +301,8 @@ third step (strip trailing newlines) is the one a re-derivation drops, and dropp
 
 `heal-ci note` shares the leak predicate **already implemented** at
 [`report/leaks.ts`](../../../../packages/fabrika-cli/src/report/leaks.ts) — import it, never
-re-derive it. This is the authored-text guard only; scanning *landed* content is `leak-guard.yml`'s
-enforced seam.
+re-derive it. This is the authored-text guard only; scanning *landed* content is the enforced seam
+of the repo's own leak workflow.
 
 ### The note suppression key is a specified format too
 
@@ -354,7 +352,7 @@ imported; a second copy is the drift this section exists to prevent.
 
 | Module | Used for |
 |---|---|
-| `review/rollup.ts` — `rollupOf`, `statusOf`, `isInformational`, `isStalled` | the check-run rollup, the ADR 0061 informational carve-out, and half the wedge test |
+| `review/rollup.ts` — `rollupOf`, `statusOf`, `isInformational`, `isStalled` | the check-run rollup, the informational carve-out, and half the wedge test |
 | `review/classes.ts` — `SHIP_NAMESPACES`, `touchesGovernanceRoot` | which namespaces a diff requires a verdict in |
 | `wire/verdict-marker.ts` — `read`, `bindToHead` | reading whether a verdict exists at the head. **Read only — this group emits none.** |
 | `wire/routed-elsewhere.ts` — `read` | reading the head-bound record that says a gate owes this PR no verdict. **Read only — this group emits none.** |
@@ -362,7 +360,7 @@ imported; a second copy is the drift this section exists to prevent.
 | `ship/queue.ts` — `queueStateOf`, `landedOnBase` | merge-queue entry state off the timeline, with the paired-removal rule |
 | `ship/github.ts` — `listShipCheckRuns`, `listRunsAtHead`, `listWorkflows`, `pullTimeline`, `behindBase`, `readMergeability` | the head-bound REST reads |
 | `ship/target.ts` — `prefixMatch`, `badNumber`, `scannedLine` | argument guards and SHA matching |
-| `io/pulls.ts` — `getPullRequest`, `listPullFiles`, `permissionFor` | PR metadata and the ADR 0055 ACL leg |
+| `io/pulls.ts` — `getPullRequest`, `listPullFiles`, `permissionFor` | PR metadata and the ACL leg |
 | `review/head.ts` — `bindHead` | tying a read to one commit before the read |
 
 **Two reads are genuinely new IO and exist nowhere in the package**: fetching a workflow job's log
@@ -375,7 +373,7 @@ text, and requesting a rerun. Both are specified from scratch below.
 **Invocation**
 
 ```
-fabrika heal-ci diagnose 4321 [--sha 03135b91] [--dwell-minutes 45] [--wedge-dwell-minutes 20] [--drift-commits 10] [--repo <owner/name>] [--json]
+fabrika heal-ci diagnose 9412 [--sha 03135b91] [--dwell-minutes 45] [--wedge-dwell-minutes 20] [--drift-commits 10] [--mergeability-seconds 60] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -387,13 +385,15 @@ fabrika heal-ci diagnose 4321 [--sha 03135b91] [--dwell-minutes 45] [--wedge-dwe
 | `--dwell-minutes` | integer | no | `45` | how long a claimed PR may go without activity before it reads `claim-stale` |
 | `--wedge-dwell-minutes` | integer | no | `20` | how long a queued-never-started check dwells before it reads `wedged` |
 | `--drift-commits` | integer | no | `10` | how far a claimed head may sit behind its base before the claim reads stale on ground drift |
+| `--mergeability-seconds` | integer | no | `60` | how long an indefinite `mergeable` is re-read before the conflict arm is skipped; `0` reads once and never re-reads |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line:
 `stall\t<token>\t<head-sha>\t<age-minutes>` where `<token>` is exactly one of `attended`,
-`ungated`, `gated-unshipped`, `claim-stale`, `red`, `check-surface`, `linkage-refused`,
-`blocked-human`, `wedged`, `not-open`, and `<age-minutes>` is the strand age (see below). Then one
+`ungated`, `gated-unshipped`, `claim-stale`, `red`, `check-surface`, `conflicted`,
+`linkage-refused`, `blocked-human`, `wedged`, `not-open`, and `<age-minutes>` is the strand age (see
+below). Then one
 line per evidence fact, in this fixed order, each present always:
 
 ```
@@ -423,9 +423,9 @@ number the sweep orders on, so it is derived here once rather than in two places
 the contract — two implementers walking it in a different order produce different answers on the
 same PR, which is exactly the drift a prose taxonomy invites.
 
-The chain has two phases, and the split is what makes totality provable. **Arms 1–6 are
+The chain has two phases, and the split is what makes totality provable. **Arms 1–7 are
 attention-independent**: they name states that block the PR no matter who is watching, so they are
-tested before anyone asks whether somebody is on it. **Arms 7–10 are the attendance phase**: the
+tested before anyone asks whether somebody is on it. **Arms 8–11 are the attendance phase**: the
 PR is open and otherwise able to proceed, so the only remaining question is whether anybody is
 moving it.
 
@@ -433,50 +433,72 @@ moving it.
 |---|---|---|
 | 1 | `not-open` | the PR's state is `draft`, `closed` or `merged`. An answer, not a refusal |
 | 2 | `wedged` | ≥1 **gating** check run is `queued` with a null `started_at` past `--wedge-dwell-minutes` (`isStalled`, plus the dwell) |
-| 3 | `check-surface` | ≥1 declared required status context has **no producing run** at this head, or ≥1 gating run answers no declared requirement — `surface`'s exact predicate, shared as one module so the two verbs cannot disagree |
-| 4 | `red` | the gating rollup at the head is `red` (`rollupOf` over `listShipCheckRuns`, informational contexts excluded first — ADR 0061) |
-| 5 | `linkage-refused` | the diff derives ≥1 namespace whose merge seam requires a linked issue, the body carries neither `Fixes #N` nor `Part of #N`, **and** it carries some other reference form |
-| 6 | `blocked-human` | ≥1 non-`Bot` reviewer's latest decisive review at this head is `CHANGES_REQUESTED`, or the diff touches a control-plane path and no approval stands at this head. REST-derivable signals only — the unresolved-thread axis is out of scope, above |
-| 7 | `attended` | **any positive signal of motion**: an owner whose last activity is inside `--dwell-minutes`, a live merge-queue entry, an armed merge intent, or a gating rollup of `pending` — CI running at this head *is* the PR moving |
-| 8 | `claim-stale` | an owner signal exists and arm 7 did not fire — the claim is there and nothing shows it live. The stderr notice names which of the three proved it: activity older than `--dwell-minutes`, a head more than `--drift-commits` behind the base (`behindBase`), or an activity timestamp that could not be read at all |
-| 9 | `gated-unshipped` | no owner signal, and every required namespace is filled at this head (`inForce`) — an in-force `pass` verdict, or for `review-ui` alone a head-bound `routed-elsewhere` record saying the gate owes this PR no verdict (ADR 0316) |
-| 10 | `ungated` | no owner signal, and ≥1 required namespace holds neither at this head |
+| 3 | `conflicted` | the merge of this head into its base conflicts — `mergeable_state` is `dirty` on a definite read. An **indefinite** read skips this arm rather than firing it |
+| 4 | `check-surface` | ≥1 declared required status context has **no producing run** at this head, or ≥1 gating run answers no declared requirement — `surface`'s exact predicate, shared as one module so the two verbs cannot disagree |
+| 5 | `red` | the gating rollup at the head is `red` (`rollupOf` over `listShipCheckRuns`, informational contexts excluded first) |
+| 6 | `linkage-refused` | the diff derives ≥1 namespace whose merge seam requires a linked issue, the body carries neither `Fixes #N` nor `Part of #N`, **and** it carries some other reference form |
+| 7 | `blocked-human` | ≥1 non-`Bot` reviewer's latest decisive review at this head is `CHANGES_REQUESTED`, or the diff touches a control-plane path and no approval stands at this head. REST-derivable signals only — the unresolved-thread axis is out of scope, above |
+| 8 | `attended` | **any positive signal of motion**: an owner whose last activity is inside `--dwell-minutes`, a live merge-queue entry, an armed merge intent, or a gating rollup of `pending` — CI running at this head *is* the PR moving |
+| 9 | `claim-stale` | an owner signal exists and arm 8 did not fire — the claim is there and nothing shows it live. The stderr notice names which of the three proved it: activity older than `--dwell-minutes`, a head more than `--drift-commits` behind the base (`behindBase`), or an activity timestamp that could not be read at all |
+| 10 | `gated-unshipped` | no owner signal, and every required namespace is filled at this head (`inForce`) — an in-force `pass` verdict, or for `review-ui` alone a head-bound `routed-elsewhere` record saying the gate owes this PR no verdict |
+| 11 | `ungated` | no owner signal, and ≥1 required namespace holds neither at this head |
 
-**Arm 3 fires above arm 4 deliberately.** A required context that no run produces cannot be healed
+**Arm 3 fires above arm 4 deliberately, and it is what keeps arm 4 honest.** GitHub builds no
+`refs/pull/<n>/merge` for a conflicted PR, so no `pull_request` workflow ever fires and **every**
+required context reads absent — which is arm 4's exact predicate. Classified there, a conflicted PR
+becomes a repository-settings escalation with an operator's name on it, and the repair it actually
+needs is a rebase. Arm 3 is therefore read **before** the surface is consulted at all, and it is the
+one arm whose fact comes from the pull request rather than from the check surface.
+
+**An indefinite mergeability skips arm 3; it never fires it.** GitHub computes `mergeable` lazily,
+so the first read of a pull request routinely answers `null` with `mergeable_state: "unknown"`. That
+is the platform declining to answer: it is re-read across `--mergeability-seconds` through `ship`'s
+own poll loop — one implementation, so the two verbs never answer differently about one PR — and a
+value still indefinite at the end of that window **skips the arm** with a stderr notice, exactly as
+an unprobeable surface skips arm 4. Reading indefinite as conflicted would route a healthy PR to a
+rebase nobody owes.
+
+**The read is made only where arm 1 has not already taken the PR.** GitHub computes `mergeable` for
+open pull requests, so a closed, merged or draft one stays indefinite however long it is polled: a
+live run spent the whole 60-second window on a closed PR for a fact the chain then never consulted,
+and a sweep pays that again for every PR that closed between its list read and its classification.
+Arm 3 is skipped there on a fact nobody read, which is the same skip an indefinite value takes.
+
+**Arm 4 fires above arm 5 deliberately.** A required context that no run produces cannot be healed
 by anything a red-log classifier does, so a PR carrying both a config gap and a failing test is
 reported `check-surface` first: the gap is the cause the other repair cannot reach. Where the
-protection surface is `unprobeable` (see `surface`), arm 3 is **skipped** with a stderr notice
-naming the skip, and the chain continues at arm 4 — a permission the token lacks must never read
+protection surface is `unprobeable` (see `surface`), arm 4 is **skipped** with a stderr notice
+naming the skip, and the chain continues at arm 5 — a permission the token lacks must never read
 as a surface that is clean.
 
-**Arm 7 sits above arms 8–10, not below them.** An actively-worked PR is not stranded, and ranking
+**Arm 8 sits above arms 9–11, not below them.** An actively-worked PR is not stranded, and ranking
 any strand class above `attended` would report a PR whose author pushed two minutes ago as
-abandoned. `pending` belongs in arm 7 for the same reason: a run in flight is motion, not a stall.
+abandoned. `pending` belongs in arm 8 for the same reason: a run in flight is motion, not a stall.
 
-**Totality, proved over all ten arms.** Reaching arm 7 means the PR is open, not wedged,
-surface-complete-or-skipped, not red, linkage-clean and human-unblocked, so its rollup is one of
-`green`, `pending`, `no-runs` or `none`. Arm 7 takes every case carrying any positive signal —
-`pending` included. What remains has no positive signal, and arms 8–10 partition it exhaustively on one Boolean:
-**an owner signal either exists or it does not.** Where it exists, arm 8 takes it unconditionally —
-arm 8 is the whole owner-exists complement of arm 7, not a subset of it, which matters because an
+**Totality, proved over all eleven arms.** Reaching arm 8 means the PR is open, not wedged, not
+conflicted-or-skipped, surface-complete-or-skipped, not red, linkage-clean and human-unblocked, so its rollup is one of
+`green`, `pending`, `no-runs` or `none`. Arm 8 takes every case carrying any positive signal —
+`pending` included. What remains has no positive signal, and arms 9–11 partition it exhaustively on one Boolean:
+**an owner signal either exists or it does not.** Where it exists, arm 9 takes it unconditionally —
+arm 9 is the whole owner-exists complement of arm 8, not a subset of it, which matters because an
 owner whose activity timestamp is *unreadable* is neither provably live nor provably old and must
 still land somewhere. Reading unknown as stale is the fail-safe direction: a false strand costs one
 look, a false `attended` is the incident. Where no owner signal exists, the required-namespace set
-either holds an in-force verdict for every member (arm 9) or fails to for at least one (arm 10). A PR with **zero** required namespaces satisfies arm 9 vacuously and reads
+either holds an in-force verdict for every member (arm 10) or fails to for at least one (arm 11). A PR with **zero** required namespaces satisfies arm 10 vacuously and reads
 `gated-unshipped` with `gates none-required` — correctly, since nothing gates it and nobody is
 shipping it. No input reaches the end of the chain unclassified.
 
 **Attendedness is never keyed on the linked issue's existence or state.** A stranded PR carried a
 closing reference to a triaged, prioritised, milestoned and *assigned* issue and stranded exactly
-like one with no board row at all. `link` is printed as a fact and consumed only by arm 5.
+like one with no board row at all. `link` is printed as a fact and consumed only by arm 6.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent (404), or `--sha` names no commit on this PR |
-| `11` | the PR, its comments, its check runs, its verdicts, its timeline or its base could not be read — the stall class is UNKNOWN, never `attended` |
-| `13` | the comment, check-run or timeline enumeration is provably short of its declared count, or the timeline read never reached a terminal page |
+| `7` | the PR is proven absent (404), `--sha` names no commit on this PR, or the enumerated changed-file list is empty |
+| `11` | the PR, its mergeability, its comments, its check runs, its verdicts, its timeline or its base could not be read — the stall class is UNKNOWN, never `attended` |
+| `13` | the comment, check-run or timeline enumeration is provably short of its declared count, the timeline read never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
 
@@ -484,15 +506,27 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 |---|---|---|
 | `heal-ci diagnose: PR #<n> not found in <repo>.` | 7 | refusal |
 | `heal-ci diagnose: no commit <sha> on PR #<n> — refusing to classify a tree this PR never had.` | 7 | refusal |
+| `heal-ci diagnose: PR #<n> has zero changed files — refusing to classify a stall over an empty diff.` | 7 | refusal |
 | `heal-ci diagnose: cannot read <what> for #<n>: <reason> — the stall class is UNKNOWN, never "attended".` | 11 | refusal |
 | `heal-ci diagnose: received <k> of <m> declared <comments\|check runs> — refusing to classify over a truncated read.` | 13 | refusal |
 | `heal-ci diagnose: the timeline read never reached a terminal page — pagination is unexhausted, so a queue entry could sit on a page nobody read; refusing to classify.` | 13 | refusal |
+| `heal-ci diagnose: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — refusing to classify a stall over a diff the platform cut short.` | 13 | refusal |
+| `heal-ci diagnose: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
 | `heal-ci diagnose: the live head is <live>, you are diagnosing <sha> — the head moved.` | 0 | notice |
+| `heal-ci diagnose: #<n> conflicts with <base> — no merge ref exists, so every required context reads absent for that reason and not a surface gap.` | 0 | notice |
+| `heal-ci diagnose: GitHub had not computed #<n>'s mergeability after <k>s — the conflict axis is INDEFINITE, so the conflict arm is skipped, never passed.` | 0 | notice |
 | `heal-ci diagnose: claim-stale fired on <inactivity\|ground-drift> — last activity <ts>, behind base <k>.` | 0 | notice |
 
-**Scope** — one PR's metadata, changed files, comments, check runs, workflow runs, reviews and
-timeline, each paginated and count-checked, plus its base branch's declared required contexts.
-Review *threads* are not read: arm 6 is REST-only, per the out-of-scope entry above. The predicate
+**Scope** — one PR's metadata, mergeability, changed files, comments, check runs, workflow runs,
+reviews and timeline, each paginated to exhaustion, plus its base branch's declared required
+contexts. Every one
+of those but the changed-file list is also count-checked: GitHub computes the pull-request record's
+`changed_files` against a base it cached at the last push, so the file list is taken as the file set
+and the disagreement is reported. An **empty** list still refuses — this is the verb an operator
+reaches for when a PR is stuck, which is the worst place to keep a refusal a stuck PR can trigger.
+So does a list at GitHub's own 3000-file ceiling: the endpoint stops serving files there and ends
+its Link chain normally, so exhaustion cannot tell that read from a complete one.
+Review *threads* are not read: arm 7 is REST-only, per the out-of-scope entry above. The predicate
 chain is total over what was read; a read that could not complete is `11`, never a class.
 
 **Examples**
@@ -501,41 +535,40 @@ chain is total over what was read; a read that could not complete is `11`, never
 40-hex head, as the `--json` example below shows.)
 
 ```
-$ fabrika heal-ci diagnose 4321
+$ fabrika heal-ci diagnose 9412
 stall	gated-unshipped	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	35
 owner	-	-	-
 gates	satisfied	2/2
 ci	green	0
 queue	none
-link	fixes:4287
+link	fixes:9415
 facts	scanned-comments:14	scanned-checks:12	behind-base:0
 ```
 
 ```
-$ fabrika heal-ci diagnose 4322 --json
-{"outcome":"stall","token":"ungated","head":"9fe12ab0c7714d9e2b3a6f05812cc4d7e6a09b18","ageMinutes":564,"owner":{"login":null,"claimedAt":null,"lastActivityAt":null},"gates":{"state":"blocked","pass":0,"required":1},"ci":{"rollup":"green","contexts":0},"queue":"none","link":{"kind":"fixes","number":5290},"scanned":{"comments":3,"checks":11},"behindBase":0}
+$ fabrika heal-ci diagnose 9413 --json
+{"outcome":"stall","token":"ungated","head":"9fe12ab0c7714d9e2b3a6f05812cc4d7e6a09b18","ageMinutes":564,"owner":{"login":null,"claimedAt":null,"lastActivityAt":null},"gates":{"state":"blocked","pass":0,"required":1},"ci":{"rollup":"green","contexts":0},"queue":"none","link":{"kind":"fixes","number":9415},"scanned":{"comments":3,"checks":11},"behindBase":0}
 ```
 
 ```
-$ fabrika heal-ci diagnose 4999
-heal-ci diagnose: PR #4999 not found in kamp-us/phoenix.
+$ fabrika heal-ci diagnose 9414
+heal-ci diagnose: PR #9414 not found in acme/repo.
 $ echo $?
 7
 ```
 
 **Grounding**
 
-- #5293 / #5328 — `gated-unshipped`. A PR passed its gate and sat 35 minutes un-enqueued because
-  the conductor spawned a shipper for a different PR; nothing on the board could express it.
-- #5333 / #5307 — `ungated`. Two PRs sat green and ungated for ~9 and ~10.5 hours on one day, both
-  found by tracing a downstream hold backwards.
-- #5326 — `claim-stale`'s second arm. The PR was claimed while its mergeability read `null` and
-  reviewed 14 commits behind base; inactivity alone would not have caught it.
-- #4820 triage / ADR 0075 — attendedness is not keyed on the linked issue, and a legitimately
-  issueless PR is not a stall.
-- ADR 0061 — informational contexts are excluded before the rollup, so a preview-deploy red never
-  reads as a healable stall.
-- ADR 0058 — this verb reads verdict markers and emits none.
+- `gated-unshipped`. A PR passed its gate and sat 35 minutes un-enqueued because the driver spawned
+  a shipper for a different PR; nothing on the board could express it.
+- `ungated`. Two PRs sat green and ungated for ~9 and ~10.5 hours on one day, both found by tracing
+  a downstream hold backwards.
+- `claim-stale`'s second arm. A PR was claimed while its mergeability read `null` and reviewed 14
+  commits behind base; inactivity alone would not have caught it.
+- Attendedness is not keyed on the linked issue, and a legitimately issueless PR is not a stall.
+- Informational contexts are excluded before the rollup, so a preview-deploy red never reads as a
+  healable stall of any kind.
+- This verb reads verdict markers and emits none.
 - v1's `resolve-failing-run.sh:43` exited `3` on a green head, so the healthiest outcome was a
   failure to any `|| exit 1` caller; here `attended` is an exit-`0` answer token.
 - v1's `orphan-heal` tested CI-red at gate 2 and lane state at gate 3, so a green laneless PR was
@@ -548,7 +581,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika heal-ci sweep [--min-age-minutes 30] [--limit 200] [--include-attended] [--dwell-minutes 45] [--wedge-dwell-minutes 20] [--drift-commits 10] [--repo <owner/name>] [--json]
+fabrika heal-ci sweep [--min-age-minutes 30] [--limit 200] [--include-attended] [--dwell-minutes 45] [--wedge-dwell-minutes 20] [--drift-commits 10] [--mergeability-seconds 60] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -561,6 +594,7 @@ fabrika heal-ci sweep [--min-age-minutes 30] [--limit 200] [--include-attended] 
 | `--dwell-minutes` | integer | no | `45` | passed through to each classification |
 | `--wedge-dwell-minutes` | integer | no | `20` | passed through to each classification |
 | `--drift-commits` | integer | no | `10` | passed through to each classification |
+| `--mergeability-seconds` | integer | no | `60` | passed through to each classification; `0` reads mergeability once and never re-reads |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -578,11 +612,11 @@ With `--json`: `{"outcome":"swept","scanned":<n>,"stalled":<n>,"prs":[{"number":
 `build`/`review`/`ship`/`author`/`human`/`nobody`, and it is a total function of the row's stall
 class plus the owner and author this verb already read — `SKILL.md` §2 carries the table. A caller
 composing a note's first line relays this column; deriving one in a workflow's `run:` block is the
-shape ADR 0228 forbids, and hardcoding one is how the scheduled sweep told every reader the detector
-had found nothing for anyone to do (#7209).
+shape a relaying script must never take, and hardcoding one tells every reader the detector found
+nothing for anyone to do.
 
 **This verb writes nothing.** It files no issue, assigns nobody, and spawns nothing — a detector
-converts a strand into claimable work and normal pull adopts it (ADR 0205, founder ruling #3532).
+converts a strand into claimable work and normal pull adopts it.
 v1's counterpart ran `--execute` on every scheduled invocation and POSTed issues against the live
 board autonomously, keyed on a lane probe whose decode failure read as "laneless".
 
@@ -598,8 +632,9 @@ dropped from the emitted rows and from the `stalled` count, but **stays in `scan
 read genuinely covered it — and a stderr notice names it. Counting it as stalled would report a
 merged PR as a strand; dropping it from `scanned` would quietly shrink the scope the answer rests on.
 
-**The sweep's own cost is bounded, and it says so.** Each PR costs `diagnose`'s full read set, so a
-200-PR board is a four-figure number of REST calls — against the very rate limit this group's own
+**The sweep's own cost is bounded, and it says so.** Each PR costs `diagnose`'s full read set — plus,
+where GitHub has not computed that PR's mergeability yet, up to `--mergeability-seconds` of re-reads
+waiting on the lazy job — so a 200-PR board is a four-figure number of REST calls — against the very rate limit this group's own
 taxonomy classifies as a transient. The verb reads the rate-limit headers as it goes and, on
 exhaustion, **refuses `11` naming the reset time with nothing partial emitted**: a sweep that
 silently covered 60 of 200 PRs and printed a stalled count would be the truncated-scope answer this
@@ -636,9 +671,9 @@ false-completeness this verb exists to prevent.
 ```
 $ fabrika heal-ci sweep
 swept	23	3
-pr	4315	claim-stale	631	4a91c07de3b8215f6c0a9e4d7b2318fa5c6e0d94	human
-pr	4322	ungated	564	9fe12ab0c7714d9e2b3a6f05812cc4d7e6a09b18	review
-pr	4321	gated-unshipped	35	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	ship
+pr	9416	claim-stale	631	4a91c07de3b8215f6c0a9e4d7b2318fa5c6e0d94	human
+pr	9413	ungated	564	9fe12ab0c7714d9e2b3a6f05812cc4d7e6a09b18	review
+pr	9412	gated-unshipped	35	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	ship
 ```
 
 ```
@@ -648,11 +683,12 @@ swept	18	0
 
 **Grounding**
 
-- The brief's 2026-08-09 design input — both live strands were found by luck rather than by a
-  sweep, so the lane must be reachable on a schedule and must classify green PRs, not only red ones.
-- ADR 0205 / founder ruling #3532 — a detector emits claimable work and never adopts or dispatches.
-- ADR 0092 — the scanned count travels with the claim; a zero-stall answer over an unproven scope
-  is the pass a guard must never emit.
+- The 2026-08-09 design input behind this group — both live strands were found by luck rather than
+  by a sweep, so the lane must be reachable on a schedule, and it must classify green PRs and not
+  only red ones.
+- A detector emits claimable work and never adopts or dispatches.
+- The scanned count travels with the claim; a zero-stall answer over an unproven scope is the pass
+  a guard must never emit.
 - v1's `orphan-heal` — scheduled `--execute` writes, prose on stdout with the structured ledger on
   stderr, zero-scope reported identically to a real empty result, and idempotency resting on a
   body-text marker greppable across every open issue.
@@ -664,7 +700,7 @@ swept	18	0
 **Invocation**
 
 ```
-fabrika heal-ci surface 4321 [--sha 03135b91] [--repo <owner/name>] [--json]
+fabrika heal-ci surface 9412 [--sha 03135b91] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -697,9 +733,9 @@ set; that number is `producing + extra`.
 With `--json`: `{"outcome":…,"sha":…,"required":[{"name":…,"state":…}…],"extra":[…],"counts":{"required":<n>,"producing":<n>,"extra":<n>}}`.
 
 **`unprobeable` is the permission answer, and it is not `no-requirements`.** The two halves of the
-declared set do not read alike, and the difference is load-bearing — **probed live against
-`kamp-us/phoenix` with a `repo`-scoped token (scopes `repo`, `workflow`, `read:org`, no `admin`)
-rather than assumed**:
+declared set do not read alike, and the difference is load-bearing — **probed live against a real
+repository with a `repo`-scoped token (scopes `repo`, `workflow`, `read:org`, no `admin`) rather
+than assumed, never taken on trust**:
 
 - `GET /repos/{repo}/branches/{base}/protection` answered **`404 "Branch not protected"`**. That
   status is returned **both** when a branch genuinely has no protection **and** when the caller
@@ -737,8 +773,8 @@ context is `extra`. `gap` iff at least one `absent` row exists.
 
 **`extra` rows are reported, never judged.** A gating run answering no requirement is normal in a
 healthy repo — most CI jobs are not required contexts. The row exists because the *inverse*
-mistake is the incident: #3369 armed a required context for an analysis that never runs in the
-batch context, and #3377 armed one whose name no run produces, and both wedged the entire merge
+mistake is the incident: one repository armed a required context for an analysis that never runs in
+the batch context, another armed one whose name no run produces, and both wedged the entire merge
 queue. Printing both sides is what lets a reader see which of the two they have.
 
 **This verb changes nothing.** Arming, renaming and disarming a required context are repository
@@ -770,7 +806,7 @@ comparison is total over what was read.
 **Examples**
 
 ```
-$ fabrika heal-ci surface 4321
+$ fabrika heal-ci surface 9412
 surface	gap	03135b91
 required	ci-required	producing
 required	code-scanning/codeql	absent
@@ -779,7 +815,7 @@ facts	required:2	producing:1	extra:1
 ```
 
 ```
-$ fabrika heal-ci surface 4330
+$ fabrika heal-ci surface 9417
 surface	no-requirements	7c31a0de
 extra	unit tests
 extra	actionlint
@@ -788,11 +824,11 @@ facts	required:0	producing:0	extra:2
 
 **Grounding**
 
-- #3377 — a required check armed with workflow-name context wedged the whole merge queue; the
-  `absent` row is that state made visible before it is armed, and the verb refuses to arm anything.
-- #3369 — arming code-scanning wedged the queue because the default analysis never runs in the
-  batch context: a declared context with no producing run, which is exactly the `absent` row.
-- #2118 — non-hermetic deployed-worker smoke drift evicted four approved control-plane PRs; the
+- A required check armed with a workflow-name context wedged a whole merge queue; the `absent` row
+  is that state made visible before it is armed, and the verb refuses to arm anything.
+- Arming code-scanning wedged a queue because the default analysis never runs in the batch context:
+  a declared context with no producing run, which is exactly the `absent` row.
+- Non-hermetic deployed-worker smoke drift once evicted four approved control-plane PRs; the
   `extra` side of the report is what makes a drifting non-required job visible.
 - v1 read check-runs at the head and nothing else — a repo-wide search of its skill for
   `protection`, `required_status`, `merge_queue` and `mergeable` returns zero hits — so the entire
@@ -805,7 +841,7 @@ facts	required:0	producing:0	extra:2
 **Invocation**
 
 ```
-fabrika heal-ci logs 4321 [--sha 03135b91] [--context <name>] [--max-bytes 65536] [--repo <owner/name>] [--json]
+fabrika heal-ci logs 9412 [--sha 03135b91] [--context <name>] [--max-bytes 65536] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -876,12 +912,12 @@ bytes it never saw.
 
 **Scope** — the gating check runs at one commit, the workflow runs behind them, and one log per
 failing context, each read paginated and count-checked. Informational contexts are excluded before
-anything is fetched (ADR 0061), so a preview-deploy failure never enters this lane.
+anything is fetched, so a preview-deploy failure never enters this lane.
 
 **Examples**
 
 ```
-$ fabrika heal-ci logs 4322 --sha 9fe12ab0
+$ fabrika heal-ci logs 9413 --sha 9fe12ab0
 logs	1	9fe12ab0
 ==== context unit tests job 44182736450 bytes 66 truncated false ====
 FAIL src/cart.test.ts > adds a line
@@ -890,7 +926,7 @@ AssertionError: expected 3 to be 2
 ```
 
 ```
-$ fabrika heal-ci logs 4321 --sha 03135b91
+$ fabrika heal-ci logs 9412 --sha 03135b91
 logs	0	03135b91
 ```
 
@@ -903,7 +939,7 @@ logs	0	03135b91
   the documented-empty answer — which is exactly what it does when `gh` exits 0 with no bytes.
 - v1's three `gh run` calls omitted `--repo`, so a run id resolved against whatever repository the
   process happened to be standing in.
-- ADR 0061 — only gating reds reach this lane.
+- Only gating reds reach this lane; the informational carve-out happens before the fetch.
 
 ---
 
@@ -939,7 +975,7 @@ With `--json`: `{"outcome":"classified","count":<n>,"contexts":[{"context":…,"
 
 **This verb consumes the framed multi-context stream, so nothing splits it by hand.** `heal-ci
 logs` emits N contexts and this verb emits N `class` lines, in the order received — `fabrika
-heal-ci logs 4321 | fabrika heal-ci classify` is the whole pipeline. Leaving the split to the
+heal-ci logs 9412 | fabrika heal-ci classify` is the whole pipeline. Leaving the split to the
 caller would put a hand-rolled parser on the one surface this skill declares attacker-authorable,
 and would let a five-context stream be classified as one signature by whichever pattern matched
 first. A bare body with no `==== context` header is classified as a single block under context `-`.
@@ -999,12 +1035,12 @@ nothing must not answer the same way.
 | `heal-ci classify: <context>: no signature matched over <k> lines — default-deny, never "transient".` | 0 | notice |
 
 **Scope** — the bytes on stdin, nothing else. Not a judging verb over a repository surface, so
-ADR 0092's zero-scope rule reaches it as the `3` refusal above rather than as a scan count.
+the zero-scope rule reaches it as the `3` refusal above rather than as a scan count.
 
 **Examples**
 
 ```
-$ fabrika heal-ci logs 4322 --sha 9fe12ab0 | fabrika heal-ci classify
+$ fabrika heal-ci logs 9413 --sha 9fe12ab0 | fabrika heal-ci classify
 classified	1
 class	unit tests	logic	assertion-failure	2
 ```
@@ -1035,13 +1071,13 @@ $ echo $?
 - v1's `failure-classifier` was correct in its default-deny core and ships **dormant with zero live
   callers**; its two-class output could not express "I recognise nothing", and its rationale went
   to stderr as prose, unrecoverable by any pipe.
-- #5348 — a green PR went red on a preview-warmup flake and a human had to decide rerun versus real
+- A green PR went red on a preview-warmup flake and a human had to decide rerun versus real
   regression; row 4 is that signature, and the third token keeps an unrecognised failure from being
   guessed into a rerun.
-- ADR 0247 / #4735 — a table of prose descriptions is an uninvented core that passes every presence
-  check; the literal patterns and the stated precedence are what make two implementations agree.
-- ADR 0061 — the informational carve-out happens upstream in `logs`, so this table never encodes
-  which contexts block.
+- A table of prose descriptions is an uninvented core that passes every presence check; the literal
+  patterns and the stated precedence are what make two implementations agree.
+- The informational carve-out happens upstream in `logs`, so this table never encodes which
+  contexts are the blocking ones.
 
 ---
 
@@ -1050,7 +1086,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika heal-ci rerun 4321 --run 9182736450 --sha 03135b91 --signature preview-warmup [--repo <owner/name>] [--json]
+fabrika heal-ci rerun 9412 --run 9182736450 --sha 03135b91 --signature preview-warmup [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -1103,7 +1139,7 @@ rerun is warranted still cannot get one.
 escalation, not retry.
 
 **This verb takes no view on whether the rerun is wise.** Where the failing context is itself a
-gate checking its own output, a bounded retry can be actively harmful (#5335); that judgment is
+gate checking its own output, a bounded retry can be actively harmful; that judgment is
 the skill's, and it is exercised before this verb is called.
 
 **Exit status**
@@ -1144,12 +1180,12 @@ run read, one comment write, one confirming comment read.
 **Examples**
 
 ```
-$ fabrika heal-ci rerun 4322 --run 9182736450 --sha 9fe12ab0 --signature preview-warmup
-rerun	2	9182736450	https://github.com/kamp-us/phoenix/pull/4322#issuecomment-5155001122
+$ fabrika heal-ci rerun 9413 --run 9182736450 --sha 9fe12ab0 --signature preview-warmup
+rerun	2	9182736450	https://github.com/acme/repo/pull/9413#issuecomment-5155001122
 ```
 
 ```
-$ fabrika heal-ci rerun 4322 --run 9182736450 --sha 9fe12ab0 --signature preview-warmup
+$ fabrika heal-ci rerun 9413 --run 9182736450 --sha 9fe12ab0 --signature preview-warmup
 heal-ci rerun: head 9fe12ab0 was already rerun (run_attempt=2) — a second rerun is escalation, not retry.
 $ echo $?
 14
@@ -1161,11 +1197,11 @@ $ echo $?
   page, the dispatch response was trusted as proof, and the reported "new run id" was the old one.
   All four are designed out here: the guard is in the verb, the read paginates and count-checks,
   the read-back gates the marker, and the printed attempt is the one read back.
-- #5348 — the flake that only needed a rerun, and the human who had to decide it was one.
-- #5335 — a bounded retry is harmful where the failing check is a gate reading its own output;
-  the judgment stays in the skill and this verb records the signature that justified it.
-- ADR 0198's shape, borrowed but not shared: the one mutation that could compound is guarded by a
-  re-derived precondition rather than by caller discipline.
+- The flake that only needed a rerun, and the human who had to decide it was one.
+- A bounded retry is harmful where the failing check is a gate reading its own output; the judgment
+  stays in the skill and this verb records the signature that justified it.
+- A shape borrowed from a sibling but not shared: the one mutation that could compound is guarded
+  by a re-derived precondition rather than by caller discipline.
 
 ---
 
@@ -1174,7 +1210,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika heal-ci note 4321 --class <stall-token> --sha <40-hex head> [--repo <owner/name>] [--json]
+fabrika heal-ci note 9412 --class <stall-token> --sha <40-hex head> [--repo <owner/name>] [--json]
 ```
 
 The body arrives on **stdin only** — no `--body`, no `--body-file`; a path flag is how a
@@ -1185,7 +1221,7 @@ machine-local path reaches a public surface while the poster reads success.
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number |
-| `--class` | string | yes | — | the stall class this note records — one of `heal-ci diagnose`'s ten tokens, the key's middle field |
+| `--class` | string | yes | — | the stall class this note records — one of `heal-ci diagnose`'s eleven tokens, the key's middle field |
 | `--sha` | string | yes | — | the head the classification was taken at, as a **full 40-hex** sha |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
@@ -1201,7 +1237,7 @@ run was classifying it still deserves the record.
 
 **Suppressed per `<pr>:<class>:<head>`, inside the verb.** What is *not* its own record is the same
 classification of the same head by a second caller: two sweeps three minutes apart left up to six
-substantively identical notes on one pull request (#7209). Before creating, `note` reads the pull
+substantively identical notes on one pull request. Before creating, `note` reads the pull
 request's **whole** comment history and refuses `14` when a comment already carries this exact key,
 posting nothing. One key earns exactly one note for as long as the PR is open, so a strand is
 re-noticed only when its class changes or a new commit lands on its head — the two events that make
@@ -1229,7 +1265,7 @@ somebody just diagnosed. The verb says so on stderr and records at the head it w
 | `7` | the PR is proven absent (404) |
 | `8` | the comment create, or its confirming re-read, failed — UNKNOWN whether it landed |
 | `9` | the comment landed but the read-back does not match |
-| `10` | `--class` is off the ten-token stall vocabulary |
+| `10` | `--class` is off the eleven-token stall vocabulary |
 | `11` | the PR, or its comment history, could not be read — nothing was posted |
 | `13` | the comment enumeration is short of the PR's declared count — nothing was posted |
 | `14` | refused: this key is already recorded on the PR — nothing was written |
@@ -1245,7 +1281,7 @@ somebody just diagnosed. The verb says so on stderr and records at the head it w
 | `heal-ci note: PR #<n> not found in <repo>.` | 7 | refusal |
 | `heal-ci note: create failed: <reason> — UNKNOWN whether the note landed; re-read before retrying.` | 8 | refusal |
 | `heal-ci note: the read-back does not match — inspect comment <id>.` | 9 | refusal |
-| `heal-ci note: --class <value> is not a stall class (known: <the ten tokens>).` | 10 | refusal |
+| `heal-ci note: --class <value> is not a stall class (known: <the eleven tokens>).` | 10 | refusal |
 | `heal-ci note: cannot read PR #<n>: <reason> — nothing was posted.` | 11 | refusal |
 | `heal-ci note: cannot read #<n>'s comments: <reason> — suppression state is UNKNOWN, so nothing was posted.` | 11 | refusal |
 | `heal-ci note: received <k> of <n> declared comments — refusing to post over a truncated suppression read.` | 13 | refusal |
@@ -1256,30 +1292,30 @@ somebody just diagnosed. The verb says so on stderr and records at the head it w
 **Examples**
 
 ```
-$ fabrika heal-ci note 4321 --class gated-unshipped --sha 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c <<'EOF'
-heal-ci: ROUTED — PR #4321 @ 03135b91 → ship
+$ fabrika heal-ci note 9412 --class gated-unshipped --sha 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c <<'EOF'
+heal-ci: ROUTED — PR #9412 @ 03135b91 → ship
 
 Stall class `gated-unshipped`: review-code and review-doc both PASS at this head, CI green,
 no merge intent armed and no queue entry. Strand age 35m. Nothing is failing; nobody is holding it.
 EOF
-noted	https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5155001122
+noted	https://github.com/acme/repo/pull/9412#issuecomment-5155001122
 ```
 
 The comment that lands carries the machine marker as its last line, below the authored text:
 
 ```
-heal-ci: ROUTED — PR #4321 @ 03135b91 → ship
+heal-ci: ROUTED — PR #9412 @ 03135b91 → ship
 
 Stall class `gated-unshipped`: …
 
-<!-- heal-ci-note key=4321:gated-unshipped:03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c -->
+<!-- heal-ci-note key=9412:gated-unshipped:03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c -->
 ```
 
 A second caller over the same strand at the same head:
 
 ```
-$ fabrika heal-ci note 4321 --class gated-unshipped --sha 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c < note.md
-heal-ci note: #4321 already carries a note at key 4321:gated-unshipped:03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c (comment 5155001122) — this strand is recorded; nothing was posted.
+$ fabrika heal-ci note 9412 --class gated-unshipped --sha 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c < note.md
+heal-ci note: #9412 already carries a note at key 9412:gated-unshipped:03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c (comment 5155001122) — this strand is recorded; nothing was posted.
 $ echo $?
 14
 ```
@@ -1291,12 +1327,12 @@ $ echo $?
   what the skill exists to make visible.
 - v1's two comment writers discarded their responses to `/dev/null`, so the only routed action of
   an invocation was reported done on the strength of a write response rather than a read-back.
-- #2393's class — the leak predicate is generic by design and is imported, never re-derived.
-- #7209: the suppression existed and lived in `.github/workflows/heal-ci-sweep.yml`'s `run:` block,
-  which built the key, paged the comments and globbed for a hit. That deduped the scheduled path
-  alone, left every other caller posting bare, and put the workflow on the wrong side of ADR 0228 —
-  a script deriving a decision rather than relaying a verb's. Moving it here fixes both, and every
-  note path inherits it.
+- The leak predicate is generic by design and is imported, never re-derived.
+- The suppression once lived in the scheduled sweep workflow's own `run:` block, which built the
+  key, paged the comments and globbed for a hit. That deduped the scheduled path alone, left every
+  other caller posting bare, and put the workflow on the wrong side of the relay rule — a script
+  deriving a decision rather than relaying a verb's. Moving it here fixes both, and every note path
+  now inherits the suppression.
 
 ---
 
@@ -1305,7 +1341,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika heal-ci scratch 4321 --slug note
+fabrika heal-ci scratch 9412 --slug note
 ```
 
 **Inputs**
@@ -1322,7 +1358,7 @@ file is not** — the caller allocates, writes the body, then reads it back on s
 classification's body on a second, the path being a pure function of session, PR and slug.
 
 Two healers deriving similar working filenames in one working directory overwrote each other's note
-bodies mid-post (#7209/#7210) — the failure `build scratch` and `triage scratch` already make
+bodies mid-post — the failure `build scratch` and `triage scratch` already make
 unconstructible for their lanes.
 
 **No nonce and no `--token`, unlike the sibling allocators.** They key on a claim nonce because a
@@ -1357,9 +1393,9 @@ The printed path is machine-local by definition and must never reach a posted ar
 
 **Grounding**
 
-- `build scratch` (#6037) and `triage scratch` (#6630): a namespace keyed on the session alone hands
-  every lane the same directory, and a fixed name like `note.md` clobbers a sibling's file silently.
-- ADR 0215 §5 and #4500: the CLI never mints an identity when the session chain comes up empty.
+- `build scratch` and `triage scratch`: a namespace keyed on the session alone hands every lane the
+  same directory, and a fixed name like `note.md` clobbers a sibling's file silently.
+- The CLI never mints an identity when the session chain comes up empty.
 
 ---
 
@@ -1370,10 +1406,10 @@ to make. Each is cited at its site above.
 
 | Question | Where it lives |
 |---|---|
-| Which surface owns an unpulled PR — this lane, the construction lane, or a new one | [#4820](https://github.com/kamp-us/phoenix/issues/4820), `ready-for:human`, awaiting a founder ruling. This spec answers "how is the state named", never "whose job is it". |
-| Whether the red-**main** response layer supersedes, feeds, or is disjoint from this lane | [#5223](https://github.com/kamp-us/phoenix/issues/5223), whose acceptance criteria require an ADR stating the relationship to #4717. A ruling there may re-scope `sweep`. |
+| Which surface owns an unpulled PR — this lane, the construction lane, or a new one | An open ticket marked `ready-for:human`, awaiting a founder ruling. This spec answers "how is the state named", never "whose job is it". |
+| Whether the red-**main** response layer supersedes, feeds, or is disjoint from this lane | An open ticket whose acceptance criteria require a decision record stating the relationship to this group. A ruling there may re-scope `sweep`. |
 
 ## The eval-enumeration obligation (leaf rule)
 
-Stated once, in [`SKILL.md`](SKILL.md)'s "Eval enumeration" section — the single home the #4891
-obligation lives in. This spec adds nothing to it; the eval mechanics belong to #4649.
+Stated once, in [`SKILL.md`](SKILL.md)'s "Eval enumeration" section — the single home that
+obligation lives in. This spec adds nothing to it; the eval mechanics belong to their own ticket.

@@ -18,6 +18,7 @@ import {FAILED} from "../verb.ts";
 import {
 	ALREADY_EXISTS,
 	BASE_UNFETCHABLE,
+	BRANCH_CLAIMS_UNKNOWN,
 	DIR_UNREADABLE,
 	IN_FLIGHT_UNKNOWN,
 	ORIGIN_REPO_UNRESOLVABLE,
@@ -26,7 +27,7 @@ import {
 import {runMint} from "./mint-verb.ts";
 
 const SHA = "49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82";
-const PATH = ".decisions/0240-only-landed-adrs-may-be-cited.md";
+const PATH = ".records/0240-only-landed-adrs-may-be-cited.md";
 
 const PULLS = /GET .*\/pulls\?state=open/;
 
@@ -40,18 +41,19 @@ const seams = (overrides: ReadonlyArray<Scripted> = []) =>
 	fakeSeams([
 		...overrides,
 		[/^git remote$/, okOut("origin\n")],
-		[/^git remote get-url origin$/, okOut("git@github.com:kamp-us/phoenix.git\n")],
+		[/^git remote get-url origin$/, okOut("git@github.com:o/r.git\n")],
 		[/^git fetch/, okOut("")],
 		[/^git rev-parse/, okOut(`${SHA}\n`)],
 		[/^git ls-tree/, okOut(tree("0234-a.md", "0235-b.md", "0236-c.md"))],
+		[/^git log/, okOut("")],
 		[PULLS, {status: 200, body: JSON.stringify([{number: 11}, {number: 12}])}],
-		[/pulls\/11\/files/, files(["added", ".decisions/0237-x.md"], ["modified", "README.md"])],
-		[/pulls\/12\/files/, files(["added", ".decisions/0239-y.md"])],
+		[/pulls\/11\/files/, files(["added", ".records/0237-x.md"], ["modified", "README.md"])],
+		[/pulls\/12\/files/, files(["added", ".records/0239-y.md"])],
 	]);
 
 const options = {
 	slug: "only-landed-adrs-may-be-cited",
-	dir: ".decisions",
+	dir: ".records",
 	base: "origin/main",
 	repo: null,
 	status: "accepted",
@@ -88,6 +90,7 @@ describe("runMint", () => {
 			slug: "only-landed-adrs-may-be-cited",
 			mergedMax: "0236",
 			inFlight: ["0237", "0239"],
+			branchClaims: [],
 			baseRef: "origin/main",
 			baseSha: SHA,
 		});
@@ -95,8 +98,16 @@ describe("runMint", () => {
 
 	it("allocates over the in-flight set, not the merged maximum", async () => {
 		const fs = fakeFs({});
-		await run([[/pulls\/12\/files/, files(["added", ".decisions/0299-z.md"])]], {}, fs);
-		expect([...fs.written.keys()]).toEqual([".decisions/0300-only-landed-adrs-may-be-cited.md"]);
+		await run([[/pulls\/12\/files/, files(["added", ".records/0299-z.md"])]], {}, fs);
+		expect([...fs.written.keys()]).toEqual([".records/0300-only-landed-adrs-may-be-cited.md"]);
+	});
+
+	// The epic-sibling shape: the id is on a branch ref and behind no pull request at all, which is
+	// what the merged and in-flight halves between them cannot see.
+	it("allocates over a branch claim no pull request carries", async () => {
+		const fs = fakeFs({});
+		await run([[/^git log/, okOut(".records/0299-sibling.md\0")]], {}, fs);
+		expect([...fs.written.keys()]).toEqual([".records/0300-only-landed-adrs-may-be-cited.md"]);
 	});
 
 	const unreadable: ReadonlyArray<readonly [string, Scripted, number]> = [
@@ -116,6 +127,11 @@ describe("runMint", () => {
 			"a pull request's files cannot be read",
 			[/pulls\/11\/files/, {status: 502, body: "{}"}],
 			IN_FLIGHT_UNKNOWN,
+		],
+		[
+			"this clone's branch refs cannot be walked",
+			[/^git log/, errOut("boom")],
+			BRANCH_CLAIMS_UNKNOWN,
 		],
 	];
 
@@ -140,7 +156,7 @@ describe("runMint", () => {
 		expect(out.code).toBe(ALREADY_EXISTS);
 		expect(out.stdout).toBe("");
 		expect(fs.written.size).toBe(0);
-		expect(out.stderr[0]).toContain("adr mint: scanned .decisions");
+		expect(out.stderr[0]).toContain("adr mint: scanned .records");
 		expect(out.stderr.at(-1)).toBe(`adr mint: ${PATH} already exists — refusing to overwrite.`);
 	});
 

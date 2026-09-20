@@ -1,5 +1,5 @@
 /**
- * The repo-shape pin behind `.patterns/typecheck-two-step.md` (#7804).
+ * The repo-shape pin behind `.patterns/typecheck-two-step.md`.
  *
  * Effect language-service diagnostics used to come from a `tsc` binary patched by a root
  * `postinstall`. That patch was state in `node_modules`, so an install that skipped scripts — every

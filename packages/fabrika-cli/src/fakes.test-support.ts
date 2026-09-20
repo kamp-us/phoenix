@@ -38,10 +38,15 @@ const denied = (method: string, path: string) =>
 		}),
 	);
 
-/** Only `type` is read by anything under test; the rest of `File.Info` is filler the shape demands. */
-const info = (type: "File" | "Directory"): FileSystem.File.Info => ({
+/**
+ * `type` and `mtime` are what anything under test reads; the rest is filler the shape demands.
+ *
+ * An unset `mtime` is `Option.none()` rather than a default instant, because a platform that does
+ * not report one is a real case and reads UNKNOWN — a default would hide it.
+ */
+const info = (type: "File" | "Directory", mtime?: Date): FileSystem.File.Info => ({
 	type,
-	mtime: Option.none(),
+	mtime: mtime === undefined ? Option.none() : Option.some(mtime),
 	atime: Option.none(),
 	birthtime: Option.none(),
 	dev: 0,
@@ -65,13 +70,30 @@ export interface FakeFsOptions {
 	 * Paths whose read fails for a reason other than absence — `PermissionDenied`.
 	 *
 	 * Distinct from an absent file on purpose: a caller that folds the two together turns "I could
-	 * not open it" into "it was deleted", which is the fail-open direction (#5304).
+	 * not open it" into "it was deleted", which is the fail-open direction.
 	 */
 	readonly unreadable?: ReadonlyArray<string>;
 	/** Paths whose writes fail. */
 	readonly unwritable?: ReadonlyArray<string>;
 	/** Paths whose existence check itself fails — distinct from a path that is absent. */
 	readonly unprobeable?: ReadonlyArray<string>;
+	/**
+	 * Paths whose `stat` fails `PermissionDenied` — there, and unreadable.
+	 *
+	 * Apart from {@link FakeFsOptions.unprobeable}, which answers `NotFound`, because a caller that
+	 * reads absence off the error tag needs the two to be different answers: one proves the path is
+	 * gone and the other proves nothing at all.
+	 */
+	readonly unstatable?: ReadonlyArray<string>;
+	/**
+	 * Path → the modification time `stat` reports. An unlisted path reports none at all, until
+	 * something creates it here: a directory this fake makes carries the instant it was made, and a
+	 * rename carries that instant along with it.
+	 *
+	 * A fake that froze the seeded value instead would report an aged mtime for a directory created
+	 * seconds ago, which is the one fact a stale-lock steal turns on.
+	 */
+	readonly mtimes?: Readonly<Record<string, Date>>;
 	/** Symlink path → the path it really is. Anything unlisted is its own real path. */
 	readonly real?: Readonly<Record<string, string>>;
 	/**
@@ -90,9 +112,43 @@ export interface FakeFsOptions {
 	readonly survivesRemoval?: ReadonlyArray<string>;
 	/**
 	 * Directory paths whose creation fails `AlreadyExists` even when nothing is there — modeling a
-	 * lock another writer holds, so the losing side of an append race is testable on demand (#5994).
+	 * lock another writer holds, so the losing side of an append race is testable on demand.
+	 *
+	 * A held lock is *removable*: once something removes the path, creating it succeeds again, and it
+	 * `stat`s as a directory meanwhile (give it an age through {@link FakeFsOptions.mtimes}). A fake
+	 * that failed forever could not tell a steal that lands from one that changes nothing — which is
+	 * the whole difference between a stale lock a waiter recovers from and one that bricks the lane.
 	 */
 	readonly mkdirExisting?: ReadonlyArray<string>;
+	/**
+	 * Directory paths whose non-recursive creation fails `NotFound` — a real `mkdir`'s ENOENT when the
+	 * parent is not there. Kept apart from {@link FakeFsOptions.mkdirExisting} because the two are
+	 * opposite answers: one says a holder exists, the other that the containing directory does not.
+	 */
+	readonly mkdirMissingParent?: ReadonlyArray<string>;
+	/**
+	 * Path → an effect run **after** a `stat` computes its answer and before the caller receives it.
+	 *
+	 * The seam a check-then-act race is testable at. Forking two fibers only *hopes* the scheduler
+	 * interleaves them inside the window under test; this puts the other writer's whole run there,
+	 * so the interleaving is the test's to state rather than the runtime's to grant.
+	 */
+	readonly duringStat?: Readonly<Record<string, Effect.Effect<void>>>;
+	/**
+	 * Path → an effect run **after** a `readFileString` computes its answer and before the caller
+	 * receives it — {@link FakeFsOptions.duringStat}'s seam for a caller whose verdict is bytes
+	 * rather than a `stat`.
+	 */
+	readonly duringRead?: Readonly<Record<string, Effect.Effect<void>>>;
+	/**
+	 * Source path → an effect run **after** a `rename` lands and before the caller receives it.
+	 *
+	 * The window a move-and-put-back opens is only observable from inside it: the caller has taken
+	 * the entry away and not yet put it back, and what another writer sees at that instant is the
+	 * whole question. Keyed on the source, because that is the path the test knows — a private
+	 * destination carries a uuid nobody outside the caller can name.
+	 */
+	readonly duringRename?: Readonly<Record<string, Effect.Effect<void>>>;
 }
 
 export interface FakeFs {
@@ -106,8 +162,21 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 	const dirs: Record<string, ReadonlyArray<string> | null> = {...options.dirs};
 	const files: Record<string, string | null> = {...options.files};
 	const written = new Map<string, string>();
-	const directories = new Set(options.directories ?? []);
+	const directories = new Set([...(options.directories ?? []), ...(options.mkdirExisting ?? [])]);
+	const held = new Set(options.mkdirExisting ?? []);
+	const mtimes: Record<string, Date> = {...options.mtimes};
 	const decoder = new TextDecoder();
+	const parentOf = (of: string): string => {
+		const cut = of.lastIndexOf("/");
+		return cut === -1 ? "" : of.slice(0, cut);
+	};
+	// A directory's mtime is its entry list's, so anything that adds, moves or drops an entry moves
+	// the parent's clock. A fake that froze it would report a directory as untouched for as long as a
+	// test ran, which is the one fact a staleness verdict on a lock directory turns on.
+	const touchParent = (path: string): void => {
+		const parent = parentOf(path);
+		if (parent !== "" && directories.has(parent)) mtimes[parent] = new Date();
+	};
 	const layer = Layer.merge(
 		FileSystem.layerNoop({
 			readDirectory: (path: string) => {
@@ -117,11 +186,19 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 					: Effect.succeed([...names]);
 			},
 			readFileString: (path: string) => {
-				if (options.unreadable?.includes(path) === true) return denied("readFileString", path);
-				const text = files[path];
-				return text === undefined || text === null
-					? notFound("readFileString", path)
-					: Effect.succeed(text);
+				const answer = (): Effect.Effect<string, PlatformError.PlatformError> => {
+					if (options.unreadable?.includes(path) === true) return denied("readFileString", path);
+					const text = files[path];
+					return text === undefined || text === null
+						? notFound("readFileString", path)
+						: Effect.succeed(text);
+				};
+				const during = options.duringRead?.[path];
+				// Answer first, deliver after — the same window `duringStat` opens, for a caller that
+				// reads its verdict out of a file.
+				return during === undefined
+					? answer()
+					: Effect.flatMap(answer(), (read) => Effect.as(during, read));
 			},
 			exists: (path: string) =>
 				options.unprobeable?.includes(path) === true
@@ -130,15 +207,32 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 							(Object.hasOwn(files, path) && files[path] !== null) || directories.has(path),
 						),
 			stat: (path: string) => {
-				if (options.unprobeable?.includes(path) === true) return notFound("stat", path);
-				if (directories.has(path) || dirs[path] != null) return Effect.succeed(info("Directory"));
-				return Object.hasOwn(files, path) && files[path] !== null
-					? Effect.succeed(info("File"))
-					: notFound("stat", path);
+				const answer = (): Effect.Effect<FileSystem.File.Info, PlatformError.PlatformError> => {
+					if (options.unstatable?.includes(path) === true) return denied("stat", path);
+					if (options.unprobeable?.includes(path) === true) return notFound("stat", path);
+					const mtime = mtimes[path];
+					if (directories.has(path) || dirs[path] != null) {
+						return Effect.succeed(info("Directory", mtime));
+					}
+					return Object.hasOwn(files, path) && files[path] !== null
+						? Effect.succeed(info("File", mtime))
+						: notFound("stat", path);
+				};
+				const during = options.duringStat?.[path];
+				// The answer is computed first and delivered after: the caller reads the world as it
+				// was when it asked, which is exactly the window a check-then-act race lives in.
+				return during === undefined
+					? answer()
+					: Effect.flatMap(answer(), (read) => Effect.as(during, read));
 			},
-			makeDirectory: (path: string) => {
+			makeDirectory: (path: string, mkdirOptions?: {readonly recursive?: boolean | undefined}) => {
 				if (options.unwritable?.includes(path) === true) return notFound("makeDirectory", path);
-				if (options.mkdirExisting?.includes(path) === true) {
+				if (options.mkdirMissingParent?.includes(path) === true) {
+					return notFound("makeDirectory", path);
+				}
+				// A non-recursive mkdir over a directory that is there fails EEXIST on every real
+				// platform, so a fake that let it through would green a second holder of one lock.
+				if (held.has(path) || (directories.has(path) && mkdirOptions?.recursive !== true)) {
 					return Effect.fail(
 						PlatformError.systemError({
 							_tag: "AlreadyExists",
@@ -149,6 +243,8 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 					);
 				}
 				directories.add(path);
+				mtimes[path] = new Date();
+				touchParent(path);
 				return Effect.void;
 			},
 			realPath: (path: string) => Effect.succeed(options.real?.[path] ?? path),
@@ -181,6 +277,21 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 					directories.add(next);
 					directories.delete(key);
 				}
+				// A rename moves the inode, so what a lock *is* travels with it: the holder another
+				// writer's mkdir collides with, and the mtime a stale verdict was reached on.
+				for (const key of [...held]) {
+					const next = moved(key);
+					if (next === null) continue;
+					held.add(next);
+					held.delete(key);
+				}
+				for (const key of Object.keys(mtimes)) {
+					const next = moved(key);
+					if (next === null) continue;
+					const at = mtimes[key];
+					if (at !== undefined) mtimes[next] = at;
+					delete mtimes[key];
+				}
 				// The parent listings move with it, because a sweep reads `readDirectory` and a fake
 				// that still listed the moved entry under its old parent would green a sweep that
 				// cannot happen — the exact claim an archive rests on.
@@ -194,15 +305,21 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 				if (listed != null) dirs[fromDir] = listed.filter((name) => name !== fromName);
 				const target = dirs[toDir];
 				if (target != null) dirs[toDir] = [...target, toName];
-				return Effect.void;
+				touchParent(path);
+				touchParent(to);
+				const during = options.duringRename?.[path];
+				return during === undefined ? Effect.void : during;
 			},
 			remove: (path: string) => {
 				if (options.unremovable?.includes(path) === true) return denied("remove", path);
 				if (options.survivesRemoval?.includes(path) === true) return Effect.void;
 				directories.delete(path);
+				held.delete(path);
+				delete mtimes[path];
 				for (const key of Object.keys(files)) {
 					if (key === path || key.startsWith(`${path}/`)) delete files[key];
 				}
+				touchParent(path);
 				return Effect.void;
 			},
 			writeFileString: (
@@ -211,12 +328,26 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 				opts?: {readonly flag?: string | undefined},
 			) => {
 				if (options.unwritable?.includes(path) === true) return notFound("writeFileString", path);
+				// An `x` flag is an exclusive create: it fails EEXIST rather than overwriting, which is
+				// what lets one of several writers reaching for the same path leave holding it. A fake
+				// that overwrote instead would green every one of them.
+				if (opts?.flag?.includes("x") === true && files[path] != null) {
+					return Effect.fail(
+						PlatformError.systemError({
+							_tag: "AlreadyExists",
+							module: "FileSystem",
+							method: "writeFileString",
+							pathOrDescriptor: path,
+						}),
+					);
+				}
 				// An append flag appends here too, because a caller that appends and one that overwrites
 				// leave different bytes on disk and a fake that flattened them would hide the difference.
 				const appending = opts?.flag?.startsWith("a") === true;
 				const next = appending ? `${files[path] ?? ""}${data}` : data;
 				files[path] = next;
 				written.set(path, next);
+				touchParent(path);
 				return Effect.void;
 			},
 			writeFile: (path: string, data: Uint8Array) => {
@@ -224,6 +355,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 				const text = decoder.decode(data);
 				files[path] = text;
 				written.set(path, text);
+				touchParent(path);
 				return Effect.void;
 			},
 		}),
@@ -242,7 +374,7 @@ export interface FakeShell {
 	 *
 	 * Without it, a caller that hands bytes to a child through stdin is indistinguishable from one
 	 * that hands it nothing — the argv is identical (`git commit -F -`) either way — so the whole
-	 * file-free carrying path would be untestable at this seam (#5484).
+	 * file-free carrying path would be untestable at this seam.
 	 */
 	readonly inputs: ReadonlyArray<string>;
 	/**
@@ -251,7 +383,7 @@ export interface FakeShell {
 	 *
 	 * Without it, a command run in another tree is indistinguishable from the same command run here
 	 * — the argv is identical either way — so "the install ran in the assembly worktree" would be a
-	 * claim no test could hold (#7188).
+	 * claim no test could hold.
 	 */
 	readonly cwds: ReadonlyArray<string | null>;
 }
@@ -358,7 +490,7 @@ export const faultingShell: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>
 /**
  * The `PlatformError` `NodeChildProcessSpawner` really fails a signal-killed child's `exitCode` with
  * — reproduced through the same `PlatformError.systemError` constructor and the same nested `cause`,
- * so a test over it binds to the dependency's shape rather than to a literal string (#4792).
+ * so a test over it binds to the dependency's shape rather than to a literal string.
  */
 export const signalledExitError = (
 	signal: NodeJS.Signals,
@@ -430,11 +562,40 @@ export const errOut = (reason: string): ExecResult => ({ok: false, stdout: "", r
 /**
  * A tree with no `.fabrika.jsonc` in it — every config key resolves to its shipped default.
  *
- * The layer a verb needs once it reads the path surface (#6296) and the test is not about the
+ * The layer a verb needs once it reads the path surface and the test is not about the
  * config. It is `fakeFs`'s empty case rather than a second noop layer so a test that later *does*
  * declare a config swaps this for a `fakeFs({files: {…}})` and nothing else changes.
  */
 export const unconfigured: Layer.Layer<FileSystem.FileSystem | Path.Path> = fakeFs({}).layer;
+
+/**
+ * A `/repo` tree declaring two `uiSurfaces` rows, one per runnable app.
+ *
+ * The layer a test needs when its subject *is* the `ui` class: {@link unconfigured} resolves the
+ * key to its shipped empty list, which raises no `ui` class at all — correct for a repo that
+ * declared nothing, and the wrong ground to derive that class on.
+ */
+export const uiConfigured: Layer.Layer<FileSystem.FileSystem | Path.Path> = fakeFs({
+	files: {
+		"/repo/.fabrika.jsonc": JSON.stringify({
+			uiSurfaces: [
+				{
+					name: "web",
+					prefix: "apps/site/src/",
+					mount: "/",
+					command: "pnpm dev --port {{port}}",
+				},
+				{
+					name: "desk-chat",
+					prefix: "apps/desk/src/",
+					mount: "/desk/chat",
+					basePath: "/",
+					command: "pnpm proof:chat --port {{port}}",
+				},
+			],
+		}),
+	},
+}).layer;
 
 /** `git ls-tree --name-only` output: one name per line. */
 export const tree = (...names: ReadonlyArray<string>): string => names.join("\n");
@@ -551,8 +712,7 @@ const isReply = (answer: ExecResult | HttpReply): answer is HttpReply => "status
  *
  * A verb that reads over HTTP and shells out for git in the same run has one ordered account of
  * what the world answered, not two lists a reader has to zip back together — and a row moved from
- * one seam to the other during the `gh`-to-fetch port (ADR 0315) changes its reply, never its
- * place.
+ * one seam to the other during the `gh`-to-fetch port changes its reply, never its place.
  */
 export const fakeSeams = (
 	script: ReadonlyArray<Scripted>,
@@ -561,7 +721,7 @@ export const fakeSeams = (
 ): {
 	readonly layer: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient>;
 	readonly calls: ReadonlyArray<string>;
-	/** What each spawn was handed on stdin, aligned with `calls` — a `git commit -F -` claim (#5484). */
+	/** What each spawn was handed on stdin, aligned with `calls` — a `git commit -F -` claim. */
 	readonly inputs: ReadonlyArray<string>;
 	readonly requests: ReadonlyArray<string>;
 	readonly bodies: ReadonlyArray<string>;
@@ -570,7 +730,7 @@ export const fakeSeams = (
 	 *
 	 * The only place an `Accept` claim can be read: two reads of one URL that differ solely by
 	 * `Accept` — the pull metadata read and the diff read — are one line in `requests`, so a fence
-	 * pinning which of them ran can be stated nowhere else (#5117, #5122).
+	 * pinning which of them ran can be stated nowhere else.
 	 */
 	readonly headers: ReadonlyArray<Readonly<Record<string, string>>>;
 	/** Both seams' traffic in one order — the only place a "X happened before Y" claim can be read. */

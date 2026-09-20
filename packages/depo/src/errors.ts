@@ -8,54 +8,53 @@
  */
 import * as Schema from "effect/Schema";
 
-export class MissingCredential extends Schema.TaggedErrorClass<MissingCredential>()(
+export class MissingCredential extends Schema.TaggedError<MissingCredential>()(
 	"depo/MissingCredential",
 	{reason: Schema.String},
 ) {}
 
-export class FileReadError extends Schema.TaggedErrorClass<FileReadError>()("depo/FileReadError", {
+export class FileReadError extends Schema.TaggedError<FileReadError>()("depo/FileReadError", {
 	path: Schema.String,
 	cause: Schema.Unknown,
 }) {}
 
 /** File extension outside the PNG/JPEG/WebP allowlist — refused before upload (mirrors 415). */
-export class UnsupportedFile extends Schema.TaggedErrorClass<UnsupportedFile>()(
-	"depo/UnsupportedFile",
-	{filename: Schema.String, ext: Schema.String},
-) {}
+export class UnsupportedFile extends Schema.TaggedError<UnsupportedFile>()("depo/UnsupportedFile", {
+	filename: Schema.String,
+	ext: Schema.String,
+}) {}
 
 /** Doorman 401 — the presented apiKey was missing or invalid. Nothing was stored. */
-export class Unauthorized extends Schema.TaggedErrorClass<Unauthorized>()("depo/Unauthorized", {
+export class Unauthorized extends Schema.TaggedError<Unauthorized>()("depo/Unauthorized", {
 	message: Schema.String,
 }) {}
 
 /** Doorman 415 — the content-type was outside the allowlist. */
-export class UnsupportedMediaType extends Schema.TaggedErrorClass<UnsupportedMediaType>()(
+export class UnsupportedMediaType extends Schema.TaggedError<UnsupportedMediaType>()(
 	"depo/UnsupportedMediaType",
 	{message: Schema.String},
 ) {}
 
 /** Doorman 413 — the body exceeded the size cap. */
-export class PayloadTooLarge extends Schema.TaggedErrorClass<PayloadTooLarge>()(
-	"depo/PayloadTooLarge",
-	{message: Schema.String},
-) {}
+export class PayloadTooLarge extends Schema.TaggedError<PayloadTooLarge>()("depo/PayloadTooLarge", {
+	message: Schema.String,
+}) {}
 
 /**
  * Doorman 409 — a second upload to an existing content-address key whose stored
  * bytes differ (a sha256 collision the doorman refuses rather than overwrites).
  */
-export class ContentAddressConflict extends Schema.TaggedErrorClass<ContentAddressConflict>()(
+export class ContentAddressConflict extends Schema.TaggedError<ContentAddressConflict>()(
 	"depo/ContentAddressConflict",
 	{message: Schema.String},
 ) {}
 
-export class DigestError extends Schema.TaggedErrorClass<DigestError>()("depo/DigestError", {
+export class DigestError extends Schema.TaggedError<DigestError>()("depo/DigestError", {
 	cause: Schema.Unknown,
 }) {}
 
 /** Transport failure, a 5xx, or any status the client does not map — the catch-all. */
-export class UploadFailed extends Schema.TaggedErrorClass<UploadFailed>()("depo/UploadFailed", {
+export class UploadFailed extends Schema.TaggedError<UploadFailed>()("depo/UploadFailed", {
 	status: Schema.NullOr(Schema.Number),
 	message: Schema.String,
 }) {}

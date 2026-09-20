@@ -14,9 +14,9 @@
  * 1. **Re-gate.** The founder approval is re-read, the floor re-derived and the digest recomputed
  *    here, not read off a prior verb's exit code. The gap between deciding and writing is closed by
  *    re-deciding — including the human decision, so a lane cannot carry a `plan check` that passed
- *    before a re-plan past this write (`25`, ADR 0289).
+ *    before a re-plan past this write (`25`).
  * 2. **Vocabulary precondition.** `POST .../labels` *creates* an unknown label rather than rejecting
- *    it (#4285), so an absent label would be silently minted. With nothing to write the check is
+ *    it, so an absent label would be silently minted. With nothing to write the check is
  *    skipped — a `nothing-to-flip` success must not refuse over a label it was never going to touch.
  * 3. **Add before remove, always.** That order is load-bearing, not stylistic: a child caught between
  *    the two calls carries **both** labels, which still satisfies `MISSING_LABEL`'s "a `status:`
@@ -75,8 +75,7 @@ const AUDIENCE_HUMAN = READY_FOR_HUMAN;
 export const MESSAGES: PlanMessages = {
 	verb: VERB,
 	grammar: (reason) => `${VERB}: the ledger grammar refused during the re-gate: ${reason}`,
-	zeroChildren: (epic) =>
-		`${VERB}: #${epic} has zero children — refusing to act over zero scope (ADR 0092).`,
+	zeroChildren: (epic) => `${VERB}: #${epic} has zero children — refusing to act over zero scope.`,
 	notAnEpic: (epic) => `${VERB}: #${epic} is not a type:epic — refusing to flip its children.`,
 	unreadable: (what, reason) => `${VERB}: cannot read ${what}: ${reason} — nothing was written.`,
 };
@@ -113,7 +112,7 @@ export const classify = (
 };
 
 /**
- * The per-child rows, collapsed for the answer channel (ADR 0308).
+ * The per-child rows, collapsed for the answer channel.
  *
  * `children` is an evidence-array: the skill is steered to the counters and the `terminal` token
  * (`check-epic-plan/SKILL.md:124`), and `:133` outright BANS claiming what any child carries after
@@ -237,7 +236,7 @@ export const runFlip = (
 				if (labels.value.includes(label)) continue;
 				return refuse(
 					LABEL_ABSENT,
-					`${VERB}: label "${label}" is absent from ${repo}'s taxonomy — refusing to create it (#4285).`,
+					`${VERB}: label "${label}" is absent from ${repo}'s taxonomy — refusing to create it.`,
 					notes,
 				);
 			}

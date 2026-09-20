@@ -3,9 +3,9 @@
  *
  * An epic's assembly worktree is placed once and merged into many times. A child that adds a
  * workspace package moves the lockfile, and the tree's installed dependencies still predate it, so
- * the validators that run next compile against the pre-merge install: child #7162's merge failed
- * `pnpm typecheck --force` with `TS2688: Cannot find type definition file for 'node'` and passed all
- * 22 typechecks after an install, with no source or lockfile change (#7188).
+ * the validators that run next compile against the pre-merge install: one such merge failed
+ * `pnpm typecheck --force` with `TS2688: Cannot find type definition file for 'node'` and passed
+ * every typecheck after an install, with no source or lockfile change.
  *
  * Declared rather than compiled in, for the reason `codeValidators` is: the command is the repo's
  * package manager and its own fail-closed flag — `--frozen-lockfile` is pnpm's, and a repo on
@@ -15,8 +15,8 @@
  * **The shipped default is nothing declared, and nothing declared skips the step.** Unlike a
  * validator's absence, which refuses UNKNOWN because a green would claim the code was checked, an
  * absent reconciler claims nothing: a repo that vendors no dependencies has no install to run, and
- * refusing every epic integration in it would be a fence around an empty field. What phoenix
- * declares is the whole guarantee for phoenix.
+ * refusing every epic integration in it would be a fence around an empty field. What a repo
+ * declares is the whole guarantee for that repo.
  */
 
 import {isRecord} from "../../io/json.ts";

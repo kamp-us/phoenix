@@ -17,6 +17,7 @@ import {UnknownSpell} from "../errors.ts";
 import {didYouMean} from "../parse/did-you-mean.ts";
 import {describeExpected, type ParamSpec, readParams} from "../parse/spell-index.ts";
 import {SpellRegistry} from "../registry.ts";
+import {RestParameter} from "../rest-parameter.ts";
 import {defineSpell} from "../spell.ts";
 
 /** One line of the table: the spell's address, what it expects, and its own sentence. */
@@ -86,7 +87,7 @@ export const renderHelp = (rows: ReadonlyArray<HelpRow>): string => {
 export const helpSpell = defineSpell({
 	path: ["help"],
 	describe: "List every spell, or only the ones under one path.",
-	params: Schema.Struct({path: Schema.optionalKey(Schema.String)}),
+	params: Schema.Struct({path: Schema.optionalKey(RestParameter)}),
 	result: HelpRows,
 	execute: Effect.fn("Tuval.Spells.help")(function* (args: {readonly path?: string}) {
 		const registry = yield* SpellRegistry;

@@ -4,7 +4,7 @@
  * The one verb in the group that reads across lanes rather than into one, because the question it
  * answers is a sweep: a driver (or a cron) asks which lanes are non-terminal and have gone quiet, and
  * gets a list. It writes nothing and stores nothing — the age comes off the `at` each event line
- * already carries (#5897).
+ * already carries.
  *
  * A lane that could not be read is a row, not the end of the sweep: refusing the whole answer over
  * one broken lane would hide every other lane's silence, which is the failure this verb exists to
@@ -12,7 +12,7 @@
  * that leaves the lane set UNKNOWN, and an UNKNOWN lane set is never a short list.
  *
  * The sweep is **offline unless a caller asks for more**. A session limit strands a lane's state and
- * the claim marker its dead builder left on the issue, and only the first is on disk (#6771) — so
+ * the claim marker its dead builder left on the issue, and only the first is on disk — so
  * `claims` pairs the second onto each non-terminal row. It is a reader the caller passes rather than
  * a flag this module reads, which is what keeps the default provable: with no reader there is no
  * seam to reach the board through.
@@ -23,7 +23,8 @@ import {exists, readDir} from "../io/fs.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_UNREADABLE} from "./codes.ts";
 import {deriveStatus, foldLog, type LaneStatus} from "./fold.ts";
-import {CHORE_PREFIX} from "./key.ts";
+import {CHORE_PREFIX, rawKeyIssue} from "./key.ts";
+import {DISPATCH_BUDGET} from "./shell-budget.ts";
 import {type Judgement, judge, lastMoved, type Verdict} from "./stale.ts";
 import {DEFAULT_CHORES_ROOT, loadLane} from "./store.ts";
 
@@ -35,7 +36,15 @@ export type ClaimReader<R> = (number: number) => Effect.Effect<Claimants, never,
 export interface StaleOptions<R = never> {
 	/** The lane roots to sweep, in order. An absent root is an empty one, not a fault. */
 	readonly roots: ReadonlyArray<string>;
-	readonly olderThanMinutes: number;
+	/**
+	 * The caller's explicit horizon, or `null` to judge each lane against its own shell budget.
+	 *
+	 * `null` is the ordinary run: a builder's silence and a shipper's silence are two different
+	 * lengths, and one number for both is either blind to the shipper or wrong about the builder. A
+	 * caller that passes one is asking its own question ("what has been quiet for two hours") rather
+	 * than disagreeing with the budgets.
+	 */
+	readonly olderThanMinutes: number | null;
 	/** The instant the ages are measured against, ISO — the adapter's clock, so the verb stays pure. */
 	readonly now: string;
 	/** The claim reader, or `null` for the offline sweep every caller gets by default. */
@@ -92,7 +101,7 @@ const VERDICTS: ReadonlyArray<Verdict> = [
 /** How a caller addresses this lane: a chore root's entries are keyed `chore:<name>` (`key.ts`). */
 const keyOf = (root: string, name: string): string =>
 	// Suffix, never equality: the default root arrives absolute once it is derived off the owning
-	// repository (#5815), so a relocated or derived root still keys its chores correctly.
+	// repository, so a relocated or derived root still keys its chores correctly.
 	root.endsWith(DEFAULT_CHORES_ROOT) ? `${CHORE_PREFIX}${name}` : name;
 
 const unreadableRow = (key: string, root: string, reason: string): LaneRow => ({
@@ -103,6 +112,9 @@ const unreadableRow = (key: string, root: string, reason: string): LaneRow => ({
 	verdict: "unreadable",
 	ageMinutes: null,
 	lastEventAt: null,
+	// A lane whose record does not read has no driven leaf to derive a horizon from, and there is no
+	// age to judge against one either — the row is reported, never measured.
+	budgetMinutes: DISPATCH_BUDGET.minutes,
 	reason,
 });
 
@@ -111,7 +123,7 @@ const judgeLane = (
 	root: string,
 	name: string,
 	nowEpochMs: number,
-	olderThanMinutes: number,
+	olderThanMinutes: number | null,
 ): Effect.Effect<LaneRow | null, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const key = keyOf(root, name);
@@ -166,19 +178,10 @@ const byAge = (left: LaneRow, right: LaneRow): number => {
 	return left.key.localeCompare(right.key);
 };
 
-/**
- * The issue a lane key names, or `null` when it names none.
- *
- * A chore lane is keyed `chore:<name>` and drives no issue, so there is no thread to pair it with —
- * and a claim is a fact about an issue, never about a lane directory.
- */
-const issueOf = (key: string): number | null =>
-	/^[0-9]+$/.test(key) ? Number.parseInt(key, 10) : null;
-
 /** The row plus what the board says about its issue — a terminal lane and a chore lane are skipped. */
 const pair = <R>(row: LaneRow, read: ClaimReader<R>): Effect.Effect<LaneRow, never, R> =>
 	Effect.gen(function* () {
-		const issue = issueOf(row.key);
+		const issue = rawKeyIssue(row.key);
 		if (issue === null || row.verdict === "terminal") return row;
 		const claimants = yield* read(issue);
 		if (claimants._tag === "Unknown") {
@@ -204,7 +207,8 @@ export const runStale = <R = never>(
 	options: StaleOptions<R>,
 ): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path | R> =>
 	Effect.gen(function* () {
-		if (!Number.isFinite(options.olderThanMinutes) || options.olderThanMinutes < 0) {
+		const override = options.olderThanMinutes;
+		if (override !== null && (!Number.isFinite(override) || override < 0)) {
 			return refuse(FAILED, `${VERB}: --older-than must be a non-negative number of minutes.`);
 		}
 		const nowEpochMs = Date.parse(options.now);
@@ -235,7 +239,7 @@ export const runStale = <R = never>(
 			}
 			let found = 0;
 			for (const name of [...names.success].sort()) {
-				const row = yield* judgeLane(root, name, nowEpochMs, options.olderThanMinutes);
+				const row = yield* judgeLane(root, name, nowEpochMs, override);
 				if (row === null) continue;
 				found += 1;
 				lanes.push(row);
@@ -261,7 +265,7 @@ export const runStale = <R = never>(
 			JSON.stringify(
 				{
 					now: options.now,
-					olderThanMinutes: options.olderThanMinutes,
+					olderThanMinutes: override,
 					scanned,
 					summary,
 					// `null` says the board was never asked, which "nothing is held" would silently claim.
@@ -282,8 +286,10 @@ export const runStale = <R = never>(
 			[
 				`${VERB}: swept ${scanned.map((entry) => `${entry.root} (${entry.present ? `${entry.lanes} lane(s)` : "absent"})`).join(", ")}.`,
 				stale.length === 0
-					? `${VERB}: no lane has been silent for ${options.olderThanMinutes} minute(s) with something owed on it.`
-					: `${VERB}: ${stale.length} stale: ${stale.map((row) => `${row.key} (${String(row.ageMinutes)}m)`).join(", ")}.`,
+					? override === null
+						? `${VERB}: no lane has been silent past its own shell budget with something owed on it.`
+						: `${VERB}: no lane has been silent for ${override} minute(s) with something owed on it.`
+					: `${VERB}: ${stale.length} stale: ${stale.map((row) => `${row.key} (${String(row.ageMinutes)}m of ${row.budgetMinutes}m)`).join(", ")}.`,
 				...(reader === null
 					? []
 					: [
@@ -291,7 +297,7 @@ export const runStale = <R = never>(
 								? `${VERB}: no non-terminal lane's issue carries a live claim.`
 								: `${VERB}: ${held.length} lane(s) whose issue is still claimed: ${held.join(
 										", ",
-									)} — a claim clears through "fabrika build adopt" then "fabrika build release", never on its own (ADR 0295).`,
+									)} — a claim clears through "fabrika build adopt" then "fabrika build release", never on its own.`,
 						]),
 				...(unknown.length === 0
 					? []

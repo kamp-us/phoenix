@@ -3,16 +3,16 @@
  *
  * The doc's per-format projection — owner module, producers, consumers — used to be typed by hand
  * off `./registry.ts`. That is a second source of truth: it agrees until someone lands a format and
- * forgets a line, and the page still reads as authoritative once it stops agreeing (#4968). So the
+ * forgets a line, and the page still reads as authoritative once it stops agreeing. So the
  * projection is not written by hand at all any more. It is one generated region, rendered here from
  * the rows, and `fabrika wire index --write` is its only writer — a hand edit inside the region is
  * overwritten by the generator and red under the check. What stays hand-written is the half the
- * registry cannot hold: the protocol narrative under each ``### `<key>` `` heading. ADR 0241 keeps
- * the shape out of both.
+ * registry cannot hold: the protocol narrative under each ``### `<key>` `` heading. Neither half
+ * restates the other.
  *
  * Three divergences are findings rather than silent drift: a registered format with no narrative
  * section, a narrative section for no registered format, and a region whose bytes are not what the
- * registry renders today. Zero scope is a refusal, never a vacuous pass (ADR 0092) — an empty or
+ * registry renders today. Zero scope is a refusal, never a vacuous pass — an empty or
  * unreadable doc, a missing marker pair, a doc with no format sections, and an empty registry all
  * refuse, because each would otherwise let the reconciliation report agreement over nothing.
  */
@@ -119,7 +119,7 @@ export const conformIndexDoc = (
 		return {
 			_tag: "ZeroScope",
 			reason:
-				"the registry holds no rows — an index reconciled against zero formats proves nothing (ADR 0092)",
+				"the registry holds no rows — an index reconciled against zero formats proves nothing",
 		};
 	}
 	if (markdown.trim() === "") {
@@ -133,7 +133,7 @@ export const conformIndexDoc = (
 	if (documented.length === 0) {
 		return {
 			_tag: "ZeroScope",
-			reason: `${DOC_PATH} parsed to zero format sections — an unparseable page reads as "nothing is documented", which is byte-identical to a page that documents nothing (ADR 0092)`,
+			reason: `${DOC_PATH} parsed to zero format sections — an unparseable page reads as "nothing is documented", which is byte-identical to a page that documents nothing`,
 		};
 	}
 
@@ -182,7 +182,7 @@ export const rewriteIndexDoc = (
 		return {
 			_tag: "ZeroScope",
 			reason:
-				"the registry holds no rows — rendering an empty table would delete the index rather than derive it (ADR 0092)",
+				"the registry holds no rows — rendering an empty table would delete the index rather than derive it",
 		};
 	}
 	const region = locateRegion(markdown);

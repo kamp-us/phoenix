@@ -92,7 +92,7 @@ describe("the sanctioned leg and the self-exemptions", () => {
 			"\n",
 		);
 
-	it("allows ADR 0315's credential leg in the one file that holds it", () => {
+	it("allows the sanctioned credential leg in the one file that holds it", () => {
 		expect(
 			scanFile(GH_API, resolveToken('\t\texecRecord({file: "gh", args: ["auth", "token"]});')),
 		).toEqual([]);
@@ -104,7 +104,7 @@ describe("the sanctioned leg and the self-exemptions", () => {
 	});
 
 	/**
-	 * The hole the sanction had until #6629's tail: keyed on the matched text alone, every argv spawn
+	 * The hole the sanction once had: keyed on the matched text alone, every argv spawn
 	 * produced the same `"gh"`, so `gh-api.ts` held a file-wide licence for the one spelling most
 	 * likely to come back.
 	 */

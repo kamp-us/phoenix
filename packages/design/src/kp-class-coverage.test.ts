@@ -28,10 +28,7 @@ const SRC = dirname(fileURLToPath(import.meta.url));
 const UNSTYLED_HOOKS: Readonly<Record<string, string>> = {
 	"kp-card": "Card's naming hook over Surface, which carries every rule the card renders with.",
 	"kp-edited-indicator": "Marker for consumers to target; the indicator's own styling is Tag's.",
-	"kp-agent-chat__delivery": "Hook on the delivery Select; the control's styling is Manti's.",
 	"kp-agent-chat__error": "Hook on the error Alert; the styling is Alert's own.",
-	"kp-agent-chat__setting-select--model":
-		"Modifier hook beside the styled `kp-agent-chat__setting-select` base.",
 };
 
 const walk = (dir: string): ReadonlyArray<string> =>
@@ -39,9 +36,18 @@ const walk = (dir: string): ReadonlyArray<string> =>
 		entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)],
 	);
 
-/** Block and line comments are prose, not class references — a name inside one is not a use. */
+/**
+ * Block and line comments are prose, not class references — a name inside one is not a use.
+ *
+ * A block comment opens only after start-of-line, whitespace, or one of the few punctuation marks
+ * one can follow (`{` for a JSX comment, `(`, `=`, `,`). Without that guard the `/*` inside
+ * `accept="image/*"` opens a comment that runs to the next real `*` + `/`, swallowing hundreds of
+ * lines and the class names in them — the pairing then depends on how many docblocks happen to sit
+ * after it, so an unrelated edit anywhere in the file silently changes which classes this guard can
+ * see (#8190).
+ */
 const withoutComments = (source: string): string =>
-	source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+	source.replace(/(^|[\s{(=,])\/\*[\s\S]*?\*\//g, "$1 ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
 
 const files = walk(SRC);
 

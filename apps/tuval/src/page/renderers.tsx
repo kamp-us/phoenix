@@ -11,51 +11,66 @@
  * The two demo renderers below are the demo programs' (#7517). Each reads its process through the
  * window contract's `readProcess` and nothing else: no store, no fetch, no socket.
  *
- * The Pi entry is `PiChatWindow` (#7611) and the Claude entry is `ClaudeChatWindow` (#7624), and
- * they are why this module is out of the kernel's strict lens and inside `tsconfig.design.json`'s:
- * the chat window is built on `@kampus/design`, which is source-consumed and authored with
+ * The Pi entry is `piChatWindow` (#7611), the Claude entry is `claudeChatWindow` (#7624), the agy
+ * entry is `agyChatWindow` (#8180), the codex entry is `codexChatWindow` (#8600) and the
+ * session-list entry is `SessionListWindow` (#8102). The four chat entries are *built* here rather
+ * than imported as their modules' default constants, because each is built at the operator's
+ * feature flags (`chatOptions` below, #8439). They are why
+ * this module is out of the kernel's strict lens and inside `tsconfig.design.json`'s: each is built
+ * on `@kampus/design`, which is source-consumed and authored with
  * `exactOptionalPropertyTypes: false`. Each key is the reference that program's own row declares,
  * imported rather than retyped, so a row and this table cannot name two different renderers.
+ *
+ * The table is built per socket rather than held as a constant, because the session-list entry is
+ * the one renderer that asks the kernel something: it is bound to this page's `call`, so the answer
+ * it renders came over the socket the desk is attached to and dies with it (#8161).
  */
 
-import {Effect, Fiber, Stream} from "effect";
-import type {ReactElement, ReactNode} from "react";
-import {useEffect, useState} from "react";
-import {CLAUDE_CHAT_WINDOW_REF, ClaudeChatWindow} from "../claude/window/index.ts";
-import type {CounterState} from "../demo/counter.ts";
-import type {LogState} from "../demo/log.ts";
-import {PI_CHAT_WINDOW_REF, PiChatWindow} from "../pi/window/index.ts";
-import type {AnyWindowHost, AnyWindowRenderer, ProcessView} from "../shell/window/index.ts";
+import features from "virtual:tuval/features";
+import {Effect, Fiber} from "effect";
+import type {ReactElement} from "react";
+import {useCallback, useEffect, useRef, useState} from "react";
+import {AGY_CHAT_WINDOW_REF, agyChatWindow} from "../agy/window/index.ts";
+import {isAiAgentSessionState} from "../ai-agent/core/snapshot.ts";
+import {isSessionListState} from "../ai-agent/renderer-ref.ts";
+import {
+	AI_AGENT_INSPECTOR_REF,
+	AiAgentInspector,
+	SESSION_LIST_WINDOW_REF,
+	type SessionListSource,
+	sessionListWindow,
+	type TranscriptSource,
+} from "../ai-agent/window/index.ts";
+import {CLAUDE_CHAT_WINDOW_REF, claudeChatWindow} from "../claude/window/index.ts";
+import {CODEX_CHAT_WINDOW_REF, codexChatWindow} from "../codex/window/index.ts";
+import {type CounterState, isCounterState} from "../demo/counter.ts";
+import {isLogState, type LogState} from "../demo/log.ts";
+import {PI_CHAT_WINDOW_REF, piChatWindow} from "../pi/window/index.ts";
+import type {ThinChatWindowOptions} from "../shell/chat/index.ts";
+import type {AnyInspectorRenderer} from "../shell/desk/index.ts";
+import type {PageAttachment} from "../shell/transport/browser.ts";
+import type {WindowHost} from "../shell/window/index.ts";
 import {windowRenderer} from "../shell/window/index.ts";
+import {authoredPageRenderers} from "./authored-windows.tsx";
+import {Pending, type ReadableRenderer, readsState, useProcessState} from "./readable-state.tsx";
+import {
+	reading,
+	readSessionList,
+	type SessionListAnswer,
+	sessionListCall,
+	settled,
+} from "./session-list.ts";
+import {
+	askedOlder,
+	landedPage,
+	noPages,
+	pagedAnswer,
+	readSessionTranscript,
+	sessionTranscriptCall,
+} from "./session-transcript.ts";
 
-/**
- * One process's public state, live. The stream never fails and ends on `ProcessGone`, so the hook
- * needs no error arm: `null` means "nothing yet", and a gone process simply stops updating.
- */
-const useProcessState = <S,>(host: AnyWindowHost): S | null => {
-	const [state, setState] = useState<S | null>(null);
-	const read = host.readProcess as Stream.Stream<ProcessView<S>>;
-	useEffect(() => {
-		const fiber = Effect.runFork(
-			Stream.runForEach(read, (view) =>
-				Effect.sync(() => {
-					if (view._tag === "Live") setState(view.state);
-				}),
-			),
-		);
-		return () => void Effect.runFork(Fiber.interrupt(fiber));
-	}, [read]);
-	return state;
-};
-
-const Pending = (): ReactElement => (
-	<p className="tuval-placeholder" role="status">
-		Waiting for the first state from this process.
-	</p>
-);
-
-function CounterRenderer({host}: {readonly host: AnyWindowHost}): ReactElement {
-	const state = useProcessState<CounterState>(host);
+function CounterRenderer({host}: {readonly host: WindowHost<CounterState>}): ReactElement {
+	const state = useProcessState(host);
 	if (state === null) return <Pending />;
 	return (
 		<div className="tuval-demo">
@@ -68,8 +83,8 @@ function CounterRenderer({host}: {readonly host: AnyWindowHost}): ReactElement {
 	);
 }
 
-function LogRenderer({host}: {readonly host: AnyWindowHost}): ReactElement {
-	const state = useProcessState<LogState>(host);
+function LogRenderer({host}: {readonly host: WindowHost<LogState>}): ReactElement {
+	const state = useProcessState(host);
 	if (state === null) return <Pending />;
 	const rows = [
 		...state.lines.map((count) => `count ${count}`),
@@ -90,16 +105,250 @@ function LogRenderer({host}: {readonly host: AnyWindowHost}): ReactElement {
 	);
 }
 
-/** Every renderer the page knows, by the reference a program row names it with. */
-export const pageRenderers: Readonly<Record<string, AnyWindowRenderer>> = {
-	"tuval/demo/counter": windowRenderer(
-		"host-native",
-		(host: AnyWindowHost): ReactNode => <CounterRenderer host={host} />,
-	),
-	"tuval/demo/log": windowRenderer(
-		"host-native",
-		(host: AnyWindowHost): ReactNode => <LogRenderer host={host} />,
-	),
-	[PI_CHAT_WINDOW_REF.ref]: PiChatWindow,
-	[CLAUDE_CHAT_WINDOW_REF.ref]: ClaudeChatWindow,
+/** How this page asks the kernel one thing: its socket's own `call` (`../shell/transport/client.ts`). */
+export type SpellCaller = PageAttachment["call"];
+
+/**
+ * The session list, read from the kernel. One call per attempt, sent when the window mounts and
+ * matched to its reply by the `CallId` it minted, so two open pickers never read each other's answer
+ * (`./session-list.ts`). A socket that goes away is no answer at all: the read stays out until its
+ * deadline passes, and the desk's own connection banner is what says the link is gone.
+ *
+ * Retry is the second correlation, and the attempt number is what carries it: a superseded call's
+ * reply still passes the `CallId` check for the call *it* answered, so the landing is refused unless
+ * the attempt it was sent for is still the current one (#8280).
+ */
+const sessionListSource = (call: SpellCaller): SessionListSource => {
+	const useSessionListAnswer: SessionListSource = (window) => {
+		const [attempt, setAttempt] = useState(0);
+		const [startedAt, setStartedAt] = useState(() => Date.now());
+		const [landed, setLanded] = useState<{
+			readonly attempt: number;
+			readonly answer: SessionListAnswer;
+		} | null>(null);
+
+		useEffect(() => {
+			const spell = sessionListCall(window);
+			const fiber = Effect.runFork(
+				call(spell).pipe(
+					Effect.flatMap((reply) =>
+						Effect.sync(() => {
+							const read = readSessionList(spell, reply);
+							if (read !== null) setLanded({attempt, answer: read});
+						}),
+					),
+					Effect.catchCause(() => Effect.void),
+				),
+			);
+			return () => void Effect.runFork(Fiber.interrupt(fiber));
+		}, [call, window, attempt]);
+
+		const retry = useCallback(() => {
+			setLanded(null);
+			setStartedAt(Date.now());
+			setAttempt((current) => current + 1);
+		}, []);
+
+		const answer = landed !== null && landed.attempt === attempt ? landed.answer : null;
+		return {
+			status: answer === null ? reading(startedAt) : settled(answer),
+			retry,
+		};
+	};
+	return useSessionListAnswer;
+};
+
+/**
+ * One session's transcript, read from the kernel a page at a time. The first page leaves when the
+ * transcript mounts and every later one leaves when the operator asks for older history, each
+ * correlated on the `CallId` it minted (`./session-transcript.ts`) so a reply belonging to another
+ * call — the list's, the other window's, the page this one superseded — is never folded in.
+ *
+ * **The cursor is what a request is, and the attempt is what makes it a new one.** A page that
+ * lands moves the cursor; a page that fails does not, so asking again asks for the same page rather
+ * than skipping the history that did not arrive. Two consecutive requests can therefore carry the
+ * same cursor, which is why the attempt counter is in the dependencies: without it a retry would be
+ * an effect whose inputs did not change and no call would leave.
+ *
+ * **Nothing here outlives the session it was opened for.** The whole state is this hook's, the hook
+ * is mounted per selected session by the window (`../ai-agent/window/SessionListWindow.tsx`), and a
+ * reply that lands after the read it belongs to was superseded is dropped rather than folded.
+ */
+const sessionTranscriptSource = (call: SpellCaller): TranscriptSource => {
+	const useSessionTranscript: TranscriptSource = (request, window) => {
+		const [paging, setPaging] = useState(noPages);
+		const [cursor, setCursor] = useState<string | null>(null);
+		const [attempt, setAttempt] = useState(0);
+		const reading = useRef(false);
+
+		useEffect(() => {
+			if (request._tag !== "Read") return;
+			let current = true;
+			reading.current = true;
+			const spell = sessionTranscriptCall({...request.read, before: cursor}, window);
+			const fiber = Effect.runFork(
+				call(spell).pipe(
+					Effect.flatMap((reply) =>
+						Effect.sync(() => {
+							if (!current) return;
+							const landing = readSessionTranscript(spell, reply);
+							if (landing !== null) {
+								reading.current = false;
+								setPaging((held) => landedPage(held, cursor, landing));
+							}
+						}),
+					),
+					Effect.catchTag("SocketError", () =>
+						Effect.sync(() => {
+							if (!current) return;
+							reading.current = false;
+							setPaging((held) =>
+								landedPage(held, cursor, {
+									_tag: "Refused",
+									failure: {
+										tag: "tuval/TranscriptReadFailed",
+										message: "This transcript page could not be read. You can try it again.",
+									},
+								}),
+							);
+						}),
+					),
+				),
+			);
+			return () => {
+				current = false;
+				void Effect.runFork(Fiber.interrupt(fiber));
+			};
+		}, [call, request, window, cursor, attempt]);
+
+		const next = paging.next;
+		const olderOut = paging.older._tag === "Reading";
+		const older = useCallback(() => {
+			if (next === null || olderOut || reading.current) return;
+			reading.current = true;
+			setPaging(askedOlder);
+			setCursor(next);
+			setAttempt((current) => current + 1);
+		}, [next, olderOut]);
+
+		const retry = useCallback(() => {
+			if (paging.refusal === null || reading.current) return;
+			reading.current = true;
+			setPaging(noPages);
+			setCursor(null);
+			setAttempt((current) => current + 1);
+		}, [paging.refusal]);
+
+		const answer = request._tag === "Read" ? pagedAnswer(paging) : null;
+		// The affordance is offered only where there is a page to ask for, so the surface's own rule
+		// ("gone once there is nothing older") and this one cannot disagree about the end of history.
+		return answer !== null && answer._tag === "Read" && answer.page.next !== null
+			? {answer, onOlder: older}
+			: answer?._tag === "Refused"
+				? {answer, onRetry: retry}
+				: {answer};
+	};
+	return useSessionTranscript;
+};
+
+/**
+ * What the four chat renderers are built at: the operator's own flags, read straight out of the
+ * module the page server generated from the booted config (`./dev-server.ts`, #8439). It is a plain
+ * import rather than a fetch or a prop, which is the whole point — the table below is built
+ * synchronously, so a flagged window is the first thing painted rather than the second.
+ *
+ * Nothing here reaches `../config.ts` at runtime: the flags arrive as generated source and the
+ * shape arrives as a type (`./assets.d.ts`), so the page's Node-free walk is unaffected.
+ */
+const chatOptions = (openProcess: OpenProcess): ThinChatWindowOptions => ({
+	subagentList: features.subagentList,
+	kernelChildren: features.kernelChildren,
+	openProcess,
+});
+
+/**
+ * How a window opens a process that is not its own — the desk's `window:attach`, which is a shell
+ * Msg and not a spell, so it arrives from the page's own shell attachment (`./boot.tsx`) rather
+ * than from anything a renderer can reach on its host (`../shell/window/host.ts`).
+ */
+export type OpenProcess = (processId: string) => void;
+
+/**
+ * Every renderer this module names, by the reference a program row names it with — each bound to the
+ * predicate over the state it reads, which is what the `ReadableRenderer` type asks for. A renderer
+ * put here unguarded does not typecheck, so the rule holds at the table and not by review (#8157).
+ *
+ * It is named apart from the merge below because the merge rests on these keys staying clear of the
+ * authored ones, and a key set nothing can read is a key set no test can check.
+ */
+export const pageOwnRenderers = (
+	call: SpellCaller,
+	openProcess: OpenProcess,
+): Readonly<Record<string, ReadableRenderer>> => {
+	const options = chatOptions(openProcess);
+	const claudeWindow = claudeChatWindow(options);
+	const codexWindow = codexChatWindow(options);
+	const piWindow = piChatWindow(options);
+	const agyWindow = agyChatWindow(options);
+	return {
+		"tuval/demo/counter": readsState(
+			isCounterState,
+			windowRenderer("host-native", (host: WindowHost<CounterState>) => (
+				<CounterRenderer host={host} />
+			)),
+		),
+		"tuval/demo/log": readsState(
+			isLogState,
+			windowRenderer("host-native", (host: WindowHost<LogState>) => <LogRenderer host={host} />),
+		),
+		[PI_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, piWindow),
+		[CLAUDE_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, claudeWindow),
+		[AGY_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, agyWindow),
+		[CODEX_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, codexWindow),
+		[SESSION_LIST_WINDOW_REF.ref]: readsState(
+			isSessionListState,
+			sessionListWindow({
+				useAnswer: sessionListSource(call),
+				useTranscript: sessionTranscriptSource(call),
+			}),
+		),
+	};
+};
+
+/**
+ * The whole table the page answers a row's reference with: every window an author has compiled
+ * (`./authored-windows.tsx`) and every renderer this module names.
+ *
+ * The authored half is read at call time rather than held as a constant, so a table rebuilt after a
+ * hot reload carries the window the author just re-compiled. This module's own keys are written
+ * after them, and that precedence is the way round it has to be: the inverse would let an authored
+ * program capture a page window by picking an id. It costs an author nothing only while the two key
+ * sets stay disjoint — an authored reference always ends in `AUTHORED_WINDOW_SUFFIX` and no key
+ * above does — and `./authored-windows.unit.test.tsx` checks that rather than this comment being
+ * the whole guarantee.
+ */
+export const pageRenderers = (
+	call: SpellCaller,
+	openProcess: OpenProcess,
+): Readonly<Record<string, ReadableRenderer>> => ({
+	...authoredPageRenderers(),
+	...pageOwnRenderers(call, openProcess),
+});
+
+/**
+ * Every desk-inspector renderer the page knows, by the reference a program row names it with. It is
+ * a second table rather than an arm of the one above because the desk region resolves through
+ * `inspectorFor` and mounts an `InspectorRenderer`, which is a different type from a window
+ * renderer and reaches the region by a different walk (`../shell/desk/compose.ts`).
+ *
+ * There is no `readsState` guard here: the admission wrapper is for a *window* renderer, and this
+ * renderer performs the same check itself at the one place it reads
+ * (`../ai-agent/window/AiAgentInspector.tsx`).
+ *
+ * Without this table `AttachedDesk` takes its empty default, the walk ends at `unknown-ref` and the
+ * region shows a sentence in the running page whatever a row declares — which is what #8218 left
+ * behind and this issue's ruling needs filled.
+ */
+export const pageInspectors: Readonly<Record<string, AnyInspectorRenderer>> = {
+	[AI_AGENT_INSPECTOR_REF.ref]: AiAgentInspector,
 };

@@ -1,7 +1,7 @@
 /**
  * The `map-ticket` marker — the first line of a wayfinding frontier ticket's opening comment.
  *
- *     map-ticket: #9140 · research · 7f3a9c21
+ *     map-ticket: #4 · research · 7f3a9c21
  *
  * Three fields: the **map** the ticket belongs to, the **kind** from a closed set, and the **run
  * nonce** of the run that filed it. The map number is the load-bearing one: a ticket whose marker
@@ -163,7 +163,6 @@ export const parseFields = (fields: string): MapTicketFields => {
 	return {_tag: "Fields", marker: {map: Number.parseInt(map, 10), kind, nonce: key}};
 };
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderMarker = (marker: MapTicketMarker): NonEmptyReadonlyArray<string> => [
 	`map\t${marker.map}`,
 	`kind\t${marker.kind}`,

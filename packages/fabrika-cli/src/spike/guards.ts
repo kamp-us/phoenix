@@ -83,7 +83,7 @@ export const nonceGrammar = (verb: string, nonce: string, tail: string): VerbOut
  * Every text this group sends to GitHub is leak-scanned before the write.
  *
  * The recorded false positive is inherited rather than designed around: the scan flags a
- * counter-example path quoted in prose (#3785), so a decision body that *quotes* a path refuses on
+ * counter-example path quoted in prose, so a decision body that *quotes* a path refuses on
  * `5`. The expectation is that a decision describes what a path was rather than pasting one — which
  * is also what keeps a machine-local path out of a posted body in the first place.
  */

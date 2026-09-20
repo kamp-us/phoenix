@@ -13,4 +13,10 @@ export {
 	sessionEnv,
 } from "./options.ts";
 export {type AgentSdk, SDK_VERSION} from "./sdk.ts";
+export {CLAUDE_BACKEND} from "./sessions.ts";
+export {
+	readSubagentTranscript,
+	type SidechainSession,
+	type SubagentTranscript,
+} from "./sidechain-store.ts";
 export type {SpawnClaudeCodeProcess} from "./subprocess.ts";

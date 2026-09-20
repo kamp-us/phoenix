@@ -1,5 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
+import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
+import type {Read} from "../config/read-key.ts";
 import {
 	errOut,
 	fakeFs,
@@ -10,9 +12,21 @@ import {
 	type Scripted,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {parkCauseRead} from "../lane/fixtures.test-support.ts";
 import {foldLog, type LogEntry, parseLog} from "../lane/fold.ts";
 import {compileText} from "../lane/machine.ts";
-import {CODEOWNERS, ENV, files, HEAD, pull} from "../ship/fixtures.test-support.ts";
+import {
+	CODEOWNERS,
+	checkRuns,
+	comments,
+	ENV,
+	files,
+	HEAD,
+	OTHER_HEAD,
+	pull,
+	runsTotal,
+	workflows,
+} from "../ship/fixtures.test-support.ts";
 import {ADDED} from "../ship/queue.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 import {
@@ -20,6 +34,8 @@ import {
 	PARK_HOLDS,
 	PARK_NOVEL,
 	PRECONDITION_UNKNOWN,
+	RATIONALE_ABSENT,
+	READBACK_MISMATCH,
 	TARGET_ABSENT,
 	TASK_UNRESOLVED,
 	WRITE_UNKNOWN,
@@ -38,9 +54,12 @@ import {
 	laneTemplate,
 	nominatedPulls,
 	PARKED_AT_CP,
+	PARKED_AT_CP_ON,
 	PARKED_AT_QUEUE_STALL,
 	PARKED_BLOCKED,
 	PARKED_ON_CAMPAIGN,
+	PARKED_ON_CI_RED,
+	PARKED_ON_ROUTED_UI,
 	PARKED_ON_SPAWN,
 	PARKED_ON_WORKTREE,
 	parkedBlockedOn,
@@ -56,7 +75,7 @@ const SECOND_PULL = /^GET .*\/repos\/o\/r\/pulls\/4322$/;
 const FILES = /^GET .*\/repos\/o\/r\/pulls\/4321\/files\?/;
 const OWNERS = /contents\/\.github\/CODEOWNERS/;
 const COMPARE = /\/repos\/o\/r\/compare\//;
-const ROSTER = /orgs\/kamp-us\/teams\/control-plane\/members/;
+const ROSTER = /orgs\/acme\/teams\/control-plane\/members/;
 const REVIEWS = /\/repos\/o\/r\/pulls\/4321\/reviews/;
 const BRANCHES = /^git for-each-ref/;
 const TREES = /^git worktree list/;
@@ -64,13 +83,19 @@ const PRUNE = /^git worktree prune$/;
 const REMOVE = /^git worktree remove /;
 const STATUS = /^git -C \S+ status --porcelain$/;
 const SELF = /^git rev-parse --path-format=absolute/;
-const REVLIST = /^git rev-list --count /;
+const REVLIST = /^git -C \S+ rev-list --count HEAD --not --branches --remotes --tags$/;
 const LANE_ISSUE = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}$`);
 const LANE_COMMENTS = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}/comments`);
 const REMOTES = /^git remote$/;
 const FETCH = /^git fetch --quiet origin main$/;
 const RESOLVE = /^git rev-parse --verify/;
 const SHOW = /^git show \S+:ROADMAP\.md$/;
+const COMMIT = /^GET \S+\/repos\/o\/r\/commits\/[0-9a-f]+$/;
+const CHECK_RUNS = /\/repos\/o\/r\/commits\/[0-9a-f]+\/check-runs/;
+const WORKFLOWS = /\/repos\/o\/r\/actions\/workflows/;
+const RUNS_AT_HEAD = /\/repos\/o\/r\/actions\/runs\?head_sha=/;
+const PR_COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4321\/comments\?/;
+const ACL = /^GET \S+\/repos\/o\/r\/collaborators\/[^/]+\/permission$/;
 
 /** The checkout the clearance reads `.fabrika.jsonc` off — unconfigured, so `ROADMAP.md` is default. */
 const CWD = "/repo";
@@ -117,7 +142,7 @@ const reviewPage = (
 /** A discharged §CP park's target half: the closing PR, its shape, its changed files. */
 const DISCHARGED: ReadonlyArray<Scripted> = [
 	[CLOSERS, reply(closingPulls(4321))],
-	[PULL, reply(pull({author: "usirin"}))],
+	[PULL, reply(pull({author: "owner"}))],
 	[FILES, CP_FILES],
 ];
 
@@ -125,8 +150,8 @@ const DISCHARGED: ReadonlyArray<Scripted> = [
 const DISCHARGED_HTTP: ReadonlyArray<Scripted> = [
 	[OWNERS, {status: 200, body: CODEOWNERS}],
 	[COMPARE, {status: 200, body: '{"behind_by":0}'}],
-	[ROSTER, members("usirin", "notusirin")],
-	[REVIEWS, reviewPage({login: "notusirin", state: "APPROVED", commit: HEAD})],
+	[ROSTER, members("owner", "reviewer")],
+	[REVIEWS, reviewPage({login: "reviewer", state: "APPROVED", commit: HEAD})],
 ];
 
 const lane = (log: string, extra: Parameters<typeof fakeFs>[0] = {}) =>
@@ -143,22 +168,41 @@ const otherPull = (number: number): HttpReply => ({
 		body: `Part of #${LANE}\n`,
 		changed_files: 1,
 		comments: 0,
-		user: {login: "usirin"},
+		user: {login: "owner"},
 		html_url: `https://github.com/o/r/pull/${number}`,
 	}),
 });
 
 const NO_NOMINATIONS: Scripted = [SEARCH, reply(nominatedPulls())];
 
+/**
+ * The clock every run is measured against — twenty minutes after the claim the spawn-dead fixtures
+ * write, so a standing claim is inside the builder's forty-minute budget unless a case moves it.
+ */
+const NOW = "2026-08-29T00:20:00.000Z";
+
 const run = (
 	fs: ReturnType<typeof fakeFs>,
 	script: ReadonlyArray<Scripted>,
 	http: ReadonlyArray<Scripted> = DISCHARGED_HTTP,
 	task: string | null = null,
+	parkCause: Read<ParkCauseSurface> = parkCauseRead(),
+	rationale: string | null = null,
+	now: string = NOW,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
-			runUnpark({root: LANES_ROOT, lane: LANE, task, repo: null, cwd: CWD, env: ENV}),
+			runUnpark({
+				root: LANES_ROOT,
+				lane: LANE,
+				task,
+				repo: null,
+				cwd: CWD,
+				env: ENV,
+				now,
+				parkCause,
+				rationale,
+			}),
 			// The nominator's body-search half is tailed, so a test scripting its own wins the lookup.
 			// Empty by default: the union then answers off the closing edge, as these tests always did.
 			Layer.merge(fs.layer, fakeSeams([...script, ...http, NO_NOMINATIONS]).layer),
@@ -182,13 +226,13 @@ describe("recipe unpark — the known recipe clears", () => {
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
-	it("clears a §CP park whose PR only says `Part of #N` — the shared nominator's body half (#6179)", async () => {
+	it("clears a §CP park whose PR only says `Part of #N` — the shared nominator's body half", async () => {
 		const fs = lane(PARKED_AT_CP);
 
 		const out = await run(fs, [
 			[CLOSERS, reply(closingPulls())],
 			[SEARCH, reply(nominatedPulls(4321))],
-			[PULL, reply(pull({author: "usirin", body: `Part of #${LANE}\n`}))],
+			[PULL, reply(pull({author: "owner", body: `Part of #${LANE}\n`}))],
 			[FILES, CP_FILES],
 		]);
 
@@ -199,11 +243,291 @@ describe("recipe unpark — the known recipe clears", () => {
 	it("names the discharge mechanism it relayed rather than restating the §CP rule", async () => {
 		const out = await run(lane(PARKED_AT_CP), DISCHARGED);
 
-		expect(JSON.parse(out.stdout).mechanism).toMatch(/member-approval:notusirin/);
+		expect(JSON.parse(out.stdout).mechanism).toMatch(/member-approval:reviewer/);
 	});
 });
 
-describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
+/** A head-bound verdict marker with no content binding — the shape `ship gate` reads as a marker. */
+const marker = (namespace: string, polarity: string, sha: string): string =>
+	`${namespace}: ${polarity} @ ${sha} — the clause`;
+
+/** The permission endpoint's own shape: a record, never a bare word. */
+const permission = (level: string): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({permission: level}),
+});
+
+/**
+ * The red-CI park's target half: the closing PR, its shape, its diff, and the §CP boundary.
+ *
+ * The diff is one code file and one doc file, so `ship scope` derives `review-code` and `review-doc`
+ * and the gate below has two namespaces to conjoin rather than a vacuous one.
+ */
+const RED_TARGET: ReadonlyArray<Scripted> = [
+	[CLOSERS, reply(closingPulls(4321))],
+	[PULL, reply(pull({comments: 2}))],
+	[FILES, reply(files("apps/site/src/App.tsx", "README.md"))],
+	[OWNERS, {status: 200, body: CODEOWNERS}],
+];
+
+/** One gating check at the head, with the run and the workflow that gives it gate coverage. */
+const ciAt = (status: string, conclusion: string | null): ReadonlyArray<Scripted> => [
+	[COMMIT, {status: 200, body: JSON.stringify({sha: HEAD})}],
+	[CHECK_RUNS, reply(checkRuns(1, [{name: "ci", status, conclusion}]))],
+	[WORKFLOWS, reply(workflows({path: ".github/workflows/ci.yml"}))],
+	[RUNS_AT_HEAD, reply(runsTotal(1, [{id: 1, path: ".github/workflows/ci.yml"}]))],
+];
+
+const GREEN_CI = ciAt("completed", "success");
+
+/** Both derived namespaces holding an authorized PASS at `sha`. */
+const boundAt = (sha: string): ReadonlyArray<Scripted> => [
+	[
+		PR_COMMENTS,
+		reply(
+			comments(
+				{id: 1, body: marker("review-code", "PASS", sha)},
+				{id: 2, body: marker("review-doc", "PASS", sha)},
+			),
+		),
+	],
+	[REVIEWS, reviewPage()],
+	[ACL, permission("write")],
+];
+
+describe("recipe unpark — a red-CI park clears once the head reads green again", () => {
+	it("clears when CI is green, the PR is open, and both derived namespaces are bound at the head", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...GREEN_CI], [...boundAt(HEAD)]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "human:cp-approval",
+			clearance: "ci-green",
+			mechanism: `ci-green:#4321 at ${HEAD}, review-code,review-doc bound`,
+			current: "ship",
+		});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it("is PARK_HOLDS while a gating check at the head is still red", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...ciAt("completed", "failure")], [...boundAt(HEAD)]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/rolls up "red"/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PARK_HOLDS while a check at the head has not concluded — pending is not green", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...ciAt("in_progress", null)], [...boundAt(HEAD)]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/rolls up "pending"/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	// The head going green is not the whole floor: a verdict left behind at an earlier head means the
+	// resumed shipper has nothing in force to enqueue on.
+	it("is PARK_HOLDS when a derived namespace is bound to another head", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...GREEN_CI], [...boundAt(OTHER_HEAD)]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/reads "blocked"/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PARK_HOLDS on a green head whose PR is no longer open", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(
+			fs,
+			[
+				[CLOSERS, reply(closingPulls(4321))],
+				[PULL, reply(pull({comments: 2, draft: true}))],
+				[FILES, reply(files("apps/site/src/App.tsx", "README.md"))],
+				[OWNERS, {status: 200, body: CODEOWNERS}],
+				...GREEN_CI,
+			],
+			[...boundAt(HEAD)],
+		);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/reads "draft"/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PRECONDITION_UNKNOWN when the CI read itself fails — never a clear on an unread head", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(
+			fs,
+			[
+				...RED_TARGET,
+				[COMMIT, {status: 200, body: JSON.stringify({sha: HEAD})}],
+				[CHECK_RUNS, httpError(502)],
+				[WORKFLOWS, reply(workflows({path: ".github/workflows/ci.yml"}))],
+				[RUNS_AT_HEAD, reply(runsTotal(1, [{id: 1, path: ".github/workflows/ci.yml"}]))],
+			],
+			[...boundAt(HEAD)],
+		);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
+	});
+
+	// The two rows share the `human:cp-approval` leaf and are told apart by the cause alone, so a park
+	// carrying neither cause must still reach the §CP discharge it always did.
+	it("leaves the null-cause §CP row unshadowed — a causeless park still reads the approval", async () => {
+		const out = await run(lane(PARKED_AT_CP), DISCHARGED);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).clearance).toBe("cp-approval");
+	});
+
+	it("is Novel for the same leaf carrying a cause no row on it names", async () => {
+		const fs = lane(PARKED_AT_CP_ON("campaign-paused"));
+
+		const out = await run(fs, [], []);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * The declaration `review-ui` is derived over — without it `uiSurfaces` is the shipped empty list
+ * and no routed namespace is ever required, which is no ground for a test about one.
+ */
+const UI_CONFIG = {
+	[`${CWD}/.fabrika.jsonc`]: JSON.stringify({
+		uiSurfaces: [
+			{name: "web", prefix: "apps/site/src/", mount: "/", command: "pnpm dev --port {{port}}"},
+		],
+	}),
+};
+
+const laneWithUi = (log: string) =>
+	fakeFs({files: {[WORKFLOW]: laneTemplate(), [LOG]: log, ...UI_CONFIG}});
+
+/** The routed-UI park's target half: a diff under the declared prefix, so `review-ui` derives. */
+const ROUTED_TARGET: ReadonlyArray<Scripted> = [
+	[CLOSERS, reply(closingPulls(4321))],
+	[PULL, reply(pull({comments: 2}))],
+	[FILES, reply(files("apps/site/src/routes/page.tsx", "README.md"))],
+	[OWNERS, {status: 200, body: CODEOWNERS}],
+];
+
+/** `review-code` and `review-doc` judged at `sha`, `review-ui` routed there. */
+const routedAt = (sha: string, uiSha: string = sha): ReadonlyArray<Scripted> => [
+	[
+		PR_COMMENTS,
+		reply(
+			comments(
+				{id: 1, body: marker("review-code", "PASS", sha)},
+				{id: 2, body: marker("review-doc", "PASS", sha)},
+				{
+					id: 3,
+					body: `routed-elsewhere: review-ui @ ${uiSha} — nothing under apps/site/src renders differently`,
+				},
+			),
+		),
+	],
+	[REVIEWS, reviewPage()],
+	[ACL, permission("write")],
+];
+
+/**
+ * `lane report` now advances a satisfied route rather than parking it, so no new lane lands here —
+ * but the lanes stranded before that reading existed are still stranded, and a ledger clears nothing
+ * by itself. These are the reads that clear them without spending a person, and the reads that keep
+ * a park whose route is *not* a finished review exactly where it is.
+ */
+describe("recipe unpark — a routed-UI park clears once the review it routed to has finished", () => {
+	it("clears when the gate is satisfied at the live head and the route still stands there", async () => {
+		const fs = laneWithUi(PARKED_ON_ROUTED_UI);
+
+		const out = await run(fs, ROUTED_TARGET, [...routedAt(HEAD)]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "route-satisfied",
+			// The lane walks back into the cell the terminal was reported from, not past it.
+			current: "review:ui",
+		});
+		// The mechanism names the route it read back, not only that a gate said yes.
+		expect(JSON.parse(out.stdout).mechanism).toContain("review-ui routed");
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it("is PARK_HOLDS while a required namespace has not answered at the head", async () => {
+		const fs = laneWithUi(PARKED_ON_ROUTED_UI);
+
+		const out = await run(fs, ROUTED_TARGET, [
+			[
+				PR_COMMENTS,
+				reply(
+					comments(
+						{id: 1, body: marker("review-code", "PASS", HEAD)},
+						{
+							id: 3,
+							body: `routed-elsewhere: review-ui @ ${HEAD} — nothing under apps/site/src renders differently`,
+						},
+					),
+				),
+			],
+			[REVIEWS, reviewPage()],
+			[ACL, permission("write")],
+		]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/reads "blocked"/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PARK_HOLDS when the route was attested at a head the branch has moved past", async () => {
+		const fs = laneWithUi(PARKED_ON_ROUTED_UI);
+
+		const out = await run(fs, ROUTED_TARGET, [...routedAt(HEAD, OTHER_HEAD)]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(fs.written.size).toBe(0);
+	});
+
+	// `satisfied` alone is also true of a PR whose rendered gate came back and judged it. That is a
+	// different park cleared by a different act, so the row reads the route as well as the gate.
+	it("is PARK_HOLDS when the gate is satisfied but nothing reads routed any more", async () => {
+		const fs = laneWithUi(PARKED_ON_ROUTED_UI);
+
+		const out = await run(fs, ROUTED_TARGET, [
+			[
+				PR_COMMENTS,
+				reply(
+					comments(
+						{id: 1, body: marker("review-code", "PASS", HEAD)},
+						{id: 2, body: marker("review-doc", "PASS", HEAD)},
+						{id: 3, body: marker("review-ui", "PASS", HEAD)},
+					),
+				),
+			],
+			[REVIEWS, reviewPage()],
+			[ACL, permission("write")],
+		]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/not the route this park was recorded about/);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+describe("recipe unpark — a BLOCKED park clears on its cause", () => {
 	it("clears the worktree-holds-branch park once no working tree holds the branch", async () => {
 		const fs = lane(PARKED_ON_WORKTREE);
 
@@ -233,8 +557,8 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 				[PRUNE, okOut("")],
 				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
 				[STATUS, okOut("")],
-				// Unbuilt commits on the branch: no board license covers this tree and ADR 0342's arm
-				// refuses one carrying work, so the park still holds.
+				// Commits no ref of this clone reaches: no board license covers this tree, and the
+				// unclaimed-lane arm refuses one whose removal would strand work, so the park holds.
 				[REVLIST, okOut("2\n")],
 			],
 			[
@@ -248,8 +572,8 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 		expect(fs.written.size).toBe(0);
 	});
 
-	// The routing half of #6610: the row names `fabrika build retire`, so a park whose only cause is a
-	// stale registration clears without a human running `git worktree remove` by hand.
+	// The row names `fabrika build retire`, so a park whose only cause is a stale registration clears
+	// without a human running `git worktree remove` by hand.
 	it("clears the park by retiring the holding tree when the board licenses it", async () => {
 		const fs = lane(PARKED_ON_WORKTREE);
 
@@ -276,7 +600,7 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
-	// #7027: the operator released the dead builder's claim first, which used to close this route.
+	// The operator releases the dead builder's claim first, which used to close this route.
 	it("clears the park on an OPEN issue when nothing claims the lane and the tree carries nothing", async () => {
 		const fs = lane(PARKED_ON_WORKTREE);
 
@@ -338,7 +662,7 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 	});
 });
 
-describe("recipe unpark — a spawn-dead park clears once the dead shell's residue is gone (#6770)", () => {
+describe("recipe unpark — a spawn-dead park clears once the dead shell's residue is gone", () => {
 	const claimComment = (author: string, token: string): HttpReply => ({
 		status: 200,
 		body: JSON.stringify([
@@ -455,9 +779,9 @@ describe("recipe unpark — a spawn-dead park clears once the dead shell's resid
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
-	// ADR 0295: a claim leaves through a written release or an adopt succession, never through this
-	// verb inferring the claimant gone — so the residue read holds rather than clears.
-	it("is PARK_HOLDS while the dead shell's claim still stands, naming the token", async () => {
+	// Inside its budget a claim is a shell that may still be working, so nothing is retracted on it:
+	// the horizon is the proof, and short of the horizon there is none.
+	it("is PARK_HOLDS while the claim is inside its budget, naming the token and the horizon", async () => {
 		const fs = lane(PARKED_ON_SPAWN);
 
 		const out = await run(
@@ -467,14 +791,72 @@ describe("recipe unpark — a spawn-dead park clears once the dead shell's resid
 				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
 				[
 					LANE_COMMENTS,
-					claimComment("usirin", "build:dead-session:9f2cab41-1111-4222-8333-444455556666"),
+					claimComment("owner", "build:dead-session:9f2cab41-1111-4222-8333-444455556666"),
 				],
 				[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
 			],
 		);
 
 		expect(out.code).toBe(PARK_HOLDS);
-		expect(out.stderr.join("\n")).toMatch(/build:dead-session:9f2cab41/);
+		const held = out.stderr.join("\n");
+		expect(held).toMatch(/build:dead-session:9f2cab41/);
+		expect(held).toMatch(/20 of its 40 minute\(s\)/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	// The half this row could not do: past the budget the claim IS the death, so it is retracted, the
+	// board is re-read to prove it gone, and the park clears with nobody running adopt-and-release.
+	it("retracts a claim past its budget, proves it gone by re-reading, and clears", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+		const token = "build:dead-session:9f2cab41-1111-4222-8333-444455556666";
+
+		const out = await run(
+			fs,
+			[[BRANCHES, branchList("main")]],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[once(LANE_COMMENTS), claimComment("owner", token)],
+				[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
+				[/^DELETE \S+\/repos\/o\/r\/issues\/comments\/1$/, {status: 204, body: ""}],
+				[LANE_COMMENTS, {status: 200, body: "[]"}],
+			],
+			null,
+			parkCauseRead(),
+			null,
+			"2026-08-29T01:00:00.000Z",
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			clearance: "spawn-clear",
+			mechanism: `spawn-clear:#${LANE} unclaimed (retracted ${token} at 60m, past the 40-minute budget), no lane branch`,
+		});
+		expect(out.stderr.join("\n")).toMatch(/past the 40-minute budget/);
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	// A delete that "worked" while the marker survived is the false green the whole protocol refuses:
+	// the write happened and the board disagrees, which is a read-back mismatch, never a clear.
+	it("is READBACK_MISMATCH when the claim still reads held after the retraction", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+		const token = "build:dead-session:9f2cab41-1111-4222-8333-444455556666";
+
+		const out = await run(
+			fs,
+			[],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
+				[/^DELETE \S+\/repos\/o\/r\/issues\/comments\/1$/, {status: 204, body: ""}],
+				[LANE_COMMENTS, claimComment("owner", token)],
+			],
+			null,
+			parkCauseRead(),
+			null,
+			"2026-08-29T01:00:00.000Z",
+		);
+
+		expect(out.code).toBe(READBACK_MISMATCH);
 		expect(fs.written.size).toBe(0);
 	});
 
@@ -495,7 +877,7 @@ describe("recipe unpark — a spawn-dead park clears once the dead shell's resid
 	});
 });
 
-describe("recipe unpark — a queue stall clears when the queue moved, and grants (#6717)", () => {
+describe("recipe unpark — a queue stall clears when the queue moved, and grants", () => {
 	const RULES = /^GET \S+\/repos\/o\/r\/rules\/branches\/main$/;
 	const SUBJECTS = /^GET \S+\/repos\/o\/r\/commits\?sha=main/;
 	const TIMELINE = /^GET \S+\/repos\/o\/r\/issues\/4321\/timeline\?/;
@@ -585,7 +967,7 @@ describe("recipe unpark — a queue stall clears when the queue moved, and grant
 	});
 });
 
-describe("recipe unpark — a campaign-paused park clears on the row it parked on (#7217)", () => {
+describe("recipe unpark — a campaign-paused park clears on the row it parked on", () => {
 	/** The lane's issue as the clearance reads it: homed on the milestone a campaign row pins. */
 	const homed = (milestone: number | null): ReadonlyArray<Scripted> => [
 		[
@@ -728,7 +1110,7 @@ describe("recipe unpark — the refusals write nothing", () => {
 			[
 				[CLOSERS, reply(closingPulls(4321))],
 				[PULL, reply(pull())],
-				[FILES, reply(files("apps/web/src/App.tsx", "README.md"))],
+				[FILES, reply(files("src/app/App.tsx", "README.md"))],
 			],
 			[
 				[OWNERS, {status: 200, body: CODEOWNERS}],
@@ -746,12 +1128,12 @@ describe("recipe unpark — the refusals write nothing", () => {
 		const out = await run(fs, [
 			[CLOSERS, reply(closingPulls(4321))],
 			[SEARCH, reply(nominatedPulls(4322))],
-			[PULL, reply(pull({author: "usirin"}))],
+			[PULL, reply(pull({author: "owner"}))],
 			[SECOND_PULL, otherPull(4322)],
 		]);
 
 		expect(out.code).toBe(PARK_NOVEL);
-		expect(out.stderr.join("\n")).toMatch(/#4321, #4322/);
+		expect(out.stderr.join("\n")).toContain("#4321, #4322");
 		expect(fs.written.size).toBe(0);
 	});
 
@@ -762,13 +1144,13 @@ describe("recipe unpark — the refusals write nothing", () => {
 			fs,
 			[
 				[CLOSERS, reply(closingPulls(4321))],
-				[PULL, reply(pull({author: "usirin"}))],
+				[PULL, reply(pull({author: "owner"}))],
 				[FILES, CP_FILES],
 			],
 			[
 				[OWNERS, {status: 200, body: CODEOWNERS}],
 				[COMPARE, {status: 200, body: '{"behind_by":0}'}],
-				[ROSTER, members("usirin", "notusirin")],
+				[ROSTER, members("owner", "reviewer")],
 				[REVIEWS, reviewPage()],
 			],
 		);
@@ -825,7 +1207,17 @@ describe("recipe unpark — the refusals write nothing", () => {
 
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runUnpark({root, lane: "nightly", task: null, repo: null, cwd: CWD, env: ENV}),
+				runUnpark({
+					root,
+					lane: "nightly",
+					task: null,
+					repo: null,
+					cwd: CWD,
+					env: ENV,
+					now: NOW,
+					parkCause: parkCauseRead(),
+					rationale: null,
+				}),
 				Layer.merge(fs.layer, fakeSeams([...DISCHARGED, ...DISCHARGED_HTTP]).layer),
 			),
 		);
@@ -843,5 +1235,109 @@ describe("recipe unpark — the read-back is the proof", () => {
 
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
+	});
+});
+
+describe("recipe unpark — a driver-routed park clears on the driver's own rationale", () => {
+	/** A repo that has declared drivers may take the parks their causes route to them. */
+	const CLEARS = parkCauseRead("record", "clear");
+
+	/** A driver-routed cause with no `KNOWN_PARKS` row: no read proves it gone, because none exists. */
+	const PARKED_ON_HEAD_BEHIND = parkedBlockedOn("head-behind-base");
+
+	const WHY = "merged main into the head, so the approval can be solicited";
+
+	it("clears a park no row covers when its cause routes to the driver", async () => {
+		const fs = lane(PARKED_ON_HEAD_BEHIND);
+
+		const out = await run(fs, [], DISCHARGED_HTTP, null, CLEARS, WHY);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "driver-rationale",
+			mechanism: "driver-rationale:head-behind-base",
+			current: "build",
+			rationale: WHY,
+		});
+	});
+
+	// The whole audit of a clear no proving read stands behind: without it the ledger records that a
+	// driver let the lane out and never what it let it out on.
+	it("refuses at RATIONALE_ABSENT when the driver names none, with the log byte-identical", async () => {
+		const fs = lane(PARKED_ON_HEAD_BEHIND);
+
+		const out = await run(fs, [], DISCHARGED_HTTP, null, CLEARS);
+
+		expect(out.code).toBe(RATIONALE_ABSENT);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toMatch(/head-behind-base/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("records the rationale on the UNBLOCKED the clear appends, trimmed", async () => {
+		const fs = lane(PARKED_ON_HEAD_BEHIND);
+
+		const out = await run(fs, [], DISCHARGED_HTTP, null, CLEARS, `  ${WHY}  `);
+
+		expect(out.code).toBe(0);
+		const parsed = parseLog(fs.written.get(LOG) ?? "");
+		expect(parsed._tag).toBe("Parsed");
+		if (parsed._tag !== "Parsed") return;
+		const cleared = parsed.entries.at(-1);
+		expect(cleared?.event).toBe("ISSUE.UNBLOCKED");
+		expect(cleared?.rationale).toBe(WHY);
+	});
+
+	// The containment: a repo that declared nothing keeps the refusal it always had, whatever the
+	// cause routes to and however good the reason handed in.
+	it("is PARK_NOVEL under the shipped key, however good the rationale", async () => {
+		const fs = lane(PARKED_ON_HEAD_BEHIND);
+
+		const out = await run(fs, [], DISCHARGED_HTTP, null, parkCauseRead(), WHY);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("still refuses a founder-routed park at PARK_NOVEL, in the words it always used", async () => {
+		const fs = lane(PARKED_BLOCKED);
+
+		const out = await run(fs, DISCHARGED, DISCHARGED_HTTP, null, CLEARS, WHY);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		expect(out.stderr.join("\n")).toMatch(
+			/refusing with the ledger untouched; route this to a human/,
+		);
+		expect(fs.written.size).toBe(0);
+	});
+
+	// A row is a proving read, and a proving read beats anybody's judgment — so the driver route
+	// changes nothing about a park that has one, in either direction.
+	it("leaves a Known driver-routed park on its recipe's read, and needs no rationale for it", async () => {
+		const fs = lane(PARKED_ON_WORKTREE);
+
+		const out = await run(
+			fs,
+			[
+				[BRANCHES, branchList(LANE_BRANCH, "main")],
+				[TREES, worktreeList({path: "/repo", branch: "main"})],
+			],
+			DISCHARGED_HTTP,
+			null,
+			CLEARS,
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({clearance: "branch-free", current: "build"});
+	});
+
+	it("is PRECONDITION_UNKNOWN on a parkCause nobody could read — never the shipped arm", async () => {
+		const fs = lane(PARKED_ON_HEAD_BEHIND);
+
+		const out = await run(fs, [], DISCHARGED_HTTP, null, {_tag: "Refused", reason: "EACCES"}, WHY);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
 	});
 });

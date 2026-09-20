@@ -1,11 +1,11 @@
 /**
  * Where the plan goes in the epic body, resolved by anchors rather than by position.
  *
- * **Detection is the verb-written enrichment marker, never a position** (#4850, #4866): with the
+ * **Detection is the verb-written enrichment marker, never a position**: with the
  * marker doing the detecting, appending the plan below the preserved brief envelope breaks no
  * detector, so no layout inversion is needed. What the marker buys here is the *bound*: a
  * `## Dependencies` heading that resolves **inside** the preserved brief is not this run's anchor, and
- * cutting there is how v1 destroyed a body (#4879).
+ * cutting there is how v1 destroyed a body.
  *
  * **The region is never cut to end-of-file.** v1's replace branch sliced from the `## Dependencies`
  * heading to EOF on the assumption that dependencies are the last section, destroying anything a human
@@ -13,8 +13,9 @@
  * byte outside it.
  */
 
+import {isThematicBreak} from "../build/dependencies.ts";
 import {unfencedLines} from "../plan/ledger.ts";
-import {MARKER_RE} from "../triage/enrich.ts";
+import {preservedEnvelope} from "../triage/enrich.ts";
 import {PLAN_HEADING} from "./plan-block.ts";
 import type {PlanMode} from "./run.ts";
 
@@ -38,16 +39,6 @@ const unresolvable = (reason: string): Splice => ({_tag: "Unresolvable", reason}
 
 const headingCount = (epic: number, heading: string, count: number): string =>
 	`#${epic}'s body carries ${count} "${heading}" headings — the plan region has no single meaning.`;
-
-/** The `[start, end)` line span of the preserved brief envelope, or `null` when there is no marker. */
-const envelopeOf = (lines: ReadonlyArray<string>): {start: number; end: number} | null => {
-	const start = lines.findIndex((line) => MARKER_RE.test(line.trim()));
-	if (start === -1) return null;
-	const closing = lines.findIndex(
-		(line, index) => index > start && line.trim().toLowerCase() === "</details>",
-	);
-	return {start, end: closing === -1 ? start : closing};
-};
 
 export interface SpliceInput {
 	readonly epic: number;
@@ -96,10 +87,10 @@ export const splicePlan = (input: SpliceInput): Splice => {
 
 	const start = planAnchors[0] as number;
 	const dependencies = dependencyAnchors[0] as number;
-	const envelope = envelopeOf(lines);
+	const envelope = preservedEnvelope(lines);
 	if (envelope !== null && dependencies > envelope.start && dependencies < envelope.end) {
 		return unresolvable(
-			`#${input.epic}'s "${DEPENDENCIES_HEADING}" heading resolves inside the preserved brief envelope — refusing to cut the region there (#4879).`,
+			`#${input.epic}'s "${DEPENDENCIES_HEADING}" heading resolves inside the preserved brief envelope — refusing to cut the region there.`,
 		);
 	}
 	if (dependencies < start) {
@@ -121,4 +112,52 @@ export const splicePlan = (input: SpliceInput): Splice => {
 	const head = before === "" ? "" : `${before}\n\n`;
 	const tail = after.trim() === "" ? "" : `\n${after}`;
 	return {_tag: "Composed", body: `${head}${composed}${tail}`};
+};
+
+export interface DependenciesSpliceInput {
+	readonly epic: number;
+	readonly body: string;
+	/** The rendered `## Dependencies` block, opening with that heading. */
+	readonly topology: string;
+}
+
+/**
+ * Replace the `## Dependencies` block alone, leaving the plan block and every other byte where they
+ * are — `ledger retopology`'s splice, and the reason it needs no staged plan run.
+ *
+ * The region ends at the next top-level heading **or at the first thematic break**, whichever comes
+ * first, which is where `build/dependencies.ts` ends the section it reads. {@link splicePlan} bounds
+ * on the heading alone and is right to: it rewrites the plan and the topology as one region, so a
+ * `---` between them is region content. Here it is not — a filed body's dated amendment is
+ * conventionally introduced by a bare `---`, and cutting through one would take an amendment out of
+ * a body this verb promised to leave alone outside the block.
+ */
+export const spliceDependencies = (input: DependenciesSpliceInput): Splice => {
+	const lines = input.body.replace(/\r\n/g, "\n").split("\n");
+	const anchors = anchorsIn(input.body, DEPENDENCIES_RE);
+	if (anchors.length !== 1) {
+		return unresolvable(headingCount(input.epic, DEPENDENCIES_HEADING, anchors.length));
+	}
+	const start = anchors[0] as number;
+	const envelope = preservedEnvelope(lines);
+	if (envelope !== null && start > envelope.start && start < envelope.end) {
+		return unresolvable(
+			`#${input.epic}'s "${DEPENDENCIES_HEADING}" heading resolves inside the preserved brief envelope — refusing to cut the region there.`,
+		);
+	}
+
+	let end = lines.length;
+	for (let i = start + 1; i < lines.length; i += 1) {
+		const line = lines[i] ?? "";
+		if (TOP_LEVEL_HEADING_RE.test(line.trim()) || isThematicBreak(line)) {
+			end = i;
+			break;
+		}
+	}
+
+	const before = lines.slice(0, start).join("\n").replace(/\s+$/, "");
+	const after = lines.slice(end).join("\n").replace(/^\n+/, "");
+	const head = before === "" ? "" : `${before}\n\n`;
+	const tail = after.trim() === "" ? "" : `\n${after}`;
+	return {_tag: "Composed", body: `${head}${block(input.topology)}\n${tail}`};
 };

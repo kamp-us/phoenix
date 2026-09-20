@@ -85,7 +85,7 @@ export const runQueue = Effect.fn("runQueue")(function* (options: QueueOptions) 
 	if (!labels.value.includes(label)) {
 		return refuse(
 			ZERO_SCOPE,
-			`triage queue: label ${label} does not exist in ${repo} — refusing to report an empty queue over zero scope (ADR 0092).`,
+			`triage queue: label ${label} does not exist in ${repo} — refusing to report an empty queue over zero scope.`,
 			[scannedLine("triage queue", repo, labels.value.length, "label", `none of them is ${label}`)],
 		);
 	}

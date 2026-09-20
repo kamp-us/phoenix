@@ -120,7 +120,7 @@ describe("decisionCites", () => {
 	const body = parsed(
 		MAP_BODY.replace(
 			"## Decisions\n",
-			"## Decisions\n- the column is on the account row — from #9146\n- an invited çaylak starts at 0 — ruled on #9301 R2.3\n",
+			"## Decisions\n- the column is on the account row — from #9146\n- an invited newcomer starts at 0 — ruled on #9301 R2.3\n",
 		),
 	);
 

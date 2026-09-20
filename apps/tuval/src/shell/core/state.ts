@@ -48,6 +48,27 @@ export type PrefixSnapshot =
 export const disarmed: PrefixSnapshot = {armed: false};
 
 /**
+ * What the kernel did with one key — its routing answer, as state can hold it. Three arms, because
+ * a surface has three things to do about a key and no fourth: hand it to the focused window's
+ * renderer, run a command the page implements (`command:open` is the only one), or nothing at all.
+ * An arm, a half-typed sequence and an unbound one are all `Consumed`: the shell took the key.
+ */
+export type KeyOutcome =
+	| {readonly _tag: "ToWindow"; readonly key: string}
+	| {readonly _tag: "Command"; readonly name: string}
+	| {readonly _tag: "Consumed"};
+
+/**
+ * The answer to the last key the kernel routed, stamped with the id the presser sent. The stamp is
+ * the whole point: a second page attached to the same shell writes this field too, so a page may
+ * read an answer as its own only when the id is the one it minted (#8274).
+ */
+export interface LastPress {
+	readonly pressId: string;
+	readonly outcome: KeyOutcome;
+}
+
+/**
  * The whole shell. `views` is keyed by window id across every workspace, not nested under one:
  * window ids are unique desk-wide, and two windows over one process own two view slots (the Vim
  * buffer model), which a per-window key states directly.
@@ -61,6 +82,12 @@ export interface ShellState {
 	/** Desk-level surfaces, held beside the workspaces so a switch leaves them alone (#7500 ruling 4). */
 	readonly desk: DeskState;
 	readonly prefix: PrefixSnapshot;
+	/**
+	 * The kernel's answer to the last key it routed. A page reads it off the acknowledgement for its
+	 * own `keys.press` and does what it says, which is what lets the desk run no router of its own
+	 * (#8274). Absent until a key has been pressed, and on a checkpoint written before this field.
+	 */
+	readonly lastPress?: LastPress;
 	/** The next mint. Every id the shell hands out is `<kind>-<n>` for one `n`, spent once. */
 	readonly nextId: number;
 }
@@ -75,6 +102,16 @@ export const isPrefixSnapshot = (value: unknown): value is PrefixSnapshot => {
 		(value.repeatWindowMs === null || typeof value.repeatWindowMs === "number")
 	);
 };
+
+export const isKeyOutcome = (value: unknown): value is KeyOutcome => {
+	if (!Predicate.isObject(value)) return false;
+	if (value._tag === "ToWindow") return typeof value.key === "string";
+	if (value._tag === "Command") return typeof value.name === "string";
+	return value._tag === "Consumed";
+};
+
+export const isLastPress = (value: unknown): value is LastPress =>
+	Predicate.isObject(value) && typeof value.pressId === "string" && isKeyOutcome(value.outcome);
 
 export const isWorkspace = (value: unknown): value is Workspace =>
 	Predicate.isObject(value) &&
@@ -103,6 +140,7 @@ export const isShellState = (value: unknown): value is ShellState =>
 	Object.values(value.views).every(isViewState) &&
 	isDeskState(value.desk) &&
 	isPrefixSnapshot(value.prefix) &&
+	(value.lastPress === undefined || isLastPress(value.lastPress)) &&
 	typeof value.nextId === "number";
 
 /** The ids one mint spends. Distinct prefixes over one counter, so no two ids can collide. */

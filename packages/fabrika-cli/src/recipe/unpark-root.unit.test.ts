@@ -1,5 +1,5 @@
 /**
- * Where `recipe unpark` looks for the lane its caller named (#7380).
+ * Where `recipe unpark` looks for the lane its caller named.
  *
  * The verb relays `lane status`, and those verbs derive their root off the owning repository, so a
  * bare cwd-relative default here made one lane key name two directories: from a worktree the lane
@@ -9,7 +9,8 @@
 import {Effect, Layer, Option} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs, fakeSeams} from "../fakes.test-support.ts";
-import {NOT_A_REPO} from "../lane/codes.ts";
+import {NOT_A_REPO, ROOT_NOT_OWNED} from "../lane/codes.ts";
+import {parkCauseRead} from "../lane/fixtures.test-support.ts";
 import {resolveRootOrRefuse} from "../lane/ground.ts";
 import {DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import {ENV} from "../ship/fixtures.test-support.ts";
@@ -45,14 +46,24 @@ const unparkFrom = (fs: ReturnType<typeof fakeFs>, cwd: string, root: Option.Opt
 			Effect.gen(function* () {
 				const resolved = yield* resolveRootOrRefuse(VERB, root, DEFAULT_LANES_ROOT, cwd);
 				return typeof resolved === "string"
-					? yield* runUnpark({root: resolved, lane: LANE, task: null, repo: null, cwd, env: ENV})
+					? yield* runUnpark({
+							root: resolved,
+							lane: LANE,
+							task: null,
+							repo: null,
+							cwd,
+							env: ENV,
+							now: "2026-08-29T00:20:00.000Z",
+							parkCause: parkCauseRead(),
+							rationale: null,
+						})
 					: resolved;
 			}),
 			Layer.merge(fs.layer, fakeSeams([]).layer),
 		),
 	);
 
-describe("the lanes root recipe unpark resolves (#7380)", () => {
+describe("the lanes root recipe unpark resolves", () => {
 	it("reaches the primary checkout's lane from a worktree cwd instead of proving it absent", async () => {
 		const out = await unparkFrom(repoFs(), WORKTREE_CWD, Option.none());
 
@@ -78,11 +89,27 @@ describe("the lanes root recipe unpark resolves (#7380)", () => {
 	});
 
 	// The control: the bare relative leaf this verb used to default to, from the same cwd and the
-	// same tree the derived root reaches the lane in.
-	it("proves the lane absent under the cwd-relative leaf the defect defaulted to", async () => {
+	// same tree the derived root reaches the lane in. It used to prove the lane absent at 7 — an
+	// exit `operate` reads as "boot"; the ground guard now refuses it before any read.
+	it("refuses the cwd-relative leaf the defect defaulted to, never proving the lane absent", async () => {
 		const out = await unparkFrom(repoFs(), WORKTREE_CWD, Option.some(DEFAULT_LANES_ROOT));
 
-		expect(out.code).toBe(TARGET_ABSENT);
+		expect(out.code).toBe(NOT_A_REPO);
+		expect(out.code).not.toBe(TARGET_ABSENT);
+	});
+
+	// This verb reaches `resolveRootOrRefuse` and no `onGround`, so an explicit root it took on
+	// trust was a root nothing checked — the stale-copy shape, one verb away from the guard.
+	it("refuses an explicit root under the worktree instead of folding that copy", async () => {
+		const out = await unparkFrom(
+			repoFs(),
+			WORKTREE_CWD,
+			Option.some(`${WORKTREE}/${DEFAULT_LANES_ROOT}`),
+		);
+
+		expect(out.code).toBe(ROOT_NOT_OWNED);
+		expect(out.stderr.join("\n")).toContain(`${WORKTREE}/${DEFAULT_LANES_ROOT}`);
+		expect(out.stderr.join("\n")).toContain(PRIMARY);
 	});
 
 	it("refuses a cwd under no repository rather than resolving a relative path", async () => {

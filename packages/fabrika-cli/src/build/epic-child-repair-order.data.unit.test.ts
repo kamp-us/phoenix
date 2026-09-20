@@ -4,8 +4,8 @@
  *
  * This pin used to assert the six-command order the skill listed. That is exactly what it could not
  * enforce — a resumed builder read the corrected order, ran the armed proof first anyway, and parked
- * epic #7140 while this test was green (#7187). The order now lives in
- * `./resume-child-verb.ts`, under executable coverage in `./resume-child-verb.unit.test.ts`; what is
+ * the epic while this test was green. The order now lives in `./resume-child-verb.ts`, under
+ * executable coverage in `./resume-child-verb.unit.test.ts`; what is
  * left for a data test is the one claim a data test can make, that the skill routes to the verb
  * rather than back to the pieces.
  */

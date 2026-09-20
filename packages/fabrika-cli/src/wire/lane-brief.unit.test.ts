@@ -1,15 +1,17 @@
 /**
- * The lane-brief's repo-independence (#6012): the rules name no repo's path, and `read(emit(b))`
- * round-trips whatever entrypoint the driver resolved — phoenix's in-tree source or an installed
- * copy — because the rules stay a pure function of the ground.
+ * The lane-brief's repo-independence: the rules name no repo's path, and `read(emit(b))`
+ * round-trips whatever entrypoint the driver resolved — in-tree source or an installed copy —
+ * because the rules stay a pure function of the ground.
  *
- * Plus the closed field set (#5809): the section set alone left the driver's own instruction
+ * Plus the closed field set: the section set alone leaves the driver's own instruction
  * representable, as a field rather than as a heading.
  */
 import {describe, expect, it} from "vitest";
 import {
 	artifactUrl,
+	EPIC_RANGE_RULES,
 	EPIC_RULES,
+	EPIC_TAIL_REPAIR_RULES,
 	EPIC_TAIL_RULES,
 	emit,
 	fabrikaEntry,
@@ -47,17 +49,17 @@ const ref = (raw: string) => {
 	return value;
 };
 
-const ISSUE = url("https://github.com/kamp-us/demlik/issues/4");
-const EPIC = url("https://github.com/kamp-us/demlik/issues/40");
-const PR = url("https://github.com/kamp-us/demlik/pull/11");
+const ISSUE = url("https://forge.example/o/r/issues/4");
+const EPIC = url("https://forge.example/o/r/issues/40");
+const PR = url("https://forge.example/o/r/pull/11");
 
 /** The two shapes a driver resolves: an installed copy, and a checkout of fabrika's own repo. */
-const INSTALLED = "/home/dev/demlik/node_modules/@kampus/fabrika-cli/dist/bin.js";
+const INSTALLED = "/home/dev/repo/node_modules/@kampus/fabrika-cli/dist/bin.js";
 const IN_TREE = "packages/fabrika-cli/src/bin.ts";
 
 const brief = (ground: LaneGround, fabrika: string, state: LaneBrief["state"]): LaneBrief => ({
 	lane: "4",
-	root: root("/home/dev/demlik/.fabrika/lanes"),
+	root: root("/home/dev/repo/.fabrika/lanes"),
 	fabrika: entry(fabrika),
 	task: "issue",
 	state,
@@ -72,6 +74,7 @@ const GROUNDS: ReadonlyArray<readonly [string, LaneGround, LaneBrief["state"]]> 
 	["Pull, with the lane's PR", {_tag: "Pull", pr: PR}, "review"],
 	["Pull, at the rendered review", {_tag: "Pull", pr: PR}, "review:ui"],
 	["Tail", {_tag: "Tail", pr: PR, epic: EPIC}, "review"],
+	["Tail repair", {_tag: "TailRepair", pr: PR, epic: EPIC, branch: ref("epic/40")}, "build"],
 	["Epic child build", {_tag: "Epic", epic: EPIC, branch: ref("epic/40")}, "build"],
 	["Epic child UI build", {_tag: "Epic", epic: EPIC, branch: ref("epic/40")}, "build:ui"],
 ];
@@ -88,7 +91,7 @@ describe("the five shell states route through one table", () => {
 	});
 
 	it("refuses a `shell:` field that disagrees with the state it was routed from", () => {
-		const artifact = `## Task\nlane: 4\nroot: /home/dev/demlik/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build:ui\nshell: builder\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
+		const artifact = `## Task\nlane: 4\nroot: /home/dev/repo/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build:ui\nshell: builder\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
 
 		expect(read(artifact)).toMatchObject({
 			_tag: "Malformed",
@@ -99,7 +102,13 @@ describe("the five shell states route through one table", () => {
 
 describe("the lane-brief carries no repo's own path in its rules", () => {
 	it("names no in-tree fabrika path anywhere in the byte-fixed text", () => {
-		for (const text of [RULES, EPIC_RULES, EPIC_TAIL_RULES]) {
+		for (const text of [
+			RULES,
+			EPIC_RULES,
+			EPIC_RANGE_RULES,
+			EPIC_TAIL_RULES,
+			EPIC_TAIL_REPAIR_RULES,
+		]) {
 			expect(text).not.toContain("packages/fabrika-cli/");
 			expect(text).not.toMatch(/node\s+\S*bin\.[jt]s/);
 		}
@@ -110,6 +119,23 @@ describe("the lane-brief carries no repo's own path in its rules", () => {
 		expect(EPIC_RULES).toContain("node <fabrika> build deviations <child>");
 		expect(EPIC_RULES).toContain("node <fabrika> wire emit --format range-verdict-marker");
 		expect(EPIC_TAIL_RULES).toContain("node <fabrika> wire read --format build-deviations");
+		expect(EPIC_RANGE_RULES).toContain("node <fabrika> review seat <child> --base <base> --tip");
+	});
+
+	// A shell reading only its brief has to learn that its tree is the wrong tree by default, and
+	// that the seat refuses rather than falling back to whatever it happened to stand on.
+	it("tells a range-carrying child's shell to seat its tree, and names the refusal", () => {
+		expect(EPIC_RANGE_RULES).toContain("Before any command that reads the working tree");
+		expect(EPIC_RANGE_RULES).toContain("exit 20");
+	});
+
+	// The repair round is told which shell moves the assembly branch, because the assembly worktree
+	// is the driver's and no spawned shell can reach it.
+	it("tells the tail's repair whose shell moves the assembly branch, and merge over rebase", () => {
+		expect(EPIC_TAIL_REPAIR_RULES).toContain("moved by the lane driver alone");
+		expect(EPIC_TAIL_REPAIR_RULES).toContain("`lane assembly`");
+		expect(EPIC_TAIL_REPAIR_RULES).toContain("merges `main` into `epic/<lane>`");
+		expect(EPIC_TAIL_REPAIR_RULES).toContain("Merge, never rebase");
 	});
 });
 
@@ -142,7 +168,7 @@ describe("the `fabrika:` field admits only a node-runnable path", () => {
 	});
 
 	it("refuses the bare binstub — in a worktree it runs another checkout's code (#5679)", () => {
-		expect(fabrikaEntry("/home/dev/demlik/node_modules/.bin/fabrika")).toBeNull();
+		expect(fabrikaEntry("/home/dev/repo/node_modules/.bin/fabrika")).toBeNull();
 		expect(fabrikaEntry("fabrika")).toBeNull();
 	});
 
@@ -155,23 +181,44 @@ describe("the `fabrika:` field admits only a node-runnable path", () => {
 
 describe("a brief with no usable entrypoint is malformed", () => {
 	const withField = (line: string) =>
-		`## Task\nlane: 4\nroot: /home/dev/demlik/.fabrika/lanes\n${line}task: issue\nstate: build\nshell: builder\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
+		`## Task\nlane: 4\nroot: /home/dev/repo/.fabrika/lanes\n${line}task: issue\nstate: build\nshell: builder\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
 
 	it("refuses a brief that names none", () => {
 		expect(read(withField(""))).toMatchObject({_tag: "Malformed", evidence: "fabrika"});
 	});
 
 	it("refuses a brief that names the binstub", () => {
-		expect(read(withField("fabrika: /home/dev/demlik/node_modules/.bin/fabrika\n"))).toMatchObject({
+		expect(read(withField("fabrika: /home/dev/repo/node_modules/.bin/fabrika\n"))).toMatchObject({
 			_tag: "Malformed",
 			evidence: "fabrika",
 		});
 	});
 });
 
+describe("only the tail's own `build` reads a PR beside a branch", () => {
+	const groundOf = (state: string, shell: string, fields: string) =>
+		`## Task\nlane: 4\nroot: /home/dev/repo/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: ${state}\nshell: ${shell}\n## Ground\nissue: ${ISSUE}\n${fields}## Rules\n${RULES}\n`;
+
+	// The tail region seats `build` alone, so a `build:ui` carrying a PR beside a branch is a child
+	// state reaching for the tail's ground — a value the union exists to keep unconstructable.
+	it("refuses a `build:ui` brief carrying the tail repair's PR", () => {
+		expect(
+			read(groundOf("build:ui", "ui-builder", `pr: ${PR}\nepic: ${EPIC}\nbranch: epic/40\n`)),
+		).toMatchObject({_tag: "Malformed", evidence: "pr"});
+	});
+
+	// The refusal sits ahead of the branch parse, so the reader names the field that should not be
+	// there rather than the empty `branch` it reached first.
+	it("reds a child's stray PR on the `pr`, not on the branch it never carried", () => {
+		expect(
+			read(groundOf("review", "reviewer", `pr: ${PR}\nepic: ${EPIC}\nrange: a..b\n`)),
+		).toMatchObject({_tag: "Malformed", evidence: "pr"});
+	});
+});
+
 describe("the field set is closed per section, the way the section set is closed (#5809)", () => {
 	const withGround = (extra: string) =>
-		`## Task\nlane: 4\nroot: /home/dev/demlik/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build\nshell: builder\n## Ground\nissue: ${ISSUE}\n${extra}## Rules\n${RULES}\n`;
+		`## Task\nlane: 4\nroot: /home/dev/repo/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build\nshell: builder\n## Ground\nissue: ${ISSUE}\n${extra}## Rules\n${RULES}\n`;
 
 	it("refuses the driver's instruction rewritten as a field", () => {
 		expect(
@@ -187,12 +234,12 @@ describe("the field set is closed per section, the way the section set is closed
 	});
 
 	it('refuses a "## Ground" field carried under "## Task"', () => {
-		const artifact = `## Task\nlane: 4\nroot: /home/dev/demlik/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build\nshell: builder\npr: ${PR}\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
+		const artifact = `## Task\nlane: 4\nroot: /home/dev/repo/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build\nshell: builder\npr: ${PR}\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
 		expect(read(artifact)).toMatchObject({_tag: "Malformed", evidence: "pr"});
 	});
 
 	it("refuses a key repeated inside the section that owns it", () => {
-		const artifact = `## Task\nlane: 4\nroot: /home/dev/demlik/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build\nshell: builder\nstate: review\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
+		const artifact = `## Task\nlane: 4\nroot: /home/dev/repo/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build\nshell: builder\nstate: review\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
 		expect(read(artifact)).toMatchObject({_tag: "Malformed", evidence: "state"});
 	});
 });

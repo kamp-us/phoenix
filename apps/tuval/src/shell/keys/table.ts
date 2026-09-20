@@ -60,6 +60,11 @@ export const defaultPrefixTable: PrefixTable = {
 		{sequence: "<arrowright>", command: command("window:focus-right"), repeatable: false},
 		{sequence: "z", command: command("window:zoom"), repeatable: false},
 		{sequence: "x", command: command("window:close"), repeatable: false},
+		// tmux binds `w` to `choose-window`, and the founder's config leaves it free (#8083).
+		{sequence: "w", command: command("window:pick"), repeatable: false},
+		// `a` is tmux's `last-pane` and the founder's config leaves it free, so it is the chord that
+		// puts focus on the focused window's own list (#8407).
+		{sequence: "a", command: command("window:focus-list"), repeatable: false},
 		{sequence: "N", command: command("workspace:create"), repeatable: false},
 		{sequence: "<c-h>", command: command("workspace:previous"), repeatable: true},
 		{sequence: "<c-l>", command: command("workspace:next"), repeatable: true},
@@ -67,6 +72,27 @@ export const defaultPrefixTable: PrefixTable = {
 		{sequence: "r", command: command("config:reload"), repeatable: false},
 	],
 };
+
+/**
+ * The bindings a feature flag adds. tmux pulls its tree picker up with `choose-tree` on `prefix s`;
+ * the founder ruled `p`, for processes, and `p` is free in the table above (#8867).
+ */
+const boardBindings: ReadonlyArray<Binding> = [
+	{sequence: "p", command: command("desk:board-toggle"), repeatable: false},
+];
+
+/** The flags a binding can be gated on — the shell's own read of `../../features.ts`. */
+export interface KeyFeatures {
+	readonly processBoard: boolean;
+}
+
+/**
+ * The grammar these flags leave standing. A gated binding names a gated command row
+ * (`../commands/table.ts`), and both are gated on the one flag, so a key can never name a row this
+ * build does not hold.
+ */
+export const prefixTableFor = (table: PrefixTable, features: KeyFeatures): PrefixTable =>
+	features.processBoard ? {...table, bindings: [...table.bindings, ...boardBindings]} : table;
 
 /** A config value naming a sequence — or a prefix — the key grammar cannot read. */
 export interface UnreadableSequenceError {

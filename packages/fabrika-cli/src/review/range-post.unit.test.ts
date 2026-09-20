@@ -1,5 +1,5 @@
 /**
- * The range-scoped write path (#5935), exercised through both verbs that own it — end to end on a
+ * The range-scoped write path, exercised through both verbs that own it — end to end on a
  * range, from the flag seam to the read-back, against the same reader `lane prove`'s epic-child arm
  * folds. The fail-closed direction gets its own cases: a namespace the range did not derive and a
  * range touching no governance root both refuse, so growing the range mode narrowed neither guard.
@@ -20,7 +20,7 @@ import {
 } from "../governance/post-verb.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
-import {OFF_VOCABULARY, SUPERSEDES_VERDICT, ZERO_SCOPE} from "./codes.ts";
+import {APPENDED_THIS_ROUND, OFF_VOCABULARY, SUPERSEDES_VERDICT, ZERO_SCOPE} from "./codes.ts";
 import {BASE, CONTENT, comments, HEAD, RAW, RAW_AT} from "./fixtures.test-support.ts";
 import {type PostOptions as ReviewPostOptions, runPost as runReviewPost} from "./post-verb.ts";
 import {FENCE, compose as supersedeWith} from "./supersede.ts";
@@ -44,12 +44,12 @@ const GOV_RAW = `:100644 100644 ${"a".repeat(40)} ${"b".repeat(40)} M\0claude-pl
 const GOV_CONTENT = "bb15e4131548";
 const GOV_MARKER = `governance: PASS range:${RANGE} content:${GOV_CONTENT} — no contradiction, no weakening`;
 
-const issue = (shape: {state?: string; pull?: boolean} = {}): HttpReply => ({
+const issue = (shape: {state?: string; pull?: boolean; body?: string} = {}): HttpReply => ({
 	status: 200,
 	body: JSON.stringify({
 		number: 5830,
 		title: "epic child",
-		body: "",
+		body: shape.body ?? "",
 		state: shape.state ?? "open",
 		labels: [],
 		html_url: "https://example.test/issues/5830",
@@ -88,6 +88,7 @@ const reviewOptions: ReviewPostOptions = {
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
 	now: Effect.succeed(ON),
 	supersede: false,
+	round: 1,
 };
 
 const governanceOptions: GovernancePostOptions = {
@@ -169,6 +170,57 @@ const runGovernance = (
 			Layer.merge(fakeSeams(script).layer, unconfigured),
 		),
 	);
+
+/**
+ * The child arm of `review post`'s `18` fence.
+ *
+ * A child's reviewer routes an in-scope finding with `--base`/`--tip` too, and its tag reads
+ * `range:<base>..<tip>` rather than `pr:#<n>`. A reader that knew only the `pr:#` spelling would
+ * leave exactly one subject able to pair an append with a PASS — and a child's PASS folds its range
+ * into the epic's tail, where nothing reads the child's body again.
+ */
+describe("review post --base/--tip refuses a PASS on the round that appended a criterion", () => {
+	const routed = (tag: string): string =>
+		`### Acceptance criteria\n\n- [ ] the first thing\n- [ ] the widened union has a test ${tag}\n`;
+
+	it("refuses on 18 over a range-tagged append from this very round", async () => {
+		const out = await runReview([
+			[ISSUE, issue({body: routed(`<!-- ac:review range:${RANGE} round:1 -->`)})],
+			...reviewHappy().slice(1),
+		]);
+		expect(out.code).toBe(APPENDED_THIS_ROUND);
+		expect(out.stderr.at(-1)).toContain(`the range ${RANGE}`);
+		expect(out.stderr.at(-1)).toContain("--polarity FAIL");
+	});
+
+	// Both ends are compared prefix-tolerantly, matching the upsert key: a reviewer that appended
+	// under an abbreviated range and posts under the full forty judged one subject, not two.
+	it("matches an abbreviated range against the full one", async () => {
+		const abbreviated = `${BASE.slice(0, 7)}..${HEAD.slice(0, 7)}`;
+		const out = await runReview([
+			[ISSUE, issue({body: routed(`<!-- ac:review range:${abbreviated} round:1 -->`)})],
+			...reviewHappy().slice(1),
+		]);
+		expect(out.code).toBe(APPENDED_THIS_ROUND);
+	});
+
+	it("passes a later round, and a row routed from another range", async () => {
+		const later = await runReview(
+			[
+				[ISSUE, issue({body: routed(`<!-- ac:review range:${RANGE} round:1 -->`)})],
+				...reviewHappy().slice(1),
+			],
+			{round: 2},
+		);
+		expect(later.code).toBe(0);
+
+		const elsewhere = await runReview([
+			[ISSUE, issue({body: routed(`<!-- ac:review range:${HEAD}..${BASE} round:1 -->`)})],
+			...reviewHappy().slice(1),
+		]);
+		expect(elsewhere.code).toBe(0);
+	});
+});
 
 describe("review post --base/--tip", () => {
 	it("posts the range-scoped verdict on the child issue and names the range it binds", async () => {

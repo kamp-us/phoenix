@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {recordClearedRound} from "./clearance.ts";
-import {coderTemplateText, twoPhaseWorkflow} from "./fixtures.test-support.ts";
+import {coderTemplateText, laneWrites, twoPhaseWorkflow} from "./fixtures.test-support.ts";
 import {deriveStatus, foldLog, parseLog} from "./fold.ts";
 import {compileText} from "./machine.ts";
 
@@ -38,7 +38,7 @@ describe("recordClearedRound", () => {
 		const {result, written} = await run({[WORKFLOW]: coderTemplateText()}, null, CAP_ROUND);
 		expect(result._tag).toBe("Recorded");
 		// The machine document is untouched — a grant is a line in the log, never a context edit,
-		// which is what keeps an already-recorded FAIL on the routing it took (ADR 0312).
+		// which is what keeps an already-recorded FAIL on the routing it took.
 		expect(written.has(WORKFLOW)).toBe(false);
 		const log = written.get(LOG) ?? "";
 		expect(JSON.parse(log.trim())).toMatchObject({
@@ -57,7 +57,7 @@ describe("recordClearedRound", () => {
 			CAP_ROUND,
 		);
 		expect(result._tag).toBe("AlreadyHeld");
-		expect(again.size).toBe(0);
+		expect(laneWrites(again)).toEqual([]);
 	});
 
 	it("stacks two distinct rounds, each buying exactly one", async () => {
@@ -83,7 +83,7 @@ describe("recordClearedRound", () => {
 			CAP_ROUND,
 		);
 		expect(result).toMatchObject({_tag: "Unusable", reason: expect.stringContaining("--task")});
-		expect(written.size).toBe(0);
+		expect(laneWrites(written)).toEqual([]);
 	});
 
 	it("refuses a task the machine does not hold", async () => {

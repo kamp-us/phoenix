@@ -3,10 +3,10 @@
  *
  * `ship gate` seats `blocked` at exit 0, and that is right for its interface: `blocked` is an answer
  * it proved, and a produced answer goes on 0 (`../verb.ts`). But an answer nobody reads enforces
- * nothing. The floor landed in #5231 and two fabrika-tree PRs merged with no governance verdict
- * anyway, because the only thing turning `blocked` into a stop was prose in the `ship` skill (#5408).
- * A workflow step cannot read `gate\tblocked` on its own without deciding in bash, which ADR 0228
- * forbids — so the decision is seated here and CI relays this verb's exit code.
+ * nothing. When the only thing turning `blocked` into a stop was prose in the `ship` skill,
+ * governance-root PRs merged with no governance verdict anyway. A workflow step cannot read
+ * `gate\tblocked` on its own without deciding in bash, which shell must never do — so the decision is
+ * seated here and CI relays this verb's exit code.
  *
  * **One namespace, and the resolution is `runGate`'s own.** This verb is not a second conjunction: it
  * asks `ship gate` for `governance` and reads that one line back, so there is one derivation of an
@@ -15,14 +15,29 @@
  *
  * **It refuses on WRONG, not only on MISSING.** `absent`, `stale` and `fail` all seat
  * {@link GOVERNANCE_FLOOR_UNMET}; a verdict from an author without write+ resolves `absent` through
- * the ADR 0055 ACL gate and lands there too. Only a head-bound PASS from an authorized author is
+ * the ACL gate and lands there too. Only a head-bound PASS from an authorized author is
  * satisfied.
  *
  * **What the floor is, and how it is seated, are two things.** {@link resolveFloor} answers the
  * first and nothing else; {@link runFloor} seats that answer on this verb's exit table, and
  * `./floor-check.ts` seats the same answer on a check-run. Splitting them is what lets the
  * check-run mode distinguish "not judged yet" from "judged wrong" without a second derivation of
- * the floor to disagree with this one (#6161).
+ * the floor to disagree with this one.
+ *
+ * **Whether the floor binds is read off the enumerated file list, not off GitHub's `changed_files`.**
+ * A list short of that declared count used to refuse at `13` on the grounds that a governance root
+ * could sit in the part nobody read. The count is the stale side — GitHub computes it against a base
+ * cached at the PR's last push — so the refusal blocked the merge with no act available to clear it.
+ * {@link platformFileSet} owns that argument; the disagreement leaves as a `scanned` line, and the
+ * empty-list refusal below is what keeps `not-required` from being answered over a diff nobody read.
+ *
+ * **The `13` this verb now keeps is the endpoint's own ceiling, not a count comparison.**
+ * `pulls/<n>/files` serves at most 3000 files (`PULL_FILES_CAP`) and ends its Link chain normally
+ * there, so the pagination proof passes over a list GitHub already truncated — and a governance
+ * root could sit in the part it never served. Unlike the retired arm, this one rests on a fact
+ * about the read itself rather than on a count computed against a base cached elsewhere.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -30,6 +45,7 @@ import {governedRootsOr} from "../config/paths.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {listPullFiles} from "../io/pulls.ts";
 import {touchesGovernanceRoot} from "../review/classes.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	GOVERNANCE_FLOOR_UNMET,
@@ -67,7 +83,7 @@ const REMEDY: Readonly<Record<string, string>> = {
 	absent:
 		"no authorized governance verdict at this head — run the `governance` skill and emit one with `fabrika governance post`",
 	stale:
-		"the in-force governance verdict is bound to another head — re-judge at this head and re-post (ADR 0058)",
+		"the in-force governance verdict is bound to another head — re-judge at this head and re-post",
 	fail: "the in-force governance verdict at this head is FAIL — repair the diff and re-post",
 };
 
@@ -153,8 +169,17 @@ export const resolveFloor = (
 		if (target._tag === "Refused") return unresolved(target.outcome);
 		const pull = target.pull;
 
-		const listed = yield* listPullFiles(repo, pr);
-		if (listed._tag === "Failure") {
+		// The enumerated list IS the file set, and the pull-request record's `changed_files` is reported
+		// beside it rather than refused on. The read stays the platform's rather than a git range
+		// because `runGate` below derives the same floor off that list: two readers over two file sets
+		// is the drift a single `platformFileSet` call on each side designs out.
+		const listed = platformFileSet(
+			VERB,
+			`#${pr}`,
+			pull.changedFiles,
+			yield* listPullFiles(repo, pr),
+		);
+		if (listed._tag === "Unreadable") {
 			return unresolved(
 				refuse(
 					PRECONDITION_UNKNOWN,
@@ -162,39 +187,50 @@ export const resolveFloor = (
 				),
 			);
 		}
+		const changed = listed.set.files;
 		const scanned = [
-			scannedLine(VERB, listed.value.length, "changed file", `${pull.changedFiles} declared`),
+			scannedLine(VERB, changed.length, "changed file", `${pull.changedFiles} declared`),
+			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
 		];
-		if (listed.value.length < pull.changedFiles) {
+		// Zero is the shortfall the enumeration alone establishes, and with the declared count no longer
+		// refusing it is the whole floor: an empty list would answer `not-required` over a diff nobody
+		// looked at.
+		if (changed.length === 0) {
 			return unresolved(
 				refuse(
-					INCOMPLETE_SCAN,
-					`${VERB}: received ${listed.value.length} of ${pull.changedFiles} changed files — a governance root could sit in the part nobody read.`,
+					ZERO_SCOPE,
+					`${VERB}: PR #${pr} has zero changed files — whether it touches a governance root is unanswerable.`,
 					scanned,
 				),
 			);
 		}
-		if (listed.value.length === 0) {
+		// The ceiling is the one truncation the enumeration cannot rule out on its own: the endpoint
+		// stops serving files there and ends its Link chain as a complete read ends.
+		if (listed.set.capped) {
 			return unresolved(
 				refuse(
-					ZERO_SCOPE,
-					`${VERB}: PR #${pr} has zero changed files — whether it touches a governance root is unanswerable (ADR 0092).`,
+					INCOMPLETE_SCAN,
+					platformCapLine(
+						VERB,
+						`#${pr}`,
+						"a governance root could sit in the part the platform never served.",
+					),
 					scanned,
 				),
 			);
 		}
 
-		if (!touchesGovernanceRoot(listed.value, governed.roots)) {
+		if (!touchesGovernanceRoot(changed, governed.roots)) {
 			const clear = `${VERB}: #${pr}'s diff touches no governance root, so the floor does not bind — this is an answer about the diff, not a discharged verdict.`;
 			return {
 				_tag: "Unbound",
 				sha: bound,
-				scanned: listed.value.length,
+				scanned: changed.length,
 				stderr: [...scanned, clear],
 			};
 		}
 
-		// The floor's whole resolution — marker read, ADR 0055 ACL, head-binding, in-force ordering —
+		// The floor's whole resolution — marker read, ACL gate, head-binding, in-force ordering —
 		// is `ship gate`'s, asked for this one namespace. A second file read cannot loosen the
 		// requirement: `--require governance` is passed because the read above already proved a
 		// governance root, so a diff that changed under us still gates.
@@ -223,12 +259,12 @@ export const resolveFloor = (
 				),
 			);
 		}
-		return {_tag: "Bound", state, sha: bound, scanned: listed.value.length, stderr: relayed};
+		return {_tag: "Bound", state, sha: bound, scanned: changed.length, stderr: relayed};
 	});
 
 /** Why a blocking state blocks, in the words the person reading the check needs. */
 export const floorRefusalLine = (pr: number, state: string, sha: string): string =>
-	`${VERB}: #${pr} touches a governance root and its ${NAMESPACE} verdict at ${sha} is ${state} — ${REMEDY[state] ?? "the floor is not discharged"} (#5408).`;
+	`${VERB}: #${pr} touches a governance root and its ${NAMESPACE} verdict at ${sha} is ${state} — ${REMEDY[state] ?? "the floor is not discharged"}.`;
 
 export const runFloor = (
 	options: FloorOptions,

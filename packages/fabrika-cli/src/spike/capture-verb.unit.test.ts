@@ -221,7 +221,7 @@ describe("runCapture splits a proven absence from a failed read", () => {
 	});
 });
 
-describe("the ACL gate precedes every write, on every path (ADR 0055)", () => {
+describe("the ACL gate precedes every write, on every path", () => {
 	it("refuses an author below write on 19", async () => {
 		const {outcome, requests} = await run([
 			[VIEWER, {status: 200, body: '{"login":"agent"}'}],

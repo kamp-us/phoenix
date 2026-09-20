@@ -1,32 +1,38 @@
 /**
  * `triage claim` — take one lane's claim on one issue, proven by read-back.
  *
- * Post this lane's marker, re-read every marker on the issue, discard the ones older than the
- * TTL, and let the earliest survivor win. `won` and `lost` are both **proven answers** and both exit
- * 0, with the discriminator in the state word: a losing claim is something this verb *determined*,
- * so seating it on a non-zero code would make "another sweep holds it" indistinguishable from "the
- * verb is broken".
+ * Post this lane's marker and resolve the race through `claim.ts`.
+ * See `triage claim --help` for the answer contract.
  *
  * **A claim names a lane, and the lane is the token this verb hands back.** A run with no `--token`
  * mints one and races under its nonce; a run that passes the token it was handed re-enters the lane
  * it already owns. That is what makes re-entry idempotent *and* keeps two triagers of one session
  * apart — the session id alone told each sibling of a fan-out that it held its sibling's marker, and
- * both wrote the issue (#6132).
+ * both wrote the issue.
  *
  * Everything a marker set could fail to say is a refusal instead. An unreadable comment list, a
  * shape that is not a list of comments, a marker whose ordering key will not parse — none of them
  * resolve to "no competing claim", which is the fail-open shape this verb exists to design out (see
- * `claim.ts`). The resolution itself is pure and lives there; this module is the IO and the exit
- * codes.
+ * `claim.ts`). A comment list that the issue's own declared count proves short is one of those
+ * refusals too, which is why both reads here go through `listCommentsReconciled` rather than
+ * `listComments`: the rule is only as good as the set it is handed, and a stale set once answered
+ * `won` for a lane that had already lost. The resolution itself is pure and lives in
+ * `claim.ts`; this module is the IO and the exit codes.
  *
  * The `Attempt`/`Existence` results the IO returns are **values, not the `E` channel**: a 404 and a
- * 502 are outcomes this verb maps onto its own codes, not exceptions (effect-smol `LLMS.md`
+ * 502 are outcomes this verb maps onto its own codes, not exceptions (Effect-TS/effect `LLMS.md`
  * §"Error handling" — the typed error channel is for faults a caller recovers from, and `io/exec.ts`
  * already folds the spawn fault in).
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {createComment, deleteComment, getIssue, listComments, resolveRepo} from "../io/issues.ts";
+import {
+	createComment,
+	deleteComment,
+	getIssue,
+	listCommentsReconciled,
+	resolveRepo,
+} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	type AskedLane,
@@ -114,7 +120,7 @@ export const runClaim = (
 			return refuse(ZERO_SCOPE, `${VERB}: issue #${issue} is closed — nothing to triage.`);
 		}
 
-		const before = yield* listComments(repo, issue);
+		const before = yield* listCommentsReconciled(repo, issue);
 		if (before._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -126,10 +132,10 @@ export const runClaim = (
 		// Re-entering one lane is idempotent: a second marker under the same nonce is strictly later
 		// than the first, so it can win nothing the first did not and only adds litter to clean up. It
 		// is the LANE that re-enters, not the session — a sibling lane of the same session holds a
-		// marker under another nonce, and posting its own is exactly what the race needs (#6132).
+		// marker under another nonce, and posting its own is exactly what the race needs.
 		const alreadyHeld = myMarker(
 			resolveClaim({
-				markers: markersOf(before.value),
+				markers: markersOf(before.value.comments),
 				caller,
 				now,
 				ttlMinutes: DEFAULT_TTL_MINUTES,
@@ -148,7 +154,7 @@ export const runClaim = (
 			postedId = posted.value.id;
 		}
 
-		const after = alreadyHeld === null ? yield* listComments(repo, issue) : before;
+		const after = alreadyHeld === null ? yield* listCommentsReconciled(repo, issue) : before;
 		if (after._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -160,9 +166,9 @@ export const runClaim = (
 						],
 			);
 		}
-		const scope = scannedLine(VERB, repo, after.value.length, "comment");
+		const scope = scannedLine(VERB, repo, after.value.comments.length, "comment");
 		const resolution = resolveClaim({
-			markers: markersOf(after.value),
+			markers: markersOf(after.value.comments),
 			caller,
 			now,
 			ttlMinutes: DEFAULT_TTL_MINUTES,

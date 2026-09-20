@@ -1,13 +1,6 @@
 /**
- * `graduate trail` — resolve one source through its sibling reader and normalize it into one
- * provenance-tagged decision trail.
- *
- * **All three readiness tokens exit `0`.** A trail holding an unresolved decision is this skill
- * working; seating it on a non-zero code would make a caller's `[ $? -ne 0 ]` read "the founder has
- * not decided yet" as "the verb never ran".
- *
- * The verb writes nothing, so its `7` is a *named* target proven absent rather than a write target —
- * the widening this group's `./codes.ts` states.
+ * `graduate trail` normalizes one source through its sibling reader.
+ * See `graduate trail --help` for readiness and refusal details.
  */
 
 import {Effect} from "effect";

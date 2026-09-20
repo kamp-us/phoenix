@@ -1,6 +1,6 @@
 /**
  * `grill read` — the parser: per-question state, ACL-resolved, digest-checked, plus the frontier
- * token and every disregarded marker.
+ * token, every disregarded marker and the total audit-context read. Research never supplies rulings.
  *
  * <!-- anchor: READ-NEVER-REFUSES-ON-CONTENT --> **This verb never refuses on marker content.** A
  * malformed marker, an unauthorized author, or a digest binding no round are all **data** —
@@ -9,14 +9,10 @@
  * access disable the verb by posting one malformed marker. Its only refusals are a session that
  * does not exist and a read that could not complete.
  *
- * **All four frontier tokens exit `0`.** A frontier holding open questions is this skill working,
- * not a failure; seating it on a non-zero code would make a caller's `[ $? -ne 0 ]` read "the
- * founder has not answered yet" as "the verb never ran".
- *
  * **Zero comments is a fact** — `empty`, the ordinary state of a session opened and not yet
  * grilled. A comment read that could not complete leaves every question's state UNKNOWN, never
  * `open`: an unpaginated read would silently drop the newest rounds and report a ruled question as
- * open, which is the fail-open direction (ADR 0092).
+ * open, which is the fail-open direction.
  *
  * **Where a later marker meets an earlier one on the same question, the later comment wins.** The
  * markers are a log, and the newest record of a question is what the session currently says about
@@ -27,6 +23,7 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type CommentRecord, listComments, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import * as auditContext from "../wire/audit-context.ts";
 import {read as readCameFrom, ticketOf} from "../wire/came-from.ts";
 import type {MarkerTime, QuestionId, RoundDigest} from "../wire/grill-marker.ts";
 import {NO_TARGET, PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -44,7 +41,6 @@ import {
 /** The closed set of question states. `superseded` occurs on either kind and always wins. */
 export type QuestionState = "open" | "answered" | "ruled" | "unattested" | "stale" | "superseded";
 
-/** The closed set of frontier tokens. All four are answers at exit `0`. */
 export type Frontier = "awaiting-founder" | "facts-pending" | "clear" | "empty";
 
 /** One question row. The five always-present keys, then the conditional ones per state. */
@@ -156,7 +152,7 @@ export const runRead = (
 		// A drifted section is reported, not refused: the READ-NEVER-REFUSES-ON-CONTENT invariant above
 		// holds, and refusing here would let anyone with write access disable the verb by editing one
 		// heading. So the drift lands on stderr beside the unparsable rounds, and `ticket` is null with
-		// the reason visible — never null in silence, which is what `grill open` cannot afford (#5661).
+		// the reason visible — never null in silence, which is what `grill open` cannot afford.
 		const binding = readCameFrom(found.body);
 		const ticket = binding._tag === "Found" ? ticketOf(binding.value.binding) : null;
 		const bindingLine =
@@ -243,7 +239,7 @@ export const runRead = (
 				disregarded.push({
 					comment: marker.comment,
 					reason: "unattested",
-					detail: `the marker on ${row.id} carries no adjacent dated authorization — a bare stamp is void (#4938)`,
+					detail: `the marker on ${row.id} carries no adjacent dated authorization — a bare stamp is void`,
 				});
 				rows.set(row.id, {...row, state: "unattested"});
 				continue;
@@ -287,6 +283,7 @@ export const runRead = (
 		return answer(
 			JSON.stringify({
 				session,
+				auditContext: auditContext.read(found.body),
 				ticket,
 				frontier: frontierOf(questions),
 				questions,

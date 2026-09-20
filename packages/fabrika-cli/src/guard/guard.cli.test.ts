@@ -5,7 +5,7 @@
  * count is this file's cost (`.patterns/subprocess-test-budget.md`). Each `it` is about a fact no
  * in-process test can establish: that the nested `guard <name> check` path is reachable by its
  * registration alone, that a violation really does cross the process boundary as a distinct
- * non-zero code, and that zero scope reds rather than passing (ADR 0092). One spawn per registered
+ * non-zero code, and that zero scope reds rather than passing. One spawn per registered
  * guard covers the registration; the taxonomy is proven once, on readme-guard.
  *
  * The four BOARD guards reach GitHub, so their registration spawn resolves the leaf and stops
@@ -74,7 +74,7 @@ describe("fabrika guard, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () 
 		expect(run.stderr).toContain("packages/a");
 	});
 
-	it("reds an empty scope rather than passing it (ADR 0092)", () => {
+	it("reds an empty scope rather than passing it", () => {
 		const run = fabrika(["guard", "readme-guard", "check", "--root", fixture({})]);
 		expect(run.code).toBe(ZERO_SCOPE);
 		expect(run.stdout).toBe("");
@@ -115,17 +115,17 @@ describe("fabrika guard, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () 
 		expect(run.stdout).toContain(marker);
 	});
 
-	// The #5720 CI-shape and canon/design batch. Two of these leaves are NOT named `check`, which
+	// The CI-shape and canon/design batch. Two of these leaves are NOT named `check`, which
 	// is the whole reason to spawn them: a leaf mis-registered under the wrong name is invisible to
 	// every in-process test and shows up only as an unknown-subcommand refusal in CI.
 	it.each([
 		["path-filter-guard", "check", "Example: fabrika guard path-filter-guard check"],
 		["change-detect-guard", "check", "Example: fabrika guard change-detect-guard check"],
 		["codeowners-cp", "check", "Example: fabrika guard codeowners-cp check"],
-		["decisions-index", "validate", "ADR 0074"],
-		["design-token-guard", "check", "ADR 0162"],
-		["design-inventory", "check", "ADR 0194"],
-		["design-inventory", "generate", "ADR 0194"],
+		["decisions-index", "validate", "Example: fabrika guard decisions-index validate"],
+		["design-token-guard", "check", "Example: fabrika guard design-token-guard check"],
+		["design-inventory", "check", "Example: fabrika guard design-inventory check"],
+		["design-inventory", "generate", "Example: fabrika guard design-inventory generate"],
 		["i18n-guard", "check", "Example: fabrika guard i18n-guard check"],
 		["no-gh", "check", "Example: fabrika guard no-gh check"],
 	])("reaches %s's %s leaf by its registration alone", (guard, leaf, marker) => {

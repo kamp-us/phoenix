@@ -41,17 +41,22 @@ of your session hold live markers. With it, a sibling's claim is refused and you
 same re-read refuses a closed target on `7`. Neither refusal is overridable, and a comment read that
 fails is `11` — never a pass.
 
-**Every working file you write goes where this prints, and nowhere else:**
+**Every working file you write is one this verb printed, and nowhere else:**
 
 ```bash
 fabrika triage scratch $issue_number --slug authored --token <claim-token>
 ```
 
-The token's nonce is what keys that directory to your lane. A fan-out shares one session
-scratchpad, so a file named by convention — `authored.md` — is overwritten by a sibling lane
-silently, and the body you then post is another issue's
-([#6630](https://github.com/kamp-us/phoenix/issues/6630)). The path it prints is machine-local and
-must never reach a posted artifact; the writing verbs red on it (`5`).
+**That prints one file, and its name is the `--slug` you passed.** The parent directory is created
+for you and the leaf is not, so write the path exactly as printed — there is nothing to `mkdir`, and
+appending to it (`<printed>/body.md`) fails with `no such file or directory` because the leaf is a
+file, not a folder. **A second working file is a second `scratch` call with a different slug**,
+`--slug notes` beside `--slug authored`.
+
+The token's nonce is what keys those paths to your lane. A fan-out shares one session scratchpad, so
+a slug picked by convention — `authored` — names the same leaf in every lane, and without the nonce
+a sibling's write lands on yours silently and the body you then post is another issue's. The path is
+machine-local and must never reach a posted artifact; the writing verbs red on it (`5`).
 
 ## 2 — Read the issue, then read the code it is about
 
@@ -60,10 +65,11 @@ in your own words. **Check any falsifiable claim it rests on against source befo
 of it** — a summary of a contract is not the contract. A hand-filed issue skipped dedup:
 
 ```bash
-fabrika report dedup --query "sozluk definition editor loses focus after save" --exclude $issue_number
+fabrika report dedup --query "definition editor loses focus after save" --exclude $issue_number
 ```
 
-Read `candidates` yourself — shared vocabulary is not a shared observation; `indeterminate` is a
+Read `candidates` yourself — shared vocabulary is not a shared observation. A closed match needs
+a behavior check before it can count as already fixed; `indeterminate` is a
 non-check, so re-query. `--exclude` is this group's extension to the `report` verb, and its grammar
 is the section that adds it:
 `fabrika wire doc-section --heading "report dedup — the --exclude extension" < <skill-base>/contract.md`. A duplicate routes by who filed it (step 8).
@@ -71,13 +77,9 @@ is the section that adds it:
 **On an agent-filed report, read the gap at `origin/main` before you enrich anything on top of it.**
 An agent files from a worktree whose skills and code were cut before a fix merged, so it reports a
 gap main has already closed — and enriching that is a founder ruling spent on a bug that was never
-live. Four parked KILLs in one drain were this one shape
-([#6527](https://github.com/kamp-us/phoenix/issues/6527),
-[#6519](https://github.com/kamp-us/phoenix/issues/6519),
-[#6526](https://github.com/kamp-us/phoenix/issues/6526),
-[#6512](https://github.com/kamp-us/phoenix/issues/6512)). So fetch, then read the file or verb the
-issue names **at main** — never the copy in the checkout you are standing in, which is the filer's
-snapshot or your own:
+live. Four parked KILLs in one queue drain were this one shape. So fetch, then read the file or verb
+the issue names **at main** — never the copy in the checkout you are standing in, which is the
+filer's snapshot or your own:
 
 ```bash
 git fetch origin main
@@ -86,11 +88,10 @@ git show origin/main:packages/fabrika-cli/src/lane/assembly-verb.ts
 
 A gap the artifact at main no longer has is **superseded**: close it yourself under §8's `superseded`
 clause with `fabrika triage kill $issue_number --confirm`, and say in the note what landed and where
-you read it. **No founder ruling is owed for that close** — the
-[#6070 (c) ruling](https://github.com/kamp-us/phoenix/issues/6070#issuecomment-5361950454) already
-lets triage close a twin on its own judgment, and ADR
-[0328](../../../../.decisions/0328-report-freshness-check-at-triage.md) puts this check at this
-layer for the same reason. This close carries no `--duplicate-of`, so it reaches agent filings only:
+you read it. **No founder ruling is owed for that close** — triage closes a twin on its own
+judgment, and the freshness check belongs at this layer for the same reason: intake is the last
+place a stale report is caught before a lane spends a whole round rebuilding a fix that already
+landed. This close carries no `--duplicate-of`, so it reaches agent filings only:
 §8's rule stands unchanged — **a human filing is parked, never killed** on this path, however
 plainly main already fixed it. Fold it into a survivor with `--duplicate-of` and provenance stops
 mattering; a bare `--confirm` close of a human filing still refuses on `12`.
@@ -122,8 +123,8 @@ has been read at main.
   you picked stamped `ready-for:human` in step 7. **"Forced" describes implementation mechanics,
   never direction** — step 4's *forced fit* is the separate question of where a ticket attaches — and
   "no PR in this repo can change X" eliminates nothing on its own, because the code X invokes is
-  usually repo-ownable (#5679's global shim vs `packages/fabrika-cli/src/bin.ts`; that exclusion cost
-  a full build round).
+  usually repo-ownable (a globally installed shim vs the repo's own
+  `packages/fabrika-cli/src/bin.ts`; that exclusion cost a full build round).
 
 Done when one type holds and you can name the question that excluded its nearest neighbour — a
 question about which category this is, never about which direction it should take.
@@ -136,7 +137,7 @@ question — is there already a ticket that *owns this surface* and should absor
 surface, not on your issue's wording:
 
 ```bash
-fabrika report dedup --query "sozluk definition editor keyboard focus" --exclude $issue_number
+fabrika report dedup --query "definition editor keyboard focus" --exclude $issue_number
 ```
 
 Read the candidates yourself and take the cheapest true route:
@@ -144,10 +145,9 @@ Read the candidates yourself and take the cheapest true route:
 - **An open epic or issue already owns this surface** → **fold in and close**, which is the preferred
   outcome. Add this issue's content to the survivor, then close this one against it so the trail runs
   both ways — the survivor carries the content, this issue points at the survivor. `fabrika triage
-  kill $issue_number --confirm --duplicate-of 4290` is the folding route, and it is open whatever the
-  provenance — a human filing folds and closes here exactly as an agent filing does
-  ([#6070's ruling](https://github.com/kamp-us/phoenix/issues/6070#issuecomment-5361950454)), because
-  a fold moves the content into the survivor instead of discarding it. `--confirm` is still required,
+  kill $issue_number --confirm --duplicate-of 8` is the folding route, and it is open whatever the
+  provenance — a human filing folds and closes here exactly as an agent filing does, because a
+  fold moves the content into the survivor instead of discarding it. `--confirm` is still required,
   and it is the `--duplicate-of` that opens the close, not the `--confirm`: a bare `--confirm` close
   of a human filing still refuses on `12` (step 8).
 - **Several small items cluster on one surface with no owner yet** → **make the cluster an epic**
@@ -186,7 +186,7 @@ Lane-entering work (an epic, or a parentless feature) additionally carries a `##
 approves a pitch**. Take an existing home: **triage never creates a milestone**, and
 `wayfinder:backlog` is bounded to genuine fog rather than work you would rather not decide about.
 **An `active` campaign's milestone is closed to new intake** unless the work is `p0` or `p1`, or
-blocks one of that milestone's own in-flight lanes (ADR 0354) — `triage homes` marks those rows
+blocks one of that milestone's own in-flight lanes — `triage homes` marks those rows
 `running: p0/p1 or blocker`, and is where you read which milestones they are. Only `p2` is subtracted,
 so a park reason names that band and nothing wider. That is a subtraction and nothing more: home the work by fit exactly as above.
 Every row the verb prints, and what `running` is derived from, is its own section
@@ -202,29 +202,46 @@ fabrika triage enrich $issue_number --token <claim-token> <<'EOF'
 EOF
 ```
 
-For an epic, `fabrika triage enrich 4318 --epic` takes the pitch's five fields on that same stdin —
-Problem / Arc / Appetite / Rabbit-holes / No-gos — and heads them `## Pitch` above the brief, which
-it preserves verbatim for the planner; no *rewrite* goes above an epic's brief. The rewrite adds
-real paths and function names over vague framing, and acceptance criteria that make "done" legible —
-not a closed set, a `review-*` gate may append. The criteria block's grammar is the wire format's,
-not this skill's ([`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts)):
+For an epic, `fabrika triage enrich $issue_number --epic` takes the pitch's five fields on that same
+stdin — Problem / Arc / Appetite / Rabbit-holes / No-gos — and heads them `## Pitch` above the
+brief, which it preserves verbatim for the planner; no *rewrite* goes above an epic's brief. The
+rewrite adds real paths and function names over vague framing, and acceptance criteria that make
+"done" legible — not a closed set, a `review-*` gate may append. The criteria block's grammar is
+the wire format's, not this skill's
+([`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts)):
 `enrich` runs that reader over the body it composed and refuses a drifted block on exit `15` before
 writing anything, naming the defect the reader found — so write the criteria and let the verb answer.
-A rewrite carrying **no** criteria block is still accepted, where none is warranted. The stdin
+A rewrite carrying **no** criteria block is still accepted, where none is warranted — **except over an
+issue already labelled `ready-for:agent`**, where it refuses on `16` and writes nothing. That label
+promises a builder can pick the issue up cold and the block is what the promise is made of, so a
+criteria-less rewrite there leaves the stamp standing on no contract and the next lane backs off. The
+refusal names both ways out: author the block and re-send, or drop the audience label first with
+`fabrika triage apply <n> --ready-for human`. `--epic` is exempt, since an epic's criteria arrive per
+child from the plan ledger. The stdin
 grammar, the epic pitch's five fields and every exit the verb refuses on live in its section
 (`fabrika wire doc-section --heading "triage enrich" < <skill-base>/contract.md`).
 
-**An ordering you state must already be an edge.** ADR
-[0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes the native `blocked_by`
-graph the one carrier of "do not start this yet", so a rewrite saying "Blocked. Do not start until
-#N" over a graph with no such edge ships an issue `build pick` admits and no lane can build — #6663
-did exactly that and cost a lane a claim. `enrich` scans the region it composed and refuses on `20`,
-writing nothing. **There is no override**, and the refusal names both ways out: wire the edge in step
-7 with `--blocked-by`, then re-send, or reword so the body states no ordering it does not own. Two
+**Mark a criterion the diff cannot settle, here, where you mint it.** Some criteria are only
+checkable outside the diff's bytes — a desk verified by hand, a checkpoint written *before* the fix,
+a runtime observation — and a grader reading the sentence later cannot tell one of those from a
+criterion that was simply never met. So say it on the row: a trailing `[evidence: <source>]` naming
+where the proof lives, and `review` grades that row on the evidence it names rather than FAILing it
+for byte-absence. `enrich` counts the marked rows on stderr and refuses a drifted keyword or a
+marker naming no source on `15`, like any other block defect. **Mark sparingly**: a criterion a test
+could discharge is not one of these, and marking it moves a mechanical check onto a reviewer's word.
+The name, the grammar and what makes a usable source live in the verb's contract section
+(`fabrika wire doc-section --heading "The outside-diff evidence marker" < <skill-base>/contract.md`).
+
+**An ordering you state must already be an edge.** The native `blocked_by` graph is the one carrier
+of "do not start this yet", so a rewrite saying "Blocked. Do not start until #N" over a graph with
+no such edge ships an issue `build pick` admits and no lane can build — one such rewrite cost a
+lane a claim. `enrich` scans the region it composed and refuses on `20`, writing nothing. **There is
+no override**, and the refusal names both ways out: wire the edge in step 7 with `--blocked-by`,
+then re-send, or reword so the body states no ordering it does not own. Two
 things it deliberately does not red on: a phrase in a third-person voice ("it is already blocked on
-#N" reports another issue's prerequisite), and a `#N` that is a **pull request** — ADR 0301 names a
-blocking PR by the issue its merge closes, so there is no edge to wire. What counts as a statement —
-and why it is narrow — is that verb's section
+#N" reports another issue's prerequisite), and a `#N` that is a **pull request** — the graph names
+a blocking PR by the issue its merge closes, so there is no edge to wire. What counts as a
+statement — and why it is narrow — is that verb's section
 (`… --heading "A stated ordering must be an edge, and 20 is the refusal"`).
 **No invention**: enrich from what you found, keep
 the uncertainty the original had, and mark your own reads `Triage note:`. On a **re-type, rewrite the
@@ -246,13 +263,25 @@ A standing lane takes `--lane wayfinder:backlog` (or `axis:pipeline-hardening`) 
 `--home`, never both — a lane label is not a milestone number, and putting a milestone on a
 lane-exempt issue is banned outright.
 
+**Repeatable `--class <name>` says which shells the lane runs, and `ui` is the one that changes a
+route.** Pass `--class ui` when the deliverable is a rendered surface, so the lane boots into
+`build:ui` — and, on a single-issue lane, `review:ui` too. This stamp is the *only* producer of that
+routing before a head has graded a diff: `lane open` and `lane emit` read the `class:<name>` label
+and seed the lane document from it, and without it a rendered ticket builds its first round in a
+shell carrying none of the design law and reaches `build:ui` only after a `review-ui` FAIL. The
+vocabulary is closed — `code`, `doc`, `skill`, `ui` — and an off-set spelling refuses on `10` before
+any label is written. The four labels are minted from that same set by `status bootstrap
+label-taxonomy`; on a board missing one the stamp refuses on `7` rather than letting the API create
+it, and running that bootstrap is the fix, never a run with the flag dropped. Most tickets need no
+`--class`: text is what the plain shells already serve.
+
 **Repeatable `--blocked-by <n>` writes the prerequisites as native graph edges** — the only triage
 route to them, and where an ordering belongs. Pass one per issue this one waits on
-(`--blocked-by 6661 --blocked-by 6662`); the verb resolves each target's internal id, skips the edges
+(`--blocked-by 5 --blocked-by 6`); the verb resolves each target's internal id, skips the edges
 already live so a re-run is safe, and reads the whole set back as the machine line's last column. A
 target that does not exist refuses on `7` before any label is written, and a target that is a **pull
-request** refuses on `21` — ADR 0301 names a blocking PR by the issue its merge closes, so pass that
-issue's number. This is the escape step 6's `20` names, so an ordered slice set is stamped
+request** refuses on `21` — the graph names a blocking PR by the issue its merge closes, so pass
+that issue's number. This is the escape step 6's `20` names, so an ordered slice set is stamped
 edges-first and its rewrite then passes.
 
 **That last column reports this run, not the graph.** It is empty on every call that passed no
@@ -273,14 +302,15 @@ lands in a builder's candidate pool.
 
 **A `type:decision` goes to `agent` when the choice is already recorded on it.** Send it there when
 the issue carries a founder ruling comment that made the call: the deliverable is then transcription
-— write that ruling into the ADR or amendment it names — and transcription executes cold (ADR
-[0300](../../../../.decisions/0300-a-cited-ruling-makes-a-decision-buildable.md)). This is the stamp
-`build`'s citation arm reads; without it the arm is unreachable and the ruling costs another human
-round-trip. No such comment, and the default above stands: `human`. You cite the comment rather than
-judging the question settled yourself, and a ruling that left a gap open is still a judgment, so it
-stays `human`. An issue already parked on `human` needs no triage re-run to come back:
-`fabrika decision rule <n> --cites <url>` is how a control-plane human records the ruling and flips
-the audience, and its contract is that verb's `--help`, not this page.
+— write that ruling into the ADR or amendment it names — and transcription executes cold. This is
+the stamp `build`'s citation arm reads; without it the arm is unreachable and the ruling costs
+another human round-trip. No such comment, and the default above stands: `human`. You cite the
+comment rather than judging the question settled yourself, and a ruling that left a gap open is
+still a judgment, so it stays `human`. An issue already parked on `human` needs no triage re-run to
+come back:
+`fabrika decision rule <n>` is how a control-plane human records the ruling and flips the audience —
+`--cites <url>` over a comment that is already there, `--authorization <file>` over a ruling given in
+conversation — and its contract is that verb's `--help`, not this page.
 
 **`--ready-for agent` requires a criteria block on every type but `epic`.** The verb reads the live
 body through the same wire reader every grader downstream reads, and refuses on `16` — writing no
@@ -289,11 +319,18 @@ cold, and the block is what the promise is made of. Author one back in step 6 an
 drift is `triage repair-criteria`'s. `--type epic` is exempt because an epic's criteria arrive per
 child from the plan ledger, and `--ready-for human` is never asked for one.
 
+**`--type epic --ready-for agent` writes no audience label, and that is not a failure.** On an epic
+`ready-for:agent` is `check-epic-plan`'s statement that the plan floor came back clean, so the gate
+is its only writer: the verb stamps the type, the priority, `status:triaged` and the home, prints
+`none` in the ready-for column with a stderr line naming the gate, and leaves the epic
+un-pickable until it is gated. Stamp it anyway — that is the correct triaged shape for an epic, and
+`--ready-for human` is what parks one for a person instead.
+
 **Do not assert control-plane scope.** `cp-classify` routes it and CODEOWNERS enforces it at merge;
 asserting it here routes a lane around an approval that never fires.
 
-Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, `ready-for:`, a home,
-and every `--blocked-by` edge you asked for.
+Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, a `ready-for:` (none on
+an epic sent to `agent`), a home, and every `--blocked-by` edge you asked for.
 
 ## 8 — The two outcomes that are not "triaged"
 
@@ -327,16 +364,20 @@ EOF
   issue's content into that one before closing; without it the content is simply lost. What the fold
   copies and what closing writes is the verb's section
   (`fabrika wire doc-section --heading "triage kill" < <skill-base>/contract.md`).
+  **A kill closes the issue and never touches a lane.** Where the killed issue had a lane booted on
+  it, that ledger stays owed until its driver records the cancellation terminal with
+  `fabrika lane settle <lane>` — that is `operate`'s step, not yours, and hand-deleting the lane
+  directory is not the protocol.
 
 ```bash
-fabrika triage kill $issue_number --confirm --duplicate-of 4290 --token <claim-token> <<'EOF'
+fabrika triage kill $issue_number --confirm --duplicate-of 8 --token <claim-token> <<'EOF'
 …
 EOF
 ```
 
 **The value bar.** An issue can be correct, well-written, and still worth nothing. This is the bar
-the founder's own sweeps run on ([#4634](https://github.com/kamp-us/phoenix/issues/4634)), and it
-kills an agent-filed issue when any one of five clauses holds:
+the founder's own backlog sweeps run on, and it kills an agent-filed issue when any one of five
+clauses holds:
 
 - **process ceremony** — the deliverable is a record nobody then acts on, a decision written down for
   its own sake;
@@ -349,13 +390,11 @@ kills an agent-filed issue when any one of five clauses holds:
 - **superseded** — something already landed, or already ruled, makes it moot;
 - **duplicate of its parent** — the parent's scope already covers it.
 
-Those examples are verdicts, not hypotheticals: a sweep on 2026-08-18 killed twelve of thirty-five
-triaged `p2`s, and every one of them landed in a clause above. The bar reaches agent-filed work only
+Those examples are verdicts, not hypotheticals: one sweep killed twelve of thirty-five triaged
+`p2`s, and every one of them landed in a clause above. The bar reaches agent-filed work only
 — **a human filing is parked, never killed**, however cleanly it fits a clause, with one exception:
-a `--duplicate-of` fold closes it whatever its provenance
-([#6070's ruling](https://github.com/kamp-us/phoenix/issues/6070#issuecomment-5361950454)), because
-a fold moves the content into the survivor instead of discarding it. Every other close of a human
-filing still refuses on `12`.
+a `--duplicate-of` fold closes it whatever its provenance, because a fold moves the content into
+the survivor instead of discarding it. Every other close of a human filing still refuses on `12`.
 
 Done when the issue has left the queue by exactly one route.
 

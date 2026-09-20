@@ -298,8 +298,9 @@ is addressed by a key, and the key decides where its ledger lives:
 
 - **`chore lane`** — a lane keyed by a **name** rather than an issue number, because a recurring
   chore has no issue to be keyed by; its state lives at `.fabrika/chores/<name>/events.jsonl`,
-  against `.fabrika/lanes/<n>/` for an issue lane. Same fold, same six-event vocabulary
-  (DONE/PASS/FAIL/BLOCKED/WIP/UNBLOCKED), different key. Source:
+  against `.fabrika/lanes/<n>/` for an issue lane. Same fold, same operator-event vocabulary
+  (DONE/PASS/FAIL/BLOCKED/WIP/UNBLOCKED, plus LAP — see **machinery lap** below), different key.
+  Source:
   [`packages/fabrika-cli/src/lane/key.ts`](../packages/fabrika-cli/src/lane/key.ts) (#5840).
 - **`recipe`** (pipeline sense) — one deterministic fabrika verb a chore workflow state applies:
   a fixed sequence with named exit codes and no judgment in it. A recipe **relays a verb's
@@ -312,16 +313,57 @@ is addressed by a key, and the key decides where its ledger lives:
 above ("The composition shell / recipe", ADR 0182) — one flat element-prop per zone. They share
 nothing but the word; name which one you mean when the context does not fix it.
 
+### The driver and the founder, the park route, and the machinery lap
+
+Four terms the fabrika skills lean on everywhere and defined nowhere until epic
+[#8810](https://github.com/kamp-us/phoenix/issues/8810). The rulings behind them are ADRs
+[0376](../.decisions/0376-driver-seat-for-non-product-parks.md) and
+[0377](../.decisions/0377-machinery-lap-narrows-repair-budget.md); this is the vocabulary.
+
+**The driver** is the session driving a lane — the seat the `operate` skill runs in. It is a human
+seat in the sense the corpus uses that phrase: it holds the moves no verb takes on its own account,
+for every cause that is not a product call. It diagnoses a park, records the clear with its own
+rationale, and answers for that judgment at the weekly machinery review.
+
+**The founder** is the seat for a product ruling and nothing else — what to build, what a campaign's
+lifecycle is, what a name means to a user. The pair is the whole routing question: *is this a product
+call, or is it machinery?* A driver never takes a founder's, and a founder is not asked about the
+engine.
+
+**A park route** is the field on a park cause that answers that question — `driver` or `founder`,
+two arms and no third, declared once on the cause in
+[`packages/fabrika-cli/src/lane/report.ts`](../packages/fabrika-cli/src/lane/report.ts)'s
+`PARK_CAUSES` and read everywhere through `routeForCause`. A park that named **no** cause routes
+`founder`, fail-closed: nothing named what went wrong, so nothing may attribute it to machinery.
+The route is not the same as a **remedy** — a remedy is a verb that removes the cause, and a
+driver-routed park with no remedy still clears, on the driver's recorded rationale rather than on a
+proving read.
+
+**A machinery lap** is a round the pipeline spent on itself — a child colliding at integrate, the
+trunk drifting under an epic tail, a queue ejection, a seat left dirty, a shell the provider killed.
+It records the `LAP` event and spends the lap counter, never the repair budget. **It is deliberately
+not called a retry**: a retry is a repair round an artifact owes because a reviewer judged it and
+found it wrong, and keeping the two words apart is the point of having two counters.
+
+### The local-tree guard
+
+A shipped fabrika guard a builder can run offline: argument-free, reading only the checked-out tree,
+needing no PR number, no board read and no auth. That predicate is the whole definition, and each
+guard answers it beside its own registration in
+[`packages/fabrika-cli/src/guard/command.ts`](../packages/fabrika-cli/src/guard/command.ts) — read
+membership there, never off a list kept anywhere else. A member runs under its own leaf, which is
+not always `check`: the decisions-index guard's is `validate`.
+
+`fabrika build check` runs every member on every surface and names each in its answer — the ruling is
+ADR [0381](../.decisions/0381-local-tree-guards-run-in-build-check.md). **A member that refuses is
+skipped, not passed**: a zero-scope or UNKNOWN exit is named as `skipped: <name> (<reason>)` on the
+local run, and the CI gate — which fails closed on the same exit under ADR
+[0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md) — still owns the verdict.
+
 ### Diátaxis-lite README shape
 
-The canonical section order every `packages/*/README.md` follows — explanation (*what it is* /
-*why it exists*, citing the forcing ADR) → how-to (runnable recipes) → reference (dry,
-look-it-up, last or linked out) → a short testing tail — with two hard rules: no tutorial at
-package scale (a walkthrough moves to its own linked surface), and scope/non-goals live in the
-explanation half. A small package may satisfy it in three short sections; the order is canonical,
-the length is not. The [`diataxis`](../claude-plugins/fabrika/skills/diataxis/SKILL.md) skill is
-the single-mode classifier over any page. Pinned by
-[package-readme-shape.md](../.patterns/package-readme-shape.md).
+The name for the package README's navigation order. Its section and page-splitting
+rules belong in [package-readme-shape.md](../.patterns/package-readme-shape.md).
 
 ### The three senses of "phoenix"
 
@@ -350,14 +392,6 @@ independently; the product simply comes home to **kamp.us**. Rebirth named in En
 (*phoenix*), completed in Turkish (*anka*), landing on the repo's Turkish-for-brand /
 English-for-technical rule (§3). `anka` is a **framework name**, not user-facing product
 copy, so it lives here in sense (3) rather than as a §3 Turkish-surface brand-noun row.
-
-### Diátaxis-lite README shape
-
-The canonical section order every `packages/*/README.md` follows — explanation (`What it is` /
-`Why it exists`) → how-to → reference tail → testing — scaled down to a three-section minimum
-for small packages. No tutorial at package scale: walkthroughs live on their own linked
-surface. The pattern doc is [`.patterns/package-readme-shape.md`](../.patterns/package-readme-shape.md);
-the `diataxis` skill is the single-mode classifier over any docs page, READMEs included.
 
 ### Milestone
 
@@ -435,6 +469,31 @@ slice of epic [#7496](https://github.com/kamp-us/phoenix/issues/7496) under `app
 means program (definition) or process (running instance). "Grain" (Orleans' virtual actor) is
 noted as a future-feeling alternative and is not adopted.
 
+### Tuval: stop, forget, remove
+
+What ends a process, and what ends it for good. The direction was ruled by the founder on 2026-09-07
+(epic [#8332](https://github.com/kamp-us/phoenix/issues/8332)) — removing a desk process durably
+forgets it and its descendants, so they stay gone after a restart — and first used in code by
+[`apps/tuval/src/durability/Checkpoints.ts`](../apps/tuval/src/durability/Checkpoints.ts) and
+[`apps/tuval/src/process/Processes.ts`](../apps/tuval/src/process/Processes.ts) (#9446). Prose that
+uses them interchangeably re-opens the question the ruling closed.
+
+- **stop** — end a *running* process: close its Effect Scope, which drains it, disposes its Subs and
+  takes its descendants with it. The durable store is untouched, so a stopped process's manifest row
+  and snapshot survive and `restore` brings it back at the next boot. That is the right answer for a
+  shutdown and the wrong one for a removal.
+- **forget** — drop a process and its whole subtree from the *durable* store: the checkpoint manifest
+  rows and the `processes/<id>.json` snapshots. Nothing about the running process; a forget of a live
+  one is ordinary, and is what makes the removal below refusable.
+- **remove** — the desk-facing verb, as it already is on `workspace.remove`, and it means
+  **forget-then-stop, in that order**. A removal whose forget fails is refused whole: the process
+  keeps running and keeps its manifest row, because a process gone from the table and still in the
+  manifest is the half-forgotten state the distinction exists to make unwritable.
+
+A **graph-declared** process — one the config's `graph` plans and boot recreates at its own id —
+refuses removal, because forgetting it would be undone by the next boot rather than by anything the
+operator did.
+
 ### Tuval: stack, orientation, size, zoom
 
 The layout tree's four nouns, first used in code by
@@ -509,6 +568,36 @@ shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
   (`SpellCall`, `SpellReply`, `Snapshot`, `Patch`), one union per direction, JSON text only. Source:
   [`apps/tuval/src/protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts).
 
+### Tuval: partial (a transcript item)
+
+- **partial** — a transcript item still being written, marked `partial` on the item itself. The
+  backend re-upserts the same `ItemId` as the text grows and leaves the marker off the last upsert,
+  so **absent means final** and one field carries the whole distinction. It is not an item kind and
+  not an event kind, and it names no backend: the window learns "still growing" once and every
+  agent program streams the same way ([#8142's
+  ruling](https://github.com/kamp-us/phoenix/issues/8142), epic
+  [#8160](https://github.com/kamp-us/phoenix/issues/8160)). Two kinds grow one — the assistant reply
+  and the thinking row, since a turn's reasoning streams before its answer does
+  ([#8288](https://github.com/kamp-us/phoenix/issues/8288)) — and every predicate that reads the
+  marker reads it through `in`, so a third costs no arm. Source:
+  [`apps/tuval/src/ai-agent/ports/transcript-item.ts`](../apps/tuval/src/ai-agent/ports/transcript-item.ts).
+
+### Tuval: thinking row, compaction marker, session row
+
+Three of the six rows a Tuval chat window renders, minted by epic
+[#8142](https://github.com/kamp-us/phoenix/issues/8142) phase 1. English technical terms, per §3,
+and model-blind: none of them names a backend, a model or a session id. Source:
+[`apps/tuval/src/ai-agent/ports/transcript-item.ts`](../apps/tuval/src/ai-agent/ports/transcript-item.ts).
+
+- **thinking row** — the agent's reasoning for one turn, as content. Not `ports/thinking.ts`, which
+  is the effort-level *control*; a bare "thinking" in Tuval transcript prose is this row, and the
+  control is always "thinking level".
+- **compaction marker** — where a session compacted its context. Its own kind rather than a session
+  row, because it is a boundary the window draws rather than a notice it prints, and it is the one
+  place a reader needs to see why earlier turns are gone.
+- **session row** — one backend notice, collapsed: a summary line always shown plus optional detail
+  the window folds away. Every notice lands here — status, hooks, local command output, refusals,
+  rate limits — and the row deliberately does not name which it was.
 
 ---
 

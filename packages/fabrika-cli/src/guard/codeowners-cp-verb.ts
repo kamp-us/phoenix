@@ -1,5 +1,5 @@
 /**
- * `guard codeowners-cp check` — ported off v1's `codeowners-cp check` (epic #5720).
+ * `guard codeowners-cp check` — ported off v1's `codeowners-cp check`.
  *
  * The verb is the IO boundary and nothing else: read `.github/CODEOWNERS`, hand it and the §CP
  * boundary const to the pure rule in `./codeowners-cp.ts`, seat the answer on the group's exit
@@ -9,7 +9,7 @@
  * elsewhere.** v1 also read the `CONTROL_PLANE_RE='…'` line out of
  * `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` and redded if it had drifted
  * from the const, because the v1 shell gates re-resolved the boundary from that line on
- * `origin/main` (#981). No fabrika verb reads that line, and `ci.yml`'s unconditional `skills` job
+ * `origin/main`. No fabrika verb reads that line, and `ci.yml`'s unconditional `skills` job
  * still runs `validate-gate-path-drift.sh`, which is the const↔formats-doc compare in full. Keeping
  * a duplicate here would have pinned a retired plugin's prose as a second merge-blocking source of
  * this boundary.
@@ -51,19 +51,19 @@ const judge = (
 		const target = path.join(root, CODEOWNERS);
 		if (!(yield* exists(target))) {
 			return zeroScope(
-				`${VERB}: ${CODEOWNERS} does not exist under ${root} — every §CP path is unowned and nothing here can prove otherwise, fail-closed (ADR 0092). Is the repo root correct?`,
+				`${VERB}: ${CODEOWNERS} does not exist under ${root} — every §CP path is unowned and nothing here can prove otherwise, fail-closed. Is the repo root correct?`,
 			);
 		}
 		const paths = cpPaths(CONTROL_PLANE_RE);
 		if (paths.length === 0) {
 			return zeroScope(
-				`${VERB}: the §CP boundary resolved ZERO paths — the guard compared nothing, fail-closed (ADR 0092). Check \`control-plane-re.ts\`.`,
+				`${VERB}: the §CP boundary resolved ZERO paths — the guard compared nothing, fail-closed. Check \`control-plane-re.ts\`.`,
 			);
 		}
 		const patterns = parseCodeownersPatterns(yield* readFile(target));
 		if (patterns.length === 0) {
 			return zeroScope(
-				`${VERB}: ${CODEOWNERS} has ZERO owned entries — every §CP path is unowned, fail-closed (ADR 0092).`,
+				`${VERB}: ${CODEOWNERS} has ZERO owned entries — every §CP path is unowned, fail-closed.`,
 			);
 		}
 		const uncovered = findUncovered(paths, patterns);
@@ -80,7 +80,7 @@ const judge = (
 					atFile(
 						"error",
 						CODEOWNERS,
-						`the §CP path \`${p.path}\` has no covering owner row, so at the ruleset's zero required approvals it merges unreviewed (#955). Fix: add a \`${p.path}\` row owned by a human team.`,
+						`the §CP path \`${p.path}\` has no covering owner row, so at the ruleset's zero required approvals it merges unreviewed. Fix: add a \`${p.path}\` row owned by a human team.`,
 					),
 				),
 			),

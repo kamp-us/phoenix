@@ -8,8 +8,9 @@ miss, or one ambiguity the diff cannot resolve, is a FAIL — never an "it's-pro
 Typecheck, lint, unit tests, secret scan, leak scan and unresolved-thread accounting are required
 CI gates on every PR. Read them structurally (`fabrika review ci`) and refuse to conclude over an
 incomplete enumeration; do not re-run them — a local re-run can hand you another checkout's cached
-green (#4106), and a second answer to an enforced question can contradict the gate (v1's ADR 0067
-in-tree-authoritative posture is deliberately not carried; the brief's scope rule wins).
+green, and a second answer to an enforced question can contradict the gate. When the two disagree,
+the enforced gate's answer is the one that decides the merge, so an in-tree re-run is at best noise
+and at worst a verdict that overrules the thing actually blocking the button.
 
 ## Per-criterion verification
 
@@ -31,7 +32,11 @@ One row per acceptance criterion, graded against the diff and the CI-at-head fac
   is a finding.
 - **Comment discipline.** Comments earn their place or die: a load-bearing note states a
   constraint the code cannot show; separators, name-restaters, and narration of obvious control
-  flow are findings, not style preferences (the repo's CLAUDE.md comment law).
+  flow are findings, not style preferences (the repo's CLAUDE.md comment law). **Under
+  `packages/fabrika-cli/` the record pointer that law asks for is an `@ruling` tag naming the hosted
+  issue that settled the behaviour** — a decision-record number or a decision-corpus path reds on
+  `portability-guard` there, so asking for one is asking for a revert. Do not raise the collapse
+  finding against a docblock that carries the tag.
 - **Staleness traps.** Session/state caching across a boundary that can move underneath it
   (heads, tokens, label sets) is a finding when nothing re-validates.
 

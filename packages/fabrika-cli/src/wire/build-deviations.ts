@@ -1,28 +1,28 @@
 /**
  * The `build-deviations` marker comment — an epic child's deviation disclosure, on its own issue.
  *
- *     build-deviations: #5828
+ *     build-deviations: #3
  *
  *     ## Deviations
  *
  *     None.
  *
- * A child of an epic run opens no PR (ADR 0285), so the one disclosure surface `build` has — the PR
- * body's `## Deviations` section — does not exist for it. Ruled on #5903: the disclosure lands as a
- * marker comment on the child issue, and the epic-tail review reads it from there.
+ * A child of an epic run opens no PR, so the one disclosure surface `build` has — the PR body's
+ * `## Deviations` section — does not exist for it. The disclosure lands as a marker comment on the
+ * child issue instead, and the epic-tail review reads it from there.
  *
  * Two parts, each with one owner. The first non-blank line is the marker: `build-deviations:` plus
  * the issue the comment discloses for, so a comment pasted onto the wrong issue is visible as a
  * mismatch rather than silently counted. Everything under it is the `## Deviations` section exactly
  * as a PR body carries it, delegated wholesale to `./deviations.ts` — this module never re-states
  * the entry grammar, because two readers of the four-field bullet is the disagreement that format
- * exists to remove (#5566).
+ * exists to remove.
  *
  * **One marker per issue.** A repair round re-discloses, and a second comment is not a second
  * disclosure: `./deviations.ts` refuses two conforming headings as undecidable, so a stacked marker
- * makes the disclosure unreadable through the very verb the tail review is told to read it with
- * (#6691). Nothing here can enforce that — this module judges one artifact's bytes and cannot see a
- * comment timeline — so the rule is held at the write seam by `build deviations`
+ * makes the disclosure unreadable through the very verb the tail review is told to read it with.
+ * Nothing here can enforce that — this module judges one artifact's bytes and cannot see a comment
+ * timeline — so the rule is held at the write seam by `build deviations`
  * (`../build/deviations-verb.ts`), which edits the standing marker in place. That verb is the only
  * sanctioned producer; a hand-rolled `gh issue comment` appends.
  *

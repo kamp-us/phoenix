@@ -21,11 +21,11 @@
  * **A re-post appends; it never replaces.** The prior verdict survives verbatim below
  * `../review/supersede.ts`'s fence and the fresh one takes the first line, because GitHub keeps no
  * comment-body history: a FAIL PATCHed over by a PASS at one head leaves nothing showing a gate ever
- * blocked (#7247, #7411). Retiring a standing verdict of the opposite polarity is
+ * blocked. Retiring a standing verdict of the opposite polarity is
  * {@link SUPERSEDES_VERDICT} until `--supersede` says so out loud.
  *
- * With `--base`/`--tip` the verb runs the range-scoped path instead (`../review/range-post.ts`,
- * #5935): the positional is the child issue, the marker is `../wire/range-verdict-marker.ts`'s, and
+ * With `--base`/`--tip` the verb runs the range-scoped path instead (`../review/range-post.ts`):
+ * the positional is the child issue, the marker is `../wire/range-verdict-marker.ts`'s, and
  * the same harness-touching rule is asked of the range's own changed paths. That path appends and
  * refuses the same way, keyed on the range rather than a head it does not have.
  */
@@ -86,10 +86,10 @@ export interface PostOptions {
 	/** In range mode (`base`/`tip` given) this is the **child issue** the verdict lands on. */
 	readonly pr: number;
 	readonly polarity: string;
-	/** Required in PR mode; refused in range mode, where content is the only binding (ADR 0276). */
+	/** Required in PR mode; refused in range mode, where content is the only binding. */
 	readonly sha: string | null;
 	readonly clause: string;
-	/** The two ends of a range-scoped verdict (#5935) — both or neither. */
+	/** The two ends of a range-scoped verdict — both or neither. */
 	readonly base: string | null;
 	readonly tip: string | null;
 	readonly repo: string | null;
@@ -112,8 +112,7 @@ const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.star
  *
  * The head dimension is what makes a re-gate at a moved head append instead of overwrite. A verdict
  * is SHA-bound, so a new head's verdict is a different fact, not a revision of the old one, and
- * PATCHing the prior head's comment destroys the only record of what was true over that tree. ADR
- * 0213 refined rule 2's uniqueness key and named this half as still open; #4007 closed it in v1.
+ * PATCHing the prior head's comment destroys the only record of what was true over that tree.
  */
 const carriesNamespaceAt = (body: string, sha: HeadSha): boolean => {
 	const parsed = readMarker(body);
@@ -218,9 +217,9 @@ export const runPost = (
 			);
 		}
 
-		// Range mode (#5935): the positional is the child issue, and content is the only binding, so
+		// Range mode: the positional is the child issue, and content is the only binding, so
 		// --sha — a head-scoped idea — is refused rather than ignored. The shape is read through the
-		// module the two range-taking read verbs share, so all three agree on what a range is (#6064).
+		// module the two range-taking read verbs share, so all three agree on what a range is.
 		const flags = readRangeFlags(VERB, {base: options.base, tip: options.tip, sha: options.sha});
 		if (flags._tag === "Refused") return flags.outcome;
 		if (flags._tag === "Pull" && options.sha === null) {
@@ -289,12 +288,12 @@ export const runPost = (
 		if (!prefixMatch(live, inspected)) {
 			return refuse(
 				STALE_HEAD,
-				`${VERB}: the live head is ${live}, not ${inspected} — the tree you judged is gone; re-review at ${live} (ADR 0058).`,
+				`${VERB}: the live head is ${live}, not ${inspected} — the tree you judged is gone; re-review at ${live}.`,
 			);
 		}
 
 		// Step 2 — re-derive the requirement at the bound commit. The head check labels the tree; only
-		// the binding makes the derived answer provably that tree's (#5122).
+		// the binding makes the derived answer provably that tree's.
 		const bound = yield* bindGovernanceHead(
 			VERB,
 			"the file list cannot be bound to a commit, so the derivation is UNKNOWN.",
@@ -313,7 +312,7 @@ export const runPost = (
 		const diagnostics = [
 			boundLine(VERB, head),
 			scannedLine(VERB, listed.value.length, "changed file"),
-			`${VERB}: content ${content.value} — the digest of ${head.mergeBase}...${head.sha} this verdict survives on (ADR 0276).`,
+			`${VERB}: content ${content.value} — the digest of ${head.mergeBase}...${head.sha} this verdict survives on.`,
 		];
 		if (!touchesGovernanceRoot(listed.value, governedRoots)) {
 			return refuse(
@@ -323,7 +322,7 @@ export const runPost = (
 			);
 		}
 
-		// Step 3 — compose through the wire format, never by hand (#3173).
+		// Step 3 — compose through the wire format, never by hand.
 		const composed = `${emitMarker({
 			namespace: NAMESPACE,
 			polarity: polarity as Polarity,
@@ -344,7 +343,7 @@ export const runPost = (
 		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
 		// The NEWEST match, by write recency — the same end of the order a resolver reads from. The list
 		// arrives oldest-first, so taking the first match edits the comment least likely to be in force
-		// and the edit lands where nobody reads (#5048).
+		// and the edit lands where nobody reads.
 		const mine = latestByWriteRecency(
 			comments.value.filter(
 				(comment) => comment.author === me.value && carriesNamespaceAt(comment.body, inspected),
@@ -352,7 +351,7 @@ export const runPost = (
 		);
 
 		// The prior verdict is never replaced, only pushed below the fence — GitHub keeps no
-		// comment-body history, so a PATCH over it is the record gone (#7247, #7411). A polarity flip
+		// comment-body history, so a PATCH over it is the record gone. A polarity flip
 		// is the one case that also needs saying out loud: it is the flip that decides the merge.
 		const standing = mine === undefined ? null : polarityOfMarker(mine.body);
 		if (standing !== null && standing !== polarity && !options.supersede) {
@@ -387,7 +386,7 @@ export const runPost = (
 		}
 		const upsert = mine === undefined ? "created" : "superseded";
 
-		// Step 6 — read it back from live state. The write call's own echo is not evidence (#3173). The
+		// Step 6 — read it back from live state. The write call's own echo is not evidence. The
 		// comparand is the ENVELOPE, not the composed verdict: on a re-post the bytes that were sent
 		// carry the retired verdict below the fence, and comparing the fresh half alone reds every
 		// append.
@@ -410,7 +409,7 @@ export const runPost = (
 
 		// Step 7 — assert the floor at this head. The floor job ran before this verdict existed and
 		// nothing re-fires it, so the gate that just wrote the verdict is the actor that re-derives the
-		// check (#5585). It never gates the post: the verdict is landed and read back by here, and a
+		// check. It never gates the post: the verdict is landed and read back by here, and a
 		// floor that could not be asserted is a red check, not an unwritten verdict.
 		const floor = yield* assertFloorAt(repo, head.sha);
 		diagnostics.push(floorLine(VERB, floor));

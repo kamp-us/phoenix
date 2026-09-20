@@ -4,7 +4,7 @@
  *
  * Each floor is asserted rather than trusted, because each one is a way this guard could go green
  * having judged nothing: a root that resolves elsewhere, an empty walk, and a directory the walk
- * never entered (#5004).
+ * never entered.
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
@@ -61,7 +61,7 @@ describe("runNoGh", () => {
 		expect(plain.stderr.some((line) => line.startsWith("::error"))).toBe(false);
 	});
 
-	it("reds a walk that matched no file rather than passing it (ADR 0092)", async () => {
+	it("reds a walk that matched no file rather than passing it", async () => {
 		const outcome = await run(tree({}));
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stdout).toBe("");

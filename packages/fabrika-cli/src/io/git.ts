@@ -3,8 +3,8 @@
  *
  * **`--base` is fetched before it is read.** Reading a stale local ref is the defect class this
  * whole contract exists to close — a checkout sitting at `0150` while origin is at `0151` mints a
- * duplicate id (#3779), and a stale tree once made a review gate declare a merged ADR nonexistent
- * (#4163). Every read below takes the resolved base SHA, never a ref name, so nothing can silently
+ * duplicate id, and a stale tree once made a review gate declare a merged record nonexistent.
+ * Every read below takes the resolved base SHA, never a ref name, so nothing can silently
  * re-resolve to a different commit mid-run.
  *
  * The outcome type is {@link Attempt} rather than the `E` channel on purpose: a fetch that fails and
@@ -163,7 +163,7 @@ export interface CommitRange<Rev extends string = string> {
  *
  * An empty `paths` reads the whole range; a non-empty one limits it to that pathspec. A caller that
  * means "these paths and no others" must therefore refuse an empty set before it reaches here — a
- * pathspec that silently widens to everything digests a scope nobody chose (ADR 0092).
+ * pathspec that silently widens to everything digests a scope nobody chose.
  */
 export const rawDiffArgs = (
 	range: CommitRange,
@@ -237,10 +237,15 @@ export const fetchAndResolve = (base: string): Shell<Attempt<string>> =>
  *
  * Newline-separated rather than `-z`: a record base name is `NNNN-slug.md` by construction, so
  * there is no name a newline could split, and a plain line grammar keeps the fixtures readable.
+ *
+ * `--full-tree` because `ls-tree` otherwise limits its listing to the process's directory, and this
+ * read's empty answer is a *fact* to its callers — an existing directory holding nothing. Run from
+ * a subdirectory the unanchored form lists nothing at all, which the allocator would read as an
+ * empty corpus and hand back `0001`.
  */
 export const listDir = (sha: string, dir: string): Shell<Attempt<ReadonlyArray<string>>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("git", ["ls-tree", "--name-only", `${sha}:${dir}`]);
+		const r = yield* execCapture("git", ["ls-tree", "--full-tree", "--name-only", `${sha}:${dir}`]);
 		if (!r.ok) return fail(r.reason);
 		return ok(
 			r.stdout
@@ -292,7 +297,7 @@ export const readFileAt = (sha: string, path: string): Shell<Attempt<string>> =>
 
 // ---------------------------------------------------------------------------------------------
 // The `governance` group's reads, appended as one block so a later verb slice extends the file here
-// rather than colliding with the range reads above (#5199).
+// rather than colliding with the range reads above.
 // ---------------------------------------------------------------------------------------------
 
 /** One changed path and the single letter git gives its change. */
@@ -340,10 +345,16 @@ export const diffRangeStatuses = (
 		return r.ok ? ok(parseNameStatus(r.stdout)) : fail(r.reason);
 	});
 
-/** Every tracked path at `sha`, recursively — how a fenced skill root is resolved without a checkout. */
+/**
+ * Every tracked path at `sha`, recursively — how a fenced skill root is resolved without a checkout.
+ *
+ * `--full-tree` because "every" is repository-wide: unanchored, `ls-tree` lists only the process's
+ * directory and names those paths relative to it, so a scan run from a package would both miss the
+ * rest of the tree and fail to match any repo-root path its caller compares against.
+ */
 export const listTreePaths = (sha: string): Shell<Attempt<ReadonlyArray<string>>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("git", ["ls-tree", "-r", "--name-only", "-z", sha]);
+		const r = yield* execCapture("git", ["ls-tree", "-r", "--full-tree", "--name-only", "-z", sha]);
 		return r.ok ? ok(r.stdout.split("\0").filter((p) => p !== "")) : fail(r.reason);
 	});
 
@@ -359,6 +370,25 @@ export const localBranches: Shell<Attempt<ReadonlyArray<string>>> = Effect.gen(f
 			)
 		: fail(r.reason);
 });
+
+/**
+ * Check this worktree out at `rev`, detached — the seat, never a branch move.
+ *
+ * Detached because the caller is a reader: it seats its tree at the commit it is judging and commits
+ * nothing there, so switching or moving a branch would be a mutation nobody asked for. The commit is
+ * the whole subject, and `--detach` is what keeps the seat from touching a ref.
+ *
+ * `git switch` rather than `git checkout --force`: `switch` refuses instead of overwriting a
+ * modified file, so a tree carrying uncommitted work is left as it stands and the caller reports
+ * that refusal rather than destroying the work to obey it.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8893
+ */
+export const checkoutDetached = (rev: string): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["switch", "--detach", rev]);
+		return r.ok ? ok<void>(undefined) : fail(r.reason);
+	});
 
 /** One commit a range adds: its object name and its whole message, subject and body together. */
 export interface RangeCommit {
@@ -445,6 +475,13 @@ export const mergeBase = (a: string, b: string): Shell<Attempt<string>> =>
 		if (!r.ok) return fail(r.reason);
 		const sha = r.stdout.trim();
 		return isObjectName(sha) ? ok(sha) : fail(`git named no merge base (got "${sha}")`);
+	});
+
+/** Whether `ancestor` is reachable from `descendant` — the fast-forward test. */
+export const isAncestor = (ancestor: string, descendant: string): Shell<boolean> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["merge-base", "--is-ancestor", ancestor, descendant]);
+		return r.ok;
 	});
 
 /** One commit on the walked ref: its object name and its committer date. */
@@ -553,6 +590,45 @@ const parsePatchIds = (stdout: string): ReadonlyArray<PatchIdentity> =>
 		);
 
 /**
+ * Every path under `dir` that a branch ref in this clone touches and `baseSha` does not carry.
+ *
+ * `--branches --remotes` is both halves of that: the local branches of every worktree of this clone,
+ * and the remote-tracking refs it has fetched. So a branch pushed from another clone is in the
+ * answer once this one fetches it, and only a branch that is still unpushed elsewhere is out of
+ * reach.
+ *
+ * One `git log` rather than a walk over `for-each-ref`: a working clone carries thousands of branch
+ * refs, so a per-ref `ls-tree` is thousands of subprocesses, while `--not <baseSha>` prunes every
+ * ref already merged into the base inside a single traversal.
+ *
+ * **Every touched path counts, not only added ones.** A `--diff-filter` would have to decide what a
+ * renumbering rename is, and getting that wrong drops the destination id from the answer. Counting
+ * a modified or deleted record instead over-reads in the one harmless direction: its id is on the
+ * base ref already, so it cannot raise a maximum the merged set does not hold.
+ *
+ * Worktrees of one clone share `refs/heads`, which is what puts a sibling lane's unpushed branch in
+ * this answer — see `../adr/branch-claims.ts` for what that closes.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8901
+ */
+export const pathsOffBase = (baseSha: string, dir: string): Shell<Attempt<ReadonlyArray<string>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", [
+			"log",
+			"--branches",
+			"--remotes",
+			"--not",
+			baseSha,
+			"--name-only",
+			"-z",
+			"--format=",
+			"--",
+			dir,
+		]);
+		return r.ok ? ok(r.stdout.split("\0").filter((p) => p !== "")) : fail(r.reason);
+	});
+
+/**
  * The stable patch identities of a stream of diffs, read by handing the bytes to `git patch-id`.
  *
  * `--stable` is load-bearing: the default id depends on the order git happened to emit the file
@@ -578,7 +654,7 @@ export const patchIdsOf = (diffs: string): Shell<Attempt<ReadonlyArray<PatchIden
  * trunk is tens of megabytes.
  *
  * An empty `paths` is refused rather than widened. A pathspec that silently becomes "everything" is
- * the same defect ADR 0092 names on the guard side: a scope nobody chose, read as an answer.
+ * the same defect a guard reds on: a scope nobody chose, read as an answer.
  */
 export const patchIdsIn = (
 	base: string,
@@ -623,8 +699,8 @@ export const isShallowClone: Shell<Attempt<boolean>> = Effect.gen(function* () {
  * A shallow clone's graft boundary is the one cause of this an operator can repair without touching
  * a ref, a blocker or an issue: every traversal treats the boundary commit as a root, so a common
  * ancestor beyond it is unreachable and {@link mergeBase} names nothing rather than erroring (the
- * same split {@link traversedParents} documents, #6343). Reported as a generic reason it cost a
- * supervisor round-trip diagnosing git history depth from outside the verb (#7292).
+ * same split {@link traversedParents} documents). Reported as a generic reason, it costs a
+ * supervisor round-trip diagnosing history depth from outside the verb.
  *
  * **Git's own reason is never dropped, and the shallow clause is a hypothesis beside it.** The probe
  * answers "is this clone shallow", which is a strictly weaker fact than "the shallowness is why
@@ -636,7 +712,7 @@ export const isShallowClone: Shell<Attempt<boolean>> = Effect.gen(function* () {
  *
  * It lives here, beside the two reads it composes, so a third merge-base seam cannot be written
  * without the diagnosis — the generic reason survived in `build reap` for exactly as long as the
- * helper was private to one caller (#7407).
+ * helper was private to one caller.
  */
 export const noMergeBaseReason = (baseRef: string, reason: string): Shell<string> =>
 	Effect.map(isShallowClone, (shallow) =>
@@ -650,8 +726,8 @@ export const noMergeBaseReason = (baseRef: string, reason: string): Shell<string
  *
  * Not the parents in the commit object: on a shallow clone's graft boundary the two disagree.
  * `git cat-file -p` still prints the recorded parents while every traversal treats the commit as a
- * root, so `merge-base`, `rev-list` and `--is-ancestor` answer wrongly and none of them errors
- * (#6343). This read is on the traversal side of that split, so an empty answer on a commit the
+ * root, so `merge-base`, `rev-list` and `--is-ancestor` answer wrongly and none of them errors.
+ * This read is on the traversal side of that split, so an empty answer on a commit the
  * object database knows the parents of is exactly the boundary.
  */
 export const traversedParents = (sha: string): Shell<Attempt<ReadonlyArray<string>>> =>

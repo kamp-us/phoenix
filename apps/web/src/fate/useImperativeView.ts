@@ -9,6 +9,7 @@
  */
 import type {
 	FateClient,
+	RequestMode,
 	View,
 	ViewData,
 	ViewEntity,
@@ -43,8 +44,12 @@ export async function readImperativeView<V extends View<any, any>>(
 	root: string,
 	view: V,
 	args?: Record<string, unknown>,
+	mode?: RequestMode,
 ): Promise<ImperativeViewData<V> | null> {
-	const result = await fate.request({[root]: args ? {view, args} : {view}});
+	const request = {[root]: args ? {view, args} : {view}};
+	// No mode means fate's own default, passed the way every caller passed it before this
+	// read could carry one — an explicit `undefined` second argument is a different call.
+	const result = await (mode ? fate.request(request, {mode}) : fate.request(request));
 	const ref = (result as Record<string, ViewRef<ViewEntityName<V>> | null>)[root] ?? null;
 	const snapshot = ref ? await fate.readView(view, ref) : null;
 	return (snapshot?.data ?? null) as ImperativeViewData<V> | null;
@@ -55,6 +60,8 @@ export interface UseImperativeViewOptions {
 	readonly args?: Record<string, unknown>;
 	readonly enabled: boolean;
 	readonly deps?: ReadonlyArray<unknown>;
+	/** Request mode for the read. Omitted leaves fate's `cache-first` default, which is what every caller had before the option existed (#9265). */
+	readonly mode?: RequestMode;
 }
 
 /**
@@ -63,7 +70,7 @@ export interface UseImperativeViewOptions {
  * demanding a context there would break every fate-free first-paint render. The hook
  * call itself stays unconditional — the catch demotes the throw, not the read.
  */
-function useFateClientWhenEnabled(enabled: boolean): ImperativeViewClient | null {
+export function useFateClientWhenEnabled(enabled: boolean): ImperativeViewClient | null {
 	try {
 		return useFateClient();
 	} catch (err) {
@@ -79,7 +86,7 @@ function useFateClientWhenEnabled(enabled: boolean): ImperativeViewClient | null
 export function useImperativeView<V extends View<any, any>>(
 	root: string,
 	view: V,
-	{args, enabled, deps = []}: UseImperativeViewOptions,
+	{args, enabled, deps = [], mode}: UseImperativeViewOptions,
 ): {readonly state: ImperativeViewState<V>; readonly refetch: () => Promise<void>} {
 	const fate = useFateClientWhenEnabled(enabled);
 	const [state, setState] = useState<ImperativeViewState<V>>({status: "idle"});
@@ -91,13 +98,13 @@ export function useImperativeView<V extends View<any, any>>(
 		}
 		setState({status: "loading"});
 		try {
-			const data = await readImperativeView(fate, root, view, args);
+			const data = await readImperativeView(fate, root, view, args, mode);
 			setState({status: "ok", data});
 		} catch (err) {
 			console.error(`[useImperativeView:${root}]`, err);
 			setState({status: "error"});
 		}
-	}, [fate, root, view, args, enabled, ...deps]);
+	}, [fate, root, view, args, enabled, mode, ...deps]);
 
 	useEffect(() => {
 		void refetch();

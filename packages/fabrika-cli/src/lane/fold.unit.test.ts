@@ -1,12 +1,13 @@
 /**
- * The six-event contract, tested as the spike's recorded runs (#5671 run 8 and 19; the
- * state-ledger rebuild's runs 1–6 recorded on #5570's 2026-08-15 session note are the plan).
+ * The six-event contract, tested as the state-ledger spike's recorded runs.
  */
 import {describe, expect, it} from "vitest";
+import {classifyPark} from "../recipe/parks.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 import {coderWorkflow, twoPhaseWorkflow} from "./fixtures.test-support.ts";
 import {
+	applyBoardTerminal,
 	applyClearance,
 	applyEvent,
 	deriveStatus,
@@ -16,8 +17,18 @@ import {
 	parseLog,
 	resolveTask,
 	standingCauses,
+	standingRationales,
+	walkOf,
 } from "./fold.ts";
-import {CLEARED_EVENT, type CompiledLane, compile} from "./machine.ts";
+import {
+	CANCELLED_EVENT,
+	CLEARED_EVENT,
+	type CompiledLane,
+	compile,
+	LANDED_EVENT,
+	OPERATOR_EVENTS,
+} from "./machine.ts";
+import {routeForCause} from "./report.ts";
 
 const lane = (workflow: unknown): CompiledLane => {
 	const result = compile(workflow);
@@ -87,7 +98,7 @@ describe("run 1 — a fresh lane's status shape", () => {
 		});
 	});
 
-	it("carries the standing lane classes in status, and nothing when none stand (ADR 0317)", () => {
+	it("carries the standing lane classes in status, and nothing when none stand", () => {
 		const compiled = lane(coderWorkflow());
 		const states = statesOf(compiled, []);
 		const at = "2026-08-16T00:00:00.000Z";
@@ -231,18 +242,18 @@ describe("run 5 — BLOCKED then UNBLOCKED resumes the state it left", () => {
 	});
 });
 
-describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)", () => {
+describe("the spent-budget park — the driver's own door out", () => {
 	const round: ReadonlyArray<readonly [string, string]> = [
 		["issue", "DONE"],
 		["issue", "FAIL"],
 	];
-	/** WIP, then a FAIL per round until the budget is spent and the last one freezes the task. */
+	/** WIP, then a FAIL per round until the budget is spent and the last one parks the task. */
 	const freeze: ReadonlyArray<readonly [string, string]> = [
 		["issue", "WIP"],
 		...Array.from({length: RETRY_BUDGET + 1}, () => round).flat(),
 	];
 
-	it("trips the lane on the frozen task rather than hanging its phase", () => {
+	it("trips the lane on the parked task rather than hanging its phase", () => {
 		const compiled = lane(coderWorkflow());
 
 		const status = statusOf(compiled, drive(compiled, freeze));
@@ -251,7 +262,17 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 		expect(status.context.issue).toMatchObject({retries: RETRY_BUDGET, maxRetries: RETRY_BUDGET});
 	});
 
-	it("refuses the door when the state would come back and the budget would not (#6570)", () => {
+	// The leaf's name is the whole delta from `frozen`: `isPark` matches `human:*` and matched
+	// `frozen` never, so a child at its cap used to park where no recipe could see a park at all.
+	it("names a park a recipe can see, routed to the driver", () => {
+		expect(classifyPark("human:budget-spent", null)).toMatchObject({
+			_tag: "Novel",
+			cause: "repair-budget-spent",
+		});
+		expect(routeForCause("repair-budget-spent")).toBe("driver");
+	});
+
+	it("refuses the door when the state would come back and the budget would not", () => {
 		const compiled = lane(coderWorkflow());
 
 		const applied = applyEvent(
@@ -262,10 +283,12 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 			"2026-08-16T00:00:00.000Z",
 		);
 		// Never a silent `active`/`review` whose only walkable arm is PASS: the resume is refused with
-		// the log unappended, and the refusal names the remedy (ADR 0312).
+		// the log unappended, and the refusal names a remedy for each seat — the founder's grant on a
+		// pull request, and the driver's own on a lane that has none.
 		expect(applied).toMatchObject({_tag: "Refused", kind: "unbudgeted-resume"});
 		if (applied._tag !== "Refused") return;
 		expect(applied.reason).toContain("build clear");
+		expect(applied.reason).toContain("lane clear");
 		expect(applied.reason).toContain(`${RETRY_BUDGET}/${RETRY_BUDGET} retries`);
 	});
 
@@ -300,7 +323,7 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 			grant(compiled, drive(compiled, freeze), "issue", CAP_ROUND),
 		);
 
-		// The granted round is walkable: FAIL routes to `build`, not straight back to `frozen`.
+		// The granted round is walkable: FAIL routes to `build`, not straight back to the park.
 		const spent = drive(compiled, [["issue", "FAIL"]], resumed);
 		expect(statusOf(compiled, spent).stateValue).toMatchObject({pipeline: {issue: "build"}});
 		expect(statusOf(compiled, drive(compiled, round, spent))).toMatchObject({
@@ -323,7 +346,7 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 		).toMatchObject({_tag: "AlreadyHeld"});
 	});
 
-	it("a grant landing on the park moves nothing — the door out is still UNBLOCKED (ADR 0297)", () => {
+	it("a grant landing on the park moves nothing — the door out is still UNBLOCKED", () => {
 		const compiled = lane(coderWorkflow());
 		const granted = grant(compiled, drive(compiled, freeze), "issue", CAP_ROUND);
 
@@ -335,7 +358,7 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 		const workflow = coderWorkflow() as {
 			machine: {states: {pipeline: {states: {issue: {initial: string}}}}};
 		};
-		workflow.machine.states.pipeline.states.issue.initial = "frozen";
+		workflow.machine.states.pipeline.states.issue.initial = "human:budget-spent";
 		const compiled = lane(workflow);
 
 		const applied = applyEvent(
@@ -443,11 +466,11 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 });
 
 /**
- * The incident this slice closes, driven end to end: lane 6462 / PR #6552, where the two halves of
- * one frozen-lane resume were applied in the order a human applies them and produced two defects
- * (#6570, #6578). Both are asserted absent here on the same log.
+ * The incident this slice closes, driven end to end: a lane where the two halves of
+ * one frozen-lane resume were applied in the order a human applies them and produced two defects.
+ * Both are asserted absent here on the same log.
  */
-describe("lane 6462 — an UNBLOCKED, then a `build clear` for that round (#6570, #6578)", () => {
+describe("one lane — an UNBLOCKED, then a `build clear` for that round", () => {
 	const round: ReadonlyArray<readonly [string, string]> = [
 		["issue", "DONE"],
 		["issue", "FAIL"],
@@ -461,8 +484,8 @@ describe("lane 6462 — an UNBLOCKED, then a `build clear` for that round (#6570
 		const compiled = lane(coderWorkflow());
 		const frozen = drive(compiled, freeze);
 
-		// #6570: the fold restored `review` at retries 2 against maxRetries 2, so `ISSUE.PASS` was the
-		// only non-error arm and the lane still read `active` — the signal an operator routes on.
+		// The fold restored `review` at a spent budget, so `ISSUE.PASS` was the only non-error arm and
+		// the lane still read `active` — the signal an operator routes on.
 		expect(statusOf(compiled, frozen).context.issue).toMatchObject({
 			retries: RETRY_BUDGET,
 			maxRetries: RETRY_BUDGET,
@@ -489,7 +512,7 @@ describe("lane 6462 — an UNBLOCKED, then a `build clear` for that round (#6570
 		);
 		const later = grant(compiled, resumed, "issue", CAP_ROUND + 1);
 
-		// #6578: the third FAIL used to re-evaluate against the widened budget, route to `build`
+		// The third FAIL used to re-evaluate against the widened budget, route to `build`
 		// instead of `frozen`, and strand the recorded UNBLOCKED in a state with no cell for it —
 		// every verb then refused on exit 4. The fold is clean, and the FAIL kept its routing.
 		const fold = foldLog(compiled, later);
@@ -536,7 +559,7 @@ describe("run 6 — invalid events refuse, producing nothing to append", () => {
 		if (applied._tag === "Refused") expect(applied.reason).toContain("NoCellError");
 	});
 
-	it("refuses an event outside the operator's six before touching the machine", () => {
+	it("refuses an event outside the operator's set before touching the machine", () => {
 		const compiled = lane(twoPhaseWorkflow());
 
 		const applied = applyEvent(
@@ -547,14 +570,17 @@ describe("run 6 — invalid events refuse, producing nothing to append", () => {
 			"2026-08-16T00:00:00.000Z",
 		);
 		expect(applied).toMatchObject({_tag: "Refused"});
-		if (applied._tag === "Refused") expect(applied.reason).toContain("six");
+		// The refusal names the whole set rather than a count, so a seventh event does not make it lie.
+		if (applied._tag === "Refused") {
+			for (const event of OPERATOR_EVENTS) expect(applied.reason).toContain(event);
+		}
 	});
 
 	it("refuses a CLEARED handed to the operator's path, naming the verb that appends one", () => {
 		const compiled = lane(twoPhaseWorkflow());
 
 		// The cell exists in every state, so nothing in the machine would stop this — the refusal is
-		// what keeps `lane transition` from minting budget nobody granted (ADR 0312).
+		// what keeps `lane transition` from minting budget nobody granted.
 		const applied = applyEvent(
 			compiled,
 			statesOf(compiled, []),
@@ -646,7 +672,7 @@ describe("the fold is deterministic and total over its inputs", () => {
 	});
 });
 
-describe("nextLeaf — the arm an event would take, asked before it is recorded (#6664)", () => {
+describe("nextLeaf — the arm an event would take, asked before it is recorded", () => {
 	const atReview = () => {
 		const compiled = lane(coderWorkflow());
 		return {
@@ -678,11 +704,51 @@ describe("nextLeaf — the arm an event would take, asked before it is recorded 
 	});
 });
 
+describe("walkOf — which of the three reasons a null nextLeaf stands for", () => {
+	const at = (steps: ReadonlyArray<readonly [string, string]>) => {
+		const compiled = lane(coderWorkflow());
+		return {compiled, states: statesOf(compiled, drive(compiled, steps))};
+	};
+
+	it("answers the leaf a walkable event lands in", () => {
+		const {compiled, states} = at([
+			["issue", "WIP"],
+			["issue", "DONE"],
+		]);
+
+		expect(walkOf(compiled, states, "issue", "PASS", ["ui"])).toMatchObject({
+			_tag: "Walks",
+			next: "review:ui",
+		});
+	});
+
+	it("separates an event no state of the machine holds a cell for from one this leaf lacks", () => {
+		const {compiled, states} = at([
+			["issue", "WIP"],
+			["issue", "BLOCKED"],
+		]);
+
+		// The ledger's own namespaced spelling and a typo are the same fact: no cell anywhere.
+		expect(walkOf(compiled, states, "issue", "ISSUE.PASS", null)._tag).toBe("Unknown");
+		expect(walkOf(compiled, states, "issue", "BANANA", null)._tag).toBe("Unknown");
+		// `PASS` is an event of this machine; the park is the leaf that owes it no cell.
+		const parked = walkOf(compiled, states, "issue", "PASS", null);
+		expect(parked._tag).toBe("NoCell");
+		expect(parked._tag === "NoCell" ? parked.why : "").toContain("UNBLOCKED");
+	});
+
+	it("keeps an unreadable task apart from both, so a caller never reads it as a refusal", () => {
+		const {compiled, states} = at([["issue", "WIP"]]);
+
+		expect(walkOf(compiled, states, "task_z", "PASS", null)._tag).toBe("Unreadable");
+	});
+});
+
 /**
  * `lane history` prints what `parseLog` returns, so a field the parser drops is a disclosure nobody
- * can read back — which is the whole job of `deferred` (#7041).
+ * can read back — which is the whole job of `deferred`.
  */
-describe("the deferral a proven PASS carries (#7041)", () => {
+describe("the deferral a proven PASS carries", () => {
 	const line = (fields: string) => `{"task":"issue","event":"ISSUE.PASS","at":"t"${fields}}\n`;
 
 	it("carries the deferred namespaces back off the line, and refuses a shape that is not a list", () => {
@@ -703,10 +769,10 @@ describe("the deferral a proven PASS carries (#7041)", () => {
 });
 
 /**
- * The routing payload a ship's `DONE` carries (ADR 0343). Absent reads as a closing merge, so the
+ * The routing payload a ship's `DONE` carries. Absent reads as a closing merge, so the
  * whole ledger written before the field existed folds byte-for-byte as it did.
  */
-describe("the partial merge a ship DONE carries (#7382)", () => {
+describe("the partial merge a ship DONE carries", () => {
 	const line = (fields: string) => `{"task":"issue","event":"ISSUE.DONE","at":"t"${fields}}\n`;
 
 	it("carries the flag back off the line, and refuses a shape that is not a boolean", () => {
@@ -724,7 +790,7 @@ describe("the partial merge a ship DONE carries (#7382)", () => {
 		});
 	});
 
-	it("carries the merged PRs that `partial` was read off (#7457)", () => {
+	it("carries the merged PRs that `partial` was read off", () => {
 		expect(parseLog(line(`,"partial":false,"landed":[7329]`))).toEqual({
 			_tag: "Parsed",
 			entries: [{task: "issue", event: "ISSUE.DONE", at: "t", partial: false, landed: [7329]}],
@@ -738,7 +804,58 @@ describe("the partial merge a ship DONE carries (#7382)", () => {
 	});
 });
 
-describe("the park cause a BLOCKED carries (#6480)", () => {
+describe("the diagnosis a build DONE carries", () => {
+	const line = (fields: string) => `{"task":"issue","event":"ISSUE.DONE","at":"t"${fields}}\n`;
+
+	it("carries the flag back off the line, and refuses a shape that is not a boolean", () => {
+		expect(parseLog(line(`,"diagnosis":true`))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.DONE", at: "t", diagnosis: true}],
+		});
+		expect(parseLog(line(`,"diagnosis":"yes"`))).toMatchObject({_tag: "Malformed"});
+	});
+
+	it("leaves a PR-backed DONE's line without the field, folding to `review` as it always did", () => {
+		const compiled = lane(coderWorkflow());
+		const log = drive(compiled, [
+			["issue", "WIP"],
+			["issue", "DONE"],
+		]);
+
+		expect(log.at(-1)).not.toHaveProperty("diagnosis");
+		expect(statusOf(compiled, log)).toMatchObject({
+			stateValue: {pipeline: {issue: "review"}},
+			status: "active",
+		});
+	});
+
+	// The whole defect: this lane used to reach `review`, whose brief needs a PR an investigation
+	// never opens, and the only move left was a park that read as a fault.
+	it("names the diagnosis finish as itself, distinct from `complete` and from every park", () => {
+		const compiled = lane(coderWorkflow());
+		const states = statesOf(compiled, [entry("issue", "WIP")]);
+		const applied = applyEvent(
+			compiled,
+			states,
+			"issue",
+			"DONE",
+			"2026-08-16T00:00:00.000Z",
+			null,
+			null,
+			null,
+			true,
+		);
+		if (applied._tag !== "Applied") throw new Error(applied.reason);
+
+		expect(applied.entry).toMatchObject({diagnosis: true});
+		expect(statusOf(compiled, [entry("issue", "WIP"), applied.entry])).toMatchObject({
+			stateValue: "diagnosed",
+			status: "done",
+		});
+	});
+});
+
+describe("the park cause a BLOCKED carries", () => {
 	const caused = (task: string, event: string, cause: string): LogEntry => ({
 		...entry(task, event),
 		cause,
@@ -807,7 +924,84 @@ describe("the park cause a BLOCKED carries (#6480)", () => {
 	});
 });
 
-describe("the parse defects that keep a grant from folding as a silent no-op (ADR 0312)", () => {
+describe("the rationale a driver's clearance stands on", () => {
+	const parked = (task: string, cause: string): LogEntry => ({
+		...entry(task, "BLOCKED"),
+		cause,
+	});
+	const cleared = (task: string, rationale: string): LogEntry => ({
+		...entry(task, "UNBLOCKED"),
+		rationale,
+	});
+
+	it("stands the rationale of a task's latest entry, per task", () => {
+		expect(
+			standingRationales([
+				parked("issue_1", "head-behind-base"),
+				cleared("issue_1", "rebased the head onto main"),
+				entry("issue_2", "WIP"),
+			]),
+		).toEqual({issue_1: "rebased the head onto main"});
+	});
+
+	it("drops the rationale once a later event supersedes it", () => {
+		expect(
+			standingRationales([cleared("issue", "rebased the head"), entry("issue", "WIP")]),
+		).toEqual({});
+	});
+
+	it("hangs the standing rationale on the task's own context, where a re-fold reads it back", () => {
+		const compiled = lane(coderWorkflow());
+		const entries = [
+			entry("issue", "WIP"),
+			parked("issue", "head-behind-base"),
+			cleared("issue", "rebased the head onto main"),
+		];
+		const folded = foldLog(compiled, entries);
+		if (folded._tag !== "Folded") throw new Error(folded.defects.join("; "));
+
+		const status = deriveStatus(
+			compiled,
+			folded.states,
+			standingCauses(entries),
+			standingRationales(entries),
+		);
+
+		expect(status.stateValue).toEqual({pipeline: {issue: "build"}});
+		expect(status.context.issue).toMatchObject({rationale: "rebased the head onto main"});
+		expect(Object.hasOwn(status.context.issue as object, "cause")).toBe(false);
+	});
+
+	// A recorded reason that says nothing is exactly as unauditable as no reason at all, so the
+	// parse refuses it rather than fold a line that reads as explained.
+	it("is a parse defect on a line whose rationale says nothing", () => {
+		const blank = JSON.stringify({
+			task: "issue",
+			event: "ISSUE.UNBLOCKED",
+			at: "2026-09-09T00:00:00.000Z",
+			rationale: "   ",
+		});
+
+		const parsed = parseLog(`${blank}\n`);
+
+		expect(parsed._tag).toBe("Malformed");
+		if (parsed._tag !== "Malformed") return;
+		expect(parsed.defects.join("; ")).toMatch(/`rationale` field that says nothing/);
+	});
+
+	it("folds a log written before the field existed with no rationale key at all", () => {
+		const compiled = lane(coderWorkflow());
+		const entries = [entry("issue", "WIP")];
+		const folded = foldLog(compiled, entries);
+		if (folded._tag !== "Folded") throw new Error(folded.defects.join("; "));
+
+		const status = deriveStatus(compiled, folded.states, {}, standingRationales(entries));
+
+		expect(Object.hasOwn(status.context.issue as object, "rationale")).toBe(false);
+	});
+});
+
+describe("the parse defects that keep a grant from folding as a silent no-op", () => {
 	const line = (fields: string) =>
 		`{"task":"issue","event":"ISSUE.${CLEARED_EVENT}","at":"t"${fields}}\n`;
 
@@ -833,7 +1027,7 @@ describe("the parse defects that keep a grant from folding as a silent no-op (AD
 	});
 
 	/** The same failure mode on the wait axis: a grant of nothing raises the budget by nothing. */
-	it("refuses a waitGrant that names no whole grant, and parses one that does (ADR 0313)", () => {
+	it("refuses a waitGrant that names no whole grant, and parses one that does", () => {
 		const resume = (fields: string) =>
 			`{"task":"issue","event":"ISSUE.UNBLOCKED","at":"t"${fields}}\n`;
 		const defect = ["line 1 carries a `waitGrant` that names no whole grant of waits"];
@@ -855,7 +1049,7 @@ describe("the parse defects that keep a grant from folding as a silent no-op (AD
 });
 
 /**
- * The wait axis's own unbudgeted resume (#6717). It cannot key on `errorFinals` the way the retry
+ * The wait axis's own unbudgeted resume. It cannot key on `errorFinals` the way the retry
  * axis does: `human:queue-stall` is a plain state carrying no `type: "final"`, so it structurally
  * cannot be in that set, and the refusal keys on the wait counter and `ship:queued`'s own park
  * pairing instead.
@@ -905,5 +1099,431 @@ describe("the queue stall — a resume out of it needs the waits granted on the 
 			waits: WAIT_BUDGET,
 			maxWaits: WAIT_BUDGET + 1,
 		});
+	});
+});
+
+describe("the board-proven terminals", () => {
+	const AT = "2026-08-29T12:00:00.000Z";
+
+	const settleWith = (
+		compiled: CompiledLane,
+		log: ReadonlyArray<LogEntry>,
+		taskId: string,
+		event: string,
+		outcome: string,
+		evidence: {landed?: ReadonlyArray<number>; sha?: string; assertedBy?: string} = {},
+	) =>
+		applyBoardTerminal(
+			compiled,
+			statesOf(compiled, log),
+			taskId,
+			event,
+			{outcome, ...evidence},
+			AT,
+		);
+
+	it("ends a task parked in `blocked` — lane 5983's own shape", () => {
+		const compiled = lane(coderWorkflow());
+		const log = drive(compiled, [
+			["issue", "WIP"],
+			["issue", "BLOCKED"],
+		]);
+		const applied = settleWith(compiled, log, "issue", CANCELLED_EVENT, "not_planned");
+
+		expect(applied).toMatchObject({
+			_tag: "Appendable",
+			entry: {task: "issue", event: "ISSUE.CANCELLED", outcome: "not_planned"},
+			previous: {stateValue: {pipeline: {issue: "blocked"}}},
+			current: {stateValue: "board:cancelled", status: "done"},
+		});
+	});
+
+	it("ends a hand-shipped task sitting in `review` — the 49 lanes' own shape", () => {
+		const compiled = lane(coderWorkflow());
+		const log = drive(compiled, [
+			["issue", "WIP"],
+			["issue", "DONE"],
+		]);
+		const applied = settleWith(compiled, log, "issue", LANDED_EVENT, "completed", {
+			landed: [6874],
+			sha: "b0ab5804263e3ca232aa950e906b997e0e6b1963",
+		});
+
+		expect(applied).toMatchObject({
+			_tag: "Appendable",
+			entry: {
+				task: "issue",
+				event: "ISSUE.LANDED",
+				outcome: "completed",
+				landed: [6874],
+				sha: "b0ab5804263e3ca232aa950e906b997e0e6b1963",
+			},
+			previous: {stateValue: {pipeline: {issue: "review"}}},
+			current: {stateValue: "board:landed", status: "done"},
+		});
+	});
+
+	it("keeps the two terminals apart: a landing is not `cancelled` and not `complete`", () => {
+		const compiled = lane(coderWorkflow());
+		const landed = settleWith(compiled, [], "issue", LANDED_EVENT, "completed", {landed: [1]});
+		const cancelled = settleWith(compiled, [], "issue", CANCELLED_EVENT, "not_planned");
+
+		expect(landed).toMatchObject({current: {stateValue: "board:landed"}});
+		expect(cancelled).toMatchObject({current: {stateValue: "board:cancelled"}});
+	});
+
+	it("refuses an event outside the two, so no caller can settle on a name it invented", () => {
+		const compiled = lane(coderWorkflow());
+
+		expect(settleWith(compiled, [], "issue", "SHIPPED", "completed")).toMatchObject({
+			_tag: "Refused",
+		});
+	});
+
+	it("reaches every state a lane can sit in, `queued` included", () => {
+		const compiled = lane(coderWorkflow());
+		const applied = settleWith(compiled, [], "issue", CANCELLED_EVENT, "duplicate");
+
+		expect(applied).toMatchObject({_tag: "Appendable", current: {stateValue: "board:cancelled"}});
+	});
+
+	it("refuses a lane already folded to its own terminal", () => {
+		const compiled = lane(coderWorkflow());
+		const log = drive(compiled, [
+			["issue", "WIP"],
+			["issue", "DONE"],
+			["issue", "PASS"],
+			["issue", "DONE"],
+		]);
+		const applied = settleWith(compiled, log, "issue", CANCELLED_EVENT, "not_planned");
+
+		expect(applied).toMatchObject({_tag: "Refused"});
+		expect(applied._tag === "Refused" && applied.reason).toContain("already carries a terminal");
+	});
+
+	it("refuses a task sitting in a final whose outcome is already recorded", () => {
+		const compiled = lane(twoPhaseWorkflow());
+		const log = drive(compiled, [
+			["task_a", "DONE"],
+			["task_a", "PASS"],
+		]);
+		const applied = settleWith(compiled, log, "task_a", CANCELLED_EVENT, "duplicate");
+
+		expect(applied).toMatchObject({_tag: "Refused"});
+		expect(applied._tag === "Refused" && applied.reason).toContain("nothing here to settle");
+	});
+
+	it("leaves an epic's sibling tasks running: one cancelled child does not end the lane", () => {
+		const compiled = lane(twoPhaseWorkflow());
+		const applied = settleWith(compiled, [], "task_a", CANCELLED_EVENT, "not_planned");
+
+		expect(applied).toMatchObject({_tag: "Appendable", current: {status: "active"}});
+	});
+
+	it("cannot be hand-typed through `lane transition` — it is not an operator event", () => {
+		const compiled = lane(coderWorkflow());
+		const applied = applyEvent(compiled, statesOf(compiled, []), "issue", CANCELLED_EVENT, AT);
+
+		expect(applied).toMatchObject({_tag: "Refused"});
+		expect(applied._tag === "Refused" && applied.reason).toContain("`lane settle`");
+	});
+
+	it("refuses a recorded landing that names no merged pull request", () => {
+		const parsed = parseLog(
+			`${JSON.stringify({task: "issue", event: "ISSUE.LANDED", at: AT, outcome: "completed"})}\n`,
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
+		expect(parsed._tag === "Malformed" && parsed.defects[0]).toContain("naming no `landed`");
+	});
+
+	it("folds a recorded landing straight to its own terminal, from the log alone", () => {
+		const compiled = lane(coderWorkflow());
+		const parsed = parseLog(
+			[
+				JSON.stringify({task: "issue", event: "ISSUE.WIP", at: AT}),
+				JSON.stringify({
+					task: "issue",
+					event: "ISSUE.LANDED",
+					at: AT,
+					outcome: "completed",
+					landed: [6874],
+					sha: "b0ab580",
+				}),
+			].join("\n"),
+		);
+		if (parsed._tag !== "Parsed") throw new Error("fixture log does not parse");
+
+		expect(deriveStatus(compiled, statesOf(compiled, parsed.entries))).toMatchObject({
+			stateValue: "board:landed",
+			status: "done",
+		});
+	});
+
+	it("refuses a recorded line that names no board outcome", () => {
+		const parsed = parseLog(
+			`${JSON.stringify({task: "issue", event: "ISSUE.CANCELLED", at: AT})}\n`,
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
+		expect(parsed._tag === "Malformed" && parsed.defects[0]).toContain("carrying no `outcome`");
+	});
+
+	it("carries `assertedBy` onto the line when the caller supplied the link", () => {
+		const compiled = lane(coderWorkflow());
+		const applied = settleWith(compiled, [], "issue", LANDED_EVENT, "completed", {
+			landed: [6894],
+			assertedBy: "caller",
+		});
+
+		expect(applied).toMatchObject({
+			_tag: "Appendable",
+			entry: {event: "ISSUE.LANDED", landed: [6894], assertedBy: "caller"},
+		});
+	});
+
+	it("leaves a body-proven landing's line without an `assertedBy` at all", () => {
+		const compiled = lane(coderWorkflow());
+		const applied = settleWith(compiled, [], "issue", LANDED_EVENT, "completed", {landed: [6874]});
+
+		expect(applied._tag === "Appendable" && applied.entry).not.toHaveProperty("assertedBy");
+	});
+
+	it("parses an asserted landing and folds it exactly as a body-proven one", () => {
+		const compiled = lane(coderWorkflow());
+		const parsed = parseLog(
+			`${JSON.stringify({
+				task: "issue",
+				event: "ISSUE.LANDED",
+				at: AT,
+				outcome: "completed",
+				landed: [6894],
+				assertedBy: "caller",
+			})}\n`,
+		);
+		if (parsed._tag !== "Parsed") throw new Error("fixture log does not parse");
+
+		expect(parsed.entries[0]).toMatchObject({assertedBy: "caller"});
+		expect(deriveStatus(compiled, statesOf(compiled, parsed.entries))).toMatchObject({
+			stateValue: "board:landed",
+		});
+	});
+
+	it("refuses an `assertedBy` riding an event that establishes no link", () => {
+		const parsed = parseLog(
+			`${JSON.stringify({task: "issue", event: "ISSUE.DONE", at: AT, assertedBy: "caller"})}\n`,
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
+		expect(parsed._tag === "Malformed" && parsed.defects[0]).toContain("only a LANDED");
+	});
+
+	it("refuses an `assertedBy` naming no source", () => {
+		const parsed = parseLog(
+			`${JSON.stringify({
+				task: "issue",
+				event: "ISSUE.LANDED",
+				at: AT,
+				outcome: "completed",
+				landed: [6894],
+				assertedBy: "",
+			})}\n`,
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
+	});
+
+	it("refuses an `outcome` riding an event that stands on no closure", () => {
+		const parsed = parseLog(
+			`${JSON.stringify({task: "issue", event: "ISSUE.DONE", at: AT, outcome: "not_planned"})}\n`,
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
+	});
+
+	it("folds a recorded cancellation straight to the terminal, from the log alone", () => {
+		const compiled = lane(coderWorkflow());
+		const parsed = parseLog(
+			[
+				JSON.stringify({task: "issue", event: "ISSUE.WIP", at: AT}),
+				JSON.stringify({task: "issue", event: "ISSUE.BLOCKED", at: AT}),
+				JSON.stringify({task: "issue", event: "ISSUE.CANCELLED", at: AT, outcome: "duplicate"}),
+			].join("\n"),
+		);
+		if (parsed._tag !== "Parsed") throw new Error("fixture log does not parse");
+
+		expect(deriveStatus(compiled, statesOf(compiled, parsed.entries))).toMatchObject({
+			stateValue: "board:cancelled",
+			status: "done",
+		});
+	});
+
+	it("clears the park's standing cause, because the lane is no longer waiting on anyone", () => {
+		const entries: ReadonlyArray<LogEntry> = [
+			{task: "issue", event: "ISSUE.BLOCKED", at: AT, cause: "spawn-dead"},
+			{task: "issue", event: "ISSUE.CANCELLED", at: AT, outcome: "not_planned"},
+		];
+
+		expect(standingCauses(entries)).toEqual({});
+	});
+});
+
+describe("the topology amendment — a line about the lane, not about a task", () => {
+	const AT = "2026-09-10T12:00:00.000Z";
+
+	it("folds inert: the lane replays to exactly where it stood before the line landed", () => {
+		const compiled = lane(coderWorkflow());
+		const worked = drive(compiled, [["issue", "WIP"]]);
+		const amended: ReadonlyArray<LogEntry> = [
+			...worked,
+			{task: "epic_900", event: "EPIC_900.AMENDED", at: AT, tasks: ["issue"]},
+		];
+
+		expect(statusOf(compiled, amended)).toEqual(statusOf(compiled, worked));
+	});
+
+	it("leaves a park's standing cause alone — it re-derives a machine and clears nothing", () => {
+		const entries: ReadonlyArray<LogEntry> = [
+			{task: "issue", event: "ISSUE.BLOCKED", at: AT, cause: "spawn-dead"},
+			{task: "epic_900", event: "EPIC_900.AMENDED", at: AT, tasks: ["issue"]},
+		];
+
+		expect(standingCauses(entries)).toEqual({issue: "spawn-dead"});
+	});
+
+	it("refuses an amendment naming no task set, the way a roundless clearance is refused", () => {
+		const parsed = parseLog(JSON.stringify({task: "epic_900", event: "EPIC_900.AMENDED", at: AT}));
+
+		expect(parsed).toMatchObject({
+			_tag: "Malformed",
+			defects: [
+				"line 1 is an AMENDED event carrying no `tasks` — the task set the re-derived machine holds",
+			],
+		});
+	});
+
+	it("refuses a `tasks` payload on any other event, which names a set nothing re-derived", () => {
+		const parsed = parseLog(
+			JSON.stringify({task: "issue", event: "ISSUE.WIP", at: AT, tasks: ["issue"]}),
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
+	});
+
+	it("refuses it as an operator event, naming the verb that appends one", () => {
+		const compiled = lane(coderWorkflow());
+		const applied = applyEvent(compiled, statesOf(compiled, []), "issue", "AMENDED", AT);
+
+		expect(applied).toMatchObject({_tag: "Refused"});
+		expect((applied as {reason: string}).reason).toContain("lane amend");
+	});
+});
+
+describe("a deferred task", () => {
+	const AT = "2026-09-10T12:00:00.000Z";
+	const EARLIER = "2026-09-09T12:00:00.000Z";
+	const REASON = "founder deferred it to a follow-up cycle";
+
+	/** The one-task coder machine, standing in for the machine an amendment has already written. */
+	const afterTheWrite = (): CompiledLane => lane(coderWorkflow());
+
+	const deferring = (task: string, through: string): LogEntry => ({
+		task: "epic_900",
+		event: "EPIC_900.AMENDED",
+		at: AT,
+		tasks: ["issue"],
+		defers: [{task, through, reason: REASON}],
+	});
+
+	it("folds cleanly once its task is gone from the machine — its lines are accounted for, not unknown", () => {
+		const folded = foldLog(afterTheWrite(), [
+			{task: "issue_3", event: "ISSUE_3.BLOCKED", at: EARLIER},
+			deferring("issue_3", EARLIER),
+		]);
+
+		expect(folded._tag).toBe("Folded");
+		expect(folded._tag === "Folded" && Object.keys(folded.states)).toEqual(["issue"]);
+	});
+
+	it("is still an unknown task when no amendment defers it", () => {
+		const folded = foldLog(afterTheWrite(), [
+			{task: "issue_3", event: "ISSUE_3.BLOCKED", at: EARLIER},
+		]);
+
+		expect(folded).toMatchObject({
+			_tag: "Unreplayable",
+			defects: ['log names task "issue_3", which is not in this lane\'s machine'],
+		});
+	});
+
+	it("refuses an unresolvable deferral rather than folding past it", () => {
+		const folded = foldLog(afterTheWrite(), [
+			{task: "issue_3", event: "ISSUE_3.BLOCKED", at: EARLIER},
+			deferring("issue_3", AT),
+		]);
+
+		expect(folded._tag).toBe("Unreplayable");
+	});
+
+	it("still folds through the OLD machine, which holds the task the amendment has not yet dropped", () => {
+		const folded = foldLog(afterTheWrite(), [
+			{task: "issue", event: "ISSUE.WIP", at: EARLIER},
+			deferring("issue", EARLIER),
+		]);
+
+		expect(folded._tag).toBe("Folded");
+		expect(folded._tag === "Folded" && folded.states.issue?.type).toBe("build");
+	});
+
+	it("refuses a `defers` row carrying no reason — a plan change nobody recorded a why for", () => {
+		const parsed = parseLog(
+			JSON.stringify({
+				task: "epic_900",
+				event: "EPIC_900.AMENDED",
+				at: AT,
+				tasks: ["issue"],
+				defers: [{task: "issue_3", through: EARLIER}],
+			}),
+		);
+
+		expect(parsed).toMatchObject({
+			_tag: "Malformed",
+			defects: [
+				"line 1 carries a `defers` field that is not a non-empty list of {task, through, reason} rows",
+			],
+		});
+	});
+
+	it("refuses `defers` on any event but an amendment", () => {
+		const parsed = parseLog(
+			JSON.stringify({
+				task: "issue",
+				event: "ISSUE.WIP",
+				at: AT,
+				defers: [{task: "issue_3", through: EARLIER, reason: REASON}],
+			}),
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
+		expect((parsed as {defects: ReadonlyArray<string>}).defects[0]).toContain(
+			"only an AMENDED defers a task out of the plan",
+		);
+	});
+
+	it("refuses one payload naming a task twice", () => {
+		const parsed = parseLog(
+			JSON.stringify({
+				task: "epic_900",
+				event: "EPIC_900.AMENDED",
+				at: AT,
+				tasks: ["issue"],
+				defers: [
+					{task: "issue_3", through: EARLIER, reason: REASON},
+					{task: "issue_3", through: EARLIER, reason: REASON},
+				],
+			}),
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
 	});
 });

@@ -9,20 +9,32 @@ import type {AiAgentSessionState} from "../../ai-agent/core/state.ts";
 import {initialState} from "../../ai-agent/core/state.ts";
 import type {
 	JsonValue,
-	PermissionRequest,
+	ThinkingLevel,
 	ToolItem,
 	ToolStatus,
 	TranscriptItem,
 } from "../../ai-agent/ports/index.ts";
 import {boundToolResult, ItemId, Mode} from "../../ai-agent/ports/index.ts";
+import {pendingPermission, permissionCard} from "../../ai-agent-fixtures/permissions.ts";
 import {
 	assistantItem,
+	compactionItem,
 	systemItem,
+	thinkingItem,
 	toolItem,
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
 
-export {assistantItem, systemItem, toolItem, userItem};
+export {
+	assistantItem,
+	compactionItem,
+	pendingPermission,
+	permissionCard as permissionRequest,
+	systemItem,
+	thinkingItem,
+	toolItem,
+	userItem,
+};
 
 /** An exchange per index, so a transcript of `n` items is `n` distinct ids in a known order. */
 export const transcriptOf = (count: number, prefix = "i"): ReadonlyArray<TranscriptItem> =>
@@ -54,6 +66,8 @@ export const call = (
 		readonly output?: string;
 		readonly resultLimit?: number;
 		readonly status?: ToolStatus;
+		/** The call this one ran inside, for the subagent-fold cases. */
+		readonly parentId?: string;
 	} = {},
 ): ToolItem => ({
 	kind: "tool",
@@ -63,17 +77,7 @@ export const call = (
 	input: options.input ?? {path: "README.md"},
 	result: boundToolResult(options.output ?? "ok", options.resultLimit),
 	status: options.status ?? "ok",
-});
-
-export const permissionRequest = (
-	overrides: Partial<PermissionRequest> = {},
-): PermissionRequest => ({
-	title: "Run a command",
-	displayName: "bash",
-	description: "The agent wants to run a shell command in the project.",
-	input: {command: "rm -rf build"},
-	offersAlways: true,
-	...overrides,
+	...(options.parentId === undefined ? {} : {parentId: ItemId.make(options.parentId)}),
 });
 
 export const modes = (
@@ -83,6 +87,26 @@ export const modes = (
 	current: current === null ? null : Mode.make(current),
 	available: available.map((name) => Mode.make(name)),
 });
+
+export const models = (
+	available: ReadonlyArray<string>,
+	current: string | null = available[0] ?? null,
+): AiAgentSessionState["models"] => ({
+	current: current === null ? null : {provider: "anthropic", id: current, name: current},
+	available: available.map((id) => ({provider: "anthropic", id, name: id})),
+});
+
+export const commands = (names: ReadonlyArray<string>): AiAgentSessionState["commands"] =>
+	names.map((name) => ({name, description: `what /${name} does`}));
+
+/**
+ * The offered thinking set, per backend (#8062). The default is Claude's five — no `off` and no
+ * `minimal` — since that is the founder's ruling in its narrowest form.
+ */
+export const thinking = (
+	available: ReadonlyArray<ThinkingLevel> = ["low", "medium", "high", "xhigh", "max"],
+	current: ThinkingLevel | null = available[0] ?? null,
+): AiAgentSessionState["thinking"] => ({current, available});
 
 export const withTranscript = (
 	items: ReadonlyArray<TranscriptItem>,

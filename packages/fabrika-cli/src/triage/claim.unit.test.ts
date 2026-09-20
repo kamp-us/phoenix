@@ -235,8 +235,8 @@ describe("resolveClaim", () => {
 
 describe("resolveClaim — two lanes of one session", () => {
 	const now = at("2026-08-02T10:00:00Z");
-	// #6132: both siblings of a fan-out carry one CLAUDE_CODE_SESSION_ID. Resolved on the session id
-	// alone, each read the other's marker back as its own and BOTH answered `won`.
+	// Both siblings of a fan-out carry one CLAUDE_CODE_SESSION_ID. Resolved on the session id alone,
+	// each read the other's marker back as its own and BOTH answered `won`.
 	const markers = [
 		{id: 2, session: MINE, lane: SIBLING_LANE, createdAt: "2026-08-02T09:14:02Z"},
 		{id: 3, session: MINE, lane: MY_LANE, createdAt: "2026-08-02T09:50:00Z"},

@@ -8,9 +8,6 @@
  *
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
- *
- * `build push` is the group's one deviant on the channel rule and the emitter honours it: its whole
- * report is stdout, so `tail -1` of stdout on exit 0 is always the verdict line.
  */
 import {randomUUID} from "node:crypto";
 import {tmpdir} from "node:os";
@@ -18,6 +15,7 @@ import {Effect, type FileSystem, Option, Result} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
+import {localTreeGuards} from "../guard/command.ts";
 import {readFile} from "../io/fs.ts";
 import {readStdin} from "../io/stdin.ts";
 import {DEFAULT_LANES_ROOT} from "../lane/store.ts";
@@ -50,6 +48,7 @@ import {
 	READY_FOR_AGENT,
 } from "./scope-admission.ts";
 import {runScratch} from "./scratch-verb.ts";
+import {DEFAULT_OLDER_THAN_MINUTES, runStaleClaims} from "./stale-claims-verb.ts";
 import {runTree} from "./tree-verb.ts";
 import {runChildVerdicts, runVerdicts} from "./verdicts-verb.ts";
 
@@ -62,7 +61,7 @@ const repoFlag = Flag.string("repo").pipe(
 
 /**
  * Required, and deliberately not defaulted: it is how a verb learns WHICH lane is asking, and the
- * session id it could otherwise fall back to names every lane of the session at once (#6037).
+ * session id it could otherwise fall back to names every lane of the session at once.
  */
 const tokenFlag = Flag.string("token").pipe(
 	Flag.withDescription("the claim token `build claim` handed this lane — its identity"),
@@ -76,6 +75,7 @@ const tree = leafCommand(
 	"tree",
 	{
 		requireClean: Flag.boolean("require-clean").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"additionally refuse a tree with any uncommitted change — the lane-open posture (default: false)",
 			),
@@ -131,7 +131,7 @@ const pick = leafCommand(
 ).pipe(
 	Command.withShortDescription("The ranked pool of issues this lane may pick up."),
 	Command.withDescription(
-		'The ranked candidate pool: status:triaged + unassigned + admitted by the shared admission test (scope axis against the ROADMAP.md "## Campaigns" table\'s active rows, audience axis on ready-for:agent), then filtered by this verb\'s own acceptance-criteria axis — a body the wire reader does not answer Found on is excluded as no-acceptance-criteria, an axis the shared admission test does not carry because build claim reaches it over an epic, and finally by the native blocked_by graph (ADR 0301) minus what the parent epic\'s assembly branch already carries — the same discharge build claim answers from, so the two seams cannot state different facts about one edge. A candidate with any blocker still open and not carried by that branch is excluded as blocked, and one whose edge list or parent could not be read is excluded as unreadable with its reason on stderr; what the branch read added is named on stderr too. Every bucket paginated in full. Prints {"pool":[…],"excluded":[{"number","home","reason"}],"scanned":{"p0":n,"p1":n,"p2":n},"campaigns":{…}}; each excluded issue names which axis refused it, and an empty pool is a fact on exit 0, readable against the scanned counts. Exits 1 (--limit is not a positive integer), 4 (the "## Campaigns" table reads but does not parse — never read as "nothing is active"), 11 (any bucket read failed or came back truncated, or the table could not be read — the pool is UNKNOWN, never partial and never unfiltered). Example: fabrika build pick --limit 5',
+		'The ranked candidate pool: status:triaged + unassigned + admitted by the shared admission test (scope axis against the ROADMAP.md "## Campaigns" table\'s active rows, audience axis on ready-for:agent), then filtered by this verb\'s own acceptance-criteria axis — a body the wire reader does not answer Found on is excluded as no-acceptance-criteria, an axis the shared admission test does not carry because build claim reaches it over an epic, and finally by the native blocked_by graph minus what the parent epic\'s assembly branch already carries — the same discharge build claim answers from, so the two seams cannot state different facts about one edge. A candidate with any blocker still open and not carried by that branch is excluded as blocked, and one whose edge list or parent could not be read is excluded as unreadable with its reason on stderr; what the branch read added is named on stderr too. Every bucket paginated in full. Prints {"pool":[…],"excluded":[{"number","home","reason"}],"scanned":{"p0":n,"p1":n,"p2":n},"campaigns":{…}}; each excluded issue names which axis refused it, and an empty pool is a fact on exit 0, readable against the scanned counts. Exits 1 (--limit is not a positive integer), 4 (the "## Campaigns" table reads but does not parse — never read as "nothing is active"), 11 (any bucket read failed or came back truncated, or the table could not be read — the pool is UNKNOWN, never partial and never unfiltered). Example: fabrika build pick --limit 5',
 	),
 );
 
@@ -144,11 +144,11 @@ const eligible = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether one issue's dependency gate is open."),
 	Command.withDescription(
-		'One issue\'s dependency gate, derived from GitHub\'s native blocked_by graph and nothing else (ADR 0301) — never off a label, and never off the epic ledger\'s prose "## Dependencies" block, which is a rendering rather than an input. Prints {"answer":"eligible","number":n,"parent":n|null}; blocked and unknown print nothing. Every blocker is read before the answer is seated, so the verdict does not depend on the order the graph lists them in, and a blocker that could not be read is named on stderr as its own row rather than counted closed. Exits 7 (the issue is proven absent or closed), 11 (the issue, its parent, its edge list or a blocker could not be read, with nothing proven open — UNKNOWN, never "eligible"), 16 (proven blocked — EVERY open edge is named on stderr, alongside any blocker that could not be read). Example: fabrika build eligible 4312',
+		'One issue\'s dependency gate, derived from GitHub\'s native blocked_by graph and nothing else — never off a label, and never off the epic ledger\'s prose "## Dependencies" block, which is a rendering rather than an input. Prints {"answer":"eligible","number":n,"parent":n|null}; blocked and unknown print nothing. Every blocker is read before the answer is seated, so the verdict does not depend on the order the graph lists them in, and a blocker that could not be read is named on stderr as its own row rather than counted closed. Exits 7 (the issue is proven absent or closed), 11 (the issue, its parent, its edge list or a blocker could not be read, with nothing proven open — UNKNOWN, never "eligible"), 16 (proven blocked — EVERY open edge is named on stderr, alongside any blocker that could not be read). Example: fabrika build eligible 4312',
 	),
 );
 
-/** The admission codes as `--help` prose, enumerated from the module rather than restated (ADR 0245). */
+/** The admission codes as `--help` prose, enumerated from the module rather than restated. */
 const admissionExits = ADMISSION_EXIT_CODES.map(
 	({code, condition}) => `${code} (${condition})`,
 ).join(", ");
@@ -194,6 +194,7 @@ const claim = leafCommand(
 			),
 		),
 		resume: Flag.boolean("resume").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"take the repair lane of an epic child that already carries a standing range FAIL, rather than building it fresh; refused on a child holding no such FAIL, exactly as its absence is refused on one that does",
 			),
@@ -234,7 +235,7 @@ const claim = leafCommand(
 		"Race the claim marker on an issue or explicitly selected repair subject.",
 	),
 	Command.withDescription(
-		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<session-id>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. In repair, --issue <served-issue> selects that explicit member of the PR body's complete linkage set before admission, independent of reference order; a missing member refuses on 14. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated; the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. The type axis binds a build claim against an ISSUE only, so ${DECISION_TYPE_LABEL} and ${EPIC_TYPE_LABEL} refuse before any marker is written; --cites ${CITATION_GRAMMAR} opens it on a decision whose choice a founder already recorded on that issue, and the URL must name this repository and the issue being judged. It is not an override: it says the refusal does not apply, and it is never accepted for an epic. The criteria axis binds a fresh build claim against an ISSUE only: a body with no readable \`### Acceptance criteria\` block refuses on 32 before any marker, absent or malformed, and it is not overridable — the repair belongs on the issue (triage enrich, triage repair-criteria), not on a branch. Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used and "cites" when a ruling was cited. --token makes the re-claim idempotent per LANE: handed the token this lane already holds, a number that lane already owns answers won with that same marker and writes nothing, while a same-session marker under another nonce is a sibling lane and races normally. A lost race retracts this run's own marker and exits 15, never 0 — including when the winner is another lane of THIS session, since ownership turns on the whole token and never the session id; no session id is set (FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID, PI_SUBAGENT_PARENT_SESSION), a --token that is not a claim token of this session, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. After the admission test, and only against an ISSUE, a blockedness gate reads the native blocked_by graph (ADR 0301): a number with any blocker still open refuses on 16 naming every one of them, and an edge list that could not be read is 11 — never "not blocked". An open blocker whose work already landed on the parent epic's assembly branch is discharged off the same derivation build eligible answers from (ADR 0285), so the two seams cannot disagree about one edge; an unreadable branch, an unnameable trunk and a standalone issue all leave every edge as the board read it, and a parent that could not be read is 11. It is not overridable, because the remedy is waiting rather than an edit. Then, on a fresh build-purpose claim only, a prior-build gate reads the number's range-scoped verdict comments — where an epic child's review lands, since a child opens no PR (ADR 0285/0276): a child carrying ANY standing verdict refuses on 31, naming each namespace, polarity, range and comment id — a FAIL points at "--resume", a PASS-only child points at the epic driver's fold and never at --resume — and --resume on a child holding no standing FAIL refuses on 31 too. Unreadable comments are 11, never "no prior build", and neither direction is overridable — --override admits a scope refusal, and this is not one. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum or --issue names a non-PR target), 14 (the requested served issue is absent from the repair PR linkage), 15 (proven lost), 16 (proven blocked), 31 (the claim's mode and the child's standing verdict disagree), and from the admission test: ${admissionExits}. Why each axis is shaped this way is in claude-plugins/fabrika/skills/build/contract.md, not here. Example: fabrika build claim 4312 --purpose gate`,
+		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<session-id>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. In repair, --issue <served-issue> selects that explicit member of the PR body's complete linkage set before admission, independent of reference order; a missing member refuses on 14. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated; the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. The type axis binds a build claim against an ISSUE only, so ${DECISION_TYPE_LABEL} and ${EPIC_TYPE_LABEL} refuse before any marker is written; --cites ${CITATION_GRAMMAR} opens it on a decision whose choice a founder already recorded on that issue, and the URL must name this repository and the issue being judged. It is not an override: it says the refusal does not apply, and it is never accepted for an epic. The criteria axis binds a fresh build claim against an ISSUE only: a body with no readable \`### Acceptance criteria\` block refuses on 32 before any marker, absent or malformed, and it is not overridable — the repair belongs on the issue (triage enrich, triage repair-criteria), not on a branch. Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used and "cites" when a ruling was cited. --token makes the re-claim idempotent per LANE: handed the token this lane already holds, a number that lane already owns answers won with that same marker and writes nothing, while a same-session marker under another nonce is a sibling lane and races normally. A lost race retracts this run's own marker and exits 15, never 0 — including when the winner is another lane of THIS session, since ownership turns on the whole token and never the session id; that 15 names the succession beside the winner — build adopt then build release, and "fabrika build claims stale" for which claims are standing past a horizon — withheld when the winner is a sibling lane of this session, which build adopt refuses; no session id is set (FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID, PI_SUBAGENT_PARENT_SESSION), a --token that is not a claim token of this session, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. After the admission test, and only against an ISSUE under purpose build, a blockedness gate reads the native blocked_by graph: a number with any blocker still open refuses on 16 naming every one of them, and an edge list that could not be read is 11 — never "not blocked". An open blocker whose work already landed on the parent epic's assembly branch is discharged off the same derivation build eligible answers from, so the two seams cannot disagree about one edge; an unreadable branch, an unnameable trunk and a standalone issue all leave every edge as the board read it, and a parent that could not be read is 11. It is not overridable, because the remedy is waiting rather than an edit. A plan or gate claim skips the graph read entirely and says so on stderr, so 16 and that 11 are unreachable under those purposes: planning and plan-gating write no code and are the work that should happen while the blocker is still open. Then, on a fresh build-purpose claim only, a prior-build gate reads the number's range-scoped verdict comments — where an epic child's review lands, since a child opens no PR: a child carrying ANY standing verdict refuses on 31, naming each namespace, polarity, range and comment id — a FAIL points at "--resume", a PASS-only child points at the epic driver's fold and never at --resume — and --resume on a child holding no standing FAIL refuses on 31 too. Unreadable comments are 11, never "no prior build", and neither direction is overridable — --override admits a scope refusal, and this is not one. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum or --issue names a non-PR target), 14 (the requested served issue is absent from the repair PR linkage), 15 (proven lost), 16 (proven blocked), 31 (the claim's mode and the child's standing verdict disagree), and from the admission test: ${admissionExits}. Why each axis is shaped this way is in claude-plugins/fabrika/skills/build/contract.md, not here. Example: fabrika build claim 4312 --purpose gate`,
 	),
 );
 
@@ -260,7 +261,43 @@ const claimants = leafCommand(
 ).pipe(
 	Command.withShortDescription("Which sessions hold live claims on one issue."),
 	Command.withDescription(
-		'Read who holds the claim on an issue, holding none yourself. It takes no --token and needs no session, so a driver holding no claim of its own can read the claim state of one issue — confirm re-proves THIS lane\'s claim and refuses a token of any other session (see claude-plugins/fabrika/skills/build/contract.md). It writes nothing, and it clears nothing — a stranded claim leaves through "fabrika build adopt" then "fabrika build release", never through a TTL, a lease or an inference from absence (ADR 0295). Prints {"answer":"held"|"unclaimed","number":n,"holder":{"commentId","author","createdAt","token","session","authorized"}|null,"claimants":[…],"adopts":[…]}: the holder is the EARLIEST AUTHORIZED marker, the same one every ownership question resolves against, and every other marker is listed beside it — an unauthorized one is counted and named on stderr, never a winner (ADR 0055). A closed issue is answered rather than refused, because a marker outliving its issue is exactly the strandedness this reads for; its state is named on stderr. Exits 7 (the issue is proven absent — there is no thread to read), 11 (the issue, its comments or an author\'s permission could not be read — UNKNOWN, never "unclaimed"). Example: fabrika build claimants 6669',
+		'Read who holds the claim on an issue, holding none yourself. It takes no --token and needs no session, so a driver holding no claim of its own can read the claim state of one issue — confirm re-proves THIS lane\'s claim and refuses a token of any other session (see claude-plugins/fabrika/skills/build/contract.md). It writes nothing, and it clears nothing — a stranded claim leaves through "fabrika build adopt" then "fabrika build release", never through a TTL, a lease or an inference from absence. Prints {"answer":"held"|"unclaimed","number":n,"holder":{"commentId","author","createdAt","token","session","authorized"}|null,"claimants":[…],"adopts":[…]}: the holder is the EARLIEST AUTHORIZED marker, the same one every ownership question resolves against, and every other marker is listed beside it — an unauthorized one is counted and named on stderr, never a winner. A closed issue is answered rather than refused, because a marker outliving its issue is exactly the strandedness this reads for; its state is named on stderr. Exits 7 (the issue is proven absent — there is no thread to read), 11 (the issue, its comments or an author\'s permission could not be read — UNKNOWN, never "unclaimed"). Example: fabrika build claimants 6669',
+	),
+);
+
+const claimsStale = leafCommand(
+	"stale",
+	{
+		olderThanMinutes: Flag.integer("older-than-minutes").pipe(
+			Flag.withDefault(DEFAULT_OLDER_THAN_MINUTES),
+			Flag.withDescription(
+				`the horizon a marker must have stood past to be a row, in minutes (default: ${DEFAULT_OLDER_THAN_MINUTES}, a day)`,
+			),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({olderThanMinutes, repo}) {
+		yield* emit(
+			yield* runStaleClaims({
+				olderThanMinutes,
+				repo: Option.getOrNull(repo),
+				now: new Date().toISOString(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Which build claims have stood on the board unmoved."),
+	Command.withDescription(
+		'Sweep the board for build claim markers that have stood past a horizon, so a lane stranded by a session that never came back is discovered instead of being found by whoever next loses a claim on exit 15. "fabrika build claimants <n>" answers one number a caller already suspects; this asks which numbers to suspect. It WRITES NOTHING and EXPIRES NOTHING: no marker is edited, deleted or retracted, and a row is never a finding that a session is dead — age is the only signal on the board and age alone proves nothing, so the ban on TTLs, leases, steals and eviction-by-inference is untouched. A stranded claim still leaves through "fabrika build adopt <n> --session <its session id> --reason <why>" then "fabrika build release <n> --token <the token adopt prints>", which the answer names. Candidates come off the search index — the open board is hundreds of issues and reading every thread would be hundreds of calls thrown away — and every candidate is then read through the same fold "build claimants" and "lane stale --claims" resolve against, so the three cannot state different facts about one marker. An index lags by minutes while a reported marker has stood for the whole horizon, whose default is a day, so the lag cannot hide a row. Prints {"answer":"stranded"|"none","now","scanned":{"candidates","markers","olderThanMinutes"},"stranded":[{"issue","title","commentId","author","createdAt","ageMinutes","token","session","holder","adopted"}]}, oldest silence first: holder says whether this is the marker ownership resolves against (a lane that raced writes more than one, and release sweeps the whole stack), and adopted says an authorized adopt marker already names that session. Only AUTHORIZED markers are rows — an unauthorized one never wins a race, so it strands nothing. Exits 1 (--older-than-minutes is not a non-negative whole number of minutes), 11 (the index, a thread, an author\'s permission or a marker\'s posted instant could not be read — the stranded set is UNKNOWN, never a short list). Examples: fabrika build claims stale · fabrika build claims stale --older-than-minutes 240',
+	),
+);
+
+const claims = Command.make("claims").pipe(
+	Command.withSubcommands([claimsStale]),
+	Command.withShortDescription("Read build claim markers across the whole board."),
+	Command.withDescription(
+		"Board-wide reads of the build claim protocol's markers, as against the per-number reads beside them. Every verb here reports and none of them writes.",
 	),
 );
 
@@ -273,7 +310,7 @@ const release = leafCommand(
 ).pipe(
 	Command.withShortDescription("Retract this session's own claim marker."),
 	Command.withDescription(
-		'Retract this LANE\'s OWN claim marker, and only its own — --token says which lane that is. It then frees this tree\'s checkout when the tree is standing on the released lane\'s own branch: HEAD is detached at the commit it already holds, so the branch stays and the pin that refuses a later "build branch --resume-lane" never forms (ADR 0323). The branch is reported as "freed"; a tree on any other branch, and a detach that fails, are both reported and neither is fatal — the claim is already retracted by then. Prints {"answer":"released","number":n,"freed":"<branch>"|null}. Exits 1 (no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, or --token is not a claim token of this session), 7 (issue proven absent or closed), 8 (the retraction failed — UNKNOWN), 11 (the marker set could not be read), 15 (this lane holds no claim — refusing to release another lane\'s). Example: fabrika build release 4312 --token build:s-9f2e:c1a4d6f8-…',
+		'Retract this LANE\'s OWN claim marker, and only its own — --token says which lane that is. It then frees this tree\'s checkout when the tree is standing on the released lane\'s own branch: HEAD is detached at the commit it already holds, so the branch stays and the pin that refuses a later "build branch --resume-lane" never forms. The branch is reported as "freed"; a tree on any other branch, and a detach that fails, are both reported and neither is fatal — the claim is already retracted by then. Prints {"answer":"released","number":n,"freed":"<branch>"|null}. It also reaches the STRANDED ADOPT — this lane\'s own build-adopt marker standing with no claim marker beside it, the state adopting an already-released claim leaves. That comment used to be unreachable: ownership answered "unclaimed" the moment no claim survived, so nothing could retract it. It is retracted alone, answering {"answer":"released","number":n,"adopted":"<session>"}, and only the lane the marker\'s "by <token>" names reaches it — a sibling lane still reads the thread as unclaimed and retracts nothing. Exits 1 (no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, or --token is not a claim token of this session), 7 (issue proven absent or closed), 8 (the retraction failed, or a stranded adopt was not retracted — UNKNOWN), 11 (the marker set could not be read), 15 (this lane holds no claim — refusing to release another lane\'s). Example: fabrika build release 4312 --token build:s-9f2e:c1a4d6f8-…',
 	),
 );
 
@@ -286,7 +323,7 @@ const retire = leafCommand(
 ).pipe(
 	Command.withShortDescription("Take back the checkout an orphaned build worktree is holding."),
 	Command.withDescription(
-		'Retire the working trees of this clone that hold #<n>\'s lane branch, so a repair lane refused at "build branch --resume-lane" can stand where it needs to (ADR 0323). Three licenses. The first two are written positive board states and never an inference from a tree that looks idle: the ticket is TERMINAL (a closed issue, a merged PR), or an authorized ADR 0295 build-adopt marker on #<n> names the session whose claim carries that branch\'s lane nonce. The third is ADR 0342\'s, for the lane NOBODY holds — no authorized claim marker on #<n> carries that branch\'s lane nonce, because the claim was released — and it is the ONE arm that reads the tree, because it has no board statement to lean on: that tree goes only on proof it carries nothing (clean, and its branch level with origin/main), and anything short of both holds and names the count that blocked it. A branch a LIVE claim still carries holds before the tree is read at all. DIRTINESS IS NOT A REFUSAL — an agent routinely leaves a worktree dirty after its ticket merged — and it costs nobody their only copy either: ADR 0321\'s salvage runs first, committing whatever the tree holds uncommitted onto its own branch, and only then is the tree removed WITHOUT --force, which that ADR bans on every path. A removal that still refuses (a locked tree does, however clean) is reported as an incident to file, never overridden. The removal takes the tree, never the branch. It first prunes registrations whose directory is already gone, never removes the tree the run is standing in, and reads every removal back off a second worktree list. A worktree-isolated caller may run it — the harness rule that refuses a typed cross-worktree git does not bind a verb\'s own child process. Prints {"answer":"retired"|"held"|"none","number":n,"retired":[…],"held":[…]}. Exits 7 (#<n> proven absent), 8 (the salvage or the removal failed — UNKNOWN), 9 (git reported a removal and the registration survives), 11 (a precondition read failed, including an unclaimed tree\'s status or commit count), 33 (a tree still holds the branch and no license releases it). Example: fabrika build retire 6567',
+		'Retire the working trees of this clone that hold #<n>\'s lane branch, so a repair lane refused at "build branch --resume-lane" can stand where it needs to. Three licenses. The first two are written positive board states and never an inference from a tree that looks idle: the ticket is TERMINAL (a closed issue, a merged PR), or an authorized build-adopt marker on #<n> names the session whose claim carries that branch\'s lane nonce. The third is for the lane NOBODY holds — no authorized claim marker on #<n> carries that branch\'s lane nonce, because the claim was released — and it is the ONE arm that reads the tree, because it has no board statement to lean on: that tree goes only on proof its removal would strand nothing (clean, and every commit its HEAD reaches named by some branch, remote-tracking ref or tag), and anything short of both holds and names the count that blocked it. A commit on the tree\'s OWN lane branch is not carried by the tree: the removal leaves the branch, so committing the work the dirty clause named is the way out rather than a second refusal. A branch a LIVE claim still carries holds before the tree is read at all. DIRTINESS IS NOT A REFUSAL — an agent routinely leaves a worktree dirty after its ticket merged — and it costs nobody their only copy either: the salvage runs first, committing whatever the tree holds uncommitted onto its own branch, and only then is the tree removed WITHOUT --force, which is banned on every path. A removal that still refuses (a locked tree does, however clean) is reported as an incident to file, never overridden. The removal takes the tree, never the branch. It first prunes registrations whose directory is already gone, never removes the tree the run is standing in, and reads every removal back off a second worktree list. A worktree-isolated caller may run it — the harness rule that refuses a typed cross-worktree git does not bind a verb\'s own child process. Prints {"answer":"retired"|"held"|"none","number":n,"retired":[…],"held":[…]}. Exits 7 (#<n> proven absent), 8 (the salvage or the removal failed — UNKNOWN), 9 (git reported a removal and the registration survives), 11 (a precondition read failed, including an unclaimed tree\'s status or its stranded-commit count), 33 (a tree still holds the branch and no license releases it). Example: fabrika build retire 6567',
 	),
 );
 
@@ -299,7 +336,7 @@ const retireBranch = leafCommand(
 ).pipe(
 	Command.withShortDescription("Retire an epic child's superseded lane branches out of build/."),
 	Command.withDescription(
-		'Clear the two-branch deadlock on epic child #<n> by RENAMING each superseded lane branch out of the build/ namespace into retired/ (ADR 0324). NO PATH OF THIS VERB DELETES A BRANCH: after the rename every commit is still there and still reachable by the new name, so a mistaken retirement costs a rename back rather than the work — which matters because a child opens no PR (ADR 0285) and its branch is the only copy. WHICH BRANCH IS SUPERSEDED IS PROVEN, NEVER GUESSED: the survivor is the candidate whose lane nonce an AUTHORIZED claim marker on #<n> carries, and where no marker attests one — or where several do — nothing is renamed and the verb refuses. Before any rename it proves no working tree of this clone holds a branch it is about to move: `git branch -m` does not refuse a held branch, it renames and silently retargets that tree\'s HEAD. Fewer than two branches is not a deadlock — zero is a refusal, one answers "none". Every rename is read back off a second local-branch read. A worktree-isolated lane may run it against a branch it never cut; refs are shared across every worktree of a clone. Prints {"answer":"retired"|"none","number":n,"survivor":"<branch>","retired":[{"from":…,"to":…}]}. Exits 7 (no branch in this clone was cut for #<n>), 8 (git refused a rename — UNKNOWN), 9 (git reported a rename and the read-back disagrees), 11 (a precondition read failed), 33 (a working tree holds a branch to be renamed — clear it with fabrika build retire <n>), 34 (the board attests no single survivor). Example: fabrika build retire-branch 6296',
+		'Clear the two-branch deadlock on epic child #<n> by RENAMING each superseded lane branch out of the build/ namespace into retired/. NO PATH OF THIS VERB DELETES A BRANCH: after the rename every commit is still there and still reachable by the new name, so a mistaken retirement costs a rename back rather than the work — which matters because a child opens no PR and its branch is the only copy. WHICH BRANCH IS SUPERSEDED IS PROVEN, NEVER GUESSED: the survivor is the candidate whose lane nonce an AUTHORIZED claim marker on #<n> carries, and where no marker attests one — or where several do — nothing is renamed and the verb refuses. Before any rename it proves no working tree of this clone holds a branch it is about to move: `git branch -m` does not refuse a held branch, it renames and silently retargets that tree\'s HEAD. Fewer than two branches is not a deadlock — zero is a refusal, one answers "none". Every rename is read back off a second local-branch read. A worktree-isolated lane may run it against a branch it never cut; refs are shared across every worktree of a clone. Prints {"answer":"retired"|"none","number":n,"survivor":"<branch>","retired":[{"from":…,"to":…}]}. Exits 7 (no branch in this clone was cut for #<n>), 8 (git refused a rename — UNKNOWN), 9 (git reported a rename and the read-back disagrees), 11 (a precondition read failed), 33 (a working tree holds a branch to be renamed — clear it with fabrika build retire <n>), 34 (the board attests no single survivor). Example: fabrika build retire-branch 6296',
 	),
 );
 
@@ -307,18 +344,25 @@ const reap = leafCommand(
 	"reap",
 	{
 		execute: Flag.boolean("execute").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"actually remove the trees classified REMOVE (default: false — print the classification and mutate nothing)",
 			),
 		),
+		limit: Flag.integer("limit").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"attempt at most this many removals; the rest stay registered, are reported UNATTEMPTED and are removable on the next run (default: every removable tree)",
+			),
+		),
 	},
-	Effect.fn(function* ({execute}) {
-		yield* emit(yield* runReap({execute}));
+	Effect.fn(function* ({execute, limit}) {
+		yield* emit(yield* runReap({execute, limit: Option.getOrNull(limit)}));
 	}),
 ).pipe(
 	Command.withShortDescription("Reclaim the finished agent worktrees this clone never removed."),
 	Command.withDescription(
-		'Sweep the registrations under .claude/worktrees/agent-* and classify each KEEP or REMOVE. REMOVE needs THREE positive proofs together: the tree holds nothing uncommitted, it carries no lock, and its HEAD is already on the trunk — reachable from origin/HEAD, or landed there as a squash (ADR 0048), matched by comparing the patch id of what the HEAD adds against the trunk\'s own patches over exactly those paths. The subject is the HEAD COMMIT, not a branch: the harness detaches the trees it registers, so a branch-keyed rule would judge almost none of them. EVERYTHING ELSE IS KEEP, per tree — dirty, locked, prunable, unlanded, and every read that failed — so one unreadable directory costs its own row and not the sweep. THE DEFAULT RUN MUTATES NOTHING: it prints the per-tree classification with its reason and stops; --execute is what removes. Each removal runs plain `git worktree remove` and NEVER --force, which ADR 0321 bans on every path; a removal git refuses leaves the tree registered and is reported, and every removal is read back off a second worktree list. The removal takes the tree, never the branch. Both halves of the report — what went and what was deliberately kept — are on stderr on every path, so a survivor is visible without re-running. Prints {"answer":"planned"|"reaped"|"none","executed":bool,"trunk":"origin/main","scanned":n,"removable"|"removed":[…],"kept":[…]}. Exits 8 (git refused a removal — the tree stays), 9 (git reported a removal and the registration survives, or the read-back failed), 11 (this run\'s own root, the registrations, or the trunk could not be read — nothing was removed). Example: fabrika build reap --execute',
+		'Sweep the registrations the harness provisions — BOTH namings: .claude/worktrees/agent-* and the harness\'s own pi-worktree-*, which does not sit under the repository at all and was 78 of the 78 removable trees on the clone this was measured against — and classify each KEEP, REMOVE or PRUNE. REMOVE needs FOUR positive proofs together: the tree holds nothing uncommitted, it carries no lock, its HEAD is already on the trunk — reachable from origin/HEAD, or landed there as a squash, matched by comparing the patch id of what the HEAD adds against the trunk\'s own patches over exactly those paths — and the tree reads QUIET, its directory untouched for 24h. The subject of the third is the HEAD COMMIT, not a branch: the harness detaches the trees it registers, so a branch-keyed rule would judge almost none of them. The fourth is not a git fact and cannot be: an operator or reviewer SEAT drives its lane without ever committing or editing, so the three git proofs read a live seat as carrying nothing — the shape that removed one mid-drive. Any live signal, and any liveness read that failed, is KEEP, and the KEEP line names which signal held. EVERYTHING ELSE IS KEEP, per tree — dirty, locked, unlanded, live, and every read that failed — so one unreadable directory costs its own row and not the sweep. THE ONE EXCEPTION IS ABSENCE: a registration whose directory is GONE is seated PRUNE, not KEEP, because there is no checkout to be unsafe about and only the record is left. Absence is proved by one stat\'s own NotFound and by nothing else: never by a read that merely failed — a PermissionDenied keeps the tree — and never by git\'s own `prunable` flag, whose condition is the worktree\'s .git file rather than its directory, so it reports a checkout that still holds uncommitted work. Only the arms answerable off the registration\'s own fields plus that one stat run for every tree; the git status and the containment scan are paid only by what those leave open, which is 13 trees of 243 on the clone this was measured against and the difference between a 42.8s scan and an 18.3s one. THE DEFAULT RUN MUTATES NOTHING: it prints the per-tree classification with its reason and stops; --execute is what removes. Each removal runs plain `git worktree remove` and NEVER --force, which is banned on every path; a removal git refuses leaves the tree registered and is reported, and every removal is read back off a second worktree list. The removal takes the tree, never the branch. Both halves of the report — what went and what was deliberately kept — are on stderr on every path, so a survivor is visible without re-running. EVERY REMOVAL IS JOURNALLED AS IT HAPPENS: the moment git reports one, a line naming this run, the trunk, the removed path and its license is appended to .fabrika/reap.jsonl under this run\'s tree root, BEFORE the next candidate is attempted — a sweep the harness kills mid-loop, which is what a large population does to the 600s no-progress watchdog, still leaves its executed set readable on disk, where the terminal JSON does not exist at all. A journal write that fails is reported and demotes nothing: a removal is proven by git and the read-back, never by the record. --limit bounds the executed set so that population is walked in watchdog-sized pieces: at most that many removals are attempted, and every removable tree past the bound stays registered, is reported UNATTEMPTED and is removable on the next run. THE STALE REGISTRATIONS GO IN THE SAME --execute PASS: one `git worktree prune` clears the entries whose directory was already gone and the ones each removal just left behind, and it is CLONE-WIDE, so it also reaches stale entries outside the swept population — the population filter bounds what is judged, not what is cleared. --limit does not bound it either, because a registration is a line in a file rather than a tree to delete. An entry LOCKED by a dead process with its directory gone is unlocked first — prune skips a locked entry, and a lock whose tree is gone guards nothing — and unlock runs ONLY where absence is proved. A stale registration that survives the prune is reported and does NOT red the sweep, and so is an unlock git refuses: neither costs disk anything nor risks work. Prints {"answer":"planned"|"reaped"|"none","executed":bool,"trunk":"origin/main","scanned":n,"journal":"<path>","removable"|"removed":[…],"stale"|"pruned":[…],"unpruned":[…],"unattempted":[…],"kept":[…]}. Exits 1 (--limit is not a positive integer — nothing was read and nothing was removed), 8 (git refused a removal — the tree stays), 9 (git reported a removal and the registration survives, or the read-back failed), 11 (this run\'s own root, the registrations, or the trunk could not be read — nothing was removed). Example: fabrika build reap --execute --limit 20',
 	),
 );
 
@@ -331,7 +375,7 @@ const issue = leafCommand(
 ).pipe(
 	Command.withShortDescription("The claimed issue's body and acceptance criteria."),
 	Command.withDescription(
-		'The claimed issue\'s body and acceptance criteria, through the content gate. Prints one JSON object with number, title, state, labels, body and criteria; criteria.state is found | absent | malformed — three facts the imported wire read keeps apart, so a drifted heading never reads as "no acceptance criteria". Exits 7 (issue proven absent or closed), 11 (the issue could not be read — its content is UNKNOWN). Example: fabrika build issue 4312',
+		'The claimed issue\'s body and acceptance criteria, through the content gate. Prints one JSON object with number, title, state, labels, body and criteria; criteria.state is found | absent | malformed — three facts the imported wire read keeps apart, so a drifted heading never reads as "no acceptance criteria". Each criterion carries its outside-diff evidence source as evidence, or null where the row is unmarked, and a marked contract also prints a stderr line quoting those rows — the evidence belongs in the PR body, because review post refuses a PASS that cites none of it (19). Exits 7 (issue proven absent or closed), 11 (the issue could not be read — its content is UNKNOWN). Example: fabrika build issue 4312',
 	),
 );
 
@@ -347,8 +391,10 @@ const branch = leafCommand(
 			Flag.withDescription("create mode: kebab-case, ≤5 words, must not begin with a hyphen"),
 		),
 		base: Flag.string("base").pipe(
-			Flag.withDefault("origin/main"),
-			Flag.withDescription("the base ref, FETCHED before the branch is cut (default: origin/main)"),
+			Flag.optional,
+			Flag.withDescription(
+				"the base ref, FETCHED from a remote before the branch is cut; honoured verbatim on every lane. A ref with no <remote>/ half is qualified against origin, never read locally. Omit it and create mode DERIVES the base: epic/<parent> for a child of an epic, origin/main for a proven-standalone issue",
+			),
 		),
 		resume: Flag.integer("resume").pipe(
 			Flag.optional,
@@ -357,6 +403,7 @@ const branch = leafCommand(
 			),
 		),
 		resumeLane: Flag.boolean("resume-lane").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"child-repair mode: take over the local branch a prior lane built <number> on, re-keyed to this claim's nonce; for an epic child, which opens no PR — takes no --slug and is exclusive with --resume",
 			),
@@ -369,7 +416,7 @@ const branch = leafCommand(
 			yield* runBranch({
 				number: Option.getOrNull(number),
 				slug: Option.getOrNull(slug),
-				base,
+				base: Option.getOrNull(base),
 				resume: Option.getOrNull(resume),
 				resumeLane,
 				token,
@@ -381,7 +428,7 @@ const branch = leafCommand(
 ).pipe(
 	Command.withShortDescription("Cut or resume the lane's branch off a freshly fetched base."),
 	Command.withDescription(
-		"Cut (or resume) the lane's nonce branch off a FRESHLY FETCHED base, never a stale local ref. Prints the checked-out branch name: build/<number>-<slug>-<nonce> in create mode, build/pr-<pr>-<nonce> in resume mode, where <nonce> is the first 8 hex of --token's UUID — the token THIS lane holds, proven against the live claim before the name is composed, so a lane cannot cut a branch on a nonce that holds nothing. The branch name IS the lane record — there is no stamp file. --resume-lane is resume mode for an epic child, which opens no PR (ADR 0285): it finds the one local branch this grammar says was cut for <number>, RE-KEYS it to this claim's nonce and checks it out, so the child's commits carry forward and exactly one branch keeps naming it — cutting a second is the underivable range lane prove refuses on. It fetches nothing, takes no --slug, and re-keys nothing when the name already matches. Exits 1 (--token is not a claim token of this session), 7 (--resume's PR is proven absent, closed or merged, or --resume-lane found no local branch cut for <number>), 10 (--slug is not kebab-case, exceeds 5 words, or is flag-shaped, or --resume-lane was combined with --resume or --slug), 11 (the fetch failed, the tree root or claim state could not be read, or --resume-lane found several candidate branches or could not re-key the one it found — the prior lane's worktree is likely still on it, which only an operator can release), 15 (proven: the claim is held by another lane). Why the nonce and the re-key are shaped this way is in claude-plugins/fabrika/skills/build/contract.md. Example: fabrika build branch 4312 --slug editor-focus-loss --token build:s-9f2e:c1a4d6f8-…",
+		"Cut (or resume) the lane's nonce branch off a FRESHLY FETCHED base, never a stale local ref. Prints the checked-out branch name: build/<number>-<slug>-<nonce> in create mode, build/pr-<pr>-<nonce> in resume mode, where <nonce> is the first 8 hex of --token's UUID — the token THIS lane holds, proven against the live claim before the name is composed, so a lane cannot cut a branch on a nonce that holds nothing. The branch name IS the lane record — there is no stamp file. CREATE MODE DERIVES THE BASE when --base is absent: it reads <number>'s parent through GitHub's issue-parent endpoint and, on a parent, cuts off that epic's assembly branch epic/<parent>, fetched like any other base; a proven-standalone issue cuts off origin/main. An explicit --base is honoured verbatim on every lane, epic child included, and suppresses the derivation. It NEVER falls back to origin/main on a read it could not make — that fallback is the silent wrong base that had an epic child graded against a fork point its assembly branch never contained. EVERY BASE IS FETCHED FROM A REMOTE: a base naming no configured remote (--base main, --base epic/7497) is qualified against origin and read off FETCH_HEAD, so no spelling reaches a bare git fetch plus a rev-parse of an unmoved local ref; the one arm that reads refs/heads/ is a derived assembly branch origin is PROVEN to hold none of. Every run names the base it used and where it came from on stderr, and a create-mode success names the base COMMIT it ended on, so the cut is provable off this verb's own output. A re-run that finds the lane branch already there proves that branch carries the base this run resolved before switching to it, and refuses on 36 when it does not — the idempotent re-run is not a way for a wrong first cut to survive. --resume-lane is resume mode for an epic child, which opens no PR: it finds the one local branch this grammar says was cut for <number>, RE-KEYS it to this claim's nonce and checks it out, so the child's commits carry forward and exactly one branch keeps naming it — cutting a second is the underivable range lane prove refuses on. It fetches nothing, takes no --slug, and re-keys nothing when the name already matches. Exits 1 (--token is not a claim token of this session), 7 (--resume's PR is proven absent, closed or merged; --resume-lane found no local branch cut for <number>; or the derived assembly branch epic/<parent> is proven absent from both origin and this clone), 10 (--slug is not kebab-case, exceeds 5 words, or is flag-shaped, --resume-lane was combined with --resume or --slug, or --base names no configured remote and this clone has no origin to qualify it against — spelled one way when the clone has no remotes at all, another when it has several and none of them is origin), 11 (the fetch failed, the tree root or claim state could not be read, the parent read or the assembly-branch read failed so which base this lane belongs on is UNKNOWN, an existing lane branch's merge base with the resolved base could not be read, or --resume-lane found several candidate branches or could not re-key the one it found — the prior lane's worktree is likely still on it, which only an operator can release), 15 (proven: the claim is held by another lane), 36 (proven: the lane branch already exists and does not carry the base this run resolved, or shares no history with it at all — the refusal spells out the one git command that moves it onto the base, and deleting it is the other way out; build retire-branch does NOT clear this, because the branch a 36 names is never the superseded one it retires). Why the nonce, the derivation and the re-key are shaped this way is in claude-plugins/fabrika/skills/build/contract.md. Example: fabrika build branch 4312 --slug editor-focus-loss --token build:s-9f2e:c1a4d6f8-…",
 	),
 );
 
@@ -397,13 +444,20 @@ const resumeChild = leafCommand(
 				"the repair claim this lane already holds, when it is re-running — the claim step then answers off the standing marker and writes nothing; omit it on a first entry, but NOT on a re-run, where a tokenless claim mints a second marker and refuses on 15",
 			),
 		),
+		cites: Flag.string("cites").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				`the founder ruling comment a ${DECISION_TYPE_LABEL} child's repair transcribes, as ${CITATION_GRAMMAR} — forwarded unchanged to the claim step, which is the only step that reads it; needed on a first entry, never on a --token continuation`,
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({number, token, repo}) {
+	Effect.fn(function* ({number, token, cites, repo}) {
 		yield* emit(
 			yield* runResumeChild({
 				issue: number,
 				token: Option.getOrNull(token),
+				cites: Option.getOrNull(cites),
 				repo: Option.getOrNull(repo),
 				cwd: process.cwd(),
 				env: process.env,
@@ -415,7 +469,7 @@ const resumeChild = leafCommand(
 ).pipe(
 	Command.withShortDescription("Open an epic child's standing-FAIL repair lane in one operation."),
 	Command.withDescription(
-		'Open the repair lane of an epic child carrying a standing FAIL, running the five ordered steps as one operation so their order is not a builder\'s to preserve (see claude-plugins/fabrika/skills/build/contract.md): "build claim <n> --resume" (which refuses on 31 unless a gate holds a standing FAIL over the child), "build confirm", the UNARMED "build tree --require-clean" over the generic checkout, "build branch <n> --resume-lane" — the one mutation, which re-keys the single prior build/<n>-<slug>-<nonce> branch to this claim\'s nonce and checks it out — and finally the ARMED "build tree --issue <n>". Each step is the verb itself, so its refusal keeps its own exit code and its own words, and no step after a refusal runs; the branch is re-keyed only once the claim and cleanliness steps have passed. Prints {"answer":"resumed","issue":n,"token":"…","branch":"build/<n>-<slug>-<nonce>","root":"<absolute>","claim":{"number":n,"nonce":"…"}}. On any stop past the claim it prints the won token and the exact continuation, "fabrika build resume-child <n> --token <token>"; that is the whole way to continue the same lane, and a re-run WITHOUT --token mints a second claim, loses the earliest-wins tiebreak to this lane\'s own prior one and refuses on 15. Exits are the stopping step\'s: 7 (the child is absent or closed, or no local branch was cut for it), 10 (a composed usage refusal), 11 (a read is UNKNOWN, several prior branches exist, or another worktree holds the branch — an operator\'s act to release), 13 (the generic checkout is dirty), 14 (the armed proof reads the wrong lane), 15 (the claim is foreign), 20/21/30/32 (the admission test), 31 (the child holds no standing FAIL, so there is nothing to repair). Example: fabrika build resume-child 7162',
+		`Open the repair lane of an epic child carrying a standing FAIL, running the five ordered steps as one operation so their order is not a builder's to preserve (see claude-plugins/fabrika/skills/build/contract.md): "build claim <n> --resume" (which refuses on 31 unless a gate holds a standing FAIL over the child), "build confirm", the UNARMED "build tree --require-clean" over the generic checkout, "build branch <n> --resume-lane" — the one mutation, which re-keys the single prior build/<n>-<slug>-<nonce> branch to this claim's nonce and checks it out — and finally the ARMED "build tree --issue <n>". Each step is the verb itself, so its refusal keeps its own exit code and its own words, and no step after a refusal runs; the branch is re-keyed only once the claim and cleanliness steps have passed. Prints {"answer":"resumed","issue":n,"token":"…","branch":"build/<n>-<slug>-<nonce>","root":"<absolute>","claim":{"number":n,"nonce":"…"}}. --cites ${CITATION_GRAMMAR} is carried to the claim step unchanged and read by no other step: it opens that step's type axis on a ${DECISION_TYPE_LABEL} child whose choice a founder already recorded on it, so the one type a ruled child can carry is repairable through this entry rather than only by hand. It judges nothing itself — the URL must name this repository and this child, an omitted one on a decision is still 30, and a citation admits no other type. On any stop past the claim it prints the won token and the exact continuation, "fabrika build resume-child <n> --token <token>"; that is the whole way to continue the same lane, it needs no second citation because the claim answers off the standing marker, and a re-run WITHOUT --token mints a second claim, loses the earliest-wins tiebreak to this lane's own prior one and refuses on 15. Exits are the stopping step's: 1 (--cites is malformed, or names another repository or issue), 7 (the child is absent or closed, or no local branch was cut for it), 10 (a composed usage refusal), 11 (a read is UNKNOWN, several prior branches exist, or another worktree holds the branch — an operator's act to release), 13 (the generic checkout is dirty), 14 (the armed proof reads the wrong lane), 15 (the claim is foreign), 20/21/30/32 (the admission test), 31 (the child holds no standing FAIL, so there is nothing to repair). Example: fabrika build resume-child 7162`,
 	),
 );
 
@@ -488,30 +542,39 @@ const check = leafCommand(
 		repo: repoFlag,
 	},
 	Effect.fn(function* ({surface, repo}) {
-		yield* emit(yield* runCheck({surface, repo: Option.getOrNull(repo), env: process.env}));
+		yield* emit(
+			yield* runCheck({
+				surface,
+				repo: Option.getOrNull(repo),
+				env: process.env,
+				guards: localTreeGuards,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription(
-		"Run this surface's validators here, with the build cache bypassed.",
+		"Run this surface's validators and the local-tree guards, in this tree.",
 	),
 	Command.withDescription(
-		'Run this surface\'s validators in this tree, with the build cache BYPASSED — a cache hit from another checkout has returned another tree\'s green. Prints {"verdict":"green","surface":"…","tree":"…","ran":[…]}; red and unknown print nothing. A workflows-only diff (.github/workflows/**) is --surface workflows: actionlint over the changed files when the tree has it, plus the commands `.fabrika.jsonc` declares under `workflowValidators` (each naming the files it `reads`); a changed workflow nothing opened is reported in `unvalidated`, and a run that opened none of them is UNKNOWN. This verb predicts; the repo\'s CI gate decides, and supersedes it where they disagree. Exits 7 (the diff against the base is empty — zero scope, ADR 0092), 10 (--surface is off-enum or provably mismatches the diff), 11 (the tree root could not be read, a validator could not be executed, `.fabrika.jsonc` could not be read, or the lane\'s claim could not be read — UNKNOWN, never green), 14 (the checked-out branch is not this lane\'s), 15 (the lane\'s claim is held by another session), 18 (proven red), 22 (no surface validates any changed file). Example: fabrika build check --surface code',
+		'Run this surface\'s validators IN THIS TREE — a green borrowed from another checkout has been another tree\'s answer. Whether a validator reads a build cache is the repo\'s own declaration, not this verb\'s. EVERY surface additionally sweeps the shipped local-tree guards — the ones that are argument-free and read only the checked-out tree — so a guard that reds in CI reds here first; membership is declared beside each guard\'s registration and the sweep is not anchored by --surface. Prints {"verdict":"green","surface":"…","tree":"…","ran":[…,"guard <name> <leaf>",…],"skipped":[…],"unvalidated":[…]}; red and unknown print nothing. A guard that exited 7 (zero scope) or 11 (UNKNOWN) is reported in `skipped` as "<name> (<reason>)" and is never folded into the green — CI\'s own gate answers that one. A workflows-only diff (.github/workflows/**) is --surface workflows: actionlint over the changed files when the tree has it, plus the commands `.fabrika.jsonc` declares under `workflowValidators` (each naming the files it `reads`); a changed workflow nothing opened is reported in `unvalidated`, and a run that opened none of them is UNKNOWN. This verb predicts; the repo\'s CI gate decides, and supersedes it where they disagree. Exits 7 (the diff against the base is empty — zero scope), 10 (--surface is off-enum or provably mismatches the diff), 11 (the tree root could not be read, a validator could not be executed, `.fabrika.jsonc` could not be read, or the lane\'s claim could not be read — UNKNOWN, never green), 14 (the checked-out branch is not this lane\'s), 15 (the lane\'s claim is held by another session), 18 (proven red — a validator or a local-tree guard failed, and the failing line names it), 22 (no surface validates any changed file). Example: fabrika build check --surface code',
 	),
 );
 
 /**
  * `--force-with-lease` is the only force shape. There is no `--force` and no `--no-verify`: the ban is
- * enforced by the flag not existing rather than by prose (#4159).
+ * enforced by the flag not existing rather than by prose.
  */
 const push = leafCommand(
 	"push",
 	{
 		forceWithLease: Flag.boolean("force-with-lease").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"permit a non-fast-forward update of this lane's own branch — repair resubmission only (default: false)",
 			),
 		),
 		dropRemoteCommits: Flag.boolean("drop-remote-commits").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"publish a head that does NOT contain the published remote head, dropping its commits — a deliberate history rewrite (default: false)",
 			),
@@ -540,6 +603,7 @@ const pr = leafCommand(
 	{
 		number: issueArg,
 		partial: Flag.boolean("partial").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				'the acceptance criteria are not all met: the body must say "Part of #<n>", not "Fixes #<n>" (default: false)',
 			),
@@ -571,6 +635,7 @@ const prBody = leafCommand(
 			Argument.withDescription("the open pull request whose body is replaced"),
 		),
 		partial: Flag.boolean("partial").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				'the acceptance criteria are not all met: the body must say "Part of #<n>", not "Fixes #<n>" (default: false)',
 			),
@@ -629,13 +694,20 @@ const deviations = leafCommand(
 			Argument.withDescription("the epic child the disclosure is for, and sits on"),
 		),
 		token: tokenFlag,
+		standing: Flag.boolean("standing").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				"print the standing disclosure and write nothing — the entries this round carries forward (default: false)",
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({issue, token, repo}) {
+	Effect.fn(function* ({issue, token, standing, repo}) {
 		yield* emit(
 			yield* runDeviations({
 				issue,
 				token,
+				standing,
 				repo: Option.getOrNull(repo),
 				env: process.env,
 				stdin: Effect.sync(readStdin),
@@ -645,7 +717,7 @@ const deviations = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post an epic child's deviation disclosure as its one marker."),
 	Command.withDescription(
-		'Post the "## Deviations" section on STDIN as the epic child\'s build-deviations marker comment — the disclosure surface a child has instead of a PR body (ADR 0285). ONE marker per issue: the standing marker is edited in place and every superseded one of this account\'s is retracted, so `fabrika wire read --format build-deviations` never meets two conforming headings. The marker line is composed from the positional, so a disclosure cannot name an issue other than the one it sits on. The section is validated through the wire format before anything is written, and the landed comment is read back from live issue state. Prints {"answer":"posted","issue":n,"commentId":n,"upsert":"created"|"edited","retracted":n,"url":"…"}. Exits 1 (--token is not a claim token of this session), 3 (stdin held nothing), 4 (the "## Deviations" section is missing or malformed), 5 (machine-local path), 6 (bare @ reference), 7 (the issue is proven absent or closed), 8 (the write failed, or a superseded marker could not be retracted — UNKNOWN), 9 (posted but does not read back), 10 (the number is a pull request, which discloses in its body), 11 (a precondition read failed), 15 (this LANE does not hold the claim). Example: fabrika build deviations 6566 --token build:s-9f2e:c1a4d6f8-… < deviations.md',
+		'Post the "## Deviations" section on STDIN as the epic child\'s build-deviations marker comment — the disclosure surface a child has instead of a PR body. ONE marker per issue: the standing marker is edited in place and every superseded one of this account\'s is retracted, so `fabrika wire read --format build-deviations` never meets two conforming headings. That marker discloses the WHOLE reviewed range, so the replacement is compared against the standing disclosure and refused when it drops an entry — an entry leaves only by restating it with a **Disposition:** saying what became of it. With --standing the verb reads instead: stdin is not read, nothing is written, and the standing section is printed for the round to carry forward (empty when the child carries no marker yet). The marker line is composed from the positional, so a disclosure cannot name an issue other than the one it sits on. The section is validated through the wire format before anything is written, and the landed comment is read back from live issue state. Prints {"answer":"posted","issue":n,"commentId":n,"upsert":"created"|"edited","retracted":n,"url":"…"}. Exits 1 (--token is not a claim token of this session), 3 (stdin held nothing), 4 (the "## Deviations" section is missing or malformed), 5 (machine-local path), 6 (bare @ reference), 7 (the issue is proven absent or closed), 8 (the write failed, or a superseded marker could not be retracted — UNKNOWN), 9 (posted but does not read back), 10 (the number is a pull request, which discloses in its body), 11 (a precondition read failed), 15 (this LANE does not hold the claim), 35 (the replacement drops a standing entry). Example: fabrika build deviations 6566 --token build:s-9f2e:c1a4d6f8-… < deviations.md',
 	),
 );
 
@@ -689,7 +761,7 @@ const verdicts = leafCommand(
 ).pipe(
 	Command.withShortDescription("The latest gate verdict per namespace at a PR's live head."),
 	Command.withDescription(
-		'The paginated, current-head, per-gate verdict fold on a PR: every comment and every review, the latest marker per gate namespace bound to the live head, native reviews as their OWN row kind (never coerced), the per-head FAIL round count, capReached, and the criteria frozen after round 2. Prints one JSON object with head, rows, rounds, capReached and frozenCriteria; {"rows":[]} on exit 0 is a proven "no verdicts", readable against the scope line. A stale marker prints as stale, never dropped. --issue <n> folds an epic child instead, whose verdicts are range-bound comments on the issue because a child opens no PR (ADR 0285/0276): each row names the range it was formed over rather than a head, a round is one graded tip, and clearances are empty with the reason on stderr — a clearance is recorded against a PR\'s base branch, and a child has none. Exits 7 (PR or issue proven absent or closed, or --issue names a PR), 10 (neither or both of --pr and --issue), 11 (the head, any comment page or any review page could not be read — UNKNOWN, never "none"). Example: fabrika build verdicts --pr 4310',
+		'The paginated, per-gate verdict fold on a PR: every comment and every review, the latest marker per gate namespace judged against the live head through bindToContent — head equality first, then the marker\'s content: digest, so a rebase that changed no content keeps its verdicts and this verb cannot disagree with ship gate; a digest that could not be derived is Unbindable and reports current:false. Native reviews are their OWN row kind (never coerced), the per-head FAIL round count, capReached, the criteria frozen at or past the declared cap round, and the findings the freeze turned away entirely — escalatedFindings folds the tagged escalation comments review append-criterion posts on the linked issue when it may no longer append, each {round, commentId, body} with the body through the content gate, so a repair round past the freeze reads the finding through this verb instead of a comment id in a spawn prompt. The child arm folds the child issue\'s own escalations the same way. Prints one JSON object with head, mergeability, rows, rounds, capReached, frozenCriteria and escalatedFindings; {"rows":[]} on exit 0 is a proven "no verdicts" about the gates, readable against the scope line. mergeability is mergeable / conflicting / unknown, read off the same single-PR GET as the head, with GitHub\'s lazily computed null kept as unknown and never as clean: a PR conflicting against its base is repair work no gate emits a FAIL for, so an all-PASS fold over one is not a no-work answer. A stale marker prints as stale, never dropped. --issue <n> folds an epic child instead, whose verdicts are range-bound comments on the issue because a child opens no PR: each row names the range it was formed over rather than a head, a round is one graded tip, and clearances are empty with the reason on stderr — a clearance is recorded against a PR\'s base branch, and a child has none. Exits 7 (PR or issue proven absent or closed, or --issue names a PR), 10 (neither or both of --pr and --issue), 11 (the head, any comment page, any review page or the linked issue\'s comment page could not be read — UNKNOWN, never "none"). Example: fabrika build verdicts --pr 4310',
 	),
 );
 
@@ -778,7 +850,7 @@ const adopt = leafCommand(
 		"Record on the board that a dead session's claim passes to this one.",
 	),
 	Command.withDescription(
-		'Post the succession marker a dead session\'s stranded claim needs: build-adopt: <dead-session> by build:<this-session>:<uuid> · <ISO> · reason: <text>. It writes ONE comment and posts no claim marker — "fabrika build release <n>" then resolves that claim as this session\'s and retracts both comments (ADR 0295). The adopted claim answers mine to confirm and admits branch/note/scratch/tree, so the successor inherits the lane; build claim over it refuses on 15, because a second marker would outlive the release. Authority is the poster\'s repository permission, read at release time (ADR 0055): an adopt from an account below write is counted, reported, and never a succession. Prints {"answer":"adopted","number":n,"session":"<dead-session>","token":"…"}. Exits 1 (no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, an empty --session or --reason, a --session carrying whitespace or ·, a multi-line --reason, or --session naming this very session — plain release already covers that), 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN), 9 (the marker landed but does not read back). Example: fabrika build adopt 6037 --session 3672779a --reason "driver died in the 2026-08-18 API outage"',
+		'Post the succession marker a dead session\'s stranded claim needs: build-adopt: <dead-session> by build:<this-session>:<uuid> · <ISO> · reason: <text>. It writes ONE comment and posts no claim marker — "fabrika build release <n> --token <the token this prints>" then resolves that claim as this session\'s and retracts both comments, and retracts this marker alone when the claim it adopted is already gone, so an adoption is never a comment no verb can reach. It fences and confers only over a claim marker POSTED AFTER IT: a succession adopts a claim that already stands, so an older adopt says nothing about a later marker on either arm of the read. The adopted claim answers mine to confirm and admits branch/note/scratch/tree, so the successor inherits the lane; build claim over it refuses on 15, because a second marker would outlive the release. Authority is the poster\'s repository permission, read at release time: an adopt from an account below write is counted, reported, and never a succession. Prints {"answer":"adopted","number":n,"session":"<dead-session>","token":"…"}. Exits 1 (no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, an empty --session or --reason, a --session carrying whitespace or ·, a multi-line --reason, or --session naming this very session — plain release already covers that), 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN), 9 (the marker landed but does not read back). Example: fabrika build adopt 6037 --session 3672779a --reason "driver died in the 2026-08-18 API outage"',
 	),
 );
 
@@ -791,6 +863,7 @@ export const buildCommand = Command.make("build").pipe(
 		claim,
 		confirm,
 		claimants,
+		claims,
 		release,
 		adopt,
 		retire,

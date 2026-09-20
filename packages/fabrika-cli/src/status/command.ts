@@ -22,7 +22,6 @@ import {leafCommand} from "../excess-operand.ts";
 import type {Attempt} from "../io/git.ts";
 import {resolveRepo} from "../io/issues.ts";
 import {readStdin} from "../io/stdin.ts";
-import {DEFAULT_STALE_MINUTES} from "../lane/stale.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import {readBoard, runBoard} from "./board-verb.ts";
@@ -62,6 +61,7 @@ const skillsDirFlag = Flag.string("skills-dir").pipe(
 );
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
@@ -136,6 +136,7 @@ const settings = leafCommand(
 			),
 		),
 		surfaces: Flag.boolean("surfaces").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"expand `surfaceDispositions` into one `surface` row per repo surface, each with the disposition this repo resolves to and what that surface is",
 			),
@@ -157,7 +158,7 @@ const settings = leafCommand(
 ).pipe(
 	Command.withShortDescription("The resolved config surface, every key with its provenance."),
 	Command.withDescription(
-		"Print every key on the config surface with its resolved value and where that value came from — the one place a skill asks what `.fabrika.jsonc` resolves to. First stdout line is `settings\\t<resolved|unknown>\\t<keys>\\t<declared>\\t<unknown>\\t<as-of>`, then one `setting\\t<key>\\t<declared|default|unknown>\\t<value-as-json>\\t<detail>\\t<as-of>` line each. A repo with no `.fabrika.jsonc` prints the full shipped-default set at exit 0; a key whose value could not be established makes the whole readout a refusal that names each UNKNOWN key on stderr, never the default it did not resolve to. Pass --surfaces to expand `surfaceDispositions` into one `surface\\t<id>\\t<fail-loud|degrade|bootstrap>\\t<what the surface is>` line per repo surface, appended to the same readout. This verb writes nothing. Exits 7 (the config surface registers zero keys, or --surfaces was passed and no `surfaceDispositions` key is registered — ADR 0092), 11 (the repository root could not be resolved, or `.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green). Example: fabrika status settings",
+		"Print every key on the config surface with its resolved value and where that value came from — the one place a skill asks what `.fabrika.jsonc` resolves to. First stdout line is `settings\\t<resolved|unknown>\\t<keys>\\t<declared>\\t<unknown>\\t<as-of>`, then one `setting\\t<key>\\t<declared|default|unknown>\\t<value-as-json>\\t<detail>\\t<as-of>` line each. A repo with no `.fabrika.jsonc` prints the full shipped-default set at exit 0; a key whose value could not be established makes the whole readout a refusal that names each UNKNOWN key on stderr, never the default it did not resolve to. Pass --surfaces to expand `surfaceDispositions` into one `surface\\t<id>\\t<fail-loud|degrade|bootstrap>\\t<what the surface is>` line per repo surface, appended to the same readout. This verb writes nothing. Exits 7 (the config surface registers zero keys, or --surfaces was passed and no `surfaceDispositions` key is registered), 11 (the repository root could not be resolved, or `.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green). Example: fabrika status settings",
 	),
 );
 
@@ -340,7 +341,9 @@ const open = leafCommand(
 					lanesField(
 						yield* runStale({
 							roots,
-							olderThanMinutes: DEFAULT_STALE_MINUTES,
+							// Each lane is judged against its own shell budget; the front door has no horizon of
+							// its own to impose.
+							olderThanMinutes: null,
 							now: new Date().toISOString(),
 							// The front door renders on a cold start and must not wait on the board for it.
 							claims: null,

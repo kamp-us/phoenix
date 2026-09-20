@@ -16,13 +16,26 @@
 	// `assets.d.ts` carries the app's `*.css` module declaration, which the design package's own
 	// side-effect stylesheet imports need as much as this slice's do.
 	"include": [
+		"src/ai-agent/window",
 		"src/shell/chat",
 		"src/pi/window",
 		"src/claude/window",
+		"src/agy/window",
+		"src/codex/window",
 		"src/page/main.tsx",
+		"src/page/boot.tsx",
 		"src/page/AttachedDesk.tsx",
 		"src/page/renderers.tsx",
+		"src/page/proof/no-recovery.tsx",
 		"src/page/attached-desk.unit.test.tsx",
+		"src/page/authored-windows.unit.test.tsx",
+		"src/page/readable-state.unit.test.tsx",
+		"src/page/session-transcript-window.unit.test.tsx",
+		"src/claude/proof/subagent-vertical.integration.test.ts",
+		"src/claude/proof/subagent-paging.integration.test.ts",
+		"src/ai-agent/restore/refill.unit.test.ts",
+		"src/ai-agent/restore/interrupted-mark.unit.test.tsx",
+		"src/agy/ai-agent/paging-from-live.unit.test.ts",
 		"src/page/assets.d.ts"
 	],
 	// `exclude` is inherited, and the base excludes exactly this directory.

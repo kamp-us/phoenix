@@ -11,20 +11,20 @@ import {
 const thread = (over: Partial<ReviewThread> = {}): ReviewThread => ({
 	id: "PRRT_kwDOLxx1",
 	isResolved: false,
-	path: "apps/web/worker/features/pano/mutations.ts",
+	path: "apps/site/features/pano/mutations.ts",
 	line: 18,
 	declaredComments: 1,
 	comments: [
 		{
 			author: "github-code-quality",
 			authorType: "Bot",
-			body: "Unused import PHOENIX_KARMA_GATES",
+			body: "Unused import KARMA_GATES",
 		},
 	],
 	...over,
 });
 
-/** The #3329 exemplar: the CodeQL/GHAS inline finding on the commands-guard workflow. */
+/** The exemplar: a CodeQL/GHAS inline finding on a workflow file. */
 const codeql = thread({
 	id: "PRRT_kwDOCodeQL",
 	path: ".github/workflows/commands-guard.yml",
@@ -38,7 +38,7 @@ const codeql = thread({
 	],
 });
 
-/** A review-code PASS with NO unresolved-threads accounting — the #3329 bug shape. */
+/** A review-code PASS with NO unresolved-threads accounting — the bug shape this gate catches. */
 const PASS_NO_ACCOUNTING =
 	"review-code: PASS @ 4da28749abc0000000000000000000000000000 — AC met, merge-ready";
 
@@ -46,12 +46,12 @@ const reportOf = (verdict: ReturnType<typeof judge>): string =>
 	verdict._tag === "Violation" ? verdict.report : "";
 
 describe("siteToken", () => {
-	it("is path:line when both are present — ADR 0158's documented row format", () => {
+	it("is path:line when both are present — the documented verdict row format", () => {
 		expect(siteToken(codeql)).toBe(".github/workflows/commands-guard.yml:35");
 	});
 
 	it("degrades to the bare path when the line is null", () => {
-		expect(siteToken(thread({line: null}))).toBe("apps/web/worker/features/pano/mutations.ts");
+		expect(siteToken(thread({line: null}))).toBe("apps/site/features/pano/mutations.ts");
 	});
 
 	it("is a sentinel no verdict satisfies by coincidence for a path-less pr-level thread", () => {
@@ -72,24 +72,24 @@ describe("isAccounted", () => {
 	});
 
 	it("is true when the verdict names the exact path:line", () => {
-		const verdict = `review-code: FAIL @ deadbeef1234567 — one criterion unmet\n- [FAIL] unresolved-threads — ${siteToken(codeql)} @github-advanced-security: "no permissions" is substantive (ADR 0158)`;
+		const verdict = `review-code: FAIL @ deadbeef1234567 — one criterion unmet\n- [FAIL] unresolved-threads — ${siteToken(codeql)} @github-advanced-security: "no permissions" is substantive`;
 		expect(isAccounted(codeql, verdict)).toBe(true);
 	});
 
 	it("is false when the verdict names a DIFFERENT site — accounting is per-site", () => {
 		const verdict =
-			"review-code: FAIL @ deadbeef1234567 — unmet\n- [FAIL] unresolved-threads — apps/web/worker/features/pano/mutations.ts:18 substantive";
+			"review-code: FAIL @ deadbeef1234567 — unmet\n- [FAIL] unresolved-threads — apps/site/features/pano/mutations.ts:18 substantive";
 		expect(isAccounted(codeql, verdict)).toBe(false);
 	});
 });
 
 describe("judge", () => {
-	it("REDS the #3329 exemplar: an unresolved CodeQL thread under a PASS with no accounting row", () => {
+	it("REDS the exemplar: an unresolved CodeQL thread under a PASS with no accounting row", () => {
 		const verdict = judge({threads: [codeql], verdictBody: PASS_NO_ACCOUNTING});
 		expect(verdict._tag).toBe("Violation");
 		expect(reportOf(verdict)).toContain(".github/workflows/commands-guard.yml:35");
 		expect(reportOf(verdict)).toContain("github-advanced-security");
-		expect(reportOf(verdict)).toContain("ADR 0158");
+		expect(reportOf(verdict)).toContain("resolving the thread with a written rationale");
 	});
 
 	it("annotates each unaccounted thread at its own path:line", () => {
@@ -110,7 +110,7 @@ describe("judge", () => {
 		expect(verdict._tag === "Clean" && verdict.scanned).toBe(0);
 	});
 
-	it("drops a resolved thread from the accounting — ADR 0158's resolve-with-rationale discharge", () => {
+	it("drops a resolved thread from the accounting — the resolve-with-rationale discharge", () => {
 		const unaccounted = unaccountedIn({
 			threads: [codeql, thread({isResolved: true})],
 			verdictBody: PASS_NO_ACCOUNTING,
@@ -128,17 +128,17 @@ describe("judge", () => {
 	});
 
 	it("passes when a thread is accounted-for by a FAIL row — the check is polarity-blind", () => {
-		const accounted = `review-code: FAIL @ 4da28749abc0000 — one criterion unmet\n- [FAIL] unresolved-threads — ${siteToken(codeql)} @github-advanced-security: "no permissions" → address on the branch (ADR 0158)`;
+		const accounted = `review-code: FAIL @ 4da28749abc0000 — one criterion unmet\n- [FAIL] unresolved-threads — ${siteToken(codeql)} @github-advanced-security: "no permissions" → address on the branch`;
 		expect(judge({threads: [codeql], verdictBody: accounted})._tag).toBe("Clean");
 	});
 
 	it("REDS a HUMAN inline thread on the same footing as a bot one", () => {
 		const human = thread({
-			comments: [{author: "cansirin", authorType: "User", body: "handle the null case here"}],
+			comments: [{author: "octocat", authorType: "User", body: "handle the null case here"}],
 		});
 		const verdict = judge({threads: [human], verdictBody: PASS_NO_ACCOUNTING});
 		expect(verdict._tag).toBe("Violation");
-		expect(reportOf(verdict)).toContain("@cansirin");
+		expect(reportOf(verdict)).toContain("@octocat");
 	});
 
 	it("REDS a live thread when review-code has posted no verdict at all — fail-closed", () => {
@@ -162,12 +162,12 @@ describe("judge", () => {
 	it("REDS a mix: accounts for one thread and reds the other", () => {
 		const other = thread({
 			id: "PRRT_other",
-			path: "apps/web/worker/features/sozluk/mutations.ts",
+			path: "apps/site/features/dictionary/mutations.ts",
 			line: 42,
 		});
 		const partial = `review-code: PASS @ 4da28749abc0000 — merge-ready\n- [FAIL] unresolved-threads — ${siteToken(codeql)} substantive`;
 		const unaccounted = unaccountedIn({threads: [codeql, other], verdictBody: partial});
 		expect(unaccounted).toHaveLength(1);
-		expect(unaccounted[0]?.path).toBe("apps/web/worker/features/sozluk/mutations.ts");
+		expect(unaccounted[0]?.path).toBe("apps/site/features/dictionary/mutations.ts");
 	});
 });

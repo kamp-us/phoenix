@@ -11,7 +11,19 @@ import {
 	UnknownNode,
 	UnknownParent,
 } from "./errors.ts";
-import {consumer, isNumber, judge, producer, program} from "./fixtures.ts";
+import {
+	authoredCron,
+	authoredDesk,
+	authoredNotify,
+	authoredReview,
+	consumer,
+	isNumber,
+	judge,
+	producer,
+	program,
+	schemaCounter,
+	schemaJudge,
+} from "./fixtures.ts";
 import type {Graph} from "./graph.ts";
 import {NodeId} from "./graph.ts";
 
@@ -72,9 +84,99 @@ describe("ports.compile", () => {
 				assert.strictEqual(incompatible.target.kind, "verdict/v1");
 				assert.strictEqual(
 					error.message,
-					'route producer.ticks -> judge.verdicts is incompatible: source kind "tick/v1" does not match target kind "verdict/v1"',
+					'route producer.ticks -> judge.verdicts is incompatible: kinds differ, no schema to compare: source kind "tick/v1" does not match target kind "verdict/v1"',
 				);
 			}),
+	);
+
+	/*
+	 * ADR 0395: a route is decided by the two ends' payload schemas where both publish one, and by
+	 * kind equality only where one of them does not. The four cases below are the whole rule.
+	 */
+
+	it.effect("routes two authored programs whose kinds differ and whose payloads fit", () =>
+		Effect.gen(function* () {
+			const compiled = yield* Effect.provide(
+				compile({
+					nodes: [node("d", "desk", [{port: "pr", to: to("r", "pr")}]), node("r", "pr-review")],
+				}),
+				Registry.layer([authoredDesk, authoredReview]),
+			);
+			assert.deepStrictEqual(compiled.routes, [
+				{
+					// The target's kind: a structural route's two ends do not share one, and this is the
+					// kind the payload is checked against on arrival.
+					kind: "pr-review/pr",
+					source: {node: "d", port: "pr", program: "desk"},
+					target: {node: "r", port: "pr", program: "pr-review"},
+				},
+			]);
+		}),
+	);
+
+	it.effect(
+		"refuses two authored programs whose payloads do not fit, naming where they first differ",
+		() =>
+			Effect.gen(function* () {
+				const error = yield* compileWith([authoredCron, authoredNotify], {
+					nodes: [
+						node("c", "cron", [{port: "brief", to: to("n", "message")}]),
+						node("n", "notify"),
+					],
+				});
+				assert.instanceOf(error, IncompatibleRoute);
+				const incompatible = error as IncompatibleRoute;
+				assert.strictEqual(incompatible.source.kind, "cron/brief");
+				assert.strictEqual(incompatible.target.kind, "notify/message");
+				// The live consumer this was built for: a richer payload does not fit a narrower port,
+				// because "fits" is exact equality and ADR 0395 declined to widen it for routes alone.
+				assert.include(incompatible.reason, "payload does not fit");
+				assert.include(incompatible.reason, ".properties");
+				assert.include(incompatible.reason, "cron.brief carries {items, ok, text}");
+				assert.include(incompatible.reason, "notify.message accepts {text}");
+			}),
+	);
+
+	it.effect("still routes a legacy row pair by kind, because neither publishes a schema", () =>
+		Effect.gen(function* () {
+			const compiled = yield* Effect.provide(
+				compile({
+					nodes: [
+						node("p", "producer", [{port: "ticks", to: to("c", "ticks")}]),
+						node("c", "consumer"),
+					],
+				}),
+				Registry.layer([producer, consumer()]),
+			);
+			assert.strictEqual(compiled.routes.length, 1);
+
+			// And a pair where only one end publishes a schema: still nominal, still routed.
+			const mixed = yield* Effect.provide(
+				compile({
+					nodes: [
+						node("s", "schema-counter", [{port: "ticks", to: to("c", "ticks")}]),
+						node("c", "consumer"),
+					],
+				}),
+				Registry.layer([schemaCounter, consumer()]),
+			);
+			assert.strictEqual(mixed.routes.length, 1);
+		}),
+	);
+
+	it.effect("refuses kind-equal ends whose published payloads disagree: the schema decides", () =>
+		Effect.gen(function* () {
+			const error = yield* compileWith([schemaCounter, schemaJudge], {
+				nodes: [
+					node("s", "schema-counter", [{port: "ticks", to: to("j", "ticks")}]),
+					node("j", "schema-judge"),
+				],
+			});
+			assert.instanceOf(error, IncompatibleRoute);
+			const incompatible = error as IncompatibleRoute;
+			assert.strictEqual(incompatible.source.kind, incompatible.target.kind);
+			assert.include(incompatible.reason, "payload does not fit");
+		}),
 	);
 
 	it.effect(

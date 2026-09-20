@@ -40,7 +40,8 @@ describe("Topbar nav-IA zone grammar (#2611)", () => {
 		expect(statusSignal.classList.contains("kp-topbar__zone--status-signal")).toBe(true);
 		expect(destination.contains(screen.getByRole("link", {name: "sözlük"}))).toBe(true);
 		expect(destination.contains(screen.getByRole("link", {name: "pano"}))).toBe(true);
-		expect(utility.contains(screen.getByRole("textbox", {name: "Ara"}))).toBe(true);
+		// The search affordance is the ⌘K palette's trigger now (ADR 0186), not a second field.
+		expect(utility.contains(screen.getByRole("button", {name: "Ara"}))).toBe(true);
 		expect(statusSignal.contains(screen.getByTestId("topbar-divan-link"))).toBe(true);
 		expect(statusSignal.contains(screen.getByTestId("topbar-karma"))).toBe(true);
 	});
@@ -144,32 +145,27 @@ describe("Topbar accent-scarcity containment law (#2614)", () => {
 		expect(temaHover?.body).not.toMatch(/var\(--accent(-11)?\)/);
 	});
 
-	// #5660. The search has exactly one focus owner, and it is the shared ring global.css paints on
-	// [data-part="control"]. Two things make that true and both are asserted: the stylesheet
-	// declares no focus treatment of its own (a second one is the mismatched double-paint), and the
-	// control is the element drawing the visible border (otherwise the ring outlines a box the
-	// reader cannot see, which is what the hand-rolled group did).
+	// #5660. The search has exactly one focus owner, and it is the shared ring global.css paints
+	// on the control. Two things make that true and both are asserted: the stylesheet declares no
+	// focus treatment of its own (a second one is the mismatched double-paint), and the element it
+	// paints on is the one drawing the visible border — the palette trigger, which since ADR 0186
+	// carries the frame the field used to (otherwise the ring outlines a box the reader cannot
+	// see, which is what the hand-rolled group did).
 	it("the search paints no focus treatment of its own, and the ring's box is the bordered one", () => {
 		const focusRules = rules.filter(
 			(r) => /kp-topbar__search/.test(r.selector) && /:focus/.test(r.selector),
 		);
-		// Any focus rule here may only NEUTRALIZE — hold the resting border against Manti's accent
-		// recolour. One that paints an outline or an accent is the second treatment coming back.
 		for (const r of focusRules) {
 			expect(r.body).not.toMatch(/outline/);
 			expect(r.body).not.toMatch(/var\(--accent/);
 		}
-		expect(focusRules.some((r) => /border-color:\s*var\(--border\)/.test(r.body))).toBe(true);
 
-		const control = rules.find(
-			(r) =>
-				/kp-topbar__search-field/.test(r.selector) &&
-				/\[data-part="control"\]/.test(r.selector) &&
-				!/:focus/.test(r.selector),
+		const trigger = rules.find(
+			(r) => r.selector === '.kp-topbar__search-trigger[data-scope="button"][data-part="root"]',
 		);
-		expect(control).toBeDefined();
-		expect(control?.body).toMatch(/border:\s*1px solid var\(--border\)/);
-		expect(control?.body).toMatch(/border-radius:\s*var\(--r-sm\)/);
+		expect(trigger).toBeDefined();
+		expect(trigger?.body).toMatch(/border:\s*1px solid var\(--border\)/);
+		expect(trigger?.body).toMatch(/border-radius:\s*var\(--r-sm\)/);
 	});
 
 	it("kompakt üst çubuk butonu Manti'nin ortak min-height değerine esnemez", () => {

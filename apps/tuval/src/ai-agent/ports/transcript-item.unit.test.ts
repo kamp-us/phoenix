@@ -1,12 +1,22 @@
+import {Schema} from "effect";
 import {describe, expect, it} from "vitest";
 import {
 	boundToolResult,
 	byteLength,
+	type CompactionItem,
 	ItemId,
 	isTranscriptItem,
 	TOOL_RESULT_BYTE_LIMIT,
 	type TranscriptItem,
+	TranscriptItemSchema,
 } from "./transcript-item.ts";
+
+/**
+ * The streaming marker is the growing kinds' alone. A compaction boundary is written once and never
+ * rewritten, so it declares nothing a reader could watch — giving it the field reds here with
+ * TS2322, at the line that says why.
+ */
+const compactionStreamsNothing: "partial" extends keyof CompactionItem ? false : true = true;
 
 const at = 1_756_000_000_000;
 const id = (value: string) => ItemId.make(value);
@@ -14,6 +24,13 @@ const id = (value: string) => ItemId.make(value);
 const user: TranscriptItem = {kind: "user", id: id("u1"), timestamp: at, text: "hi"};
 const assistant: TranscriptItem = {kind: "assistant", id: id("a1"), timestamp: at, text: "hello"};
 const system: TranscriptItem = {kind: "system", id: id("s1"), timestamp: at, text: "resumed"};
+const thinking: TranscriptItem = {kind: "thinking", id: id("k1"), timestamp: at, text: "weighing"};
+const compaction: TranscriptItem = {
+	kind: "compaction",
+	id: id("c1"),
+	timestamp: at,
+	text: "context compacted",
+};
 const tool: TranscriptItem = {
 	kind: "tool",
 	id: id("t1"),
@@ -24,17 +41,63 @@ const tool: TranscriptItem = {
 	status: "running",
 };
 
+const kinds: ReadonlyArray<TranscriptItem> = [user, assistant, system, tool, thinking, compaction];
+
 describe("transcript item union", () => {
-	it("admits all four kinds", () => {
-		expect([user, assistant, system, tool].map(isTranscriptItem)).toEqual([true, true, true, true]);
+	it("admits all six kinds", () => {
+		expect(kinds.map(isTranscriptItem)).toEqual(kinds.map(() => true));
 	});
 
 	it("admits an assistant turn the operator cut short", () => {
 		expect(isTranscriptItem({...assistant, interrupted: true})).toBe(true);
 	});
 
+	it("admits an assistant turn still being written, and one that has finished", () => {
+		expect(isTranscriptItem({...assistant, partial: true})).toBe(true);
+		expect(isTranscriptItem({...assistant, partial: false})).toBe(true);
+		expect(isTranscriptItem({...assistant, partial: undefined})).toBe(true);
+	});
+
+	it("refuses a partial marker that is not a flag", () => {
+		expect(isTranscriptItem({...assistant, partial: "true"})).toBe(false);
+		expect(isTranscriptItem({...assistant, partial: 1})).toBe(false);
+		expect(isTranscriptItem({...assistant, partial: null})).toBe(false);
+	});
+
+	it("admits reasoning still being written, and reasoning that has finished", () => {
+		expect(isTranscriptItem({...thinking, partial: true})).toBe(true);
+		expect(isTranscriptItem({...thinking, partial: false})).toBe(true);
+		expect(isTranscriptItem({...thinking, partial: undefined})).toBe(true);
+	});
+
+	it("refuses a reasoning partial marker that is not a flag", () => {
+		expect(isTranscriptItem({...thinking, partial: "true"})).toBe(false);
+		expect(isTranscriptItem({...thinking, partial: 1})).toBe(false);
+		expect(isTranscriptItem({...thinking, partial: null})).toBe(false);
+		expect(compactionStreamsNothing).toBe(true);
+	});
+
 	it("refuses an item of an unknown kind", () => {
-		expect(isTranscriptItem({...user, kind: "thinking"})).toBe(false);
+		expect(isTranscriptItem({...user, kind: "rate-limit"})).toBe(false);
+	});
+
+	it("refuses a thinking or compaction item whose text is missing or not a string", () => {
+		expect(isTranscriptItem({kind: "thinking", id: id("k2"), timestamp: at})).toBe(false);
+		expect(isTranscriptItem({...thinking, text: 7})).toBe(false);
+		expect(isTranscriptItem({kind: "compaction", id: id("c2"), timestamp: at})).toBe(false);
+		expect(isTranscriptItem({...compaction, text: null})).toBe(false);
+	});
+
+	it("refuses a thinking or compaction item with no stable id or no timestamp", () => {
+		expect(isTranscriptItem({...thinking, id: ""})).toBe(false);
+		expect(isTranscriptItem({kind: "compaction", id: id("c1"), text: "gone"})).toBe(false);
+	});
+
+	it("takes a system notice with or without folded detail, and refuses a non-string one", () => {
+		expect(isTranscriptItem({...system, detail: "exit 1\nno such file"})).toBe(true);
+		expect(isTranscriptItem({...system, detail: undefined})).toBe(true);
+		expect(isTranscriptItem({...system, detail: 7})).toBe(false);
+		expect(isTranscriptItem({...system, detail: null})).toBe(false);
 	});
 
 	it("refuses an item with no stable id or no timestamp", () => {
@@ -49,6 +112,24 @@ describe("transcript item union", () => {
 		expect(isTranscriptItem({...tool, status: "pending"})).toBe(false);
 	});
 
+	it("takes an item of any kind with or without a parent", () => {
+		expect(kinds.map((item) => isTranscriptItem({...item, parentId: "toolu_agent"}))).toEqual(
+			kinds.map(() => true),
+		);
+		expect(kinds.map((item) => isTranscriptItem({...item, parentId: undefined}))).toEqual(
+			kinds.map(() => true),
+		);
+	});
+
+	it("refuses a parent tag that is not an id, in every kind's arm", () => {
+		for (const parentId of ["", 7, null]) {
+			expect(
+				kinds.map((item) => isTranscriptItem({...item, parentId})),
+				String(parentId),
+			).toEqual(kinds.map(() => false));
+		}
+	});
+
 	it("refuses a tool result past the per-item byte bound, however it was built", () => {
 		const oversized = "x".repeat(TOOL_RESULT_BYTE_LIMIT + 1);
 		expect(isTranscriptItem({...tool, result: {text: oversized, omitted: {bytes: 0}}})).toBe(false);
@@ -57,6 +138,39 @@ describe("transcript item union", () => {
 	it("refuses a tool result whose omission metadata is missing or negative", () => {
 		expect(isTranscriptItem({...tool, result: {text: "ok"}})).toBe(false);
 		expect(isTranscriptItem({...tool, result: {text: "ok", omitted: {bytes: -1}}})).toBe(false);
+	});
+});
+
+describe("the transcript item schema, beside the predicate it was written from", () => {
+	// The schema exists so a row can publish what its ports carry and a `Program.shape` check can
+	// compare it (#8887). A second, drifting description of the union would be worse than none, so
+	// these two cases hold it to the predicate on both answers.
+	const admits = Schema.is(TranscriptItemSchema);
+
+	it("admits every kind the predicate admits", () => {
+		expect(kinds.map(admits)).toEqual(kinds.map(() => true));
+	});
+
+	it("refuses what the predicate refuses", () => {
+		const refused: ReadonlyArray<unknown> = [
+			{kind: "user", id: id("u1"), timestamp: at},
+			{kind: "nope", id: id("x1"), timestamp: at, text: "hi"},
+			{...tool, status: "pending"},
+			null,
+		];
+		expect(refused.map(admits)).toEqual(refused.map(() => false));
+		expect(refused.map(isTranscriptItem)).toEqual(refused.map(() => false));
+	});
+
+	it("is the shape and not the bound: an over-long tool result is a payload only the predicate refuses", () => {
+		// `isToolResult` also enforces `TOOL_RESULT_BYTE_LIMIT`, which no JSON Schema expresses. The
+		// predicate stays the routing check for exactly this reason.
+		const tooBig = {
+			...tool,
+			result: {text: "x".repeat(TOOL_RESULT_BYTE_LIMIT + 1), omitted: {bytes: 0}},
+		};
+		expect(admits(tooBig)).toBe(true);
+		expect(isTranscriptItem(tooBig)).toBe(false);
 	});
 });
 

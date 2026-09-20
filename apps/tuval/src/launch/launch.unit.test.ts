@@ -1,6 +1,7 @@
 import {type Cmd, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Option, Queue, type Scope} from "effect";
+import {SpawnedProcesses} from "../commands/core/process.ts";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
 import {compile} from "../ports/compile.ts";
@@ -8,17 +9,22 @@ import {bound, isNumber} from "../ports/fixtures.ts";
 import {type Graph, NodeId} from "../ports/graph.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import {open} from "../ports/wiring.ts";
+import {PlannedProcesses} from "../process/PlannedProcesses.ts";
 import {Processes} from "../process/Processes.ts";
 import {ProcessTable} from "../process/ProcessTable.ts";
+import {ProcessId} from "../process/process.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {NoReceiver} from "./errors.ts";
 import {launch} from "./launch.ts";
 
 type Seen = {readonly seen: ReadonlyArray<number>};
+/** The speaker's state. `ended` is the child it was told about — see its `stopped` cell below. */
+type Watched = Seen & {readonly ended: string | null};
 type Take = {readonly type: "take"; readonly n: number};
 type Say = {readonly type: "say"; readonly n: number};
 type Emit = {readonly type: "emit"; readonly n: number};
+type Ended = {readonly type: "stopped"; readonly process: string};
 
 const identity = (program: string) => ({
 	package: "@kampus/tuval",
@@ -27,12 +33,20 @@ const identity = (program: string) => ({
 	digest: `sha256:${program}`,
 });
 
-/** Emits every `say` on `out`; nothing else. */
+/**
+ * Emits every `say` on `out`, and writes down the id of a child it is told ended. It is the graph's
+ * parent node, so that `stopped` cell is what an adopted child's end has to reach (#9227): the
+ * finalizer that delivers it hangs on `enrol`, which both `spawn` and `adopt` pass through, so a
+ * planned node with a declared parent is heard from exactly as an ad-hoc child is.
+ */
 const speaker: AnyProgram = {
 	id: ProgramId.make("speaker"),
-	core: defineMachine<Seen, Say, Emit, never, unknown>({
-		init: (loaded) => [loaded ?? {seen: []}, []],
-		update: {say: (state, msg) => [state, [{type: "emit", n: msg.n}]]},
+	core: defineMachine<Watched, Say | Ended, Emit, never, unknown>({
+		init: (loaded) => [loaded ?? {seen: [], ended: null}, []],
+		update: {
+			say: (state, msg) => [state, [{type: "emit", n: msg.n}]],
+			stopped: (state, msg) => [{...state, ended: msg.process}, []],
+		},
 		interpret: {emit: () => Promise.resolve()},
 	}),
 	ports: {out: {kind: "tick/v1", direction: "out", accepts: isNumber}},
@@ -46,7 +60,7 @@ const speaker: AnyProgram = {
 	capabilities: [],
 	identity: identity("speaker"),
 	placement: {host: "local"},
-} satisfies Program<Seen, Say, Emit, never, unknown, unknown, ProcessPorts>;
+} satisfies Program<Watched, Say | Ended, Emit, never, unknown, unknown, ProcessPorts>;
 
 /** Records every number arriving on `in`; `receive` is what makes it a listener. */
 const listener = (withReceiver: boolean): AnyProgram => ({
@@ -83,14 +97,26 @@ const eventually = (check: () => boolean) =>
 		for (let i = 0; i < 200 && !check(); i++) yield* Effect.sleep(5);
 	});
 
+/** `launch` enrols every node it spawns in `SpawnedProcesses` since #8944, so the kernel owes it. */
 const withKernel = <A, E>(
 	rows: ReadonlyArray<AnyProgram>,
-	body: Effect.Effect<A, E, Processes | ProcessTable | Registry | Checkpoints | Scope.Scope>,
+	body: Effect.Effect<
+		A,
+		E,
+		| Processes
+		| PlannedProcesses
+		| ProcessTable
+		| Registry
+		| Checkpoints
+		| SpawnedProcesses
+		| Scope.Scope
+	>,
 ) =>
 	body.pipe(
 		Effect.scoped,
 		Effect.provide(
-			Processes.layer.pipe(
+			SpawnedProcesses.layer({readTimeout: "50 millis"}).pipe(
+				Layer.provideMerge(Processes.layer),
 				Layer.provideMerge(Checkpoints.layer(memoryStores())),
 				Layer.provideMerge(Registry.layer(rows)),
 			),
@@ -153,6 +179,58 @@ describe("launch", () => {
 					assert.deepStrictEqual(yield* table.list, []);
 				}),
 			),
+	);
+
+	/**
+	 * The adopted half of #9227. `launch` hands `adopt` the node's declared parent, and the table
+	 * hangs the same end-notice finalizer it hangs on an ad-hoc spawn — so a graph node that ends,
+	 * for any reason, reaches the node that declared it. `it.live`, because the notice is forked and
+	 * a test clock would never let that fiber run.
+	 */
+	it.live("hands a node's parent a `stopped` when the adopted child ends", () =>
+		withKernel(
+			[speaker, listener(true)],
+			Effect.gen(function* () {
+				const compiled = yield* compile(graph);
+				const wiring = yield* open(compiled);
+				const [s, l] = yield* launch(compiled, wiring);
+
+				yield* l!.handle.stop;
+				yield* eventually(() => (s!.handle.getState() as Watched).ended !== null);
+
+				assert.strictEqual((s!.handle.getState() as Watched).ended, l!.handle.id);
+			}),
+		),
+	);
+
+	/**
+	 * The record `Processes.remove` refuses on (#9446). It is written here because here is the only
+	 * place the planned node ids exist — `compile(graph)` is a local in `src/boot.ts` and nothing
+	 * downstream retains it — and it is the compiled graph's ids, never "was this id checkpointed":
+	 * a restored process and a planned one both come back at their saved id.
+	 */
+	it.effect("declares its nodes as planned, so removing one is refused", () =>
+		withKernel(
+			[speaker, listener(true)],
+			Effect.gen(function* () {
+				const processes = yield* Processes;
+				const planned = yield* PlannedProcesses;
+				const compiled = yield* compile(graph);
+				yield* launch(compiled, yield* open(compiled));
+
+				assert.isTrue(yield* planned.isPlanned(ProcessId.make("s")));
+				const refused = yield* Effect.flip(processes.remove(ProcessId.make("s")));
+				assert.strictEqual(refused._tag, "tuval/ProcessIsPlanned");
+				assert.strictEqual(
+					refused.message,
+					'process "s" is declared by the config graph, so boot would start it again; edit the config to remove it',
+				);
+				assert.deepStrictEqual(
+					(yield* ProcessTable.use((table) => table.list)).map((row) => row.id),
+					[ProcessId.make("s"), ProcessId.make("l")],
+				);
+			}),
+		),
 	);
 
 	it.effect("a stopped process's pump stops with it; the queue keeps what arrives after", () =>

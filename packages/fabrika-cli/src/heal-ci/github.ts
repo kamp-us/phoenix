@@ -7,13 +7,13 @@
  * are `../io/gh-api.ts`'s, imported rather than re-derived.
  *
  * The disciplines are the shipped ones, restated nowhere: every response's status is read before its
- * bytes, and proven-absent is split from could-not-read at every seam. Since the port off `gh`
- * (ADR 0315) the status is a number the response carried rather than a code scraped out of an error
+ * bytes, and proven-absent is split from could-not-read at every seam. Since the port off the `gh`
+ * subprocess the status is a number the response carried rather than a code scraped out of an error
  * string, so `Absent` and `Unknown` are told apart by the platform's own answer.
  *
  * **Where the credential comes from.** Every export takes `(repo, …)` and reaches `ambientToken` for
  * its credential, erasing the transport requirement with `onTransport` rather than publishing
- * `HttpClient` up through its callers — the shape ADR 0315 carries as amended by the #6704 ruling.
+ * `HttpClient` up through its callers — the shape every transport seam in this package takes.
  */
 import {Effect} from "effect";
 import {
@@ -31,6 +31,7 @@ import {
 import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
 import {type Existence, unknown} from "../io/issues.ts";
 import {isRecord} from "../io/json.ts";
+import {isBaseConflict, readDefiniteMergeability} from "../ship/mergeability.ts";
 
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
 
@@ -173,7 +174,7 @@ export const rerunFailedJobs = (repo: string, run: number): Shell<Attempt<void>>
  *
  * {@link rerunFailedJobs} is refused on a run with no failed job, which is the ordinary state of a
  * governance-floor run since the floor moved off the job's exit code onto a check-run: the job
- * succeeds — it published an answer — while the check-run it published stays pending (#6161). The
+ * succeeds — it published an answer — while the check-run it published stays pending. The
  * same 2xx-is-not-an-attempt discipline holds; the caller still proves the new attempt from run
  * state.
  */
@@ -182,7 +183,7 @@ export const rerunRun = (repo: string, run: number): Shell<Attempt<void>> =>
 
 /**
  * A read's answer beside the status GitHub served — which is what a permission denial is told apart
- * by, now that no error string carries the code (ADR 0315).
+ * by, now that no error string carries the code.
  */
 export interface Answered<A> {
 	readonly read: A;
@@ -334,3 +335,45 @@ export const commitPushedAt = (repo: string, sha: string): Shell<Attempt<string>
 			return at === "" ? fail("GitHub answered 200 but named no commit date") : ok(at);
 		}),
 	);
+
+/**
+ * Whether the merge of a PR's head into its base conflicts, as four values rather than a boolean.
+ *
+ * `Indefinite` is the one that earns the type. GitHub computes `mergeable` lazily, so the first read
+ * of a pull request routinely answers `null` with `mergeable_state: "unknown"` — the platform
+ * declining to answer, which is neither a clean merge nor a conflict. Folding it into `Clear` is the
+ * false green; folding it into `Conflicted` routes a healthy PR to a rebase nobody owes.
+ */
+export type ConflictRead =
+	/** Proven: `mergeable_state` is `dirty`, so the merge of this head into its base conflicts. */
+	| {readonly _tag: "Conflicted"}
+	/** A definite read that is not a base conflict — `clean`, `blocked` and `behind` all land here. */
+	| {readonly _tag: "Clear"}
+	/** The lazy job had not landed inside the window. How many seconds it was given. */
+	| {readonly _tag: "Indefinite"; readonly seconds: number}
+	| {readonly _tag: "Unreadable"; readonly reason: string};
+
+/**
+ * The base-conflict fact `diagnose`'s conflict arm runs on.
+ *
+ * The read and its poll policy are `../ship/mergeability.ts`'s, not this group's: `ship enqueue` and
+ * `ship merge` assert the same precondition through one loop, and a second implementation here would
+ * be a second window over the same lazy job, answering `dirty` on one verb and `UNKNOWN` on another
+ * for one pull request.
+ *
+ * `../io/pulls.ts`'s `PullRecord.mergeability` is **not** that fact and cannot stand in for it: it
+ * collapses every definite not-mergeable value to `conflicting`, so a `blocked` PR — one merely
+ * waiting on its required checks — reads there exactly like a conflicted one.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9012
+ */
+export const readBaseConflict = (
+	repo: string,
+	pr: number,
+	windowSeconds: number,
+): Shell<ConflictRead> =>
+	Effect.map(readDefiniteMergeability(repo, pr, windowSeconds), (read): ConflictRead => {
+		if (read._tag === "Unreadable") return {_tag: "Unreadable", reason: read.reason};
+		if (read._tag === "Indefinite") return {_tag: "Indefinite", seconds: read.seconds};
+		return isBaseConflict(read.value) ? {_tag: "Conflicted"} : {_tag: "Clear"};
+	});

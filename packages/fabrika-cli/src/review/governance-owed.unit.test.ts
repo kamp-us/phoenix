@@ -27,6 +27,8 @@ const workflowRun = (name: string, status: string): WorkflowRun => ({
 	conclusion: status === "completed" ? "success" : null,
 	completedAt: status === "completed" ? "2026-08-08T00:00:00Z" : null,
 	path: `.github/workflows/${name}.yml`,
+	event: "pull_request",
+	headSha: "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c",
 	workflowId: 1,
 	checkSuiteId: 1,
 });
@@ -113,7 +115,7 @@ describe("staleFloorIsTheOnlyRed", () => {
 		expect(staleFloorIsTheOnlyRed([PASSED, RED_SUITE])).toBe(false);
 	});
 
-	/** UNKNOWN never passes and is nobody's to discount, least of all the shell reading it (ADR 0092). */
+	/** UNKNOWN never passes and is nobody's to discount, least of all the shell reading it. */
 	it("is false on an unresolved floor", () => {
 		expect(staleFloorIsTheOnlyRed([PASSED, UNRESOLVED])).toBe(false);
 	});

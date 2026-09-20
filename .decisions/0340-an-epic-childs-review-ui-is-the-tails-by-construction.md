@@ -102,3 +102,53 @@ the line it always wrote.
 - Instance: epic #6767's tracer C, https://github.com/kamp-us/phoenix/issues/7031
 - Narrows: ADR [0320](0320-the-review-bar-splits-across-two-cells-and-the-machine-decides.md)
 - Rests on: ADR [0285](0285-epic-machine-ends-in-review.md), ADR [0317](0317-ui-lane-carries-its-own-shells.md)
+
+## Amendment — 2026-09-16: the creditor gets a cell, so the tail defers like any PR-owning lane
+
+This record's decision is untouched: a child's `PASS` out of `review` still defers
+`ROUTED_NAMESPACES` unconditionally, and the creditor is still the epic's tail. What changes is one
+sentence of the reasoning above, which described the tail as it then stood rather than as it had to
+stand.
+
+"The tail's `review` cell routes to `ship` and to no ui cell, so under 0320's own rule its `PASS`
+defers nothing and stands on the whole set" was true of
+[`emit.ts`](../packages/fabrika-cli/src/lane/emit.ts) and false of what the tail could actually
+walk. A tail standing on the whole set has nowhere to *produce* it: `review` routes to `ship`, so no
+cell of the generated machine dispatches the rendered gate, and
+[`lane-brief.ts`](../packages/fabrika-cli/src/wire/lane-brief.ts) maps `ui-reviewer` to a state the
+document never held. Every epic whose diff classed `ui` refused its tail `PASS` at exit `23` forever,
+and could not park honestly either — `review` is an active state, so `lane recover`'s stale sweep
+never saw it. Live instance: epic lane 8716, PR [#8750](https://github.com/kamp-us/phoenix/pull/8750)
+— `governance`, `review-code` and `review-doc` all PASS at `fca9f763`, CI green, tail refused with
+~20 files classed `ui`. Its driver got out by hand-composing a ui-reviewer spawn off the tail's own
+`review` brief with the `shell:` line swapped, which `operate` otherwise forbids.
+[#8937](https://github.com/kamp-us/phoenix/issues/8937) is the repair.
+
+**The generated tail region now carries `review:ui`**, entered by the `class:ui` arm on its `review`
+`PASS` and shaped like the committed
+[coder template](../packages/fabrika-cli/src/lane/templates/coder.workflow.json)'s: `PASS` to `ship`,
+`BLOCKED` to `blocked`, a budget-guarded `FAIL` falling through to `human:budget-spent`, and the
+machinery `LAP` self-loop when `machineryLaps.onEmit` is set. So the tail now defers exactly the way
+0320 rules a PR-owning lane must — derived from its own machine, never from a constant — and this
+record's one exception stays the child's alone. No child region gains the cell; the section above
+saying why still holds word for word.
+
+Two shapes this amendment deliberately does **not** build:
+
+- **No `build:ui` at the tail.** A tail repair round is briefed on the assembly branch beside the
+  run's one PR, and `lane-brief.ts` admits that pair for `build` alone; a rendered repair is the
+  mixed builder's per-file law over that same branch. A `build:ui` at the tail would need that
+  refusal widened for one cell that dispatches nothing a `build` brief cannot.
+- **No class seed on the tail's context.** The tail is emitted before any child has classed
+  anything, so the class can only arrive as the `classes` a reviewer relays on `lane report --class
+  ui`. That is the same relay 0320 already requires of a single lane, and it fails the same way: an
+  unrelayed class leaves the whole set owed at `review` and refuses there. Unlike a child, the tail
+  has a cell that can pay, so a forgotten flag is a refusal to fix rather than a wall.
+
+A lane already emitted does not adopt the cell — the machine is fixed at emission, exactly as
+0285's own amendment says of the tail's `build`.
+
+Sources: [#8937](https://github.com/kamp-us/phoenix/issues/8937), epic lane 8716 /
+PR [#8750](https://github.com/kamp-us/phoenix/pull/8750),
+[`emit.ts`](../packages/fabrika-cli/src/lane/emit.ts),
+[`prove.ts`](../packages/fabrika-cli/src/lane/prove.ts)'s `REVIEW_UI_STATE`.

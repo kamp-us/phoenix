@@ -1,30 +1,25 @@
 /**
  * `@kampus/fabrika-cli/capture` — the screenshot/render/golden-diff machinery the
- * design gates drive (ADR 0165, epic #1966). It lives here, on fabrika's release
- * train, so an adopter repo gets it with fabrika instead of depending on a
- * phoenix-published package (founder ruling on #5061, issue #5063).
+ * design gates drive. It lives here, on fabrika's release train, so an adopter repo
+ * gets it with fabrika instead of depending on a package published out of somebody
+ * else's repo.
  *
- * The same ruling keeps the repo-specific DATA per-repo, and that boundary is what
- * decides where a module lives. Anything naming a *host* or a *credential* — the depo
- * store/fetch of golden bytes, the pointer file, the harness config — is the consuming
- * repo's and is NOT here (ADR 0183).
+ * The repo-specific DATA stays per-repo, and that boundary is what decides where a
+ * module lives. Anything naming a *host* or a *credential* — the store/fetch of golden
+ * bytes, the pointer file, the harness config — is the consuming repo's and is NOT here.
  * That is not only a taste call: this package is published, so a dependency on a private
- * `@kampus/*` package could not resolve from a clean registry (ADR 0201 §3, enforced by
- * `publish-isolation-guard`). Storing bytes is therefore an injected `StoreLeg` here — the
- * shape, never the store.
+ * package could not resolve from a clean registry (`publish-isolation-guard` enforces
+ * it). Storing bytes is therefore an injected `StoreLeg` here — the shape, never the
+ * store.
  *
- * The seam #2246 codes against: `captureAndUpload(request)` →
- * `Effect<CaptureRecord[], CaptureError, HttpClient>`, each record
- * `{surface, route, state, localPath, hostedUrl, uploadError}` (the `capture`
- * bin emits this per-surface JSON). `hostedUrls` projects the hosted URLs;
- * `resolvePreviewUrl` resolves the preview base from the sticky preview-deploy
- * comment, keyed off the per-app `<!-- preview-deploy:<app> -->` anchor.
+ * `captureAndUpload` and its request/result types live in `./orchestrate.ts`.
+ * `resolvePreviewUrl` reads the sticky preview-deploy comment by its per-app anchor.
  */
 
-// The blessing surface (ADR 0183 §5, epic #2955 stories 2/9, issue #2962): render the
-// founder gallery comment from a candidate set, parse the founder's verdicts, and fold
-// approve/redline into a golden-pointer move — the human-in-the-loop bless → commit path
-// (no re-render: the blessed sha comes from the set the founder saw).
+// The blessing surface: render the operator gallery comment from a candidate set, parse
+// the operator's verdicts, and fold approve/redline into a golden-pointer move — the
+// human-in-the-loop bless → commit path (no re-render: the blessed sha comes from the
+// set the operator saw).
 export type {
 	ApplyBlessingInput,
 	BlessDecision,
@@ -33,10 +28,9 @@ export type {
 	BlessVerdict,
 } from "./blessing-surface.ts";
 export {applyBlessing, parseBlessDecisions, renderBlessingGallery} from "./blessing-surface.ts";
-// The candidate-render step (ADR 0183 §5, epic #2955 story 1): render the founder
-// priority surfaces over a flag-forced preview into a blessing candidate set, staged
-// for the founder's bless (#2962) — each candidate anchored to the exact depo sha256
-// a later bless commits (the no-re-render guard).
+// The candidate-render step: render the priority surfaces over a flag-forced preview
+// into a blessing candidate set, staged for the operator's bless — each candidate
+// anchored to the exact store sha256 a later bless commits (the no-re-render guard).
 export type {
 	CaptureLeg as CandidateCaptureLeg,
 	RenderCandidateSetDeps,
@@ -54,7 +48,7 @@ export type {
 export {assembleCandidateSet, parseCandidateSet, serializeCandidateSet} from "./candidate-set.ts";
 export type {CaptureCookie, CapturedSurface, CaptureOptions} from "./capture.ts";
 export {CaptureError, captureShots} from "./capture.ts";
-// The golden-baseline seam (ADR 0183): the current-golden pointer in git, the bytes in
+// The golden-baseline seam: the current-golden pointer in git, the bytes in
 // the consuming repo's asset store; pointer → deterministic diff. Consumed by write-code
 // (self-check) and review-design (blocking gate) so there is ONE notion of "golden". The
 // store/fetch half is NOT here — see the module docblock.

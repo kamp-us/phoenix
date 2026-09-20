@@ -1,20 +1,20 @@
 /**
- * Test fixtures derived from spike #235's verified crabbox output. Plain TS, no
+ * Test fixtures derived from a real crabbox run's output. Plain TS, no
  * Effect (per `.patterns/effect-testing.md` §Helpers): a representative
  * run-summary (the `provider`/`leaseId`/`slug`/timing/`exitCode`/`artifacts[]`/
- * `leaseStopped` shape #235 captured, widened with the per-command `commands[]`
+ * `leaseStopped` shape crabbox emits, widened with the per-command `commands[]`
  * the adapter folds into `checks[]`) plus JUnit XML strings.
  */
 import type {RunSummary} from "./crabbox.ts";
 
 /**
- * A passing crabbox run (the #235 happy path): a local-container lease that ran
+ * A passing crabbox run (the happy path): a local-container lease that ran
  * three gate commands, all exit 0, pulled a JUnit artifact back, released cleanly.
  */
 export const passingRunSummary = (overrides: Partial<RunSummary> = {}): RunSummary => ({
 	provider: "local-container",
 	leaseId: "lease_2c1f9a",
-	slug: "phoenix-pr-244",
+	slug: "repo-pr-244",
 	machineType: "node:24-bookworm",
 	exitCode: 0,
 	commands: [

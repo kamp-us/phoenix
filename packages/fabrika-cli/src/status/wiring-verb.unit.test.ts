@@ -3,7 +3,7 @@
  * as the proven negative it did not establish.
  *
  * The case that matters is the middle one — a repo where the CLI answers and no skill loads was
- * green on every other status surface for two days (#6443).
+ * green on every other status surface for two days.
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
@@ -68,8 +68,8 @@ describe("wiringOf", () => {
 	});
 
 	/**
-	 * The demlik shape's near miss: an entry naming no marketplace resolves to no plugin, so calling
-	 * it wired would green a session that loads nothing.
+	 * The near miss an adopting repo hits: an entry naming no marketplace resolves to no plugin, so
+	 * calling it wired would green a session that loads nothing.
 	 */
 	it("reads a bare `fabrika` key naming no marketplace as unwired", () => {
 		const read = wiringOf(text({enabledPlugins: {fabrika: true}}));

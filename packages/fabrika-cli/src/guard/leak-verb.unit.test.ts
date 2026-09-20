@@ -26,7 +26,7 @@ describe("runLeakGuard", () => {
 		const outcome = await run(
 			["docs/guide.md", "scripts/run.sh", "src/a.ts"],
 			tree({
-				"docs/guide.md": "see apps/web/worker/index.ts",
+				"docs/guide.md": "see apps/site/worker/index.ts",
 				"scripts/run.sh": "pnpm build",
 				"src/a.ts": "const p = '/Users/alice/x'",
 			}),
@@ -80,7 +80,7 @@ describe("runLeakGuard", () => {
 		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
 	});
 
-	// v1 answered this clean. A scan that covered nothing has proven nothing (ADR 0092).
+	// v1 answered this clean. A scan that covered nothing has proven nothing.
 	it("fails closed on an empty file list", async () => {
 		const outcome = await run([], tree({}));
 		expect(outcome.code).toBe(ZERO_SCOPE);

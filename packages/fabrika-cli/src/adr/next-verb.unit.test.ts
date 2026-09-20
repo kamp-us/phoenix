@@ -3,6 +3,7 @@ import {describe, expect, it} from "vitest";
 import {errOut, fakeSeams, okOut, type Scripted, tree} from "../fakes.test-support.ts";
 import {
 	BASE_UNFETCHABLE,
+	BRANCH_CLAIMS_UNKNOWN,
 	DIR_UNREADABLE,
 	IN_FLIGHT_UNKNOWN,
 	ORIGIN_REPO_UNRESOLVABLE,
@@ -16,10 +17,11 @@ const base = (overrides: ReadonlyArray<Scripted> = []) =>
 	fakeSeams([
 		...overrides,
 		[/^git remote$/, okOut("origin\n")],
-		[/^git remote get-url origin$/, okOut("git@github.com:kamp-us/phoenix.git\n")],
+		[/^git remote get-url origin$/, okOut("git@github.com:o/r.git\n")],
 		[/^git fetch/, okOut("")],
 		[/^git rev-parse/, okOut(`${SHA}\n`)],
 		[/^git ls-tree/, okOut(tree("0234-a.md", "0235-b.md", "0236-c.md"))],
+		[/^git log/, okOut("")],
 		[
 			/GET .*\/pulls\?state=open/,
 			{status: 200, body: JSON.stringify([{number: 11}, {number: 12}])},
@@ -29,18 +31,18 @@ const base = (overrides: ReadonlyArray<Scripted> = []) =>
 			{
 				status: 200,
 				body: JSON.stringify([
-					{status: "added", filename: ".decisions/0237-x.md"},
+					{status: "added", filename: ".records/0237-x.md"},
 					{status: "modified", filename: "README.md"},
 				]),
 			},
 		],
 		[
 			/pulls\/12\/files/,
-			{status: 200, body: JSON.stringify([{status: "added", filename: ".decisions/0239-y.md"}])},
+			{status: 200, body: JSON.stringify([{status: "added", filename: ".records/0239-y.md"}])},
 		],
 	]);
 
-const options = {dir: ".decisions", base: "origin/main", repo: null, json: false};
+const options = {dir: ".records", base: "origin/main", repo: null, json: false};
 
 const run = (overrides: ReadonlyArray<Scripted> = [], opts: Partial<typeof options> = {}) =>
 	Effect.runPromise(Effect.provide(runNext({...options, ...opts}), base(overrides).layer));
@@ -59,9 +61,36 @@ describe("runNext", () => {
 			id: "0240",
 			mergedMax: "0236",
 			inFlight: ["0237", "0239"],
+			branchClaims: [],
 			baseRef: "origin/main",
 			baseSha: SHA,
 		});
+	});
+
+	it("folds in an id a branch ref claims with no pull request behind it", async () => {
+		const out = await run([[/^git log/, okOut(".records/0241-sibling.md\0.records/0235-b.md\0")]], {
+			json: true,
+		});
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({id: "0242", branchClaims: ["0235", "0241"]});
+		expect(out.stderr.join("\n")).toContain("2 id(s) claimed on branch refs");
+	});
+
+	it("refuses when the branch walk fails — never 'nothing claimed'", async () => {
+		const out = await run([[/^git log/, errOut("fatal: bad revision")]]);
+		expect(out.code).toBe(BRANCH_CLAIMS_UNKNOWN);
+		expect(out.code).not.toBe(1);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain('never "nothing claimed"');
+	});
+
+	// The walk is local and the pull-request enumeration is not, so an already-UNKNOWN answer must
+	// not first spend a full enumeration of GitHub's open pull requests.
+	it("refuses a failed branch walk before it enumerates the open pull requests", async () => {
+		const seams = base([[/^git log/, errOut("fatal: bad revision")]]);
+		const out = await Effect.runPromise(Effect.provide(runNext(options), seams.layer));
+		expect(out.code).toBe(BRANCH_CLAIMS_UNKNOWN);
+		expect(seams.requests.some((r) => r.includes("/pulls"))).toBe(false);
 	});
 
 	it("refuses on an unfetchable base — the merged set is UNKNOWN, not the local tree", async () => {
@@ -101,9 +130,9 @@ describe("runNext", () => {
 		expect(out.stdout).toBe("");
 	});
 
-	// A fresh adopter's `.decisions/` is empty by definition, and `git ls-tree <sha>:<dir>` fails
+	// A fresh adopter's record directory is empty by definition, and `git ls-tree <sha>:<dir>` fails
 	// outright on a directory that is not in the tree — so an empty listing PROVES an existing,
-	// empty directory and mints `0001` (#5254).
+	// empty directory and mints `0001`.
 	it("answers 0001 on a readable-but-empty --dir, with no open PR claiming an id", async () => {
 		const out = await run([
 			[/^git ls-tree/, okOut("")],
@@ -121,14 +150,14 @@ describe("runNext", () => {
 	});
 
 	// An unreadable directory is a PROVEN refusal, so it may not share `1` with a verb that failed
-	// to run (#4208, #4219, #4736), and it must stay distinct from the empty directory that answers.
+	// to run, and it must stay distinct from the empty directory that answers.
 	it("refuses an unreadable --dir on its own proven code, not on 1", async () => {
 		const out = await run([[/^git ls-tree/, errOut("fatal: not a tree object")]]);
 		expect(out.code).toBe(DIR_UNREADABLE);
 		expect(out.code).not.toBe(1);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			'adr next: cannot read .decisions at origin/main: fatal: not a tree object — the merged set is UNKNOWN, never "0 records".',
+			'adr next: cannot read .records at origin/main: fatal: not a tree object — the merged set is UNKNOWN, never "0 records".',
 		);
 	});
 

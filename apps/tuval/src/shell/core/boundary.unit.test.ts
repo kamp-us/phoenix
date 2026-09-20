@@ -1,8 +1,9 @@
 /**
  * The three boundaries this slice keeps. The first is type-level, so `tsc` over this file is the
  * proof: nothing callable can reach any corner of the shell's state, because the kernel checkpoints
- * it as JSON. The second is the Cmd vocabulary — there is no arm that stops a process, so no path
- * through the reducer can end one. The third is textual: the core runs no clock and reads no DOM.
+ * it as JSON. The second is the Cmd vocabulary — exactly one arm ends a process and it is named for
+ * doing so, so no *window* path through the reducer can end one (#9447 added `removeProcess`; before
+ * it there was no such arm at all). The third is textual: the core runs no clock and reads no DOM.
  *
  * Every `=` probe below is a claim on the right of an assignment and each was flip-verified — see
  * `.patterns/unconditional-test-assertions.md`, "the type-level sibling".
@@ -12,7 +13,9 @@ import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import type {Duration, Effect} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
+import {defaultPrefixTable} from "../keys/index.ts";
 import type {KernelCmd, PageCmd, ShellCmd, ShellMsg} from "./machine.ts";
+import {applyMsg, initialState} from "./machine.ts";
 import type {PrefixSnapshot, ShellState, Workspace} from "./state.ts";
 
 /**
@@ -69,7 +72,7 @@ describe("shell core boundary", () => {
 		expect([durationValue, effectValue]).toEqual([false, false]);
 	});
 
-	it("the Cmd vocabulary has no arm that stops a process", () => {
+	it("the Cmd vocabulary ends a process on one arm only, and that arm says so", () => {
 		expectTypeOf<ShellCmd["type"]>().toEqualTypeOf<
 			| "forwardKey"
 			| "startRepeatTimer"
@@ -77,9 +80,27 @@ describe("shell core boundary", () => {
 			| "runCommand"
 			| "openProgram"
 			| "attachProcess"
+			| "removeProcess"
 			| "openCommandLine"
 			| "reloadConfig"
 		>();
+	});
+
+	it("no window Msg reaches that arm: closing a window still stops nothing (#9447)", () => {
+		const table = defaultPrefixTable;
+		const state = initialState();
+		// A split first, because the last window of a workspace is never closed and the no-op arm
+		// would answer `NO_CMDS` for a reason that has nothing to do with process lifetime.
+		const [split] = applyMsg(table, state, {type: "window.split", orientation: "horizontal"});
+		for (const msg of [
+			{type: "window.close"},
+			{type: "window.unbind"},
+		] satisfies ReadonlyArray<ShellMsg>) {
+			expect(applyMsg(table, split, msg)[1]).toEqual([]);
+		}
+		// And the one Msg that does reach it asks for that arm and nothing else.
+		const [, cmds] = applyMsg(table, split, {type: "process.remove", processId: "process-1"});
+		expect(cmds.map((cmd) => cmd.type)).toEqual(["removeProcess"]);
 	});
 
 	it("every arm names the side that runs it, and the two sides are the whole vocabulary", () => {
@@ -87,7 +108,12 @@ describe("shell core boundary", () => {
 			"startRepeatTimer" | "cancelRepeatTimer" | "openCommandLine"
 		>();
 		expectTypeOf<KernelCmd["type"]>().toEqualTypeOf<
-			"forwardKey" | "runCommand" | "openProgram" | "attachProcess" | "reloadConfig"
+			| "forwardKey"
+			| "runCommand"
+			| "openProgram"
+			| "attachProcess"
+			| "removeProcess"
+			| "reloadConfig"
 		>();
 		expect([armsPartition, anArmOffTheSides]).toEqual([true, false]);
 	});
@@ -100,11 +126,13 @@ describe("shell core boundary", () => {
 			| "window.focusDirection"
 			| "window.bind"
 			| "window.unbind"
+			| "window.forwardKey"
 			| "window.setView"
 			| "layout.resize"
 			| "layout.zoom"
 			| "window.open"
 			| "window.attach"
+			| "process.remove"
 			| "workspace.create"
 			| "workspace.remove"
 			| "workspace.activate"
@@ -112,6 +140,8 @@ describe("shell core boundary", () => {
 			| "command.open"
 			| "config.reload"
 			| "desk.inspector.toggle"
+			| "desk.board.toggle"
+			| "desk.board.close"
 			| "keys.press"
 			| "prefix.repeatLapsed"
 		>();

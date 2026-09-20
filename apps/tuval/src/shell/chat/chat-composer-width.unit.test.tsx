@@ -31,7 +31,7 @@ import {type TestProcess, testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {chatWindow} from "./ChatWindow.tsx";
 import {sessionState} from "./chat.testing.ts";
-import type {ChatView} from "./view.ts";
+import {type ChatView, initialChatView} from "./view.ts";
 
 installDomShims();
 
@@ -46,14 +46,14 @@ beforeAll(() => {
 	document.head.appendChild(style);
 });
 
-const emptyView: ChatView = {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []};
-
 /** Mounts the window inside a parent of a known inline size, the way a desk window sizes it. */
 const openWindowIn = async (parentWidth: number): Promise<void> => {
 	const process: TestProcess<AiAgentSessionState, AiAgentSessionMsg> = await Effect.runPromise(
 		testProcess<AiAgentSessionState, AiAgentSessionMsg>(ProcessId.make("p1"), sessionState()),
 	);
-	const host = await Effect.runPromise(process.window<ChatView>(WindowId.make("w1"), emptyView));
+	const host = await Effect.runPromise(
+		process.window<ChatView>(WindowId.make("w1"), initialChatView),
+	);
 	const element = chatWindow({scrollCommitMs: 0, scrollToFn: () => {}}).render(
 		host,
 	) as ReactElement;

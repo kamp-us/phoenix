@@ -18,8 +18,8 @@ import {Command, Flag} from "effect/unstable/cli";
 import {boot, defaultGlobalConfig} from "./boot.ts";
 import {renderBindingErrors} from "./commands/bindings/index.ts";
 import {servePage} from "./page/dev-server.ts";
+import {displayHost} from "./page/loopback.ts";
 import {serveDesk} from "./shell/host/index.ts";
-import {defaultPrefixTable} from "./shell/keys/index.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 import type {TableRow} from "./table/row.ts";
 
@@ -64,7 +64,7 @@ const tuval = Command.make(
 		),
 	},
 	Effect.fn(function* ({config, project, noPage, pagePort}) {
-		const {report, kernel} = yield* boot({
+		const {report, kernel, keyTable, moduleRenderers, features} = yield* boot({
 			global: Option.getOrElse(config, defaultGlobalConfig),
 			project: Option.getOrElse(project, () => process.cwd()),
 		}).pipe(
@@ -91,9 +91,7 @@ const tuval = Command.make(
 
 		// The socket first: the page is handed its URL, so the transport has to be bound before the
 		// dev server that will answer with it.
-		// The default is the shell row's too, because nothing passes `shellProgram` a table yet; a
-		// config that does would reach only the row, which is #7890.
-		const transport = yield* serveDesk({kernel, port: 0, table: defaultPrefixTable});
+		const transport = yield* serveDesk({kernel, port: 0, table: keyTable});
 		yield* Console.log(`tuval: transport on 127.0.0.1:${transport.port}`);
 		if (noPage) {
 			yield* Console.log("tuval: no page served (--no-page)");
@@ -102,8 +100,18 @@ const tuval = Command.make(
 			// and checkpointing, and a second `pnpm dev` can attach to the same socket.
 			// `servePage` admits its own port with the transport's fence before returning, so the URL
 			// printed here is one a browser can actually attach from (#7560).
-			yield* servePage({root: appRoot, transport, port: pagePort}).pipe(
-				Effect.flatMap((page) => Console.log(`tuval: desk at ${page.url}`)),
+			// The config's rows are the page's loader list too: every `kind: "module"` renderer they name
+			// is handed to the page server beside the config module that declared it, and the page refuses
+			// a specifier that resolves from neither (ADR 0359, amended by #8262).
+			// The merged flags ride along for the same reason the rows do: the page generates them into
+			// a module its renderer table imports, and that is the only way a flag an operator turned
+			// on in their config reaches the browser (#8439).
+			yield* servePage({root: appRoot, transport, port: pagePort, moduleRenderers, features}).pipe(
+				Effect.flatMap((page) =>
+					// The localhost URL, and the addresses behind it: whichever family the browser resolves
+					// reaches this desk, and the founder can see that it does (ADR 0370, #8593).
+					Console.log(`tuval: desk at ${page.url} — ${page.hosts.map(displayHost).join(" and ")}`),
+				),
 				Effect.catch((error) => Console.error(`tuval: ${error.message}`)),
 			);
 		}

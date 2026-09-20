@@ -24,6 +24,7 @@ import {
 	digestOver,
 	epic,
 	epicBody,
+	issueUrl,
 	planSeams,
 	ROSTER,
 	type Scripted,
@@ -72,7 +73,7 @@ const ledger = (childPayload: HttpReply): ReadonlyArray<Scripted> => [
 
 const POSTED: HttpReply = {
 	status: 201,
-	body: JSON.stringify({id: 512346, html_url: "https://github.com/o/r/issues/4300#c"}),
+	body: JSON.stringify({id: 512346, html_url: `${issueUrl(4300)}#c`}),
 };
 
 const digestOf = (childPayload: HttpReply): Promise<string> =>
@@ -327,7 +328,7 @@ describe("runVerdict", () => {
 
 	/**
 	 * An unapproved plan gets no verdict at all, not even a `FAIL`: a posted verdict is the gate saying
-	 * it ran, and on an unapproved plan the gate is exactly what did not run (ADR 0289).
+	 * it ran, and on an unapproved plan the gate is exactly what did not run.
 	 */
 	it("refuses 25 on an unapproved plan, posting nothing", async () => {
 		const digest = await digestOf(DEFECTIVE_CHILD);

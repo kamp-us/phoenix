@@ -1,11 +1,11 @@
 /**
- * The one exit table the seven `ledger` verbs allocate from.
+ * The one exit table the ten `ledger` verbs allocate from.
  *
  * Three tiers, and the tier decides how a constant gets here rather than what it means:
  *
  * - `3`–`11` are `report`'s seats, reached through `build`'s re-exports so there is one hop, not two
  *   tables to keep level. `ALIGNED_GROUPS` records the claim under `BUILD_SEATS` — *not*
- *   `SHARED_SEATS`, which omits `BAD_SECTIONS`: three verbs here seat `4`, so under `SHARED_SEATS`
+ *   `SHARED_SEATS`, which omits `BAD_SECTIONS`: four verbs here seat `4`, so under `SHARED_SEATS`
  *   the checker would report `4` as a private code colliding with the base.
  * - `13`–`19` are `build`'s, **re-exported verbatim**, because this group asserts the identical fact
  *   (this session holds this issue's claim) and a caller driving both in one sweep must read one
@@ -54,7 +54,7 @@ export const REGION_UNRESOLVABLE = 22;
  *
  * Narrower and more useful than {@link WRITE_UNKNOWN} or {@link READBACK_MISMATCH}: the create is
  * proven and the *link* is unknown, so a named child exists unlinked. Fusing it into `8` would leave a
- * successor unable to tell "something may exist" from "#4302 exists and needs linking".
+ * successor unable to tell "something may exist" from "this named child exists and needs linking".
  */
 export const LINK_UNPROVEN = 23;
 /** Proven: the declared topology is invalid — a cycle, a dangling ref, or an unplaced child. */

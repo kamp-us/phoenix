@@ -5,7 +5,7 @@
  */
 
 import type {Cmd, Machine, Sub} from "@demlik/tea";
-import {type Effect, Schema, type Scope} from "effect";
+import {type Effect, type Option, Schema, type Scope} from "effect";
 // Type-only, so the commands slice's runtime dependency on this file stays one-directional.
 import type {AnySpell} from "../commands/spell.ts";
 import type {SubFailurePolicy} from "../sub-failure.ts";
@@ -16,20 +16,50 @@ export type ProgramId = typeof ProgramId.Type;
 
 /**
  * A public port: a nominal runtime kind plus a payload predicate, the shape spike #7379 routed on.
- * Not a schema system — the kind names the protocol, the predicate admits a payload. Only an
+ * Not a schema system — the kind names the protocol, the predicate admits a payload. What a graph
+ * route is decided by is the `schema` below where both ends publish one and the kind where either
+ * does not (ADR 0395, `./payload-fit.ts`); the predicate is still the only thing a payload is run
+ * against at delivery. Only an
  * in-port owns a queue, so only an in-port declares the bound (#7371: no unbounded queue by
  * default); an out-port is a name routes leave from. The routing itself is `src/ports/`.
  */
 export type PortSchema<T = unknown> = InPort<T> | OutPort<T>;
 
-export interface InPort<T = unknown> {
+/**
+ * The schema a port was declared over, as a row may publish it beside the predicate: no service
+ * requirements and an encoded form equal to the decoded one, because the `accepts` the kernel
+ * routes on is `Schema.is` of exactly this (`../authoring/port.ts`).
+ */
+export type PortPayloadSchema = Schema.Codec<any, any, never, unknown>;
+
+/**
+ * The payload schema `accepts` was built from, published so a `Program.shape` check can read this
+ * row structurally (#8887) — a predicate cannot be compared with another predicate. Nothing in
+ * the kernel routes on it; the predicate does. Optional because a hand-written row
+ * (`../ai-agent/ports/ports.ts`) has a predicate and no schema behind it, and such a row cannot
+ * fill a shaped arg until its ports are authored (#8887). On a compiled `port.request` this is
+ * the input schema — the one that arrives on the port.
+ */
+interface PublishedSchema {
+	readonly schema?: PortPayloadSchema;
+}
+
+export interface InPort<T = unknown> extends PublishedSchema {
 	readonly kind: string;
 	readonly direction: "in";
 	readonly accepts: (payload: unknown) => payload is T;
 	readonly bound: PortBound;
+	/**
+	 * The predicate an answer to this port must fit, present only on a port that answers its caller
+	 * — `port.request(In, Out)` in the authoring layer (#8716 R17.1). A request port arrives like any
+	 * other in-port, so it is one field here rather than a fourth `PortSchema` member every
+	 * `direction === "in"` reader would have to learn; its absence is what "this port answers
+	 * nothing" means, and an `ask` against such a port is refused (#8756).
+	 */
+	readonly answers?: (payload: unknown) => boolean;
 }
 
-export interface OutPort<T = unknown> {
+export interface OutPort<T = unknown> extends PublishedSchema {
 	readonly kind: string;
 	readonly direction: "out";
 	readonly accepts: (payload: unknown) => payload is T;
@@ -75,9 +105,19 @@ export type HostSubs<M, U extends Sub, E, R> = {
  */
 export type Receiver<M> = (payload: never) => M;
 
-export type RendererKind = "host-native" | "host-declarative" | "isolated-frame";
+export type RendererKind = "host-native" | "host-declarative" | "isolated-frame" | "module";
 
-/** A reference only. Rendering is not this epic's; the kernel stores the reference and reports it. */
+/**
+ * A reference only. Rendering is not this epic's; the kernel stores the reference and reports it.
+ *
+ * For every kind but one, `ref` is a name the page's own table answers to. For `kind: "module"`,
+ * `ref` is a module specifier the page loads (ADR 0359): a bare package entry such as
+ * `@csirin/tuval-calc/window`, resolved from the app root the way any import there is. The module's
+ * `default` export is the renderer, minted with `windowRenderer("module", …)`, and its `admits`
+ * export is the predicate over the state that renderer reads (ADR 0358). A row written by a package
+ * installed with `pnpm add` is then whole on its own: the kernel half runs from this row, and the
+ * page finds the window half by the same string, with no table edit in the app.
+ */
 export interface RendererRef {
 	readonly kind: RendererKind;
 	readonly ref: string;
@@ -178,7 +218,73 @@ export interface Program<
 	 * reads what the Msgs mean.
 	 */
 	readonly resume?: (state: S) => ReadonlyArray<M>;
+	/**
+	 * The lines this program derives off its own state, keyed by the out-port each is published on —
+	 * `title@1` and `status@1` today (`src/process/self-report.ts`).
+	 *
+	 * The kernel seeds a process's self-report latch from this at spawn, which is the only publisher
+	 * a restored process reaches (#8812). The latch is per-process runtime memory, a rehydrating
+	 * `init` may emit no Cmds, and the authored `update` publishes a line only on the transition
+	 * that moves it — so without this a restored process whose title is stable reads back as having
+	 * none, however long it runs.
+	 *
+	 * Pure and total, and asked once per spawn. A row that derives no line omits the field and pays
+	 * nothing on either path.
+	 */
+	readonly derivedLines?: (state: S) => Readonly<Record<string, string>>;
+	/**
+	 * What the kernel dispatches into every live process of this program when the config is re-read
+	 * and this row's replacement carries different settings (#7509 ruling 3).
+	 *
+	 * Read off the row a process is *running under*, and handed the reloaded row of the same id —
+	 * so a row that wants to diff its own settings has to publish them on itself, as
+	 * `claudeSession` publishes `settings` (`../claude/program.ts`). Pure and total: a row that
+	 * applies nothing live answers with an empty list, and the kernel never reads what the Msgs
+	 * mean. A row the reloaded config dropped is never asked, so its processes keep running under
+	 * the row they were spawned from.
+	 */
+	readonly configChanged?: (next: AnyProgram) => ReadonlyArray<M>;
+	/**
+	 * Whether this program could restore the raw checkpoint durability loaded for it — the same
+	 * verdict its `init` reaches, asked before `init` runs.
+	 *
+	 * `false` means the process boots on its own refusal, and durability holds the bytes for it: a
+	 * snapshot this refuses is never written over, so it stays on disk to be read and re-refused on
+	 * every later boot (`src/durability/Checkpoints.ts`, #8112). Without it the refusal was
+	 * one-shot — the state carrying it was saved straight back over the checkpoint it refused, and
+	 * the next boot restored that state with no failure on it. A row that omits the field restores
+	 * whatever loads, which is every program with no parse of its own.
+	 */
+	readonly restorable?: (raw: unknown) => boolean;
+	/**
+	 * How a snapshot written under an older version of this program becomes one this version can
+	 * restore, keyed by the version it was written under (#8907). An added field is then an ordinary
+	 * bump: the shell's 1.1.0 step fills `desk.boardOpen` from `initialDesk`, so a desk saved before
+	 * the field comes back with every window it had.
+	 *
+	 * A row that declares none, or whose steps do not reach this version from the one on disk, keeps
+	 * the old answer whole — the snapshot is refused, the process stays absent until a person
+	 * decides, and nothing is fresh-booted over it (`../durability/Checkpoints.ts`, #7467).
+	 */
+	readonly migrations?: Migrations;
+	/**
+	 * Whether a state of this program is worth a checkpoint. The host asks it at every save site,
+	 * and `false` writes nothing — so a program streaming a reply answers `false` for every
+	 * mid-turn state, pays no disk for the burst, and the state that ends the turn is the flush
+	 * (`src/host/actor.ts`, #8170). A state this refuses is one no restore ever reads back, which
+	 * is why the skipped write is not owed: a half-written reply must never come back as the reply.
+	 *
+	 * A row that omits it checkpoints every state, which is every program with nothing in flight.
+	 */
+	readonly checkpointWorthy?: (state: S) => boolean;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
+	/**
+	 * The service keys this program's args are read through, one per arg the author declared, keyed
+	 * by the arg's name (#8716 R15.1). Data only: an arg's value never rides the row — it rides the
+	 * row's existing `R`, provided by the Layer the config call builds when it fills the args
+	 * (`src/authoring/args.ts`). A row whose program declares none omits the field.
+	 */
+	readonly args?: Readonly<Record<string, string>>;
 	/**
 	 * The program takes keys the shell forwards from its focused window, as its own `key` Msg. Only
 	 * `true` or absent: a row that never asked for keys is never sent one, so a keystroke landing on
@@ -201,6 +307,23 @@ export interface Program<
 	readonly identity: DefinitionIdentity;
 	readonly placement: Placement;
 }
+
+/**
+ * One step of a snapshot's walk from the version it was written under to the one the program is
+ * now: what that version becomes, and the version the answer is written under. `none` declines the
+ * bytes — a shape this step did not expect is refused rather than handed on half-migrated.
+ *
+ * `to` is on the step because the chain is checked and not asserted (`../durability/migrations.ts`):
+ * a step left behind by a later bump no longer reaches the current version, so its snapshot is
+ * refused instead of arriving under a version nothing wrote it as.
+ */
+export interface Migration {
+	readonly to: string;
+	readonly migrate: (raw: unknown) => Option.Option<unknown>;
+}
+
+/** The steps a program declares, keyed by the version each one migrates *from*. */
+export type Migrations = Readonly<Record<string, Migration>>;
 
 /**
  * A row with its private types erased: what the registry stores and resolves, since one registry

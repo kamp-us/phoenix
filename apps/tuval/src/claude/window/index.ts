@@ -9,4 +9,4 @@
  */
 
 export {CLAUDE_CHAT_WINDOW_REF} from "../renderer-ref.ts";
-export {ClaudeChatWindow, claudeChatWindow, SessionLine, UsageLine} from "./ClaudeChatWindow.tsx";
+export {ClaudeChatWindow, claudeChatWindow} from "./ClaudeChatWindow.tsx";

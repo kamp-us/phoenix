@@ -56,7 +56,7 @@ export const runResolve = (
 			empty: `${VERB}: no rationale on stdin — a silent resolve discards an objection unauditably; write why.`,
 			bareAt: `${VERB}: the rationale is a bare "@" path reference — the text never arrived. Send its bytes on stdin.`,
 			leaked: (_count, first) =>
-				`${VERB}: the rationale carries a machine-local path at line ${first.line} (${first.class}) — cite it repo-relative (#4994's class routes to a human, see the shared section).`,
+				`${VERB}: the rationale carries a machine-local path at line ${first.line} (${first.class}) — cite it repo-relative.`,
 		});
 		if (authored._tag === "Refused") return authored.outcome;
 		const rationale = authored.text;

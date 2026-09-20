@@ -11,9 +11,6 @@
 		},
 		"packages/fabrika-pi": {
 			"component": "fabrika-pi"
-		},
-		"packages/fabrika-opencode": {
-			"component": "fabrika-opencode"
 		}
 	}
 }

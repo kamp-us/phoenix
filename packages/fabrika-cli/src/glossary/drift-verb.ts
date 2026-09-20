@@ -1,14 +1,7 @@
 /**
- * `glossary drift` — the surfaces that moved since a register last changed, and the candidate
- * coinages in them.
- *
- * **The three outcomes are disjoint by construction, and all three exit 0.** `bootstrap` is reachable
- * only from a directory that was *read* and holds no register (or one with zero rows); `clean` means
- * the range was computed and every candidate was suppressed; `drift` means one survived. A `--dir`
- * that could not be read is `11`, and a `--paths` matching nothing is `7` — answering `clean` there
- * is exactly how v1 reported "no drift" forever against a layout the repo did not have (#4776).
- *
- * This verb reports; it never reds a merge (ADR 0128).
+ * `glossary drift` reports changed files and candidate terms.
+ * A failed directory read or unmatched path set must never become a clean result.
+ * See `glossary drift --help` for the answer and refusal contract.
  */
 
 import type {FileSystem} from "effect";
@@ -107,7 +100,7 @@ export const runDrift = (options: DriftOptions): DriftEffect<VerbOutcome> =>
 			if (tracked.value.length === 0) {
 				return refuse(
 					ZERO_SCOPE,
-					`${VERB}: --paths ${options.paths} matched 0 tracked files — refusing to report a clean sweep of nothing (ADR 0092).`,
+					`${VERB}: --paths ${options.paths} matched 0 tracked files — refusing to report a clean sweep of nothing.`,
 				);
 			}
 		}

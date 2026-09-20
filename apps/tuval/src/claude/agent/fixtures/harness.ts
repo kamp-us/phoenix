@@ -3,7 +3,7 @@
  * the whole thing inside one Scope so a run's end is the teardown the layer owes.
  */
 
-import type {SDKMessage, SessionMessage} from "@anthropic-ai/claude-agent-sdk";
+import type {SDKMessage, SDKSessionInfo, SessionMessage} from "@anthropic-ai/claude-agent-sdk";
 import {Effect, Layer, Schema} from "effect";
 import {Mode} from "../../../ai-agent/ports/index.ts";
 import {TuvalAiAgent, type TuvalAiAgentApi} from "../../../ai-agent/service/index.ts";
@@ -25,11 +25,15 @@ export const MODES: ReadonlyArray<Mode> = [
 	Mode.make("plan"),
 ];
 
-/** What `start` itself emits: starting, the handshake's ready phase, then the mode list. */
-export const START_EVENTS = 3;
+/**
+ * What `start` itself emits: starting, the mode list, the model list (#7981), the slash-command
+ * catalog (#8060), the thinking-level set that model offers (#8062), and the handshake's `ready`
+ * last — behind the catalogs, never ahead of them (#8425).
+ */
+export const START_EVENTS = 6;
 
 /**
- * Those three plus the one event the `system`/`init` frame carries: the model it names.
+ * Those plus the one event the `system`/`init` frame carries: the model it names.
  *
  * That one is not part of `start` — the frame belongs to the first turn (`sdk.d.ts`), so on a
  * scripted run whose `opening` begins with `init` the pump emits it just after, and a test that
@@ -55,6 +59,10 @@ export interface HarnessOptions extends ScriptedBehaviour {
 	readonly opening?: ReadonlyArray<SDKMessage>;
 	readonly rows?: ReadonlyArray<SessionMessage>;
 	readonly readFails?: Error;
+	readonly openFails?: Error;
+	readonly openFailsAt?: number;
+	readonly sessions?: ReadonlyArray<SDKSessionInfo>;
+	readonly listFails?: Error;
 	readonly spawn?: SpawnClaudeCodeProcess;
 	readonly allowedTools?: ReadonlyArray<string>;
 	readonly model?: string;
@@ -103,9 +111,27 @@ export const on = <A, E>(
 			opening: harness.opening ?? [],
 			...(harness.rows === undefined ? {} : {rows: harness.rows}),
 			...(harness.readFails === undefined ? {} : {readFails: harness.readFails}),
+			...(harness.openFails === undefined ? {} : {openFails: harness.openFails}),
+			...(harness.openFailsAt === undefined ? {} : {openFailsAt: harness.openFailsAt}),
+			...(harness.sessions === undefined ? {} : {sessions: harness.sessions}),
+			...(harness.listFails === undefined ? {} : {listFails: harness.listFails}),
 			...(harness.version === undefined ? {} : {version: harness.version}),
 			...(harness.deferOpening === undefined ? {} : {deferOpening: harness.deferOpening}),
 			...(harness.endsAtOnce === undefined ? {} : {endsAtOnce: harness.endsAtOnce}),
+			...(harness.models === undefined ? {} : {models: harness.models}),
+			...(harness.runningModel === undefined ? {} : {runningModel: harness.runningModel}),
+			...(harness.contextFails === undefined ? {} : {contextFails: harness.contextFails}),
+			...(harness.modelSwitchFails === undefined
+				? {}
+				: {modelSwitchFails: harness.modelSwitchFails}),
+			...(harness.catalogFails === undefined ? {} : {catalogFails: harness.catalogFails}),
+			...(harness.commands === undefined ? {} : {commands: harness.commands}),
+			...(harness.commandsFail === undefined ? {} : {commandsFail: harness.commandsFail}),
+			...(harness.interruptFails === undefined ? {} : {interruptFails: harness.interruptFails}),
+			...(harness.account === undefined ? {} : {account: harness.account}),
+			...(harness.effortSwitchFails === undefined
+				? {}
+				: {effortSwitchFails: harness.effortSwitchFails}),
 		});
 		return Effect.gen(function* () {
 			const agent = yield* TuvalAiAgent;

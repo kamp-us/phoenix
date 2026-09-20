@@ -14,7 +14,7 @@ import type {ProcessId} from "../../process/process.ts";
 import type {WindowId} from "../window/host.ts";
 import {flatten, type PickerEntries, type PickerEntry} from "./entries.ts";
 import {refusalMessage} from "./refusal.ts";
-import {cursorOf, type PickerView} from "./view.ts";
+import {cursorOf, type PickerView, visibleFor} from "./view.ts";
 
 /**
  * The role tokens the picker paints in, by name. Dark is the only scheme the shell has: Tuval is a
@@ -47,6 +47,12 @@ export interface PickerOption {
 	readonly selected: boolean;
 	/** The highlight as a character, so selection is never carried by colour alone. */
 	readonly marker: string;
+	/**
+	 * This option's index into `flatten(entries)` — the argument `pickerPointer` takes, so a surface
+	 * binding a pointer event reads the row number off the frame instead of re-deriving the offset
+	 * its section starts at.
+	 */
+	readonly index: number;
 	readonly entry: PickerEntry;
 }
 
@@ -61,11 +67,47 @@ export interface PickerGroup {
 
 /**
  * The refusal channel. An `alert` interrupts because the user just acted and nothing happened;
- * `status` does not, because it is only ever the count.
+ * `status` does not, because it is only ever the count. That split is the whole of the rule that
+ * the filter's count never reaches the assertive channel — an `alert` is a refusal and nothing else.
  */
 export type PickerAnnouncement =
-	| {readonly role: "status"; readonly live: "polite"; readonly text: string}
+	| {
+			readonly role: "status";
+			readonly live: "polite";
+			/** WCAG 2.2 SC 4.1.3: the count is read whole, never as the characters that changed. */
+			readonly atomic: true;
+			readonly text: string;
+			/**
+			 * The two region ids the surface writes into by turns, so a count that did not change is
+			 * still announced (the GOV.UK status technique). `null` is one static region, which is what
+			 * a picker nobody is filtering needs.
+			 */
+			readonly alternates: readonly [string, string] | null;
+	  }
 	| {readonly role: "alert"; readonly live: "assertive"; readonly text: string};
+
+/**
+ * The filter input at the top of the list, once `/` has opened it. `null` until then.
+ *
+ * It is a combobox and not a bare text field, because while it exists it is the element that holds
+ * DOM focus — and `aria-activedescendant` is announced only off the focused element (#7499). So the
+ * highlight moves with the combobox's own `aria-activedescendant`, `controls` names the listbox it
+ * points into, and the listbox goes back to carrying it the moment Escape closes this.
+ */
+export interface PickerFilterFrame {
+	readonly role: "combobox";
+	readonly id: string;
+	readonly label: string;
+	readonly placeholder: string;
+	readonly value: string;
+	readonly expanded: true;
+	readonly autocomplete: "list";
+	/** The listbox this filter's highlight walks. */
+	readonly controls: string;
+	/** How many of the picker's rows this query left, and how many there were. */
+	readonly matches: number;
+	readonly total: number;
+}
 
 export interface PickerFrame {
 	readonly role: "listbox";
@@ -73,6 +115,7 @@ export interface PickerFrame {
 	readonly label: string;
 	readonly windowId: WindowId;
 	readonly activeDescendant: string | null;
+	readonly filter: PickerFilterFrame | null;
 	readonly groups: ReadonlyArray<PickerGroup>;
 	readonly announcement: PickerAnnouncement;
 	readonly theme: PickerTheme;
@@ -83,6 +126,12 @@ export interface PickerFrame {
 export interface PickerFrameOptions {
 	/** The user's `prefers-reduced-motion`. Unknown is `true`: the safe answer is the still one. */
 	readonly reducedMotion?: boolean;
+	/**
+	 * The operator's `processRemove` flag (`../../features.ts`, #9447). It decides one row of
+	 * `keyHelp` and nothing else: a desk whose `d` key does not exist must not offer it, and a desk
+	 * whose does must say so, because a key nothing names is a key nobody finds.
+	 */
+	readonly processRemove?: boolean;
 }
 
 const themeFor = (options: PickerFrameOptions | undefined): PickerTheme => ({
@@ -114,11 +163,25 @@ const detailOf = (entry: PickerEntry): string =>
 		: `${entry.processId}${entry.parentId === null ? "" : ` ← ${entry.parentId}`}`;
 
 const KEY_HELP = [
-	{keys: "↑ ↓ / k j", action: "Move between rows"},
+	{keys: "↑ ↓ or k j", action: "Move between rows"},
 	{keys: "Home / End", action: "Jump to the first or last row"},
+	{keys: "/", action: "Filter the rows by typing"},
 	{keys: "Enter", action: "Open or attach the highlighted row"},
-	{keys: "Escape", action: "Dismiss the message"},
 ] as const;
+
+/** The help for the one key a flag adds (`./view.ts`, `REMOVE`). */
+const REMOVE_HELP = {keys: "d", action: "Remove the highlighted process and forget it durably"};
+
+/** Escape's help is the one row that reads off the view: it says what the key will actually do. */
+const escapeHelp = (view: PickerView) => ({
+	keys: "Escape",
+	action:
+		view.filter !== null
+			? "Close the filter and show every row"
+			: view.previous === null
+				? "Dismiss the message"
+				: "Return to the process this window was showing",
+});
 
 /**
  * The frame for one mount. Pure over `entries` and `view`: the same pair always renders the same
@@ -130,7 +193,8 @@ export const pickerFrame = (
 	view: PickerView,
 	options?: PickerFrameOptions,
 ): PickerFrame => {
-	const rows = flatten(entries);
+	const visible = visibleFor(entries, view);
+	const rows = flatten(visible);
 	const at = cursorOf(entries, view);
 	const optionId = (index: number) => `picker-${windowId}-option-${index}`;
 
@@ -145,38 +209,74 @@ export const pickerFrame = (
 				detail: detailOf(entry),
 				selected,
 				marker: selected ? "▸" : " ",
+				index: absolute,
 				entry,
 			};
 		});
 
+	const filtering = view.filter !== null;
 	const groups: ReadonlyArray<PickerGroup> = [
 		{
 			role: "group",
 			id: `picker-${windowId}-programs`,
 			label: "Programs",
-			options: optionsFrom(entries.programs, 0),
+			options: optionsFrom(visible.programs, 0),
 			emptyMessage:
-				entries.programs.length === 0 ? "No registered program can fill a window." : null,
+				visible.programs.length > 0
+					? null
+					: filtering
+						? "No program matches this filter."
+						: "No registered program can fill a window.",
 		},
 		{
 			role: "group",
 			id: `picker-${windowId}-processes`,
 			label: "Running processes",
-			options: optionsFrom(entries.processes, entries.programs.length),
-			emptyMessage: entries.processes.length === 0 ? "Nothing is running to attach to." : null,
+			options: optionsFrom(visible.processes, visible.programs.length),
+			emptyMessage:
+				visible.processes.length > 0
+					? null
+					: filtering
+						? "No running process matches this filter."
+						: "Nothing is running to attach to.",
 		},
 	];
 
+	const total = flatten(entries).length;
+	const counts = `${entries.programs.length} program${
+		entries.programs.length === 1 ? "" : "s"
+	}, ${entries.processes.length} running process${entries.processes.length === 1 ? "" : "es"}.`;
+	const matchCount =
+		rows.length === 0 ? "No windows match this filter." : `${rows.length} of ${total} windows`;
+
 	const announcement: PickerAnnouncement =
-		view.refusal === null
-			? {
+		view.refusal !== null
+			? {role: "alert", live: "assertive", text: refusalMessage(view.refusal)}
+			: {
 					role: "status",
 					live: "polite",
-					text: `${entries.programs.length} program${entries.programs.length === 1 ? "" : "s"}, ${
-						entries.processes.length
-					} running process${entries.processes.length === 1 ? "" : "es"}.`,
-				}
-			: {role: "alert", live: "assertive", text: refusalMessage(view.refusal)};
+					atomic: true,
+					text: filtering ? matchCount : counts,
+					alternates: filtering
+						? [`picker-${windowId}-status-a`, `picker-${windowId}-status-b`]
+						: null,
+				};
+
+	const filter: PickerFilterFrame | null =
+		view.filter === null
+			? null
+			: {
+					role: "combobox",
+					id: `picker-${windowId}-filter`,
+					label: "Filter rows by name",
+					placeholder: "Type to narrow",
+					value: view.filter,
+					expanded: true,
+					autocomplete: "list",
+					controls: `picker-${windowId}`,
+					matches: rows.length,
+					total,
+				};
 
 	return {
 		role: "listbox",
@@ -184,9 +284,14 @@ export const pickerFrame = (
 		label: "Open a program or attach a running process",
 		windowId,
 		activeDescendant: rows.length === 0 ? null : optionId(at),
+		filter,
 		groups,
 		announcement,
 		theme: themeFor(options),
-		keyHelp: [...KEY_HELP],
+		keyHelp: [
+			...KEY_HELP,
+			...(options?.processRemove === true ? [REMOVE_HELP] : []),
+			escapeHelp(view),
+		],
 	};
 };

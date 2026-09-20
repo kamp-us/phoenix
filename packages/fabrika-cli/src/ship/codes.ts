@@ -1,17 +1,7 @@
 /**
- * The one exit table every `ship` verb allocates from, so a code means one thing across this group
- * whichever verb produced it.
- *
- * **Every seat this group shares is imported, never re-typed as a numeral.** `3`, `5`, `6`, `7`,
- * `8`, `9`, `10` and `11` come from `../exit-codes.ts` and `../triage/codes.ts`; `12` and `13`
- * come from `../review/codes.ts` and `23` from `../plan/codes.ts`, whose meanings this group holds
- * unchanged. A restated numeral is a second source that can drift silently; an import cannot.
- *
- * `16` and `17` are this group's own proven refusals, and they sit above `review`'s private band on
- * purpose — `14`/`15` are `review`'s ACL and append-only seats, meanings no verb here performs, so a
- * row for either would be a meaning this group does not have.
- *
- * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
+ * Exit allocations for ship. See ./command.ts help for caller semantics.
+ * Shared meanings stay imported so their values cannot drift.
+ * Review's ACL and append-only allocations stay unused here; ship performs neither.
  */
 
 import {
@@ -23,6 +13,7 @@ import {
 	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
 	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
 } from "../exit-codes.ts";
+import {PRIMARY_CHECKOUT as LANE_PRIMARY_CHECKOUT} from "../lane/codes.ts";
 import {LABEL_ABSENT as PLAN_LABEL_ABSENT} from "../plan/codes.ts";
 import {
 	INCOMPLETE_SCAN as REVIEW_INCOMPLETE_SCAN,
@@ -30,39 +21,30 @@ import {
 } from "../review/codes.ts";
 import {OFF_VOCABULARY as TRIAGE_OFF_VOCABULARY} from "../triage/codes.ts";
 
-/** Stdin was read and held nothing — `ship resolve`, `ship note`. */
 export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
-/** The **authored** text carries a machine-local path. */
 export const LEAKED_PATH = SHARED_LEAKED_PATH;
-/** The **authored** text is a bare `@` path reference — not redactable, so a second code. */
 export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 /**
  * Zero scope: the target is **proven absent (404)**, the PR is closed/draft where the verb requires
- * an open one, or it has zero changed files (ADR 0092).
+ * an open one, or it has zero changed files — a gate with nothing to judge refuses, never passes.
  *
  * *Proven* is the operative word — a 404 is a fact about the repository, an unreachable GitHub is
  * not a fact about anything and lands on {@link PRECONDITION_UNKNOWN}.
  */
 export const ZERO_SCOPE = SHARED_NO_TARGET;
-/** The write, or the read that confirms it, failed — the outcome is **UNKNOWN**. */
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
-/** The write landed but the read-back does not match. */
 export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
-/** A supplied classification value is off the closed vocabulary — a `--require`, a `--site`. */
 export const OFF_VOCABULARY = TRIAGE_OFF_VOCABULARY;
-/** A precondition read failed — nothing was proven and (for a write) nothing was written. */
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
-/** Refused: the live head moved past the inspected `--sha` — `review`'s seat, same meaning. */
 export const STALE_HEAD = REVIEW_STALE_HEAD;
-/** Refused: a read completed but its scope is **provably incomplete** — `review`'s seat. */
 export const INCOMPLETE_SCAN = REVIEW_INCOMPLETE_SCAN;
 
 /**
  * Refused: the target is **proven not in the state this write acts on** — nothing was mutated.
  *
  * Neither {@link ZERO_SCOPE} (the target exists) nor {@link PRECONDITION_UNKNOWN} (nothing failed).
- * It is #4816 made structural: the verb that mutates re-derives its own precondition and declines.
+ * It is structural: the verb that mutates re-derives its own precondition and declines.
  */
 export const PROVEN_NOT_IN_STATE = 16;
 /**
@@ -75,7 +57,7 @@ export const NUDGE_REOPEN_UNCONFIRMED = 17;
 
 /**
  * Refused: the diff touches a governance root and its `governance` verdict is **not** a head-bound
- * PASS — `absent`, `stale` or `fail` (`ship floor`, #5408).
+ * PASS — `absent`, `stale` or `fail` (`ship floor`).
  *
  * Its own seat rather than a fold into {@link PROVEN_NOT_IN_STATE}, because a CI job keys on it: this
  * is the one refusal a red check means "a human owes this PR a governance verdict", and every other
@@ -90,12 +72,12 @@ export const GOVERNANCE_FLOOR_UNMET = 18;
  * spends on the queue-governed base: those two refusals route opposite ways. A queue-governed base
  * sends the run onward to `ship enqueue`; a repository with squash, merge-commit and rebase all
  * disabled sends it to a human with repository-settings access and ends the lane there. One code
- * carrying both would make the caller parse a message to know which (#6018).
+ * carrying both would make the caller parse a message to know which.
  */
 export const NO_LANDING_METHOD = 19;
 
 /**
- * Refused: a label this run would POST is absent from the repository's taxonomy (#4285).
+ * Refused: a label this run would POST is absent from the repository's taxonomy.
  *
  * `plan`'s seat, imported, under `plan`'s own rule — *import a code when two groups prove the same
  * fact*. `plan flip` and `ship release` prove one fact here, on one board, over the same taxonomy:
@@ -110,13 +92,42 @@ export const LABEL_ABSENT = PLAN_LABEL_ABSENT;
 
 /**
  * Refused: every check run at the head passed and **not one workflow this repo authors produced a
- * run there**, so no gate of the repo's own inspected the bytes `ship` would merge (#6915).
+ * run there**, so no gate of the repo's own inspected the bytes `ship` would merge.
  *
  * `review`'s `16` proves the same fact, and this group does not import it: `16` here is
  * {@link PROVEN_NOT_IN_STATE}, a meaning `ship` allocated first, so the two groups seat one fact on
  * two numbers rather than one number on two meanings.
  */
 export const NO_GATE_COVERAGE = 20;
+
+/**
+ * Refused: the PR's base moved under it and the merge now **conflicts** — a definite
+ * `mergeable_state: dirty`, nothing was armed.
+ *
+ * Its own seat rather than a fold into {@link PROVEN_NOT_IN_STATE}, because the two route the lane
+ * to different budgets. Every other definite not-mergeable read is a fact about the head, so it is
+ * the repair round the retry budget exists to bound; a conflicted base is the pipeline's own
+ * machinery, so it spends a machinery lap instead. A shipper that had to tell the two apart by
+ * grepping the refusal's prose would be parsing a message to pick a budget.
+ *
+ * A re-review is still owed — a dirty base moves the merge-base blob every verdict's content digest
+ * covers (`../review/content-binding.ts`), so every verdict on the PR is void. This code changes
+ * what the round *costs*, never whether it happens.
+ */
+export const BASE_CONFLICTED = 21;
+
+/**
+ * Refused: the verb is standing in the repository's **main working tree** — the driver's own
+ * checkout rather than a worktree of the shipper's own.
+ *
+ * `lane`'s seat, imported, under this group's stated rule — *import a code when two groups prove the
+ * same fact*. The fact is one fact read one way: `standingInLinkedWorktree` in `../lane/assembly.ts`,
+ * git's `--git-dir` / `--git-common-dir` pair. `lane push` spends it on an assembly write aimed at
+ * the shared checkout; `ship scope` spends it on a shipper that never got the worktree its spawn
+ * asked for. `lane`'s documented reading — *the branch is in the wrong tree* — is the shipper's
+ * failure exactly, so a numeral minted here would be a second source for one fact.
+ */
+export const PRIMARY_CHECKOUT = LANE_PRIMARY_CHECKOUT;
 
 /**
  * The unallocated codes. `4` is `report file`'s body-section seat and `14`/`15` are `review`'s ACL

@@ -1,6 +1,6 @@
 /**
  * The pure rule behind `guard settings-env-guard check`, ported from the v1 CLI's
- * `settings-env-guard.unit.test.ts` (#2495). The cases carried across are the two real regression
+ * `settings-env-guard.unit.test.ts`. The cases carried across are the two real regression
  * values and the shape boundary — braced expands, bare `$VAR` does not.
  */
 // biome-ignore-all lint/suspicious/noTemplateCurlyInString: the unexpanded brace token is the fixture under test; every case here must spell one in a plain string.
@@ -65,6 +65,6 @@ describe("expansionReport", () => {
 		const report = expansionReport(VERB, [{key: "KAMPUS_PIPELINE_DATA", value: "${X}/.pipeline"}]);
 		expect(report).toContain("KAMPUS_PIPELINE_DATA = ${X}/.pipeline");
 		expect(report).toContain("VERBATIM");
-		expect(report).toContain("#2495");
+		expect(report).toContain("$CLAUDE_PROJECT_DIR");
 	});
 });

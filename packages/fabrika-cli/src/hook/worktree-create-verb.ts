@@ -1,22 +1,21 @@
 /**
- * `hook worktree-create` — the provider verb behind phoenix's `WorktreeCreate` hook.
+ * `hook worktree-create` — the provider verb behind a repo's `WorktreeCreate` hook.
  *
  * It exists because the harness's own worktree path leaves the tree **dep-less**. That path execs
- * git hooks with a stripped `PATH`, so lefthook's `post-checkout` `bootstrap-deps` finds no
- * corepack, no pinned pnpm and no npm, and clean-SKIPs at exit 0 (ADR 0109 §3) — a silent skip that
- * is byte-identical, from the outside, to a successful install. Every `isolation: worktree` shell
- * then pays an install before its first verb, or fails at exit 126 on it (#7220).
+ * git hooks with a stripped `PATH`, so the repo's `post-checkout` install finds no corepack, no
+ * pinned pnpm and no npm, and clean-SKIPs at exit 0 — a silent skip that is byte-identical, from the
+ * outside, to a successful install. Every `isolation: worktree` shell then pays an install before
+ * its first verb, or fails at exit 126 on it.
  *
  * A `WorktreeCreate` hook **replaces** that path, and that is the whole mechanism: this verb runs
  * `git worktree add` itself, under a `PATH` that resolves the toolchain and a 600s hook budget, so
- * the same `bootstrap-deps` install ADR 0109 already owns actually runs. Nothing about *how* deps
- * are installed changes — only who triggers it and with what environment (ADR 0178, rehomed by ADR
- * 0337).
+ * the repo's own `post-checkout` install actually runs. Nothing about *how* deps are installed
+ * changes — only who triggers it and with what environment.
  *
  * **Every failure arm refuses, and a refusal blocks the spawn.** That is deliberate: the harness
  * reads any non-zero exit as a creation failure and does not fall back to git, so a blocked spawn is
- * the only honest alternative to handing an agent a tree this verb could not finish (ADR 0092). The
- * last arm is the one that makes the guarantee real — `git worktree add` succeeding proves nothing
+ * the only honest alternative to handing an agent a tree this verb could not finish. The last arm
+ * is the one that makes the guarantee real — `git worktree add` succeeding proves nothing
  * about the install, so the deps are checked as an artifact before any path is emitted.
  */
 import {randomUUID} from "node:crypto";
@@ -47,7 +46,10 @@ import {
 	isCommitId,
 	planWorktree,
 	pruneWorktreesArgs,
+	REAP_LIMIT,
+	REAP_TIMEOUT_SECONDS,
 	RECOVERY_ATTEMPTS,
+	reapArgs,
 	recoveryBackoffMs,
 	resolveBaseArgs,
 	type WorktreePlan,
@@ -60,14 +62,22 @@ const EVENT = "WorktreeCreate";
 export const GIT_TIMEOUT_SECONDS = 540;
 const CAPTURE_BYTES = 64 * 1024;
 
-/** The proof deps landed. `bootstrap-deps` writes the virtual store; a clean SKIP writes nothing. */
+/** The proof deps landed. The install writes the virtual store; a clean SKIP writes nothing. */
 const VIRTUAL_STORE = "node_modules/.pnpm";
+
+/** How to re-enter this CLI as a child — the node binary running now, and its own entry module. */
+export interface CliEntry {
+	readonly node: string;
+	readonly entry: string;
+}
 
 export interface WorktreeCreateOptions {
 	readonly stdin: Effect.Effect<StdinRead>;
 	/** Plan and report, mutate nothing. The declared hook can never pass it — rule 5 forbids flags. */
 	readonly dryRun: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** `null` skips the reap-before-provision sweep — a process that cannot name its own entrypoint. */
+	readonly cli: CliEntry | null;
 }
 
 type Requirements = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem;
@@ -100,7 +110,7 @@ const succeeded = (outcome: ChildOutcome): boolean =>
  * A timed-out run classifies as nothing for the same reason, and it is the arm that pays worst for
  * getting this wrong: one timed-out command spends {@link GIT_TIMEOUT_SECONDS} of the hook's 600s
  * budget, so a second attempt cannot finish inside what is left and the hook is killed partway
- * through it, losing the refusal it would have emitted at once (#7408). Whatever stderr it captured
+ * through it, losing the refusal it would have emitted at once. Whatever stderr it captured
  * before the clock ran out, a command that never exited is not evidence of a transient sibling
  * window. {@link describeOutcome} renders it as the timeout it was.
  */
@@ -196,13 +206,13 @@ const baseBranch = (
  * The fetch is not a courtesy. The primary checkout's `origin/main` only advances on an explicit
  * fetch and nothing fetches per spawn, so branching off the cached tip bases a lane on state missing
  * a sibling lane's just-merged commit — two lanes then both go green in isolation and collide at
- * ship time, or one silently reverts the other (#3620/#3678). So the base is what *this* fetch just
+ * ship time, or one silently reverts the other. So the base is what *this* fetch just
  * wrote, never a remote-tracking ref somebody else's fetch maintains, and the fetch still never
  * moves the primary's local `main`.
  *
  * What it is not is `FETCH_HEAD`. That name is shared by every spawn of this clone, so the base
  * travelled through a file a sibling's fetch could truncate mid-read, and the loser's spawn died on
- * `fatal: invalid reference: FETCH_HEAD` (#6081). It lands in a per-spawn ref instead, is resolved to
+ * `fatal: invalid reference: FETCH_HEAD`. It lands in a per-spawn ref instead, is resolved to
  * a commit id, and the ref is dropped before the slow `git worktree add` — so nothing this verb
  * branches from has a name another process can write.
  *
@@ -278,7 +288,7 @@ const provision = (
 		if (!provisioned) {
 			return refuse(
 				DEPS_NOT_PROVISIONED,
-				`${VERB}: ${plan.worktreePath} has no ${VIRTUAL_STORE} — bootstrap-deps skipped or failed, so the tree would arrive dep-less (ADR 0109 §3)`,
+				`${VERB}: ${plan.worktreePath} has no ${VIRTUAL_STORE} — the post-checkout install skipped or failed, so the tree would arrive dep-less`,
 				[`${VERB}: remove the half-built tree with \`git worktree remove ${plan.worktreePath}\``],
 			);
 		}
@@ -288,10 +298,70 @@ const provision = (
 		]);
 	});
 
+/**
+ * Reclaim what this clone can before the tree is provisioned, and report what happened.
+ *
+ * The answer is a stderr line and never a refusal — see {@link REAP_LIMIT}'s note: a reclaimer that
+ * could block a spawn would turn a housekeeping miss into the total stop it exists to prevent. So
+ * every outcome, including a sweep the timeout cut off, folds into one line here.
+ *
+ * The sweep's own verdicts are `build reap`'s and are not re-derived: what this reports is only
+ * whether it ran.
+ */
+const reapFirst = (
+	cli: CliEntry | null,
+	repoRoot: string,
+	env: Record<string, string>,
+): Effect.Effect<ReadonlyArray<string>, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		if (cli === null) {
+			return [
+				`${VERB}: reaped nothing before provisioning — this process cannot name its own entrypoint.`,
+			];
+		}
+		const swept = yield* execRecord({
+			file: cli.node,
+			args: reapArgs(cli.entry),
+			cwd: repoRoot,
+			env,
+			timeoutSeconds: REAP_TIMEOUT_SECONDS,
+			captureBytes: CAPTURE_BYTES,
+		});
+		return succeeded(swept)
+			? [`${VERB}: reaped before provisioning — ${lastLine(swept)}`]
+			: [
+					`${VERB}: the reap before provisioning did not finish — ${describeSweep(swept)}. The spawn is unaffected and the sweep re-runs on the next one.`,
+				];
+	});
+
+/**
+ * Why the sweep did not finish, in its own terms.
+ *
+ * Not {@link describeOutcome}: that one names git and quotes the git children's budget, and this
+ * child is neither — a line saying `git did not finish within 540s` about a 120s node run sends its
+ * reader to the wrong process and the wrong clock.
+ */
+const describeSweep = (outcome: ChildOutcome): string => {
+	if (outcome._tag === "Unstartable") return `the sweep could not start — ${outcome.reason}`;
+	if (outcome.timedOut) return `it ran past its ${REAP_TIMEOUT_SECONDS}s bound and was cut off`;
+	return firstLine(outcome.stderr) || `it exited ${outcome.exitCode}`;
+};
+
+/** A child's last stderr line — for `build reap`, the sweep's own count of what it did. */
+const lastLine = (outcome: ChildOutcome): string => {
+	if (outcome._tag !== "Ran") return "the sweep reported nothing";
+	const lines = new TextDecoder()
+		.decode(outcome.stderr)
+		.split("\n")
+		.filter((line) => line.trim() !== "");
+	return lines.at(-1) ?? "the sweep reported nothing";
+};
+
 export const runWorktreeCreate = ({
 	stdin,
 	dryRun,
 	env,
+	cli,
 }: WorktreeCreateOptions): Effect.Effect<VerbOutcome, never, Requirements> =>
 	Effect.gen(function* () {
 		const read = readEnvelope(yield* stdin);
@@ -323,7 +393,9 @@ export const runWorktreeCreate = ({
 		if (dryRun) return answer(planned.plan.worktreePath, [scope]);
 
 		const nonce = randomUUID().replaceAll("-", "").slice(0, 12);
-		return yield* provision(planned.plan, childEnv(env), nonce).pipe(
-			Effect.map((outcome) => ({...outcome, stderr: [scope, ...outcome.stderr]})),
+		const child = childEnv(env);
+		const swept = yield* reapFirst(cli, planned.plan.repoRoot, child);
+		return yield* provision(planned.plan, child, nonce).pipe(
+			Effect.map((outcome) => ({...outcome, stderr: [scope, ...swept, ...outcome.stderr]})),
 		);
 	});

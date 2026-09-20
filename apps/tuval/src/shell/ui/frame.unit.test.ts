@@ -1,7 +1,11 @@
 import {describe, expect, it} from "vitest";
+import {ProcessId} from "../../process/process.ts";
+import type {ShellState} from "../core/index.ts";
 import {applyMsg} from "../core/index.ts";
+import type {Key} from "../keys/index.ts";
 import {defaultPrefixTable} from "../keys/index.ts";
 import {createStack, createTree, createWindow, SIZE_TOLERANCE} from "../layout/index.ts";
+import {delivered, processGone} from "../window/host.ts";
 import {deskWith, threeWindowDesk, threeWindowTree} from "./fixtures.ts";
 import {
 	defaultLayoutOf,
@@ -9,37 +13,60 @@ import {
 	panelWindows,
 	routerPrefix,
 	sameLayout,
+	shellOwnsKey,
 	statusFrame,
-	surfaceKey,
 	zoomedWindow,
 } from "./frame.ts";
+import {refused, replyIn, replyOf} from "./press.ts";
 
 const table = defaultPrefixTable;
-const prefixPress = {key: "b", ctrlKey: true};
+const prefixPress: Key = {key: "b", ctrlKey: true};
 
-describe("surfaceKey", () => {
-	it("hands an unprefixed key to the focused window and nothing else", () => {
-		const answer = surfaceKey(table, routerPrefix(threeWindowDesk()), {key: "j"});
-		expect(answer).toEqual({_tag: "ToWindow", key: "j"});
+describe("shellOwnsKey", () => {
+	it("takes the prefix key from an idle prefix, and leaves every other key alone", () => {
+		const idleDesk = routerPrefix(threeWindowDesk());
+		expect(shellOwnsKey(table, idleDesk, prefixPress)).toBe(true);
+		expect(shellOwnsKey(table, idleDesk, {key: "j"})).toBe(false);
 	});
 
-	it("opens the command line on `prefix :`, and only after the prefix", () => {
-		const idle = threeWindowDesk();
-		expect(surfaceKey(table, routerPrefix(idle), {key: ":"})).toEqual({_tag: "ToWindow", key: ":"});
-
-		const [armed] = applyMsg(table, idle, {type: "keys.press", key: prefixPress});
-		expect(surfaceKey(table, routerPrefix(armed), {key: ":"})).toEqual({_tag: "OpenCommandLine"});
-	});
-
-	it("keeps every other bound sequence the shell's, naming the command it resolved", () => {
+	it("takes every key while the prefix is armed, bound or not", () => {
 		const [armed] = applyMsg(table, threeWindowDesk(), {type: "keys.press", key: prefixPress});
-		const answer = surfaceKey(table, routerPrefix(armed), {key: "|"});
-		expect(answer).toEqual({_tag: "Shell", command: "window:split-vertical"});
+		expect(shellOwnsKey(table, routerPrefix(armed), {key: "|"})).toBe(true);
+		expect(shellOwnsKey(table, routerPrefix(armed), {key: "q"})).toBe(true);
+	});
+});
+
+describe("the kernel's answer to one press", () => {
+	const pressed = (state: ShellState, key: Key, pressId: string): ShellState =>
+		applyMsg(table, state, {type: "keys.press", key, pressId})[0];
+
+	it("reads the answer to this page's own press off the state the acknowledgement carried", () => {
+		const armed = pressed(threeWindowDesk(), prefixPress, "page-1");
+		expect(replyIn("page-1", armed)).toEqual({_tag: "Consumed"});
+
+		const commanded = pressed(armed, {key: "h"}, "page-2");
+		expect(replyIn("page-2", commanded)).toEqual({_tag: "Command", name: "window:focus-left"});
+
+		const forwarded = pressed(commanded, {key: "j"}, "page-3");
+		expect(replyIn("page-3", forwarded)).toEqual({_tag: "ToWindow", key: "j"});
 	});
 
-	it("answers the same way the core routes: arming names no command", () => {
-		const answer = surfaceKey(table, routerPrefix(threeWindowDesk()), prefixPress);
-		expect(answer).toEqual({_tag: "Shell", command: null});
+	// A second page on the same shell writes `lastPress` too. Reading its answer as this page's
+	// would forward a key nobody here pressed, so an id that is not ours is no answer at all.
+	it("refuses an answer stamped by anyone else, and a state it cannot read", () => {
+		const other = pressed(threeWindowDesk(), {key: "j"}, "other-page-1");
+		expect(replyIn("page-1", other)).toEqual(refused);
+		expect(replyIn("page-1", {not: "a shell state"})).toEqual(refused);
+	});
+
+	it("refuses a dispatch the kernel never applied, and one that carried no state", () => {
+		const forwarded = pressed(threeWindowDesk(), {key: "j"}, "page-1");
+		expect(replyOf("page-1", processGone(ProcessId.make("process-1")))).toEqual(refused);
+		expect(replyOf("page-1", delivered)).toEqual(refused);
+		expect(replyOf("page-1", {_tag: "Delivered", view: {revision: 3, state: forwarded}})).toEqual({
+			_tag: "ToWindow",
+			key: "j",
+		});
 	});
 });
 

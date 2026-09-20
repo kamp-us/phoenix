@@ -2,13 +2,13 @@
  * `campaign open` — append a new `paused` row pinning a milestone, past the approval trace.
  *
  * **The state is always `paused` and there is no flag to change it.** A row that could be written
- * `active` would grant dispatch in the same stroke that names the campaign, which is exactly what
- * ADR 0304 separated into two acts. Flipping it is `campaign state`'s, and it demands its own
- * citation.
+ * `active` would grant dispatch in the same stroke that names the campaign, and naming a campaign
+ * and granting it dispatch are two separate acts. Flipping it is `campaign state`'s, and it demands
+ * its own citation.
  *
  * Nothing here checks that the milestone exists, is open, or is in sync with the board:
  * `guard roadmap-guard check` owns I1-I5, and a second answer to a merge-gating question is worse
- * than no answer at all (ADR 0238).
+ * than no answer at all.
  */
 
 import {Effect} from "effect";

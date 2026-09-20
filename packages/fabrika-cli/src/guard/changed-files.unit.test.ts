@@ -19,8 +19,8 @@ describe("resolveBasis", () => {
 		});
 	});
 
-	// On the queue's batched ref `base_ref` is empty, so the batch's own base commit is the basis
-	// (ADR 0132) — that is what yields exactly the files the batch adds vs main.
+	// On the queue's batched ref `base_ref` is empty, so the batch's own base commit is the basis —
+	// that is what yields exactly the files the batch adds vs main.
 	it("diffs a merge_group batch against the base the queue built it on", () => {
 		expect(
 			resolveBasis(event({eventName: "merge_group", baseRef: "", mergeGroupBaseSha: "abc123"})),
@@ -32,7 +32,7 @@ describe("resolveBasis", () => {
 	});
 
 	// A dispatch carries a ref, not a base; the dispatched branch targets the default branch and the
-	// three-dot range resolves that to the merge-base (#5718).
+	// three-dot range resolves that to the merge-base.
 	it("diffs a dispatched run against the default branch", () => {
 		expect(resolveBasis(event({eventName: "workflow_dispatch", defaultBranch: "trunk"}))).toEqual({
 			_tag: "Range",

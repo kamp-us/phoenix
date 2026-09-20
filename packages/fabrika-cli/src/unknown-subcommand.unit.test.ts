@@ -1,6 +1,7 @@
 import {NodeServices} from "@effect/platform-node";
-import {Cause, Effect, Exit, Option} from "effect";
+import {Cause, Effect, Exit, Layer, Option} from "effect";
 import {CliError, Command} from "effect/unstable/cli";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {describe, expect, it} from "vitest";
 import {registeredGroups} from "./registry.ts";
 import {fabrikaCommand} from "./root-command.ts";
@@ -9,17 +10,20 @@ import {type CommandNode, findUnknownSubcommand, refusal} from "./unknown-subcom
 const node = (
 	name: string,
 	subs: ReadonlyArray<CommandNode> = [],
-	extra: {alias?: string; hidden?: boolean} = {},
+	extra: {alias?: string; unlisted?: boolean} = {},
 ): CommandNode => ({
 	name,
 	alias: extra.alias,
-	hidden: extra.hidden ?? false,
+	unlisted: extra.unlisted ?? false,
 	subcommands: subs.length === 0 ? [] : [{commands: subs}],
 });
 
 describe("findUnknownSubcommand", () => {
 	const leaf = node("leaf");
-	const group = node("group", [node("verb", [], {alias: "v"}), node("secret", [], {hidden: true})]);
+	const group = node("group", [
+		node("verb", [], {alias: "v"}),
+		node("secret", [], {unlisted: true}),
+	]);
 	const root = node("root", [group, leaf]);
 
 	it("resolves a known path to no refusal", () => {
@@ -30,7 +34,7 @@ describe("findUnknownSubcommand", () => {
 		expect(findUnknownSubcommand(root, ["group", "v"])).toBeUndefined();
 	});
 
-	it("resolves a hidden subcommand by exact name, as the parser does", () => {
+	it("resolves a unlisted subcommand by exact name, as the parser does", () => {
 		expect(findUnknownSubcommand(root, ["group", "secret"])).toBeUndefined();
 	});
 
@@ -50,7 +54,7 @@ describe("findUnknownSubcommand", () => {
 		});
 	});
 
-	it("withholds hidden subcommands from what it offers, so a typo cannot reveal one", () => {
+	it("withholds unlisted subcommands from what it offers, so a typo cannot reveal one", () => {
 		expect(findUnknownSubcommand(root, ["group", "nope"])?.known).not.toContain("secret");
 	});
 
@@ -98,12 +102,12 @@ describe("against the real fabrika command tree", () => {
 		}
 	});
 
-	it("finds groups at all — fail closed on zero scope (ADR 0092)", () => {
+	it("finds groups at all — fail closed on zero scope", () => {
 		expect(registeredGroups.length).toBeGreaterThan(0);
 	});
 
-	// The token used to be `triage`, which #4822 was reported against; registering that group turned
-	// this fixture green for the wrong reason, so it moved to a name no slice will ever claim.
+	// The token used to be `triage`, the name the defect was reported against; registering that group
+	// turned this fixture green for the wrong reason, so it moved to a name no slice will ever claim.
 	it("refuses an unregistered group", () => {
 		expect(findUnknownSubcommand(fabrikaCommand, ["nosuchgroup", "--help"])).toEqual({
 			token: "nosuchgroup",
@@ -140,7 +144,7 @@ describe("the parser refuses an unknown token at every node that carries subcomm
 
 	const paths = routerPaths(fabrikaCommand);
 
-	it("finds router nodes at all — fail closed on zero scope (ADR 0092)", () => {
+	it("finds router nodes at all — fail closed on zero scope", () => {
 		expect(paths.length).toBeGreaterThan(0);
 	});
 
@@ -149,7 +153,7 @@ describe("the parser refuses an unknown token at every node that carries subcomm
 	)("refuses at `fabrika %s`", async (_label, path) => {
 		const exit = await Effect.runPromiseExit(
 			Command.runWith(fabrikaCommand, {version: "test"})([...path, "__no_such_token__"]).pipe(
-				Effect.provide(NodeServices.layer),
+				Effect.provide(Layer.merge(NodeServices.layer, FetchHttpClient.layer)),
 			),
 		);
 		expect(Exit.isFailure(exit)).toBe(true);

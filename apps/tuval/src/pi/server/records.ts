@@ -13,12 +13,15 @@ import type {PiSessionHandle} from "./PiSessionHost.ts";
 
 export type ConnectionId = string;
 
-/** Monotonic per session. A reacquire mints the next one, which invalidates the previous. */
-export type LeaseId = number;
+/**
+ * The attachment a `SessionTarget` names. Minted per claim, so a call made on the lease a
+ * reacquire replaced carries an id the record no longer holds and is refused as locked.
+ */
+export type AttachmentId = string;
 
 export interface SessionOwner {
 	readonly connection: ConnectionId;
-	readonly lease: LeaseId;
+	readonly attachment: AttachmentId;
 }
 
 export interface SessionRecord {
@@ -27,23 +30,28 @@ export interface SessionRecord {
 	/** Advanced with the revision, so a snapshot's `updatedAt` names the change it carries. */
 	readonly updatedAt: number;
 	readonly owner: SessionOwner | undefined;
-	readonly nextLease: LeaseId;
 }
 
 export type ClaimOutcome =
-	| {readonly _tag: "Claimed"; readonly record: SessionRecord; readonly lease: LeaseId}
+	| {readonly _tag: "Claimed"; readonly record: SessionRecord; readonly attachment: AttachmentId}
 	| {readonly _tag: "NotFound"}
 	| {readonly _tag: "Locked"; readonly by: ConnectionId};
 
 export interface SessionRecords {
-	readonly insert: (handle: PiSessionHandle, owner: ConnectionId, now: number) => SessionRecord;
+	readonly insert: (
+		handle: PiSessionHandle,
+		owner: ConnectionId,
+		attachment: AttachmentId,
+		now: number,
+	) => SessionRecord;
 	readonly get: (id: string) => SessionRecord | undefined;
 	readonly list: () => ReadonlyArray<SessionRecord>;
 	/**
 	 * Attach, or — when the asking connection already owns the session — reconnect: the previous
-	 * lease is invalidated and a new one issued over the same record, so the transcript survives.
+	 * attachment is invalidated and a new one issued over the same record, so the transcript
+	 * survives.
 	 */
-	readonly claim: (id: string, connection: ConnectionId) => ClaimOutcome;
+	readonly claim: (id: string, connection: ConnectionId, attachment: AttachmentId) => ClaimOutcome;
 	readonly release: (id: string, connection: ConnectionId) => boolean;
 	/** A closed socket owns nothing; its sessions stay open and become attachable again. */
 	readonly releaseConnection: (connection: ConnectionId) => void;
@@ -62,28 +70,24 @@ export const makeSessionRecords = (): SessionRecords => {
 	};
 
 	return {
-		insert: (handle, owner, now) =>
-			put({
-				handle,
-				revision: 0,
-				updatedAt: now,
-				owner: {connection: owner, lease: 0},
-				nextLease: 1,
-			}),
+		insert: (handle, owner, attachment, now) =>
+			put({handle, revision: 0, updatedAt: now, owner: {connection: owner, attachment}}),
 
 		get: (id) => records.get(id),
 
 		list: () => [...records.values()],
 
-		claim: (id, connection) => {
+		claim: (id, connection, attachment) => {
 			const record = records.get(id);
 			if (record === undefined) return {_tag: "NotFound"};
 			if (record.owner !== undefined && record.owner.connection !== connection) {
 				return {_tag: "Locked", by: record.owner.connection};
 			}
-			const lease = record.nextLease;
-			const claimed = put({...record, owner: {connection, lease}, nextLease: lease + 1});
-			return {_tag: "Claimed", record: claimed, lease};
+			return {
+				_tag: "Claimed",
+				record: put({...record, owner: {connection, attachment}}),
+				attachment,
+			};
 		},
 
 		release: (id, connection) => {

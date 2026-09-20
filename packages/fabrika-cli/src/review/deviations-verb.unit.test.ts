@@ -33,7 +33,7 @@ const served = (result: ExecResult, status = 200): HttpReply => ({status, body: 
  *
  * The unbound diff read this verb must never make is that same URL under a diff `Accept`, so the
  * two are one line at the HTTP seam and only the count tells them apart: one read is the metadata
- * read every run makes, two is the PR-number diff read coming back (#5122).
+ * read every run makes, two is the PR-number diff read coming back.
  */
 const pullReads = (requests: ReadonlyArray<string>): number =>
 	requests.filter((request) => PULL.test(request)).length;
@@ -191,7 +191,7 @@ describe("runDeviations", () => {
 });
 
 /**
- * The single-source fence (#5157).
+ * The single-source fence.
  *
  * The exit-`13` denominator is git's own count over the bound range, not GitHub's `changed_files`.
  * Each case fails if the denominator drifts back across the system boundary, where a rename git
@@ -209,7 +209,7 @@ describe("runDeviations proves its scan complete against git's own count", () =>
 	it("reports the git-vs-GitHub disagreement on stderr instead of refusing on it", async () => {
 		const out = await run(renamed());
 		expect(out.stderr.at(-1)).toBe(
-			"review deviations: git and GitHub disagree on #4321's file count (1 vs 2) — different merge base and different rename detection; reported, never refused on (#5157).",
+			"review deviations: git and GitHub disagree on #4321's file count (1 vs 2) — different merge base and different rename detection; reported, never refused on.",
 		);
 	});
 
@@ -223,7 +223,7 @@ describe("runDeviations proves its scan complete against git's own count", () =>
 });
 
 /**
- * The provenance fence (#5122), the sibling of `review scope`'s.
+ * The provenance fence, the sibling of `review scope`'s.
  *
  * A `deviation-disclosure` verdict claims "nothing undisclosed that this gate could see", so the hit
  * list is not one input among many — read at a head nobody scoped it is under- or over-reported

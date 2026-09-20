@@ -1,30 +1,29 @@
 # `/build-ui` — derived CLI contract
 
-**Skill:** [`build-ui`](SKILL.md) · **Authoring brief:** [#4941](https://github.com/kamp-us/phoenix/issues/4941) · **Date:** 2026-08-09
+**Skill:** [`build-ui`](SKILL.md) · **Date:** 2026-08-09
 
 The verbs land in `packages/fabrika-cli/` under the **`ui`** subcommand group, registered in
 `packages/fabrika-cli/src/registry.ts` like the shipped `adr`, `report`, `triage`, `review` and
 `wire` groups. The [CLI interface convention](../../docs/cli-interface-convention.md) governs
 every verb; where this spec and that doc disagree, the doc wins and this spec is the bug.
-**None of these verbs exist yet** — this spec is greenfield, like the sibling `build` group's
-(#4988); nothing below assumes a shipped `ui` implementation.
+**None of these verbs exist yet** — this spec is greenfield, like the sibling `build` group's;
+nothing below assumes a shipped `ui` implementation.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill** (ADR 0238). The v1 prior
-art — the three UI branches in v1 `write-code`, `design-token-guard`, `design-inventory` — was
-**read** for semantics and scars and none is invoked, wrapped, or deferred to.
+**`fabrika` calls the retired v1 pipeline CLI nowhere, and neither does the skill.** The v1 prior
+art — its UI branches, its token guard, its design inventory — was **read** for semantics and scars
+and none is invoked, wrapped, or deferred to.
 
 **The capture-machinery boundary — no longer a judgment call.** The golden/capture machinery is
 **fabrika's own**: it lives at `packages/fabrika-cli/src/capture/`, exported as the
-`@kampus/fabrika-cli/capture` subpath, moved out of phoenix's `packages/design-capture` by founder
-ruling (#5061 → #5063) so it ships on fabrika's release train instead of an adopter depending on a
-phoenix package. So the `ui` verbs **import it**, the way they import fabrika's own `wire` modules
+`@kampus/fabrika-cli/capture` subpath. It was moved there out of a consuming repo's own workspace
+package by ruling, so that it ships on fabrika's release train instead of every adopter depending on
+one repo's package. So the `ui` verbs **import it**, the way they import fabrika's own `wire` modules
 — not "may import a workspace package," and never a reimplementation of the same machinery a
 second time.
 
-What did **not** move is the repo-specific **data**: the blessed golden bytes (in depo) and the
-pointer that names them, which stays per-repo at `packages/design-capture/golden-pointer.json`
-(ADR 0183) with `design-goldens.json` at the root as the fallback — the probe order below is
-unchanged by the move. Machinery is fabrika's; goldens are the consuming repo's.
+What did **not** move is the repo-specific **data**: the blessed golden bytes and the pointer that
+names them, which stays per-repo at the paths the probe order below names. Machinery is fabrika's;
+goldens are the consuming repo's.
 
 The import does not soften a single verdict: every scar this spec designs out (the `never`-typed
 upload channel, the silent `hostedUrls` projection, the fail-open pointer probe) binds **regardless
@@ -50,39 +49,37 @@ drifts from. The `ui` group is only what the visual modality adds.
 - `packages/fabrika-cli/src/io/` — exec/fs/github seams.
 
 **Considered and deliberately not derived** — each answer is already enforced at a gate, and a
-second answer can contradict the gate (interface convention rule 6; ADR 0238):
+second answer can contradict the gate (interface convention rule 6):
 
-- **A token-discipline verdict.** `design-token-guard.yml` runs on every PR: undefined
+- **A token-discipline verdict.** A repo's own token gate runs on every PR: undefined
   `var(--…)` refs, raw hex outside the raw-scale layer, the per-file raw-px ratchet. The skill
-  builds to pass it; no `ui` verb recomputes it. (Its two shipped scars — gate-fail vs IO-fail
-  undistinguished, and a resettable `--write-baseline` ratchet — are that guard's to fix, not
+  builds to pass it; no `ui` verb recomputes it. (Scars in such a gate — gate-fail and IO-fail
+  undistinguished, a resettable baseline ratchet — are that guard's to fix, not
   this group's to shadow.)
-- **An inventory freshness check.** `design-inventory-guard.yml` reds a stale committed
+- **An inventory freshness check.** A repo's inventory gate reds a stale committed
   inventory. `ui manifest` reports the inventory file's *presence*; freshness is the gate's.
-- **An a11y verdict.** `a11y-pbt.yml` owns the property-based floor (ADR 0162 pillar 4).
-- **A rendered-surface PASS/FAIL.** That is `review-ui`'s gate (#4718). `ui render` + the
+- **An a11y verdict.** A repo's accessibility gate owns the property-based floor.
+- **A rendered-surface PASS/FAIL.** That is `review-ui`'s gate. `ui render` + the
   skill's look predict it; they never emit a verdict token.
-- **A diff→surface classifier.** v1's `classify-ui-surface.sh` fails open (`#4493`); `build`'s
+- **A diff→surface classifier.** The v1 shell classifier failed open, and `build`'s
   contract already declined a surface classifier for text. The skill names the surfaces it
   changed — `ui render` takes them as explicit `--surface` operands and refuses zero.
-- **A golden blesser.** Blessing is the founder flow of ADR 0183 §5 through the built gallery
+- **A golden blesser.** Blessing is a human flow through the built gallery
   machinery; `ui golden` only resolves and diffs, it never writes the pointer.
-- **A visual-judgement verb — ruled out, not merely skipped** (founder ruling, brief amendment
-  2026-08-09). The render loop's cut is: verbs do render, screenshot, and the dumb golden
+- **A visual-judgement verb — ruled out, not merely skipped.** The render loop's cut is: verbs do
+  render, screenshot, and the dumb golden
   pixel-diff — nothing more; everything that *looks* (reading the image, judging it against the
   law, deciding the fix) is LLM-driven in the skill. A verb's ceiling is the golden diff. This
   applies identically to the optional Chrome path. No future `ui` verb may emit a composition
   score, a layout opinion, or any judgement token over pixels.
 
-**The `paths`-glob auto-arm lever — considered, not used (this session's design call, recorded
-per the brief).** Auto-arming on touched files would need a glob, and any glob is either
-repo-specific (`apps/web/src/**` — dead on the portability ruling, this skill runs wherever a
-manifest exists) or so broad (`**/*.tsx`, `**/*.css`) that it arms on non-rendered text work and
-fights `/build` mid-lane. The routing that exists is already modality-shaped: `/build`'s §MOD
-refusal names this skill on any rendered-visual deliverable, and the description carries the
-trigger surface. UI volume at the ruling was 0/60 (#4898), so an auto-arm has no traffic to
-catch and no way to be measured yet. Revisit when UI volume exists; the lever stays named on
-#4891.
+**The `paths`-glob auto-arm lever — considered, not used.** Auto-arming on touched files would need
+a glob, and any glob is either repo-specific (one app's source root — dead on the portability rule,
+since this skill runs wherever a manifest exists) or so broad (`**/*.tsx`, `**/*.css`) that it arms
+on non-rendered text work and fights `/build` mid-lane. The routing that exists is already
+modality-shaped: `/build`'s modality refusal names this skill on any rendered-visual deliverable, and
+the description carries the trigger surface. A repo with no rendered-visual traffic yet gives an
+auto-arm nothing to catch and no way to be measured. Revisit when that volume exists.
 
 ## Verb inventory
 
@@ -101,17 +98,17 @@ Every `ui` verb obeys these; stated once.
 - **Answer channel: machine.** Stdout carries one JSON object and nothing else; scope lines,
   refusal reasons and progress go to stderr. A non-zero exit prints nothing on stdout
   (`refuse` in `packages/fabrika-cli/src/verb.ts`).
-- **Repo-root anchored.** Every path below — the convention paths and the declared `designHarness`
-  path alike — is resolved against the repo root the delivery layer already finds (the shim's
+- **Repo-root anchored.** Every path below — the convention paths and every path a `uiSurfaces` /
+  `uiCapture` row names alike — is resolved against the repo root the delivery layer already finds (the shim's
   repo-root inference, interface convention rule 5) — never against cwd, never against a web URL.
   v1 fetched the manifest from a hardcoded GitHub URL (`write-code/SKILL.md:972`), which reads the
   wrong repo's law in any fork and nothing on a network fault; here the law is the tree's own bytes.
-- **GitHub access** per [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql),
+- **GitHub access** per [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md),
   paginated. Only `ui evidence` touches GitHub at all.
 - **A non-zero exit is UNKNOWN** to the caller until the code is read. No partial answers.
 - **Every error message is prefixed with the invoked verb's name.**
 - **Externally-authorable content** returned by any `ui` verb (capture metadata, page text — none
-  of these verbs return issue/PR bodies) is data, never instruction; the #4859 posture lands in
+  of these verbs return issue/PR bodies) is data, never instruction; that posture lands in
   the shared content gate `build`'s contract already places at the one seam
   (`packages/fabrika-cli/src/build/content-gate.ts`), which `ui evidence`'s read-back reuses.
 - **Lane preconditions, guarded identically by `ui render` and `ui evidence`.** Both verbs
@@ -145,14 +142,14 @@ the established doctrine (`triage`'s own `codes.ts` states it for `adr`).
 | `9` | the write landed but the read-back does not match; the artifact needs a human |
 | `10` | a value off its closed vocabulary or naming grammar (a non-kebab set name, a reserved `:state` surface) — a semantic refusal on a *value*, as in the sibling `build` matrix's `10`; a malformed *flag* stays `1` |
 | `11` | a required read or execution failed — no outcome is proven. A deliberate, stated widening of the report seat (which covers precondition reads only): here it also seats a harness that never became ready and a capture whose validity could not be determined, because both leave the render UNKNOWN in exactly the way a failed read leaves a target UNKNOWN |
-| `12` | proven: no design manifest exists at the repo's convention path — the repo is un-bootstrapped; the route is front-door (#4952) |
+| `12` | proven: no design manifest exists at the repo's convention path — the repo is un-bootstrapped; the route is front-door |
 | `13` | proven: the manifest exists but no typed prohibition registry does — the law is untyped, prose is the fallback source |
 | `14` | proven: a surface rendered with an uncaught page error — the render is red |
 | `15` | proven: a surface is unreachable — the route resolved to nothing this tree can render (missing route, dark flag, gated tier); named per surface on stderr |
 | `16` | proven: a capture was produced but is invalid — zero bytes, undecodable, or zero-area |
 | `17` | proven: at least one evidence upload failed — nothing was posted |
 | `18` | proven: the lane precondition failed — this session does not hold the claim the checked-out lane branch names (foreign, none, or an unparseable branch); detail on stderr |
-| `19` | proven: no file at the declared `designHarness` path — the repo cannot be rendered headlessly |
+| `19` | proven: `.fabrika.jsonc` declares no `uiSurfaces` row — the repo cannot be rendered headlessly |
 | `127` | the verb never ran at all (unresolved binary — the shell's code) |
 
 **`7` versus `11`** is the same split the whole CLI rests on: a proven absence is a verdict, a
@@ -162,14 +159,14 @@ and an untyped law are *routable* states the skill acts on by name, not generic 
 
 ## Required environment — the two render paths
 
-Declared here per the 2026-08-09 brief amendment (Chrome as a second render path) and the
-portability ruling; #5049 is where required-environment declarations live as a corpus concern.
+Declared here because a skill that needs something installed says so in its own contract, where the
+reader who has to provide it will look.
 
 - **Default path (required): the headless harness.** `ui render` needs a local dev server for
   the tree and a headless browser. This path is what works in agent sessions and CI, and it is
   the **only** source of evidence captures — its validation (`16`) is what makes a PNG a record.
-  **The browser dependency ships with the verb package** (founder preference, 2026-08-09:
-  default-available beats install-a-thing): installing `@kampus/fabrika-cli` provisions the
+  **The browser dependency ships with the verb package** — default-available beats
+  install-a-thing: installing `@kampus/fabrika-cli` provisions the
   headless browser; no operator or agent ever runs a separate browser-install step by hand. A
   missing or broken browser provision at run time is `11` with the exact remediation command in
   the message — never a silent skip.
@@ -184,44 +181,71 @@ portability ruling; #5049 is where required-environment declarations live as a c
 
 ## The design-surface conventions
 
-Stated once, consumed by `ui manifest` and `ui law`. These are **filename conventions, not
-phoenix facts** — the portability ruling on #4941: this skill reads whatever repo it runs in,
-and phoenix is one instance.
+Stated once, consumed by `ui manifest` and `ui law`. These are **filename conventions, not facts
+about one repository** — this skill reads whatever repo it runs in, and the repo it was written in
+is one instance of the convention rather than its definition.
 
 | Surface | Convention path (repo-root-relative) | Absent means |
 |---|---|---|
-| design manifest | `design-system-manifest.md` | the repo is un-bootstrapped for UI work — exit `12`, route to front-door (#4952) |
+| design manifest | `design-system-manifest.md` | the repo is un-bootstrapped for UI work — exit `12`, route to front-door |
 | prohibition registry | `design-prohibitions.json` | the law is untyped — exit `13` from `ui law`; manifest prose is the fallback source |
 | component inventory | `design-system-inventory.md` | a fact: the repo ships no inventory; reported as `null`, never an error |
 | golden pointer | `packages/design-capture/golden-pointer.json` where present, else `design-goldens.json` at root | a fact: no goldens; every surface is unblessed |
-| render harness config | the **declared** `designHarness` path, whose shipped value here is `design-harness.json` | the repo cannot be rendered headlessly — exit `19` from `ui render`; reported as `null` by `ui manifest` |
 
-The harness row is the one path a repo **declares** rather than inherits: `ui render`, `ui manifest`
-and `ui evidence` resolve the `designHarness` key in `.fabrika.jsonc` and open whatever it names,
-reaching `design-harness.json` only because that is the shipped value. The other four rows are
-convention paths with no key behind them.
+The four rows are convention paths with no key behind them. **What the repo renders is not a path at
+all**: it is the `uiSurfaces` list in `.fabrika.jsonc`, read by `ui render`, `ui manifest` and `ui
+evidence` — and by `review scope` / `ship scope`, which raise the `ui` class off the same rows'
+`prefix` fields, so what renders and what owes a rendered verdict are one declaration.
 
-### The harness config schema — canonical here
+### The `uiSurfaces` and `uiCapture` schema — canonical here
 
-The harness config is one JSON object telling the `ui` group how this repo renders and where
-evidence lives — the portable replacement for v1's phoenix-hardcoded "alchemy dev" knowledge:
+Two keys in `.fabrika.jsonc` tell the `ui` group how this repo renders and where evidence lives —
+the portable replacement for v1's hardcoded knowledge of one repo's dev server.
+
+`uiSurfaces` is an array, one row per runnable app. **The empty list is the shipped default and a
+legal declaration**: it means this repo renders nothing, so no path raises the `ui` class and `ui
+render` / `ui evidence` refuse on `19` saying exactly that — never a silent no-op.
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `command` | string | yes | the shell command that starts the repo's dev server, run from the repo root; `ui render` starts it, waits for readiness, and kills it on exit |
-| `url` | string | yes | the base URL the server listens on (e.g. `http://127.0.0.1:5173`); surfaces resolve as `<url><route>` |
-| `readyPath` | string | no (default `/`) | path polled for HTTP 200 to detect readiness; not ready within 60s is `11` |
+| `name` | string, kebab-case | yes | names this app in every refusal, and must be unique across the list |
+| `prefix` | string, repo-relative, ends in `/` | yes | the source root whose changed files raise the `ui` class. Two rows may share one prefix — two mounts over one app is the ordinary case |
+| `command` | string | yes | the shell command that starts this app, run from the repo root; `ui render` starts it, waits for readiness, and kills it on exit. It **must** carry the `{{port}}` placeholder and bind it strictly — see below |
+| `mount` | string, `/`-prefixed | yes | the prefix of the surface namespace this app owns, unique across the list. A surface goes to the app whose mount is its longest match, on segment boundaries (`/lab` claims `/lab/x`, never `/laboratory`); `/` is the catch-all |
+| `basePath` | string, `/`-prefixed | no (default: the mount) | what the mount maps to on this app's own server. The default is the identity, so only an app serving those pages at a different root (a proof server rooted at `/`) has to say so |
+| `readyPath` | string | no (default `/`) | path polled for HTTP 200 to detect **this app's** readiness; not ready within 60s is `11` naming the app |
+
+`uiCapture` is one object beside it, every field optional:
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
 | `viewport` | object `{width, height}` | no (default `{1280, 900}`) | the capture viewport in CSS px |
-| `evidenceStore` | string | no | base URL of a content-addressed evidence store (the ADR 0144/0183 idiom); see `ui evidence` for the two-tier upload protocol |
+| `evidenceStore` | string | no | base URL of a content-addressed evidence store; see `ui evidence` for the two-tier upload protocol |
 | `storageState` | string | no | repo-root-relative path to a Playwright storage-state JSON, seeded into every capture context so surfaces behind a login render as a signed-in user; declared-but-absent is `11` from `ui render`, never a screenshot of the login page. The file is a credential — the repo gitignores it, and the cookies are never inlined here |
 
-A file that exists but violates this schema is `4` from `ui render` — same whole-file rule as the
-registry.
+**No app declares a port, and that is the point.** `{{port}}` in a `command` is replaced with a free
+port the render leg just bound and released, so two worktrees can render at once and neither can
+reach the other's tree. `{{port:<name>}}` allocates a further port for the same command, and every
+occurrence of one name gets the same number — that is how an app passes one port to two processes. A
+command with no unnamed `{{port}}` is refused. The app's base URL is `http://localhost:<the unnamed
+port>`, and a surface resolves to `<base><basePath + the remainder past the mount>`.
+
+The allocation binds `:0`, reads the number and lets go, so the **command must bind that exact port
+or fail** — it passes its server's own strict-port flag. That base URL is otherwise a guess: a server
+that quietly takes the next free port leaves every capture aimed at whatever else answers on the
+allocated one, and the readiness probe returns 200 from a sibling worktree's server without anything
+downstream being able to tell. A tool cannot check this, so it is a rule on the declaration: an app
+whose command cannot be made strict is left undeclared.
+
+A declared value that violates this schema is refused whole, the same rule the registry gets: the
+key's decode reports the first violation and `ui render` exits `11`, because a config nobody can
+decode leaves the render UNKNOWN rather than absent. A surface that falls outside every declared
+mount is `10`, and the refusal lists them.
 
 ### The registry schema — canonical here
 
 `design-prohibitions.json` is one JSON object: `{"rows": [ … ]}`. Each row carries **exactly**
-the seven fields the #4891 ruling pins — the five typed fields plus the two transcribed ones:
+the seven fields ruled for this registry — the five typed fields plus the two transcribed ones:
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -233,7 +257,7 @@ the seven fields the #4891 ruling pins — the five typed fields plus the two tr
 | `statement` | string | the prohibition, one sentence |
 | `counterexample` | string | one concrete violating instance |
 
-The registry is **normative and founder-ratified** (the ADR 0194 firewall): no fabrika verb
+The registry is **normative and human-ratified**: no fabrika verb
 writes it, ever — learn-back drafts *proposals* through report→triage, and ratification moves the
 file by human hands. A registry that exists but violates this schema — missing field, duplicate
 `id`, off-enum `class`/`machineCheck`, unknown extra field — is `4` from `ui law`, whole-file:
@@ -250,8 +274,8 @@ the law.
 fabrika ui manifest
 ```
 
-**Inputs** — none. The repo root is the delivery layer's; four of the five paths are this
-contract's convention table, and the harness path is whatever `designHarness` declares.
+**Inputs** — none. The repo root is the delivery layer's; the four paths are this contract's
+convention table, and `uiSurfaces` is read off `.fabrika.jsonc`.
 
 **Output** — machine. One JSON object:
 
@@ -260,59 +284,59 @@ contract's convention table, and the harness path is whatever `designHarness` de
  "registry": "design-prohibitions.json",
  "inventory": "design-system-inventory.md",
  "goldenPointer": "packages/design-capture/golden-pointer.json",
- "harness": "design-harness.json",
+ "uiSurfaces": ["web", "web-lab"],
  "lawSource": "registry"}
 ```
 
-Each key is the surface's repo-root-relative path, or `null` when that path holds no file —
-`harness` is the path `designHarness` declares, and the `design-harness.json` above is phoenix's
-shipped value, not a fixed name. `lawSource` is `"registry"` when the registry file exists,
+Each path key is the surface's repo-root-relative path, or `null` when that path holds no file.
+`uiSurfaces` is the declared rows' names, and `[]` is a repo that declares none — a fact, not an
+error. `lawSource` is `"registry"` when the registry file exists,
 `"manifest-prose"` when only the manifest does — the skill writes this token into its PR body
-verbatim. `registry`, `inventory`, `goldenPointer` and `harness` report **presence only**; parsing
-them is `ui law`'s, `ui golden`'s and `ui render`'s.
+verbatim. `registry`, `inventory` and `goldenPointer` report **presence only**; parsing
+them is `ui law`'s and `ui golden`'s.
 The manifest itself is the one surface whose absence refuses: without it there is no law at all.
 
 **Exit status** (beyond the universal four)
 
 | Code | Trigger |
 |---|---|
-| `11` | the repo root could not be resolved, or one of the five paths' existence could not be determined (permission fault, unreadable dir) |
+| `11` | the repo root could not be resolved, one of the four convention paths' existence could not be determined (permission fault, unreadable dir), or the declared `uiSurfaces` did not decode |
 | `12` | proven: no file at the manifest convention path |
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Run /fabrika: front-door's bootstrap drafts one from the repo's own CSS and pages (#4952). Never improvise a design language.` | 12 | refusal |
+| `ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Run /fabrika: front-door's bootstrap drafts one from the repo's own CSS and pages. Never improvise a design language.` | 12 | refusal |
 | `ui manifest: cannot probe <path>: <reason> — presence is UNKNOWN, never "absent".` | 11 | refusal |
 
-**Scope** — the same five paths against the repo root: four convention, one declared
-(`designHarness`). Not a judging verb; presence is the supplied fact, and the one refusal (`12`)
+**Scope** — the four convention paths against the repo root, plus the declared `uiSurfaces` rows.
+Not a judging verb; presence is the supplied fact, and the one refusal (`12`)
 exists because "no manifest" must route, not report.
 
 **Examples**
 
 ```
 $ fabrika ui manifest
-{"manifest":"design-system-manifest.md","registry":null,"inventory":"design-system-inventory.md","goldenPointer":"packages/design-capture/golden-pointer.json","harness":"design-harness.json","lawSource":"manifest-prose"}
+{"manifest":"design-system-manifest.md","registry":null,"inventory":"design-system-inventory.md","goldenPointer":"packages/design-capture/golden-pointer.json","uiSurfaces":["web","web-lab"],"lawSource":"manifest-prose"}
 ```
 
 ```
 $ fabrika ui manifest
-ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Run /fabrika: front-door's bootstrap drafts one from the repo's own CSS and pages (#4952). Never improvise a design language.
+ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Run /fabrika: front-door's bootstrap drafts one from the repo's own CSS and pages. Never improvise a design language.
 $ echo $?
 12
 ```
 
 **Grounding**
 
-- Founder design input on #4941 (2026-08-09): portability — the manifest is repo content read by
-  convention; and the missing-manifest path routes to front-door's bootstrap, never a dead-end.
-- v1 scar: the manifest arrived via hardcoded GitHub URL (`write-code/SKILL.md:972`) — wrong
-  repo's law on a fork, silent nothing offline. Here: the tree's own bytes, or a loud `12`.
+- **Portability is the ruling behind this verb**: the manifest is repo content read by convention,
+  and the missing-manifest path routes to front-door's bootstrap rather than dead-ending.
+- **v1 scar: the manifest arrived over a hardcoded GitHub URL** — the wrong repo's law on a fork,
+  and a silent nothing offline. Here it is the tree's own bytes, or a loud `12`.
 - `12` ≠ `7`: un-bootstrapped is a routable state with a named next step, not generic absence.
-- #4952's detection verb may later subsume the presence probe; if it lands first, this verb
-  aligns its vocabulary — flagged for both sessions, not raced.
+- **A front-door detection verb may later subsume this presence probe**; whichever lands first, the
+  two align their vocabulary rather than racing.
 
 ---
 
@@ -344,13 +368,13 @@ registry with zero rows is `4` (a law file that names no law is malformed, not m
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `ui law: design-prohibitions.json exists but does not satisfy the registry schema: <first violation> — refusing the whole file; half a law is not a law.` | 4 | refusal |
-| `ui law: no design manifest at design-system-manifest.md — run /fabrika (#4952).` | 12 | refusal |
+| `ui law: no design manifest at design-system-manifest.md — run /fabrika: front-door's bootstrap drafts one.` | 12 | refusal |
 | `ui law: the law is untyped — no design-prohibitions.json beside the manifest. The manifest's prose prohibitions are the law; note LAW-SOURCE: manifest-prose in the PR.` | 13 | refusal |
 | `ui law: cannot read design-prohibitions.json: <reason> — the law is UNKNOWN, never "untyped".` | 11 | refusal |
 
 **Scope** — one file against one schema. Zero rows reds (`4`): a registry this repo committed
 asserts a typed law; an empty one is a drafting defect to surface, not a fact to pass through
-(ADR 0092's shape at document scale).
+(the zero-scope rule at document scale).
 
 **Example**
 
@@ -361,9 +385,10 @@ $ fabrika ui law
 
 **Grounding**
 
-- Charter A on #4941 / the #4891 ruling: the five pinned fields plus `statement` and
-  `counterexample`; class promotion as a one-field edit.
-- ADR 0194 — the descriptive/normative firewall: this verb reads; ratification is human.
+- **The row's seven fields are ruled**: the five typed ones plus `statement` and
+  `counterexample`, with class promotion as a one-field edit.
+- **The descriptive/normative firewall**: this verb reads the law, and ratifying it is human work —
+  no verb writes the registry.
 - `13` vs `4` vs `11`: untyped, mistyped, and unreadable are three different facts, and the
   skill's fallback is legal only in the first.
 
@@ -374,7 +399,7 @@ $ fabrika ui law
 **Invocation**
 
 ```
-fabrika ui render --out before --surface /pano --surface /pano/yeni [--first-render <surface>]…
+fabrika ui render --out before --surface /board --surface /board/new [--first-render <surface>]…
 ```
 
 **Inputs**
@@ -382,7 +407,7 @@ fabrika ui render --out before --surface /pano --surface /pano/yeni [--first-ren
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--out` | string | yes | — | kebab-case capture-set name; captures land under the lane scratch dir (`build scratch`'s allocator) in `<set>/` |
-| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a bare route (`/pano`); zero surfaces is a usage error (`1`) — no tool guesses surfaces from a diff |
+| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a bare route (`/board`); zero surfaces is a usage error (`1`) — no tool guesses surfaces from a diff |
 | `--first-render` | string, repeatable | no | — | a listed surface that has no pre-change state; recorded as `firstRender: true`, exempted from before/after pairing |
 
 A surface id is a bare route in v1 of this grammar. A `:state` suffix is **reserved and refused
@@ -394,17 +419,20 @@ implementations guessing differently.
 
 ```
 {"set": "before", "captures": [
-  {"surface": "/pano", "path": "<abs>/before/pano.png", "width": 1280, "height": 2140,
+  {"surface": "/board", "path": "<abs>/before/board.png", "width": 1280, "height": 2140,
    "sha256": "…", "firstRender": false}
 ]}
 ```
 
 **The mechanism, in order.** Resolve the lane (shared conventions; the set dir is
-`build scratch`'s allocation for this lane, `<scratch>/<set>/`). Read the declared `designHarness`
-path (absent `19`, malformed `4`). Start `command` from the repo root; poll `<url><readyPath>` until
-HTTP 200, up to the schema row's readiness bound (`11` on timeout, with the server's stderr tail
-in the message); on any exit, kill the started process tree. For each `--surface`, in a headless browser at the
-config's viewport: navigate to `<url><route>`; an HTTP status ≥ 400 or a failed navigation is
+`build scratch`'s allocation for this lane, `<scratch>/<set>/`). Read the declared `uiSurfaces` rows
+(empty `19`, undecodable `11`). Resolve each `--surface` to the app whose `mount` is its longest
+match (`10` when no mount claims one). Start each of those apps, and only those, from the repo root
+on ports allocated here and filled into its `command`'s `{{port}}` placeholders; poll each app's own
+`<base><readyPath>` until HTTP 200, up to the schema row's readiness bound (`11` on timeout, naming
+the app, with its stderr tail in the message); on any exit, kill every started process tree. For each
+`--surface`, in a headless browser at the config's viewport: navigate to its app's
+`<base><basePath + the remainder past the mount>`; an HTTP status ≥ 400 or a failed navigation is
 **unreachable** (`15`); an uncaught page exception during render is **crashed** (`14`);
 otherwise screenshot the full page to `<set>/<route-slug>.png` (slug: `/` → `-`, leading
 stripped, `/` root → `root`). Validate every capture: file exists, non-zero bytes, decodable
@@ -421,14 +449,13 @@ never the tool's silent tolerance.
 
 | Code | Trigger |
 |---|---|
-| `4` | the harness config exists but violates its schema |
-| `10` | `--out` is not kebab-case, or a `--surface` carries the reserved `:state` suffix |
-| `11` | the harness did not become ready, a capture's validity could not be determined, or the claim state could not be read — the render is UNKNOWN |
+| `10` | `--out` is not kebab-case, a `--surface` carries the reserved `:state` suffix, or a `--surface` falls outside every declared `mount` |
+| `11` | an app did not become ready, a capture's validity could not be determined, or the claim state could not be read — the render is UNKNOWN |
 | `14` | proven: at least one surface threw an uncaught page error during render |
 | `15` | proven: at least one surface is unreachable — status ≥ 400 or failed navigation (no route, dark flag, gated tier); each named on stderr |
 | `16` | proven: at least one capture was produced but is invalid (zero bytes, undecodable, zero area) |
 | `18` | proven: the lane precondition failed (shared conventions) |
-| `19` | proven: no file at the declared `designHarness` path |
+| `19` | proven: `.fabrika.jsonc` declares no `uiSurfaces` row |
 
 When outcomes mix, the reported code is the smallest applicable of `14`/`15`/`16` and stderr
 carries every surface's outcome — the code routes, the stderr enumerates.
@@ -438,42 +465,45 @@ carries every surface's outcome — the code routes, the stderr enumerates.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `ui render: surface "<id>" threw during render: <first page error> — the render is red; fix it before looking.` | 14 | refusal |
-| `ui render: surface "<id>" is unreachable in this tree (<reason: no route | flag dark | gated tier>) — fix reachability, or drop it explicitly and carry the reason into the PR's Deviations (#4305).` | 15 | refusal |
-| `ui render: surface "<id>" captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 16 | refusal |
-| `ui render: the render harness could not start: <reason> — every surface is UNKNOWN.` | 11 | refusal |
-| `ui render: the harness did not answer 200 on <readyPath> within the readiness bound — every surface is UNKNOWN; server stderr tail: <tail>.` | 11 | refusal |
+| `ui render: surface "<id>" is unreachable in this tree (<reason: no route | flag dark | gated tier>) — fix reachability, or drop it explicitly and carry the reason into the PR's Deviations.` | 15 | refusal |
+| `ui render: surface "<id>" captured invalid bytes (<detail>) — a capture nobody can open is not evidence.` | 16 | refusal |
+| `ui render: app "<name>" could not start: <reason> — every surface is UNKNOWN.` | 11 | refusal |
+| `ui render: app "<name>" did not answer 200 on <readyPath> within the readiness bound — every surface is UNKNOWN; server stderr tail: <tail>.` | 11 | refusal |
 | `ui render: cannot determine the validity of <set>/<file>: <reason> — the capture is UNKNOWN, never valid.` | 11 | refusal |
-| `ui render: no <harness path> at the repo root — this repo declares no headless render path; add one (see the harness config schema).` | 19 | refusal |
-| `ui render: <harness path> exists but does not satisfy its schema: <first violation>.` | 4 | refusal |
+| `ui render: .fabrika.jsonc declares no \`uiSurfaces\` rows — this repo declares no rendered surface, so no path raises the ui class and nothing can be rendered headlessly.` | 19 | refusal |
+| `ui render: .fabrika.jsonc is refused — <first violation>, so where this repo declares its render path is unread — the render path is UNKNOWN, never absent.` | 11 | refusal |
+| `ui render: .fabrika.jsonc is refused — <first violation>, so how this repo captures a surface is unread — the render path is UNKNOWN, never absent.` | 11 | refusal |
 | `ui render: --surface "<id>" carries a :state suffix — states are a reserved grammar, not yet realized; render the bare route.` | 10 | refusal |
 | `ui render: --out "<value>" is not a kebab-case set name.` | 10 | refusal |
+| `ui render: --surface "<id>" falls outside every mount \`uiSurfaces\` declares (<mounts>) — no app serves it; declare its app's mount.` | 10 | refusal |
 | `ui render: this session does not hold the claim the checked-out branch names (<detail>) — the lane is not yours.` | 18 | refusal |
 
-`<harness path>` is interpolated, not fixed: the verb prints the path `designHarness` declares, so a
-repo that declares its own harness path reads that path back in both refusals.
+The `19` sentence is one string, shared with `ui evidence` and with the `review scope` / `ship scope`
+stderr line, so "this repo has no rendered gate" reads the same wherever it is stated.
 
 **Scope** — exactly the `--surface` operands, no more: the verb never scans the diff. Zero
-operands is `1`, so "rendered nothing, found nothing wrong" is unrepresentable (ADR 0092).
+operands is `1`, so "rendered nothing, found nothing wrong" is unrepresentable — a scan that
+covered nothing has proven nothing.
 
 **Example**
 
 ```
-$ fabrika ui render --out after --surface /pano
-{"set":"after","captures":[{"surface":"/pano","path":"/tmp/fabrika-build/s-9f2e/4312-c1a4d6f8/after/pano.png","width":1280,"height":2140,"sha256":"9c41…","firstRender":false}]}
+$ fabrika ui render --out after --surface /board
+{"set":"after","captures":[{"surface":"/board","path":"/tmp/fabrika-build/s-9f2e/9312-c1a4d6f8/after/board.png","width":1280,"height":2140,"sha256":"9c41…","firstRender":false}]}
 ```
 
 **Grounding**
 
-- #4305 / #3232 — the silent-degradation class: a dark-flagged surface self-404'd on preview and
-  the design review went render-blind without anyone saying so. `15` makes the state loud and
-  puts the drop in the skill's hands.
-- #2594 (via the v1 capture leg) — an uncaught page error is a red render, never a screenshot of
-  a broken page judged as composition.
-- v1 scar: `write-code` Step 4d specifies no capture-success check at all (`SKILL.md:1178` names
-  the invocation, nothing checks it); here validity is part of the answer.
+- **The silent-degradation class.** A dark-flagged surface self-404'd on preview and the design
+  review went render-blind without anyone saying so. `15` makes that state loud and puts the drop
+  in the skill's hands.
+- **An uncaught page error is a red render**, never a screenshot of a broken page judged as
+  composition.
+- **v1 scar: its capture step specified no success check at all** — it named the invocation and
+  checked nothing. Here validity is part of the answer.
 - The capture-set name feeds `ui evidence`'s pairing; `--first-render` exists so a new page's
-  missing before is a recorded fact, not a fabricated baseline (v1's under-specified "pre-edit
-  baseline", `SKILL.md:1531`).
+  missing before is a recorded fact, not a fabricated baseline — v1's "pre-edit baseline" was
+  under-specified enough to invite one.
 
 ---
 
@@ -482,7 +512,7 @@ $ fabrika ui render --out after --surface /pano
 **Invocation**
 
 ```
-fabrika ui golden --surface /pano --candidate <path>
+fabrika ui golden --surface /board --candidate <path>
 ```
 
 **Inputs**
@@ -494,11 +524,11 @@ fabrika ui golden --surface /pano --candidate <path>
 
 **The pointer schema — canonical here.** The golden pointer file is one JSON object:
 `{"store": "<base URL>", "surfaces": {"<surface-id>": {"sha256": "<hex>"}}}`. `store` is the
-content-addressed byte store's base URL (phoenix's instance: depo, per ADR 0183); golden bytes
+content-addressed byte store's base URL, whichever store the repo runs; golden bytes
 for a surface resolve as `GET <store>/<sha256>.png`, and the fetched bytes must hash to the
-pointer's sha (a mismatch is `11` — the store is answering wrongly, trust nothing). Phoenix's
-shipped pointer predates the `store` key while the corpus is empty (`{"surfaces": {}}`); the
-implementation treats a pointer with surfaces but no `store` as malformed (`4`).
+pointer's sha (a mismatch is `11` — the store is answering wrongly, trust nothing). A pointer
+written before the `store` key existed is legal only while its corpus is empty
+(`{"surfaces": {}}`); a pointer with surfaces but no `store` is malformed (`4`).
 
 **The diff — defined here so two implementers compute one number.** Dimensions must match; a
 dimension mismatch is reported as `{"magnitude": 1, "regions": [], "dimensionMismatch": true}` —
@@ -509,7 +539,7 @@ decimals. `regions` is the bounding boxes of 8-connected components of differing
 closer than 16px merged, largest-area first, capped at 20 (the cap stated on stderr when hit).
 
 **Output** — machine. One JSON object. Unblessed (the common case — the corpus is empty today):
-`{"surface": "/pano", "blessed": false, "golden": null, "diff": null}` on exit 0 — **a missing
+`{"surface": "/board", "blessed": false, "golden": null, "diff": null}` on exit 0 — **a missing
 golden is a fact, not a failure**. Blessed without `--candidate`: `blessed: true` plus the
 resolved golden. With `--candidate`: the diff object too — **a signal to steer by, never a
 verdict**; no threshold lives in this verb and no PASS/FAIL token ever appears in its output.
@@ -532,24 +562,24 @@ verdict**; no threshold lives in this verb and no PASS/FAIL token ever appears i
 
 **Scope** — one surface against the pointer convention path. The unblessed answer is legal only
 after a successful pointer read: v1's blessed-surface probe resolved an **unreadable** pointer to
-an empty set with `|| true` (`step4d-blessed-surfaces.sh:9-11`, tracked as #4501) — the exact
+an empty set, because its shell swallowed the read's failure with `|| true` — the exact
 fail-open this verb's `4`/`11` rows exist to refuse.
 
 **Examples**
 
 ```
-$ fabrika ui golden --surface /pano
-{"surface":"/pano","blessed":false,"golden":null,"diff":null}
+$ fabrika ui golden --surface /board
+{"surface":"/board","blessed":false,"golden":null,"diff":null}
 ```
 
 ```
-$ fabrika ui golden --surface /pano
-{"surface":"/pano","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-ui-goldens/9c41f2….png"},"diff":null}
+$ fabrika ui golden --surface /board
+{"surface":"/board","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-ui-goldens/9c41f2….png"},"diff":null}
 ```
 
 ```
-$ fabrika ui golden --surface /pano --candidate /tmp/fabrika-build/s-9f2e/4312-c1a4d6f8/after/pano.png
-{"surface":"/pano","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-ui-goldens/9c41f2….png"},"diff":{"magnitude":0.031,"regions":[{"x":120,"y":840,"w":420,"h":96}]}}
+$ fabrika ui golden --surface /board --candidate /tmp/fabrika-build/s-9f2e/9312-c1a4d6f8/after/board.png
+{"surface":"/board","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-ui-goldens/9c41f2….png"},"diff":{"magnitude":0.031,"regions":[{"x":120,"y":840,"w":420,"h":96}]}}
 ```
 
 (The golden's `path` is the fetched bytes cached content-addressed under the OS temp root —
@@ -559,10 +589,11 @@ content-addressed file is write-once, so concurrent lanes cannot clobber each ot
 
 **Grounding**
 
-- ADR 0183 — bytes in depo content-addressed, pointer in git; this verb reads both, writes
-  neither; blessing stays the founder gallery flow (ADR 0183 §5).
-- #2945 / calibration B — diff magnitude is a steering signal; the verdict fork is `review-ui`'s.
-- #4501 — the fail-open pointer probe, designed out.
+- **Bytes live content-addressed in a store, the pointer lives in git.** This verb reads both and
+  writes neither; blessing stays a human gallery flow.
+- **A diff magnitude is a steering signal**, and the verdict fork is `review-ui`'s.
+- **The fail-open pointer probe is designed out**: an unreadable pointer is UNKNOWN, never an empty
+  blessed set.
 
 ---
 
@@ -571,7 +602,7 @@ content-addressed file is write-once, so concurrent lanes cannot clobber each ot
 **Invocation**
 
 ```
-fabrika ui evidence --pr 4318 --before before --after after
+fabrika ui evidence --pr 9318 --before before --after after
 ```
 
 **Inputs**
@@ -584,7 +615,7 @@ fabrika ui evidence --pr 4318 --before before --after after
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository written to |
 
 **Output** — machine.
-`{"answer": "attached", "pr": 4318, "commentId": 512347, "head": "03135b91", "surfaces": 2}`.
+`{"answer": "attached", "pr": 9318, "commentId": 512347, "head": "03135b91", "surfaces": 2}`.
 
 The protocol, in order. **Read both capture sets through their manifests** —
 `<set>/manifest.json`, written by `ui render`; a named set with no manifest, or a manifest that
@@ -595,17 +626,17 @@ unexplained missing baseline is a hole in the evidence, not a layout choice). Re
 paired PNG against its manifest sha (`16` on mismatch or invalidity). **Upload every PNG and
 verify each upload individually, before anything posts** — the two-tier store:
 
-1. **Store tier** — when the harness config declares `evidenceStore`: `PUT` each PNG
-   content-addressed (`<store>/<sha256>.png`, the golden-store idiom of ADR 0183), then `GET`
+1. **Store tier** — when `.fabrika.jsonc`'s `uiCapture` declares `evidenceStore`: `PUT` each PNG
+   content-addressed (`<store>/<sha256>.png`, the golden-store idiom), then `GET`
    the same URL back and hash-compare. Any failed PUT, GET, or hash mismatch is `17`. (The
-   tier choice reads the harness config here too: an absent file selects the attachment
-   tier — no harness config is a fact, not an error, at evidence time; a file that exists but
-   violates its schema is `4`, same whole-file rule as in `ui render`.)
+   tier choice reads `uiCapture` here too: an undeclared `evidenceStore` is `null` and selects
+   the attachment tier — declaring no store is a fact, not an error, at evidence time; a
+   `uiCapture` that does not decode is `11`, same key-read rule as in `ui render`.)
 2. **Attachment tier** — no `evidenceStore` declared: upload each PNG through GitHub's
    user-attachment endpoint, then probe every returned URL (`HEAD`, expect 200). Any failed
    upload or probe is `17`. Two facts about this tier stated rather than hidden: the endpoint
-   is **undocumented** (the ADR 0165 durability caveat rides along — hosted copies are
-   display-grade, the set manifest in the lane scratch is the durable record), and it is an
+   is **undocumented**, and its durability caveat rides along — hosted copies are
+   display-grade, the set manifest in the lane scratch is the durable record — and it is an
    upload API, not an issues read/write, so it sits **outside** skill-conventions §11's
    REST-porcelain scope while every issue/PR read and write in this verb stays inside it.
 
@@ -624,13 +655,13 @@ branch and refuses on `18` when the lane branch does not publish there — an ev
 another lane's PR is a cross-lane write. **Where the lane publishes is its branch's tracked
 upstream, else `origin/<branch>`** — the same resolution `build push` performs, so a repair round's
 `build/pr-<pr>-<nonce>` branch, whose local name is never the PR's head ref, passes on its upstream
-rather than refusing every time (#7402). PR open (`7`).
+rather than refusing every time. PR open (`7`).
 
 **Exit status** (beyond the universal four)
 
 | Code | Trigger |
 |---|---|
-| `4` | an after-surface has no before and no `firstRender` mark, a named capture set is missing/empty, a set's `manifest.json` is absent or unparseable, or the harness config exists but violates its schema |
+| `4` | an after-surface has no before and no `firstRender` mark, a named capture set is missing/empty, or a set's `manifest.json` is absent or unparseable |
 | `5` | the composed comment carries a machine-local path |
 | `6` | the composed comment is a bare `@` path reference — not redactable |
 | `7` | the PR is proven absent, closed, or merged |
@@ -640,13 +671,14 @@ rather than refusing every time (#7402). PR open (`7`).
 | `16` | proven: a capture in a named set is invalid or does not match its manifest sha — evidence nobody can open is not evidence |
 | `17` | proven: at least one upload or upload-verification failed — **nothing was posted**; every failed surface named on stderr |
 | `18` | proven: the lane precondition failed (shared conventions) |
+| `19` | proven: `.fabrika.jsonc` declares no `uiSurfaces` row |
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `ui evidence: after-surface "<id>" has no before capture and no firstRender mark — an unexplained missing baseline is a hole in the evidence.` | 4 | refusal |
-| `ui evidence: upload failed for <n> of <m> captures (<first surface>: <reason>) — refusing to post partial evidence; a gallery missing its failures is #3925.` | 17 | refusal |
+| `ui evidence: upload failed for <n> of <m> captures (<first surface>: <reason>) — refusing to post partial evidence; a gallery missing its failures lies by omission.` | 17 | refusal |
 | `ui evidence: the composed comment is a bare @ path reference — write the evidence, not a pointer to it.` | 6 | refusal |
 | `ui evidence: set "<set>" has no manifest.json — a set without its manifest is not a set; re-run ui render.` | 4 | refusal |
 | `ui evidence: this session does not hold the claim on #<n> (<detail>) — the lane is not yours.` | 18 | refusal |
@@ -655,6 +687,9 @@ rather than refusing every time (#7402). PR open (`7`).
 | `ui evidence: the post failed: <reason> — it may or may not have landed; re-read the PR before re-running.` | 8 | refusal |
 | `ui evidence: the comment landed but does not read back as sent — it needs a human eye.` | 9 | refusal |
 | `ui evidence: cannot read <what>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
+| `ui evidence: .fabrika.jsonc is refused — <first violation>, so where this repo declares its render path is unread — nothing was uploaded or posted.` | 11 | refusal |
+| `ui evidence: .fabrika.jsonc is refused — <first violation>, so which evidence tier this repo declares is unread — nothing was uploaded or posted.` | 11 | refusal |
+| `ui evidence: .fabrika.jsonc declares no \`uiSurfaces\` rows — this repo declares no rendered surface, so no path raises the ui class and nothing can be rendered headlessly.` | 19 | refusal |
 | `ui evidence: capture "<id>" in set "<set>" is invalid (<detail>).` | 16 | refusal |
 
 **Scope** — the named capture sets, one PR, one comment. All-or-nothing by construction.
@@ -662,21 +697,20 @@ rather than refusing every time (#7402). PR open (`7`).
 **Example**
 
 ```
-$ fabrika ui evidence --pr 4318 --before before --after after
-{"answer":"attached","pr":4318,"commentId":512347,"head":"03135b91","surfaces":2}
+$ fabrika ui evidence --pr 9318 --before before --after after
+{"answer":"attached","pr":9318,"commentId":512347,"head":"03135b91","surfaces":2}
 ```
 
 **Grounding**
 
-- #3925 — months of 100%-failed uploads behind a passing gate. The upstream upload channel is
-  typed `never` and silently projects failures away (`packages/fabrika-cli/src/capture/upload.ts:9-13`,
-  `orchestrate.ts:104-105`); ADR 0165 accepted that for the *review* side's verdict. This verb is
-  the *construction* side's attach, and here a failed upload is `17`, aggregated, fail-closed —
-  the one behavior this contract most exists to pin.
-- #4808's class — evidence at a stale head misleads; the head SHA is in the comment text and a
-  repair re-attach posts fresh at the new head.
-- v1 scar: `write-code`'s Step 5 attach names no success check (`SKILL.md:1527-1538`); here the
-  read-back is the answer.
+- **Months of wholly-failed uploads once sat behind a passing gate.** The upload channel in
+  `packages/fabrika-cli/src/capture/upload.ts` is typed `never` and silently projects failures away,
+  which the *review* side accepted for its own verdict. This verb is the *construction* side's
+  attach, and here a failed upload is `17`, aggregated, fail-closed — the one behaviour this
+  contract most exists to pin.
+- **Evidence at a stale head misleads**, so the head SHA is in the comment text and a repair
+  re-attach posts fresh at the new head.
+- **v1 scar: its attach step named no success check**; here the read-back is the answer.
 
 ---
 

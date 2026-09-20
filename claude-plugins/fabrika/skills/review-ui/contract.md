@@ -1,6 +1,6 @@
 # `/review-ui` — derived CLI contract
 
-**Skill:** [`review-ui`](SKILL.md) · **Authoring brief:** [#4718](https://github.com/kamp-us/phoenix/issues/4718) · **Date:** 2026-08-09
+**Skill:** [`review-ui`](SKILL.md) · **Date:** 2026-08-09
 
 The verbs land in `packages/fabrika-cli/` under the **`review-ui`** subcommand group, registered
 in `packages/fabrika-cli/src/registry.ts` beside the shipped `adr`, `build`, `report`,
@@ -9,18 +9,16 @@ in `packages/fabrika-cli/src/registry.ts` beside the shipped `adr`, `build`, `re
 spec and that doc disagree, the doc wins and this spec is the bug. **None of these verbs exists yet** —
 this spec is greenfield.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill** (ADR 0238). The v1 prior
-art — `claude-plugins/kampus-pipeline/skills/review-design/` and the six field-4 tools — was
-**read** for semantics and scars; none is invoked, wrapped, or deferred to. Each Grounding
-section names the scar the v1 counterpart carries and what this spec does instead.
+**`fabrika` calls the retired v1 pipeline CLI nowhere, and neither does the skill.** The v1 prior
+art — its `review-design` skill and the six tools behind it — was **read** for semantics and scars;
+none is invoked, wrapped, or deferred to. Each Grounding section names the scar the v1 counterpart
+carries and what this spec does instead.
 
 **The capture-machinery boundary (the tandem ruling).** Rendering, capture validation, golden
 resolution and raster diffing are **one machinery shared with `build-ui`** — same render paths,
 same golden formats, same modules (founder ruling, brief amendment 2026-08-09). That machinery is
-fabrika-owned: [#5063](https://github.com/kamp-us/phoenix/issues/5063) moved that machinery onto
-fabrika's train, where it now lives at `packages/fabrika-cli/src/capture/` behind the
-`@kampus/fabrika-cli/capture` subpath (repo-specific DATA — golden bytes, `golden-pointer.json`,
-harness config — stayed per-repo), ahead of the `ui`-verb implementation (#5061). An implementer
+fabrika-owned: it lives at `packages/fabrika-cli/src/capture/` behind the capture subpath, while
+repo-specific DATA — golden bytes, `golden-pointer.json`, harness config — stays per-repo. An implementer
 imports that module the way `build`'s verbs import the `wire` modules. Every scar this spec designs
 out binds regardless of whether the implementation imports or reimplements.
 
@@ -31,10 +29,9 @@ out binds regardless of whether the implementation imports or reimplements.
   `review deviations`. The skill invokes them as-is; restating one here would be the second home
   a shared fact drifts from.
 - **The named-gate read** is `heal-ci`'s ([`../heal-ci/contract.md`](../heal-ci/contract.md)):
-  `heal-ci surface`. §5 names three design gates and needs each one's live state *by name* — the
+  `heal-ci surface`. §5 needs each armed design gate's live state *by name* — the
   check-run name, the job's `name:` inside each workflow file, never its filename;
-  `review ci` collapsed its check rows to a status tally under ADR
-  [0308](../../../../.decisions/0308-bounded-evidence-output-shape.md), and even uncollapsed it could
+  `review ci` collapsed its check rows to a bounded status tally, and even uncollapsed it could
   never tell a required gate that never ran from a gate the repo does not declare at all — both are
   simply no row. `surface` prints every declared required context as `producing` or `absent` and
   every undeclared gating run as `extra`, which between them is the answer §5 was always asking for.
@@ -76,26 +73,25 @@ sibling contracts carry.)
   LLM-driven in the skill. A verb's ceiling is the golden diff. No future `review-ui` verb may
   emit a composition score, a layout opinion, or any judgement token over pixels.
 - **A UI-surface classifier.** v1's `classify-ui-surface.sh` swallows a failed file-list read
-  into "not a UI PR" (`|| true`, #4493) and scrapes its predicate out of another skill's
+  into "not a UI PR" (a trailing `|| true`) and scrapes its predicate out of another skill's
   markdown at `ref=main` (three copies of one regex, one live-scraped). The modality decision is
   the skill's judgment over `review diff`'s refusal-guarded bytes; `render` takes explicit
   `--surface` operands and refuses zero. No verb guesses surfaces, so no verb can fail open on
   the guess.
-- **A token-discipline / inventory-freshness / a11y verdict.** Each is enforced at its own gate
-  (phoenix: `design-token-guard.yml`, `design-inventory-guard.yml`, `a11y-pbt.yml`) — and every
-  real v1 design FAIL (#2513, #3007, #3232) was the deterministic token-seam class those gates
+- **A token-discipline / inventory-freshness / a11y verdict.** Each is enforced at the repo's own
+  CI gate for it — and every real v1 design FAIL was the deterministic token-seam class those gates
   now own. The skill states the expectation; the verdict stays where it is enforced.
-- **A control-plane classifier.** v1's leg called `cp-classify` and then discarded its answer
-  (#4582), and the ADR-0164 content probe behind it over-matched 84% of the decisions corpus
-  (#2617) — a content-keyed check that cannot see its subject, answering confidently. That whole
-  branch retires with v1 (#4937). Here §CP arrives as the `--carrier` **input**, exactly as in
+- **A control-plane classifier.** v1's leg computed a control-plane answer and then discarded it,
+  and the content probe behind it over-matched most of the decision corpus — a content-keyed check
+  that cannot see its subject, answering confidently. That whole
+  branch retires with v1. Here §CP arrives as the `--carrier` **input**, exactly as in
   `review post`; nothing in this group computes membership.
 - **A second parser for the marker, the pointer, the registry, or the preview comment.** The
   marker is the registered wire format; the pointer and registry schemas are `build-ui`'s
   contract's; the preview-comment anchor grammar is the capture machinery's one resolver module.
   v1 held three copies of its UI predicate and two of the design law; one home each is the point.
 - **A verdict-ledger / learn-back verb.** The charter sequences learn-back after this skill is
-  eval-green (#3946: registry → goldens → corpus → `review-ui` eval-green → learn-back). Scraping
+  eval-green: registry → goldens → corpus → `review-ui` eval-green → learn-back. Scraping
   markers into structured data is that later work's verb, in its own contract.
 - **A before-capture verb (rendering the base branch).** The pairwise *before* is the blessed
   golden or nothing — an unblessed surface is judged against the rubric checklist, and the
@@ -105,10 +101,10 @@ sibling contracts carry.)
 
 ### Nothing here recomputes an enforced answer
 
-The gated questions and their owners, named so the boundary is checkable: token discipline
-(`design-token-guard.yml` — branch protection, not the `ci-required` aggregator), inventory
-freshness + the descriptive/normative firewall (`design-inventory-guard.yml`), the a11y floor
-(`a11y-pbt.yml`), run-evidence presence (`run-evidence.yml` + ship-it's reader), §CP membership
+The gated questions and their owners, named so the boundary is checkable: token discipline (the
+repo's token guard, armed through branch protection rather than the CI aggregator), inventory
+freshness plus the descriptive/normative firewall (its inventory guard), the a11y floor (its a11y
+job), run-evidence presence (the evidence producer plus the ship gate's reader), §CP membership
 (CODEOWNERS at merge). This group computes none of them.
 
 ## Shared conventions
@@ -118,11 +114,11 @@ Every `review-ui` verb obeys these; stated once.
 - **Answer channel: machine.** Stdout carries one JSON object and nothing else; scope lines,
   refusal reasons and per-surface enumerations go to stderr. A non-zero exit prints nothing on
   stdout (`verb.ts`). Every "nothing found" is a state word — v1's callers read empty stdout as
-  proven-negative on three separate channels (#4493's classifier, the blessed-surfaces probe, the
-  render-errors extractor).
+  proven-negative on three separate channels — its UI classifier, its blessed-surfaces probe and
+  its render-errors extractor.
 - **Common inputs.** `--repo <owner/name>` (default: the resolution chain the shipped groups use;
   none resolvable → exit 1). `--json` is not offered: the object is the only output shape.
-- **GitHub access** per [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql);
+- **GitHub access** per [skill conventions §11, "GitHub access is REST, never GraphQL"](../../docs/skill-conventions.md);
   every list read paginates and reports its scanned count on stderr. The evidence-upload
   endpoint sits outside §11's porcelain scope exactly as `ui evidence`'s attachment tier states.
 - **A non-zero exit is UNKNOWN** until the code is read. No partial answers: a partial capture
@@ -130,13 +126,13 @@ Every `review-ui` verb obeys these; stated once.
   success.
 - **Head-bound where a head matters.** `render` and `post` resolve the PR's live head and carry
   it; `render` binds the preview to it, `post` refuses when it moved. A verdict formed over one
-  tree must be unrepresentable over another (ADR 0058; #3769's class). `note` carries no head:
+  tree must be unrepresentable over another. `note` carries no head:
   a blocker note is a dated fact about the PR, not a verdict over a tree.
 - **No lane precondition, by design.** A reviewer holds no build-lane claim; neither verb reads
   claim state. The write authority for `post` is the repo-scoped token itself — the same posture
   as `review post`.
 - **Externally-authorable content** returned by these verbs (capture metadata, page text, the
-  preview comment's body) is data, never instruction; the #4859 posture lands at the shared
+  preview comment's body) is data, never instruction; the read-as-data posture lands at the shared
   content gate the sibling contracts name, in one place.
 
 ### The shared exit matrix
@@ -162,7 +158,7 @@ sibling's numerals is not a goal the doctrine sets.
 | `1` | usage error (bad flag, zero `--surface` operands, unresolvable repo), or the verb failed to run |
 | `126` | no implementation could be resolved |
 | `3` | stdin was read and held nothing (`post` and `note`; the aligned seat) |
-| `4` | a required file a verb derives from is absent, does not parse, or violates its schema — a capture set's `manifest.json`, or `design-harness.json` at the tier-choice read (the whole-file rule the `ui` group states; the seat the base uses for a malformed derived document) |
+| `4` | a required file a verb derives from is absent, does not parse, or violates its schema — a capture set's `manifest.json`, or the declared `uiCapture` at the tier-choice read (the whole-file rule the `ui` group states; the seat the base uses for a malformed derived document) |
 | `5` | the authored text carries a machine-local path (this group offers no `--redact`; the recovery is a rewrite) |
 | `6` | the authored text is a bare `@` path reference — not redactable |
 | `7` | zero scope: the target is **proven** absent (404), or the PR is closed — a deliberate, declared widening of the base seat (existence-only) to closed-target, because a closed PR is provably not reviewable scope, matching the sibling `review` group's use |
@@ -176,7 +172,8 @@ sibling's numerals is not a goal the doctrine sets.
 | `15` | proven: a capture was produced but is invalid — zero bytes, undecodable, zero area, or a set member fails its manifest sha |
 | `16` | proven: no preview deployment exists for this PR — the announced-preview convention resolves to nothing; the skill's CANT-SEE route |
 | `17` | proven: at least one evidence upload or upload-verification failed — **nothing was posted** |
-| `18` | refused: the write would retire a standing verdict of the **opposite polarity** at this head and `--supersede` was not passed — nothing posted (#7247) |
+| `18` | refused: the write would retire a standing verdict of the **opposite polarity** at this head and `--supersede` was not passed — nothing posted |
+| `20` | refused, proven: the text review a `route` record rests on is not a standing PASS at the head it binds — the `review-code` verdict in force at `--sha` is a FAIL, or a route resting on a hand-verification has no text verdict binding that head — nothing posted |
 | `127` | the verb never ran at all (unresolved binary) |
 
 **`7` versus `11`** is the package's spine: a 404 is a fact about the repository, an unreachable
@@ -185,14 +182,15 @@ GitHub is not a fact about anything; no message here reads "does not exist, or i
 would bind a tree that is not the PR* — because the caller's move is identical (re-render /
 re-review at the live head), where `13`/`14`/`15`/`16` each route differently and stay four codes.
 **`16` is not `7`**: the PR exists; what is proven absent is the repo's ability to show it — a
-routable can't-see state the skill acts on by name, the #4305 declaration made mechanical.
+routable can't-see state the skill acts on by name — a can't-see the reviewer declares out loud,
+made mechanical.
 
 ## Required environment — the two render paths
 
 Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-ui`:
 
 - **Default path (required): the headless capture machinery** — the fabrika-owned capture
-  package (#5063) driving a headless browser at the **preview deployment's URL**. The browser
+  package driving a headless browser at the **preview deployment's URL**. The browser
   dependency ships with the verb package (founder preference: default-available beats
   install-a-thing); a missing or broken provision at run time is `11` with the remediation in
   the message. This path is the only source of evidence captures — its validation is what makes
@@ -203,19 +201,31 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   verb changes behavior based on it. Chrome absent means the default path, silently.
 - Chrome output never enters `review-ui post --evidence`: evidence comes from `review-ui render`
   capture sets only, so the attach path has one validated producer.
-- **A tier-naming surface needs `BETTER_AUTH_SECRET` plus that tier's own session token**, all unset
-  by default. `BETTER_AUTH_SECRET` is the preview worker's, so the cookie signature verifies; the
+- **A tier-naming surface needs the preview worker's signing secret plus that tier's own session
+  token**, all unset by default. The secret is the one the *preview worker deployed with*, so the
+  cookie signature verifies, and it is named rather than assumed: `--auth-secret-from <file>` reads
+  it from an export of the **ci-credentials** stack's alchemy state, which is its one readable copy.
+  That value is repo-wide rather than per-stage — `infra/ci-credentials/github.ts` mints one and
+  pushes it as a write-only Actions secret handed to the deploy of every stage of an app whose
+  worker binds it — so there is no
+  preview-stage copy to export, and the app stack's deployed `secret_text` binding does not read
+  back. Without the
+  flag the ambient `$BETTER_AUTH_SECRET` stands in, and **a value that is empty or carries the
+  `insecure_` placeholder an example env file ships is refused on `11` rather than signed with**.
+  A placeholder-signed cookie is perfectly well-formed and the worker answers it as a visitor, which
+  at the shot is indistinguishable from a preview nobody seeded — two gate rounds were spent
+  splitting exactly that by hand. The
   token is the one `preview-seed test-account` wrote onto the preview D1 for that tier —
   `PREVIEW_TEST_SESSION_TOKEN` for `:auth` (yazar), `PREVIEW_TEST_CAYLAK_SESSION_TOKEN` for
   `:auth-caylak` (çaylak). **One variable per tier, and an unset one is never satisfied by
   another's**: an unset tier token means that tier was not seeded on this preview, and falling back
-  to a seeded identity would render the audience the surface said it was not (#7398). With any of
+  to a seeded identity would render the audience the surface said it was not. With any of
   them unset the request refuses `11` rather than substituting; with no tier-naming surface asked
   for, every surface renders anonymously as before. Setting them is necessary and not sufficient —
   whether the cookie authenticated, and at which tier, is the per-shot session proof's answer, also
   an `11`.
 - **`--flag` needs those same values plus one grant on the preview D1.** The override cookie is
-  honored only for a platform admin (`flagship/override-authz.ts`, unchanged by #7218), and
+  honored only for a platform admin, per the repo's own override authorization, and
   `preview-seed test-account` provisions moderation authority to the yazar identity and nothing at
   all to the çaylak one. So a forced run is preceded by `node packages/admin-grant/src/bin.ts grant
   --user-id <the tier's account id> --database-id <preview-d1>` — offline and direct-D1, on a
@@ -242,7 +252,7 @@ anchor at all is the proven `16`.
 **Invocation**
 
 ```
-fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /pano/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--app web] [--repo <owner/name>]
+fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--auth-secret-from <file>] [--app web] [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -251,14 +261,15 @@ fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /pano/
 |---|---|---|---|---|
 | `--pr` | integer | yes | — | the pull request whose preview is judged |
 | `--out` | string | yes | — | kebab-case capture-set name; captures land under `<OS temp>/fabrika-review-ui/<pr>-<head8>/<set>/` |
-| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a route (`/pano`), or a route plus a realized tier state (`/pano:auth`, `/pano:auth-caylak`); zero operands is `1` — no tool guesses surfaces from a diff |
+| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a route (`/feed`), or a route plus a realized tier state (`/feed:auth`, `/feed:auth-caylak`); zero operands is `1` — no tool guesses surfaces from a diff |
 | `--viewport` | string, repeatable | no | `desktop` alone | a viewport to shoot every `--surface` at, over the closed set `desktop` (1280×800) and `mobile` (390×844); crossed with `--surface`, so two of each is four captures. A name outside the set, or one passed twice, is `10` |
 | `--flag` | string, repeatable | no | every flag at its default | force one flag for this run: `<key>=on` or `<key>=off`; anything else, or a key forced twice, is `10` |
-| `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve |
+| `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve. Whichever app is resolved, a `--surface` whose own `uiSurfaces` row belongs to an app this preview did not announce is `11` — omitting the flag routes around no fence |
+| `--auth-secret-from` | string | no | the ambient `$BETTER_AUTH_SECRET` | a file holding the `BETTER_AUTH_SECRET` the preview worker deploys with — one repo-wide value, exported from the ci-credentials stack's alchemy state, its one readable copy; a file that cannot be read is `11`, and so is a resolved value that is empty or carries the `insecure_` placeholder |
 | `--repo` | string | no | resolved | the repository |
 
 A `:state` suffix is admitted **only for a state something here actually puts on screen**, and
-refused on `10` otherwise. The realized set is `auth` and `auth-caylak` (#7051, #7398), and **each
+refused on `10` otherwise. The realized set is `auth` and `auth-caylak`, and **each
 one names the tier it renders at**: `:auth` is the yazar+moderator identity, `:auth-caylak` the
 çaylak one. Each seeds that identity's own better-auth session cookie into the capture context, and
 each account is provisioned direct-D1 by `preview-seed test-account`, never by a worker route.
@@ -282,7 +293,7 @@ perfectly valid PNGs no byte check can tell from the real one.
 of the design law — a sub-36px tap target, a nowrap string that overflows, spacing that goes off-grid
 — is only answerable from narrow pixels, and before this operand existed every shot was 1280 wide, so
 an acceptance criterion phrased about a phone ended the gate as disclosed-UNKNOWN rather than PASS or
-FAIL (#7706, and PR #7388 took a FAIL that no change to its branch could repair). Omitting it renders
+FAIL, and one PR took a FAIL that no change to its branch could repair. Omitting it renders
 at `desktop` alone, exactly as every invocation written before it did. The two realized names resolve
 to the constants in `capture/plan.ts`; a third name would have to fall back to some width, and a shot
 at the fallback width filed under the asked-for label is coverage claimed and not held. Repeating one
@@ -290,7 +301,7 @@ name is `10` too — the second shot would overwrite the first's file and its ev
 
 Viewports **cross** the surfaces rather than pairing with them: two surfaces and two viewports is one
 set of four captures. Nothing collides, because the PNG file name has always carried the viewport
-label (`pano@desktop.png`, `pano@mobile.png`) and each manifest entry now records it beside the
+label (`feed@desktop.png`, `feed@mobile.png`) and each manifest entry now records it beside the
 surface id — so a set can say what width each of its shots is of, and the evidence gallery heads each
 one `<surface> @ <viewport>`.
 
@@ -300,15 +311,15 @@ from the request, and a shot whose width is not the requested viewport's is refu
 recorded nowhere. A desktop-width capture filed under `mobile` is a perfectly valid PNG of a layout
 nobody asked about, and no byte check downstream can tell it from the real thing.
 
-**`--flag` forces a dark-shipped flag on, so the state the PR adds paints** (ADR 0336, #7218). It
-rides the worker's existing `phoenix_flag_overrides` cookie — no route is added and
-`flagship/override-authz.ts` is untouched — and that gate is why the operand carries a fence of its
+**`--flag` forces a dark-shipped flag on, so the state the PR adds paints.** It
+rides the worker's existing flag-override cookie — no route is added and the override
+authorization is untouched — and that gate is why the operand carries a fence of its
 own: on a deployed stage the cookie is honored only for a request whose actor holds platform
 `Admin`, so an anonymous surface would drop it and render the default state cleanly under the
 forced name. Every `--surface` in a forced run must therefore name a tier state, and a bare route
 beside a `--flag` is `10`. Neither preview test account holds admin, so a forced run also needs
 `admin-grant grant --user-id <that tier's account id> --database-id <preview-d1>` against that
-throwaway preview D1 — offline, direct-D1, the same sanctioned path ADR 0107 already names. Admin is
+throwaway preview D1 — offline, direct-D1, the same path the repo already sanctions for a grant. Admin is
 a relation tuple and not a tier, so a granted `preview-test-caylak` is still a çaylak and still
 passes the tier proof.
 
@@ -330,9 +341,9 @@ still refuses every `:state`.
 
 ```
 {"set": "judged", "pr": 4321, "head": "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c",
- "previewUrl": "https://phoenix-pr-4321.kampus.workers.dev",
+ "previewUrl": "https://app-pr-4321.example.workers.dev",
  "captures": [
-   {"surface": "/pano", "viewport": "desktop", "path": "<abs>/judged/pano@desktop.png",
+   {"surface": "/feed", "viewport": "desktop", "path": "<abs>/judged/feed@desktop.png",
     "width": 1280, "height": 2140, "sha256": "…", "pageErrors": {"rows": [], "more": 0}}
  ]}
 ```
@@ -341,7 +352,20 @@ still refuses every `:state`.
 `11`). Resolve the preview comment for `--app` (paginated sweep; anchor absent → `16`, anchor
 present but unparseable → `11`). **Bind the preview to the head**: the comment's deployed SHA
 must equal the live head — a preview that lags the push is `12`, because pixels of an old tree
-bound to a new SHA are the stale-verdict class at the capture seam. For each `--surface` at each
+bound to a new SHA are the stale-verdict class at the capture seam. **Fence the app axis**: every
+surface resolves to its owning `uiSurfaces` row by longest claiming mount and that row to its app —
+the leading segment of the row's `name`, so `web-lab` is `web`'s and `desk-chat` is `desk`'s — and
+a surface whose app is not among the ones this preview announced is `11` before a browser launches,
+naming every such surface. One origin is resolved for the run, so shooting a foreign surface at it
+returns that app's not-found page: a clean PNG the outcome typing would record as `captured`. A
+surface no declared row claims is shot as before — which app serves it is a question the list does
+not answer either way. **Resolve the tier signing
+secret** — the file `--auth-secret-from` names, else the ambient variable — and refuse on `11`
+before a browser launches when it cannot be read, is empty, or carries the `insecure_` placeholder.
+The refusal names the source it read and the route out, and the route differs by source: with no
+flag it is to pass one, and with a flag it is to re-export the repo-wide value from the
+ci-credentials stack's alchemy state, since the named file does not hold the deployed one.
+For each `--surface` at each
 `--viewport`, in the provisioned headless browser sized to that viewport: navigate to
 `<previewUrl><route>`; status ≥ 400 or failed navigation is **unreachable** (`14`); an uncaught
 page exception is **crashed** (`13`); otherwise screenshot full-page to
@@ -352,7 +376,7 @@ requested viewport's width (`19`).
 crash/advisory split is the machinery's page-error module, and an empty list is only ever
 written from a successfully-read error channel (v1's extractor returned empty on a parse failure,
 fusing "no crashes" with "never looked"). Because nothing reads a row by name, it is an
-evidence-array and prints collapsed (ADR 0308): `{"rows": [<first 3>], "more": <the rest>}`, with
+evidence-array and prints collapsed to a bounded shape: `{"rows": [<first 3>], "more": <the rest>}`, with
 `more` always present so a list capped at exactly its length reads as whole. The stderr
 per-surface line counts the **whole** tally, not the kept rows. **Write the set manifest** `<set>/manifest.json`,
 byte-identical to the stdout JSON — `post` reads the set through it, and a set without its
@@ -370,7 +394,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
 | `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; or `--flag` was passed beside an anonymous surface |
-| `11` | the PR/head/comment read failed; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token or `BETTER_AUTH_SECRET` is unset; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; or a forced flag evaluated at its default anyway |
+| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, or while `--auth-secret-from` names a file that could not be read; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; or a forced flag evaluated at its default anyway |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -386,6 +410,9 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: PR #<n> is closed — nothing to judge.` | 7 | refusal |
 | `review-ui render: --surface "<id>" names a :state nothing renders — the realized states are auth, auth-caylak; render the bare route.` | 10 | refusal |
 | `review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: <names>) — the named tier's render is UNKNOWN, never a seeded substitute.` | 11 | refusal |
+| `review-ui render: a tier-naming surface was requested but <the source> carries the insecure_ placeholder prefix — a cookie signed with it is one the preview worker answers as a visitor — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
+| `review-ui render: a tier-naming surface was requested but <the source> is empty — there is no key to sign the tier cookie with — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
+| `review-ui render: cannot read the exported repo-wide session-signing secret at <path>: <reason> — the named tier's render is UNKNOWN.` | 11 | refusal |
 | `review-ui render: surface "<id>" at <viewport> did not render signed in (<reason>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
 | `review-ui render: surface "<id>" at <viewport> named tier <wanted> and rendered as <rendered> — the named tier's render is UNKNOWN, never another tier's.` | 11 | refusal |
 | `review-ui render: --flag "<token>" is not a <key>=<on\|off> pair (<reason>) — an operand nothing can force would shoot the default state under the forced name.` | 10 | refusal |
@@ -397,6 +424,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: --out "<value>" is not a kebab-case set name.` | 10 | refusal |
 | `review-ui render: cannot read <what> for #<n>: <reason> — the render is UNKNOWN.` | 11 | refusal |
 | `review-ui render: the preview comment names apps <list> — pass --app to pick one.` | 11 | refusal |
+| `review-ui render: --surface "<id>" is served by app "<app>" (row "<row>"), which this preview does not announce — it announces <list>; the shot would come back as an announced app's not-found page.` | 11 | refusal |
 | `review-ui render: the preview comment carries the anchor but no parseable URL + SHA for app "<app>" — a malformed announcement is unreadable, not absent.` | 11 | refusal |
 | `review-ui render: the preview deploys <deployed-sha7>, the live head is <head7> — stale preview; pixels of an old tree must not bind a new head (#4808's class).` | 12 | refusal |
 | `review-ui render: surface "<id>" at <viewport> threw during render: <first page error> — the render is red; a broken page is not composition to judge.` | 13 | refusal |
@@ -405,84 +433,85 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: no preview-deploy comment on PR #<n> — nothing to judge without running the PR's code; the run is CANT-SEE.` | 16 | refusal |
 
 **Scope** — exactly the `--surface` × `--viewport` cross product against one PR's announced preview. Zero operands
-is `1`, so "rendered nothing, found nothing wrong" is unrepresentable (ADR 0092). The
+is `1`, so "rendered nothing, found nothing wrong" is unrepresentable — this verb fails closed on
+zero scope like every other. The
 per-surface outcome enumeration goes to stderr on every path, success included.
 
 **Examples**
 
 ```
-$ fabrika review-ui render --pr 4321 --out judged --surface /pano
-{"set":"judged","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/pano","viewport":"desktop","path":"/tmp/fabrika-review-ui/4321-03135b91/judged/pano@desktop.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}}]}
+$ fabrika review-ui render --pr 4321 --out judged --surface /feed
+{"set":"judged","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://app-pr-4321.example.workers.dev","captures":[{"surface":"/feed","viewport":"desktop","path":"/tmp/fabrika-review-ui/4321-03135b91/judged/feed@desktop.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 ```
-$ fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /yonetim
-review-ui render: surface "/pano" at desktop captured: 1280x2140, 0 page errors
-review-ui render: surface "/yonetim" at desktop is unreachable at the preview (status 404) — judge what renders, and hold the gap against the PR's Deviations (#4305).
+$ fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /admin
+review-ui render: surface "/feed" at desktop captured: 1280x2140, 0 page errors
+review-ui render: surface "/admin" at desktop is unreachable at the preview (status 404) — judge what renders, and hold the gap against the PR's Deviations (#4305).
 $ echo $?
 14
 ```
 
 ```
-$ fabrika review-ui render --pr 4321 --out narrow --surface /pano --viewport desktop --viewport mobile
-review-ui render: surface "/pano" at desktop captured: 1280x2140, 0 page errors
-review-ui render: surface "/pano" at mobile captured: 390x3180, 0 page errors
-{"set":"narrow","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/pano","viewport":"desktop","path":"/tmp/fabrika-review-ui/4321-03135b91/narrow/pano@desktop.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}},{"surface":"/pano","viewport":"mobile","path":"/tmp/fabrika-review-ui/4321-03135b91/narrow/pano@mobile.png","width":390,"height":3180,"sha256":"1f7b…","pageErrors":{"rows":[],"more":0}}]}
+$ fabrika review-ui render --pr 4321 --out narrow --surface /feed --viewport desktop --viewport mobile
+review-ui render: surface "/feed" at desktop captured: 1280x2140, 0 page errors
+review-ui render: surface "/feed" at mobile captured: 390x3180, 0 page errors
+{"set":"narrow","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://app-pr-4321.example.workers.dev","captures":[{"surface":"/feed","viewport":"desktop","path":"/tmp/fabrika-review-ui/4321-03135b91/narrow/feed@desktop.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}},{"surface":"/feed","viewport":"mobile","path":"/tmp/fabrika-review-ui/4321-03135b91/narrow/feed@mobile.png","width":390,"height":3180,"sha256":"1f7b…","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 ```
-$ fabrika review-ui render --pr 4321 --out forced --surface /hosgeldin:auth --flag phoenix-welcome=on
-review-ui render: surface "/hosgeldin:auth" at desktop captured: 1280x1640, 0 page errors
-{"set":"forced","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/hosgeldin:auth","viewport":"desktop","path":"/tmp/fabrika-review-ui/4321-03135b91/forced/hosgeldin-auth@desktop.png","width":1280,"height":1640,"sha256":"1f7b…","pageErrors":{"rows":[],"more":0}}]}
+$ fabrika review-ui render --pr 4321 --out forced --surface /welcome:auth --flag welcome-banner=on
+review-ui render: surface "/welcome:auth" at desktop captured: 1280x1640, 0 page errors
+{"set":"forced","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://app-pr-4321.example.workers.dev","captures":[{"surface":"/welcome:auth","viewport":"desktop","path":"/tmp/fabrika-review-ui/4321-03135b91/forced/welcome-auth@desktop.png","width":1280,"height":1640,"sha256":"1f7b…","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 ```
-$ fabrika review-ui render --pr 4321 --out caylak --surface /hosgeldin:auth-caylak
-review-ui render: surface "/hosgeldin:auth-caylak" captured: 1280x1640, 0 page errors
-{"set":"caylak","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/hosgeldin:auth-caylak","path":"/tmp/fabrika-review-ui/4321-03135b91/caylak/hosgeldin-auth-caylak.png","width":1280,"height":1640,"sha256":"4d02…","pageErrors":{"rows":[],"more":0}}]}
+$ fabrika review-ui render --pr 4321 --out caylak --surface /welcome:auth-caylak
+review-ui render: surface "/welcome:auth-caylak" captured: 1280x1640, 0 page errors
+{"set":"caylak","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://app-pr-4321.example.workers.dev","captures":[{"surface":"/welcome:auth-caylak","path":"/tmp/fabrika-review-ui/4321-03135b91/caylak/welcome-auth-caylak.png","width":1280,"height":1640,"sha256":"4d02…","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 ```
-$ fabrika review-ui render --pr 4321 --out caylak --surface /hosgeldin:auth-caylak
+$ fabrika review-ui render --pr 4321 --out caylak --surface /welcome:auth-caylak
 review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: PREVIEW_TEST_CAYLAK_SESSION_TOKEN) — the named tier's render is UNKNOWN, never a seeded substitute.
 $ echo $?
 11
 ```
 
 ```
-$ fabrika review-ui render --pr 4321 --out caylak --surface /hosgeldin:auth-caylak
-review-ui render: surface "/hosgeldin:auth-caylak" named tier çaylak and rendered as yazar — the named tier's render is UNKNOWN, never another tier's.
+$ fabrika review-ui render --pr 4321 --out caylak --surface /welcome:auth-caylak
+review-ui render: surface "/welcome:auth-caylak" named tier çaylak and rendered as yazar — the named tier's render is UNKNOWN, never another tier's.
 $ echo $?
 11
 ```
 
 ```
-$ fabrika review-ui render --pr 4321 --out forced --surface /hosgeldin --flag phoenix-welcome=on
-review-ui render: --flag was passed with the anonymous surface "/hosgeldin" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (auth, auth-caylak) on every surface.
+$ fabrika review-ui render --pr 4321 --out forced --surface /welcome --flag welcome-banner=on
+review-ui render: --flag was passed with the anonymous surface "/welcome" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (auth, auth-caylak) on every surface.
 $ echo $?
 10
 ```
 
 **Grounding**
 
-- #3925 / v1 S1–S2 — v1's capture invocation carried no status assertion and no capture-count
-  check: a crashed helper meant zero surfaces judged, zero violations, PASS. Here full success is
-  the only `0`, and every shortfall is a named proven code.
+- **A crashed capture that read as a clean gate.** v1's capture invocation carried no status
+  assertion and no capture-count check, so a crashed helper meant zero surfaces judged, zero
+  violations, PASS. Here full success is the only `0`, and every shortfall is a named proven code.
 - v1 S22 — the preview resolver took the first `workers.dev` URL anywhere in the comment (wrong
   app on multi-app comments), hardcoded the domain, and read one unpaginated page. The resolver
   module reads the app sub-line, any domain, paginated.
-- #4808's class / ADR 0058 — the deployed-SHA-equals-head bind (`12`): v1 never checked that the
-  preview it judged was the head it stamped.
-- #2594 (via the machinery's page-error module) — an uncaught exception is a red render (`13`),
-  never a screenshot judged as composition; `console.error` stays advisory data.
-- #4305 — unreachable is a per-surface proven outcome (`14`) the skill must dispose of loudly,
-  never a silent skip; the disclosure fork (Deviations-named vs undisclosed) is the skill's.
+- **A verdict bound to a tree it never saw.** The deployed-SHA-equals-head bind (`12`) exists
+  because v1 never checked that the preview it judged was the head it stamped.
+- **A crashed page is not composition.** An uncaught exception is a red render (`13`), never a
+  screenshot judged as a layout; `console.error` stays advisory data.
+- **Unreachable is an outcome, not a skip.** It is a per-surface proven code (`14`) the skill must
+  dispose of loudly; the disclosure fork (Deviations-named vs undisclosed) is the skill's.
 - v1 S4 — v1's captures lived in an unrecorded `mktemp -d`: a PASS whose evidence upload failed
   was unauditable. The set path here is deterministic from PR + head, and the manifest records it.
-- #6541 / ADR 0336 — the verb captured every flag at its default, so under the dark-ship norm the
-  gate judged the off-path and said PASS. `--flag` is that ruling's implementation (#7218), and its
-  own proof exists because an override the preview dropped is the same clean-but-wrong capture.
-- #7398 — one identity at one tier meant a çaylak-only surface could not be rendered at all, and the
+- **A flag-off capture that passed for the feature.** The verb captured every flag at its default,
+  so under the dark-ship norm the gate judged the off-path and said PASS. `--flag` is the fix, and
+  its own proof exists because an override the preview dropped is the same clean-but-wrong capture.
+- **One identity meant one audience.** A tier-only surface could not be rendered at all, and the
   yazar's shot of it came back `captured`, valid and decodable, showing the state the PR did not add.
   The tier rides the surface id, one seeded identity per tier, and the session proof reads the tier
   back — the third instance of the same class the two bullets above name.
@@ -535,12 +564,12 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 3. **Re-validate every capture against its manifest sha** (`15` on mismatch or invalidity).
 4. **Upload every capture and verify each upload individually, before anything posts** — the
    two-tier store exactly as `ui evidence` specifies it (store tier when the repo declares one;
-   the GitHub user-attachment tier otherwise, each upload probed back). The tier choice reads
-   `design-harness.json` at the repo root the delivery layer resolves — the reviewer's own
+   the GitHub user-attachment tier otherwise, each upload probed back). The tier choice reads the
+   `uiCapture` key of `.fabrika.jsonc` at the repo root the delivery layer resolves — the reviewer's own
    checked-out tree, never the PR head, which this skill never checks out. Any failure is `17`,
-   aggregated, **nothing posted**. This inverts v1's posture at the seam #3925 named: ADR 0165's
-   judge-the-local-bytes stands — the pixels you judged were local — but the *marker* does not
-   land over a broken evidence channel. The upload stopped being decoration and became a
+   aggregated, **nothing posted**. This inverts v1's posture at the seam where a crashed capture
+   still produced a verdict: judging the local bytes stands — the pixels you judged were local —
+   but the *marker* does not land over a broken evidence channel. The upload stopped being decoration and became a
    precondition of the verdict's existence.
 5. **Compose the comment**: first line through the wire format's `emit` (namespace `review-ui`,
    `--polarity`, `--sha`, `--clause`), or with `--carrier advisory` the fixed advisory line plus
@@ -555,8 +584,8 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
    verbatim below the `<!-- fabrika:superseded -->` fence under a dated `## Superseded verdict —
    YYYY-MM-DD` heading, and the fresh verdict takes the first line so every marker reader resolves
    the newest one. GitHub keeps no comment-body history, so a PATCH over a verdict is that verdict
-   gone: on PR #7081 a FAIL became a PASS at an unchanged head and nothing showed a gate had ever
-   blocked (#7247). When the write would retire a standing verdict of the **opposite** polarity at
+   gone: on one PR a FAIL became a PASS at an unchanged head and nothing showed a gate had ever
+   blocked. When the write would retire a standing verdict of the **opposite** polarity at
    this head, it is the `18` refusal unless `--supersede` is passed, and nothing is posted — the
    flip is legitimate and routine, but it is the one the merge gate reads.
 8. **Read it back, unconditionally, from live PR state** — the format's `read` (or the advisory
@@ -568,7 +597,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | Code | Trigger |
 |---|---|
 | `3` | stdin was read and held nothing — an empty verdict body would read as ungated |
-| `4` | the `--evidence` set's `manifest.json` is absent or does not parse, or `design-harness.json` (the tier-choice read) exists but violates its schema — whole-file rule |
+| `4` | the `--evidence` set's `manifest.json` is absent or does not parse, or the declared `uiCapture` (the tier-choice read) violates its schema — whole-file rule |
 | `5` | the assembled comment carries a machine-local path |
 | `6` | the body is a bare `@` path reference — the body never arrived |
 | `7` | the PR is proven absent (404) or closed |
@@ -593,7 +622,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: --carrier advisory is a PASS path only — post the FAIL marker instead.` | 10 | refusal |
 | `review-ui post: cannot read <what> for #<n>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
 | `review-ui post: evidence set "<set>" has no readable manifest.json (<absent|parse reason>) — a set without its manifest is not a set; re-run review-ui render.` | 4 | refusal |
-| `review-ui post: design-harness.json exists but does not satisfy its schema: <first violation> — the tier choice is unmakeable.` | 4 | refusal |
+| `review-ui post: .fabrika.jsonc declares a `uiCapture` that does not satisfy its schema: <first violation> — the tier choice is unmakeable.` | 4 | refusal |
 | `review-ui post: the live head is <live>, not <sha> — the tree you judged is gone; re-review at <live> (ADR 0058).` | 12 | refusal |
 | `review-ui post: evidence set "<set>" was rendered at <set-head7>, you are posting at <sha7> — stale pixels; re-render at the live head.` | 12 | refusal |
 | `review-ui post: capture "<id>" in set "<set>" is invalid or fails its manifest sha (<detail>).` | 15 | refusal |
@@ -611,7 +640,7 @@ outcome known-unwritten.
 
 ```
 $ fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged < verdict.md
-{"answer":"posted","namespace":"review-ui","polarity":"FAIL","sha":"03135b91","upsert":"created","carrier":"marker","surfaces":1,"commentUrl":"https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211"}
+{"answer":"posted","namespace":"review-ui","polarity":"FAIL","sha":"03135b91","upsert":"created","carrier":"marker","surfaces":1,"commentUrl":"https://github.com/<owner>/<repo>/pull/4321#issuecomment-5154902211"}
 ```
 
 ```
@@ -630,26 +659,26 @@ $ echo $?
 
 ```
 $ fabrika review-ui post 7081 --polarity PASS --sha 77f61ce9 --clause "merge-ready" --evidence judged --supersede < verdict.md
-{"answer":"posted","namespace":"review-ui","polarity":"PASS","sha":"77f61ce9","upsert":"superseded","carrier":"marker","surfaces":1,"commentUrl":"https://github.com/kamp-us/phoenix/pull/7081#issuecomment-5460446728"}
+{"answer":"posted","namespace":"review-ui","polarity":"PASS","sha":"77f61ce9","upsert":"superseded","carrier":"marker","surfaces":1,"commentUrl":"https://github.com/<owner>/<repo>/pull/7081#issuecomment-5460446728"}
 ```
 
 **Grounding**
 
-- #3925 / v1 S1, S24, and the `never`-typed upload channel
+- **An upload channel typed so failure could not surface.**
   (`packages/fabrika-cli/src/capture/upload.ts` — every transport failure degraded to
   `{hostedUrl: null, uploadError}` and no consumer ever read `uploadError`): the upload outcome
-  was advisory by contract, so a 100%-failed channel decorated months of PASSes. Step 4 makes it
+  was advisory by contract, so a wholly-failed channel decorated months of PASSes. Step 4 makes it
   a precondition; `17` is this contract's reason to exist.
-- ADR 0165 stands, inverted at the right seam: the *judged* source stays the local bytes; what
-  changed is that the *verdict* cannot exist without its verified public evidence — audit trail
-  and gate outcome stop being separable.
+- **Judge the local bytes, but do not post over a broken channel.** The *judged* source stays the
+  local pixels; what changed is that the *verdict* cannot exist without its verified public
+  evidence — audit trail and gate outcome stop being separable.
 - v1 S14 — the comment id was `awk '{print $2}'` over a prose line; here the answer is one JSON
   object and the read-back is the format's own `read`.
-- #3173's class — the single sanctioned emit with unconditional live-state read-back; a
-  hand-rolled `gh api` marker post is the incident, not an alternative.
-- ADR 0151 / ADR 0226 — the advisory carrier's fixed shape and its PASS-only rule, matched with
-  `review post` so §CP reads one grammar across the review family; #4582's discarded-answer leg
-  is gone because membership is the carrier input, never computed here.
+- **One sanctioned emit, with an unconditional live-state read-back.** A hand-rolled `gh api`
+  marker post is the incident, not an alternative.
+- **The advisory carrier has a fixed shape and a PASS-only rule**, matched with `review post` so
+  §CP reads one grammar across the review family; the old discarded-answer leg is gone because
+  membership is the carrier input, never computed here.
 - v1 S23 — the can't-gate plain note invisible to the ship layer: this verb never posts a
   "partial" verdict; the can't-see states live in `render`'s codes and the skill's CANT-SEE
   terminal, where the empty namespace fail-closes shipping by construction.
@@ -723,19 +752,18 @@ review-ui cannot see this PR: no preview-deploy comment exists, so there is noth
 without running the PR's code. The review-ui namespace is deliberately left empty (fail-closed
 at ship). Unblock by restoring the preview deployment for this PR.
 EOF
-{"answer":"noted","pr":4321,"commentId":512399,"commentUrl":"https://github.com/kamp-us/phoenix/pull/4321#issuecomment-512399"}
+{"answer":"noted","pr":4321,"commentId":512399,"commentUrl":"https://github.com/<owner>/<repo>/pull/4321#issuecomment-512399"}
 ```
 
 **Grounding**
 
 - v1 S23 — the can't-gate "plain note" had no sanctioned emit path and no read-back; a typed
   non-verdict write is the smallest cure that does not mint a second marker grammar.
-- #3173's class — every write this skill makes goes through a verb with a read-back; a bare
-  `gh api` comment is the incident, whatever the comment says.
-- #4305 — the can't-see declaration this verb carries is the "review-ui can't-gate note"
-  mechanism that decision names, supplied as a seam; whether it later becomes a machine-read
-  state is that open decision's to rule, and the typed refusal of marker-shaped bodies keeps
-  this verb from pre-empting it.
+- **Every write goes through a verb with a read-back.** A bare `gh api` comment is the incident,
+  whatever the comment says.
+- **The can't-see declaration this verb carries is a note, not a verdict.** Whether it later
+  becomes a machine-read state is a decision still open, and the typed refusal of marker-shaped
+  bodies keeps this verb from pre-empting it.
 
 ---
 
@@ -744,7 +772,7 @@ EOF
 **Invocation**
 
 ```
-fabrika review-ui route 6326 --sha <head> --clause "<why>" [--repo <owner/name>]
+fabrika review-ui route 6326 --sha <head> --clause "<why>" [--verified-at <head>] [--repo <owner/name>]
 ```
 
 The reasoning arrives on **stdin only**, for the same reason as `post` and `note`.
@@ -756,37 +784,85 @@ The reasoning arrives on **stdin only**, for the same reason as `post` and `note
 | *(positional)* | integer | yes | — | the pull-request number |
 | `--sha` | string | yes | — | the head whose diff was read, 7–40 lowercase hex |
 | `--clause` | string | yes | — | the one-line why, carried on the record's first line; blank is refused |
+| `--verified-at` | string | no | none | the head a hand-verification standing in for the render ran at, 7–40 lowercase hex; the range to `--sha` is then read and a `ui`-class file in it refuses the route, as does a range the platform could not read whole or at all |
 | `--repo` | string | no | resolved | the repository |
 | stdin | markdown | yes | — | which files changed and why none of them renders anything |
 
 **Output** — machine. One JSON object:
-`{"answer":"routed","namespace":"review-ui","sha":"6c6fe226…","uiFiles":2,"upsert":"created","commentUrl":"…"}`.
+`{"answer":"routed","namespace":"review-ui","sha":"6c6fe226…","uiFiles":2,"verifiedAt":null,"textReview":"absent","upsert":"created","commentUrl":"…"}`.
+`verifiedAt` is the `--verified-at` head the range was cleared over, and `null` where the route
+rested on no hand-verification. `textReview` is the `review-code` verdict this record rests on:
+`pass` where one stands in force at `--sha`, `absent` where none binds that head — and `absent` is
+reachable only on a route carrying no `--verified-at`, because one that does is refused at `20`.
 
 **Why it exists.** `ship scope` raises the `ui` class from a path test that cannot see whether
-pixels moved, so a PR whose only `apps/web/src/**` change is prose requires this namespace — and
+pixels moved, so a PR whose only change under a declared `uiSurfaces` prefix is prose requires this namespace — and
 `render` refuses zero surfaces while `post` refuses without captures, so nothing legal could fill
-it and `ship gate` blocked forever (#6376). This verb records the answer that was missing. It is
+it and `ship gate` blocked forever. This verb records the answer that was missing. It is
 **not** a second verdict path: the `routed-elsewhere` wire format carries no polarity, so
 `verdict-marker` reads it as `Absent` and it can never be counted as a PASS; `ship gate` resolves
 it as its own `routed` state and admits it for `review-ui` alone; and the record is head-bound, so
-any push voids it. ADR
-[0316](../../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md) is the ruling.
+any push voids it: a gate that owes no verdict still has to record that it owes none.
 
 **The mechanism, in order.** Validate `--sha` and `--clause` (`10`). Read stdin (`3` on empty) —
 an unexplained route is an assertion nobody can check. Resolve the PR, open and non-empty
 (`7`/`11`). Refuse if the live head has moved past `--sha` (`12`): the record binds the tree whose
-diff was read, and is re-read rather than re-bound. Read the changed-file list; a truncated read is
-`11`, never a derivation, because truncation can only shrink the `ui` count and would refuse a PR
-the gate is meanwhile blocking. Refuse a diff that raises no `ui` class (`7`) — nothing required
+diff was read, and is re-read rather than re-bound. Read the changed-file list through
+`review/local-file-set.ts`'s `platformFileSet`: the enumeration is the file set, and the
+`changed_files` the pull-request record declares prints as a disagreement line rather than refusing,
+because that count is computed against a base cached at the last push and no caller can invalidate
+it. An **empty** list is `7` — the `ui` count would then be derived over a diff nobody read — and a
+list at GitHub's 3000-file ceiling is `11`, because that is the one truncation the enumeration
+cannot rule out on its own and it can only ever shrink the `ui` count. Refuse a diff that raises no
+`ui` class (`7`) — nothing required
 this namespace, so there is nothing to route; the predicate is `review/classes.ts`'s own
-`isUiSurface`, never a second copy. Compose the record's first line through the `routed-elsewhere`
-wire format, leak-scan the assembled comment (`5`/`6`), upsert one record for this namespace on the
-emitter's own comment, and read it back from live state (`9` on mismatch, `8` on an unproven
-write).
+`isUiSurface`, over the same declared `uiSurfaces` prefixes the gate raised the class from, never a
+second copy. Read the PR's comments and resolve the `review-code` verdict in force at `--sha`; a
+standing FAIL is `20`, and so is an absent verdict on a route carrying `--verified-at`. That read
+runs **before** the `--verified-at` comparison below, so a route that is both spent at
+`--verified-at` and standing-FAIL at `--sha` exits `20`, not `12` — a record asserting a text PASS
+that is not there is unpostable at any head, while a spent hand-verification is cleared by re-running
+it, so the text lane is the move to name first. With `--verified-at`, compare that head to `--sha`
+and refuse on `12` when any file in
+the range raises the `ui` class — the hand-verification is then spent and a fresh one is owed at
+`--sha`; a comparison that came back at GitHub's 300-file ceiling is `11`, because the compare
+declares no total and a capped list can only ever hide a `ui`-class file, and so is one whose two
+heads have diverged, because the platform's three-dot compare then answers from their merge base and
+the range was never read at all. Compose the record's first
+line through the `routed-elsewhere` wire format, leak-scan the assembled comment (`5`/`6`), upsert
+one record for this namespace on the emitter's own comment, and read it back from live state (`9` on
+mismatch, `8` on an unproven write).
+
+**The hand-verification's currency, and why the verb owns it.** An app that deploys to no preview
+has no address the reviewer can render, so a route over it can rest on the builder's own
+hand-verification instead — a run at the desk, posted with the head it ran at. That evidence stands
+for the record's head exactly when no `ui`-class file changed in between, and a gate left to derive
+that range by eye derives it differently or not at all. `--verified-at` moves the derivation here.
+It is optional because a prose-only diff under a declared prefix rests on the body alone and has no
+head to compare; where a hand-verification exists, naming it is what makes the record checkable.
+Nothing about the `routed-elsewhere` bytes changes either way: the record stays head-bound to
+`--sha` and carries no evidence field.
+
+**The text review the record rests on.** An interim exception that lets a hand-verification stand
+in for a render prescribes the clause such a record carries, and that clause asserts a text review
+PASS beside the hand-verification. The verb used to post it while reading neither half, so a record
+over a standing text FAIL and one over a PASS read identically — and the `routed-elsewhere` format
+carries no polarity for a later reader to tell them apart. The text PASS is a precondition, not
+commentary, and the verb reads it: it resolves the `review-code` verdict in force at `--sha` through
+`review verdicts`' own two carriers — the `verdict-marker` first line and the §CP advisory — ordered
+by `ship gate`'s `inForce`, judged current by the same `bindToContent`, and given the advisory's
+polarity by the one `advisoryPolarity` its sibling readers call, so no two readers hold different
+rules. That last one was a copy before it was shared, and the copy diverged: a `[FAIL]` row inside an
+advisory is an invalid emission, and it cleared this route while `ship gate` refused on the same
+comment. A standing FAIL refuses on `20`. An **absent** verdict refuses on `20` only where
+`--verified-at` is passed: that route asserts the conjunction, while a prose-only route asserts
+nothing about the text lane and says so on stderr instead of blocking. The host's native review fold
+is `ship gate`'s widening and is not read here — the merge gate still reads it, and this verb only
+judges what its own clause claims.
 
 **What this verb does not decide.** Whether the diff renders anything. That is the skill's judgment
-over `review diff`'s refusal-guarded bytes, and it is the branch #6376's candidate 2 proposed and
-the founder rejected: no path test can decide whether pixels moved, so a verb that tried would just
+over `review diff`'s refusal-guarded bytes. Narrowing the `ui` path class instead was proposed and
+rejected: no path test can decide whether pixels moved, so a verb that tried would just
 relocate the defect. This verb takes the judgment as `--clause` plus a body and records it.
 
 **Exit status** (beyond the universal four)
@@ -796,12 +872,13 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `3` | stdin was read and held nothing |
 | `5` | the assembled comment carries a machine-local path |
 | `6` | the body is a bare `@` path reference |
-| `7` | the PR is proven absent (404), closed, has zero changed files, or its diff raises no `ui` class |
+| `7` | the PR is proven absent (404), closed, has zero changed files, is served an empty changed-file list, or its diff raises no `ui` class |
 | `8` | the create/edit failed — UNKNOWN whether the record landed |
 | `9` | the record landed but does not read back as sent |
-| `10` | `--sha` is not a head SHA, or `--clause` is blank |
-| `11` | a precondition read failed, or the changed-file list came back truncated — nothing was posted |
-| `12` | the live head moved past `--sha` — the diff you read is gone |
+| `10` | `--sha` or `--verified-at` is not a head SHA, or `--clause` is blank |
+| `11` | a precondition read failed, the changed-file list came back at GitHub's 3000-file ceiling, or the `--verified-at` comparison came back at the 300-file ceiling or between two diverged heads — nothing was posted |
+| `12` | the live head moved past `--sha` — the diff you read is gone; or a `ui`-class file changed between `--verified-at` and `--sha`, so the hand-verification is spent |
+| `20` | the `review-code` verdict in force at `--sha` is a FAIL, or a route resting on `--verified-at` has no `review-code` verdict binding that head |
 
 **Errors**
 
@@ -812,14 +889,21 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `review-ui route: the body is a bare "@" path reference — the body never arrived. Send its bytes on stdin.` | 6 | refusal |
 | `review-ui route: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review-ui route: PR #<n> is closed — a route on a closed PR resolves nothing.` | 7 | refusal |
+| `review-ui route: GitHub served no changed files for #<n> against the <m> its own pull-request record declares — refusing to derive the ui class from a diff nobody read.` | 7 | refusal |
 | `review-ui route: #<n>'s diff raises no ui class, so ship gate requires no review-ui namespace — there is nothing to route.` | 7 | refusal |
 | `review-ui route: create/edit failed: <reason> — UNKNOWN whether the route landed; re-read the PR before retrying.` | 8 | refusal |
 | `review-ui route: posted, but the read-back does not yield this record (<why>) — inspect comment <id>.` | 9 | refusal |
 | `review-ui route: --sha "<value>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
 | `review-ui route: --clause is blank — a route with no stated reason records nothing a reader can check.` | 10 | refusal |
-| `review-ui route: received <m> of <n> changed files — refusing to derive the ui class from a truncated read.` | 11 | refusal |
+| `review-ui route: --verified-at "<value>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
+| `review-ui route: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a ui-class file could sit in the part the platform never served.` | 11 | refusal |
+| `review-ui route: the comparison over <verified>..<sha> came back at GitHub's 300-file ceiling — refusing to clear the hand-verification against a capped read.` | 11 | refusal |
+| `review-ui route: <verified> is <status> of <sha>, not an ancestor — the comparison answers from their merge base, so <verified>..<sha> was never read. Re-run the hand-verification at <sha>.` | 11 | refusal |
 | `review-ui route: cannot read <what> for #<n>: <reason> — nothing was posted.` | 11 | refusal |
-| `review-ui route: the live head is <live>, not <sha> — the diff you read is gone; re-read at <live> (ADR 0058).` | 12 | refusal |
+| `review-ui route: the live head is <live>, not <sha> — the diff you read is gone; re-read at <live>.` | 12 | refusal |
+| `review-ui route: <files> raise the ui class in <verified>..<sha> — the hand-verification at <verified> is spent; re-run it at <sha>.` | 12 | refusal |
+| `review-ui route: review-code stands FAIL at <sha> (comment <id>) — this record would assert a text PASS that is not there; repair the finding and route at the head the text gate passes.` | 20 | refusal |
+| `review-ui route: no standing review-code verdict binds <sha>, and a route resting on a hand-verification asserts one — land the text verdict first, and read what stands with fabrika review verdicts <n>.` | 20 | refusal |
 
 **Scope** — one PR, one comment write, the caller's stdin.
 
@@ -827,24 +911,61 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 
 ```
 $ fabrika review-ui route 6326 --sha 6c6fe226 \
-    --clause "no rendered delta; both apps/web/src files are prose only" <<'EOF'
+    --clause "no rendered delta; both changed files are prose only" <<'EOF'
 `shell-keys.ts` rewrites one JSDoc paragraph to drop a `pipeline-cli` reference — no statement,
 export or type changed. `design-token-lint.config.json` rewrites two note strings; the guard's
 data fields are byte-identical. No component, route, token or style is touched.
 EOF
-{"answer":"routed","namespace":"review-ui","sha":"6c6fe226","uiFiles":2,"upsert":"created","commentUrl":"https://github.com/kamp-us/phoenix/pull/6326#issuecomment-512399"}
+{"answer":"routed","namespace":"review-ui","sha":"6c6fe226","uiFiles":2,"verifiedAt":null,"textReview":"absent","upsert":"created","commentUrl":"https://github.com/<owner>/<repo>/pull/6326#issuecomment-5123990412"}
+```
+
+A route resting on a hand-verification names the head it ran at, and the range decides whether it
+still stands:
+
+```
+$ fabrika review-ui route 4471 --sha fb01065b --verified-at 8efd315a \
+    --clause "no rendered delta; the app deploys to no preview, hand-verified at the desk" <<'EOF'
+The desk run at `8efd315a` drove every readout this diff touches. `8efd315a..fb01065b` is one
+commit under `packages/<cli>/`, so the composition is byte-identical.
+EOF
+{"answer":"routed","namespace":"review-ui","sha":"fb01065b","uiFiles":3,"verifiedAt":"8efd315a","textReview":"pass","upsert":"created","commentUrl":"https://github.com/<owner>/<repo>/pull/4471#issuecomment-5598041887"}
+
+$ fabrika review-ui route 4471 --sha fb01065b --verified-at 8efd315a --clause "…" < why.md
+review-ui route: scanned 2 files changed in 8efd315a..fb01065b; 2 raise the ui class.
+review-ui route: apps/<app>/src/window/usage.tsx, apps/<app>/src/page/reply-row.tsx raise the ui
+class in 8efd315a..fb01065b — the hand-verification at 8efd315a is spent; re-run it at fb01065b.
+# exit 12
+
+$ fabrika review-ui route 4471 --sha 9c40aa71 --verified-at 8efd315a --clause "…" < why.md
+review-ui route: 8efd315a is diverged of 9c40aa71, not an ancestor — the comparison answers from
+their merge base, so 8efd315a..9c40aa71 was never read. Re-run the hand-verification at 9c40aa71.
+# exit 11
+
+$ fabrika review-ui route 4471 --sha fb01065b --verified-at fb01065b --clause "…" < why.md
+review-ui route: scanned 6 comments.
+review-ui route: scanned 2 review-code claims; FAIL at fb01065b via the marker carrier.
+review-ui route: review-code stands FAIL at fb01065b (comment 5598219196) — this record would
+assert a text PASS that is not there; repair the finding and route at the head the text gate passes.
+# exit 20
 ```
 
 **Grounding**
 
-- #6376 — the two rules that could not both hold, and the founder ruling that picked this shape
-  over narrowing the `ui` class.
-- ADR 0092 — the zero-scope refusals this verb inherits rather than loosens: `render` still
-  refuses zero surfaces, `post` still refuses without captures, and this verb refuses a diff that
-  raises no `ui` class.
-- ADR 0055 — the record is authored, so the write+ ACL binds it at `ship gate` exactly as it binds
-  a verdict marker.
-- ADR 0058 — the head binding, and why a moved head is re-read rather than re-bound.
+- **Two rules that could not both hold.** The `ui` class is raised by a path test, and the gate
+  demanded a namespace nothing legal could fill; recording the routed answer is the shape that
+  keeps both, rather than narrowing the class.
+- **The zero-scope refusals this verb inherits rather than loosens**: `render` still refuses zero
+  surfaces, `post` still refuses without captures, and this verb refuses a diff that raises no `ui`
+  class.
+- **The record is authored**, so the write+ ACL binds it at `ship gate` exactly as it binds a
+  verdict marker.
+- **A hand-verification's currency is the verb's judgment, not the gate's**, and it binds the
+  `ui` files' content rather than the record's own head — a commit that moves no rendered surface
+  keeps the evidence rather than spending a desk session to re-prove it.
+- **The text PASS a hand-verification clause asserts is read, not assumed** — a standing
+  `review-code` FAIL at the record's head refuses the route, and the reader is `review verdicts`'
+  own, so the two gates cannot answer one question differently.
+- **The head binding**, and why a moved head is re-read rather than re-bound.
 
 ---
 

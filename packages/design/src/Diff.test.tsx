@@ -1,0 +1,114 @@
+import {readFileSync} from "node:fs";
+import {join} from "node:path";
+import {render, screen} from "@testing-library/react";
+import fc from "fast-check";
+import {beforeEach, describe, expect, it, vi} from "vitest";
+import {runEnforcedInvariants} from "./a11y/check";
+import {Diff} from "./Diff";
+
+// The layout is a prop the library reads inside its shadow root, and jsdom neither lays out nor
+// finishes the async highlight — so the only place it is decidable here is at the call.
+const seen = vi.hoisted(() => ({calls: [] as Array<Record<string, unknown>>}));
+
+vi.mock("@pierre/diffs/react", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@pierre/diffs/react")>();
+	return {
+		...actual,
+		FileDiff: (props: Parameters<typeof actual.FileDiff>[0]) => {
+			seen.calls.push({...props.options, lang: props.fileDiff.lang});
+			return actual.FileDiff(props);
+		},
+	};
+});
+
+/**
+ * The rows themselves are drawn by `@pierre/diffs` inside a shadow root, and jsdom applies no CSS
+ * and runs no layout — so what a test here can hold is the contract this package owns: the scroller
+ * is focusable and named, the layout prop reaches the library, and the markup this component adds
+ * carries no axe violation.
+ */
+const BEFORE = "const a = 1;\nconst b = 2;\n";
+const AFTER = "const a = 1;\nconst b = 3;\n";
+
+describe("Diff", () => {
+	beforeEach(() => {
+		seen.calls = [];
+	});
+
+	it("puts the tab stop and the name on the element that scrolls", () => {
+		render(<Diff before={BEFORE} after={AFTER} path="src/count.ts" />);
+
+		const region = screen.getByRole("region", {name: /src\/count\.ts/});
+		expect(region.tagName).toBe("DIV");
+		expect(region.tabIndex).toBe(0);
+		expect(region.classList.contains("kp-diff")).toBe(true);
+	});
+
+	// `querySelectorAll` does not cross a shadow boundary, so this holds for the light DOM this
+	// component owns and says nothing about the rows the library draws inside its shadow root.
+	it("adds exactly one aria-label of its own — the region's — and none per line", () => {
+		const {container} = render(<Diff before={BEFORE} after={AFTER} path="src/count.ts" />);
+
+		expect(container.querySelectorAll("[aria-label]").length).toBe(1);
+	});
+
+	it("renders unified by default and split on request", () => {
+		render(<Diff before={BEFORE} after={AFTER} path="src/count.ts" />);
+		expect(seen.calls.at(-1)?.diffStyle).toBe("unified");
+
+		render(<Diff before={BEFORE} after={AFTER} path="src/count.ts" split />);
+		expect(seen.calls.at(-1)?.diffStyle).toBe("split");
+	});
+
+	it("derives the language from the path's extension", () => {
+		render(<Diff before={BEFORE} after={AFTER} path="src/count.ts" />);
+		expect(seen.calls.at(-1)?.lang).toBe("typescript");
+
+		render(<Diff before="# a" after="# b" path="docs/notes.md" />);
+		expect(seen.calls.at(-1)?.lang).toBe("markdown");
+	});
+
+	it("colours through the role-token theme, never a theme of the library's own", () => {
+		render(<Diff before={BEFORE} after={AFTER} path="src/count.ts" />);
+
+		expect(seen.calls.at(-1)?.theme).toBe("kampus-role-tokens");
+	});
+
+	/**
+	 * Every `light-dark()` the library's sheet leaves without an `-override` input reads the pane's
+	 * used `color-scheme`, and the token set's own default is dark — `tokens.css` hangs the dark
+	 * scales off a bare `:root` and makes `[data-theme="light"]` the opt-in. Getting that polarity
+	 * backwards paints the light-tuned mix ratios over dark tokens, which collapses the context,
+	 * gutter and separator rows into the surface. Vitest injects no CSS, so the sheet is read off
+	 * disk and put in the document; jsdom resolves `color-scheme` and this selector itself.
+	 */
+	it("resolves color-scheme dark by default and light only under [data-theme=light]", () => {
+		const style = document.createElement("style");
+		style.textContent = readFileSync(join(import.meta.dirname, "Diff.css"), "utf8");
+		document.head.append(style);
+		const {container} = render(
+			<div data-theme="light">
+				<Diff before={BEFORE} after={AFTER} path="src/count.ts" />
+			</div>,
+		);
+		const light = container.querySelector(".kp-diff__pane") as HTMLElement;
+		const dflt = render(
+			<Diff before={BEFORE} after={AFTER} path="src/count.ts" />,
+		).container.querySelector(".kp-diff__pane") as HTMLElement;
+
+		expect(getComputedStyle(dflt).colorScheme).toBe("dark");
+		expect(getComputedStyle(light).colorScheme).toBe("light");
+
+		style.remove();
+	});
+
+	it("has no axe violations", async () => {
+		const {container} = render(<Diff before={BEFORE} after={AFTER} path="src/count.ts" />);
+
+		const violations = await runEnforcedInvariants(container, {
+			kind: "presentational",
+			arb: fc.constant(<div />),
+		});
+		expect(violations).toEqual([]);
+	});
+});

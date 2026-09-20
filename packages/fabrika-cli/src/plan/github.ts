@@ -10,7 +10,7 @@
  *   would turn a broken read into a clean zero-scope refusal about a real ledger.
  * - **Absence is decided by HTTP status, never by matching text against an error string.** v1 used
  *   `/404|not found/i.test(stderr)`, which reads an auth-hidden repo as a proven-absent issue. Since
- *   the port off `gh` (ADR 0315) the status is a number the response carried.
+ *   the port off `gh` onto the REST client the status is a number the response carried.
  *
  * The credential is an argument to every leg of the client, so each read resolves one from the `env`
  * its caller hands down — never from `process`, which is what keeps a test's environment scripted.
@@ -28,6 +28,7 @@ import {existenceOf, pagedWithLinkProof, resolveToken, restRead} from "../io/gh-
 import {type Attempt, fail, ok} from "../io/git.ts";
 import {type Existence, unknown} from "../io/issues.ts";
 import {isRecord} from "../io/json.ts";
+import {classesFromLabels} from "../lane/class-seed.ts";
 import type {CycleDoc} from "./model.ts";
 
 /** An authenticated GitHub read: the transport, plus the spawner the `gh auth token` leg needs. */
@@ -50,11 +51,21 @@ type Env = Readonly<Record<string, string | undefined>>;
  */
 export {SHIPPED_CYCLE_DOC as CYCLE_DOC_PATH} from "../config/keys/paths.ts";
 
-/** One native sub-issue link: the child's number plus the open/closed facts the payload carries. */
+/**
+ * One native sub-issue link: the child's number, the open/closed facts the payload carries, and the
+ * classes its labels declare.
+ *
+ * The classes ride this shape because `sub_issues` answers with issue objects that already carry
+ * each child's `labels`, so `lane emit` seeds them into that child's `context` entry with no second
+ * request. A payload carrying no readable labels answers the same as a child nobody classed —
+ * unlike `state`, which fails the read, because an unclassed child routes to the shells it always
+ * routed to while a defaulted state mis-seats the region.
+ */
 export interface SubIssueLink {
 	readonly number: number;
 	readonly state: "open" | "closed";
 	readonly stateReason: string | null;
+	readonly classes: ReadonlyArray<string>;
 }
 
 /**
@@ -65,7 +76,7 @@ export interface SubIssueLink {
  *
  * Each entry must carry a readable `state` — an entry without one fails the whole read rather than
  * defaulting to open, because a silently-defaulted state is exactly how `lane emit` booted closed
- * children as `queued` (#5746).
+ * children as `queued`.
  *
  * **A walk that never reached a terminal page fails.** The proof is a `rel="next"` still outstanding
  * at the page cap: a child list nobody proved was all of it must not read back as a shorter ledger.
@@ -95,10 +106,16 @@ export const listSubIssues = (
 					`GitHub answered 200 but sub-issue #${value.number} carries no readable \`state\``,
 				);
 			}
+			const labels = Array.isArray(value.labels)
+				? value.labels.flatMap((label) =>
+						isRecord(label) && typeof label.name === "string" ? [label.name] : [],
+					)
+				: [];
 			links.push({
 				number: value.number,
 				state: value.state,
 				stateReason: typeof value.state_reason === "string" ? value.state_reason : null,
+				classes: classesFromLabels(labels),
 			});
 		}
 		return ok(links);

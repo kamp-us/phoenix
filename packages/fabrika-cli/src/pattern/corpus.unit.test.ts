@@ -10,7 +10,7 @@ const INDEX = `# Patterns
 |---|---|---|
 | [registered.md](./registered.md) | x | y |
 | [gone.md](./gone.md) | x | y |
-| [../.decisions/0001-a.md](../.decisions/0001-a.md) | x | y |
+| [../other-corpus/0001-a.md](../other-corpus/0001-a.md) | x | y |
 `;
 
 describe("docSlugs", () => {
@@ -66,7 +66,7 @@ describe("readCorpus", () => {
 		});
 		expect(reading.dangling).toEqual([
 			{target: "./gone.md", section: "Index — services"},
-			{target: "../.decisions/0001-a.md", section: "Index — services"},
+			{target: "../other-corpus/0001-a.md", section: "Index — services"},
 		]);
 	});
 });

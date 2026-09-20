@@ -1,29 +1,19 @@
 /**
- * `review verdicts` — every verdict marker on the PR, per namespace, each with its
- * `Current` / `Stale` / `Unbindable` binding against the live head.
- *
- * The `Binding` type has three arms; the three reach stdout here as **three tokens**, because folding
- * any two of them together is how a stale PASS reads as a current one (ADR 0058, #3769 / #4338).
+ * `review verdicts` reads every verdict marker and its binding against the live head.
+ * See ./command.ts help for output fields and binding tokens.
  *
  * **It resolves the same binding `ship gate` does, and that is the point of the coupling.** This verb
  * is what routes an agent to re-review, so a row reading `stale` where the merge gate would read
- * `pass` re-imposes the very tax ADR 0276 removed — through a second opinion nobody would think to
- * suspect. Both call `bindToContent`, so they cannot disagree.
+ * `pass` re-imposes the very tax the content binding removed — through a second opinion nobody
+ * would think to suspect. Both call `bindToContent`, so they cannot disagree.
  *
- * A head this verb cannot resolve prints `unbindable` on **every** row — never `current`, never
- * `stale`. A comparison that could not be made is not a negative result, so the live-head read's
- * failure is that answer rather than an exit: the markers themselves were seen and are reportable
- * facts.
+ * An unresolved head cannot support a binding comparison, but the markers were still seen and
+ * remain reportable facts.
  *
- * A marker that reaches for the format and fails it prints as a `malformed` row with the wire reason
- * on stderr. It is never dropped from the sweep — a dropped row is how a FAIL'd PR reads as
- * unreviewed (#4103 / #4105, #4520).
+ * Malformed markers stay in the sweep. Dropping one could make a failed PR read as unreviewed.
  *
- * **A superseded verdict gets its own row too, marked `superseded` in the sixth field.** `review
- * post` retires the prior verdict below `./supersede.ts`'s fence instead of over it, so those bytes
- * are still on the PR; printing only the surviving one would report exactly the erasure the append
- * exists to prevent (#7247). The sixth field is what tells the two apart — `standing` is the verdict
- * in force, and it is the only kind `ship gate` reads.
+ * Superseded verdicts stay visible too. `review post` preserves them below ./supersede.ts's fence;
+ * reporting only the surviving verdict would hide the history the append preserves.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -132,7 +122,7 @@ const sweep = (
 		}
 		// A superseded verdict is a row of its own, never a row dropped: `review post` retires the
 		// prior verdict below the fence rather than over it, and a sweep that printed only the
-		// surviving one would report exactly the erasure the append exists to prevent (#7247).
+		// surviving one would report exactly the erasure the append exists to prevent.
 		for (const retired of archivedVerdicts(comment.body)) {
 			const older = readMarker(retired);
 			if (older._tag !== "Found") continue;
@@ -227,7 +217,7 @@ export const runVerdicts = (
 			if (read !== null && read._tag === "Ok") digest = read.value;
 			else {
 				diagnostics.push(
-					`${VERB}: a marker binds content at another head, but this head's digest could not be read — those rows print unbindable (ADR 0276).`,
+					`${VERB}: a marker binds content at another head, but this head's digest could not be read — those rows print unbindable.`,
 				);
 			}
 		}

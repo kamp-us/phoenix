@@ -24,9 +24,11 @@ export type {
 	SnapshotProcess,
 } from "./snapshot.ts";
 export {
+	closeBoard,
 	type DeskMsg,
 	type DeskState,
 	initialDesk,
 	isDeskState,
+	toggleBoard,
 	toggleInspector,
 } from "./state.ts";

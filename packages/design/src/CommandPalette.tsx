@@ -55,6 +55,14 @@ export interface CommandPaletteProps {
 	readonly closeOnEscape?: boolean;
 	readonly shortcut?: boolean;
 	readonly variant?: "flush" | "inset";
+	/**
+	 * Where the palette lives. `dialog` (default) is the modal ⌘K surface. `inline` renders the same
+	 * field, listbox and ARIA spine in place, for a caller whose whole surface *is* the search — it
+	 * is always open, so `open`, `trigger`, `disabled`, `closeOnSelect`, `closeOnEscape` and the ⌘K
+	 * shortcut are dialog-only and have nothing to act on — each of them is about opening, closing or
+	 * offering the modal, and an inline palette does none of the three.
+	 */
+	readonly presentation?: "dialog" | "inline";
 	readonly showSearchIcon?: boolean;
 	readonly scopes?: readonly CommandPaletteScope[];
 	readonly scopeHintLabel?: string;
@@ -112,8 +120,9 @@ const nextEnabledIndex = (
 
 /**
  * @component CommandPalette
- * @whenToUse A modal, keyboard-first search surface over a caller-owned result set.
- *   The caller owns copy, filtering overrides and what selecting a result does.
+ * @whenToUse A keyboard-first search surface over a caller-owned result set — modal by default,
+ *   or inline in place at `presentation="inline"`. The caller owns copy, filtering overrides and
+ *   what selecting a result does.
  * @slot trigger Optional element that opens the palette. Rendered disabled, not removed,
  *   when the palette is disabled.
  * @slot footer Optional key legend or contextual hint below the results.
@@ -154,7 +163,9 @@ export function CommandPalette({
 	onActiveChange,
 	announcement,
 	error,
+	presentation = "dialog",
 }: CommandPaletteProps) {
+	const inline = presentation === "inline";
 	const baseId = useId();
 	const inputRef = useRef<HTMLInputElement>(null);
 	const keyboardIntentRef = useRef(false);
@@ -162,7 +173,8 @@ export function CommandPalette({
 	const [internalQuery, setInternalQuery] = useState(defaultQuery);
 	const [activeIndex, setActiveIndex] = useState(-1);
 	const [keyboardFocused, setKeyboardFocused] = useState(false);
-	const isOpen = !disabled && (open ?? internalOpen);
+	// An inline palette has no closed state to be in: it is the surface itself.
+	const isOpen = inline || (!disabled && (open ?? internalOpen));
 	const searchQuery = query ?? internalQuery;
 
 	const setOpen = (next: boolean) => {
@@ -214,7 +226,7 @@ export function CommandPalette({
 	}, [activeIndex, visibleItems, onActiveChange]);
 
 	useEffect(() => {
-		if (!shortcut) return;
+		if (!shortcut || inline) return;
 		const handleShortcut = (event: globalThis.KeyboardEvent) => {
 			if (event.key.toLocaleLowerCase() !== "k" || (!event.metaKey && !event.ctrlKey)) return;
 			event.preventDefault();
@@ -222,7 +234,7 @@ export function CommandPalette({
 		};
 		window.addEventListener("keydown", handleShortcut);
 		return () => window.removeEventListener("keydown", handleShortcut);
-	}, [isOpen, shortcut]);
+	}, [isOpen, shortcut, inline]);
 
 	useEffect(() => {
 		const clearKeyboardIntent = () => {
@@ -277,17 +289,10 @@ export function CommandPalette({
 	// expanded — a combobox that always claims one sends a reader to a listbox holding nothing.
 	const expanded = !loading && visibleItems.length > 0;
 
-	return (
-		<Dialog
-			trigger={disabled && trigger ? cloneElement(trigger, {disabled: true}) : trigger}
-			title={title}
-			showCloseButton={false}
-			closeOnEscape={closeOnEscape}
-			open={isOpen}
-			onOpenChange={setOpen}
-			size="lg"
-			className={`kp-command-palette kp-command-palette--${variant} ${className}`.trim()}
-		>
+	const frame = `kp-command-palette kp-command-palette--${variant} ${className}`.trim();
+
+	const body = (
+		<>
 			<div className="kp-command-palette__header">
 				<Input
 					ref={inputRef}
@@ -402,6 +407,32 @@ export function CommandPalette({
 					{footer ? <div className="kp-command-palette__legend">{footer}</div> : null}
 				</div>
 			) : null}
+		</>
+	);
+
+	// Inline is a `<section>` rather than a bare `div` because the dialog's own accessible name goes
+	// with the dialog: without a landmark carrying `title`, the field and the listbox would be the
+	// only things on the surface a reader could name, and neither says what the surface is.
+	if (inline) {
+		return (
+			<section aria-label={title} className={`${frame} kp-command-palette--inline`}>
+				{body}
+			</section>
+		);
+	}
+
+	return (
+		<Dialog
+			trigger={disabled && trigger ? cloneElement(trigger, {disabled: true}) : trigger}
+			title={title}
+			showCloseButton={false}
+			closeOnEscape={closeOnEscape}
+			open={isOpen}
+			onOpenChange={setOpen}
+			size="lg"
+			className={frame}
+		>
+			{body}
 		</Dialog>
 	);
 }

@@ -12,7 +12,7 @@ import {memoryStores} from "../durability/stores.ts";
 import {type AnyProgram, type Program, type ProgramCore, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {Processes} from "./Processes.ts";
-import {ProcessTable} from "./ProcessTable.ts";
+import type {ProcessTable} from "./ProcessTable.ts";
 
 class Boom extends Schema.TaggedError<Boom>()("test/Boom", {}) {}
 

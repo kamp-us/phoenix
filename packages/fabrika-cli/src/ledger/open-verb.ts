@@ -88,7 +88,7 @@ export const runOpen = (
 		if (behind.value > 0) {
 			return refuse(
 				STALE_GROUND,
-				`${VERB}: base is ${behind.value} commit(s) behind origin/main — a plan derived here is derived on stale ground (#3330).`,
+				`${VERB}: base is ${behind.value} commit(s) behind origin/main — a plan derived here is derived on stale ground.`,
 				notes,
 			);
 		}

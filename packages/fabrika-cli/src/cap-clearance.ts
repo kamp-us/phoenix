@@ -4,9 +4,9 @@
  * The cap in `./retry-budget.ts` is enforced in two places that never see each other: `build
  * verdicts` folds `capReached` off the FAIL-marker round count, and the lane machine guards each
  * task with `retries < maxRetries`. A founder clearance used to live only as issue prose, so the
- * round it granted could only land as an edit outside the loop (#5959). This module is the one
- * derivation both readers apply, so a PR read through `build verdicts` and the same PR driven by a
- * lane cannot disagree about whether the loop still has budget.
+ * round it granted could only land as an edit outside the loop. This module is the one derivation
+ * both readers apply, so a PR read through `build verdicts` and the same PR driven by a lane cannot
+ * disagree about whether the loop still has budget.
  *
  * **A grant is keyed by the round it clears, which is what makes it spendable exactly once.** A
  * clearance recorded at round N raises the cap to N+1, so the round it was issued for proceeds; the
@@ -17,11 +17,11 @@
  * **The cap is the round after the highest cleared one, not the declared cap plus a tally.** Adding
  * one per grant held that invariant only when the grant landed at exactly {@link CAP_ROUND}: a
  * clearance stamped at round 4 with no prior grant raised the cap to 4, so `capReached(4, [4])` was
- * still true and the granted round could not be built (#6137, which parked #6122 with an honoured
- * clearance buying nothing). Taking the maximum is the same number whenever the grants are the
- * contiguous run from `CAP_ROUND` up, and the right one when they are not.
+ * still true and the granted round could not be built — an honoured clearance bought nothing and the
+ * lane parked. Taking the maximum is the same number whenever the grants are the contiguous run from
+ * `CAP_ROUND` up, and the right one when they are not.
  *
- * A round below {@link CAP_ROUND} is never counted. Nothing can be cleared before the budget is
+ * A round below the relevant declared cap is never counted. Nothing can be cleared before the budget is
  * spent, so such a marker is either hand-written or from a drifted writer, and counting it would
  * silently widen the cap by a round nobody granted.
  */
@@ -29,8 +29,8 @@
 import {CAP_ROUND, RETRY_BUDGET} from "./retry-budget.ts";
 
 /** The recorded rounds that are grants at all: whole numbers at or past the declared cap. */
-const honoured = (cleared: ReadonlyArray<number>): ReadonlyArray<number> =>
-	cleared.filter((round) => Number.isInteger(round) && round >= CAP_ROUND);
+const honoured = (cleared: ReadonlyArray<number>, declaredCap: number): ReadonlyArray<number> =>
+	cleared.filter((round) => Number.isInteger(round) && round >= declaredCap);
 
 /**
  * How many distinct rounds a set of recorded clearances names — what a scope line reports.
@@ -39,17 +39,20 @@ const honoured = (cleared: ReadonlyArray<number>): ReadonlyArray<number> =>
  * double-posted grant — a re-run, a reconciled write — can never read as two.
  */
 export const grantedRounds = (cleared: ReadonlyArray<number>): number =>
-	new Set(honoured(cleared)).size;
+	new Set(honoured(cleared, CAP_ROUND)).size;
 
 /** The highest round a clearance names, or `null` when nothing was cleared. */
-export const highestCleared = (cleared: ReadonlyArray<number>): number | null => {
-	const rounds = honoured(cleared);
+export const highestCleared = (
+	cleared: ReadonlyArray<number>,
+	declaredCap: number = CAP_ROUND,
+): number | null => {
+	const rounds = honoured(cleared, declaredCap);
 	return rounds.length === 0 ? null : Math.max(...rounds);
 };
 
 /** The freeze round for a declared cap, given what has been cleared — the derivation both readers take. */
 export const capWith = (declaredCap: number, cleared: ReadonlyArray<number>): number => {
-	const highest = highestCleared(cleared);
+	const highest = highestCleared(cleared, declaredCap);
 	return highest === null ? declaredCap : Math.max(declaredCap, highest + 1);
 };
 
@@ -76,7 +79,7 @@ export const capReached = (rounds: number, cleared: ReadonlyArray<number>): bool
  *
  * Written as the derivation actually runs — the round after the highest grant — so an operator
  * reading it can check the arithmetic against the markers instead of against a tally that no longer
- * explains the number (#6137).
+ * explains the number.
  */
 export const capNote = (cleared: ReadonlyArray<number>): string => {
 	const highest = highestCleared(cleared);

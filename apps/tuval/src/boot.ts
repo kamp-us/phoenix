@@ -1,6 +1,8 @@
 import {homedir} from "node:os";
 import {join} from "node:path";
-import {type Context, Effect, type FileSystem, Layer} from "effect";
+import {Context, Effect, type FileSystem, Layer, Ref} from "effect";
+import {AiAgentSessionList, aiAgentSessionListKernel} from "./ai-agent/session-list.ts";
+import {AiAgentTranscripts, aiAgentTranscriptsKernel} from "./ai-agent/session-transcript.ts";
 import type {BindingError, BindingSource} from "./commands/bindings/index.ts";
 import {everyRegistered, SpellBridge} from "./commands/bridge/index.ts";
 import {helpSpells} from "./commands/core/index.ts";
@@ -11,22 +13,27 @@ import type {SpellRegistry} from "./commands/registry.ts";
 import type {WindowIndex} from "./commands/scope.ts";
 import type {AnySpell} from "./commands/spell.ts";
 import {SpellSet} from "./commands/spell-set.ts";
-import {type ConfigLoadError, loadLayeredConfig} from "./config.ts";
+import {type ConfigLoadError, loadLayeredConfig, type TuvalFeatures} from "./config.ts";
 import {Checkpoints} from "./durability/Checkpoints.ts";
 import {restore} from "./durability/restore.ts";
 import {fileStores} from "./durability/stores.ts";
+import {Features} from "./feature-flags.ts";
 import {type LaunchedProcess, launch} from "./launch/launch.ts";
 import {compile} from "./ports/compile.ts";
 import type {Graph} from "./ports/graph.ts";
 import {open} from "./ports/wiring.ts";
+import {PlannedProcesses} from "./process/PlannedProcesses.ts";
 import {Processes} from "./process/Processes.ts";
 import {ProcessTable} from "./process/ProcessTable.ts";
 import type {ProcessHandle} from "./process/process.ts";
 import type {AnyProgram} from "./registry/program.ts";
 import {Registry} from "./registry/Registry.ts";
+import {dispatchConfigChanged} from "./reload.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
 import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kernel.ts";
-import {shellId} from "./shell/program.ts";
+import type {PrefixTable} from "./shell/keys/index.ts";
+import {shellId, shellPrefixTable, withShellFeatures} from "./shell/program.ts";
+import type {ModuleRendererRef} from "./shell/window/index.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 
 /** The global config module, `~/.tuval/tuval.config.ts`; the home dir is a parameter so a test can point it elsewhere. */
@@ -40,8 +47,20 @@ export const projectConfig = (project: string): string =>
 
 export type Kernel =
 	| Registry
+	// The merged feature flags. A program row's layer reads what the config layers resolved through
+	// this and nothing else: the row is built while a config module is being evaluated, which is
+	// before the merge exists (#8595).
+	| Features
+	// The session-list spell's own requirement, filled from the built kernel below: the union it
+	// answers builds each backend's layer under the context a spawn of that row would run under.
+	| AiAgentSessionList
+	// The transcript spell's own requirement, filled the same way: one named backend's layer, built
+	// to read a session's history without opening a process on it.
+	| AiAgentTranscripts
 	| Checkpoints
 	| Processes
+	// The graph-declared process ids `launch` records and `Processes.remove` refuses on (#9446).
+	| PlannedProcesses
 	| ProcessTable
 	| ProcessTablePort
 	| SpawnedProcesses
@@ -70,6 +89,11 @@ export interface StartOptions {
 	 * Absent for a caller that has no config layers to offer, which is every caller but `boot`.
 	 */
 	readonly keys?: ReadonlyArray<BindingSource>;
+	/**
+	 * The merged feature flags this kernel runs under. Absent for a caller with no config layers to
+	 * merge — every caller but `boot` — which is what `featuresDefault` means.
+	 */
+	readonly features?: TuvalFeatures;
 }
 
 export interface Started {
@@ -84,14 +108,16 @@ export interface Started {
  * The app from rows and a graph, built into the caller's Scope. The graph is compiled over the
  * registry before any process exists, so a bad route refuses here with nothing spawned and
  * nothing written; the wiring opens next and the kernel after it, so a stop takes the processes
- * down — pumps included — before their queues close. A snapshot under another definition
- * refuses the boot at its spawn, with nothing fresh-booted (#7467, #7514).
+ * down — pumps included — before their queues close. A snapshot under a definition the program's
+ * own `migrations` do not reach refuses the boot at its spawn, with nothing fresh-booted
+ * (#7467, #7514).
  */
 export const start = Effect.fn("Tuval.start")(function* ({
 	programs,
 	graph,
 	stateDir,
 	keys,
+	features,
 }: StartOptions) {
 	const registry = yield* Layer.build(Registry.layer(programs));
 	const compiled = yield* compile(graph).pipe(Effect.provideContext(registry));
@@ -113,22 +139,42 @@ export const start = Effect.fn("Tuval.start")(function* ({
 			Layer.mergeAll(Layer.succeedContext(spells), shellWindowIndexKernel(shellId)),
 		),
 	);
-	const kernel = yield* Layer.build(
-		Layer.mergeAll(ProcessTablePort.layer, commands).pipe(
+	const built = yield* Layer.build(
+		Layer.mergeAll(ProcessTablePort.layer, Features.layer(features), commands).pipe(
 			Layer.provideMerge(Processes.layer),
 			Layer.provideMerge(Checkpoints.layer(fileStores(stateDir))),
 			Layer.provideMerge(Layer.succeedContext(registry)),
 		),
 	);
+	// Added to the context it reads rather than layered into it: the session list builds every
+	// registered backend's layer, and those layers need the kernel this call is closing over — a
+	// layer inside the merge above would be asking for itself.
+	const listing = Context.add(built, AiAgentSessionList, aiAgentSessionListKernel(built));
+	const kernel = Context.add(listing, AiAgentTranscripts, aiAgentTranscriptsKernel(listing));
+	// The kernel reaches a process's handlers on one route only, the `services` argument: a handler
+	// is sealed to its spawn set, so the ambient a spawner is called under can no longer stand in
+	// for a `services` that forgot something (#7972). What each spawner is *called* under is
+	// therefore its own `R` and nothing more — the services `launch` and `restore` name for
+	// themselves, not the kernel a second time. `SpawnedProcesses` is among them since #8944:
+	// `launch` enrols every node it spawns there, so one table answers the process spells for a
+	// planned program and an ad-hoc one alike.
+	const spawnerNeeds = Context.pick(
+		Checkpoints,
+		PlannedProcesses,
+		Processes,
+		ProcessTable,
+		Registry,
+		SpawnedProcesses,
+	)(kernel);
 	// The kernel rides into every launched process's handlers: the shell row's Cmds spawn programs
 	// and read the process table, and a program row declares exactly those needs as its `R`.
 	const launched = yield* launch(compiled, wiring, {services: kernel}).pipe(
-		Effect.provideContext(kernel),
+		Effect.provideContext(spawnerNeeds),
 	);
 	// The same kernel a launched process gets, so a row's `R` is satisfied whichever spawner brings
 	// it up (#7951). What still differs is the ports: the graph does not own a restored process, so
 	// restore builds it an un-wired `ProcessPorts` of its own (#7789).
-	const restored = yield* restore(kernel).pipe(Effect.provideContext(kernel));
+	const restored = yield* restore(kernel).pipe(Effect.provideContext(spawnerNeeds));
 	return {kernel, launched, restored} satisfies Started;
 });
 
@@ -153,21 +199,47 @@ export interface BootReport {
 	readonly restoredCount: number;
 }
 
-/** What a reload replaced. The running processes are not among them; see `Booted.reload`. */
+/** What a reload replaced, and how many running processes it told. See `Booted.reload`. */
 export interface ReloadReport {
 	readonly sources: ReadonlyArray<string>;
 	readonly spellCount: number;
 	readonly bindingCount: number;
 	readonly bindingErrors: ReadonlyArray<BindingError>;
+	/**
+	 * Live processes handed a config change by their own row's `configChanged`. A row whose
+	 * settings did not move, one that applies nothing live, and one the reloaded config dropped
+	 * all leave their processes uncounted and untouched.
+	 */
+	readonly notified: number;
 }
 
 export interface Booted {
 	readonly report: BootReport;
 	readonly kernel: Context.Context<Kernel>;
 	/**
+	 * The `kind: "module"` window specifiers the booted rows declared, each beside the config module
+	 * that declared it. The page server resolves every one from its own origin, so it is carried out
+	 * of the config load rather than recomputed from the registry, whose rows have lost their layer.
+	 */
+	readonly moduleRenderers: ReadonlyArray<ModuleRendererRef>;
+	/**
+	 * The merged feature flags, every one resolved to a boolean. Carried out of the boot because the
+	 * page server generates them into a module the browser imports — without that they stay on this
+	 * side and an operator who turns one on sees nothing (#8439).
+	 */
+	readonly features: TuvalFeatures;
+	/**
+	 * The key grammar the booted shell row was built with. Carried out of the boot because the
+	 * transport sends it to every attached page (ADR 0353) and is started from `src/bin.ts`, which
+	 * holds the kernel and not the config — before this it named `defaultPrefixTable` a second time,
+	 * so a config-set table reached the shell row and nothing else (#7890).
+	 */
+	readonly keyTable: PrefixTable;
+	/**
 	 * The config read again, its spells registered and its bindings compiled against them in one
-	 * write. It replaces the spell registry and the binding table and nothing else: the processes
-	 * the first boot launched keep running under the program rows they were spawned from.
+	 * write, and then every live process handed what its own row says the new config means for it
+	 * (`reload.ts`). Nothing restarts and nothing respawns: a process keeps running under the row
+	 * it was spawned from, and what applies live is the row's own call (#7509 ruling 3).
 	 */
 	readonly reload: Effect.Effect<
 		ReloadReport,
@@ -181,9 +253,17 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 	const layers = {global: options.global, project: projectConfig(options.project)};
 	const config = yield* loadLayeredConfig(layers);
 	// Config rows are trusted local code (#7484 R1.1); the loader checks each row's id, not its shape.
-	const programs = config.programs as ReadonlyArray<AnyProgram>;
+	// The flags are applied once, here: a config module is evaluated before the merge exists (#8595),
+	// so this is the only place that holds both the rows and what the layers said about them (#8867).
+	const programs = withShellFeatures(config.programs as ReadonlyArray<AnyProgram>, config.features);
 	const stateDir = projectDir(options.project);
-	const started = yield* start({programs, graph: config.graph, stateDir, keys: config.keys});
+	const started = yield* start({
+		programs,
+		graph: config.graph,
+		stateDir,
+		keys: config.keys,
+		features: config.features,
+	});
 	const live = yield* ProcessTable.use((table) => table.list).pipe(
 		Effect.provideContext(started.kernel),
 	);
@@ -200,26 +280,33 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 			started.launched.filter((process) => process.restored).length + started.restored.length,
 	};
 
+	// The generation the live processes are running under. `Registry` cannot answer this: it is
+	// built once at boot and a reload never rewrites it, so after the first reload it names rows
+	// no running process has seen a change against.
+	const generation = yield* Ref.make(programs);
+
 	const reload = Effect.fn("Tuval.reload")(function* () {
 		const next = yield* loadLayeredConfig(layers);
+		const rows = withShellFeatures(next.programs as ReadonlyArray<AnyProgram>, next.features);
 		const set = yield* SpellSet;
-		yield* set.reload({
-			core: coreSpells,
-			programs: next.programs as ReadonlyArray<AnyProgram>,
-			keys: next.keys,
-		});
+		yield* set.reload({core: coreSpells, programs: rows, keys: next.keys});
+		const notified = yield* dispatchConfigChanged(yield* Ref.getAndSet(generation, rows), rows);
 		const current = yield* set.read;
 		return {
 			sources: next.sources,
 			spellCount: current.table.rows.length,
 			bindingCount: current.bindings.bindings.length,
 			bindingErrors: current.bindings.errors,
+			notified,
 		} satisfies ReloadReport;
 	});
 
 	return {
 		report,
 		kernel: started.kernel,
+		moduleRenderers: config.moduleRenderers,
+		features: config.features,
+		keyTable: shellPrefixTable(programs),
 		reload: reload().pipe(Effect.provideContext(started.kernel)),
 	} satisfies Booted;
 });

@@ -38,8 +38,12 @@ export const windowRenderer = <Out, S, M extends Message, V extends ViewState>(
 	render: (host: WindowHost<S, M, V>) => Out,
 ): WindowRenderer<Out, S, M, V> => ({kind, render});
 
-/** Why a reference did not resolve. Both arms are the shell's own answer, never a throw. */
-export type RendererRefusal = "unknown-ref" | "kind-mismatch";
+/**
+ * Why a reference did not resolve. Every arm is the shell's own answer, never a throw.
+ * `module-load-failed` is the arm a `kind: "module"` reference lands on when the page loaded its
+ * specifier and got no renderer back (ADR 0359); `detail` on the resolution says what it got.
+ */
+export type RendererRefusal = "unknown-ref" | "kind-mismatch" | "module-load-failed";
 
 export type RendererResolution =
 	| {readonly _tag: "Resolved"; readonly renderer: AnyWindowRenderer}
@@ -49,25 +53,95 @@ export type RendererResolution =
 			readonly _tag: "RendererUnresolved";
 			readonly ref: RendererRef;
 			readonly reason: RendererRefusal;
+			/** For `module-load-failed`: the load's own sentence, so the placeholder can name it. */
+			readonly detail?: string;
 	  };
 
 /** How a shell turns a row's reference into the renderer it names. The transport picks the implementation. */
 export type RendererResolver = (ref: RendererRef) => RendererResolution;
 
 /**
+ * What a table holds for a reference whose module the page tried to load and could not: the failure
+ * itself, as a value in the renderer's seat. It stays in the table rather than being dropped so the
+ * resolver can tell "no module was ever named for this" from "it was named and did not load" — the
+ * second is the one a founder can act on, and it must not read as the first.
+ */
+export interface RendererLoadFailure {
+	readonly _tag: "RendererLoadFailure";
+	readonly detail: string;
+}
+
+export const rendererLoadFailure = (detail: string): RendererLoadFailure => ({
+	_tag: "RendererLoadFailure",
+	detail,
+});
+
+const isLoadFailure = (
+	entry: AnyWindowRenderer | RendererLoadFailure,
+): entry is RendererLoadFailure => "_tag" in entry && entry._tag === "RendererLoadFailure";
+
+/** A shell-wide renderer table, keyed by `RendererRef.ref`. */
+export type RendererTable = Readonly<Record<string, AnyWindowRenderer | RendererLoadFailure>>;
+
+/**
  * The resolver over a table keyed by `RendererRef.ref`. `kind` is checked too: a reference asking
  * for an `isolated-frame` renderer must not be answered with the `host-native` one of the same name.
  */
 export const resolverFromTable =
-	(table: Readonly<Record<string, AnyWindowRenderer>>): RendererResolver =>
+	(table: RendererTable): RendererResolver =>
 	(ref) => {
-		const renderer = table[ref.ref];
-		if (renderer === undefined) return {_tag: "RendererUnresolved", ref, reason: "unknown-ref"};
-		if (renderer.kind !== ref.kind) {
+		const entry = table[ref.ref];
+		if (entry === undefined) return {_tag: "RendererUnresolved", ref, reason: "unknown-ref"};
+		if (isLoadFailure(entry)) {
+			return {_tag: "RendererUnresolved", ref, reason: "module-load-failed", detail: entry.detail};
+		}
+		if (entry.kind !== ref.kind) {
 			return {_tag: "RendererUnresolved", ref, reason: "kind-mismatch"};
 		}
-		return {_tag: "Resolved", renderer};
+		return {_tag: "Resolved", renderer: entry};
 	};
+
+/**
+ * A program row beside the config module that declared it. Node resolved the row's own imports from
+ * that module, and a `kind: "module"` renderer on the row is the other half of the same program, so
+ * that module is the base its specifier resolves from too — a program installed beside the user's
+ * config is whole there, and never has to be a dependency of the app (#8262).
+ */
+export interface DeclaredProgram {
+	readonly row: AnyProgram;
+	/** Absolute path of the config module whose `programs` array holds this row. */
+	readonly origin: string;
+}
+
+/** One `kind: "module"` window specifier, carrying the config module that declared its row. */
+export interface ModuleRendererRef {
+	/** The specifier as the row wrote it: the key the page seats the loaded renderer under. */
+	readonly ref: string;
+	/** Absolute path of the config module that declared the row — what `ref` resolves from. */
+	readonly origin: string;
+}
+
+/**
+ * The module specifiers a set of declared rows asks the page to load: one per `kind: "module"`
+ * window reference, in row order, each once. The page server generates its loader module from
+ * exactly this list, which is why it is computed here from the rows and not typed twice.
+ *
+ * The dedupe key is `ref` alone, because that string is the renderer table's key and two seats
+ * cannot share one. Where two rows wrote the same specifier, the first keeps its origin: a merged
+ * row sits in the layer position it overrode, so a project row replacing a global one by id already
+ * arrives here carrying the project config as its origin.
+ */
+export const moduleRendererRefs = (
+	declared: ReadonlyArray<DeclaredProgram>,
+): ReadonlyArray<ModuleRendererRef> => {
+	const seen = new Map<string, ModuleRendererRef>();
+	for (const {row, origin} of declared) {
+		if (row.renderer?.kind !== "module") continue;
+		if (seen.has(row.renderer.ref)) continue;
+		seen.set(row.renderer.ref, {ref: row.renderer.ref, origin});
+	}
+	return [...seen.values()];
+};
 
 /** The row's renderer, or the reason there is none. This is the only route from a program to its window renderer. */
 export const rendererFor = (row: AnyProgram, resolve: RendererResolver): RendererResolution =>

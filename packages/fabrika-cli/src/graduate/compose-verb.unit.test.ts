@@ -94,7 +94,7 @@ describe("the authored half is validated before anything is rendered", () => {
 			trail: {
 				_tag: "Text",
 				text: trailJson([
-					{ref: "R1.1", provenance: "established", text: "the fixture lives at ~/code/phoenix"},
+					{ref: "R1.1", provenance: "established", text: "the fixture lives at ~/code/repo"},
 				]),
 			},
 		});

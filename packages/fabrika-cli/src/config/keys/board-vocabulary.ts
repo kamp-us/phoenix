@@ -2,9 +2,9 @@
  * `boardVocabulary` — the statuses, types, priorities, audiences and standing lanes a repo's board
  * runs on.
  *
- * The shipped default is phoenix's own vocabulary, taken off `labels.ts` and `triage/facets.ts`
- * rather than restated here, so a repo with no `.fabrika.jsonc` reconciles and bootstraps exactly as
- * phoenix does today.
+ * The shipped default is taken off `labels.ts` and `triage/facets.ts` rather than restated here, so
+ * a repo with no `.fabrika.jsonc` reconciles and bootstraps on exactly the values those modules
+ * already carry.
  *
  * **Every sub-key is independently optional, and an explicitly-empty one is refused — except
  * `standingLanes`.** A repo that renames only its lanes declares only `standingLanes`; the other
@@ -13,10 +13,10 @@
  * gate turned off by a settings file, which is the one thing this surface refuses whole.
  *
  * `"standingLanes": []` turns nothing off. It says every issue homes on a milestone, which is a
- * board shape a repo may genuinely have — ADR 0286 rules an absent key and an empty list both mean
- * zero lanes. Refusing it left `triage homes`'s "this repo declares none" answer unreachable from
- * any configuration: a documented state no operator could produce (#6440). An **absent** key still
- * falls to the shipped pair; that departure from 0286 is #6469's.
+ * board shape a repo may genuinely have, so an empty list means zero lanes. Refusing it would leave
+ * `triage homes`'s "this repo declares none" answer unreachable from any configuration: a documented
+ * state no operator could produce. An **absent** key still falls to the shipped pair, because a repo
+ * that never wrote the key has declared nothing rather than declared none.
  *
  * **A sub-key this module does not know is refused too.** `"standingLane": [...]` would otherwise be
  * a declaration the operator believes is configured and is not.

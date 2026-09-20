@@ -2,6 +2,7 @@ import {describe, expect, it} from "vitest";
 import {
 	AUDIENCES,
 	type Change,
+	CLASSES,
 	decodeMember,
 	PRIORITIES,
 	parkedFacets,
@@ -18,6 +19,7 @@ const triaged = triagedFacets({
 	priority: "p2",
 	readyFor: "agent",
 	lane: null,
+	classes: [],
 });
 
 const removedLabels = (changes: ReadonlyArray<Change>): ReadonlyArray<string> =>
@@ -27,32 +29,89 @@ const addedLabels = (changes: ReadonlyArray<Change>): ReadonlyArray<string> =>
 	changes.flatMap((c) => (c._tag === "AddLabels" ? [...c.labels] : []));
 
 describe("the containment invariant", () => {
-	// #4285's mechanism was a facet owning MORE than its input can produce, so a correct value read
+	// The failure shape is a facet owning MORE than its input can produce, so a correct value reads
 	// as superseded. Every case below re-derives that the pattern and the vocabulary line up, rather
 	// than trusting the note in facets.ts that says so.
 	it.each(TYPES)("keeps type:%s under the facet that owns type:*", (type) => {
-		const facets = triagedFacets({type, priority: "p2", readyFor: "agent", lane: null});
+		const facets = triagedFacets({
+			type,
+			priority: "p2",
+			readyFor: "agent",
+			lane: null,
+			classes: [],
+		});
 		const facet = facets.find((f) => f.name === "type");
 		expect(facet?.keep).toEqual([`type:${type}`]);
 		expect(facet?.owns(`type:${type}`)).toBe(true);
 	});
 
 	it.each(PRIORITIES)("keeps %s under the facet that owns /^p\\d+$/", (priority) => {
-		const facets = triagedFacets({type: "bug", priority, readyFor: "agent", lane: null});
+		const facets = triagedFacets({
+			type: "bug",
+			priority,
+			readyFor: "agent",
+			lane: null,
+			classes: [],
+		});
 		const facet = facets.find((f) => f.name === "priority");
 		expect(facet?.keep).toEqual([priority]);
 		expect(facet?.owns(priority)).toBe(true);
 	});
 
 	it.each(AUDIENCES)("keeps ready-for:%s under the facet that owns ready-for:*", (readyFor) => {
-		const facets = triagedFacets({type: "bug", priority: "p2", readyFor, lane: null});
+		const facets = triagedFacets({type: "bug", priority: "p2", readyFor, lane: null, classes: []});
 		const facet = facets.find((f) => f.name === "audience");
 		expect(facet?.keep).toEqual([`ready-for:${readyFor}`]);
 		expect(facet?.owns(`ready-for:${readyFor}`)).toBe(true);
 	});
 
+	/** On an epic that label is `check-epic-plan`'s statement, so triage keeps none of it. */
+	it("keeps no audience label on an epic asked for the agent audience", () => {
+		const facets = triagedFacets({
+			type: "epic",
+			priority: "p2",
+			readyFor: "agent",
+			lane: null,
+			classes: [],
+		});
+		const facet = facets.find((f) => f.name === "audience");
+		expect(facet?.keep).toEqual([]);
+		// Still owned, so a stamp a gate run left is reconciled away rather than preserved.
+		expect(facet?.owns("ready-for:agent")).toBe(true);
+	});
+
+	it("keeps ready-for:human on an epic — parking it for a person is triage's own claim", () => {
+		const facets = triagedFacets({
+			type: "epic",
+			priority: "p2",
+			readyFor: "human",
+			lane: null,
+			classes: [],
+		});
+		expect(facets.find((f) => f.name === "audience")?.keep).toEqual(["ready-for:human"]);
+	});
+
+	it.each(
+		TYPES.filter((type) => type !== "epic"),
+	)("keeps ready-for:agent on %s — the exemption is the epic's alone", (type) => {
+		const facets = triagedFacets({
+			type,
+			priority: "p2",
+			readyFor: "agent",
+			lane: null,
+			classes: [],
+		});
+		expect(facets.find((f) => f.name === "audience")?.keep).toEqual(["ready-for:agent"]);
+	});
+
 	it.each(STANDING_LANES)("keeps %s under the facet that owns the standing lanes", (lane) => {
-		const facets = triagedFacets({type: "bug", priority: "p2", readyFor: "agent", lane});
+		const facets = triagedFacets({
+			type: "bug",
+			priority: "p2",
+			readyFor: "agent",
+			lane,
+			classes: [],
+		});
 		const facet = facets.find((f) => f.name === "lane");
 		expect(facet?.keep).toEqual([lane]);
 		expect(facet?.owns(lane)).toBe(true);
@@ -60,7 +119,13 @@ describe("the containment invariant", () => {
 
 	it("holds for every keep label of every facet, in both tables", () => {
 		const tables = [
-			triagedFacets({type: "epic", priority: "p0", readyFor: "human", lane: "wayfinder:backlog"}),
+			triagedFacets({
+				type: "epic",
+				priority: "p0",
+				readyFor: "human",
+				lane: "wayfinder:backlog",
+				classes: [],
+			}),
 			parkedFacets(),
 		];
 		for (const table of tables) {
@@ -68,6 +133,30 @@ describe("the containment invariant", () => {
 				for (const label of facet.keep) expect(facet.owns(label)).toBe(true);
 			}
 		}
+	});
+
+	it.each(CLASSES)("keeps class:%s under the facet that owns class:*", (name) => {
+		const facets = triagedFacets({
+			type: "bug",
+			priority: "p2",
+			readyFor: "agent",
+			lane: null,
+			classes: [name],
+		});
+		const facet = facets.find((f) => f.name === "class");
+		expect(facet?.keep).toEqual([`class:${name}`]);
+		expect(facet?.owns(`class:${name}`)).toBe(true);
+	});
+
+	/**
+	 * The facet owns `class:*` whatever this run keeps, so re-triaging an issue without `--class`
+	 * strips the class it was carrying. That is the same ownership rule the audience facet reads:
+	 * a facet that only added would leave two classes standing and route on whichever was read first.
+	 */
+	it("keeps no class when none is asked for, while still owning every class label", () => {
+		const facet = triaged.find((f) => f.name === "class");
+		expect(facet?.keep).toEqual([]);
+		expect(facet?.owns("class:ui")).toBe(true);
 	});
 
 	it("owns status:needs-info as a status, so a park and a triage contradict rather than coexist", () => {
@@ -89,7 +178,7 @@ describe("decodeMember", () => {
 		expect(decodeMember(AUDIENCES, "")).toBeNull();
 	});
 
-	// The lanes are an open set once they are configuration (#6294), so the refusal is this decode
+	// The lanes are an open set once they are configuration, so the refusal is this decode
 	// against the resolved list rather than a compile-time narrowing.
 	it("recognises exactly the lanes it is handed, and nothing adjacent", () => {
 		expect(decodeMember(STANDING_LANES, "wayfinder:backlog")).toBe("wayfinder:backlog");
@@ -111,7 +200,7 @@ describe("planReconcile — the #4285 removal mechanism", () => {
 	});
 
 	it("NEVER removes the label it is applying, even when the facet's pattern matches it", () => {
-		// The exact #4285 delete: `p2` matches /^p\d+$/, so a keep set the removal does not consult
+		// The delete this guards: `p2` matches /^p\d+$/, so a keep set the removal does not consult
 		// strips the priority the run just asked for while still printing a success line.
 		const plan = planReconcile({labels: ["p2", "type:bug"], milestone: 47}, triaged, 47);
 		expect(plan.removed).not.toContain("p2");
@@ -157,12 +246,13 @@ describe("planReconcile — the #4285 removal mechanism", () => {
 		expect(plan.changes).toEqual([]);
 	});
 
-	it("clears the milestone when the home is a standing lane (ADR 0208)", () => {
+	it("clears the milestone when the home is a standing lane", () => {
 		const facets = triagedFacets({
 			type: "chore",
 			priority: "p2",
 			readyFor: "agent",
 			lane: "axis:pipeline-hardening",
+			classes: [],
 		});
 		const plan = planReconcile({labels: [], milestone: 47}, facets, null);
 		expect(plan.changes[0]).toEqual({_tag: "ClearMilestone"});
@@ -182,6 +272,7 @@ describe("planReconcile — the #4285 removal mechanism", () => {
 			priority: "p2",
 			readyFor: "agent",
 			lane: "axis:pipeline-hardening",
+			classes: [],
 		});
 		const plan = planReconcile({labels: ["wayfinder:backlog"], milestone: null}, facets, null);
 		expect(plan.removed).toEqual(["wayfinder:backlog"]);
@@ -267,12 +358,13 @@ describe("shapeViolations — the read-back's positive proof", () => {
 		expect(shapeViolations(observed, triaged, 47)).toEqual(["milestone"]);
 	});
 
-	it("names the milestone when a lane-exempt issue is still homed (ADR 0208)", () => {
+	it("names the milestone when a lane-exempt issue is still homed", () => {
 		const facets = triagedFacets({
 			type: "chore",
 			priority: "p2",
 			readyFor: "agent",
 			lane: "wayfinder:backlog",
+			classes: [],
 		});
 		const observed = {
 			labels: ["type:chore", "p2", "status:triaged", "ready-for:agent", "wayfinder:backlog"],
@@ -301,7 +393,7 @@ describe("renderShape", () => {
 	it("reports what was seen facet by facet, including the milestone", () => {
 		const observed = {labels: ["type:bug", "p1", "p2", "area:x"], milestone: 47};
 		expect(renderShape(observed, triaged)).toBe(
-			"type=[type:bug], priority=[p1, p2], status=[], audience=[], lane=[], milestone=47",
+			"type=[type:bug], priority=[p1, p2], status=[], audience=[], lane=[], class=[], milestone=47",
 		);
 	});
 

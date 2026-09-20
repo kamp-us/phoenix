@@ -35,6 +35,8 @@ const GREEN = runs(3, [
 
 const CI_YML = ".github/workflows/ci.yml";
 const GUARD_YML = ".github/workflows/leak-guard.yml";
+/** Checked into the repo and fired on `pull_request_target` — repo-authored, base-context. */
+const CLEANUP_YML = ".github/workflows/pr-cleanup.yml";
 const CODEQL = "dynamic/github-code-scanning/codeql";
 
 /** The repo's own gates ran here — the coverage reads every non-red rollup now owes. */
@@ -82,7 +84,7 @@ describe("runCi", () => {
 	});
 
 	/**
-	 * ADR 0308: `checks` is an evidence-array collapsed to a status tally; what the rows were for
+	 * `checks` is an evidence-array collapsed to a status tally; what the rows were for
 	 * — naming the red and in-flight runs — moves to the notes channel.
 	 */
 	it("names the failing and still-running runs on stderr, never as answer rows", async () => {
@@ -111,7 +113,15 @@ describe("runCi", () => {
 				[COMMIT(OLD_HEAD), {status: 200, body: JSON.stringify({sha: OLD_HEAD})}],
 				[RUNS, GREEN],
 			],
-			GATED,
+			[
+				[WORKFLOWS, served(inventory(CI_YML, GUARD_YML, CODEQL))],
+				[
+					AT_HEAD,
+					served(
+						runsAtHead({path: CI_YML, headSha: OLD_HEAD}, {path: GUARD_YML, headSha: OLD_HEAD}),
+					),
+				],
+			],
 			{sha: OLD_HEAD},
 		);
 		expect(out.code).toBe(0);
@@ -132,7 +142,7 @@ describe("runCi", () => {
 		expect(out.stderr.at(-1)).toBe(`review ci: no commit ${OLD_HEAD} on PR #4321 in o/r.`);
 	});
 
-	it("refuses zero declared check runs on 7 — a vacuous green is the ADR 0092 fail-open", async () => {
+	it("refuses zero declared check runs on 7 — a vacuous green is the fail-open", async () => {
 		const out = await run(
 			[
 				[PULL, served(pull())],
@@ -153,7 +163,7 @@ describe("runCi", () => {
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`review ci: received 1 of 9 declared check runs at ${HEAD} — refusing the partial enumeration (#3999).`,
+			`review ci: received 1 of 9 declared check runs at ${HEAD} — refusing the partial enumeration.`,
 		);
 	});
 
@@ -180,7 +190,7 @@ describe("runCi", () => {
 });
 
 describe("the gate-coverage read", () => {
-	/** The live incident: a conflicted head where only CodeQL's default setup reported (#6522). */
+	/** The live incident: a conflicted head where only CodeQL's default setup reported. */
 	const CODEQL_ONLY = runs(4, [
 		{name: "CodeQL", status: "completed", conclusion: "success"},
 		{name: "Analyze (actions)", status: "completed", conclusion: "success"},
@@ -202,7 +212,7 @@ describe("the gate-coverage read", () => {
 		expect(out.code).toBe(NO_GATE_COVERAGE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`review ci: none of the 2 workflow(s) o/r authors produced a run at ${HEAD} — the 4 check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green (#6522).`,
+			`review ci: none of the 2 workflow(s) o/r authors inspected ${HEAD} — the 4 check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected these bytes: the CI state is UNKNOWN, never green.`,
 		);
 	});
 
@@ -219,9 +229,7 @@ describe("the gate-coverage read", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain(`ci\t${HEAD}\tgreen`);
-		expect(out.stderr).toContain(
-			`review ci: 1 of 2 workflow(s) o/r authors produced a run at ${HEAD}.`,
-		);
+		expect(out.stderr).toContain(`review ci: 1 of 2 workflow(s) o/r authors inspected ${HEAD}.`);
 	});
 
 	it("refuses a pending rollup with no gate coverage too — the reviewer would wait forever", async () => {
@@ -238,6 +246,83 @@ describe("the gate-coverage read", () => {
 		expect(out.code).toBe(NO_GATE_COVERAGE);
 	});
 
+	it("refuses a head whose only repo-authored run opened the base ref", async () => {
+		// The reported incident: a conflicted PR gets no `pull_request` run, and `pr-cleanup.yml` fires on
+		// `pull_request_target`, which carries the head and checks out the base. Its path is inside
+		// `.github/workflows/`, so the path alone reads as a gate that never opened a byte of this head.
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[
+					RUNS,
+					runs(2, [
+						{name: "resolve app roster", status: "completed", conclusion: "success"},
+						{name: "cleanup (web)", status: "completed", conclusion: "success"},
+					]),
+				],
+			],
+			[
+				[WORKFLOWS, served(inventory(CI_YML, GUARD_YML, CLEANUP_YML))],
+				[AT_HEAD, served(runsAtHead({path: CLEANUP_YML, event: "pull_request_target"}))],
+			],
+		);
+		expect(out.code).toBe(NO_GATE_COVERAGE);
+		expect(out.stdout).toBe("");
+	});
+
+	it("covers a mixed head off the head-inspecting run beside the cleanup one", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[RUNS, GREEN],
+			],
+			[
+				[WORKFLOWS, served(inventory(CI_YML, GUARD_YML, CLEANUP_YML))],
+				[AT_HEAD, served(runsAtHead({path: CLEANUP_YML, event: "pull_request_target"}, CI_YML))],
+			],
+		);
+		expect(out.code).toBe(0);
+		expect(out.stderr).toContain(`review ci: 1 of 3 workflow(s) o/r authors inspected ${HEAD}.`);
+	});
+
+	it("judges an abbreviated --sha exactly as its full object name does", async () => {
+		// The Actions run list filters `head_sha` as an exact string, so the abbreviation has to be
+		// resolved before the read. This script answers only the full one: an abbreviation on the wire
+		// matches nothing and the verb refuses on 11 instead of printing this green.
+		const AT_FULL = new RegExp(`actions/runs\\?head_sha=${HEAD}`);
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[COMMIT("03135b91"), {status: 200, body: JSON.stringify({sha: HEAD})}],
+				[RUNS, GREEN],
+			],
+			[
+				[WORKFLOWS, served(inventory(CI_YML, GUARD_YML, CODEQL))],
+				[AT_FULL, served(runsAtHead(CI_YML, GUARD_YML))],
+			],
+			{sha: "03135b91"},
+		);
+		expect(out.code).toBe(0);
+		// The answer still spells the commit the caller asked about; only the coverage read resolves it.
+		expect(out.stdout.split("\n")[0]).toBe("ci\t03135b91\tgreen");
+		expect(out.stderr).toContain(`review ci: 2 of 2 workflow(s) o/r authors inspected ${HEAD}.`);
+	});
+
+	it("reports an unresolvable head as UNKNOWN, never as a repo whose gates were silent", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull({head: "03135b91"}))],
+				[RUNS, GREEN],
+			],
+			[
+				[WORKFLOWS, served(inventory(CI_YML, GUARD_YML, CODEQL))],
+				[AT_HEAD, served(runsAtHead(CI_YML))],
+			],
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("cannot judge gate coverage at 03135b91");
+	});
+
 	it("names the coverage it judged when the repo's own gates did run", async () => {
 		const out = await run(
 			[
@@ -247,9 +332,7 @@ describe("the gate-coverage read", () => {
 			GATED,
 		);
 		expect(out.code).toBe(0);
-		expect(out.stderr).toContain(
-			`review ci: 2 of 2 workflow(s) o/r authors produced a run at ${HEAD}.`,
-		);
+		expect(out.stderr).toContain(`review ci: 2 of 2 workflow(s) o/r authors inspected ${HEAD}.`);
 	});
 
 	it("carries the coverage on the --json object", async () => {
@@ -264,7 +347,7 @@ describe("the gate-coverage read", () => {
 		expect(JSON.parse(out.stdout).gates).toEqual({declared: 2, covered: 2});
 	});
 
-	/** ADR 0308: `checks` is a status histogram under `--json`, never a row per run. */
+	/** `checks` is a status histogram under `--json`, never a row per run. */
 	it("collapses --json checks to a status tally beside the coverage", async () => {
 		const out = await run(
 			[
@@ -404,7 +487,7 @@ describe("the no-producer split", () => {
 });
 
 /**
- * The bounded wait of #7282: a `pending` is the ordinary state of a PR minutes after a push, and a
+ * The bounded wait: a `pending` is the ordinary state of a PR minutes after a push, and a
  * caller that cannot wait for it has only a park on a human to offer for a condition that clears
  * itself. The verb owns the loop so no skill ever sleeps (`docs/skill-conventions.md` §14).
  */
@@ -501,8 +584,8 @@ describe("the bounded --wait", () => {
 	});
 
 	/**
-	 * #7392: the floor check-run stays `in_progress` until a governance verdict binds at the head
-	 * (ADR 0318), and the shell running this wait is the shell that owes that verdict. A cadence no
+	 * The floor check-run stays `in_progress` until a governance verdict binds at the head,
+	 * and the shell running this wait is the shell that owes that verdict. A cadence no
 	 * test could sit through proves the answer comes on the first read.
 	 */
 	describe("a governance floor that is waiting on its own caller", () => {
@@ -564,7 +647,7 @@ describe("the bounded --wait", () => {
 		});
 
 		/**
-		 * #7441 is #7392's other half. On a repair round the verdict is bound to the previous head, so
+		 * The other half. On a repair round the verdict is bound to the previous head, so
 		 * the floor concludes `failure` rather than staying pending — the rollup is `red` and the verb
 		 * returns at once. That red belongs to the shell reading it, and a reviewer taking it as the
 		 * code class's execution evidence FAILs a PR over a floor it was about to clear.
@@ -634,7 +717,7 @@ describe("the bounded --wait", () => {
 			expect(out.stderr.join("\n")).not.toContain("yours to clear");
 		});
 
-		/** UNKNOWN never passes, so it is never the reader's to discount either (ADR 0092). */
+		/** UNKNOWN never passes, so it is never the reader's to discount either. */
 		it("stays a plain red when the floor could not be resolved at all", async () => {
 			const out = await run(
 				[

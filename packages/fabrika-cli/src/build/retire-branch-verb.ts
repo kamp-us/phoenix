@@ -2,10 +2,10 @@
  * `build retire-branch` — clear the two-branch deadlock on an epic child by renaming the superseded
  * lane branches out of `build/`.
  *
- * The residue this clears is #6296 / #6298: two local branches both carry one child's commits,
- * `traceRange` answers `Many`, `locateRange` maps that to `Ambiguous`, and `lane prove` refuses
- * because which range the lane built is not derivable. `build branch --resume-lane` already printed
- * the remedy and nothing performed it. ADR 0324 is the ruling; this is the verb.
+ * The residue this clears: two local branches both carry one child's commits, `traceRange` answers
+ * `Many`, `locateRange` maps that to `Ambiguous`, and `lane prove` refuses because which range the
+ * lane built is not derivable. `build branch --resume-lane` already printed the remedy and nothing
+ * performed it; this verb performs it.
  *
  * The order is the contract:
  *
@@ -17,7 +17,7 @@
  *      attests to would be a guess, and a wrong guess moves the only copy of a child's work.
  *   4. Stale worktree registrations are pruned, and no branch about to be renamed may be checked
  *      out anywhere. `renameBranch` (`./git.ts`) exits 0 on a held branch and silently retargets
- *      that worktree's `HEAD`, so skipping this proof is destructive in the one way ADR 0324 bans.
+ *      that worktree's `HEAD`, so skipping this proof moves a branch out from under a live lane.
  *   5. Each superseded branch is renamed into `retired/`. **No path here deletes a branch** — the
  *      commits survive, and a mistaken retirement costs a rename back rather than the work.
  *   6. Every rename is read back off a second `localBranches` — a retirement this verb reports is
@@ -116,7 +116,7 @@ export const runRetireBranch = (
 		if (seated._tag === "Unattested") {
 			return refuse(
 				SURVIVOR_UNATTESTED,
-				`${VERB}: ${seated.why} — nothing was renamed, because a survivor picked without an attestation is a guess, and a child's branch is the only copy of its work (ADR 0324).`,
+				`${VERB}: ${seated.why} — nothing was renamed, because a survivor picked without an attestation is a guess, and a child's branch is the only copy of its work.`,
 				[scope],
 			);
 		}

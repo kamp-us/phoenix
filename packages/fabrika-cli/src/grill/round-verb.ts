@@ -9,7 +9,7 @@
  *
  * **Zero existing rounds is a fact — this is round 1.** A comment read that could not complete is
  * `PRECONDITION_UNKNOWN` and posts nothing: the next round number would be a guess, and a guessed
- * round number collides with the round already there (ADR 0092).
+ * round number collides with the round already there.
  *
  * **`--supersedes` is the retraction path, and it is what keeps a session finishable.** A question
  * whose text was re-worded goes `stale`, which is un-ruled, and holds the frontier open forever;

@@ -26,6 +26,7 @@ import {
 } from "../ai-agent/core/index.ts";
 import {aiAgentPortNames} from "../ai-agent/handlers/index.ts";
 import {agentPorts, Mode} from "../ai-agent/ports/index.ts";
+import {AI_AGENT_INSPECTOR_REF} from "../ai-agent/renderer-ref.ts";
 import {ScriptedAiAgent} from "../ai-agent/service/index.ts";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
@@ -67,6 +68,8 @@ const script = {
 	sessionId: "claude-program-test",
 	history: [],
 	modes: {current: null, available: []},
+	models: {current: null, available: []},
+	thinking: {current: null, available: []},
 	interrupt: [],
 	turns: [],
 };
@@ -87,6 +90,11 @@ describe("the claude-session program row", () => {
 		assert.strictEqual(declared.identity.program, CLAUDE_SESSION_PROGRAM);
 		assert.deepStrictEqual(declared.placement, {host: "local"});
 		assert.deepStrictEqual(declared.renderer, CLAUDE_CHAT_WINDOW_REF);
+		assert.deepStrictEqual(
+			declared.inspector,
+			AI_AGENT_INSPECTOR_REF,
+			"a row declaring no inspector leaves the desk with nothing to paint for a Claude session",
+		);
 		assert.isFunction(
 			declared.resume,
 			"a restored Claude session has no way back without a resume",

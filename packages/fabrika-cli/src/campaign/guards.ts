@@ -134,7 +134,7 @@ export const readRoadmap = (
 						_tag: "Refused",
 						outcome: refuse(
 							TABLE_UNREADABLE,
-							`${verb}: ${located.display}: ${parsed.reason} — the whole ## Campaigns table is unreadable (ADR 0304).${tail}`,
+							`${verb}: ${located.display}: ${parsed.reason} — the whole ## Campaigns table is unreadable.${tail}`,
 						),
 					}
 				: {_tag: "Text", text, rows: parsed.rows};
@@ -248,13 +248,13 @@ export const runTrace = (request: TraceRequest): CampaignEffect<Trace> =>
 			return unreadable(acl.reason);
 		}
 		if (acl._tag === "BelowFloor") {
-			// Composed past `no()`: this line spends its em dash on the ADR clause, so the disclosure
-			// starts a second sentence instead of hanging off a second dash.
+			// Composed past `no()`: this line spends its em dash on the authority clause, so the
+			// disclosure starts a second sentence instead of hanging off a second dash.
 			return {
 				_tag: "Refused",
 				outcome: refuse(
 					BELOW_WRITE_FLOOR,
-					`${verb}: ${url} was authored by @${login}, who resolves to ${acl.level ?? "no collaboration"} on ${request.repo}, below write — authority is the ACL's, never ${CONFIG_PATH}'s alone (ADR 0055). ${NOTHING}`,
+					`${verb}: ${url} was authored by @${login}, who resolves to ${acl.level ?? "no collaboration"} on ${request.repo}, below write — authority is the ACL's, never ${CONFIG_PATH}'s alone. ${NOTHING}`,
 				),
 			};
 		}

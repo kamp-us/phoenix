@@ -8,9 +8,10 @@
  * agreeing by construction. What this verb owns is the **subject acquisition**: `adr sweep` can only
  * read a local draft, and a review-time or digest-time subject lives in a commit.
  *
- * All three outcomes exit 0 and all three are answers — and none of them is a clearance. A record that
- * disagrees with the subject about what a *label means* shares no distinctive vocabulary and never
- * appears here at all, which is why `no-overlap` carries that sentence in `reason` verbatim.
+ * Lexical overlap cannot find a disagreement that shares no distinctive vocabulary, so this scan
+ * cannot grant clearance. See ./command.ts help for its result states.
+ * The local three-dot file set is authoritative; GitHub caches its count at the last push.
+ * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect, type FileSystem, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -18,9 +19,10 @@ import {idFromFile, isFourDigitId, partitionRecordNames} from "../adr/records.ts
 import {renderEntry, type SweepCandidate, sweep} from "../adr/sweep.ts";
 import {readDir, readFile} from "../io/fs.ts";
 import {diffRangeStatuses, readFileAt} from "../io/git.ts";
+import {readLocalFileSet} from "../review/local-file-set.ts";
 import {badNumber, openPull, resolveTargetRepo} from "../review/target.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {bindGovernanceHead, boundLine} from "./head.ts";
 
 const VERB = "governance sweep";
@@ -64,7 +66,7 @@ const readCorpus = (dir: string): Effect.Effect<Corpus, never, FileSystem.FileSy
 				_tag: "Refused" as const,
 				outcome: refuse(
 					ZERO_SCOPE,
-					`${VERB}: scanned ${root}, 0 decision records — refusing to answer (ADR 0092).`,
+					`${VERB}: scanned ${root}, 0 decision records — refusing to answer.`,
 				),
 			};
 		}
@@ -139,7 +141,7 @@ export const runSweep = (
 				requireOpen: true,
 				closedReason: "nothing to sweep.",
 				requireFiles: true,
-				emptyReason: "refusing to sweep over an empty diff (ADR 0092).",
+				emptyReason: "refusing to sweep over an empty diff.",
 				unknownMessage: (reason) =>
 					`${VERB}: cannot read PR #${pr} in ${repo}: ${reason} — what the subject says is UNKNOWN.`,
 			});
@@ -157,21 +159,33 @@ export const runSweep = (
 			const head = bound.head;
 			diagnostics.push(boundLine(VERB, head));
 
-			const listed = yield* diffRangeStatuses(head.mergeBase, head.sha);
-			if (listed._tag === "Failure") {
+			// The local three-dot list is the file set, and GitHub's `changed_files` is reported beside
+			// it rather than refused on — `readLocalFileSet` carries why that count is not a floor.
+			const listed = yield* readLocalFileSet(
+				VERB,
+				`#${pr}`,
+				{base: head.mergeBase, tip: head.sha},
+				target.pull.changedFiles,
+				diffRangeStatuses,
+			);
+			if (listed._tag === "Unreadable") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
 					`${VERB}: cannot read the changed files of #${pr} at ${head.sha}: ${listed.reason} — ${UNKNOWN_TAIL}`,
 				);
 			}
-			if (listed.value.length < target.pull.changedFiles) {
+			if (listed.set.disagreement !== null) diagnostics.push(listed.set.disagreement);
+			// Zero is the one shortfall git alone establishes. `openPull`'s `requireFiles` already
+			// refused a PR GitHub declares empty, and this is the range disagreeing with it: without
+			// the seat, an empty read would report "carries no decision record" over a diff nobody read.
+			if (listed.set.files.length === 0) {
 				return refuse(
-					INCOMPLETE_SCAN,
-					`${VERB}: ${head.sha} carries ${listed.value.length} of the ${target.pull.changedFiles} files #${pr} declares — refusing to prove ${subjectId} is in this PR from a short read (#3999).`,
+					ZERO_SCOPE,
+					`${VERB}: ${head.mergeBase}...${head.sha} changes no path — refusing to sweep over an empty diff.`,
 					diagnostics,
 				);
 			}
-			const carried = listed.value.find(
+			const carried = listed.set.files.find(
 				(entry) => idFromFile(entry.path.split("/").pop() ?? "") === subjectId,
 			);
 			if (carried === undefined) {

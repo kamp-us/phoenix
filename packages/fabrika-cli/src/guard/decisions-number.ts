@@ -1,10 +1,10 @@
 /**
- * `guard decisions-index validate` core — the ADR number lock (ADR 0074): every `.decisions/` record
+ * `guard decisions-index validate` core — the ADR number lock: every record in the decision corpus
  * declares the four index fields, its filename number and its frontmatter `id` name the same ADR,
  * and no two records claim one id.
  *
  * The two invariants are one guard because they compose. The id-keyed duplicate check is what
- * catches the #1471 collision class — two branches each minting 0284, green apart, colliding once
+ * catches the collision class — two branches each minting 0284, green apart, colliding once
  * both land — and it only sees a filename collision because the prefix↔`id` lock forces the two
  * axes to agree. Drop either half and a collision hides behind the other axis.
  *

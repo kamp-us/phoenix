@@ -12,7 +12,7 @@ import {describe, expect, expectTypeOf, it} from "vitest";
 import type {ProcessId} from "../../process/process.ts";
 import type {ProgramId} from "../../registry/program.ts";
 import type {PortRefused, UnknownPort, UnknownProcess, UnknownProgram} from "./errors.ts";
-import type {KernelBridge} from "./KernelBridge.ts";
+import type {KernelBridge, Sent} from "./KernelBridge.ts";
 
 type Service = KernelBridge["Service"];
 
@@ -35,7 +35,7 @@ describe("claude tools boundary", () => {
 				process: ProcessId,
 				port: string,
 				payload: unknown,
-			) => Effect.Effect<boolean, UnknownProcess | UnknownPort | PortRefused>
+			) => Effect.Effect<Sent, UnknownProcess | UnknownPort | PortRefused>
 		>();
 		expectTypeOf<Service["read"]>().toEqualTypeOf<
 			(

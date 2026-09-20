@@ -1,29 +1,28 @@
 /**
  * The golden POINTER — the committed git metadata mapping a capture surface-id to
- * its current blessed golden (ADR 0183). The golden BYTES live in depo
- * (content-addressed, immutable — ADR 0144); git carries ONLY this tiny pointer,
+ * its current blessed golden. The golden BYTES live in a content-addressed, immutable
+ * asset store; git carries ONLY this tiny pointer,
  * so a re-bless is a one-line reviewable diff and history never bloats with PNGs.
  *
- * This is the migrations-guard committed-baseline + `bless` idiom (ADR 0108): the
- * pointer file is the audited baseline, `blessSurface` is the deliberate re-bless
- * (the golden analogue of `deriveBaseline`), and depo's write-once immutability IS
- * the "explicit update, never silent overwrite" guarantee (epic #2955 story 9) —
- * a re-bless is a new sha256 → new depo URL → a pointer move, never an in-place
+ * This is the committed-baseline + `bless` idiom a migrations guard uses: the
+ * pointer file is the audited baseline, `blessSurface` is the deliberate re-bless,
+ * and the store's write-once immutability IS
+ * the "explicit update, never silent overwrite" guarantee —
+ * a re-bless is a new sha256 → new store URL → a pointer move, never an in-place
  * overwrite of live bytes.
  *
  * Pure + IO-free (the unit-tested resolution/bless logic), and dependency-free so
- * the pure test never has to load the depo client: the fs load/serialize boundary
- * lives in `golden-fs.ts`, and the depo URL/store/fetch boundary — including
- * `resolveGoldenUrl` (sha256 → immutable depo URL) — in `golden-store.ts`.
+ * the pure test never has to load a store client: the fs load/serialize boundary
+ * lives in `golden-fs.ts`, and the store URL/store/fetch boundary — including
+ * `resolveGoldenUrl` (sha256 → immutable store URL) — is the consuming repo's.
  */
 
 /**
- * One surface's current golden, exactly the ADR 0183 §2 schema
- * (`surface-id -> { sha256, blessed-date, intent }`). The bytes are at
- * `depo.kamp.us/<sha256>.png`; this record is the pointer, not the image.
+ * One surface's current golden: `surface-id -> { sha256, blessed-date, intent }`.
+ * The bytes are at `<store>/<sha256>.png`; this record is the pointer, not the image.
  */
 export interface GoldenEntry {
-	/** 64-hex depo content-address stem — the blessed bytes at `depo.kamp.us/<sha256>.png`. */
+	/** 64-hex store content-address stem — the blessed bytes at `<store>/<sha256>.png`. */
 	readonly sha256: string;
 	/** ISO date (YYYY-MM-DD) the surface was blessed to this sha. */
 	readonly blessedDate: string;
@@ -34,7 +33,7 @@ export interface GoldenEntry {
 /** The whole pointer: surface-id (the `<route>[:state]` capture spec) → its current golden. */
 export type GoldenPointer = Readonly<Record<string, GoldenEntry>>;
 
-/** A 64-char lowercase-hex sha256 — the exact shape depo content-addresses with. */
+/** A 64-char lowercase-hex sha256 — the exact shape the store content-addresses with. */
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 export const isSha256Hex = (value: string): boolean => SHA256_HEX.test(value);
@@ -69,7 +68,7 @@ export const blessSurface = (pointer: GoldenPointer, input: BlessInput): GoldenP
 	}
 	if (!isSha256Hex(input.sha256)) {
 		throw new Error(
-			`golden-pointer: sha256 must be a 64-hex depo content-address stem (no ".png", no URL), got "${input.sha256}"`,
+			`golden-pointer: sha256 must be a 64-hex content-address stem (no ".png", no URL), got "${input.sha256}"`,
 		);
 	}
 	if (input.intent.trim().length === 0) {

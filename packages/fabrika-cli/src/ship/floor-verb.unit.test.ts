@@ -1,6 +1,6 @@
 /**
  * The floor's whole value is that it refuses on a verdict that is WRONG, not only on one that is
- * MISSING — a guard that fires on absence alone is the class #5416 and #4887 keep re-landing. So the
+ * MISSING — a guard that fires on absence alone keeps letting the wrong verdict through. So the
  * battery below mutates the verdict four ways that all *look* like a governance verdict is there —
  * FAIL at head, PASS on another head, PASS from an author without write+, a marker in a neighbouring
  * namespace — and asserts each one still reds.
@@ -9,6 +9,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, type Scripted, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {PULL_FILES_CAP} from "../io/pulls.ts";
 import {
 	GOVERNANCE_FLOOR_UNMET,
 	INCOMPLETE_SCAN,
@@ -39,7 +40,7 @@ const permissionServed = (permission: string): HttpReply => ({
 /** A fabrika-tree diff — `claude-plugins/` is one of the shipped governance roots. */
 const FABRIKA_TREE = [
 	FILES,
-	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/web/src/b.ts")),
+	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/site/src/b.ts")),
 ] as const;
 
 const options = {pr: 4321, sha: HEAD, repo: null, json: false, cwd: "/repo", env: ENV};
@@ -74,14 +75,14 @@ describe("runFloor", () => {
 	it("answers n/a — not satisfied — when the diff touches no governance root", async () => {
 		const out = await run([
 			[PULL, served(pull())],
-			[FILES, served(files("apps/web/src/a.ts", "apps/web/src/b.ts"))],
+			[FILES, served(files("apps/site/src/a.ts", "apps/site/src/b.ts"))],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(`floor\tn/a\t${HEAD}\nns\tgovernance\t-\n`);
 		expect(out.stderr.join("\n")).toContain("not a discharged verdict");
 	});
 
-	it("reds when the verdict is ABSENT — the #5293/#5333 shape", async () => {
+	it("reds when the verdict is ABSENT — no verdict at this head at all", async () => {
 		const out = await run([
 			[PULL, served(pull({comments: 0}))],
 			FABRIKA_TREE,
@@ -136,20 +137,48 @@ describe("runFloor", () => {
 		expect(out.stderr.join("\n")).toContain('never "n/a"');
 	});
 
-	it("refuses a short file list — a governance root could sit in the part nobody read", async () => {
+	// The declared count is GitHub's own, computed against a base cached at the last push, so a list
+	// short of it proved nothing about completeness. It used to refuse at 13 and red the floor check.
+	it("reports a short file list in `scanned` and answers the floor anyway (#9322)", async () => {
 		const out = await run([
 			[PULL, served(pull({changedFiles: 9}))],
-			[FILES, served(files("apps/web/src/a.ts"))],
+			[FILES, served(files("apps/site/src/a.ts"))],
 		]);
-		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`floor\tn/a\t${HEAD}`);
+		expect(out.stderr.join("\n")).toContain(
+			"GitHub's file list for #4321 holds 1 paths against the 9 its own pull-request record declares",
+		);
 	});
 
-	it("refuses a zero-file diff rather than answering n/a (ADR 0092)", async () => {
+	// The empty read is the seat that survives the retirement, driven by the list rather than the
+	// declared count: a zero can never render as a satisfied floor.
+	it("refuses an empty file list even where the record declares files (#9322)", async () => {
 		const out = await run([
-			[PULL, served(pull({changedFiles: 0}))],
+			[PULL, served(pull({changedFiles: 9}))],
 			[FILES, served(files())],
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stderr.join("\n")).toContain(
+			"ship floor: PR #4321 has zero changed files — whether it touches a governance root is unanswerable.",
+		);
+	});
+
+	// The ceiling is the truncation pagination cannot catch: GitHub stops serving files at 3000 and
+	// ends the Link chain there exactly as a complete read ends, so `n/a` would be answered over a
+	// list that never carried the governance root.
+	it("refuses a file list at the 3000-file ceiling on 13 (#9322)", async () => {
+		const out = await run([
+			[PULL, served(pull({changedFiles: PULL_FILES_CAP}))],
+			[
+				FILES,
+				served(files(...Array.from({length: PULL_FILES_CAP}, (_, i) => `apps/site/src/f${i}.ts`))),
+			],
+		]);
+		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.stderr.join("\n")).toContain(
+			"ship floor: GitHub's file list for #4321 came back at its 3000-file ceiling, so the list is provably partial — a governance root could sit in the part the platform never served.",
+		);
 	});
 
 	it("emits the same two outcomes as JSON", async () => {
