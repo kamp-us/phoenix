@@ -17,6 +17,7 @@ export function AgentChatOverflow() {
 		connection,
 		projectTrust,
 		settingsDisabled,
+		settingsChanging,
 		setDelivery,
 		changeProjectTrust,
 	} = useAgentChatInput();
@@ -79,6 +80,7 @@ export function AgentChatOverflow() {
 					iconSize={14}
 					className="kp-agent-chat__resources-button"
 					aria-label={t("admin.agent.resources.label")}
+					loading={settingsChanging}
 				>
 					{t("admin.agent.resources")}
 				</AgentChatControl>

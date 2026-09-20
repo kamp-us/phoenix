@@ -94,6 +94,12 @@ if (print.startsWith("/")) {
 
 const conversationId = flagValue("--conversation") ?? "fake-0000-1111-2222";
 
+// A launch-time hang is different from a slow turn: the process stays alive but never establishes
+// a session. This makes the timeout cleanup path observable without spending the production minute.
+if (process.env.AGY_FAKE_WITHHOLD_INIT === "1") {
+	await new Promise(() => setInterval(() => {}, 60_000));
+}
+
 /** How long a turn withholds its first byte, so "returned at the send" is observable rather than raced. */
 const TURN_DELAY_MS = Number(process.env.AGY_FAKE_TURN_DELAY_MS ?? "300");
 

@@ -13,9 +13,12 @@ import {act, render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {afterEach, describe, expect, it, vi} from "vitest";
+import {foldEvent} from "../../ai-agent/core/fold.ts";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
+import {initialState} from "../../ai-agent/core/state.ts";
 import type {SubagentSlot} from "../../ai-agent/ports/index.ts";
 import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
+import {fixtureEventFrames} from "../../claude/history/fixtures/events.ts";
 import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
 import {testProcess} from "../window/fixtures.ts";
@@ -257,6 +260,42 @@ describe("a subagent's rows in the agent window", () => {
 		expect(list()).toBeNull();
 		expect(screen.getByText("done")).toBeTruthy();
 		expect(document.querySelectorAll('[data-nested="true"]').length).toBe(3);
+		rendered.unmount();
+	});
+});
+
+/**
+ * The window over a real background spawn's own frames (#9506), which is what the list was empty
+ * for: every fabrika driver spawn goes this way, and the operator saw no row for any of them.
+ *
+ * Synthetic slots above prove what the window draws for a slot. This one starts a frame earlier —
+ * the captured `Agent` call, its async-launch `tool_result` and the `task_notification` that ended
+ * the worker a minute later (`../../claude/history/fixtures/background-subagent-turn.json`) — and
+ * folds them through the shipped mapping and core, so what it proves is that there is a row on
+ * screen at all.
+ */
+describe("the window over a captured background spawn", () => {
+	/** The session state as of frame `upTo`, folded exactly as the live session folds it. */
+	const stateAfter = (upTo: number): AiAgentSessionState => {
+		const frames = fixtureEventFrames("background-subagent-turn", {at: STARTED_AT});
+		return frames
+			.slice(0, upTo)
+			.flat()
+			.reduce((carried, event) => foldEvent(carried, event, {}), initialState("/repo"));
+	};
+
+	it("draws the worker's row while it runs, where it used to draw nothing", async () => {
+		const {rendered} = await openWindow(stateAfter(2), {subagentList: true});
+		expect(list()).not.toBeNull();
+		const rows = rowsOf();
+		expect(rows).toHaveLength(1);
+		expect(fieldsOf(rows[0] as HTMLElement).type).toBe("Explore");
+		rendered.unmount();
+	});
+
+	it("takes the row away once the notification ends the worker (Q2)", async () => {
+		const {rendered} = await openWindow(stateAfter(3), {subagentList: true});
+		expect(list()).toBeNull();
 		rendered.unmount();
 	});
 });

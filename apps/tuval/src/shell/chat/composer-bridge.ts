@@ -148,6 +148,20 @@ export interface ComposerBridge {
 	readonly setThinking: (thinking: ThinkingState) => void;
 }
 
+type PendingSetting =
+	| {
+			readonly kind: "model";
+			readonly target: ModelRef;
+			readonly resolve: () => void;
+			readonly reject: (cause: Error) => void;
+	  }
+	| {
+			readonly kind: "thinking";
+			readonly target: ThinkingLevel;
+			readonly resolve: () => void;
+			readonly reject: (cause: Error) => void;
+	  };
+
 const none =
 	<A>(value: A) =>
 	(): Promise<A> =>
@@ -159,6 +173,7 @@ export const composerBridge = (handlers: ComposerHandlers): ComposerBridge => {
 	let commands = handlers.initialCommands;
 	let thinking = handlers.initialThinking;
 	let listener: ((event: PiEvent) => void) | null = null;
+	let pending: PendingSetting | null = null;
 
 	const bridge: AgentChatInputBridge = {
 		loadPiState: () =>
@@ -177,15 +192,26 @@ export const composerBridge = (handlers: ComposerHandlers): ComposerBridge => {
 		// that nothing here rejects, and the core would refuse the Msg anyway.
 		setPiModel: (model) => {
 			const picked = refOf(model, models.available);
-			if (picked !== null) handlers.onSetModel(picked);
-			return Promise.resolve();
+			if (picked === null) return Promise.resolve();
+			if (pending !== null)
+				return Promise.reject(new Error("A setting change is already in progress."));
+			return new Promise<void>((resolve, reject) => {
+				pending = {kind: "model", target: picked, resolve, reject};
+				handlers.onSetModel(picked);
+			});
 		},
 		setPiThinkingLevel: (level) => {
 			const picked = levelOf(level, thinking.available);
-			if (picked !== null) handlers.onSetThinkingLevel(picked);
-			return Promise.resolve();
+			if (picked === null) return Promise.resolve();
+			if (pending !== null)
+				return Promise.reject(new Error("A setting change is already in progress."));
+			return new Promise<void>((resolve, reject) => {
+				pending = {kind: "thinking", target: picked, resolve, reject};
+				handlers.onSetThinkingLevel(picked);
+			});
 		},
-		setPiProjectTrust: none(undefined),
+		setPiProjectTrust: () =>
+			Promise.reject(new Error("Project resources cannot be changed for this agent.")),
 		sendPiPrompt: ({message}) => {
 			handlers.onPrompt(message);
 			return Promise.resolve();
@@ -222,6 +248,10 @@ export const composerBridge = (handlers: ComposerHandlers): ComposerBridge => {
 			const was = isWorking(phase);
 			const knew = offerResolved(phase);
 			phase = next;
+			if (next === "gone" && pending !== null) {
+				pending.reject(new Error("The agent stopped before confirming the setting."));
+				pending = null;
+			}
 			// A phase carries the offer's resolution, so crossing into a resolved one is itself news
 			// the pickers need: without this push a control left saying "loading" at `starting` has
 			// nothing to correct it if the layer's catalogs never change again.
@@ -234,6 +264,14 @@ export const composerBridge = (handlers: ComposerHandlers): ComposerBridge => {
 		},
 		setModels: (next) => {
 			models = next;
+			if (
+				pending?.kind === "model" &&
+				next.current !== null &&
+				refOf(composerModel(next.current), [pending.target]) !== null
+			) {
+				pending.resolve();
+				pending = null;
+			}
 			listener?.(catalogStatus(next, commands, thinking, offerResolved(phase)));
 		},
 		setCommands: (next) => {
@@ -242,6 +280,10 @@ export const composerBridge = (handlers: ComposerHandlers): ComposerBridge => {
 		},
 		setThinking: (next) => {
 			thinking = next;
+			if (pending?.kind === "thinking" && next.current === pending.target) {
+				pending.resolve();
+				pending = null;
+			}
 			listener?.(catalogStatus(models, commands, next, offerResolved(phase)));
 		},
 	};

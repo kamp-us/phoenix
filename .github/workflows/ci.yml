@@ -919,6 +919,10 @@ jobs:
             const interval = 15000;
             // Match the web app's block in the sticky comment, capturing the URL
             // and the hidden d1 token deploy.yml emits for web only.
+            // The workers.dev host shape stays deliberate (#9507): a `pr-<n>` stage binds
+            // no custom domain, so alchemy prints `domains: []` and the preview comment
+            // carries a workers.dev host. Widening this to any https URL would let a
+            // custom-domain line — which only prod produces — satisfy a preview poll.
             const webRe = /<!-- preview-deploy:web -->\n[^\n]*?(https:\/\/[A-Za-z0-9.-]+\.workers\.dev)[^\n]*?<!-- d1:([0-9a-f-]+) -->/;
             // Optional, independent of the required URL+D1 match: the forced preview-flag
             // key set deploy.yml emits (issue #2951). Absent when no `preview-flag:<key>`
