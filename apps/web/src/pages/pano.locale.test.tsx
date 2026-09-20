@@ -37,7 +37,7 @@ vi.mock("../components/authorship/FirstContributionOnramp", () => ({
 
 vi.mock("../lib/useLinkMetadata", () => ({
 	useLinkMetadata: () => ({fetchMetadata: async () => ({title: null, description: null})}),
-	prefillIfEmpty: () => {},
+	prefillUpdate: () => (current: string) => current,
 }));
 
 vi.mock("../components/reaction/CommentReactionBar", () => ({

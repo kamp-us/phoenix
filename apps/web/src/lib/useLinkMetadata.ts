@@ -3,7 +3,7 @@
  *
  * Safe-default, always: an invalid URL or any fetch failure resolves to `{}` and the hook
  * never throws, so a prefill can only ever leave the form untouched. The "never clobber
- * user input" rule itself is {@link prefillIfEmpty}, so both surfaces share one definition.
+ * user input" rule itself is {@link prefillUpdate}, so both surfaces share one definition.
  */
 import {useCallback, useEffect, useRef, useState} from "react";
 import {
@@ -27,15 +27,30 @@ function isFetchableUrl(url: string): boolean {
 	}
 }
 
-/** The "never clobber user input" rule: write only into a field still blank after trim. */
+/**
+ * The "never clobber user input" rule as a state updater: keep a field the person has
+ * touched, write the clamped metadata into one still blank after trim.
+ *
+ * A React caller passes this straight to its setter, so the rule is decided against the
+ * value the field holds when the response lands, not the one captured by the render that
+ * started the fetch — typing during the fetch is what that snapshot lost (#7859).
+ */
+export function prefillUpdate(value: string | undefined): (current: string) => string {
+	return (current) => {
+		if (value === undefined || value === "") return current;
+		if (current.trim() !== "") return current;
+		return value.slice(0, PREFILL_MAX_LEN);
+	};
+}
+
+/** The same rule for a caller that holds the current value itself, such as a DOM input. */
 export function prefillIfEmpty(
 	current: string,
 	value: string | undefined,
 	set: (next: string) => void,
 ): void {
-	if (value === undefined || value === "") return;
-	if (current.trim() !== "") return;
-	set(value.slice(0, PREFILL_MAX_LEN));
+	const next = prefillUpdate(value)(current);
+	if (next !== current) set(next);
 }
 
 export interface UseLinkMetadata {
