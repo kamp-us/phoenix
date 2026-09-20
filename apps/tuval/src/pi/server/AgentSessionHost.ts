@@ -3,11 +3,11 @@
  * `SessionManager`; everything above it — dispatch, the ownership table, the connection — sees
  * protocol values only.
  *
- * The JSONL lands under the session's own cwd. Pi's default would put it in the user's agent dir
- * (`SessionManager.create(cwd)` slugs the cwd into `~/.pi/agent/sessions/<slug>/`), which is the
- * right home for the `pi` CLI and the wrong one for a Tuval process whose cwd is the project root
- * that booted the kernel: the process's transcripts belong beside the project's `.tuval/`, and a
- * test must not write into the operator's home to prove a session persisted.
+ * The JSONL lands in the directory the caller names, which is the desk's own state dir under the
+ * home dir (`../../state-dir.ts`, ADR 0402). It is neither Pi's default — `SessionManager.create(cwd)`
+ * slugs the cwd into `~/.pi/agent/sessions/<slug>/`, the right home for the `pi` CLI and the wrong
+ * one for a Tuval process — nor anything derived from a session's cwd, because a session opened
+ * against a foreign repository must write nothing into it.
  */
 
 import {readdirSync} from "node:fs";
@@ -34,8 +34,13 @@ export interface AgentSessionHostOptions {
 	readonly modelRuntime: ModelRuntime;
 	/** Pi's global config directory for this process. */
 	readonly agentDir: string;
-	/** Where a session's JSONL lands, from its cwd. Defaults to `<cwd>/.tuval/pi-sessions`. */
-	readonly sessionDir?: (cwd: string) => string;
+	/**
+	 * Where every session this host opens lands its JSONL: the desk's own store, one directory for
+	 * the whole desk. Not a function of a session's `cwd` — that is the write into a foreign
+	 * repository ADR 0402 bans — and not optional, because a host with no store to write to is a
+	 * host that silently picks one.
+	 */
+	readonly sessionDir: string;
 	/** Built-in tool suppression, passed straight through to `createAgentSession`. */
 	readonly noTools?: "all" | "builtin" | undefined;
 	/**
@@ -74,13 +79,6 @@ const allThinkingLevels: ReadonlyArray<ThinkingLevel> = [
 	"xhigh",
 	"max",
 ];
-
-/**
- * Where a session's JSONL lands. Exported because it is a convention two modules share: this host
- * writes it and the Pi AI agent layer's `page` reads it back, and a second copy of the path would
- * be a second thing to keep in step.
- */
-export const defaultSessionDir = (cwd: string): string => join(cwd, ".tuval", "pi-sessions");
 
 /**
  * Pi's catalog is every model it knows of — 1312 at this pin — and a picker wants the ones this
@@ -328,7 +326,6 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 
 		open: (request) =>
 			Effect.gen(function* () {
-				const sessionDir = (options.sessionDir ?? defaultSessionDir)(request.cwd);
 				const model =
 					request.model === undefined
 						? undefined
@@ -350,7 +347,7 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 								? {}
 								: {thinkingLevel: request.thinkingLevel}),
 							modelRuntime: options.modelRuntime,
-							sessionManager: SessionManager.create(request.cwd, sessionDir),
+							sessionManager: SessionManager.create(request.cwd, options.sessionDir),
 							settingsManager,
 							...(resourceLoader === undefined ? {} : {resourceLoader}),
 							...(options.noTools === undefined ? {} : {noTools: options.noTools}),
@@ -385,10 +382,9 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 						detail: `this host holds no project root, so session ${sessionId} cannot be re-opened`,
 					});
 				}
-				const dir = (options.sessionDir ?? defaultSessionDir)(cwd);
 				const refuse = (detail: string) => new SessionOpenFailed({cwd, detail});
 				const file = yield* Effect.try({
-					try: () => sessionFile(dir, sessionId),
+					try: () => sessionFile(options.sessionDir, sessionId),
 					catch: (error) => retaining(error, refuse("Pi could not reopen the stored session")),
 				});
 				if (file === undefined) return yield* refuse("Pi could not find the stored session file");
@@ -405,7 +401,7 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 						const result = await createAgentSession({
 							cwd,
 							modelRuntime: options.modelRuntime,
-							sessionManager: SessionManager.open(file, dir, cwd),
+							sessionManager: SessionManager.open(file, options.sessionDir, cwd),
 							settingsManager,
 							...(resourceLoader === undefined ? {} : {resourceLoader}),
 							...(options.noTools === undefined ? {} : {noTools: options.noTools}),

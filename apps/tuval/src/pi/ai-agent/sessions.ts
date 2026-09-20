@@ -6,8 +6,9 @@
  *
  * 1. **The `pi` CLI's global store**, `<agentDir>/sessions/<per-cwd slug>/*.jsonl` — where a
  *    session the operator started with `pi` in a terminal lands.
- * 2. **Tuval's own per-project store**, `<projectRoot>/.tuval/pi-sessions/*.jsonl` — deliberately
- *    outside the global one (`server/AgentSessionHost.ts`), so the global scan reaches none of it.
+ * 2. **Tuval's own per-desk store**, `<state dir>/pi-sessions/*.jsonl` under the home dir
+ *    (`../../state-dir.ts`) — deliberately outside the global one, so the global scan reaches none
+ *    of it.
  *
  * Rows are read through `SessionManager.listAll(dir)`, which builds a `SessionInfo` per `.jsonl`
  * file in one directory. The global store's per-cwd slug directories are enumerated here rather
@@ -15,9 +16,10 @@
  * `getAgentDir()` — process env at call time — and would ignore the `agentDir` this layer was
  * built on, which is the same directory its credentials and its model catalog are rebased on.
  *
- * **Known limitation.** Tuval's own Pi sessions under *other* project roots stay unreachable:
- * Tuval knows one project root, and `sessionDir` is a programmatic option with no config knob, so
- * there is no set of roots to walk. Multi-root discovery is not built here.
+ * **Known limitation.** Tuval's own Pi sessions belonging to *other* desks stay unreachable: a layer
+ * is handed one state dir, and there is no set of them to walk. Every desk's store is now a sibling
+ * directory under one home-dir tree, so the walk that would reach them is a walk of that tree —
+ * #8105's work, not built here.
  */
 
 import {existsSync, readdirSync} from "node:fs";

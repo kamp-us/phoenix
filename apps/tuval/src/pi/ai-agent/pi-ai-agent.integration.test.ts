@@ -33,6 +33,9 @@ const MODEL = {provider: "faux", id: "faux-1"} as const;
 /** Long enough for a pushed snapshot to land, short enough to fail inside the suite budget. */
 const SETTLE = "500 millis";
 
+/** The store a case's host and its layer must agree on: the desk's one directory, under its root. */
+const piSessions = (root: string): string => join(root, "pi-sessions");
+
 const setUp = (responses = [fauxAssistantMessage("hello from faux")]) => {
 	const cwd = mkdtempSync(join(tmpdir(), "tuval-pi-ai-agent-"));
 	const faux = fauxProvider({
@@ -58,6 +61,8 @@ const hostLayer = (cwd: string, provider: ReturnType<typeof fauxProvider>) =>
 				return agentSessionHostLayer({
 					modelRuntime,
 					agentDir: join(cwd, "agent"),
+					// The host names its store outright now; this case's is under its own temp root.
+					sessionDir: piSessions(cwd),
 					noTools: "all",
 				});
 			},
@@ -212,7 +217,11 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				assert.strictEqual(faux.state.callCount, 2, "the tool loop ran two model turns");
 			}).pipe(
 				Effect.scoped,
-				Effect.provide(aiAgentOverHost({model: MODEL}).pipe(Layer.provide(hostLayer(cwd, faux)))),
+				Effect.provide(
+					aiAgentOverHost({model: MODEL, sessionDir: piSessions(cwd)}).pipe(
+						Layer.provide(hostLayer(cwd, faux)),
+					),
+				),
 			);
 		},
 		{timeout: 60_000},
@@ -310,7 +319,11 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				assert.isFalse(opening.hasMore, "the walk reaches the beginning of the session");
 			}).pipe(
 				Effect.scoped,
-				Effect.provide(aiAgentOverHost({model: MODEL}).pipe(Layer.provide(hostLayer(cwd, faux)))),
+				Effect.provide(
+					aiAgentOverHost({model: MODEL, sessionDir: piSessions(cwd)}).pipe(
+						Layer.provide(hostLayer(cwd, faux)),
+					),
+				),
 			);
 		},
 		{timeout: 60_000},
@@ -351,7 +364,7 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 						assert.strictEqual(missing.reason, "session-not-found");
 					}).pipe(
 						Effect.provide(
-							aiAgentOverClient({model: MODEL}).pipe(
+							aiAgentOverClient({model: MODEL, sessionDir: piSessions(cwd)}).pipe(
 								Layer.provide(PiClientService.layerWebSocket({url, serverId: server.serverId})),
 							),
 						),
@@ -396,7 +409,7 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 					);
 				}).pipe(
 					Effect.provide(
-						aiAgentOverClient({model: MODEL}).pipe(
+						aiAgentOverClient({model: MODEL, sessionDir: piSessions(cwd)}).pipe(
 							Layer.provide(
 								PiClientService.layer({
 									transportFactory: socket.factory,

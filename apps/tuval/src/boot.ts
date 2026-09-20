@@ -34,13 +34,25 @@ import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kern
 import type {PrefixTable} from "./shell/keys/index.ts";
 import {shellId, shellPrefixTable, withShellFeatures} from "./shell/program.ts";
 import type {ModuleRendererRef} from "./shell/window/index.ts";
+import {
+	adoptInProjectState,
+	homeStateDir,
+	homeTuvalDir,
+	prepareStateDir,
+	type StateAdoption,
+	StateDir,
+} from "./state-dir.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 
 /** The global config module, `~/.tuval/tuval.config.ts`; the home dir is a parameter so a test can point it elsewhere. */
 export const defaultGlobalConfig = (home: string = homedir()): string =>
-	join(home, ".tuval", "tuval.config.ts");
+	join(homeTuvalDir(home), "tuval.config.ts");
 
-/** A project's Tuval dir: its optional config module and, beside it, its checkpoints (gitignored). */
+/**
+ * A project's Tuval dir: its optional config module and nothing else. No state is written here and
+ * none is read back from here — the desk's manifest, checkpoints and session files live under the
+ * home dir, keyed by this project's absolute path (`./state-dir.ts`, ADR 0402).
+ */
 export const projectDir = (project: string): string => join(project, ".tuval");
 export const projectConfig = (project: string): string =>
 	join(projectDir(project), "tuval.config.ts");
@@ -64,6 +76,9 @@ export type Kernel =
 	| ProcessTable
 	| ProcessTablePort
 	| SpawnedProcesses
+	// The desk's state directory, so a row's layer can put its own files beside the checkpoints
+	// instead of deriving a directory from a session's cwd (`./state-dir.ts`, ADR 0402).
+	| StateDir
 	| SpellSet
 	| SpellRegistry
 	| WindowIndex
@@ -140,7 +155,12 @@ export const start = Effect.fn("Tuval.start")(function* ({
 		),
 	);
 	const built = yield* Layer.build(
-		Layer.mergeAll(ProcessTablePort.layer, Features.layer(features), commands).pipe(
+		Layer.mergeAll(
+			ProcessTablePort.layer,
+			Features.layer(features),
+			StateDir.layer(stateDir),
+			commands,
+		).pipe(
 			Layer.provideMerge(Processes.layer),
 			Layer.provideMerge(Checkpoints.layer(fileStores(stateDir))),
 			Layer.provideMerge(Layer.succeedContext(registry)),
@@ -181,8 +201,14 @@ export const start = Effect.fn("Tuval.start")(function* ({
 export interface BootOptions {
 	/** The global config module's path. */
 	readonly global: string;
-	/** The project directory; its `.tuval/` holds the project config and the state. */
+	/** The project directory. Its `.tuval/` holds the project config layer, and no state. */
 	readonly project: string;
+	/**
+	 * The home dir this desk's state hangs under. A parameter for the reason it is one on
+	 * `defaultGlobalConfig`: a test must be able to point it at a temp dir rather than write into
+	 * the operator's own.
+	 */
+	readonly home?: string;
 }
 
 export interface BootReport {
@@ -194,7 +220,10 @@ export interface BootReport {
 	readonly bindingCount: number;
 	/** One per key binding that did not compile; the binding is dropped and the rest still run. */
 	readonly bindingErrors: ReadonlyArray<BindingError>;
+	/** The home-dir directory this desk's state lives in, keyed by the project's absolute path. */
 	readonly stateDir: string;
+	/** What ADR 0402 rule 7's one-time move lifted out of `<project>/.tuval` on this boot. */
+	readonly adopted: StateAdoption;
 	readonly processCount: number;
 	readonly restoredCount: number;
 }
@@ -256,7 +285,14 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 	// The flags are applied once, here: a config module is evaluated before the merge exists (#8595),
 	// so this is the only place that holds both the rows and what the layers said about them (#8867).
 	const programs = withShellFeatures(config.programs as ReadonlyArray<AnyProgram>, config.features);
-	const stateDir = projectDir(options.project);
+	// The state dir is derived from the project's absolute path and never joined onto the project
+	// (ADR 0402). The adoption runs before anything reads a checkpoint, so a desk whose state was
+	// written under `<project>/.tuval` by an older build comes back whole on its first boot here.
+	const stateDir = yield* prepareStateDir(
+		options.project,
+		homeStateDir(options.project, options.home),
+	);
+	const adopted = yield* adoptInProjectState(projectDir(options.project), stateDir);
 	const started = yield* start({
 		programs,
 		graph: config.graph,
@@ -275,6 +311,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 		bindingCount: spells.bindings.bindings.length,
 		bindingErrors: spells.bindings.errors,
 		stateDir,
+		adopted,
 		processCount: live.length,
 		restoredCount:
 			started.launched.filter((process) => process.restored).length + started.restored.length,

@@ -105,25 +105,34 @@ or model execution; the in-memory host records UI dispatches without executing t
 `pnpm dev` runs `node src/bin.ts`, an Effect CLI (`effect/unstable/cli`) over the pure `boot`.
 Node strips the TypeScript itself, so the kernel has no build step. Boot loads your config layers
 (see "Your config"), registers their programs, launches the processes the graph plans, restores any
-other checkpointed process from the project's `.tuval/`, prints the process table, binds the page
+other checkpointed process from this project's state dir, prints the process table, binds the page
 socket, serves the desk, and stays up until Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints
 every process and exits 0; a config that plans no process exits right after the report.
 
 ```
 tuval [flags]
   --config file          Global config module (default: ~/.tuval/tuval.config.ts)
-  --project directory    Project dir whose .tuval/ holds the project config and state (default: cwd)
+  --project directory    Project dir whose .tuval/ holds the project config (default: cwd)
   --no-page              Boot the kernel and the socket, but serve no page
   --page-port integer    Port for the page (default: a free one)
   --help, --version
 ```
 
 `node src/bin.ts --config <module>` swaps the global layer, which is how the tests exercise the
-refusals; `--project <dir>` runs against another project's `.tuval/`. A path named by either flag
-must exist.
+refusals; `--project <dir>` opens another project. A path named by either flag must exist.
+
+Nothing Tuval saves goes into the project. The process manifest, the checkpoints and the Pi session
+files live under `~/.tuval/projects/<key>`, where the key is that checkout's absolute path written
+as one folder name — the same shape Claude Code keys its projects by, and the reason two worktrees
+of one repository are two desks with no shared state
+([ADR 0402](../../.decisions/0402-tuval-state-lives-under-home.md)). Each directory holds a
+`project.json` naming the path it was derived from, so a key reads back. A project needs zero files
+to be a project; `<project>/.tuval/` is a config directory and may hold `tuval.config.ts` and
+nothing else. State an older build left under `<project>/.tuval` is moved into the home-dir key on
+the next boot, once, and the boot line says what it moved.
 
 ```
-tuval: booted — 3 program(s), 6 spell(s) registered from …/apps/tuval/.tuval/tuval.config.ts; 3 process(es) live, 0 restored from …/apps/tuval/.tuval
+tuval: booted — 3 program(s), 6 spell(s) registered from …/apps/tuval/.tuval/tuval.config.ts; 3 process(es) live, 0 restored from ~/.tuval/projects/-Users-you-code-phoenix-apps-tuval
 tuval: process shell program=shell parent=- ports=- state=running@0
 tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0
 tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0
@@ -160,8 +169,9 @@ Configuration is code you own, the Neovim model, in two layers: a global module 
 project dir (the cwd, or `--project`). Either may be absent — an absent layer is empty, and a
 boot with neither registers nothing. The two merge project-over-global: a program row or a graph
 node in the project layer replaces the global one with the same id, in place; the rest append.
-This repo's `apps/tuval/.tuval/tuval.config.ts` is the project layer `pnpm dev` runs against, and
-the checkpoints land beside it (that dir is gitignored except for the config).
+This repo's `apps/tuval/.tuval/tuval.config.ts` is the project layer `pnpm dev` runs against. The
+checkpoints do not land beside it — they land under the home dir, which is why no repository needs
+an ignore rule for Tuval state.
 
 A config module default-exports one versioned object, `TuvalConfigInput` from `src/config.ts`:
 `version: 1`, `programs`, an optional `graph`, and an optional `keys` (see "Spells"). A row is a
@@ -951,8 +961,8 @@ inbound bound closes the socket with `1009`; a per-connection outbound queue ove
 it with `1013`.
 
 **`PiSessionHost`** is the seam. Above it, only protocol values; below it, the real `AgentSession`
-and its JSONL `SessionManager` — the transcript lands under the session's own cwd, at
-`<cwd>/.tuval/pi-sessions`. Everything crossing that seam is projected, never cast, per
+and its JSONL `SessionManager` — the transcript lands in the desk's own store, at
+`<state dir>/pi-sessions`, whatever cwd the session works in. Everything crossing that seam is projected, never cast, per
 [`.patterns/strict-wire-schema-projection.md`](../../.patterns/strict-wire-schema-projection.md).
 `makeScriptedHost` in `fixtures.ts` is the same seam with no model behind it, which is what lets
 the whole wire suite run in the unit tier.

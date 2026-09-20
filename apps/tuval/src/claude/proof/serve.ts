@@ -45,7 +45,7 @@ const proof = Command.make(
 	{
 		project: Flag.string("project").pipe(
 			Flag.withDescription(
-				"The project root: the session cwd and where the checkpoints live. Reuse it to prove the restart.",
+				"The project root: the session cwd, and the key this desk's home-dir state hangs under. Reuse it to prove the restart.",
 			),
 			Flag.withDefault(join(tmpdir(), "tuval-claude-real-proof")),
 		),

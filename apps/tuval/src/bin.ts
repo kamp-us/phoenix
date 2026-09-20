@@ -3,8 +3,12 @@
  *
  *   node src/bin.ts                         # boot from ~/.tuval and ./.tuval, run until Ctrl-C
  *   node src/bin.ts --config <module>       # another global config module
- *   node src/bin.ts --project <dir>         # another project dir (its .tuval/ config and state)
+ *   node src/bin.ts --project <dir>         # another project dir (its .tuval/ config layer)
  *   node src/bin.ts --help
+ *
+ * The desk's saved state is not in the project: it lives under `~/.tuval/projects/<key>`, keyed by
+ * the project checkout's absolute path (ADR 0402). The boot line names the directory it used, and
+ * a boot that found state left in a project by an older build says what it moved.
  *
  * Ctrl-C is `NodeRuntime.runMain`'s interrupt: it interrupts the main fiber, whose Scope closing
  * stops and checkpoints every process. That stop is the documented way out, so it exits 0 rather
@@ -49,9 +53,7 @@ const tuval = Command.make(
 			Flag.optional,
 		),
 		project: Flag.directory("project", {mustExist: true}).pipe(
-			Flag.withDescription(
-				"Project dir whose .tuval/ holds the project config and state (default: cwd)",
-			),
+			Flag.withDescription("Project dir whose .tuval/ holds the project config (default: cwd)"),
 			Flag.optional,
 		),
 		noPage: Flag.boolean("no-page").pipe(
@@ -78,6 +80,19 @@ const tuval = Command.make(
 		yield* Console.log(
 			`tuval: booted — ${report.programCount} program(s), ${report.spellCount} spell(s) registered from ${from}; ${report.processCount} process(es) live, ${report.restoredCount} restored from ${report.stateDir}`,
 		);
+		// The one-time move of state an older build left in the project (ADR 0402 rule 7). Printed
+		// because it is the only time a boot rewrites a directory the operator did not name, and a
+		// `kept` entry is the one thing they may still want to delete by hand.
+		if (report.adopted.moved.length > 0) {
+			yield* Console.log(
+				`tuval: moved ${report.adopted.moved.join(", ")} out of the project into ${report.stateDir}`,
+			);
+		}
+		if (report.adopted.kept.length > 0) {
+			yield* Console.log(
+				`tuval: left ${report.adopted.kept.join(", ")} in the project — ${report.stateDir} already holds one of each`,
+			);
+		}
 		// A binding that did not compile costs its own key and nothing else, so this is a report and
 		// not a refusal: boot goes on with the bindings that did compile.
 		for (const line of renderBindingErrors(report.bindingErrors)) {

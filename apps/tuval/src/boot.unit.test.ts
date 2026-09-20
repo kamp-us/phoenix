@@ -1,5 +1,14 @@
 import {type ChildProcess, spawn, spawnSync} from "node:child_process";
-import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -20,6 +29,7 @@ import {Features} from "./feature-flags.ts";
 import {featuresDefault, type TuvalFeatures} from "./features.ts";
 import {subagentExtensionPaths} from "./pi/server/index.ts";
 import {shellSpells} from "./shell/commands/spells.ts";
+import {homeStateDir, PROJECT_MARKER} from "./state-dir.ts";
 
 /** Every boot registers these, whatever the config declares; no fixture program declares a spell. */
 const CORE_SPELLS = coreSpells.length;
@@ -116,9 +126,19 @@ const freshDir = (prefix: string) => {
 	return dir;
 };
 
-/** A project dir whose `.tuval/` is empty: no project config, nothing checkpointed. */
+/**
+ * The scratch home every case here boots under. Saved state lives under the home dir keyed by the
+ * project's absolute path (ADR 0402), so a case that did not name one would write the desk's
+ * manifest and checkpoints into the operator's own `~/.tuval`.
+ */
+const freshHome = () => freshDir("tuval-home-");
+
+/** A project dir holding no files at all — a supported, first-class case (ADR 0402 rule 1). */
+const emptyProject = () => freshDir("tuval-project-");
+
+/** A project dir whose `.tuval/` is there but empty: no project config, nothing checkpointed. */
 const freshProject = () => {
-	const project = freshDir("tuval-project-");
+	const project = emptyProject();
 	mkdirSync(projectDir(project));
 	return project;
 };
@@ -133,29 +153,34 @@ const projectWithConfig = (name: string) => {
 	return project;
 };
 
-/** A project dir holding one checkpointed `counter` process at `version`. */
-const seededProject = (version: string) => {
-	const project = freshProject();
+/**
+ * One checkpointed `counter` process at `version`, written where an older build wrote it: under
+ * `<project>/.tuval`. Every case that boots on this is reading the one-time move (ADR 0402 rule 7),
+ * because nothing writes there any more.
+ */
+const seedInProjectState = (project: string, version: string, id = "p-1") => {
 	const stateDir = projectDir(project);
-	mkdirSync(join(stateDir, "processes"));
+	mkdirSync(join(stateDir, "processes"), {recursive: true});
 	writeFileSync(
 		join(stateDir, "manifest.json"),
-		JSON.stringify({processes: [{id: "p-1", programId: "counter", parentId: null}]}),
+		JSON.stringify({processes: [{id, programId: "counter", parentId: null}]}),
 	);
 	writeFileSync(
-		join(stateDir, "processes", "p-1.json"),
+		join(stateDir, "processes", `${id}.json`),
 		JSON.stringify({programId: "counter", version, state: {count: 3}}),
 	);
 	return project;
 };
+
+const seededProject = (version: string) => seedInProjectState(freshProject(), version);
 
 class TestIo extends Schema.TaggedError<TestIo>()("TestIo", {cause: Schema.Defect()}) {}
 
 const io = <A>(run: () => Promise<A>) =>
 	Effect.tryPromise({try: run, catch: (cause) => new TestIo({cause})});
 
-const bootDirect = (global: string, project: string) =>
-	boot({global, project}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer));
+const bootDirect = (global: string, project: string, home: string = freshHome()) =>
+	boot({global, project, home}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer));
 
 afterEach(() => {
 	for (const dir of tempDirs.splice(0)) rmSync(dir, {recursive: true, force: true});
@@ -166,15 +191,17 @@ describe("boot", () => {
 		"registers the rows the config module exports and reports their count",
 		() =>
 			Effect.gen(function* () {
+				const home = freshHome();
 				const project = freshProject();
-				const {report} = yield* bootDirect(fixture("two-rows"), project);
+				const {report} = yield* bootDirect(fixture("two-rows"), project, home);
 				assert.deepStrictEqual(report, {
 					sources: [fixture("two-rows")],
 					programCount: 2,
 					spellCount: CORE_SPELLS,
 					bindingCount: 0,
 					bindingErrors: [],
-					stateDir: projectDir(project),
+					stateDir: homeStateDir(project, home),
+					adopted: {moved: [], kept: []},
 					processCount: 0,
 					restoredCount: 0,
 				});
@@ -185,11 +212,15 @@ describe("boot", () => {
 	it(
 		"exits on its own when the config plans no process",
 		() => {
+			const home = freshHome();
 			const project = freshProject();
-			const result = run(["--config", fixture("two-rows"), "--project", project]);
+			const result = run(["--config", fixture("two-rows"), "--project", project], {
+				...process.env,
+				HOME: home,
+			});
 			expect(result.status).toBe(0);
 			expect(result.stdout).toBe(
-				`tuval: booted — 2 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("two-rows")}; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
+				`tuval: booted — 2 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("two-rows")}; 0 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
 			);
 		},
 		spawnBudget(1),
@@ -198,7 +229,7 @@ describe("boot", () => {
 	it(
 		"reads ~/.tuval/tuval.config.ts and the cwd's .tuval/tuval.config.ts by default, both merged",
 		() => {
-			const home = freshDir("tuval-home-");
+			const home = freshHome();
 			mkdirSync(join(home, ".tuval"));
 			writeFileSync(
 				defaultGlobalConfig(home),
@@ -213,7 +244,7 @@ describe("boot", () => {
 			expect(result.stderr).toBe("");
 			expect(result.status).toBe(0);
 			expect(result.stdout).toBe(
-				`tuval: booted — 3 program(s), ${CORE_SPELLS} spell(s) registered from ${defaultGlobalConfig(home)} + ${projectConfig(project)}; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
+				`tuval: booted — 3 program(s), ${CORE_SPELLS} spell(s) registered from ${defaultGlobalConfig(home)} + ${projectConfig(project)}; 0 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
 			);
 		},
 		spawnBudget(1),
@@ -222,12 +253,12 @@ describe("boot", () => {
 	it(
 		"boots with no config module at all: nothing registered, nothing to run",
 		() => {
-			const home = freshDir("tuval-home-");
+			const home = freshHome();
 			const project = freshProject();
 			const result = run(["--project", project], {...process.env, HOME: home});
 			expect(result.status).toBe(0);
 			expect(result.stdout).toBe(
-				`tuval: booted — 0 program(s), ${CORE_SPELLS} spell(s) registered from no config module; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
+				`tuval: booted — 0 program(s), ${CORE_SPELLS} spell(s) registered from no config module; 0 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
 			);
 		},
 		spawnBudget(1),
@@ -236,13 +267,15 @@ describe("boot", () => {
 	it(
 		"boots the box config: the shell and the two demo processes, the table on the terminal, and all three back after a restart",
 		async () => {
+			const home = freshHome();
+			const env = {...process.env, HOME: home};
 			const project = freshProject();
 			const args = ["--config", boxConfig, "--project", project];
-			const first = await runUntilRunning(args);
+			const first = await runUntilRunning(args, env);
 			expect(first.stderr).toBe("");
 			expect(first.status).toBe(0);
 			expect(first.stdout).toContain(
-				`tuval: booted — 8 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${projectDir(project)}\n`,
+				`tuval: booted — 8 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
 			);
 			expect(first.stdout).toContain(
 				"tuval: process shell program=shell parent=- ports=- state=running@0\n",
@@ -265,10 +298,10 @@ describe("boot", () => {
 				first.stdout.indexOf("tuval: running — Ctrl-C stops and checkpoints\n"),
 			);
 
-			const second = await runUntilRunning(args);
+			const second = await runUntilRunning(args, env);
 			expect(second.status).toBe(0);
 			expect(second.stdout).toContain(
-				`tuval: booted — 8 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${projectDir(project)}\n`,
+				`tuval: booted — 8 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${homeStateDir(project, home)}\n`,
 			);
 			expect(second.stdout).toContain("tuval: process log program=log parent=counter");
 		},
@@ -276,20 +309,24 @@ describe("boot", () => {
 	);
 
 	it.effect(
-		"restores every checkpointed process from the project's state through Demlik's fileStore",
+		"restores every checkpointed process from the home-dir state through Demlik's fileStore",
 		() =>
 			Effect.gen(function* () {
+				const home = freshHome();
 				const project = seededProject("1.0.0");
-				const {report} = yield* bootDirect(fixture("one-counter"), project);
+				const {report} = yield* bootDirect(fixture("one-counter"), project, home);
 				assert.strictEqual(report.processCount, 1);
 				assert.strictEqual(report.restoredCount, 1);
 				const result = yield* io(() =>
-					runUntilRunning(["--config", fixture("one-counter"), "--project", project]),
+					runUntilRunning(["--config", fixture("one-counter"), "--project", project], {
+						...process.env,
+						HOME: home,
+					}),
 				);
 				assert.strictEqual(result.status, 0);
 				assert.include(
 					result.stdout,
-					`tuval: booted — 1 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("one-counter")}; 1 process(es) live, 1 restored from ${projectDir(project)}\n`,
+					`tuval: booted — 1 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("one-counter")}; 1 process(es) live, 1 restored from ${homeStateDir(project, home)}\n`,
 				);
 				assert.include(
 					result.stdout,
@@ -303,7 +340,10 @@ describe("boot", () => {
 		"refuses to boot on a snapshot under another program version, naming the process and both versions",
 		() => {
 			const project = seededProject("0.9.0");
-			const result = run(["--config", fixture("one-counter"), "--project", project]);
+			const result = run(["--config", fixture("one-counter"), "--project", project], {
+				...process.env,
+				HOME: freshHome(),
+			});
 			expect(result.status).toBe(1);
 			expect(result.stdout).toBe("");
 			expect(result.stderr).toBe(
@@ -316,7 +356,10 @@ describe("boot", () => {
 	it(
 		"refuses to boot on a throwing config module, naming the module and the reason",
 		() => {
-			const result = run(["--config", fixture("throws"), "--project", freshProject()]);
+			const result = run(["--config", fixture("throws"), "--project", freshProject()], {
+				...process.env,
+				HOME: freshHome(),
+			});
 			expect(result.status).toBe(1);
 			expect(result.stdout).toBe("");
 			expect(result.stderr).toBe(
@@ -330,7 +373,7 @@ describe("boot", () => {
 		"refuses to boot on a wrong-shaped project config the same way",
 		() => {
 			const project = projectWithConfig("wrong-shape");
-			const result = run(["--project", project], {...process.env, HOME: freshDir("tuval-home-")});
+			const result = run(["--project", project], {...process.env, HOME: freshHome()});
 			expect(result.status).toBe(1);
 			expect(result.stderr).toBe(
 				`tuval: refusing to boot — config module ${projectConfig(project)}: not a v1 config at version: Missing key\n`,
@@ -348,6 +391,114 @@ describe("boot", () => {
 			expect(result.stderr).toContain(`Path does not exist: ${missing}`);
 		},
 		spawnBudget(1),
+	);
+
+	it.effect(
+		"keys each project's state dir off that checkout's absolute path, and records the path in it",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				const one = freshProject();
+				const two = freshProject();
+				const first = yield* bootDirect(fixture("two-rows"), one, home);
+				const second = yield* bootDirect(fixture("two-rows"), two, home);
+				assert.notStrictEqual(first.report.stateDir, second.report.stateDir);
+				// The key is a folder name, and an operator reading one back wants the path rather than
+				// the substitution that made it: the marker inside the directory is what answers.
+				assert.deepStrictEqual(
+					JSON.parse(readFileSync(join(first.report.stateDir, PROJECT_MARKER), "utf8")),
+					{path: one},
+				);
+				assert.deepStrictEqual(
+					JSON.parse(readFileSync(join(second.report.stateDir, PROJECT_MARKER), "utf8")),
+					{path: two},
+				);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it(
+		"boots a full attaching desk over a project holding no files, on the home config alone",
+		async () => {
+			const home = freshHome();
+			mkdirSync(join(home, ".tuval"));
+			writeFileSync(
+				defaultGlobalConfig(home),
+				`export {default} from ${JSON.stringify(boxConfig)};\n`,
+			);
+			const project = emptyProject();
+			const result = await runUntilRunning(["--project", project], {...process.env, HOME: home});
+			expect(result.status).toBe(0);
+			expect(result.stdout).toContain(
+				`3 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
+			);
+			expect(result.stdout).toContain("tuval: process shell program=shell");
+			expect(result.stdout).toContain("tuval: desk at http://");
+			// The whole point of rule 1: the project is exactly as empty as it was.
+			expect(readdirSync(project)).toEqual([]);
+		},
+		spawnBudget(1),
+	);
+
+	it.effect(
+		"layers the project's config module over the home one and leaves that dir holding config alone",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				mkdirSync(join(home, ".tuval"));
+				writeFileSync(
+					defaultGlobalConfig(home),
+					`export {default} from ${JSON.stringify(fixture("two-rows"))};\n`,
+				);
+				const project = projectWithConfig("one-counter");
+				const {report} = yield* bootDirect(defaultGlobalConfig(home), project, home);
+				assert.deepStrictEqual(report.sources, [defaultGlobalConfig(home), projectConfig(project)]);
+				assert.strictEqual(report.programCount, 3);
+				assert.deepStrictEqual(readdirSync(projectDir(project)), ["tuval.config.ts"]);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it.effect(
+		"moves state an older build left in the project into the home key once, config module aside",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				const project = seedInProjectState(projectWithConfig("one-counter"), "1.0.0");
+				const {report} = yield* bootDirect(fixture("one-counter"), project, home);
+				assert.deepStrictEqual([...report.adopted.moved].sort(), ["manifest.json", "processes"]);
+				assert.deepStrictEqual(report.adopted.kept, []);
+				assert.strictEqual(report.restoredCount, 1);
+				assert.deepStrictEqual(readdirSync(projectDir(project)), ["tuval.config.ts"]);
+				assert.isTrue(existsSync(join(report.stateDir, "manifest.json")));
+				// Once, not on every boot: the second one finds nothing left to move and restores the
+				// same process off the home-dir key.
+				const again = yield* bootDirect(fixture("one-counter"), project, home);
+				assert.deepStrictEqual(again.report.adopted, {moved: [], kept: []});
+				assert.strictEqual(again.report.restoredCount, 1);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it.effect(
+		"reads no state back out of the project after the move, whatever is written there next",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				const project = seededProject("1.0.0");
+				yield* bootDirect(fixture("one-counter"), project, home);
+				// An older build's leftovers, written again after the move and naming a process the
+				// home-dir key has never heard of. A fallback read would spawn it; nothing does.
+				seedInProjectState(project, "1.0.0", "p-2");
+				const {report} = yield* bootDirect(fixture("one-counter"), project, home);
+				assert.deepStrictEqual([...report.adopted.kept].sort(), ["manifest.json", "processes"]);
+				assert.deepStrictEqual(report.adopted.moved, []);
+				assert.strictEqual(report.processCount, 1);
+				assert.strictEqual(report.restoredCount, 1);
+				assert.isTrue(existsSync(join(projectDir(project), "processes", "p-2.json")));
+				assert.isFalse(existsSync(join(report.stateDir, "processes", "p-2.json")));
+			}),
+		DIRECT_BOOT_MS,
 	);
 
 	it(

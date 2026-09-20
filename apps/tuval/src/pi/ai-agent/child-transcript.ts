@@ -6,8 +6,8 @@
  * `<artifactsDir>/<runId>_<agent>_<index>_transcript.jsonl` (`src/shared/artifacts.ts:182-193`),
  * and under the default `dir: "session"` preference that directory is
  * `dirname(parentSessionFile)/subagent-artifacts` (`src/shared/artifacts.ts:156-167`) — for Tuval,
- * `<cwd>/.tuval/pi-sessions/subagent-artifacts/`, off `../server/AgentSessionHost.ts`'s
- * `defaultSessionDir`.
+ * `<state dir>/pi-sessions/subagent-artifacts/`, off the desk's own session store
+ * (`../../state-dir.ts`).
  *
  * The grammar is versioned (`CHILD_TRANSCRIPT_ARTIFACT_VERSION = 1`) and small, so it is
  * reimplemented here rather than imported: `pi-subagents`' own reader is

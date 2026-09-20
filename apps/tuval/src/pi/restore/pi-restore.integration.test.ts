@@ -32,7 +32,7 @@ import type {Arrival} from "../../ai-agent/restore/fixtures/window.ts";
 import {type Booted, boot, projectDir} from "../../boot.ts";
 import {Processes} from "../../process/Processes.ts";
 import {type ProcessHandle, ProcessId} from "../../process/process.ts";
-import {defaultSessionDir} from "../server/index.ts";
+import {homeStateDir, piSessionStore} from "../../state-dir.ts";
 import {AGENT_NODE, PROJECT_ROOT_VAR, WINDOW_NODE} from "./fixtures/names.ts";
 
 const configModule = fileURLToPath(new URL("./fixtures/pi-desk.ts", import.meta.url));
@@ -43,6 +43,14 @@ afterAll(() => {
 	for (const dir of tempDirs.splice(0)) rmSync(dir, {recursive: true, force: true});
 	delete process.env[PROJECT_ROOT_VAR];
 });
+
+/**
+ * One scratch home for all three boots. The desk's state — the checkpoints these reboots read and
+ * the Pi JSONLs below — lives under the home dir keyed by the project path (ADR 0402), so a proof
+ * that did not name one would write into the operator's own.
+ */
+const home = realpathSync(mkdtempSync(join(tmpdir(), "tuval-pi-restore-home-")));
+tempDirs.push(home);
 
 const freshProject = (): string => {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "tuval-pi-restore-")));
@@ -145,7 +153,7 @@ const askForPage = (window: ProcessHandle, limit: number) =>
 	});
 
 const sessionFiles = (root: string): ReadonlyArray<string> => {
-	const dir = defaultSessionDir(root);
+	const dir = piSessionStore(homeStateDir(root, home));
 	return existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith(".jsonl")) : [];
 };
 
@@ -187,7 +195,7 @@ interface ThirdRun {
  */
 const runFirstBoot = (project: string): Effect.Effect<FirstRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
-		const booted = yield* boot({global: configModule, project});
+		const booted = yield* boot({global: configModule, project, home});
 		const {agent, window} = yield* handlesOf(booted);
 		const seen = () => ({
 			phase: sessionOf(agent).phase,
@@ -236,7 +244,7 @@ const runFromTheCheckpoint = (
 	project: string,
 ): Effect.Effect<SecondRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
-		const booted = yield* boot({global: configModule, project});
+		const booted = yield* boot({global: configModule, project, home});
 		const {agent, window} = yield* handlesOf(booted);
 		const restored = sessionOf(agent);
 		const seen = () => ({
@@ -292,8 +300,10 @@ const runWithTheStoreGone = (
 	project: string,
 ): Effect.Effect<ThirdRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
-		yield* Effect.sync(() => rmSync(defaultSessionDir(project), {recursive: true, force: true}));
-		const booted = yield* boot({global: configModule, project});
+		yield* Effect.sync(() =>
+			rmSync(piSessionStore(homeStateDir(project, home)), {recursive: true, force: true}),
+		);
+		const booted = yield* boot({global: configModule, project, home});
 		const {agent} = yield* handlesOf(booted);
 		yield* until(
 			"the refused resume to settle",

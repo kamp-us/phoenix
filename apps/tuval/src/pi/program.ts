@@ -29,6 +29,7 @@ import {KernelBridge} from "../ai-agent/tools/KernelBridge.ts";
 import type {SpellBridge} from "../commands/bridge/index.ts";
 import type {Scope as SpellScope} from "../commands/spell.ts";
 import type {Features} from "../feature-flags.ts";
+import type {StateDir} from "../state-dir.ts";
 import {PiAiAgent, type PiAiAgentOptions} from "./ai-agent/index.ts";
 import {PI_CHAT_WINDOW_REF, PI_SESSION_PROGRAM} from "./renderer-ref.ts";
 
@@ -62,23 +63,28 @@ interface PiSessionBase {
  * `layer` is the one injection a config module cannot express in plain strings: `PiAiAgent.layer`
  * reaches for the operator's own credentials and model catalog, and a proof that must call no model
  * API stands its own host up over Pi's faux provider. Such a layer holds no bridge and needs no
- * scope.
+ * scope. It does declare `StateDir`, because a substitute host writes its sessions under the same
+ * law the real one does (ADR 0402) rather than somewhere the proof picks.
  */
 export type PiSessionProgramOptions = PiSessionBase &
 	(
 		| {readonly scope: SpellScope; readonly layer?: undefined}
-		| {readonly layer: Layer.Layer<TuvalAiAgent>; readonly scope?: undefined}
+		| {
+				readonly layer: Layer.Layer<TuvalAiAgent, never, StateDir>;
+				readonly scope?: undefined;
+		  }
 	);
 
 /**
- * `Features` rides out unclosed, the way the Claude row leaves `SpellBridge` open (#7951): the row
- * is built while a config module is evaluated, which is before the flags are merged, so the layer
- * is handed the resolved record at spawn from the kernel context (#8595).
+ * `Features` and `StateDir` ride out unclosed, the way the Claude row leaves `SpellBridge` open
+ * (#7951): the row is built while a config module is evaluated, which is before the flags are
+ * merged and before a boot has resolved a state dir, so the layer is handed both at spawn from the
+ * kernel context (#8595; ADR 0402 for the state dir, which is where this row's session store lives).
  */
 export const piSessionProgram = (
 	options: PiSessionProgramOptions,
-): AiAgentProgram<SpellBridge | Features> =>
-	aiAgentProgram<SpellBridge | Features>({
+): AiAgentProgram<SpellBridge | Features | StateDir> =>
+	aiAgentProgram<SpellBridge | Features | StateDir>({
 		id: PI_SESSION_PROGRAM,
 		layer:
 			options.layer ??
