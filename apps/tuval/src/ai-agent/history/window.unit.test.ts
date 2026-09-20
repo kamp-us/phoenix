@@ -204,6 +204,39 @@ describe("a tail of session notices", () => {
 	});
 });
 
+/**
+ * The window crosses its own bound to reach a row a page cursor can be minted from — by one group,
+ * not without limit. A row that costs an own-item and can still anchor nothing is ordinary in a live
+ * tail (an unechoed `local:` turn, a reply still being written), so a yield with no ceiling under it
+ * would let such a tail carry the whole history instead of the forty rows it declares (#9514).
+ */
+describe("the anchor yield is one group wide", () => {
+	const UNSENT = 200;
+	const exchange = [userItem("u1", "answered long ago"), assistantItem("a1", "the answer")];
+	const unsent = Array.from({length: UNSENT}, (_unused, index) => ({
+		...userItem(`local:${index}`, "queued"),
+		local: true,
+	}));
+	const history = [...exchange, ...unsent];
+
+	it("reaches the anchor without carrying the tail it walked over", () => {
+		const plan = planTranscriptWindow(history);
+		expect(plan.kind).toBe("window");
+		if (plan.kind !== "window") return;
+
+		// Nothing in `unsent` anchors, so the bound alone would leave the window unpageable.
+		expect(unsent.some(anchorsCursor)).toBe(false);
+		expect(plan.items.some(anchorsCursor)).toBe(true);
+		// The overshoot is the one group the anchor was in — the same width the newest-group
+		// exception already allows, and far under the 200 rows a limitless yield would have taken.
+		expect(plan.items.length).toBeLessThanOrEqual(TRANSCRIPT_WINDOW_ITEM_LIMIT + exchange.length);
+		// The newest end is still the live tail, whatever the walk put down behind it.
+		expect(plan.items.at(-1)?.id).toBe(history.at(-1)?.id);
+		expect(plan.items.length + plan.omitted.items).toBe(history.length);
+		expect(plan.omitted.reason).toBe("item-limit");
+	});
+});
+
 describe("the window refuses rather than cutting", () => {
 	const history = [userItem("u1"), assistantItem("a1"), toolItem("t1"), userItem("u2")];
 

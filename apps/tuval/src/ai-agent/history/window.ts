@@ -77,12 +77,21 @@ export const noticeLimitsFor = (limits: GroupWeight): GroupWeight => ({
 export const windowPassengersFor = (own: GroupWeight): Omit<TakeLimits, "own"> => ({
 	nested: nestedLimitsFor(own),
 	notices: noticeLimitsFor(own),
+	anchor: "yield",
 });
 
-/** A page's, which drop no notice: a hole here is history no later page can tile over. */
+/**
+ * A page's, which drop no notice: a hole here is history no later page can tile over.
+ *
+ * `anchor: "hold"` for the other half of the same reason. A page cursor is minted from the live
+ * window, never from a page answer, so a page has no anchor to hold out for — and `planTranscriptPage`
+ * runs this walk with `own.items` set to the caller's `limit`, so a walk that yielded its own bound
+ * would answer more rows than were asked for.
+ */
 export const pagePassengersFor = (own: GroupWeight): Omit<TakeLimits, "own"> => ({
 	nested: nestedLimitsFor(own),
 	notices: "own",
+	anchor: "hold",
 });
 
 export interface TranscriptWindow extends TranscriptPayload {
@@ -103,7 +112,7 @@ export interface WindowOptions {
 	readonly byteLimit?: number;
 }
 
-export const plus = (left: GroupWeight, right: GroupWeight): GroupWeight => ({
+const plusWeight = (left: GroupWeight, right: GroupWeight): GroupWeight => ({
 	items: left.items + right.items,
 	bytes: left.bytes + right.bytes,
 });
@@ -154,18 +163,26 @@ export const bytesOf = (items: ReadonlyArray<TranscriptItem>): number =>
 
 /**
  * The ceilings a walk answers to: the conversation's own rows, a spawned worker's rows riding
- * along, and what the session's notices answer to.
+ * along, what the session's notices answer to, and whether the own bound yields to the anchor rule.
  *
  * `notices: "own"` is the page walk's answer and means they are charged to the conversation's own
- * bound, exactly as they were before they had a bucket. A page is the only way back to history a
- * reader has, and a walk that puts a row down leaves a hole consecutive pages cannot tile over —
- * so the shedding ceiling is the live window's alone, where the rows it drops are still reachable
- * by paging.
+ * bound, exactly as they were before they had a bucket. A page tiles history one contiguous range at
+ * a time, and a walk that puts a row down leaves a hole no later page covers — the row is gone from
+ * the reader's history rather than deferred to it. Shedding is the live window's alone, where a
+ * dropped notice costs nothing a reader could have gone back for: a notice is live-only (no backend
+ * history read resolves one, per `anchorsCursor`) and `chatRows` collapses a whole run of them into
+ * one rendered line.
  */
 export interface TakeLimits {
 	readonly own: GroupWeight;
 	readonly nested: GroupWeight;
 	readonly notices: GroupWeight | "own";
+	/**
+	 * `yield` lets the walk cross the own bound while it still holds no row a page cursor can be
+	 * minted from; `hold` makes the bound absolute. Only the live window yields — it is the surface
+	 * an unanchored answer strands, and the page walk's own bound *is* the caller's `limit`.
+	 */
+	readonly anchor: "yield" | "hold";
 }
 
 /** What one walk kept, where it started, and what it put down on the way. */
@@ -193,10 +210,16 @@ export interface TakenGroups {
  * That last clause is the invariant the three reports of an unreadable window all reduce to: a
  * window whose every row fails `anchorsCursor` renders as one collapsed line and then refuses every
  * page off itself, so the operator can neither read the session nor walk back into it (#9514,
- * #8031, #8814). So the own bound, like the newest group, yields to it: a window carries whatever
- * it must to hold one anchor. The newest group in range is still the exception to every ceiling,
- * carried whole — an empty tail is not a refusal, so `foldItem` would commit it and the live
- * transcript would collapse (#8031).
+ * #8031, #8814). So under `anchor: "yield"` the own bound bends to it — but by one group, not
+ * without limit: past the bound and still unanchored, the walk stops *keeping* groups and only
+ * steps over them, until a group holding an anchor lands. That one is kept and ends the walk. So
+ * the answer is at most the bound plus one group, the same overshoot the newest-group clause
+ * already allows, rather than the whole history a tail that never anchors would otherwise drag in.
+ * Under `anchor: "hold"` the bound is absolute and the walk simply ends there, which is what keeps
+ * `planTranscriptPage` answering exactly the `limit` it was asked for.
+ *
+ * The newest group in range is still the exception to every ceiling, carried whole — an empty tail
+ * is not a refusal, so `foldItem` would commit it and the live transcript would collapse (#8031).
  */
 export const takeGroups = (
 	history: ReadonlyArray<TranscriptItem>,
@@ -217,11 +240,20 @@ export const takeGroups = (
 		const group = groups[index];
 		if (group === undefined) break;
 		const newest = kept.length === 0;
-		const own = riding ? group.weight : plus(group.weight, group.notices);
-		const stop = stoppedBy(own, spent, limits.own);
-		if (stop !== null && !newest && anchored) {
+		const own = riding ? group.weight : plusWeight(group.weight, group.notices);
+		const stop = newest ? null : stoppedBy(own, spent, limits.own);
+		// Past the own bound with no anchor yet, and a walk allowed to yield: this group is worth
+		// crossing the bound for only if it can supply the anchor, and it is the last one either way.
+		const seeking = stop !== null && limits.anchor === "yield" && !anchored;
+		if (stop !== null && !seeking) {
 			reason = stop;
 			break;
+		}
+		if (seeking && !group.items.some(anchorsCursor)) {
+			reason = stop ?? reason;
+			shed.unshift(group.items);
+			start = group.start;
+			continue;
 		}
 		const nestedStop = newest ? null : stoppedBy(group.nested, nested, limits.nested);
 		const noticeStop =
@@ -249,11 +281,17 @@ export const takeGroups = (
 			reason = refused ?? reason;
 		}
 		kept.unshift(members);
-		spent = plus(spent, own);
-		if (!shedding.nested) nested = plus(nested, group.nested);
-		if (riding && !shedding.notices) notices = plus(notices, group.notices);
+		spent = plusWeight(spent, own);
+		if (!shedding.nested) nested = plusWeight(nested, group.nested);
+		if (riding && !shedding.notices) notices = plusWeight(notices, group.notices);
 		anchored = anchored || members.some(anchorsCursor);
 		start = group.start;
+		// The bound was already spent when this group was taken; it was taken for its anchor, and
+		// the walk has what it crossed the bound for.
+		if (seeking && stop !== null) {
+			reason = stop;
+			break;
+		}
 	}
 	return {items: kept.flat(), start, shed: shed.flat(), reason};
 };
