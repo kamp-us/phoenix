@@ -1,0 +1,9 @@
+# Machine-local experiment evidence — never committed.
+# `results/` holds real phoenix conversation transcripts (adapter output), the
+# census inventories (absolute `C:\Users\...` paths), and the upstream-rendered
+# `report.html` (transcript-derived, shareable-by-default). REPORT.md §10 and
+# ISSUE_DRAFT.md's paths note both say these stay off the record.
+# The adapter shim is the exception: it is the documented working reference
+# REPORT.md §6 cites, with no session content inside.
+results/*
+!results/opencode_adapter.py

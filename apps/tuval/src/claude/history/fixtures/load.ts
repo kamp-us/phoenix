@@ -11,6 +11,7 @@ import {join} from "node:path";
 
 export type FixtureName =
 	| "assistant-turn"
+	| "background-subagent-turn"
 	| "compact-boundary"
 	| "error-result"
 	| "informational-notice"

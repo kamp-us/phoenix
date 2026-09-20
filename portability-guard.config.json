@@ -1,6 +1,10 @@
 {
 	"$comment": "The bounded allow-list `fabrika guard portability-guard check` judges claude-plugins/fabrika/ and packages/fabrika-cli/src/ against. `exempt` is a permanent per-file cap for text that is not a portability defect. `unmigrated` is the sweep floor: one row per sweep unit, ceiling equal to that unit's reference count when the guard landed, each `why` naming the child that clears it. The floor only shrinks — a ceiling above the count reds as loudly as a count above the ceiling.",
 	"exempt": {
+		"claude-plugins/fabrika/skills/skill-doctor/assets/pierre-diffs.js": {
+			"ceiling": 138,
+			"why": "Byte-exact upstream asset under this skill's re-copy-never-edit rule: every hit is a CSS hex colour on the minified line, which the hex carve-out does not reach here. Editing the file is forbidden, so the cap is the only honest disposition."
+		},
 		"claude-plugins/fabrika/.claude-plugin/plugin.json": {
 			"ceiling": 6,
 			"why": "The plugin manifest's `homepage`/`repository` name where this plugin is published; a published package has to say where it lives."
