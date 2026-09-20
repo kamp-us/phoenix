@@ -1151,11 +1151,10 @@ export const worktree = (fill: WorktreeFill): AnyProgram => {
 		handlers: {...row.handlers, ...worktreeHandlers(settled)},
 
 		/**
-		 * The window, named rather than declared. `defineProgram` compiles an authored `window` field
-		 * into a `host-native` reference and seats the renderer in a map *inside the kernel process* —
-		 * and the page is a browser tab, so nothing over there can reach that map (kamp-us/phoenix
-		 * #8811, open). A `kind: "module"` reference is the route that does cross: the page loads the
-		 * specifier itself at boot (ADR 0359).
+		 * The window, named rather than declared. A `kind: "module"` reference is the only kind the
+		 * page can act on: it loads the specifier itself at boot (ADR 0359). A window declared inline
+		 * on the authored record would be seated in a map *inside the kernel process*, which a browser
+		 * tab cannot reach — so that key no longer exists (phoenix #8811, #8946).
 		 */
 		renderer: WORKTREE_WINDOW_REF,
 	};

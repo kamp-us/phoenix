@@ -519,17 +519,15 @@ export const cron = (fill: CronFill): AnyProgram => {
 			label: `${authored.id} (${fill.job.id})`,
 		}),
 		/**
-		 * The window, named rather than declared. `defineProgram` compiles an authored `window` field
-		 * into a `host-native` reference and seats the renderer in a map *inside the kernel process* —
-		 * and the page is a browser tab, so nothing over there can reach that map (kamp-us/phoenix
-		 * #8811, open). A `kind: "module"` reference is the route that does cross: the page loads the
-		 * specifier itself at boot and seats what comes back (ADR 0359). So the row carries the
-		 * specifier, and `./window.tsx` is what answers it.
+		 * The window, named rather than declared. A `kind: "module"` reference is the only kind the
+		 * page can act on: it imports the specifier itself at boot (ADR 0359), and `./window.tsx` is
+		 * what answers it. A window declared inline on the authored record would be seated in a map
+		 * *inside the kernel process*, which a browser tab cannot reach — so that key no longer
+		 * exists (phoenix #8811, #8946).
 		 *
-		 * Spread onto the row rather than passed to `defineProgram`, because `renderer` is not a field
-		 * the authoring surface takes — `FIELD_COMPILERS` owns that key and computes it from `window`.
-		 * The row is a plain object and says so: "every field this layer does not sugar is still
-		 * reachable by spread".
+		 * Still spread onto the row rather than passed to `defineProgram`, which now takes a
+		 * `renderer` of its own: this row is assembled by spread already, and one place to read the
+		 * window off beats two.
 		 */
 		renderer: CRON_WINDOW_REF,
 	};
