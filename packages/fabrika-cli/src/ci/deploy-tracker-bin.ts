@@ -162,7 +162,9 @@ if (repo === "" || token === "" || runId === "") {
 
 const jobs = conclusion === "failure" ? await failedJobNames() : {names: [], read: true};
 const facts = factsFromEnv(process.env, jobs.names, jobs.read);
-if (facts.mention === "") {
+// Only the red path carries a mention; a recovery comment wakes nobody by design, so warning
+// there would put a warning annotation on every green push.
+if (conclusion === "failure" && facts.mention === "") {
 	console.log("::warning::deploy-tracker: TRACKER_MENTION is empty — the report mentions nobody");
 }
 
