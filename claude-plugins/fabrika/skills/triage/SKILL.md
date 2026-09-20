@@ -68,7 +68,8 @@ of it** — a summary of a contract is not the contract. A hand-filed issue skip
 fabrika report dedup --query "definition editor loses focus after save" --exclude $issue_number
 ```
 
-Read `candidates` yourself — shared vocabulary is not a shared observation; `indeterminate` is a
+Read `candidates` yourself — shared vocabulary is not a shared observation. A closed match needs
+a behavior check before it can count as already fixed; `indeterminate` is a
 non-check, so re-query. `--exclude` is this group's extension to the `report` verb, and its grammar
 is the section that adds it:
 `fabrika wire doc-section --heading "report dedup — the --exclude extension" < <skill-base>/contract.md`. A duplicate routes by who filed it (step 8).

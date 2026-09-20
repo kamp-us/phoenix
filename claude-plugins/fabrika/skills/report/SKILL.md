@@ -58,8 +58,9 @@ Which sources it reads and how the cap is applied are the verb's section
 only one of them is about your observation:
 
 - **`candidates`** — open each and judge it yourself. Shared vocabulary is not a shared observation.
-  The list is capped, and the verb says on stderr when it truncated.
-- **`none`** — both sources were read and nothing open matched. A real answer.
+  The list is capped, and the verb says on stderr when it truncated. Read a closed candidate
+  before treating it as resolved work; a recurring failure may need a new issue.
+- **`none`** — the live queue and indexed corpus yielded no lexical match within the reported scope.
 - **`indeterminate`** — your query carried too few distinctive keywords to discriminate, so nothing
   useful was compared. This is a non-check, not a clean one. Re-query with the specific terms.
 

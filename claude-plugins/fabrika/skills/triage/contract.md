@@ -2442,58 +2442,21 @@ $ fabrika triage kill 7 --confirm --json < reason.md
 
 ---
 
-## `report dedup` — the `--exclude` extension
+## `report dedup — the --exclude extension`
 
-**Invocation**
+`fabrika report dedup --query "definition editor loses focus" --exclude 7` omits the issue being
+triaged. Invocation and output grammar are in `fabrika report dedup --help`; retrieval and cache
+requirements belong to [the report contract](../report/contract.md#report-dedup).
 
-```
-fabrika report dedup --query "definition editor loses focus" --exclude 7
-```
+Filter the excluded number from the live queue and indexed corpus before either ranking selects
+its top 20 and before the final `--limit`. It cannot consume a candidate slot or match itself.
+Corpus-dependent scores may change when a document is removed. A number absent from both sources
+is harmless and filters nothing.
 
-**Input**
+Excluding the only lexical match produces `none`, not `indeterminate`. The latter is reserved for
+queries below the two-word floor. `none` describes the observed search scope, not proof that no
+paraphrased duplicate exists.
 
-| Flag | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `--exclude` | integer | no | absent (no issue is filtered) | an issue number to omit from both sources — the issue being deduped, so it never flags itself |
-
-Everything else — the tokenizer, the two sources, the three outcome tokens — is unchanged from the
-implemented verb at `packages/fabrika-cli/src/report/dedup.ts` and its verb wrapper
-`dedup-verb.ts`. **This change adds no exit code, no error, and no output shape**: `candidates`,
-`none` and `indeterminate` all still exit 0, and the existing `1` / `7` / `27` / `28` are untouched.
-
-**`dedup`'s codes come from the `report` table, not this group's.** `7` is a missing `--label`, and
-`27`/`28` are the queue and the search index read failing — numbers no `triage` verb speaks, so a
-caller invoking both in one sweep never has to ask which table a code came from.
-
-**Behaviour.** The excluded number is filtered from both the queue half and the search half **after**
-retrieval and **before** scoring and the cap, so excluding an issue never changes the rank order of
-the rest and never lets a truncated row take the excluded issue's place. `--exclude` naming an issue
-that does not exist is not an error: the filter simply matches nothing, because the caller's intent —
-"not this one" — is satisfied either way.
-
-**Scope note.** Excluding the only candidate yields `none`, which remains a **proven** negative: both
-sources were read and nothing else matched. It is not `indeterminate`, which is reserved for a query
-that carried too few distinctive tokens to compare at all.
-
-**Examples**
-
-```
-$ fabrika report dedup --query "definition editor loses focus after an entry is saved" --exclude 7
-none
-```
-
-```
-$ fabrika report dedup --query "definition editor loses focus after an entry is saved"
-candidates
-7	queue	3	Definition editor loses focus after an entry is saved
-```
-
-The pair is the point: the same query returns the issue itself without `--exclude`, and a proven
-`none` with it.
-
-**Grounding**
-
-- The `/report` contract deferred this flag to this seam by name. This is the first caller.
-- v1's `intake-dedup` carries `--exclude` for the same reason; its scars (empty stdout as the
-  negative, the discarded `source`/`score`, exit 0 on a zero-token non-check) were already designed
-  out by the `/report` contract's outcome tokens, so this extension inherits the fixed verb.
+This extension adds no exit codes. The report group's codes apply: 7 for a missing queue label,
+27 for an unreadable queue, and 28 for an unreadable issue corpus. All three outcome tokens still
+exit 0. A closed candidate needs inspection before it can count as fixed work.

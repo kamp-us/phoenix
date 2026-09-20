@@ -25,6 +25,7 @@ import {runAmend} from "./amend-verb.ts";
 import {DEFAULT_LIMIT} from "./dedup.ts";
 import {runDedup} from "./dedup-verb.ts";
 import {runFile} from "./file-verb.ts";
+import {DEFAULT_CLOSED_DAYS} from "./issue-index.ts";
 import {runNote} from "./note-verb.ts";
 import {runScratch} from "./scratch-verb.ts";
 
@@ -53,7 +54,19 @@ const dedup = leafCommand(
 	"dedup",
 	{
 		query: Flag.string("query").pipe(
-			Flag.withDescription("the observation text to check for an already-open issue"),
+			Flag.withDescription("the observation text to compare with open and recently closed issues"),
+		),
+		closedDays: Flag.integer("closed-days").pipe(
+			Flag.withDefault(DEFAULT_CLOSED_DAYS),
+			Flag.withDescription(
+				"integer from 0 to 36500; include issues closed within this many days; 0 searches open only (default: 14)",
+			),
+		),
+		refresh: Flag.boolean("refresh").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				"refresh the repository issue cache now; otherwise reuse it for up to five minutes",
+			),
 		),
 		label: Flag.string("label").pipe(
 			Flag.withDefault(DEFAULT_LABEL),
@@ -63,7 +76,9 @@ const dedup = leafCommand(
 		),
 		limit: Flag.integer("limit").pipe(
 			Flag.withDefault(DEFAULT_LIMIT),
-			Flag.withDescription(`the maximum number of candidates to print (default: ${DEFAULT_LIMIT})`),
+			Flag.withDescription(
+				`nonnegative safe integer; maximum candidates to print, 0 prints only the outcome (default: ${DEFAULT_LIMIT})`,
+			),
 		),
 		exclude: Flag.integer("exclude").pipe(
 			Flag.optional,
@@ -74,10 +89,12 @@ const dedup = leafCommand(
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({query, label, limit, exclude, repo, json}) {
+	Effect.fn(function* ({query, closedDays, refresh, label, limit, exclude, repo, json}) {
 		yield* emit(
 			yield* runDedup({
 				query,
+				closedDays,
+				refresh,
 				label,
 				limit,
 				exclude: Option.getOrNull(exclude),
@@ -88,9 +105,11 @@ const dedup = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Rank the open issues that may already cover an observation."),
+	Command.withShortDescription(
+		"Find open and recently closed issues that may cover an observation.",
+	),
 	Command.withDescription(
-		'Rank the open issues that may already cover an observation. First stdout line is the outcome token — candidates | none | indeterminate — and ALL THREE exit 0; a candidates list adds one `<number>\\t<source>\\t<score>\\t<title>` line per entry. Exits 7 (--label does not exist, so the queue half would scan nothing), 27 (queue unreadable), 28 (search index unreadable). Example: fabrika report dedup --query "retry helper swallows the abort reason" --exclude 4312',
+		'Find open and recently closed issues that may cover an observation. First stdout line is the outcome token — candidates | none | indeterminate — and ALL THREE exit 0; a candidates list adds one `<number>\\t<source>\\t<score>\\t<state>\\t<title>` line per entry. Exit 1 means invalid arguments or unresolved repository. Exits 7 (--label does not exist, so the queue half would scan nothing), 27 (queue unreadable), 28 (issue corpus unreadable). Sources: queue | index | both; states: open | closed. JSON includes candidates, tokens, reason, truncated, retrievalTruncated, queueCount, indexCount, closedSince and cache {source, ageMs}. The corpus cache is reused for less than five minutes; --refresh bypasses it. Matches are advisory. Example stdout for a sole matching issue in both sources:\ncandidates\n4312\tboth\t0.03278688524590164\topen\tretry cancellation\nNo-match stdout:\nnone\nBelow-floor stdout:\nindeterminate\nExample: fabrika report dedup --query "retry helper swallows the abort reason" --exclude 4312',
 	),
 );
 

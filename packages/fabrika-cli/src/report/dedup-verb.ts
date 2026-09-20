@@ -1,23 +1,15 @@
-/**
- * `report dedup` — rank the open issues that may already cover an observation.
- *
- * The ranking is advisory. A duplicate can be closed later; a lost observation cannot be recovered.
- *
- * The two halves are read for different reasons. The **label queue** is read-after-write consistent
- * and catches an issue filed seconds ago; the **search index** is eventually consistent — it lags
- * fresh issues but reaches older open issues that have already left the queue.
- *
- * The search half is sent a **narrower token list than ranking scores against**, so the
- * stderr scope line and `--json` both carry `searchTokens` beside `tokens` whenever the two differ —
- * a diagnostic naming a scope the run did not read is worse than none.
- */
-
-import {Effect} from "effect";
+import {Clock, type Crypto, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {listLabels, openIssuesWithLabel, resolveRepo, searchOpenIssues} from "../io/issues.ts";
+import {issueDocuments, listLabels, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {NO_TARGET, QUEUE_UNREADABLE, SEARCH_UNREADABLE} from "./codes.ts";
-import {rank, renderCandidate, searchTokens, tokenize} from "./dedup.ts";
+import {loadIndex} from "./index-cache.ts";
+import {
+	closedCutoff,
+	DEFAULT_CLOSED_DAYS,
+	DuplicateIndex,
+	renderIndexedCandidate,
+} from "./issue-index.ts";
 
 /**
  * `--label` does not exist in `--repo`, so the queue half has **no scope** — and a scope of zero
@@ -33,6 +25,8 @@ export {NO_TARGET as LABEL_ABSENT};
 
 export interface DedupOptions {
 	readonly query: string;
+	readonly closedDays?: number;
+	readonly refresh?: boolean;
 	readonly label: string;
 	readonly limit: number;
 	readonly repo: string | null;
@@ -44,12 +38,20 @@ export interface DedupOptions {
 
 export const runDedup = (
 	options: DedupOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path | Crypto.Crypto
+> =>
 	Effect.gen(function* () {
 		const {label, limit, json, exclude} = options;
+		const closedDays = options.closedDays ?? DEFAULT_CLOSED_DAYS;
+		if (!Number.isSafeInteger(closedDays) || closedDays < 0 || closedDays > 36500)
+			return refuse(FAILED, "report dedup: --closed-days must be an integer from 0 to 36500.");
 
 		if (options.query.trim() === "") return refuse(FAILED, "report dedup: --query is empty.");
-		if (limit < 0) return refuse(FAILED, `report dedup: --limit ${limit} is negative.`);
+		if (!Number.isSafeInteger(limit) || limit < 0)
+			return refuse(FAILED, `report dedup: --limit ${limit} is negative.`);
 
 		const repoAttempt = yield* resolveRepo(options.repo, options.env);
 		if (repoAttempt._tag === "Failure") {
@@ -77,76 +79,61 @@ export const runDedup = (
 			);
 		}
 
-		const tokens = tokenize(options.query);
-		if (tokens.length < 2) {
-			const result = rank({tokens, queue: [], search: [], limit, label, exclude});
-			const scope = `report dedup: ${repo}, tokens: ${tokens.join(", ") || "(none)"} — neither source was read, because the query cannot discriminate.`;
-			const diagnostics = [scope, `report dedup: ${result.reason}.`];
+		const empty = new DuplicateIndex([]).search(options.query, [], limit, exclude);
+		if (empty.outcome === "indeterminate") {
 			return json
 				? answer(
 						JSON.stringify({
-							outcome: result.outcome,
-							candidates: [],
-							reason: result.reason,
-							tokens,
-							// Neither source was read, so nothing reached the search query — not the
-							// slice this query would have produced.
-							searchTokens: [],
-							truncated: false,
+							...empty,
 							queueCount: 0,
-							searchCount: 0,
+							indexCount: 0,
+							cache: null,
+							closedSince: null,
 						}),
-						diagnostics,
+						[empty.reason ?? "indeterminate"],
 					)
-				: answer(result.outcome, diagnostics);
+				: answer(empty.outcome, [empty.reason ?? "indeterminate"]);
 		}
-
-		const sent = searchTokens(tokens);
-		const queue = yield* openIssuesWithLabel(repo, label);
-		const search = yield* searchOpenIssues(repo, sent);
-
-		// The queue is the load-bearing half — it is the one that catches an issue filed seconds ago —
-		// so when both fail its code is the one reported, and the reason names both failures so
-		// neither is hidden by the precedence.
-		if (queue._tag === "Failure") {
-			const also =
-				search._tag === "Failure" ? ` (the search index also failed: ${search.reason})` : "";
+		const now = yield* Clock.currentTimeMillis;
+		const queue = yield* issueDocuments(repo, {state: "open", label});
+		const index = yield* loadIndex(repo, closedDays, now, options.refresh ?? false, options.env);
+		if (queue._tag === "Failure")
 			return refuse(
 				QUEUE_UNREADABLE,
-				`report dedup: cannot read the ${label} queue in ${repo}: ${queue.reason}${also} — the outcome is UNKNOWN, never "none".`,
+				`report dedup: cannot read the ${label} queue in ${repo}: ${queue.reason}${index._tag === "Failure" ? ` (the index also failed: ${index.reason})` : ""}. The outcome is UNKNOWN, never "none".`,
 			);
-		}
-		if (search._tag === "Failure") {
+		if (index._tag === "Failure")
 			return refuse(
 				SEARCH_UNREADABLE,
-				`report dedup: cannot read the search index for ${repo}: ${search.reason} — the outcome is UNKNOWN, never "none".`,
+				`report dedup: cannot read the issue index for ${repo}: ${index.reason}. The outcome is UNKNOWN, never "none".`,
 			);
-		}
-
-		const result = rank({tokens, queue: queue.value, search: search.value, limit, label, exclude});
-		const excluded = exclude === null ? "" : `; #${exclude} excluded from both sources`;
-		const narrowed = sent.length === tokens.length ? "" : `; sent to search: ${sent.join(", ")}`;
-		const scope = `report dedup: ${repo}, ${queue.value.length} open issue(s) in the ${label} queue, ${search.value.length} search hit(s)${excluded}; tokens: ${tokens.join(", ")}${narrowed}${result.truncated ? `; list TRUNCATED to --limit ${limit}` : ""}.`;
-		const diagnostics =
-			result.reason === null ? [scope] : [scope, `report dedup: ${result.reason}.`];
-
-		if (json) {
-			return answer(
-				JSON.stringify({
-					outcome: result.outcome,
-					candidates: result.candidates,
-					reason: result.reason,
-					tokens,
-					searchTokens: sent,
-					truncated: result.truncated,
-					queueCount: queue.value.length,
-					searchCount: search.value.length,
-				}),
-				diagnostics,
-			);
-		}
-		return answer(
-			[result.outcome, ...result.candidates.map(renderCandidate)].join("\n"),
-			diagnostics,
+		const result = new DuplicateIndex(index.value.issues).search(
+			options.query,
+			queue.value,
+			limit,
+			exclude,
 		);
+		const closedSince = closedDays === 0 ? null : closedCutoff(now, closedDays);
+		const scope = `report dedup: ${repo}, ${queue.value.length} live queue issue(s), ${index.value.issues.length} indexed issue(s); all open plus closed since ${closedSince ?? "disabled"}; cache ${index.value.cache.source}, age ${index.value.cache.ageMs}ms; tokens: ${result.tokens.join(", ")}${exclude === null ? "" : `; #${exclude} excluded from both sources`}${result.truncated ? `; list TRUNCATED to --limit ${limit}` : ""}.`;
+		const diagnostics = [...index.value.diagnostics, scope];
+		if (result.retrievalTruncated)
+			diagnostics.push(
+				"report dedup: retrieval bounded to the top 20 title and top 20 title/body matches; more lexical matches exist.",
+			);
+		if (result.reason !== null) diagnostics.push(result.reason);
+		return json
+			? answer(
+					JSON.stringify({
+						...result,
+						queueCount: queue.value.length,
+						indexCount: index.value.issues.length,
+						cache: index.value.cache,
+						closedSince,
+					}),
+					diagnostics,
+				)
+			: answer(
+					[result.outcome, ...result.candidates.map(renderIndexedCandidate)].join("\n"),
+					diagnostics,
+				);
 	});
