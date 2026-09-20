@@ -1142,21 +1142,62 @@ describe("toAgentEvents over a captured background spawn", () => {
 
 /**
  * The other half of #9506's fix: a *foreground* spawn's own `tool_result` is still what ends its
- * slot, and the proof is that both foreground captures reach every slot's end with their
- * notifications dropped. Without that the change would have moved every worker's end onto a frame a
- * foreground run raises after the fact.
+ * slot, asserted over both captures exactly as they were recorded.
+ *
+ * Their notifications are what makes this worth a case of its own. In both captures the
+ * `task_notification` for a worker arrives one frame *before* the `tool_result` that settles its
+ * spawning call — `two-subagent-turn.json` frames 41/42 and 45/46, `subagent-turn.json` frames
+ * 34/35 — so a notice arm that ended every slot it found would finish each foreground worker a
+ * frame early, and the running list would lose its row while the call is still open.
  */
-describe("toAgentEvents over the foreground captures with no notification", () => {
-	const withoutNotices = (name: "subagent-turn" | "two-subagent-turn") =>
-		messages(name).filter((one) => !(one.type === "system" && one.subtype === "task_notification"));
+describe("toAgentEvents over the foreground captures as recorded", () => {
+	/** Which frame of the capture left each slot `finished`, by the spawning call's id. */
+	const endedAt = (name: "subagent-turn" | "two-subagent-turn") => {
+		const at = new Map<string, number>();
+		let mapping = emptyMapping;
+		messages(name).forEach((one, index) => {
+			mapping = toAgentEvents(one, mapping, {at: AT}).mapping;
+			for (const [id, slot] of mapping.subagents) {
+				if (slot.status === "finished" && !at.has(id)) at.set(id, index);
+			}
+		});
+		return at;
+	};
+
+	/** The frame each `Agent` call's notification and settling `tool_result` arrive on. */
+	const frames = (name: "subagent-turn" | "two-subagent-turn") => {
+		const notice = new Map<string, number>();
+		const settle = new Map<string, number>();
+		messages(name).forEach((one, index) => {
+			const frame = one as {
+				readonly tool_use_id?: string;
+				readonly message?: {readonly content?: ReadonlyArray<Record<string, unknown>>};
+			};
+			if (one.type === "system" && one.subtype === "task_notification") {
+				if (frame.tool_use_id !== undefined) notice.set(frame.tool_use_id, index);
+				return;
+			}
+			for (const block of frame.message?.content ?? []) {
+				if (block.type !== "tool_result") continue;
+				const id = block.tool_use_id;
+				if (typeof id === "string") settle.set(id, index);
+			}
+		});
+		return {notice, settle};
+	};
 
 	it.each([
 		"subagent-turn",
 		"two-subagent-turn",
-	] as const)("finishes every %s slot on the call that spawned it", (name) => {
-		const {mapping} = run(withoutNotices(name));
-		const slots = [...mapping.subagents.values()];
-		expect(slots.length).toBeGreaterThan(0);
-		expect(slots.map((one) => one.status)).toEqual(slots.map(() => "finished"));
+	] as const)("finishes every %s slot on the call that spawned it, not on its notification", (name) => {
+		const ends = endedAt(name);
+		const {notice, settle} = frames(name);
+		expect(ends.size).toBeGreaterThan(0);
+		for (const [id, index] of ends) {
+			// Every worker in these two captures is announced before it is answered, so the two frames
+			// are distinguishable and the assertion below has something to fail on.
+			expect(notice.get(id)).toBeLessThan(settle.get(id) ?? -1);
+			expect(index).toBe(settle.get(id));
+		}
 	});
 });

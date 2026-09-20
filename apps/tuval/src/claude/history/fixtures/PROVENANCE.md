@@ -414,8 +414,9 @@ from a scratch directory exactly as the first table describes, then apply the su
 before the JSON comes anywhere near this directory.
 
 The nine excerpted fixtures cannot be re-produced that way — no `query()` run forces reasoning, a
-compaction, a usage-limit notice, a slash command or a background spawn. Re-producing them means finding the frame again
-in an operator's own local CLI session log and re-keying it against `sdk.d.ts` at the catalog pin,
+compaction, a usage-limit notice, a slash command or a background spawn. Re-producing them means
+finding the frame again in an operator's own local CLI session log and re-keying it against
+`sdk.d.ts` at the catalog pin,
 per the table in
 [the section above](#the-three-excerpted-from-a-cli-session-transcript), in
 [the one after it](#the-five-local-command-captures) or in

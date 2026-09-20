@@ -112,6 +112,16 @@ export interface Mapping {
 	readonly thinking: string;
 	/** Every subagent slot this stream has opened, by the spawning call's id. */
 	readonly subagents: ReadonlyMap<string, SubagentSlot>;
+	/**
+	 * The spawning calls whose `tool_result` answered a *launch* rather than a worker's report, so
+	 * their slots end on the `task_notification` instead (#9506).
+	 *
+	 * Held per slot rather than read off the notification's own frame, because frame order does not
+	 * separate the two spawns: in both foreground captures the notification arrives one frame
+	 * *before* the settling `tool_result` it belongs to, so a notice arm that ended every slot it
+	 * found would end a foreground worker early.
+	 */
+	readonly asyncLaunches: ReadonlySet<string>;
 	/** How many messages this mapping had nothing to say about. */
 	readonly skipped: number;
 }
@@ -123,6 +133,7 @@ export const emptyMapping: Mapping = {
 	settled: null,
 	thinking: "",
 	subagents: new Map(),
+	asyncLaunches: new Set(),
 	skipped: 0,
 };
 
@@ -870,14 +881,20 @@ export const userEvents = (
 	//
 	// A background spawn is the one call whose result is not that settling: it answers the launch
 	// within a second and the worker runs on for minutes, so ending the slot here emptied the running
-	// list for the whole run (#9506). Its end arrives as the `task_notification` for the same
-	// `tool_use_id`, which `taskNoticeEvents` below finishes the slot on, so the slot still cannot
-	// outlive the turn.
+	// list for the whole run (#9506). Such a slot is marked instead, and `taskNoticeEvents` below
+	// finishes a marked slot on the `task_notification` for the same `tool_use_id`, so the slot still
+	// cannot outlive the turn.
 	let subagents = folded.subagents;
+	let asyncLaunches = mapping.asyncLaunches;
+	const launched = isAsyncLaunch(message);
 	const ended: Array<AgentEvent> = [];
-	for (const one of isAsyncLaunch(message) ? [] : settled) {
+	for (const one of settled) {
 		const slot = subagents.get(one.id);
 		if (slot === undefined || slot.status === "finished") continue;
+		if (launched) {
+			asyncLaunches = new Set(asyncLaunches).add(one.id);
+			continue;
+		}
 		const finished: SubagentSlot = {...slot, status: "finished"};
 		subagents = new Map(subagents).set(one.id, finished);
 		ended.push({kind: "subagent", slot: finished});
@@ -906,7 +923,7 @@ export const userEvents = (
 		opened.push({kind: "subagent", slot});
 	}
 	return {
-		mapping: {...mapping, toolCalls, subagents, skipped},
+		mapping: {...mapping, toolCalls, subagents, asyncLaunches, skipped},
 		events: [...events, ...folded.events, ...ended, ...opened],
 	};
 };
@@ -1221,10 +1238,15 @@ const taskOutcomeOf = (status: unknown): string => {
  *
  * **This frame is also where a background worker's slot ends**, and for that worker it is the only
  * place: its spawning call answered the launch while it was still starting, so `userEvents` above
- * leaves the slot running and this one finishes it (#9506). Every status ends it — the frame is
- * raised when a task settles, and `failed` and `stopped` are settlings too — so a slot still cannot
- * outlive its turn (#8401). A foreground worker's slot was finished by its own settling call before
- * this frame arrives, and a finished slot is left exactly as it was (Q2 on #8384).
+ * leaves the slot running under `asyncLaunches` and this one finishes it (#9506). Every status ends
+ * it — the frame is raised when a task settles, and `failed` and `stopped` are settlings too — so a
+ * slot still cannot outlive its turn (#8401).
+ *
+ * Only a slot that mark names, because this frame is raised for a foreground worker too and the
+ * captures put it *ahead* of that worker's settling `tool_result`
+ * (`fixtures/two-subagent-turn.json`: notification at frame 41, the result it belongs to at 42).
+ * Ending every slot found here would cut a foreground worker's row out of the running list one frame
+ * before its own call settles, which is the list going wrong in the other direction.
  */
 export const taskNoticeEvents = (
 	message: unknown,
@@ -1238,7 +1260,9 @@ export const taskNoticeEvents = (
 	const slot = callId.length === 0 ? undefined : mapping.subagents.get(callId);
 	const name = slot?.type ?? mapping.toolCalls.get(callId)?.name ?? "task";
 	const ended: SubagentSlot | null =
-		slot === undefined || slot.status === "finished" ? null : {...slot, status: "finished"};
+		slot === undefined || slot.status === "finished" || !mapping.asyncLaunches.has(callId)
+			? null
+			: {...slot, status: "finished"};
 	return {
 		mapping:
 			ended === null
