@@ -59,7 +59,7 @@ const dedup = leafCommand(
 		closedDays: Flag.integer("closed-days").pipe(
 			Flag.withDefault(DEFAULT_CLOSED_DAYS),
 			Flag.withDescription(
-				"include issues closed within this many days; 0 searches open issues only (default: 14)",
+				"integer from 0 to 36500; include issues closed within this many days; 0 searches open only (default: 14)",
 			),
 		),
 		refresh: Flag.boolean("refresh").pipe(
@@ -76,7 +76,9 @@ const dedup = leafCommand(
 		),
 		limit: Flag.integer("limit").pipe(
 			Flag.withDefault(DEFAULT_LIMIT),
-			Flag.withDescription(`the maximum number of candidates to print (default: ${DEFAULT_LIMIT})`),
+			Flag.withDescription(
+				`nonnegative safe integer; maximum candidates to print, 0 prints only the outcome (default: ${DEFAULT_LIMIT})`,
+			),
 		),
 		exclude: Flag.integer("exclude").pipe(
 			Flag.optional,
@@ -107,7 +109,7 @@ const dedup = leafCommand(
 		"Find open and recently closed issues that may cover an observation.",
 	),
 	Command.withDescription(
-		'Find open and recently closed issues that may cover an observation. First stdout line is the outcome token — candidates | none | indeterminate — and ALL THREE exit 0; a candidates list adds one `<number>\\t<source>\\t<score>\\t<state>\\t<title>` line per entry. Exits 7 (--label does not exist, so the queue half would scan nothing), 27 (queue unreadable), 28 (issue corpus unreadable). Sources: queue | index | both; states: open | closed. JSON includes candidates, tokens, reason, truncated, retrievalTruncated, queueCount, indexCount, closedSince and cache {source, ageMs}. The corpus cache is reused for less than five minutes; --refresh bypasses it. Matches are advisory. Example: fabrika report dedup --query "retry helper swallows the abort reason" --exclude 4312',
+		'Find open and recently closed issues that may cover an observation. First stdout line is the outcome token — candidates | none | indeterminate — and ALL THREE exit 0; a candidates list adds one `<number>\\t<source>\\t<score>\\t<state>\\t<title>` line per entry. Exit 1 means invalid arguments or unresolved repository. Exits 7 (--label does not exist, so the queue half would scan nothing), 27 (queue unreadable), 28 (issue corpus unreadable). Sources: queue | index | both; states: open | closed. JSON includes candidates, tokens, reason, truncated, retrievalTruncated, queueCount, indexCount, closedSince and cache {source, ageMs}. The corpus cache is reused for less than five minutes; --refresh bypasses it. Matches are advisory. Example stdout for a sole matching issue in both sources:\ncandidates\n4312\tboth\t0.03278688524590164\topen\tretry cancellation\nNo-match stdout:\nnone\nBelow-floor stdout:\nindeterminate\nExample: fabrika report dedup --query "retry helper swallows the abort reason" --exclude 4312',
 	),
 );
 

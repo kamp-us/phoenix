@@ -273,6 +273,86 @@ and name both failures. Invalid arguments or unresolved repository are exit 1. C
 failure alone is a warning because the fetched corpus remains usable. No failure authorizes an
 empty `none`, and no result or failure authorizes automatic closure or blocking a filing.
 
+### Fixed-input stdout examples
+
+These examples fix repository `o/r`, label `status:needs-triage` present, an empty live queue,
+`--limit 20`, no exclusion and successful reads. The corpus contains exactly one open issue,
+number 4312, title `retry cancellation`, empty body and null `closed_at`. A valid cache fetched
+at `2026-09-20T00:00:00.000Z` is reused at that same instant with `--closed-days 0`.
+It contains that issue and no other rows. Every block below is stdout only, ending in a newline;
+all exit 0. API enumeration order cannot affect a single-document ranking.
+
+`fabrika report dedup --repo o/r --closed-days 0 --query "retry cancellation"` prints:
+
+```text
+candidates
+4312	index	0.03278688524590164	open	retry cancellation
+```
+
+The candidate ranks first in both lists, so its score is `1/61 + 1/61`.
+Adding `--json` to that invocation prints this single line:
+
+```json
+{"outcome":"candidates","candidates":[{"number":4312,"title":"retry cancellation","state":"open","score":0.03278688524590164,"source":"index"}],"tokens":["retry","cancellation"],"truncated":false,"retrievalTruncated":false,"reason":null,"queueCount":0,"indexCount":1,"cache":{"source":"cache","ageMs":0},"closedSince":null}
+```
+
+`fabrika report dedup --repo o/r --closed-days 0 --query "editor cursor"` prints:
+
+```text
+none
+```
+
+Adding `--json` prints:
+
+```json
+{"outcome":"none","candidates":[],"tokens":["editor","cursor"],"truncated":false,"retrievalTruncated":false,"reason":"no lexical matches in the live queue and indexed corpus","queueCount":0,"indexCount":1,"cache":{"source":"cache","ageMs":0},"closedSince":null}
+```
+
+`fabrika report dedup --repo o/r --closed-days 0 --query "retry"` prints:
+
+```text
+indeterminate
+```
+
+Adding `--json` prints the following. Only labels were read, so neither cache nor corpus scope
+is asserted:
+
+```json
+{"outcome":"indeterminate","candidates":[],"tokens":["retry"],"truncated":false,"retrievalTruncated":false,"reason":"the query yielded 1 distinctive token(s), below the floor of 2","queueCount":0,"indexCount":0,"cache":null,"closedSince":null}
+```
+
+### Input validation and failures
+
+`--closed-days` must be a safe integer from 0 through 36500, inclusive. `--limit` must be a
+nonnegative safe integer, at most 9007199254740991. Its default is 20; zero retains the outcome
+and truncation metadata while returning no candidate rows. Validation runs in this order:
+closed days, nonblank query, limit, repository resolution, label read, label existence.
+The two-token check follows label validation. CLI parsing errors, such as a missing required
+`--query` or a noninteger flag value, use the shared Effect CLI usage diagnostic and exit 1
+before this verb runs.
+
+Every failure below has empty stdout. Messages are exact templates; `<repo>`, `<label>` and
+`<limit>` substitute the inputs, and `<reason>` is the failed read's diagnostic. The limit
+message is retained even for unsafe integers.
+
+| Message | Stream | Code | Kind |
+|---|---|---|---|
+| `report dedup: --closed-days must be an integer from 0 to 36500.` | stderr | 1 | usage error |
+| `report dedup: --query is empty.` | stderr | 1 | usage error |
+| `report dedup: --limit <limit> is negative.` | stderr | 1 | usage error |
+| `report dedup: cannot resolve a target repo — set CLAUDE_PIPELINE_REPO, or run inside a checkout whose origin remote resolves.` | stderr | 1 | usage error |
+| `report dedup: cannot read the label set of <repo>: <reason> — whether the <label> queue exists is UNKNOWN, and so is the outcome.` | stderr | 27 | refusal |
+| `report dedup: <repo> has no "<label>" label — the queue half would scan nothing, so the outcome is UNKNOWN, never "none". Create the label, or pass the one this repo uses.` | stderr | 7 | refusal |
+| `report dedup: cannot read the <label> queue in <repo>: <reason>. The outcome is UNKNOWN, never "none".` | stderr | 27 | refusal |
+| `report dedup: cannot read the <label> queue in <repo>: <reason> (the index also failed: <index reason>). The outcome is UNKNOWN, never "none".` | stderr | 27 | refusal, both reads failed |
+| `report dedup: cannot read the issue index for <repo>: <reason>. The outcome is UNKNOWN, never "none".` | stderr | 28 | refusal |
+
+Cache diagnostics are stderr warnings with an otherwise successful answer, not refusals:
+`report dedup: invalid or expired cache; fetching the corpus.`,
+`report dedup: cache write failed; using the fetched corpus for this run.`, and
+`report dedup: no cache directory available; using the fetched corpus for this run.`
+The first warns before a replacement read; if that read fails, the failure table applies.
+
 ### Worked cases
 
 - An issue titled "Networking" whose excerpt mentions "retry cancellation" is returned for
