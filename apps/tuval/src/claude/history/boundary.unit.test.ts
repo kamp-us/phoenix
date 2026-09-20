@@ -22,6 +22,7 @@ const shipped = () => sources().filter(({name}) => !name.endsWith(".unit.test.ts
  * what a check written against that union could no longer read.
  */
 interface AnyFrame {
+	readonly type?: string;
 	readonly event?: {
 		readonly type?: string;
 		readonly content_block?: {readonly type?: string; readonly id?: unknown};
@@ -84,6 +85,7 @@ describe("the Claude history mapping is pure", () => {
 			"agent-a1b2c3d4e5f60718a",
 			"agent-a1b2c3d4e5f60718a.meta",
 			"assistant-turn",
+			"background-subagent-turn",
 			"compact-boundary",
 			"error-result",
 			"informational-notice",
@@ -153,6 +155,32 @@ describe("the Claude history mapping is pure", () => {
 		// The flip side: a fragment with no root name in it is what the scan cannot see, and the
 		// reassembly check below is why that gap is survivable.
 		expect(operatorRoots.test("xvxk83q4c0000gn/T/tu")).toBe(false);
+	});
+
+	/**
+	 * `SDKUserMessage.tool_use_result` is one structured output per *frame*, and `../map.ts` reads a
+	 * background spawn's launch answer off it to decide whether the frame ends a worker's slot
+	 * (#9506). That read is exact only where a frame answers one call, so the corpus is held to the
+	 * shape every capture in it has: one `tool_result` per user frame, which is how the CLI writes
+	 * them — each call's answer arrives when that call finishes.
+	 */
+	it("answers at most one call per captured user frame, which is what keeps that output exact", () => {
+		const dir = join(import.meta.dirname, "fixtures");
+		const offenders: Array<string> = [];
+		for (const name of readdirSync(dir).filter((one) => one.endsWith(".json"))) {
+			const parsed: unknown = JSON.parse(readFileSync(join(dir, name), "utf8"));
+			const frames = (Array.isArray(parsed) ? parsed : [parsed]) as ReadonlyArray<AnyFrame>;
+			for (const frame of frames) {
+				if (frame.type !== "user") continue;
+				const content = frame.message?.content;
+				// A prompt frame's content is a bare string, which answers no call at all.
+				const answers = Array.isArray(content)
+					? content.filter((block) => block.type === "tool_result")
+					: [];
+				if (answers.length > 1) offenders.push(`${name}: ${answers.length}`);
+			}
+		}
+		expect(offenders).toEqual([]);
 	});
 
 	/**
