@@ -136,9 +136,49 @@
 .kp-subnav__input input::placeholder {
 	color: var(--text-faint);
 }
-/* Phone reflow (≤640px, the repo's 640px container convention) — let the box fill the
-   Subnav row instead of a fixed 260px, so it shrinks fluidly rather than overflowing. */
+/* Phone reflow (≤640px, the repo's 640px container convention) — the same treatment the
+   sibling chrome row already carries (Topbar.css's own ≤640px block). The desktop bar is a
+   nowrap flex row whose zones all size to their content, so its min-content width is the sum
+   of every label plus every padding: pano publishes five destinations plus a CTA, that sum
+   exceeds a 390px viewport, and a block in normal flow that wide grows the document's own
+   scroll width (#7730). Wrapping is what keeps every destination reachable — the alternative,
+   clipping the row behind `overflow`, hides destinations that have nowhere else to go.
+
+   The sticky offset goes with the wrap. `top: var(--topbar-h)` is only honest while the
+   topbar is one row tall, and the topbar's own phone rule deliberately wraps search onto a
+   second row, so below 640px the correct offset is a height no stylesheet can read. Resting
+   the bar in normal flow is the honest answer in CSS alone: it can neither hide under the
+   topbar nor let the feed slide beneath it. */
 @media (max-width: 640px) {
+	.kp-subnav {
+		height: auto;
+		min-height: var(--subnav-h);
+		flex-wrap: wrap;
+		gap: var(--s-1);
+		padding: var(--s-1) var(--s-2);
+		position: static;
+		top: auto;
+	}
+	/* The tab strip is its own nested nowrap row, so wrapping the bar alone would still leave
+	   all five destinations in one unshrinkable block. */
+	.kp-subnav__filters {
+		flex-wrap: wrap;
+		height: auto;
+		min-width: 0;
+	}
+	.kp-subnav__filter {
+		min-width: 0;
+		padding-inline: var(--s-2);
+	}
+	/* `flex: 1` on a wrapped row claims a whole line of its own, so the spacer cannot do the
+	   pinning here; an auto margin absorbs the free space of whichever line the CTA lands on,
+	   which keeps the trailing-edge placement law (#2587) whether it wraps or not. */
+	.kp-subnav__spacer {
+		display: none;
+	}
+	.kp-subnav__cta {
+		margin-left: auto;
+	}
 	.kp-subnav__input-slot {
 		flex: 1;
 	}
