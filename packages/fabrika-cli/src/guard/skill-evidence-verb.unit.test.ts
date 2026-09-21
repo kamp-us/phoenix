@@ -14,13 +14,7 @@ import {mkdirSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {
-	fakeFs,
-	fakeHttp,
-	fakeShell,
-	type HttpReply,
-	okOut,
-} from "../fakes.test-support.ts";
+import {fakeFs, fakeHttp, fakeShell, type HttpReply, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
 import {runSkillEvidenceGuard} from "./skill-evidence-verb.ts";
