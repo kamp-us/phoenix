@@ -260,6 +260,39 @@ export const adoptInProjectState = Effect.fn("Tuval.adoptInProjectState")(functi
 });
 
 /**
+ * The boot lines one adoption owes the operator, in order, unprefixed.
+ *
+ * `moved` empties itself once the move is done, so its line is one-shot on its own. `kept` and
+ * `unowned` do not: a collision leaves both copies on disk, and a project holding a file Tuval does
+ * not write goes on holding it, so either line would print on every boot for the life of the
+ * project. What separates them is what each asks of the operator. `kept` names a collision only a
+ * hand fix resolves, so it keeps asking until someone acts. `unowned` asks for nothing — a project
+ * is meant to hold its `tuval.config.ts` — so it is reported only beside a move, which is the boot
+ * the line was written for: the one where Tuval rewrote a directory the operator did not name and
+ * owes an account of what it did and did not take.
+ */
+export const renderAdoption = (
+	adoption: StateAdoption,
+	stateDir: string,
+): ReadonlyArray<string> => {
+	const lines: Array<string> = [];
+	if (adoption.moved.length > 0) {
+		lines.push(`moved ${adoption.moved.join(", ")} out of the project into ${stateDir}`);
+	}
+	if (adoption.kept.length > 0) {
+		lines.push(
+			`left ${adoption.kept.join(", ")} in the project — ${stateDir} already holds one of each`,
+		);
+	}
+	if (adoption.moved.length > 0 && adoption.unowned.length > 0) {
+		lines.push(
+			`left ${adoption.unowned.join(", ")} in the project — Tuval moves only the state it wrote itself`,
+		);
+	}
+	return lines;
+};
+
+/**
  * The state directory this desk was booted on, as a kernel service.
  *
  * A program row's layer declares it as a leftover requirement and is handed it at spawn — the seam

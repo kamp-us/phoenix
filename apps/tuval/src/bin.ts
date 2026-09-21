@@ -25,6 +25,7 @@ import {renderBindingErrors} from "./commands/bindings/index.ts";
 import {servePage} from "./page/dev-server.ts";
 import {displayHost} from "./page/loopback.ts";
 import {serveDesk} from "./shell/host/index.ts";
+import {renderAdoption} from "./state-dir.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 import type {TableRow} from "./table/row.ts";
 
@@ -84,24 +85,10 @@ const tuval = Command.make(
 		yield* Console.log(
 			`tuval: booted — ${report.programCount} program(s), ${report.spellCount} spell(s) registered from ${from}; ${report.processCount} process(es) live, ${report.restoredCount} restored from ${report.stateDir}`,
 		);
-		// The one-time move of state an older build left in the project (ADR 0402 rule 7). Printed
-		// because it is the only time a boot rewrites a directory the operator did not name, and a
-		// `kept` entry is the one thing they may still want to delete by hand. The two reasons for
-		// leaving an entry behind print apart, because only one of them asks anything of the operator.
-		if (report.adopted.moved.length > 0) {
-			yield* Console.log(
-				`tuval: moved ${report.adopted.moved.join(", ")} out of the project into ${report.stateDir}`,
-			);
-		}
-		if (report.adopted.kept.length > 0) {
-			yield* Console.log(
-				`tuval: left ${report.adopted.kept.join(", ")} in the project — ${report.stateDir} already holds one of each`,
-			);
-		}
-		if (report.adopted.unowned.length > 0) {
-			yield* Console.log(
-				`tuval: left ${report.adopted.unowned.join(", ")} in the project — Tuval moves only the state it wrote itself`,
-			);
+		// The one-time move of state an older build left in the project (ADR 0402 rule 7).
+		// `renderAdoption` owns which lines a given adoption earns.
+		for (const line of renderAdoption(report.adopted, report.stateDir)) {
+			yield* Console.log(`tuval: ${line}`);
 		}
 		// A binding that did not compile costs its own key and nothing else, so this is a report and
 		// not a refusal: boot goes on with the bindings that did compile.
