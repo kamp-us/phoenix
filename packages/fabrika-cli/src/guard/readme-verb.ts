@@ -29,7 +29,7 @@ import {
 const VERB = "guard readme-guard check";
 
 /** The convention is about `packages/*` specifically — `apps/*` and `infra/*` are out of scope. */
-const GLOB = "packages/*";
+export const GLOB = "packages/*";
 const README = "README.md";
 
 export interface ReadmeGuardOptions {

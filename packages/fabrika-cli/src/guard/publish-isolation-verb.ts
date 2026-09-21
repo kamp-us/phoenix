@@ -37,7 +37,7 @@ import {
 const VERB = "guard publish-isolation-guard check";
 
 /** The release pipeline that defines which packages publish — the guard's scope source. */
-const PUBLISH_WORKFLOW = ".github/workflows/publish.yml";
+export const PUBLISH_WORKFLOW = ".github/workflows/publish.yml";
 
 const MANIFEST = "package.json";
 

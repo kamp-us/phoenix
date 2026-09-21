@@ -42,7 +42,7 @@ import {
 
 const VERB = "guard fanout-guard check";
 
-const FEATURES_DIR = "apps/web/worker/features";
+export const FEATURES_DIR = "apps/web/worker/features";
 const MUTATIONS_FILE = "mutations.ts";
 const LIVE_FILE = "live.ts";
 const PROTOCOL_PATH = `${FEATURES_DIR}/fate-live/protocol.ts`;

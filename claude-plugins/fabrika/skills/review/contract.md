@@ -247,12 +247,40 @@ answer is a path under one of those roots, so a verdict quoting where the diff w
 
 ---
 
+## Review content filtering
+
+Filtering is opt-in for `review scope` and `review diff`: `--filter-placement=after` enables it;
+omitting the flag preserves unfiltered output. `before` and every other value refuse on `10`.
+`--exclude` adds comma-separated patterns only when filtering is enabled. Patterns support `*`
+within a path segment and `**` across segments; every other character, including `?`, is literal.
+The effective set is shipped defaults minus `reviewFilterUnexclude`, then `reviewFilterExclusions`
+and caller additions, deduplicated by pattern in declaration order. Re-adding a removed default
+restores it and removes it from the removal report.
+
+Required classes, namespaces and subsystem constraints always derive from the complete raw path
+list. Filtering changes delivered contents only. Pattern checks and the runtime check of actually
+excluded paths refuse hiding governed content on `21`. Guards continue reading raw paths.
+
+Completeness is proved before filtering. A complete nonempty raw diff may deliberately serve zero
+sections, with every excluded path reported; that result retains all required reviews. It is not a
+verdict and does not establish acceptance criteria. An empty or incomplete raw read retains its
+existing refusal. The reviewer follows the filtered-content instructions in `SKILL.md`.
+
+Worked cases:
+
+- A lockfile-only diff with filtering enabled reports `review-code`, one excluded path and zero
+  served sections. The same call without placement serves the original content.
+- A mixed code/doc diff excluding its code content retains both required text reviews.
+- A configured UI path still requires `review-ui`; a governed path still requires governance and
+  cannot be excluded. Preview and scope report the same required set.
+- A literal `?` pattern matches that filename only, without throwing or acting as a quantifier.
+
 ## `review scope`
 
 **Invocation**
 
 ```
-fabrika review scope 4321 [--sha <head>] [--repo <owner/name>] [--json]
+fabrika review scope 4321 [--sha <head>] [--repo <owner/name>] [--json] [--filter-placement=after] [--exclude <patterns>]
 ```
 
 **Inputs**
@@ -263,6 +291,16 @@ fabrika review scope 4321 [--sha <head>] [--repo <owner/name>] [--json]
 | `--sha` | string | no | the PR's live head | the head to read the changed files at; see the binding step above |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
+
+Filtering options follow [Review content filtering](#review-content-filtering).
+Between class and namespace rows, each matching subsystem emits `subsystem\t<name>\t<count>`,
+`subsystem-note\t<name>\t<constraint>` and sorted `subsystem-path\t<name>\t<path>` rows.
+Subsystems sort by name; a file may match several. JSON adds `subsystems` entries with
+`{name, files, paths, constraint}` only when matches exist.
+When filtering is enabled, the output ends with `excluded\t<count>` and `excluded-path\t<path>`
+rows, then `un-excluded\t<count>` and `un-excluded-path\t<pattern>` for removed defaults when
+any remain removed. JSON adds `filter_placement`, `excluded: {count, paths}` and, when nonempty,
+`unexcluded: {count, paths}`. Classes and `scanned` continue counting all raw paths.
 
 **Output** — machine channel, in this line order. First line:
 `scoped\t<head-sha>\t<fixes:n|part-of:n|->`, where the head is the commit the file list was actually
@@ -442,7 +480,7 @@ $ fabrika review scope 4321 --json
 **Invocation**
 
 ```
-fabrika review diff 4321 [--sha <head>] [--repo <owner/name>]
+fabrika review diff 4321 [--sha <head>] [--repo <owner/name>] [--filter-placement=after] [--exclude <patterns>]
 ```
 
 **Inputs**
@@ -452,6 +490,13 @@ fabrika review diff 4321 [--sha <head>] [--repo <owner/name>]
 | *(positional)* | integer | yes | — | the pull-request number |
 | `--sha` | string | no | the PR's live head | the head to read the diff at; see the binding step above |
 | `--repo` | string | no | resolved | the repository |
+
+Filtering options follow [Review content filtering](#review-content-filtering).
+A filtered answer prefixes the kept unified-diff sections with
+`x-fabrika-filter: placement=after excluded=N served=M`, then sorted
+`x-fabrika-excluded-path: <path>` lines and sorted `x-fabrika-unexcluded-path: <pattern>` lines for
+removed defaults. The header remains when M is zero. Counts describe complete file sections,
+including quoted filenames decoded with the same parser as the raw completeness proof.
 
 **Output** — machine channel. The unified diff bytes, read out of the object database at the bound
 commit. There is no empty answer: a PR with zero changed files is `review scope`'s `7`, and this
@@ -520,6 +565,25 @@ index 0b1c2d3..a1b2c3d 100644
   bytes are read at a commit rather than stamped with one afterwards.
 
 ---
+
+## `review preview`
+
+Read one subject with `--filter-placement=after`: a PR number with optional `--sha`/`--repo`,
+`--base` and `--tip`, or `--diff-file <path>`. Exactly one subject is required. Filtering options
+follow [Review content filtering](#review-content-filtering). Omitted placement, `before`, conflicting
+subjects/modifiers, or `--emit-diff` with `--json` refuse on `10`.
+
+PR and range subjects read the object database and prove diff completeness against the same
+range's path list before filtering. A local diff file has no range to verify; it reads bytes as
+given through the filesystem service. An unreadable input or config refuses on `11`, a stale PR
+head on `12`, a provably incomplete diff on `13`, and a governed exclusion on `21`.
+
+The answer starts `preview\tafter`, then `matched\t<count>`, raw-derived class and namespace
+rows, and excluded/removal rows in scope's grammar. Required namespaces use the same configured
+governed roots and UI prefixes as scope. `--json` returns `outcome: "previewed"`, `placement`,
+`matched_paths`, `excluded: {count, paths}`, optional `unexcluded: {count, paths}`, `active_classes`,
+`namespaces`, `filtered_diff_bytes` and `filtered_diff_lines`. `--emit-diff` returns the filtered
+bytes in `review diff`'s grammar instead. No review verdict or network write is produced.
 
 ## `review criteria`
 

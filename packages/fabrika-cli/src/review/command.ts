@@ -16,12 +16,16 @@ import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
+import {refuse} from "../verb.ts";
 import {runAppendCriterion} from "./append-criterion-verb.ts";
 import {runCi} from "./ci-verb.ts";
+import {OFF_VOCABULARY} from "./codes.ts";
 import {runCriteria} from "./criteria-verb.ts";
 import {runDeviations} from "./deviations-verb.ts";
 import {runDiff} from "./diff-verb.ts";
+import type {FilterPlacement} from "./filter-spike.ts";
 import {runPost} from "./post-verb.ts";
+import {runPreview} from "./preview-verb.ts";
 import {runScope} from "./scope-verb.ts";
 import {runScratch} from "./scratch-verb.ts";
 import {runSeat} from "./seat-verb.ts";
@@ -49,6 +53,32 @@ const prArg = Argument.integer("pr").pipe(
 	Argument.withDescription("the pull-request number to read"),
 );
 
+const filterPlacementFlag = Flag.string("filter-placement").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"review diff filtering: use `after` to omit content while retaining every required review; omitted, no filtering runs",
+	),
+);
+
+const excludeFlag = Flag.string("exclude").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"review diff filtering: comma-separated extra exclusion globs beyond the defaults; refused at 21 when one intersects a governed root",
+	),
+);
+
+/** Omitted filtering and the supported placement are distinct inputs. */
+const placementOf = (
+	verb: string,
+	value: string | null,
+): FilterPlacement | null | ReturnType<typeof refuse> =>
+	value === null || value === "after"
+		? value
+		: refuse(
+				OFF_VOCABULARY,
+				`review ${verb}: --filter-placement must be \`after\`, got "${value}"`,
+			);
+
 /**
  * The read verbs' `--sha`: the head the caller scoped, asserted so the answer's provenance is the
  * caller's claim and not whatever the endpoint happened to serve. Omitted, the verb binds to the
@@ -64,14 +94,28 @@ const boundShaFlag = Flag.string("sha").pipe(
 
 const scope = leafCommand(
 	"scope",
-	{pr: prArg, sha: boundShaFlag, repo: repoFlag, json: jsonFlag},
-	Effect.fn(function* ({pr, sha, repo, json}) {
+	{
+		pr: prArg,
+		sha: boundShaFlag,
+		repo: repoFlag,
+		json: jsonFlag,
+		filterPlacement: filterPlacementFlag,
+		exclude: excludeFlag,
+	},
+	Effect.fn(function* ({pr, sha, repo, json, filterPlacement, exclude}) {
+		const placement = placementOf("scope", Option.getOrNull(filterPlacement));
+		if (placement && typeof placement === "object") {
+			yield* emit(placement);
+			return;
+		}
 		yield* emit(
 			yield* runScope({
 				pr,
 				sha: Option.getOrNull(sha),
 				repo: Option.getOrNull(repo),
 				json,
+				filterPlacement: placement,
+				exclude: Option.getOrNull(exclude),
 				cwd: process.cwd(),
 				env: process.env,
 			}),
@@ -86,13 +130,27 @@ const scope = leafCommand(
 
 const diff = leafCommand(
 	"diff",
-	{pr: prArg, sha: boundShaFlag, repo: repoFlag},
-	Effect.fn(function* ({pr, sha, repo}) {
+	{
+		pr: prArg,
+		sha: boundShaFlag,
+		repo: repoFlag,
+		filterPlacement: filterPlacementFlag,
+		exclude: excludeFlag,
+	},
+	Effect.fn(function* ({pr, sha, repo, filterPlacement, exclude}) {
+		const placement = placementOf("diff", Option.getOrNull(filterPlacement));
+		if (placement && typeof placement === "object") {
+			yield* emit(placement);
+			return;
+		}
 		yield* emit(
 			yield* runDiff({
 				pr,
 				sha: Option.getOrNull(sha),
 				repo: Option.getOrNull(repo),
+				filterPlacement: placement,
+				exclude: Option.getOrNull(exclude),
+				cwd: process.cwd(),
 				env: process.env,
 			}),
 		);
@@ -428,6 +486,82 @@ const seat = leafCommand(
 	),
 );
 
+const preview = leafCommand(
+	"preview",
+	{
+		diffFile: Flag.string("diff-file").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"a unified diff on local disk to extract paths from (no PR, no network, no LLM)",
+			),
+		),
+		pr: Argument.integer("pr").pipe(
+			Argument.optional,
+			Argument.withDescription("the pull-request number to read instead of --diff-file"),
+		),
+		sha: boundShaFlag,
+		repo: repoFlag,
+		base: Flag.string("base").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"a range's base revision — reads the range's diff from its merge base, beside --tip",
+			),
+		),
+		tip: Flag.string("tip").pipe(
+			Flag.optional,
+			Flag.withDescription("the range's tip revision; --base and --tip come together"),
+		),
+		filterPlacement: filterPlacementFlag,
+		exclude: excludeFlag,
+		emitDiff: Flag.boolean("emit-diff").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				"print the filtered diff (header + kept sections) instead of the preview rows",
+			),
+		),
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({
+		diffFile,
+		pr,
+		sha,
+		repo,
+		base,
+		tip,
+		filterPlacement,
+		exclude,
+		emitDiff,
+		json,
+	}) {
+		const placement = placementOf("preview", Option.getOrNull(filterPlacement));
+		if (placement && typeof placement === "object") {
+			yield* emit(placement);
+			return;
+		}
+		yield* emit(
+			yield* runPreview({
+				diffFile: Option.getOrNull(diffFile),
+				pr: Option.getOrNull(pr),
+				sha: Option.getOrNull(sha),
+				repo: Option.getOrNull(repo),
+				base: Option.getOrNull(base),
+				tip: Option.getOrNull(tip),
+				filterPlacement: placement,
+				exclude: Option.getOrNull(exclude),
+				emitDiff,
+				json,
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Filtered path extraction for review diffs — no LLM, no write."),
+	Command.withDescription(
+		"Read one subject's diff and return its filtered path extraction: the matched paths, the excluded paths, the active class partition and the namespaces it derives, at the requested --filter-placement. Subjects are mutually exclusive: --diff-file reads a local unified diff (no PR, no network); a pull-request number binds a head (optional --sha/--repo) and reads the PR's three-dot diff out of the object database exactly as review diff does; --base/--tip reads a range from its own merge base. `after` derives required text, UI and governance reviews over the full read and enumerates excluded paths beside those unchanged requirements, including all-excluded content. Filtering is optional for scope and diff; preview requires `after`. The defaults exclude pnpm-lock.yaml, **/__snapshots__/** and the generated-schema/build-output shapes; --exclude adds globs, and any pattern intersecting a governed root refuses at 21. PR and range subjects prove diff completeness first — a served-file count short of the range's own path census refuses at 13, so a deliberate exclusion can never masquerade as a truncation; `--diff-file` reads the bytes exactly as given, with no range to prove a census against (its exclusions are still enumerated). --emit-diff prints the filtered diff with its `x-fabrika-filter` / `x-fabrika-excluded-path` header instead of the rows. No LLM invocation, no network write. Exits 10 (missing or off-vocabulary --filter-placement, --emit-diff with --json, no subject named, or two subjects at once), 7 (PR absent, closed, or zero changed files), 11 (a read the answer turns on failed — the diff file, .fabrika.jsonc, the PR read, or a git read), 12 (--sha is not the PR's head), 13 (a provably short diff), 21 (an exclusion pattern intersects governedRoots). Example: fabrika review preview --diff-file pr.diff --filter-placement=after --json",
+	),
+);
+
 export const reviewCommand = Command.make("review").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
@@ -437,6 +571,7 @@ export const reviewCommand = Command.make("review").pipe(
 		ci,
 		verdicts,
 		deviations,
+		preview,
 		post,
 		appendCriterion,
 		scratch,

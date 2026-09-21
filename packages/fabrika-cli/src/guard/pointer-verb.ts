@@ -32,7 +32,7 @@ import {
 
 const VERB = "guard pointer-guard check";
 
-const DOC = "CLAUDE.md";
+export const DOC = "CLAUDE.md";
 
 /** Everything this verb needs: the filesystem for reads and probes, the spawner for git. */
 type Scan<A, E = ReadFailed> = Effect.Effect<

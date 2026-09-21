@@ -1,8 +1,17 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeSeams, type HttpReply, okOut, type Scripted} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeFs,
+	fakeSeams,
+	type HttpReply,
+	okOut,
+	type Scripted,
+	unconfigured,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
+	GOVERNED_FILTER,
 	INCOMPLETE_SCAN,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
@@ -10,6 +19,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {runDiff} from "./diff-verb.ts";
+import type {FilterPlacement} from "./filter-spike.ts";
 import {
 	binding,
 	DIFF,
@@ -55,6 +65,10 @@ const options = {
 	pr: 4321,
 	sha: null as string | null,
 	repo: null,
+	/** ocr-port spike fields, null = off — the overrides below turn them on per case. */
+	filterPlacement: null as FilterPlacement | null,
+	exclude: null as string | null,
+	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
@@ -62,7 +76,11 @@ const shell = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof option
 	const fake = fakeSeams(script);
 	return {
 		fake,
-		out: Effect.runPromise(Effect.provide(runDiff({...options, ...overrides}), fake.layer)),
+		// The config arms of the exclusion set are part of the verb's reads now, so every run stands
+		// on the unconfigured checkout unless a case layers a declared `.fabrika.jsonc` over it.
+		out: Effect.runPromise(
+			Effect.provide(runDiff({...options, ...overrides}), Layer.merge(fake.layer, unconfigured)),
+		),
 	};
 };
 
@@ -277,5 +295,228 @@ describe("runDiff binds its bytes to a commit", () => {
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("cannot resolve base main");
+	});
+});
+
+/**
+ * The exclusion set's config arms.
+ *
+ * `reviewFilterExclusions` extends the effective set, `reviewFilterUnexclude` removes a shipped
+ * default. A removal is stated twice — an `x-fabrika-unexcluded-path` line in the served diff's
+ * header and an `unexcluded=` count in the diagnostic — so a narrowed filter is never silent, and
+ * with both keys empty the served bytes are byte-identical to a run that never read them.
+ */
+describe("runDiff's exclusion set reads .fabrika.jsonc", () => {
+	const LOCK_DIFF = `diff --git a/src/cart.ts b/src/cart.ts
+--- a/src/cart.ts
++++ b/src/cart.ts
+@@ -10,2 +10,3 @@
+ const items = read();
++const extra = 1;
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -1,1 +1,2 @@
++  effect:
+`;
+	const placement = {filterPlacement: "after" as const, exclude: "README.md"};
+	const configured = (config: Record<string, unknown>) =>
+		Layer.merge(
+			fakeSeams(green()).layer,
+			fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}}).layer,
+		);
+
+	it("serves byte-identical bytes and the same diagnostic when the keys are absent, empty, or the file declares none", async () => {
+		const plain = await run(green(), placement);
+		const braces = await Effect.runPromise(
+			Effect.provide(runDiff({...options, ...placement}), configured({})),
+		);
+		const empty = await Effect.runPromise(
+			Effect.provide(
+				runDiff({...options, ...placement}),
+				configured({reviewFilterExclusions: [], reviewFilterUnexclude: []}),
+			),
+		);
+		expect(braces.stdout).toBe(plain.stdout);
+		expect(braces.stderr).toEqual(plain.stderr);
+		expect(empty.stdout).toBe(plain.stdout);
+		expect(empty.stderr).toEqual(plain.stderr);
+		// The filter itself ran in all three — one CLI exclusion, no un-excluded count anywhere.
+		expect(plain.stdout).toContain("x-fabrika-filter: placement=after excluded=1 served=1");
+		expect(plain.stdout).toContain("x-fabrika-excluded-path: README.md");
+		expect(plain.stdout).not.toContain("x-fabrika-unexcluded-path");
+		expect(plain.stderr.at(-1)).toContain("excluded=1 served=1 of 2 files");
+		expect(plain.stderr.at(-1)).not.toContain("unexcluded=");
+	});
+
+	it("extends the exclusion set with the declared globs", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDiff({...options, ...placement}),
+				Layer.merge(
+					fakeSeams(green()).layer,
+					fakeFs({
+						files: {
+							"/repo/.fabrika.jsonc": JSON.stringify({reviewFilterExclusions: ["**/cart.ts"]}),
+						},
+					}).layer,
+				),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("x-fabrika-filter: placement=after excluded=2 served=0");
+		expect(out.stdout).toContain("x-fabrika-excluded-path: src/cart.ts");
+		expect(out.stderr.at(-1)).toContain("excluded=2 served=0 of 2 files");
+	});
+
+	it("names a removed default in the header and the diagnostic, and serves its bytes", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDiff({...options, filterPlacement: "after", cwd: "/repo"}),
+				Layer.merge(
+					fakeSeams(green(LOCK_DIFF, {}, ["src/cart.ts", "pnpm-lock.yaml"])).layer,
+					fakeFs({
+						files: {
+							"/repo/.fabrika.jsonc": JSON.stringify({reviewFilterUnexclude: ["pnpm-lock.yaml"]}),
+						},
+					}).layer,
+				),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("x-fabrika-filter: placement=after excluded=0 served=2");
+		expect(out.stdout).toContain("x-fabrika-unexcluded-path: pnpm-lock.yaml");
+		expect(out.stdout).toContain("+  effect:");
+		expect(out.stderr.at(-1)).toContain("unexcluded=1");
+	});
+
+	it("refuses an undecodable exclusion key on 11", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDiff({...options, ...placement}),
+				configured({reviewFilterExclusions: "src/**"}),
+			),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(
+			"`reviewFilterExclusions` is not an array of pattern strings",
+		);
+	});
+
+	it("refuses a removal naming a non-default on 11 — only a default's exact pattern may be removed", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDiff({...options, ...placement}),
+				configured({reviewFilterUnexclude: ["dist/**"]}),
+			),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain('"dist/**" is not a shipped default exclusion');
+	});
+});
+
+/**
+ * The runtime backstop.
+ *
+ * The pattern-level arms refuse only what a pattern forces; a leading-double-star suffix glob
+ * slips past both while still carving governed content out of the served diff. What closes the
+ * rest of the contract is the exclusion itself: when the split actually excluded a path under a
+ * governed root, the verb refuses instead of serving a diff that no longer holds everything. The
+ * governed roots ride options.governedRoots, read by the adapter exactly as the verb reads them.
+ */
+describe("runDiff refuses a filter that excludes governed content", () => {
+	const GOVERNED_DIFF = `diff --git a/governed/cart.ts b/governed/cart.ts
+--- a/governed/cart.ts
++++ b/governed/cart.ts
+@@ -1,1 +1,2 @@
++const items = read();
+diff --git a/src/cart.ts b/src/cart.ts
+--- a/src/cart.ts
++++ b/src/cart.ts
+@@ -1,1 +1,2 @@
++const extra = 1;
+`;
+	const governedRoots = ["governed/"];
+
+	/** The layer a governed-roots case runs over — the adapter hands the verb these roots. */
+	const runOverRoots = (
+		script: ReadonlyArray<Scripted>,
+		roots: ReadonlyArray<string>,
+		overrides: Partial<typeof options> = {},
+	) =>
+		Effect.runPromise(
+			Effect.provide(
+				runDiff({...options, ...overrides, governedRoots: roots}),
+				Layer.merge(fakeSeams(script).layer, unconfigured),
+			),
+		);
+
+	it("refuses on 21 when the split actually excluded a governed-rooted path", async () => {
+		const out = await runOverRoots(
+			green(GOVERNED_DIFF, {}, ["governed/cart.ts", "src/cart.ts"]),
+			governedRoots,
+			{
+				filterPlacement: "after",
+				exclude: "**/*.ts",
+			},
+		);
+		expect(out.code).toBe(GOVERNED_FILTER);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("the filter excludes governed content");
+		expect(out.stderr.join("\n")).toContain('"**/*.ts" excludes governed path "governed/cart.ts"');
+	});
+
+	it("serves a filter whose exclusions are all non-governed beside a declared governed root", async () => {
+		const out = await runOverRoots(green(), governedRoots, {
+			filterPlacement: "after",
+			exclude: "README.md",
+		});
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("x-fabrika-filter: placement=after excluded=1 served=1");
+		expect(out.stdout).not.toContain("excludes governed path");
+	});
+});
+
+describe("diff reads filter configuration only when filtering", () => {
+	it.each([
+		{reviewFilterExclusions: "src/**"},
+		{reviewFilterUnexclude: ["not-a-default"]},
+		{governedRoots: []},
+	])("ignores unused malformed configuration %j", async (config) => {
+		const read = (filterPlacement: FilterPlacement | null) =>
+			Effect.runPromise(
+				Effect.provide(
+					runDiff({...options, filterPlacement}),
+					Layer.merge(
+						fakeSeams(green()).layer,
+						fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}}).layer,
+					),
+				),
+			);
+		const baseline = await run(green());
+		const unfiltered = await read(null);
+		const filtered = await read("after");
+		expect(unfiltered).toEqual(baseline);
+		expect(filtered.code).toBe(PRECONDITION_UNKNOWN);
+		expect(filtered.stdout).toBe("");
+	});
+	it("serves unfiltered content when config is unreadable, but refuses filtering", async () => {
+		const read = (filterPlacement: FilterPlacement | null) =>
+			Effect.runPromise(
+				Effect.provide(
+					runDiff({...options, filterPlacement}),
+					Layer.merge(
+						fakeSeams(green()).layer,
+						fakeFs({files: {"/repo/.fabrika.jsonc": "{}"}, unreadable: ["/repo/.fabrika.jsonc"]})
+							.layer,
+					),
+				),
+			);
+		const baseline = await run(green());
+		const unfiltered = await read(null);
+		const filtered = await read("after");
+		expect(unfiltered).toEqual(baseline);
+		expect(filtered.code).toBe(PRECONDITION_UNKNOWN);
 	});
 });

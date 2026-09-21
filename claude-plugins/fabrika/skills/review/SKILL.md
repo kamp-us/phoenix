@@ -205,6 +205,31 @@ in the skill class, under `A-TOUCHED-SKILL-FILE-IS-READ-WHOLE` further down. Edi
 any prose surface: apply [`writing-for-agents`](../writing-for-agents/SKILL.md) verbatim, reading it
 inline as a reference, and state its outcome in that class's namespace.
 
+**When filtering is requested**, pass the same `--filter-placement=after` and `--exclude`
+options to `scope` and `diff` at the bound head. Omitting placement keeps both reads unfiltered.
+Read the complete served diff and the exclusion list. The namespace checklist still comes from
+all changed paths. Check that every omitted path is justified by the effective exclusions and
+that the remaining evidence settles each claimed acceptance criterion and applicable rubric.
+For a criterion or rubric needing omitted content, read the unfiltered diff at the same SHA.
+Describe exactly which content and evidence you read in the verdict.
+
+**An all-excluded diff still owes review.** Its header reports zero served sections beside explicit
+excluded paths, after the raw completeness proof. Check those exclusions, the issue criteria,
+subsystem constraints and relevant validation evidence. Read raw content when needed to settle a
+claim. Emit each required verdict only when that evidence supports it; zero served sections alone
+never justify PASS. An empty or incomplete raw read remains a refusal, not this deliberate case.
+
+<!-- anchor: SUBSYSTEM-ROWS-ARE-ADDITIVE --> **The `subsystem` rows `scope` printed are additive
+constraints on the class rubric, never a replacement for it.** A repo may declare
+`reviewSubsystems` in `.fabrika.jsonc` — path globs whose matched files each carry a constraint
+text. `scope` prints one `subsystem` row per subsystem with matches, and the `subsystem-note` line
+under it carries that text verbatim. Its sorted `subsystem-path` rows name the matched files;
+use those paths to associate constraints with each class. Grade every class exactly as its rubric says, then read each
+`subsystem-note` whose `subsystem` row covers files in your class and apply its constraint **on
+top**: the rows can add findings a rubric alone would not ask about, and they never relax, replace,
+or skip a rubric line. A path may match several subsystems, so one file can carry more than one
+constraint; a class whose files match none is graded by its rubric alone.
+
 **A diff touching fabrika's own two trees owes the portability check, in the doc class and the skill
 class alike.** When any changed file sits under `claude-plugins/fabrika/` or
 `packages/fabrika-cli/src/`, run it and read the verdict into those classes:

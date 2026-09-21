@@ -100,5 +100,15 @@ export const UNNAMED_EVIDENCE = 19;
  */
 export const UNREACHABLE_TIP = 20;
 
+/**
+ * Refused: a requested filter pattern intersects `governedRoots` — the review diff filtering
+ * invariant (`filter-spike.ts` + `guard-trees.ts`). Requirement-deriving consumers read the raw
+ * path list, so the narrowed union is sufficient: the broader draft union was measured refusing
+ * the exact dependency-only PR class the filter exists to serve. Guard trigger trees stay
+ * documented and drift-loud by `guard-trees.sync.unit.test.ts`, not protected by refusal.
+ * Private-band seat so a caller reading `[ $? -ne 0 ]` cannot mistake it for a verb that never ran.
+ */
+export const GOVERNED_FILTER = 21;
+
 /** Reserved for report file body sections, which no review verb performs. */
 export const DELIBERATE_GAP = 4;

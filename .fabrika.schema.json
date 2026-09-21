@@ -345,6 +345,52 @@
 			},
 			"additionalProperties": false
 		},
+		"reviewFilterExclusions": {
+			"type": "array",
+			"description": "The glob patterns added to the review diff filter's exclusion set, on top of the shipped defaults. Empty (or absent) changes nothing.",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
+		"reviewFilterUnexclude": {
+			"type": "array",
+			"description": "The shipped default exclusion patterns removed from the review diff filter's exclusion set. Each entry must equal a shipped default's pattern exactly; every removal that nothing re-adds is enumerated in the verbs' output. Empty (or absent) changes nothing.",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
+		"reviewSubsystems": {
+			"type": "array",
+			"description": "The path-glob-to-constraint rows `review scope` layers onto the class rubrics, one row per subsystem. Additive constraints, never a partition: a path matching several patterns counts under each. Empty (or absent) changes nothing.",
+			"items": {
+				"type": "object",
+				"description": "One subsystem: the files its glob matches carry its constraint on top of the class rubric.",
+				"properties": {
+					"pattern": {
+						"type": "string",
+						"description": "The slash-separated glob the subsystem's files match — `*` within one segment, `**` spanning directories.",
+						"minLength": 1
+					},
+					"subsystem": {
+						"type": "string",
+						"description": "The subsystem's name, unique across the list.",
+						"minLength": 1
+					},
+					"constraint": {
+						"type": "string",
+						"description": "The constraint text a reviewer applies on top of the class rubric, printed verbatim in the scope output.",
+						"minLength": 1
+					}
+				},
+				"required": [
+					"pattern",
+					"subsystem",
+					"constraint"
+				]
+			}
+		},
 		"roadmapFile": {
 			"type": "string",
 			"description": "The roadmap file carrying the `## Campaigns` focus table, repo-relative.",
