@@ -85,4 +85,21 @@ describe("SozlukAlphabet — A–Z index ARIA (#2169)", () => {
 		);
 		expect(SOZLUK_CSS).toMatch(/\.kp-sozluk-alphabet__letter\s*\{[^}]*line-height:\s*1/s);
 	});
+
+	// The strip wraps to three rows at 390px and the bar's fixed `--subnav-h` box did not grow
+	// with it, so the page's first line painted through rows two and three and the CTA ran past
+	// the viewport edge (#9354). Pinning the selector too, not just the declarations: relaxing
+	// `.kp-subnav` itself would drag every other SubnavShell consumer along.
+	it("relaxes the bar's fixed height only for a Subnav that hosts the strip (#9354)", () => {
+		const phone = SOZLUK_CSS.match(/@media \(max-width: 640px\) \{[\s\S]*?\n\}/)?.[0];
+		expect(phone).toBeTruthy();
+		expect(phone).toMatch(
+			/\.kp-subnav:has\(\.kp-sozluk-alphabet\)\s*\{[^}]*height:\s*auto[^}]*min-height:\s*var\(--subnav-h\)[^}]*flex-wrap:\s*wrap/s,
+		);
+		expect(phone).toMatch(
+			/\.kp-subnav:has\(\.kp-sozluk-alphabet\)\s+\.kp-subnav__filters\s*\{[^}]*flex:\s*1 1 100%/s,
+		);
+		// An unscoped `.kp-subnav {` inside the phone block would relax the bar for /pano too.
+		expect(phone).not.toMatch(/(^|[^)\w-])\.kp-subnav\s*\{/m);
+	});
 });
