@@ -88,14 +88,17 @@ describe("Subnav narrow-viewport reflow (#7730)", () => {
 		expect(NARROW).toMatch(/\.kp-subnav__filters\s*\{[^}]*flex-wrap:\s*wrap/s);
 	});
 
-	it("rests the bar in normal flow, because the sticky offset is a height it cannot read", () => {
-		// `top: var(--topbar-h)` is only honest while the topbar is one row, and the topbar's own
-		// ≤640px rule wraps search onto a second row. A stale offset hides the bar under the
-		// topbar; normal flow cannot.
-		expect(NARROW).toMatch(/\.kp-subnav\s*\{[^}]*position:\s*static/s);
+	it("keeps the bar sticky at every width, offset by the topbar's measured height", () => {
+		// The founder ruled the subnav stays sticky on phones, and `top: var(--topbar-h)` is only
+		// honest while the topbar is one row — its own ≤640px rule wraps search onto a second row.
+		// So the offset is the MEASURED height `stickyChrome.ts` publishes, and the narrow block
+		// leaves both `position` and `top` alone. Asserting the absence inside the brace-matched
+		// block is the point: an unstick here is invisible to a regex over the whole file.
 		expect(SUBNAV_CSS.slice(0, SUBNAV_CSS.indexOf(NARROW_AT))).toMatch(
-			/\.kp-subnav\s*\{[^}]*position:\s*sticky[^}]*top:\s*var\(--topbar-h\)/s,
+			/\.kp-subnav\s*\{[^}]*position:\s*sticky[^}]*top:\s*var\(--kp-topbar-measured-h\)/s,
 		);
+		expect(NARROW).not.toMatch(/position:\s*static/);
+		expect(NARROW).not.toMatch(/\.kp-subnav\s*\{[^}]*top:/s);
 	});
 
 	it("keeps the CTA on the trailing edge once the spacer stops spanning the row", () => {

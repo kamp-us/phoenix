@@ -10,7 +10,10 @@
 	background: var(--surface);
 	font: var(--t-body-sm);
 	position: sticky;
-	top: var(--topbar-h);
+	/* The topbar's MEASURED height, never its token: below 640px the topbar wraps search onto a
+	   second row, and `var(--topbar-h)` there leaves this bar sitting under it. Published by
+	   `stickyChrome.ts`, which also declares what this resolves to before the first measurement. */
+	top: var(--kp-topbar-measured-h);
 	z-index: 49;
 }
 
@@ -144,11 +147,11 @@
    scroll width (#7730). Wrapping is what keeps every destination reachable — the alternative,
    clipping the row behind `overflow`, hides destinations that have nowhere else to go.
 
-   The sticky offset goes with the wrap. `top: var(--topbar-h)` is only honest while the
-   topbar is one row tall, and the topbar's own phone rule deliberately wraps search onto a
-   second row, so below 640px the correct offset is a height no stylesheet can read. Resting
-   the bar in normal flow is the honest answer in CSS alone: it can neither hide under the
-   topbar nor let the feed slide beneath it. */
+   The bar keeps sticking here — nothing in this block touches `position` or `top`. The offset
+   below the breakpoint is a height no stylesheet can read, because the topbar's own phone rule
+   wraps search onto a second row; `stickyChrome.ts` measures it and the base rule above reads
+   that measurement, so the bar sits flush under the wrapped topbar at any width instead of
+   resting in normal flow and scrolling away with the feed (founder ruling on #7730). */
 @media (max-width: 640px) {
 	.kp-subnav {
 		height: auto;
@@ -156,8 +159,6 @@
 		flex-wrap: wrap;
 		gap: var(--s-1);
 		padding: var(--s-1) var(--s-2);
-		position: static;
-		top: auto;
 	}
 	/* The tab strip is its own nested nowrap row, so wrapping the bar alone would still leave
 	   all five destinations in one unshrinkable block. */
