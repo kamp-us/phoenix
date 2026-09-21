@@ -22,8 +22,15 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {producerFor, resolveCi} from "../config/ci-producer.ts";
 import {reasonHistogram} from "../evidence.ts";
 import {commitExists} from "../io/pulls.ts";
+import {
+	authorityNote,
+	type BlockingSet,
+	readBlockingSet,
+	reportedLine,
+	unreadableCause,
+} from "../review/blocking.ts";
 import {gateCoverageOf, type RunProvenance} from "../review/gate-coverage.ts";
-import {isFailing, isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
+import {isFailing, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
@@ -73,10 +80,18 @@ export interface ChecksOptions {
  * `failure` is an informational run would tally identically, and the carve-out is exactly
  * what separates them. A superseded cancel says so in the key for the same reason — it pends where a
  * plain `cancelled` reds.
+ *
+ * The axis keeps its two words and changed its authority: `gating` is now a context the base branch
+ * declares required, and `informational` every other — the base branch answers it, not a name list
+ * in this package.
  */
-const checkClassOf = (run: ShipCheckRun, superseded: ReadonlySet<number>): string => {
+const checkClassOf = (
+	run: ShipCheckRun,
+	superseded: ReadonlySet<number>,
+	blocking: BlockingSet,
+): string => {
 	const status = isSuperseded(run, superseded) ? `${statusOf(run)}-superseded` : statusOf(run);
-	return `${status}/${isInformational(run.name) ? "informational" : "gating"}`;
+	return `${status}/${blocking.blocks(run.name) ? "gating" : "informational"}`;
 };
 
 export interface Sample {
@@ -101,8 +116,8 @@ export interface Sample {
 }
 
 /** The gating check runs a superseded suite cancelled — read as still in flight, never as failed. */
-const supersededGating = (sample: Sample): ReadonlyArray<ShipCheckRun> =>
-	sample.runs.filter((run) => !isInformational(run.name) && isSuperseded(run, sample.superseded));
+const supersededGating = (sample: Sample, blocking: BlockingSet): ReadonlyArray<ShipCheckRun> =>
+	sample.runs.filter((run) => blocking.blocks(run.name) && isSuperseded(run, sample.superseded));
 
 /**
  * The whole answer over one sample.
@@ -111,17 +126,21 @@ const supersededGating = (sample: Sample): ReadonlyArray<ShipCheckRun> =>
  * not of the sample: a single read cannot tell a check that queued a second ago from one wedged for
  * an hour.
  */
-export const rollupFor = (sample: Sample, wedged: ReadonlyArray<string>): ChecksRollup => {
+export const rollupFor = (
+	sample: Sample,
+	wedged: ReadonlyArray<string>,
+	blocking: BlockingSet,
+): ChecksRollup => {
 	if (wedged.length > 0) return "wedged";
 	if (sample.runs.length === 0) {
 		if (sample.workflows.length === 0) return "no-producer";
 		return sample.runCount === 0 ? "no-runs" : "pending";
 	}
-	const gating = sample.runs.filter((run) => !isInformational(run.name));
+	const gating = sample.runs.filter((run) => blocking.blocks(run.name));
 	const rollup = rollupOf(gating.filter((run) => !isSuperseded(run, sample.superseded)));
 	// A superseded cancel is exactly as unfinished as a running check, so it pends a green and loses
 	// to a red — the substitution `rollupOf` would make if the row were still in flight.
-	return rollup === "green" && supersededGating(sample).length > 0 ? "pending" : rollup;
+	return rollup === "green" && supersededGating(sample, blocking).length > 0 ? "pending" : rollup;
 };
 
 export const runChecks = (
@@ -163,7 +182,20 @@ export const runChecks = (
 		// (`../review/gate-coverage.ts`).
 		const head = at.value;
 
-		const diagnostics: string[] = [];
+		// The base branch's declared required set, read once: it is a property of the branch this PR
+		// targets, not of the head, so a `--wait` poll re-reading it would spend a call per cadence on
+		// an answer that cannot move. Unreadable is a refusal, never a colour — with the authority
+		// unread, no green here could say which checks it was green over.
+		const authority = yield* readBlockingSet(repo, target.pull.baseRef);
+		if (authority._tag !== "Set") {
+			return refuse(
+				authority._tag === "Incomplete" ? INCOMPLETE_SCAN : PRECONDITION_UNKNOWN,
+				unreadableCause(VERB, target.pull.baseRef, authority),
+			);
+		}
+		const blocking = authority.set;
+
+		const diagnostics: string[] = [authorityNote(VERB, target.pull.baseRef, blocking)];
 		if (!prefixMatch(target.pull.headSha, bound)) {
 			diagnostics.push(
 				`${VERB}: the live head is ${target.pull.headSha}, you are enumerating ${bound} — the head moved.`,
@@ -225,15 +257,19 @@ export const runChecks = (
 			const failing = read.runs
 				.filter(
 					(run) =>
-						!isInformational(run.name) && isFailing(run) && !isSuperseded(run, read.superseded),
+						blocking.blocks(run.name) && isFailing(run) && !isSuperseded(run, read.superseded),
 				)
 				.map((run) => run.name)
 				.sort();
-			const replaced = supersededGating(read)
+			const reported = read.runs
+				.filter((run) => !blocking.blocks(run.name) && isFailing(run))
+				.map((run) => run.name);
+			const replaced = supersededGating(read, blocking)
 				.map((run) => run.name)
 				.sort();
 			const scope = [
 				...diagnostics,
+				...reportedLine(VERB, reported),
 				scannedLine(
 					VERB,
 					read.runs.length,
@@ -255,7 +291,9 @@ export const runChecks = (
 					: [`${VERB}: failing gating checks: ${failing.join(", ")} — route these to heal-ci.`]),
 				...notes,
 			];
-			const checks = reasonHistogram(read.runs, (run) => checkClassOf(run, read.superseded));
+			const checks = reasonHistogram(read.runs, (run) =>
+				checkClassOf(run, read.superseded, blocking),
+			);
 			if (json) {
 				return answer(
 					JSON.stringify({
@@ -359,7 +397,7 @@ export const runChecks = (
 
 		const first = yield* sample;
 		if ("code" in first) return first;
-		if (!options.wait) return settled(first, rollupFor(first, []), [], null);
+		if (!options.wait) return settled(first, rollupFor(first, [], blocking), [], null);
 
 		// The budget is WALL CLOCK, call latency included — v1 counted only its sleeps and silently
 		// overran the budget it claimed to hold.
@@ -376,7 +414,7 @@ export const runChecks = (
 			const wedged = [...stalledSince.entries()]
 				.filter(([, since]) => now - since >= options.wedgeDwellSeconds * 1000)
 				.map(([name]) => name);
-			const rollup = rollupFor(read, wedged);
+			const rollup = rollupFor(read, wedged, blocking);
 			if (rollup !== "pending") return settled(read, rollup, wedged, "settled");
 			if (now - startedAt >= options.budgetSeconds * 1000) {
 				return settled(read, rollup, wedged, "budget-exhausted");
@@ -389,7 +427,7 @@ export const runChecks = (
 			if (moved._tag === "Refused") return moved.outcome;
 			if (!prefixMatch(moved.pull.headSha, bound)) {
 				// The answer is about a tree the PR no longer is.
-				return settled(read, rollupFor(read, wedged), wedged, "head-moved");
+				return settled(read, rollupFor(read, wedged, blocking), wedged, "head-moved");
 			}
 			const next = yield* sample;
 			if ("code" in next) return next;

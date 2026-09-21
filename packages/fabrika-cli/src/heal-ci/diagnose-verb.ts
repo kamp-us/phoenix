@@ -40,9 +40,10 @@ import {
 	type PullRecord,
 	permissionFor,
 } from "../io/pulls.ts";
+import {authorityNote, readBlockingSet, reportedLine, unreadableCause} from "../review/blocking.ts";
 import {partitionWithUi, shipNamespacesOf, touchesGovernanceRoot} from "../review/classes.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
-import {isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
+import {isFailing, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {inForce, ROUTABLE} from "../ship/gate-verb.ts";
 import {
 	behindBase,
@@ -70,7 +71,7 @@ import {commitPushedAt, readBaseConflict} from "./github.ts";
 import {type LaneToken, laneFor} from "./lane.ts";
 import {type Link, linkOf, renderLink} from "./link.ts";
 import {type CiToken, classifyStall, type StallToken, strandAgeMinutes} from "./stall.ts";
-import {compare, readDeclared} from "./surface.ts";
+import {compare} from "./surface.ts";
 
 const VERB = "heal-ci diagnose";
 
@@ -302,9 +303,9 @@ export const diagnoseOne = (
 				short(enumerated.value.runs.length, enumerated.value.declared, "check runs"),
 			);
 		}
-		const gating = latestPerContext(enumerated.value.runs).filter(
-			(run) => !isInformational(run.name),
-		);
+		// Every latest-per-context run at the head. Which of them *block* is the base branch's call,
+		// read below — so nothing here narrows the set before the authority that owns it is known.
+		const latest = latestPerContext(enumerated.value.runs);
 
 		const workflows = yield* listWorkflows(repo);
 		if (workflows._tag === "Failure") {
@@ -323,15 +324,8 @@ export const diagnoseOne = (
 			return refused(PRECONDITION_UNKNOWN, unreadable("the head commit", pr, pushedAt.reason));
 		}
 		// A single check-run read carries no queue-entry stamp, so the dwell is measured from the head
-		// push: a gating check that never started since the head landed is what "wedged" observes.
+		// push: a blocking check that never started since the head landed is what "wedged" observes.
 		const headAgeMinutes = strandAgeMinutes(pushedAt.value, null, params.now);
-		const stranded = gating.filter(isStalled).map((run) => run.name);
-		const wedged = stranded.length > 0 && headAgeMinutes >= params.wedgeDwellMinutes;
-		if (stranded.length > 0) {
-			notices.push(
-				`${VERB}: stranded past the dwell: ${stranded.join(", ")} — the cancel-and-rerun lever is an operator's.`,
-			);
-		}
 
 		const open = pull.state === "open" && !pull.draft && !pull.merged;
 		// Read before the protection surface because the conflict arm sits above the surface arm: a
@@ -363,25 +357,39 @@ export const diagnoseOne = (
 			);
 		}
 
-		const declared = yield* readDeclared(repo, pull.baseRef);
-		if (declared._tag === "Unknown") {
-			return refused(PRECONDITION_UNKNOWN, unreadable(declared.what, pr, declared.reason));
-		}
-		if (declared._tag === "Incomplete") {
+		// The blocking authority, read before any check's colour is turned into a class. An unreadable
+		// one no longer skips one arm and passes the rest: with the set unread, the `red` arm, the
+		// wedge and the surface arm are all underivable, so the classification stops on the read
+		// failure itself — the cause a lane waits or parks on.
+		const authority = yield* readBlockingSet(repo, pull.baseRef);
+		if (authority._tag !== "Set") {
 			return refused(
-				INCOMPLETE_SCAN,
-				`${VERB}: the ruleset read never reached a terminal page — pagination is unexhausted; refusing to classify.`,
+				authority._tag === "Incomplete" ? INCOMPLETE_SCAN : PRECONDITION_UNKNOWN,
+				unreadableCause(VERB, pull.baseRef, authority),
 			);
 		}
-		// A permission the token lacks must never read as a surface that is clean, so arm 3 is skipped
-		// rather than passed and the chain continues at arm 4.
-		const surfaceGap =
-			declared._tag === "Unprobeable" ? null : compare(declared.contexts, gating).token === "gap";
-		if (declared._tag === "Unprobeable") {
+		const blocking = latest.filter((run) => authority.set.blocks(run.name));
+		notices.push(authorityNote(VERB, pull.baseRef, authority.set));
+		notices.push(
+			...reportedLine(
+				VERB,
+				latest
+					.filter((run) => !authority.set.blocks(run.name) && isFailing(run))
+					.map((run) => run.name),
+			),
+		);
+
+		const stranded = blocking.filter(isStalled).map((run) => run.name);
+		const wedged = stranded.length > 0 && headAgeMinutes >= params.wedgeDwellMinutes;
+		if (stranded.length > 0) {
 			notices.push(
-				`${VERB}: cannot read ${pull.baseRef}'s protection surface at this token's permission — the check-surface axis is UNPROBEABLE, so arm 4 is skipped, never passed.`,
+				`${VERB}: stranded past the dwell: ${stranded.join(", ")} — the cancel-and-rerun lever is an operator's.`,
 			);
 		}
+
+		// `compare` applies its own reporting carve-out to the runs it is handed, so the whole
+		// latest-per-context set goes in and the `extra` rows stay what `heal-ci surface` prints.
+		const surfaceGap = compare(authority.set.contexts, latest).token === "gap";
 
 		const commented = yield* listComments(repo, pr);
 		if (commented._tag === "Failure") {
@@ -491,7 +499,7 @@ export const diagnoseOne = (
 				: strandAgeMinutes(null, lastActivityAt, params.now);
 
 		const token = ciTokenOf(
-			gating,
+			blocking,
 			producerFor(VERB, repo, workflows.value, ci),
 			runCount.value,
 			wedged,
@@ -505,7 +513,8 @@ export const diagnoseOne = (
 		const failingOrStranded =
 			token === "wedged"
 				? stranded.length
-				: gating.filter((run) => run.status === "completed" && statusOf(run) !== "success").length;
+				: blocking.filter((run) => run.status === "completed" && statusOf(run) !== "success")
+						.length;
 
 		const queue = queueStateOf(timeline.value.events);
 		const verdict = classifyStall({
@@ -553,7 +562,7 @@ export const diagnoseOne = (
 				ci: {rollup: token, contexts: failingOrStranded},
 				queue,
 				link,
-				scanned: {comments: commented.value.length, checks: gating.length},
+				scanned: {comments: commented.value.length, checks: blocking.length},
 				behindBase: drift.value,
 				notices,
 			},

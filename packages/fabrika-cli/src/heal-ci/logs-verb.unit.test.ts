@@ -11,7 +11,11 @@ import {
 	JOB_LOG,
 	JOBS,
 	jobs,
+	PROTECTION,
+	protection,
 	pull,
+	RULES,
+	rules,
 	runsAtHead,
 } from "./fixtures.test-support.ts";
 import {runLogs, tailBytes} from "./logs-verb.ts";
@@ -33,8 +37,25 @@ const options = {
 	env: ENV,
 };
 
+/**
+ * A base branch that declares nothing required, scripted **last** so a case about the required set
+ * puts its own rows first and wins the first-match lookup.
+ *
+ * Under it the denylist definition answers, which is what every case here that is not about the
+ * blocking authority means to run under.
+ */
+const UNDECLARED: ReadonlyArray<Scripted> = [
+	[RULES, rules()],
+	[PROTECTION, protection()],
+];
+
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
-	Effect.runPromise(Effect.provide(runLogs({...options, ...overrides}), fakeSeams(script).layer));
+	Effect.runPromise(
+		Effect.provide(
+			runLogs({...options, ...overrides}),
+			fakeSeams([...script, ...UNDECLARED]).layer,
+		),
+	);
 
 /** A served log body: the bytes GitHub's signed URL answers with, not JSON. */
 const logText = (text: string): HttpReply => ({status: 200, body: text});
@@ -93,6 +114,37 @@ describe("runLogs reads every failing gating context, not the first", () => {
 			[RUNS_AT_HEAD, reply(runsAtHead(0, []))],
 		]);
 		expect(out.stdout).toBe(`logs\t0\t${HEAD}\n`);
+	});
+
+	// The required set is the blocking authority: a red the base branch does not require is a note,
+	// so its log is never fetched and this lane never opens over it.
+	it("fetches the required red's log and leaves the non-required red named on the notices", async () => {
+		const out = await run([
+			[RULES, rules("ci-required")],
+			[PROTECTION, protection()],
+			[PULL, reply(pull())],
+			[CHECK_RUNS, reply(checkRuns(2, [failed("ci-required"), failed("Analyze (python)")]))],
+			[RUNS_AT_HEAD, reply(runsAtHead(1, [{id: 77}]))],
+			[JOBS, jobs(1, [{id: 441, name: "ci-required"}])],
+			[JOB_LOG, logText("boom")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`logs\t1\t${HEAD}`);
+		expect(out.stdout).toContain("==== context ci-required job 441");
+		expect(out.stdout).not.toContain("Analyze (python)");
+		expect(out.stderr.join("\n")).toContain(
+			"failing outside the required set: Analyze (python) — reported, never blocking.",
+		);
+	});
+
+	it("refuses on 11 when the required set cannot be read, naming that read as the cause", async () => {
+		const out = await run([
+			[RULES, httpError(403, "Resource not accessible by integration")],
+			[PULL, reply(pull())],
+			[CHECK_RUNS, reply(checkRuns(1, [failed("unit tests")]))],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("cannot read main's required status checks");
 	});
 
 	it("emits a context with no workflow job behind it rather than failing the whole read", async () => {

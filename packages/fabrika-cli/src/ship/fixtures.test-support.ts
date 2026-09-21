@@ -25,6 +25,55 @@ export const LINKED_WORKTREE: Scripted = [
 	{ok: true, stdout: "/repo/.git/worktrees/ship-4321\n/repo/.git\n", reason: ""},
 ];
 
+/**
+ * The two reads behind the blocking authority (`../review/blocking.ts`), and the payloads they
+ * answer with.
+ *
+ * Here rather than in one group's own file because all four verbs that read a head's checks read
+ * this pair too, and a second literal for one platform response is how two tests come to disagree
+ * about what the platform returns.
+ */
+const API = "https:\\/\\/api\\.github\\.com";
+
+export const RULES = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/rules\\/branches\\/main\\?`);
+export const PROTECTION = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/branches\\/main\\/protection$`);
+
+/** A terminal page: 200 with no `rel="next"`, which is what the exhaustion proof reads. */
+const served = (body: unknown, status = 200): HttpReply => ({status, body: JSON.stringify(body)});
+
+/** A `rules/branches/<branch>` page: only `required_status_checks` rules carry contexts. */
+export const rules = (...contexts: ReadonlyArray<string>): HttpReply =>
+	served(
+		contexts.length === 0
+			? []
+			: [
+					{
+						type: "required_status_checks",
+						parameters: {
+							required_status_checks: contexts.map((context) => ({context})),
+						},
+					},
+				],
+	);
+
+export const protection = (...contexts: ReadonlyArray<string>): HttpReply =>
+	served({required_status_checks: {contexts}});
+
+/** A served refusal — the status is the fact, and the message is what GitHub prints beside it. */
+export const httpError = (status: number, message = "refused"): HttpReply => ({
+	status,
+	body: JSON.stringify({message}),
+});
+
+/**
+ * A base branch that declares nothing required, scripted **last** so a case about the required set
+ * puts its own rows first and wins the first-match lookup. Under it the denylist definition answers.
+ */
+export const UNDECLARED: ReadonlyArray<Scripted> = [
+	[RULES, rules()],
+	[PROTECTION, protection()],
+];
+
 export const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 export const OTHER_HEAD = "9fe12ab04f5a6b7c8d9e0f1a2b3c4d5e6f708192";
 

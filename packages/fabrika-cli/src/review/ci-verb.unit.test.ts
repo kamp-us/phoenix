@@ -2,7 +2,15 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs, fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {workflows} from "../ship/fixtures.test-support.ts";
+import {
+	httpError,
+	PROTECTION,
+	protection,
+	RULES,
+	rules,
+	UNDECLARED,
+	workflows,
+} from "../ship/fixtures.test-support.ts";
 import {CHECK_RUN_NAME, planFor} from "../ship/floor-check.ts";
 import {runCi} from "./ci-verb.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -66,9 +74,116 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			runCi({...options, ...overrides}),
-			Layer.merge(fakeSeams([...script, ...http]).layer, fakeFs({files}).layer),
+			Layer.merge(fakeSeams([...script, ...http, ...UNDECLARED]).layer, fakeFs({files}).layer),
 		),
 	);
+
+/**
+ * This verb used to roll up every run at the head with no blocking dimension at all, so any red
+ * anywhere made it call the head red. The base branch's declared required set is the authority now.
+ */
+describe("runCi under the base branch's required set", () => {
+	const REQUIRES: ReadonlyArray<Scripted> = [
+		[RULES, rules("unit tests")],
+		[PROTECTION, protection()],
+	];
+
+	it("is green over a red no declared context names, and names it on the notes", async () => {
+		const out = await run(
+			[
+				...REQUIRES,
+				[PULL, served(pull())],
+				[
+					RUNS,
+					runs(2, [
+						{name: "unit tests", status: "completed", conclusion: "success"},
+						{name: "Analyze (python)", status: "completed", conclusion: "failure"},
+					]),
+				],
+			],
+			GATED,
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tgreen`);
+		expect(out.stderr.join("\n")).toContain(
+			"failing outside the required set: Analyze (python) — reported, never blocking.",
+		);
+	});
+
+	// The tally is the whole enumeration's, unchanged: the rollup narrowed, the evidence did not.
+	it("still tallies the non-required run it did not roll up", async () => {
+		const out = await run(
+			[
+				...REQUIRES,
+				[PULL, served(pull())],
+				[
+					RUNS,
+					runs(2, [
+						{name: "unit tests", status: "completed", conclusion: "success"},
+						{name: "Analyze (python)", status: "completed", conclusion: "failure"},
+					]),
+				],
+			],
+			GATED,
+		);
+		expect(out.stdout).toContain("check\tfailure\t1");
+		expect(out.stdout).toContain("run\t2");
+	});
+
+	it("is red when the failing context is one the base branch declares required", async () => {
+		const out = await run([
+			...REQUIRES,
+			[PULL, served(pull())],
+			[
+				RUNS,
+				runs(2, [
+					{name: "unit tests", status: "completed", conclusion: "failure"},
+					{name: "Analyze (python)", status: "completed", conclusion: "success"},
+				]),
+			],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tred`);
+		expect(out.stderr.join("\n")).toContain("review ci: failing at this head: unit tests.");
+	});
+
+	// A non-required run still in flight is not something this head is waiting on.
+	it("does not pend on a still-running check outside the required set", async () => {
+		const out = await run(
+			[
+				...REQUIRES,
+				[PULL, served(pull())],
+				[
+					RUNS,
+					runs(2, [
+						{name: "unit tests", status: "completed", conclusion: "success"},
+						{name: "Analyze (python)", status: "in_progress", conclusion: null},
+					]),
+				],
+			],
+			GATED,
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tgreen`);
+	});
+
+	it("refuses on 11 when the required set cannot be read, never a colour over it", async () => {
+		const out = await run([
+			[RULES, httpError(403, "Resource not accessible by integration")],
+			[PULL, served(pull())],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot read main's required status checks");
+		expect(out.stderr.at(-1)).toContain("which checks block is UNKNOWN, never none.");
+	});
+
+	it("falls back to the denylist on a base branch that declares nothing required", async () => {
+		const out = await run([
+			[PULL, served(pull())],
+			[RUNS, runs(1, [{name: "unit tests", status: "completed", conclusion: "failure"}])],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tred`);
+		expect(out.stderr.join("\n")).toContain("declares no required status checks");
+	});
+});
 
 describe("runCi", () => {
 	it("prints the rollup, the run count, and one line per status present", async () => {
@@ -126,7 +241,7 @@ describe("runCi", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe(`ci\t${OLD_HEAD}\tgreen`);
-		expect(out.stderr[0]).toContain("the head moved");
+		expect(out.stderr.join("\n")).toContain("the head moved");
 	});
 
 	it("refuses a --sha proven absent on 7", async () => {

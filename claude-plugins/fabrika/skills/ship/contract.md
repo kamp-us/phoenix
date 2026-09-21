@@ -1138,7 +1138,9 @@ with ties broken on the class:
 step 4 routes off the rollup and nothing reads a run by name, so the rows collapse to counts. The
 gating axis stays inside the key because status alone would leave the rollup underivable from the
 answer — a `red` head and a head whose only `failure` is an informational run would tally
-identically. The two runs the skill's terminals read by name are still **named**, on the notes
+identically. **The axis keeps its two words and changed its authority:** `gating` is a context the
+base branch declares required, `informational` is every other, and the base branch answers it rather
+than a name list in this package (`src/review/blocking.ts`). The two runs the skill's terminals read by name are still **named**, on the notes
 channel, where the skill already reads them: the wedged run, and — wherever a gating run has failed,
 which is `red` and also the `wedged` head that carries a failure too — the failing gating runs,
 `ship checks: failing gating checks: <name>, … — route these to heal-ci.`, name-sorted. Informational
@@ -1176,6 +1178,18 @@ all, `ship checks: <repo> authors no workflow of its own — …`. The floor sit
 `red` head already routes to `heal-ci` by name, and a `pending` head is one this group waits on
 rather than lands.
 
+**Only a context the base branch declares required may make this head red.** The declared set —
+branch protection unioned with the rulesets whose ref condition matches the base — is read once per
+invocation, before the first sample: it is a property of the branch this PR targets rather than of
+the head, so a `--wait` poll never re-reads it. A failing check outside that set tallies as
+`informational`, is named on the notes channel as `ship checks: failing outside the required set:
+<name>, … — reported, never blocking.`, and does not red the head. A base branch that declares
+**nothing** falls back to the informational-name denylist, so every non-informational check gates
+there — an undeclared branch is one nobody has said what gates, not one that gates nothing. A
+declared set that cannot be read at this token's permission is `11` naming that read as the cause:
+this group is the merge authority, and no green here may be served over an authority nobody could
+name. Which definition answered is stated on the notes channel on every run.
+
 **Zero workflows is `no-producer`, and it no longer collapses into `pending`.** A repo with
 no CI and a repo whose CI has not reported yet are different facts, and printing the second over the
 first tells an operator to wait for a run nothing will ever start. Workflow *existence* is the whole
@@ -1197,9 +1211,10 @@ declared run concluded `success`/`neutral`/`skipped`; unrecognized conclusion �
 today; extend it, never fork it), plus this group's two additions on top: the
 running-vs-wedged split (`queued` with a null `started_at` past the dwell → the whole answer
 is `wedged`, with the stranded checks named — diagnosis only; the cancel-and-rerun lever is
-an operator's) and the informational carve-out (a fixed, single-sourced list of
-non-gating deploy/cleanup contexts, maintained in the module, not duplicated;
-v1 hardcoded it in two scripts' jq and they drifted). The read is REST check-runs
+an operator's) and the blocking-set narrowing (the base branch's declared required contexts, read
+through `src/review/blocking.ts`, which the other three head-reading verbs call too; the
+deploy/cleanup name denylist it falls back to is single-sourced in `src/review/rollup.ts`, never
+duplicated — v1 hardcoded it in two scripts' jq and they drifted). The read is REST check-runs
 latest-per-context — the GraphQL rollup lags ~15 minutes behind reality and refused green
 PRs for it; the aggregate `.conclusion` is never bound (red-wins-over-pending masks
 an unfinished gating check).
@@ -1215,7 +1230,7 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | Code | Trigger |
 |---|---|
 | `7` | the PR or the `--sha` commit is proven absent; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
-| `11` | the check-run read, the workflow read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
+| `11` | the check-run read, the workflow read, the base branch's required-set read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
 | `13` | entries received < declared `total_count` — never read as "no red checks" |
 | `20` | every check at the head passed and **no workflow the repo authors inspected it** — every repo-authored run here carries another commit or ran against another ref, so `green` is UNKNOWN, never merged |
 

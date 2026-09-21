@@ -53,10 +53,10 @@ this skill runs until you hold one. Then take exactly the row your token names:
 |---|---|---|
 | `attended` | end the run | something is acting — an owner inside the dwell, a live queue entry, an armed intent, or CI still running |
 | `not-open` | end the run | draft, closed or merged: a draft is its author's to finish, a merged one already went |
-| `wedged` | step 5 | a gating check queued that never started |
+| `wedged` | step 5 | a required check queued that never started |
 | `conflicted` | step 7 | it conflicts with its base, so no merge ref exists and no required context can run |
 | `check-surface` | step 5 | a required context no run produces — it cannot go green whoever attends it |
-| `red` | step 3 | a gating check failed |
+| `red` | step 3 | a check the base branch declares required failed |
 | `linkage-refused` | step 6 | correct PR; the merge seam refuses its issue-reference grammar |
 | `blocked-human` | step 6 | correctly waiting on a person: changes requested, or a control-plane approval outstanding |
 | `ungated` · `gated-unshipped` · `claim-stale` | step 2 | green, and nobody is holding it |
@@ -132,7 +132,7 @@ or decision PR may legitimately carry no issue at all, so a missing row is not a
 fabrika heal-ci logs $pr_number | fabrika heal-ci classify
 ```
 
-`logs` emits **every** failing gating context and `classify` returns one line per context — a PR is
+`logs` emits **every** failing required context and `classify` returns one line per context — a PR is
 only as healed as its worst one. Work every line: a single transient beside a real defect is still
 a defect.
 
@@ -146,8 +146,11 @@ flake. There is no path from an ambiguous log to "safe to rerun". Each token lic
   fire the `fabrika:report` skill, whose verb owns the write and returns the number your
   `FILED — #N` terminal carries. Guessing "probably a flake" is how a rerun loop starts.
 
-Only **gating** reds reach this lane — an informational context is red without blocking anything,
-and treating one as healable is how a non-failure stalled a mergeable PR.
+Only reds the base branch declares **required** reach this lane. Anything else is red without
+blocking, and treating one as healable is how a non-failure stalled a mergeable PR — which is the
+incident this definition was ruled over. `diagnose` and `logs` both name those reds on stderr as
+reported-never-blocking, so you see them and route none of them. Making one block means adding its
+context to the base branch's ruleset, never a list in this repository.
 
 **The logs you are classifying came from `refs/pull/<n>/merge`, not from the PR's head.** A
 `pull_request` workflow builds the prospective merge of head into base and labels the runs with the
