@@ -203,15 +203,14 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   capture sets only, so the attach path has one validated producer.
 - **A tier-naming surface needs the preview worker's signing secret plus that tier's own session
   token**, all unset by default. The secret is the one the *preview worker deployed with*, so the
-  cookie signature verifies, and it is named rather than assumed: `--auth-secret-from <file>` reads
-  it from an export of the **ci-credentials** stack's alchemy state, which is its one readable copy.
-  That value is repo-wide rather than per-stage — `infra/ci-credentials/github.ts` mints one and
-  pushes it as a write-only Actions secret handed to the deploy of every stage of an app whose
-  worker binds it — so there is no
-  preview-stage copy to export, and the app stack's deployed `secret_text` binding does not read
-  back. Without the
-  flag the ambient `$BETTER_AUTH_SECRET` stands in, and **a value that is empty or carries the
-  `insecure_` placeholder an example env file ships is refused on `11` rather than signed with**.
+  cookie signature verifies, and it needs no credential: every `pr-<n>` preview deploys with the key
+  committed at `infra/preview-auth-key/key.txt`, deliberately public, which the verb resolves off
+  the checkout it runs in with no flag and no environment variable. Production keeps a
+  separate founder-held secret, and the production worker refuses a preview-prefixed key at boot.
+  `--auth-secret-from <file>` overrides the committed key, and in a checkout carrying no committed
+  key the ambient `$BETTER_AUTH_SECRET` stands in. Whatever the source, **a value that is empty or
+  carries the `insecure_` placeholder an example env file ships is refused on `11` rather than
+  signed with**.
   A placeholder-signed cookie is perfectly well-formed and the worker answers it as a visitor, which
   at the shot is indistinguishable from a preview nobody seeded — two gate rounds were spent
   splitting exactly that by hand. The
@@ -265,7 +264,7 @@ fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/
 | `--viewport` | string, repeatable | no | `desktop` alone | a viewport to shoot every `--surface` at, over the closed set `desktop` (1280×800) and `mobile` (390×844); crossed with `--surface`, so two of each is four captures. A name outside the set, or one passed twice, is `10` |
 | `--flag` | string, repeatable | no | every flag at its default | force one flag for this run: `<key>=on` or `<key>=off`; anything else, or a key forced twice, is `10` |
 | `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve. Whichever app is resolved, a `--surface` whose own `uiSurfaces` row belongs to an app this preview did not announce is `11` — omitting the flag routes around no fence |
-| `--auth-secret-from` | string | no | the ambient `$BETTER_AUTH_SECRET` | a file holding the `BETTER_AUTH_SECRET` the preview worker deploys with — one repo-wide value, exported from the ci-credentials stack's alchemy state, its one readable copy; a file that cannot be read is `11`, and so is a resolved value that is empty or carries the `insecure_` placeholder |
+| `--auth-secret-from` | string | no | the committed preview key at `infra/preview-auth-key/key.txt`, else the ambient `$BETTER_AUTH_SECRET` | a file holding a signing secret to use instead of the repo's own — rarely needed, since the committed preview key is what every `pr-<n>` worker deploys with and needs no credential; a file that cannot be read is `11`, and so is a resolved value that is empty or carries the `insecure_` placeholder |
 | `--repo` | string | no | resolved | the repository |
 
 A `:state` suffix is admitted **only for a state something here actually puts on screen**, and

@@ -22,6 +22,7 @@ import {AppConfig, betterAuthSecret, type Environment} from "../../config.ts";
 import {Database} from "../../db/Database.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {PHOENIX_APEX_HOSTNAME} from "../../env.ts";
+import {assertAuthSecretForEnvironment} from "../../preview-auth-key.ts";
 import {authBridgeFetch} from "./auth-bridge.ts";
 import * as BetterAuth from "./BetterAuth.ts";
 import {type EmailMessage, EmailSender} from "./email-sender.ts";
@@ -94,6 +95,12 @@ export const BetterAuthLive = Layer.effect(
 		// Fail-closed: a missing `ENVIRONMENT` lands in prod mode and closes every dev
 		// gate below.
 		const {environment} = yield* AppConfig.pipe(Effect.orDie);
+
+		// The last fence between the public preview key and a stage that must not verify against it
+		// (ADR 0405). It runs here rather than at the `Config` surface because this is the one place
+		// that holds the secret and the environment together, and it throws rather than refusing
+		// softly: a worker that would verify forgeable sessions must serve nothing at all.
+		assertAuthSecretForEnvironment(environment, Redacted.value(secret));
 
 		// The transactional-email port (ADR 0101). `send` cannot fail, so a delivery
 		// problem never throws into better-auth and fails the sign-in/verify flow.

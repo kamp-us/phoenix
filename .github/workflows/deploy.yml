@@ -383,6 +383,31 @@ jobs:
           echo "stage '$STAGE' → ENVIRONMENT '$ENVIRONMENT'"
           echo "ENVIRONMENT=$ENVIRONMENT" >> "$GITHUB_ENV"
 
+      # Which session-signing key THIS stage deploys with (ADR 0405). Two values exist and
+      # they are not interchangeable: the founder-held `secrets.BETTER_AUTH_SECRET`, which
+      # no agent holds a copy of (#9339), and the deliberately-public preview key committed
+      # at infra/preview-auth-key/key.txt, which anyone reading the repo can forge a login
+      # with. The choice keys on the stage name through `isPreviewStage` — the single owner
+      # of the `pr-<n>` shape, in apps/web/worker/environment.ts — and NOT on ENVIRONMENT
+      # above, which maps every unrecognized stage to `preview` and would hand a
+      # hand-named stage the public key. This step ECHOES the resolved source so a deploy
+      # log says which value the stage took rather than leaving it to be read out of a
+      # nested YAML ternary. Second fence, independent of this one: the worker itself dies
+      # at boot when a non-`preview` ENVIRONMENT is handed a `preview_`-prefixed key
+      # (apps/web/worker/preview-auth-key.ts), so a mistake here serves nothing rather
+      # than serving forgeable logins.
+      - name: Resolve the session-signing key source from stage
+        run: |
+          set -euo pipefail
+          PREVIEW_STAGE="$(node --eval "import('./apps/web/worker/environment.ts').then((m) => process.stdout.write(m.isPreviewStage(process.env.STAGE) ? 'yes' : 'no'))")"
+          if [ "$PREVIEW_STAGE" = "yes" ]; then
+            echo "stage '$STAGE' → session-signing key: the committed public preview key (infra/preview-auth-key/key.txt)"
+            echo "PREVIEW_AUTH_KEY=$(tr -d '\n' < infra/preview-auth-key/key.txt)" >> "$GITHUB_ENV"
+          else
+            echo "stage '$STAGE' → session-signing key: the founder-held BETTER_AUTH_SECRET Actions secret"
+            echo "PREVIEW_AUTH_KEY=" >> "$GITHUB_ENV"
+          fi
+
       # The SPA is a plain Vite build; the worker uploads `dist/client` via its
       # `assets` prop. `alchemy deploy` does not drive Vite for phoenix's shape.
       - name: Build SPA (${{ matrix.app }})
@@ -435,7 +460,12 @@ jobs:
           # reads it via `Config.redacted(ENV_BINDINGS.betterAuthSecret)` → a `secret_text`
           # binding the worker reads at runtime; the value must be present at deploy
           # time. A future auth-less app sets `needs-auth: false` and never reads it.
-          BETTER_AUTH_SECRET: ${{ matrix.needs-auth && secrets.BETTER_AUTH_SECRET || '' }}
+          # WHICH value is picked by the stage-keyed step above, which sets
+          # PREVIEW_AUTH_KEY non-empty for a `pr-<n>` stage and empty for every other
+          # one — so a preview deploys the committed public key and production, audit
+          # and any hand-named stage deploy the founder-held secret (ADR 0405). The
+          # non-empty test is the whole selector: there is no third value.
+          BETTER_AUTH_SECRET: ${{ matrix.needs-auth && (env.PREVIEW_AUTH_KEY != '' && env.PREVIEW_AUTH_KEY || secrets.BETTER_AUTH_SECRET) || '' }}
           # Sentry DSN for the WORKER tier (ADR 0118, #1502). index.ts adds the
           # `SENTRY_DSN` secret_text binding only when this is present at deploy; absent
           # ⇒ no binding ⇒ the worker Sentry path stays inert. Same public DSN as the SPA

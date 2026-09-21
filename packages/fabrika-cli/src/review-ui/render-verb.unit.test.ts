@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {signSessionToken} from "../capture/auth.ts";
+import {PREVIEW_AUTH_KEY_PATH, signSessionToken} from "../capture/auth.ts";
 import type {UiSurface} from "../config/keys/ui-surfaces.ts";
 import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {
@@ -101,6 +101,10 @@ const options = {
 	app: null,
 	surfaceRows: ROWS,
 	authSecretFrom: null as string | null,
+	// A directory in no package tree, so the committed-preview-key source finds nothing and the
+	// ambient fallback is what these cases exercise. The cases that mean to read the committed key
+	// override this with `/repo`, whose fake tree carries the file.
+	cwd: "/work",
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 	tmpRoot: "/tmp",
@@ -216,7 +220,92 @@ describe("runRender", () => {
 		const said = outcome.stderr.join("\n");
 		expect(said).toContain("insecure_");
 		expect(said).toContain("$BETTER_AUTH_SECRET");
-		expect(said).toContain("--auth-secret-from");
+		// The route out is the committed preview key, never a credential the seat has to be handed
+		// — this checkout simply carries no such file.
+		expect(said).toContain(PREVIEW_AUTH_KEY_PATH);
+		expect(said).not.toContain("ALCHEMY_PASSWORD");
+	});
+
+	/**
+	 * The route the whole ruling exists to open: a seat holding no credential at all renders an
+	 * `:auth` surface, because the key its preview verifies against is committed in the repo.
+	 */
+	it("signs with the committed preview key, with no flag and no ambient secret", async () => {
+		const seen = new Map<string, readonly {name: string; value: string}[]>();
+		const {outcome} = await run(
+			happy(),
+			{
+				surfaces: ["/pano:auth"],
+				cwd: "/repo",
+				env: {CLAUDE_PIPELINE_REPO: "o/r", PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32)},
+				render: (request) => {
+					seen.set(request.surface, request.cookies);
+					return Effect.succeed(rendered(request.surface, request.outDir));
+				},
+			},
+			{
+				"/repo/package.json": "{}",
+				[`/repo/${PREVIEW_AUTH_KEY_PATH}`]: "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0\n",
+			},
+		);
+		expect(outcome.code).toBe(0);
+		expect(seen.get("/pano:auth")?.[0]?.value).toBe(
+			signSessionToken("t".repeat(32), "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0"),
+		);
+	});
+
+	it("prefers the committed preview key over a usable ambient secret", async () => {
+		const seen = new Map<string, readonly {name: string; value: string}[]>();
+		await run(
+			happy(),
+			{
+				surfaces: ["/pano:auth"],
+				cwd: "/repo",
+				env: {
+					CLAUDE_PIPELINE_REPO: "o/r",
+					PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+					BETTER_AUTH_SECRET: "a".repeat(32),
+				},
+				render: (request) => {
+					seen.set(request.surface, request.cookies);
+					return Effect.succeed(rendered(request.surface, request.outDir));
+				},
+			},
+			{
+				"/repo/package.json": "{}",
+				[`/repo/${PREVIEW_AUTH_KEY_PATH}`]: "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0\n",
+			},
+		);
+		// The ambient variable is a seat's guess at what some stage deploys with; the committed key
+		// is what this preview provably deploys with, so it wins.
+		expect(seen.get("/pano:auth")?.[0]?.value).toBe(
+			signSessionToken("t".repeat(32), "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0"),
+		);
+	});
+
+	it("lets --auth-secret-from override the committed preview key", async () => {
+		const seen = new Map<string, readonly {name: string; value: string}[]>();
+		await run(
+			happy(),
+			{
+				surfaces: ["/pano:auth"],
+				cwd: "/repo",
+				authSecretFrom: "/run/named-secret",
+				env: {CLAUDE_PIPELINE_REPO: "o/r", PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32)},
+				render: (request) => {
+					seen.set(request.surface, request.cookies);
+					return Effect.succeed(rendered(request.surface, request.outDir));
+				},
+			},
+			{
+				"/repo/package.json": "{}",
+				[`/repo/${PREVIEW_AUTH_KEY_PATH}`]: "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0\n",
+				"/run/named-secret": `${"d".repeat(32)}\n`,
+			},
+		);
+		expect(seen.get("/pano:auth")?.[0]?.value).toBe(
+			signSessionToken("t".repeat(32), "d".repeat(32)),
+		);
 	});
 
 	it("signs with the exported repo-wide secret when --auth-secret-from names it", async () => {

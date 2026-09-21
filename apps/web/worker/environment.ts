@@ -63,3 +63,15 @@ export const isProductionDeploy = (env: {readonly ENVIRONMENT?: string | undefin
 // `production`, which is what keeps the audit force-on rule from matching a prod deploy.
 export const environmentForStage = (stage: string): Environment =>
 	stage === "prod" ? "production" : stage === AUDIT_STAGE ? "audit" : "preview";
+
+/**
+ * Whether a stage is one of the per-PR preview stacks CI mints — `pr-<n>` and nothing else.
+ *
+ * Narrower than `environmentForStage(stage) === "preview"`, and deliberately so: that map is
+ * fail-open on the stage axis (every unrecognized name lands in `preview`), which is right for the
+ * runtime gates it feeds and wrong for choosing which signing key a deploy hands out. This is the
+ * predicate `.github/workflows/deploy.yml` keys that choice on, so a stage somebody names by hand
+ * gets the founder-held secret rather than the public preview key (ADR 0405). It reads the same
+ * `pr-<n>` shape ADR 0349's D1 fence reads, one layer up.
+ */
+export const isPreviewStage = (stage: string): boolean => /^pr-\d+$/.test(stage);
