@@ -477,7 +477,8 @@ undisclosed that this gate could see"* — never "no deviations exist".
   **A FAIL is not a licence to skip it.** "The repair moves the head, so this verdict is stale on
   arrival" is the deadlock the every-round rule exists to rule out: the third refusal guarding
   `operate`'s `FAIL` row — which owns that rule, this is only a pointer to it — records no FAIL
-  until every derived namespace holds a binding verdict, so a declined governance round strands the
+  until every namespace that floor asks for holds a binding verdict, governance always among them,
+  so a declined governance round strands the
   lane with the
   repair undispatchable. Fire it, and expect to fire it again at each repair head — the extra run
   is the accepted cost. Neither namespace discharges the other. You never emit governance's
@@ -669,11 +670,16 @@ an incomplete read the lane must not act on yet, so print the terminal without r
 the record to the operator's re-read. **A `routed` row is subtracted here on the same grounds it is
 subtracted from a `PASS`**: out of the plain `review` cell a routed namespace is the next cell's,
 which is what the decision record *The review bar splits across the two review cells, and the lane's
-own machine decides where* rules, and the merge gate re-derives it regardless. Nothing mechanical
-asks for it here either — `lane prove` answers `not-required` for a `FAIL` out of `review`, because
-that event claims no artifact at all. Requiring it would be unsatisfiable rather than merely strict:
-`review-ui route` refuses at exit `20` at any head where `review-code` stands `FAIL`, so the one gate
-that may post that row cannot, and the lane waits on a verdict nobody is permitted to write. And
+own machine decides where* rules for the `PASS` arm and *The reviewer's FAIL floor subtracts a routed
+namespace, as the PASS arm does* carries to this one, and the merge gate re-derives it regardless.
+Nothing mechanical asks for it here either — `lane prove` answers `not-required` for a `FAIL` out of
+`review`, because that event claims no artifact at all. **And nothing can fill that row at a failing
+head**, by either of the two routes there are: on a PR that renders nothing `review-ui route` is the
+sanctioned resolution and it refuses at exit `20` while `review-code` stands `FAIL`; on a PR that
+does render `review-ui post` is the emit path and it is permitted — it reads no text verdict at all —
+but the `review` cell's only arm into `review:ui` is the `PASS`, so a `FAIL` routes into repair and
+the gate that owes the row is never dispatched. Requiring it would leave the lane waiting on a
+verdict that is not coming. And
 record an `UNKNOWN`, a `STALE` or an `UNBINDABLE` **only
 when no derived namespace holds a still-binding `FAIL`**: those three park the lane on a human, a
 `FAIL` routes it into a repair round under the retry budget, and a park recorded over a FAIL
