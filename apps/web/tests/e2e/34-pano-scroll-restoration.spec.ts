@@ -46,8 +46,12 @@ test.describe("pano scroll restoration", () => {
 		await page.goBack();
 		await expect(page).toHaveURL(/\/pano(\?.*)?$/);
 		await expect(page.locator(".kp-pano-post").first()).toBeVisible({timeout: 10_000});
+		// `offset` is a Node-side binding, so it crosses into the page as an argument — reading it
+		// straight out of the callback is a `ReferenceError` in the browser context.
 		await expect
-			.poll(() => page.evaluate(() => Math.abs(window.scrollY - offset)), {timeout: 10_000})
+			.poll(() => page.evaluate((saved) => Math.abs(window.scrollY - saved), offset), {
+				timeout: 10_000,
+			})
 			.toBeLessThanOrEqual(50);
 	});
 });
