@@ -51,6 +51,7 @@ import {AtolyeIndexPage} from "./lab/atolye/AtolyeIndexPage";
 import {DensityProvider} from "./lib/density";
 import {SAVED_HREF} from "./lib/panoNav";
 import {safeReturnTo} from "./lib/returnTo";
+import {ScrollRestorationMount} from "./lib/ScrollRestorationMount";
 import {ThemeProvider, useTheme} from "./lib/theme";
 import {AuthPage} from "./pages/AuthPage";
 import {BildirimlerPage} from "./pages/BildirimlerPage";
@@ -456,6 +457,10 @@ export function App() {
 					    (which reads search). Hoisted for the same reason the sözlük create dialog's is
 					    (#3840) — an ancestor unmount below must not silently close it. */}
 					<SearchPaletteProvider>
+						{/* Scroll restoration (#9268). A null-rendering leaf, so subscribing to the
+						    location costs one re-render here instead of re-rendering every provider
+						    above `<Routes>` on each navigation. */}
+						<ScrollRestorationMount />
 						<Routes>
 							<Route element={<Layout />}>
 								<Route path="/" element={<LandingPage />} />
