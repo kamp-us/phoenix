@@ -50,26 +50,45 @@ export const loadRefusal = (
 };
 
 /**
- * Seat a non-`Placed`, non-`Exists` boot outcome — nothing was written, and the reason names the
- * remedy. `Exists` is not folded here: the two boot verbs answer it with opposite remedies — `lane
- * emit` retires and re-emits a lane running the wrong machine, `lane open` sends the driver at the
- * lane that is already there — so each states its own rather than sharing a sentence that is true of
- * one of them.
+ * One stderr sentence out of a refusal's own plus whatever the caller wrote before reaching it, so a
+ * refusal that stranded something on the board says so in the same line rather than a stray one.
+ */
+export const say = (...sentences: ReadonlyArray<string>): string =>
+	sentences.filter((sentence) => sentence.length > 0).join(" ");
+
+/**
+ * Seat a non-`Placed`, non-`Exists` boot outcome — nothing was written *to disk*, and the reason
+ * names the remedy. `Exists` is not folded here: the two boot verbs answer it with opposite remedies
+ * — `lane emit` retires and re-emits a lane running the wrong machine, `lane open` sends the driver
+ * at the lane that is already there — so each states its own rather than sharing a sentence that is
+ * true of one of them.
+ *
+ * `stranded` carries what the caller already landed off-disk before the placement refused — `lane
+ * open --from-board`'s adoption comment is the one — because "nothing was booted" is true of the
+ * ledger and false of the board, and a reader who meets only the first half meets a record nothing
+ * accounts for.
  */
 export const placementRefusal = (
 	verb: string,
 	placed: Exclude<Placement, {_tag: "Placed"} | {_tag: "Exists"}>,
+	stranded: ReadonlyArray<string> = [],
 ): VerbOutcome => {
 	switch (placed._tag) {
 		case "Unprobeable":
 			return refuse(
 				LANE_UNREADABLE,
-				`${verb}: cannot establish whether a lane is already at ${placed.dir}: ${placed.reason} — refusing to write over UNKNOWN.`,
+				say(
+					`${verb}: cannot establish whether a lane is already at ${placed.dir}: ${placed.reason} — refusing to write over UNKNOWN.`,
+					...stranded,
+				),
 			);
 		case "Unwritten":
 			return refuse(
 				APPEND_UNKNOWN,
-				`${verb}: the write to ${placed.path} did not land: ${placed.reason} — the lane is NOT booted.`,
+				say(
+					`${verb}: the write to ${placed.path} did not land: ${placed.reason} — the lane is NOT booted.`,
+					...stranded,
+				),
 			);
 	}
 };

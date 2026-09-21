@@ -310,14 +310,32 @@ held one refuses at `64`, an unreadable thread is `11` — so the deferral detac
 discards no branch or worktree.
 
 **Exit `63` out of `lane open` says the board shows this issue already had a lane** — it names every
-pull request that proves it. Nothing here is bootable: end `STOPPED` naming the code, and drive the
-pull request the refusal names, or record the clearance that reopens the frozen lane's door. Never
-retire a directory to get past it.
+pull request that proves it. Drive the pull request the refusal names, or record the clearance that
+reopens the frozen lane's door. Never retire a directory to get past it.
+
+**One shape of that `63` is not a stop, and it is the one a second operator account produces.** When
+the prior ledger was written on another machine it is unreachable forever, so no clearance can
+produce it and driving the PR through a lane is exactly what you cannot do. That case re-runs the
+boot under the flag, which reads the board instead of trusting you:
+
+```bash
+node <fabrika> lane open $lane_key --from-board
+```
+
+It admits the boot only on what the board proves — one open pull request, every namespace its head
+derives answered — and everything short of that is `63` again carrying the board's own reason, so a
+second `63` here is the real stop. On admission it records the adoption as a comment on the issue
+and places the lane with its **repair budget declared spent**: nothing proves how many rounds the
+prior lane burned, so a `FAIL` parks at `human:budget-spent` until `lane clear` grants one. The
+lane lands at its initial state rather than at a stage — walk it forward with `lane transition`,
+which proves each event against the board before recording it. End `STOPPED` naming the code only
+when the flag's own read refuses.
 
 Both verbs live beside `status`/`transition`/`history`/`print` in
 `packages/fabrika-cli/src/lane/`, and each verb's `--help` is its interface. Any other exit is a stop, not a fallback: `4` is a record read in full and not
 the shape, `11` is a lane that could not be read — opposite remedies, neither yours to guess; `63` is
-the issue's prior lane above. End `STOPPED` naming the code.
+the issue's prior lane above, and it stops you only where that passage says it does. End `STOPPED`
+naming the code.
 
 A lane `lane emit` booted is an epic run, and an epic run is **one branch and one PR**: its children
 open none of their own and the run publishes once. That is structural, not a label
