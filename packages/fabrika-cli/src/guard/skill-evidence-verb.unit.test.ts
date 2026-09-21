@@ -15,7 +15,6 @@ import {tmpdir} from "node:os";
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
-	type FakeFsOptions,
 	fakeFs,
 	fakeHttp,
 	fakeShell,
@@ -300,16 +299,8 @@ describe("runSkillEvidenceGuard — one gated skill, end to end over the seams",
 
 	it("reds a committed report whose bytes differ from the run's artifact", async () => {
 		const forged = `${JSON.stringify(JSON.parse(reportJson()), null, 2)}\n`;
-		const {outcome} = run({
-			git: gitScript(),
-			http: [
-				[RUN_URL, runOk],
-				[ARTIFACTS_URL, artifactsOk],
-				[ZIP_URL, {status: 200, body: `PK\u0003\u0004${forged}`}],
-			],
-		});
 		// The unzip row must answer the FORGED bytes for the mismatch to be exercised; the default
-		// run() script answers the committed bytes, so re-wrap the shell for this one case.
+		// run() script answers the committed bytes, so this case wraps its own seams.
 		const shell = fakeShell([...gitScript(), ...shellScript(forged)]);
 		const http = fakeHttp(
 			[
