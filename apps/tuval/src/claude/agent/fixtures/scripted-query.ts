@@ -17,7 +17,6 @@ import type {
 	AccountInfo,
 	EffortLevel,
 	ListSessionsOptions,
-	ModelInfo,
 	Options,
 	PermissionMode,
 	SDKMessage,
@@ -57,6 +56,24 @@ export interface QueryRecord {
 	readonly child: SpawnedProcess | null;
 }
 
+/**
+ * One row of the catalog a scripted run advertises.
+ *
+ * Declared here rather than handed out as the SDK's `ModelInfo`: the Agent SDK's surface stops at
+ * `src/claude/` (`../boundary.unit.test.ts`), so a test outside this directory scripting a catalog
+ * needs a row type it is allowed to name (#9530). `supportedModels` below answers with these rows
+ * under the SDK's own return type, which is the pin — a field the SDK makes required reds there
+ * rather than drifting quietly.
+ */
+export interface ScriptedModel {
+	readonly value: string;
+	readonly resolvedModel?: string;
+	readonly displayName: string;
+	readonly description: string;
+	readonly supportsEffort?: boolean;
+	readonly supportedEffortLevels?: Array<EffortLevel>;
+}
+
 /** How a scripted query behaves at the two seams a real one has: the handshake and the first turn. */
 export interface ScriptedBehaviour {
 	/**
@@ -71,7 +88,7 @@ export interface ScriptedBehaviour {
 	 */
 	readonly endsAtOnce?: boolean;
 	/** What `supportedModels()` answers. Absent is a CLI that offers none, which is the old shape. */
-	readonly models?: ReadonlyArray<ModelInfo>;
+	readonly models?: ReadonlyArray<ScriptedModel>;
 	readonly runningModel?: string;
 	readonly contextFails?: Error;
 	/** A `setModel` the CLI refuses. The call is still recorded, so a test sees it was attempted. */

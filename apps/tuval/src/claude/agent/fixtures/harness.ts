@@ -14,6 +14,12 @@ import type {ClaudeAiAgentOptions} from "../options.ts";
 import type {SpawnClaudeCodeProcess} from "../subprocess.ts";
 import {type ScriptedBehaviour, type ScriptedSdk, scriptedSdk} from "./scripted-query.ts";
 
+/**
+ * Re-exported beside `on`: a test scripting a catalog reaches this module for the run, and outside
+ * `src/claude/` it may not name the SDK row type these stand in for (#9530).
+ */
+export type {ScriptedModel} from "./scripted-query.ts";
+
 export const CWD = "/tmp/tuval-capture";
 export const SESSION_ID = "00000000-0000-4000-8000-000000000001";
 export const TOOL_SESSION_ID = "00000000-0000-4000-8000-000000000007";
