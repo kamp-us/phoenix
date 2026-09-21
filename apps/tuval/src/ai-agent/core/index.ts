@@ -96,6 +96,7 @@ export {
 	remarkCutReplies,
 	restore,
 	settleRunningSubagents,
+	settleSessionSubagents,
 	settleTurn,
 	type ThinkingState,
 	type TurnUsage,

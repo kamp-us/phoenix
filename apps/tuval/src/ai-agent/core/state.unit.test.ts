@@ -24,6 +24,8 @@ import {
 	lastAssistantId,
 	phases,
 	restore,
+	settleSessionSubagents,
+	settleTurn,
 } from "./state.ts";
 
 /** Every `Phase` is in `phases`; flipping this reds with TS2322 at this line. */
@@ -179,6 +181,24 @@ describe("a restored session and its subagents", () => {
 		]);
 	});
 
+	// A background worker ends on its own notice, and the process that would have delivered one is
+	// gone — so a restore is where a slot stranded by a lost notice is cleared (#9587).
+	it("brings a worker that outlives a turn back not running either", () => {
+		const back = restore({
+			...loaded,
+			subagents: {"call-3": subagentSlot("call-3", {outlivesTurn: true})},
+		});
+		expect(back.subagents["call-3"]?.status).toBe("finished");
+	});
+
+	it("still leaves a kernel child alone, because its process is not this session's", () => {
+		const back = restore({
+			...loaded,
+			subagents: {"call-4": subagentSlot("call-4", {process: "pi-7"})},
+		});
+		expect(back.subagents["call-4"]?.status).toBe("running");
+	});
+
 	it("keeps the rows a worker collected, so a view open on it is not blanked", () => {
 		expect(restore(loaded).subagents["call-1"]?.items).toEqual(items);
 	});
@@ -198,6 +218,46 @@ describe("a restored session and its subagents", () => {
 			{key: "first", state: "uncertain", failure: null},
 			{key: "second", state: "uncertain", failure: null},
 		]);
+	});
+});
+
+/**
+ * What a turn's end is the end of. The premise the settle rested on — "a worker runs inside its
+ * parent's turn, so the turn ending is the worker ending" — is false for a worker the backend
+ * launched in the background, which is why the list was empty for the whole life of every one
+ * (#9587). Two kinds are exempt now and the third still settles.
+ */
+describe("the workers a turn's end settles", () => {
+	const holding = (...slots: ReadonlyArray<ReturnType<typeof subagentSlot>>): AiAgentSessionState =>
+		({
+			...initialState("/repo"),
+			subagents: Object.fromEntries(slots.map((slot) => [slot.id, slot])),
+		}) as AiAgentSessionState;
+
+	it("leaves a worker that outlives its turn running", () => {
+		const state = settleTurn(holding(subagentSlot("call-1", {outlivesTurn: true})));
+		expect(state.subagents["call-1"]?.status).toBe("running");
+	});
+
+	it("still leaves a kernel child alone, and still settles an in-turn worker", () => {
+		const state = settleTurn(
+			holding(subagentSlot("call-1", {process: "pi-7"}), subagentSlot("call-2")),
+		);
+		expect(state.subagents["call-1"]?.status).toBe("running");
+		expect(state.subagents["call-2"]?.status).toBe("finished");
+	});
+
+	// The session going away is the one thing that ends a worker whose notice never arrived: nothing
+	// is left to deliver one, and a row claiming a live worker is a lie nobody can clear.
+	it("ends a worker that outlives a turn once the session itself is over", () => {
+		const state = settleSessionSubagents(
+			holding(
+				subagentSlot("call-1", {outlivesTurn: true}),
+				subagentSlot("call-2", {process: "pi-7"}),
+			),
+		);
+		expect(state.subagents["call-1"]?.status).toBe("finished");
+		expect(state.subagents["call-2"]?.status).toBe("running");
 	});
 });
 
@@ -221,6 +281,21 @@ describe("what is worth a checkpoint write", () => {
 
 	it("admits the state once that worker has finished", () => {
 		expect(checkpointWorthy(holding(subagentSlot("call-1", {status: "finished"})))).toBe(true);
+	});
+
+	/**
+	 * A worker that outlives its turn moves the same two fields, and the gate still admits it: it
+	 * runs for minutes across turns, so counting it would hold the gate shut for that whole stretch
+	 * and freeze the session's copy on disk — #8170's freeze with a new cause. A write per frame is
+	 * the price, and a session that keeps saving is what it buys (#9587).
+	 */
+	it("admits a state whose only running worker outlives its turn", () => {
+		expect(checkpointWorthy(holding(subagentSlot("call-1", {outlivesTurn: true})))).toBe(true);
+		expect(
+			checkpointWorthy(
+				holding(subagentSlot("call-1", {outlivesTurn: true}), subagentSlot("call-2")),
+			),
+		).toBe(false);
 	});
 
 	it("refuses while any one of several workers is still running", () => {

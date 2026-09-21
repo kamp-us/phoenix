@@ -17,10 +17,15 @@
  * count is not a model: every backend that spawns workers can report one, and the row Q1 rules
  * shows it while the worker runs.
  *
- * `process` is the seventh and the only optional one: a slot the kernel spawned names the process
- * it is for, and a slot the backend spawned names none (founder rulings R1.1 and R2.1 on #8715).
- * It still names no backend — the kernel is Tuval's own — and it is what lets one row be opened as
- * a window where the other swaps the window's view.
+ * `process` is the seventh: a slot the kernel spawned names the process it is for, and a slot the
+ * backend spawned names none (founder rulings R1.1 and R2.1 on #8715). It still names no backend —
+ * the kernel is Tuval's own — and it is what lets one row be opened as a window where the other
+ * swaps the window's view.
+ *
+ * `outlivesTurn` is the eighth, and the two of them are the only optional ones. It is the fact the
+ * core needs to stop settling a background worker at the end of the turn that spawned it (#9587),
+ * and it is on the slot rather than in a mapper's own table because the core is model-blind and can
+ * reach no backend-side correlation.
  */
 
 import {Predicate} from "effect";
@@ -84,6 +89,21 @@ export interface SubagentSlot {
 	 * this shape cannot spell. Nothing about it is a backend's: the kernel is Tuval's own.
 	 */
 	readonly process?: string;
+	/**
+	 * Set when the worker keeps writing after the turn that spawned it ends, so the turn's end says
+	 * nothing about whether it is done. A backend marks it at launch; absent is the other fact and
+	 * the only other one — the worker runs inside its turn and ends with it.
+	 *
+	 * `true` rather than a boolean, because `false` and absent would be two spellings of one fact,
+	 * and a slot read back off a checkpoint written before this field existed can only spell the
+	 * absent one.
+	 *
+	 * Not folded into `process`: a kernel child is already exempt from the turn settle on its own
+	 * field (#8715), but it is exempt because it is *not this session's worker at all*, where this
+	 * one is — this session writes its lines, opens its rows and ends it on its own notice. A slot
+	 * naming a process it has none of is the invalid state that merge would spell.
+	 */
+	readonly outlivesTurn?: true;
 }
 
 const statuses: ReadonlySet<string> = new Set<SubagentStatus>(["running", "finished"]);
@@ -101,7 +121,11 @@ export const isSubagentSlot = (value: unknown): value is SubagentSlot =>
 	typeof value.status === "string" &&
 	statuses.has(value.status) &&
 	// Absent is a harness-native worker; an empty string is neither fact and stays refused.
-	(value.process === undefined || (typeof value.process === "string" && value.process.length > 0));
+	(value.process === undefined ||
+		(typeof value.process === "string" && value.process.length > 0)) &&
+	// `false` is refused rather than read as absent: a checkpoint spelling the fact twice is one
+	// this program did not write.
+	(value.outlivesTurn === undefined || value.outlivesTurn === true);
 
 /**
  * The slots one agent holds, by the id each is keyed on. An array is refused rather than admitted

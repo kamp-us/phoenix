@@ -110,18 +110,16 @@ export interface Mapping {
 	 * one carries that block alone: joining would grow a row the settle then shrinks.
 	 */
 	readonly thinking: string;
-	/** Every subagent slot this stream has opened, by the spawning call's id. */
-	readonly subagents: ReadonlyMap<string, SubagentSlot>;
 	/**
-	 * The spawning calls whose `tool_result` answered a *launch* rather than a worker's report, so
-	 * their slots end on the `task_notification` instead (#9506).
+	 * Every subagent slot this stream has opened, by the spawning call's id.
 	 *
-	 * Held per slot rather than read off the notification's own frame, because frame order does not
-	 * separate the two spawns: in both foreground captures the notification arrives one frame
-	 * *before* the settling `tool_result` it belongs to, so a notice arm that ended every slot it
-	 * found would end a foreground worker early.
+	 * A background launch is marked on the slot itself (`SubagentSlot.outlivesTurn`) rather than in a
+	 * set beside this map: the core has to read that fact too — it is what stops the turn's end
+	 * settling such a worker (#9587) — and a mapper-side table is a thing the core cannot reach.
+	 * `taskNoticeEvents` reads the same field for its own purpose, so the two can never disagree
+	 * about one launch.
 	 */
-	readonly asyncLaunches: ReadonlySet<string>;
+	readonly subagents: ReadonlyMap<string, SubagentSlot>;
 	/** How many messages this mapping had nothing to say about. */
 	readonly skipped: number;
 }
@@ -133,7 +131,6 @@ export const emptyMapping: Mapping = {
 	settled: null,
 	thinking: "",
 	subagents: new Map(),
-	asyncLaunches: new Set(),
 	skipped: 0,
 };
 
@@ -244,7 +241,7 @@ const lineOf = (one: TranscriptItem): string => {
 	);
 };
 
-const openSlot = (id: string, type: string, at: number): SubagentSlot => ({
+const openSlot = (id: string, type: string | null, at: number): SubagentSlot => ({
 	id: itemId(id),
 	type,
 	lastLine: "",
@@ -881,23 +878,30 @@ export const userEvents = (
 	//
 	// A background spawn is the one call whose result is not that settling: it answers the launch
 	// within a second and the worker runs on for minutes, so ending the slot here emptied the running
-	// list for the whole run (#9506). Such a slot is marked instead, and `taskNoticeEvents` below
-	// finishes a marked slot on the `task_notification` for the same `tool_use_id`, so the slot still
-	// cannot outlive the turn.
+	// list for the whole run (#9506). Such a slot is marked `outlivesTurn` instead, and
+	// `taskNoticeEvents` below finishes a marked slot on the `task_notification` for the same
+	// `tool_use_id`.
+	//
+	// The mark is pushed as an event of its own rather than kept here, because the core settles every
+	// running worker at the end of the turn and would take this row straight back out — which is
+	// exactly what the list did after #9506's fix landed (#9587). The slot the core holds has to
+	// carry the fact, so this frame is where it learns it.
 	let subagents = folded.subagents;
-	let asyncLaunches = mapping.asyncLaunches;
 	const launched = isAsyncLaunch(message);
-	const ended: Array<AgentEvent> = [];
+	const slotEvents: Array<AgentEvent> = [];
 	for (const one of settled) {
 		const slot = subagents.get(one.id);
 		if (slot === undefined || slot.status === "finished") continue;
 		if (launched) {
-			asyncLaunches = new Set(asyncLaunches).add(one.id);
+			if (slot.outlivesTurn === true) continue;
+			const background: SubagentSlot = {...slot, outlivesTurn: true};
+			subagents = new Map(subagents).set(one.id, background);
+			slotEvents.push({kind: "subagent", slot: background});
 			continue;
 		}
 		const finished: SubagentSlot = {...slot, status: "finished"};
 		subagents = new Map(subagents).set(one.id, finished);
-		ended.push({kind: "subagent", slot: finished});
+		slotEvents.push({kind: "subagent", slot: finished});
 	}
 	// A kernel child's slot opens here rather than at its call, and after the loop above rather than
 	// before it: the process id is on the *answer*, and a spawn spell answers the instant the child
@@ -923,8 +927,8 @@ export const userEvents = (
 		opened.push({kind: "subagent", slot});
 	}
 	return {
-		mapping: {...mapping, toolCalls, subagents, asyncLaunches, skipped},
-		events: [...events, ...folded.events, ...ended, ...opened],
+		mapping: {...mapping, toolCalls, subagents, skipped},
+		events: [...events, ...folded.events, ...slotEvents, ...opened],
 	};
 };
 
@@ -1211,6 +1215,62 @@ export const systemNoticeEvents = (
 };
 
 /**
+ * A registered task's notice, plus the slot it opens when that task is a background worker of this
+ * session's — which is the only way a *resumed* worker ever gets a row.
+ *
+ * A resume is a message to an agent that is already alive, so no `Agent` call is made, no
+ * `subagent_type` input is written and nothing in `assistantEvents` opens a slot: the list drew
+ * nothing at all for a resumed worker (#9587). This frame is what names it, and
+ * `SDKTaskStartedMessage.is_backgrounded` is the field that says so: "Whether the task was
+ * registered in the background (true) or in the foreground with the spawning tool call blocking on
+ * it (false). **A resumed subagent is always registered in the background.**" (`sdk.d.ts`, 0.3.259).
+ *
+ * Only a backgrounded one, because a foreground worker already has its slot from its own call and
+ * ends on that call's `tool_result` — a mark here would keep it in the list a frame past its end.
+ * Only a worker, too: `is_backgrounded` is set for `local_bash` tasks as well, and a backgrounded
+ * `Bash` is not a subagent, so the frame has to name a `local_agent` task or carry the
+ * `subagent_type` only a Task-tool subagent has. An `ambient` task is the CLI's own housekeeping and
+ * hosts are told to keep it out of activity indicators, so it opens nothing.
+ *
+ * The collapsed notice row stays exactly as it was: this arm adds the slot, and takes no row away.
+ */
+export const taskStartedEvents = (
+	message: unknown,
+	mapping: Mapping,
+	options: MappingOptions,
+): MappingStep => {
+	const notice = systemNoticeEvents(message, mapping, options);
+	if (!isRecord(message) || message.is_backgrounded !== true) return notice;
+	if (message.ambient === true || message.skip_transcript === true) return notice;
+	const callId = typeof message.tool_use_id === "string" ? message.tool_use_id : "";
+	// The slot is keyed on the spawning call, so a frame naming none has no row to be about.
+	if (callId.length === 0) return notice;
+	const type =
+		typeof message.subagent_type === "string" && message.subagent_type.length > 0
+			? message.subagent_type
+			: null;
+	if (type === null && message.task_type !== "local_agent") return notice;
+	const standing = mapping.subagents.get(callId);
+	// A finished slot stays finished: `status` is terminal for the process holding it
+	// (`../../ai-agent/ports/subagent.ts`), and a worker resumed after its last run settled is
+	// registered under the resuming call's own id, where a slot of its own opens.
+	if (standing?.status === "finished" || standing?.outlivesTurn === true) return notice;
+	const call = mapping.toolCalls.get(callId);
+	// The call's own clock where there is one, for the reason `ToolCall.at` exists: the list sorts
+	// oldest-first, and a row that started at its announcement rather than at its call would sort past
+	// a worker spawned after it.
+	const slot: SubagentSlot = {
+		...(standing ??
+			openSlot(callId, type ?? call?.name ?? null, call?.at ?? timestampOf(message, options.at))),
+		outlivesTurn: true,
+	};
+	return {
+		mapping: {...mapping, subagents: new Map(mapping.subagents).set(callId, slot)},
+		events: [...notice.events, {kind: "subagent", slot}],
+	};
+};
+
+/**
  * What a settled task reads as. `SDKTaskNotificationMessage.status` is
  * `'completed' | 'failed' | 'stopped'` (`sdk.d.ts`, 0.3.259); only the first wants a different
  * word, and a value the union grows later is shown verbatim rather than forced into one of these.
@@ -1238,11 +1298,10 @@ const taskOutcomeOf = (status: unknown): string => {
  *
  * **This frame is also where a background worker's slot ends**, and for that worker it is the only
  * place: its spawning call answered the launch while it was still starting, so `userEvents` above
- * leaves the slot running under `asyncLaunches` and this one finishes it (#9506). Every status ends
- * it — the frame is raised when a task settles, and `failed` and `stopped` are settlings too — so a
- * slot still cannot outlive its turn (#8401).
+ * leaves the slot running and marked `outlivesTurn`, and this one finishes it (#9506). Every status
+ * ends it — the frame is raised when a task settles, and `failed` and `stopped` are settlings too.
  *
- * Only a slot that mark names, because this frame is raised for a foreground worker too and the
+ * Only a marked slot, because this frame is raised for a foreground worker too and the
  * captures put it *ahead* of that worker's settling `tool_result`
  * (`fixtures/two-subagent-turn.json`: notification at frame 41, the result it belongs to at 42).
  * Ending every slot found here would cut a foreground worker's row out of the running list one frame
@@ -1260,7 +1319,7 @@ export const taskNoticeEvents = (
 	const slot = callId.length === 0 ? undefined : mapping.subagents.get(callId);
 	const name = slot?.type ?? mapping.toolCalls.get(callId)?.name ?? "task";
 	const ended: SubagentSlot | null =
-		slot === undefined || slot.status === "finished" || !mapping.asyncLaunches.has(callId)
+		slot === undefined || slot.status === "finished" || slot.outlivesTurn !== true
 			? null
 			: {...slot, status: "finished"};
 	return {

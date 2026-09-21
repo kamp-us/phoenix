@@ -75,6 +75,17 @@ describe("a subagent slot", () => {
 		expect(isSubagentSlot({...slot, process: null})).toBe(false);
 	});
 
+	// One fact, one spelling: absent is "ends with its turn", and a checkpoint written before the
+	// field existed spells it that way. `false` would be a second spelling of the same fact, so it is
+	// refused rather than read as absent (#9587).
+	it("admits a slot marked as outliving its turn, and refuses any other value", () => {
+		expect(isSubagentSlot({...slot, outlivesTurn: true})).toBe(true);
+		expect(isSubagentSlot(slot)).toBe(true);
+		expect(isSubagentSlot({...slot, outlivesTurn: false})).toBe(false);
+		expect(isSubagentSlot({...slot, outlivesTurn: "true"})).toBe(false);
+		expect(isSubagentSlot({...slot, outlivesTurn: null})).toBe(false);
+	});
+
 	it("admits every item kind in its rows, not the agent-facing three", () => {
 		const items = [
 			userItem("u1"),

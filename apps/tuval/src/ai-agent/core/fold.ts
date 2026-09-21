@@ -32,6 +32,7 @@ import {
 	emptyOmission,
 	noteCutReply,
 	remarkCutReplies,
+	settleSessionSubagents,
 	settleTurn,
 	type UsageLedger,
 } from "./state.ts";
@@ -458,8 +459,11 @@ export const foldEvent = (
 			// A subagent under that turn is over with it, and settles here for the same reason.
 			const turn = event.phase === "prompting" ? state : settleTurn(state);
 			if (event.phase === "gone") {
+				// The session is over and not just its turn, so the workers a turn's end leaves running
+				// end here too: a background one can no longer be ended by the notice it was waiting
+				// for (#9587).
 				return {
-					...closeOfferedCatalogs(turn),
+					...closeOfferedCatalogs(settleSessionSubagents(turn)),
 					phase: event.phase,
 					interruption: interruptionAfter(turn, event.phase),
 					sends: settleEndedSession(turn.sends, null),
@@ -570,7 +574,8 @@ export const foldEvent = (
 			}
 			const phase = phaseAfterFailure(state, event.failure);
 			const settled = settleTurn(state);
-			const turn = phase === "gone" ? closeOfferedCatalogs(settled) : settled;
+			const turn =
+				phase === "gone" ? closeOfferedCatalogs(settleSessionSubagents(settled)) : settled;
 			return {
 				...turn,
 				phase,

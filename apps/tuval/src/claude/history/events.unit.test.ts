@@ -1107,7 +1107,7 @@ describe("toAgentEvents over a captured background spawn", () => {
 		expect(blocks?.[0]?.input && "run_in_background" in blocks[0].input).toBe(false);
 	});
 
-	it("emits the slot's ended event alongside the notice, so no slot outlives the turn (#8401)", () => {
+	it("emits the slot's ended event alongside the notice, so the worker's row goes when it does", () => {
 		const {events} = run(stream);
 		const last = events.at(-1);
 		expect(last?.kind === "subagent" && last.slot).toMatchObject({
@@ -1118,7 +1118,24 @@ describe("toAgentEvents over a captured background spawn", () => {
 		const notice = items(events).at(-1);
 		expect(notice?.kind === "system" && notice.text).toBe("Explore finished");
 		expect(notice?.kind === "system" && notice.subagent).toBe(SPAWN);
-		expect(walk(stream).seen.map((one) => one.events)).toEqual([1, 0, 1]);
+		// One slot event per frame: the open, the launch answer's mark, and the end. The middle one is
+		// #9587's — without it the core never hears that this worker outlives the turn, and settles it
+		// seconds later.
+		expect(walk(stream).seen.map((one) => one.events)).toEqual([1, 1, 1]);
+	});
+
+	/**
+	 * The mark the core reads, on the slot rather than in a table beside it. The launch answer is
+	 * where it lands, because that frame is the first thing that says this spawn was a background one
+	 * — the call's own input carries no `run_in_background` at all (#9587).
+	 */
+	it("marks the slot as outliving its turn on the launch answer, and pushes that to the core", () => {
+		const {mapping} = walk(stream);
+		expect(mapping.subagents.get(SPAWN)?.outlivesTurn).toBe(true);
+		const marks = run(stream)
+			.events.filter((event) => event.kind === "subagent")
+			.map((event) => event.slot.outlivesTurn);
+		expect(marks).toEqual([undefined, true, true]);
 	});
 
 	/**

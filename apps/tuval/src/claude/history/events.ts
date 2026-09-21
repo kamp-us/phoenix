@@ -27,6 +27,7 @@ import {
 	skipMessage,
 	systemNoticeEvents,
 	taskNoticeEvents,
+	taskStartedEvents,
 	userEvents,
 } from "./map.ts";
 
@@ -61,6 +62,11 @@ export const toAgentEvents = (
 			}
 			if (message.subtype === "task_notification") {
 				return taskNoticeEvents(message, mapping, options);
+			}
+			// The notice this frame already drew, plus the slot a resumed background worker has no
+			// other frame to open (#9587).
+			if (message.subtype === "task_started") {
+				return taskStartedEvents(message, mapping, options);
 			}
 			return systemNoticeEvents(message, mapping, options);
 		default:

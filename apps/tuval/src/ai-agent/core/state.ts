@@ -388,37 +388,74 @@ export const settlePartialItems = (state: AiAgentSessionState): AiAgentSessionSt
  */
 const ownWorker = (slot: SubagentSlot): boolean => slot.process === undefined;
 
-/** Is any subagent still writing? Its slot moves on every line the worker produces. */
-export const holdsRunningSubagent = (state: AiAgentSessionState): boolean =>
-	Object.values(state.subagents).some((slot) => ownWorker(slot) && slot.status === "running");
+/**
+ * A worker whose whole life is the turn that spawned it, so that turn's end is its end.
+ *
+ * Two kinds are not: a kernel child, which is its own process (`ownWorker`), and a worker the
+ * backend launched in the background, which says so on its own slot and ends on its own notice
+ * (#9587). Both facts are read off the slot rather than off a per-backend table, because a mapper's
+ * table is a thing this core cannot reach.
+ */
+const endsWithTurn = (slot: SubagentSlot): boolean => ownWorker(slot) && slot.outlivesTurn !== true;
 
 /**
- * Mark every running worker of this session's own finished, keeping its rows. A kernel child is
- * left alone (`ownWorker`): its process outlives the turn that spawned it.
+ * Is any subagent this turn is the life of still writing? Its slot moves on every line the worker
+ * produces.
  *
- * A worker runs inside its parent's turn, so the turn ending is the worker ending — whatever the
- * turn came to. Without this a slot the layer never closed stays `running` for the rest of the
- * process, and the gate below then refuses every later state of the session, freezing its copy on
- * disk exactly as a stranded partial item did (#8170).
+ * A worker that outlives its turn moves the same way and is still not counted, because this is also
+ * the checkpoint gate below: counting one would hold that gate shut for every state of the session
+ * while a background agent ran — minutes at a time, and the founder's drivers end a turn under one
+ * almost every send — which is the #8170 freeze with a new cause. So such a slot costs a write per
+ * frame instead, and that is the trade #9587 takes: a session that keeps saving over one that stops.
  */
-export const settleRunningSubagents = (state: AiAgentSessionState): AiAgentSessionState =>
-	holdsRunningSubagent(state)
+export const holdsRunningSubagent = (state: AiAgentSessionState): boolean =>
+	Object.values(state.subagents).some((slot) => endsWithTurn(slot) && slot.status === "running");
+
+const finishRunning = (
+	state: AiAgentSessionState,
+	ends: (slot: SubagentSlot) => boolean,
+): AiAgentSessionState =>
+	Object.values(state.subagents).some((slot) => ends(slot) && slot.status === "running")
 		? {
 				...state,
 				subagents: Object.fromEntries(
 					Object.entries(state.subagents).map(([id, slot]) => [
 						id,
-						ownWorker(slot) && slot.status === "running"
-							? {...slot, status: "finished" as const}
-							: slot,
+						ends(slot) && slot.status === "running" ? {...slot, status: "finished" as const} : slot,
 					]),
 				),
 			}
 		: state;
 
+/**
+ * Mark every worker the turn was the life of finished, keeping its rows.
+ *
+ * A worker runs inside its parent's turn, so the turn ending is the worker ending — whatever the
+ * turn came to. Without this a slot the layer never closed stays `running` for the rest of the
+ * process, and the gate below then refuses every later state of the session, freezing its copy on
+ * disk exactly as a stranded partial item did (#8170). The two kinds `endsWithTurn` leaves out are
+ * left running here and ended by `settleSessionSubagents` instead, which is the session going away
+ * rather than a turn.
+ */
+export const settleRunningSubagents = (state: AiAgentSessionState): AiAgentSessionState =>
+	finishRunning(state, endsWithTurn);
+
 /** Everything a turn's end settles: the reply still being written, and the workers under it. */
 export const settleTurn = (state: AiAgentSessionState): AiAgentSessionState =>
 	settleRunningSubagents(settlePartialItems(state));
+
+/**
+ * Mark every worker of this session's own finished, the ones that outlive a turn included: the
+ * session itself is over.
+ *
+ * A background worker ends on its own notice, and a lost notice is the shape that would otherwise
+ * leave it `running` for the rest of the process — a row claiming a live worker where the session
+ * driving it is gone, and nothing left to clear it (#9587). A kernel child is still left alone: its
+ * process is the kernel's and survives this session (#8715). A `session-reset` needs none of this;
+ * it drops every slot with the conversation they belonged to (`./fold.ts`).
+ */
+export const settleSessionSubagents = (state: AiAgentSessionState): AiAgentSessionState =>
+	finishRunning(state, ownWorker);
 
 /**
  * A session at `gone` offers no rows: every catalog it read off that session is emptied, and the
@@ -583,10 +620,11 @@ export const remarkCutReplies = (
  * landed — and a window that reopens on this session offers its operator that text rather than
  * resending it.
  *
- * No subagent comes back running. Nothing is pumping one any more — the layer that was reading its
- * frames went with the process — so a row still claiming to be live is a lie the operator cannot
- * clear, and it would hold the checkpoint gate shut for the rest of the restored session. The rows
- * it collected stay, because that is the view Q9 refuses to blank under a reader.
+ * No subagent of this session's own comes back running, a background worker included. Nothing is
+ * pumping one any more — the layer that was reading its frames went with the process — so a row
+ * still claiming to be live is a lie the operator cannot clear, and it would hold the checkpoint
+ * gate shut for the rest of the restored session. The rows it collected stay, because that is the
+ * view Q9 refuses to blank under a reader.
  *
  * A card that was `answering` comes back `unresolved`. The call carrying that answer went with the
  * process, so whether the backend applied it is exactly what nobody knows — and an entry restored
@@ -607,8 +645,8 @@ export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 	const cutReplies = reply === null ? loaded.cutReplies : noteCutReply(loaded.cutReplies, reply);
 	const settled =
 		loaded.phase === "gone"
-			? closeOfferedCatalogs(settleRunningSubagents(loaded))
-			: settleRunningSubagents(loaded);
+			? closeOfferedCatalogs(settleSessionSubagents(loaded))
+			: settleSessionSubagents(loaded);
 	return {
 		...settled,
 		phase: loaded.phase === "gone" ? "gone" : "idle",
