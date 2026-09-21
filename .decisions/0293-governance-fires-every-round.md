@@ -1,7 +1,7 @@
 ---
 id: 0293
 title: Governance fires every review round on a governance-root diff, FAIL rounds included
-status: accepted
+status: amended-in-part by [0405](0405-fail-floor-subtracts-routed-namespaces.md)
 date: 2026-08-18
 tags: [fabrika, pipeline-hardening]
 ---

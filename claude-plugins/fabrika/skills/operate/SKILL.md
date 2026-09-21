@@ -1381,20 +1381,23 @@ One more refusal guards a reviewer `FAIL`, and it is the one half `lane prove` c
 hands — the read enforces it mechanically for a `PASS` (exit `23`) on both paths, the shell's
 through `lane report` and yours through `lane transition`, while a `FAIL` claims no
 artifact and so is proven by nothing: **a reviewer `FAIL` is recorded only when every derived
-namespace holds a verdict that still binds** — governance included, on a `governance: required` diff. `FAIL`
+namespace the head does not route elsewhere holds a verdict that still binds** — governance included,
+on a `governance: required` diff, and a routed `review-ui` excluded, which `review`'s own floor
+subtracts for the reasons it states there. `FAIL`
 routes the machine into a repair build, and a repair pushes a new head; recorded while any
 namespace is still in flight, it orphans that namespace's verdict mid-write and spends one of the
 machine's retries on a verdict set nobody finished. A reviewer report carrying a `FAIL` beside a
 namespace with no verdict that still binds is an incomplete read, not an event: re-read the
-artifact's verdicts — the PR's, or the child range's — until every derived namespace is terminal
-against what that artifact carries now, then record. **The re-read is bounded, not a hold**: it runs
+artifact's verdicts — the PR's, or the child range's — until every derived namespace that floor
+still asks for is terminal against what that artifact carries now, then record. **The re-read is bounded, not a hold**: it runs
 only while the reviewer's run is still in flight, and once that run has ended with the namespace
 still empty the outcome is the `BLOCKED` the next paragraph names — never an indefinite wait on a
 state that reads as active. No repair builder is
-ever spawned while any namespace at the head is non-terminal.
+ever spawned while a namespace that floor asks for is non-terminal at the head.
 
-**Re-reading terminates, because no reviewer may decline a derived namespace on a `FAIL` round, and
-none may route one away either.** Governance is
+**Re-reading terminates on `governance`, because no reviewer may decline that namespace on a `FAIL`
+round, and none may route it away either — the claim is `governance`'s alone, and a routed
+`review-ui` is the case it does not cover.** Governance is
 derived-required at every round and every head on a `governance: required` diff, FAIL rounds included —
 `review` §6 states it on both arms, and that skill's `routed elsewhere` terminal covers `review-ui`
 and `check-epic-plan` only, so no reviewer terminal ends a run with governance un-fired. So a
@@ -1402,8 +1405,8 @@ governance verdict missing at a `governance: required` head is
 always a read still in flight or a reviewer that died mid-emit, never a licensed refusal, and the
 remedy above reaches a verdict instead of waiting on one nobody will write. The floor stays, and no
 `governance: required` FAIL round holds the old deadlock — the state where the verdict is refused by rule,
-so it can never be written and the repair can never be dispatched. A namespace still empty after the
-reviewer's run has ended is a dead spawn like any other: record `BLOCKED` per the spawn-report step
+so it can never be written and the repair can never be dispatched. A `governance` verdict still empty
+after the reviewer's run has ended is a dead spawn like any other: record `BLOCKED` per the spawn-report step
 above and let a human unblock it. Do not re-spawn the reviewer on your own read.
 
 `lane transition` exits are verdicts: `12` means the event was refused and the log left
