@@ -613,7 +613,7 @@ canonical example is that the route is `/search?q=`, not `/ara`.
 **locale**; **Turkish is the default**, so a reader who picks nothing reads what the site
 always read. Both locales are served from one typed **catalog** per locale under
 `apps/web/src/i18n/`, and **the brand nouns in the table below are not translated in
-either one** — the English interface still says sözlük, pano, mecmua, yazar, çaylak.
+either one** — the English interface still says sözlük, pano, yazar, çaylak.
 Tuval, Fabrika and Demlik are English-only: only the product name is Turkish, and none of
 them coins a Turkish term.
 
@@ -676,7 +676,6 @@ The Turkish product/brand nouns this repo uses:
 | **künye** | the per-user identity DO (karma, invite-only access, privileges) |
 | **depo** | the internal asset store/CDN (was imge) |
 | **divan** | the proving-ground reviewer surface — the gated `/divan` destination where yazar + moderatör review a çaylak's sandboxed work ("work goes before the divan") |
-| **mecmua** | the serious long-form blogging / publishing product (a third surface beside **sözlük** + **pano**, epic #2429) — a **yazar** authors and publishes a long-form post (başlık + markdown body) that anyone may read; a **çaylak** cannot publish (authorship is earned). v1 is a surface on the existing `apps/web` worker, not its own app. Turkish for "magazine / journal / anthology" |
 | **sustur** | mute — the **one-directional, silent, notification-suppressing** member-mute lever (epic #2571; v1 semantics fixed by ADR [0188](../.decisions/0188-mute-v1-semantics.md)). Muting a member both read-masks their content *and* suppresses the **bildirim** their interactions would generate to the muter; the muted member is never notified. Distinct from **engelle** (block) — mute is one-directional and lighter. Turkish for "silence / mute" |
 | **engelle** | block — the heavier, **mutual** interaction-prevention lever (preventing replies/mentions/mutual visibility, symmetry TBD). **Deferred from mute v1** and scoped to its own later decision/epic (ADR [0188](../.decisions/0188-mute-v1-semantics.md)); named here to keep it distinct from the lighter one-directional **sustur** (mute). Turkish for "block / obstruct" |
 

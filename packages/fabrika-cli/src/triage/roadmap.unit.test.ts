@@ -4,7 +4,7 @@ import {parseRoadmap, roadmapRowFor} from "./roadmap.ts";
 /** The milestone each fixture row pins, named so no row carries a bare number. */
 const PILLARS = 17;
 const GECIT = 24;
-const MECMUA = 25;
+const READER = 25;
 const MENTOR = 27;
 const FABRIKA = 44;
 const UNREAD = 99;
@@ -18,7 +18,7 @@ const ROADMAP = `# Roadmap
 |-----|-----------|-------|
 | Four Pillars | #${PILLARS} | done |
 | Geçit | #${GECIT} | active |
-| Mecmua v2 | #${MECMUA} | queued |
+| Reader v2 | #${READER} | queued |
 
 ## Campaigns
 
@@ -40,7 +40,7 @@ describe("parseRoadmap", () => {
 		expect(rows.arcs).toEqual([
 			{name: "Four Pillars", milestone: 17},
 			{name: "Geçit", milestone: 24},
-			{name: "Mecmua v2", milestone: 25},
+			{name: "Reader v2", milestone: 25},
 		]);
 		expect(rows.campaigns).toEqual([
 			{name: "Mentor Audit", milestone: 27},

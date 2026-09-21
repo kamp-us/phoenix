@@ -5,7 +5,7 @@ import {
 	type CommandPaletteScope,
 	Kbd,
 } from "@kampus/design";
-import {BookOpen, Compass, FileText, Search, Users} from "lucide-react";
+import {BookOpen, FileText, Search, Users} from "lucide-react";
 import type * as React from "react";
 import {defineExhibit} from "../exhibit";
 
@@ -42,14 +42,6 @@ const results: readonly CommandPaletteItem[] = [
 		group: "Kampüs",
 		icon: <Users size={20} />,
 		scope: "@",
-	},
-	{
-		value: "route-mecmua",
-		label: "mecmua",
-		description: "yakında",
-		group: "Kampüs",
-		icon: <Compass size={20} />,
-		disabled: true,
 	},
 ];
 

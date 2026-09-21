@@ -51,14 +51,6 @@
       "entityType": "tables"
     },
     {
-      "name": "mecmua_post",
-      "entityType": "tables"
-    },
-    {
-      "name": "mecmua_subscription",
-      "entityType": "tables"
-    },
-    {
       "name": "notification",
       "entityType": "tables"
     },
@@ -1125,116 +1117,6 @@
       "name": "created_at",
       "entityType": "columns",
       "table": "karma_event"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "mecmua_post"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "title",
-      "entityType": "columns",
-      "table": "mecmua_post"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "''",
-      "generated": null,
-      "name": "body",
-      "entityType": "columns",
-      "table": "mecmua_post"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "slug",
-      "entityType": "columns",
-      "table": "mecmua_post"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "author_id",
-      "entityType": "columns",
-      "table": "mecmua_post"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "published_at",
-      "entityType": "columns",
-      "table": "mecmua_post"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "table": "mecmua_post"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "updated_at",
-      "entityType": "columns",
-      "table": "mecmua_post"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "author_id",
-      "entityType": "columns",
-      "table": "mecmua_subscription"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "subscriber_id",
-      "entityType": "columns",
-      "table": "mecmua_subscription"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "table": "mecmua_subscription"
     },
     {
       "type": "text",
@@ -2584,16 +2466,6 @@
     },
     {
       "columns": [
-        "subscriber_id",
-        "author_id"
-      ],
-      "nameExplicit": false,
-      "name": "mecmua_subscription_pk",
-      "entityType": "pks",
-      "table": "mecmua_subscription"
-    },
-    {
-      "columns": [
         "post_id",
         "user_id"
       ],
@@ -2716,15 +2588,6 @@
       "nameExplicit": false,
       "name": "karma_event_pk",
       "table": "karma_event",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "mecmua_post_pk",
-      "table": "mecmua_post",
       "entityType": "pks"
     },
     {
@@ -3063,42 +2926,6 @@
       "name": "karma_event_user_created",
       "entityType": "indexes",
       "table": "karma_event"
-    },
-    {
-      "columns": [
-        {
-          "value": "author_id",
-          "isExpression": false
-        },
-        {
-          "value": "\"created_at\" DESC",
-          "isExpression": true
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "mecmua_post_author_created",
-      "entityType": "indexes",
-      "table": "mecmua_post"
-    },
-    {
-      "columns": [
-        {
-          "value": "subscriber_id",
-          "isExpression": false
-        },
-        {
-          "value": "\"created_at\" DESC",
-          "isExpression": true
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "mecmua_subscription_subscriber",
-      "entityType": "indexes",
-      "table": "mecmua_subscription"
     },
     {
       "columns": [

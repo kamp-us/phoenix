@@ -23,7 +23,7 @@ import {
 } from "./fixtures.test-support.ts";
 import {runOpen} from "./open-verb.ts";
 
-const NEW = "Mecmua reading layout";
+const NEW = "Reader layout";
 
 const run = (
 	script: ReadonlyArray<Scripted>,

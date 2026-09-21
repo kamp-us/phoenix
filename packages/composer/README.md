@@ -18,7 +18,7 @@ types and methods off consumer call sites.
 - `<Composer>` — a headless component that renders only the editor surface (no chrome,
   no styling opinions),
 - `<ReadOnlyComposer>` — the same baseKit path with editing switched off: renders
-  stored markdown non-editably (the mecmua reader half, #2581),
+  stored markdown non-editably (the Atölye read-only exhibit, #2581),
 - `renderTestMarkdown` — the canonical render-test fixture every element round-trips.
 
 ## Why it exists

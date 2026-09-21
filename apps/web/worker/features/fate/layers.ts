@@ -25,7 +25,6 @@ import {Kunye, KunyeLive} from "../kunye/Kunye.ts";
 import {RelationStoreLive} from "../kunye/RelationStore.ts";
 import {authorshipLadder} from "../kunye/standing.ts";
 import {VouchLedgerLive} from "../kunye/VouchLedger.ts";
-import {MecmuaLive} from "../mecmua/Mecmua.ts";
 import {MuteLive} from "../mute/Mute.ts";
 import {BookmarkLive} from "../pano/Bookmark.ts";
 import {PanoFeedCache} from "../pano/feed-cache.ts";
@@ -153,7 +152,6 @@ export const makeFateLayer = Layer.mergeAll(
 	ReportLive,
 	FunnelLive,
 	NotificationLive,
-	MecmuaLive,
 	MuteLive,
 	// The çaylak in-place visibility preference store (#6422, epic #4306) — the
 	// yazar's own opt-in row, depending only on `Drizzle` (discharged below), so it

@@ -118,31 +118,17 @@ vi.mock("./pages/useProfileStats", () => ({useProfileStats: () => ({status: "idl
 vi.mock("./components/divan/useDivanAccess", () => ({useDivanAccess: () => false}));
 vi.mock("./components/bildirim/useBildirimUnread", () => ({useBildirimUnread: () => 0}));
 
-// `loading: false` models the shell-key members' synchronous `__BOOT__` resolution (ADR 0179): a
-// member carries its final value on the first render, with no post-boot flip. `PHOENIX_WELCOME` is
-// not a member, so it alone gets a settable `loading` axis.
 // `signedIn` drives the mocked `readBootUser` below; default false = `__BOOT__` absent.
 const flags = vi.hoisted(() => ({
-	mecmua: false,
-	mecmuaFeed: false,
 	welcome: false,
-	// `PHOENIX_WELCOME` is NOT a boot member, so unlike its neighbours above it really does
-	// start loading and resolve later — the axis the redirect race lives on.
 	welcomeLoading: false,
 	signedIn: false,
 }));
 vi.mock("./flags/useFlag", async () => {
-	const {MECMUA_PUBLIC_READ, MECMUA_FEED, PHOENIX_WELCOME} = await import("./flags/keys");
+	const {PHOENIX_WELCOME} = await import("./flags/keys");
 	return {
 		useFlag: (key: string) => ({
-			value:
-				key === MECMUA_PUBLIC_READ
-					? flags.mecmua
-					: key === MECMUA_FEED
-						? flags.mecmuaFeed
-						: key === PHOENIX_WELCOME
-							? flags.welcome
-							: false,
+			value: key === PHOENIX_WELCOME ? flags.welcome : false,
 			loading: key === PHOENIX_WELCOME ? flags.welcomeLoading : false,
 		}),
 	};
@@ -343,74 +329,6 @@ describe("signed-in cluster seeded from __BOOT__.user (ADR 0185)", () => {
 	});
 });
 
-// The mecmua nav entry is a shell-key member, so it resolves synchronously and lands in its final
-// nav position on the FIRST paint — no false→true pop-in (#2828, ADR 0179).
-describe("mecmua nav entry (#2828) — resolves at first paint from __BOOT__, no pop-in", () => {
-	beforeEach(() => {
-		fateMounts.length = 0;
-		sessionState = {data: null, isPending: true};
-		flags.mecmua = false;
-	});
-	afterEach(() => {
-		flags.mecmua = false;
-		vi.clearAllMocks();
-	});
-
-	it("off: the kill-switch dark ⇒ no mecmua nav link (the route's dark-ship posture is preserved)", () => {
-		renderApp();
-		expect(screen.queryByRole("link", {name: "mecmua"})).toBeNull();
-		expect(screen.getByRole("link", {name: "sözlük"})).toBeTruthy();
-		expect(screen.getByRole("link", {name: "pano"})).toBeTruthy();
-	});
-
-	it("on: mecmua paints on the FIRST render (session still pending), in final position after pano", () => {
-		flags.mecmua = true;
-		renderApp();
-		const mecmua = screen.getByRole("link", {name: "mecmua"});
-		expect(mecmua.getAttribute("href")).toBe("/mecmua");
-		const navLinks = ["sözlük", "pano", "mecmua"].map((label) =>
-			screen.getByRole("link", {name: label}),
-		);
-		const order = navLinks.map((el) =>
-			Array.prototype.indexOf.call(document.querySelectorAll("a"), el),
-		);
-		expect(order).toEqual([...order].sort((a, b) => a - b));
-		expect(fateMounts).toHaveLength(0);
-	});
-});
-
-// The akış entry gates on the SAME `mecmua-feed` seam its route self-gates on, so the link can
-// never point at a dark 404 (#2547).
-describe("mecmua feed nav entry (#2547) — gated on mecmua-feed, never a dead link", () => {
-	beforeEach(() => {
-		fateMounts.length = 0;
-		sessionState = {data: null, isPending: true};
-		flags.mecmuaFeed = false;
-	});
-	afterEach(() => {
-		flags.mecmuaFeed = false;
-		vi.clearAllMocks();
-	});
-
-	it("off: the flag dark ⇒ no akış nav link (subscribe's destination stays hidden with its route)", () => {
-		renderApp("/mecmua");
-		act(() => {
-			setSession({data: null, isPending: false});
-		});
-		expect(screen.queryByRole("link", {name: "akış"})).toBeNull();
-	});
-
-	it("on: the flag flipped ⇒ the akış nav link paints and points at /mecmua/akis", () => {
-		flags.mecmuaFeed = true;
-		renderApp("/mecmua");
-		act(() => {
-			setSession({data: null, isPending: false});
-		});
-		const link = screen.getByRole("link", {name: "akış"});
-		expect(link.getAttribute("href")).toBe("/mecmua/akis");
-	});
-});
-
 // The routed page mounts below the session gate, so these settle the session to commit the
 // Outlet (#2598).
 describe("nav-IA per-product Subnav zone substrate (#2598)", () => {
@@ -470,39 +388,6 @@ describe("nav-IA coupling: pano/yeni Subnav CTA ↔ topbar + gönderi eviction (
 		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();
 		expect(screen.queryByRole("button", {name: "yeni gönderi"})).toBeNull();
 		expect(container.querySelector(".kp-subnav")).toBeTruthy();
-	});
-});
-
-// akış lives in the mecmua Subnav zone, not the topbar product-noun row — still gated on its own
-// seam (#2603).
-describe("nav-IA mecmua delta: akış moves from topbar into the mecmua Subnav zone (#2603)", () => {
-	beforeEach(() => {
-		fateMounts.length = 0;
-		sessionState = {data: null, isPending: true};
-		flags.mecmuaFeed = false;
-	});
-	afterEach(() => {
-		flags.mecmuaFeed = false;
-		vi.clearAllMocks();
-	});
-
-	it("akış is evicted from the topbar and lives in the mecmua Subnav zone", () => {
-		flags.mecmuaFeed = true;
-		const {container} = renderApp("/mecmua");
-		act(() => {
-			setSession({data: null, isPending: false});
-		});
-		const akis = screen.getByRole("link", {name: "akış"});
-		expect(container.querySelector(".kp-topbar")?.contains(akis)).toBe(false);
-		expect(container.querySelector(".kp-subnav")?.contains(akis)).toBe(true);
-	});
-
-	it("mecmua-feed off: no akış link anywhere (still gated on its own seam)", () => {
-		renderApp("/mecmua");
-		act(() => {
-			setSession({data: null, isPending: false});
-		});
-		expect(screen.queryByRole("link", {name: "akış"})).toBeNull();
 	});
 });
 

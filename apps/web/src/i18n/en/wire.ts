@@ -1,7 +1,7 @@
 import type {WireCodeKey, WireUsernameKey} from "../tr/wire";
 
 // Lowercase like the Turkish side: these are inline error lines, not sentences with a
-// capitalised opener. `yazar`, `kefil`, `mecmua` and `sustur` are brand nouns (ADR 0347), so
+// capitalised opener. `yazar`, `kefil` and `sustur` are brand nouns (ADR 0347), so
 // they read identically here — `brandNouns.unit.test.ts` is what holds that.
 const codes: Record<WireCodeKey, string> = {
 	"wire.UNAUTHORIZED": "you need to sign in to do that",
@@ -33,8 +33,6 @@ const codes: Record<WireCodeKey, string> = {
 	"wire.DISPLAY_NAME_EMPTY": "the display name cannot be empty",
 	"wire.BAN_REASON_REQUIRED": "a ban reason is required",
 	"wire.EMAIL_FAILING_REASON_REQUIRED": "a reason for the mark is required",
-	"wire.MECMUA_DISABLED": "mecmua is closed right now",
-	"wire.MECMUA_POST_NOT_FOUND": "entry not found",
 	"wire.MUTE_DISABLED": "sustur is off right now",
 	"wire.SELF_MUTE_REJECTED": "you cannot mute yourself",
 	"wire.BAD_REQUEST": "invalid request",

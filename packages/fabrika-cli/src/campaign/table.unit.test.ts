@@ -47,11 +47,11 @@ describe("parseCampaigns — the extraction the fence narrows", () => {
 
 describe("appendRow", () => {
 	it("appends after the current last row and touches nothing else", () => {
-		const next = appendRow(TWO_ROWS, "Mecmua reading layout", 52);
+		const next = appendRow(TWO_ROWS, "Reader layout", 52);
 		expect(rowsOf(next).at(-1)).toEqual({
 			milestone: 52,
 			state: "paused",
-			name: "Mecmua reading layout",
+			name: "Reader layout",
 		});
 		expect(next.split("\n").slice(0, 8)).toEqual(TWO_ROWS.split("\n").slice(0, 8));
 	});

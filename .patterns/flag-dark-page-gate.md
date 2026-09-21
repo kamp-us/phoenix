@@ -67,10 +67,9 @@ page and test it there — `caylakVisibilityGating.ts` returns one of six states
 A key listed in `SHELL_FLAG_KEYS` ([`apps/web/src/flags/shell-keys.ts`](../apps/web/src/flags/shell-keys.ts))
 is injected into `window.__BOOT__` by the worker's shell render, and `useFlag` resolves it
 synchronously in its `useState` initializer — so the very first render already carries
-`{value, loading: false}` and the placeholder branch never paints. `MECMUA_PUBLIC_READ` and
-`MECMUA_FEED` are the members today, so `MecmuaIndexPage`, `MecmuaPostPage` and `MecmuaFeedPage` get
-the fast path; every other gated page — including the `MECMUA_WRITE` pages `MecmuaDraftsPage` and
-`MecmuaEditorPage` — takes the `/api/flags/evaluate` round trip and does paint the placeholder.
+`{value, loading: false}` and the placeholder branch never paints. The manifest is currently
+empty, so every gated page takes the `/api/flags/evaluate` round trip and paints the placeholder.
+The boot payload still carries its typed `user` member for first-paint identity.
 
 That does not make the placeholder branch dead code: `__BOOT__` is absent whenever the shell was not
 injected, and membership is a deliberate, guarded decision — only a flag whose wrong value moves
@@ -96,8 +95,7 @@ the flag's real value arrives with nothing left to steer. Hold the navigation wh
 
 ## Pages carrying the gate today
 
-`BildirimlerPage`, `CaylakVisibilityPage`, `MecmuaDraftsPage`, `MecmuaEditorPage`,
-`MecmuaFeedPage`, `MecmuaIndexPage`, `MecmuaPostPage`, `MutesPage`, `WelcomePage` — all under
+`BildirimlerPage`, `CaylakVisibilityPage`, `MutesPage`, `WelcomePage` — all under
 `apps/web/src/pages/`.
 
 `WelcomePage` is the one whose gate also decides a **suppression**: past `sign-in` it asks whether

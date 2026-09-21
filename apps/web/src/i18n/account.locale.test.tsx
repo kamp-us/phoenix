@@ -1,5 +1,5 @@
 /**
- * The English render of the mecmua and account surfaces (#7531) — the provider path end to end,
+ * The English render of the account surfaces (#7531) — the provider path end to end,
  * plus the loaded `en` catalog for the surfaces whose components need a fate client to mount.
  */
 
@@ -58,11 +58,8 @@ describe("the account surfaces render English once the locale is en", () => {
 });
 
 describe("the en catalog covers the surfaces whose components need a transport to mount", () => {
-	it("carries English for the mecmua feed, the editor, bildirimler and the mutes page", async () => {
+	it("carries English for bildirimler, the mutes page and the profile", async () => {
 		const en = await loadCatalog("en");
-		expect(en["mecmua.feed.lede"]).toBe("the latest from the authors you follow.");
-		expect(en["mecmua.editor.action.publish"]).toBe("publish");
-		expect(en["mecmua.drafts.title"]).toBe("my posts");
 		expect(en["bildirim.title"]).toBe("notifications");
 		expect(en["bildirim.kind.reply.other"]).toBe("your post got {count} replies");
 		expect(en["mute.page.title"]).toBe("muted members");

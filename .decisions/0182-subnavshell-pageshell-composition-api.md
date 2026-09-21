@@ -22,9 +22,8 @@ class lives in which zone), with the per-product **Subnav** as the product zone.
 *not* fix is the **composition API** of that Subnav: how a product surface hands its elements to
 the bar. That gap is what let the shape drift.
 
-A live audit of the five real subnav consumers grounded this decision:
+The remaining examples from the live subnav audit that grounded this decision:
 
-- **mecmua** — sub-destination tabs (`akış` / `yazılarım`) + a promoted `yaz` CTA.
 - **pano** — sort/filter chips + a site/host context crumb + a `N başlık` count + a `yeni` CTA.
 - **divan** — reviewer sections, no promoted verb (its subnav has no CTA and that is correct).
 - **sözlük** — an alphabet strip + a go-to-or-create box, no promoted verb.
@@ -58,9 +57,9 @@ element taxonomy — they are not invented here.
 
 - **`leading?: ReactNode`** — context / crumb (e.g. pano's site/host crumb).
 - **`destinations?: ReactNode`** — **ONE** slot; the route-links OR stateful buttons are composed
-  *inside* it by the consumer (mecmua tabs / pano chips / divan sections / sözlük alphabet). The
+  *inside* it by the consumer (pano chips / divan sections / sözlük alphabet). The
   shell does not enumerate destinations — it hands the consumer one zone and the consumer fills it.
-- **`primaryAction?: ReactNode`** — the ONE promoted verb (mecmua / pano). **ABSENT for divan and
+- **`primaryAction?: ReactNode`** — the ONE promoted verb (pano). **ABSENT for divan and
   sözlük is normal, not a gap** — a subnav with no promoted verb is a valid subnav.
 - **`signal?: ReactNode`** — meta / count (e.g. pano's `N başlık`).
 

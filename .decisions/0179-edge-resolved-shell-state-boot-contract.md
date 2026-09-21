@@ -16,13 +16,11 @@ founder rulings charted interactively on the graduated wayfinder map
 
 ## Context
 
-The shell — the geometry above the fold: nav items (sözlük / pano / mecmua), the topbar
-structure, and the signed-in cluster (giriş-yap ↔ user chips) — resolves **client-side, after JS
-boot**. The topnav (`apps/web/src/App.tsx`) hardcodes sözlük/pano and spreads `mecmua` in only once
-`useFlag(MECMUA_PUBLIC_READ, false)` resolves; `session.isPending`, `MECMUA_FEED`, and
-`PHOENIX_NAV_IA` are sibling pop-ins of the same shape. The result is an
-HTML → JS-boot → flag-fetch → repaint waterfall with guaranteed layout shift (CLS). The triggering
-symptom was #2828 (the topnav `mecmua` link popping in after boot).
+The shell — the geometry above the fold: nav items (sözlük / pano), the topbar
+structure, and the signed-in cluster (giriş-yap ↔ user chips) — originally resolved
+**client-side, after JS boot**. In the topnav (`apps/web/src/App.tsx`), `session.isPending`
+and nav-shaping flags produced an HTML → JS-boot → fetch → repaint waterfall with
+guaranteed layout shift (CLS).
 
 `useFlag` (`apps/web/src/flags/useFlag.ts`) is **deliberately non-suspending**: it returns
 `{value: default, loading: true}` on first render, POSTs `/api/flags/evaluate`, and setStates after —
@@ -56,8 +54,7 @@ client reads synchronously. Four founder rulings define the contract.
 ### 1. The geometry law (founder ruling [#2830](https://github.com/kamp-us/phoenix/issues/2830))
 
 The above-the-fold line is drawn on **geometry, not data**. **Shell-critical = state whose wrong
-value moves geometry at first paint.** That is exactly: the three nav-shaping flags
-(`PHOENIX_NAV_IA`, `MECMUA_PUBLIC_READ`, `MECMUA_FEED`) + session **presence** (`signedIn`), **plus**
+value moves geometry at first paint.** That is exactly: nav-shaping flags + session **presence** (`signedIn`), **plus**
 reserved chip *slots* when signed in. Chip *values* (karma, unread count, avatar) are **not**
 shell-critical — they late-fill into fixed, reserved geometry from fate (the #2160 late-fill
 ruling). Nothing else may gate shell geometry. The edge payload is therefore four booleans and no
@@ -106,15 +103,13 @@ The strategy is the law; each known pop-in resolves as an instance of it:
 
 | Pop-in | Resolves as |
 |---|---|
-| [#2828](https://github.com/kamp-us/phoenix/issues/2828) — mecmua nav link | `MECMUA_PUBLIC_READ` in the shell-key manifest → in `__BOOT__` → nav geometry correct at first paint. The flag itself **stays** (live kill-switch — founder ruling); the fix is at the render/data layer, not flag removal. |
 | `session.isPending` — giriş-yap ↔ user-cluster swap | the shell frame reads `__BOOT__.signedIn`; signed-in ⇒ reserved chip slots at first paint |
 | chips (karma / bildirim / avatar) shift | slots reserved by `signedIn`; **values** late-fill from fate per #2160 — the geometry law |
-| `MECMUA_FEED` — akış entry | shell-key manifest → `__BOOT__` |
 | `PHOENIX_NAV_IA` — topbar restructure | shell-key manifest → `__BOOT__` |
 
 ### Non-goals
 
-SEO / prerender is out of scope (its own future wayfinding session, per the mecmua map #2467).
+SEO / prerender is out of scope.
 Below-fold flags are unchanged on the existing fetch path. No localStorage mirror. No permutation
 precompute.
 

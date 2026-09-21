@@ -7,9 +7,6 @@
 import type {Input} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {
-	MECMUA_FEED,
-	MECMUA_PUBLIC_READ,
-	MECMUA_WRITE,
 	MEMBER_MUTE,
 	PHOENIX_BILDIRIM,
 	PHOENIX_CAYLAK_METER,
@@ -79,28 +76,6 @@ export {PHOENIX_BILDIRIM, PHOENIX_KARMA_GATES};
  * `FlagshipFlag`. Default-OFF ships the path to production dark — flipping it on is the human
  * release act (ADR 0083).
  */
-export const MECMUA_WRITE_FLAG = {
-	key: MECMUA_WRITE,
-	description:
-		"mecmua write-path (publish + save-draft) dark-ship (#2497, epic #2467). owner: mecmua. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-export const mecmuaWriteFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("mecmua_write", {appId, ...MECMUA_WRITE_FLAG});
-
-export const MECMUA_FEED_FLAG = {
-	key: MECMUA_FEED,
-	description:
-		"mecmua subscribed-author feed (mecmuaFeed root + subscribe/unsubscribe + feed page) dark-ship (#2500, epic #2467). owner: mecmua. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-export const mecmuaFeedFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("mecmua_feed", {appId, ...MECMUA_FEED_FLAG});
-
 export const BILDIRIM_FLAG = {
 	key: PHOENIX_BILDIRIM,
 	description:
@@ -182,17 +157,6 @@ export const EMAIL_DELIVERY_NOTICE_FLAG = {
 
 export const emailDeliveryNoticeFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_email_delivery_notice", {appId, ...EMAIL_DELIVERY_NOTICE_FLAG});
-
-export const MECMUA_PUBLIC_READ_FLAG = {
-	key: MECMUA_PUBLIC_READ,
-	description:
-		"mecmua public-read (anon GET route + reader page) dark-ship (#2498, epic #2467). owner: mecmua. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-export const mecmuaPublicReadFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("mecmua_public_read", {appId, ...MECMUA_PUBLIC_READ_FLAG});
 
 // `on` passes `"unbounded"` to the sözlük read's stamp wave, `off` keeps `concurrency: 1`.
 // Wire output is identical either way — only wall time changes.

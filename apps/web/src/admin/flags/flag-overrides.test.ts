@@ -23,11 +23,11 @@ describe("parseOverridesFromCookie", () => {
 
 	it("decodes the URL-encoded JSON map, picking the cookie out of a multi-cookie string", () => {
 		const value = encodeURIComponent(
-			JSON.stringify({"mecmua-write": true, "phoenix-reactions": false}),
+			JSON.stringify({"member-mute": true, "phoenix-reactions": false}),
 		);
 		const cookie = `session=abc; ${FLAG_OVERRIDE_COOKIE}=${value}; theme=dark`;
 		expect(parseOverridesFromCookie(cookie)).toEqual({
-			"mecmua-write": true,
+			"member-mute": true,
 			"phoenix-reactions": false,
 		});
 	});
@@ -80,7 +80,7 @@ describe("overrideStateOf / effectiveValue", () => {
 
 describe("serializeOverrideCookie — the write side", () => {
 	it("writes a path-scoped, SameSite=Lax cookie whose value round-trips back through the parser", () => {
-		const map = {"mecmua-write": true, "phoenix-user-ban": false};
+		const map = {"member-mute": true, "phoenix-user-ban": false};
 		const cookie = serializeOverrideCookie(map);
 		expect(cookie).toContain(`${FLAG_OVERRIDE_COOKIE}=`);
 		expect(cookie).toContain("path=/");
