@@ -39,6 +39,13 @@
 	min-width: 0;
 }
 
+/* Phoenix's labelled close button rides in the body slot, and Manti renders that slot only when
+   something fills it. A dialog with no body of its own must not gain a flex row — and a gap —
+   from the button alone, which is out of flow anyway. */
+[data-scope="dialog"][data-part="body"]:has(> [data-part="close-trigger"]:only-child) {
+	display: contents;
+}
+
 .kp-dialog-actions {
 	display: flex;
 	justify-content: flex-end;

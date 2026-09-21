@@ -74,12 +74,41 @@ suppression one layer up: Manti drops Zag's `aria-labelledby` when you pass `ari
 
 ### Two places the primitives leave a control unnamed
 
-- **`Dialog`'s close button has no accessible name.** Zag's `getCloseTriggerProps` emits only
-  `id`/`type`/`onClick`, Manti renders an `aria-hidden` X inside it, and `DialogProps` offers no
-  label prop. (`Popover`'s close button is fine — Zag defaults it to `"close"`.) Tracked in
-  [#6776](https://github.com/kamp-us/phoenix/issues/6776); don't work around it per call site.
+- **`Dialog`'s close button has no accessible name, and `packages/design/src/Dialog.tsx` fixes it
+  for every call site.** Zag's `getCloseTriggerProps` emits only `id`/`type`/`onClick`, Manti
+  renders an `aria-hidden` X inside it, and `DialogProps` offers no label prop. (`Popover`'s close
+  button is fine — Zag defaults it to `"close"`.) The wrapper passes `showCloseButton={false}` to
+  Manti and renders its own button through the published `{close}` render prop, named from
+  `ui.dialog.close` — so nothing is needed at a call site, and nothing is needed *per* call site
+  either. See below for what that button reproduces.
 - **A `ToggleGroup` root is an unnamed `radiogroup`.** Name it from outside — `PropKnobs.tsx` wraps
   each in a `<fieldset aria-labelledby={labelId}>`, which is the shape to copy.
+
+### Re-rendering a primitive's part: what the replacement owes
+
+`Dialog`'s close button is the one part phoenix renders itself, and the route was ruled on
+[#6776](https://github.com/kamp-us/phoenix/issues/6776) over patching Manti or reaching for the
+portalled node. Reaching for a render prop is the supported API, but the replacement inherits
+everything the original's attributes carried:
+
+- **The anatomy hooks.** `data-scope="dialog"` + `data-part="close-trigger"` are what every
+  close-trigger rule keys on, in `@manti-ui/styles` and in `Dialog.css` alike. Drop them and the
+  corner button lands in the flow.
+- **Zag's id.** `dialog:<dialog id>:close` is what `dialog.dom.mjs` resolves for
+  `getCloseTriggerEl`, and an `alertdialog` focuses exactly that element on open
+  (`dialog.machine.mjs`). Without it an `alertdialog` falls back to the first `[autofocus]` in its
+  body. The wrapper therefore always passes Manti an `id` — the consumer's, or its own `useId` —
+  so it can compose that one.
+- **The slot's own layout.** Manti renders the body slot only when something fills it, so a
+  childless dialog would gain a flex row from the button alone; `Dialog.css` collapses that case
+  with `display: contents`.
+
+Checked in Chromium against Manti's own button: same rect, same tab order, same focus-on-open, for
+a plain dialog, an `alertdialog` holding an `[autofocus]` input, and a childless one.
+
+**jsdom cannot check the focus half.** It gives no element a layout box, so Zag reads no tabbable
+and focuses the content element in every case — a focus assertion there passes on a broken tree
+too. Assert the id and the DOM order instead, and take focus itself to a browser.
 
 ## Nothing invents a name for a control with no naming text
 
@@ -171,7 +200,8 @@ truth, and the name can't drift from the heading. The house shape:
 ## See also
 
 - `packages/design/src/` — the wrapper layer. Most are bare re-exports; a wrapper earns code
-  only when it corrects the primitive (`Switch.tsx` re-asserts Zag's uncontrolled hidden input).
+  only when it corrects the primitive (`Switch.tsx` re-asserts Zag's uncontrolled hidden input;
+  `Dialog.tsx` renames the close button).
 - [property-based-a11y.md](./property-based-a11y.md) — the `fast-check` × `axe-core` gate over
   `@kampus/design`. Note the compound primitives above are all parked `deferred` there, so nothing
   automatically catches a naming regression in them.

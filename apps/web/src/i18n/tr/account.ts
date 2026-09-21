@@ -183,6 +183,7 @@ export const account = {
 	"profile.delete.pending": "kaldırılıyor…",
 	"profile.delete.error": "hesap kaldırılamadı, tekrar dene.",
 
+	"ui.dialog.close": "kapat",
 	"ui.caylakBadge": "çaylak katkısı",
 	"ui.caylakBadge.stage": ", hazırlık aşamasında",
 	"ui.reviewBadge": "incelemede",

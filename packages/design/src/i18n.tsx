@@ -1,6 +1,7 @@
 import {createContext, type ReactNode, useContext} from "react";
 
 export const designTrMessages = {
+	"ui.dialog.close": "kapat",
 	"ui.caylakBadge": "çaylak katkısı",
 	"ui.caylakBadge.stage": ", hazırlık aşamasında",
 	"ui.reviewBadge": "incelemede",
