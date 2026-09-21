@@ -4,7 +4,15 @@
  * are never one directory, and that a directory refuses a second project's claim on it.
  */
 
-import {mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync} from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {NodeFileSystem} from "@effect/platform-node";
@@ -112,7 +120,7 @@ describe("the state directory", () => {
 });
 
 describe("the one-time move of in-project state", () => {
-	it.effect("lifts everything but the config module, and moves nothing on a second run", () =>
+	it.effect("lifts the names Tuval writes, and moves nothing on a second run", () =>
 		Effect.gen(function* () {
 			const project = freshDir("tuval-state-project-");
 			const stateDir = join(freshDir("tuval-state-home-"), "state");
@@ -126,10 +134,56 @@ describe("the one-time move of in-project state", () => {
 			const first = yield* adoptInProjectState(projectTuval, stateDir);
 			assert.deepStrictEqual([...first.moved].sort(), ["manifest.json", "processes"]);
 			assert.deepStrictEqual(first.kept, []);
+			// The config module comes back under the same field as any other unrecognised name: it is
+			// left because it is outside the set, not by a skip of its own.
+			assert.deepStrictEqual(first.unowned, ["tuval.config.ts"]);
+			assert.isTrue(existsSync(join(projectTuval, "tuval.config.ts")));
+			assert.isFalse(existsSync(join(stateDir, "tuval.config.ts")));
 			assert.strictEqual(readFileSync(join(stateDir, "processes", "p-1.json"), "utf8"), "{}\n");
 
 			const second = yield* adoptInProjectState(projectTuval, stateDir);
-			assert.deepStrictEqual(second, {moved: [], kept: []});
+			assert.deepStrictEqual(second, {moved: [], kept: [], unowned: ["tuval.config.ts"]});
+		}).pipe(Effect.provide(NodeFileSystem.layer)),
+	);
+
+	it.effect("leaves a file the operator parked there, and never copies it into the state dir", () =>
+		Effect.gen(function* () {
+			const project = freshDir("tuval-state-project-");
+			const stateDir = join(freshDir("tuval-state-home-"), "state");
+			const projectTuval = join(project, ".tuval");
+			mkdirSync(projectTuval, {recursive: true});
+			mkdirSync(stateDir, {recursive: true});
+			writeFileSync(join(projectTuval, "manifest.json"), "{}\n");
+			writeFileSync(join(projectTuval, "notes.md"), "mine\n");
+			mkdirSync(join(projectTuval, "scratch"), {recursive: true});
+
+			const adopted = yield* adoptInProjectState(projectTuval, stateDir);
+			assert.deepStrictEqual(adopted.moved, ["manifest.json"]);
+			assert.deepStrictEqual([...adopted.unowned].sort(), ["notes.md", "scratch"]);
+			assert.strictEqual(readFileSync(join(projectTuval, "notes.md"), "utf8"), "mine\n");
+			assert.isTrue(existsSync(join(projectTuval, "scratch")));
+			assert.isFalse(existsSync(join(stateDir, "notes.md")));
+			assert.isFalse(existsSync(join(stateDir, "scratch")));
+		}).pipe(Effect.provide(NodeFileSystem.layer)),
+	);
+
+	it.effect("reports a collision and an unowned name under their own fields", () =>
+		Effect.gen(function* () {
+			const project = freshDir("tuval-state-project-");
+			const stateDir = join(freshDir("tuval-state-home-"), "state");
+			const projectTuval = join(project, ".tuval");
+			mkdirSync(projectTuval, {recursive: true});
+			mkdirSync(stateDir, {recursive: true});
+			writeFileSync(join(projectTuval, "manifest.json"), "the project's\n");
+			writeFileSync(join(stateDir, "manifest.json"), "the desk's\n");
+			writeFileSync(join(projectTuval, "notes.md"), "mine\n");
+
+			const adopted = yield* adoptInProjectState(projectTuval, stateDir);
+			assert.deepStrictEqual(adopted, {
+				moved: [],
+				kept: ["manifest.json"],
+				unowned: ["notes.md"],
+			});
 		}).pipe(Effect.provide(NodeFileSystem.layer)),
 	);
 
@@ -144,7 +198,7 @@ describe("the one-time move of in-project state", () => {
 			writeFileSync(join(stateDir, "manifest.json"), "the desk's\n");
 
 			const adopted = yield* adoptInProjectState(projectTuval, stateDir);
-			assert.deepStrictEqual(adopted, {moved: [], kept: ["manifest.json"]});
+			assert.deepStrictEqual(adopted, {moved: [], kept: ["manifest.json"], unowned: []});
 			assert.strictEqual(readFileSync(join(stateDir, "manifest.json"), "utf8"), "the desk's\n");
 		}).pipe(Effect.provide(NodeFileSystem.layer)),
 	);
@@ -154,7 +208,7 @@ describe("the one-time move of in-project state", () => {
 			const project = freshDir("tuval-state-project-");
 			const stateDir = join(freshDir("tuval-state-home-"), "state");
 			const adopted = yield* adoptInProjectState(join(project, ".tuval"), stateDir);
-			assert.deepStrictEqual(adopted, {moved: [], kept: []});
+			assert.deepStrictEqual(adopted, {moved: [], kept: [], unowned: []});
 		}).pipe(Effect.provide(NodeFileSystem.layer)),
 	);
 });
