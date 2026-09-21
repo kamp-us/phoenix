@@ -4,6 +4,7 @@ import type {Term} from "../../../worker/features/fate/views";
 import {toIsoOrNull} from "../../fate/wire";
 import {useT, useTPlural} from "../../i18n";
 import {formatAgoTR, formatDateTR} from "../../lib/datetime";
+import {sozlukLetterHref} from "../../lib/sozlukLetterHref";
 
 export const TermHeaderView = view<Term>()({
 	id: true,
@@ -36,7 +37,7 @@ export function SozlukTermHeader(props: SozlukTermHeaderProps) {
 				<Link to="/sozluk">{t("sozluk.term.crumbRoot")}</Link> /{" "}
 				{firstLetter ? (
 					<>
-						<Link to="/sozluk">{firstLetter}</Link> /{" "}
+						<Link to={sozlukLetterHref(firstLetter, false)}>{firstLetter}</Link> /{" "}
 					</>
 				) : null}
 				{term.title}
