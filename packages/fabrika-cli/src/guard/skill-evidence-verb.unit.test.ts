@@ -1,13 +1,17 @@
 /**
  * `guard skill-evidence-guard check`'s IO boundary over the scripted seams: the fail-closed seats
  * the verb owns (zero files, an unreadable policy), the CLI-shaped skip, and — through the scripted
- * spawner and HTTP client — the full gather path of one skill: git trees, word-diff source texts,
- * the committed report, and the trusted-run fetch with its three API answers.
+ * spawner and HTTP client — the full gather path of one skill: policy from the base commit,
+ * `git ls-tree` content probes, word-diff source texts, the committed report, the trusted-run
+ * fetch, and the run's published report artifact compared byte-for-byte.
  *
  * The git paths not exercised here (a base tree that resolves, per-file absence at head, a
  * benchmark commit that does not resolve) are the core's `judge` branches over facts, proven by
- * `./skill-evidence.unit.test.ts` — the verb only relays those facts — the verb relays, the judge derives.
+ * `./skill-evidence.unit.test.ts` — the verb only relays those facts, the judge derives.
  */
+
+import {mkdirSync} from "node:fs";
+import {tmpdir} from "node:os";
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
@@ -26,8 +30,18 @@ const ROOT = "/repo";
 const SKILLS = "claude-plugins/fabrika/skills";
 const REPORTS = "benchmarks/skill-evidence/reports";
 const PRODUCER = ".github/workflows/skill-benchmark.yml";
+const POLICY_PATH = "benchmarks/skill-evidence/policy.json";
+const ARTIFACT = "skill-benchmark-report";
+// The scratch path must be writable by the REAL `writeFile` the verb uses (the zip is written for
+// `unzip -p` to read), so the fake mktemp answers a directory under the platform tmpdir, not a
+// POSIX-only /tmp that is `C:\tmp` on Windows.
+const SCRATCH = `${tmpdir().replaceAll("\\", "/")}/sb-test`.replace(/\/+$/, "");
+const SCRATCH_RE = SCRATCH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+mkdirSync(SCRATCH, {recursive: true});
 
 const TREE_HEAD = `a${"1".repeat(39)}`;
+const POLICY_OID = `b${"2".repeat(39)}`;
+const ARTIFACT_ID = 77;
 const BASE_COMMIT = `f${"6".repeat(39)}`;
 const HEAD_COMMIT = `e${"5".repeat(39)}`;
 const RUN = 4242;
@@ -36,6 +50,7 @@ const POLICY = JSON.stringify({
 	producerWorkflow: PRODUCER,
 	skillsRoot: SKILLS,
 	reportRoot: REPORTS,
+	reportArtifact: ARTIFACT,
 	thresholds: {
 		default: {minRepetitions: 3, successDelta: 0, newCriticalErrors: 0, maxCostRatio: 1.25},
 		perSkill: {},
@@ -67,20 +82,30 @@ const reportJson = (): string =>
 
 const absent = (reason: string): ExecResult => ({ok: false, stdout: "", reason});
 
+const policyBlobAt = (sha: string, text: string): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+	[
+		new RegExp(`ls-tree ${sha} -- ${POLICY_PATH}$`),
+		okOut(`100644 blob ${POLICY_OID}\t${POLICY_PATH}`),
+	],
+	[new RegExp(`cat-file blob ${POLICY_OID}$`), okOut(text)],
+];
+
 /**
- * The git story of a NEW skill changed at head: the head tree and the benchmark commit resolve, the
- * base side of everything fails (the skill is absent there), the head text adds words over the base
- * text — a behavior change, not the typo lane — and the committed report reads off the HEAD TREE
- * (`git show <head>:<report path>`), which is what the gate judges rather than any working-tree copy.
+ * The git story of a NEW skill changed at head, with the policy read from the BASE commit: the
+ * policy blob resolves base-side, the skill's tree resolves at head and is absent at base, the head
+ * text adds words over the base text — a behavior change, not the typo lane — the benchmark commit
+ * resolves, and the committed report reads off the HEAD TREE (`git show <head>:<report path>`),
+ * which is what the gate judges rather than any working-tree copy.
  */
 const gitScript = (withReport = true): ReadonlyArray<readonly [RegExp, ExecResult]> => {
 	const skillArg = `${SKILLS}/build`;
 	const rows: Array<readonly [RegExp, ExecResult]> = [
-		[new RegExp(`rev-parse --verify --quiet ${HEAD_COMMIT}:${skillArg}$`), okOut(TREE_HEAD)],
-		// `<rev>:<path>` names any object there; the verb proves the answer is a TREE with a second
-		// read (`cat-file -t`) — a blob at the skills-root path must not pose as a skill.
-		[new RegExp(`cat-file -t ${TREE_HEAD}$`), okOut("tree")],
-		[new RegExp(`rev-parse --verify --quiet ${BASE_COMMIT}:`), absent("absent at base")],
+		...policyBlobAt(BASE_COMMIT, POLICY),
+		[
+			new RegExp(`ls-tree ${HEAD_COMMIT} -- ${skillArg}$`),
+			okOut(`040000 tree ${TREE_HEAD}\t${skillArg}`),
+		],
+		[new RegExp(`ls-tree ${BASE_COMMIT} -- ${skillArg}$`), okOut("")],
 		[new RegExp(`show ${BASE_COMMIT}:`), absent("absent at base")],
 		[new RegExp(`show ${HEAD_COMMIT}:${skillArg}/SKILL.md`), okOut("one two three four")],
 		[new RegExp(`cat-file -e ${HEAD_COMMIT}\\^\\{commit\\}`), okOut("")],
@@ -105,7 +130,29 @@ const runOk: HttpReply = {
 	}),
 };
 
-const RUN_URL = /GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/runs\/4242/;
+/** The run's published report artifact, listed and downloadable. */
+const artifactsOk: HttpReply = {
+	status: 200,
+	body: JSON.stringify({
+		total_count: 1,
+		artifacts: [{id: ARTIFACT_ID, name: ARTIFACT, expired: false}],
+	}),
+};
+
+/** A zip whose first bytes are the magic number and whose `report.json` matches the committed one. */
+const zipOk: HttpReply = {status: 200, body: `PK\u0003\u0004${reportJson()}`};
+
+const shellScript = (artifactText: string): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+	[/^mktemp -d$/, okOut(SCRATCH)],
+	[
+		new RegExp(`unzip -p '${SCRATCH_RE}/skill-benchmark-report\\.zip' report\\.json$`),
+		okOut(artifactText),
+	],
+];
+
+const RUN_URL = /GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/runs\/4242$/;
+const ARTIFACTS_URL = /GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/runs\/4242\/artifacts/;
+const ZIP_URL = /GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/artifacts\/77\/zip$/;
 
 interface RunCase {
 	readonly files?: ReadonlyArray<string>;
@@ -115,9 +162,17 @@ interface RunCase {
 	readonly unreachable?: ReadonlyArray<RegExp>;
 }
 
-const run = (fsOptions: FakeFsOptions, options: RunCase = {}) => {
-	const shell = fakeShell(options.git ?? gitScript());
-	const http = fakeHttp(options.http ?? [[RUN_URL, runOk]], undefined, options.unreachable ?? []);
+const run = (options: RunCase = {}) => {
+	const shell = fakeShell([...(options.git ?? gitScript()), ...shellScript(reportJson())]);
+	const http = fakeHttp(
+		options.http ?? [
+			[RUN_URL, runOk],
+			[ARTIFACTS_URL, artifactsOk],
+			[ZIP_URL, zipOk],
+		],
+		undefined,
+		options.unreachable ?? [],
+	);
 	return {
 		outcome: Effect.runPromise(
 			Effect.provide(
@@ -130,59 +185,69 @@ const run = (fsOptions: FakeFsOptions, options: RunCase = {}) => {
 					cwd: ROOT,
 					env: options.env ?? {GITHUB_TOKEN: "t"},
 				}),
-				Layer.merge(fakeFs(fsOptions).layer, Layer.merge(shell.layer, http.layer)),
+				Layer.merge(fakeFs({}).layer, Layer.merge(shell.layer, http.layer)),
 			),
 		),
 		http,
 	};
 };
 
-const repoTree = (files: Readonly<Record<string, string>>): FakeFsOptions => ({
-	files: Object.fromEntries(Object.entries(files).map(([name, text]) => [`${ROOT}/${name}`, text])),
-});
-
-/** The fs side of a runnable gate: the policy on disk. The report rides the git seam, not this one. */
-const fullTree = (): FakeFsOptions => repoTree({"benchmarks/skill-evidence/policy.json": POLICY});
-
 describe("runSkillEvidenceGuard", () => {
 	it("fails closed on an empty file list, whatever the tree holds", async () => {
-		const {outcome} = run(repoTree({"benchmarks/skill-evidence/policy.json": POLICY}), {files: []});
+		const {outcome} = run({files: []});
 		const result = await outcome;
 		expect(result.code).toBe(ZERO_SCOPE);
 		expect(result.stderr.join("\n")).toContain("handed ZERO files");
 	});
 
-	it("answers UNKNOWN when the gate's own policy file is missing", async () => {
-		const {outcome} = run(repoTree({}));
+	it("answers UNKNOWN when the policy is missing from both base and head", async () => {
+		const {outcome} = run({
+			git: [
+				[new RegExp(`ls-tree ${BASE_COMMIT} -- ${POLICY_PATH}$`), okOut("")],
+				[new RegExp(`ls-tree ${HEAD_COMMIT} -- ${POLICY_PATH}$`), okOut("")],
+			],
+		});
 		const result = await outcome;
 		expect(result.code).toBe(PRECONDITION_UNKNOWN);
-		expect(result.stderr.join("\n")).toContain("the gate's own policy is missing");
+		expect(result.stderr.join("\n")).toContain("missing from both");
+	});
+
+	it("answers UNKNOWN when the policy's git read fails — a failed read is never absence", async () => {
+		const {outcome} = run({
+			git: [
+				[
+					new RegExp(`ls-tree ${BASE_COMMIT} -- ${POLICY_PATH}$`),
+					absent("fatal: not a tree object"),
+				],
+			],
+		});
+		const result = await outcome;
+		expect(result.code).toBe(PRECONDITION_UNKNOWN);
+		expect(result.stderr.join("\n")).toContain("could not be read from");
 	});
 
 	it("answers UNKNOWN when the policy exists but is malformed", async () => {
-		const {outcome} = run(repoTree({"benchmarks/skill-evidence/policy.json": "{nope"}));
+		const {outcome} = run({git: policyBlobAt(BASE_COMMIT, "{nope")});
 		const result = await outcome;
 		expect(result.code).toBe(PRECONDITION_UNKNOWN);
 		expect(result.stderr.join("\n")).toContain("malformed");
 	});
 
-	it("answers UNKNOWN when the policy exists but cannot be read", async () => {
-		const {outcome} = run(
-			{
-				...repoTree({"benchmarks/skill-evidence/policy.json": POLICY}),
-				unreadable: [`${ROOT}/benchmarks/skill-evidence/policy.json`],
-			},
-			{},
-		);
+	it("bootstraps from the head tree when the policy is absent at base", async () => {
+		const {outcome} = run({
+			git: [
+				[new RegExp(`ls-tree ${BASE_COMMIT} -- ${POLICY_PATH}$`), okOut("")],
+				...policyBlobAt(HEAD_COMMIT, POLICY),
+				...gitScript().slice(2),
+			],
+		});
 		const result = await outcome;
-		expect(result.code).toBe(PRECONDITION_UNKNOWN);
-		expect(result.stderr.join("\n")).toContain("UNKNOWN");
+		expect(result.code).toBe(0);
+		expect(result.stdout).toContain("1 skill(s) checked");
 	});
 
 	it("skips a diff that touches no skill file, naming the skills root", async () => {
-		const {outcome} = run(repoTree({"benchmarks/skill-evidence/policy.json": POLICY}), {
-			files: ["README.md", "worker/src/index.ts"],
-		});
+		const {outcome} = run({files: ["README.md", "worker/src/index.ts"]});
 		const result = await outcome;
 		expect(result.code).toBe(0);
 		expect(result.stdout).toContain("0 of 2 changed files under");
@@ -190,43 +255,113 @@ describe("runSkillEvidenceGuard", () => {
 });
 
 describe("runSkillEvidenceGuard — one gated skill, end to end over the seams", () => {
-	it("passes a fully-evidenced new skill, having read the trusted run once", async () => {
-		const {outcome, http} = run(fullTree());
+	it("passes a fully-evidenced new skill, byte-verified against the run's artifact", async () => {
+		const {outcome, http} = run({});
 		const result = await outcome;
 		expect(result.code).toBe(0);
 		expect(result.stdout).toContain("1 skill(s) checked");
 		expect(result.stderr).toEqual([]);
-		expect(http.calls).toEqual([`GET https://api.github.com/repos/o/r/actions/runs/${RUN}`]);
+		expect(http.calls).toEqual([
+			`GET https://api.github.com/repos/o/r/actions/runs/${RUN}`,
+			`GET https://api.github.com/repos/o/r/actions/runs/${RUN}/artifacts?per_page=100`,
+			`GET https://api.github.com/repos/o/r/actions/artifacts/${ARTIFACT_ID}/zip`,
+		]);
 	});
 
 	it("reds a report absent from the HEAD tree at the violation seat, naming the expected path", async () => {
-		const {outcome} = run(fullTree(), {git: gitScript(false)});
+		const {outcome} = run({git: gitScript(false)});
 		const result = await outcome;
 		expect(result.code).toBe(VIOLATION);
 		expect(result.stdout).toBe("");
 		expect(result.stderr.join("\n")).toContain(`${REPORTS}/build/report.json`);
 	});
 
-	it("answers UNKNOWN when the run id answers 404", async () => {
-		const {outcome} = run(fullTree(), {http: [[RUN_URL, {status: 404, body: "{}"}]]});
+	it("answers UNKNOWN when the run id answers 404 — and never reads artifacts", async () => {
+		const {outcome, http} = run({http: [[RUN_URL, {status: 404, body: "{}"}]]});
 		const result = await outcome;
 		expect(result.code).toBe(PRECONDITION_UNKNOWN);
 		expect(result.stderr.join("\n")).toContain(
 			"was not found among the repository's workflow runs",
 		);
+		expect(http.calls).toEqual([`GET https://api.github.com/repos/o/r/actions/runs/${RUN}`]);
+	});
+
+	it("answers UNKNOWN when the run published no report artifact — the numbers stay unproven", async () => {
+		const {outcome} = run({
+			http: [
+				[RUN_URL, runOk],
+				[ARTIFACTS_URL, {status: 200, body: JSON.stringify({total_count: 0, artifacts: []})}],
+			],
+		});
+		const result = await outcome;
+		expect(result.code).toBe(PRECONDITION_UNKNOWN);
+		expect(result.stderr.join("\n")).toContain(`published no \`${ARTIFACT}\` artifact`);
+	});
+
+	it("reds a committed report whose bytes differ from the run's artifact", async () => {
+		const forged = `${JSON.stringify(JSON.parse(reportJson()), null, 2)}\n`;
+		const {outcome} = run({
+			git: gitScript(),
+			http: [
+				[RUN_URL, runOk],
+				[ARTIFACTS_URL, artifactsOk],
+				[ZIP_URL, {status: 200, body: `PK\u0003\u0004${forged}`}],
+			],
+		});
+		// The unzip row must answer the FORGED bytes for the mismatch to be exercised; the default
+		// run() script answers the committed bytes, so re-wrap the shell for this one case.
+		const shell = fakeShell([...gitScript(), ...shellScript(forged)]);
+		const http = fakeHttp(
+			[
+				[RUN_URL, runOk],
+				[ARTIFACTS_URL, artifactsOk],
+				[ZIP_URL, {status: 200, body: `PK\u0003\u0004${forged}`}],
+			],
+			undefined,
+			[],
+		);
+		const result = await Effect.runPromise(
+			Effect.provide(
+				runSkillEvidenceGuard({
+					files: [`${SKILLS}/build/SKILL.md`],
+					baseSha: BASE_COMMIT,
+					headSha: HEAD_COMMIT,
+					repo: "o/r",
+					root: ROOT,
+					cwd: ROOT,
+					env: {GITHUB_TOKEN: "t"},
+				}),
+				Layer.merge(fakeFs({}).layer, Layer.merge(shell.layer, http.layer)),
+			),
+		);
+		expect(result.code).toBe(VIOLATION);
+		expect(result.stderr.join("\n")).toContain("bytes differ from the");
+	});
+
+	it("answers UNKNOWN when the artifact download answers a non-2xx", async () => {
+		const {outcome} = run({
+			http: [
+				[RUN_URL, runOk],
+				[ARTIFACTS_URL, artifactsOk],
+				[ZIP_URL, {status: 503, body: "nope"}],
+			],
+		});
+		const result = await outcome;
+		expect(result.code).toBe(PRECONDITION_UNKNOWN);
+		expect(result.stderr.join("\n")).toContain(
+			"could not be read (the artifact download answered HTTP 503)",
+		);
 	});
 
 	it("answers UNKNOWN when the GitHub API answers a non-2xx the gate cannot read", async () => {
-		const {outcome} = run(fullTree(), {
-			http: [[RUN_URL, {status: 500, body: '{"message":"nope"}'}]],
-		});
+		const {outcome} = run({http: [[RUN_URL, {status: 500, body: '{"message":"nope"}'}]]});
 		const result = await outcome;
 		expect(result.code).toBe(PRECONDITION_UNKNOWN);
 		expect(result.stderr.join("\n")).toContain("the GitHub API could not be read");
 	});
 
 	it("reds an in-progress run (conclusion null) as not from the trusted runner, not UNKNOWN", async () => {
-		const {outcome} = run(fullTree(), {
+		const {outcome} = run({
 			http: [
 				[
 					RUN_URL,
@@ -247,14 +382,21 @@ describe("runSkillEvidenceGuard — one gated skill, end to end over the seams",
 		expect(result.stderr.join("\n")).toContain("did not come from the trusted runner");
 	});
 
-	it("reads the run off a caller-supplied apiBase instead of the public API", async () => {
+	it("reads the run and its artifact off a caller-supplied apiBase instead of the public API", async () => {
 		const base = "https://gh.example/api/v3/";
 		const http = fakeHttp(
-			[[/GET https:\/\/gh\.example\/api\/v3\/repos\/o\/r\/actions\/runs\/4242/, runOk]],
+			[
+				[/GET https:\/\/gh\.example\/api\/v3\/repos\/o\/r\/actions\/runs\/4242$/, runOk],
+				[
+					/GET https:\/\/gh\.example\/api\/v3\/repos\/o\/r\/actions\/runs\/4242\/artifacts/,
+					artifactsOk,
+				],
+				[/GET https:\/\/gh\.example\/api\/v3\/repos\/o\/r\/actions\/artifacts\/77\/zip$/, zipOk],
+			],
 			undefined,
 			[],
 		);
-		const shell = fakeShell(gitScript());
+		const shell = fakeShell([...gitScript(), ...shellScript(reportJson())]);
 		const result = await Effect.runPromise(
 			Effect.provide(
 				runSkillEvidenceGuard({
@@ -267,22 +409,26 @@ describe("runSkillEvidenceGuard — one gated skill, end to end over the seams",
 					env: {GITHUB_TOKEN: "t"},
 					apiBase: base,
 				}),
-				Layer.merge(fakeFs(fullTree()).layer, Layer.merge(shell.layer, http.layer)),
+				Layer.merge(fakeFs({}).layer, Layer.merge(shell.layer, http.layer)),
 			),
 		);
 		expect(result.code).toBe(0);
-		expect(http.calls).toEqual([`GET ${base}repos/o/r/actions/runs/${RUN}`]);
+		expect(http.calls).toEqual([
+			`GET ${base}repos/o/r/actions/runs/${RUN}`,
+			`GET ${base}repos/o/r/actions/runs/${RUN}/artifacts?per_page=100`,
+			`GET ${base}repos/o/r/actions/artifacts/${ARTIFACT_ID}/zip`,
+		]);
 	});
 
 	it("answers UNKNOWN when the GitHub API is unreachable", async () => {
-		const {outcome} = run(fullTree(), {unreachable: [RUN_URL]});
+		const {outcome} = run({unreachable: [RUN_URL]});
 		const result = await outcome;
 		expect(result.code).toBe(PRECONDITION_UNKNOWN);
 		expect(result.stderr.join("\n")).toContain("the GitHub API could not be read");
 	});
 
 	it("answers UNKNOWN without a token, and never reaches for the API", async () => {
-		const {outcome, http} = run(fullTree(), {env: {}});
+		const {outcome, http} = run({env: {}});
 		const result = await outcome;
 		expect(result.code).toBe(PRECONDITION_UNKNOWN);
 		expect(result.stderr.join("\n")).toContain("cannot verify provenance without GITHUB_TOKEN");

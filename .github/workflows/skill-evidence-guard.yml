@@ -133,8 +133,12 @@ jobs:
           # 2026-09-06, run 34000979042: the shallow main tip had no merge base with
           # the merge ref, `git diff` died 128 inside the substitution, and the job
           # went green over a diff that was never computed).
-          if ! diff_raw=$(git diff --name-only --diff-filter=ACMRD "$base...HEAD"); then
-            echo "::error::git diff $base...HEAD failed — refusing to report a clean gate over a diff that did not run."
+          # The diff binds to $HEAD_SHA, NOT the checked-out HEAD: on `pull_request`
+          # the checkout is the synthetic merge ref while the verb audits trees and
+          # reports at $HEAD_SHA (the PR head). Scope and audit must name the same
+          # commit, or the diff's files and the audited content can diverge.
+          if ! diff_raw=$(git diff --name-only --diff-filter=ACMRD "$base...$HEAD_SHA"); then
+            echo "::error::git diff $base...$HEAD_SHA failed — refusing to report a clean gate over a diff that did not run."
             exit 1
           fi
           changed=()

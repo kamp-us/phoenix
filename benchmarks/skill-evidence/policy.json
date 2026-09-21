@@ -2,6 +2,7 @@
 	"producerWorkflow": ".github/workflows/skill-benchmark.yml",
 	"skillsRoot": "claude-plugins/fabrika/skills",
 	"reportRoot": "benchmarks/skill-evidence/reports",
+	"reportArtifact": "skill-benchmark-report",
 	"thresholds": {
 		"default": {
 			"minRepetitions": 3,

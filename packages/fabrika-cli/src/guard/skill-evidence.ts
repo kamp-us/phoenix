@@ -59,6 +59,11 @@ export interface SkillEvidencePolicy {
 	readonly producerWorkflow: string;
 	readonly skillsRoot: string;
 	readonly reportRoot: string;
+	/**
+	 * The name of the artifact the producer run must publish, whose zip carries the byte-identical
+	 * `report.json` — the binding that keeps the committed numbers from being self-attested.
+	 */
+	readonly reportArtifact: string;
 	readonly thresholds: {
 		readonly default: Thresholds;
 		/**
@@ -151,6 +156,7 @@ export const parsePolicy = (text: string): PolicyParse => {
 		"producerWorkflow",
 		"skillsRoot",
 		"reportRoot",
+		"reportArtifact",
 		"thresholds",
 		"typoExemption",
 	]);
@@ -161,6 +167,8 @@ export const parsePolicy = (text: string): PolicyParse => {
 		errors.push("policy.producerWorkflow must be a non-empty string");
 	if (!nonEmpty(value.skillsRoot)) errors.push("policy.skillsRoot must be a non-empty string");
 	if (!nonEmpty(value.reportRoot)) errors.push("policy.reportRoot must be a non-empty string");
+	if (!nonEmpty(value.reportArtifact))
+		errors.push("policy.reportArtifact must be a non-empty string");
 	let defaults: Thresholds | null = null;
 	let perSkill: Record<string, ThresholdOverride> = {};
 	const thresholds = isObj(value.thresholds) ? value.thresholds : null;
@@ -234,6 +242,7 @@ export const parsePolicy = (text: string): PolicyParse => {
 			producerWorkflow: value.producerWorkflow as string,
 			skillsRoot: value.skillsRoot as string,
 			reportRoot: value.reportRoot as string,
+			reportArtifact: value.reportArtifact as string,
 			thresholds: {default: defaults, perSkill},
 			typoExemption: typoPolicy,
 		},
@@ -612,6 +621,22 @@ export const typoVerdict = (typo: TypoFacts, policy: TypoExemptionPolicy): TypoV
 // The facts and the judge
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Whether the committed report's bytes are the bytes the trusted run published.
+ *
+ * The run's existence and shape prove a benchmark *ran at this content*; only the artifact
+ * comparison proves the committed numbers ARE the run's numbers. `Unreadable` and `Missing` are
+ * UNKNOWN seats, never clean — a gate that cannot read what the run published does not get to
+ * trust the report instead. `NotChecked` marks the legs the judge seats earlier (no token, a run
+ * that did not resolve) so the artifact read never runs on a report whose run is already red.
+ */
+export type ArtifactBinding =
+	| {readonly _tag: "NotChecked"}
+	| {readonly _tag: "Unreadable"; readonly reason: string}
+	| {readonly _tag: "Missing"}
+	| {readonly _tag: "Mismatch"}
+	| {readonly _tag: "Match"};
+
 /** The trusted runner's run as the GitHub API answered it, or `null` when the API did not answer. */
 export interface RunFacts {
 	readonly exists: boolean;
@@ -630,6 +655,7 @@ export interface ProvenanceFacts {
 	readonly tokenPresent: boolean;
 	/** The skill's tree SHA at the benchmark commit; null when unreachable or unresolvable. */
 	readonly benchmarkTreeAtHeadSha?: string | null;
+	readonly artifact: ArtifactBinding;
 }
 
 /** One changed skill, with everything the judge needs about it. */
@@ -644,6 +670,12 @@ export interface SkillFacts {
 	readonly typo: TypoFacts;
 	readonly report: ReportOutcome;
 	readonly provenance: ProvenanceFacts;
+	/**
+	 * Why a git read that establishes this skill's content could not be made, when that is the fact.
+	 * The judge seats it on UNKNOWN before any removal/typo/report logic — a failed read is never
+	 * allowed to wear the shape of "skill absent".
+	 */
+	readonly gitError?: string | undefined;
 }
 
 export interface SkillEvidenceFacts {
@@ -852,6 +884,18 @@ const judgeSkill = (skill: SkillFacts, policy: SkillEvidencePolicy): SkillJudgem
 		violations.push(
 			`${name}: evidence did not come from the trusted runner — run ${report.provenance.runId} answered ${got}, expected ${want}.`,
 		);
+	} else if (provenance.artifact._tag === "Unreadable") {
+		unknowns.push(
+			`${name}: the report artifact of benchmark run ${report.provenance.runId} could not be read (${provenance.artifact.reason}) — the committed numbers cannot be proven to be the run's, UNKNOWN.`,
+		);
+	} else if (provenance.artifact._tag === "Missing") {
+		unknowns.push(
+			`${name}: benchmark run ${report.provenance.runId} published no \`${policy.reportArtifact}\` artifact — the committed numbers cannot be proven to be the run's, UNKNOWN.`,
+		);
+	} else if (provenance.artifact._tag === "Mismatch") {
+		violations.push(
+			`${name}: the committed report's bytes differ from the \`${policy.reportArtifact}\` artifact the trusted run published — the numbers are not the run's. Commit the run's artifact bytes verbatim.`,
+		);
 	} else if (!provenance.reachable) {
 		unknowns.push(
 			`${name}: benchmark commit ${report.provenance.headSha} is absent from this checkout — cannot bind content, UNKNOWN.`,
@@ -885,7 +929,16 @@ export const judge = (facts: SkillEvidenceFacts): GuardVerdict => {
 	const removed: Array<string> = [];
 	const exempted: Array<string> = [];
 	const gated: Array<SkillFacts> = [];
+	const unknowns: Array<string> = [];
 	for (const skill of facts.skills) {
+		// Before ANY removal/typo logic: a failed git read must never wear the shape of a fact about
+		// the skill's content — "removed" and "absent at base" are content answers, not read errors.
+		if (skill.gitError !== undefined) {
+			unknowns.push(
+				`${skill.name}: a git read failed (${skill.gitError}) — the skill's content could not be established, UNKNOWN.`,
+			);
+			continue;
+		}
 		if (!skill.existsAtHead) {
 			removed.push(skill.name);
 			continue;
@@ -899,6 +952,13 @@ export const judge = (facts: SkillEvidenceFacts): GuardVerdict => {
 	}
 
 	if (gated.length === 0) {
+		// Every skill exempt/removed is a clean skip ONLY when nothing failed along the way: a
+		// gitError above leaves the gate unable to prove the classification itself.
+		if (unknowns.length > 0) {
+			return unknown(
+				`${VERB}: ${unknowns[0] ?? ""}${unknowns.length > 1 ? ` (+${unknowns.length - 1} more)` : ""}`,
+			);
+		}
 		const parts: Array<string> = [];
 		if (removed.length > 0)
 			parts.push(`${removed.length} skill(s) removed — no evidence required to delete`);
@@ -909,7 +969,6 @@ export const judge = (facts: SkillEvidenceFacts): GuardVerdict => {
 	}
 
 	const violations: Array<string> = [];
-	const unknowns: Array<string> = [];
 	const annotations: Array<Annotation> = [];
 	let offenders = 0;
 	for (const skill of gated) {
@@ -947,7 +1006,7 @@ export const judge = (facts: SkillEvidenceFacts): GuardVerdict => {
 		);
 	}
 	return clean(
-		`${VERB}: skill evidence gate: ${gated.length} skill(s) checked — every changed skill carries trusted, version-bound benchmark evidence meeting the policy's thresholds` +
+		`${VERB}: skill evidence gate: ${gated.length} skill(s) checked — every changed skill carries trusted, version-bound benchmark evidence meeting the policy's thresholds, byte-verified against the run's artifact` +
 			` (${removed.length} removed, ${exempted.length} typo-exempt)`,
 		gated.length,
 	);

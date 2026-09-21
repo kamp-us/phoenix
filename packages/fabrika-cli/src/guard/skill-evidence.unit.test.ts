@@ -44,6 +44,7 @@ const POLICY: SkillEvidencePolicy = {
 	producerWorkflow: PRODUCER,
 	skillsRoot: SKILLS,
 	reportRoot: REPORTS,
+	reportArtifact: "skill-benchmark-report",
 	thresholds: {default: DEFAULTS, perSkill: {}},
 	typoExemption: {mdOnly: true, maxChangedWords: 20, maxWordEditDistance: 2},
 };
@@ -61,6 +62,7 @@ const goodProvenance: ProvenanceFacts = {
 	run: goodRun,
 	tokenPresent: true,
 	benchmarkTreeAtHeadSha: TREE_HEAD,
+	artifact: {_tag: "Match"},
 };
 
 /** Not typo-exempt by default: many changed words, so a case opts INTO the lane explicitly. */
@@ -568,6 +570,74 @@ describe("judge — provenance: the trusted runner, the content it measured", ()
 		);
 		expect(verdict._tag).toBe("Violation");
 	});
+
+	it("answers UNKNOWN when the run published no report artifact — the numbers stay unproven", () => {
+		const verdict = judge(
+			facts(
+				[`${SKILLS}/build/SKILL.md`],
+				[skill("build", {provenance: {...goodProvenance, artifact: {_tag: "Missing"}}})],
+			),
+		);
+		expect(verdict._tag).toBe("Unknown");
+		expect(verdict._tag === "Unknown" && verdict.report).toContain(
+			"published no `skill-benchmark-report` artifact",
+		);
+	});
+
+	it("answers UNKNOWN when the run's report artifact could not be read", () => {
+		const verdict = judge(
+			facts(
+				[`${SKILLS}/build/SKILL.md`],
+				[
+					skill("build", {
+						provenance: {...goodProvenance, artifact: {_tag: "Unreadable", reason: "HTTP 503"}},
+					}),
+				],
+			),
+		);
+		expect(verdict._tag).toBe("Unknown");
+		expect(verdict._tag === "Unknown" && verdict.report).toContain("could not be read (HTTP 503)");
+	});
+
+	it("reds a committed report whose bytes differ from the run's published artifact", () => {
+		const verdict = judge(
+			facts(
+				[`${SKILLS}/build/SKILL.md`],
+				[skill("build", {provenance: {...goodProvenance, artifact: {_tag: "Mismatch"}}})],
+			),
+		);
+		const violation = isViolation(verdict);
+		expect(violation?.report).toContain("bytes differ from the `skill-benchmark-report` artifact");
+	});
+});
+
+describe("judge — a failed git read is never a fact about content", () => {
+	it("answers UNKNOWN on gitError instead of reading the skill as removed", () => {
+		const verdict = judge(
+			facts(
+				[`${SKILLS}/build/SKILL.md`],
+				[skill("build", {existsAtHead: false, gitError: "fatal: not a tree object"})],
+			),
+		);
+		expect(verdict._tag).toBe("Unknown");
+		expect(verdict._tag === "Unknown" && verdict.report).toContain("a git read failed");
+		expect(verdict._tag === "Unknown" && verdict.report).not.toContain("removed");
+	});
+
+	it("answers UNKNOWN on gitError even when other skills in the same change are all exempt", () => {
+		const verdict = judge(
+			facts(
+				[`${SKILLS}/build/SKILL.md`, `${SKILLS}/report/SKILL.md`],
+				[
+					skill("build", {existsAtHead: false, gitError: "fatal: not a tree object"}),
+					skill("report", {
+						typo: {nonMdFiles: [], mdFiles: 1, changedWords: 2, pairs: [{old: "teh", new: "the"}]},
+					}),
+				],
+			),
+		);
+		expect(verdict._tag).toBe("Unknown");
+	});
 });
 
 describe("judge — the happy paths", () => {
@@ -616,6 +686,7 @@ describe("parsePolicy", () => {
 		producerWorkflow: PRODUCER,
 		skillsRoot: SKILLS,
 		reportRoot: REPORTS,
+		reportArtifact: "skill-benchmark-report",
 		thresholds: {default: DEFAULTS, perSkill: {build: {minRepetitions: 1}}},
 		typoExemption: {mdOnly: true, maxChangedWords: 20, maxWordEditDistance: 2},
 	});
@@ -623,6 +694,7 @@ describe("parsePolicy", () => {
 	it("parses a well-formed policy with its per-skill overrides", () => {
 		const parsed = parsePolicy(policyText);
 		expect(parsed._tag).toBe("Ok");
+		expect(parsed._tag === "Ok" && parsed.policy.reportArtifact).toBe("skill-benchmark-report");
 		expect(parsed._tag === "Ok" && parsed.policy.thresholds.perSkill.build).toEqual({
 			minRepetitions: 1,
 		});
