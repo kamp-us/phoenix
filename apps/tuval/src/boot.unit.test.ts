@@ -243,11 +243,10 @@ describe("boot", () => {
 			});
 			expect(result.stderr).toBe("");
 			expect(result.status).toBe(0);
-			// The second line is the adoption's not-ours arm: the project's config module is outside
-			// the set the move takes, so every boot names it as left rather than skipping it silently.
+			// One line and no more: this boot moved nothing, so the account of what the move left
+			// behind has nothing to account for, and the project's config module goes unmentioned.
 			expect(result.stdout).toBe(
-				`tuval: booted — 3 program(s), ${CORE_SPELLS} spell(s) registered from ${defaultGlobalConfig(home)} + ${projectConfig(project)}; 0 process(es) live, 0 restored from ${homeStateDir(project, home)}\n` +
-					"tuval: left tuval.config.ts in the project — Tuval moves only the state it wrote itself\n",
+				`tuval: booted — 3 program(s), ${CORE_SPELLS} spell(s) registered from ${defaultGlobalConfig(home)} + ${projectConfig(project)}; 0 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
 			);
 		},
 		spawnBudget(1),

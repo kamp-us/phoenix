@@ -27,6 +27,7 @@ import {
 	piSessionStore,
 	prepareStateDir,
 	projectKey,
+	renderAdoption,
 	StateKeyCollision,
 } from "./state-dir.ts";
 
@@ -211,4 +212,50 @@ describe("the one-time move of in-project state", () => {
 			assert.deepStrictEqual(adopted, {moved: [], kept: [], unowned: []});
 		}).pipe(Effect.provide(NodeFileSystem.layer)),
 	);
+});
+
+describe("the boot lines one adoption earns", () => {
+	it.effect("says nothing on the repeat boot of a project that holds only its config module", () =>
+		Effect.gen(function* () {
+			const project = freshDir("tuval-state-project-");
+			const stateDir = join(freshDir("tuval-state-home-"), "state");
+			const projectTuval = join(project, ".tuval");
+			mkdirSync(projectTuval, {recursive: true});
+			mkdirSync(stateDir, {recursive: true});
+			writeFileSync(join(projectTuval, "tuval.config.ts"), "export default {};\n");
+
+			const adopted = yield* adoptInProjectState(projectTuval, stateDir);
+			// The field still reports the config module — what changed is that nothing prints it.
+			assert.deepStrictEqual(adopted, {moved: [], kept: [], unowned: ["tuval.config.ts"]});
+			assert.deepStrictEqual(renderAdoption(adopted, stateDir), []);
+		}).pipe(Effect.provide(NodeFileSystem.layer)),
+	);
+
+	it.effect("names what the move took and what it left, on the boot that moved something", () =>
+		Effect.gen(function* () {
+			const project = freshDir("tuval-state-project-");
+			const stateDir = join(freshDir("tuval-state-home-"), "state");
+			const projectTuval = join(project, ".tuval");
+			mkdirSync(projectTuval, {recursive: true});
+			mkdirSync(stateDir, {recursive: true});
+			writeFileSync(join(projectTuval, "manifest.json"), "{}\n");
+			writeFileSync(join(projectTuval, "tuval.config.ts"), "export default {};\n");
+			writeFileSync(join(projectTuval, "notes.md"), "mine\n");
+
+			const adopted = yield* adoptInProjectState(projectTuval, stateDir);
+			assert.deepStrictEqual(adopted.moved, ["manifest.json"]);
+			assert.deepStrictEqual([...adopted.unowned].sort(), ["notes.md", "tuval.config.ts"].sort());
+			assert.deepStrictEqual(renderAdoption(adopted, stateDir), [
+				`moved manifest.json out of the project into ${stateDir}`,
+				`left ${adopted.unowned.join(", ")} in the project — Tuval moves only the state it wrote itself`,
+			]);
+		}).pipe(Effect.provide(NodeFileSystem.layer)),
+	);
+
+	it("still names a collision on a boot that moved nothing, since it asks for a hand fix", () => {
+		assert.deepStrictEqual(
+			renderAdoption({moved: [], kept: ["manifest.json"], unowned: ["notes.md"]}, "/state"),
+			["left manifest.json in the project — /state already holds one of each"],
+		);
+	});
 });

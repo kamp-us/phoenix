@@ -192,6 +192,33 @@ skips the one name `tuval.config.ts` and lifts every other entry, so the change 
 owed: it is [#9611](https://github.com/kamp-us/phoenix/issues/9611), and no other record or issue
 carries it.
 
+## Amendment (2026-09-21, [#9625](https://github.com/kamp-us/phoenix/issues/9625)) — the `left` line belongs to the move boot, not to every boot
+
+The amendment above restated the ruling as "an entry under `<project>/.tuval` whose name is not one
+of those three stays where it is, **and the boot's `left` line names it**". That second clause is
+this record's, not the founder's. His ruling quoted above says *"The boot line keeps naming exactly
+what moved"*, which governs the `moved` line and asks nothing of the boots after the move. **That
+quoted sentence is unchanged and nothing here touches its scope.**
+
+Read as written, the restatement made a permanent condition into a permanent line: a project's
+`tuval.config.ts` is outside the moved set by rule and therefore unowned on every boot, so every
+boot of every project holding a config module printed a notice about a file that is supposed to be
+there. That is the opposite of the ruling's own reason — a tool that does not surprise its operator.
+
+**So the restatement is corrected: the `left` line for an unowned entry is part of the move boot's
+account of what it took and what it did not, and prints only on a boot where something moved.** A
+boot that moved nothing has no account to give and says nothing. The move's *report* is unchanged:
+`StateAdoption.unowned` still carries every entry outside the moved set, `tuval.config.ts` included,
+because narrowing the field would make the move boot's own account incomplete — which is the shape
+the ruling actually forbids.
+
+Out of scope here: the `kept` line, which names a collision between a project copy and a home-dir
+copy and so asks the operator for a hand fix. Whether that one should also quiet down is unsettled
+and unasked.
+
+Everything else in the record stands, including the moved set, the closed list, and the Banned
+bullets.
+
 ## Records
 
 Coined: **Tuval project** — a directory Tuval opens as a desk, identified by its absolute path,

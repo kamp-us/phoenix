@@ -260,6 +260,37 @@ export const adoptInProjectState = Effect.fn("Tuval.adoptInProjectState")(functi
 });
 
 /**
+ * The boot lines one adoption owes the operator, in order, unprefixed.
+ *
+ * `moved` and `kept` are facts about this boot: both fields empty themselves once the move is done,
+ * so both lines are one-shot on their own. `unowned` is not — its condition is that a project holds
+ * a file Tuval does not write, which is permanent, so a project with a `tuval.config.ts` would say
+ * so on every boot for the life of the project. It is reported only beside a move, which is the
+ * boot the line was written for: the one where Tuval rewrote a directory the operator did not name
+ * and owes an account of what it did and did not take.
+ */
+export const renderAdoption = (
+	adoption: StateAdoption,
+	stateDir: string,
+): ReadonlyArray<string> => {
+	const lines: Array<string> = [];
+	if (adoption.moved.length > 0) {
+		lines.push(`moved ${adoption.moved.join(", ")} out of the project into ${stateDir}`);
+	}
+	if (adoption.kept.length > 0) {
+		lines.push(
+			`left ${adoption.kept.join(", ")} in the project — ${stateDir} already holds one of each`,
+		);
+	}
+	if (adoption.moved.length > 0 && adoption.unowned.length > 0) {
+		lines.push(
+			`left ${adoption.unowned.join(", ")} in the project — Tuval moves only the state it wrote itself`,
+		);
+	}
+	return lines;
+};
+
+/**
  * The state directory this desk was booted on, as a kernel service.
  *
  * A program row's layer declares it as a leftover requirement and is handed it at spawn — the seam
