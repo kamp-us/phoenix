@@ -192,5 +192,15 @@
 	// #5991, 2026-08-18 — the surface stands on `actionlint` alone. So a local tree without
 	// `actionlint` opens no workflow file and `--surface workflows` refuses `11`, UNKNOWN — never
 	// green — and `ci.yml`'s own jobs stay the deciding authority on these files.
-	"workflowValidators": []
+	"workflowValidators": [],
+
+	// What fabrika may assume about this repo's CI producer. `mainAlarm` is the one half declared
+	// here: who the main-went-red alarm wakes. The shipped `mention` is empty — a handle baked into
+	// the package would ping a stranger in every adopting repo — so the founder's handle is this
+	// repository's own fact, written here and nowhere in the package (#9508).
+	"ci": {
+		"mainAlarm": {
+			"mention": ["@usirin"]
+		}
+	}
 }

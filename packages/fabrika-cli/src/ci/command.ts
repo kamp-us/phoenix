@@ -7,12 +7,16 @@
  * A mistake here breaks cutting rather than a check, which is why they are grouped apart from
  * `guard`.
  *
- * The group's fifth member is not a verb: `ci-required` is a bare entry point
- * (`./required-bin.ts`), because its gate job installs no dependencies and an Effect CLI command
- * would put the whole dependency tree on the always-on aggregator's critical path.
+ * Two members of the group are not verbs but bare entry points, each because its job installs no
+ * dependencies and an Effect CLI command would put the whole dependency tree on its critical path:
+ * `ci-required` (`./required-bin.ts`), the always-on aggregator, and the main alarm
+ * (`./main-alarm-bin.ts`), which reports a red push to the default branch and so must not depend on
+ * the install that may be what broke.
  *
  * The adapter and nothing else: it declares the flags, reads the machine facts the verbs do not
  * derive, runs the verb, and emits its outcome.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9508
  */
 
 import {Effect, Option} from "effect";

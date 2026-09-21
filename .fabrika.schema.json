@@ -161,6 +161,28 @@
 					"description": "The CI gate's workflow filename, as `gh api actions/workflows/<file>` names it — a bare filename, not a path.",
 					"minLength": 1,
 					"pattern": "^[^/]+$"
+				},
+				"mainAlarm": {
+					"type": "object",
+					"description": "The main-went-red alarm: who it wakes, and the label its tracking issue carries.",
+					"properties": {
+						"mention": {
+							"type": "array",
+							"description": "The handles the alarm mentions — e.g. [\"@someone\"]. Empty mentions nobody and still files.",
+							"items": {
+								"type": "string",
+								"minLength": 1,
+								"pattern": "^\\S+$"
+							}
+						},
+						"label": {
+							"type": "string",
+							"description": "The label the alarm issue carries, which is also how the standing one is found again.",
+							"minLength": 1,
+							"pattern": "^[^,]+$"
+						}
+					},
+					"additionalProperties": false
 				}
 			},
 			"additionalProperties": false
