@@ -369,6 +369,17 @@ for the field at 0.3.259. `../events.unit.test.ts` covers the other two by stamp
 over the captured background notification, leaving every other key the capture's, and says so at the
 case.
 
+**A `task_started` frame.** The background capture above holds the launch receipt and the settling
+notification and nothing in between, because the CLI records this frame as an `attachment` row
+rather than the SDK's own envelope and `getSessionMessages` raises no such row — the same reason the
+notification there had to be re-keyed. The frame matters because of one field:
+`SDKTaskStartedMessage.is_backgrounded`, whose declaration says "A resumed subagent is always
+registered in the background", which makes this the only frame that ever names a *resumed* worker
+(#9587 — a resume makes no `Agent` call, so nothing else opens its slot). `../task-started.unit.test.ts`
+builds the frame from `sdk.d.ts` at the `0.3.259` catalog pin and says so in its own docblock, the
+route `../../agent/conversation-reset.unit.test.ts` already takes. Replacing it with a real capture
+belongs to the same operator run as the excerpted fixtures above.
+
 **A subagent's streamed reply.** The live-stream gap this section used to name is closed from both
 ends now: `subagent-turn.json` is the SDK's stream — a worker's `user`, `assistant` (prose and
 reasoning) and tool frames all arrive parent-tagged on the parent session — and the sidechain pair

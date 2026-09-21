@@ -5,7 +5,7 @@
 
 import {describe, expect, it} from "vitest";
 import {foldEvent} from "../../ai-agent/core/fold.ts";
-import {initialState} from "../../ai-agent/core/state.ts";
+import {initialState, settleTurn} from "../../ai-agent/core/state.ts";
 import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
 import {fixtureEventFrames} from "../../claude/history/fixtures/events.ts";
 import {
@@ -257,5 +257,38 @@ describe("runningSubagents over a captured background spawn", () => {
 
 	it("drops the row once the notification ends the worker (Q2)", () => {
 		expect(perFrame().at(-1)).toEqual({rows: [], more: 0});
+	});
+
+	/**
+	 * The row the desk check actually lost: the launch answer arrives seconds into a two-minute
+	 * worker, and the parent's turn ends right behind it — so the list was empty for the whole run
+	 * even after the mapper stopped ending the slot (#9587).
+	 */
+	it("still draws the row after the turn that launched the worker has settled under it", () => {
+		let state = initialState("/repo");
+		for (const events of fixtureEventFrames("background-subagent-turn", {
+			at: 1_700_000_000_000,
+		}).slice(0, 2)) {
+			state = events.reduce((carried, event) => foldEvent(carried, event, {}), state);
+		}
+		const settled = settleTurn(state);
+		expect(runningSubagents(settled.subagents).rows.map((row) => row.id)).toEqual([SPAWN]);
+		expect(settled.subagents[SPAWN]?.status).toBe("running");
+	});
+
+	/**
+	 * A *resumed* background worker reaches the list as the same shape, and that is the whole of what
+	 * this list knows about it: the frame that opens its slot is `task_started`, proven in
+	 * `../../claude/history/task-started.unit.test.ts` — this directory's project cannot import the
+	 * SDK's types, so the two halves meet on the slot.
+	 */
+	it("draws a row for any slot that outlives its turn, resumed workers included", () => {
+		const held = {
+			...initialState("/repo"),
+			subagents: slots(subagentSlot("resumed", {type: "Explore", outlivesTurn: true})),
+		};
+		expect(runningSubagents(settleTurn(held).subagents).rows.map((row) => row.id)).toEqual([
+			"resumed",
+		]);
 	});
 });
