@@ -127,6 +127,25 @@ describe("ScrollRestorationMount", () => {
 		expect(window.scrollY).toBe(640);
 	});
 
+	it("lands the reader at the top coming back to an entry they never scrolled", () => {
+		// The feed opens at 0 and the reader clicks the first post without scrolling, so the feed's
+		// entry has no saved row. Before this arm existed the hook read that absence as "leave the
+		// viewport alone" and the feed came back carrying the post's offset (#9268).
+		renderApp();
+		click("push");
+		viewport.readerScrollsTo(1200);
+		click("back");
+		expect(window.scrollY).toBe(0);
+	});
+
+	it("never scrolls on the cold load, including under StrictMode's double mount", () => {
+		// The cold load is a POP with nothing saved too, and there the entry is the browser's:
+		// a deep link's own fragment handling has to survive. StrictMode runs the effect twice for
+		// that one navigation, and the second run must not read as an arrival.
+		renderApp(true);
+		expect(viewport.calls).toEqual([]);
+	});
+
 	it("keeps re-applying the offset while the feed gets its height back", async () => {
 		renderApp();
 		viewport.readerScrollsTo(640);

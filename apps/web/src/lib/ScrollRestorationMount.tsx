@@ -74,6 +74,12 @@ export function useScrollRestoration(): void {
 	// A settle drives the window itself, and against a page that is still filling it lands
 	// clamped. The recorder must not write those intermediate offsets over the saved one.
 	const settlingRef = React.useRef(false);
+	// The last navigation this hook decided, and what it decided. `null` is the proof that the
+	// navigation being handled is the session's first one, which is the only POP whose viewport
+	// belongs to the browser. Holding the decision beside its signature is what makes the answer
+	// idempotent under StrictMode's double-invoked effects: the same navigation re-run reaches
+	// the same intent instead of reading as a second arrival.
+	const lastRunRef = React.useRef<{signature: string; intent: ScrollIntent} | null>(null);
 
 	React.useEffect(() => {
 		const previous = window.history.scrollRestoration;
@@ -96,11 +102,20 @@ export function useScrollRestoration(): void {
 	// right before the browser paints, so the reader never sees the top of the list flash past.
 	React.useLayoutEffect(() => {
 		keyRef.current = location.key;
-		const intent = scrollIntent({
-			navigation: navigationKind(navigationType),
-			hash: location.hash,
-			saved: positionsRef.current?.get(location.key),
-		});
+		const previousRun = lastRunRef.current;
+		// The signature is this effect's own dependency list: identical deps twice in a row is
+		// React re-running the effect, never a navigation the reader made.
+		const signature = `${location.key}\u0000${location.hash}\u0000${navigationType}`;
+		const intent =
+			previousRun?.signature === signature
+				? previousRun.intent
+				: scrollIntent({
+						navigation: navigationKind(navigationType),
+						hash: location.hash,
+						saved: positionsRef.current?.get(location.key),
+						isFirstNavigation: previousRun === null,
+					});
+		lastRunRef.current = {signature, intent};
 		if (intent.kind === "none") return;
 
 		const deadline = Date.now() + SCROLL_SETTLE_TIMEOUT_MS;

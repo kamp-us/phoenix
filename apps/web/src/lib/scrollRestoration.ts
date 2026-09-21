@@ -28,6 +28,13 @@ export interface ScrollIntentInput {
 	readonly hash: string;
 	/** The offset saved for this history entry; `undefined` when none was ever saved. */
 	readonly saved: number | undefined;
+	/**
+	 * Whether this is the session's very first navigation — the cold load, which react-router
+	 * reports as a POP. Without it, that cold load and a back navigation to an entry the reader
+	 * never scrolled are one indistinguishable "POP with nothing saved", and the reader lands on
+	 * the feed carrying the post's offset (#9268).
+	 */
+	readonly isFirstNavigation: boolean;
 }
 
 /**
@@ -52,21 +59,36 @@ function pageOwnsFragment(id: string): boolean {
 	return PAGE_OWNED_FRAGMENT_PREFIXES.some((prefix) => id.startsWith(prefix));
 }
 
-export function scrollIntent({navigation, hash, saved}: ScrollIntentInput): ScrollIntent {
+/**
+ * Where an arrival at this URL rests, with no history behind it: the fragment it names, or the
+ * top. The pano feed's own `N yorum` link is `/pano/<id>#comments`, so a hash arrival that kept
+ * the departing offset would read as the previous page's scroll carried over. A fragment the
+ * landing page scrolls itself is the top too — this module stands down rather than race it.
+ */
+function arrivalIntent(hash: string): ScrollIntent {
+	const id = hash.startsWith("#") ? hash.slice(1) : "";
+	if (id === "" || pageOwnsFragment(id)) return {kind: "top"};
+	return {kind: "anchor", id};
+}
+
+export function scrollIntent({
+	navigation,
+	hash,
+	saved,
+	isFirstNavigation,
+}: ScrollIntentInput): ScrollIntent {
 	// A replace is a correction of the entry the reader is already on — the post-auth
 	// redirect, a `?sort=` rewrite — so it is not an arrival and owes the viewport nothing.
 	if (navigation === "replace") return {kind: "none"};
-	// A forward navigation is an arrival, so it never keeps the offset the reader left behind.
-	// Where it names a fragment that fragment is the arrival point — the pano feed's own
-	// `N yorum` link is `/pano/<id>#comments` — and where it names none, the top is. A fragment
-	// the landing page scrolls itself is the top too: this module stands down rather than race it.
-	if (navigation === "push") {
-		const id = hash.startsWith("#") ? hash.slice(1) : "";
-		if (id === "" || pageOwnsFragment(id)) return {kind: "top"};
-		return {kind: "anchor", id};
+	if (navigation === "pop") {
+		// `saved === 0` is a real saved offset and stays distinct from the absence.
+		if (saved !== undefined) return {kind: "restore", top: saved};
+		// The cold load is a POP too, and there the browser's own fragment handling is the better
+		// answer than a forced 0 — this hook was not mounted when the entry was left.
+		if (isFirstNavigation) return {kind: "none"};
+		// Every other POP with nothing saved is an entry this hook did handle and the reader never
+		// scrolled, so it rests where an arrival rests. Answering `none` here left the viewport on
+		// the departing page's offset, which is the regression this issue exists to fix.
 	}
-	// POP with nothing saved is the first load of a tab (react-router's initial navigation
-	// type), where the browser's own anchor handling is the better answer than a forced 0.
-	// `saved === 0` is a real saved offset and stays distinct from the absence.
-	return saved === undefined ? {kind: "none"} : {kind: "restore", top: saved};
+	return arrivalIntent(hash);
 }
