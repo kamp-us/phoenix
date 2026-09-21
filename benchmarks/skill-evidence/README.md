@@ -106,6 +106,28 @@ equal `report.skill.treeSha` — the trusted run measured the exact content the
 report attests. No `GITHUB_TOKEN` in the environment, an unreachable API, or
 an absent benchmark commit is UNKNOWN (exit 11), never clean.
 
+**Artifact byte-binding.** A run existing proves a benchmark *ran*; it does
+not prove the committed numbers are the run's. The producer must publish an
+artifact named by `policy.reportArtifact` (today `skill-benchmark-report`)
+whose zip carries `report.json`, and the gate downloads it and requires it to
+be **byte-identical** to the committed report — commit the artifact's bytes
+verbatim, no reformatting. The run publishing no such artifact, a download
+that cannot be read, or an extraction that cannot run is UNKNOWN (exit 11);
+bytes that differ is a violation (exit 12).
+
+## The policy is read from the BASE commit
+
+`policy.json` is read from the PR's **base** commit, not the PR head — a PR
+cannot relax its own thresholds, widen its typo exemption, or move the report
+root it is judged under. Every policy change takes effect only after it
+merges, so a relaxing policy PR is still judged by the policy it relaxes. The
+head-tree read exists only to bootstrap (the PR that first lands the policy
+has no base copy yet) and cannot serve as a relaxation vector once the policy
+exists at base — which, after that merge, is always. A failed git read while
+establishing any of this (a skill's tree at base or head, the policy blob) is
+UNKNOWN, never "skill absent" — a read that failed never wears the shape of a
+content fact.
+
 ## Out of scope
 
 Raw transcripts, per-run logs, and scenario bodies never land here — only the

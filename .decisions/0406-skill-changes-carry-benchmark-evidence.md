@@ -57,12 +57,24 @@ the base and head SHAs, and the repository name; the verb gathers the facts
   `treatment.criticalErrors - baseline.criticalErrors <= newCriticalErrors`,
   and cost within `maxCostRatio` of the baseline (an absolute budget over a
   zero-cost baseline).
-- **Trusted-runner provenance.** The report names the producer run; the gate
-  reads that run off the GitHub API and requires a completed, successful run
-  of exactly `policy.producerWorkflow` whose `head_sha` is a commit present in
-  the checkout where the skill's tree equals the attested `skill.treeSha` —
-  the trusted run measured the content the report attests. Self-reported
-  numbers are never trusted on their own.
+- **Trusted-runner provenance, artifact-bound.** The report names the producer
+  run; the gate reads that run off the GitHub API and requires a completed,
+  successful run of exactly `policy.producerWorkflow` whose `head_sha` is a
+  commit present in the checkout where the skill's tree equals the attested
+  `skill.treeSha`, and it downloads the run's published `reportArtifact` and
+  requires its `report.json` to be byte-identical to the committed one — the
+  run's existence proves a benchmark ran at this content; the artifact
+  comparison is what proves the committed numbers ARE the run's numbers (the
+  fetch-the-artifact posture `ship evidence` takes toward its bundle).
+  Self-reported numbers are never trusted on their own.
+- **The policy is a base-anchored trust root.** `policy.json` is read from the
+  PR's base commit, so a PR cannot relax its own thresholds, widen its typo
+  exemption, or move the report root it is judged under — a policy change
+  takes effect only after it merges, judged (while it is a PR) by the policy
+  it changes. A head-tree read bootstraps only the PR that first lands the
+  policy. A failed git read that would establish a content fact (a skill's
+  tree, the policy blob) is UNKNOWN, never "skill absent" — the probe
+  (`git ls-tree`) separates a failed read from an absent path by exit code.
 - **Stale-evidence refusal.** `report.skill.treeSha` must equal the PR's skill
   tree; any skill edit after the benchmark ran reds until the benchmark is
   re-run at the new content.
@@ -73,11 +85,13 @@ the base and head SHAs, and the repository name; the verb gathers the facts
   the caps never qualify. Content-based on purpose: it answers identically on
   `pull_request` and `merge_group`, and the word-diff facts are computed by
   the verb in code (ADR 0228's relay-never-derive — the workflow relays the
-  diff, the verb decides).
+  diff, the verb decides). The workflow's diff binds to the same head SHA the
+  verb audits, so the merge ref a `pull_request` checkout lands on can never
+  diverge from the content the evidence must attest.
 - **Missing or failing evidence reds** (exit 12) once the check is required; a
   read the verdict rests on that could not be made — policy, report file, git,
-  the GitHub API, no token — is UNKNOWN (exit 11), never clean, per the
-  group's fail-closed floor (ADR 0092).
+  the GitHub API, the report artifact, no token — is UNKNOWN (exit 11), never
+  clean, per the group's fail-closed floor (ADR 0092).
 
 **Adjacent rulings stay in their scopes.** Epic #8035's non-goal "gating
 anything on a skill-doctor grade" is about the grader's letter grades — this
