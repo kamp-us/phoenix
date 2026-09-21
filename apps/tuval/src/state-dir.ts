@@ -4,9 +4,10 @@
  * and no other module may: the manifest, the process checkpoints and the Pi session files all hang
  * off `homeStateDir`, so a project Tuval opens needs zero files and gets none written into it.
  *
- * `<project>/.tuval/` survives as a config directory alone — `boot`'s `projectConfig` reads
- * `tuval.config.ts` out of it, and `adoptInProjectState` below lifts everything else out of it once
- * and leaves that module behind.
+ * `<project>/.tuval/` survives as a config directory an operator also keeps their own files in —
+ * `boot`'s `projectConfig` reads `tuval.config.ts` out of it, and `adoptInProjectState` below lifts
+ * the closed set of names Tuval itself writes out of it once, leaving every other name where it is
+ * (ADR 0402 rule 7, as amended).
  *
  * The home dir is a required parameter everywhere here, never defaulted: a caller that named none
  * would resolve the operator's own home, and a test or proof that did so would write a desk's
@@ -173,16 +174,32 @@ export const prepareStateDir = Effect.fn("Tuval.prepareStateDir")(function* (
 	return stateDir;
 });
 
-/** What one boot's adoption of in-project state moved, and what it found already adopted. */
+/**
+ * What one boot's adoption of in-project state moved, and the two distinct reasons it left an entry
+ * behind. A collision and a name Tuval does not own are different facts about the project's
+ * directory — one asks the operator to reconcile two copies of their desk's state, the other says
+ * their own file was never touched — so they never share a field.
+ */
 export interface StateAdoption {
 	/** Entries lifted out of `<project>/.tuval` into the home-dir key. */
 	readonly moved: ReadonlyArray<string>;
 	/** Entries left where they were, because the home-dir key already holds one under that name. */
 	readonly kept: ReadonlyArray<string>;
+	/** Entries left where they were, because their name is outside the set Tuval writes. */
+	readonly unowned: ReadonlyArray<string>;
 }
 
-/** The one file `<project>/.tuval/` may still hold after adoption: the project's config layer. */
-const CONFIG_MODULE = "tuval.config.ts";
+/**
+ * The closed set of names Tuval itself writes into `<project>/.tuval`, and therefore the only names
+ * the one-time move takes (ADR 0402 rule 7, as amended by the founder's ruling on #9566). A new kind
+ * of Tuval state file moves only once it is added here and in that record; until then a project's
+ * copy is left behind, which is the cost the ruling accepts.
+ */
+const TUVAL_STATE_NAMES: ReadonlySet<string> = new Set([
+	"manifest.json",
+	"processes",
+	"pi-sessions",
+]);
 
 /**
  * Move an entry across, falling back to a copy when the two directories are on different volumes —
@@ -204,9 +221,11 @@ const lift = (
 	});
 
 /**
- * ADR 0402 rule 7's one-time move: state already sitting under `<project>/.tuval` is lifted into
- * that project's home-dir key, once, by boot code — never by a hand edit on an operator's machine.
- * The config module stays behind, because that directory goes on being a config directory.
+ * ADR 0402 rule 7's one-time move, as amended: the names in `TUVAL_STATE_NAMES` sitting under
+ * `<project>/.tuval` are lifted into that project's home-dir key, once, by boot code — never by a
+ * hand edit on an operator's machine. Every other name stays where it is, `tuval.config.ts` among
+ * them by that rule and not by a skip of its own: a tool moves only the files it wrote, and
+ * relocating an operator's notes or scripts without saying so is the surprise the ruling bans.
  *
  * An entry the home-dir key already holds is left where it is rather than overwritten: the desk
  * that wrote the home-dir copy is the live one, and destroying either copy is not this move's call.
@@ -218,12 +237,17 @@ export const adoptInProjectState = Effect.fn("Tuval.adoptInProjectState")(functi
 	stateDir: string,
 ) {
 	const fs = yield* FileSystem.FileSystem;
-	if (!(yield* fs.exists(projectTuvalDir))) return {moved: [], kept: []} satisfies StateAdoption;
+	if (!(yield* fs.exists(projectTuvalDir)))
+		return {moved: [], kept: [], unowned: []} satisfies StateAdoption;
 	const entries = yield* fs.readDirectory(projectTuvalDir);
 	const moved: Array<string> = [];
 	const kept: Array<string> = [];
+	const unowned: Array<string> = [];
 	for (const entry of entries) {
-		if (entry === CONFIG_MODULE) continue;
+		if (!TUVAL_STATE_NAMES.has(entry)) {
+			unowned.push(entry);
+			continue;
+		}
 		const target = join(stateDir, entry);
 		if (yield* fs.exists(target)) {
 			kept.push(entry);
@@ -232,7 +256,7 @@ export const adoptInProjectState = Effect.fn("Tuval.adoptInProjectState")(functi
 		yield* lift(join(projectTuvalDir, entry), target);
 		moved.push(entry);
 	}
-	return {moved, kept} satisfies StateAdoption;
+	return {moved, kept, unowned} satisfies StateAdoption;
 });
 
 /**

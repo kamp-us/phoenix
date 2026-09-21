@@ -201,7 +201,7 @@ describe("boot", () => {
 					bindingCount: 0,
 					bindingErrors: [],
 					stateDir: homeStateDir(project, home),
-					adopted: {moved: [], kept: []},
+					adopted: {moved: [], kept: [], unowned: []},
 					processCount: 0,
 					restoredCount: 0,
 				});
@@ -243,8 +243,11 @@ describe("boot", () => {
 			});
 			expect(result.stderr).toBe("");
 			expect(result.status).toBe(0);
+			// The second line is the adoption's not-ours arm: the project's config module is outside
+			// the set the move takes, so every boot names it as left rather than skipping it silently.
 			expect(result.stdout).toBe(
-				`tuval: booted — 3 program(s), ${CORE_SPELLS} spell(s) registered from ${defaultGlobalConfig(home)} + ${projectConfig(project)}; 0 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
+				`tuval: booted — 3 program(s), ${CORE_SPELLS} spell(s) registered from ${defaultGlobalConfig(home)} + ${projectConfig(project)}; 0 process(es) live, 0 restored from ${homeStateDir(project, home)}\n` +
+					"tuval: left tuval.config.ts in the project — Tuval moves only the state it wrote itself\n",
 			);
 		},
 		spawnBudget(1),
@@ -468,13 +471,18 @@ describe("boot", () => {
 				const {report} = yield* bootDirect(fixture("one-counter"), project, home);
 				assert.deepStrictEqual([...report.adopted.moved].sort(), ["manifest.json", "processes"]);
 				assert.deepStrictEqual(report.adopted.kept, []);
+				assert.deepStrictEqual(report.adopted.unowned, ["tuval.config.ts"]);
 				assert.strictEqual(report.restoredCount, 1);
 				assert.deepStrictEqual(readdirSync(projectDir(project)), ["tuval.config.ts"]);
 				assert.isTrue(existsSync(join(report.stateDir, "manifest.json")));
 				// Once, not on every boot: the second one finds nothing left to move and restores the
 				// same process off the home-dir key.
 				const again = yield* bootDirect(fixture("one-counter"), project, home);
-				assert.deepStrictEqual(again.report.adopted, {moved: [], kept: []});
+				assert.deepStrictEqual(again.report.adopted, {
+					moved: [],
+					kept: [],
+					unowned: ["tuval.config.ts"],
+				});
 				assert.strictEqual(again.report.restoredCount, 1);
 			}),
 		DIRECT_BOOT_MS,
