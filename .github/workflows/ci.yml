@@ -138,7 +138,7 @@ jobs:
       # the opposite stance of check/integration/packages/workflows above (which DO
       # OR in `merge_group` to run the full gate on the batch, because they need no
       # deploy). e2e alone awaits a live preview URL + D1 id from deploy.yml, and
-      # deploy.yml has NO `merge_group` trigger (only `push: [main]` + `pull_request`),
+      # deploy.yml has NO `merge_group` trigger,
       # so a batch can't produce a preview — e2e would await one forever, time out,
       # and red `ci-required`, ejecting the whole batch (ADR 0132; run 28645439324).
       # e2e already gated every PR in the `pull_request` context (where deploy.yml
@@ -158,7 +158,7 @@ jobs:
       # CHANGELOGs, the release manifest — matches no `e2e:` path, so that run still skips on
       # the filter, which is the same legitimate not-applicable PASS a `pull_request` run of
       # it gets. A dispatched run whose diff DOES hit the `e2e:` paths runs the job and,
-      # since deploy.yml has no dispatch trigger, finds no preview to test: the await step
+      # since deploy.yml dispatches target prod, finds no preview to test: the await step
       # fails and `ci-required` goes red. Red is the correct answer there — a dispatch may
       # not launder a missing e2e run into a pass.
       e2e_required: >-
