@@ -73,6 +73,21 @@ check surfaces only as a note. A check that should block gets added to the requi
 - A red outside that set is reported, never blocking, in every verb that reads a head's checks.
 - Making a check blocking means adding its context to the ruleset, not to a list in this repository.
 
+**Alternatives not taken.**
+
+- **Extend the denylist.** Adding the CodeQL contexts to `INFORMATIONAL` in
+  `packages/fabrika-cli/src/review/rollup.ts` is the cheapest change and leaves ADR 0061 intact, but
+  it buys one quiet check at a time: every non-required check the repository gains later reds a
+  mergeable pull request once, and someone hand-edits the list after the fact. It also keeps
+  blocking authority in this repository's source while GitHub already holds the answer on the base
+  branch, so the two can drift.
+- **Fix the check and let the old branches drain.**
+  [#9562](https://github.com/kamp-us/phoenix/issues/9562) records `Analyze (python)` failing on
+  branches cut before `main` carried Python files, and those branches do drain. That removes this
+  symptom and leaves the definition as it was, so the next non-required red strands the next pull
+  request exactly the same way. It is worth doing on its own merits and is not a ruling on what
+  blocks.
+
 **Not ruled here.**
 
 - **What holds when the required set is empty or unreadable.** ADR 0061 rejected the required-set
@@ -92,9 +107,10 @@ hand-fixed gates of 2026-09-20 stop recurring. The denylist in `review/rollup.ts
 blocking criterion; whether it survives as a reporting classifier is an implementation question this
 record leaves to the change that lands it.
 
-This record is the ruling written down, not the implementation. The four verbs named above still
-read the denylist, so each needs its own change, and the required-set read has to fail closed rather
-than silently gate nothing.
+This record is the ruling written down, not the implementation. Each of the four verbs named above
+needs its own change: `ship checks`, `heal-ci diagnose` and `heal-ci logs` because they read the
+denylist through `isInformational`, and `review ci` because it filters nothing at all and rolls up
+every run at the head. The required-set read has to fail closed rather than silently gate nothing.
 
 ## Records
 
