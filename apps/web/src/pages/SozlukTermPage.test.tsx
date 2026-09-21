@@ -4,7 +4,7 @@ import {MemoryRouter} from "react-router";
 import {describe, expect, it, vi} from "vitest";
 import {LocaleProvider} from "../i18n";
 import {LOCALE_STORAGE_KEY} from "../lib/localeStorage";
-import {DefinitionsList} from "./SozlukTermPage";
+import {DefinitionsList, NewTermComposer} from "./SozlukTermPage";
 
 vi.mock("react-fate", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("react-fate")>();
@@ -92,5 +92,54 @@ describe("the term page's composer reads English at locale en (#7529)", () => {
 		await waitFor(() => expect(screen.getByLabelText("entry")).toBeTruthy());
 		expect(screen.getByTestId("sozluk-composer-submit").textContent).toBe("add entry");
 		expect(screen.getByText("markdown ·", {exact: false})).toBeTruthy();
+	});
+});
+
+// The undefined slug has no stored `first_letter`, so the letter comes off the slug — through
+// `sozlukLetterOf`, the fold the column's own producers share. `slug.charAt(0).toLowerCase()`
+// read `IŞIK` as `i` while the same headword reads `ı` everywhere else (#9602).
+describe("NewTermComposer's breadcrumb letter", () => {
+	function renderComposer(slug: string) {
+		sessionMock.data = {user: {id: "u1", name: "yazar"}};
+		const {container} = render(
+			<MemoryRouter>
+				<NewTermComposer slug={slug} onCreated={vi.fn()} />
+			</MemoryRouter>,
+		);
+		return container.querySelector(".kp-sozluk-term__crumbs") as HTMLElement;
+	}
+
+	function letterCrumb(slug: string, letter: string): string | null {
+		renderComposer(slug);
+		return screen.queryByRole("link", {name: letter})?.getAttribute("href") ?? null;
+	}
+
+	it("folds the dotless capital I to ı, not to i", () => {
+		expect(letterCrumb("IŞIK", "ı")).toBe(`/sozluk/harf/${encodeURIComponent("ı")}`);
+		expect(screen.queryByRole("link", {name: "i"})).toBeNull();
+	});
+
+	it("keeps a slug already starting ı on the dotless letter's page", () => {
+		expect(letterCrumb("ışık", "ı")).toBe(`/sozluk/harf/${encodeURIComponent("ı")}`);
+	});
+
+	it("folds the dotted capital İ to i", () => {
+		expect(letterCrumb("İMECE", "i")).toBe("/sozluk/harf/i");
+	});
+
+	it("keeps a slug already starting i on the dotted letter's page", () => {
+		expect(letterCrumb("imece", "i")).toBe("/sozluk/harf/i");
+	});
+
+	it("renders no letter crumb for a slug the alphabet does not index", () => {
+		const crumbs = renderComposer("3-adim");
+		expect(crumbs.textContent).toContain("3 adim");
+		expect(crumbs.querySelectorAll("a").length).toBe(1);
+	});
+
+	it("routes both crumbs through the router, so a click does not reload the page", () => {
+		const crumbs = renderComposer("imece");
+		const hrefs = [...crumbs.querySelectorAll("a")].map((a) => a.getAttribute("href"));
+		expect(hrefs).toEqual(["/sozluk", "/sozluk/harf/i"]);
 	});
 });

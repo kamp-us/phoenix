@@ -17,10 +17,12 @@ import {
 } from "react-fate";
 import {Link, useNavigate, useParams} from "react-router";
 import type {Term} from "../../worker/features/fate/views";
+import {sozlukLetterOf} from "../../worker/features/sozluk/turkish-alphabet";
 import {useSession} from "../auth/client";
 import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
 import {actorLabel} from "../components/moderation/actor-identity";
 import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCard";
+import {SozlukTermCrumbs} from "../components/sozluk/SozlukTermCrumbs";
 import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";
 import {Screen} from "../fate/Screen";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
@@ -188,7 +190,7 @@ function SozlukTermContent({
 	);
 }
 
-function NewTermComposer({
+export function NewTermComposer({
 	slug,
 	onCreated,
 }: {
@@ -196,14 +198,17 @@ function NewTermComposer({
 	onCreated: (definitionId: string | null) => void;
 }) {
 	const t = useT();
+	const title = slug.replace(/-/g, " ");
+	// The term does not exist yet, so there is no stored `first_letter` to read — the letter has
+	// to come off the slug, and through the same Turkish-aware fold the column's producers use.
+	// `null` for a slug the alphabet does not index, which renders no letter crumb, matching the
+	// header (#9602).
+	const letter = sozlukLetterOf(slug);
 	return (
 		<>
 			<header className="kp-sozluk-term__head">
-				<p className="kp-sozluk-term__crumbs">
-					<a href="/sozluk">{t("sozluk.term.crumbRoot")}</a> /{" "}
-					<a href="/sozluk">{slug.charAt(0).toLowerCase()}</a> / {slug.replace(/-/g, " ")}
-				</p>
-				<h1 className="kp-sozluk-term__title kp-prose">{slug.replace(/-/g, " ")}</h1>
+				<SozlukTermCrumbs letter={letter} title={title} />
+				<h1 className="kp-sozluk-term__title kp-prose">{title}</h1>
 				<div className="kp-sozluk-term__meta">
 					<span>{t("sozluk.term.noEntriesYet")}</span>
 				</div>
