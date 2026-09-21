@@ -1,0 +1,19 @@
+{
+	"producerWorkflow": ".github/workflows/skill-benchmark.yml",
+	"skillsRoot": "claude-plugins/fabrika/skills",
+	"reportRoot": "benchmarks/skill-evidence/reports",
+	"thresholds": {
+		"default": {
+			"minRepetitions": 3,
+			"successDelta": 0,
+			"newCriticalErrors": 0,
+			"maxCostRatio": 1.25
+		},
+		"perSkill": {}
+	},
+	"typoExemption": {
+		"mdOnly": true,
+		"maxChangedWords": 20,
+		"maxWordEditDistance": 2
+	}
+}

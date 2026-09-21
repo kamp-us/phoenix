@@ -110,6 +110,11 @@ node packages/fabrika-cli/src/bin.ts guard readme-guard check --help
 Shared implementations resolve [workspace members](../src/guard/members.ts),
 [changed files](../src/guard/changed-files.ts) and [verdicts](../src/guard/verdict.ts).
 
+`guard skill-evidence-guard check` — whether changed skills carry trusted, version-bound
+benchmark evidence meeting predefined thresholds. The policy, the report schema and the
+activation status live in [benchmarks/skill-evidence](../../../benchmarks/skill-evidence/README.md)
+(ADR 0403).
+
 ## The `handoff` group
 
 Record work so another session can resume it. The caller writes the explanation; the command

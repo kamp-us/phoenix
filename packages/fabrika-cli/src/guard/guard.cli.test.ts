@@ -128,6 +128,11 @@ describe("fabrika guard, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () 
 		["design-inventory", "generate", "Example: fabrika guard design-inventory generate"],
 		["i18n-guard", "check", "Example: fabrika guard i18n-guard check"],
 		["no-gh", "check", "Example: fabrika guard no-gh check"],
+		[
+			"skill-evidence-guard",
+			"check",
+			"Example: node packages/fabrika-cli/src/bin.ts guard skill-evidence-guard check",
+		],
 	])("reaches %s's %s leaf by its registration alone", (guard, leaf, marker) => {
 		const run = fabrika(["guard", guard, leaf, "--help"]);
 		expect(run.code).toBe(0);
