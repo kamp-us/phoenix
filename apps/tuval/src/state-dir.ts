@@ -262,12 +262,14 @@ export const adoptInProjectState = Effect.fn("Tuval.adoptInProjectState")(functi
 /**
  * The boot lines one adoption owes the operator, in order, unprefixed.
  *
- * `moved` and `kept` are facts about this boot: both fields empty themselves once the move is done,
- * so both lines are one-shot on their own. `unowned` is not — its condition is that a project holds
- * a file Tuval does not write, which is permanent, so a project with a `tuval.config.ts` would say
- * so on every boot for the life of the project. It is reported only beside a move, which is the
- * boot the line was written for: the one where Tuval rewrote a directory the operator did not name
- * and owes an account of what it did and did not take.
+ * `moved` empties itself once the move is done, so its line is one-shot on its own. `kept` and
+ * `unowned` do not: a collision leaves both copies on disk, and a project holding a file Tuval does
+ * not write goes on holding it, so either line would print on every boot for the life of the
+ * project. What separates them is what each asks of the operator. `kept` names a collision only a
+ * hand fix resolves, so it keeps asking until someone acts. `unowned` asks for nothing — a project
+ * is meant to hold its `tuval.config.ts` — so it is reported only beside a move, which is the boot
+ * the line was written for: the one where Tuval rewrote a directory the operator did not name and
+ * owes an account of what it did and did not take.
  */
 export const renderAdoption = (
 	adoption: StateAdoption,

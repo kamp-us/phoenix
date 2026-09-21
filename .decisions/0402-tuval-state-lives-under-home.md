@@ -192,7 +192,7 @@ skips the one name `tuval.config.ts` and lifts every other entry, so the change 
 owed: it is [#9611](https://github.com/kamp-us/phoenix/issues/9611), and no other record or issue
 carries it.
 
-## Amendment (2026-09-21, [#9625](https://github.com/kamp-us/phoenix/issues/9625)) — the `left` line belongs to the move boot, not to every boot
+## Amendment (2026-09-20, [#9625](https://github.com/kamp-us/phoenix/issues/9625)) — the `left` line belongs to the move boot, not to every boot
 
 The amendment above restated the ruling as "an entry under `<project>/.tuval` whose name is not one
 of those three stays where it is, **and the boot's `left` line names it**". That second clause is
