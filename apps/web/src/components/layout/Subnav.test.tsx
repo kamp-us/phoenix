@@ -9,6 +9,25 @@ const readSource = (rel: string): string =>
 const SUBNAV_CSS = readSource("./Subnav.css");
 const BUTTON_CSS = readSource("../../../../../packages/design/src/Button.css");
 
+const NARROW_AT = "@media (max-width: 640px)";
+
+/**
+ * The narrow-viewport block's own body, brace-matched off the source. Asserting the rules
+ * against a regex over the whole stylesheet would pass on a declaration that landed OUTSIDE
+ * the media query, which is the one thing #7730 needs held: the reflow is conditional, and a
+ * `position: static` that escaped the block would unstick the bar on the desktop too.
+ */
+const narrowBlock = (css: string): string => {
+	const open = css.indexOf(`${NARROW_AT} {`);
+	if (open < 0) throw new Error(`Subnav.css declares no ${NARROW_AT} block`);
+	let depth = 0;
+	for (let i = css.indexOf("{", open); i < css.length; i++) {
+		if (css[i] === "{") depth++;
+		else if (css[i] === "}" && --depth === 0) return css.slice(open, i + 1);
+	}
+	throw new Error(`Subnav.css's ${NARROW_AT} block is unterminated`);
+};
+
 describe("Subnav CTA slot (#2598)", () => {
 	it("renders the passed cta node in the dedicated primary-action slot", () => {
 		const {container} = render(
@@ -48,5 +67,44 @@ describe("Subnav CTA slot (#2598)", () => {
 		expect(SUBNAV_CSS).toMatch(
 			/\.kp-subnav__filters\s+\.kp-subnav__filter:hover:not\(:disabled\)\s*\{[^}]*text-decoration:\s*none/s,
 		);
+	});
+});
+
+describe("Subnav narrow-viewport reflow (#7730)", () => {
+	const NARROW = narrowBlock(SUBNAV_CSS);
+
+	it("declares the reflow at the file's one existing breakpoint, never a second one", () => {
+		const breakpoints = [...SUBNAV_CSS.matchAll(/@media[^{]*\{/g)].map((m) => m[0].trim());
+		expect(breakpoints).toEqual([`${NARROW_AT} {`]);
+	});
+
+	it("lets the bar and its tab strip wrap instead of overflowing the viewport", () => {
+		// The desktop bar is a nowrap flex row whose zones size to their content, so pano's five
+		// destinations plus the CTA push its min-content width past 390px and the document
+		// scrolls sideways. Both rows have to wrap: the tab strip is its own nested flex row.
+		expect(NARROW).toMatch(/\.kp-subnav\s*\{[^}]*flex-wrap:\s*wrap/s);
+		expect(NARROW).toMatch(/\.kp-subnav\s*\{[^}]*height:\s*auto/s);
+		expect(NARROW).toMatch(/\.kp-subnav\s*\{[^}]*min-height:\s*var\(--subnav-h\)/s);
+		expect(NARROW).toMatch(/\.kp-subnav__filters\s*\{[^}]*flex-wrap:\s*wrap/s);
+	});
+
+	it("keeps the bar sticky at every width, offset by the topbar's measured height", () => {
+		// The founder ruled the subnav stays sticky on phones, and `top: var(--topbar-h)` is only
+		// honest while the topbar is one row — its own ≤640px rule wraps search onto a second row.
+		// So the offset is the MEASURED height `stickyChrome.ts` publishes, and the narrow block
+		// leaves both `position` and `top` alone. Asserting the absence inside the brace-matched
+		// block is the point: an unstick here is invisible to a regex over the whole file.
+		expect(SUBNAV_CSS.slice(0, SUBNAV_CSS.indexOf(NARROW_AT))).toMatch(
+			/\.kp-subnav\s*\{[^}]*position:\s*sticky[^}]*top:\s*var\(--kp-topbar-measured-h\)/s,
+		);
+		expect(NARROW).not.toMatch(/position:\s*static/);
+		expect(NARROW).not.toMatch(/\.kp-subnav\s*\{[^}]*top:/s);
+	});
+
+	it("keeps the CTA on the trailing edge once the spacer stops spanning the row", () => {
+		// A `flex: 1` spacer claims a whole line of a wrapped row rather than pushing anything,
+		// so the trailing-edge placement law (#2587) needs the auto margin instead.
+		expect(NARROW).toMatch(/\.kp-subnav__spacer\s*\{[^}]*display:\s*none/s);
+		expect(NARROW).toMatch(/\.kp-subnav__cta\s*\{[^}]*margin-left:\s*auto/s);
 	});
 });

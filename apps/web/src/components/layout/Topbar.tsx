@@ -11,6 +11,7 @@ import {formatUnreadBadge, showUnreadBadge} from "../bildirim/bildirim";
 import {Icon} from "../Icon";
 import {Karma} from "../karma/Karma";
 import type {CaylakMeter} from "./caylakMeter";
+import {useStickyChromeHeight} from "./stickyChrome";
 import {ThemeChoicePicker} from "./ThemeChoicePicker";
 import {UserMenu} from "./UserMenu";
 import "./Topbar.css";
@@ -62,6 +63,10 @@ export function Topbar({
 	reserveSignedInSlots?: boolean;
 }) {
 	const t = useT();
+	// The bar the subnav sticks below and the scroll anchor has to clear, so its rendered height
+	// is published for both (#7730) — it is not `var(--topbar-h)` once the ≤640px rule below wraps
+	// search onto a second row.
+	const topbarRef = useStickyChromeHeight<HTMLElement>("topbar");
 	// ⌘K (mac) / Ctrl+K (other) opens the one search surface (ADR 0186), backing the
 	// <Kbd>⌘K</Kbd> hint on the trigger below. preventDefault overrides the browser's own
 	// ⌘/Ctrl+K (address-bar) binding. The shortcut lives HERE rather than in the palette
@@ -218,7 +223,7 @@ export function Topbar({
 	// Every element sits in its one lawful zone (see ADR 0176). The primary-action zone is
 	// empty on purpose — #2600 moved `+ gönderi` to the pano Subnav CTA; do not refill it.
 	return (
-		<header className="kp-topbar">
+		<header className="kp-topbar" ref={topbarRef}>
 			{brand}
 			<span className="kp-topbar__sep" />
 			<div

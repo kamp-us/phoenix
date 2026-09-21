@@ -2,6 +2,7 @@ import {Button} from "@kampus/design";
 import type * as React from "react";
 import {NavLink} from "react-router";
 import {useT} from "../../i18n";
+import {useStickyChromeHeight} from "./stickyChrome";
 import "./Subnav.css";
 
 export type SubnavFilter = {id: string; label: React.ReactNode};
@@ -49,8 +50,12 @@ export function Subnav({
 	cta?: React.ReactNode;
 }) {
 	const t = useT();
+	// The lower of the two sticky bars: it publishes its own height so the scroll anchor clears
+	// it too, which matters most exactly where it is hardest to predict — below 640px, where the
+	// bar wraps and is taller than `var(--subnav-h)` (#7730).
+	const subnavRef = useStickyChromeHeight<HTMLDivElement>("subnav");
 	return (
-		<div className="kp-subnav">
+		<div className="kp-subnav" ref={subnavRef}>
 			{filters?.length || links?.length || destinations ? (
 				<div className="kp-subnav__filters">
 					{filters?.map((f) => (

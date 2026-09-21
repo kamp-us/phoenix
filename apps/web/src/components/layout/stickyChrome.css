@@ -1,0 +1,19 @@
+/* The sticky chrome stack's measured offsets (#7730) — see `stickyChrome.ts` for why a
+   stylesheet cannot compute either of these itself. That module publishes both properties onto
+   the document root from a live measurement of the rendered bar; the declarations here are what
+   the refs resolve to before the first measurement lands and after a bar unmounts, so neither is
+   ever a guess at a wrapped bar's height: `--topbar-h` is the one-row token the topbar is built
+   from, and a page with no subnav owes no subnav offset at all. */
+:root {
+	--kp-topbar-measured-h: var(--topbar-h);
+	--kp-subnav-measured-h: 0px;
+}
+
+/* The document is the scrolling box (`.kp-shell` is `min-height: 100vh`, nothing between it and
+   the viewport scrolls), so the scroll anchor moves here. Without it a tab stop reached by
+   keyboard, or an in-page anchor target, is scrolled to the top of the viewport and comes to rest
+   UNDER the sticky bars covering that edge — WCAG 2.4.11. Both bars, because the subnav sticks
+   below the topbar and the pair is what covers the edge. */
+html {
+	scroll-padding-top: calc(var(--kp-topbar-measured-h) + var(--kp-subnav-measured-h));
+}
