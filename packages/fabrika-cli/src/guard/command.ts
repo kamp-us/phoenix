@@ -745,7 +745,7 @@ const skillEvidenceCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a skill change with no trusted benchmark evidence."),
 	Command.withDescription(
-		"Judge the handed changed files' skills under claude-plugins/fabrika/skills: every behavior-affecting skill change must carry a committed report under benchmarks/skill-evidence/reports/<skill>/report.json, produced by the trusted in-repo runner (.github/workflows/skill-benchmark.yml), attesting the PR's exact skill tree, a correctly-kind and fresh baseline (previous-version for an update, without-skill for a new skill), and measured arms that meet the policy's thresholds. Typo-only .md edits under the policy's word cap are exempt, with their numbers named in the summary. A removed skill needs no evidence. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations under Actions. Exits 7 (zero scope: an empty file list — fail-closed), 11 (the policy, a report file, a git read or the GitHub API could not be read, so the verdict is UNKNOWN), 12 (evidence is missing, stale, mis-provenanced, or fails a threshold). Example: node packages/fabrika-cli/src/bin.ts guard skill-evidence-guard check --base <sha> --head <sha> --repo kamp-us/phoenix <file...>",
+		"Judge the handed changed files' skills under claude-plugins/fabrika/skills: every behavior-affecting skill change must carry a committed report under benchmarks/skill-evidence/reports/<skill>/report.json, produced by the trusted in-repo runner (.github/workflows/skill-benchmark.yml), attesting the PR's exact skill tree, a correctly-kind and fresh baseline (previous-version for an update, without-skill for a new skill), and measured arms that meet the policy's thresholds. Typo-only .md edits under the policy's word cap are exempt, with their numbers named in the summary. A removed skill needs no evidence. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations under Actions. Exits 7 (zero scope: an empty file list — fail-closed), 11 (the policy, a report file, a git read or the GitHub API could not be read, so the verdict is UNKNOWN), 12 (evidence is missing, stale, mis-provenanced, or fails a threshold). Example: node packages/fabrika-cli/src/bin.ts guard skill-evidence-guard check --base <sha> --head <sha> --repo owner/name <file...>",
 	),
 );
 
@@ -753,7 +753,7 @@ const skillEvidenceGuard = Command.make("skill-evidence-guard").pipe(
 	Command.withSubcommands([skillEvidenceCheck]),
 	Command.withShortDescription("Skill changes carry trusted benchmark evidence."),
 	Command.withDescription(
-		"Skills merged without measured benefit are merged on vibes; the founder ruled (2026-09-21, ADR 0403) that a skill change must prove its benefit over a baseline before it merges, and that CI — not prose — is the enforcement surface.",
+		"Skills merged without measured benefit are merged on vibes; the founder ruled (2026-09-21) that a skill change must prove its benefit over a baseline before it merges, and that CI — not prose — is the enforcement surface.",
 	),
 );
 

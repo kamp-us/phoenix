@@ -1,12 +1,12 @@
 ---
-id: 0403
+id: 0406
 title: Skill changes carry trusted benchmark evidence before they merge
 status: proposed
 date: 2026-09-21
 tags: [fabrika, skills, ci, benchmarks]
 ---
 
-# 0403 — Skill changes carry trusted benchmark evidence before they merge
+# 0406 — Skill changes carry trusted benchmark evidence before they merge
 
 **What this decides:** a PR that changes a skill under
 `claude-plugins/fabrika/skills/` must carry committed benchmark evidence proving

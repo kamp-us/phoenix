@@ -1,7 +1,7 @@
 /**
  * `guard skill-evidence-guard check` — a change to a skill under the skills root carries committed
  * benchmark evidence from the trusted in-repo runner, bound to the exact skill content the PR ships
- * (ADR 0403).
+ * (the founder ruling of 2026-09-21).
  *
  * The verb is the IO boundary and nothing else: it resolves the repo root, reads the policy, gathers
  * the git facts (skill trees at base/head, per-file contents for the word diff, benchmark-commit

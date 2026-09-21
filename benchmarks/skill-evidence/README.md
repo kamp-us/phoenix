@@ -4,7 +4,7 @@ The benchmark-evidence surface for skills under `claude-plugins/fabrika/skills`:
 the gate's policy, and the committed `report.json` evidence the gate judges.
 Enforced by `fabrika guard skill-evidence-guard check` in
 [`.github/workflows/skill-evidence-guard.yml`](../../.github/workflows/skill-evidence-guard.yml);
-the why is [ADR 0403](../../.decisions/0403-skill-changes-carry-benchmark-evidence.md)
+the why is [ADR 0406](../../.decisions/0406-skill-changes-carry-benchmark-evidence.md)
 (founder ruling 2026-09-21): a skill change merges only with measured proof of
 its benefit vs a baseline, produced by a trusted in-repo runner.
 

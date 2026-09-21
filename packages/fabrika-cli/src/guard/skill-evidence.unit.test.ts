@@ -88,7 +88,7 @@ const reportValue = (name: string, over: Record<string, unknown> = {}): unknown 
 	provenance: {
 		workflow: PRODUCER,
 		runId: RUN,
-		runUrl: `https://github.com/kamp-us/phoenix/actions/runs/${RUN}`,
+		runUrl: `https://github.com/o/r/actions/runs/${RUN}`,
 		headSha: HEAD_SHA,
 	},
 	...over,
@@ -115,7 +115,7 @@ const facts = (
 
 const isViolation = (verdict: GuardVerdict) => (verdict._tag === "Violation" ? verdict : null);
 
-describe("judge — fail-closed on zero scope (ADR 0092)", () => {
+describe("judge — fail-closed on zero scope (fail-closed)", () => {
 	it("FAILS with zero-scope when handed ZERO files, whatever else is true", () => {
 		const verdict = judge(facts([], [skill("build")]));
 		expect(verdict._tag).toBe("ZeroScope");
@@ -124,7 +124,7 @@ describe("judge — fail-closed on zero scope (ADR 0092)", () => {
 	});
 
 	it("SKIPS when no changed file sits under the skills root", () => {
-		const verdict = judge(facts(["README.md", "apps/web/worker/index.ts"], []));
+		const verdict = judge(facts(["README.md", "worker/src/index.ts"], []));
 		expect(verdict._tag).toBe("Skipped");
 		expect(verdict._tag === "Skipped" && verdict.summary).toContain("0 of 2 changed files under");
 	});

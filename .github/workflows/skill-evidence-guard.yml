@@ -1,6 +1,6 @@
 name: skill-evidence-guard
 
-# The skill-evidence gate (ADR 0403, founder ruling 2026-09-21): a change to a
+# The skill-evidence gate (ADR 0406, founder ruling 2026-09-21): a change to a
 # skill under claude-plugins/fabrika/skills must carry committed benchmark
 # evidence — produced by the trusted in-repo producer workflow — proving the
 # skill's benefit vs a baseline at the PR's exact skill content. The rule lives

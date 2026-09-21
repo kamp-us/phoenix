@@ -113,7 +113,7 @@ Shared implementations resolve [workspace members](../src/guard/members.ts),
 `guard skill-evidence-guard check` — whether changed skills carry trusted, version-bound
 benchmark evidence meeting predefined thresholds. The policy, the report schema and the
 activation status live in [benchmarks/skill-evidence](../../../benchmarks/skill-evidence/README.md)
-(ADR 0403).
+(ADR 0406).
 
 ## The `handoff` group
 

@@ -6,7 +6,7 @@
  *
  * The git paths not exercised here (a base tree that resolves, per-file absence at head, a
  * benchmark commit that does not resolve) are the core's `judge` branches over facts, proven by
- * `./skill-evidence.unit.test.ts` — the verb only relays those facts (ADR 0228).
+ * `./skill-evidence.unit.test.ts` — the verb only relays those facts — the verb relays, the judge derives.
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
@@ -60,7 +60,7 @@ const reportJson = (): string =>
 		provenance: {
 			workflow: PRODUCER,
 			runId: RUN,
-			runUrl: `https://github.com/kamp-us/phoenix/actions/runs/${RUN}`,
+			runUrl: `https://github.com/o/r/actions/runs/${RUN}`,
 			headSha: HEAD_COMMIT,
 		},
 	});
@@ -105,7 +105,7 @@ const runOk: HttpReply = {
 	}),
 };
 
-const RUN_URL = /GET https:\/\/api\.github\.com\/repos\/kamp-us\/phoenix\/actions\/runs\/4242/;
+const RUN_URL = /GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/runs\/4242/;
 
 interface RunCase {
 	readonly files?: ReadonlyArray<string>;
@@ -125,7 +125,7 @@ const run = (fsOptions: FakeFsOptions, options: RunCase = {}) => {
 					files: options.files ?? [`${SKILLS}/build/SKILL.md`],
 					baseSha: BASE_COMMIT,
 					headSha: HEAD_COMMIT,
-					repo: "kamp-us/phoenix",
+					repo: "o/r",
 					root: ROOT,
 					cwd: ROOT,
 					env: options.env ?? {GITHUB_TOKEN: "t"},
@@ -181,7 +181,7 @@ describe("runSkillEvidenceGuard", () => {
 
 	it("skips a diff that touches no skill file, naming the skills root", async () => {
 		const {outcome} = run(repoTree({"benchmarks/skill-evidence/policy.json": POLICY}), {
-			files: ["README.md", "apps/web/worker/index.ts"],
+			files: ["README.md", "worker/src/index.ts"],
 		});
 		const result = await outcome;
 		expect(result.code).toBe(0);
@@ -196,9 +196,7 @@ describe("runSkillEvidenceGuard — one gated skill, end to end over the seams",
 		expect(result.code).toBe(0);
 		expect(result.stdout).toContain("1 skill(s) checked");
 		expect(result.stderr).toEqual([]);
-		expect(http.calls).toEqual([
-			`GET https://api.github.com/repos/kamp-us/phoenix/actions/runs/${RUN}`,
-		]);
+		expect(http.calls).toEqual([`GET https://api.github.com/repos/o/r/actions/runs/${RUN}`]);
 	});
 
 	it("reds a report absent from the HEAD tree at the violation seat, naming the expected path", async () => {
@@ -252,7 +250,7 @@ describe("runSkillEvidenceGuard — one gated skill, end to end over the seams",
 	it("reads the run off a caller-supplied apiBase instead of the public API", async () => {
 		const base = "https://gh.example/api/v3/";
 		const http = fakeHttp(
-			[[/GET https:\/\/gh\.example\/api\/v3\/repos\/kamp-us\/phoenix\/actions\/runs\/4242/, runOk]],
+			[[/GET https:\/\/gh\.example\/api\/v3\/repos\/o\/r\/actions\/runs\/4242/, runOk]],
 			undefined,
 			[],
 		);
@@ -263,7 +261,7 @@ describe("runSkillEvidenceGuard — one gated skill, end to end over the seams",
 					files: [`${SKILLS}/build/SKILL.md`],
 					baseSha: BASE_COMMIT,
 					headSha: HEAD_COMMIT,
-					repo: "kamp-us/phoenix",
+					repo: "o/r",
 					root: ROOT,
 					cwd: ROOT,
 					env: {GITHUB_TOKEN: "t"},
@@ -273,7 +271,7 @@ describe("runSkillEvidenceGuard — one gated skill, end to end over the seams",
 			),
 		);
 		expect(result.code).toBe(0);
-		expect(http.calls).toEqual([`GET ${base}repos/kamp-us/phoenix/actions/runs/${RUN}`]);
+		expect(http.calls).toEqual([`GET ${base}repos/o/r/actions/runs/${RUN}`]);
 	});
 
 	it("answers UNKNOWN when the GitHub API is unreachable", async () => {

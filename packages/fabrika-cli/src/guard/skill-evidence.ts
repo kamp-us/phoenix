@@ -1,7 +1,7 @@
 /**
  * `guard skill-evidence-guard check`'s pure half — a change to a skill under the skills root must
  * carry committed benchmark evidence, produced by the trusted in-repo runner, that proves the skill
- * earns its place at the exact content the PR ships (ADR 0403, founder ruling 2026-09-21).
+ * earns its place at the exact content the PR ships (founder ruling 2026-09-21).
  *
  * The judge consumes facts the verb gathers — git trees, file contents, the GitHub run, the policy —
  * and every decision below is arithmetic over those facts, so each red names the exact offender:
@@ -30,7 +30,7 @@ const VERB = "guard skill-evidence-guard check";
 
 /**
  * The zero-scope red, shared by the judge and the verb so a zero-file invocation never depends on
- * the policy being readable to refuse (ADR 0092).
+ * the policy being readable to refuse, fail-closed like the guard family.
  */
 export const ZERO_FILES_REPORT = `${VERB}: handed ZERO files — the scan covered nothing, so it proves nothing, fail-closed like every guard here. The caller resolves the changed-file list; an empty one is a broken caller, never a clean diff.`;
 
@@ -746,7 +746,7 @@ const judgeSkill = (skill: SkillFacts, policy: SkillEvidencePolicy): SkillJudgem
 
 	if (skill.report._tag === "ReadError") {
 		violations.push(
-			`${reportPath}: ${skill.report.reason} — expected committed benchmark evidence at this path (ADR 0403).`,
+			`${reportPath}: ${skill.report.reason} — expected committed benchmark evidence at this path.`,
 		);
 		return {violations, unknowns};
 	}
@@ -921,7 +921,7 @@ export const judge = (facts: SkillEvidenceFacts): GuardVerdict => {
 				atFile(
 					"error",
 					`${policy.reportRoot}/${skill.name}/report.json`,
-					`\`${skill.name}\` lacks trusted, version-bound benchmark evidence meeting the policy's thresholds — run the producer workflow and commit its report. See ADR 0403.`,
+					`\`${skill.name}\` lacks trusted, version-bound benchmark evidence meeting the policy's thresholds — run the producer workflow and commit its report.`,
 				),
 			);
 		}
@@ -935,7 +935,7 @@ export const judge = (facts: SkillEvidenceFacts): GuardVerdict => {
 			`A behavior-affecting skill change must carry a report produced by ${policy.producerWorkflow} ` +
 			"at the PR's skill content and committed under " +
 			`${policy.reportRoot}/<skill>/report.json. Typo-only .md edits under ` +
-			`${policy.typoExemption.maxChangedWords} changed words are exempt. See ADR 0403.`;
+			`${policy.typoExemption.maxChangedWords} changed words are exempt. The schema and policy live under the skill-evidence benchmark directory.`;
 		return violation(
 			report,
 			annotationsOrNone(() => annotations),
