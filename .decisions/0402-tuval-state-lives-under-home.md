@@ -43,6 +43,12 @@ record's own call on the logic of ruling 2 — flagged for veto here the way rul
 consequence was flagged and then confirmed. Read rule 7 as the record's, not the founder's, until
 he says otherwise.
 
+> That flag is answered in part, and the paragraph above still holds for the rest. The founder ruled
+> the move's **scope** on [#9566](https://github.com/kamp-us/phoenix/issues/9566) — which entries it
+> takes — and that much of rule 7 is now his; see the Amendment at the end of this record. He did not
+> rule the pick to migrate at all rather than honour the state in place or drop it. That pick and the
+> Banned read-fallback bullet are still this record's own call, open to veto the way the scope was.
+
 - [Ruling 1](https://github.com/kamp-us/phoenix/issues/9515#issuecomment-5752393670): *"yes but it
   should also allow project config as well. i basically wanna be able to use my home folder config
   on my work computer, but my personal projects should and will have their own program setups. so
@@ -96,11 +102,14 @@ the checkout's absolute path; a project directory holds a config module or nothi
    under the old key. Nothing follows the move, and nothing tries to detect one.
 
 7. **Existing in-project state owes a one-time move, per machine.** Where boot finds state under
-   `<project>/.tuval`, it moves it once into that project's home-dir key and leaves the config
-   module behind. After that lands, this repository's `.gitignore` rule for `apps/tuval/.tuval/*`
-   goes, because no repository needs an ignore rule for Tuval state any more. **This rule is the
-   record's own and no ruling picked it** — see Context, and the Banned bullet below that goes with
-   it.
+   `<project>/.tuval`, it moves `manifest.json`, `processes/` and `pi-sessions/` once into that
+   project's home-dir key, and leaves behind the config module and every other entry it does not
+   recognise. After that lands, this repository's `.gitignore` rule for `apps/tuval/.tuval/*`
+   goes, because no repository needs an ignore rule for Tuval state any more. **What the move takes
+   is the founder's, ruled on
+   [#9566](https://github.com/kamp-us/phoenix/issues/9566#issuecomment-5754129508) and written down
+   in the Amendment below.** The pick to migrate at all is still the record's own, as is the Banned
+   read-fallback bullet below — see Context, and both are open to veto the way the scope was.
 
 **Banned.**
 
@@ -143,6 +152,45 @@ the checkout's absolute path; a project directory holds a config module or nothi
   walk of that tree; and the single-root rule stated in `AgentSessionHost.ts`'s docblock is replaced
   by rule 3 here rather than by #8105's build. Its criteria read against the home-dir layout from
   now on.
+
+## Amendment (2026-09-20, [#9566](https://github.com/kamp-us/phoenix/issues/9566)) — rule 7's move takes a named set
+
+Rule 7 said the move lifts in-project state and "leaves the config module behind", which is a move
+by exclusion: every entry but `tuval.config.ts` goes. The record flagged rule 7 as its own call, and
+[#9566](https://github.com/kamp-us/phoenix/issues/9566) carried the veto to the founder, naming two
+directions — today's exclusion, or a named set — plus a third nobody had proposed, an opt-in prompt.
+
+Founder ruling, 2026-09-20 PT:
+[the ruling comment on #9566](https://github.com/kamp-us/phoenix/issues/9566#issuecomment-5754129508).
+*"The one-time move takes only what Tuval itself wrote into `<project>/.tuval`: `manifest.json`,
+`processes/` and `pi-sessions/`. Every other file or folder an operator left there stays where it
+is, untouched, next to `tuval.config.ts`. Why: a tool moves only the files it wrote. Relocating an
+operator's own notes or scripts without saying so is the kind of surprise that costs trust. Accepted
+tradeoff: the list is closed, so a future kind of Tuval state file has to be added to it or it is
+left behind. The boot line keeps naming exactly what moved."*
+
+**So rule 7's move takes `manifest.json`, `processes/` and `pi-sessions/`, and nothing else.** An
+entry under `<project>/.tuval` whose name is not one of those three stays where it is, and the
+boot's `left` line names it. The list is closed: a new kind of Tuval state file is moved only once
+it is added here and in the code, and until then a project's copy of it is left behind — the cost
+the ruling accepts.
+
+**What this ruling does not settle.** All three directions #9566 named were move-shaped, so the
+ruling picks among them and presumes the move. Whether migrating is the right disposition at all —
+rather than honouring in-project state where it is found, or dropping it — is the three-way question
+#9515 left unpicked, and the founder has not answered it. That pick stays this record's own call,
+flagged in Context, open to veto the way the scope was. Reading his choice of scope as ratifying the
+move itself would be filling a gap his ruling left open, which is not this record's to do.
+
+The rest of rule 7 is unchanged: the move is one-time and per machine, boot code runs it, the config
+module stays, and the repository's `.gitignore` rule for `apps/tuval/.tuval/*` goes once the move
+lands. The Banned list is unchanged too, including the read-fallback bullet, which stays this
+record's own call rather than the founder's.
+
+This differs from the code that shipped. `adoptInProjectState` in `apps/tuval/src/state-dir.ts`
+skips the one name `tuval.config.ts` and lifts every other entry, so the change to a closed set is
+owed: it is [#9611](https://github.com/kamp-us/phoenix/issues/9611), and no other record or issue
+carries it.
 
 ## Records
 
