@@ -905,7 +905,7 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 |---|---|
 | `7` | the PR or the `--sha` is proven absent — no commit to enumerate; **or zero check runs are declared at the commit** — a vacuous green is a fail-open and is refused; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
 | `11` | the check-run read, the workflow-inventory read, the runs-at-head read, the base branch's required-set read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green` |
-| `13` | entries received < declared `total_count` — the enumeration is provably incomplete and is never read as "no red checks" |
+| `13` | entries received < declared `total_count` — the enumeration is provably incomplete and is never read as "no red checks"; **or the base branch's ruleset walk never reached a terminal page** — the declared required set is provably short, so which checks block is UNKNOWN |
 | `16` | the rollup is not `red` and **no workflow this repo authors inspected the head** — the enumeration is complete, every repo-authored run here carries another commit or ran against another ref, and the CI state is UNKNOWN, never `green` |
 
 **Errors**
@@ -930,7 +930,11 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | `review ci: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
 | `review ci: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
 | `review ci: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
+| `review ci: no run at this head answers any context <base> declares required — pending, never green: the required checks have not reported.` | 0 | notice |
+| `review ci: every run at this head is informational — pending, never green: nothing here gates.` | 0 | notice |
 | `review ci: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `review ci: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `review ci: <base>'s ruleset read never reached a terminal page after <n> rule(s) — pagination is unexhausted, so which checks block is UNKNOWN, never none.` | 13 | refusal |
 | `review ci: the live head is <live>, you are enumerating at <sha> — the head moved; a verdict still binds only what was inspected.` | 0 | notice |
 
 **Scope** — the check runs at one commit, paginated, count-verified against `total_count`, and the

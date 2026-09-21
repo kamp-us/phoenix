@@ -508,7 +508,7 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 |---|---|
 | `7` | the PR is proven absent (404), `--sha` names no commit on this PR, or the enumerated changed-file list is empty |
 | `11` | the PR, its mergeability, its comments, its check runs, its verdicts, its timeline, its base, or its base branch's declared required set could not be read — the stall class is UNKNOWN, never `attended` |
-| `13` | the comment, check-run or timeline enumeration is provably short of its declared count, the timeline read never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
+| `13` | the comment, check-run or timeline enumeration is provably short of its declared count, the base branch's ruleset walk never reached a terminal page, the timeline read never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
 
@@ -527,8 +527,11 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 | `heal-ci diagnose: GitHub had not computed #<n>'s mergeability after <k>s — the conflict axis is INDEFINITE, so the conflict arm is skipped, never passed.` | 0 | notice |
 | `heal-ci diagnose: claim-stale fired on <inactivity\|ground-drift> — last activity <ts>, behind base <k>.` | 0 | notice |
 | `heal-ci diagnose: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
+| `heal-ci diagnose: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
 | `heal-ci diagnose: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `heal-ci diagnose: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `heal-ci diagnose: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `heal-ci diagnose: <base>'s ruleset read never reached a terminal page after <n> rule(s) — pagination is unexhausted, so which checks block is UNKNOWN, never none.` | 13 | refusal |
 
 **Scope** — one PR's metadata, mergeability, changed files, comments, check runs, workflow runs,
 reviews and timeline, each paginated to exhaustion, plus its base branch's declared required
@@ -907,7 +910,7 @@ bytes it never saw.
 |---|---|
 | `7` | the PR or the `--sha` commit is proven absent (404), or `--context` names a context that does not exist at this head |
 | `11` | the check runs, the run list, or a job log could not be read after retries — whether a failure log exists is UNKNOWN, never empty |
-| `13` | the check-run or job enumeration is provably short of its declared count |
+| `13` | the check-run or job enumeration is provably short of its declared count, or the base branch's ruleset walk never reached a terminal page |
 | `15` | proven: the platform reports the run's logs expired or purged — a fact about the run, and no retry can change it |
 
 **Errors**
@@ -923,8 +926,11 @@ bytes it never saw.
 | `heal-ci logs: context <name> has no workflow job behind it (posted by an external check) — emitted with an empty body.` | 0 | notice |
 | `heal-ci logs: read <k> of <m> failing gating contexts (--context narrowed the read).` | 0 | notice |
 | `heal-ci logs: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
+| `heal-ci logs: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
 | `heal-ci logs: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `heal-ci logs: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `heal-ci logs: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `heal-ci logs: <base>'s ruleset read never reached a terminal page after <n> rule(s) — pagination is unexhausted, so which checks block is UNKNOWN, never none.` | 13 | refusal |
 
 **Scope** — the blocking check runs at one commit, the workflow runs behind them, and one log per
 failing context, each read paginated and count-checked. The base branch's declared required set is

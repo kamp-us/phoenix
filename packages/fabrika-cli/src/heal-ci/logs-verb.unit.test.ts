@@ -17,6 +17,7 @@ import {
 	RULES,
 	rules,
 	runsAtHead,
+	UNDECLARED,
 } from "./fixtures.test-support.ts";
 import {runLogs, tailBytes} from "./logs-verb.ts";
 
@@ -36,18 +37,6 @@ const options = {
 	json: false,
 	env: ENV,
 };
-
-/**
- * A base branch that declares nothing required, scripted **last** so a case about the required set
- * puts its own rows first and wins the first-match lookup.
- *
- * Under it the denylist definition answers, which is what every case here that is not about the
- * blocking authority means to run under.
- */
-const UNDECLARED: ReadonlyArray<Scripted> = [
-	[RULES, rules()],
-	[PROTECTION, protection()],
-];
 
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(

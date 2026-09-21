@@ -1140,7 +1140,8 @@ gating axis stays inside the key because status alone would leave the rollup und
 answer — a `red` head and a head whose only `failure` is an informational run would tally
 identically. **The axis keeps its two words and changed its authority:** `gating` is a context the
 base branch declares required, `informational` is every other, and the base branch answers it rather
-than a name list in this package (`src/review/blocking.ts`). The two runs the skill's terminals read by name are still **named**, on the notes
+than a name list in this package (`src/review/blocking.ts`). The two runs the skill's terminals read
+by name are still **named**, on the notes
 channel, where the skill already reads them: the wedged run, and — wherever a gating run has failed,
 which is `red` and also the `wedged` head that carries a failure too — the failing gating runs,
 `ship checks: failing gating checks: <name>, … — route these to heal-ci.`, name-sorted. Informational
@@ -1238,7 +1239,7 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 |---|---|
 | `7` | the PR or the `--sha` commit is proven absent; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
 | `11` | the check-run read, the workflow read, the base branch's required-set read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
-| `13` | entries received < declared `total_count` — never read as "no red checks" |
+| `13` | entries received < declared `total_count` — never read as "no red checks"; **or the base branch's ruleset walk never reached a terminal page** — the declared required set is provably short, so which checks block is UNKNOWN |
 | `20` | every check at the head passed and **no workflow the repo authors inspected it** — every repo-authored run here carries another commit or ran against another ref, so `green` is UNKNOWN, never merged |
 
 **Errors**
@@ -1257,6 +1258,14 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `ship checks: cannot judge gate coverage at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
 | `ship checks: <k> of <m> workflow(s) <repo> authors inspected <head>.` | 0 | notice |
 | `ship checks: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
+| `ship checks: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
+| `ship checks: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `ship checks: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
+| `ship checks: no run at this head answers any context <base> declares required — pending, never green: the required checks have not reported.` | 0 | notice |
+| `ship checks: every run at this head is informational — pending, never green: nothing here gates.` | 0 | notice |
+| `ship checks: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `ship checks: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `ship checks: <base>'s ruleset read never reached a terminal page after <n> rule(s) — pagination is unexhausted, so which checks block is UNKNOWN, never none.` | 13 | refusal |
 
 **Scope** — the check runs and workflow inventory at one commit, paginated,
 count-verified. Zero *declared* check runs with zero workflows is `green`-ineligible and
