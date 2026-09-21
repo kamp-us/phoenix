@@ -80,8 +80,10 @@ afterAll(() => {
 const BUDGET_MS = 20_000;
 
 /**
- * `.tsx` as well as `.ts`: the layer the persistence rule below protects is `src/shell/`, which is
- * mostly `.tsx`, so a walker that collected `.ts` alone read past most of what it guards (#9623).
+ * `.tsx` as well as `.ts`: the persistence rule below recurses from `src/shell/`, where 32 non-test
+ * `.tsx` files sat unread by a walker that collected `.ts` alone — nearly all of them components
+ * under `shell/chat`, `shell/ui` and `shell/board`, the layer whose own state the rule exists to
+ * forbid (#9623).
  */
 const isSource = (name: string): boolean => name.endsWith(".ts") || name.endsWith(".tsx");
 
