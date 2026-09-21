@@ -262,7 +262,10 @@ describe("runDiagnose answers", () => {
 		expect(out.stderr.join("\n")).toContain("INDEFINITE");
 	});
 
-	it("skips the surface arm on an unprobeable protection surface rather than passing it", async () => {
+	// The protection surface used to skip one arm and let the rest classify. It is now the blocking
+	// authority for the `red` arm and the wedge too, so an unreadable one leaves nothing to classify:
+	// the class stops on the read failure, which is the cause a lane waits or parks on.
+	it("refuses on an unprobeable required set rather than answering a colour over it", async () => {
 		const out = await run(
 			script([
 				[
@@ -272,8 +275,67 @@ describe("runDiagnose answers", () => {
 				[RULES, httpError(403, "Must have admin rights")],
 			]),
 		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot read main's required status checks");
+		expect(out.stderr.at(-1)).toContain("which checks block is UNKNOWN, never none.");
+	});
+
+	// The live cost this definition was ruled over: a pull request answered `red` on a static-analysis
+	// context its base branch does not require, and a merge-eligible PR was routed to a repair lane
+	// with nothing to fix.
+	it("does not answer red for a failing run the base branch declares nothing about", async () => {
+		const out = await run(
+			script([
+				[
+					CHECK_RUNS,
+					reply(
+						checkRuns(2, [
+							{name: "ci-required", status: "completed", conclusion: "success"},
+							{name: "Analyze (python)", status: "completed", conclusion: "failure"},
+						]),
+					),
+				],
+			]),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).not.toContain("\tred\t");
+		expect(out.stderr.join("\n")).toContain(
+			"failing outside the required set: Analyze (python) — reported, never blocking.",
+		);
+	});
+
+	it("still answers red when the failing run is one the base branch declares required", async () => {
+		const out = await run(
+			script([
+				[
+					CHECK_RUNS,
+					reply(
+						checkRuns(2, [
+							{name: "ci-required", status: "completed", conclusion: "failure"},
+							{name: "Analyze (python)", status: "completed", conclusion: "success"},
+						]),
+					),
+				],
+			]),
+		);
 		expect(out.stdout.split("\n")[0]).toBe(`stall\tred\t${HEAD}\t35`);
-		expect(out.stderr.join("\n")).toContain("UNPROBEABLE");
+	});
+
+	// A repository whose base branch declares contexts today is not a licence to read an undeclared
+	// branch as one that gates nothing: the denylist definition still answers there.
+	it("falls back to the denylist on a base branch that declares nothing required", async () => {
+		const out = await run(
+			script([
+				[
+					CHECK_RUNS,
+					reply(checkRuns(1, [{name: "unit tests", status: "completed", conclusion: "failure"}])),
+				],
+				[RULES, rules()],
+			]),
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`stall\tred\t${HEAD}\t35`);
+		expect(out.stderr.join("\n")).toContain("declares no required status checks");
 	});
 
 	it("declares arm 7's unimplemented half on stderr rather than letting the class read whole", async () => {

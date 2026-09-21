@@ -2,9 +2,23 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs, fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {blockingSet} from "../review/blocking.ts";
 import {rollupFor, runChecks} from "./checks-verb.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {checkRuns, ENV, HEAD, pull, runsTotal, workflows} from "./fixtures.test-support.ts";
+import {
+	checkRuns,
+	ENV,
+	HEAD,
+	httpError,
+	PROTECTION,
+	protection,
+	pull,
+	RULES,
+	rules,
+	runsTotal,
+	UNDECLARED,
+	workflows,
+} from "./fixtures.test-support.ts";
 
 const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4321$/;
 const COMMIT = /^GET \S+\/repos\/o\/r\/commits\/[0-9a-f]+$/;
@@ -44,9 +58,12 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			runChecks({...options, ...overrides}),
-			Layer.merge(fakeSeams([...shell, ...http]).layer, fakeFs({files}).layer),
+			Layer.merge(fakeSeams([...shell, ...http, ...UNDECLARED]).layer, fakeFs({files}).layer),
 		),
 	);
+
+/** The denylist definition, which every case not about the required set means to run under. */
+const UNDECLARED_SET = blockingSet([]);
 
 /** The PR and the commit probe — a present PR at a commit the repository holds. */
 const found: ReadonlyArray<Scripted> = [
@@ -93,21 +110,27 @@ const sampleOf = (
 
 describe("rollupFor", () => {
 	it("names any wedged check as the whole answer", () => {
-		expect(rollupFor({...empty, workflows: inventory(3), runCount: 0}, ["ci-required"])).toBe(
-			"wedged",
-		);
+		expect(
+			rollupFor({...empty, workflows: inventory(3), runCount: 0}, ["ci-required"], UNDECLARED_SET),
+		).toBe("wedged");
 	});
 
 	it("is no-runs only with positive evidence: workflows exist and none fired at this head", () => {
-		expect(rollupFor({...empty, workflows: inventory(12), runCount: 0}, [])).toBe("no-runs");
+		expect(rollupFor({...empty, workflows: inventory(12), runCount: 0}, [], UNDECLARED_SET)).toBe(
+			"no-runs",
+		);
 	});
 
 	it("is no-producer on zero workflows, never collapsed into pending (#6298)", () => {
-		expect(rollupFor({...empty, workflows: [], runCount: 0}, [])).toBe("no-producer");
+		expect(rollupFor({...empty, workflows: [], runCount: 0}, [], UNDECLARED_SET)).toBe(
+			"no-producer",
+		);
 	});
 
 	it("keeps no-producer apart from pending — the second waits on a run, the first never will", () => {
-		expect(rollupFor({...empty, workflows: inventory(1), runCount: 3}, [])).toBe("pending");
+		expect(rollupFor({...empty, workflows: inventory(1), runCount: 3}, [], UNDECLARED_SET)).toBe(
+			"pending",
+		);
 	});
 });
 
@@ -116,13 +139,21 @@ describe("rollupFor", () => {
 describe("rollupFor over a concurrency-cancelled run", () => {
 	it("pends a superseded cancelled aggregator rather than reding it", () => {
 		expect(
-			rollupFor(sampleOf([{name: "ci-required", conclusion: "cancelled", suite: 91}], [91]), []),
+			rollupFor(
+				sampleOf([{name: "ci-required", conclusion: "cancelled", suite: 91}], [91]),
+				[],
+				UNDECLARED_SET,
+			),
 		).toBe("pending");
 	});
 
 	it("reds a cancelled run no newer run of its workflow replaced", () => {
 		expect(
-			rollupFor(sampleOf([{name: "ci-required", conclusion: "cancelled", suite: 91}]), []),
+			rollupFor(
+				sampleOf([{name: "ci-required", conclusion: "cancelled", suite: 91}]),
+				[],
+				UNDECLARED_SET,
+			),
 		).toBe("red");
 	});
 
@@ -134,7 +165,7 @@ describe("rollupFor over a concurrency-cancelled run", () => {
 			],
 			[91],
 		);
-		expect(rollupFor(sample, [])).toBe("red");
+		expect(rollupFor(sample, [], UNDECLARED_SET)).toBe("red");
 	});
 
 	it("never reclassifies a conclusion other than cancelled, however superseded its suite", () => {
@@ -145,9 +176,13 @@ describe("rollupFor over a concurrency-cancelled run", () => {
 			"startup_failure",
 			"stale",
 		]) {
-			expect(rollupFor(sampleOf([{name: "ci-required", conclusion, suite: 91}], [91]), [])).toBe(
-				"red",
-			);
+			expect(
+				rollupFor(
+					sampleOf([{name: "ci-required", conclusion, suite: 91}], [91]),
+					[],
+					UNDECLARED_SET,
+				),
+			).toBe("red");
 		}
 	});
 
@@ -159,7 +194,122 @@ describe("rollupFor over a concurrency-cancelled run", () => {
 			],
 			[91],
 		);
-		expect(rollupFor(sample, [])).toBe("green");
+		expect(rollupFor(sample, [], UNDECLARED_SET)).toBe("green");
+	});
+});
+
+/**
+ * The base branch's declared required set is the blocking authority, and this verb is the one that
+ * says the word a merge reads — so the green below is served only over the contexts that branch
+ * declares, and a red outside them leaves named rather than routed.
+ */
+describe("runChecks under the base branch's required set", () => {
+	const REQUIRES_CI: ReadonlyArray<Scripted> = [
+		[RULES, rules("ci-required")],
+		[PROTECTION, protection()],
+	];
+
+	it("is green over a red no declared context names, and names it on the notes", async () => {
+		const out = await run(
+			[...REQUIRES_CI, ...found],
+			[
+				[
+					RUNS,
+					served(
+						checkRuns(2, [
+							noRun("ci-required", "completed", "success"),
+							noRun("Analyze (python)", "completed", "failure"),
+						]),
+					),
+				],
+				[WORKFLOWS, served(workflows({path: ".github/workflows/ci.yml"}))],
+				[RUN_COUNT, served(runsTotal(2, [{id: 1}]))],
+			],
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tgreen`);
+		expect(out.stdout).toContain("check\tfailure/informational\t1");
+		expect(out.stderr.join("\n")).toContain(
+			"failing outside the required set: Analyze (python) — reported, never blocking.",
+		);
+	});
+
+	it("is red when the failing context is one the base branch declares required", async () => {
+		const out = await run(
+			[...REQUIRES_CI, ...found],
+			[
+				[
+					RUNS,
+					served(
+						checkRuns(2, [
+							noRun("ci-required", "completed", "failure"),
+							noRun("Analyze (python)", "completed", "success"),
+						]),
+					),
+				],
+				[WORKFLOWS, served(workflows("active"))],
+				[RUN_COUNT, served(runsTotal(2))],
+			],
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tred`);
+		expect(out.stderr.join("\n")).toContain("failing gating checks: ci-required");
+	});
+
+	it("refuses on 11 when the required set cannot be read, never a colour over it", async () => {
+		const out = await run(
+			[[RULES, httpError(403, "Resource not accessible by integration")], ...found],
+			[],
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot read main's required status checks");
+	});
+
+	// Narrowing the rollup to the declared set opens an empty-gating-set case wherever the required
+	// contexts have not posted yet, and `rollupOf([])` is `green` by construction.
+	it("pends, never greens, a head where no run answers any declared required context", async () => {
+		const out = await run(
+			[...REQUIRES_CI, ...found],
+			[
+				[RUNS, served(checkRuns(1, [noRun("Analyze (python)", "completed", "success")]))],
+				[WORKFLOWS, served(workflows("active"))],
+				[RUN_COUNT, served(runsTotal(1))],
+			],
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tpending`);
+		expect(out.stderr.join("\n")).toContain(
+			"no run at this head answers any context main declares required",
+		);
+	});
+
+	// The same hole on the fallback definition: a head whose every run is on the name denylist.
+	it("pends a head whose every run is informational under the fallback definition", async () => {
+		const out = await run(found, [
+			[
+				RUNS,
+				served(
+					checkRuns(2, [
+						noRun("deploy (web)", "completed", "success"),
+						noRun("cleanup previews", "completed", "success"),
+					]),
+				),
+			],
+			[WORKFLOWS, served(workflows("active"))],
+			[RUN_COUNT, served(runsTotal(2))],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tpending`);
+		expect(out.stderr.join("\n")).toContain("every run at this head is informational");
+	});
+
+	it("says which definition answered on every run", async () => {
+		const out = await run(
+			[...REQUIRES_CI, ...found],
+			[
+				[RUNS, served(checkRuns(1, [noRun("ci-required", "completed", "success")]))],
+				[WORKFLOWS, served(workflows("active"))],
+				[RUN_COUNT, served(runsTotal(1))],
+			],
+		);
+		expect(out.stderr.join("\n")).toContain("main declares 1 required context(s): ci-required");
 	});
 });
 

@@ -53,7 +53,12 @@ export const rollupOf = (runs: ReadonlyArray<RollupRun>): Rollup => {
  *
  * A check reaches this list by being named here and nowhere else: the default is that a new check
  * gates, so a preview-deploy flake added tomorrow blocks until someone decides otherwise. v1
- * hardcoded the same list in two scripts' `jq` and they drifted; `ship checks` reads it from here.
+ * hardcoded the same list in two scripts' `jq` and they drifted.
+ *
+ * **It is no longer the blocking criterion.** The base branch's declared required set is
+ * (`./blocking.ts`), and this list is what that module falls back to on a branch declaring nothing
+ * required, plus the reporting carve-out `heal-ci surface` computes its `extra` rows with. Nothing
+ * else may read it to decide what blocks.
  */
 const INFORMATIONAL = [/^deploy\b/i, /^cleanup\b/i];
 

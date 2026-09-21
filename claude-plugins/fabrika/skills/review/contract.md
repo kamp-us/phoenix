@@ -795,6 +795,25 @@ uncollapsed: a check run that does not exist has no row here, so a required gate
 a gate the repo does not declare at all were always the same silence. This verb answers "is the head
 green"; `heal-ci surface` answers "is the gate armed and did it post".
 
+**Only a context the base branch declares required is rolled up.** The declared set — branch
+protection unioned with the rulesets whose ref condition matches the base — is read once per
+invocation, before the first sample, through the module the other three head-reading verbs call
+(`src/review/blocking.ts`). A red outside it is named on the notes channel as `review ci: failing
+outside the required set: <name>, … — reported, never blocking.` and never makes this verb call the
+head red; a still-running run outside it never makes it `pending` either. The `check` tally and the
+`run` count stay the **whole** enumeration's: the rollup narrowed, the evidence did not, and the
+completeness proof still divides by what the platform declared. A base branch declaring **nothing**
+required falls back to the informational-name denylist in `src/review/rollup.ts`, so every
+non-informational check blocks there. A declared set that cannot be read at this token's permission
+is `11` naming that read as the cause — never a colour over it. Which definition answered is stated
+on the notes channel on every run. The two governance-floor settle tokens read the blocking set too,
+so a non-required red beside a stale floor no longer hides it.
+
+**A head that produced runs and no *blocking* run is `pending`, never `green`.** The rollup over an
+empty set is green by construction, and narrowing to the declared set opens that case wherever the
+required contexts have not posted yet. What is missing there is a report, so the answer is `pending`
+with the reason on the notes channel.
+
 **The rollup is total over the status vocabulary, fail-closed on the ambiguous rows:** `red`
 when any completed run concluded `failure`, `timed_out`, `action_required` or `cancelled` (a
 cancelled check proved nothing, and "proved nothing" must not read green); `pending` when none
@@ -885,8 +904,8 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | Code | Trigger |
 |---|---|
 | `7` | the PR or the `--sha` is proven absent — no commit to enumerate; **or zero check runs are declared at the commit** — a vacuous green is a fail-open and is refused; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
-| `11` | the check-run read, the workflow-inventory read, the runs-at-head read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green` |
-| `13` | entries received < declared `total_count` — the enumeration is provably incomplete and is never read as "no red checks" |
+| `11` | the check-run read, the workflow-inventory read, the runs-at-head read, the base branch's required-set read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green` |
+| `13` | entries received < declared `total_count` — the enumeration is provably incomplete and is never read as "no red checks"; **or the base branch's ruleset walk never reached a terminal page** — the declared required set is provably short, so which checks block is UNKNOWN |
 | `16` | the rollup is not `red` and **no workflow this repo authors inspected the head** — the enumeration is complete, every repo-authored run here carries another commit or ran against another ref, and the CI state is UNKNOWN, never `green` |
 
 **Errors**
@@ -908,6 +927,14 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | `review ci: cannot judge gate coverage at <sha>: <reason> — which gates inspected these bytes is UNKNOWN, never green.` | 11 | refusal |
 | `review ci: <c> of <g> workflow(s) <repo> authors inspected <head>.` | 0 | notice |
 | `review ci: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
+| `review ci: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
+| `review ci: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `review ci: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
+| `review ci: no run at this head answers any context <base> declares required — pending, never green: the required checks have not reported.` | 0 | notice |
+| `review ci: every run at this head is informational — pending, never green: nothing here gates.` | 0 | notice |
+| `review ci: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `review ci: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `review ci: <base>'s ruleset read never reached a terminal page after <n> rule(s) — pagination is unexhausted, so which checks block is UNKNOWN, never none.` | 13 | refusal |
 | `review ci: the live head is <live>, you are enumerating at <sha> — the head moved; a verdict still binds only what was inspected.` | 0 | notice |
 
 **Scope** — the check runs at one commit, paginated, count-verified against `total_count`, and the

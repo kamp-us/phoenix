@@ -35,6 +35,14 @@ import {type CheckRun, commitExists, listCheckRuns} from "../io/pulls.ts";
 import {CHECK_RUN_NAME} from "../ship/floor-check.ts";
 import {listRunsAtHead, listWorkflowPaths, listWorkflows} from "../ship/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {
+	authorityNote,
+	type BlockingSet,
+	noBlockingRunNote,
+	readBlockingSet,
+	reportedLine,
+	unreadableCause,
+} from "./blocking.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {gateCoverageOf} from "./gate-coverage.ts";
 import {governanceOwed, governanceStale, staleFloorIsTheOnlyRed} from "./governance-owed.ts";
@@ -133,9 +141,14 @@ const noProducerAnswer = (
  * other row it also printed was a passing name nobody read. So the names survive, addressed to the
  * channel diagnostics belong on, and the answer channel carries the counts.
  */
-export const namedLines = (verb: string, runs: ReadonlyArray<CheckRun>): ReadonlyArray<string> => {
-	const failing = runs.filter(isFailing).map((run) => run.name);
-	const running = runs.filter((run) => run.status !== "completed").map((run) => run.name);
+export const namedLines = (
+	verb: string,
+	runs: ReadonlyArray<CheckRun>,
+	blocking: BlockingSet,
+): ReadonlyArray<string> => {
+	const named = runs.filter((run) => blocking.blocks(run.name));
+	const failing = named.filter(isFailing).map((run) => run.name);
+	const running = named.filter((run) => run.status !== "completed").map((run) => run.name);
 	return [
 		...(failing.length === 0
 			? []
@@ -165,9 +178,23 @@ export const runCi = (
 		const target = yield* openPull(VERB, repo, pr, {requireOpen: false, requireFiles: false});
 		if (target._tag === "Refused") return target.outcome;
 		const live = target.pull.headSha;
+		const base = target.pull.baseRef;
+
+		// The blocking authority, read once before any rollup: this verb used to roll up every run at
+		// the head with no filter at all, so a red the base branch does not require made it call the
+		// head red. An unreadable authority is a refusal — with it unread, `green` would be a claim
+		// about a set nobody could name.
+		const authority = yield* readBlockingSet(repo, base);
+		if (authority._tag !== "Set") {
+			return refuse(
+				authority._tag === "Incomplete" ? INCOMPLETE_SCAN : PRECONDITION_UNKNOWN,
+				unreadableCause(VERB, base, authority),
+			);
+		}
+		const blocking = authority.set;
 
 		const asked = options.sha?.trim() ?? "";
-		const diagnostics: string[] = [];
+		const diagnostics: string[] = [authorityNote(VERB, base, blocking)];
 		// `sha` is what the caller asked and what every answer is spelled with; `head` is that same
 		// commit's full object name. They differ only on an abbreviated `--sha`, and the split is the
 		// whole fix for it: the Actions run list filters `head_sha` as an exact string, so an
@@ -260,15 +287,29 @@ export const runCi = (
 				);
 			}
 
-			const rollup = rollupOf(runs);
-			notes.push(...namedLines(VERB, runs));
+			// The rollup is over the blocking set alone; every other run at the head is reported. The
+			// completeness proof above still divides by the whole enumeration, because a short read is a
+			// fact about the page rather than about what blocks.
+			const blocked = runs.filter((run) => blocking.blocks(run.name));
+			// `rollupOf` over an empty set is `green` by construction — every run it was given passed,
+			// there having been none — and the narrowing opens that case wherever the declared contexts
+			// have not posted yet. Runs exist and none of them blocks, so what is missing is a report.
+			const rollup: Rollup = blocked.length === 0 ? "pending" : rollupOf(blocked);
+			if (blocked.length === 0) notes.push(noBlockingRunNote(VERB, base, blocking));
+			notes.push(...namedLines(VERB, runs, blocking));
+			notes.push(
+				...reportedLine(
+					VERB,
+					runs.filter((run) => !blocking.blocks(run.name) && isFailing(run)).map((run) => run.name),
+				),
+			);
 			// A red rollup is already the answer a caller must act on, so the coverage question is asked
 			// only where it changes one: `green` and `pending` are the two words that read as "nothing to
 			// do here", and both are wrong over bytes no gate inspected.
 			let gates: {readonly declared: number; readonly covered: number} | null = null;
 			let owedGovernance = false;
 			let staleGovernance = false;
-			if (rollup === "red" && staleFloorIsTheOnlyRed(runs)) {
+			if (rollup === "red" && staleFloorIsTheOnlyRed(blocked)) {
 				// The one red that is also asked: a floor concluded `failure` on a stale verdict is the
 				// reader's own to clear, and only the workflow runs say the row came from this repo's floor
 				// job. The cheap predicate above gates the read, so an ordinary red still pays nothing.
@@ -282,7 +323,7 @@ export const runCi = (
 						),
 					);
 				}
-				staleGovernance = governanceStale(runs, atHead.value.runs);
+				staleGovernance = governanceStale(blocked, atHead.value.runs);
 				if (staleGovernance) {
 					notes.push(
 						`${VERB}: the only failing check at ${sha} is "${CHECK_RUN_NAME}", and the governance verdict behind it is bound to another head. This red is yours to clear: fire the governance skill, then re-read.`,
@@ -343,7 +384,7 @@ export const runCi = (
 						`${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors inspected ${head}.`,
 					);
 				}
-				owedGovernance = governanceOwed(runs, atHead.value.runs);
+				owedGovernance = governanceOwed(blocked, atHead.value.runs);
 				if (owedGovernance) {
 					notes.push(
 						`${VERB}: the only unfinished check at ${sha} is "${CHECK_RUN_NAME}", and its ${FLOOR_WORKFLOW_NAME} run has completed — what is still owed is a governance verdict bound at this head, which no wait produces. Fire the governance skill, then re-read.`,
