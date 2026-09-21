@@ -724,8 +724,12 @@ const proveNoPull = (
  * The read stops at the rows. Which bar is asked of them is the caller's, because the two bars are
  * opposite: a `PASS` must clear {@link foldNamespaces}'s floor, a park must only survive
  * {@link foldPark}'s single contradiction.
+ *
+ * It is exported for the one caller outside this verb that asks the same question of a PR no lane
+ * is folded over yet — [`board-seat.ts`](board-seat.ts)'s admission. Sharing the read is the point:
+ * the bar a board-seated boot clears is the bar the `PASS` it stands in for would have had to.
  */
-const readNamespaceRows = (
+export const readNamespaceRows = (
 	repo: string,
 	pr: number,
 	diagnostics: ReadonlyArray<string>,
@@ -930,7 +934,7 @@ const readNamespaceRows = (
 	});
 
 /** What a head-scoped verdict read produced, before either bar is asked of it. */
-type HeadRead =
+export type HeadRead =
 	| {
 			readonly _tag: "Rows";
 			readonly head: string;
