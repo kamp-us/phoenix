@@ -58,7 +58,13 @@ function Harness() {
 			<button type="button" onClick={() => navigate(-1)}>
 				back
 			</button>
+			<button type="button" onClick={() => navigate("/pano/1#comment-42")}>
+				push-comment-permalink
+			</button>
 			<div id="comments">yorumlar</div>
+			{/* The one fragment family that already has a live handler behind it: the comment node
+			    `PanoPostDetail`'s `useCommentAnchor` centres. */}
+			<div id="comment-42">bir yorum</div>
 		</>
 	);
 }
@@ -152,6 +158,25 @@ describe("ScrollRestorationMount", () => {
 		viewport.readerScrollsTo(640);
 		click("push-anchor");
 		expect(scrollIntoView).toHaveBeenCalledWith({behavior: "instant", block: "start"});
+		scrollIntoView.mockRestore();
+	});
+
+	it("never touches a comment permalink's node — that page scrolls it itself", async () => {
+		// `PanoPostDetail` runs `useCommentAnchor` on `#comment-<id>` and centres the node when it
+		// mounts. If this hook also scrolled it, the resting position would be whichever of the two
+		// landed last. It lands the arrival at the top and leaves the element alone (#9268).
+		const scrollIntoView = vi
+			.spyOn(Element.prototype, "scrollIntoView")
+			.mockImplementation(() => undefined);
+		renderApp();
+		viewport.readerScrollsTo(640);
+		click("push-comment-permalink");
+		expect(window.scrollY).toBe(0);
+		// A settle would keep re-applying across frames, so the next frame is where a second
+		// authority would show up.
+		await nextFrame();
+		expect(scrollIntoView).not.toHaveBeenCalled();
+		expect(window.scrollY).toBe(0);
 		scrollIntoView.mockRestore();
 	});
 

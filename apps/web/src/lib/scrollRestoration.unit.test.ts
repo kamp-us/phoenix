@@ -37,6 +37,21 @@ describe("scrollIntent", () => {
 		});
 	});
 
+	it("lands a comment permalink at the top, because the post page scrolls that node itself", () => {
+		// `PanoPostDetail`'s `useCommentAnchor` owns `#comment-<id>`. Claiming it here too would
+		// put two scroll calls on one element with no ordering between them.
+		expect(scrollIntent({navigation: "push", hash: "#comment-abc123", saved: 640})).toEqual({
+			kind: "top",
+		});
+	});
+
+	it("keeps claiming a fragment no page owns, even next to the comment family", () => {
+		expect(scrollIntent({navigation: "push", hash: "#commentary", saved: undefined})).toEqual({
+			kind: "anchor",
+			id: "commentary",
+		});
+	});
+
 	it("leaves a replace alone — it corrects the entry the reader is already on", () => {
 		expect(scrollIntent({navigation: "replace", hash: "", saved: undefined})).toEqual({
 			kind: "none",

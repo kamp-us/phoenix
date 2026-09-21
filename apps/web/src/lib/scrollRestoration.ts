@@ -9,7 +9,7 @@
  * which is why #9268 rules the data-router migration out and hand-rolls this instead.
  *
  * The decision is separated from the DOM so it can be read as a table: three navigation
- * kinds in, one of three intents out, nothing in between representable.
+ * kinds in, one of four intents out, nothing in between representable.
  */
 
 /** react-router's `NavigationType`, narrowed to this module's own vocabulary. */
@@ -37,16 +37,33 @@ export interface ScrollIntentInput {
  */
 export const SCROLL_SETTLE_TIMEOUT_MS = 1_000;
 
+/**
+ * Fragment families a page already scrolls for itself.
+ *
+ * `PanoPostDetail` runs `useCommentAnchor` over `#comment-<id>`: it waits for the node through a
+ * `MutationObserver` — a comment mounts when its own view snapshot fulfills (#649) — and then
+ * centres it. Two scroll authorities on one element is two resting positions, whichever lands
+ * last, so this module claims no fragment a page owns. The arrival still lands at the top and the
+ * page's own anchoring is what moves the reader from there.
+ */
+const PAGE_OWNED_FRAGMENT_PREFIXES = ["comment-"] as const;
+
+function pageOwnsFragment(id: string): boolean {
+	return PAGE_OWNED_FRAGMENT_PREFIXES.some((prefix) => id.startsWith(prefix));
+}
+
 export function scrollIntent({navigation, hash, saved}: ScrollIntentInput): ScrollIntent {
 	// A replace is a correction of the entry the reader is already on — the post-auth
 	// redirect, a `?sort=` rewrite — so it is not an arrival and owes the viewport nothing.
 	if (navigation === "replace") return {kind: "none"};
 	// A forward navigation is an arrival, so it never keeps the offset the reader left behind.
 	// Where it names a fragment that fragment is the arrival point — the pano feed's own
-	// `N yorum` link is `/pano/<id>#comments` — and where it names none, the top is.
+	// `N yorum` link is `/pano/<id>#comments` — and where it names none, the top is. A fragment
+	// the landing page scrolls itself is the top too: this module stands down rather than race it.
 	if (navigation === "push") {
 		const id = hash.startsWith("#") ? hash.slice(1) : "";
-		return id === "" ? {kind: "top"} : {kind: "anchor", id};
+		if (id === "" || pageOwnsFragment(id)) return {kind: "top"};
+		return {kind: "anchor", id};
 	}
 	// POP with nothing saved is the first load of a tab (react-router's initial navigation
 	// type), where the browser's own anchor handling is the better answer than a forced 0.
