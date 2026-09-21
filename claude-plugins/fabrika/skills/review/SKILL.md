@@ -662,10 +662,19 @@ outright, so every class you leave off it is cleared, which is what makes `--cla
 text-only head retire a stale `ui` rather than sit beside it. `lane prove` refuses that at exit `67` with nothing appended, and the remedy on
 the refusal is this line with the head's rows on it.
 
-Two guards are yours before you record, one per polarity. Record a `FAIL` **only when every derived
-namespace holds a verdict that still binds at the head** — a `FAIL` beside an in-flight namespace is
+Two guards are yours before you record, one per polarity. Record a `FAIL` **only when every namespace
+on your emission checklist — §1's derived set minus every `routed` row — holds a verdict that still
+binds at the head** — a `FAIL` beside an in-flight namespace is
 an incomplete read the lane must not act on yet, so print the terminal without recording and leave
-the record to the operator's re-read. And record an `UNKNOWN`, a `STALE` or an `UNBINDABLE` **only
+the record to the operator's re-read. **A `routed` row is subtracted here on the same grounds it is
+subtracted from a `PASS`**: out of the plain `review` cell a routed namespace is the next cell's,
+which is what the decision record *The review bar splits across the two review cells, and the lane's
+own machine decides where* rules, and the merge gate re-derives it regardless. Nothing mechanical
+asks for it here either — `lane prove` answers `not-required` for a `FAIL` out of `review`, because
+that event claims no artifact at all. Requiring it would be unsatisfiable rather than merely strict:
+`review-ui route` refuses at exit `20` at any head where `review-code` stands `FAIL`, so the one gate
+that may post that row cannot, and the lane waits on a verdict nobody is permitted to write. And
+record an `UNKNOWN`, a `STALE` or an `UNBINDABLE` **only
 when no derived namespace holds a still-binding `FAIL`**: those three park the lane on a human, a
 `FAIL` routes it into a repair round under the retry budget, and a park recorded over a FAIL
 converts the second into the first with nothing downstream able to tell — which is why a park out
