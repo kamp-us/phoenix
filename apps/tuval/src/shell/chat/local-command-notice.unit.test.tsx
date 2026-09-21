@@ -6,20 +6,18 @@
  *
  * The rows come off the real Claude mapper over the captured frames (`claude/history/fixtures`), so
  * this case and the mapper's own move together — a renderer case fed a hand-made item would still
- * pass with the mapping put back the way it was. The import is this file's alone: `boundary.unit.
- * test.ts` forbids a shipped file under `shell/chat/` from reaching a backend, and exempts tests.
+ * pass with the mapping put back the way it was. The capture is driven through the boundary by
+ * `fixtures/events.ts` and handed back as `AgentEvent`s, so this file names no SDK type: the Agent
+ * SDK stops at `src/claude/`, and that rule exempts nothing (#9530).
  */
 
-import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {act, fireEvent, render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
-import {toAgentEvents} from "../../claude/history/events.ts";
-import {loadFixture} from "../../claude/history/fixtures/load.ts";
-import {emptyMapping} from "../../claude/history/map.ts";
+import {fixtureEvents} from "../../claude/history/fixtures/events.ts";
 import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
 import {type TestProcess, testProcess} from "../window/fixtures.ts";
@@ -32,10 +30,8 @@ installDomShims();
 
 const AT = 1_700_000_000_000;
 
-const mapped = (name: Parameters<typeof loadFixture>[0]): ReadonlyArray<TranscriptItem> =>
-	toAgentEvents(loadFixture(name) as SDKMessage, emptyMapping, {at: AT}).events.flatMap((event) =>
-		event.kind === "item" ? [event.item] : [],
-	);
+const mapped = (name: Parameters<typeof fixtureEvents>[0]): ReadonlyArray<TranscriptItem> =>
+	fixtureEvents(name, {at: AT}).flatMap((event) => (event.kind === "item" ? [event.item] : []));
 
 const openWindow = async (items: ReadonlyArray<TranscriptItem>): Promise<void> => {
 	const process: TestProcess<AiAgentSessionState, AiAgentSessionMsg> = await Effect.runPromise(

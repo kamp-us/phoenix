@@ -12,7 +12,6 @@
  * picker naming the pick does nothing if the layer never says the catalog is gone.
  */
 
-import type {ModelInfo} from "@anthropic-ai/claude-agent-sdk";
 import {AgentChatInput, DesignTranslationProvider} from "@kampus/design";
 import {act, render, screen} from "@testing-library/react";
 import {Effect, Stream} from "effect";
@@ -20,14 +19,20 @@ import type {ReactElement} from "react";
 import {expect, it} from "vitest";
 import {type AiAgentSessionState, foldEvent, initialState} from "../../ai-agent/core/index.ts";
 import type {AgentEvent} from "../../ai-agent/events.ts";
-import {CWD, on, START_EVENTS, settled} from "../../claude/agent/fixtures/harness.ts";
+import {
+	CWD,
+	on,
+	type ScriptedModel,
+	START_EVENTS,
+	settled,
+} from "../../claude/agent/fixtures/harness.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
 import {type ComposerBridge, composerBridge} from "./composer-bridge.ts";
 import {tuvalDesignTranslate} from "./copy.ts";
 
 installDomShims();
 
-const CATALOG: ReadonlyArray<ModelInfo> = [
+const CATALOG: ReadonlyArray<ScriptedModel> = [
 	{
 		value: "opus",
 		resolvedModel: "claude-opus-5",

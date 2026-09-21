@@ -36,3 +36,16 @@ export const fixtureEventFrames = (
 	}
 	return perFrame;
 };
+
+/**
+ * The events a single-frame capture maps to, on an empty mapping.
+ *
+ * The frame-by-frame answer above is for a capture that is an array; a fixture that is one frame —
+ * a local command's turn, say — has no seam to carry a mapping across, and a caller handed one
+ * array per frame would only flatten it back.
+ */
+export const fixtureEvents = (
+	name: FixtureName,
+	options: MappingOptions,
+): ReadonlyArray<AgentEvent> =>
+	toAgentEvents(loadFixture(name) as SDKMessage, emptyMapping, options).events;

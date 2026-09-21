@@ -43,11 +43,14 @@ type RowSub = RowOf<3>;
 const specifiersOf = (text: string): ReadonlyArray<string> =>
 	[...text.matchAll(/from\s+"([^"]+)"/g)].map((match) => match[1] ?? "");
 
+/** `.tsx` as well as `.ts`, for the reason `agent/boundary.unit.test.ts` widens its copy (#9530). */
+const isSource = (entry: string): boolean => entry.endsWith(".ts") || entry.endsWith(".tsx");
+
 const sourcesUnder = (dir: string): ReadonlyArray<{name: string; text: string}> =>
 	readdirSync(dir).flatMap((entry) => {
 		const path = join(dir, entry);
 		if (statSync(path).isDirectory()) return sourcesUnder(path);
-		return entry.endsWith(".ts") ? [{name: path, text: readFileSync(path, "utf8")}] : [];
+		return isSource(entry) ? [{name: path, text: readFileSync(path, "utf8")}] : [];
 	});
 
 describe("what the row hands the factory", () => {

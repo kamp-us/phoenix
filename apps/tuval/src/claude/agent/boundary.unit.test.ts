@@ -32,11 +32,20 @@ const windowScope: Scope = {
 	client: ClientId.make("c"),
 };
 
+/**
+ * `.tsx` as well as `.ts`: the layer these rules protect is `src/shell/`, which is mostly `.tsx`, so
+ * a walker that collected `.ts` alone read past most of what it guards (#9530).
+ */
+const isSource = (entry: string): boolean => entry.endsWith(".ts") || entry.endsWith(".tsx");
+
+const isUnitTest = (name: string): boolean =>
+	name.endsWith(".unit.test.ts") || name.endsWith(".unit.test.tsx");
+
 const sourcesUnder = (dir: string): ReadonlyArray<{name: string; text: string}> =>
 	readdirSync(dir).flatMap((entry) => {
 		const path = join(dir, entry);
 		if (statSync(path).isDirectory()) return sourcesUnder(path);
-		return entry.endsWith(".ts") ? [{name: path, text: readFileSync(path, "utf8")}] : [];
+		return isSource(entry) ? [{name: path, text: readFileSync(path, "utf8")}] : [];
 	});
 
 const specifiersOf = (text: string): ReadonlyArray<string> =>
@@ -111,7 +120,7 @@ const stripComments = (text: string): string =>
 describe("the layer holds no retry loop", () => {
 	it("names no retry, repeat, schedule or reconnect — that policy is the machine's data (#7371)", () => {
 		const offenders = sourcesUnder(import.meta.dirname)
-			.filter(({name}) => !name.endsWith(".unit.test.ts") && !name.includes("fixtures"))
+			.filter(({name}) => !isUnitTest(name) && !name.includes("fixtures"))
 			.flatMap(({name, text}) =>
 				stripComments(text)
 					.split("\n")
