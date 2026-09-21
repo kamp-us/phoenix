@@ -1,6 +1,6 @@
 # Developing on phoenix
 
-phoenix is the opinionated stack the kamp.us products (sözlük, pano, mecmua) are built on — a single Cloudflare Worker on alchemy + Effect + fate that serves the SPA, the data plane, and every backend route. It is not a general-purpose framework; it's this repo's engine, written down precisely enough that you can extend it without reverse-engineering the choices.
+phoenix is the opinionated stack kamp.us’s two products (sözlük and pano) are built on — a single Cloudflare Worker on alchemy + Effect + fate that serves the SPA, the data plane, and every backend route. It is not a general-purpose framework; it's this repo's engine, written down precisely enough that you can extend it without reverse-engineering the choices.
 
 This is the builder's door. For what kamp.us *is* — the products and the ethos — see [README.md](./README.md).
 
@@ -59,7 +59,6 @@ apps/web/
         │                  # — products & product surfaces —
         ├── sozluk/        # product — dictionary (sözlük)
         ├── pano/          # product — link aggregator
-        ├── mecmua/        # product — long-form publishing (mecmua)
         ├── vote/          # votes on the three targets (definition / post / comment)
         ├── reaction/      # ungated, karma-free emoji reactions — the vote-engine twin
         ├── divan/         # the çaylak proving-ground reviewer surface (divan)
@@ -149,7 +148,7 @@ Two of `apps/tuval`'s proof scripts are deliberately **not** declared. `proof:cl
 
 `apps/web` reads both dev ports through [`apps/web/dev-ports.ts`](./apps/web/dev-ports.ts) (`PHOENIX_SPA_PORT`, `PHOENIX_WORKER_PORT`), which is the one place the Vite proxy and the worker it proxies to can agree. Unset, they are the historical `3000` and `1337`, so `pnpm dev` by hand is unchanged.
 
-**Reachable today:** the routes a signed-out visitor can actually see — `/`, `/pano`, `/sozluk`, `/mecmua`, `/divan`, `/search`, `/auth` and `/lab/atolye` among them. Point the harness at one of those and the capture is what a visitor sees.
+**Reachable today:** the routes a signed-out visitor can actually see — `/`, `/pano`, `/sozluk`, `/divan`, `/search`, `/auth` and `/lab/atolye` among them. Point the harness at one of those and the capture is what a visitor sees.
 
 **A session-gated route does not refuse — it captures the signed-out view and exits `0`.** [`apps/web/src/App.tsx`](./apps/web/src/App.tsx) routes entirely client-side, and Vite serves `index.html` at 200 for any path it does not otherwise own, so the navigation always succeeds; [`browser.ts`](./packages/fabrika-cli/src/ui/browser.ts) calls a surface unreachable only on a navigation failure, status `0`, or status `>= 400`. There is no route-level auth wrapper either — each page gates itself, so what lands in the PNG differs per page: `/profile` client-redirects to `/auth`, `/bildirimler` renders its `giriş yapmalısın` prompt, a flag-dark page self-404s. Each is a valid, non-empty capture that `ui evidence` accepts. **The harness cannot tell you it showed you the wrong thing**, so a gated surface is only judgeable with a real session — `uiCapture.storageState` is the schema's slot for that, and minting one is tracked on [#7398](https://github.com/kamp-us/phoenix/issues/7398). Until then, treat a capture of a gated route as UNKNOWN however plausible it looks.
 

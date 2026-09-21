@@ -53,9 +53,6 @@ import {
 	funnelCohortFlag,
 	karmaGatesFlag,
 	localeFlag,
-	mecmuaFeedFlag,
-	mecmuaPublicReadFlag,
-	mecmuaWriteFlag,
 	memberMuteFlag,
 	panoStampWaveFlag,
 	profileCanvasFlag,
@@ -83,9 +80,6 @@ export default Alchemy.Stack(
 		// Yielding the same app resource the worker `bind()`s is idempotent.
 		const flagship = yield* Flagship;
 		yield* demoTargetingFlag(flagship.appId);
-		// The mecmua write-path dark-ship flag, default-off (#2497, epic #2467) — the
-		// single seam mecmua.publish + mecmua.saveDraft gate behind until a human release.
-		yield* mecmuaWriteFlag(flagship.appId);
 		// The bildirim (notification system) dark-ship flag, default-off (#1694, epic
 		// #1666) — the single seam the whole notification surface gates behind.
 		yield* bildirimFlag(flagship.appId);
@@ -111,13 +105,6 @@ export default Alchemy.Stack(
 		// The failing-email membrane notice dark-ship flag, default-off (#2693, epic #2687)
 		// — the seam the user-facing notice gates behind until a human release.
 		yield* emailDeliveryNoticeFlag(flagship.appId);
-		// The mecmua public-read dark-ship flag, default-off (#2498, epic #2467) — the
-		// single seam the anon GET route + reader page gate behind until a human release.
-		yield* mecmuaPublicReadFlag(flagship.appId);
-		// The mecmua subscribed-author feed dark-ship flag, default-off (#2500, epic #2467) —
-		// the single seam the mecmuaFeed root + subscribe/unsubscribe + feed page gate behind
-		// until a human release.
-		yield* mecmuaFeedFlag(flagship.appId);
 		// The sözlük parallel-stamp-wave read-collapse dark-ship flag, default-off (#2709,
 		// epic #2567) — the concurrency knob the definition reads' stamp wave passes: off ⇒
 		// serial (today), on ⇒ one concurrent wave, until a human release.

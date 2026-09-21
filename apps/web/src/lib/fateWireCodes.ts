@@ -63,10 +63,6 @@ export const FATE_WIRE_CODES = [
 	// `pasaport/EmailFailingReasonRequired` (#2692): same audit-record floor for an
 	// out-of-band failing-address mark.
 	"EMAIL_FAILING_REASON_REQUIRED",
-	// The `mecmua-write` flag is off (#2497).
-	"MECMUA_DISABLED",
-	// `mecmua/MecmuaPostNotFound` (#2497) — an ownership-scoped miss, not just absence.
-	"MECMUA_POST_NOT_FOUND",
 	// The `member-mute` flag is off (#3112).
 	"MUTE_DISABLED",
 	// `mute/SelfMuteRejected` (#3112).

@@ -22,25 +22,6 @@ export const PHOENIX_SOZLUK_STAMP_WAVE = "phoenix-sozluk-stamp-wave";
 export const PHOENIX_PANO_STAMP_WAVE = "phoenix-pano-stamp-wave";
 
 /**
- * mecmua write-path dark-ship seam (#2497): `mecmua.publish` + `mecmua.saveDraft` fail
- * `MECMUA_DISABLED` with it off. Default-off, ADR 0083.
- */
-export const MECMUA_WRITE = "mecmua-write";
-
-/**
- * mecmua public-read dark-ship seam (#2498): the `GET /fate/mecmua/post/:slug` route's existence
- * (404 until flipped) AND the `/mecmua/:slug` reader page's self-404. Default-off, ADR 0083.
- */
-export const MECMUA_PUBLIC_READ = "mecmua-public-read";
-
-/**
- * mecmua subscribed-author feed dark-ship seam (#2500): the `mecmuaFeed` list root (empty when
- * off), the subscribe/unsubscribe mutations, AND the `/mecmua` feed page's self-404. Default-off,
- * ADR 0083.
- */
-export const MECMUA_FEED = "mecmua-feed";
-
-/**
  * The single seam for the WHOLE notification surface (#1694) — unread badge, `/bildirimler`, and
  * every emitter reuse this one key rather than minting per-child flags. Default-off, ADR 0083.
  */
@@ -176,9 +157,6 @@ export interface FlagDeclaration {
 export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_SOZLUK_STAMP_WAVE, defaultValue: false},
 	{key: PHOENIX_PANO_STAMP_WAVE, defaultValue: false},
-	{key: MECMUA_WRITE, defaultValue: false},
-	{key: MECMUA_PUBLIC_READ, defaultValue: false},
-	{key: MECMUA_FEED, defaultValue: false},
 	{key: PHOENIX_BILDIRIM, defaultValue: false},
 	{key: PHOENIX_REACTIONS, defaultValue: false},
 	{key: PHOENIX_KARMA_GATES, defaultValue: false},

@@ -20,7 +20,7 @@ Routes fall into two visibility classes:
   client-side role check, because their fate roots deny an unentitled reader `UNAUTHORIZED` and
   `<Screen>` renders that as "yetkin yok".
 - **Dark feature routes** — mounted plainly, but the page self-gates on a default-off flag
-  (off ⇒ 404): `/bildirimler`, `/susturduklarim`, `/caylak-gorunurlugu`, and the `/mecmua/*`
+  (off ⇒ 404): `/bildirimler`, `/susturduklarim`, and `/caylak-gorunurlugu`
   routes. These ship dark by default and a human flips the flag to release them (the
   agents-deploy / humans-release contract, ADR 0083). The gate's shape — the self-404 and the
   placeholder that keeps the 404 from flashing before the flag settles — is
@@ -30,7 +30,7 @@ Routes fall into two visibility classes:
 
 ## Per-product Subnav zones — nested layout routes
 
-Each product (`/sozluk`, `/pano`, `/mecmua`, `/divan`) mounts its routes under a
+Each product (`/sozluk`, `/pano`, `/divan`) mounts its routes under a
 **pathless per-product layout route** whose element is
 [`ProductSubnavLayout`](../apps/web/src/components/layout/ProductSubnavLayout.tsx) — it
 renders the product's persistent `<Subnav>` zone above the routed `<Outlet>`, so the zone
@@ -45,7 +45,7 @@ Two properties make the nesting safe to layer over the flat tree:
 - **A pathless layout route is transparent to matching.** React Router ranks routes by
   path specificity, not source order, so grouping a product's routes under a layout route
   changes only *what renders above them*, never *which* route matches. The existing
-  ordering notes (static `/mecmua/yaz` out-ranking `/mecmua/:slug`) still hold unchanged.
+  ordering notes (static `/pano/yeni` out-ranking `/pano/:id`) still hold unchanged.
 - **The nesting is unconditional.** `App.tsx` wraps each product's routes under its
   `*SubnavLayout` directly — no flag read. (It shipped behind the default-off
   `phoenix-nav-ia` seam, retired at on@100% per ADR 0136.) The per-product delta children
@@ -95,5 +95,4 @@ and be felt rather than vanish after one session.
 **`/lab/composer` (#2465)** — the tiptap composer — is the first kept public route under
 this convention (opened as PR
 [#2472](https://github.com/kamp-us/phoenix/pull/2472)). It is a durable inhabitant of
-the standing space, not deletable scaffolding: publicly visible, kept, and prototyping
-toward the mecmua long-form publishing arc (#2467).
+the standing space, not deletable scaffolding: publicly visible and kept for composer prototyping.

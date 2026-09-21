@@ -7,14 +7,13 @@
  * than a CI guard (#2928) — a CI guard would live outside the bundle it guards.
  */
 import type {User} from "../../worker/features/fate/views.ts";
-import {MECMUA_FEED, MECMUA_PUBLIC_READ} from "./keys.ts";
 
 /**
  * Only the flags whose wrong value moves geometry at first paint (ADR 0179 §1); below-fold flags
  * stay on the client fetch path. The Subnav-zone seam graduated and was retired (ADR 0136), so no
  * flag shapes those zones any more.
  */
-export const SHELL_FLAG_KEYS = [MECMUA_PUBLIC_READ, MECMUA_FEED] as const;
+export const SHELL_FLAG_KEYS = [] as const;
 
 export type ShellFlagKey = (typeof SHELL_FLAG_KEYS)[number];
 

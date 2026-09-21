@@ -4,7 +4,7 @@
 
 ## What kamp.us is
 
-kamp.us, reborn. A small, earnest community built around three products — **sözlük** (the community of definitions), **pano** (the shared board of links and posts), and **mecmua** (long-form publishing) — bound by **künye**, earned-authorship identity: you arrive a çaylak and become a yazar by vouch (kefil), not by signup. Quality over growth; the founders are the first users; nothing seeded. An autonomous software factory builds it.
+kamp.us, reborn. A small, earnest community built around two products — **sözlük** (the community of definitions) and **pano** (the shared board of links and posts) — bound by **künye**, earned-authorship identity: you arrive a çaylak and become a yazar by vouch (kefil), not by signup. Quality over growth; the founders are the first users; nothing seeded. An autonomous software factory builds it.
 
 ## How this roadmap works
 
@@ -21,7 +21,6 @@ flowchart TD
 	subgraph arcs["Arcs"]
 		arc_four_pillars["Four Pillars"]:::done
 		arc_ge_it["Geçit"]:::active
-		arc_mecmua_v2["Mecmua v2"]:::queued
 		arc_at_lye["Atölye"]:::done
 	end
 	subgraph campaigns["Campaigns"]
@@ -77,14 +76,11 @@ flowchart TD
 |-----|-----------|-------|
 | Four Pillars | #17 | done |
 | Geçit | #24 | active |
-| Mecmua v2 | #25 | queued |
 | Atölye | #26 | done |
 
 **Four Pillars** — *done.* Frontend polish and the encoded design system: the four pillars — Performance, Cohesiveness, Usability, Accessibility — made real and enforced (ADR 0162, the design-system manifest). The surface of kamp.us becomes excellent and self-consistent. The nav-IA discipline landed here.
 
 **Geçit** — *active. The passage.* The membrane of the community: onboarding, künye (the reputation DO), and moderation. How a stranger becomes a çaylak, a çaylak becomes a yazar by vouch, and how the community governs itself. The çaylak→yazar journey — undefined today — gets designed here. (The earlier künye milestone folded in.)
-
-**Mecmua v2** — The next chapter of long-form publishing: the Thinking-Machines 3-zone reading layout, and the reading/authoring experience maturing past v1.
 
 **Atölye** — *the workshop.* The in-product museum of craft: curated exhibits, live and playable, where kamp.us shows how it is made.
 

@@ -60,16 +60,16 @@ There is no scheduled-job substrate (ADR 0009 deferred Workflows/Cron) and we do
 
 §2 above lists what the teardown touches: `session`, `account`, `apikey`, `verification` and the
 scrubbed `user` row. It says nothing about the per-user relation and preference tables keyed by the
-departing user's id, and that silence is what three tables in a row inherited — `user_mute`,
-`mecmua_subscription`, and now `caylak_visibility_preference` ([#6422](https://github.com/kamp-us/phoenix/issues/6422),
+departing user's id, and that silence is what `user_mute`
+and `caylak_visibility_preference` inherited ([#6422](https://github.com/kamp-us/phoenix/issues/6422),
 epic [#4306](https://github.com/kamp-us/phoenix/issues/4306)) — surviving an `account.delete` by
 default rather than by decision. The founder
 [ruled](https://github.com/kamp-us/phoenix/issues/6446#issuecomment-5363121594) on 2026-08-20: they
 are swept.
 
 **The rule.** A per-user relation or preference row keyed by the deleted user's id is **deleted**, in
-the same atomic batch as the identity teardown (ADR [0014](0014-drizzle-run-batch-as-service-methods.md)). At ruling
-time that is three tables: `user_mute`, `mecmua_subscription`, `caylak_visibility_preference`. Both
+the same atomic batch as the identity teardown (ADR [0014](0014-drizzle-run-batch-as-service-methods.md)). The remaining
+tables are `user_mute` and `caylak_visibility_preference`. Both
 sides of a two-sided edge go, because both columns are user ids and neither side resolves to a live
 relation once the account is a tombstone — a mute the departed yazar set masks nothing for a yazar
 who is gone, and a mute *against* them matches nothing once their content is re-attributed to

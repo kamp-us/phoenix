@@ -21,7 +21,6 @@ import {AppShell, Main} from "./components/layout/AppShell";
 import {type CaylakMeter, caylakMeter} from "./components/layout/caylakMeter";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
-import {MecmuaSubnavLayout} from "./components/mecmua/MecmuaSubnavLayout";
 import {EmailDeliveryNoticeMount} from "./components/membrane/EmailDeliveryNoticeMount";
 import {actorLabel} from "./components/moderation/actor-identity";
 import {hasSeenWelcome, welcomeStorage} from "./components/onboarding/welcomeSeen";
@@ -38,12 +37,7 @@ import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
 import {teardownAuthedSnapshot} from "./fate/snapshot";
 import {readBootUser} from "./flags/boot";
 import {EdgeShellBootMarker} from "./flags/EdgeShellBoot";
-import {
-	MECMUA_PUBLIC_READ,
-	PHOENIX_BILDIRIM,
-	PHOENIX_CAYLAK_METER,
-	PHOENIX_WELCOME,
-} from "./flags/keys";
+import {PHOENIX_BILDIRIM, PHOENIX_CAYLAK_METER, PHOENIX_WELCOME} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {LocaleProvider} from "./i18n";
 import {AtolyeExhibitPage} from "./lab/atolye/AtolyeExhibitPage";
@@ -58,10 +52,6 @@ import {CAYLAK_VISIBILITY_PATH, CaylakVisibilityPage} from "./pages/CaylakVisibi
 import {DivanPage} from "./pages/DivanPage";
 import {FunnelPage} from "./pages/FunnelPage";
 import {LandingPage} from "./pages/LandingPage";
-import {MecmuaDraftsPage} from "./pages/MecmuaDraftsPage";
-import {MecmuaFeedPage} from "./pages/MecmuaFeedPage";
-import {MecmuaIndexPage} from "./pages/MecmuaIndexPage";
-import {MecmuaPostPage} from "./pages/MecmuaPostPage";
 import {MutesPage} from "./pages/MutesPage";
 import {NotFoundPage} from "./pages/NotFoundPage";
 import {PanoFeed} from "./pages/PanoFeed";
@@ -107,9 +97,6 @@ function Layout() {
 	const location = useLocation();
 	const {choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const [chips, setChips] = useState<TopbarChips | null>(null);
-	// mecmua-public-read (#2512) resolves synchronously from `window.__BOOT__` so the nav paints
-	// its final geometry on the first frame; absent `__BOOT__` it falls back to the fetch. See ADR 0179.
-	const {value: mecmuaOn} = useFlag(MECMUA_PUBLIC_READ, false);
 
 	// Eager public-tier pano feed above the session gate — see ADR 0167. The public client is a
 	// distinct, never-re-keyed instance, so the authed tree still mounts exactly once (#438).
@@ -180,13 +167,9 @@ function Layout() {
 						<Topbar
 							brandName="kamp.us"
 							reserveSignedInSlots={reserveSignedInSlots}
-							// akış is a mecmua SUB-destination living in the mecmua Subnav zone (#2603),
-							// so the topbar carries just the `mecmua` product noun — a cross-product
-							// destination, per placement law #2587.
 							nav={[
 								{to: "/sozluk", label: "sözlük"},
 								{to: "/pano", label: "pano"},
-								...(mecmuaOn ? [{to: "/mecmua", label: "mecmua"}] : []),
 							]}
 							divanTo={chips?.divanTo}
 							divanPending={chips?.divanCount}
@@ -377,14 +360,8 @@ function PanoSiteFeedRoute() {
 	return <PanoFeed {...(host ? {host} : {})} />;
 }
 
-// The composer routes are the SPA's only `@kampus/composer` (tiptap/ProseMirror) consumers,
-// so lazy-loading both keeps that heavy editor payload out of the entry chunk every public
-// route pays for — the performance-pillar fix of #2523. Named-export → default shim for React.lazy.
 const LabComposerPage = lazy(() =>
 	import("./pages/LabComposerPage").then((m) => ({default: m.LabComposerPage})),
-);
-const MecmuaEditorPage = lazy(() =>
-	import("./pages/MecmuaEditorPage").then((m) => ({default: m.MecmuaEditorPage})),
 );
 
 function ComposerRouteFallback() {
@@ -411,35 +388,6 @@ export function App() {
 		/>,
 		<Route key="pano-detail" path="/pano/:id" element={<PanoPostDetail />} />,
 	];
-	// mecmua — each page self-gates on its flag (off ⇒ 404), so these routes are dark by
-	// default: the public index (#2512) + reader (#2498) on mecmua-public-read, the
-	// subscribed-author feed (#2500) on mecmua-feed, the authoring page (#2499), the
-	// id-addressable draft load + the drafts list (#2544) on mecmua-write. The
-	// static/`yaz`-prefixed paths out-rank the `/mecmua/:slug` reader.
-	const mecmuaRoutes = [
-		<Route key="mecmua" path="/mecmua" element={<MecmuaIndexPage />} />,
-		<Route key="mecmua-akis" path="/mecmua/akis" element={<MecmuaFeedPage />} />,
-		<Route key="mecmua-yazilarim" path="/mecmua/yazilarim" element={<MecmuaDraftsPage />} />,
-		<Route
-			key="mecmua-yaz"
-			path="/mecmua/yaz"
-			element={
-				<Suspense fallback={<ComposerRouteFallback />}>
-					<MecmuaEditorPage />
-				</Suspense>
-			}
-		/>,
-		<Route
-			key="mecmua-yaz-id"
-			path="/mecmua/yaz/:id"
-			element={
-				<Suspense fallback={<ComposerRouteFallback />}>
-					<MecmuaEditorPage />
-				</Suspense>
-			}
-		/>,
-		<Route key="mecmua-slug" path="/mecmua/:slug" element={<MecmuaPostPage />} />,
-	];
 	const sozlukRoutes = [
 		<Route key="sozluk" path="/sozluk" element={<SozlukHome />} />,
 		// Two segments, so it never competes with the one-segment term route below it.
@@ -461,9 +409,6 @@ export function App() {
 								<Route path="/" element={<LandingPage />} />
 								<Route key="pano-zone" element={<PanoSubnavLayout />}>
 									{panoRoutes}
-								</Route>
-								<Route key="mecmua-zone" element={<MecmuaSubnavLayout />}>
-									{mecmuaRoutes}
 								</Route>
 								<Route key="sozluk-zone" element={<SozlukSubnavLayout />}>
 									{sozlukRoutes}

@@ -69,7 +69,7 @@ Ratified on #2586. Every nav element is assigned to exactly one of four classes.
 
 | Class | What it is | Examples |
 |---|---|---|
-| **destination** | A place you go — a product noun or a top-level feed. | sözlük, pano, mecmua |
+| **destination** | A place you go — a product noun or a top-level feed. | sözlük, pano |
 | **primary action** | The one verb the surface promotes. Exactly one per surface. | the global `+` create menu |
 | **utility** | An ambient control the user reaches for on demand. | search (`⌘K`), theme (on the profile page) |
 | **signal** | Read-only state that reports "what needs your attention". | bildirim (bell + count), divan access, karma |
@@ -109,9 +109,9 @@ containment law already forbids resting accent chrome elsewhere on the bar, "a u
 as the CTA" is unrepresentable — there is no second accent fill for a utility to borrow. One
 accent container, one promoted action.
 
-### The seven element verdicts (the taxonomy applied)
+### The element verdicts (the taxonomy applied)
 
-Ratified on #2591 (with #2588 for `tema`). Applying the law to today's topbar produced seven
+Ratified on #2591 (with #2588 for `tema`). Applying the law to today's topbar produced these
 verdicts — the concrete restructure the discipline demands:
 
 1. **`+ gönderi` — EVICTED.** A pano-scoped verb wearing global placement. Split into (a) the
@@ -125,11 +125,9 @@ verdicts — the concrete restructure the discipline demands:
 4. **karma → folds into the user-menu trigger** as `name (karma)` (HN-style). The standalone
    chip dies; detail + çaylak progress live on the profile. (A karma-provenance ledger was
    filed separately into intake, #2592.)
-5. **`akış` / `yazılarım` → demoted under mecmua's Subnav.** They are product sub-destinations,
-   not top-level product nouns — they leave the destinations row.
-6. **search (`ara`) → utility**, invoked via `⌘K`; it is not a destination.
-7. **divan → the signals zone** (a gated Lucide glyph + tooltip, with a future pending-count
-   badge). The destinations row is purely **sözlük / pano / mecmua**.
+5. **search (`ara`) → utility**, invoked via `⌘K`; it is not a destination.
+6. **divan → the signals zone** (a gated Lucide glyph + tooltip, with a future pending-count
+   badge). The destinations row is purely **sözlük / pano**.
 
 These verdicts are recorded here as the ratified target; the topbar restructure and the Subnav
 standardization that implement them ship as separate epics downstream of this ADR (the map's

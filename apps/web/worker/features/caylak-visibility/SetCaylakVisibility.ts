@@ -1,7 +1,7 @@
 /**
  * `SetCaylakVisibility` — the yazar floor on opting INTO in-place çaylak visibility
  * (#6422, epic #4306), a `Capability.Level` modeled verbatim on {@link
- * ../mecmua/PublishMecmua PublishMecmua}: it reads the GLOBAL account-level standing
+ * ../sozluk/OpenTerm OpenTerm}: it reads the GLOBAL account-level standing
  * off {@link Kunye.tierOf} against the {@link authorshipLadder} and denies with
  * {@link RequiresLevel} (`FORBIDDEN`).
  *
@@ -10,8 +10,7 @@
  * which the epic names a no-go — so the tier is read fresh here, never taken from
  * request input or session state.
  *
- * Opting OUT is deliberately NOT behind this floor (the mecmua publish/saveDraft
- * split): an account that was a yazar when it opted in and is no longer one must
+ * Opting OUT is deliberately NOT behind this floor: an account that was a yazar when it opted in and is no longer one must
  * still be able to withdraw, and withdrawing grants nothing.
  */
 import {Capability, Grant, type Principal} from "@kampus/authz";

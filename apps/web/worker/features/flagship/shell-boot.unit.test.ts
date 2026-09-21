@@ -3,7 +3,6 @@
  * `HTMLRewriter` streaming is a workerd global, exercised in the integration tier.
  */
 import {describe, expect, it} from "vitest";
-import {MECMUA_FEED, MECMUA_PUBLIC_READ} from "../../../src/flags/keys.ts";
 import {
 	assertShellBootKeysSingleSourced,
 	BOOT_MEMBER_KEYS,
@@ -12,10 +11,7 @@ import {
 } from "../../../src/flags/shell-keys.ts";
 import {bootScriptTag, buildBootPayload} from "./shell-boot.ts";
 
-const shellFlags = {
-	[MECMUA_PUBLIC_READ]: false,
-	[MECMUA_FEED]: true,
-} as const;
+const shellFlags = {} as const;
 
 const bootUser: BootUser = {
 	id: "user-42",
@@ -31,9 +27,7 @@ const bootUser: BootUser = {
 describe("buildBootPayload", () => {
 	it("carries every shell flag value plus the edge-resolved user object", () => {
 		const payload = buildBootPayload(bootUser, shellFlags);
-		expect(payload[MECMUA_PUBLIC_READ]).toBe(false);
-		expect(payload[MECMUA_FEED]).toBe(true);
-		expect(payload.user).toEqual(bootUser);
+		expect(payload).toEqual({user: bootUser});
 	});
 
 	it("sets user to null for a signed-out viewer, independent of the flags", () => {

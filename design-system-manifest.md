@@ -330,7 +330,7 @@ nav element without first assigning its class.
 
 | Class | What it is | Examples |
 |---|---|---|
-| **destination** | A place you go — a product noun or top-level feed. | sözlük, pano, mecmua |
+| **destination** | A place you go — a product noun or top-level feed. | sözlük, pano |
 | **primary action** | The one verb the surface promotes (exactly one per surface). | the global `+` create menu |
 | **utility** | An ambient control reached for on demand. | search (`⌘K`), theme (profile page) |
 | **signal** | Read-only state reporting "what needs your attention". | bildirim (bell + count), divan, karma |
@@ -346,14 +346,14 @@ admits its class.
 | **Subnav** (per-product) | product sub-destinations · product filters · the contextual (product-scoped) create CTA | a global destination · the global primary action |
 | **User menu** | account-scoped utilities + account items | a destination · a signal · the primary action |
 
-The topbar destinations row is **purely sözlük / pano / mecmua**. A product-scoped create verb
+The topbar destinations row is **purely sözlük / pano**. A product-scoped create verb
 lives as a contextual CTA in *that product's* Subnav — never as a global topbar button.
 
 ### The class table — every current nav element → class → sanctioned zone
 
 | Element | Class | Sanctioned zone |
 |---|---|---|
-| sözlük · pano · mecmua | destination | Topbar (destinations row) |
+| sözlük · pano | destination | Topbar (destinations row) |
 | the global `+` create menu | primary action | Topbar (the one promoted action) |
 | a product-scoped create CTA (e.g. pano "new post") | primary action (contextual) | that product's Subnav |
 | search (`⌘K`) | utility | Topbar |
@@ -361,12 +361,11 @@ lives as a contextual CTA in *that product's* Subnav — never as a global topba
 | bildirim (bell + count → dropdown) | signal | Topbar (signals zone) |
 | divan (gated glyph + tooltip) | signal | Topbar (signals zone) |
 | karma | signal | Folded into the user-menu trigger as `name (karma)` |
-| `akış` / `yazılarım` | destination (sub) | mecmua's Subnav |
 
 ### Prohibitions (machine-checkable)
 
 - **Never** place a non-destination in the topbar destinations row (the destinations row is
-  purely product nouns — sözlük / pano / mecmua).
+  purely product nouns — sözlük / pano).
 - **Never** style a utility with the primary-action treatment — the primary action is
   distinguished by **container scarcity**: the `+` create menu is the **only** accent-filled
   element (`--accent` / `--accent-fg`) in the topbar. A second accent fill on the bar is a

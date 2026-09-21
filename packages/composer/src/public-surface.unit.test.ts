@@ -25,8 +25,8 @@ describe("public export surface", () => {
 		expect(typeof composer.useComposerEditor).toBe("function");
 		expect(typeof composer.Composer).toBe("function");
 		expect(typeof composer.baseKit).toBe("function");
-		// The read-only render mode (#2581) is part of the public surface — a consumer (mecmua
-		// reader) renders through it without importing tiptap or reaching a deep path.
+		// The read-only render mode (#2581) is part of the public surface — a consumer (the Atölye
+		// exhibit) renders through it without importing tiptap or reaching a deep path.
 		expect(typeof composer.ReadOnlyComposer).toBe("function");
 	});
 });

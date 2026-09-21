@@ -4,7 +4,6 @@ import {admin} from "./admin";
 import {auth} from "./auth";
 import {divan} from "./divan";
 import {layout} from "./layout";
-import {mecmua} from "./mecmua";
 import {pano} from "./pano";
 import {sozluk} from "./sozluk";
 import {wire} from "./wire";
@@ -23,7 +22,6 @@ export const en = {
 	...auth,
 	...divan,
 	...layout,
-	...mecmua,
 	...pano,
 	...sozluk,
 	...wire,
