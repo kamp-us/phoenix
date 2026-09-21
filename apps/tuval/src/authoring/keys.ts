@@ -24,11 +24,20 @@ export const KEY_EVENT = "key";
  * A forwarded keystroke as the author's `key` cell sees it — the shape the shell already dispatches
  * (`../shell/host/effects.ts`), named here so the cell's event is a stated type rather than
  * `unknown`. `key` is the pressed key as the terminal reported it.
+ *
+ * **A type alias, and it may not become an `interface` (#9543).** A module window types its
+ * `WindowHost` dispatch at its program's `ProgramEvent` union (`./view.ts`), and that parameter is
+ * constrained to the kernel's `Message` (`../process/process.ts`), which carries an index
+ * signature. TypeScript gives a type alias of an object literal the implicit index signature that
+ * satisfies it and never gives an interface one, so a `key` cell declared as an interface makes the
+ * keyboard opt-in and a typed window dispatch mutually exclusive — with an error naming `Message`,
+ * which the author never wrote. `ArrivalEvent` and `RequestArrivalEvent` (`./define-program.ts`)
+ * are aliases for the same reason.
  */
-export interface KeyEvent {
+export type KeyEvent = {
 	readonly type: typeof KEY_EVENT;
 	readonly key: string;
-}
+};
 
 /**
  * The row's `takesKeys`, read off the `update` table. `undefined` leaves the field off the row —

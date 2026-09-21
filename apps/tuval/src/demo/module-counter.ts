@@ -49,6 +49,13 @@ export const moduleCounterProgram = program({
 	title: (state: CounterState) => `module counter: ${state.count}`,
 	update: {
 		bump: (state: CounterState) => [{count: state.count + 1}, []],
+		// The keyboard opt-in beside a typed window dispatch — the combination this demo had to give
+		// up while `KeyEvent` was an interface (#9543). `-` counts down, anything else counts up, so
+		// the cell reads `event.key` rather than only its presence.
+		key: (state: CounterState, event) => [
+			{count: event.key === "-" ? state.count - 1 : state.count + 1},
+			[],
+		],
 	},
 	renderer: {kind: "module", ref: MODULE_COUNTER_WINDOW_REF},
 });

@@ -35,6 +35,11 @@ export const admits = isCounterState;
  * Every event this program's own `update` answers, read off the program's table — types only, so
  * the file it is read from is never imported. A `bump` this window sent under any other name would
  * be a compile error here, which is the whole reason the type makes the crossing at all.
+ *
+ * The union carries the `key` arm the authoring layer supplies beside the author's own `bump`. That
+ * combination is what this file had to give up until #9543: `WindowHost`'s Msg parameter is
+ * constrained to the kernel's `Message`, and a `key` cell used to fail it, so a windowed program
+ * chose between the keyboard and a typed dispatch.
  */
 type CounterEvent = ProgramEvent<Record<string, never>, (typeof moduleCounterProgram)["update"]>;
 
