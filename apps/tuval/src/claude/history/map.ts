@@ -1231,6 +1231,23 @@ export const systemNoticeEvents = (
 };
 
 /**
+ * The task-to-call pairing this frame states, learned into `Mapping.tasks`.
+ *
+ * Both ids or nothing: `tool_use_id` is optional on both frames that carry a task id beside one
+ * (`sdk.d.ts`, 0.3.259), and half a pairing points at no slot. Taken from every such frame rather
+ * than from the background ones alone — the worker this index exists for *starts in the foreground*,
+ * so filtering on `is_backgrounded` here would drop the one pairing `taskUpdatedEvents` needs.
+ */
+const withTaskCall = (mapping: Mapping, message: unknown): Mapping => {
+	if (!isRecord(message)) return mapping;
+	const taskId = typeof message.task_id === "string" ? message.task_id : "";
+	const callId = typeof message.tool_use_id === "string" ? message.tool_use_id : "";
+	if (taskId.length === 0 || callId.length === 0) return mapping;
+	if (mapping.tasks.get(taskId) === callId) return mapping;
+	return {...mapping, tasks: new Map(mapping.tasks).set(taskId, callId)};
+};
+
+/**
  * A registered task's notice, plus the slot it opens when that task is a background worker of this
  * session's — which is the only way a *resumed* worker ever gets a row.
  *
@@ -1250,23 +1267,6 @@ export const systemNoticeEvents = (
  *
  * The collapsed notice row stays exactly as it was: this arm adds the slot, and takes no row away.
  */
-/**
- * The task-to-call pairing this frame states, learned into `Mapping.tasks`.
- *
- * Both ids or nothing: `tool_use_id` is optional on both frames that carry a task id beside one
- * (`sdk.d.ts`, 0.3.259), and half a pairing points at no slot. Taken from every such frame rather
- * than from the background ones alone — the worker this index exists for *starts in the foreground*,
- * so filtering on `is_backgrounded` here would drop the one pairing `taskUpdatedEvents` needs.
- */
-const withTaskCall = (mapping: Mapping, message: unknown): Mapping => {
-	if (!isRecord(message)) return mapping;
-	const taskId = typeof message.task_id === "string" ? message.task_id : "";
-	const callId = typeof message.tool_use_id === "string" ? message.tool_use_id : "";
-	if (taskId.length === 0 || callId.length === 0) return mapping;
-	if (mapping.tasks.get(taskId) === callId) return mapping;
-	return {...mapping, tasks: new Map(mapping.tasks).set(taskId, callId)};
-};
-
 export const taskStartedEvents = (
 	message: unknown,
 	mapping: Mapping,
