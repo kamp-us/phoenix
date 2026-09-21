@@ -10,7 +10,8 @@
  * `./skill-evidence.unit.test.ts` — the verb only relays those facts, the judge derives.
  */
 
-import {mkdirSync} from "node:fs";
+import {spawnSync} from "node:child_process";
+import {mkdirSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
@@ -161,6 +162,82 @@ const shellScript = (artifactText: string): ReadonlyArray<readonly [RegExp, Exec
 	],
 ];
 
+// -----------------------------------------------------------------------------------------
+// A minimal STORED-entry zip writer — enough structure that the real `unzip` accepts it, so
+// the round-trip test exercises actual archive bytes instead of a hand-drawn `PK` prefix.
+// -----------------------------------------------------------------------------------------
+
+const CRC_TABLE = (() => {
+	const table = new Uint32Array(256);
+	for (let i = 0; i < 256; i++) {
+		let c = i;
+		for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+		table[i] = c;
+	}
+	return table;
+})();
+
+const crc32 = (bytes: Uint8Array): number => {
+	let c = 0xffffffff;
+	for (const byte of bytes) c = (CRC_TABLE[(c ^ byte) & 0xff] ?? 0) ^ (c >>> 8);
+	return (c ^ 0xffffffff) >>> 0;
+};
+
+const u16 = (view: DataView, offset: number, value: number): void =>
+	view.setUint16(offset, value, true);
+const u32 = (view: DataView, offset: number, value: number): void =>
+	view.setUint32(offset, value, true);
+
+/** One stored (uncompressed) file as a complete zip archive: local header, data, central dir, EOCD. */
+const storedZip = (name: string, content: string): Uint8Array => {
+	const encoder = new TextEncoder();
+	const data = encoder.encode(content);
+	const nameBytes = encoder.encode(name);
+	const crc = crc32(data);
+	const localSize = 30 + nameBytes.length + data.length;
+	const centralSize = 46 + nameBytes.length;
+	const bytes = new Uint8Array(localSize + centralSize + 22);
+	const view = new DataView(bytes.buffer);
+	// Local file header.
+	u32(view, 0, 0x04034b50);
+	u16(view, 4, 20); // version needed
+	u16(view, 6, 0); // flags
+	u16(view, 8, 0); // stored
+	u16(view, 10, 0); // time
+	u16(view, 12, 0); // date
+	u32(view, 14, crc);
+	u32(view, 18, data.length);
+	u32(view, 22, data.length);
+	u16(view, 26, nameBytes.length);
+	u16(view, 28, 0);
+	bytes.set(nameBytes, 30);
+	bytes.set(data, 30 + nameBytes.length);
+	// Central directory entry.
+	const centralAt = localSize;
+	u32(view, centralAt, 0x02014b50);
+	u16(view, centralAt + 4, 20); // version made by
+	u16(view, centralAt + 6, 20); // version needed
+	u16(view, centralAt + 8, 0);
+	u16(view, centralAt + 10, 0); // stored
+	u16(view, centralAt + 12, 0);
+	u16(view, centralAt + 14, 0);
+	u32(view, centralAt + 16, crc);
+	u32(view, centralAt + 20, data.length);
+	u32(view, centralAt + 24, data.length);
+	u16(view, centralAt + 28, nameBytes.length);
+	// extra/comment/disk/inner-attrs stay zero; external attrs four zero bytes.
+	u32(view, centralAt + 42, 0); // local header offset
+	bytes.set(nameBytes, centralAt + 46);
+	// End of central directory.
+	const eocdAt = localSize + centralSize;
+	u32(view, eocdAt, 0x06054b50);
+	u16(view, eocdAt + 8, 1); // entries this disk
+	u16(view, eocdAt + 10, 1); // entries total
+	u32(view, eocdAt + 12, centralSize);
+	u32(view, eocdAt + 16, localSize);
+	return bytes;
+};
+
 const RUN_URL = /GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/runs\/4242$/;
 const ARTIFACTS_URL = /GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/runs\/4242\/artifacts/;
 const ZIP_URL = /GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/artifacts\/77\/zip$/;
@@ -211,7 +288,7 @@ describe("runSkillEvidenceGuard", () => {
 		expect(result.stderr.join("\n")).toContain("handed ZERO files");
 	});
 
-	it("answers UNKNOWN when the policy is missing from both base and head", async () => {
+	it("answers UNKNOWN when the policy is missing from the base commit", async () => {
 		const {outcome} = run({
 			git: [
 				[new RegExp(`ls-tree ${BASE_COMMIT} -- ${POLICY_PATH}$`), okOut("")],
@@ -220,7 +297,7 @@ describe("runSkillEvidenceGuard", () => {
 		});
 		const result = await outcome;
 		expect(result.code).toBe(PRECONDITION_UNKNOWN);
-		expect(result.stderr.join("\n")).toContain("missing from both");
+		expect(result.stderr.join("\n")).toContain("missing from the base commit");
 	});
 
 	it("answers UNKNOWN when the policy's git read fails — a failed read is never absence", async () => {
@@ -244,7 +321,11 @@ describe("runSkillEvidenceGuard", () => {
 		expect(result.stderr.join("\n")).toContain("malformed");
 	});
 
-	it("bootstraps from the head tree when the policy is absent at base", async () => {
+	it("NEVER judges by a head-tree policy — a change cannot write the text it is judged by", async () => {
+		// The bootstrap attack: a PR introduces the policy beside a skill change with permissive
+		// thresholds. With no head-side fallback, the base absence refuses regardless of what the
+		// head tree carries — and a relocated `skillsRoot` in a head policy cannot make the change
+		// look skill-free, because the head policy is never read to scope.
 		const {outcome} = run({
 			git: [
 				[new RegExp(`ls-tree ${BASE_COMMIT} -- ${POLICY_PATH}$`), okOut("")],
@@ -253,8 +334,11 @@ describe("runSkillEvidenceGuard", () => {
 			],
 		});
 		const result = await outcome;
-		expect(result.code).toBe(0);
-		expect(result.stdout).toContain("1 skill(s) checked");
+		expect(result.code).toBe(PRECONDITION_UNKNOWN);
+		const err = result.stderr.join("\n");
+		expect(err).toContain("missing from the base commit");
+		expect(err).toContain("never by one this change wrote");
+		expect(result.stdout).toBe("");
 	});
 
 	it("skips a diff that touches no skill file, naming the skills root", async () => {
@@ -488,5 +572,29 @@ describe("runSkillEvidenceGuard — one gated skill, end to end over the seams",
 		expect(result.code).toBe(PRECONDITION_UNKNOWN);
 		expect(result.stderr.join("\n")).toContain("cannot verify provenance without GITHUB_TOKEN");
 		expect(http.calls).toEqual([]);
+	});
+
+	it("round-trips a REAL zip artifact — real bytes, extracted by the real unzip", async (ctx) => {
+		// The other artifact tests answer `unzip -p` through the scripted spawner; this one proves
+		// the ZIP ITSELF is well-formed by extracting it with the real unzip before the verb ever
+		// sees it, then serving those exact bytes to the verb's magic-byte check and byte-compare.
+		const zipPath = `${SCRATCH}/real.zip`;
+		const zipBytes = storedZip("report.json", reportJson());
+		writeFileSync(zipPath, zipBytes);
+		const real = spawnSync("unzip", ["-p", zipPath, "report.json"], {encoding: "utf8"});
+		if (real.error !== undefined || real.status !== 0) return ctx.skip();
+		expect(real.stdout).toBe(reportJson());
+
+		const {outcome} = run({
+			http: [
+				[RUN_URL, runOk],
+				[ARTIFACTS_URL, artifactsOk],
+				[ZIP_URL, {status: 200, body: "", bytes: zipBytes}],
+			],
+		});
+		const result = await outcome;
+		expect(result.code).toBe(0);
+		expect(result.stderr).toEqual([]);
+		expect(result.stdout).toContain("1 skill(s) checked");
 	});
 });

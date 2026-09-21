@@ -117,16 +117,18 @@ bytes that differ is a violation (exit 12).
 
 ## The policy is read from the BASE commit
 
-`policy.json` is read from the PR's **base** commit, not the PR head — a PR
-cannot relax its own thresholds, widen its typo exemption, or move the report
-root it is judged under. Every policy change takes effect only after it
-merges, so a relaxing policy PR is still judged by the policy it relaxes. The
-head-tree read exists only to bootstrap (the PR that first lands the policy
-has no base copy yet) and cannot serve as a relaxation vector once the policy
-exists at base — which, after that merge, is always. A failed git read while
-establishing any of this (a skill's tree at base or head, the policy blob) is
+`policy.json` is read from the PR's **base** commit — never from the PR head,
+with no fallback. A PR cannot relax its own thresholds, widen its typo
+exemption, or move the report root it is judged under; nor can a head policy
+relocate `skillsRoot` to make a skill change look skill-free, because the
+head tree is never read for the policy at all. The one-time cost is honest:
+the bootstrap PR that first lands the policy reds on its own gate until it
+merges (land it skill-free in its own PR), and after that merge the base
+always carries the policy. A failed git read while establishing any of this
+(a skill's tree at base or head, the policy blob, a word-diff source) is
 UNKNOWN, never "skill absent" — a read that failed never wears the shape of a
-content fact.
+content fact, and neither does a present-but-wrong-shaped object (a blob at a
+skill's path is "not a skill directory", never "removed").
 
 ## Out of scope
 

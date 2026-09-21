@@ -68,13 +68,17 @@ the base and head SHAs, and the repository name; the verb gathers the facts
   fetch-the-artifact posture `ship evidence` takes toward its bundle).
   Self-reported numbers are never trusted on their own.
 - **The policy is a base-anchored trust root.** `policy.json` is read from the
-  PR's base commit, so a PR cannot relax its own thresholds, widen its typo
-  exemption, or move the report root it is judged under — a policy change
-  takes effect only after it merges, judged (while it is a PR) by the policy
-  it changes. A head-tree read bootstraps only the PR that first lands the
-  policy. A failed git read that would establish a content fact (a skill's
-  tree, the policy blob) is UNKNOWN, never "skill absent" — the probe
-  (`git ls-tree`) separates a failed read from an absent path by exit code.
+  PR's base commit — never from the PR head, with no fallback — so a PR
+  cannot relax its own thresholds, widen its typo exemption, move the report
+  root it is judged under, or relocate `skillsRoot` to make a skill change
+  look skill-free: a head policy is never read, for judging or for scoping.
+  The one-time cost is the bootstrap PR that first lands the policy reding on
+  its own gate until it merges. A failed git read that would establish a
+  content fact (a skill's tree, the policy blob, a word-diff source) is
+  UNKNOWN, never "skill absent" — the probe (`git ls-tree`) separates a
+  failed read from an absent path by exit code, and a present-but-wrong-shaped
+  object (a blob at a skill's path) rides the same UNKNOWN seat rather than
+  reading as "removed".
 - **Stale-evidence refusal.** `report.skill.treeSha` must equal the PR's skill
   tree; any skill edit after the benchmark ran reds until the benchmark is
   re-run at the new content.

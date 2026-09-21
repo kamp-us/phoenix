@@ -312,39 +312,30 @@ type PolicyLoad =
  * The gate's policy, read from the BASE commit — the trust anchor.
  *
  * A policy read from the PR head lets one commit relax its own thresholds, widen its typo
- * exemption, or move the report root it is judged under. Reading base-side makes every policy
- * change its own reviewable diff that takes effect only AFTER it merges: the PR that relaxes the
- * policy is still judged by the policy it is relaxing. The head-side read exists only to bootstrap
- * (the PR that first lands the policy has no base copy yet) and can never serve as a relaxation
- * vector once the policy exists at base — which, after the bootstrap merge, is always.
+ * exemption, or move the report root it is judged under — and with no base copy to anchor on, the
+ * very PR that introduces the policy could introduce a permissive one beside a skill change and be
+ * judged by its own text. So there is NO head-side fallback: the policy must exist at the base
+ * commit, full stop. A head copy is never read, so a head policy cannot steer scoping either (a
+ * relocated `skillsRoot` cannot make a skill change look skill-free). The one-time cost is honest
+ * and documented: the bootstrap PR that first lands the policy reds on its own gate until it
+ * merges, and after that merge the base always carries the policy.
  */
-const loadPolicy = (root: string, baseSha: string, headSha: string): Gather<PolicyLoad> =>
+const loadPolicy = (root: string, baseSha: string): Gather<PolicyLoad> =>
 	Effect.gen(function* () {
 		const atBase = yield* blobAt(root, baseSha, POLICY_PATH);
-		let text: string;
 		if (atBase._tag === "GitError") {
 			return {
 				_tag: "Unusable",
 				reason: `could not be read from ${baseSha} (${atBase.reason})`,
 			} as const;
 		}
-		if (atBase._tag === "Ok") {
-			text = atBase.text;
-		} else {
-			const atHead = yield* blobAt(root, headSha, POLICY_PATH);
-			if (atHead._tag === "GitError")
-				return {
-					_tag: "Unusable",
-					reason: `could not be read from ${headSha} (${atHead.reason})`,
-				} as const;
-			if (atHead._tag !== "Ok")
-				return {
-					_tag: "Unusable",
-					reason: `missing from both ${baseSha} and ${headSha} — the policy must exist before a skill change can be judged`,
-				} as const;
-			text = atHead.text;
+		if (atBase._tag !== "Ok") {
+			return {
+				_tag: "Unusable",
+				reason: `missing from the base commit ${baseSha} — the gate judges by the base policy, never by one this change wrote; land the policy in its own merge first`,
+			} as const;
 		}
-		const parsed = parsePolicy(text);
+		const parsed = parsePolicy(atBase.text);
 		return parsed._tag === "Ok"
 			? ({_tag: "Loaded", policy: parsed.policy} as const)
 			: ({
@@ -535,7 +526,7 @@ export const runSkillEvidenceGuard = (
 		if (options.files.length === 0) {
 			return emitVerdict(zeroScope(ZERO_FILES_REPORT), options.env);
 		}
-		const loaded = yield* loadPolicy(root, options.baseSha, options.headSha);
+		const loaded = yield* loadPolicy(root, options.baseSha);
 		if (loaded._tag === "Unusable") {
 			return emitVerdict(
 				unknown(
