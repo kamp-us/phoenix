@@ -79,6 +79,12 @@ afterAll(() => {
  */
 const BUDGET_MS = 20_000;
 
+/**
+ * `.tsx` as well as `.ts`: the layer the persistence rule below protects is `src/shell/`, which is
+ * mostly `.tsx`, so a walker that collected `.ts` alone read past most of what it guards (#9623).
+ */
+const isSource = (name: string): boolean => name.endsWith(".ts") || name.endsWith(".tsx");
+
 /** The test tier's own failure for a store write, so no rejection lands as an untyped defect. */
 class StoreWrite extends Schema.TaggedError<StoreWrite>()("StoreWrite", {cause: Schema.Defect()}) {}
 
@@ -334,10 +340,11 @@ describe("the shell as a program row", () => {
 				for (const entry of readdirSync(dir, {withFileTypes: true})) {
 					const path = join(dir, entry.name);
 					if (entry.isDirectory()) roots.push(path);
-					else if (entry.name.endsWith(".ts") && !entry.name.includes(".test.")) sources.push(path);
+					else if (isSource(entry.name) && !entry.name.includes(".test.")) sources.push(path);
 				}
 			}
 			assert.isAbove(sources.length, 0);
+			assert.isTrue(sources.some((path) => path.endsWith(".tsx")));
 
 			for (const path of sources) {
 				const code = readFileSync(path, "utf8")
