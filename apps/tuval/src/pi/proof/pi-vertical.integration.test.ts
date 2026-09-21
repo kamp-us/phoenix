@@ -29,6 +29,7 @@ import {Socket} from "effect/unstable/socket";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import {boot, projectDir} from "../../boot.ts";
 import {ProcessId} from "../../process/process.ts";
+import {scratchHome} from "../../scratch-home.ts";
 import {
 	activeWorkspace,
 	type ShellMsg,
@@ -60,6 +61,9 @@ import {
 	REPLY_2,
 } from "./names.ts";
 
+/** The scratch home every boot in this file runs under. */
+const home = scratchHome("pi-vertical");
+
 const TIMEOUT = 180_000;
 
 const configModule = fileURLToPath(new URL("./desk.ts", import.meta.url));
@@ -82,7 +86,7 @@ const freshProject = (): string => {
  * app stopping, which is what the restart proof does.
  */
 const bootDesk = Effect.fn("piVertical.bootDesk")(function* (project: string) {
-	const booted = yield* boot({global: configModule, project});
+	const booted = yield* boot({global: configModule, project, home});
 	const server = yield* serveDesk({kernel: booted.kernel, port: 0, table: defaultPrefixTable});
 	const entries = yield* readEntries.pipe(Effect.provideContext(booted.kernel));
 	return {booted, server, entries};

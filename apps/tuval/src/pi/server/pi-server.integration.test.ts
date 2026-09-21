@@ -93,6 +93,8 @@ const hostLayer = (cwd: string, provider: ReturnType<typeof fauxProvider>) =>
 				return agentSessionHostLayer({
 					modelRuntime,
 					agentDir: join(cwd, "agent"),
+					// The host names its store outright now; this case's is under its own temp root.
+					sessionDir: join(cwd, "pi-sessions"),
 					noTools: "all",
 				});
 			},
@@ -169,7 +171,7 @@ describe("the loopback Pi server over a real AgentSession", () => {
 	);
 
 	it.live(
-		"persists the session as JSONL under its own cwd, and the file reloads",
+		"persists the session as JSONL in the store it was given, and the file reloads",
 		() => {
 			const {cwd, faux} = setUp();
 			return Effect.gen(function* () {
@@ -185,7 +187,7 @@ describe("the loopback Pi server over a real AgentSession", () => {
 				});
 				yield* response(client, "p1");
 
-				const sessionDir = join(cwd, ".tuval", "pi-sessions");
+				const sessionDir = join(cwd, "pi-sessions");
 				const reloaded = SessionManager.open(
 					join(sessionDir, findJsonl(sessionDir)),
 					sessionDir,

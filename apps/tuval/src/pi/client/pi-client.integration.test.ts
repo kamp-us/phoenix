@@ -49,6 +49,8 @@ const hostLayer = (cwd: string, provider: ReturnType<typeof fauxProvider>) =>
 				return agentSessionHostLayer({
 					modelRuntime,
 					agentDir: join(cwd, "agent"),
+					// The host names its store outright now; this case's is under its own temp root.
+					sessionDir: join(cwd, "pi-sessions"),
 					noTools: "all",
 				});
 			},

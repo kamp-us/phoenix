@@ -22,6 +22,10 @@ import {type Booted, boot, projectDir} from "./boot.ts";
 import type {DeclaredClaudeConfig} from "./config-fixtures/reloadable-claude.ts";
 import {ProcessTable} from "./process/ProcessTable.ts";
 import {ProcessId} from "./process/process.ts";
+import {scratchHome} from "./scratch-home.ts";
+
+/** The scratch home every boot in this file runs under. */
+const home = scratchHome("reload-dispatch");
 
 const layer = fileURLToPath(new URL("./config-fixtures/reloadable-claude.ts", import.meta.url));
 
@@ -49,7 +53,7 @@ const bootClaude = Effect.fnUntraced(function* (first: DeclaredClaudeConfig) {
 	const declaration = join(freshDir("tuval-claude-declared-"), "config.json");
 	declare(declaration, first);
 	process.env.TUVAL_CLAUDE_RELOAD_FIXTURE = declaration;
-	const booted = yield* boot({global: layer, project});
+	const booted = yield* boot({global: layer, project, home});
 	return {booted, declaration};
 });
 

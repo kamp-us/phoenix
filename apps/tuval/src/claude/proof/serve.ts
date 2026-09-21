@@ -31,9 +31,13 @@ import {Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {boot, projectDir} from "../../boot.ts";
 import {servePage} from "../../page/dev-server.ts";
+import {scratchHome} from "../../scratch-home.ts";
 import {serveDesk} from "../../shell/host/index.ts";
 import {defaultPrefixTable} from "../../shell/keys/index.ts";
 import {PROJECT_ROOT_VAR} from "./names.ts";
+
+/** The scratch home every boot in this file runs under. */
+const home = scratchHome("claude-real");
 
 /** `apps/tuval` — `index.html`'s home, and so the page server's root, as `src/bin.ts` computes it. */
 const appRoot = dirname(dirname(dirname(import.meta.dirname)));
@@ -45,7 +49,7 @@ const proof = Command.make(
 	{
 		project: Flag.string("project").pipe(
 			Flag.withDescription(
-				"The project root: the session cwd and where the checkpoints live. Reuse it to prove the restart.",
+				"The project root: the session cwd, and the key this desk's home-dir state hangs under. Reuse it to prove the restart.",
 			),
 			Flag.withDefault(join(tmpdir(), "tuval-claude-real-proof")),
 		),
@@ -58,7 +62,7 @@ const proof = Command.make(
 		mkdirSync(projectDir(project), {recursive: true});
 		process.env[PROJECT_ROOT_VAR] = project;
 
-		const booted = yield* boot({global: configModule, project});
+		const booted = yield* boot({global: configModule, project, home});
 		const transport = yield* serveDesk({kernel: booted.kernel, port: 0, table: defaultPrefixTable});
 		// The booted flags ride to the page for the same reason they do in `src/bin.ts`: this harness
 		// is the one desk a founder can turn a flag on in and look at, so a run that dropped them

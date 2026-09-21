@@ -1,8 +1,8 @@
 /**
  * The three boundaries this layer keeps: it is ruling 4's `Layer<TuvalAiAgent, never, Scope>`
- * (#7570) with two of Tuval's own services as its requirements — `KernelBridge` (#8720) and
- * `Features` (#8595) — no Pi type reaches its public surface, and the per-launch token reaches
- * nothing at all.
+ * (#7570) with three of Tuval's own services as its requirements — `KernelBridge` (#8720),
+ * `Features` (#8595) and `StateDir` (ADR 0402) — no Pi type reaches its public surface, and the
+ * per-launch token reaches nothing at all.
  *
  * The surface probe states its expected answer on the right of an `=`, with a positive control
  * pinned to the opposite value, per `.patterns/unconditional-test-assertions.md`'s type-level
@@ -17,6 +17,7 @@ import {describe, expect, it} from "vitest";
 import type {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import type {KernelBridge} from "../../ai-agent/tools/KernelBridge.ts";
 import type {Features} from "../../feature-flags.ts";
+import type {StateDir} from "../../state-dir.ts";
 import type {PiServerService, PiSessionHost, ServerBindFailed} from "../server/index.ts";
 import {PiAiAgent} from "./index.ts";
 
@@ -30,27 +31,28 @@ type Exactly<X, Y> = [X] extends [Y] ? ([Y] extends [X] ? true : false) : false;
 
 /**
  * Ruling 4's shape, as ruling R9.1 on #8715 leaves it. `E` is `never` — a bind failure dies inside
- * the layer — and `R` is `KernelBridge | Features` and nothing else: the ruled `Scope` is the scoped
- * layer's own and is not a requirement a `Layer` type carries; the bridge is Tuval's own service the
- * row provides from its scope (#8720), and the flags are the merged record the kernel hands over at
- * spawn (#8595). Both are kernel services, so the boundary this file guards still holds: no Pi value
- * crosses out and no Pi type is named in `R`.
+ * the layer — and `R` is `KernelBridge | Features | StateDir` and nothing else: the ruled `Scope` is
+ * the scoped layer's own and is not a requirement a `Layer` type carries; the bridge is Tuval's own
+ * service the row provides from its scope (#8720), the flags are the merged record the kernel hands
+ * over at spawn (#8595), and the state dir is the desk's own, which is where this layer's session
+ * store lives (ADR 0402). All three are kernel services, so the boundary this file guards still
+ * holds: no Pi value crosses out and no Pi type is named in `R`.
  */
 type RuledShape<L> =
 	L extends Layer.Layer<infer A, infer E, infer R> ? Exactly<[A, E, R], Ruled> : false;
 
-type Ruled = [TuvalAiAgent, never, KernelBridge | Features];
+type Ruled = [TuvalAiAgent, never, KernelBridge | Features | StateDir];
 
 const surface: RuledShape<ReturnType<typeof PiAiAgent.layer>> = true;
 
 /** The control: a layer that published the server would publish the token with it. */
 const leaksTheServer: RuledShape<
-	Layer.Layer<TuvalAiAgent | PiServerService, never, KernelBridge | Features>
+	Layer.Layer<TuvalAiAgent | PiServerService, never, KernelBridge | Features | StateDir>
 > = false;
 
 /** The second control: a departure this test used to pin, now red on the error channel. */
 const raisesTheBindFailure: RuledShape<
-	Layer.Layer<TuvalAiAgent, ServerBindFailed, KernelBridge | Features>
+	Layer.Layer<TuvalAiAgent, ServerBindFailed, KernelBridge | Features | StateDir>
 > = false;
 
 /**
@@ -70,10 +72,14 @@ const requiresTheHost: RuledShape<Layer.Layer<TuvalAiAgent, never, PiSessionHost
  */
 const requiresNothing: RuledShape<Layer.Layer<TuvalAiAgent, never, never>> = false;
 
-/** Half of `R` is not `R`: each service alone leaves the other one's route unprovided. */
+/** Part of `R` is not `R`: each service alone leaves the others' routes unprovided. */
 const requiresOnlyTheFlags: RuledShape<Layer.Layer<TuvalAiAgent, never, Features>> = false;
 
 const requiresOnlyTheBridge: RuledShape<Layer.Layer<TuvalAiAgent, never, KernelBridge>> = false;
+
+/** The state dir's own half: dropping it is the derived-from-a-session's-cwd store ADR 0402 bans. */
+const requiresOnlyTheOldTwo: RuledShape<Layer.Layer<TuvalAiAgent, never, KernelBridge | Features>> =
+	false;
 
 describe("the Pi AI agent layer's surface", () => {
 	it("is the ruled shape and provides the interface and nothing else", () => {
@@ -85,7 +91,8 @@ describe("the Pi AI agent layer's surface", () => {
 			requiresNothing,
 			requiresOnlyTheFlags,
 			requiresOnlyTheBridge,
-		]).toEqual([true, false, false, false, false, false, false]);
+			requiresOnlyTheOldTwo,
+		]).toEqual([true, false, false, false, false, false, false, false]);
 	});
 
 	it("publishes one layer and its own options", () => {

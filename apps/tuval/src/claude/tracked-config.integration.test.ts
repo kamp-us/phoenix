@@ -28,9 +28,13 @@ import {PI_SESSION_PROGRAM} from "../pi/renderer-ref.ts";
 import {ProcessTable} from "../process/ProcessTable.ts";
 import {ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
+import {scratchHome} from "../scratch-home.ts";
 import {programEntries} from "../shell/picker/entries.ts";
 import {CLAUDE_SESSION_PROGRAM} from "./renderer-ref.ts";
 import {KernelBridge} from "./tools/index.ts";
+
+/** The scratch home every boot in this file runs under. */
+const home = scratchHome("tracked-config");
 
 const configModule = fileURLToPath(new URL("../../.tuval/tuval.config.ts", import.meta.url));
 
@@ -48,11 +52,11 @@ const freshProject = (): string => {
 };
 
 /**
- * The tracked config booted as the global layer over an empty project, so the checkpoints and the
- * state dir are the temp root's and this repo's own `.tuval/` is read but never written.
+ * The tracked config booted as the global layer over an empty project, so the state dir is a key
+ * under this file's scratch home and this repo's own `.tuval/` is read but never written.
  */
 const bootTracked = Effect.fn("trackedConfig.boot")(function* () {
-	return yield* boot({global: configModule, project: freshProject()});
+	return yield* boot({global: configModule, project: freshProject(), home});
 });
 
 describe("the Claude row the tracked config registers", () => {

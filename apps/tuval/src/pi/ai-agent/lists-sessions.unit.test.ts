@@ -46,7 +46,11 @@ const idle: PiClientApi = {
 	disconnections: Stream.never,
 };
 
-const listing = (options: {readonly agentDir: string; readonly projectRoot: string}) =>
+const listing = (options: {
+	readonly agentDir: string;
+	readonly projectRoot: string;
+	readonly sessionDir: string;
+}) =>
 	Effect.flatMap(TuvalAiAgent, (agent) => agent.listSessions).pipe(
 		Effect.provide(
 			aiAgentOverClient(options).pipe(Layer.provide(Layer.succeed(PiClientService, idle))),
@@ -58,10 +62,13 @@ describe("the Pi layer's listSessions", () => {
 		Effect.gen(function* () {
 			const agentDir = temp();
 			const projectRoot = temp();
+			// The desk's own store, named outright: it lives under the home dir keyed by the project
+			// (ADR 0402), so a case that derived one would read the operator's own.
+			const sessionDir = temp();
 			writeSession(join(agentDir, "sessions", "--work-phoenix--"), "cli", "/work/phoenix", 10);
-			writeSession(join(projectRoot, ".tuval", "pi-sessions"), "tuval", projectRoot, 20);
+			writeSession(sessionDir, "tuval", projectRoot, 20);
 
-			const rows = yield* listing({agentDir, projectRoot});
+			const rows = yield* listing({agentDir, projectRoot, sessionDir});
 
 			assert.deepStrictEqual(
 				rows.map((row) => `${row.backend}:${row.sessionId}`),
@@ -74,11 +81,11 @@ describe("the Pi layer's listSessions", () => {
 		Effect.gen(function* () {
 			const agentDir = temp();
 			const projectRoot = temp();
+			const sessionDir = join(temp(), "pi-sessions");
 			writeFileSync(join(agentDir, "sessions"), "not a directory\n");
-			mkdirSync(join(projectRoot, ".tuval"), {recursive: true});
-			writeFileSync(join(projectRoot, ".tuval", "pi-sessions"), "not a directory\n");
+			writeFileSync(sessionDir, "not a directory\n");
 
-			const error = yield* Effect.flip(listing({agentDir, projectRoot}));
+			const error = yield* Effect.flip(listing({agentDir, projectRoot, sessionDir}));
 
 			assert.isTrue(error instanceof ListError);
 			assert.strictEqual(error.reason, "store-unreadable");
@@ -87,7 +94,7 @@ describe("the Pi layer's listSessions", () => {
 			const causes = error.cause as ReadonlyArray<{cause?: unknown}>;
 			assert.isTrue(causes.every((failure) => failure.cause instanceof Error));
 			assert.notInclude(JSON.stringify(Schema.encodeSync(ListError)(error)), agentDir);
-			assert.notInclude(JSON.stringify(Schema.encodeSync(ListError)(error)), projectRoot);
+			assert.notInclude(JSON.stringify(Schema.encodeSync(ListError)(error)), sessionDir);
 		}),
 	);
 });
@@ -99,7 +106,7 @@ describe("Pi stored transcript partial success", () => {
 			const projectRoot = temp();
 			const brokenStore = join(agentDir, "sessions");
 			writeFileSync(brokenStore, "not a directory\n");
-			const directory = join(projectRoot, ".tuval", "pi-sessions");
+			const directory = temp();
 			writeSession(directory, "stored", projectRoot, 20);
 			appendFileSync(
 				join(directory, `${at(20).replace(/[:.]/g, "-")}_stored.jsonl`),
@@ -116,7 +123,7 @@ describe("Pi stored transcript partial success", () => {
 				agent.sessionTranscript({sessionId: "stored", cwd: projectRoot, before: null, limit: 20}),
 			).pipe(
 				Effect.provide([
-					aiAgentOverClient({agentDir, projectRoot}).pipe(
+					aiAgentOverClient({agentDir, projectRoot, sessionDir: directory}).pipe(
 						Layer.provide(Layer.succeed(PiClientService, idle)),
 					),
 					Logger.layer([

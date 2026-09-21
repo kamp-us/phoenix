@@ -31,6 +31,10 @@ import {SpawnedProcesses} from "../commands/core/process.ts";
 import {bridgeProbeId} from "../config-fixtures/kernel-restore.ts";
 import {Processes} from "../process/Processes.ts";
 import type {ProcessId} from "../process/process.ts";
+import {scratchHome} from "../scratch-home.ts";
+
+/** The scratch home every boot in this file runs under. */
+const home = scratchHome("boot-restore-context");
 
 const config = fileURLToPath(new URL("../config-fixtures/kernel-restore.ts", import.meta.url));
 
@@ -63,7 +67,7 @@ const handleOf = (id: ProcessId) =>
  */
 const firstBoot = (project: string) =>
 	Effect.gen(function* () {
-		const booted = yield* boot({global: config, project});
+		const booted = yield* boot({global: config, project, home});
 		const id = yield* SpawnedProcesses.use((spawned) =>
 			spawned.spawn(bridgeProbeId, Option.none()),
 		).pipe(Effect.provideContext(booted.kernel));
@@ -80,7 +84,7 @@ const firstBoot = (project: string) =>
  */
 const secondBoot = (project: string, id: ProcessId) =>
 	Effect.gen(function* () {
-		const booted = yield* boot({global: config, project});
+		const booted = yield* boot({global: config, project, home});
 		const handle = yield* handleOf(id).pipe(Effect.provideContext(booted.kernel));
 		return {report: booted.report, state: handle.getState()};
 	}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer), Effect.orDie);

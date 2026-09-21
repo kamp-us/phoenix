@@ -9,9 +9,13 @@
  * config module are two runtimes, and the only things that cross between them are the JSONL and the
  * checkpoint — the things actually under test.
  *
- * Two options are load-bearing rather than tidy. `authPath` and `agentDir` sit under the caller's
- * own root, so nothing reads or writes the operator's `~/.pi`; `allowModelNetwork: false` makes
+ * Two options are load-bearing rather than tidy. `authPath` and `agentDir` sit under the desk's own
+ * state dir, so nothing reads or writes the operator's `~/.pi`; `allowModelNetwork: false` makes
  * that structural instead of a promise.
+ *
+ * The state dir is where the session store goes too, so this substitute layer lives under the same
+ * law the shipped row does (ADR 0402): the proof's project root is the session's cwd and nothing
+ * more, and a proof writes nothing into it.
  */
 
 import {join} from "node:path";
@@ -21,6 +25,7 @@ import {ModelRuntime} from "@earendil-works/pi-coding-agent";
 import {Effect, Layer} from "effect";
 import type {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {featuresDefault} from "../../features.ts";
+import {piSessionStore, StateDir} from "../../state-dir.ts";
 import {aiAgentOverHost} from "../ai-agent/PiAiAgent.ts";
 import {agentSessionHostLayer, SessionOpenFailed, subagentExtensionPaths} from "../server/index.ts";
 
@@ -31,7 +36,7 @@ export const FAUX_MODEL = {provider: "faux", id: "faux-1"} as const;
 export type FauxReply = ReturnType<typeof fauxAssistantMessage>;
 
 export interface FauxPiOptions {
-	/** The project root: the session cwd, and the parent of the `.tuval/pi-agent` dir this stands up. */
+	/** The project root: the session cwd, and nothing else. Nothing is written under it. */
 	readonly root: string;
 	/** What the provider answers, in order. A turn past the end of this list is a proof asking for one too many. */
 	readonly replies: ReadonlyArray<FauxReply>;
@@ -45,8 +50,19 @@ export interface FauxPiOptions {
  * touching the caller's disk — the tool *turn* is still exercised end to end, which is the item a
  * transcript proof needs.
  */
-export const fauxPiLayer = ({root, replies}: FauxPiOptions): Layer.Layer<TuvalAiAgent> =>
-	aiAgentOverHost({model: FAUX_MODEL, projectRoot: root}).pipe(
+export const fauxPiLayer = ({
+	root,
+	replies,
+}: FauxPiOptions): Layer.Layer<TuvalAiAgent, never, StateDir> =>
+	Layer.unwrap(Effect.map(StateDir, (state) => fauxOverStateDir({root, replies}, state.path)));
+
+const fauxOverStateDir = (
+	{root, replies}: FauxPiOptions,
+	stateDir: string,
+): Layer.Layer<TuvalAiAgent> => {
+	const agentDir = join(stateDir, "proof-pi-agent");
+	const sessionDir = piSessionStore(stateDir);
+	return aiAgentOverHost({model: FAUX_MODEL, projectRoot: root, sessionDir}).pipe(
 		Layer.provide(
 			Layer.unwrap(
 				Effect.tryPromise({
@@ -63,7 +79,7 @@ export const fauxPiLayer = ({root, replies}: FauxPiOptions): Layer.Layer<TuvalAi
 							modelsPath: null,
 							refreshOnCreate: false,
 							allowModelNetwork: false,
-							authPath: join(root, ".tuval", "pi-agent", "auth.json"),
+							authPath: join(agentDir, "auth.json"),
 						});
 						modelRuntime.registerNativeProvider(faux.provider);
 						// The same flag the shipped row reads (`../ai-agent/PiAiAgent.ts`), so flipping it
@@ -73,8 +89,9 @@ export const fauxPiLayer = ({root, replies}: FauxPiOptions): Layer.Layer<TuvalAi
 						const extensionPaths = subagentExtensionPaths(featuresDefault);
 						return agentSessionHostLayer({
 							modelRuntime,
-							agentDir: join(root, ".tuval", "pi-agent"),
+							agentDir,
 							projectRoot: root,
+							sessionDir,
 							// `"all"` is no tools at all; `"builtin"` leaves extension tools active and the four
 							// disk-touching built-ins inactive (`pi-coding-agent` `dist/core/sdk.js:141,144`
 							// with `agent-session.js:2086-2100`), which is what lets the turn reach
@@ -89,3 +106,4 @@ export const fauxPiLayer = ({root, replies}: FauxPiOptions): Layer.Layer<TuvalAi
 			),
 		),
 	);
+};

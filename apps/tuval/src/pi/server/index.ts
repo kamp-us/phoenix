@@ -1,6 +1,5 @@
 export {
 	type AgentSessionHostOptions,
-	defaultSessionDir,
 	extensionLoader,
 	layer as agentSessionHostLayer,
 } from "./AgentSessionHost.ts";

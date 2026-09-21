@@ -33,6 +33,7 @@
  */
 
 import {readdirSync} from "node:fs";
+import {homedir} from "node:os";
 import {dirname, join} from "node:path";
 import {getAgentDir, ModelRuntime, SessionManager} from "@earendil-works/pi-coding-agent";
 import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
@@ -61,11 +62,11 @@ import {
 import {KernelBridge} from "../../ai-agent/tools/KernelBridge.ts";
 import {withTurnResult} from "../../ai-agent/turn-result.ts";
 import {Features} from "../../feature-flags.ts";
+import {homeStateDir, piSessionStore, StateDir} from "../../state-dir.ts";
 import {PiClientService, type PiSessionRef, type SessionUpdate} from "../client/index.ts";
 import {retaining} from "../diagnostics.ts";
 import {
 	agentSessionHostLayer,
-	defaultSessionDir,
 	ModelRuntimeUnavailable,
 	type PiServerLimits,
 	PiServerService,
@@ -121,8 +122,13 @@ export interface PiAiAgentOptions {
 	readonly limits?: Partial<PiServerLimits>;
 	/** The model a new session opens on. Absent leaves Pi's own default. */
 	readonly model?: ModelSelection;
-	/** Where this session's JSONL lives, from its cwd. Defaults to the host's own convention. */
-	readonly sessionDir?: (cwd: string) => string;
+	/**
+	 * The desk's Pi session store: one directory for every session this layer opens, under the
+	 * desk's own state dir. Absent derives it from `projectRoot` — the shipped row is handed the
+	 * booted desk's state dir by `PiAiAgent.layer`, so only a caller standing a layer up outside a
+	 * boot leaves it to that derivation.
+	 */
+	readonly sessionDir?: string;
 	/**
 	 * The project root that booted the kernel: where a `start({cwd, resume})` after a restart looks
 	 * for the saved session's JSONL, since the server it is dialling has never held that session.
@@ -141,6 +147,19 @@ export interface PiAiAgentOptions {
 	 */
 	readonly streamPartialText?: boolean;
 }
+
+/**
+ * The one directory this layer's sessions live in.
+ *
+ * `PiAiAgent.layer` always names it, off the `StateDir` the booted desk hands a row at spawn, so
+ * the derivation below is what a layer stood up outside a boot gets: the state dir of the project
+ * root it was built on, else of the process's own cwd — which is what `--project` defaults to
+ * (`src/bin.ts`). Neither reading ever joins a path onto a project, and neither reads a session's
+ * `cwd`: that is the write into a foreign repository ADR 0402 bans.
+ */
+const storeOf = (options: PiAiAgentOptions): string =>
+	options.sessionDir ??
+	piSessionStore(homeStateDir(options.projectRoot ?? process.cwd(), homedir()));
 
 type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
 
@@ -285,7 +304,7 @@ const make = (
 	Effect.gen(function* () {
 		const pi = yield* PiClientService;
 		const scope = yield* Effect.scope;
-		const sessionDir = options.sessionDir ?? defaultSessionDir;
+		const sessionDir = storeOf(options);
 		const agentDir = options.agentDir ?? getAgentDir();
 
 		const session = yield* Ref.make<PiSessionRef | null>(null);
@@ -508,9 +527,7 @@ const make = (
 				const lease = yield* pi.heldSnapshot(resumed.id);
 				// Read before either branch answers: a finished detached row is invisible to both the
 				// seed and the paint, so its workers come off the results index either way (#8685).
-				const fill = yield* Effect.sync(() =>
-					asyncFillOf(lease, subagentArtifactsDir(sessionDir(options_.cwd))),
-				);
+				const fill = yield* Effect.sync(() => asyncFillOf(lease, subagentArtifactsDir(sessionDir)));
 				// A restored process is looking at its own committed tail, so the seed suppresses
 				// everything through the boundary that tail reaches and emits whatever the session
 				// finished past it — or changed under it — while the socket was down (#8374).
@@ -566,7 +583,7 @@ const make = (
 			yield* Ref.set(
 				pump,
 				yield* Effect.forkIn(
-					follow(ref.id, open, feed, seed, subagentArtifactsDir(sessionDir(options_.cwd)), fill),
+					follow(ref.id, open, feed, seed, subagentArtifactsDir(sessionDir), fill),
 					scope,
 				),
 			);
@@ -740,7 +757,7 @@ const make = (
 					detail: "start has not opened a Pi session on this layer",
 				});
 			}
-			const entries = yield* readBranch(sessionDir(current.cwd), current.id, current.cwd);
+			const entries = yield* readBranch(sessionDir, current.id, current.cwd);
 			const planned = planPageOverEntries(entries, {before, limit});
 			if (isRefusal(planned)) {
 				if (planned.reason === "limit-not-positive") {
@@ -758,7 +775,7 @@ const make = (
 		/**
 		 * `page`'s answer off disk, with no session open and no transport dialled (#8233).
 		 *
-		 * It walks both stores rather than `sessionDir(cwd)` alone, because the ids it is handed come
+		 * It walks both stores rather than the desk's own alone, because the ids it is handed come
 		 * off `listSessions` below, which unions the two — a session the operator started with `pi`
 		 * in a terminal is in the CLI store and would otherwise read as gone.
 		 *
@@ -769,7 +786,7 @@ const make = (
 		const sessionTranscript = Effect.fn("TuvalAiAgent.sessionTranscript")(function* (
 			query: TranscriptQuery,
 		) {
-			const stores = yield* piSessionDirs({agentDir, tuvalDir: sessionDir(query.cwd)});
+			const stores = yield* piSessionDirs({agentDir, tuvalDir: sessionDir});
 			yield* Effect.forEach(
 				stores.failures,
 				(failure) =>
@@ -810,21 +827,14 @@ const make = (
 		 * Both of Pi's stores, unioned (#8099). A read of disk rather than of the transport, so it
 		 * answers before `start` and after a drop.
 		 *
-		 * Tuval's own store is located under the project root the layer was built on, or under the
-		 * running session's cwd when the layer was given none — the same one root `start({resume})`
-		 * looks in. With neither, only the `pi` CLI's store is reachable and the answer says so by
-		 * holding its rows alone.
+		 * Tuval's own store is the desk's one directory, whatever cwd the running session was opened
+		 * against — the same store `start({resume})` looks in.
 		 *
 		 * A failed store is a log line and not the answer: it fails only when no store answered at
 		 * all, because returning `[]` there would claim this machine holds no Pi sessions.
 		 */
 		const listSessions = Effect.gen(function* () {
-			const current = yield* Ref.get(session);
-			const root = options.projectRoot ?? current?.cwd;
-			const read = yield* readPiSessions({
-				agentDir,
-				...(root === undefined ? {} : {tuvalDir: sessionDir(root)}),
-			});
+			const read = yield* readPiSessions({agentDir, tuvalDir: sessionDir});
 			yield* Effect.forEach(
 				read.failures,
 				(failure) =>
@@ -959,7 +969,7 @@ const host = (options: PiAiAgentOptions) =>
 				agentDir,
 				...(extensionPaths.length === 0 ? {} : {extensionPaths}),
 				...(customTools.length === 0 ? {} : {customTools}),
-				...(options.sessionDir === undefined ? {} : {sessionDir: options.sessionDir}),
+				sessionDir: storeOf(options),
 				...(options.projectRoot === undefined ? {} : {projectRoot: options.projectRoot}),
 				...(options.streamPartialText === undefined
 					? {}
@@ -996,10 +1006,14 @@ export const PiAiAgent = {
 	/**
 	 * Ruling 4's layer (#7570): building it inside the process's Scope stands up Pi's model runtime,
 	 * the session host, the loopback server and the client, and closing that Scope tears all four
-	 * down. `E` is `never` and `R` is `KernelBridge | Features` — no Pi type reaches it, so a process
-	 * hands this to `aiAgentProgram` and holds no Pi value of its own. The row provides the bridge
-	 * from its own scope the way the Claude and Codex rows do (ruling R9.1 on #8715), and a spawn
-	 * hands over the merged flag record (#8595).
+	 * down. `E` is `never` and `R` is `KernelBridge | Features | StateDir` — no Pi type reaches it, so
+	 * a process hands this to `aiAgentProgram` and holds no Pi value of its own. The row provides the
+	 * bridge from its own scope the way the Claude and Codex rows do (ruling R9.1 on #8715), and a
+	 * spawn hands over the merged flag record (#8595) and the booted desk's state dir (ADR 0402).
+	 *
+	 * The state dir is what makes this layer's session store the *desk's* rather than something
+	 * derived from wherever a session happens to work: a config module is evaluated before a boot has
+	 * resolved one, so the row cannot write it down and is handed it at spawn.
 	 *
 	 * The shape is inferred rather than annotated on purpose, and `boundary.unit.test.ts` pins it: an
 	 * annotation would declare `Features` in `R` even after a body stopped reading it, which is how a
@@ -1011,5 +1025,13 @@ export const PiAiAgent = {
 	 * a case the row models.
 	 */
 	layer: (options: PiAiAgentOptions = {}) =>
-		aiAgentOverHost(options).pipe(Layer.provide(host(options))),
+		Layer.unwrap(
+			Effect.map(StateDir, (state) => {
+				const resolved: PiAiAgentOptions = {
+					...options,
+					sessionDir: options.sessionDir ?? piSessionStore(state.path),
+				};
+				return aiAgentOverHost(resolved).pipe(Layer.provide(host(resolved)));
+			}),
+		),
 } as const;

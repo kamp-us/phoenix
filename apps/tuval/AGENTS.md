@@ -15,8 +15,10 @@ A hand-verification desk — the scratch instance a builder drives by hand, sinc
 no preview and a reviewer has no address to render
 ([ADR 0391](../../.decisions/0391-hand-verification-binds-ui-content.md)) — lives entirely under the
 path `fabrika build scratch <n> --slug desk --token <t>` prints: the project directory the desk
-opens, the scratch agent home it runs under, its `.tuval/processes/` checkpoints and its driver
-scripts. Never a directory you name yourself in the session scratchpad, which every lane of the
+opens, the scratch agent home it runs under — which is where its checkpoints land, under that
+home's `.tuval/projects/<key>`
+([ADR 0402](../../.decisions/0402-tuval-state-lives-under-home.md)) — and its driver scripts. Never
+a directory you name yourself in the session scratchpad, which every lane of the
 session shares
 ([build](../../claude-plugins/fabrika/skills/build/SKILL.md),
 [build-ui](../../claude-plugins/fabrika/skills/build-ui/SKILL.md)).
