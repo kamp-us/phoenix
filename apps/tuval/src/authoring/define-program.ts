@@ -129,21 +129,32 @@ export type Answer<S, X = never> = readonly [S, ReadonlyArray<ProgramEffect | X>
 
 export type EventHandler<S, E, X = never> = (state: S, event: E) => Answer<S, X>;
 
-/** An in-port arrival as the author's `update` sees it: the port's name, its decoded payload. */
-export interface ArrivalEvent<Name extends string, Payload> {
+/**
+ * An in-port arrival as the author's `update` sees it: the port's name, its decoded payload.
+ *
+ * **A type alias, and it may not become an `interface` (#9543).** A module window types its
+ * `WindowHost` dispatch at its program's `ProgramEvent` union (`./view.ts`), whose Msg parameter is
+ * constrained to the kernel's `Message` (`../process/process.ts`) — an index-signature shape only a
+ * type alias of an object literal implicitly satisfies. As an interface this arm made a typed
+ * window dispatch and any in-port mutually exclusive. Same reason as `KeyEvent` (`./keys.ts`).
+ */
+export type ArrivalEvent<Name extends string, Payload> = {
 	readonly type: Name;
 	readonly payload: Payload;
-}
+};
 
 /**
  * A `port.request` arrival: the same event as any other, plus the bound `reply` the caller's `ask`
  * is waiting on (#8716 R17.1). The address is opaque and belongs to this one question, so the cell
  * answers by handing it back to `reply(event.reply, answer)` and names no process.
+ *
+ * An intersection rather than an `extends`, because the implicit index signature `ArrivalEvent`
+ * above exists for does not survive an interface that inherits it — the request arm failed the
+ * `Message` constraint on its own until it stopped being one (#9543).
  */
-export interface RequestArrivalEvent<Name extends string, Payload>
-	extends ArrivalEvent<Name, Payload> {
+export type RequestArrivalEvent<Name extends string, Payload> = ArrivalEvent<Name, Payload> & {
 	readonly reply: ReplyTo;
-}
+};
 
 /** What arrives on one declared port, which is the request kind's arrival for a request port. */
 export type ArrivalEventOf<D extends PortDecls, K extends keyof D & string> =

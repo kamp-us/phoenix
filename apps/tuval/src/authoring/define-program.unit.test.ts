@@ -14,7 +14,13 @@ import {ProcessSelf} from "../process/self.ts";
 import {type AnyProgram, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {ArgUnfilled, programArgs} from "./args.ts";
-import {type Answer, type ArrivalEvent, defineProgram, program} from "./define-program.ts";
+import {
+	type Answer,
+	type ArrivalEvent,
+	defineProgram,
+	program,
+	type RequestArrivalEvent,
+} from "./define-program.ts";
 import {
 	emit,
 	type ProgramEffect,
@@ -27,6 +33,8 @@ import {
 } from "./effect.ts";
 import {port} from "./port.ts";
 import {Program, ShapeMismatch, type ShapeSource} from "./shape.ts";
+import type {ProgramEvent} from "./view.ts";
+import type {WindowHost} from "./window.ts";
 
 const Count = Schema.Number;
 const Review = Schema.Struct({pr: Schema.Number, urgent: Schema.Boolean});
@@ -831,5 +839,53 @@ describe("authoring.program types a program held in a binding", () => {
 		expect(held.update.stopped({count: 1}, stopped(ProcessId.make("proc-x")))[0]).toEqual({
 			count: 2,
 		});
+	});
+});
+
+/**
+ * A program with both arriving kinds and a module window, which is the general case #9543 found
+ * under the keyboard report: a port arm fails the `Message` constraint exactly as a `key` cell did,
+ * so a window over any in-port had the same choice between a typed dispatch and its ports.
+ */
+const portedWindow = program({
+	id: "ported-window",
+	ports: {ticks: port.in(Count), review: port.request(Review, Count)},
+	init: (): CounterState => ({count: 0}),
+	update: {
+		ticks: (state, event) => [{count: state.count + event.payload}, []],
+		review: (state) => [state, []],
+		reset: (state: CounterState) => [{count: 0}, []],
+	},
+	renderer: {kind: "module", ref: "/src/demo/module-window.tsx"},
+});
+
+/** The host that program's window types its dispatch at, exactly as `../demo/module-window.tsx` does. */
+type PortedHost = WindowHost<
+	CounterState,
+	ProgramEvent<(typeof portedWindow)["ports"], (typeof portedWindow)["update"]>
+>;
+
+/** Does that host's dispatch still take this event — narrow, rather than widened to `Message`? */
+type Dispatches<E> = PortedHost["dispatch"] extends (msg: E) => unknown ? true : false;
+
+const arrivalDispatches: Dispatches<ArrivalEvent<"ticks", number>> = true;
+const requestArrivalDispatches: Dispatches<
+	RequestArrivalEvent<"review", {readonly pr: number; readonly urgent: boolean}>
+> = true;
+const ownEventDispatches: Dispatches<{readonly type: "reset"}> = true;
+const strangerDispatches: Dispatches<{readonly type: "unheard"}> = false;
+
+describe("authoring.defineProgram window host over a program's ports", () => {
+	it("lets a module window type its host at a program with in-ports, plain and request", () => {
+		// Each `=` above is the claim, checked by `tsc` over this file
+		// (`.patterns/unconditional-test-assertions.md`, "the type-level sibling"). `PortedHost`
+		// itself is the claim #9543 turns on: it is TS2344 while either arrival arm is an
+		// interface, because `WindowHost`'s Msg parameter is constrained to the kernel's `Message`.
+		expect([
+			arrivalDispatches,
+			requestArrivalDispatches,
+			ownEventDispatches,
+			strangerDispatches,
+		]).toEqual([true, true, true, false]);
 	});
 });
