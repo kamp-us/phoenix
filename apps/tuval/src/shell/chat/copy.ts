@@ -18,6 +18,7 @@
 import type {DesignCatalogKey, DesignTranslate} from "@kampus/design";
 
 const messages: Readonly<Record<DesignCatalogKey, string>> = {
+	"ui.dialog.close": "close",
 	"ui.caylakBadge": "newcomer contribution",
 	"ui.caylakBadge.stage": ", in preparation",
 	"ui.reviewBadge": "in review",
