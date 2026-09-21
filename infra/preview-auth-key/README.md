@@ -7,7 +7,7 @@ sign a preview session cookie with no setup step and no credential hand-off. Any
 this repository can forge a login on any preview deploy. That is the accepted cost, ruled by the
 founder on 2026-09-21
 ([#9533](https://github.com/kamp-us/phoenix/issues/9533#issuecomment-5754589033)) and written down
-in [ADR 0405](../../.decisions/0405-preview-workers-sign-with-a-committed-public-key.md).
+in [ADR 0406](../../.decisions/0406-preview-workers-sign-with-a-committed-public-key.md).
 
 **It is not the production secret and can never become one.** Production and every named stage keep
 the founder-held `BETTER_AUTH_SECRET` the `infra/ci-credentials/` stack mints and pushes as a
@@ -30,7 +30,7 @@ only the e2e suite's sign-ups and whatever `preview-seed test-account` put there
 rows ([ADR 0349](../../.decisions/0349-preview-seed-fence-keys-on-d1-name.md)). A cookie signed with
 this key authenticates at that one preview origin and nowhere else: the production worker rejects
 it by the prefix fence above, and no deployed stack outside the `pr-<n>` matrix binds it. See ADR
-0405 for the full check, including the one hand-deployed worker that shares pasaport's secret.
+0406 for the full check, including the one hand-deployed worker that shares pasaport's secret.
 
 ## Rotating it
 

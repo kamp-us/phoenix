@@ -38,7 +38,7 @@ secrets, all from code.
 | `CLOUDFLARE_API_TOKEN` | The minted token, scoped to Workers Scripts / KV / D1 / Tail / Account-Settings-Read / **Secrets-Store-Read+Write** (the last pair is what `Cloudflare.state()` needs to adopt its state-store worker's bearer token + encryption key on every deploy — omit them and the deploy fails with Cloudflare error 10000). Never echoed to your shell — piped from `AccountApiToken.value` straight into `GitHub.Secret`. |
 | `CLOUDFLARE_ACCOUNT_ID` | Which account to deploy into. |
 | `ALCHEMY_PASSWORD` | Encrypts/decrypts secrets in the Cloudflare-hosted alchemy state store. |
-| `BETTER_AUTH_SECRET` | The session-signing secret **for production, `audit` and every named stage** — not for previews. The worker reads it at runtime as a `secret_text` binding (`config.ts`: `Config.redacted("BETTER_AUTH_SECRET")`), so `alchemy deploy` needs the value. `infra/ci-credentials/github.ts` mints a stable `Random` (persisted in its state) and pushes it. A `pr-<n>` stage deploys instead with the public key committed at `infra/preview-auth-key/key.txt`, picked by stage name in `deploy.yml` ([ADR 0405](../.decisions/0405-preview-workers-sign-with-a-committed-public-key.md)). |
+| `BETTER_AUTH_SECRET` | The session-signing secret **for production, `audit` and every named stage** — not for previews. The worker reads it at runtime as a `secret_text` binding (`config.ts`: `Config.redacted("BETTER_AUTH_SECRET")`), so `alchemy deploy` needs the value. `infra/ci-credentials/github.ts` mints a stable `Random` (persisted in its state) and pushes it. A `pr-<n>` stage deploys instead with the public key committed at `infra/preview-auth-key/key.txt`, picked by stage name in `deploy.yml` ([ADR 0406](../.decisions/0406-preview-workers-sign-with-a-committed-public-key.md)). |
 
 > **`BETTER_AUTH_SECRET` is a deploy-time binding value, not Random-in-the-app-stack.**
 > The worker reads it from the runtime env (`config.ts`); `Random` is a deploy-time
@@ -108,7 +108,7 @@ orphaned token.
   secret only for legs that bind it, so such an app would deploy without ever touching auth
   state. **Which value a binding leg gets is keyed on the stage**: a `pr-<n>` deploy takes the
   committed public preview key, everything else takes the Actions secret
-  ([ADR 0405](../.decisions/0405-preview-workers-sign-with-a-committed-public-key.md)).
+  ([ADR 0406](../.decisions/0406-preview-workers-sign-with-a-committed-public-key.md)).
 - **Prod safety check.** The `cleanup` job refuses to `destroy` if `STAGE == prod`,
   even though it only ever runs on closed PRs. It runs per matrix leg, so each app's
   preview-stage teardown is independently guarded.

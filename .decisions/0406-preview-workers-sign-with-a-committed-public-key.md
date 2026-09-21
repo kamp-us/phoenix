@@ -1,12 +1,12 @@
 ---
-id: 0405
+id: 0406
 title: Preview workers sign sessions with a committed public key, production with the founder-held secret
 status: accepted
 date: 2026-09-21
 tags: [auth, preview, security, ci, review-ui, alchemy]
 ---
 
-# 0405 — Preview workers sign sessions with a committed public key, production with the founder-held secret
+# 0406 — Preview workers sign sessions with a committed public key, production with the founder-held secret
 
 **What this decides:** every `pr-<n>` preview worker deploys with the session-signing key committed
 at `infra/preview-auth-key/key.txt`. Production, `audit` and every hand-named stage keep the

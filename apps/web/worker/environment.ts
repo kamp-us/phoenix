@@ -71,7 +71,7 @@ export const environmentForStage = (stage: string): Environment =>
  * fail-open on the stage axis (every unrecognized name lands in `preview`), which is right for the
  * runtime gates it feeds and wrong for choosing which signing key a deploy hands out. This is the
  * predicate `.github/workflows/deploy.yml` keys that choice on, so a stage somebody names by hand
- * gets the founder-held secret rather than the public preview key (ADR 0405). It reads the same
+ * gets the founder-held secret rather than the public preview key (ADR 0406). It reads the same
  * `pr-<n>` shape ADR 0349's D1 fence reads, one layer up.
  */
 export const isPreviewStage = (stage: string): boolean => /^pr-\d+$/.test(stage);

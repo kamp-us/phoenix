@@ -202,7 +202,8 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
 - Chrome output never enters `review-ui post --evidence`: evidence comes from `review-ui render`
   capture sets only, so the attach path has one validated producer.
 - **A tier-naming surface needs the preview worker's signing secret plus that tier's own session
-  token**, all unset by default. The secret is the one the *preview worker deployed with*, so the
+  token.** The tokens are unset by default; the secret is not, since it resolves off the checkout.
+  The secret is the one the *preview worker deployed with*, so the
   cookie signature verifies, and it needs no credential: every `pr-<n>` preview deploys with the key
   committed at `infra/preview-auth-key/key.txt`, deliberately public, which the verb resolves off
   the checkout it runs in with no flag and no environment variable. Production keeps a
@@ -359,11 +360,13 @@ naming every such surface. One origin is resolved for the run, so shooting a for
 returns that app's not-found page: a clean PNG the outcome typing would record as `captured`. A
 surface no declared row claims is shot as before — which app serves it is a question the list does
 not answer either way. **Resolve the tier signing
-secret** — the file `--auth-secret-from` names, else the ambient variable — and refuse on `11`
-before a browser launches when it cannot be read, is empty, or carries the `insecure_` placeholder.
-The refusal names the source it read and the route out, and the route differs by source: with no
-flag it is to pass one, and with a flag it is to re-export the repo-wide value from the
-ci-credentials stack's alchemy state, since the named file does not hold the deployed one.
+secret** — the file `--auth-secret-from` names when one is passed, else the committed preview key at
+`infra/preview-auth-key/key.txt` in the checkout this verb runs in, else the ambient variable — and
+refuse on `11` before a browser launches when it cannot be read, is empty, or carries the `insecure_`
+placeholder. The refusal names the source it read and the route out, and the route differs by source:
+with no flag it is to run from a checkout that carries that committed key, which needs no flag, no
+credential and no environment variable; with a flag it is to drop the flag, since the named file does
+not hold the value this preview verifies against and the committed key resolves on its own.
 For each `--surface` at each
 `--viewport`, in the provisioned headless browser sized to that viewport: navigate to
 `<previewUrl><route>`; status ≥ 400 or failed navigation is **unreachable** (`14`); an uncaught
@@ -393,7 +396,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
 | `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; or `--flag` was passed beside an anonymous surface |
-| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, or while `--auth-secret-from` names a file that could not be read; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; or a forced flag evaluated at its default anyway |
+| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, while `--auth-secret-from` names a file that could not be read, or while the repo root could not be located at all so the committed preview key was never looked for; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; or a forced flag evaluated at its default anyway |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -411,7 +414,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: <names>) — the named tier's render is UNKNOWN, never a seeded substitute.` | 11 | refusal |
 | `review-ui render: a tier-naming surface was requested but <the source> carries the insecure_ placeholder prefix — a cookie signed with it is one the preview worker answers as a visitor — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
 | `review-ui render: a tier-naming surface was requested but <the source> is empty — there is no key to sign the tier cookie with — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
-| `review-ui render: cannot read the exported repo-wide session-signing secret at <path>: <reason> — the named tier's render is UNKNOWN.` | 11 | refusal |
+| `review-ui render: cannot read the session-signing secret at <path>: <reason> — the named tier's render is UNKNOWN.` | 11 | refusal |
 | `review-ui render: surface "<id>" at <viewport> did not render signed in (<reason>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
 | `review-ui render: surface "<id>" at <viewport> named tier <wanted> and rendered as <rendered> — the named tier's render is UNKNOWN, never another tier's.` | 11 | refusal |
 | `review-ui render: --flag "<token>" is not a <key>=<on\|off> pair (<reason>) — an operand nothing can force would shoot the default state under the forced name.` | 10 | refusal |

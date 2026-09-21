@@ -115,8 +115,9 @@ const run = (
 	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	files: Readonly<Record<string, string>> = {},
+	unreadable: ReadonlyArray<string> = [],
 ) => {
-	const fs = fakeFs({files});
+	const fs = fakeFs({files, unreadable: [...unreadable]});
 	return Effect.runPromise(
 		Effect.provide(
 			runRender({...options, ...overrides}),
@@ -331,6 +332,29 @@ describe("runRender", () => {
 		// The named source wins over the ambient placeholder, which is the whole point of the flag.
 		const value = seen.get("/pano:auth")?.[0]?.value;
 		expect(value).toBe(signSessionToken("t".repeat(32), "d".repeat(32)));
+	});
+
+	/**
+	 * "I could not look" and "there is no repo here" are two facts, and only the second one is the
+	 * ambient fallback's case. An unreadable ancestor folded into that arm would refuse on the
+	 * ambient variable being empty and never mention the directory that actually stopped the read.
+	 */
+	it("refuses on 11 naming the unreadable ancestor when the repo root cannot be located", async () => {
+		const {outcome} = await run(
+			happy(),
+			{
+				surfaces: ["/pano:auth"],
+				cwd: "/repo",
+				env: {CLAUDE_PIPELINE_REPO: "o/r", PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32)},
+			},
+			{"/repo/package.json": "{}"},
+			["/repo/package.json"],
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		const said = outcome.stderr.join("\n");
+		expect(said).toContain("/repo/package.json");
+		expect(said).toContain("the repo root could not be located");
+		expect(said).not.toContain("$BETTER_AUTH_SECRET");
 	});
 
 	it("refuses an unreadable --auth-secret-from on 11, naming the path", async () => {

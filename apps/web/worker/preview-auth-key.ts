@@ -1,6 +1,6 @@
 /**
  * The fence between the committed preview session-signing key and every stage that is not a
- * preview — see `infra/preview-auth-key/README.md` for the key itself and ADR 0405 for the ruling.
+ * preview — see `infra/preview-auth-key/README.md` for the key itself and ADR 0406 for the ruling.
  *
  * The key is public by design, so "production must not verify against it" cannot rest on nobody
  * having a copy; it has to rest on production refusing the value. The refusal keys on a PREFIX
@@ -57,7 +57,7 @@ export class PreviewAuthKeyOffPreviewError extends Error {
 			`Refusing to boot: ENVIRONMENT "${environment}" was handed a session-signing secret carrying the ` +
 				`"${PREVIEW_AUTH_KEY_PREFIX}" prefix — that is the public preview key committed at ` +
 				`${PREVIEW_AUTH_KEY_PATH}, which anyone who can read the repo can forge a login with. ` +
-				`Only a pr-<n> preview stage may deploy with it (ADR 0405); this stage must deploy with ` +
+				`Only a pr-<n> preview stage may deploy with it (ADR 0406); this stage must deploy with ` +
 				`the founder-held BETTER_AUTH_SECRET.`,
 		);
 		this.name = "PreviewAuthKeyOffPreviewError";

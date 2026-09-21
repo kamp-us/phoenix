@@ -202,7 +202,7 @@ while four of the PR's own compositions never painted.
 `:auth` reaches what is behind login, and `--flag <key>=<on|off>` forces a dark-shipped flag on:
 
 ```bash
-fabrika review-ui render --pr $pr_number --out forced --surface /welcome:auth --flag welcome-banner=on --auth-secret-from <file>
+fabrika review-ui render --pr $pr_number --out forced --surface /welcome:auth --flag welcome-banner=on
 ```
 
 Both fences hold, so neither can quietly hand you the default pixels. A forced run must name

@@ -113,7 +113,7 @@ describe("environmentForStage (the single owner of the prod→production map)", 
 	});
 });
 
-describe("isPreviewStage (which stages the deploy hands the public preview key, ADR 0405)", () => {
+describe("isPreviewStage (which stages the deploy hands the public preview key, ADR 0406)", () => {
 	it("admits exactly the `pr-<n>` shape CI mints", () => {
 		expect(isPreviewStage("pr-1")).toBe(true);
 		expect(isPreviewStage("pr-9533")).toBe(true);

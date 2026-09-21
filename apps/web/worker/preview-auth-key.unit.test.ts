@@ -1,5 +1,5 @@
 /**
- * The fence between the committed public preview key and every non-preview stage (ADR 0405).
+ * The fence between the committed public preview key and every non-preview stage (ADR 0406).
  *
  * The file read below is load-bearing, not decoration: the refusal keys on a prefix, so a rotation
  * that dropped the prefix would leave `judgeAuthSecret` accepting the committed key everywhere

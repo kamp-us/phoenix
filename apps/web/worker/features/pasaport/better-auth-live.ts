@@ -97,7 +97,7 @@ export const BetterAuthLive = Layer.effect(
 		const {environment} = yield* AppConfig.pipe(Effect.orDie);
 
 		// The last fence between the public preview key and a stage that must not verify against it
-		// (ADR 0405). It runs here rather than at the `Config` surface because this is the one place
+		// (ADR 0406). It runs here rather than at the `Config` surface because this is the one place
 		// that holds the secret and the environment together, and it throws rather than refusing
 		// softly: a worker that would verify forgeable sessions must serve nothing at all.
 		assertAuthSecretForEnvironment(environment, Redacted.value(secret));

@@ -219,6 +219,10 @@ type UnreadableSecret = {
  * the checkout carries no committed key, which is a checkout predating that file. {@link
  * classifyAuthSecret} keeps it honest — a placeholder or empty value refuses rather than signing.
  *
+ * A root discovery that *failed* is not that fallback's case. It refuses instead, because
+ * {@link discoverRepoRoot} answers "no repo here" with `undefined` and "I could not look" on its `E`
+ * channel, and an unreadable ancestor handed to the ambient arm would report the second as the first.
+ *
  * A run whose surfaces name no tier asks for no session, so nothing calls this: there is no key to
  * read and no cookie to sign.
  */
@@ -234,7 +238,17 @@ const resolveAuthSecret = (
 				: classifyAuthSecret(read.success, {_tag: "RepoWideExport", path: named});
 		}
 		const root = yield* Effect.result(discoverRepoRoot(options.cwd));
-		if (!Result.isFailure(root) && root.success !== undefined) {
+		// `discoverRepoRoot` keeps "I could not look" on its `E` channel and "there is no repo here"
+		// on `undefined`, so folding the failure into the ambient fallback would report an unreadable
+		// ancestor as a checkout that simply carries no committed key.
+		if (Result.isFailure(root)) {
+			return {
+				_tag: "Unreadable",
+				path: root.failure.path,
+				reason: `${root.failure.reason} — the repo root could not be located, so the committed preview key was never looked for`,
+			} as const;
+		}
+		if (root.success !== undefined) {
 			const path = (yield* Path.Path).join(root.success, PREVIEW_AUTH_KEY_PATH);
 			const committed = yield* Effect.result(readFile(path));
 			if (!Result.isFailure(committed)) {

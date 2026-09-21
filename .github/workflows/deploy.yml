@@ -383,7 +383,7 @@ jobs:
           echo "stage '$STAGE' → ENVIRONMENT '$ENVIRONMENT'"
           echo "ENVIRONMENT=$ENVIRONMENT" >> "$GITHUB_ENV"
 
-      # Which session-signing key THIS stage deploys with (ADR 0405). Two values exist and
+      # Which session-signing key THIS stage deploys with (ADR 0406). Two values exist and
       # they are not interchangeable: the founder-held `secrets.BETTER_AUTH_SECRET`, which
       # no agent holds a copy of (#9339), and the deliberately-public preview key committed
       # at infra/preview-auth-key/key.txt, which anyone reading the repo can forge a login
@@ -463,7 +463,7 @@ jobs:
           # WHICH value is picked by the stage-keyed step above, which sets
           # PREVIEW_AUTH_KEY non-empty for a `pr-<n>` stage and empty for every other
           # one — so a preview deploys the committed public key and production, audit
-          # and any hand-named stage deploy the founder-held secret (ADR 0405). The
+          # and any hand-named stage deploy the founder-held secret (ADR 0406). The
           # non-empty test is the whole selector: there is no third value.
           BETTER_AUTH_SECRET: ${{ matrix.needs-auth && (env.PREVIEW_AUTH_KEY != '' && env.PREVIEW_AUTH_KEY || secrets.BETTER_AUTH_SECRET) || '' }}
           # Sentry DSN for the WORKER tier (ADR 0118, #1502). index.ts adds the

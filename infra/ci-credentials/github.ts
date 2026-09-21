@@ -55,7 +55,7 @@
  * passes through here. It is committed in the clear at `infra/preview-auth-key/key.txt`
  * and picked by stage name in `deploy.yml`, so a preview worker never verifies against
  * the value above and any agent can sign a preview session with no credential at all
- * (ADR 0405). Nothing to mint, nothing to push, nothing to rotate from this stack.
+ * (ADR 0406). Nothing to mint, nothing to push, nothing to rotate from this stack.
  */
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
