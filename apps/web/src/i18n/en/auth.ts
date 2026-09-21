@@ -100,7 +100,7 @@ export const auth = {
 	"auth.landing.join.sub": "the door is open · a voice is earned",
 	"auth.landing.browse.panoSub": "posts · discussions",
 	"auth.landing.browse.sozlukSub": "terms · definitions",
-	"auth.landing.col.pano": "the last 24 hours on {panoNoun}",
+	"auth.landing.col.pano": "latest posts on {panoNoun}",
 	"auth.landing.col.sozluk": "latest in {sozlukNoun}",
 	"auth.landing.seeAll": "see all",
 	"auth.landing.empty.posts": "no posts yet.",
