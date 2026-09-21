@@ -5,6 +5,7 @@ import {httpError, PROTECTION, protection, RULES, rules} from "../heal-ci/fixtur
 import {
 	authorityNote,
 	blockingSet,
+	noBlockingRunNote,
 	readBlockingSet,
 	reportedLine,
 	unreadableCause,
@@ -113,6 +114,15 @@ describe("the lines a verb prints about its authority", () => {
 		);
 		expect(authorityNote("ship checks", "main", blockingSet([]))).toContain(
 			"declares no required status checks",
+		);
+	});
+
+	it("says why a head with no blocking run may not read green", () => {
+		expect(noBlockingRunNote("ship checks", "main", blockingSet(["ci-required"]))).toContain(
+			"no run at this head answers any context main declares required — pending, never green",
+		);
+		expect(noBlockingRunNote("ship checks", "main", blockingSet([]))).toContain(
+			"every run at this head is informational — pending, never green",
 		);
 	});
 

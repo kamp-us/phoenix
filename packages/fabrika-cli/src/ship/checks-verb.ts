@@ -25,6 +25,7 @@ import {commitExists} from "../io/pulls.ts";
 import {
 	authorityNote,
 	type BlockingSet,
+	noBlockingRunNote,
 	readBlockingSet,
 	reportedLine,
 	unreadableCause,
@@ -137,6 +138,11 @@ export const rollupFor = (
 		return sample.runCount === 0 ? "no-runs" : "pending";
 	}
 	const gating = sample.runs.filter((run) => blocking.blocks(run.name));
+	// `rollupOf` over an empty set is `green` by construction, and serving that here would merge a
+	// head no blocking check has reported on — the hole the required-set narrowing widens, since the
+	// declared contexts routinely post later than everything else. Runs exist and none of them
+	// blocks, so what is missing is a report, which is `pending`.
+	if (gating.length === 0) return "pending";
 	const rollup = rollupOf(gating.filter((run) => !isSuperseded(run, sample.superseded)));
 	// A superseded cancel is exactly as unfinished as a running check, so it pends a green and loses
 	// to a red — the substitution `rollupOf` would make if the row were still in flight.
@@ -267,9 +273,12 @@ export const runChecks = (
 			const replaced = supersededGating(read, blocking)
 				.map((run) => run.name)
 				.sort();
+			const noneBlocking =
+				read.runs.length > 0 && !read.runs.some((run) => blocking.blocks(run.name));
 			const scope = [
 				...diagnostics,
 				...reportedLine(VERB, reported),
+				...(noneBlocking ? [noBlockingRunNote(VERB, target.pull.baseRef, blocking)] : []),
 				scannedLine(
 					VERB,
 					read.runs.length,

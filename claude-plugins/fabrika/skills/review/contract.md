@@ -809,6 +809,11 @@ is `11` naming that read as the cause — never a colour over it. Which definiti
 on the notes channel on every run. The two governance-floor settle tokens read the blocking set too,
 so a non-required red beside a stale floor no longer hides it.
 
+**A head that produced runs and no *blocking* run is `pending`, never `green`.** The rollup over an
+empty set is green by construction, and narrowing to the declared set opens that case wherever the
+required contexts have not posted yet. What is missing there is a report, so the answer is `pending`
+with the reason on the notes channel.
+
 **The rollup is total over the status vocabulary, fail-closed on the ambiguous rows:** `red`
 when any completed run concluded `failure`, `timed_out`, `action_required` or `cancelled` (a
 cancelled check proved nothing, and "proved nothing" must not read green); `pending` when none

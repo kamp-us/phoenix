@@ -1190,6 +1190,13 @@ declared set that cannot be read at this token's permission is `11` naming that 
 this group is the merge authority, and no green here may be served over an authority nobody could
 name. Which definition answered is stated on the notes channel on every run.
 
+**A head that produced runs and no *blocking* run is `pending`, never `green`.** The rollup over an
+empty set is green by construction — every run it was given concluded passing, there having been
+none — and narrowing to the declared set opens that case wherever the required contexts have not
+posted yet. What is missing there is a report, so the answer is `pending` with the reason on the
+notes channel. The same rule covers the fallback definition's version of it, a head whose every run
+is on the informational name list.
+
 **Zero workflows is `no-producer`, and it no longer collapses into `pending`.** A repo with
 no CI and a repo whose CI has not reported yet are different facts, and printing the second over the
 first tells an operator to wait for a run nothing will ever start. Workflow *existence* is the whole

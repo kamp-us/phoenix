@@ -38,6 +38,7 @@ import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	authorityNote,
 	type BlockingSet,
+	noBlockingRunNote,
 	readBlockingSet,
 	reportedLine,
 	unreadableCause,
@@ -290,7 +291,11 @@ export const runCi = (
 			// completeness proof above still divides by the whole enumeration, because a short read is a
 			// fact about the page rather than about what blocks.
 			const blocked = runs.filter((run) => blocking.blocks(run.name));
-			const rollup = rollupOf(blocked);
+			// `rollupOf` over an empty set is `green` by construction — every run it was given passed,
+			// there having been none — and the narrowing opens that case wherever the declared contexts
+			// have not posted yet. Runs exist and none of them blocks, so what is missing is a report.
+			const rollup: Rollup = blocked.length === 0 ? "pending" : rollupOf(blocked);
+			if (blocked.length === 0) notes.push(noBlockingRunNote(VERB, base, blocking));
 			notes.push(...namedLines(VERB, runs, blocking));
 			notes.push(
 				...reportedLine(

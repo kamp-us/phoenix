@@ -142,6 +142,20 @@ export const authorityNote = (verb: string, base: string, set: BlockingSet): str
 		? `${verb}: ${base} declares ${set.contexts.length} required context(s): ${[...set.contexts].sort().join(", ")} — a red outside that set is reported, never blocking.`
 		: `${verb}: ${base} declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.`;
 
+/**
+ * What a verb says when a head produced runs and **none of them blocks** — an answer that may not
+ * be green.
+ *
+ * Narrowing the rollup to the declared set opens this case wherever the required contexts have not
+ * posted yet, and `rollupOf` over an empty set answers `green` by construction: every run it was
+ * given concluded passing, there having been none. A caller that served that word would merge a head
+ * no required check has reported on. Both callers answer `pending` instead and print this.
+ */
+export const noBlockingRunNote = (verb: string, base: string, set: BlockingSet): string =>
+	set.token === "required"
+		? `${verb}: no run at this head answers any context ${base} declares required — pending, never green: the required checks have not reported.`
+		: `${verb}: every run at this head is informational — pending, never green: nothing here gates.`;
+
 /** The names failing outside the blocking set: real reds a caller reports rather than routes. */
 export const reportedLine = (verb: string, names: ReadonlyArray<string>): ReadonlyArray<string> =>
 	names.length === 0

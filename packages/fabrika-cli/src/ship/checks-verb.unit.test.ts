@@ -264,6 +264,42 @@ describe("runChecks under the base branch's required set", () => {
 		expect(out.stderr.at(-1)).toContain("cannot read main's required status checks");
 	});
 
+	// Narrowing the rollup to the declared set opens an empty-gating-set case wherever the required
+	// contexts have not posted yet, and `rollupOf([])` is `green` by construction.
+	it("pends, never greens, a head where no run answers any declared required context", async () => {
+		const out = await run(
+			[...REQUIRES_CI, ...found],
+			[
+				[RUNS, served(checkRuns(1, [noRun("Analyze (python)", "completed", "success")]))],
+				[WORKFLOWS, served(workflows("active"))],
+				[RUN_COUNT, served(runsTotal(1))],
+			],
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tpending`);
+		expect(out.stderr.join("\n")).toContain(
+			"no run at this head answers any context main declares required",
+		);
+	});
+
+	// The same hole on the fallback definition: a head whose every run is on the name denylist.
+	it("pends a head whose every run is informational under the fallback definition", async () => {
+		const out = await run(found, [
+			[
+				RUNS,
+				served(
+					checkRuns(2, [
+						noRun("deploy (web)", "completed", "success"),
+						noRun("cleanup previews", "completed", "success"),
+					]),
+				),
+			],
+			[WORKFLOWS, served(workflows("active"))],
+			[RUN_COUNT, served(runsTotal(2))],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tpending`);
+		expect(out.stderr.join("\n")).toContain("every run at this head is informational");
+	});
+
 	it("says which definition answered on every run", async () => {
 		const out = await run(
 			[...REQUIRES_CI, ...found],

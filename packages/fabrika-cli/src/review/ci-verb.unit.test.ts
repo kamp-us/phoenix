@@ -164,6 +164,23 @@ describe("runCi under the base branch's required set", () => {
 		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tgreen`);
 	});
 
+	// `rollupOf([])` is `green` by construction, and the narrowing opens that case wherever the
+	// declared contexts have not posted yet.
+	it("pends, never greens, a head where no run answers any declared required context", async () => {
+		const out = await run(
+			[
+				...REQUIRES,
+				[PULL, served(pull())],
+				[RUNS, runs(1, [{name: "Analyze (python)", status: "completed", conclusion: "success"}])],
+			],
+			GATED,
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tpending`);
+		expect(out.stderr.join("\n")).toContain(
+			"no run at this head answers any context main declares required",
+		);
+	});
+
 	it("refuses on 11 when the required set cannot be read, never a colour over it", async () => {
 		const out = await run([
 			[RULES, httpError(403, "Resource not accessible by integration")],
