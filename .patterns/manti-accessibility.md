@@ -31,7 +31,7 @@ sets no label anywhere, and which Manti never reaches.
 | `Tooltip` | trigger `aria-describedby` while open; content `role="tooltip"` + id | n/a — a tooltip is a *description*. The trigger keeps its own name; Manti wraps it rather than replacing it | `@zag-js/tooltip` `tooltip.connect.mjs`; `Tooltip.test.tsx` reads the trigger as `.parentElement` |
 | `Switch` | thumb and control `aria-hidden`; hidden input `role="switch"` + `aria-labelledby` → the label part | the **child** you pass, which Manti renders as the label part | `@zag-js/switch` `switch.connect.mjs` `getHiddenInputProps`; `@manti-ui/react` `dist/index.js` |
 | `ToggleGroup` | root `role="radiogroup"` (single) or `"group"`; item `role="radio"` + `aria-checked`, or `aria-pressed` | each item from its `items[].label`. **The group itself gets no name** — Zag's root sets neither `aria-label` nor `aria-labelledby` | `@zag-js/toggle-group` `toggle-group.connect.mjs` |
-| `Toast` | region `role="region"` + `aria-live="polite"`; each toast `role="status"`, `aria-atomic`, title/description id-sync | the `title`/`description` you raise through `useToast` | `@zag-js/toast` `toast-group.connect.mjs`, `toast.connect.mjs` |
+| `Toast` | region `role="region"` + `aria-live="polite"`; each toast `role="status"`, `aria-atomic`, title/description id-sync | the `title`/`description` you raise through `useToast`. The close button from `createToaster`'s `translations.closeTriggerLabel`; the **region name from nothing** — see below | `@zag-js/toast` `toast-group.connect.mjs`, `toast.connect.mjs` |
 
 Two mechanisms are worth knowing because they explain the failure modes below.
 
@@ -109,6 +109,51 @@ a plain dialog, an `alertdialog` holding an `[autofocus]` input, and a childless
 **jsdom cannot check the focus half.** It gives no element a layout box, so Zag reads no tabbable
 and focuses the content element in every case — a focus assertion there passes on a broken tree
 too. Assert the id and the DOM order instead, and take focus itself to a browser.
+
+### `Toast`: the close button is named from a build-time option, and the region is not namable
+
+Two English strings ship on this surface, and only one of them has a route from phoenix. Both were
+read off `@manti-ui/react@0.9.0` and `@zag-js/toast@1.43.0`.
+
+**The close button is fixed, and `packages/design/src/Toast.tsx` fixes it once for every toast.**
+`createToaster`'s `translations` option carries exactly one field, `closeTriggerLabel?: string`
+(`dist/components/Toast/Toast.d.ts`), and Zag hands it straight to the button's `aria-label`
+(`toast.connect.mjs:110`). Left alone it is Manti's `"Close"` (`dist/index.js:3790`).
+
+The catch is *when* the option binds. `createToaster` destructures `translations` into the closure
+its `Toaster` host renders every toast from (`dist/index.js:3790`, `:3808`), and `ToasterProps` is
+`{className?}` alone — so nothing can hand a label to a toaster that already exists. A toaster at
+module scope therefore cannot be localized at all, because `useDesignT` is unreachable there. The
+wrapper builds one **per provider, keyed on the label**, through React's adjust-state-during-render
+shape: `built.closeTriggerLabel !== closeTriggerLabel` rebuilds. A catalog swap under a mounted
+provider drops any toast in flight, which is the price of the option binding at build time.
+
+That move has a second effect worth knowing: each `<ToastProvider>` now owns its own store. The
+module-scope toaster was shared, so a nested provider (the `/lab/atolye/toast` exhibit under the
+app's own) rendered every toast into *both* regions.
+
+**Pass no `id` rather than `id: undefined`.** Zag's store generates an id and then spreads the
+caller's data over it (`toast.store.mjs:81-89`), so an explicit `undefined` erases it and the toast
+machine throws `missing required props: id` (`toast.machine.mjs:10`) — `ensureProps` is not
+`NODE_ENV`-guarded, so that is a production throw, not a dev warning.
+
+**The region's name is not reachable and is not to be overridden in-repo.** Zag composes it from a
+`label` option Manti never forwards:
+
+```js
+// @zag-js/toast@1.43.0 dist/toast-group.connect.mjs:16-26
+const { label = "Notifications" } = options;
+const hotkeyLabel = hotkey.join("+").replace(/Key/g, "").replace(/Digit/g, "");
+"aria-label": `${label}, ${placement} (${hotkeyLabel})`,
+```
+
+`Manti`'s host calls `getGroupProps()` with no argument, so a phoenix toaster announces
+`Notifications, bottom-end (alt+T)` — English, plus a hotkey nobody chose to advertise. Ruled on
+[#6777](https://github.com/kamp-us/phoenix/issues/6777): this goes upstream as
+[manti-ui/ui#115](https://github.com/manti-ui/ui/issues/115), **not** as a ref/effect that rewrites
+the rendered `aria-label`. Until it lands, leave the region alone — `Toast.test.tsx` holds its
+`role`, its `aria-live="polite"` and its `aria-atomic` so a future change to the close button cannot
+quietly move the announcement.
 
 ## Nothing invents a name for a control with no naming text
 
@@ -201,7 +246,7 @@ truth, and the name can't drift from the heading. The house shape:
 
 - `packages/design/src/` — the wrapper layer. Most are bare re-exports; a wrapper earns code
   only when it corrects the primitive (`Switch.tsx` re-asserts Zag's uncontrolled hidden input;
-  `Dialog.tsx` renames the close button).
+  `Dialog.tsx` renames the close button; `Toast.tsx` localizes its own).
 - [property-based-a11y.md](./property-based-a11y.md) — the `fast-check` × `axe-core` gate over
   `@kampus/design`. Note the compound primitives above are all parked `deferred` there, so nothing
   automatically catches a naming regression in them.

@@ -184,6 +184,7 @@ export const account = {
 	"profile.delete.error": "hesap kaldırılamadı, tekrar dene.",
 
 	"ui.dialog.close": "kapat",
+	"ui.toast.close": "bildirimi kapat",
 	"ui.caylakBadge": "çaylak katkısı",
 	"ui.caylakBadge.stage": ", hazırlık aşamasında",
 	"ui.reviewBadge": "incelemede",

@@ -183,6 +183,7 @@ export const account = {
 	"profile.delete.error": "the account could not be removed, try again.",
 
 	"ui.dialog.close": "close",
+	"ui.toast.close": "dismiss notification",
 	"ui.caylakBadge": "çaylak contribution",
 	"ui.caylakBadge.stage": ", in the preparation stage",
 	"ui.reviewBadge": "in review",
