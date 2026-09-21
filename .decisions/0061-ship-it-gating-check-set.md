@@ -1,7 +1,7 @@
 ---
 id: 0061
 title: ship-it gates on the gating-check set, not the full rollup; preview deploys are informational (denylist of known-informational checks, fail-safe to blocking; consistent-by-construction with the run-evidence bundle)
-status: accepted
+status: amended-in-part by [0404](0404-required-set-is-the-blocking-set.md)
 date: 2026-06-15
 tags: [pipeline, skills, ship-it, heal-ci, ci, agents]
 ---
