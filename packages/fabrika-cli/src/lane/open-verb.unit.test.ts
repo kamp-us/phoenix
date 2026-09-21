@@ -469,6 +469,36 @@ describe("lane open", () => {
 			expect(posted).toHaveLength(0);
 		});
 
+		it("names the record it stranded when the placement write does not land", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}, unwritable: [WORKFLOW]});
+			const posted: string[] = [];
+			const out = await run(
+				fs,
+				runOpen({
+					...OPTIONS,
+					priorLane: drivenBy(7991),
+					fromBoard: true,
+					boardSeat: verified,
+					record: recorder(posted),
+				}),
+			);
+			const stderr = out.stderr.join("\n");
+
+			expect(out.code).toBe(APPEND_UNKNOWN);
+			expect(posted).toHaveLength(1);
+			expect(stderr).toContain("the lane is NOT booted");
+			expect(stderr).toContain("https://example.invalid/c/1");
+			expect(stderr).toContain("re-running posts a second record beside it");
+		});
+
+		it("leaves an ordinary placement refusal naming no record, because it stranded none", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}, unwritable: [WORKFLOW]});
+			const out = await run(fs, runOpen(OPTIONS));
+
+			expect(out.code).toBe(APPEND_UNKNOWN);
+			expect(out.stderr.join("\n")).not.toContain("adoption record");
+		});
+
 		it("changes nothing about a boot the prior-lane read never refused", async () => {
 			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
 			const posted: string[] = [];

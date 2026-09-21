@@ -1,6 +1,12 @@
 /** The board seat — what admits a re-boot, and what the placed document declares afterwards. */
 import {describe, expect, it} from "vitest";
-import {adoptionRecord, seatFromProof, solePull, spendBudget} from "./board-seat.ts";
+import {
+	adoptionRecord,
+	seatFromProof,
+	solePull,
+	spendBudget,
+	strandedRecord,
+} from "./board-seat.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 import {compileText} from "./machine.ts";
 
@@ -90,5 +96,19 @@ describe("adoptionRecord", () => {
 
 	it("names no filesystem path, because a board artifact carrying one is a leak", () => {
 		expect(adoptionRecord(9435, 9430, "77aa05b")).not.toContain("/");
+	});
+});
+
+describe("strandedRecord", () => {
+	it("says nothing where no record was written, so an ordinary refusal reads unchanged", () => {
+		expect(strandedRecord(null)).toEqual([]);
+	});
+
+	it("names the record and that a re-run posts a second one, because nothing retracts it", () => {
+		const [sentence] = strandedRecord("https://example.invalid/c/1");
+
+		expect(sentence).toContain("https://example.invalid/c/1");
+		expect(sentence).toContain("a lane that was not booted");
+		expect(sentence).toContain("second record");
 	});
 });

@@ -67,6 +67,7 @@ import {
 	type BoardRecorder,
 	type BoardSeatReader,
 	spendBudget,
+	strandedRecord,
 } from "./board-seat.ts";
 import {type ChildMembership, childMembership} from "./child-membership.ts";
 import type {ClaimHoldReader} from "./claim-hold.ts";
@@ -82,7 +83,7 @@ import {
 import {capRefusal} from "./concurrency.ts";
 import type {ExpectationReader} from "./expectation.ts";
 import type {PriorLaneReader} from "./prior-lane.ts";
-import {placementRefusal} from "./refusals.ts";
+import {placementRefusal, say} from "./refusals.ts";
 import {type LaneRef, placeMachine, probeLane} from "./store.ts";
 
 const VERB = "fabrika lane open";
@@ -296,14 +297,20 @@ export const runOpen = <R = never>(
 			}
 			record = wrote.url;
 		}
+		// Every arm below this point refused *after* the record landed, so each one carries it: the
+		// board keeps a comment naming a succession the disk never took, and only the refusal can say so.
+		const stranded = strandedRecord(record);
 		const placed = yield* placeMachine(options, seated === null ? seed.text : seated.text);
 		if (placed._tag === "Exists") {
 			return refuse(
 				LANE_EXISTS,
-				`${VERB}: a lane already exists at ${placed.dir} — resuming needs no boot, so drive the lane that is there (\`fabrika lane status ${options.lane}\`). Removing ${placed.dir} and booting again is not the remedy: the ledger is the lane's whole state and it is gitignored, so the re-boot restores its spent repair budget with nothing recording that a round was granted. A spent budget comes back only through a granted round recorded on the board.`,
+				say(
+					`${VERB}: a lane already exists at ${placed.dir} — resuming needs no boot, so drive the lane that is there (\`fabrika lane status ${options.lane}\`). Removing ${placed.dir} and booting again is not the remedy: the ledger is the lane's whole state and it is gitignored, so the re-boot restores its spent repair budget with nothing recording that a round was granted. A spent budget comes back only through a granted round recorded on the board.`,
+					...stranded,
+				),
 			);
 		}
-		if (placed._tag !== "Placed") return placementRefusal(VERB, placed);
+		if (placed._tag !== "Placed") return placementRefusal(VERB, placed, stranded);
 		const text = seated === null ? seed.text : seated.text;
 		return answer(
 			JSON.stringify({

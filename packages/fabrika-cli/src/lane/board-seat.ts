@@ -169,6 +169,22 @@ export const adoptionRecord = (issue: number, pr: number, head: string): string 
 	].join("\n");
 
 /**
+ * What a refusal below the adoption record owes the reader, or nothing when no record was written.
+ *
+ * The record lands before the placement because a seat nobody can review is the laundering this arm
+ * exists not to be — which means every refusal past that write leaves a comment on the board claiming
+ * a succession that has no ledger behind it. Nothing retracts it: the boot has no authority to edit
+ * the board back, and a re-run posts a second record beside the first. So the refusal names it, the
+ * way every other refusal in this verb names exactly what it did and did not write.
+ */
+export const strandedRecord = (record: string | null): ReadonlyArray<string> =>
+	record === null
+		? []
+		: [
+				`The adoption record at ${record} is already on the board and nothing here retracts it, so it now names a lane that was not booted — re-running posts a second record beside it.`,
+			];
+
+/**
  * The live reader: one pull request, open, with every namespace its head derives answered.
  *
  * The verdict read is `lane prove`'s own ({@link readNamespaceRows}) rather than a second reading of

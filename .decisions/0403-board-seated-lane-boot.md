@@ -2,7 +2,7 @@
 id: 0403
 title: A stranded lane re-boots from what the board proves
 status: accepted
-date: 2026-09-21
+date: 2026-09-20
 tags: [lane, fabrika-cli, operate]
 ---
 
@@ -63,6 +63,20 @@ can review afterwards is the laundering this refusal exists to stop, whatever ad
 The lane is placed at its initial state, not at a stage. Walking it forward is `lane transition`'s,
 and that verb proves every event against the board before it records one, so the seat never asserts
 a stage the board would not re-prove.
+
+**This amends ADR [0384](0384-a-retired-lane-does-not-re-open-over-its-own-work.md) in one clause.**
+That record's Consequences state that the exit-63 refusal has *"no override flag, because an override
+on the boot end is the bypass this record closes"*, and `--from-board` is a flag on the boot end. What
+0384 closed is an override that **asserts**: a driver typing a flag to declare the prior lane's budget
+spent, with nothing on the board recording it. `--from-board` declares nothing. It makes the refusal
+read the board and refuse again — carrying the board's own reason — on everything the board does not
+prove, and the seat it admits writes `maxRetries: 0`, so 0384's own rule that a spent budget returns
+only through a recorded grant is restated rather than widened.
+
+The rest of 0384 stands unchanged. A boot over a ledger this checkout can still read is refused as
+before, removing a `frozen` lane's directory to get its retries back is still the laundering it
+names, the wrong-template retire is still the one retire a driver may take, and a `--from-board` boot
+over a directory that is present never reaches the arm at all.
 
 ### Alternatives rejected
 

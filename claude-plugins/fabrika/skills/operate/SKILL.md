@@ -334,7 +334,8 @@ when the flag's own read refuses.
 Both verbs live beside `status`/`transition`/`history`/`print` in
 `packages/fabrika-cli/src/lane/`, and each verb's `--help` is its interface. Any other exit is a stop, not a fallback: `4` is a record read in full and not
 the shape, `11` is a lane that could not be read — opposite remedies, neither yours to guess; `63` is
-the issue's prior lane above. End `STOPPED` naming the code.
+the issue's prior lane above, and it stops you only where that passage says it does. End `STOPPED`
+naming the code.
 
 A lane `lane emit` booted is an epic run, and an epic run is **one branch and one PR**: its children
 open none of their own and the run publishes once. That is structural, not a label
