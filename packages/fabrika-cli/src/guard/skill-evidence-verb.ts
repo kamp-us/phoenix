@@ -133,12 +133,6 @@ const blobAt = (root: string, sha: string, path: string): Gather<BlobRead, never
 			: ({_tag: "GitError", reason: read.reason} as const);
 	});
 
-/** One file's contents at `sha`, or `null` when the file is absent — a new file has no base text. */
-const fileAt = (root: string, sha: string, file: string): Gather<string | null, never> =>
-	Effect.map(execCapture("git", ["-C", root, "show", `${sha}:${file}`]), (read) =>
-		read.ok ? read.stdout : null,
-	);
-
 /** Whether `sha` resolves to a commit in this clone's object database. */
 const commitPresent = (root: string, sha: string): Gather<boolean, never> =>
 	Effect.map(
@@ -385,23 +379,37 @@ const gatherSkill = (
 		const skillPath = `${policy.skillsRoot}/${name}`;
 		const headProbe = yield* objectAt(root, options.headSha, skillPath);
 		const baseProbe = yield* objectAt(root, options.baseSha, skillPath);
+		const failed = (reason: string): SkillFacts => ({
+			name,
+			existsAtHead: false,
+			existsAtBase: false,
+			headTreeSha: null,
+			baseTreeSha: null,
+			changedFiles: files,
+			typo: {nonMdFiles: [], mdFiles: 0, changedWords: 0, pairs: []},
+			report: {_tag: "ReadError", reason: "not read — the content probe failed"},
+			provenance: provenanceDefaults,
+			gitError: reason,
+		});
 		if (headProbe._tag === "GitError" || baseProbe._tag === "GitError") {
-			const reason =
+			return failed(
 				headProbe._tag === "GitError"
 					? headProbe.reason
-					: (baseProbe as {readonly reason: string}).reason;
-			return {
-				name,
-				existsAtHead: false,
-				existsAtBase: false,
-				headTreeSha: null,
-				baseTreeSha: null,
-				changedFiles: files,
-				typo: {nonMdFiles: [], mdFiles: 0, changedWords: 0, pairs: []},
-				report: {_tag: "ReadError", reason: "not read — the content probe failed"},
-				provenance: provenanceDefaults,
-				gitError: reason,
-			};
+					: (baseProbe as {readonly reason: string}).reason,
+			);
+		}
+		// A PRESENT object of the wrong kind is not a content answer either: it is neither a skill
+		// directory nor an absent one, so it can never be read as "removed" (skip evidence) or as a
+		// clean new-skill baseline side. It rides the same UNKNOWN seat as a failed read.
+		for (const [side, probe] of [
+			["head", headProbe],
+			["base", baseProbe],
+		] as const) {
+			if (probe._tag === "Object" && probe.type !== "tree") {
+				return failed(
+					`${skillPath} under the ${side} commit is a ${probe.type}, not a skill directory`,
+				);
+			}
 		}
 		const headTreeSha =
 			headProbe._tag === "Object" && headProbe.type === "tree" ? headProbe.oid : null;
@@ -420,11 +428,19 @@ const gatherSkill = (
 			mdFiles++;
 			// A file absent at one end is the whole-file diff against "" — a new file's every word
 			// counts, which is what keeps "whole file added" out of the typo lane unless it is tiny.
-			// (A read that FAILS also reads as "" here, and every consumer of the typo lane treats an
-			// over-count by gating — fail-closed — so this one read needs no error channel.)
-			const before = (yield* fileAt(root, options.baseSha, file)) ?? "";
-			const after = (yield* fileAt(root, options.headSha, file)) ?? "";
-			const diff = diffWords(before, after);
+			// A read that FAILS is never "": both ends failing would read as zero changed words and
+			// wear the typo exemption, so a failed source read seats the skill on UNKNOWN instead.
+			const before = yield* blobAt(root, options.baseSha, file);
+			const after = yield* blobAt(root, options.headSha, file);
+			for (const read of [before, after]) {
+				if (read._tag === "GitError") {
+					return failed(`the word-diff source ${file} could not be read (${read.reason})`);
+				}
+			}
+			const diff = diffWords(
+				before._tag === "Ok" ? before.text : "",
+				after._tag === "Ok" ? after.text : "",
+			);
 			changedWords += diff.changedWords;
 			pairs.push(...diff.pairs);
 		}
@@ -433,7 +449,13 @@ const gatherSkill = (
 		// The report is read from the HEAD TREE, not the working tree: what merges is the commit, and
 		// a locally-modified-but-uncommitted report must never gate what the commit actually ships.
 		const reportRel = `${policy.reportRoot}/${name}/report.json`;
-		const committed = yield* fileAt(root, options.headSha, reportRel);
+		const committedBlob = yield* blobAt(root, options.headSha, reportRel);
+		if (committedBlob._tag === "GitError") {
+			return failed(
+				`the committed report ${reportRel} could not be read (${committedBlob.reason})`,
+			);
+		}
+		const committed = committedBlob._tag === "Ok" ? committedBlob.text : null;
 		const report: ReportOutcome =
 			committed === null
 				? {

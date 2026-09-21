@@ -83,12 +83,30 @@ const policyBlobAt = (sha: string, text: string): ReadonlyArray<readonly [RegExp
 	[new RegExp(`cat-file blob ${POLICY_OID}$`), okOut(text)],
 ];
 
+/** A blob's `ls-tree` + `cat-file` rows — the two reads `blobAt` makes, as one unit. */
+const blobRows = (
+	sha: string,
+	path: string,
+	oid: string,
+	text: string | null,
+): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+	[
+		new RegExp(`ls-tree ${sha} -- ${path}$`),
+		text === null ? okOut("") : okOut(`100644 blob ${oid}\t${path}`),
+	],
+	[new RegExp(`cat-file blob ${oid}$`), text === null ? okOut("") : okOut(text)],
+];
+
+const SKILL_OID = `c${"3".repeat(39)}`;
+const BASE_SKILL_OID = `9${"9".repeat(39)}`;
+const REPORT_OID = `d${"4".repeat(39)}`;
+
 /**
  * The git story of a NEW skill changed at head, with the policy read from the BASE commit: the
  * policy blob resolves base-side, the skill's tree resolves at head and is absent at base, the head
- * text adds words over the base text — a behavior change, not the typo lane — the benchmark commit
- * resolves, and the committed report reads off the HEAD TREE (`git show <head>:<report path>`),
- * which is what the gate judges rather than any working-tree copy.
+ * text adds words over the base text (a behavior change, not the typo lane; the base side of the
+ * file is genuinely absent), the benchmark commit resolves, and the committed report reads off the
+ * HEAD TREE via its blob — which is what the gate judges rather than any working-tree copy.
  */
 const gitScript = (withReport = true): ReadonlyArray<readonly [RegExp, ExecResult]> => {
 	const skillArg = `${SKILLS}/build`;
@@ -99,16 +117,16 @@ const gitScript = (withReport = true): ReadonlyArray<readonly [RegExp, ExecResul
 			okOut(`040000 tree ${TREE_HEAD}\t${skillArg}`),
 		],
 		[new RegExp(`ls-tree ${BASE_COMMIT} -- ${skillArg}$`), okOut("")],
-		[new RegExp(`show ${BASE_COMMIT}:`), absent("absent at base")],
-		[new RegExp(`show ${HEAD_COMMIT}:${skillArg}/SKILL.md`), okOut("one two three four")],
+		...blobRows(BASE_COMMIT, `${skillArg}/SKILL.md`, BASE_SKILL_OID, null),
+		...blobRows(HEAD_COMMIT, `${skillArg}/SKILL.md`, SKILL_OID, "one two three four"),
 		[new RegExp(`cat-file -e ${HEAD_COMMIT}\\^\\{commit\\}`), okOut("")],
+		...blobRows(
+			HEAD_COMMIT,
+			`${REPORTS}/build/report\\.json`,
+			REPORT_OID,
+			withReport ? reportJson() : null,
+		),
 	];
-	if (withReport) {
-		rows.push([
-			new RegExp(`show ${HEAD_COMMIT}:${REPORTS}/build/report\\.json`),
-			okOut(reportJson()),
-		]);
-	}
 	return rows;
 };
 
@@ -267,6 +285,58 @@ describe("runSkillEvidenceGuard — one gated skill, end to end over the seams",
 		expect(result.code).toBe(VIOLATION);
 		expect(result.stdout).toBe("");
 		expect(result.stderr.join("\n")).toContain(`${REPORTS}/build/report.json`);
+	});
+
+	it("answers UNKNOWN when the head-side word-diff source read fails — never a zero-word typo", async () => {
+		const {outcome} = run({
+			// First match wins in the scripted spawner: the head SKILL.md blob read dies before the
+			// good row is reached, so the word diff cannot wear "zero changed words".
+			git: [
+				[new RegExp(`cat-file blob ${SKILL_OID}$`), absent("fatal: object file is corrupt")],
+				...gitScript(),
+			],
+		});
+		const result = await outcome;
+		expect(result.code).toBe(PRECONDITION_UNKNOWN);
+		const err = result.stderr.join("\n");
+		expect(err).toContain("a git read failed");
+		expect(err).toContain("word-diff source");
+	});
+
+	it("answers UNKNOWN when the base-side word-diff source read fails", async () => {
+		const {outcome} = run({
+			git: [
+				[
+					new RegExp(`ls-tree ${BASE_COMMIT} -- ${SKILLS}/build/SKILL.md$`),
+					okOut(`100644 blob ${BASE_SKILL_OID}\t${SKILLS}/build/SKILL.md`),
+				],
+				[new RegExp(`cat-file blob ${BASE_SKILL_OID}$`), absent("fatal: object file is corrupt")],
+				...gitScript(),
+			],
+		});
+		const result = await outcome;
+		expect(result.code).toBe(PRECONDITION_UNKNOWN);
+		const err = result.stderr.join("\n");
+		expect(err).toContain("a git read failed");
+		expect(err).toContain("word-diff source");
+	});
+
+	it("answers UNKNOWN when the skill path holds a blob — never read as removed", async () => {
+		const {outcome} = run({
+			git: [
+				[
+					new RegExp(`ls-tree ${HEAD_COMMIT} -- ${SKILLS}/build$`),
+					okOut(`100644 blob ${SKILL_OID}\t${SKILLS}/build`),
+				],
+				...gitScript(),
+			],
+		});
+		const result = await outcome;
+		expect(result.code).toBe(PRECONDITION_UNKNOWN);
+		expect(result.stdout).toBe("");
+		const err = result.stderr.join("\n");
+		expect(err).toContain("is a blob, not a skill directory");
+		expect(err).not.toContain("removed");
 	});
 
 	it("answers UNKNOWN when the run id answers 404 — and never reads artifacts", async () => {
