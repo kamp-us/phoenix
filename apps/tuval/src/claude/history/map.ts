@@ -120,6 +120,21 @@ export interface Mapping {
 	 * about one launch.
 	 */
 	readonly subagents: ReadonlyMap<string, SubagentSlot>;
+	/**
+	 * The spawning call each registered task belongs to, by the backend's own task id.
+	 *
+	 * Every slot is keyed on the call, and `SDKTaskUpdatedMessage` declares `task_id`, `patch`,
+	 * `uuid` and `session_id` and no `tool_use_id` at all (`sdk.d.ts`, 0.3.259) — so without this a
+	 * `task_updated` frame carries nothing that reaches a slot. `SDKTaskStartedMessage` and
+	 * `SDKTaskNotificationMessage` both carry the task id *beside* an optional `tool_use_id`, which
+	 * is where the pairing is learned; a task registered under neither is simply unknown here and
+	 * changes no slot (#9594).
+	 *
+	 * Ids only, and no judgement about what kind of task it is: `is_backgrounded` is set for
+	 * `local_bash` tasks too, so the arms that read this index decide on their own whether the call
+	 * they land on is a worker's.
+	 */
+	readonly tasks: ReadonlyMap<string, string>;
 	/** How many messages this mapping had nothing to say about. */
 	readonly skipped: number;
 }
@@ -131,6 +146,7 @@ export const emptyMapping: Mapping = {
 	settled: null,
 	thinking: "",
 	subagents: new Map(),
+	tasks: new Map(),
 	skipped: 0,
 };
 
@@ -1215,6 +1231,23 @@ export const systemNoticeEvents = (
 };
 
 /**
+ * The task-to-call pairing this frame states, learned into `Mapping.tasks`.
+ *
+ * Both ids or nothing: `tool_use_id` is optional on both frames that carry a task id beside one
+ * (`sdk.d.ts`, 0.3.259), and half a pairing points at no slot. Taken from every such frame rather
+ * than from the background ones alone — the worker this index exists for *starts in the foreground*,
+ * so filtering on `is_backgrounded` here would drop the one pairing `taskUpdatedEvents` needs.
+ */
+const withTaskCall = (mapping: Mapping, message: unknown): Mapping => {
+	if (!isRecord(message)) return mapping;
+	const taskId = typeof message.task_id === "string" ? message.task_id : "";
+	const callId = typeof message.tool_use_id === "string" ? message.tool_use_id : "";
+	if (taskId.length === 0 || callId.length === 0) return mapping;
+	if (mapping.tasks.get(taskId) === callId) return mapping;
+	return {...mapping, tasks: new Map(mapping.tasks).set(taskId, callId)};
+};
+
+/**
  * A registered task's notice, plus the slot it opens when that task is a background worker of this
  * session's — which is the only way a *resumed* worker ever gets a row.
  *
@@ -1239,7 +1272,8 @@ export const taskStartedEvents = (
 	mapping: Mapping,
 	options: MappingOptions,
 ): MappingStep => {
-	const notice = systemNoticeEvents(message, mapping, options);
+	const known = withTaskCall(mapping, message);
+	const notice = systemNoticeEvents(message, known, options);
 	if (!isRecord(message) || message.is_backgrounded !== true) return notice;
 	if (message.ambient === true || message.skip_transcript === true) return notice;
 	const callId = typeof message.tool_use_id === "string" ? message.tool_use_id : "";
@@ -1250,12 +1284,12 @@ export const taskStartedEvents = (
 			? message.subagent_type
 			: null;
 	if (type === null && message.task_type !== "local_agent") return notice;
-	const standing = mapping.subagents.get(callId);
+	const standing = known.subagents.get(callId);
 	// A finished slot stays finished: `status` is terminal for the process holding it
 	// (`../../ai-agent/ports/subagent.ts`), and a worker resumed after its last run settled is
 	// registered under the resuming call's own id, where a slot of its own opens.
 	if (standing?.status === "finished" || standing?.outlivesTurn === true) return notice;
-	const call = mapping.toolCalls.get(callId);
+	const call = known.toolCalls.get(callId);
 	// The call's own clock where there is one, for the reason `ToolCall.at` exists: the list sorts
 	// oldest-first, and a row that started at its announcement rather than at its call would sort past
 	// a worker spawned after it.
@@ -1264,6 +1298,56 @@ export const taskStartedEvents = (
 			openSlot(callId, type ?? call?.name ?? null, call?.at ?? timestampOf(message, options.at))),
 		outlivesTurn: true,
 	};
+	return {
+		mapping: {...known, subagents: new Map(known.subagents).set(callId, slot)},
+		events: [...notice.events, {kind: "subagent", slot}],
+	};
+};
+
+/**
+ * A registered task's patch, which is the third and last way a worker becomes a background one.
+ *
+ * `SDKTaskStartedMessage.is_backgrounded` names all three: registration in the background, a resume
+ * — both `taskStartedEvents` above — and "**A later move to the background arrives as task_updated
+ * patch.is_backgrounded**" (`sdk.d.ts`, 0.3.259). Without this arm such a worker keeps #9587's
+ * symptom exactly: `settleRunningSubagents` (`../../ai-agent/core/state.ts`) flips the unmarked slot
+ * to `finished` at the end of the turn that spawned it, and the operator loses the row of a worker
+ * that is still writing (#9594).
+ *
+ * The frame names its task and never its call, so the call comes from `Mapping.tasks` — and the slot
+ * has to be standing already. That is the frame's own limit, not a shortcut: `is_backgrounded` is
+ * set for `local_bash` tasks too, and this patch carries no `subagent_type` and no `task_type` to
+ * tell a moved worker from a moved shell command. A standing slot is the proof the other two arms
+ * read off those fields, so a call that opened one is a worker and a call that did not is left
+ * alone. `taskStartedEvents` opens the slot for every worker registered as one, and a foreground
+ * spawn — the only kind that can be moved — has had its slot since the spawning call
+ * (`assistantEvents`).
+ *
+ * `patch` is a wire-safe subset "of TaskState fields that changed" (`sdk.d.ts`), so a patch with no
+ * `is_backgrounded` at all says nothing about backgroundedness and leaves the slot as it was. So
+ * does `false`: `SubagentSlot.outlivesTurn` is `true`-or-absent by construction, and a move back
+ * into the foreground is not a fact this mapping has ever needed to write.
+ *
+ * The collapsed notice row stays exactly as it was: this arm adds the slot, and takes no row away.
+ */
+export const taskUpdatedEvents = (
+	message: unknown,
+	mapping: Mapping,
+	options: MappingOptions,
+): MappingStep => {
+	const notice = systemNoticeEvents(message, mapping, options);
+	if (!isRecord(message)) return notice;
+	const patch = message.patch;
+	if (!isRecord(patch) || patch.is_backgrounded !== true) return notice;
+	const taskId = typeof message.task_id === "string" ? message.task_id : "";
+	const callId = taskId.length === 0 ? undefined : mapping.tasks.get(taskId);
+	const standing = callId === undefined ? undefined : mapping.subagents.get(callId);
+	if (callId === undefined || standing === undefined) return notice;
+	// A finished slot stays finished, for the reason `taskStartedEvents` leaves one alone: `status`
+	// is terminal for the process that holds it. An already-marked slot is re-emitted by nothing,
+	// because a second identical event would tell a reader the worker moved twice.
+	if (standing.status === "finished" || standing.outlivesTurn === true) return notice;
+	const slot: SubagentSlot = {...standing, outlivesTurn: true};
 	return {
 		mapping: {...mapping, subagents: new Map(mapping.subagents).set(callId, slot)},
 		events: [...notice.events, {kind: "subagent", slot}],
@@ -1313,20 +1397,19 @@ export const taskNoticeEvents = (
 	options: MappingOptions,
 ): MappingStep => {
 	if (!isRecord(message)) return skipMessage(mapping);
+	const known = withTaskCall(mapping, message);
 	const at = timestampOf(message, options.at);
 	const id = typeof message.uuid === "string" ? message.uuid : `notice-${at}`;
 	const callId = typeof message.tool_use_id === "string" ? message.tool_use_id : "";
-	const slot = callId.length === 0 ? undefined : mapping.subagents.get(callId);
-	const name = slot?.type ?? mapping.toolCalls.get(callId)?.name ?? "task";
+	const slot = callId.length === 0 ? undefined : known.subagents.get(callId);
+	const name = slot?.type ?? known.toolCalls.get(callId)?.name ?? "task";
 	const ended: SubagentSlot | null =
 		slot === undefined || slot.status === "finished" || slot.outlivesTurn !== true
 			? null
 			: {...slot, status: "finished"};
 	return {
 		mapping:
-			ended === null
-				? mapping
-				: {...mapping, subagents: new Map(mapping.subagents).set(callId, ended)},
+			ended === null ? known : {...known, subagents: new Map(known.subagents).set(callId, ended)},
 		events: [
 			item({
 				kind: "system",

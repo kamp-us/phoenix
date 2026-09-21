@@ -28,6 +28,7 @@ import {
 	systemNoticeEvents,
 	taskNoticeEvents,
 	taskStartedEvents,
+	taskUpdatedEvents,
 	userEvents,
 } from "./map.ts";
 
@@ -67,6 +68,11 @@ export const toAgentEvents = (
 			// other frame to open (#9587).
 			if (message.subtype === "task_started") {
 				return taskStartedEvents(message, mapping, options);
+			}
+			// The same notice, plus the mark a worker *moved* to the background gets nowhere else
+			// (#9594) — the third way `SDKTaskStartedMessage.is_backgrounded` says a task becomes one.
+			if (message.subtype === "task_updated") {
+				return taskUpdatedEvents(message, mapping, options);
 			}
 			return systemNoticeEvents(message, mapping, options);
 		default:
