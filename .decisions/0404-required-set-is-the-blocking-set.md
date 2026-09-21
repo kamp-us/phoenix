@@ -90,11 +90,9 @@ check surfaces only as a note. A check that should block gets added to the requi
 
 **Not ruled here.**
 
-- **What holds when the required set is empty or unreadable.** ADR 0061 rejected the required-set
-  definition precisely because an empty set gates nothing. `main` declares four contexts today, so
-  the ruling is safe as given, but a repository or branch that declares none is a case the ruling
-  does not reach. It goes back to the founder rather than being filled in here; no verb may read
-  this record as authorizing a merge over an unreadable required set.
+- **What holds when the required set is empty or unreadable.** Ruled since, in the Amendment of
+  2026-09-21 (#9597) below, which answers the two states apart. This record no longer sends the
+  case away.
 - **Arm order in `heal-ci`.** The original report proposed moving `stall.ts`'s ownership arms above
   its `red` arm. `stall.ts`'s own docblock calls the arm order the contract, the ruling does not
   reach it, and under this decision the non-required red that motivated the reorder no longer
@@ -115,5 +113,46 @@ every run at the head. The required-set read has to fail closed rather than sile
 ## Records
 
 - Ruling: [issue 9570, founder comment](https://github.com/kamp-us/phoenix/issues/9570#issuecomment-5753839456).
+- Amendment ruling: [issue 9597, ruling comment](https://github.com/kamp-us/phoenix/issues/9597#issuecomment-5754418554).
 - Amends in part: [ADR 0061](0061-ship-it-gating-check-set.md).
 - no vocabulary impact
+
+## Amendment (2026-09-21, #9597) — an unreadable required set refuses, an empty one falls back to ADR 0061
+
+The Decision above left one case under `Not ruled here`: what holds when the base branch's declared
+required set is empty or cannot be read. It is answered now, and the two states are answered apart,
+matching the split `packages/fabrika-cli/src/heal-ci/surface.ts` already drew between
+`no-requirements` and `unprobeable`.
+
+Ruling, 2026-09-20, made by the driver under the standing engine-loop grant
+([#8807](https://github.com/kamp-us/phoenix/issues/8807) R4.1 — pipeline internals are the driver's
+call, the founder rules product):
+[the ruling comment on issue 9597](https://github.com/kamp-us/phoenix/issues/9597#issuecomment-5754418554).
+
+**The required set could not be read (`unprobeable`): fail closed.** No ship. The verb names the
+read failure as the cause, and the lane waits or parks on that cause, never on a check's colour.
+Nothing may read this record as permission to merge over an unreadable set. Any read that does not
+produce a declared set is this case, whatever failed in it.
+
+**The read succeeded and the base branch declares nothing required (`no-requirements`): fall back to
+[ADR 0061](0061-ship-it-gating-check-set.md)'s gating set.** Every non-informational check blocks,
+exactly as it did before this record. An empty declaration is a branch nobody has said what gates,
+not a branch that gates nothing.
+
+**Why these, and not the whole-question alternative.** The question named two directions that each
+covered both states: fail closed everywhere, which is what ADR 0061 had, or refuse outright with
+`UNKNOWN` everywhere. Neither is taken whole. Refusing outright is not taken for `no-requirements`,
+because it parks every lane on a repository that has simply never declared its checks, and fabrika
+has to stay usable there — falling back to ADR 0061 gates that repository instead of stopping it.
+Fail-closed-on-colour is not taken for `unprobeable`, because with the authority unread, whether any
+red blocks is underivable, so the refusal names the read rather than serving a colour over it. Both
+arms keep a ship from going out ungated, which is the case ADR 0061 rejected the required-set
+definition over.
+
+**Accepted tradeoff.** On a repository with an empty required set, a non-required red still blocks,
+so this record's relief applies only once that repository declares its required checks.
+
+**Scope.** This amendment carries the Decision's binding scope unchanged: it binds all four readers
+named there — `fabrika ship checks`, `fabrika heal-ci diagnose`, `fabrika heal-ci logs` and
+`fabrika review ci` — because the two zero-signal states are part of the one answer those verbs
+share, not a per-verb detail.
