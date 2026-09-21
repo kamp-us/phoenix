@@ -1141,13 +1141,12 @@ answer — a `red` head and a head whose only `failure` is an informational run 
 identically. **The axis keeps its two words and changed its authority:** `gating` is a context the
 base branch declares required, `informational` is every other, and the base branch answers it rather
 than a name list in this package (`src/review/blocking.ts`). The two runs the skill's terminals read
-by name are still **named**, on the notes
-channel, where the skill already reads them: the wedged run, and — wherever a gating run has failed,
-which is `red` and also the `wedged` head that carries a failure too — the failing gating runs,
-`ship checks: failing gating checks: <name>, … — route these to heal-ci.`, name-sorted. Informational
-failures are excluded from that line for the same reason the gating axis exists: they do not make
-the head red, and naming them there would send the operator to `heal-ci` over a check that gates
-nothing.
+by name are still **named**, on the notes channel, where the skill already reads them: the wedged
+run, and — wherever a gating run has failed, which is `red` and also the `wedged` head that carries a
+failure too — the failing gating runs, `ship checks: failing gating checks: <name>, … — route these
+to heal-ci.`, name-sorted. Informational failures are excluded from that line for the same reason the
+gating axis exists: they do not make the head red, and naming them there would send the operator to
+`heal-ci` over a check that gates nothing.
 Last line: `facts\tworkflows:<n>\truns:<n>` — `workflows` counts the repository's **active**
 workflows (the inventory's `state == "active"` rows, nothing more: no trigger matching, no YAML
 parser); `runs` counts the total workflow runs recorded at this

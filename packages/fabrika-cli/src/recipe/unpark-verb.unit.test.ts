@@ -25,6 +25,7 @@ import {
 	OTHER_HEAD,
 	pull,
 	runsTotal,
+	UNDECLARED,
 	workflows,
 } from "../ship/fixtures.test-support.ts";
 import {ADDED} from "../ship/queue.ts";
@@ -205,7 +206,10 @@ const run = (
 			}),
 			// The nominator's body-search half is tailed, so a test scripting its own wins the lookup.
 			// Empty by default: the union then answers off the closing edge, as these tests always did.
-			Layer.merge(fs.layer, fakeSeams([...script, ...http, NO_NOMINATIONS]).layer),
+			// `UNDECLARED` is tailed too: this group calls `runChecks` in process, so the blocking
+			// authority's two reads happen here, and an unscripted one refuses at `11` before a case
+			// reaches the park arm it is about.
+			Layer.merge(fs.layer, fakeSeams([...script, ...http, NO_NOMINATIONS, ...UNDECLARED]).layer),
 		),
 	);
 
