@@ -15,7 +15,7 @@ import {panoSubmitGate} from "../lib/panoSubmitGate";
 import {POST_TAG_KINDS, tagClass, tagLabel} from "../lib/panoTags";
 import {authRedirectPath} from "../lib/returnTo";
 import {useDraftAutosave} from "../lib/useDraftAutosave";
-import {prefillIfEmpty, useLinkMetadata} from "../lib/useLinkMetadata";
+import {prefillUpdate, useLinkMetadata} from "../lib/useLinkMetadata";
 import {postSubmitMembership} from "./panoSubmitArgs";
 import "./PanoSubmitPage.css";
 
@@ -102,8 +102,10 @@ export function PanoSubmitPage() {
 
 	async function prefillFromUrl() {
 		const meta = await fetchMetadata(url);
-		prefillIfEmpty(title, meta.title, setTitle);
-		prefillIfEmpty(body, meta.description, setBody);
+		// Updaters, not `title`/`body`: those are this render's strings, and the person can type
+		// between the blur that starts this fetch and the response (#7859).
+		setTitle(prefillUpdate(meta.title));
+		setBody(prefillUpdate(meta.description));
 	}
 	const draftValue = React.useMemo<PanoDraft>(
 		() => ({mode, url, title, body, tags: Array.from(selectedTags)}),
