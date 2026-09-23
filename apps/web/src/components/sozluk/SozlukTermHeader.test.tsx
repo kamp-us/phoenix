@@ -4,7 +4,7 @@
  * column three other places already derive — and wrong twice over for Turkish: ASCII lowercasing
  * maps `İ` to `i̇` and `I` to `i`, when `İ` is `i`'s capital and `I` is the dotless `ı`'s.
  */
-import {render, screen} from "@testing-library/react";
+import {render, screen, within} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
 import {describe, expect, it, vi} from "vitest";
 import {LocaleProvider} from "../../i18n";
@@ -94,5 +94,51 @@ describe("SozlukTermHeader — where the letter crumb goes", () => {
 	it("leaves the root crumb pointing at the sözlük home", () => {
 		renderHeader(TERM);
 		expect(screen.getByRole("link", {name: "sözlük"}).getAttribute("href")).toBe("/sozluk");
+	});
+});
+
+/** Each crumb's text with its `aria-hidden` parts removed: what assistive tech reads per item. */
+function spokenCrumbs(nav: HTMLElement): string[] {
+	return within(nav)
+		.getAllByRole("listitem")
+		.map((item) => {
+			const copy = item.cloneNode(true) as HTMLElement;
+			for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+			return copy.textContent ?? "";
+		});
+}
+
+// The WAI-ARIA breadcrumb pattern (#9629): a named landmark around an ordered list, the page's
+// own crumb marked current, and the `/` separators kept out of what a screen reader reads.
+describe("SozlukTermHeader — the breadcrumb's semantics", () => {
+	it("is a navigation landmark named from the catalog, holding one list item per crumb", () => {
+		renderHeader(TERM);
+		const nav = screen.getByRole("navigation", {name: "sayfa yolu"});
+		expect(within(nav).getByRole("list").tagName).toBe("OL");
+		expect(within(nav).getAllByRole("listitem")).toHaveLength(3);
+	});
+
+	it("marks the term title, and only it, as the current page", () => {
+		renderHeader(TERM);
+		const nav = screen.getByRole("navigation", {name: "sayfa yolu"});
+		const current = nav.querySelectorAll("[aria-current]");
+		expect(current).toHaveLength(1);
+		expect(current[0]?.getAttribute("aria-current")).toBe("page");
+		expect(spokenCrumbs(nav).at(-1)).toBe("ışık");
+		expect(within(nav).getAllByRole("listitem").at(-1)).toBe(current[0]);
+	});
+
+	it("hides the separators, so the row reads as the crumb labels only", () => {
+		renderHeader(TERM);
+		const nav = screen.getByRole("navigation", {name: "sayfa yolu"});
+		expect(nav.textContent).toBe("sözlük / ı / ışık");
+		expect(spokenCrumbs(nav)).toEqual(["sözlük", "ı", "ışık"]);
+	});
+
+	it("keeps the same shape when the headword has no letter crumb", () => {
+		renderHeader({...TERM, title: "webhook", slug: "webhook", firstLetter: ""});
+		const nav = screen.getByRole("navigation", {name: "sayfa yolu"});
+		expect(spokenCrumbs(nav)).toEqual(["sözlük", "webhook"]);
+		expect(nav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
 	});
 });

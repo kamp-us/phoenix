@@ -19,6 +19,7 @@ import {Link, useNavigate, useParams} from "react-router";
 import type {Term} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
 import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
+import {Breadcrumbs} from "../components/layout/Breadcrumbs";
 import {actorLabel} from "../components/moderation/actor-identity";
 import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCard";
 import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";
@@ -199,10 +200,14 @@ function NewTermComposer({
 	return (
 		<>
 			<header className="kp-sozluk-term__head">
-				<p className="kp-sozluk-term__crumbs">
-					<a href="/sozluk">{t("sozluk.term.crumbRoot")}</a> /{" "}
-					<a href="/sozluk">{slug.charAt(0).toLowerCase()}</a> / {slug.replace(/-/g, " ")}
-				</p>
+				<Breadcrumbs
+					className="kp-sozluk-term__crumbs"
+					trail={[
+						{key: "root", label: <a href="/sozluk">{t("sozluk.term.crumbRoot")}</a>},
+						{key: "letter", label: <a href="/sozluk">{slug.charAt(0).toLowerCase()}</a>},
+					]}
+					current={{key: "term", label: slug.replace(/-/g, " ")}}
+				/>
 				<h1 className="kp-sozluk-term__title kp-prose">{slug.replace(/-/g, " ")}</h1>
 				<div className="kp-sozluk-term__meta">
 					<span>{t("sozluk.term.noEntriesYet")}</span>
