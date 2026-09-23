@@ -284,7 +284,9 @@ jobs:
             # Paths the full e2e suite (#525) actually exercises: the SPA and its
             # build inputs (src, vite config, the served index.html shell), the
             # worker that serves it, the alchemy stack/D1 the preview deploys, the
-            # specs + playwright config, and the seed tool. A docs/skills-only PR
+            # specs + playwright config, the seed tool, and the design package the
+            # SPA renders (a design-only PR routes into review:ui, which needs the
+            # preview — #9720). A docs/skills-only PR
             # touches none of these, so `e2e` stays false → the e2e job skips
             # (→ green, non-blocking). Includes both workflows so a CI/deploy edit
             # keeps the gate self-covering.
@@ -312,6 +314,7 @@ jobs:
               - 'apps/**/playwright.config.cjs'
               - 'apps/**/package.json'
               - 'packages/preview-seed/**'
+              - 'packages/design/**'
               - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy.yml'

@@ -29,7 +29,13 @@ import {
 	windowProgram,
 	windowRoutes,
 } from "@kampus/tuval-sdk/kernel/ai-agent/restore/fixtures/window";
-import {AGENT_NODE, BEFORE_THE_TOOL, PROJECT_ROOT_VAR, WINDOW_NODE} from "./names.ts";
+import {
+	AFTER_THE_TOOL,
+	AGENT_NODE,
+	BEFORE_THE_TOOL,
+	PROJECT_ROOT_VAR,
+	WINDOW_NODE,
+} from "./names.ts";
 
 /** Re-exported so a reader of this fixture sees the model its assertions name (`@kampus/tuval-pi/testing/faux`). */
 export const MODEL = FAUX_MODEL;
@@ -50,7 +56,7 @@ export const replies = [
 			stopReason: "toolUse",
 		},
 	),
-	fauxAssistantMessage("that tool is not available here"),
+	fauxAssistantMessage(AFTER_THE_TOOL),
 ];
 
 const projectRoot = (): string => {

@@ -136,6 +136,7 @@ jobs:
               - 'apps/**/playwright.config.cjs'
               - 'apps/**/package.json'
               - 'packages/preview-seed/**'
+              - 'packages/design/**'
               - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy.yml'

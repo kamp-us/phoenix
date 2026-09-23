@@ -1,6 +1,7 @@
 import {Effect, FileSystem, Layer, Path, PlatformError} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
+import {classifyProbe} from "../io/attachment-read-back.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {compose as supersedeWith} from "../review/supersede.ts";
 import {
@@ -17,8 +18,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {type CaptureManifest, serializeManifest, sha256Hex} from "./manifest.ts";
-import {runPost, type UploadLeg} from "./post-verb.ts";
-import {classifyProbe} from "./upload-leg.ts";
+import {type EvidenceCheck, runPost, runPostFlags, type UploadLeg} from "./post-verb.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const OLD_HEAD = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
@@ -127,6 +127,7 @@ const comments = (
 
 const hostingLeg: UploadLeg = () => Effect.succeed({_tag: "Hosted", url: HOSTED});
 const failingLeg: UploadLeg = () => Effect.succeed({_tag: "Failed", reason: "HTTP 500"});
+const opensCheck: EvidenceCheck = () => Effect.succeed({_tag: "Resolved"});
 
 const BODY = "| surface | verdict |\n|---|---|\n| /pano | FAIL |\n";
 
@@ -143,6 +144,7 @@ const options = {
 	tmpRoot: "/tmp",
 	cwd: "/repo",
 	upload: hostingLeg,
+	confirm: opensCheck,
 	supersede: false,
 	now: Effect.succeed(NOW_MILLIS),
 };
@@ -284,6 +286,46 @@ describe("runPost", () => {
 		expect(outcome.stderr.join("\n")).toMatch(/probed back HTTP 404/);
 	});
 
+	it("re-checks the posted comment's evidence against the judged bytes, keyed on the landed comment", async () => {
+		const seen: Array<Parameters<EvidenceCheck>[0]> = [];
+		const recording: EvidenceCheck = (request) => {
+			seen.push(request);
+			return Effect.succeed({_tag: "Resolved"});
+		};
+		const {outcome} = await run(happy(), {confirm: recording});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([
+			{repo: "o/r", commentId: 5154902211, evidence: [{url: HOSTED, bytes: BYTES}]},
+		]);
+	});
+
+	it("never reports success when the POSTED comment's evidence does not open — 9, said loudly", async () => {
+		const broken: EvidenceCheck = () =>
+			Effect.succeed({
+				_tag: "Unresolved",
+				reasons: [`${HOSTED}: the hosted asset probed back HTTP 404`],
+			});
+		const {outcome, requests} = await run(happy(), {confirm: broken});
+		expect(outcome.code).toBe(READBACK_MISMATCH);
+		expect(outcome.stdout).toBe("");
+		expect(requests.some((request) => CREATE.test(request))).toBe(true);
+		const said = outcome.stderr.join("\n");
+		expect(said).toMatch(/POSTED, BUT ITS EVIDENCE DOES NOT OPEN/);
+		expect(said).toMatch(/comment 5154902211/);
+		expect(said).toMatch(/probed back HTTP 404/);
+	});
+
+	it("does not run the after-post check when nothing posted", async () => {
+		let ran = false;
+		const tracking: EvidenceCheck = () => {
+			ran = true;
+			return Effect.succeed({_tag: "Resolved"});
+		};
+		const {outcome} = await run(happy(), {upload: failingLeg, confirm: tracking});
+		expect(outcome.code).toBe(UPLOAD_FAILED);
+		expect(ran).toBe(false);
+	});
+
 	it("appends into this namespace's own comment instead of stacking a second marker", async () => {
 		const prior = `review-ui: PASS @ ${OLD_HEAD} — older round`;
 		const {outcome, requests, bodies} = await run([
@@ -367,5 +409,50 @@ describe("runPost", () => {
 			[once(READBACK), posted("someone else's comment entirely")],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
+	});
+});
+
+describe("runPostFlags", () => {
+	const runFlags = (evidence: ReadonlyArray<string>) => {
+		const uploads: string[] = [];
+		const recordingLeg: UploadLeg = (request) => {
+			uploads.push(request.fileName);
+			return hostingLeg(request);
+		};
+		let stdinRead = false;
+		const seams = fakeSeams(happy());
+		return Effect.runPromise(
+			Effect.provide(
+				runPostFlags({
+					...options,
+					evidence,
+					upload: recordingLeg,
+					stdin: Effect.sync<StdinRead>(() => {
+						stdinRead = true;
+						return {_tag: "Text", text: BODY};
+					}),
+				}),
+				Layer.merge(seams.layer, world()),
+			),
+		).then((outcome) => ({outcome, uploads, stdinRead, requests: seams.requests}));
+	};
+
+	it("refuses two --evidence sets on 10, naming both, before any read, upload or write", async () => {
+		const {outcome, uploads, stdinRead, requests} = await runFlags(["judged", "long-host"]);
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stdout).toBe("");
+		const reason = outcome.stderr.join("\n");
+		expect(reason).toContain('"judged"');
+		expect(reason).toContain('"long-host"');
+		expect(uploads).toEqual([]);
+		expect(stdinRead).toBe(false);
+		expect(requests).toEqual([]);
+	});
+
+	it("posts a single --evidence set exactly as runPost does", async () => {
+		const {outcome, uploads} = await runFlags(["judged"]);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({answer: "posted", surfaces: 1});
+		expect(uploads).toHaveLength(1);
 	});
 });

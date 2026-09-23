@@ -2,6 +2,7 @@ import {Button} from "@kampus/design";
 import {createContext, type ReactNode, useContext, useState} from "react";
 import {Outlet} from "react-router";
 import {useT} from "../../i18n";
+import {Breadcrumbs, type BreadcrumbsProps, type Crumb} from "../layout/Breadcrumbs";
 import type {SubnavFilter} from "../layout/Subnav";
 import {SubnavShell} from "../layout/SubnavShell";
 import {PanoSubnavCta} from "./PanoSubnavCta";
@@ -15,7 +16,14 @@ export type PanoSubnavContent = {
 	activeFilter: string;
 	onFilterChange: (id: string) => void;
 	meta: ReactNode;
-	crumb?: {label: ReactNode; onClear: () => void};
+	crumb?: PanoSubnavCrumbContent;
+};
+
+/** The active site filter as breadcrumb parts, so the zone renders it as a WAI-ARIA breadcrumb. */
+export type PanoSubnavCrumbContent = {
+	trail: BreadcrumbsProps["trail"];
+	current: Crumb;
+	onClear: () => void;
 };
 
 const SetPanoSubnavContent = createContext<((content: PanoSubnavContent | null) => void) | null>(
@@ -60,11 +68,11 @@ function PanoSubnavFilters({
 }
 
 /** Plain inline text, deliberately no resting-chrome pill — containment law, #2585. */
-function PanoSubnavCrumb({crumb}: {crumb: {label: ReactNode; onClear: () => void}}) {
+function PanoSubnavCrumb({crumb}: {crumb: PanoSubnavCrumbContent}) {
 	const t = useT();
 	return (
-		<span className="kp-subnav__crumb">
-			{crumb.label}
+		<div className="kp-subnav__crumb">
+			<Breadcrumbs trail={crumb.trail} current={crumb.current} />
 			<Button
 				type="button"
 				variant="link"
@@ -74,7 +82,7 @@ function PanoSubnavCrumb({crumb}: {crumb: {label: ReactNode; onClear: () => void
 			>
 				{t("layout.filter.clear")}
 			</Button>
-		</span>
+		</div>
 	);
 }
 

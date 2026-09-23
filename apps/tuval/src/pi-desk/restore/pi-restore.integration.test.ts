@@ -36,7 +36,7 @@ import {homeStateDir, piSessionStore} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Effect, type FileSystem, Option, type Scope} from "effect";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {type Booted, boot, projectDir} from "../../boot.ts";
-import {AGENT_NODE, PROJECT_ROOT_VAR, WINDOW_NODE} from "./fixtures/names.ts";
+import {AFTER_THE_TOOL, AGENT_NODE, PROJECT_ROOT_VAR, WINDOW_NODE} from "./fixtures/names.ts";
 
 const configModule = fileURLToPath(new URL("./fixtures/pi-desk.ts", import.meta.url));
 
@@ -101,6 +101,30 @@ const answered = (window: ProcessHandle, text: string): boolean => {
 	return (
 		asked >= 0 &&
 		items.slice(asked + 1).some((item) => item.kind === "assistant" && item.partial !== true)
+	);
+};
+
+/**
+ * A tool turn is over when its tool row sits on the tail with the reply after it finished.
+ *
+ * `answered` alone is not enough here: the turn's first finished item is the text before the tool
+ * call, so a wait on it ends before the tool row lands, and a runner that stalls past `quiet`'s
+ * window reads a tail with no tool in it (#9734).
+ */
+const toolTurnAnswered = (window: ProcessHandle, text: string): boolean => {
+	const items = tailOf(window);
+	const asked = items.findLastIndex((item) => item.kind === "user" && item.text === text);
+	if (asked < 0) return false;
+	const after = items.slice(asked + 1);
+	const tool = after.findIndex((item) => item.kind === "tool");
+	return (
+		tool >= 0 &&
+		after
+			.slice(tool + 1)
+			.some(
+				(item) =>
+					item.kind === "assistant" && item.partial !== true && item.text === AFTER_THE_TOOL,
+			)
 	);
 };
 
@@ -189,12 +213,14 @@ interface ThirdRun {
  * Boot, run two turns — a plain one and one through the tool loop — and stop. Closing the scope is
  * the stop: the host drains, closes its Subs and flushes the last save (`../../host/actor.ts`).
  *
- * Between turns, not during one. Mid-turn state is unobservable from here: a Cmd handler runs
- * inside the actor's serial step (`host/actor.ts`'s `runInterpret`), so nothing folds until
- * `prompt` resolves (#7852). The interrupted marker is therefore proven on a checkpoint, in
- * `@kampus/tuval-pi`'s `src/restore/interrupted.unit.test.ts`, rather than by cutting a live Pi turn. The stop
- * itself is no longer the obstacle it was — a mid-turn close returns, and
- * `@kampus/tuval-pi`'s `src/ai-agent/teardown.unit.test.ts` pins that (#7896).
+ * Transcript rows land mid-turn, not only once `prompt` resolves: the tool turn's text before the
+ * tool call reaches the tail before its tool row does. So a turn's wait keys on that turn's own
+ * last row, as `toolTurnAnswered` does, never on the first finished assistant item (#9734).
+ *
+ * The scope closes between turns, not during one. The interrupted marker is proven on a
+ * checkpoint, in `@kampus/tuval-pi`'s `src/restore/interrupted.unit.test.ts`, rather than by
+ * cutting a live Pi turn, and `@kampus/tuval-pi`'s `src/ai-agent/teardown.unit.test.ts` pins that
+ * a mid-turn close returns (#7896).
  */
 const runFirstBoot = (project: string): Effect.Effect<FirstRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
@@ -209,20 +235,25 @@ const runFirstBoot = (project: string): Effect.Effect<FirstRun, unknown, FileSys
 		yield* until("the Pi session to open", () => sessionOf(agent).sessionId !== null, seen);
 		yield* until("the session to be ready", () => sessionOf(agent).phase === "ready", seen);
 
-		const turn = (what: string, text: string, key: string) =>
+		const turn = (
+			what: string,
+			text: string,
+			key: string,
+			over: (window: ProcessHandle, text: string) => boolean,
+		) =>
 			Effect.gen(function* () {
 				yield* say(window, text, key);
-				yield* until(`${what} to be answered`, () => answered(window, text), seen);
+				yield* until(`${what} to be answered`, () => over(window, text), seen);
 			});
 
-		yield* turn("the first turn", "read the readme", "k1");
+		yield* turn("the first turn", "read the readme", "k1", answered);
 		yield* quiet(window);
 		assert.isTrue(
 			sessionOf(agent).transcript.items.some((item) => item.kind === "assistant"),
 			"the first turn settled with no reply in the tail",
 		);
 
-		yield* turn("the tool turn", "now run the tool", "k2");
+		yield* turn("the tool turn", "now run the tool", "k2", toolTurnAnswered);
 		yield* quiet(window);
 		assert.isTrue(
 			sessionOf(agent).transcript.items.some((item) => item.kind === "tool"),

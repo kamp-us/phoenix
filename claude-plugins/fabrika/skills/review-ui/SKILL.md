@@ -300,15 +300,16 @@ piece UNKNOWN. The marker format, the evidence-upload proof and every exit are t
 
 <!-- anchor: CAPABILITIES --> This skill opens no PR, mutates no branch, runs no PR code locally;
 it holds a shell, a repo-scoped token, a headless browser pointed at the repo's preview
-deployment, and **uses** three writes — the verdict comment (with its verified evidence), the
-can't-see/escalation comment, and the routed-elsewhere record. No push, no merge, no label. Every run ends as exactly one of:
+deployment, and **uses** four writes — the verdict comment (with its verified evidence), the
+can't-see/escalation comment, the routed-elsewhere record, and one append to the driver's lane
+ledger through `lane report` at the `--root` your brief carries, a path outside this checkout. No push, no merge, no label. Every run ends as exactly one of:
 **verdict PASS** · **verdict FAIL** · **CANT-SEE** (no preview, stale preview unrepairable, or
 nothing renderable — no verdict posted, blocker named on the PR; cause `no-preview-render`) ·
 **ESCALATED** (a verdict was
 formed but provably could not land — the evidence upload or the write path failed after exactly
 one re-run; the state named on the PR through `review-ui note` where that write still lands, and
 in the session report when even the note cannot — the empty namespace fail-closes either way;
-never a hand-posted marker) · **BLOCKED-NO-MANIFEST** (no
+never a hand-posted marker; cause `write-unlanded`) · **BLOCKED-NO-MANIFEST** (no
 design law — routed to front-door, nothing posted; cause `no-design-manifest`) ·
 **ROUTED-ELSEWHERE** (no rendered delta —
 `review`'s lane; the `routed-elsewhere` record posted, or nothing posted when the diff raised no
@@ -317,8 +318,26 @@ judgment formed but
 not landed never reports as one. Cross-lane signals are closed-vocabulary — kind + action +
 branded ref, no free prose; receivers re-fetch from the PR.
 
-**Three of those six land no verdict, and each names its cause when you record it.** They fold to
-one park, so a report that names none is a park the sweep cannot tell apart from the other two — and
+**Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
+step is the verb — pass back the `lane`, `root` and `task` its `## Task` section carries, one token
+per terminal above (`PASS`, `FAIL`, `CANT-SEE`, `ESCALATED`, `BLOCKED-NO-MANIFEST`,
+`ROUTED-ELSEWHERE`), mapped to a lane event in its code, with the PR as the event's evidence. Every
+one of the six has an entry in that map. `<fabrika>` is that same section's `fabrika:` entrypoint,
+the one path this repo's verbs actually run from:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token PASS --pr <pr-url>
+```
+
+`--task` names which task of the lane your verdict addresses, and it is not optional wherever a lane
+has more than one — every epic run. The verb resolves a missing one only on a single-task lane and
+otherwise refuses at exit `13` before it appends anything, so a report that omits it records
+nothing. On any refusal, print the token and name the exit code; the operator re-reads and routes.
+Then print the token as the last line either way; a run whose caller named no lane prints the token
+only and records nothing.
+
+**Four of those six land no verdict, and each names its cause when you record it.** They fold to
+one park, so a report that names none is a park the sweep cannot tell apart from the other three — and
 `recipe unpark` keys its table on the cause, which is why a bare one always costs a human. Ride the
 cause on the same line:
 
@@ -327,8 +346,11 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token CANT-SEE -
 ```
 
 `BLOCKED-NO-MANIFEST` reports `--cause no-design-manifest`, `ROUTED-ELSEWHERE` reports
-`--cause no-rendered-delta`. Two of the three still route to a human, and the cause is what makes
-that route a gap somebody can write a row for rather than an anonymous dead end.
+`--cause no-rendered-delta`, and `ESCALATED` reports `--cause write-unlanded`. Under
+`parkCause.uncaused: "refuse"` a park that names no cause is refused at exit `52`, so an `ESCALATED`
+without one is not recorded at all. Three of the four always park; `ROUTED-ELSEWHERE`
+parks only when it cannot advance (below). Each park routes to the driver by its cause, never to a human: the cause is what
+lets the driver read the failure, or a recipe row clear it, rather than an anonymous dead end.
 
 **`ROUTED-ELSEWHERE` is the one that may not park at all, and that is the verb's call rather than
 yours.** Your route is a *completed* review of a diff that renders nothing, and `lane prove` has
@@ -339,9 +361,7 @@ absent, stale, unauthorized or unreadable route, a review still outstanding, a s
 report the terminal and the cause exactly as above either way, and read the answer's `current` for
 where the lane went — do not pre-judge which arm you are on, and never record a `review-ui` `PASS`
 to get there. Nothing about this changes what you post: the record stays a route with no polarity.
-`ESCALATED` carries no cause:
-its spelling is shared with the builder and reviewer shells, so a cause for it is a cross-shell
-change and not this gate's to make. The vocabulary is closed and lives in code
+The vocabulary is closed and lives in code
 ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts));
 a token outside it is refused with the log unappended, so there is none to compose and none to
 guess.
