@@ -14,23 +14,24 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {SnapshotRefused} from "@kampus/tuval-sdk/kernel/durability/errors";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {applyKeysConfig, defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Effect, Layer, Option, Result, Schema} from "effect";
 import {afterAll} from "vitest";
 import {boot, projectDir} from "../boot.ts";
 import {reboundTable} from "../config-fixtures/shell-rebound-keys.ts";
-import {Checkpoints} from "../durability/Checkpoints.ts";
-import {SnapshotRefused} from "../durability/errors.ts";
-import {memoryStores} from "../durability/stores.ts";
-import {Processes} from "../process/Processes.ts";
-import {ProcessTable} from "../process/ProcessTable.ts";
-import {ProcessId} from "../process/process.ts";
-import type {AnyProgram} from "../registry/program.ts";
-import {ProgramId} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
 import {scratchHome} from "../scratch-home.ts";
 import {applyMsg, initialState, type ShellMsg} from "./core/index.ts";
 import type {ServeDeskOptions} from "./host/index.ts";
-import {applyKeysConfig, defaultPrefixTable} from "./keys/index.ts";
 import {showsInAWindow} from "./picker/entries.ts";
 import {
 	SHELL_VERSION,
@@ -44,7 +45,6 @@ import {
 	windowBindings,
 	withShellFeatures,
 } from "./program.ts";
-import {WindowId} from "./window/index.ts";
 
 /** The scratch home every boot in this file runs under. */
 const home = scratchHome("shell-program");

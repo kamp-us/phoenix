@@ -26,7 +26,8 @@ disposed of together.** nix-shell's idea, pointed at agents rather than at build
 ```ts
 // ~/.tuval/tuval.config.ts
 import {worktree} from "@kampus/tuval-worktree";
-import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 
 const REPO = "/code/my-app";
 const scope = {workspace: WorkspaceId.make("default"), client: ClientId.make("tuval-desk")};
@@ -158,7 +159,7 @@ refusals rather than a log. A refusal that moved no state was a button that did 
 
 A turn result is attributed to a worktree **only when exactly one agent is running.** Tuval's
 `Reply` is `{type, payload}` and carries no process id
-(`apps/tuval/src/authoring/effect.ts:179-182`), so with two agents up there is nothing in the event
+(`Reply` in the SDK's `packages/tuval/src/authoring/effect.ts`), so with two agents up there is nothing in the event
 that says which one answered — and the honest answer to that is not a guess. With more than one
 running (or with none), the result goes to an `unattributed` list that belongs to no worktree, the
 status line says how many are there, and the window shows them with the reason.
@@ -177,16 +178,17 @@ kernel gap, not a shortcut taken here, and it is filed as
 What the kernel says, read at the current checkout:
 
 - `spawn(program, {on})` carries a program id and an out-port routing table and nothing else —
-  `apps/tuval/src/authoring/effect.ts:111-118`. `SpawnEffect` is `{type, program, on}`; there is no
+  `SpawnEffect` in the SDK's `packages/tuval/src/authoring/effect.ts`. It is `{type, program, on}`; there is no
   slot for arguments.
 - `cwd` is baked onto the registry row at config time: `claudeSession({cwd})` →
-  `src/claude/program.ts:115` → `src/ai-agent/core/machine.ts:187` →
-  `src/claude/agent/options.ts:135`, which is the SDK option the CLI launches under. It never
-  changes live (`src/claude/program.ts:134`).
-- `claude-session`'s id is a constant (`src/claude/renderer-ref.ts:12`) and a duplicate id fails the
+  the row's `cwd` in `packages/tuval-claude/src/program.ts` → the session core's `init` in the
+  SDK's `packages/tuval/src/ai-agent/core/machine.ts` → the `cwd` that `queryOptionsOf` puts on
+  the Agent SDK options in `packages/tuval-claude/src/agent/options.ts`, which the CLI launches
+  under. It never changes live (the hot-reload docblock in `packages/tuval-claude/src/program.ts`).
+- `claude-session`'s id is a constant (`CLAUDE_SESSION_PROGRAM` in `packages/tuval-claude/src/renderer-ref.ts`) and a duplicate id fails the
   registry layer, so "one row per cwd" is not available either. Rows are boot-time only.
 - `PromptPayloadSchema` is `{text, key, timestamp}` — no `cwd` field, so the prompt cannot carry one.
-- The one per-spawn cwd mechanism, `SessionOpening` (`src/ai-agent/opening.ts:17-25`), is produced
+- The one per-spawn cwd mechanism, `SessionOpening` (the SDK's `packages/tuval/src/ai-agent/opening.ts`), is produced
   by the shell picker and read by the `aiAgent.boot` handler; nothing an authored program can reach
   produces it, and its own docblock rules out growing `Processes.spawn` into a program-arguments
   system.
@@ -307,7 +309,7 @@ find them for you.
 
 ## How it relates to Tuval
 
-This is a Tuval **program**, built on `defineProgram` out of `@kampus/tuval/authoring`. Everything
+This is a Tuval **program**, built on `defineProgram` out of `@kampus/tuval-sdk/authoring`. Everything
 around the program is the kernel's: the board tile is what the kernel renders from the `title` and
 `status` lines this program publishes; checkpoint and restore are the kernel's; the two spells are
 `commands` entries the kernel compiles and registers under the program id, so they are addressable
@@ -392,7 +394,7 @@ hand. That closes by construction the one race the Sub had: there is no window b
 record does not exist any more.
 
 **`Machine` is provided inside the handler, and it has to be.** A handler resolves exactly the
-services the *spawner* granted its process, sealed (`apps/tuval/src/process/Processes.ts`), and a
+services the *spawner* granted its process, sealed (the SDK's `packages/tuval/src/process/Processes.ts`), and a
 handler added by spread is not even arg-bound — so there is nowhere else to ask. Providing
 `machineLayer(settled.runner)` at the row-building site is not a convenience: it is the only place
 that knows which `Runner` this row was configured with, and it is what lets a test hand
@@ -409,7 +411,7 @@ kernel wrote. It is the only place that check can be made.
 is a session writing into a directory being deleted, so the `stop` has to come first — but
 `[stop(agent), teardownEffect(…)]` is not "first", it is "and only if the first one worked". The
 actor runs a cell's effects serially and a failing handler short-circuits the rest
-(`apps/tuval/src/host/actor.ts`), and `Processes.stop` fails `ProcessNotFound` on a process already
+(the SDK's `packages/tuval/src/host/actor.ts`), and `Processes.stop` fails `ProcessNotFound` on a process already
 gone. So an agent that crashed a moment before its `stopped` landed would cancel its own worktree's
 removal, leave `pending` set, and get every later spell refused "busy" until restart.
 
@@ -435,30 +437,30 @@ pnpm add @kampus/tuval-worktree
 There are no runtime dependencies at all — `node:child_process`, `node:net`, `node:fs/promises` and
 `node:path` are the whole of what provisioning needs. Everything else is a peer.
 
-`@kampus/tuval` is **private and not published to npm**. This package now lives in the same pnpm
+`@kampus/tuval-sdk` is **publishable but not yet on npm**. This package now lives in the same pnpm
 workspace as Tuval does, so the dependency is a plain workspace one —
-`"@kampus/tuval": "workspace:*"` — and pnpm resolves it to `apps/tuval` in this repo with no path
+`"@kampus/tuval-sdk": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
 link and no second checkout anywhere. It becomes a real version range the day Tuval ships to a
 registry; nothing in the source changes with it, because the source already imports only through
 the published doors (#8943, #9250):
 
-- `@kampus/tuval/authoring` — `defineProgram`, `programArgs`, `port`, `Program.shape`, the effect
+- `@kampus/tuval-sdk/authoring` — `defineProgram`, `programArgs`, `port`, `Program.shape`, the effect
   constructors (`send`/`spawn`/`stop`), `testProgram`, `ProcessId`, `TITLE_PORT`/`STATUS_PORT`, and
   the types around them (`ArgRefs`, `Spawnable`, `PortSchema`)
-- `@kampus/tuval/window` — `windowRenderer` and `WindowHost`, the browser-safe half. `src/window.tsx`
+- `@kampus/tuval-sdk/window` — `windowRenderer` and `WindowHost`, the browser-safe half. `src/window.tsx`
   is the only file that touches it, and `src/state.ts` is the kernel-free leaf both halves share so
   a browser never has a path to `src/worktree.ts`
-- `@kampus/tuval/ai-agent/ports` — `PromptPayloadSchema`, `TurnResultSchema`: the agent *interface*,
+- `@kampus/tuval-sdk/ai-agent/ports` — `PromptPayloadSchema`, `TurnResultSchema`: the agent *interface*,
   which pulls in no agent
-- `@kampus/tuval/sessions` — `claudeSession`/`codexSession`, the branded `ClientId`/`WorkspaceId`,
-  and `TuvalConfigInput`, which only a config needs
+- `@kampus/tuval-claude` — `claudeSession` and the branded `ClientId`/`WorkspaceId` its `scope` needs
+- `@kampus/tuval-sdk/config` — `TuvalConfigInput`, which only a config needs
 
-Nothing reaches `@kampus/tuval/src/...`; the exports map would refuse it anyway.
+Nothing reaches `@kampus/tuval-sdk/src/...`; the exports map would refuse it anyway.
 
 ## Settings this package borrows from Tuval
 
 Two settings here are not this package's taste. They are restatements of `apps/tuval`'s, and they
-exist because `@kampus/tuval` is consumed as **raw TypeScript source**: its `exports` map points at
+exist because `@kampus/tuval-sdk` is consumed as **raw TypeScript source**: its `exports` map points at
 `src/*.ts` and it ships no `.d.ts`. Both go away the day Tuval publishes built declarations.
 
 **`tsconfig.json`: `lib: ["ES2023", "DOM", "DOM.Iterable"]` and `exactOptionalPropertyTypes: false`.**

@@ -23,15 +23,15 @@
  * **This file lives outside Tuval.** It began beside the kernel, in `apps/tuval/src/cron/` of
  * `kamp-us/phoenix`, and it is here now — a separate npm package, in a separate repo, owned by
  * someone who is not the kernel's author. Nothing in it reaches into Tuval's source: every name it
- * imports comes through one of the three published doors (#8943) — `@kampus/tuval/authoring`,
- * `@kampus/tuval/ai-agent/ports`, `@kampus/tuval/sessions` — which is the point of it being here.
+ * imports comes through a published door (#8943) — `@kampus/tuval-sdk/authoring`,
+ * `@kampus/tuval-sdk/ai-agent/ports`, `@kampus/tuval-claude` — which is the point of it being here.
  * A program a third party can write is only proven by a program a third party did write, from
  * outside, against the door and nothing else.
  *
  * The job arrives as an arg typed by its ports alone (`Program.shape`, #8716 R15.1), so this module
  * names no session and imports no session's package — which program fills it is
  * `.tuval/tuval.config.ts`'s call. The shape is declared over the *real* AI-agent payloads:
- * `PromptPayloadSchema` and `TurnResultSchema` out of `@kampus/tuval/ai-agent/ports`, the interface
+ * `PromptPayloadSchema` and `TurnResultSchema` out of `@kampus/tuval-sdk/ai-agent/ports`, the interface
  * module, not any agent's implementation — what R15.1 asks for rather than what it forbids. So a
  * real Claude or Codex session is the kind of thing that fits the shape, and a config hands the arg
  * the shipped row itself.
@@ -61,7 +61,11 @@
  */
 
 import type {DepKeyedSub} from "@demlik/tea";
-import {PromptPayloadSchema, type TurnResult, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import {
+	PromptPayloadSchema,
+	type TurnResult,
+	TurnResultSchema,
+} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type Answer,
 	type AnyProgram,
@@ -80,7 +84,7 @@ import {
 	send,
 	spawn,
 	stop,
-} from "@kampus/tuval/authoring";
+} from "@kampus/tuval-sdk/authoring";
 import {Schema} from "effect";
 import {CRON_WINDOW_REF} from "./renderer-ref.ts";
 import {armSchedule, humanize, parseSchedule, type Schedule} from "./schedule.ts";
@@ -94,7 +98,7 @@ export const jobShape = Program.shape({
 
 /**
  * The declared args, named. `programArgs`' return type is `ArgRefs`, which
- * `@kampus/tuval/authoring` publishes (#9250) together with the `ArgRef`/`ProgramArgRef`/
+ * `@kampus/tuval-sdk/authoring` publishes (#9250) together with the `ArgRef`/`ProgramArgRef`/
  * `Spawnable` chain under it — so the declaration emit for `cronProgram` can write this type down
  * through the door rather than through a `node_modules` path it would refuse (TS2742).
  */
@@ -295,7 +299,7 @@ export const cronProgram = (options: CronOptions) => {
 		 * `brief` is out, and it is how the job's answer leaves the process. Declared over
 		 * `TurnResultSchema` — the same shipped schema `jobShape` names on the job's side — so what
 		 * cron announces is exactly what the job announced, unwrapped and unsummarised, and a consumer
-		 * decodes it with the schema out of `@kampus/tuval/ai-agent/ports` rather than one of cron's
+		 * decodes it with the schema out of `@kampus/tuval-sdk/ai-agent/ports` rather than one of cron's
 		 * invention. The tile's `summary` is a *reading* of a brief; this is the brief.
 		 */
 		ports: {

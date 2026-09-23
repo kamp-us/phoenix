@@ -5,8 +5,13 @@
  */
 
 import {defineMachine} from "@demlik/tea";
+import {
+	type AnyProgram,
+	type Program,
+	ProgramId,
+	type RendererRef,
+} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Predicate} from "effect";
-import {type AnyProgram, type Program, ProgramId, type RendererRef} from "../registry/program.ts";
 import {COUNT_KIND, isCount} from "./count.ts";
 
 export type LogState = {

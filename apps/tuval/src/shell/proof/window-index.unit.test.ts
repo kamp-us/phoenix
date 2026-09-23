@@ -13,11 +13,9 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Option, Schema} from "effect";
-import {start} from "../../boot.ts";
-import {SpellBridge} from "../../commands/bridge/index.ts";
-import {SpellExecutor} from "../../commands/executor.ts";
-import type {Client} from "../../commands/scope.ts";
+import {SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import type {Client} from "@kampus/tuval-sdk/kernel/commands/scope";
 import {
 	ClientId,
 	defineSpell,
@@ -25,13 +23,19 @@ import {
 	type Scope as SpellScope,
 	WindowId,
 	WorkspaceId,
-} from "../../commands/spell.ts";
-import {Processes} from "../../process/Processes.ts";
-import {ProcessTable} from "../../process/ProcessTable.ts";
-import {ProcessId} from "../../process/process.ts";
-import {CallId} from "../../protocol/ids.ts";
-import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../../protocol/messages.ts";
-import {type AnyProgram, ProgramId} from "../../registry/program.ts";
+} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {
+	PROTOCOL_VERSION,
+	SpellCall,
+	type SpellReply,
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {type AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Context, Effect, Option, Schema} from "effect";
+import {start} from "../../boot.ts";
 import {ShellDispatch} from "../commands/dispatch.ts";
 import {activeWorkspace} from "../core/index.ts";
 import {wiredShellEffects} from "../host/effects.ts";

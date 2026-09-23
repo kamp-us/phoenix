@@ -5,24 +5,29 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {compile} from "@kampus/tuval-sdk/kernel/ports/compile";
+import {bound, isString} from "@kampus/tuval-sdk/kernel/ports/fixtures";
+import {type Graph, NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProcessPorts, unwired} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import {open} from "@kampus/tuval-sdk/kernel/ports/wiring";
+import type {PlannedProcesses} from "@kampus/tuval-sdk/kernel/process/PlannedProcesses";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import type {ProcessHandle, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {
+	STATUS_PORT,
+	statusPort,
+	TITLE_PORT,
+	titlePort,
+} from "@kampus/tuval-sdk/kernel/process/self-report";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer, Option, type Scope} from "effect";
-import {SpawnedProcesses} from "../commands/core/process.ts";
-import {Checkpoints} from "../durability/Checkpoints.ts";
-import {memoryStores} from "../durability/stores.ts";
 import {launch} from "../launch/launch.ts";
-import {compile} from "../ports/compile.ts";
-import {bound, isString} from "../ports/fixtures.ts";
-import {type Graph, NodeId} from "../ports/graph.ts";
-import {ProcessPorts, unwired} from "../ports/ProcessPorts.ts";
-import {open} from "../ports/wiring.ts";
-import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
 import {toTableRow} from "../table/row.ts";
-import type {PlannedProcesses} from "./PlannedProcesses.ts";
-import {Processes} from "./Processes.ts";
-import {ProcessTable} from "./ProcessTable.ts";
-import type {ProcessHandle, ProcessId} from "./process.ts";
-import {STATUS_PORT, statusPort, TITLE_PORT, titlePort} from "./self-report.ts";
 
 type State = {readonly said: number};
 type Say = {readonly type: "say"; readonly port: string; readonly line: string};

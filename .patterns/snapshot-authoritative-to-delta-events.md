@@ -4,10 +4,10 @@ A backend whose state is **a whole value per revision**, feeding a consumer that
 changed**, needs an explicit fold between them. This is the shape every `TuvalAiAgent` layer over a
 snapshot-shaped agent has to write, and the choices in it are not obvious.
 
-Where this lives today: [`apps/tuval/src/pi/ai-agent/items.ts`](../apps/tuval/src/pi/ai-agent/items.ts)
+Where this lives today: [`packages/tuval-pi/src/ai-agent/items.ts`](../packages/tuval-pi/src/ai-agent/items.ts)
 (`eventsOf` and `deltaEventsOf`), pinned by
-[`items.unit.test.ts`](../apps/tuval/src/pi/ai-agent/items.unit.test.ts). It folds Tuval's
-`SessionSnapshot` and `SessionDelta` ([`pi/wire/session.ts`](../apps/tuval/src/pi/wire/session.ts))
+[`items.unit.test.ts`](../packages/tuval-pi/src/ai-agent/items.unit.test.ts). It folds Tuval's
+`SessionSnapshot` and `SessionDelta` ([`pi/wire/session.ts`](../packages/tuval-pi/src/wire/session.ts))
 onto the `AgentEvent` union founder ruling 1
 ([#7570](https://github.com/kamp-us/phoenix/issues/7570)) defines, where `item` means "new **or
 updated** by id".
@@ -18,11 +18,11 @@ The state is whole-value *by construction*, and that does not have to mean whole
 wire*. A streamed turn signals per token, so sending the transcript per signal is a whole-transcript
 frame per token. Tuval's server therefore sends the whole value on a viewer's first subscribe and a
 delta for every revision after it, diffed against the last thing it sent that viewer
-([`pi/wire/delta.ts`](../apps/tuval/src/pi/wire/delta.ts)'s `nextPush`,
-[`pi/server/PiServerService.ts`](../apps/tuval/src/pi/server/PiServerService.ts)'s `followSession`).
+([`pi/wire/delta.ts`](../packages/tuval-pi/src/wire/delta.ts)'s `nextPush`,
+[`pi/server/PiServerService.ts`](../packages/tuval-pi/src/server/PiServerService.ts)'s `followSession`).
 Over the protocol-8 envelope a delta frame round trips in under a tenth of what the whole-transcript
 frame costs — pinned as that ratio, not as a wall-clock figure, in
-[`pi/wire/codec.unit.test.ts`](../apps/tuval/src/pi/wire/codec.unit.test.ts). Absolute microseconds
+[`pi/wire/codec.unit.test.ts`](../packages/tuval-pi/src/wire/codec.unit.test.ts). Absolute microseconds
 are a fact about the machine that measured them: the same bound that held on a developer laptop reds
 on a shared CI runner, so a ratio between two measurements taken in one process is the only form of
 this claim that travels.
@@ -100,12 +100,12 @@ phase above a reply that has not landed yet, and usage annotates a turn that is 
 Where the pushes fill a queue and a separate fiber drains it, the two are not peers in a race: an
 ended push stream would interrupt the fold with the turn's last update still queued and unfolded.
 The fill runs as a child fiber (`Effect.forkChild`) and only the transport drop ends the fold
-([`PiAiAgent.ts`](../apps/tuval/src/pi/ai-agent/PiAiAgent.ts)'s `follow`).
+([`PiAiAgent.ts`](../packages/tuval-pi/src/ai-agent/PiAiAgent.ts)'s `follow`).
 
 ## Paging joins a separate identity space
 
 An item id used for live upserts is not necessarily a stored paging cursor. Keep the visual anchor
-and the cursor separate: [`history/cursor.ts`](../apps/tuval/src/ai-agent/history/cursor.ts) skips
+and the cursor separate: [`history/cursor.ts`](../packages/tuval/src/ai-agent/history/cursor.ts) skips
 local echoes and every partial row once for the handler and window, returning an explicit
 unavailable result rather than turning absence into `before: null` (the newest end). A partial row
 can arrive before its first completed block exists in storage; a live id alone does not prove that
@@ -113,16 +113,16 @@ an alias has a target. Completion makes that row eligible on the next request; t
 anchor stays independent.
 
 Backend mappers project their identity joins as `cursorAliases`; the shared
-[`page.ts`](../apps/tuval/src/ai-agent/history/page.ts) resolves them before validating the group
+[`page.ts`](../packages/tuval/src/ai-agent/history/page.ts) resolves them before validating the group
 boundary. A stored id wins over an alias, and a missing target still refuses. Neither transcript is
 re-keyed. The default remains a strict group-start cursor; adapters that page from a live row inside
 an exchange opt into `containing-group`.
 
-Pi's [`entries.ts`](../apps/tuval/src/pi/ai-agent/entries.ts) counts the current context's messages,
+Pi's [`entries.ts`](../packages/tuval-pi/src/ai-agent/entries.ts) counts the current context's messages,
 not all disk messages: at 0.84.3, `buildSessionContext` composes `buildContextEntries` and
 `sessionEntryToContextMessages`, including compaction summaries and invisible custom messages.
 Those same exports associate live positions with stored entry ids without a text or timestamp join.
-Claude's [`items.ts`](../apps/tuval/src/claude/history/items.ts) instead associates streaming
+Claude's [`items.ts`](../packages/tuval-claude/src/history/items.ts) instead associates streaming
 `message.id` with stored frame `uuid`, including the derived thinking id. Its SDK 0.3.259
 `SDKAssistantMessage` can deliver one frame per content block, so the first matching stored row owns
 the cursor boundary. These are backend projections, not copies of the shared cursor rule.
@@ -151,7 +151,7 @@ one, and Tuval does not use it: subscribing for real means answering `$chord.ser
 with a `WireServiceSubscriptionSnapshot` and pushing every update through a decoder that is stateful
 across frames, where anything it rejects fails the whole connection. The reasoning and the source
 citations are at
-[`pi/wire/codec.ts`](../apps/tuval/src/pi/wire/codec.ts)'s `createServerFrameSplitter`.
+[`pi/wire/codec.ts`](../packages/tuval-pi/src/wire/codec.ts)'s `createServerFrameSplitter`.
 
 ## See also
 
@@ -167,12 +167,12 @@ Pi 0.85.1's `pi-ai/dist/types.d.ts` carries `AssistantMessage.stopReason` and op
 turn is therefore snapshot content, even when its text is empty, and is not a socket failure or a
 new session phase.
 
-[`itemsOf`](../apps/tuval/src/pi/ai-agent/items.ts) appends a `SystemItem` under the stable
+[`itemsOf`](../packages/tuval-pi/src/ai-agent/items.ts) appends a `SystemItem` under the stable
 `<turn>:failure` identity. Nonempty prose and reasoning retain their own identities; an empty
 failed prose row is omitted, while an interrupted row retains its resend control. Usage remains
 keyed by the source turn. Repeated snapshots fingerprint the notice exactly like other rows.
 
-[`providerFailureText`](../apps/tuval/src/pi/ai-agent/provider-failure.ts) translates explicitly
+[`providerFailureText`](../packages/tuval-pi/src/ai-agent/provider-failure.ts) translates explicitly
 recognized diagnostic prefixes into fixed credit/quota/rate/key guidance. Unknown, missing or
 non-string diagnostics receive a generic failed-turn explanation. No original diagnostic, URL,
 credential, exception object or diagnostic suffix is copied into generic state. These are provider
@@ -181,6 +181,6 @@ reports, not independent diagnoses; this mapping does not alter RPC exception tr
 History re-keys the notice as `<entry>:failure` and aliases it to the matching live notice. Thus
 initial paint, reattach and page/tail joins preserve one explanation without replacing the reply
 beside it. The shared `SessionRow` renders this text through React text content, never markdown.
-The [provider-failure regression](../apps/tuval/src/pi/window/provider-failure.unit.test.tsx) drives
+The [provider-failure regression](../packages/tuval-pi/src/window/provider-failure.unit.test.tsx) drives
 the source projection, actual protocol-8 codec, mapper, history join, reattach and rendered window
 with synthetic diagnostics and no provider credentials.

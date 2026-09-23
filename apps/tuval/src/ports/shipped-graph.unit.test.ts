@@ -11,10 +11,10 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {compile} from "@kampus/tuval-sdk/kernel/ports/compile";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Effect} from "effect";
 import shipped from "../../.tuval/tuval.config.ts";
-import {Registry} from "../registry/Registry.ts";
-import {compile} from "./compile.ts";
 
 describe("the shipped project graph", () => {
 	it.effect("compiles to the same routes a nominal check accepted", () =>

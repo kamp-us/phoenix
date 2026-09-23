@@ -10,9 +10,9 @@
 
 import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
+import type {Message} from "@kampus/tuval-sdk/kernel/process/process";
+import type {ViewState, WindowHost} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {describe, expect, expectTypeOf, it} from "vitest";
-import type {Message} from "../../process/process.ts";
-import type {ViewState, WindowHost} from "../window/host.ts";
 import type {AttachedProcess} from "./client.ts";
 import type {SocketSession} from "./server.ts";
 

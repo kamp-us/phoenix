@@ -23,16 +23,20 @@
 
 import type {IncomingMessage} from "node:http";
 import {NodeSocketServer} from "@effect/platform-node";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import type {
+	ProcessChange,
+	ProcessHandle,
+	ProcessId,
+} from "@kampus/tuval-sdk/kernel/process/process";
+import type {SpellCall, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import {type AnyProgram, programLabel} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Deferred, Effect, type Option, type Redacted, Semaphore, Stream} from "effect";
 import {Socket, type SocketServer} from "effect/unstable/socket";
-import {ProcessTable} from "../../process/ProcessTable.ts";
-import type {ProcessChange, ProcessHandle, ProcessId} from "../../process/process.ts";
-import type {SpellCall, SpellReply} from "../../protocol/messages.ts";
-import type {RegistryDescription} from "../../protocol/registry-description.ts";
-import {type AnyProgram, programLabel} from "../../registry/program.ts";
-import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
-import type {PrefixTable} from "../keys/table.ts";
 import {showsInAWindow} from "../picker/entries.ts";
 import {checkHandshake, launchUrl, loopbackOrigins} from "./handshake.ts";
 import {

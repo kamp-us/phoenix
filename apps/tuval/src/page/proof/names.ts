@@ -8,7 +8,7 @@
 
 /**
  * One harness per test, keyed by the arm it serves. A boot holds two turns
- * (`../../pi/proof/vertical.ts`) and each test spends both — the one it finds already chatted, and
+ * (`../../pi-desk/proof/vertical.ts`) and each test spends both — the one it finds already chatted, and
  * the one it asks for after the drop. Both harnesses serve both pages; which page a test opens is
  * what makes it the arm it is.
  */

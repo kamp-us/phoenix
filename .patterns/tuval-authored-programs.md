@@ -1,32 +1,33 @@
 # Authoring a Tuval program
 
 How a program is written with `defineProgram`, and what a compiled row still owes the kernel that
-the authoring layer does not write for you. Everything here is `apps/tuval/src/authoring/`; the row
-it compiles to is [`registry/program.ts`](../apps/tuval/src/registry/program.ts), and where a
+the authoring layer does not write for you. Everything here is the Tuval SDK's authoring layer,
+[`packages/tuval/src/authoring/`](../packages/tuval/src/authoring), which a program imports as
+`@kampus/tuval-sdk/authoring`; the row it compiles to is [`registry/program.ts`](../packages/tuval/src/registry/program.ts), and where a
 program's Effects live is [`tuval-program-row-effects.md`](./tuval-program-row-effects.md) — this
 doc is the layer above it.
 
-The worked example is
-[`authoring/example/pr-review.ts`](../apps/tuval/src/authoring/example/pr-review.ts), thirty-odd
-lines end to end. Copy that first; read this when the copy runs out.
+The worked example ships with the desk app,
+[`pr-review.ts`](../apps/tuval/src/example/pr-review.ts), thirty-odd lines end to end,
+importing the SDK by the specifiers an outside author writes. Copy that first; read this when the copy runs out.
 
 ## What you write, and what compiles
 
 `defineProgram` takes an authored record and answers one registry row. Each field of the record is
 compiled by one entry of `FIELD_COMPILERS` in
-[`define-program.ts`](../apps/tuval/src/authoring/define-program.ts), one row field per key:
+[`define-program.ts`](../packages/tuval/src/authoring/define-program.ts), one row field per key:
 
 | You write | The row gets | Module |
 |---|---|---|
-| `ports` | `ports` + a `receive` per arriving port | [`port.ts`](../apps/tuval/src/authoring/port.ts) |
+| `ports` | `ports` + a `receive` per arriving port | [`port.ts`](../packages/tuval/src/authoring/port.ts) |
 | `init` / `update` / `subs` | `core` (a Demlik machine) | `define-program.ts` |
-| effects returned from `update` | `handlers` | [`effect.ts`](../apps/tuval/src/authoring/effect.ts) |
-| `args` | `args` | [`args.ts`](../apps/tuval/src/authoring/args.ts) |
-| `commands` | `spells` | [`commands.ts`](../apps/tuval/src/authoring/commands.ts) |
-| `key` cell in `update` | `takesKeys` | [`keys.ts`](../apps/tuval/src/authoring/keys.ts) |
-| `title` / `status` | the two self-report out-ports | [`view.ts`](../apps/tuval/src/authoring/view.ts) |
-| `renderer` | `renderer` — a module specifier, straight through | [`define-program.ts`](../apps/tuval/src/authoring/define-program.ts) |
-| `resume` | `resume` | [`resume.ts`](../apps/tuval/src/authoring/resume.ts) |
+| effects returned from `update` | `handlers` | [`effect.ts`](../packages/tuval/src/authoring/effect.ts) |
+| `args` | `args` | [`args.ts`](../packages/tuval/src/authoring/args.ts) |
+| `commands` | `spells` | [`commands.ts`](../packages/tuval/src/authoring/commands.ts) |
+| `key` cell in `update` | `takesKeys` | [`keys.ts`](../packages/tuval/src/authoring/keys.ts) |
+| `title` / `status` | the two self-report out-ports | [`view.ts`](../packages/tuval/src/authoring/view.ts) |
+| `renderer` | `renderer` — a module specifier, straight through | [`define-program.ts`](../packages/tuval/src/authoring/define-program.ts) |
+| `resume` | `resume` | [`resume.ts`](../packages/tuval/src/authoring/resume.ts) |
 
 The row is a plain object, so **anything the table above does not cover is reached by spreading the
 compiled row**: `{...defineProgram({...}), restorable, checkpointWorthy, configChanged}`.
@@ -54,8 +55,8 @@ export const counterProgram = program({
 });
 
 // window.tsx — the module the page imports. `default` is the renderer, `admits` the predicate.
-import type {ProgramEvent} from "@kampus/tuval/window";
-import {windowRenderer, type WindowHost} from "@kampus/tuval/window";
+import type {ProgramEvent} from "@kampus/tuval-sdk/window";
+import {windowRenderer, type WindowHost} from "@kampus/tuval-sdk/window";
 import {type CounterState, isCounterState} from "./counter-state.ts";
 import type {counterProgram} from "./counter.ts"; // types only — erased by the bundler
 
@@ -135,7 +136,7 @@ it keeps — the change is an ordinary event, not a reset.
 
 Two spawners bring a process back, and they wire it differently. Read
 [`launch/launch.ts`](../apps/tuval/src/launch/launch.ts) and
-[`durability/restore.ts`](../apps/tuval/src/durability/restore.ts) for the two halves:
+[`durability/restore.ts`](../packages/tuval/src/durability/restore.ts) for the two halves:
 
 - **A graph node** whose checkpoint existed comes back through `launch`, with the graph's wiring
   bound to it both ways. What it emits reaches the route the config plans, exactly as before the
@@ -149,9 +150,11 @@ So a `resume` that emits is safe on a graph node and loud on a spawned child. Th
 the alternative was a silent no-op — but it means a spawned child's `resume` should move state or
 send, not announce.
 
-`authoring/reload/authoring-reload.integration.test.ts` is both halves on a real kernel: the
-example's `verdict` route reaching its reader after a restart, and a restored spawned child's emit
-refused with the port named.
+The desk app's
+[`authoring-reload.integration.test.ts`](../apps/tuval/src/example/reload/authoring-reload.integration.test.ts)
+is both halves on a real
+kernel: the example's `verdict` route reaching its reader after a restart, and a restored spawned
+child's emit refused with the port named.
 
 ## Wiring one into a config graph
 
@@ -166,11 +169,12 @@ relation that decides whether a program fills a `Program.shape` arg
 [#8923](https://github.com/kamp-us/phoenix/issues/8923)).
 
 Kinds are compared only when one of the two ends publishes no schema — a hand-written registry row
-such as [`ai-agent/ports/ports.ts`](../apps/tuval/src/ai-agent/ports/ports.ts)'s three two-way kinds
+such as [`ai-agent/ports/ports.ts`](../packages/tuval/src/ai-agent/ports/ports.ts)'s three two-way kinds
 — and then they must be identical, exactly as before. Either way the refusal happens before boot:
 `IncompatibleRoute` names both ends and a `reason` saying which clause refused and why.
 
-[`authoring/reload/fixtures/reviewing-desk.ts`](../apps/tuval/src/authoring/reload/fixtures/reviewing-desk.ts)
+The desk app's
+[`reviewing-desk.ts`](../apps/tuval/src/example/reload/fixtures/reviewing-desk.ts) fixture
 is the worked wiring — `desk.pr -> pr-review.pr` and `pr-review.verdict -> sink.verdict`, every end
 authored, no plain registry row standing in for one.
 
@@ -187,7 +191,7 @@ if you meet it cold:
 
 Two tiers, and they answer different questions:
 
-- **Unit** — [`testProgram`](../apps/tuval/src/authoring/test-program.ts) drives an authored program
+- **Unit** — [`testProgram`](../packages/tuval/src/authoring/test-program.ts) drives an authored program
   with no kernel, no desk and no Effect runtime: `testProgram(prReview).send("pr", 8690)` answers
   the new state and the effects it asked for. Use it for everything about the program's own logic.
 - **Integration** — boot a config layer over a temp project directory and drive the real kernel.

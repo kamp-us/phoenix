@@ -11,20 +11,20 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {restore} from "@kampus/tuval-sdk/kernel/durability/restore";
+import {type CheckpointStores, memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {PortNotWired} from "@kampus/tuval-sdk/kernel/ports/errors";
+import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {HandlerFailed} from "@kampus/tuval-sdk/kernel/process/errors";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer, Option} from "effect";
-import {SpawnedProcesses} from "../commands/core/process.ts";
 import {counterId, counterProgram} from "../demo/counter.ts";
-import {PortNotWired} from "../ports/errors.ts";
-import {NodeId} from "../ports/graph.ts";
-import {HandlerFailed} from "../process/errors.ts";
-import {Processes} from "../process/Processes.ts";
-import {ProcessTable} from "../process/ProcessTable.ts";
-import type {ProcessId} from "../process/process.ts";
-import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
-import {Checkpoints} from "./Checkpoints.ts";
-import {restore} from "./restore.ts";
-import {type CheckpointStores, memoryStores} from "./stores.ts";
 
 const counterRows = [counterProgram({everyMs: null})];
 

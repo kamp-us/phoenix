@@ -1,7 +1,7 @@
 /**
  * The rule the three discovery spells exist to keep: a spell's sentence is written once, at its own
  * `defineSpell` site, and every surface renders it from the registry (#7617 R2.4). So this greps the
- * sources under `src/commands/core/` for the two shapes a hand-written help table takes — another
+ * sources under the SDK's `src/commands/core/` for the two shapes a hand-written help table takes — another
  * spell's sentence copied in, and a pre-aligned help line baked into a literal. Both the file list
  * and the spell list are derived: the files by reading the directory, the spells from `boot.ts`'s
  * `coreSpells`, so a new core spell or a new core file is covered the day it lands.
@@ -14,15 +14,18 @@ import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import {describe, expect, it} from "vitest";
 import {coreSpells} from "../../boot.ts";
+import {sdkModule} from "../../sdk-source.testing.ts";
 
 const stripComments = (text: string): string =>
 	text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
-const sources = readdirSync(import.meta.dirname)
+const coreDir = sdkModule("commands/core");
+
+const sources = readdirSync(coreDir)
 	.filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
 	.map((name) => ({
 		name,
-		text: readFileSync(join(import.meta.dirname, name), "utf8"),
+		text: readFileSync(join(coreDir, name), "utf8"),
 	}));
 
 // Derived from boot's real core list, not a fixture table: a fixture that omits a core group (as

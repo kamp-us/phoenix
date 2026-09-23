@@ -6,9 +6,9 @@ writing a new spell can look one up without reading the whole slice. The *why* (
 [0348](../.decisions/0348-tuval-command-framework-spell-registry-versioned-protocol.md); this page
 carries no argument for the design.
 
-Everything below is read off the code under [`apps/tuval/src/commands/`](../apps/tuval/src/commands)
-and [`apps/tuval/src/protocol/`](../apps/tuval/src/protocol). A companion unit test,
-[`apps/tuval/src/commands/pattern-doc-paths.unit.test.ts`](../apps/tuval/src/commands/pattern-doc-paths.unit.test.ts),
+Everything below is read off the code under [`packages/tuval/src/commands/`](../packages/tuval/src/commands)
+and [`packages/tuval/src/protocol/`](../packages/tuval/src/protocol). A companion unit test,
+[`packages/tuval/src/commands/pattern-doc-paths.unit.test.ts`](../packages/tuval/src/commands/pattern-doc-paths.unit.test.ts),
 asserts that every path this page cites is on disk, so the page cannot drift into naming a file that
 moved.
 
@@ -16,45 +16,45 @@ moved.
 
 | File | What is in it |
 |---|---|
-| [`spell.ts`](../apps/tuval/src/commands/spell.ts) | `Spell`, `defineSpell`, `SpellPath`, `Scope`, `renderPath`, the `WindowId` / `WorkspaceId` / `ClientId` brands |
-| [`rest-parameter.ts`](../apps/tuval/src/commands/rest-parameter.ts) | `RestParameter`, the explicit final free-text parameter schema, and its wire annotation key |
-| [`registry.ts`](../apps/tuval/src/commands/registry.ts) | `buildRegistry`, `SpellRegistry`, `SpellRow`, `SpellNode`, `RegistryTable`, `lookupRow`, `describeSpell` |
-| [`spell-set.ts`](../apps/tuval/src/commands/spell-set.ts) | `SpellSet`: the table and the key bindings compiled against it, in one cell |
-| [`scope.ts`](../apps/tuval/src/commands/scope.ts) | `WindowIndex`, `WindowPlacement`, `Client`, `resolveScope` |
-| [`executor.ts`](../apps/tuval/src/commands/executor.ts) | `SpellExecutor`: one `SpellCall` in, one `SpellReply` out |
-| [`errors.ts`](../apps/tuval/src/commands/errors.ts) | `DuplicateSpellPath`, `SpellNotDescribable`, `SpellNotFound`, `NoSuchWindow`, `UnknownSpell`, `BadArgs`, `BadResult`, `SpellFailed` |
-| [`index.ts`](../apps/tuval/src/commands/index.ts) | a partial barrel: `bindings/`, `errors`, `executor`, `parse/`, `registry`, `scope` and `spell`, but not `core/` or `bridge/`, which are imported from their own directories |
-| [`parse/tokenize.ts`](../apps/tuval/src/commands/parse/tokenize.ts) | the command line's lexer |
-| [`parse/reading.ts`](../apps/tuval/src/commands/parse/reading.ts) | the single walk `parse` and `complete` share |
-| [`parse/parse.ts`](../apps/tuval/src/commands/parse/parse.ts) | `parse`, `ParseResult`, `SpellCallDraft` |
-| [`parse/complete.ts`](../apps/tuval/src/commands/parse/complete.ts) | `complete`, `Candidate`, the two ranking rules |
-| [`parse/spell-index.ts`](../apps/tuval/src/commands/parse/spell-index.ts) | `buildSpellIndex`, `readParams`, `ParamSpec`, `describeExpected` |
-| [`parse/did-you-mean.ts`](../apps/tuval/src/commands/parse/did-you-mean.ts) | the one suggestion a refusal carries |
-| [`bindings/compile.ts`](../apps/tuval/src/commands/bindings/compile.ts) | `compileBindings`, `Binding`, `KeyBindings` |
-| [`bindings/errors.ts`](../apps/tuval/src/commands/bindings/errors.ts) | `BindingError`, `renderBindingErrors` |
-| [`bindings/file.ts`](../apps/tuval/src/commands/bindings/file.ts) | `describeFile`: how a config module is named in an error |
-| [`core/help.ts`](../apps/tuval/src/commands/core/help.ts) | the `help` spell and its row rendering |
-| [`core/spell.ts`](../apps/tuval/src/commands/core/spell.ts) | `spell list` and `spell describe` |
-| [`core/process.ts`](../apps/tuval/src/commands/core/process.ts) | `process spawn`, `process send`, `process read` |
-| [`core/index.ts`](../apps/tuval/src/commands/core/index.ts) | `helpSpells`, the three discovery spells as a list |
-| [`bridge/SpellBridge.ts`](../apps/tuval/src/commands/bridge/SpellBridge.ts) | the program-blind `list` / `call` surface an agent's SDK tool wraps |
-| [`bridge/errors.ts`](../apps/tuval/src/commands/bridge/errors.ts) | `SpellNotAllowed` |
-| [`protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts) | the four messages, the two unions, `PROTOCOL_VERSION` |
-| [`protocol/codec.ts`](../apps/tuval/src/protocol/codec.ts) | the four total encode / decode functions |
-| [`protocol/ids.ts`](../apps/tuval/src/protocol/ids.ts) | the wire's branded ids and scalars |
-| [`protocol/desk.ts`](../apps/tuval/src/protocol/desk.ts) | `Desk`, `Workspace`, `Window`, the layout tree |
-| [`protocol/process-row.ts`](../apps/tuval/src/protocol/process-row.ts) | `ProcessRow` as a snapshot carries it |
-| [`protocol/registry-description.ts`](../apps/tuval/src/protocol/registry-description.ts) | `SpellDescription`, `RegistryDescription`, `CapabilityRequest` |
-| [`protocol/patch.ts`](../apps/tuval/src/protocol/patch.ts) | `applyPatch` |
-| [`protocol/recency.ts`](../apps/tuval/src/protocol/recency.ts) | `nextRecency`, `focusWindow`: minting the `recency` stamp |
-| [`protocol/issue.ts`](../apps/tuval/src/protocol/issue.ts) | `firstSchemaIssue`, `describeSchemaError` |
-| [`protocol/json.ts`](../apps/tuval/src/protocol/json.ts) | the `try`/`catch` JSON boundary, both directions |
-| [`protocol/errors.ts`](../apps/tuval/src/protocol/errors.ts) | `ProtocolRefused`, `PatchRefused` |
-| [`registry/program.ts`](../apps/tuval/src/registry/program.ts) | the program row, including its optional `spells` |
+| [`spell.ts`](../packages/tuval/src/commands/spell.ts) | `Spell`, `defineSpell`, `SpellPath`, `Scope`, `renderPath`, the `WindowId` / `WorkspaceId` / `ClientId` brands |
+| [`rest-parameter.ts`](../packages/tuval/src/commands/rest-parameter.ts) | `RestParameter`, the explicit final free-text parameter schema, and its wire annotation key |
+| [`registry.ts`](../packages/tuval/src/commands/registry.ts) | `buildRegistry`, `SpellRegistry`, `SpellRow`, `SpellNode`, `RegistryTable`, `lookupRow`, `describeSpell` |
+| [`spell-set.ts`](../packages/tuval/src/commands/spell-set.ts) | `SpellSet`: the table and the key bindings compiled against it, in one cell |
+| [`scope.ts`](../packages/tuval/src/commands/scope.ts) | `WindowIndex`, `WindowPlacement`, `Client`, `resolveScope` |
+| [`executor.ts`](../packages/tuval/src/commands/executor.ts) | `SpellExecutor`: one `SpellCall` in, one `SpellReply` out |
+| [`errors.ts`](../packages/tuval/src/commands/errors.ts) | `DuplicateSpellPath`, `SpellNotDescribable`, `SpellNotFound`, `NoSuchWindow`, `UnknownSpell`, `BadArgs`, `BadResult`, `SpellFailed` |
+| [`index.ts`](../packages/tuval/src/commands/index.ts) | a partial barrel: `bindings/`, `errors`, `executor`, `parse/`, `registry`, `scope` and `spell`, but not `core/` or `bridge/`, which are imported from their own directories |
+| [`parse/tokenize.ts`](../packages/tuval/src/commands/parse/tokenize.ts) | the command line's lexer |
+| [`parse/reading.ts`](../packages/tuval/src/commands/parse/reading.ts) | the single walk `parse` and `complete` share |
+| [`parse/parse.ts`](../packages/tuval/src/commands/parse/parse.ts) | `parse`, `ParseResult`, `SpellCallDraft` |
+| [`parse/complete.ts`](../packages/tuval/src/commands/parse/complete.ts) | `complete`, `Candidate`, the two ranking rules |
+| [`parse/spell-index.ts`](../packages/tuval/src/commands/parse/spell-index.ts) | `buildSpellIndex`, `readParams`, `ParamSpec`, `describeExpected` |
+| [`parse/did-you-mean.ts`](../packages/tuval/src/commands/parse/did-you-mean.ts) | the one suggestion a refusal carries |
+| [`bindings/compile.ts`](../packages/tuval/src/commands/bindings/compile.ts) | `compileBindings`, `Binding`, `KeyBindings` |
+| [`bindings/errors.ts`](../packages/tuval/src/commands/bindings/errors.ts) | `BindingError`, `renderBindingErrors` |
+| [`bindings/file.ts`](../packages/tuval/src/commands/bindings/file.ts) | `describeFile`: how a config module is named in an error |
+| [`core/help.ts`](../packages/tuval/src/commands/core/help.ts) | the `help` spell and its row rendering |
+| [`core/spell.ts`](../packages/tuval/src/commands/core/spell.ts) | `spell list` and `spell describe` |
+| [`core/process.ts`](../packages/tuval/src/commands/core/process.ts) | `process spawn`, `process send`, `process read` |
+| [`core/index.ts`](../packages/tuval/src/commands/core/index.ts) | `helpSpells`, the three discovery spells as a list |
+| [`bridge/SpellBridge.ts`](../packages/tuval/src/commands/bridge/SpellBridge.ts) | the program-blind `list` / `call` surface an agent's SDK tool wraps |
+| [`bridge/errors.ts`](../packages/tuval/src/commands/bridge/errors.ts) | `SpellNotAllowed` |
+| [`protocol/messages.ts`](../packages/tuval/src/protocol/messages.ts) | the four messages, the two unions, `PROTOCOL_VERSION` |
+| [`protocol/codec.ts`](../packages/tuval/src/protocol/codec.ts) | the four total encode / decode functions |
+| [`protocol/ids.ts`](../packages/tuval/src/protocol/ids.ts) | the wire's branded ids and scalars |
+| [`protocol/desk.ts`](../packages/tuval/src/protocol/desk.ts) | `Desk`, `Workspace`, `Window`, the layout tree |
+| [`protocol/process-row.ts`](../packages/tuval/src/protocol/process-row.ts) | `ProcessRow` as a snapshot carries it |
+| [`protocol/registry-description.ts`](../packages/tuval/src/protocol/registry-description.ts) | `SpellDescription`, `RegistryDescription`, `CapabilityRequest` |
+| [`protocol/patch.ts`](../packages/tuval/src/protocol/patch.ts) | `applyPatch` |
+| [`protocol/recency.ts`](../packages/tuval/src/protocol/recency.ts) | `nextRecency`, `focusWindow`: minting the `recency` stamp |
+| [`protocol/issue.ts`](../packages/tuval/src/protocol/issue.ts) | `firstSchemaIssue`, `describeSchemaError` |
+| [`protocol/json.ts`](../packages/tuval/src/protocol/json.ts) | the `try`/`catch` JSON boundary, both directions |
+| [`protocol/errors.ts`](../packages/tuval/src/protocol/errors.ts) | `ProtocolRefused`, `PatchRefused` |
+| [`registry/program.ts`](../packages/tuval/src/registry/program.ts) | the program row, including its optional `spells` |
 
 ## A spell
 
-`defineSpell` in [`spell.ts`](../apps/tuval/src/commands/spell.ts) is the identity function. Its
+`defineSpell` in [`spell.ts`](../packages/tuval/src/commands/spell.ts) is the identity function. Its
 whole job is inference: an `execute` that returns a Promise, or a `params` that is not an Effect
 `Schema`, is a compile error at the definition site.
 
@@ -75,7 +75,7 @@ stores that, because one table holds spells of every shape.
 ### Capabilities are inert
 
 The `capabilities` list reuses the kernel's `CapabilityRequest` record from
-[`registry/program.ts`](../apps/tuval/src/registry/program.ts). Nothing grants it, nothing checks
+[`registry/program.ts`](../packages/tuval/src/registry/program.ts). Nothing grants it, nothing checks
 it, nothing denies it. It is not a security boundary. The only thing standing between a calling
 program and the registry today is the bridge's allowance, and that allowance is whatever the caller
 passed to `SpellBridge.layer({allow})`, not a check the kernel makes.
@@ -83,7 +83,7 @@ passed to `SpellBridge.layer({allow})`, not a check the kernel makes.
 ## A program declares its spells
 
 A program row's optional `spells` field
-([`registry/program.ts`](../apps/tuval/src/registry/program.ts)) is a list of `AnySpell`. The
+([`registry/program.ts`](../packages/tuval/src/registry/program.ts)) is a list of `AnySpell`. The
 kernel's own `Registry` never reads it; only the spell registry does. Each entry is registered under
 `[programId, ...spell.path]`, so a program's spells are namespaced by its id and cannot collide with
 the core list by accident.
@@ -93,7 +93,7 @@ direction and the runtime dependency stays one way: `commands/` reaches into `re
 reverse.
 
 An authored program writes that list as a `commands` record instead of hand-rolling spells
-([`authoring/commands.ts`](../apps/tuval/src/authoring/commands.ts)): the key is the command's own
+([`authoring/commands.ts`](../packages/tuval/src/authoring/commands.ts)): the key is the command's own
 path, the declared `args` schema becomes the spell's `params`, and `run` becomes its `execute`,
 returning the effect vocabulary the compiler interprets through the row's own handlers. The author
 writes no group — the prefix above is composed here, from the row's id, and nowhere else.
@@ -101,7 +101,7 @@ writes no group — the prefix above is composed here, from the row's id, and no
 ## The registry
 
 `buildRegistry({core, programs})` in
-[`registry.ts`](../apps/tuval/src/commands/registry.ts) is registration. It is a pure Effect over
+[`registry.ts`](../packages/tuval/src/commands/registry.ts) is registration. It is a pure Effect over
 the core spell list and the program rows, and it produces a `RegistryTable`:
 
 - `root`, a trie of `SpellNode`s keyed by path segment; a node carries a `SpellRow` when a spell is
@@ -142,7 +142,7 @@ that can fail already happened. The closure never leaves the kernel.
 
 ## Scope, and who resolves it
 
-`Scope` ([`spell.ts`](../apps/tuval/src/commands/spell.ts)) is where a call came from:
+`Scope` ([`spell.ts`](../packages/tuval/src/commands/spell.ts)) is where a call came from:
 
 ```ts
 interface Scope {
@@ -156,7 +156,7 @@ interface Scope {
 A workspace and a client are always known. A window and a process are known only when the caller was
 inside one.
 
-`resolveScope` ([`scope.ts`](../apps/tuval/src/commands/scope.ts)) builds it. The wire lets a page
+`resolveScope` ([`scope.ts`](../packages/tuval/src/commands/scope.ts)) builds it. The wire lets a page
 name the window it called from and nothing else: the process and the workspace are looked up through
 `WindowIndex`, so a page cannot address another process by putting an id on the wire. A spell that
 legitimately targets another process takes that id as a parameter of its own `params`.
@@ -176,7 +176,7 @@ table rather than a running desk. The proof is
 ## The executor
 
 `SpellExecutor.execute(call, client)`
-([`executor.ts`](../apps/tuval/src/commands/executor.ts)) is a `SpellCall` in and a `SpellReply`
+([`executor.ts`](../packages/tuval/src/commands/executor.ts)) is a `SpellCall` in and a `SpellReply`
 out. Its error channel is `never`: every way a call can go wrong becomes a failed outcome on the
 reply, so a caller has exactly one thing to read.
 
@@ -204,7 +204,7 @@ registered spell needs. The composition root that builds the registry owes those
 
 ## A spell that reads the disk
 
-The session list ([`ai-agent/session-list.ts`](../apps/tuval/src/ai-agent/session-list.ts)) is the
+The session list ([`ai-agent/session-list.ts`](../packages/tuval/src/ai-agent/session-list.ts)) is the
 first spell in the tree whose answer comes off the filesystem, and it is shaped by two rules the
 rest of the spell path does not enforce.
 
@@ -228,7 +228,7 @@ provider is a compile error at `start` rather than a defect at the first call.
 
 A binding is written the way a person types it (`"window close"`), and a key router needs
 `{path, args}`. `compileBindings(source, table)`
-([`bindings/compile.ts`](../apps/tuval/src/commands/bindings/compile.ts)) does that conversion once,
+([`bindings/compile.ts`](../packages/tuval/src/commands/bindings/compile.ts)) does that conversion once,
 at config load.
 
 A `KeyBindings` record maps a key string to either a command string or
@@ -240,10 +240,10 @@ A `KeyBindings` record maps a key string to either a command string or
   binding: a bad one costs its own key and nothing else. The loader's whole-config fallback stays
   reserved for an unimportable module or a top-level schema error.
 
-`BindingError` ([`bindings/errors.ts`](../apps/tuval/src/commands/bindings/errors.ts)) carries five
+`BindingError` ([`bindings/errors.ts`](../packages/tuval/src/commands/bindings/errors.ts)) carries five
 things and renders them in that order: which module, which key, the character offset inside the
 command string, what was expected, and the nearest thing the author may have meant. `file` comes
-from `describeFile` ([`bindings/file.ts`](../apps/tuval/src/commands/bindings/file.ts)), which names
+from `describeFile` ([`bindings/file.ts`](../packages/tuval/src/commands/bindings/file.ts)), which names
 the layer plus the path *inside* that layer's directory and falls back to the bare file name rather
 than leaking an absolute path.
 
@@ -254,7 +254,7 @@ into an error on the next compile — which is why nothing calls `compileBinding
 
 ## The set boot holds
 
-`SpellSet` ([`spell-set.ts`](../apps/tuval/src/commands/spell-set.ts)) is the registry table, the
+`SpellSet` ([`spell-set.ts`](../packages/tuval/src/commands/spell-set.ts)) is the registry table, the
 config's key sources and the bindings compiled from them, held in **one** `SubscriptionRef` and written in one
 `SubscriptionRef.set`. Two cells would be two states to keep in step, and keeping them in step is the whole
 job: a binding is only ever as valid as the table it was compiled against.
@@ -294,14 +294,14 @@ read.
 The parser is total, synchronous and never throws, because the page runs it on every keystroke and
 the kernel runs it over the key bindings at load.
 
-`tokenize(input)` ([`parse/tokenize.ts`](../apps/tuval/src/commands/parse/tokenize.ts)) is the
+`tokenize(input)` ([`parse/tokenize.ts`](../packages/tuval/src/commands/parse/tokenize.ts)) is the
 lexer. Whitespace separates, double quotes group, a backslash escapes the next character inside a
 quoted run as well as outside one. Every `Token` carries `text` (quotes and escapes resolved) plus
 the raw `start` and `end` offsets, because a refusal points at a position on a line the user is
 still typing. The `Tokenization` also reports `trailingSeparator` (the caret sits on a fresh empty
 token) and `openQuote`.
 
-`read(input, registry)` ([`parse/reading.ts`](../apps/tuval/src/commands/parse/reading.ts)) is the
+`read(input, registry)` ([`parse/reading.ts`](../packages/tuval/src/commands/parse/reading.ts)) is the
 single walk `parse` and `complete` share. Two rules make it incremental:
 
 1. **The caret's token is still being typed.** It is the last token, or a fresh empty one when the
@@ -321,7 +321,7 @@ accept what the kernel rejects. It also refuses a token with no parameter left t
 ### A final parameter that consumes remaining words
 
 Declare `RestParameter` from
-[`rest-parameter.ts`](../apps/tuval/src/commands/rest-parameter.ts) as the final field of a spell's
+[`rest-parameter.ts`](../packages/tuval/src/commands/rest-parameter.ts) as the final field of a spell's
 `Schema.Struct`; wrap it in `Schema.optionalKey` when omission is allowed. It is a string schema
 annotated with `x-command-rest: true`. No other trailing string becomes rest implicitly.
 
@@ -345,11 +345,11 @@ name would normally select live values.
 
 `help` and `spell describe` opt their path into rest. They retain `segmentsOf` to resolve dotted
 and whitespace-separated paths to the same command; the generic parser does not normalize dots
-in arbitrary text. [`parse/rest.unit.test.ts`](../apps/tuval/src/commands/parse/rest.unit.test.ts)
+in arbitrary text. [`parse/rest.unit.test.ts`](../packages/tuval/src/commands/parse/rest.unit.test.ts)
 exercises declaration refusals, the wire round trip, completion, unchanged non-rest refusals and
 the three path spellings through the real discovery handlers.
 
-`parse(input, registry, snapshot)` ([`parse/parse.ts`](../apps/tuval/src/commands/parse/parse.ts))
+`parse(input, registry, snapshot)` ([`parse/parse.ts`](../packages/tuval/src/commands/parse/parse.ts))
 answers one of three (the second parameter is named `registry` and its type is `SpellIndex`):
 
 | `_tag` | Carries |
@@ -361,7 +361,7 @@ answers one of three (the second parameter is named `registry` and its type is `
 ### The spell index
 
 `buildSpellIndex(descriptions)`
-([`parse/spell-index.ts`](../apps/tuval/src/commands/parse/spell-index.ts)) builds the trie the
+([`parse/spell-index.ts`](../packages/tuval/src/commands/parse/spell-index.ts)) builds the trie the
 parser walks, from the protocol's `RegistryDescription`. That is the same value a `Snapshot`
 carries, so the page and the kernel run this parser over identical input. A `RegistryTable` would
 carry richer types and the page cannot hold one: it has descriptions, never closures.
@@ -381,7 +381,7 @@ Unannotated input is read defensively. Explicit invalid rest declarations throw
 ## Completion
 
 `complete(input, registry, snapshot)`
-([`parse/complete.ts`](../apps/tuval/src/commands/parse/complete.ts)) ranks the candidates for the
+([`parse/complete.ts`](../packages/tuval/src/commands/parse/complete.ts)) ranks the candidates for the
 token under the caret. Two rules, and they never mix:
 
 1. **Exact prefix, for names the system defines.** Spell path segments, program ids, and an enum
@@ -422,20 +422,20 @@ round trip.
 
 ## The core spells
 
-`helpSpells` ([`core/index.ts`](../apps/tuval/src/commands/core/index.ts)) is the three discovery
+`helpSpells` ([`core/index.ts`](../packages/tuval/src/commands/core/index.ts)) is the three discovery
 spells as one list.
 
-- **`help [path]`** ([`core/help.ts`](../apps/tuval/src/commands/core/help.ts)) lists every spell, or
+- **`help [path]`** ([`core/help.ts`](../packages/tuval/src/commands/core/help.ts)) lists every spell, or
   only the ones under one path. There is no help text in the file: a row's `describe` is the
   registry's own, and `usage` is derived by running `readParams` and `describeExpected` over the
   description. A prefix that matches nothing answers `UnknownSpell`, carrying a suggestion only when
   one is near enough. `segmentsOf` accepts both separators, because a typed line uses spaces and a
   refusal renders dots.
 - **`spell list`** and **`spell describe <path>`**
-  ([`core/spell.ts`](../apps/tuval/src/commands/core/spell.ts)) hand the same table to a program.
+  ([`core/spell.ts`](../packages/tuval/src/commands/core/spell.ts)) hand the same table to a program.
   An agent driving Tuval discovers what it can call over exactly the wire a human's command line uses.
 - **`process spawn` / `process send` / `process read`**
-  ([`core/process.ts`](../apps/tuval/src/commands/core/process.ts)) are the generic tools an agent
+  ([`core/process.ts`](../packages/tuval/src/commands/core/process.ts)) are the generic tools an agent
   program calls, written once for every program. Nothing in the file names a program. A
   `SpawnedProcesses` service retains the handle of every process it spawns, because the process
   table exposes rows and no dispatch; `send` and `read` answer `UnknownProcess` for a process this
@@ -446,24 +446,24 @@ spells as one list.
   where the answer goes; `answer` spends one correlation, checks the payload against that port's own
   output schema, and hands it to the asking process; and `spawn`'s `on` record turns a named child
   out-port into one of the spawner's own events. All three land through `deliver`
-  ([`process/inbox.ts`](../apps/tuval/src/process/inbox.ts)), which needs only a live handle — so an
+  ([`process/inbox.ts`](../packages/tuval/src/process/inbox.ts)), which needs only a live handle — so an
   answer reaches any process, not only one these spells spawned.
 
 ### The bridge
 
-`SpellBridge` ([`bridge/SpellBridge.ts`](../apps/tuval/src/commands/bridge/SpellBridge.ts)) is
+`SpellBridge` ([`bridge/SpellBridge.ts`](../packages/tuval/src/commands/bridge/SpellBridge.ts)) is
 `list` and `call`, and neither mentions a program. An agent program's SDK tool is a wrapper over it,
 so a second agent program costs an adapter and no new spell.
 
 `call(path, args, scope)` refuses a path outside the allowance with `SpellNotAllowed`
-([`bridge/errors.ts`](../apps/tuval/src/commands/bridge/errors.ts)) before the executor is reached.
+([`bridge/errors.ts`](../packages/tuval/src/commands/bridge/errors.ts)) before the executor is reached.
 `SpellBridge.layer({allow})` takes that allowance from whoever builds the layer, and no program
 row's field is wired into it. A `SpellAllowance` is a rule and never a snapshot, which is what keeps
 `list` and `call` answering from one config: `everyRegistered` is re-read from the registry on every
 call, so a reload moves both halves together, and `onlyPaths([…])` names constants the caller wrote
 down, which nothing can make stale. `src/boot.ts` passes `everyRegistered`;
 `bridge/bridge.unit.test.ts` passes its own paths, and
-[`bridge/allowlist-reload.unit.test.ts`](../apps/tuval/src/commands/bridge/allowlist-reload.unit.test.ts)
+[`bridge/allowlist-reload.unit.test.ts`](../packages/tuval/src/commands/bridge/allowlist-reload.unit.test.ts)
 reloads through the real `SpellSet` in both directions. What makes the file program-blind is that no
 program id is written in it. The intent recorded in the module's own docblock is that a calling
 program's registry row will supply the allowance, and that wiring is a later child's.
@@ -476,7 +476,7 @@ enforce.
 
 An AI agent process reaches the bridge through its `TuvalAiAgent` layer, which is where a real
 program's SDK tool would sit. `ScriptedAiAgent` has no SDK, so its script says what to call: a
-turn's optional `plan` ([`ai-agent/service/script.ts`](../apps/tuval/src/ai-agent/service/script.ts))
+turn's optional `plan` ([`ai-agent/service/script.ts`](../packages/tuval/src/ai-agent/service/script.ts))
 names one spell at a time out of the answers the turn already has, and the script's `spells` holds
 the `SpellBridgeApi` those calls go through plus the `Scope` each one carries. Every answer lands on
 the session's transcript as a `tool` item, so the run reads back as the conversation it was.
@@ -484,32 +484,32 @@ the session's transcript as a `tool` item, so the run reads back as the conversa
 ### An agent program's adapter over the bridge
 
 The Claude program's is the first one, under
-[`apps/tuval/src/claude/tools/`](../apps/tuval/src/claude/tools). It is the shape every later agent
+[`packages/tuval-claude/src/tools/`](../packages/tuval-claude/src/tools). It is the shape every later agent
 program copies, and it is three files:
 
-- [`KernelBridge.ts`](../apps/tuval/src/claude/tools/KernelBridge.ts) — `spawn`, `send` and `read` as
+- [`KernelBridge.ts`](../packages/tuval-claude/src/tools/KernelBridge.ts) — `spawn`, `send` and `read` as
   Effects. `KernelBridge.live(scope)` calls the three `process` spells through `SpellBridge` with the
   calling process's own `Scope`; `KernelBridge.scripted(table)` is the deterministic fake, and each
   build of it gets its own state.
-- [`errors.ts`](../apps/tuval/src/claude/tools/errors.ts) — the four the adapter answers with. The
+- [`errors.ts`](../packages/tuval-claude/src/tools/errors.ts) — the four the adapter answers with. The
   executor flattens a spell's typed error to a `SpellFailure`'s `tag` and sentence, so an adapter
   re-reads that tag into an error of its own; the fields the caller already knows are its own, and
   whatever else the kernel said rides in `detail`. That is where `PortRefused` names the port's kind,
   since the wire carries no field for it.
-- [`server.ts`](../apps/tuval/src/claude/tools/server.ts) — `tuvalToolServer(bridge, run)`, three
+- [`server.ts`](../packages/tuval-claude/src/tools/server.ts) — `tuvalToolServer(bridge, run)`, three
   `tool()` definitions on one `createSdkMcpServer({name: "tuval"})`. The server name is half of every
   wire name (`mcp__tuval__spawn`), so it is written once and `wireNames` is derived from it. Handlers
   are plain `async` functions and the Effect runs *inside* one, through a `ToolRuntime` the calling
   process built: the SDK offers no hook for handing it a runtime.
 
 No program id is written in that directory, and
-[`boundary.unit.test.ts`](../apps/tuval/src/claude/tools/boundary.unit.test.ts) is what keeps it that
+[`boundary.unit.test.ts`](../packages/tuval-claude/src/tools/boundary.unit.test.ts) is what keeps it that
 way.
 
 ## The Tuval protocol
 
 One versioned page-to-kernel wire
-([`protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts)). `PROTOCOL_VERSION` is `1` and
+([`protocol/messages.ts`](../packages/tuval/src/protocol/messages.ts)). `PROTOCOL_VERSION` is `1` and
 every message carries it, so a page and a kernel from different builds refuse each other by decode
 rather than by behaviour.
 
@@ -536,12 +536,12 @@ over the whole desk, bumped when a window takes focus and when a process spawns,
 stamp is whatever was touched last. It is a counter and not a `lastFocusedAt` for the reason
 `Revision` is one — the kernel holds no clock, a counter is deterministic under test, and the page
 only ever compares two stamps, so a wall time would buy nothing and cost clock skew.
-[`protocol/recency.ts`](../apps/tuval/src/protocol/recency.ts) mints it, beside the schema that
+[`protocol/recency.ts`](../packages/tuval/src/protocol/recency.ts) mints it, beside the schema that
 declares it and for the same reason `applyPatch` lives there. Completion reads it to break a fuzzy
 tie; no shell holds windows yet, so `focusWindow` has no production caller.
 
 The registry rides in the `Snapshot` as a `RegistryDescription`
-([`protocol/registry-description.ts`](../apps/tuval/src/protocol/registry-description.ts)), so the
+([`protocol/registry-description.ts`](../packages/tuval/src/protocol/registry-description.ts)), so the
 parser's index is built without a round trip.
 
 JSON text is the whole wire. There is no binary framing and there are no channels. A program that
@@ -549,13 +549,13 @@ streams raw bytes is what reopens that.
 
 ### Codec, ids, patch
 
-[`protocol/codec.ts`](../apps/tuval/src/protocol/codec.ts) exports four functions,
+[`protocol/codec.ts`](../packages/tuval/src/protocol/codec.ts) exports four functions,
 `decodePageMessage` / `decodeKernelMessage` / `encodePageMessage` / `encodeKernelMessage`. A decode
 is total: it answers with the message or with `ProtocolRefused`
-([`protocol/errors.ts`](../apps/tuval/src/protocol/errors.ts)) naming the direction and the schema
+([`protocol/errors.ts`](../packages/tuval/src/protocol/errors.ts)) naming the direction and the schema
 issue. Nothing throws and nothing resolves a malformed frame to a partial value.
 
-[`protocol/json.ts`](../apps/tuval/src/protocol/json.ts) holds the module's native `try`/`catch`,
+[`protocol/json.ts`](../packages/tuval/src/protocol/json.ts) holds the module's native `try`/`catch`,
 on purpose: reading and writing untrusted JSON needs it, the repo bans it inside Effect control
 flow, so the boundary lives in its own module with no `effect` import and the codec wraps it. Both
 directions answer a value rather than throwing — `parseJson` is `Parsed | Failed`, `stringifyJson`
@@ -563,12 +563,12 @@ is `Stringified | Failed`. The write needs the same guard as the read because `S
 a reply's `result` and `Replace.value` are all `Schema.Unknown`: encode is identity there, so a
 BigInt or a cycle reaches the writer untouched and encode fails with `ProtocolRefused`.
 
-[`protocol/ids.ts`](../apps/tuval/src/protocol/ids.ts) re-declares `ProcessId` and `ProgramId`
+[`protocol/ids.ts`](../packages/tuval/src/protocol/ids.ts) re-declares `ProcessId` and `ProgramId`
 rather than importing them from the kernel slices, which keeps the protocol module independent by
 construction. It costs nothing at the type level: `Schema.brand` is keyed on the literal brand
 string, so `"tuval/ProcessId"` here and in `src/process/process.ts` are one type to the checker.
 
-`applyPatch(snapshot, patch)` ([`protocol/patch.ts`](../apps/tuval/src/protocol/patch.ts)) encodes,
+`applyPatch(snapshot, patch)` ([`protocol/patch.ts`](../packages/tuval/src/protocol/patch.ts)) encodes,
 walks each replace path, then decodes the result back as a `Snapshot`. The decode is the point: a
 patch that would leave the desk in a shape the protocol does not admit is refused with
 `PatchRefused` rather than delivered. A replace never creates a key.
@@ -576,11 +576,11 @@ patch that would leave the desk in a shape the protocol does not admit is refuse
 The revision check is `patch.rev !== snapshot.rev + 1`, so a patch applies over exactly the
 revision below it: a patch at `rev + 7` is refused rather than applied over a gap, and so is one
 older than the snapshot. That is what the refusal message ("does not follow") and the comment on
-`Patch` in [`protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts) ("it applies only over
+`Patch` in [`protocol/messages.ts`](../packages/tuval/src/protocol/messages.ts) ("it applies only over
 the revision just below it") have always said; the check used to be wider than both, which is
 [#7689](https://github.com/kamp-us/phoenix/issues/7689).
 
-[`protocol/issue.ts`](../apps/tuval/src/protocol/issue.ts) turns an Effect `SchemaError` into
+[`protocol/issue.ts`](../packages/tuval/src/protocol/issue.ts) turns an Effect `SchemaError` into
 `{expected, at}`, which is what every refusal in the slice interpolates.
 
 It takes the failing input as a second operand, and that operand serves one case: a direction union
@@ -622,7 +622,7 @@ rides on the Msg's own Cmd — `window:open` becomes `window.open`, whose cell e
 `commandName` joins the path with colons (`window:close`), which is the spelling a key binding uses;
 `commandPath` reads it back. One derivation each way, so a row cannot carry a name its path
 disagrees with, and the prefix table's `CommandName`
-([`shell/keys/table.ts`](../apps/tuval/src/shell/keys/table.ts)) needs no second vocabulary.
+([`shell/keys/table.ts`](../packages/tuval-ui/src/shell/keys/table.ts)) needs no second vocabulary.
 
 `msgForCommandName` is the one place a bound key's name becomes a Msg, and `shell/core/machine.ts`
 calls it — so a key press and a typed line run the same row. It answers `null` for a row that needs
@@ -681,7 +681,7 @@ already opens — never a second mechanism.
 |---|---|
 | [`Palette.tsx`](../apps/tuval/src/palette/Palette.tsx) | The overlay: `@kampus/design`'s `CommandPalette` fed the ranked candidates, plus the focused row's sentence and the last refusal |
 | [`candidates.ts`](../apps/tuval/src/palette/candidates.ts) | `paletteCandidates`, `acceptCandidate` — what the list holds and what accepting a row types |
-| [`call.ts`](../apps/tuval/src/palette/call.ts) | `spellCallFor`, `failureLine` — a read line into a `SpellCall`, a `SpellFailure` into one sentence |
+| [`call.ts`](../packages/tuval-ui/src/palette/call.ts) | `spellCallFor`, `failureLine` — a read line into a `SpellCall`, a `SpellFailure` into one sentence |
 | [`use-palette.ts`](../apps/tuval/src/palette/use-palette.ts) | `usePalette`: open/closed, the opener's window, the element the caret goes back to |
 | [`palette.css`](../apps/tuval/src/palette/palette.css) | Geometry only. Every colour is a `@kampus/design` role token; `tokens.unit.test.ts` scans for a literal one |
 
@@ -756,8 +756,8 @@ forms, then removes a command and reconnects without reloading the page.
 
 A spell answered on demand — the session list, one page of a session's transcript — reaches the
 surface through the page's socket rather than through a state frame, and the two live instances are
-[`page/session-list.ts`](../apps/tuval/src/page/session-list.ts) and
-[`page/session-transcript.ts`](../apps/tuval/src/page/session-transcript.ts). Both are the same three
+[`page/session-list.ts`](../packages/tuval-ui/src/page/session-list.ts) and
+[`page/session-transcript.ts`](../packages/tuval-ui/src/page/session-transcript.ts). Both are the same three
 pieces, and the split is what keeps the surface provable.
 
 **A pure call/read pair per spell, under `page/`.** One function builds the `SpellCall` and mints its
@@ -767,7 +767,7 @@ arm: a page holds several calls open on one socket, so "not my reply" has to sta
 from "mine, and it is empty" — collapsing them shows one window another's answer.
 
 **The address is the program-prefixed one, and `protocol/` spells both.** The registry keys a row's
-spell under `[programId, ...path]` ([`commands/registry.ts`](../apps/tuval/src/commands/registry.ts)),
+spell under `[programId, ...path]` ([`commands/registry.ts`](../packages/tuval/src/commands/registry.ts)),
 so a call carrying the spell's bare path reaches nothing and the kernel answers `UnknownSpell`. Each
 protocol module therefore exports the row's own path *and* the whole call path
 (`SESSION_LIST_PATH` / `SESSION_LIST_CALL_PATH`,

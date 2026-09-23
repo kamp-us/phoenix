@@ -11,13 +11,13 @@
  * cannot part company with the kernel about which key arms the prefix.
  */
 
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import type {Key, PrefixState, PrefixTable} from "@kampus/tuval-ui/keys";
+import {idle, route} from "@kampus/tuval-ui/keys";
 import {Duration} from "effect";
 import type {ShellState, Workspace} from "../core/index.ts";
 import {activeWorkspace} from "../core/index.ts";
-import type {Key, PrefixState, PrefixTable} from "../keys/index.ts";
-import {idle, route} from "../keys/index.ts";
 import type {LayoutNode, WindowId as LayoutWindowId, NodeId, StackNode} from "../layout/index.ts";
-import {WindowId} from "../window/index.ts";
 
 /** The command name the surface, not the kernel, answers: opening the command line is a page act. */
 export const COMMAND_LINE_COMMAND = "command:open";

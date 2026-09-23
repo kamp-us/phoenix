@@ -18,14 +18,14 @@
 import {homedir} from "node:os";
 import {dirname} from "node:path";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
+import {renderBindingErrors} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
+import {renderAdoption} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Cause, Console, Effect, Exit, Option, Runtime} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {boot, defaultGlobalConfig} from "./boot.ts";
-import {renderBindingErrors} from "./commands/bindings/index.ts";
 import {servePage} from "./page/dev-server.ts";
 import {displayHost} from "./page/loopback.ts";
 import {serveDesk} from "./shell/host/index.ts";
-import {renderAdoption} from "./state-dir.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 import type {TableRow} from "./table/row.ts";
 

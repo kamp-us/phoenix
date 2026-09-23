@@ -26,10 +26,10 @@
  * repeats it byte for byte, so that arm refuses at once.
  */
 
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Duration, Effect, Fiber, Option, Schema, type Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {useEffect, useState} from "react";
-import type {ProcessId} from "../process/process.ts";
 import type {ShellMsg} from "../shell/core/index.ts";
 import type {AttachedProcess, PageAttachment} from "../shell/transport/browser.ts";
 import {attach, SHELL_PROGRAM_ID} from "../shell/transport/browser.ts";

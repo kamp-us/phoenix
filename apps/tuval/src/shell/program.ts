@@ -12,12 +12,26 @@
  * whoever runs the desk, and this slice ships only the inert set (`unwiredShellEffects`).
  */
 
+import type {GraphNode} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {
+	AnyProgram,
+	HostHandlers,
+	Migrations,
+	Program,
+} from "@kampus/tuval-sdk/kernel/registry/program";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {
+	type Empty,
+	empty,
+	type ProcessGone,
+	processGone,
+	WindowId,
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {initialDesk} from "@kampus/tuval-ui/desk";
+import {defaultPrefixTable, type PrefixTable, prefixTableFor} from "@kampus/tuval-ui/keys";
 import {Effect, Option, Predicate} from "effect";
-import type {GraphNode} from "../ports/graph.ts";
-import {NodeId} from "../ports/graph.ts";
-import {ProcessId} from "../process/process.ts";
-import type {AnyProgram, HostHandlers, Migrations, Program} from "../registry/program.ts";
-import {ProgramId} from "../registry/program.ts";
 import {shellSpells, shellSpellsFor} from "./commands/spells.ts";
 import {commandIndexFor, type ShellCommandFeatures} from "./commands/table.ts";
 import {
@@ -27,10 +41,7 @@ import {
 	type ShellState,
 	shellCore,
 } from "./core/index.ts";
-import {initialDesk} from "./desk/state.ts";
-import {defaultPrefixTable, type PrefixTable, prefixTableFor} from "./keys/index.ts";
 import {windows} from "./layout/index.ts";
-import {type Empty, empty, type ProcessGone, processGone, WindowId} from "./window/index.ts";
 
 /** The row's stable id. A founder rebinding the shell in their own config replaces this id's row. */
 export const shellId = ProgramId.make("shell");
@@ -205,7 +216,7 @@ const isShellRow = (program: AnyProgram): program is ShellRow =>
  * both: `boot` calls it once, and everything downstream — the registry, the spell set, the grammar
  * the transport sends — reads the gated row rather than re-deriving the gate for itself (#8867).
  *
- * Gating is additive and lives in two lists, `boardBindings` in `./keys/table.ts` and
+ * Gating is additive and lives in two lists, `boardBindings` in `packages/tuval-ui/src/shell/keys/table.ts` and
  * `boardCommands` in `./commands/table.ts`. Both are keyed on the one flag, so a key can never name
  * a row this build does not hold.
  */

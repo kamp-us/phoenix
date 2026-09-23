@@ -16,9 +16,9 @@
  * title and the status — and a run's `summary` is the thing a morning brief actually *is*. One line
  * per run, ten runs, read at a glance, is the whole point of opening one.
  *
- * **What this module may import.** `@kampus/tuval/window` (the browser-safe door, whose own closure
+ * **What this module may import.** `@kampus/tuval-sdk/window` (the browser-safe door, whose own closure
  * reaches no `node:` builtin), `effect`, `react`, and this package's kernel-free `./state.ts`. It
- * must not reach `./cron.ts`: that file imports `@kampus/tuval/authoring`, which reaches
+ * must not reach `./cron.ts`: that file imports `@kampus/tuval-sdk/authoring`, which reaches
  * `node:crypto` through the kernel, and the page loads this module in a browser tab.
  *
  * **What the two exports are.** `default` is a renderer minted with `windowRenderer("module", …)`
@@ -31,8 +31,8 @@
  * the same event landing in the same cell. The button is the spell, without the palette.
  */
 
-import type {WindowHost} from "@kampus/tuval/window";
-import {windowRenderer} from "@kampus/tuval/window";
+import type {WindowHost} from "@kampus/tuval-sdk/window";
+import {windowRenderer} from "@kampus/tuval-sdk/window";
 import {Effect, Fiber, Stream} from "effect";
 import type {CSSProperties, ReactElement} from "react";
 import {useCallback, useEffect, useState} from "react";

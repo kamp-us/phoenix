@@ -6,10 +6,15 @@
  */
 
 import {defineMachine} from "@demlik/tea";
+import type {PayloadRejected, PortNotWired} from "@kampus/tuval-sdk/kernel/ports/errors";
+import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import {
+	type AnyProgram,
+	type Program,
+	ProgramId,
+	type RendererRef,
+} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
-import type {PayloadRejected, PortNotWired} from "../ports/errors.ts";
-import {ProcessPorts} from "../ports/ProcessPorts.ts";
-import {type AnyProgram, type Program, ProgramId, type RendererRef} from "../registry/program.ts";
 import {COUNT_KIND, isCount} from "./count.ts";
 import type {CounterState} from "./counter-state.ts";
 

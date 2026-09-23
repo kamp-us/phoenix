@@ -3,9 +3,9 @@
  * one core Msg out — no runtime, no layer, no double.
  */
 
+import {CommandName, FOCUS_LIST_KEY} from "@kampus/tuval-ui/keys";
 import {describe, expect, it} from "vitest";
 import type {ShellMsg} from "../core/machine.ts";
-import {CommandName, FOCUS_LIST_KEY} from "../keys/index.ts";
 import {pickerCommands} from "../picker/intent.ts";
 import {commandName, isOptionalParameter, parameterNames} from "./row.ts";
 import {

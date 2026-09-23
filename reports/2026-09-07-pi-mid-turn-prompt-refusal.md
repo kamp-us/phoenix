@@ -8,7 +8,7 @@ the pinned `@earendil-works/*` 0.84.3 trees in this clone's `node_modules`, neve
 line (that upgrade is epic [#8518](https://github.com/kamp-us/phoenix/issues/8518) and is not this).
 
 The reproduction is committed beside the code it describes, as
-[`apps/tuval/src/pi/ai-agent/mid-turn-refusal.unit.test.ts`](../apps/tuval/src/pi/ai-agent/mid-turn-refusal.unit.test.ts).
+[`packages/tuval-pi/src/ai-agent/mid-turn-refusal.unit.test.ts`](../packages/tuval-pi/src/ai-agent/mid-turn-refusal.unit.test.ts).
 Six cases, no model spend, no socket.
 
 ## The short version

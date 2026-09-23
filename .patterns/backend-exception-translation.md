@@ -3,11 +3,11 @@
 How a Tuval backend adapter turns an arbitrary thrown value from its SDK into one of the generic
 `TuvalAiAgent` errors — and where the thrown value itself goes.
 
-The shape lives in [`apps/tuval/src/claude/agent/refusals.ts`](../apps/tuval/src/claude/agent/refusals.ts)
-and [`apps/tuval/src/claude/agent/diagnosis.ts`](../apps/tuval/src/claude/agent/diagnosis.ts), and is
-judged by [`refusals.unit.test.ts`](../apps/tuval/src/claude/agent/refusals.unit.test.ts) beside them.
-It applies to any adapter under `apps/tuval/src/<backend>/` that catches a dependency's exception;
-it does not govern the error classes themselves ([`ai-agent/service/errors.ts`](../apps/tuval/src/ai-agent/service/errors.ts))
+The shape lives in [`packages/tuval-claude/src/agent/refusals.ts`](../packages/tuval-claude/src/agent/refusals.ts)
+and [`packages/tuval-claude/src/agent/diagnosis.ts`](../packages/tuval-claude/src/agent/diagnosis.ts), and is
+judged by [`refusals.unit.test.ts`](../packages/tuval-claude/src/agent/refusals.unit.test.ts) beside them.
+It applies to any adapter in a harness package (`packages/tuval-<backend>/src/`) that catches a dependency's exception;
+it does not govern the error classes themselves ([`ai-agent/service/errors.ts`](../packages/tuval/src/ai-agent/service/errors.ts))
 or how the core folds them.
 
 ## The exception's text is not the error's `detail`
@@ -66,10 +66,10 @@ moved off it.
 
 ## Pi keeps diagnostics on the local side of protocol 8
 
-Pi uses the same split in [`pi/diagnostics.ts`](../apps/tuval/src/pi/diagnostics.ts):
+Pi uses the same split in [`pi/diagnostics.ts`](../packages/tuval-pi/src/diagnostics.ts):
 `retaining` assigns the original thrown value to the JavaScript `Error.cause` slot, outside the
 schema fields. The client and session host translate exceptions into deliberate operation text;
-[`pi/ai-agent/refusals.ts`](../apps/tuval/src/pi/ai-agent/refusals.ts) translates their typed
+[`pi/ai-agent/refusals.ts`](../packages/tuval-pi/src/ai-agent/refusals.ts) translates their typed
 refusals again at the generic agent boundary. `failureOf` projects only tag, reason and message
 into checkpoint data. Listing has its own boundary: `session-list.ts` projects the typed error's
 message into `unreadable`, not its cause.
@@ -81,7 +81,7 @@ missing-session and disconnected guidance. Unknown codes and arbitrary exception
 the operation sentence, never inferred authentication or billing advice.
 
 Protocol 8's opaque service payload does not make local exceptions wire data. The owned
-[`dispatch.ts`](../apps/tuval/src/pi/server/dispatch.ts) logs refused create, resume and session
+[`dispatch.ts`](../packages/tuval-pi/src/server/dispatch.ts) logs refused create, resume and session
 calls with their retained error, then answers only an owned code and deliberate sentence. The
 session host's working directory and original exception never become the response message.
 Framing errors follow the same split: the local classifier retains the pinned

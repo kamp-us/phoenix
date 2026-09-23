@@ -38,8 +38,8 @@
  *
  * **The agent-inside half is honest about what it cannot do, and that is the whole of v1's caveat.**
  * A Tuval `spawn` carries a program id and an out-port routing table and nothing else
- * (`apps/tuval/src/authoring/effect.ts:111-118`); an AI-agent row's `cwd` is baked onto the
- * registry row at config time (`src/claude/program.ts:115` → `src/claude/agent/options.ts:135`) and
+ * (`SpawnEffect` in `@kampus/tuval-sdk`'s `authoring/effect.ts`); an AI-agent row's `cwd` is baked onto the
+ * registry row at config time (`packages/tuval-claude/src/program.ts` → `queryOptionsOf` in `packages/tuval-claude/src/agent/options.ts`) and
  * `claude-session`'s id is a constant, so one kernel holds one such row and one cwd. The one
  * per-spawn cwd mechanism the kernel has, `SessionOpening`, is produced by the shell picker and by
  * nothing an authored program can reach. Filed as kamp-us/phoenix#9287.
@@ -54,7 +54,11 @@
  */
 
 import {basename, join} from "node:path";
-import {PromptPayloadSchema, type TurnResult, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import {
+	PromptPayloadSchema,
+	type TurnResult,
+	TurnResultSchema,
+} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type Answer,
 	type AnyProgram,
@@ -73,7 +77,7 @@ import {
 	send,
 	spawn,
 	stop,
-} from "@kampus/tuval/authoring";
+} from "@kampus/tuval-sdk/authoring";
 import {Effect, Schema} from "effect";
 import {
 	type Machine,
@@ -805,7 +809,7 @@ export const authoredWorktree = (settled: Settled) => {
 			 * point, and what ends it is `:<id> close <name>`.
 			 *
 			 * **Whose turn, though.** Tuval's `Reply` is `{type, payload}` and carries no process id
-			 * (`apps/tuval/src/authoring/effect.ts:179-182`), so with two agents up there is nothing in
+			 * (`Reply` in `@kampus/tuval-sdk`'s `authoring/effect.ts`), so with two agents up there is nothing in
 			 * this event that says which one answered. This cell therefore attributes a result **only
 			 * when exactly one agent is running**, where "the one running agent" is a fact rather than a
 			 * guess. With two up — or with none — the result goes to `unattributed`, off every worktree,

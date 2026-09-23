@@ -1,6 +1,6 @@
+import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Schema} from "effect";
-import {NodeId} from "../ports/graph.ts";
-import {ProgramId} from "../registry/program.ts";
 
 /** The program declares the in-port but no `receive` entry for it, so nothing could be pumped into it. */
 export class NoReceiver extends Schema.TaggedError<NoReceiver>()("tuval/launch/NoReceiver", {

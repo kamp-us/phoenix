@@ -1,0 +1,290 @@
+/**
+ * The composer's seam onto the window, and the whole reason `ChatWindow` can reuse `AgentChatInput`
+ * unchanged.
+ *
+ * `AgentChatInput` (`@kampus/design`) does not take an `onSubmit`: it sends through an
+ * `AgentChatInputBridge` and reads a live connection state off that bridge's event subscription.
+ * So the bridge *is* the seam. This one answers out of the window's own vocabulary — a submit
+ * becomes a `prompt` Msg, a stop becomes an `interrupt` Msg, and the session's phase is pushed as
+ * the two events the composer keys its working/ready state on.
+ *
+ * Project trust and file completions are capabilities this window does not have, and both are
+ * answered empty rather than refused: a rejection would put the composer in its `unavailable` state
+ * and disable the send button. An empty answer is not a hidden control, though — the composer
+ * renders each picker whatever its list holds, so a control with nothing behind it reads as broken
+ * rather than absent (#8062), which is why the three settings this window *does* have are wired
+ * rather than stubbed.
+ *
+ * Models (#7981), slash commands (#8060) and thinking levels (#8062) are those three. All read the
+ * session's own state — `AiAgentSessionState.models`, `.commands` and `.thinking`, fed by each
+ * layer's `model`, `commands` and `thinking` events — and a pick becomes a `setModel` or
+ * `setThinkingLevel` Msg, while a command pick is just text the composer writes into the draft. No
+ * list is known at mount, because the agent has not started when the composer runs its loads, so
+ * all three are *pushed* through the same subscription the phase is: `AgentChatInput` re-runs its
+ * whole load on a new bridge identity, and rebuilding the bridge per state change would drop the
+ * composer back to `loading` on every turn. That is also why this bridge answers *whether* a
+ * catalog is known and not only what is in it: an empty offer read before the session opens is a
+ * different fact from a backend that offers nothing, and collapsing the two left Pi's faux desk
+ * saying "loading" through a whole answering session (#8425).
+ *
+ * Nothing here is React. It is a plain object with a setter, so its behaviour is unit-testable
+ * without a DOM — which is what `composer-bridge.unit.test.ts` does.
+ */
+
+import type {
+	AgentChatInputBridge,
+	PiCommand,
+	PiEvent,
+	PiModel,
+	PiThinkingLevel,
+} from "@kampus/design";
+import type {CommandRef, ModelRef, ThinkingLevel} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {ModelState, ThinkingState} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import type {Phase} from "@kampus/tuval-sdk/kernel/ai-agent/events";
+import {isWorking} from "./phase.ts";
+
+export interface ComposerHandlers {
+	/** The operator submitted. The window mints the idempotency key, not this bridge. */
+	readonly onPrompt: (text: string) => void;
+	/** The operator asked to stop — the composer's stop button, or Escape while a turn is running. */
+	readonly onInterrupt: () => void;
+	/** The operator picked a model. The window turns it into the `setModel` Msg. */
+	readonly onSetModel: (model: ModelRef) => void;
+	/** The operator picked a thinking level, turned into the `setThinkingLevel` Msg. */
+	readonly onSetThinkingLevel: (level: ThinkingLevel) => void;
+	readonly initialPhase: Phase;
+	readonly initialModels: ModelState;
+	readonly initialCommands: ReadonlyArray<CommandRef>;
+	readonly initialThinking: ThinkingState;
+}
+
+/**
+ * The composer names a model by `provider/id` and labels it by `name`, so a ref with no provider
+ * gets one that cannot collide with a real provider's namespace — a bare id would make two
+ * backends' same-named models one row.
+ */
+const composerModel = (model: ModelRef): PiModel => ({
+	provider: model.provider ?? "agent",
+	id: model.id,
+	name: model.name,
+});
+
+const refOf = (model: PiModel, offered: ReadonlyArray<ModelRef>): ModelRef | null =>
+	offered.find(
+		(candidate) =>
+			composerModel(candidate).provider === model.provider && candidate.id === model.id,
+	) ?? null;
+
+/**
+ * The composer's command rows. `argumentHint` is dropped rather than folded into the description:
+ * the picker inserts the command and the operator types the arguments, so a hint rendered as prose
+ * would read as part of what the command does.
+ */
+const composerCommand = (command: CommandRef): PiCommand => ({
+	name: command.name,
+	...(command.description === undefined ? {} : {description: command.description}),
+});
+
+/**
+ * The offered level as this interface names it. The design vocabulary and this one are the same
+ * seven strings, so the lookup is the whole crossing — and it is a `find` rather than an
+ * `includes`, so what comes back is typed by the session's own list and needs no cast.
+ */
+const levelOf = (
+	level: PiThinkingLevel,
+	offered: ReadonlyArray<ThinkingLevel>,
+): ThinkingLevel | null => offered.find((candidate) => candidate === level) ?? null;
+
+/**
+ * Has the layer said what this session offers?
+ *
+ * Before the session is open it has not, and its `models`/`thinking` slices still hold the
+ * reducer's empty defaults — so an empty offered set read here is "not known yet", not "nothing
+ * offered". The phase carries the answer only because every layer owes its catalogs ahead of the
+ * `ready` that closes its open — the contract is in
+ * `.patterns/agent-layer-phase-contract.md` ("The open's `ready` ships with its catalogs"), and a
+ * layer that breaks it opens onto a picker claiming nothing is offered (#8425).
+ */
+const offerResolved = (phase: Phase): boolean => phase !== "idle" && phase !== "starting";
+
+/**
+ * The one event the composer takes its catalogs on: its `harness_status` arm. An unresolved offer
+ * omits both catalog keys rather than sending empty ones, because the composer reads an omitted key
+ * as "nothing said" and an empty array as a resolved answer.
+ */
+const catalogStatus = (
+	models: ModelState,
+	commands: ReadonlyArray<CommandRef>,
+	thinking: ThinkingState,
+	resolved: boolean,
+): PiEvent => ({
+	type: "harness_status",
+	status: {
+		commands: commands.map(composerCommand),
+		...(resolved
+			? {models: models.available.map(composerModel), thinkingLevels: thinking.available}
+			: {}),
+		...(models.current === null ? {} : {model: composerModel(models.current)}),
+		...(thinking.current === null ? {} : {thinkingLevel: thinking.current}),
+	},
+});
+
+export interface ComposerBridge {
+	readonly bridge: AgentChatInputBridge;
+	/**
+	 * Tell a mounted composer where the session is now. Pushing an event rather than re-building the
+	 * bridge is deliberate: `AgentChatInput` re-runs its whole load on a new bridge identity, so a
+	 * bridge rebuilt per phase would re-enter `loading` on every turn.
+	 */
+	readonly setPhase: (phase: Phase) => void;
+	/**
+	 * Tell a mounted composer what the session now offers and runs on. Neither catalog is known at
+	 * mount — the agent has not started — so this is the only way they reach the pickers.
+	 */
+	readonly setModels: (models: ModelState) => void;
+	/** Same push, same reason: the slash catalog is not known until the session opens. */
+	readonly setCommands: (commands: ReadonlyArray<CommandRef>) => void;
+	/** Same push, same reason: the offered level set is per model and arrives with the session. */
+	readonly setThinking: (thinking: ThinkingState) => void;
+}
+
+type PendingSetting =
+	| {
+			readonly kind: "model";
+			readonly target: ModelRef;
+			readonly resolve: () => void;
+			readonly reject: (cause: Error) => void;
+	  }
+	| {
+			readonly kind: "thinking";
+			readonly target: ThinkingLevel;
+			readonly resolve: () => void;
+			readonly reject: (cause: Error) => void;
+	  };
+
+const none =
+	<A>(value: A) =>
+	(): Promise<A> =>
+		Promise.resolve(value);
+
+export const composerBridge = (handlers: ComposerHandlers): ComposerBridge => {
+	let phase = handlers.initialPhase;
+	let models = handlers.initialModels;
+	let commands = handlers.initialCommands;
+	let thinking = handlers.initialThinking;
+	let listener: ((event: PiEvent) => void) | null = null;
+	let pending: PendingSetting | null = null;
+
+	const bridge: AgentChatInputBridge = {
+		loadPiState: () =>
+			Promise.resolve({
+				isStreaming: isWorking(phase),
+				...(models.current === null ? {} : {model: composerModel(models.current)}),
+				...(thinking.current === null ? {} : {thinkingLevel: thinking.current}),
+			}),
+		loadPiCommands: () => Promise.resolve(commands.map(composerCommand)),
+		loadPiModels: () =>
+			Promise.resolve(offerResolved(phase) ? models.available.map(composerModel) : undefined),
+		loadPiThinkingLevels: () =>
+			Promise.resolve(offerResolved(phase) ? thinking.available : undefined),
+		loadPiFiles: none([]),
+		// A pick the session does not offer is dropped rather than rejected: the bridge's contract is
+		// that nothing here rejects, and the core would refuse the Msg anyway.
+		setPiModel: (model) => {
+			const picked = refOf(model, models.available);
+			if (picked === null) return Promise.resolve();
+			if (pending !== null)
+				return Promise.reject(new Error("A setting change is already in progress."));
+			return new Promise<void>((resolve, reject) => {
+				pending = {kind: "model", target: picked, resolve, reject};
+				handlers.onSetModel(picked);
+			});
+		},
+		setPiThinkingLevel: (level) => {
+			const picked = levelOf(level, thinking.available);
+			if (picked === null) return Promise.resolve();
+			if (pending !== null)
+				return Promise.reject(new Error("A setting change is already in progress."));
+			return new Promise<void>((resolve, reject) => {
+				pending = {kind: "thinking", target: picked, resolve, reject};
+				handlers.onSetThinkingLevel(picked);
+			});
+		},
+		setPiProjectTrust: () =>
+			Promise.reject(new Error("Project resources cannot be changed for this agent.")),
+		sendPiPrompt: ({message}) => {
+			handlers.onPrompt(message);
+			return Promise.resolve();
+		},
+		abortPi: () => {
+			handlers.onInterrupt();
+			return Promise.resolve();
+		},
+		answerPiExtension: none(undefined),
+		subscribeToPiEvents: (onEvent) => {
+			listener = onEvent;
+			// The composer subscribes *after* its four loads resolve, so anything that landed in
+			// between was pushed at a listener that did not exist yet and would be lost until the
+			// next catalog event — which, on a session nobody switches, never comes. Resolution is
+			// one of those things: this window's own `setPhase` runs before the child's loads have
+			// settled, so a session already `ready` answered its loads as unresolved (#8425).
+			if (
+				offerResolved(phase) ||
+				models.available.length > 0 ||
+				commands.length > 0 ||
+				thinking.available.length > 0
+			) {
+				onEvent(catalogStatus(models, commands, thinking, offerResolved(phase)));
+			}
+			return () => {
+				if (listener === onEvent) listener = null;
+			};
+		},
+	};
+
+	return {
+		bridge,
+		setPhase: (next) => {
+			const was = isWorking(phase);
+			const knew = offerResolved(phase);
+			phase = next;
+			if (next === "gone" && pending !== null) {
+				pending.reject(new Error("The agent stopped before confirming the setting."));
+				pending = null;
+			}
+			// A phase carries the offer's resolution, so crossing into a resolved one is itself news
+			// the pickers need: without this push a control left saying "loading" at `starting` has
+			// nothing to correct it if the layer's catalogs never change again.
+			if (offerResolved(next) !== knew) {
+				listener?.(catalogStatus(models, commands, thinking, offerResolved(next)));
+			}
+			const now = isWorking(next);
+			if (was === now) return;
+			listener?.({type: now ? "agent_start" : "agent_settled"});
+		},
+		setModels: (next) => {
+			models = next;
+			if (
+				pending?.kind === "model" &&
+				next.current !== null &&
+				refOf(composerModel(next.current), [pending.target]) !== null
+			) {
+				pending.resolve();
+				pending = null;
+			}
+			listener?.(catalogStatus(next, commands, thinking, offerResolved(phase)));
+		},
+		setCommands: (next) => {
+			commands = next;
+			listener?.(catalogStatus(models, next, thinking, offerResolved(phase)));
+		},
+		setThinking: (next) => {
+			thinking = next;
+			if (pending?.kind === "thinking" && next.current === pending.target) {
+				pending.resolve();
+				pending = null;
+			}
+			listener?.(catalogStatus(models, commands, next, offerResolved(phase)));
+		},
+	};
+};

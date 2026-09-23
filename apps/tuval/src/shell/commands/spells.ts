@@ -9,8 +9,8 @@
  * framework already expects a spell's requirements to ride its own type.
  */
 
+import {type AnySpell, defineSpell} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {Effect, Schema} from "effect";
-import {type AnySpell, defineSpell} from "../../commands/spell.ts";
 import {ShellDispatch} from "./dispatch.ts";
 import type {AnyShellCommand} from "./row.ts";
 import {type ShellCommandFeatures, shellCommands, shellCommandsFor} from "./table.ts";

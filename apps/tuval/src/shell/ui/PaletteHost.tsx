@@ -1,14 +1,18 @@
 /** Live registry commands and shell shortcuts, calling the attached kernel. */
 
+import {buildSpellIndex} from "@kampus/tuval-sdk/kernel/commands/parse/spell-index";
+import {WindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import type {SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {
+	PROTOCOL_VERSION,
+	SpellCall,
+	SpellReplyError,
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
 import {Effect, Fiber, Schema} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {buildSpellIndex} from "../../commands/parse/spell-index.ts";
 import {Palette} from "../../palette/index.ts";
-import {WindowId} from "../../protocol/ids.ts";
-import type {SpellReply} from "../../protocol/messages.ts";
-import {PROTOCOL_VERSION, SpellCall, SpellReplyError} from "../../protocol/messages.ts";
-import type {RegistryDescription} from "../../protocol/registry-description.ts";
 import type {CommandIndex} from "../commands/table.ts";
 import {shellCommandIndex} from "../commands/table.ts";
 import type {ShellState} from "../core/index.ts";

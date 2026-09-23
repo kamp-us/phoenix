@@ -6,11 +6,15 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import type {RendererRef} from "@kampus/tuval-sdk/kernel/registry/program";
+import {counterRow} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
+import {
+	rendererFor,
+	resolverFromTable,
+	windowRenderer,
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect} from "effect";
 import * as fixture from "../demo/module-window.tsx";
-import type {RendererRef} from "../registry/program.ts";
-import {counterRow} from "../shell/window/fixtures.ts";
-import {rendererFor, resolverFromTable, windowRenderer} from "../shell/window/index.ts";
 import {loadModuleRenderers} from "./module-renderers.ts";
 
 const MODULE_REF = "/src/demo/module-window.tsx";

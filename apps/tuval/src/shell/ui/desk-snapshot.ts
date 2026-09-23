@@ -1,7 +1,7 @@
 /**
  * The `DeskSnapshot` the desk regions are composed from, assembled where the live half of it lives.
  *
- * `../desk/` is pure and imports no React and nothing from here
+ * `packages/tuval-ui/src/shell/desk/` is pure and imports no React and nothing from here
  * ([`.patterns/tuval-shell-assembly.md`](../../../../../.patterns/tuval-shell-assembly.md)), so it
  * states what a snapshot *is* and never builds one: half of it — the `WindowHost` a renderer mounts
  * into, and the two renderer tables a page assembles from its own imports — exists only on the
@@ -12,9 +12,8 @@
  * second answer to "what is this window showing".
  */
 
-import {ProcessId} from "../../process/process.ts";
-import type {ShellState} from "../core/index.ts";
-import {activeWorkspace, processOf} from "../core/index.ts";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import type {
 	AnyInspectorRenderer,
 	AnyStatusRenderer,
@@ -22,8 +21,9 @@ import type {
 	DeskSnapshot,
 	KernelFacts,
 	SnapshotProcess,
-} from "../desk/index.ts";
-import {WindowId} from "../window/index.ts";
+} from "@kampus/tuval-ui/desk";
+import type {ShellState} from "../core/index.ts";
+import {activeWorkspace, processOf} from "../core/index.ts";
 import type {MountResolver} from "./mount.ts";
 
 /**

@@ -1,11 +1,11 @@
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
+import {featuresDefault} from "@kampus/tuval-sdk/kernel/features";
+import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
 import {ConfigLoadError, DeclaredFeatures, loadConfigModule, loadLayeredConfig} from "./config.ts";
-import {featuresDefault} from "./features.ts";
-import {NodeId} from "./ports/graph.ts";
-import {ProgramId} from "./registry/program.ts";
 
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));

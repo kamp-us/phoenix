@@ -14,16 +14,21 @@
  * gets the current value first and then every update — which is exactly `readProcess`'s promise.
  */
 
+import type {Message, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import type {SpellCall, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import type {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {
+	type DispatchResult,
+	delivered,
+	type ProcessView,
+	processGone,
+} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Deferred, Effect, Option, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";
-import type {Message, ProcessId} from "../../process/process.ts";
-import type {CallId} from "../../protocol/ids.ts";
-import type {SpellCall, SpellReply} from "../../protocol/messages.ts";
-import type {RegistryDescription} from "../../protocol/registry-description.ts";
-import type {ProgramId} from "../../registry/program.ts";
 import type {TableRow} from "../../table/row.ts";
-import type {PrefixTable} from "../keys/table.ts";
-import {type DispatchResult, delivered, type ProcessView, processGone} from "../window/host.ts";
 import {
 	type AttachRefused,
 	NoSuchProcess,

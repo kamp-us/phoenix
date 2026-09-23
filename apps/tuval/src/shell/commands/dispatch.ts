@@ -17,9 +17,9 @@
  * with a refusal a caller can read, never a defect.
  */
 
+import type {DispatchError} from "@kampus/tuval-sdk/kernel/host/actor";
+import type {HandlerFailed} from "@kampus/tuval-sdk/kernel/process/errors";
 import {Context, Effect, Layer, Schema} from "effect";
-import type {DispatchError} from "../../host/actor.ts";
-import type {HandlerFailed} from "../../process/errors.ts";
 import type {ShellMsg} from "../core/machine.ts";
 
 /** No process of the desk's program row is running, so the Msg has nowhere to land. */

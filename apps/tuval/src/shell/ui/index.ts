@@ -1,6 +1,18 @@
 /** The browser surface: the desk, its one keyboard listener, and the components it mounts. */
 
 export {
+	type ForwardedKey,
+	ForwardedKeyProvider,
+	useForwardedKey,
+} from "@kampus/tuval-ui/forwarded-key";
+export {
+	INITIAL_INPUT_MODALITY,
+	INPUT_MODALITY_ATTRIBUTE,
+	type InputModality,
+	inputModalityAround,
+	inputModalityHandlers,
+} from "@kampus/tuval-ui/input-modality";
+export {
 	type AttachEvent,
 	type AttachState,
 	type AttachStatus,
@@ -15,11 +27,6 @@ export {DeskInspector, type DeskInspectorProps} from "./DeskInspector.tsx";
 export {type DeskTables, deskSnapshotOf, noDeskTables} from "./desk-snapshot.ts";
 export {ErrorBoundary, type ErrorBoundaryProps} from "./ErrorBoundary.tsx";
 export {
-	type ForwardedKey,
-	ForwardedKeyProvider,
-	useForwardedKey,
-} from "./forwarded-key.tsx";
-export {
 	COMMAND_LINE_COMMAND,
 	defaultLayoutOf,
 	holdsPanels,
@@ -31,13 +38,6 @@ export {
 	statusFrame,
 	zoomedWindow,
 } from "./frame.ts";
-export {
-	INITIAL_INPUT_MODALITY,
-	INPUT_MODALITY_ATTRIBUTE,
-	type InputModality,
-	inputModalityAround,
-	inputModalityHandlers,
-} from "./input-modality.ts";
 export {LayoutView, type LayoutViewProps} from "./LayoutView.tsx";
 export {
 	boundMount,

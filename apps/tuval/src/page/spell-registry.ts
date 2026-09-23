@@ -1,6 +1,6 @@
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
 import {Effect, Fiber, Stream} from "effect";
 import {useEffect, useState} from "react";
-import type {RegistryDescription} from "../protocol/registry-description.ts";
 import type {PageAttachment} from "../shell/transport/browser.ts";
 
 type Source = Pick<PageAttachment, "spells" | "closed">;

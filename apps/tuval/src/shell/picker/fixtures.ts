@@ -5,26 +5,34 @@
  */
 
 import {type Cmd, defineMachine} from "@demlik/tea";
-import {Context, Effect, Exit, Layer, Option, PubSub, type Scope, Stream} from "effect";
-import {SessionOpening} from "../../ai-agent/opening.ts";
-import {CallingWindow} from "../../commands/scope.ts";
-import type {WindowId as CallWindowId} from "../../commands/spell.ts";
-import {ForgetRefused, ProcessIsPlanned, ProcessNotFound} from "../../process/errors.ts";
-import {Processes, type RemoveError, type SpawnOptions} from "../../process/Processes.ts";
-import {ProcessTable} from "../../process/ProcessTable.ts";
+import {SessionOpening} from "@kampus/tuval-sdk/kernel/ai-agent/opening";
+import {CallingWindow} from "@kampus/tuval-sdk/kernel/commands/scope";
+import type {WindowId as CallWindowId} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {
+	ForgetRefused,
+	ProcessIsPlanned,
+	ProcessNotFound,
+} from "@kampus/tuval-sdk/kernel/process/errors";
+import {
+	Processes,
+	type RemoveError,
+	type SpawnOptions,
+} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {
 	type Lifecycle,
 	type ProcessChange,
 	type ProcessHandle,
 	ProcessId,
 	type ProcessRow,
-} from "../../process/process.ts";
-import {noSelfReport} from "../../process/self-report.ts";
-import {type AnyProgram, type Program, ProgramId} from "../../registry/program.ts";
-import {Registry} from "../../registry/Registry.ts";
+} from "@kampus/tuval-sdk/kernel/process/process";
+import {noSelfReport} from "@kampus/tuval-sdk/kernel/process/self-report";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import {Context, Effect, Exit, Layer, Option, PubSub, type Scope, Stream} from "effect";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {toTableRow} from "../../table/row.ts";
-import {WindowId} from "../window/host.ts";
 
 type CountState = {readonly count: number};
 type CountMsg = {readonly type: "tick"};

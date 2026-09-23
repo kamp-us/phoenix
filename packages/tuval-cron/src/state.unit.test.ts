@@ -7,7 +7,7 @@
 // `ProcessId` is a type-only brand — a plain string at runtime — and `ProcessId.make` is the only
 // way to name one. The leaf under test imports it as a type and emits nothing; this test needs the
 // value, which is why the kernel door appears in a test of a kernel-free module and nowhere else.
-import {ProcessId} from "@kampus/tuval/authoring";
+import {ProcessId} from "@kampus/tuval-sdk/authoring";
 import {describe, expect, it} from "vitest";
 import {
 	type CronRun,

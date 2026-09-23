@@ -13,29 +13,22 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer, type Scope} from "effect";
-import {SpawnedProcesses} from "../commands/core/process.ts";
-import {Checkpoints} from "../durability/Checkpoints.ts";
-import {memoryStores} from "../durability/stores.ts";
-import {launch} from "../launch/launch.ts";
-import {compile} from "../ports/compile.ts";
-import {PayloadRejected} from "../ports/errors.ts";
-import {type Graph, NodeId} from "../ports/graph.ts";
-import {ProcessPorts} from "../ports/ProcessPorts.ts";
-import {open} from "../ports/wiring.ts";
-import {Processes} from "../process/Processes.ts";
-import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
-import {isAiAgentSessionState} from "./core/index.ts";
-import {aiAgentPortNames} from "./handlers/index.ts";
 import type {
 	ModePayload,
 	PermissionPayload,
 	TranscriptPagePayload,
 	TranscriptPayload,
-} from "./ports/index.ts";
-import {mode, permission, prompt, transcript, transcriptPage} from "./ports/index.ts";
-import {aiAgentProgram} from "./program.ts";
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import {
+	mode,
+	permission,
+	prompt,
+	transcript,
+	transcriptPage,
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
+import {aiAgentProgram} from "@kampus/tuval-sdk/kernel/ai-agent/program";
 import {
 	history,
 	mode as modeBrand,
@@ -43,8 +36,21 @@ import {
 	PERMISSION_REQUEST,
 	permissionTurn,
 	plainReply,
-} from "./service/fixtures/scripts.ts";
-import {type AgentScript, ScriptedAiAgent} from "./service/index.ts";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/fixtures/scripts";
+import {type AgentScript, ScriptedAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {compile} from "@kampus/tuval-sdk/kernel/ports/compile";
+import {PayloadRejected} from "@kampus/tuval-sdk/kernel/ports/errors";
+import {type Graph, NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import {open} from "@kampus/tuval-sdk/kernel/ports/wiring";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import {Effect, Layer, type Scope} from "effect";
+import {launch} from "../launch/launch.ts";
 
 interface Arrival {
 	readonly port: string;

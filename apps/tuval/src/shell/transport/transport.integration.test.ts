@@ -8,6 +8,24 @@
 
 import {type Cmd, DispatchDiscardedError, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
+import type {SpellPath} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {type CheckpointStores, memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import type {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {type ProcessHandle, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {type DuplicateProgramId, ProgramNotFound} from "@kampus/tuval-sdk/kernel/registry/errors";
+import {
+	type AnyProgram,
+	type Program,
+	ProgramId,
+	type RendererRef,
+} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import type {DispatchResult, ProcessView} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {
 	Context,
 	Effect,
@@ -23,26 +41,8 @@ import {
 } from "effect";
 import {Socket} from "effect/unstable/socket";
 import {WebSocket as NodeWebSocket} from "ws";
-import type {SpellPath} from "../../commands/spell.ts";
-import {Checkpoints} from "../../durability/Checkpoints.ts";
-import {type CheckpointStores, memoryStores} from "../../durability/stores.ts";
-import {Processes} from "../../process/Processes.ts";
-import type {ProcessTable} from "../../process/ProcessTable.ts";
-import {type ProcessHandle, ProcessId} from "../../process/process.ts";
-import {CallId} from "../../protocol/ids.ts";
-import {PROTOCOL_VERSION, SpellCall} from "../../protocol/messages.ts";
-import {type DuplicateProgramId, ProgramNotFound} from "../../registry/errors.ts";
-import {
-	type AnyProgram,
-	type Program,
-	ProgramId,
-	type RendererRef,
-} from "../../registry/program.ts";
-import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {scriptedDescriptions, scriptedSpellChannel} from "../host/fixtures.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
-import type {DispatchResult, ProcessView} from "../window/host.ts";
 import {attach} from "./client.ts";
 import {PlacementUnsupported} from "./errors.ts";
 import {mintLaunchToken, TOKEN_PARAM} from "./handshake.ts";

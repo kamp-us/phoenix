@@ -6,10 +6,10 @@ that merely *extends* the wire's shape is rejected, and it is rejected at encode
 a provider happened to fill, in production. So the boundary carries an explicit projection: a
 function that names each field that crosses, and drops everything else by construction.
 
-Where this lives today: [`apps/tuval/src/pi/server/`](../apps/tuval/src/pi/server/) —
-[`cost.ts`](../apps/tuval/src/pi/server/cost.ts) for model pricing and
-[`transcript.ts`](../apps/tuval/src/pi/server/transcript.ts) for messages, both feeding
-Tuval's own wire vocabulary in [`pi/wire/`](../apps/tuval/src/pi/wire/).
+Where this lives today: [`packages/tuval-pi/src/server/`](../packages/tuval-pi/src/server/) —
+[`cost.ts`](../packages/tuval-pi/src/server/cost.ts) for model pricing and
+[`transcript.ts`](../packages/tuval-pi/src/server/transcript.ts) for messages, both feeding
+Tuval's own wire vocabulary in [`pi/wire/`](../packages/tuval-pi/src/wire/).
 
 **Read the "where this stops applying" section before reaching for the negative test.** Tuval's own
 boundary stopped being strict at the 0.85.1 Pi upgrade: protocol 8 carries every payload opaque
@@ -68,14 +68,14 @@ Three rules make it hold:
    the test why the encoder is no longer the one asserting it. Either way the half that proves only
    "the four fields were copied" is not the whole test.
 
-See [`projections.unit.test.ts`](../apps/tuval/src/pi/server/projections.unit.test.ts).
+See [`projections.unit.test.ts`](../packages/tuval-pi/src/server/projections.unit.test.ts).
 
 ## The bound is not the only refusal
 
 A strict schema usually also carries value bounds, and a real catalog will violate them. Pi's
 openrouter auto-router models price themselves at `-1000000` as a "varies" sentinel, and Tuval's own
 wire type floors every rate at `0`. A value the wire cannot describe is **left out**, not clamped:
-`describable` in [`AgentSessionHost.ts`](../apps/tuval/src/pi/server/AgentSessionHost.ts) drops
+`describable` in [`AgentSessionHost.ts`](../packages/tuval-pi/src/server/AgentSessionHost.ts) drops
 those two rows, because clamping would quote a price that is not the model's.
 
 ## Where this stops applying

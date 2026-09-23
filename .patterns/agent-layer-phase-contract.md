@@ -1,7 +1,7 @@
 # What a `TuvalAiAgent` layer owes the core, per turn
 
 Every agent layer under
-[`apps/tuval/src/ai-agent/service/TuvalAiAgent.ts`](../apps/tuval/src/ai-agent/service/TuvalAiAgent.ts)
+[`packages/tuval/src/ai-agent/service/TuvalAiAgent.ts`](../packages/tuval/src/ai-agent/service/TuvalAiAgent.ts)
 pushes one `AgentEvent` stream, and the core folds it. Three of those events are a promise the layer
 makes about every turn — two `phase` events and one `result` — and nothing in the type system holds
 the layer to any of them: no signature says a turn ended, so a layer that never says one did
@@ -26,23 +26,23 @@ Per turn, exactly three events — the two `phase` events and the `result` betwe
 open the layer would be describing: it is `ready` off the `started` that the layer's own `start`
 call answered, so folding a late `starting` would walk a live session backwards into a phase where
 `promptRefused` is the only answer a prompt gets. `coreOwned` in
-[`core/fold.ts`](../apps/tuval/src/ai-agent/core/fold.ts) drops both, which makes a layer that
+[`core/fold.ts`](../packages/tuval/src/ai-agent/core/fold.ts) drops both, which makes a layer that
 sends one a layer writing to a channel nobody reads
 ([#7925](https://github.com/kamp-us/phoenix/issues/7925)).
 
 ## The two enforcement sites, and why the omission is fatal
 
-- [`core/fold.ts`](../apps/tuval/src/ai-agent/core/fold.ts) — `foldEvent`'s `phase` arm is the only
+- [`core/fold.ts`](../packages/tuval/src/ai-agent/core/fold.ts) — `foldEvent`'s `phase` arm is the only
   thing that moves a session's phase. It is also where a turn's other loose ends settle: any phase
   but `prompting` runs `settleTurn`, `interruptionAfter` drops an outstanding interrupt request,
   and `settleAccepted` reaches the running send so its window may drop the copy it was holding
   ([#8005](https://github.com/kamp-us/phoenix/issues/8005),
   [#8007](https://github.com/kamp-us/phoenix/issues/8007)). The turn-end `ready` is not decoration
   on a phase line — it is the event four pieces of state wait on.
-- [`core/machine.ts`](../apps/tuval/src/ai-agent/core/machine.ts) — the `prompt` cell, which has an
+- [`core/machine.ts`](../packages/tuval/src/ai-agent/core/machine.ts) — the `prompt` cell, which has an
   arm per case and records every answer as data rather than throwing it. At `ready` the send is
   admitted. At `prompting` it is **queued** (`enqueue`, bounded by `queueLimit` in
-  [`core/queue.ts`](../apps/tuval/src/ai-agent/core/queue.ts)) and answered `promptQueueFull` only
+  [`core/queue.ts`](../packages/tuval/src/ai-agent/core/queue.ts)) and answered `promptQueueFull` only
   once the queue is full — a prompt written while the turn runs waits rather than being refused
   ([#8159](https://github.com/kamp-us/phoenix/issues/8159)). Every other phase — `idle`,
   `starting`, `reconnecting`, `gone` — is `promptRefused`. What drains the queue is `settleQueue`,
@@ -64,7 +64,7 @@ running; only that turn's end accepts it.
 ## The open's own `ready`, and the first turn it can swallow
 
 A layer narrates its open on the same stream it narrates turns on, and the core is not listening
-yet. `subscriptions` in [`core/machine.ts`](../apps/tuval/src/ai-agent/core/machine.ts) opens the
+yet. `subscriptions` in [`core/machine.ts`](../packages/tuval/src/ai-agent/core/machine.ts) opens the
 events Sub off `state.sessionId`, which the `started` Msg sets — and `started` is what the layer's
 own `start` call answered, so everything `start` emitted is already sitting in the layer's queue
 when the Sub attaches. The queue is unbounded and nothing is lost; what varies is *when* it drains.
@@ -81,7 +81,7 @@ The per-turn `prompting` is the whole defence, and it is why the layer owes one 
 than leaving `admit`'s to stand. It rides the same queue *behind* the open's events, so the session
 is back on `prompting` before the turn's first frame whichever order the drain took
 ([#8156](https://github.com/kamp-us/phoenix/issues/8156)). Both orders are pinned in
-[`claude/agent/phases.unit.test.ts`](../apps/tuval/src/claude/agent/phases.unit.test.ts), which
+[`agent/phases.unit.test.ts`](../packages/tuval-claude/src/agent/phases.unit.test.ts), which
 folds the layer's real event stream through the real core — including the case with that one event
 removed, where the running turn reads idle for its whole length.
 
@@ -95,10 +95,10 @@ The open's `ready` is also the answer to a second question, and the layer owes b
 **emit `model` and `thinking` before the `ready` that closes the open, never after it.**
 
 A layer's `models`/`thinking` slices start on the reducer's empty defaults
-([`core/state.ts`](../apps/tuval/src/ai-agent/core/state.ts)), and an empty offered set is two
+([`core/state.ts`](../packages/tuval/src/ai-agent/core/state.ts)), and an empty offered set is two
 different facts — "the layer has not answered yet" and "answered, nothing offered". Nothing in
 `AgentEvent` distinguishes them, so
-[`shell/chat/composer-bridge.ts`](../apps/tuval/src/shell/chat/composer-bridge.ts) reads the answer
+[`shell/chat/composer-bridge.ts`](../packages/tuval-ui/src/shell/chat/composer-bridge.ts) reads the answer
 off the phase instead: past `starting`, the offer counts as resolved, and the composer stops showing
 `loading` and starts showing `thinking effort: none offered`. That read is only true of a layer
 whose catalogs are already folded when its `ready` lands.
@@ -132,7 +132,7 @@ saved at `gone`, and a live process failing into `gone` are all such lifetimes, 
 `thinking`, `modes` and `commands` are checkpointed, so their dead rows come back off disk intact
 ([#8634](https://github.com/kamp-us/phoenix/issues/8634)). So the rule is the core's: **a session at
 `gone` offers no rows.** `closeOfferedCatalogs`
-([`ai-agent/core/state.ts`](../apps/tuval/src/ai-agent/core/state.ts)) empties the four, and every
+([`ai-agent/core/state.ts`](../packages/tuval/src/ai-agent/core/state.ts)) empties the four, and every
 route to `gone` runs it — `restore` on a checkpoint loaded at `gone`, and both `fold`'s `phase` arm
 and the `gone` landing of its `failure` arm. The layer's clear then agrees with the core rather than
 being the only thing holding the line.
@@ -161,7 +161,7 @@ together:
   local command ended all owe one — marked, not skipped. A consumer told nothing about a failed turn
   waits for an answer that is never coming, which is the same wedge a missing `ready` is. A failure
   is a turn's end whether or not a phase follows it, because that is what the core does with one:
-  `phaseAfterFailure` in [`core/fold.ts`](../apps/tuval/src/ai-agent/core/fold.ts) walks a
+  `phaseAfterFailure` in [`core/fold.ts`](../packages/tuval/src/ai-agent/core/fold.ts) walks a
   `prompting` session to `ready` off any failure, emitting nothing on the layer's stream, and
   `foldInterruptRefusal` beside it does the same for every interrupt refusal but `turn-running` —
   the one case where the reply is still being written. So the fold closes the turn on the failure
@@ -175,7 +175,7 @@ together:
   asked for.
 
 **A layer does not hand-roll the bookkeeping.** `withTurnResult` in
-[`apps/tuval/src/ai-agent/turn-result.ts`](../apps/tuval/src/ai-agent/turn-result.ts) derives the
+[`packages/tuval/src/ai-agent/turn-result.ts`](../packages/tuval/src/ai-agent/turn-result.ts) derives the
 event from the bracket this contract already requires — it watches `prompting` … turn-end, collects
 the turn's items as they arrive (upserted by id, so a re-sent row is carried once as it last stood),
 takes the newest assistant row's text, and answers `ok: false` for a turn that carried a refusal,
@@ -194,29 +194,29 @@ two of them has no bracket to close (which is exactly what the host does: one `r
 
 Each layer's own test proves it rather than a shared conformance suite, because a layer that drops
 the wrap compiles clean:
-[`claude/agent/phases.unit.test.ts`](../apps/tuval/src/claude/agent/phases.unit.test.ts),
-[`codex/agent.unit.test.ts`](../apps/tuval/src/codex/agent.unit.test.ts),
-[`pi/ai-agent/turn-end.unit.test.ts`](../apps/tuval/src/pi/ai-agent/turn-end.unit.test.ts),
-[`agy/ai-agent/pays-the-turn-result.unit.test.ts`](../apps/tuval/src/agy/ai-agent/pays-the-turn-result.unit.test.ts)
-and [`ai-agent/service/ScriptedAiAgent.unit.test.ts`](../apps/tuval/src/ai-agent/service/ScriptedAiAgent.unit.test.ts).
-The fold's own cases are [`ai-agent/turn-result.unit.test.ts`](../apps/tuval/src/ai-agent/turn-result.unit.test.ts).
+[`agent/phases.unit.test.ts`](../packages/tuval-claude/src/agent/phases.unit.test.ts),
+[`agent.unit.test.ts`](../packages/tuval-codex/src/agent.unit.test.ts) (`@kampus/tuval-codex`),
+[`pi/ai-agent/turn-end.unit.test.ts`](../packages/tuval-pi/src/ai-agent/turn-end.unit.test.ts),
+[`tuval-agy/src/ai-agent/pays-the-turn-result.unit.test.ts`](../packages/tuval-agy/src/ai-agent/pays-the-turn-result.unit.test.ts)
+and [`ai-agent/service/ScriptedAiAgent.unit.test.ts`](../packages/tuval/src/ai-agent/service/ScriptedAiAgent.unit.test.ts).
+The fold's own cases are [`ai-agent/turn-result.unit.test.ts`](../packages/tuval/src/ai-agent/turn-result.unit.test.ts).
 
 ## Reference shapes
 
-- [`claude/agent/ClaudeAiAgent.ts`](../apps/tuval/src/claude/agent/ClaudeAiAgent.ts) — `prompt`
+- [`agent/ClaudeAiAgent.ts`](../packages/tuval-claude/src/agent/ClaudeAiAgent.ts) — `prompt`
   publishes `prompting` *before* the write to the CLI's input (a write that then fails is a turn
   nobody ran, and its `PromptError` settles the send on its own arm), and `drive` publishes `ready`
   on the SDK's `result` message, which is the one frame that means a turn is over. The per-turn
   `init` frame is not that frame: it leads a turn rather than closing one, and taking it for the
   turn-end phase was #7963. Copy its turn handling, not its `start`: that emits a layer `starting`
   the core drops on the floor, and its own comment beside the line says so.
-- [`pi/ai-agent/items.ts`](../apps/tuval/src/pi/ai-agent/items.ts) — `phaseOf` derives the pair from
+- [`pi/ai-agent/items.ts`](../packages/tuval-pi/src/ai-agent/items.ts) — `phaseOf` derives the pair from
   the backend's own session phase (`idle` → `ready`, anything else → `prompting`) and the fold
   emits it only on a change. A snapshot-pushing backend gets the contract for free this way; what
   it does not get for free is delivery, and a queue between the layer and the core that coalesces
   snapshots can drop the one carrying the change (#7897). See
   [snapshot-authoritative-to-delta-events.md](./snapshot-authoritative-to-delta-events.md).
-- [`claude/proof/script.ts`](../apps/tuval/src/claude/proof/script.ts) — the fixture scripts are
+- [`claude-desk/proof/script.ts`](../apps/tuval/src/claude-desk/proof/script.ts) — the fixture scripts are
   where a scripted session's narration lives, one `prompting` … `ready` bracket per turn, with the
   restart-cut turn deliberately missing its `ready` so a proof can assert what an unfinished turn
   looks like. `service/ScriptedAiAgent.ts` itself narrates no per-turn phase — it replays whatever
@@ -239,14 +239,14 @@ the turn-result half of this contract has one implementation to get right rather
 ## An open outcome also ends a subscription lifetime
 
 The transport is rebuilt before the agent's `start` call in
-[`handlers/index.ts`](../apps/tuval/src/ai-agent/handlers/index.ts), so both `started` and
+[`handlers/index.ts`](../packages/tuval/src/ai-agent/handlers/index.ts), so both `started` and
 `openFailed` advance `connection`. The latter is a dedicated completion message, not a diagnostic
 classification: an ordinary `failed` message has rebuilt nothing and cannot advance the generation.
 The existing failure fold still chooses `idle` for a refused open and `gone` for a missing resumed
 session; a process with no session id or a terminal session desires no event subscription.
 
 This distinction follows the current host's
-[`reconcile`](../apps/tuval/src/host/actor.ts): an ended or failed manual subscription keeps its
+[`reconcile`](../packages/tuval/src/host/actor.ts): an ended or failed manual subscription keeps its
 registered id, and an unchanged id is never re-armed. A new generation closes that registration and
 subscribes to the agent now held by the slot. The slot's child Scope independently closes the old
 transport on rebuild; Effect rc.112's `Scope.fork` documents that closing a child detaches it from

@@ -12,11 +12,11 @@
  * process refusing a Msg must not turn it into a refusal of the whole re-read.
  */
 
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import type {Message} from "@kampus/tuval-sdk/kernel/process/process";
+import type {AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Option} from "effect";
-import {Processes} from "./process/Processes.ts";
-import {ProcessTable} from "./process/ProcessTable.ts";
-import type {Message} from "./process/process.ts";
-import type {AnyProgram, ProgramId} from "./registry/program.ts";
 
 const byId = (rows: ReadonlyArray<AnyProgram>): ReadonlyMap<ProgramId, AnyProgram> =>
 	new Map(rows.map((row) => [row.id, row]));

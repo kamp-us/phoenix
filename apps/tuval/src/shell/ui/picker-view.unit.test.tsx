@@ -7,13 +7,13 @@
  * listbox keeps DOM focus so `aria-activedescendant` stays the one highlight.
  */
 
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {fireEvent, render} from "@testing-library/react";
 import {describe, expect, it} from "vitest";
 import type {ShellMsg} from "../core/index.ts";
 import {mountPicker, type PickerEntries, programEntries} from "../picker/browser.ts";
 import {processId, programId, programRow} from "../picker/fixtures.ts";
-import {WindowId} from "../window/index.ts";
-import {installDomShims} from "./dom.testing.ts";
 import {PickerView} from "./PickerView.tsx";
 
 installDomShims();

@@ -9,36 +9,46 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Fiber, Layer} from "effect";
-import {TestClock} from "effect/testing";
-import {SpellExecutor} from "../commands/executor.ts";
-import {type Client, WindowIndex} from "../commands/scope.ts";
-import {ClientId, WorkspaceId} from "../commands/spell.ts";
-import {SpellSet} from "../commands/spell-set.ts";
-import {CallId} from "../protocol/ids.ts";
-import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../protocol/messages.ts";
-import type {SessionList} from "../protocol/session-list.ts";
-import {SESSION_LIST_CALL_PATH, SESSION_LIST_PROGRAM} from "../protocol/session-list.ts";
-import type {AnyProgram} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
-import {programEntries} from "../shell/picker/entries.ts";
-import {type AiAgentSessions, listAiAgentSessions} from "./backends.ts";
-import {aiAgentProgram} from "./program.ts";
-import {SESSION_LIST_WINDOW_REF} from "./renderer-ref.ts";
-import {models, modes, thinking} from "./service/fixtures/scripts.ts";
+import {
+	type AiAgentSessions,
+	listAiAgentSessions,
+} from "@kampus/tuval-sdk/kernel/ai-agent/backends";
+import {aiAgentProgram} from "@kampus/tuval-sdk/kernel/ai-agent/program";
+import {SESSION_LIST_WINDOW_REF} from "@kampus/tuval-sdk/kernel/ai-agent/renderer-ref";
+import {models, modes, thinking} from "@kampus/tuval-sdk/kernel/ai-agent/service/fixtures/scripts";
 import {
 	type AgentScript,
 	ListError,
 	ScriptedAiAgent,
 	type SessionSummary,
 	sessionSummary,
-} from "./service/index.ts";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {
 	AiAgentSessionList,
 	sessionListId,
 	sessionListProgram,
 	sessionListSpell,
-} from "./session-list.ts";
+} from "@kampus/tuval-sdk/kernel/ai-agent/session-list";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {type Client, WindowIndex} from "@kampus/tuval-sdk/kernel/commands/scope";
+import {ClientId, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {
+	PROTOCOL_VERSION,
+	SpellCall,
+	type SpellReply,
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import type {SessionList} from "@kampus/tuval-sdk/kernel/protocol/session-list";
+import {
+	SESSION_LIST_CALL_PATH,
+	SESSION_LIST_PROGRAM,
+} from "@kampus/tuval-sdk/kernel/protocol/session-list";
+import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import {Effect, Fiber, Layer} from "effect";
+import {TestClock} from "effect/testing";
+import {programEntries} from "../shell/picker/entries.ts";
 
 const at = (offset: number): number => 1_760_000_000_000 + offset;
 

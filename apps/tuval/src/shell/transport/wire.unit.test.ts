@@ -4,19 +4,19 @@
  * never guessed at.
  */
 
-import {Duration, Option} from "effect";
-import {assert, describe, expect, it} from "vitest";
-import type {ProcessId} from "../../process/process.ts";
-import {CallId} from "../../protocol/ids.ts";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
 import {
 	PROTOCOL_VERSION,
 	SpellCall,
 	SpellReplyError,
 	SpellReplyOk,
-} from "../../protocol/messages.ts";
-import type {ProgramId} from "../../registry/program.ts";
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import type {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
+import {Duration, Option} from "effect";
+import {assert, describe, expect, it} from "vitest";
 import type {TableRow} from "../../table/row.ts";
-import {defaultPrefixTable} from "../keys/table.ts";
 import {
 	ATTACH_KIND,
 	ATTACH_REFUSED_KIND,
@@ -207,7 +207,7 @@ describe("the transport wire", () => {
 
 	it("a reply whose result is absent round trips: JSON cannot carry a Void spell's `undefined`", () => {
 		// What `succeeded` builds for every authored spell, whose `result` is `Schema.Void`
-		// (`../../authoring/commands.ts`): `result: undefined`, which `JSON.stringify` drops. The key
+		// (the SDK's `authoring/commands.ts`): `result: undefined`, which `JSON.stringify` drops. The key
 		// comes back absent, and the page reads absent as "completed, returned nothing" (#9365).
 		const frame = spellReplyFrame(
 			new SpellReplyOk({

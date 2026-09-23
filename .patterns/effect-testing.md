@@ -188,7 +188,7 @@ scheduler preemption, which is the non-determinism you were trying to remove.
 So close the window by construction instead, and judge *that* at a named seam:
 
 - Move the read-and-write into a module that owns the `Ref` and exposes only the atomic operation
-  (`apps/tuval/src/agy/ai-agent/stop-claim.ts` — one `Ref.modify`, no `Ref` on the interface). The
+  (`packages/tuval-agy/src/ai-agent/stop-claim.ts` — one `Ref.modify`, no `Ref` on the interface). The
   two-step shape stops being something a caller can spell.
 - At the seam, assert the invariant that holds under *every* interleaving ("exactly one owner"), so
   no load can red it falsely, and read the single step off the module's own source for the one

@@ -14,17 +14,17 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
+import type {Binding} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
+import {HelpRows} from "@kampus/tuval-sdk/kernel/commands/core/help";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {ClientId, renderPath, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {Effect, Fiber, type FileSystem, Schema, type Scope} from "effect";
 import {afterEach} from "vitest";
 import {type Booted, boot, coreSpells, projectDir} from "./boot.ts";
-import type {Binding} from "./commands/bindings/index.ts";
-import {HelpRows} from "./commands/core/help.ts";
-import {SpellExecutor} from "./commands/executor.ts";
-import {ClientId, renderPath, WorkspaceId} from "./commands/spell.ts";
-import {SpellSet} from "./commands/spell-set.ts";
 import type {DeclaredConfig} from "./config-fixtures/reloadable.ts";
-import {CallId} from "./protocol/ids.ts";
-import {PROTOCOL_VERSION, SpellCall} from "./protocol/messages.ts";
 import {scratchHome} from "./scratch-home.ts";
 
 /** The scratch home every boot in this file runs under. */

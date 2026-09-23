@@ -20,17 +20,18 @@
  */
 
 import {defineMachine} from "@demlik/tea";
-import {Duration} from "effect";
-import {type CommandIndex, shellCommandIndex} from "../commands/table.ts";
+import type {ViewState} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {
 	closeBoard,
 	type DeskMsg,
 	initialDesk,
 	toggleBoard,
 	toggleInspector,
-} from "../desk/state.ts";
-import type {CommandName, Key, PrefixState, PrefixTable, RouteAnswer} from "../keys/index.ts";
-import {idle, route} from "../keys/index.ts";
+} from "@kampus/tuval-ui/desk";
+import type {CommandName, Key, PrefixState, PrefixTable, RouteAnswer} from "@kampus/tuval-ui/keys";
+import {idle, route} from "@kampus/tuval-ui/keys";
+import {Duration} from "effect";
+import {type CommandIndex, shellCommandIndex} from "../commands/table.ts";
 import {
 	createStack,
 	createTree,
@@ -50,7 +51,6 @@ import {
 } from "../layout/index.ts";
 import type {ProgramOpening} from "../picker/intent.ts";
 import {mountPicker} from "../picker/view.ts";
-import type {ViewState} from "../window/host.ts";
 import {
 	activeWorkspace,
 	disarmed,

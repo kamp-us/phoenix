@@ -9,14 +9,14 @@
  * and nothing but a stated clock can say that.
  */
 
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 import {
 	emit,
 	type ShapeSource,
 	STATUS_PORT,
 	TITLE_PORT,
 	testProgram,
-} from "@kampus/tuval/authoring";
-import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval/sessions";
+} from "@kampus/tuval-sdk/authoring";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {type CronOptions, cron, cronProgram} from "./cron.ts";
 import {armSchedule, humanize, parseSchedule} from "./schedule.ts";

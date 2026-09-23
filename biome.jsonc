@@ -117,6 +117,17 @@
 					}
 				}
 			}
+		},
+		{
+			// The authoring example is held to a ruled line budget (#8716 R11.1, pinned by its own
+			// test), and it imports the authoring door by the package specifier an outside author
+			// writes. At 100 columns that one import wraps to ten lines and spends the budget on
+			// punctuation. 110 is exactly that import's width, so it stays the one line it was when the
+			// specifier was relative and nothing else in the file rewraps.
+			"includes": ["apps/tuval/src/example/pr-review.ts"],
+			"formatter": {
+				"lineWidth": 110
+			}
 		}
 	]
 }

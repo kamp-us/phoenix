@@ -11,14 +11,14 @@
 
 import {readFileSync} from "node:fs";
 import {defineMachine} from "@demlik/tea";
+import type {ClaudeSessionConfigInput} from "@kampus/tuval-claude";
+import {CLAUDE_SESSION_PROGRAM, claudeSession} from "@kampus/tuval-claude";
+import {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
+import {ScriptedAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import type {AgentScript} from "@kampus/tuval-sdk/kernel/ai-agent/service/script";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
-import {Mode} from "../ai-agent/ports/index.ts";
-import {ScriptedAiAgent} from "../ai-agent/service/index.ts";
-import type {AgentScript} from "../ai-agent/service/script.ts";
-import type {ClaudeSessionConfigInput} from "../claude/config.ts";
-import {CLAUDE_SESSION_PROGRAM, claudeSession} from "../claude/program.ts";
-import type {TuvalConfigInput} from "../config.ts";
-import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 
 /** One generation of the fixture: the `claude` block, or the row's absence. */
 export interface DeclaredClaudeConfig {

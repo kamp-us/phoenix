@@ -33,7 +33,7 @@ pnpm deploy       # vite build + alchemy deploy (use --stage <name> for isolatio
 
 ## Architecture
 
-phoenix is a pnpm monorepo with one runnable app per directory under `apps/` (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)). There are two today: `apps/web`, the Cloudflare Worker, and `apps/tuval`, a local app that carries no `alchemy.run.ts` and never deploys. The docs live alongside the code: `.decisions/` for the *why*, `.patterns/` for the *how*.
+phoenix is a pnpm monorepo with one runnable app per directory under `apps/` (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)). There are two today: `apps/web`, the Cloudflare Worker, and `apps/tuval`, a local app that carries no `alchemy.run.ts` and never deploys. An app is never imported: code another package needs ships as a package under `packages/`, and apps take `@kampus-apps/*` names (ADR [0407](./.decisions/0407-apps-are-never-imported.md)). The docs live alongside the code: `.decisions/` for the *why*, `.patterns/` for the *how*.
 
 One worker serves the React SPA (built to `dist/client`, served via the `assets` binding) and the API. It keeps precedence on its own paths — `/api/*`, `/fate`, `/fate/*` — and hands everything else to the SPA. The backend is one Effect program: it declares its bindings, hosts the Durable Object, and returns a `fetch` handler.
 
@@ -77,28 +77,32 @@ apps/web/
 
 **The live plane.** A single Durable Object, `LiveDO`, fans out SSE. One class plays both roles — it holds a tab's stream (`connection:<id>`) and owns a data key's subscriber registry and fan-out (`topic:<key>`), told apart by instance-name prefix. It reaches its sibling instances through its own namespace, resolved once at init, so every RPC method stays requirement-free. State is `state.storage` KV: subscriber rows plus a per-connection counter that invalidates dead instances. Mutations reach the DO through the per-request `LivePublisher` service, whose publish methods are `Effect<void>` — a failed publish cannot fail the committed mutation. Read [.patterns/effect-sse-externally-driven.md](./.patterns/effect-sse-externally-driven.md); ADRs [0037](./.decisions/0037-unified-void-aligned-live-do.md) (the DO) and [0039](./.decisions/0039-livebus-context-service.md) (the publish-capability service, since folded into `LivePublisher`) are the design.
 
-**The second app is local.** `apps/tuval` is a Node app you run on your machine: the program/process kernel and the programs that ship in the box. It has no `alchemy.run.ts`, no bindings and no deploy, and that missing stack is the marker that it never ships to Cloudflare (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)).
+**The second app is local.** `apps/tuval` (`@kampus-apps/tuval`) is the Tuval desk, a Node app you run on your machine: the shell, the page and the programs that ship in the box. It has no `alchemy.run.ts`, no bindings and no deploy, and that missing stack is the marker that it never ships to Cloudflare (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)). The kernel it runs on and the program-author API are the Tuval SDK in `packages/tuval`, the chat UI is `packages/tuval-ui`, and each AI harness is its own package. The desk uses all of them through their public exports only (ADR [0407](./.decisions/0407-apps-are-never-imported.md)).
 
 ```
-apps/tuval/
+apps/tuval/                # @kampus-apps/tuval — the desk; imported by nothing
 ├── src/
 │   ├── bin.ts             # entry: the local process the app's `dev` script runs
 │   ├── boot.ts            # boots a configured graph of programs
-│   ├── config.ts          # the graph config the kernel reads
-│   ├── host/              # the program/process kernel: actors, definitions, errors
-│   ├── registry/          # the program registry
-│   ├── commands/          # the spell registry, executor, parser, key bindings, agent bridge
-│   ├── protocol/          # the versioned page-to-kernel wire: messages, codec, patch
-│   ├── process/           # the running-process side of the table
+│   ├── config.ts          # loads and merges the global and project config layers
+│   ├── launch/            # launching a compiled graph into processes
 │   ├── table/             # the process-table port
-│   ├── ports/             # typed inter-program wiring: compile + open
-│   ├── launch/            # launching a program into a process
-│   ├── durability/        # saving and restoring process state
-│   ├── ai-agent/          # the backend-blind AI agent slice: core machine, ports, handlers, history
-│   ├── pi/                # the Pi backend: loopback server, lease client, the `TuvalAiAgent` layer
-│   ├── claude/            # the Claude backend: the Agent SDK layer, SDK-message mapping, the generic kernel tools
-│   └── demo/              # the programs that ship in the box
+│   ├── shell/             # the shell program: layout, core machine, picker, transport, host
+│   ├── page/              # the browser desk the page serves
+│   ├── palette/           # the command palette
+│   ├── pi-desk/ claude-desk/ codex-desk/ agy-desk/   # desk-level proofs per harness
+│   └── demo/              # the demo programs that ship in the box
 └── vitest.config.ts       # two projects, `unit` and `integration`; the repo-wide unit gate resolves here
+
+packages/tuval/            # @kampus/tuval-sdk — the Tuval SDK, published to npm
+└── src/
+    ├── authoring/         # the program-author API (`./authoring`, `./window`)
+    ├── config.ts          # `TuvalConfigInput` (`./config`)
+    ├── ai-agent/          # the backend-blind AI agent runtime; `ports/` is `./ai-agent/ports`
+    └── host/ registry/ process/ ports/ durability/ commands/ protocol/   # the kernel (`./kernel/*`, unstable)
+
+packages/tuval-ui/         # @kampus/tuval-ui — the desk chat UI and shared agent window
+packages/tuval-claude/ tuval-codex/ tuval-pi/ tuval-agy/   # one harness package per AI backend
 ```
 
 ## Commands
@@ -116,15 +120,18 @@ apps/tuval/
 | `pnpm lint` | `biome check .`. |
 | `pnpm format` | `biome check --write .`. |
 
-Those run `apps/web`. `apps/tuval` is local-only, so reach it through its filter:
+Those run `apps/web`. `apps/tuval` is local-only, so reach it through its filter. Its kernel and
+authoring API live in the SDK package `packages/tuval` (`@kampus/tuval-sdk`):
 
 | Command | What it does |
 |---|---|
-| `pnpm --filter @kampus/tuval dev` | `node src/bin.ts`, which boots the kernel locally. |
-| `pnpm --filter @kampus/tuval typecheck` | `tsc -p tsconfig.json`. |
-| `pnpm --filter @kampus/tuval test` | Every vitest project in the app. |
-| `pnpm --filter @kampus/tuval test:unit` | Just the `unit` project. This is the script CI's `pnpm --filter './apps/**' test:unit` gate calls. |
-| `pnpm --filter @kampus/tuval test:integration` | Just the `integration` project. Slow, not remote: it drives a real Pi `AgentSession` over a real loopback socket on Pi's faux provider, so it needs no cloud credentials. CI's `integration tests` job runs it alongside `apps/web`'s remote suite. |
+| `pnpm --filter @kampus-apps/tuval dev` | `node src/bin.ts`, which boots the desk locally. |
+| `pnpm --filter @kampus-apps/tuval typecheck` | `tsc -p tsconfig.json`. |
+| `pnpm --filter @kampus-apps/tuval test` | Every vitest project in the app. |
+| `pnpm --filter @kampus-apps/tuval test:unit` | Just the `unit` project. This is the script CI's `pnpm --filter './apps/**' test:unit` gate calls. |
+| `pnpm --filter @kampus-apps/tuval test:integration` | Just the `integration` project. Slow, not remote: it drives a real Pi `AgentSession` over a real loopback socket on Pi's faux provider, so it needs no cloud credentials. CI's `integration tests` job runs it alongside `apps/web`'s remote suite. |
+| `pnpm --filter @kampus/tuval-sdk typecheck` | The SDK's own lens, `tsc -p tsconfig.json`. |
+| `pnpm --filter @kampus/tuval-sdk test` | The SDK's unit suite. CI's `packages-tests` job runs it with every other package's. |
 
 Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — which pins the workspace binary (2.4.15). A bare `biome …` can resolve a stale **global** install (e.g. a homebrew 2.1.1) that doesn't recognize the GritQL node bindings our `biome-plugins/*.grit` rules use, so it prints spurious `Compile Error` lines while loading them. That noise is cosmetic (the run still exits `0`, unaffected via pnpm and in CI) and safe to ignore — but go through pnpm and it won't appear.
 
@@ -145,7 +152,7 @@ The key declares a **list of apps**, because this repo runs two (ADR [0345](./.d
 
 The five apps declared today: `web` (mount `/`, both dev legs, ready on `/api/health`), `web-lab` (mount `/lab`, Vite alone), and one per rendering `apps/tuval` proof script — `tuval-chat`, `tuval-pi-window`, `tuval-pi-vertical`, each mounted under `/tuval/…` and rooted at `/`.
 
-Two of `apps/tuval`'s proof scripts are deliberately **not** declared. `proof:claude-real` boots the real Claude Code CLI on the operator's own login and spends model tokens ([`apps/tuval/src/claude/proof/serve.ts`](./apps/tuval/src/claude/proof/serve.ts)) — it is the founder's run by hand, so no verb an agent invokes may reach it, and it serves an empty desk anyway, which is nothing to capture. `proof:page-reconnect` is tracked separately. Render either by starting it yourself.
+Two of `apps/tuval`'s proof scripts are deliberately **not** declared. `proof:claude-real` boots the real Claude Code CLI on the operator's own login and spends model tokens ([`apps/tuval/src/claude-desk/proof/serve.ts`](./apps/tuval/src/claude-desk/proof/serve.ts)) — it is the founder's run by hand, so no verb an agent invokes may reach it, and it serves an empty desk anyway, which is nothing to capture. `proof:page-reconnect` is tracked separately. Render either by starting it yourself.
 
 `apps/web` reads both dev ports through [`apps/web/dev-ports.ts`](./apps/web/dev-ports.ts) (`PHOENIX_SPA_PORT`, `PHOENIX_WORKER_PORT`), which is the one place the Vite proxy and the worker it proxies to can agree. Unset, they are the historical `3000` and `1337`, so `pnpm dev` by hand is unchanged.
 

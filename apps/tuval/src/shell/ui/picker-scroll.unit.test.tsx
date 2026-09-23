@@ -6,14 +6,17 @@
  * never handed one, and the highlight walks out of the window body (#8656).
  *
  * The keys arrive the way the desk sends them — one `ForwardedKey` per press, with a rising `seq` —
- * because that is the only channel a renderer has (`./forwarded-key.tsx`).
+ * because that is the only channel a renderer has (`packages/tuval-ui/src/shell/ui/forwarded-key.tsx`).
  */
 
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {type ForwardedKey, ForwardedKeyProvider} from "@kampus/tuval-ui/forwarded-key";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {useState} from "react";
 import {describe, expect, it, vi} from "vitest";
-import {ProgramId} from "../../registry/program.ts";
 import type {ShellMsg} from "../core/index.ts";
 import {
 	asPickerView,
@@ -22,9 +25,6 @@ import {
 	type PickerEntries,
 	type PickerView as PickerViewState,
 } from "../picker/browser.ts";
-import {WindowId} from "../window/index.ts";
-import {installDomShims} from "./dom.testing.ts";
-import {type ForwardedKey, ForwardedKeyProvider} from "./forwarded-key.tsx";
 import {PickerView} from "./PickerView.tsx";
 
 installDomShims();

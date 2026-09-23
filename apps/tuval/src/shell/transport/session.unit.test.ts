@@ -1,5 +1,13 @@
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {type AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {
 	Cause,
 	Context,
@@ -13,15 +21,7 @@ import {
 	Stream,
 } from "effect";
 import {Socket} from "effect/unstable/socket";
-import {Checkpoints} from "../../durability/Checkpoints.ts";
-import {memoryStores} from "../../durability/stores.ts";
-import {Processes} from "../../process/Processes.ts";
-import {ProcessTable} from "../../process/ProcessTable.ts";
-import {ProcessId} from "../../process/process.ts";
-import {type AnyProgram, ProgramId} from "../../registry/program.ts";
-import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
 import {session} from "./server.ts";
 import {ATTACH_KIND, PROCESS_STATE_KIND} from "./wire.ts";
 
@@ -33,7 +33,12 @@ const program: AnyProgram = {
 	handlers: {},
 	capabilities: [],
 	placement: {host: "local"},
-	identity: {package: "@kampus/tuval", program: "socket-test", version: "1", digest: "socket-test"},
+	identity: {
+		package: "@kampus/tuval",
+		program: "socket-test",
+		version: "1",
+		digest: "socket-test",
+	},
 };
 
 const controlled = Effect.gen(function* () {

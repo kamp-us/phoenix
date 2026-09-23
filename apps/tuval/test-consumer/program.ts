@@ -13,7 +13,8 @@
  * alone, and every import below is a package specifier.
  */
 
-import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
+import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type Answer,
 	type AnyProgram,
@@ -31,8 +32,8 @@ import {
 	spawn,
 	stop,
 	TITLE_PORT,
-} from "@kampus/tuval/authoring";
-import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
+} from "@kampus/tuval-sdk/authoring";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {Schema} from "effect";
 
 const worker = Program.shape({in: {prompt: PromptPayloadSchema}, out: {result: TurnResultSchema}});

@@ -1,0 +1,588 @@
+/**
+ * Folding one `AgentEvent` into the session state — the half of `update` that has nothing to do
+ * with Cmds, kept apart so the transition table below reads as a table.
+ *
+ * The transcript half is the only one that can lose data, and it loses it on purpose: every new
+ * item goes through `planTranscriptWindow`, so the tail in state is whatever the bounds admit and
+ * the running omission totals carry what they dropped. A refused plan leaves the tail as it was —
+ * the planner answers with data rather than throwing, so this does too.
+ *
+ * The transcript has one other entrance, and it is here too: the operator's own turn, recorded by
+ * the `prompt` cell the moment they send it rather than when a layer gets round to echoing it
+ * (#7978). That is the item `upsertItem`'s echo join exists for.
+ */
+
+import type {AgentEvent, AgentFailure, Phase} from "../events.ts";
+import {isRefusal, localEchoes, planTranscriptWindow} from "../history/index.ts";
+import {
+	ItemId,
+	itemIds,
+	type PendingPermission,
+	type PermissionProgress,
+	type TranscriptItem,
+	type TranscriptPayload,
+	type UserItem,
+	type WindowOmission,
+} from "../ports/index.ts";
+import {INTERRUPT_ERROR, START_ERROR} from "./failures.ts";
+import {markTurnRunning, settleAccepted, settleEndedSession, settleFailedTurn} from "./sends.ts";
+import {
+	type AiAgentSessionState,
+	closeOfferedCatalogs,
+	emptyOmission,
+	noteCutReply,
+	remarkCutReplies,
+	settleSessionSubagents,
+	settleTurn,
+	type UsageLedger,
+} from "./state.ts";
+
+/** How much tail one session keeps. Absent, the window module's own defaults apply. */
+export interface WindowLimits {
+	readonly itemLimit?: number;
+	readonly byteLimit?: number;
+}
+
+/** A locally-recorded turn's id, derived from the prompt's idempotency key so it is stable. */
+export const promptItemId = (key: string): ItemId => ItemId.make(`local:${key}`);
+
+/** The operator's turn as the core records it on send, before any layer has confirmed it. */
+export const promptItem = (prompt: {
+	readonly text: string;
+	readonly key: string;
+	readonly timestamp: number;
+}): UserItem => ({
+	kind: "user",
+	id: promptItemId(prompt.key),
+	timestamp: prompt.timestamp,
+	text: prompt.text,
+	local: true,
+});
+
+/**
+ * Where a layer's echo of a locally-recorded turn belongs, or `-1`.
+ *
+ * Text is the only join the core has: the layer mints the turn under its own id, so an id lookup
+ * would append the echo beside the item it is a copy of. Matching is confined to items still
+ * carrying `local` — an echo that already landed cleared the flag — and a locally-recorded item
+ * never reconciles against another one, so two deliberate sends of the same text stay two turns.
+ */
+const echoOf = (items: ReadonlyArray<TranscriptItem>, item: TranscriptItem): number =>
+	item.kind !== "user" || item.local === true
+		? -1
+		: items.findIndex(
+				(candidate) =>
+					candidate.kind === "user" && candidate.local === true && candidate.text === item.text,
+			);
+
+/** An item with a known id supersedes the one it names, in place; anything else is the new tail. */
+export const upsertItem = (
+	items: ReadonlyArray<TranscriptItem>,
+	item: TranscriptItem,
+): ReadonlyArray<TranscriptItem> => {
+	const byId = items.findIndex((candidate) => candidate.id === item.id);
+	const at = byId < 0 ? echoOf(items, item) : byId;
+	return at < 0
+		? [...items, item]
+		: items.map((candidate, index) => (index === at ? item : candidate));
+};
+
+/**
+ * The cut-turn marker after one item folded: a row the echo join re-keys takes the marker with it.
+ *
+ * The marker names the operator's own prompt (`cutPromptId`, #8699) and the echo join replaces that
+ * row with the layer's copy under the layer's own id, so the marker would otherwise name a row no
+ * longer in the tail — the Resend gone the moment the backend echoed the very prompt it is for.
+ * This follows a re-key and decides nothing: with no marker standing there is nothing to move, and
+ * an incoming row that supersedes some other item leaves it alone.
+ */
+const reanchored = (state: AiAgentSessionState, item: TranscriptItem): ItemId | null => {
+	if (state.interrupted === null) return null;
+	const echo = echoOf(state.transcript.items, item);
+	return echo >= 0 && state.transcript.items[echo]?.id === state.interrupted
+		? item.id
+		: state.interrupted;
+};
+
+/**
+ * The cut-reply record after one item folded: a layer's marked reply is named in it from here on.
+ *
+ * Every backend marks the cut reply on the row itself — agy off the terminal `result`'s
+ * `error: "interrupted"` (`@kampus/tuval-agy`'s `src/ai-agent/mapper.ts`), the Claude layer off
+ * `aborted`, Pi off an `aborted` status, Codex off an `interrupted` turn — so this one arm catches
+ * all four, and a fifth needs nothing added here. The record is what survives the tail the row does not (#8985).
+ */
+const cutRepliesAfter = (
+	state: AiAgentSessionState,
+	item: TranscriptItem,
+): AiAgentSessionState["cutReplies"] =>
+	item.kind === "assistant" && item.interrupted === true
+		? noteCutReply(state.cutReplies, item.id)
+		: state.cutReplies;
+
+const addOmission = (carried: WindowOmission, dropped: WindowOmission): WindowOmission => ({
+	items: carried.items + dropped.items,
+	bytes: carried.bytes + dropped.bytes,
+	reason: dropped.reason === "none" ? carried.reason : dropped.reason,
+});
+
+export const foldItem = (
+	transcript: TranscriptPayload,
+	item: TranscriptItem,
+	limits: WindowLimits,
+): TranscriptPayload => {
+	const planned = planTranscriptWindow(upsertItem(transcript.items, item), limits);
+	return isRefusal(planned)
+		? transcript
+		: {items: planned.items, omitted: addOmission(transcript.omitted, planned.omitted)};
+};
+
+/**
+ * Which held row each row of the store's history is a copy of, as a pair of indices.
+ *
+ * The pairing rather than a bare set of covered positions, because the splice below needs to put
+ * each held row back *where* it was recognised: a set says only that the range is covered, and
+ * everything inside it then has to be substituted wholesale or not at all (#9208).
+ */
+const heldAnchors = (
+	held: ReadonlyArray<TranscriptItem>,
+	history: ReadonlyArray<TranscriptItem>,
+): ReadonlyMap<number, number> => {
+	// The operator's own turns join on text, not on id: the core records one at the send under a
+	// `local:<key>` id no backend ever sees (#7978), and a layer that echoes no `user` item never
+	// clears it — so an id-only join would read every unechoed prompt as a row the store lacks.
+	const echoes = localEchoes(history, held);
+	const heldAt = new Map<TranscriptItem, number>(held.map((item, index) => [item, index]));
+	// Every other row joins on identity, and identity is both of a row's ids: a backend keying its
+	// live tail and its history reads in two spaces states the join in `alias` (#8032). On `id`
+	// alone this map met nothing agy's store returned, which left the range empty and sent the whole
+	// tail to the end of the history as a second copy of itself (#9061).
+	const byId = new Map<string, number>();
+	held.forEach((item, index) => {
+		for (const id of itemIds(item)) if (!byId.has(id)) byId.set(id, index);
+	});
+	const anchors = new Map<number, number>();
+	history.forEach((item, index) => {
+		const echo = echoes.get(index);
+		const at =
+			echo === undefined ? itemIds(item).flatMap((id) => byId.get(id) ?? [])[0] : heldAt.get(echo);
+		if (at !== undefined) anchors.set(index, at);
+	});
+	return anchors;
+};
+
+/**
+ * The store's history with the tail this process is holding spliced back into the range it covers.
+ *
+ * **The held tail wins over the rows it is recognised at**, and only over those: each held row lands
+ * at the store position it was recognised at, and a store row inside the range that the tail never
+ * held stays where the store put it, between the held rows around it. Substituting the whole range
+ * instead dropped every such row — on a backend that streams no live row for a prompt or a system
+ * notice, the operator's own earlier questions (#9208).
+ *
+ * Two things live in that tail and in no store: the operator's turns, recorded locally at the send,
+ * and the half-written reply the restart cut, which the backend never finished writing down. Neither
+ * is recognised anywhere, so neither anchors: they travel with the held row they were held beside,
+ * which is what keeps every prompt above the reply it produced — merged by store order they would
+ * have none and land at the end. Where a held row is recognised, our copy is also the one the restore
+ * marked `interrupted` (`./state.ts`) and the operator has already read that way; a row that
+ * genuinely moved while the transport was down arrives on the event stream and upserts over this
+ * (#8374). Outside the range there is no held copy to win, so a cut reply the window dropped is
+ * re-marked by the caller instead (`refillTranscript`).
+ *
+ * A tail with nothing in the store at all is the whole store's junior, so it goes behind it.
+ */
+const rebaseOnStore = (
+	held: ReadonlyArray<TranscriptItem>,
+	history: ReadonlyArray<TranscriptItem>,
+): ReadonlyArray<TranscriptItem> => {
+	if (held.length === 0) return history;
+	const anchors = heldAnchors(held, history);
+	if (anchors.size === 0) return [...history, ...held];
+	const first = [...anchors.keys()].reduce((left, right) => (right < left ? right : left));
+	const anchorOf = new Map<number, number>();
+	for (const [position, at] of anchors) if (!anchorOf.has(at)) anchorOf.set(at, position);
+	const outside = (from: number, to: number): ReadonlyArray<TranscriptItem> =>
+		history.slice(from, to).filter((_, offset) => !anchors.has(from + offset));
+	const spliced: Array<TranscriptItem> = [];
+	let cursor = first;
+	held.forEach((item, at) => {
+		const anchor = anchorOf.get(at);
+		if (anchor !== undefined) {
+			spliced.push(...outside(cursor, anchor));
+			cursor = Math.max(cursor, anchor + 1);
+		}
+		spliced.push(item);
+	});
+	return [...outside(0, first), ...spliced, ...outside(cursor, history.length)];
+};
+
+/**
+ * The tail a resumed session comes back with: a fresh window over the store's whole history rather
+ * than the one the checkpoint carried (#8855).
+ *
+ * `foldItem` above runs per arriving live item, so it can shed rows and never bring one back — a
+ * checkpoint written under an older window rule stays exactly as unrenderable after every boot.
+ * This is the one entrance that re-plans, which is also what makes any later change to the window
+ * rule self-healing.
+ *
+ * The omission is replaced, not added to: it describes the window that was just planned, and the
+ * count the stale tail carried was about a window that no longer exists. A refused plan leaves the
+ * tail as it was, the same answer `foldItem` gives.
+ *
+ * `cut` is why this takes a fourth operand. `rebaseOnStore` holds the marked copy of a cut reply the
+ * tail still carries, and that reaches held rows alone — a row the window dropped comes back here as
+ * the store's bare copy, which says the model finished a reply the operator stopped. The record
+ * outlives the window (`./state.ts`), so the mark is re-applied to whatever the store returned
+ * (#8985). Pass `state.cutReplies`; an empty record is a no-op, never a silently unmarked row.
+ */
+export const refillTranscript = (
+	transcript: TranscriptPayload,
+	history: ReadonlyArray<TranscriptItem>,
+	limits: WindowLimits,
+	cut: ReadonlyArray<ItemId>,
+): TranscriptPayload => {
+	const rebased = remarkCutReplies(rebaseOnStore(transcript.items, history), cut);
+	const planned = planTranscriptWindow(rebased, limits);
+	return isRefusal(planned) ? transcript : {items: planned.items, omitted: planned.omitted};
+};
+
+/**
+ * One turn's cost, folded under that turn's own id.
+ *
+ * A turn already in the ledger keeps the entry it has: the event is the backend restating what
+ * that turn cost, which a resume does routinely, and adding it a second time is the double-count
+ * #8369 closed. The model is not keyed — it is whatever the newest report named, which is what the
+ * inspector's model line has always shown.
+ */
+export const addUsage = (
+	usage: UsageLedger,
+	event: Extract<AgentEvent, {kind: "usage"}>,
+): UsageLedger => ({
+	model: event.model,
+	turns:
+		usage.turns[event.turn] === undefined
+			? {
+					...usage.turns,
+					[event.turn]: {
+						inputTokens: event.inputTokens,
+						outputTokens: event.outputTokens,
+						cost: event.cost,
+					},
+				}
+			: usage.turns,
+});
+
+const without = <A>(
+	pending: Readonly<Record<string, A>>,
+	request: string,
+): Readonly<Record<string, A>> =>
+	Object.fromEntries(Object.entries(pending).filter(([id]) => id !== request));
+
+export const dropRequest = (state: AiAgentSessionState, request: string): AiAgentSessionState => ({
+	...state,
+	permissions: without(state.permissions, request),
+});
+
+/** A card whose answer is out. The narrowing is what lets a caller read the decision unguarded. */
+export type AnsweringPermission = PendingPermission & {
+	readonly progress: Extract<PermissionProgress, {readonly status: "answering"}>;
+};
+
+/**
+ * The card one answer's confirmation belongs to, or `null` when it belongs to nothing any more.
+ *
+ * Both operands have to match: the id says which card, and the `seq` says which *raising* of that
+ * id. A reply that outlived its own card is stale, and clearing whatever sits under the id would
+ * settle a request nobody has answered.
+ */
+export const awaitingAnswer = (
+	state: AiAgentSessionState,
+	request: string,
+	seq: number,
+): AnsweringPermission | null => {
+	const held = state.permissions[request];
+	if (held === undefined || held.seq !== seq) return null;
+	return held.progress.status === "answering" ? {...held, progress: held.progress} : null;
+};
+
+/** The card as it stands once its answer's outcome turns out to be unknown. */
+export const unresolvedAnswer = (
+	state: AiAgentSessionState,
+	request: string,
+	held: AnsweringPermission,
+): AiAgentSessionState => ({
+	...state,
+	permissions: {
+		...state.permissions,
+		[request]: {...held, progress: {status: "unresolved", decision: held.progress.decision}},
+	},
+});
+
+/**
+ * The two phases only the core's own cells may enter. `start` and `reconnect` are what put a
+ * session into an open, and `started` or `failed` are the only ways out of one, so a layer cannot
+ * tell the core about an open the core did not start.
+ *
+ * Every layer narrates its own open on the event stream — `PiAiAgent.start` and
+ * `ClaudeAiAgent.start` both emit `starting` and then `ready` — and that stream is opened by the
+ * `started` the open already answered (`machine.ts`, `subscriptions`). So the `starting` a Sub
+ * reads first is always a report about an open that is finished, and folding it walks a ready
+ * session backwards into a phase that refuses every prompt (#7925).
+ */
+const coreOwned = (phase: Phase): boolean => phase === "starting" || phase === "reconnecting";
+
+/** The backend does not hold the session this resume named. */
+const sessionGone = (failure: AgentFailure): boolean =>
+	failure.tag === START_ERROR && failure.reason === "session-not-found";
+
+/**
+ * What is left of an outstanding interruption once the session lands on `phase`.
+ *
+ * The request is a question — "has the turn stopped?" — and the session leaving `prompting` is the
+ * backend's answer, whichever way it left: a turn that ended, one that failed, a transport that
+ * went away. While the session is still on the turn the question stands, which is what keeps the
+ * window able to say the abort is outstanding rather than showing an unexplained busy line (#8007).
+ */
+export const interruptionAfter = (
+	state: AiAgentSessionState,
+	phase: AiAgentSessionState["phase"],
+): AiAgentSessionState["interruption"] => (phase === "prompting" ? state.interruption : null);
+
+/**
+ * Where a failure leaves a session: back where it was before the act that failed.
+ *
+ * A resume is the exception, because there is nowhere before it to go back to. A refused resume
+ * ends the session at `gone` — the id the checkpoint carried names nothing the backend still
+ * holds, and the one thing that must never happen is a fresh session opening quietly in its place
+ * (#7514). Any other reconnect failure is a transport that can be tried again, so it lands on
+ * `idle` rather than staying at `reconnecting`, which the reconnect guard itself would refuse.
+ */
+export const phaseAfterFailure = (
+	state: AiAgentSessionState,
+	failure: AgentFailure,
+): AiAgentSessionState["phase"] => {
+	if (state.phase === "reconnecting") return sessionGone(failure) ? "gone" : "idle";
+	if (state.phase === "starting") return "idle";
+	if (state.phase === "prompting") return "ready";
+	return state.phase;
+};
+
+/**
+ * Where a refused interrupt leaves the session — the one failure `phaseAfterFailure` does not
+ * decide (ADR 0356).
+ *
+ * `interrupt` declares no error channel, so a backend that will not stop reaches the core only as
+ * this tag on the event stream, and routing it through the walk-to-`ready` above would say the turn
+ * had stopped on the very event that says it has not. The `reason` the refusing adapter stamped is
+ * the whole input, because it is the only party that knows which half it is on.
+ *
+ * `turn-running` changes nothing but the failure the window renders: the reply is still streaming,
+ * so `settleTurn` is exactly wrong here — it would take the partial marker off a paragraph the
+ * backend is still writing — and the outstanding `interruption` stays, since the operator's request
+ * is answered rather than withdrawn.
+ *
+ * `no-live-turn` is the case that froze the founder's desk on 2026-09-05: there was nothing left to
+ * stop, so the turn ends `interrupted` and the session goes to `ready` rather than sitting at
+ * `prompting` until a restart. It reaches `ready` on the same terms the `phase` arm does and settles
+ * the send the same way — the backend saying there is no turn to stop *is* that turn's end reported
+ * late, and the send it belonged to has no other event coming to accept it. `settleFailedTurn` is
+ * the wrong settle here and stays unused on both halves: this failure names the interrupt call
+ * rather than a send, which is why `sendAfterFailure` (`./sends.ts`) answers `null` for the tag.
+ *
+ * Neither half touches `interrupted`. The `interrupt` cell anchors the marker on the operator's own
+ * prompt at the press, so by the time a refusal can arrive it is already set, and a second decider
+ * here could only re-point it at a reply — which is the anchor #8699 moved away from.
+ */
+export const foldInterruptRefusal = (
+	state: AiAgentSessionState,
+	failure: AgentFailure,
+): AiAgentSessionState => {
+	if (state.phase !== "prompting" || failure.reason === "turn-running") {
+		return {...state, failure};
+	}
+	const turn = settleTurn(state);
+	return {
+		...turn,
+		phase: "ready",
+		interruption: null,
+		failure,
+		sends: settleAccepted(turn.sends),
+	};
+};
+
+export const foldEvent = (
+	state: AiAgentSessionState,
+	event: AgentEvent,
+	limits: WindowLimits,
+): AiAgentSessionState => {
+	switch (event.kind) {
+		case "item":
+			return {
+				...state,
+				interrupted: reanchored(state, event.item),
+				cutReplies: cutRepliesAfter(state, event.item),
+				transcript: foldItem(state.transcript, event.item, limits),
+			};
+		// The phase line is also where a send in flight learns it crossed, and it takes two events
+		// to say so: the layer narrating the backend *starting* a turn, and then that turn ending.
+		//
+		// A layer's `prompt` returns at the send on both rows (#8018), so nothing on the Cmd's own
+		// answer can say the backend took the text. Nor can a bare `ready`: the `prompt` cell walks
+		// the session to `prompting` itself, before `aiAgent.prompt` is even called, so a `ready`
+		// pushed for some earlier turn or for no turn at all lands in that gap looking exactly like
+		// a turn's end (#8107). What is not ambiguous is the pair — `prompting` marks the send's
+		// turn running (`./sends.ts`), and only a running turn's end accepts it, whatever the turn
+		// itself came to, so its window may drop the copy it was holding (#8005). Both rows narrate
+		// both halves: Pi off its session phase (`pi/ai-agent/items.ts` maps `idle` to `ready` and
+		// everything else to `prompting`), the Claude layer on the write that hands the CLI the
+		// text and on the SDK's `result` (`claude/agent/ClaudeAiAgent.ts`).
+		//
+		// The pair is also what says *which* send crossed, because a stale `ready` leaves the
+		// session `ready` under a send whose turn never began and the operator can send again into
+		// that gap — so two can be in flight at once. `markTurnRunning` gives the turn to the
+		// oldest send still waiting for one, which is the order the layer handed them over in, and
+		// `settleAccepted` reaches that running send and no other. Neither reads "whichever send is
+		// pending", which is how a later turn accepted an older, never-started one (#8107).
+		//
+		// `gone` is the other half, and it is the terminal arm: a session that ended under a send in
+		// flight can never answer for it, so `settleEndedSession` makes every one of them
+		// recoverable. Refusals reach the send by their own arms below, and they arrive before this
+		// line does — both rows push the turn's failure ahead of the phase that closes it. The
+		// catalogs end with it too: `closeOfferedCatalogs` is the core holding the `gone` invariant
+		// itself rather than depending on a layer announcement that reaches one lifetime of three
+		// (#8634).
+		case "phase": {
+			if (coreOwned(event.phase)) return state;
+			// Any phase but `prompting` is the turn over, and nothing will supersede a partial the
+			// stream left behind — least of all `gone`, which is the stream having died mid-reply.
+			// A subagent under that turn is over with it, and settles here for the same reason.
+			const turn = event.phase === "prompting" ? state : settleTurn(state);
+			if (event.phase === "gone") {
+				// The session is over and not just its turn, so the workers a turn's end leaves running
+				// end here too: a background one can no longer be ended by the notice it was waiting
+				// for (#9587).
+				return {
+					...closeOfferedCatalogs(settleSessionSubagents(turn)),
+					phase: event.phase,
+					interruption: interruptionAfter(turn, event.phase),
+					sends: settleEndedSession(turn.sends, null),
+				};
+			}
+			return {
+				...turn,
+				phase: event.phase,
+				interruption: interruptionAfter(turn, event.phase),
+				sends:
+					event.phase === "prompting" ? markTurnRunning(turn.sends) : settleAccepted(turn.sends),
+			};
+		}
+		// A raising stamps the next `seq`, which is what makes a card's identity the raising rather
+		// than the id: a backend that re-uses a request id gets a second card, and the first card's
+		// answer can no longer settle it (#8006).
+		case "permission": {
+			const seq = state.permissionsRaised + 1;
+			return {
+				...state,
+				permissionsRaised: seq,
+				permissions: {
+					...state.permissions,
+					[event.request]: {request: event.detail, seq, progress: {status: "open"}},
+				},
+			};
+		}
+		case "permission-resolved":
+			return dropRequest(state, event.request);
+		case "mode":
+			return {...state, modes: {current: event.current, available: event.available}};
+		case "model":
+			return {...state, models: {current: event.current, available: event.available}};
+		// Replaced, never merged: the push carries the whole list, so a merge would keep a command
+		// the backend has just withdrawn.
+		case "commands":
+			return {...state, commands: event.available};
+		case "thinking":
+			return {...state, thinking: {current: event.current, available: event.available}};
+		// The turn's end and the swap in one commit, because the events Sub is keyed on the session
+		// id and a second event under the old one would be filtered out (`../events.ts`).
+		//
+		// `ready` rather than a phase the layer narrates: a local command produces no `result`, so
+		// this event is the only thing that will ever say the turn is over (#8197). The send that
+		// asked for it is accepted on the same rule an ordinary turn's end uses — the oldest send
+		// the layer said had begun, and no other (`./sends.ts`). What is queued is untouched here;
+		// the machine's own `settleQueue` admits its head off the `ready`, so nothing an operator
+		// wrote is dropped by the reset.
+		//
+		// Everything cleared belongs to the conversation that ended: its tail, its cut-turn marker and
+		// the record of every reply it cut — ids in a store no page of this conversation will read —
+		// the abort still outstanding over it, its permission cards — which no answer can reach any
+		// more — its subagent rows and the page read off it. The usage ledger stays: the reset does
+		// not un-spend what this session already spent.
+		case "session-reset":
+			return {
+				...state,
+				phase: "ready",
+				sessionId: event.sessionId,
+				transcript: {items: [], omitted: emptyOmission},
+				interrupted: null,
+				cutReplies: [],
+				interruption: null,
+				permissions: {},
+				subagents: {},
+				lastPage: null,
+				pageOutcome: null,
+				sends: settleAccepted(state.sends),
+				failure: null,
+			};
+		// Replaced, never accumulated: one slot holds the last finished turn, which is what the
+		// `result` port publishes and what a `read` through the kernel answers with (#8724). It
+		// lands ahead of the phase that closes the turn, so a `session-reset` — the one event that
+		// is a turn's end and a conversation swap at once — commits this turn's answer first.
+		case "result":
+			return {...state, result: event.result};
+		case "usage":
+			return {...state, usage: addUsage(state.usage, event)};
+		// Replaced, never accumulated: one layer drives one backend, and the newest announcement is
+		// what that backend is running.
+		case "version":
+			return {...state, agentVersion: event.version};
+		// Replaced whole, never merged into the standing one: the layer resolves the account at the
+		// open, so a field the newest announcement omits is a field this session does not have — and
+		// a merge would keep the organization a previous login reported.
+		case "account":
+			return {...state, account: event.account};
+		// Replaced under its own id, never merged: the mapper computes the whole slot from the
+		// worker's frames, so a merge would keep a line the newer read has already superseded. A
+		// finished slot is kept rather than dropped — its rows are a view an operator may be
+		// reading (Q9, #8384).
+		case "subagent":
+			return {...state, subagents: {...state.subagents, [event.slot.id]: event.slot}};
+		// The same landing the `failed` Msg gives a failure the handlers saw, so a refusal reads the
+		// same to the window whichever channel carried it. Routing it through `event` is what keeps
+		// the machine's identity filter over it: a late refusal from a session this process has
+		// already replaced is dropped rather than failing its successor (#8018).
+		//
+		// This is the per-turn arm, not the terminal one: `phaseAfterFailure` can walk the session
+		// back to `ready`, so `settleFailedTurn` settles the send this failure is about and leaves
+		// every other in flight `pending` for its own turn's end (#8236). The one landing that is
+		// terminal is `gone` — a refused resume — and it empties the catalogs on the same terms the
+		// `phase` arm does, which is the route a rebuilt layer takes with nothing to announce the
+		// clear behind it (#8634).
+		case "failure": {
+			if (event.failure.tag === INTERRUPT_ERROR) {
+				return foldInterruptRefusal(state, event.failure);
+			}
+			const phase = phaseAfterFailure(state, event.failure);
+			const settled = settleTurn(state);
+			const turn =
+				phase === "gone" ? closeOfferedCatalogs(settleSessionSubagents(settled)) : settled;
+			return {
+				...turn,
+				phase,
+				interruption: interruptionAfter(turn, phase),
+				failure: event.failure,
+				sends: settleFailedTurn(turn.sends, event.failure),
+			};
+		}
+	}
+};

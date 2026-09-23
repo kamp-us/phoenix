@@ -13,9 +13,9 @@
  * transport is the `DeskSource` a caller supplies: subscribe, emit events, hand back an unsubscribe.
  */
 
+import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {useEffect, useState} from "react";
 import {isShellState, type ShellState} from "../core/index.ts";
-import type {PrefixTable} from "../keys/index.ts";
 
 export type AttachEvent =
 	| {readonly _tag: "Attached"}

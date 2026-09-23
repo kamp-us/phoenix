@@ -20,12 +20,12 @@
  * written, so unzoom lands on the layout the user left (`../layout/tree.ts`, `zoom`).
  */
 
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import type {ReactElement, ReactNode} from "react";
 import {useEffect} from "react";
 import {Group, type LayoutChangedMeta, Panel, Separator, useGroupRef} from "react-resizable-panels";
 import type {ShellMsg} from "../core/index.ts";
 import {type LayoutNode, SIZE_TOLERANCE, type StackNode} from "../layout/index.ts";
-import {WindowId} from "../window/index.ts";
 import {defaultLayoutOf, holdsPanels, sameLayout} from "./frame.ts";
 
 export interface LayoutViewProps {

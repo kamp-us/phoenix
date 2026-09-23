@@ -38,7 +38,7 @@ const INLINE_STYLE = /style=\{\{/g;
 
 describe("the palette's paint", () => {
 	it("has files to judge", () => {
-		expect(files.length).toBeGreaterThan(5);
+		expect(files.length).toBeGreaterThan(4);
 	});
 
 	it("names no hex colour", () => {

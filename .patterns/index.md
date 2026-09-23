@@ -16,7 +16,7 @@ Shared Effect concepts apply across consumers. Match API examples to the owning 
 | [effect-layer-composition.md](./effect-layer-composition.md) | apps/web worker | Wiring services into the worker, adding a feature Layer, guarding one member of an existing service |
 | [effect-errors.md](./effect-errors.md) | Web wire errors | Designing a new error or feature's error set |
 | [error-copy-law.md](./error-copy-law.md) | apps/web | Authoring a user-facing error `message`, or a `WIRE_MESSAGES` entry |
-| [backend-exception-translation.md](./backend-exception-translation.md) | Tuval backends | Catching a dependency's exception in an `apps/tuval` backend adapter |
+| [backend-exception-translation.md](./backend-exception-translation.md) | Tuval backends | Catching a dependency's exception in a Tuval harness package's backend adapter |
 | [effect-error-operators.md](./effect-error-operators.md) | Effect consumers | Catching, recovering, or inspecting failures at a boundary |
 | [effect-fn-tracing.md](./effect-fn-tracing.md) | Effect consumers | Writing or naming a service method |
 | [effect-platform-access.md](./effect-platform-access.md) | Effect consumers | Reading/writing files, building paths, or minting ids in Effect code ([#3461](https://github.com/kamp-us/phoenix/issues/3461)), or migrating a directory walk ([#3922](https://github.com/kamp-us/phoenix/issues/3922)) |
@@ -166,14 +166,14 @@ For `apps/tuval`. Its local integration tests use real sessions and sockets, not
 | Pattern | Topic / scope | Read when |
 |---|---|---|
 | [layout-tree-with-resizable-panels.md](./layout-tree-with-resizable-panels.md) | apps/tuval | Touching `apps/tuval/src/shell/ui/LayoutView.tsx`, adding a layout Msg, or bumping the `react-resizable-panels` pin |
-| [tuval-shell-assembly.md](./tuval-shell-assembly.md) | apps/tuval | Touching `apps/tuval/src/shell/host/`, `apps/tuval/src/shell/desk/`, `apps/tuval/src/page/`, `apps/tuval/src/bin.ts`, `apps/tuval/tsconfig.browser.json` or a `browser.ts` barrel, the launch/spawn services seam, giving a program row a renderer, or writing a proof that drives the whole app |
+| [tuval-shell-assembly.md](./tuval-shell-assembly.md) | apps/tuval | Touching `apps/tuval/src/shell/host/`, `packages/tuval-ui/src/shell/desk/`, `apps/tuval/src/page/`, `apps/tuval/src/bin.ts`, `apps/tuval/tsconfig.browser.json` or a `browser.ts` barrel, the launch/spawn services seam, giving a program row a renderer, or writing a proof that drives the whole app |
 | [tuval-spells.md](./tuval-spells.md) | apps/tuval | Writing a spell or a shell command row, wiring the registry, or touching anything under `apps/tuval/src/commands/`, `apps/tuval/src/protocol/` or `apps/tuval/src/shell/commands/` (ADR [0348](../.decisions/0348-tuval-command-framework-spell-registry-versioned-protocol.md)) |
 | [strict-wire-schema-projection.md](./strict-wire-schema-projection.md) | apps/tuval | Encoding a dependency's own value onto a wire schema you do not own ([#7567](https://github.com/kamp-us/phoenix/issues/7567)) |
 | [owned-wire-vocabulary.md](./owned-wire-vocabulary.md) | apps/tuval | Putting a dependency-owned wire behind a seam before a redesign lands on the other side of its pin ([#8549](https://github.com/kamp-us/phoenix/issues/8549)) |
 | [snapshot-authoritative-to-delta-events.md](./snapshot-authoritative-to-delta-events.md) | apps/tuval | Writing a `TuvalAiAgent` layer over a snapshot-pushing agent, or any consumer of an authoritative-whole-state push ([#7602](https://github.com/kamp-us/phoenix/issues/7602)) |
 | [promise-sdk-subprocess-layer.md](./promise-sdk-subprocess-layer.md) | apps/tuval | Writing a `TuvalAiAgent` layer over an agent SDK, or any Effect layer over a Promise-shaped dependency that owns a subprocess ([#7621](https://github.com/kamp-us/phoenix/issues/7621)) |
 | [agent-layer-phase-contract.md](./agent-layer-phase-contract.md) | apps/tuval | Writing or reviewing a `TuvalAiAgent` layer, or touching anything that carries its events to the core ([#7963](https://github.com/kamp-us/phoenix/issues/7963), [#7897](https://github.com/kamp-us/phoenix/issues/7897), [#8724](https://github.com/kamp-us/phoenix/issues/8724)) |
-| [tuval-codex.md](./tuval-codex.md) | apps/tuval | Changing `apps/tuval/src/codex/` |
+| [tuval-codex.md](./tuval-codex.md) | packages/tuval-codex | Changing `packages/tuval-codex/src/` |
 | [tuval-detached-child-tail.md](./tuval-detached-child-tail.md) | apps/tuval | A Tuval AI-agent layer whose subagent rows come from a child process rather than the session stream |
 | [tuval-program-row-effects.md](./tuval-program-row-effects.md) | apps/tuval | Writing a Tuval program row, or giving one a service, a resource or an out-port emission ([#7603](https://github.com/kamp-us/phoenix/issues/7603)) |
 | [tuval-history-cursor-join.md](./tuval-history-cursor-join.md) | apps/tuval | A Tuval AI-agent layer whose history read keys rows differently from its live stream, or a `cursor-not-found` on `Load earlier messages` |
