@@ -420,6 +420,29 @@ describe("lane report — a cause-less park under `parkCause.uncaused: refuse`",
 		expect(fs.written.size).toBe(0);
 	});
 
+	// The builder's repair-cap `ESCALATED` is the same park: it lands only once it names the budget.
+	it("records a builder ESCALATED that names the spent repair budget", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "ESCALATED", {parkCause: strict, cause: "repair-budget-spent"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "repair-budget-spent",
+		});
+	});
+
+	it("still refuses a builder ESCALATED that names no cause", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "ESCALATED", {parkCause: strict});
+
+		expect(out.code).toBe(PARK_UNCAUSED);
+		expect(out.stderr.join(" ")).toContain("repair-budget-spent");
+		expect(fs.written.size).toBe(0);
+	});
+
 	it("refuses UNKNOWN on a config nobody could read, rather than recording the bare park", async () => {
 		const fs = laneAt(LOG_AT.build);
 		const prover = fakeProver();
