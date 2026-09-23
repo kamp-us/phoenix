@@ -65,8 +65,9 @@ const runDeclared = (
 	command: string,
 	stdin: string,
 	extraArgs: ReadonlyArray<string> = [],
+	extraEnv: NodeJS.ProcessEnv = {},
 ): Run => {
-	const env: NodeJS.ProcessEnv = {...process.env, FABRIKA_SKIP_INFER: "1"};
+	const env: NodeJS.ProcessEnv = {...process.env, ...extraEnv, FABRIKA_SKIP_INFER: "1"};
 	const run = spawnSync(process.execPath, [BIN, ...argvOf(command), ...extraArgs], {
 		encoding: "utf8",
 		input: stdin,
@@ -88,6 +89,7 @@ describe("the committed hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 		expect([...new Set(surface.map((hook) => hook.command))].sort()).toEqual([
 			"fabrika hook check",
 			"fabrika hook claude-spend",
+			"fabrika hook cli-floor",
 			"fabrika hook pre-bash",
 		]);
 		expect(
@@ -98,12 +100,8 @@ describe("the committed hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 			].sort(),
 		).toEqual(["SessionStart"]);
 		expect(
-			surface.every((hook) =>
-				["fabrika hook check", "fabrika hook claude-spend", "fabrika hook pre-bash"].includes(
-					hook.command,
-				),
-			),
-		).toBe(true);
+			surface.filter((hook) => hook.command === "fabrika hook cli-floor").map((hook) => hook.event),
+		).toEqual(["SessionStart"]);
 		expect(
 			surface.filter((hook) => hook.command === "fabrika hook pre-bash").map((hook) => hook.event),
 		).toEqual(["PreToolUse"]);
@@ -344,6 +342,34 @@ describe("the pre-bash guard, run against the captured Bash envelope", {
 
 		expect(run.code).toBe(WRONG_EVENT);
 		expect(run.stdout).toBe("");
+	});
+});
+
+describe("the CLI minimum check, run as declared", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
+	const declared = surface.find((row) => row.command === "fabrika hook cli-floor");
+	if (declared === undefined) throw new Error("the declaration carries no cli-floor hook");
+	const pluginRoot = fileURLToPath(new URL("../../../../claude-plugins/fabrika", import.meta.url));
+	const envelope = () =>
+		readGoldenFixture(import.meta.url, "__fixtures__/session-start.payload.golden.json");
+
+	it("shows nothing when this CLI meets the committed plugin's minimum", () => {
+		const run = runDeclared(declared.command, envelope(), [], {CLAUDE_PLUGIN_ROOT: pluginRoot});
+		expect(run.code, run.stderr).toBe(0);
+		const out = JSON.parse(run.stdout);
+		expect(out).not.toHaveProperty("systemMessage");
+		expect(out.fabrika.outcome).toBe("met");
+	});
+
+	it("warns through systemMessage when the plugin needs a newer CLI", () => {
+		const dir = mkdtempSync(join(tmpdir(), "cli-floor-"));
+		try {
+			writeFileSync(join(dir, "cli-floor.json"), JSON.stringify({minimum: "999.0.0"}));
+			const run = runDeclared(declared.command, envelope(), [], {CLAUDE_PLUGIN_ROOT: dir});
+			expect(run.code, run.stderr).toBe(0);
+			expect(JSON.parse(run.stdout).systemMessage).toContain("v999.0.0");
+		} finally {
+			rmSync(dir, {recursive: true, force: true});
+		}
 	});
 });
 

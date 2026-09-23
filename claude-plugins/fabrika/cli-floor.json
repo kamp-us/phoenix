@@ -1,0 +1,4 @@
+{
+	"description": "The oldest @kampus/fabrika-cli these skills run against. release-please writes `minimum` in each fabrika-cli Release PR (release-please-config.json, extra-files), so it is never edited by hand. `fabrika hook cli-floor` warns at session start when the running CLI is older. This is not a plugin version: the plugin carries none and ships with every commit.",
+	"minimum": "0.7.1"
+}

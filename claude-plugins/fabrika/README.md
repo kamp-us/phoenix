@@ -17,6 +17,7 @@ claude-plugins/fabrika/
 ├── .codex-plugin/plugin.json    Codex manifest; shares skills and uses CLI dispatch
 ├── .claude-plugin/plugin.json   the plugin manifest (no version — it ships continuously, addressed by commit)
 ├── README.md                    this file
+├── cli-floor.json               the oldest @kampus/fabrika-cli the skills need, written at each CLI release (not a plugin version)
 ├── agents/                      the eight agent shells, one per stage role (see docs/agent-shells.md)
 ├── docs/                        the agent-facing convention + contract docs (see docs/README.md)
 ├── guide/                       the human-facing pages, one Diátaxis mode each (see guide/README.md)
