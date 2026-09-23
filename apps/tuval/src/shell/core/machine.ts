@@ -21,17 +21,17 @@
 
 import {defineMachine} from "@demlik/tea";
 import type {ViewState} from "@kampus/tuval-sdk/kernel/shell/window/host";
-import {Duration} from "effect";
-import {type CommandIndex, shellCommandIndex} from "../commands/table.ts";
 import {
 	closeBoard,
 	type DeskMsg,
 	initialDesk,
 	toggleBoard,
 	toggleInspector,
-} from "../desk/state.ts";
-import type {CommandName, Key, PrefixState, PrefixTable, RouteAnswer} from "../keys/index.ts";
-import {idle, route} from "../keys/index.ts";
+} from "@kampus/tuval-ui/desk";
+import type {CommandName, Key, PrefixState, PrefixTable, RouteAnswer} from "@kampus/tuval-ui/keys";
+import {idle, route} from "@kampus/tuval-ui/keys";
+import {Duration} from "effect";
+import {type CommandIndex, shellCommandIndex} from "../commands/table.ts";
 import {
 	createStack,
 	createTree,

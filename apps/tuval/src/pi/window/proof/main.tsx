@@ -20,10 +20,10 @@ import type {
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {type TestProcess, testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {type ChatView, initialChatView} from "@kampus/tuval-ui/chat";
 import {Effect} from "effect";
 import {StrictMode} from "react";
 import {createRoot} from "react-dom/client";
-import {type ChatView, initialChatView} from "../../../shell/chat/index.ts";
 import {piChatWindow} from "../PiChatWindow.tsx";
 import {piSession, usageOf} from "../pi-window.testing.ts";
 import "../../../page/styles.ts";

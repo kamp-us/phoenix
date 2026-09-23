@@ -21,11 +21,11 @@ import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {render, screen} from "@testing-library/react";
 import {Option} from "effect";
 import {describe, expect, it} from "vitest";
 import type {TableRow} from "../../table/row.ts";
-import {installDomShims} from "../ui/dom.testing.ts";
 import {ProcessBoardOverlay} from "./ProcessBoardOverlay.tsx";
 
 installDomShims();

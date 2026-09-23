@@ -98,7 +98,7 @@ A layer's `models`/`thinking` slices start on the reducer's empty defaults
 ([`core/state.ts`](../packages/tuval/src/ai-agent/core/state.ts)), and an empty offered set is two
 different facts — "the layer has not answered yet" and "answered, nothing offered". Nothing in
 `AgentEvent` distinguishes them, so
-[`shell/chat/composer-bridge.ts`](../apps/tuval/src/shell/chat/composer-bridge.ts) reads the answer
+[`shell/chat/composer-bridge.ts`](../packages/tuval-ui/src/shell/chat/composer-bridge.ts) reads the answer
 off the phase instead: past `starting`, the offer counts as resolved, and the composer stops showing
 `loading` and starts showing `thinking effort: none offered`. That read is only true of a layer
 whose catalogs are already folded when its `ready` lands.

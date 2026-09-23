@@ -107,7 +107,7 @@ which constructs an `IntersectionObserver`. jsdom ships none, so the deferred ca
 `ReferenceError: IntersectionObserver is not defined` after the test that opened the popup has
 ended, and Vitest collects it as an unhandled rejection against an otherwise-green run. A no-op
 `IntersectionObserver` on `globalThis` is the whole fix — nothing asserts a popup's position, and
-jsdom has no layout to observe a change in. `apps/tuval/src/shell/ui/dom.testing.ts` installs one
+jsdom has no layout to observe a change in. `packages/tuval-ui/src/shell/ui/dom.testing.ts` installs one
 beside its other shims. `packages/design/test-setup.ts` shims `ResizeObserver` and not this one, so
 a design test that opens a popup and unmounts it has the same exposure.
 

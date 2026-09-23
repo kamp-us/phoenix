@@ -45,7 +45,7 @@ Both test tiers run in jsdom, which has no layout: a claim about what the chat w
 a diff column's width, a disclosure indicator's size, whether a portaled listbox resolves its
 tokens — cannot be made there, and a report of a browser run whose harness was thrown away cannot
 be checked by anyone (#7610). So the harness ships. `pnpm proof:chat` serves
-`src/shell/chat/proof/`: two chat windows over one in-memory process, on the same fixtures the unit
+`src/chat/proof/`: two chat windows over one in-memory process, on the same fixtures the unit
 tier uses, with a tool call of each shape, a pending permission card and three modes. It boots no
 kernel or agent session, so the default page proves paint and keyboard only. Pass `--port <n>`
 when the default is taken.

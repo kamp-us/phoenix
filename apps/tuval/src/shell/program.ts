@@ -29,6 +29,8 @@ import {
 	processGone,
 	WindowId,
 } from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {initialDesk} from "@kampus/tuval-ui/desk";
+import {defaultPrefixTable, type PrefixTable, prefixTableFor} from "@kampus/tuval-ui/keys";
 import {Effect, Option, Predicate} from "effect";
 import {shellSpells, shellSpellsFor} from "./commands/spells.ts";
 import {commandIndexFor, type ShellCommandFeatures} from "./commands/table.ts";
@@ -39,8 +41,6 @@ import {
 	type ShellState,
 	shellCore,
 } from "./core/index.ts";
-import {initialDesk} from "./desk/state.ts";
-import {defaultPrefixTable, type PrefixTable, prefixTableFor} from "./keys/index.ts";
 import {windows} from "./layout/index.ts";
 
 /** The row's stable id. A founder rebinding the shell in their own config replaces this id's row. */

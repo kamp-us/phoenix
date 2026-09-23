@@ -36,17 +36,17 @@ import {
 } from "@kampus/tuval-sdk/kernel/protocol/session-transcript";
 import type {ProcessView, WindowHost} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {delivered, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {SESSION_LIST_WINDOW_REF} from "@kampus/tuval-ui/agent-window";
+import {sessionTranscriptCall} from "@kampus/tuval-ui/session-transcript";
+import {claudeSession} from "@kampus/tuval-ui/testing/agent-window";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, cleanup, fireEvent, render, screen, within} from "@testing-library/react";
 import {Effect, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import type {ReactElement} from "react";
 import {beforeEach, describe, expect, it} from "vitest";
-import {claudeSession} from "../ai-agent/window/fixtures.ts";
-import {SESSION_LIST_WINDOW_REF} from "../ai-agent/window/index.ts";
-import {installDomShims} from "../shell/ui/dom.testing.ts";
 import type {SpellCaller} from "./renderers.tsx";
 import {pageRenderers} from "./renderers.tsx";
-import {sessionTranscriptCall} from "./session-transcript.ts";
 
 installDomShims();
 

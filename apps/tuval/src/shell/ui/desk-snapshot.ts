@@ -14,8 +14,6 @@
 
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
-import type {ShellState} from "../core/index.ts";
-import {activeWorkspace, processOf} from "../core/index.ts";
 import type {
 	AnyInspectorRenderer,
 	AnyStatusRenderer,
@@ -23,7 +21,9 @@ import type {
 	DeskSnapshot,
 	KernelFacts,
 	SnapshotProcess,
-} from "../desk/index.ts";
+} from "@kampus/tuval-ui/desk";
+import type {ShellState} from "../core/index.ts";
+import {activeWorkspace, processOf} from "../core/index.ts";
 import type {MountResolver} from "./mount.ts";
 
 /**

@@ -33,14 +33,21 @@
 import {WindowId as ProtocolWindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
 import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
 import {PREFIX_ARMED_ATTRIBUTE, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {inspectorFor, statusFor} from "@kampus/tuval-ui/desk";
+import {type ForwardedKey, ForwardedKeyProvider} from "@kampus/tuval-ui/forwarded-key";
+import {
+	INITIAL_INPUT_MODALITY,
+	INPUT_MODALITY_ATTRIBUTE,
+	type InputModality,
+	inputModalityHandlers,
+} from "@kampus/tuval-ui/input-modality";
+import type {Key, PrefixTable} from "@kampus/tuval-ui/keys";
 import type {ReactElement, ReactNode} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {usePalette} from "../../palette/index.ts";
 import {commandIndexFor} from "../commands/index.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
-import {inspectorFor, statusFor} from "../desk/index.ts";
-import type {Key, PrefixTable} from "../keys/index.ts";
 import {layoutSignature} from "../layout/index.ts";
 import type {PickerEntries} from "../picker/browser.ts";
 import {noEntries} from "../picker/browser.ts";
@@ -51,7 +58,6 @@ import {DeskInspector} from "./DeskInspector.tsx";
 import type {DeskTables} from "./desk-snapshot.ts";
 import {deskSnapshotOf, noDeskTables} from "./desk-snapshot.ts";
 import {ErrorBoundary} from "./ErrorBoundary.tsx";
-import {type ForwardedKey, ForwardedKeyProvider} from "./forwarded-key.tsx";
 import {
 	COMMAND_LINE_COMMAND,
 	routerPrefix,
@@ -59,12 +65,6 @@ import {
 	statusFrame,
 	zoomedWindow,
 } from "./frame.ts";
-import {
-	INITIAL_INPUT_MODALITY,
-	INPUT_MODALITY_ATTRIBUTE,
-	type InputModality,
-	inputModalityHandlers,
-} from "./input-modality.ts";
 import {LayoutView} from "./LayoutView.tsx";
 import type {MountResolver} from "./mount.ts";
 import {focusedWindowOf, PaletteHost} from "./PaletteHost.tsx";

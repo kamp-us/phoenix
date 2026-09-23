@@ -193,7 +193,7 @@ jsdom gives no `ResizeObserver`, no `PointerEvent`, and reports every element as
 resize a group it has never measured (`Error: Previous layout not found for panel index 0`), so a
 `ResizeObserver` stub that merely records its callback leaves the library permanently unmeasured and
 every resize test dead. The observer has to **fire**, once, with a real box.
-`apps/tuval/src/shell/ui/dom.testing.ts` is that shim.
+`packages/tuval-ui/src/shell/ui/dom.testing.ts` is that shim.
 
 With it, a separator's arrow key is a real user gesture through the real library, which is how the
 one-Msg-per-gesture claim is proved rather than asserted.

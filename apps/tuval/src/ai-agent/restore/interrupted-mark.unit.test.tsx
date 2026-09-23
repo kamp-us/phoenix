@@ -29,6 +29,13 @@ import {aiAgentSessionMachine} from "@kampus/tuval-sdk/kernel/ai-agent/core/mach
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {type TestProcess, testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {
+	type ChatView,
+	type ChatWindowHost,
+	chatWindow,
+	initialChatView,
+} from "@kampus/tuval-ui/chat";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
@@ -39,9 +46,6 @@ import {
 	liveJoinFullLines,
 	liveJoinLines,
 } from "../../agy/ai-agent/transcript-fixtures.ts";
-import {type ChatWindowHost, chatWindow} from "../../shell/chat/ChatWindow.tsx";
-import {type ChatView, initialChatView} from "../../shell/chat/view.ts";
-import {installDomShims} from "../../shell/ui/dom.testing.ts";
 
 installDomShims();
 

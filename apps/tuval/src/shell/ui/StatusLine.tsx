@@ -19,8 +19,8 @@
  */
 
 import {Kbd} from "@kampus/design";
+import type {StatusBar, StatusSegment} from "@kampus/tuval-ui/desk";
 import type {ReactElement} from "react";
-import type {StatusBar, StatusSegment} from "../desk/index.ts";
 import "./desk.css";
 import type {StatusFrame} from "./frame.ts";
 

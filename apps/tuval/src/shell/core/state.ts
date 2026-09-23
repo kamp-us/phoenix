@@ -14,8 +14,8 @@
  */
 
 import {isViewState, type ViewState} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import {type DeskState, isDeskState} from "@kampus/tuval-ui/desk";
 import {Predicate} from "effect";
-import {type DeskState, isDeskState} from "../desk/state.ts";
 import {isLayoutTree, type LayoutTree, type WindowId, windows} from "../layout/index.ts";
 
 /** A workspace id. The shell mints it; nothing outside this module generates one. */

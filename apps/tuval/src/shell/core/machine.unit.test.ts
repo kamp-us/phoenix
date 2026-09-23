@@ -3,8 +3,6 @@
  * so a test is a state in, a state and a Cmd list out.
  */
 
-import {describe, expect, it} from "vitest";
-import {commandIndexFor} from "../commands/index.ts";
 import {
 	CommandName,
 	defaultPrefixTable,
@@ -12,7 +10,9 @@ import {
 	type Key,
 	type PrefixTable,
 	prefixTableFor,
-} from "../keys/index.ts";
+} from "@kampus/tuval-ui/keys";
+import {describe, expect, it} from "vitest";
+import {commandIndexFor} from "../commands/index.ts";
 import {findWindow, windows} from "../layout/index.ts";
 import {mountPicker} from "../picker/view.ts";
 import {applyMsg, cellsFor, initialState, type ShellCmd, type ShellMsg} from "./machine.ts";

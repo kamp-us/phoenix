@@ -7,6 +7,7 @@ import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {type AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {
 	Cause,
 	Context,
@@ -21,7 +22,6 @@ import {
 } from "effect";
 import {Socket} from "effect/unstable/socket";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
 import {session} from "./server.ts";
 import {ATTACH_KIND, PROCESS_STATE_KIND} from "./wire.ts";
 

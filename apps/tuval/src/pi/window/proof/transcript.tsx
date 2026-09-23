@@ -1,8 +1,9 @@
 /** Rendered failure affordances only; the actual socket branch is proved by page/session-transcript-window.unit.test.tsx. */
+
+import {SessionTranscriptView} from "@kampus/tuval-ui/agent-window";
+import type {TranscriptAnswer} from "@kampus/tuval-ui/session-transcript";
+import {claudeSession} from "@kampus/tuval-ui/testing/agent-window";
 import {createRoot} from "react-dom/client";
-import {claudeSession} from "../../../ai-agent/window/fixtures.ts";
-import {SessionTranscriptView} from "../../../ai-agent/window/SessionTranscript.tsx";
-import type {TranscriptAnswer} from "../../../page/session-transcript.ts";
 import "../../../page/styles.ts";
 import "./proof.css";
 

@@ -7,13 +7,13 @@
 
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {render, screen, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import {Option} from "effect";
 import {describe, expect, it, vi} from "vitest";
 import type {PortDeclaration, TableRow} from "../../table/row.ts";
-import {installDomShims} from "../ui/dom.testing.ts";
 import {ProcessBoard} from "./ProcessBoard.tsx";
 
 installDomShims();

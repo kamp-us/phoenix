@@ -27,13 +27,13 @@ import {tmpdir} from "node:os";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {boot, projectDir} from "../../boot.ts";
 import {servePage} from "../../page/dev-server.ts";
 import {scratchHome} from "../../scratch-home.ts";
 import {serveDesk} from "../../shell/host/index.ts";
-import {defaultPrefixTable} from "../../shell/keys/index.ts";
 import {PROJECT_ROOT_VAR} from "./names.ts";
 
 /** The scratch home every boot in this file runs under. */

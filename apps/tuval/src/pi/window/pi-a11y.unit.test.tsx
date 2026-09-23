@@ -6,7 +6,7 @@
  * That region moved with #8190: the Pi window's usage line went to the desk inspector the
  * `pi-session` row now declares, so this pass follows it and scans `.tuval-agent-inspector` over Pi
  * session states. The window itself is #7604/#7610's and has its own pass
- * (`../../shell/chat/chat-a11y.unit.test.tsx`); widening the scope here would red this gate on
+ * (`packages/tuval-ui/src/shell/chat/chat-a11y.unit.test.tsx`); widening the scope here would red this gate on
  * somebody else's defect — the composer's `role="combobox"` textarea (#7876) is exactly that.
  *
  * The renderer is shared with Claude, and so is this scan — but the *states* are not, which is why
@@ -27,13 +27,13 @@ import type {
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
 import {type AnyWindowHost, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {AiAgentInspector} from "@kampus/tuval-ui/agent-window";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import fc from "fast-check";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import {AiAgentInspector} from "../../ai-agent/window/index.ts";
-import {installDomShims} from "../../shell/ui/dom.testing.ts";
 import {piSession, usageOf} from "./pi-window.testing.ts";
 
 installDomShims();

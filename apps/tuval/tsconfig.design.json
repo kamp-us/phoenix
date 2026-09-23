@@ -16,8 +16,7 @@
 	// `assets.d.ts` carries the app's `*.css` module declaration, which the design package's own
 	// side-effect stylesheet imports need as much as this slice's do.
 	"include": [
-		"src/ai-agent/window",
-		"src/shell/chat",
+		"src/chat",
 		"src/pi/window",
 		"src/claude/window",
 		"src/agy/window",
@@ -30,6 +29,7 @@
 		"src/page/attached-desk.unit.test.tsx",
 		"src/page/readable-state.unit.test.tsx",
 		"src/page/session-transcript-window.unit.test.tsx",
+		"src/page/ai-agent-inspector-ref.unit.test.tsx",
 		"src/claude/proof/subagent-vertical.integration.test.ts",
 		"src/claude/proof/subagent-paging.integration.test.ts",
 		"src/ai-agent/restore/refill.unit.test.ts",

@@ -38,7 +38,7 @@ author happened to open. There are three today, and one function serves all thre
 | --- | --- |
 | A resume's refill over the store's whole history | `refillTranscript`'s `cut` operand (`apps/tuval/src/ai-agent/core/fold.ts`) |
 | A checkpoint read back | `restore` (`apps/tuval/src/ai-agent/core/state.ts`) |
-| The window's own `Load earlier messages` | `remarkCutReplies` before `mergeOlder` (`apps/tuval/src/shell/chat/ChatWindow.tsx`) |
+| The window's own `Load earlier messages` | `remarkCutReplies` before `mergeOlder` (`packages/tuval-ui/src/shell/chat/ChatWindow.tsx`) |
 
 `remarkCutReplies` is total and idempotent, so an entrance that is already correct is unchanged by
 calling it, and an empty record is a no-op.
@@ -51,7 +51,7 @@ therefore marks nothing at all on such a backend: agy's stored rows are `<cid>:l
 live `<cid>:<n>`, so every paged row missed and the cut turn came back reading "Worked for …"
 ([#9046](https://github.com/kamp-us/phoenix/issues/9046)). `remarkCutReplies` reads `id` **or**
 `alias` — the same identity join the page/tail stitch performs (`unheld` in
-`apps/tuval/src/shell/chat/rows.ts`). A fixture that gives the store's copy the live row's own id
+`packages/tuval-ui/src/shell/chat/rows.ts`). A fixture that gives the store's copy the live row's own id
 collapses the two spaces and passes either way, which is how the first round shipped green and broken:
 the case has to be keyed from a real page.
 

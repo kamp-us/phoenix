@@ -35,9 +35,9 @@ const renderers = pageRenderers(
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {type TestProcess, testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
 import {type WindowHost, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
-import type {ChatWindowRenderer, ThinChatWindowOptions} from "../../shell/chat/index.ts";
-import {type ChatView, chatWindow, initialChatView} from "../../shell/chat/index.ts";
-import {installDomShims} from "../../shell/ui/dom.testing.ts";
+import type {ChatWindowRenderer, ThinChatWindowOptions} from "@kampus/tuval-ui/chat";
+import {type ChatView, chatWindow, initialChatView} from "@kampus/tuval-ui/chat";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {CLAUDE_CHAT_WINDOW_REF} from "../renderer-ref.ts";
 import {ClaudeChatWindow, claudeChatWindow} from "./ClaudeChatWindow.tsx";
 import {

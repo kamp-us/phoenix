@@ -6,8 +6,8 @@ import {
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
 import {groupTranscript} from "@kampus/tuval-sdk/kernel/ai-agent/history/index";
+import {mergeOlder} from "@kampus/tuval-ui/chat";
 import {describe, expect, it} from "vitest";
-import {mergeOlder} from "../../shell/chat/rows.ts";
 import {pageCursorAliases, pageItems, planPageOverEntries} from "../ai-agent/entries.ts";
 import {emptyProjection, eventsOf, itemsOf} from "../ai-agent/items.ts";
 import {projectTranscript, type SourceMessage} from "../server/transcript.ts";

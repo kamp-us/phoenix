@@ -17,10 +17,10 @@
  */
 
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import type {CommandName} from "@kampus/tuval-ui/keys";
+import {FOCUS_LIST_KEY} from "@kampus/tuval-ui/keys";
 import {Schema} from "effect";
 import type {ShellMsg} from "../core/machine.ts";
-import {FOCUS_LIST_KEY} from "../keys/syntax.ts";
-import type {CommandName} from "../keys/table.ts";
 import type {Direction} from "../layout/index.ts";
 import {type PickerCommand, pickerCommands} from "../picker/intent.ts";
 import {

@@ -10,9 +10,9 @@
  * a config module to re-import — rides on the Msg's own Cmd, which is the host's to run.
  */
 
+import {CommandName} from "@kampus/tuval-ui/keys";
 import type {Schema} from "effect";
 import type {ShellMsg} from "../core/machine.ts";
-import {CommandName} from "../keys/table.ts";
 
 /**
  * A row's address: a non-empty list of lowercase English segments (`["window", "close"]`).

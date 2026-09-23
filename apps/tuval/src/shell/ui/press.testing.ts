@@ -8,10 +8,10 @@
  * the desks whose subject is something else and which still need their keys to work.
  */
 
+import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {useRef, useState} from "react";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {applyMsg} from "../core/index.ts";
-import type {PrefixTable} from "../keys/index.ts";
 import type {KeyPress} from "./press.ts";
 import {replyIn} from "./press.ts";
 

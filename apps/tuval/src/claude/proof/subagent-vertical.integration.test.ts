@@ -36,13 +36,15 @@ import type {
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {ProcessView, WindowHost} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {type ChatView, initialChatView} from "@kampus/tuval-ui/chat";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, fireEvent, render} from "@testing-library/react";
 import {Effect, type FileSystem, Queue, Schema, type Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import type {ReactElement} from "react";
 import {boot, projectDir} from "../../boot.ts";
 import {scratchHome} from "../../scratch-home.ts";
-import {type ChatView, initialChatView} from "../../shell/chat/index.ts";
 import {
 	activeWorkspace,
 	type ShellMsg,
@@ -50,7 +52,6 @@ import {
 	windowIds,
 } from "../../shell/core/index.ts";
 import {serveDesk} from "../../shell/host/index.ts";
-import {defaultPrefixTable} from "../../shell/keys/index.ts";
 import {windows} from "../../shell/layout/index.ts";
 import {
 	mountPicker,
@@ -61,7 +62,6 @@ import {
 } from "../../shell/picker/index.ts";
 import {shellNode} from "../../shell/program.ts";
 import {attach} from "../../shell/transport/client.ts";
-import {installDomShims} from "../../shell/ui/dom.testing.ts";
 import {CLAUDE_SESSION_PROGRAM} from "../renderer-ref.ts";
 import {claudeChatWindow} from "../window/index.ts";
 import {PROJECT_ROOT_VAR} from "./names.ts";
@@ -80,7 +80,7 @@ installDomShims();
 
 /**
  * jsdom lays nothing out, so without a box the virtualizer clamps every offset to zero and renders
- * one row — the same shim `../../shell/chat/subagent-view.unit.test.tsx` carries, and for the same
+ * one row — the same shim `packages/tuval-ui/src/shell/chat/subagent-view.unit.test.tsx` carries, and for the same
  * reason. On the prototype and before the first render, because a box stubbed after mount is stubbed
  * after the opening layout effect has already resolved against a max scroll of 0.
  */

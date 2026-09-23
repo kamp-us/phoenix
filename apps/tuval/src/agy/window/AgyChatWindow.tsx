@@ -4,7 +4,7 @@
  *
  * Shaped on `../../pi/window/PiChatWindow.tsx`, which is epic #8162's scope call: agy follows
  * `src/pi/` and not `src/claude/`. Nothing here re-derives a transcript, a composer or a control —
- * the window is `../../shell/chat/`'s, and this module supplies its `extras` slot with a usage line
+ * the window is `packages/tuval-ui/src/shell/chat/`'s, and this module supplies its `extras` slot with a usage line
  * read straight off the session state.
  *
  * Two things are deliberate and not obvious.
@@ -22,9 +22,9 @@
 
 import {MetaRow} from "@kampus/design";
 import {type UsageTotals, usageTotals} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import type {ChatWindowOptions, ChatWindowRenderer} from "@kampus/tuval-ui/chat";
+import {chatWindow} from "@kampus/tuval-ui/chat";
 import type {ReactElement} from "react";
-import type {ChatWindowOptions, ChatWindowRenderer} from "../../shell/chat/index.ts";
-import {chatWindow} from "../../shell/chat/index.ts";
 import "./agy-window.css";
 
 /**

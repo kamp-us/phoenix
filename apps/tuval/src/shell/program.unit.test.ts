@@ -24,6 +24,7 @@ import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {applyKeysConfig, defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Effect, Layer, Option, Result, Schema} from "effect";
 import {afterAll} from "vitest";
 import {boot, projectDir} from "../boot.ts";
@@ -31,7 +32,6 @@ import {reboundTable} from "../config-fixtures/shell-rebound-keys.ts";
 import {scratchHome} from "../scratch-home.ts";
 import {applyMsg, initialState, type ShellMsg} from "./core/index.ts";
 import type {ServeDeskOptions} from "./host/index.ts";
-import {applyKeysConfig, defaultPrefixTable} from "./keys/index.ts";
 import {showsInAWindow} from "./picker/entries.ts";
 import {
 	SHELL_VERSION,

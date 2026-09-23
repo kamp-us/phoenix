@@ -31,10 +31,6 @@ import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/snap
 import {isSessionListState} from "@kampus/tuval-sdk/kernel/ai-agent/renderer-ref";
 import type {WindowHost} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {windowRenderer} from "@kampus/tuval-sdk/kernel/shell/window/index";
-import {Effect, Fiber} from "effect";
-import type {ReactElement} from "react";
-import {useCallback, useEffect, useRef, useState} from "react";
-import {AGY_CHAT_WINDOW_REF, agyChatWindow} from "../agy/window/index.ts";
 import {
 	AI_AGENT_INSPECTOR_REF,
 	AiAgentInspector,
@@ -42,23 +38,16 @@ import {
 	type SessionListSource,
 	sessionListWindow,
 	type TranscriptSource,
-} from "../ai-agent/window/index.ts";
-import {CLAUDE_CHAT_WINDOW_REF, claudeChatWindow} from "../claude/window/index.ts";
-import {CODEX_CHAT_WINDOW_REF, codexChatWindow} from "../codex/window/index.ts";
-import {type CounterState, isCounterState} from "../demo/counter.ts";
-import {isLogState, type LogState} from "../demo/log.ts";
-import {PI_CHAT_WINDOW_REF, piChatWindow} from "../pi/window/index.ts";
-import type {ThinChatWindowOptions} from "../shell/chat/index.ts";
-import type {AnyInspectorRenderer} from "../shell/desk/index.ts";
-import type {PageAttachment} from "../shell/transport/browser.ts";
-import {Pending, type ReadableRenderer, readsState, useProcessState} from "./readable-state.tsx";
+} from "@kampus/tuval-ui/agent-window";
+import type {ThinChatWindowOptions} from "@kampus/tuval-ui/chat";
+import type {AnyInspectorRenderer} from "@kampus/tuval-ui/desk";
 import {
 	reading,
 	readSessionList,
 	type SessionListAnswer,
 	sessionListCall,
 	settled,
-} from "./session-list.ts";
+} from "@kampus/tuval-ui/session-list";
 import {
 	askedOlder,
 	landedPage,
@@ -66,7 +55,18 @@ import {
 	pagedAnswer,
 	readSessionTranscript,
 	sessionTranscriptCall,
-} from "./session-transcript.ts";
+} from "@kampus/tuval-ui/session-transcript";
+import {Effect, Fiber} from "effect";
+import type {ReactElement} from "react";
+import {useCallback, useEffect, useRef, useState} from "react";
+import {AGY_CHAT_WINDOW_REF, agyChatWindow} from "../agy/window/index.ts";
+import {CLAUDE_CHAT_WINDOW_REF, claudeChatWindow} from "../claude/window/index.ts";
+import {CODEX_CHAT_WINDOW_REF, codexChatWindow} from "../codex/window/index.ts";
+import {type CounterState, isCounterState} from "../demo/counter.ts";
+import {isLogState, type LogState} from "../demo/log.ts";
+import {PI_CHAT_WINDOW_REF, piChatWindow} from "../pi/window/index.ts";
+import type {PageAttachment} from "../shell/transport/browser.ts";
+import {Pending, type ReadableRenderer, readsState, useProcessState} from "./readable-state.tsx";
 
 function CounterRenderer({host}: {readonly host: WindowHost<CounterState>}): ReactElement {
 	const state = useProcessState(host);
@@ -170,7 +170,7 @@ const sessionListSource = (call: SpellCaller): SessionListSource => {
  * an effect whose inputs did not change and no call would leave.
  *
  * **Nothing here outlives the session it was opened for.** The whole state is this hook's, the hook
- * is mounted per selected session by the window (`../ai-agent/window/SessionListWindow.tsx`), and a
+ * is mounted per selected session by the window (`packages/tuval-ui/src/ai-agent/window/SessionListWindow.tsx`), and a
  * reply that lands after the read it belongs to was superseded is dropped rather than folded.
  */
 const sessionTranscriptSource = (call: SpellCaller): TranscriptSource => {
@@ -320,11 +320,11 @@ export const pageRenderers = (
  * Every desk-inspector renderer the page knows, by the reference a program row names it with. It is
  * a second table rather than an arm of the one above because the desk region resolves through
  * `inspectorFor` and mounts an `InspectorRenderer`, which is a different type from a window
- * renderer and reaches the region by a different walk (`../shell/desk/compose.ts`).
+ * renderer and reaches the region by a different walk (`packages/tuval-ui/src/shell/desk/compose.ts`).
  *
  * There is no `readsState` guard here: the admission wrapper is for a *window* renderer, and this
  * renderer performs the same check itself at the one place it reads
- * (`../ai-agent/window/AiAgentInspector.tsx`).
+ * (`packages/tuval-ui/src/ai-agent/window/AiAgentInspector.tsx`).
  *
  * Without this table `AttachedDesk` takes its empty default, the walk ends at `unknown-ref` and the
  * region shows a sentence in the running page whatever a row declares — which is what #8218 left

@@ -11,6 +11,8 @@
  */
 
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {type ForwardedKey, ForwardedKeyProvider} from "@kampus/tuval-ui/forwarded-key";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {fireEvent, render} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {useState} from "react";
@@ -25,8 +27,6 @@ import {
 	withFilter,
 } from "../picker/browser.ts";
 import {processId, programId, programRow} from "../picker/fixtures.ts";
-import {installDomShims} from "./dom.testing.ts";
-import {type ForwardedKey, ForwardedKeyProvider} from "./forwarded-key.tsx";
 import {PickerView} from "./PickerView.tsx";
 
 installDomShims();

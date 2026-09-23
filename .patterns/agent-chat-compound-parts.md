@@ -39,7 +39,7 @@ so the two can't drift.
   left group only, because a host that dropped the send group would have a composer nothing leaves.
 - **A host that wants the composer's rows *and* one of its own puts `.Pickers` in `.Settings`'s
   children beside it** — that is the whole reason `.Pickers` is a part. Tuval's chat window does
-  this with its mode picker (`apps/tuval/src/shell/chat/ChatWindow.tsx`), which is what replaced its
+  this with its mode picker (`packages/tuval-ui/src/shell/chat/ChatWindow.tsx`), which is what replaced its
   use of the `settings` slot.
 - **Class names belong to the parts, not to call sites.** Assembling by hand means placing parts,
   never re-typing `kp-agent-chat__*` markup; a host that reaches for a wrapper the parts do not

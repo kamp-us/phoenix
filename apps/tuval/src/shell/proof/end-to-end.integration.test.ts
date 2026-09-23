@@ -19,6 +19,7 @@ import {dirname, join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {ProcessView} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {defaultPrefixTable, type Key, parse} from "@kampus/tuval-ui/keys";
 import {Effect, Queue, Result, Schema, Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {start} from "../../boot.ts";
@@ -29,7 +30,6 @@ import {readCommandLine} from "../commands/index.ts";
 import {activeWorkspace, type ShellMsg, type ShellState, windowIds} from "../core/index.ts";
 import {wiredShellEffects} from "../host/effects.ts";
 import {serveDesk} from "../host/serve.ts";
-import {defaultPrefixTable, type Key, parse} from "../keys/index.ts";
 import {windows} from "../layout/index.ts";
 import {
 	mountPicker,

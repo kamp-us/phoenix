@@ -11,9 +11,9 @@
 
 import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import type {Duration, Effect} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
-import {defaultPrefixTable} from "../keys/index.ts";
 import type {KernelCmd, PageCmd, ShellCmd, ShellMsg} from "./machine.ts";
 import {applyMsg, initialState} from "./machine.ts";
 import type {PrefixSnapshot, ShellState, Workspace} from "./state.ts";

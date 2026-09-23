@@ -30,10 +30,10 @@ import {
 	type WindowLimits,
 } from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import {isRefusal, type TranscriptPage} from "@kampus/tuval-sdk/kernel/ai-agent/history/index";
-import {describe, expect, it} from "vitest";
 // `rows.ts` rather than the chat barrel: the barrel re-exports `.tsx`, which the node tsconfig's
 // file list does not carry, so importing it from here is a TS6307 on `pnpm typecheck`.
-import {mergeOlder} from "../../shell/chat/rows.ts";
+import {mergeOlder} from "@kampus/tuval-ui/chat";
+import {describe, expect, it} from "vitest";
 import {eventsOf, idleTurn} from "./mapper.ts";
 import {planPageOverTranscript, transcriptLines, transcriptProjection} from "./transcript.ts";
 import * as fixtures from "./transcript-fixtures.ts";

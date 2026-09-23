@@ -15,8 +15,8 @@
 
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import {normalize} from "@kampus/tuval-ui/keys";
 import {Result} from "effect";
-import {normalize} from "../keys/syntax.ts";
 import {flatten, type PickerEntries, type PickerEntry} from "./entries.ts";
 import {type PickerFilter, visibleEntries} from "./filter.ts";
 import {attachProcess, intentOf, type PickerIntent} from "./intent.ts";

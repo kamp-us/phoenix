@@ -30,6 +30,7 @@ import type {
 } from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {ProcessView} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {defaultPrefixTable, type Key, parse} from "@kampus/tuval-ui/keys";
 import {Effect, type FileSystem, Queue, Result, Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {boot, projectDir} from "../../boot.ts";
@@ -41,7 +42,6 @@ import {
 	windowIds,
 } from "../../shell/core/index.ts";
 import {serveDesk} from "../../shell/host/index.ts";
-import {defaultPrefixTable, type Key, parse} from "../../shell/keys/index.ts";
 import {windows} from "../../shell/layout/index.ts";
 import {
 	mountPicker,

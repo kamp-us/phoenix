@@ -10,9 +10,9 @@
  */
 
 import {foldEvent, initialState, usageTotals} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {render, screen} from "@testing-library/react";
 import {describe, expect, it} from "vitest";
-import {installDomShims} from "../../shell/ui/dom.testing.ts";
 import {UsageLine} from "./AgyChatWindow.tsx";
 
 installDomShims();

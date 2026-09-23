@@ -7,10 +7,10 @@ import type {
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {type ChatView, initialChatView} from "@kampus/tuval-ui/chat";
+import {withTranscript} from "@kampus/tuval-ui/testing/chat";
 import {Effect} from "effect";
 import {createRoot} from "react-dom/client";
-import {withTranscript} from "../../../shell/chat/chat.testing.ts";
-import {type ChatView, initialChatView} from "../../../shell/chat/index.ts";
 import {itemsOf} from "../../ai-agent/items.ts";
 import {projectTranscript, type SourceMessage} from "../../server/transcript.ts";
 import {piChatWindow} from "../PiChatWindow.tsx";

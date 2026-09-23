@@ -25,10 +25,10 @@ import {
 	type ProcessView,
 	processGone,
 } from "@kampus/tuval-sdk/kernel/shell/window/host";
+import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Deferred, Effect, Option, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";
 import type {TableRow} from "../../table/row.ts";
-import type {PrefixTable} from "../keys/table.ts";
 import {
 	type AttachRefused,
 	NoSuchProcess,

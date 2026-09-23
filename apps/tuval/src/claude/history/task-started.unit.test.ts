@@ -102,7 +102,7 @@ describe("a background task the backend registers", () => {
 	/**
 	 * #9587's whole symptom: the slot was there for seconds and the turn's end took it out. A
 	 * `running` slot is what the list draws its row from — `runningSubagents` over exactly this shape
-	 * is `../../shell/chat/subagents.unit.test.ts`'s, which is the project that may import the shell.
+	 * is `@kampus/tuval-ui`'s `subagents.unit.test.ts` and `../window/subagents-capture.unit.test.ts`.
 	 */
 	it("leaves the worker running across the end of the turn that registered it", () => {
 		const state = settleTurn(folded(run([resumed]).events));

@@ -33,9 +33,9 @@ import type {Lifecycle, ProcessId} from "@kampus/tuval-sdk/kernel/process/proces
 import {SpellCall, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
 import type {ProgramId, RendererKind, RendererRef} from "@kampus/tuval-sdk/kernel/registry/program";
+import {type Binding, CommandName, type PrefixTable} from "@kampus/tuval-ui/keys";
 import {Duration, Option, Predicate, Result, Schema} from "effect";
 import type {PortDeclaration, TableEvent, TableEventKind, TableRow} from "../../table/row.ts";
-import {type Binding, CommandName, type PrefixTable} from "../keys/table.ts";
 import type {UndecodableReason} from "./errors.ts";
 
 export const ATTACH_KIND = "tuval/transport/attach/v1";

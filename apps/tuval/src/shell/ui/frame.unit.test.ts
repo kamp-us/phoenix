@@ -1,10 +1,10 @@
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {delivered, processGone} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import type {Key} from "@kampus/tuval-ui/keys";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {describe, expect, it} from "vitest";
 import type {ShellState} from "../core/index.ts";
 import {applyMsg} from "../core/index.ts";
-import type {Key} from "../keys/index.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
 import {createStack, createTree, createWindow, SIZE_TOLERANCE} from "../layout/index.ts";
 import {deskWith, threeWindowDesk, threeWindowTree} from "./fixtures.ts";
 import {

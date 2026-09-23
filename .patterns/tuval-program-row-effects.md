@@ -264,7 +264,7 @@ retained for their existing readers, so neither one alone says what this request
 counter is needed: the dispatch reply already correlates the observation. The window keeps a local
 pending guard and rejects completions from a replaced session/connection; a missing completion view
 is an unconfirmed request, not a success. The outcome is defaulted for old checkpoints and dropped
-on restore. See [`ChatWindow.tsx`](../apps/tuval/src/shell/chat/ChatWindow.tsx), its codec-round-trip
+on restore. See [`ChatWindow.tsx`](../packages/tuval-ui/src/shell/chat/ChatWindow.tsx), its codec-round-trip
 regressions, and the real-process tests in
 [`handlers.unit.test.ts`](../packages/tuval/src/ai-agent/handlers/handlers.unit.test.ts).
 
