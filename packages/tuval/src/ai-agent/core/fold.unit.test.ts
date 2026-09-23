@@ -498,9 +498,10 @@ describe("folding a session's end over its catalogs", () => {
 
 /**
  * The resume's rebase, on the one-id-space shape (#9208). The two-space one is measured against a
- * real capture in `agy/ai-agent/paging-from-live.unit.test.ts`; what is proven here is the ordering
- * rule both shapes share — a store row inside the covered range that the tail never held keeps the
- * store's own place, and a held row the store has no copy of keeps the place the tail held it at.
+ * real capture in `@kampus/tuval-agy`'s `src/ai-agent/paging-from-live.unit.test.ts`; what is
+ * proven here is the ordering rule both shapes share — a store row inside the covered range that
+ * the tail never held keeps the store's own place, and a held row the store has no copy of keeps
+ * the place the tail held it at.
  */
 describe("refilling a resumed session's tail over the store's history", () => {
 	const history: ReadonlyArray<TranscriptItem> = [

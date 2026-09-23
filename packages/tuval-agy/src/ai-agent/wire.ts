@@ -2,7 +2,7 @@
  * agy's `--output-format=stream-json` output, and the total read of one NDJSON line into it.
  *
  * Module-internal by construction: no type in this file appears on a public signature, which is
- * what keeps agy's protocol inside `src/agy/` the way Pi's stays inside `@kampus/tuval-pi`.
+ * what keeps agy's protocol inside `@kampus/tuval-agy` the way Pi's stays inside `@kampus/tuval-pi`.
  *
  * Everything here is captured from **agy v1.1.27** (`agy --input-format=stream-json
  * --output-format=stream-json --print='' --sandbox --add-dir=<dir>`), and the stream carries no

@@ -130,7 +130,7 @@ export type AgyVersionVerdict =
 	| {readonly kind: "supported"; readonly version: string}
 	| {readonly kind: "refused"; readonly detail: string};
 
-const upgrade = `install agy ${AGY_VERSION} or newer — src/agy/ reads a wire captured against that release and agy's stream carries no version field to negotiate against (ADR 0362)`;
+const upgrade = `install agy ${AGY_VERSION} or newer — @kampus/tuval-agy reads a wire captured against that release and agy's stream carries no version field to negotiate against (ADR 0362)`;
 
 /**
  * The floor verdict over whatever `agy --version` printed; `null` means the binary could not be run

@@ -28,6 +28,7 @@
 // `CallingWindow` (`src/shell/picker/open.ts`), and the kernel resolves the parent of a tool
 // `spawn` from it, so a spawned process is a child of the Claude one (#8758).
 
+import {agySessionProgram} from "@kampus/tuval-agy";
 import {claudeSession} from "@kampus/tuval-claude";
 import {codexSession} from "@kampus/tuval-codex";
 import {piSessionProgram, projectRootOf} from "@kampus/tuval-pi";
@@ -39,7 +40,6 @@ import {
 } from "@kampus/tuval-sdk/kernel/commands/spell";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Console} from "effect";
-import {agySessionProgram} from "../src/agy/program.ts";
 import {prReview} from "../src/authoring/example/pr-review.ts";
 import type {TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";

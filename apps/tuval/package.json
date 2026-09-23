@@ -27,6 +27,7 @@
 		"@demlik/tea": "catalog:",
 		"@effect/platform-node": "catalog:",
 		"@kampus/design": "workspace:*",
+		"@kampus/tuval-agy": "workspace:*",
 		"@kampus/tuval-claude": "workspace:*",
 		"@kampus/tuval-codex": "workspace:*",
 		"@kampus/tuval-pi": "workspace:*",

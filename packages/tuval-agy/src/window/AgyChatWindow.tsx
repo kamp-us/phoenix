@@ -10,8 +10,8 @@
  * Two things are deliberate and not obvious.
  *
  * **The line reads state, it does not accumulate.** `usage` is the core's own per-turn ledger
- * (`../../ai-agent/core/state.ts`) summed by its own `usageTotals`, checkpointed with the rest of
- * the session, so two windows over one process show one figure and a restart shows the figure it
+ * (`@kampus/tuval-sdk`'s `src/ai-agent/core/state.ts`) summed by its own `usageTotals`,
+ * checkpointed with the rest of the session, so two windows over one process show one figure and a restart shows the figure it
  * left on. There is no counter here, and this file never sees an agy wire event: what fills the
  * ledger is the mapper's business.
  *

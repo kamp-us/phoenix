@@ -197,7 +197,7 @@ the wrap compiles clean:
 [`agent/phases.unit.test.ts`](../packages/tuval-claude/src/agent/phases.unit.test.ts),
 [`agent.unit.test.ts`](../packages/tuval-codex/src/agent.unit.test.ts) (`@kampus/tuval-codex`),
 [`pi/ai-agent/turn-end.unit.test.ts`](../packages/tuval-pi/src/ai-agent/turn-end.unit.test.ts),
-[`agy/ai-agent/pays-the-turn-result.unit.test.ts`](../apps/tuval/src/agy/ai-agent/pays-the-turn-result.unit.test.ts)
+[`tuval-agy/src/ai-agent/pays-the-turn-result.unit.test.ts`](../packages/tuval-agy/src/ai-agent/pays-the-turn-result.unit.test.ts)
 and [`ai-agent/service/ScriptedAiAgent.unit.test.ts`](../packages/tuval/src/ai-agent/service/ScriptedAiAgent.unit.test.ts).
 The fold's own cases are [`ai-agent/turn-result.unit.test.ts`](../packages/tuval/src/ai-agent/turn-result.unit.test.ts).
 

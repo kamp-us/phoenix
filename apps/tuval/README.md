@@ -916,10 +916,10 @@ whole exchanges only, and Tuval keeps no second copy.
 the core, the eight port keys, the `receive` translations, the handlers and the Sub. A caller varies
 `layer`, `cwd` and the identity. Four backends fill it today: `PiAiAgent.layer`,
 `CodexAiAgent.layer`, `ClaudeAiAgent.layer` (`@kampus/tuval-claude`, `packages/tuval-claude/src/agent/ClaudeAiAgent.ts`) and
-`AgyAiAgent.layer` (`src/agy/ai-agent/AgyAiAgent.ts`). The first three are a
-`Layer<TuvalAiAgent, never, KernelBridge>` — never-failing, asking only for the kernel-tools bridge
-the row provides; agy reaches no kernel tool, so its layer asks for nothing
-(`src/agy/program.ts`). The `claude-session` row that wires it into the config
+`AgyAiAgent.layer` (`@kampus/tuval-agy`, `packages/tuval-agy/src/ai-agent/AgyAiAgent.ts`). The first
+three are a `Layer<TuvalAiAgent, never, KernelBridge>` — never-failing, asking only for the
+kernel-tools bridge the row provides; agy reaches no kernel tool, so its layer asks for nothing
+(`packages/tuval-agy/src/program.ts`). The `claude-session` row that wires it into the config
 graph is [#7623](https://github.com/kamp-us/phoenix/issues/7623).
 
 Shape and rationale: [tuval-program-row-effects.md](../../.patterns/tuval-program-row-effects.md).

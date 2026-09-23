@@ -6,10 +6,9 @@
  * `agy` CLI over a subprocess, the renderer is browser-side and must reach none of that, so the two
  * names they share live alone in a file that imports one type.
  *
- * It sits beside the row rather than inside `./window/`, because the strict lens is `composite` and
- * must list every file it compiles: `./window/` is excluded from it whole (it imports
- * `@kampus/design`, which needs the relaxed lens of `tsconfig.design.json`), and a file the row
- * imports out of an excluded directory is a `TS6307` on every build.
+ * It sits beside the row rather than inside `./window/`, because the package's root entry re-exports
+ * it and that entry must reach no React: a leaf inside `./window/` would sit one wrong import away
+ * from pulling the window into every config module.
  */
 
 import type {RendererRef} from "@kampus/tuval-sdk/kernel/registry/program";

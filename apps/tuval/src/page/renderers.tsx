@@ -27,6 +27,7 @@
  */
 
 import features from "virtual:tuval/features";
+import {AGY_CHAT_WINDOW_REF, agyChatWindow} from "@kampus/tuval-agy/window";
 import {CLAUDE_CHAT_WINDOW_REF, claudeChatWindow} from "@kampus/tuval-claude/window";
 import {CODEX_CHAT_WINDOW_REF, codexChatWindow} from "@kampus/tuval-codex/window";
 import {PI_CHAT_WINDOW_REF, piChatWindow} from "@kampus/tuval-pi/window";
@@ -62,7 +63,6 @@ import {
 import {Effect, Fiber} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useRef, useState} from "react";
-import {AGY_CHAT_WINDOW_REF, agyChatWindow} from "../agy/window/index.ts";
 import {type CounterState, isCounterState} from "../demo/counter.ts";
 import {isLogState, type LogState} from "../demo/log.ts";
 import type {PageAttachment} from "../shell/transport/browser.ts";

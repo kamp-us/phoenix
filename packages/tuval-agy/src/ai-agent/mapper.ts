@@ -134,8 +134,8 @@ const spent = (tokens: Tokens): boolean => tokens.inputTokens > 0 || tokens.outp
  * keeps.
  *
  * The core keys a cost on `UsageEvent.turn` and keeps the *first* report under a key it has seen
- * (`../../ai-agent/core/fold.ts`). A desk restore rebuilds the layer over a core state that already
- * holds this conversation's ledger, so a counter starting at `0` either aliases a key the ledger has
+ * (`@kampus/tuval-sdk`'s `src/ai-agent/core/fold.ts`). A desk restore rebuilds the layer over a
+ * core state that already holds this conversation's ledger, so a counter starting at `0` either aliases a key the ledger has
  * spent — dropping the restored session's tokens — or lands past it and double-counts a report agy
  * repeats ([#8695](https://github.com/kamp-us/phoenix/issues/8695)). Keyed on the conversation plus
  * the step or the turn agy itself numbers, a report lands on the entry it already wrote whatever

@@ -57,11 +57,11 @@ const markOf = (items: ReadonlyArray<TranscriptItem>, id: string): boolean | und
 
 /**
  * The conversation as a real agy log keys it: `<cid>:line:<n>` for the stored row, with the live id
- * the tail knew it by stated in `alias` (`../../agy/ai-agent/transcript.ts`). The numbers are the
- * captured v1.2.0 conversation's own — the cut reply is line 9, alias `:9` — and the derivation from
- * that capture through the shipped reader is pinned in
- * `../../agy/ai-agent/paging-from-live.unit.test.ts`. Restated as literals here because the core may
- * not reach a backend (`./boundary.unit.test.ts`).
+ * the tail knew it by stated in `alias` (`@kampus/tuval-agy`'s `src/ai-agent/transcript.ts`). The
+ * numbers are the captured v1.2.0 conversation's own — the cut reply is line 9, alias `:9` — and the
+ * derivation from that capture through the shipped reader is pinned in `@kampus/tuval-agy`'s
+ * `src/ai-agent/paging-from-live.unit.test.ts`. Restated as literals here because the core may not
+ * reach a backend (`./boundary.unit.test.ts`).
  */
 const CID = "8377fd63-b158-49b9-b2c1-2d89ed9135ce";
 

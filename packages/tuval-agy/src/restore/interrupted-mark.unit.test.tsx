@@ -5,9 +5,9 @@
  * that carries them, and this pins that it does.
  *
  * Two rows, two carriers, and the distinction is the whole test. The reply keeps its own
- * `interrupted: true` — `../core/state.ts`'s `remarkCutReplies` writes it — and the *prompt* carries
- * the mark and the Resend, because `state.interrupted` is the resend anchor and `ChatWindow` renders
- * both off it (#8699). Both are checkpointed fields, so a restore that drops either reds here.
+ * `interrupted: true` — `remarkCutReplies` in `@kampus/tuval-sdk`'s `src/ai-agent/core/state.ts`
+ * writes it — and the *prompt* carries the mark and the Resend, because `state.interrupted` is the
+ * resend anchor and `ChatWindow` renders both off it (#8699). Both are checkpointed fields, so a restore that drops either reds here.
  *
  * The history the resume refills over comes from agy's on-disk reader, and that reader mints no
  * interrupted item at all — measured, not assumed: at agy 1.2.0 an operator stop leaves the cut reply
@@ -40,12 +40,12 @@ import {render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import {transcriptItems, transcriptLines} from "../../agy/ai-agent/transcript.ts";
+import {transcriptItems, transcriptLines} from "../ai-agent/transcript.ts";
 import {
 	liveJoinConversationId,
 	liveJoinFullLines,
 	liveJoinLines,
-} from "../../agy/ai-agent/transcript-fixtures.ts";
+} from "../ai-agent/transcript-fixtures.ts";
 
 installDomShims();
 

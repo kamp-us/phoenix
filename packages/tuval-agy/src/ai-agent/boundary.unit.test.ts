@@ -1,8 +1,8 @@
 /**
  * The boundaries this layer keeps: it is ruling 4's `Layer<TuvalAiAgent, never, never>` (#7570),
  * no agy wire type reaches its public surface, it implements every `TuvalAiAgentApi` member rather
- * than the brief's nine, and none of `@kampus/tuval-claude`'s kernel-tool apparatus exists anywhere under
- * `src/agy/`.
+ * than the brief's nine, and none of `@kampus/tuval-claude`'s kernel-tool apparatus exists anywhere in
+ * `@kampus/tuval-agy`.
  *
  * The surface probe states its expected answer on the right of an `=`, with positive controls
  * pinned to the opposite value, per `.patterns/unconditional-test-assertions.md`'s type-level
@@ -11,12 +11,12 @@
  */
 
 import {readdirSync, readFileSync, statSync} from "node:fs";
+import {createRequire} from "node:module";
 import {join} from "node:path";
 import type {TuvalAiAgent, TuvalAiAgentApi} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import type {FileSystem, Layer} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {describe, expect, it} from "vitest";
-import {sdkModule} from "../../sdk-source.testing.ts";
 import {AgyAiAgent} from "./index.ts";
 
 /**
@@ -64,7 +64,10 @@ const members: ReadonlyArray<keyof TuvalAiAgentApi> = [
 	"events",
 ];
 
-const portSource = sdkModule("ai-agent/service/TuvalAiAgent.ts");
+/** The port's own source, found through the SDK's exports map the way any outside consumer finds it. */
+const portSource = createRequire(import.meta.url).resolve(
+	"@kampus/tuval-sdk/kernel/ai-agent/service/TuvalAiAgent",
+);
 
 /** The member names the port's interface declares, read off its text so a new one cannot be missed. */
 const declaredMembers = (text: string): ReadonlyArray<string> => {
@@ -158,7 +161,7 @@ describe("the agy AI agent layer's surface", () => {
 });
 
 describe("this row follows @kampus/tuval-pi, not @kampus/tuval-claude", () => {
-	it("has no tools directory anywhere under src/agy/", () => {
+	it("has no tools directory anywhere in the package", () => {
 		expect(readdirSync(moduleDir).filter((entry) => entry === "tools")).toEqual([]);
 	});
 
