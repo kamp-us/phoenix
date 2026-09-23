@@ -20,6 +20,14 @@ export default defineConfig({
 					maxWorkers,
 				},
 			},
+			{
+				test: {
+					name: "pack",
+					include: ["src/**/*.pack.test.ts"],
+					pool: "forks",
+					maxWorkers,
+				},
+			},
 		],
 	},
 });

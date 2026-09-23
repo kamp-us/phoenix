@@ -116,14 +116,14 @@ export interface ChatWindowOptions {
 	/** The clock a send stamps its turn with, so no update cell has to read one (#7978). */
 	readonly now?: () => number;
 	/**
-	 * The window's half of the config's `features.subagentList` flag (`apps/tuval/src/config.ts`), on by
+	 * The window's half of the config's `features.subagentList` flag (`@kampus/tuval-sdk/config`), on by
 	 * default since the flag's flip. It gates the running list and the removal of a subagent's rows
 	 * from the transcript together, so a caller passing `false` gets exactly the pre-flag window
 	 * (#8405).
 	 */
 	readonly subagentList?: boolean;
 	/**
-	 * The window's half of the config's `features.kernelChildren` flag (`apps/tuval/src/config.ts`), off by
+	 * The window's half of the config's `features.kernelChildren` flag (`@kampus/tuval-sdk/config`), off by
 	 * default. On, a process the agent spawned through the kernel shows as a marked row in the list
 	 * and opens as its own window; off, the window is exactly the one it is without the flag — the
 	 * slot is filtered out before anything reads it, so neither the list nor the transcript's

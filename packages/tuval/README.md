@@ -76,6 +76,7 @@ keystroke, and `.call(…)` for a declared command.
 | `@kampus/tuval-sdk/authoring` | `program`, `defineProgram`, `port`, `programArgs`, `Program`, the effect constructors, `testProgram`, and the types an authored program annotates itself with | the authoring API |
 | `@kampus/tuval-sdk/window` | `windowRenderer`, `WindowHost` and `ProgramEvent` for a module window; browser-safe | the authoring API |
 | `@kampus/tuval-sdk/ai-agent/ports` | the AI-agent port vocabulary: `PromptPayloadSchema`, `TurnResultSchema` and the rest | the authoring API |
+| `@kampus/tuval-sdk/config` | `TuvalConfigInput`, the type a `tuval.config.ts` default export satisfies, and the `TuvalConfig` schema the desk decodes it with | the config API |
 | `@kampus/tuval-sdk/kernel/*` | any kernel module by its path, without the extension, e.g. `@kampus/tuval-sdk/kernel/process/Processes` | **unstable** |
 
 **`./kernel/*` is unstable.** It is public so the desk app,

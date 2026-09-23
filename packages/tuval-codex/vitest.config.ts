@@ -30,6 +30,14 @@ export default defineConfig({
 					testTimeout: 60_000,
 				},
 			},
+			{
+				test: {
+					name: "pack",
+					include: ["src/**/*.pack.test.ts"],
+					pool: "forks",
+					maxWorkers,
+				},
+			},
 		],
 	},
 });

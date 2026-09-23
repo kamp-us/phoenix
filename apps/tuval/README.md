@@ -175,7 +175,7 @@ This repo's `apps/tuval/.tuval/tuval.config.ts` is the project layer `pnpm dev` 
 checkpoints do not land beside it — they land under the home dir, which is why no repository needs
 an ignore rule for Tuval state.
 
-A config module default-exports one versioned object, `TuvalConfigInput` from `src/config.ts`:
+A config module default-exports one versioned object, `TuvalConfigInput` from `@kampus/tuval-sdk/config`:
 `version: 1`, `programs`, an optional `graph`, and an optional `keys` (see "Spells"). A row is a
 `Program` (`src/registry/program.ts`):
 one stable id, a private Demlik core machine, public typed ports, a `receive` map that turns what
@@ -187,7 +187,7 @@ programs and runs nothing.
 
 ```ts
 import {Console} from "effect";
-import type {TuvalConfigInput} from "../src/config.ts";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
 import {ProcessId} from "../src/process/process.ts";
 import {wiredShellEffects} from "../src/shell/host/index.ts";

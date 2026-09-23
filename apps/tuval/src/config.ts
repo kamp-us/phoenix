@@ -1,7 +1,7 @@
 /**
  * The user-owned config's fail-closed module loader and the two-layer merge — a global module
  * under the home dir's `.tuval` and an optional project module under the cwd's `.tuval`, project
- * over global. The shape a module decodes against is the SDK's (`@kampus/tuval-sdk/kernel/config`),
+ * over global. The shape a module decodes against is the SDK's (`@kampus/tuval-sdk/config`),
  * because a config is written against it outside this app.
  *
  * Configuration is code the user owns (the Neovim model, #7484 R1.1): a TypeScript module whose
@@ -14,13 +14,13 @@
 
 import {dirname} from "node:path";
 import {pathToFileURL} from "node:url";
+import {TuvalConfig} from "@kampus/tuval-sdk/config";
 import {
 	type BindingSource,
 	type ConfigLayer,
 	describeFile,
 	type KeyBindings,
 } from "@kampus/tuval-sdk/kernel/commands/bindings/index";
-import {TuvalConfig} from "@kampus/tuval-sdk/kernel/config";
 // Re-exported below rather than declared here: both ends of the node/browser wire need the resolved
 // flag record, and this module reaches `node:*` (#8439).
 import {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
@@ -33,11 +33,7 @@ import {
 } from "@kampus/tuval-sdk/kernel/shell/window/renderer";
 import {Effect, FileSystem, Option, Schema, SchemaIssue} from "effect";
 
-export {
-	DeclaredFeatures,
-	TuvalConfig,
-	type TuvalConfigInput,
-} from "@kampus/tuval-sdk/kernel/config";
+export {DeclaredFeatures, TuvalConfig} from "@kampus/tuval-sdk/config";
 export {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
 
 export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()(

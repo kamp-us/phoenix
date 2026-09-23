@@ -24,6 +24,21 @@
 		},
 		"packages/tuval": {
 			"component": "tuval-sdk"
+		},
+		"packages/tuval-agy": {
+			"component": "tuval-agy"
+		},
+		"packages/tuval-claude": {
+			"component": "tuval-claude"
+		},
+		"packages/tuval-codex": {
+			"component": "tuval-codex"
+		},
+		"packages/tuval-pi": {
+			"component": "tuval-pi"
+		},
+		"packages/tuval-ui": {
+			"component": "tuval-ui"
 		}
 	}
 }

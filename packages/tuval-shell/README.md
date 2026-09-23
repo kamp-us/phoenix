@@ -17,7 +17,7 @@ The pairing, which is what you are almost certainly here for — a nightly fetch
 // ~/.tuval/tuval.config.ts
 import {cron} from "@kampus/tuval-cron";
 import {shell} from "@kampus/tuval-shell";
-import type {TuvalConfigInput} from "@kampus/tuval-sdk/kernel/config";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 
 export const nightlyFetch = cron({
   id: "nightly-fetch",

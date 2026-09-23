@@ -15,9 +15,9 @@
 import {claudeSession, claudeSessionSettings} from "@kampus/tuval-claude";
 import {ClaudeAiAgent} from "@kampus/tuval-claude/agent";
 import {KernelBridge} from "@kampus/tuval-claude/tools";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Layer} from "effect";
-import type {TuvalConfigInput} from "../../config.ts";
 import {wiredShellEffects} from "../../shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../../shell/program.ts";
 import {PROJECT_ROOT_VAR} from "./names.ts";

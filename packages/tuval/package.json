@@ -13,6 +13,7 @@
 		"./authoring": "./src/authoring/index.ts",
 		"./window": "./src/authoring/window.ts",
 		"./ai-agent/ports": "./src/ai-agent/ports/index.ts",
+		"./config": "./src/config.ts",
 		"./kernel/*": "./src/*.ts",
 		"./package.json": "./package.json"
 	},
@@ -34,6 +35,10 @@
 			"./ai-agent/ports": {
 				"types": "./dist/ai-agent/ports/index.d.ts",
 				"default": "./dist/ai-agent/ports/index.js"
+			},
+			"./config": {
+				"types": "./dist/config.d.ts",
+				"default": "./dist/config.js"
 			},
 			"./kernel/*": {
 				"types": "./dist/*.d.ts",

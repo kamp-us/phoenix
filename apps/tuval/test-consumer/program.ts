@@ -33,7 +33,7 @@ import {
 	stop,
 	TITLE_PORT,
 } from "@kampus/tuval-sdk/authoring";
-import type {TuvalConfigInput} from "@kampus/tuval-sdk/kernel/config";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {Schema} from "effect";
 
 const worker = Program.shape({in: {prompt: PromptPayloadSchema}, out: {result: TurnResultSchema}});

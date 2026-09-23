@@ -7,7 +7,7 @@
 // default-off, so a desk booted today carries the nine: the worked `pr-review` example (#8734)
 // behind `prReviewExample`. Flip that line and restart the desk to get the row, its graph node and
 // its spells.
-// The shape is `TuvalConfigInput` (src/config.ts), version 1.
+// The shape is `TuvalConfigInput` (`@kampus/tuval-sdk/config`), version 1.
 //
 // The shell is registered here and nowhere else — it is a program row like any other, so dropping
 // its row and its graph node is how you boot without a desk.
@@ -32,6 +32,7 @@ import {agySessionProgram} from "@kampus/tuval-agy";
 import {claudeSession} from "@kampus/tuval-claude";
 import {codexSession} from "@kampus/tuval-codex";
 import {piSessionProgram, projectRootOf} from "@kampus/tuval-pi";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {sessionListProgram} from "@kampus/tuval-sdk/kernel/ai-agent/session-list";
 import {
 	ClientId,
@@ -41,7 +42,6 @@ import {
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Console} from "effect";
 import {prReview} from "../src/authoring/example/pr-review.ts";
-import type {TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
 import {moduleCounter} from "../src/demo/module-counter.ts";
 import {wiredShellEffects} from "../src/shell/host/index.ts";

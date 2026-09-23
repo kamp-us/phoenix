@@ -1,7 +1,6 @@
 {
 	"name": "@kampus/tuval-pi",
 	"version": "0.0.0",
-	"private": true,
 	"description": "Tuval's Pi harness — the pi-session program row, its loopback Pi host and client, kernel tools, history and window, on the @kampus/tuval-sdk kernel",
 	"license": "MIT",
 	"repository": {
@@ -20,7 +19,47 @@
 		"./testing/window-proof": "./src/window/proof.testing.ts",
 		"./package.json": "./package.json"
 	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"publishConfig": {
+		"access": "public",
+		"exports": {
+			".": {
+				"types": "./dist/index.d.ts",
+				"default": "./dist/index.js"
+			},
+			"./ai-agent": {
+				"types": "./dist/ai-agent/index.d.ts",
+				"default": "./dist/ai-agent/index.js"
+			},
+			"./server": {
+				"types": "./dist/server/index.d.ts",
+				"default": "./dist/server/index.js"
+			},
+			"./window": {
+				"types": "./dist/window/index.d.ts",
+				"default": "./dist/window/index.js"
+			},
+			"./testing/faux": {
+				"types": "./dist/proof/faux.d.ts",
+				"default": "./dist/proof/faux.js"
+			},
+			"./testing/window": {
+				"types": "./dist/window/pi-window.testing.d.ts",
+				"default": "./dist/window/pi-window.testing.js"
+			},
+			"./testing/window-proof": {
+				"types": "./dist/window/proof.testing.d.ts",
+				"default": "./dist/window/proof.testing.js"
+			},
+			"./package.json": "./package.json"
+		}
+	},
 	"scripts": {
+		"build": "rm -rf dist && tsc -p tsconfig.build.json && node ./scripts/copy-src-assets.mjs",
+		"prepack": "pnpm run build",
 		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
 		"test": "vitest run",
 		"test:unit": "vitest run --project unit",
