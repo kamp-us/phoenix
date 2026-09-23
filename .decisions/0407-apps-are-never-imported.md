@@ -131,9 +131,9 @@ package under `packages/`.**
 - The SDK owes stability on `./authoring`, `./window`, `./ai-agent/ports` and `./config`, and on
   nothing else. Moving the config type later would break every config, which is why it has a
   stable entry.
-- `apps/web` is still named `@kampus/web`, and some packages still reach it (among them
-  `packages/fts-backfill`, `packages/preview-seed` and `packages/d1-rest`). Rules 1 and 3 apply to
-  it too, but the founder ruled the web imports out of #9646's scope. Until the app is renamed and
+- `apps/web` is still named `@kampus/web`, and `packages/fts-backfill` and
+  `packages/preview-seed` still depend on it. Rules 1 and 3 apply to it too, but the founder ruled
+  the web imports out of #9646's scope. Until the app is renamed and
   those imports move, the guard's `@kampus-apps/*` match does not see them.
 - The desk app still carries a worked program (`apps/tuval/src/authoring/example/pr-review.ts`) and
   the app-side tests of the authoring layer. That is the app using the SDK, not an SDK home.
