@@ -18,7 +18,7 @@
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {applyCellChecked} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {ItemId} from "@kampus/tuval/ai-agent/ports";
+import {ItemId} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type AiAgentSessionCmd,
 	type AiAgentSessionMsg,
@@ -26,8 +26,8 @@ import {
 	aiAgentSessionMachine,
 	initialState,
 	restore,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {Effect, Stream} from "effect";
 import {CWD, message, on, SESSION_ID, START_EVENTS} from "./fixtures/harness.ts";
 

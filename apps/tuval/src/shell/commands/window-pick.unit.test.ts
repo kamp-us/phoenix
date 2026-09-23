@@ -6,8 +6,8 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect} from "effect";
 import {applyMsg, initialState, type ShellMsg} from "../core/machine.ts";
 import {activeWorkspace, keyTargetOf, type ShellState} from "../core/state.ts";

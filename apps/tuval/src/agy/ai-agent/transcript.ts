@@ -52,12 +52,12 @@
  * the fold.
  */
 
-import type {TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import type {TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	planTranscriptPage,
 	type TranscriptPage,
 	type TranscriptPageResult,
-} from "@kampus/tuval/kernel/ai-agent/history/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/history/index";
 import {Effect, FileSystem} from "effect";
 import {assistantItem, itemId, systemItem, toolItem, toolStatusOf, userItem} from "./items.ts";
 import {type AgyToolCall, type AgyTranscriptLine, decodeTranscriptLine} from "./transcript-wire.ts";

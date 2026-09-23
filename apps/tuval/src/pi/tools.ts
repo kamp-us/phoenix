@@ -21,10 +21,10 @@
  */
 
 import type {AgentToolResult, ToolDefinition} from "@earendil-works/pi-coding-agent";
-import type {BridgeError} from "@kampus/tuval/kernel/ai-agent/tools/errors";
-import type {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import type {BridgeError} from "@kampus/tuval-sdk/kernel/ai-agent/tools/errors";
+import type {KernelBridge} from "@kampus/tuval-sdk/kernel/ai-agent/tools/KernelBridge";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Option} from "effect";
 import {Type} from "typebox";
 

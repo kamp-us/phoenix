@@ -26,7 +26,7 @@
  * repeats it byte for byte, so that arm refuses at once.
  */
 
-import type {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Duration, Effect, Fiber, Option, Schema, type Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {useEffect, useState} from "react";

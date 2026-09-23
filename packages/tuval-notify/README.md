@@ -106,7 +106,7 @@ Reaches no network at all. With a target title, a message is written as `Morning
 ## What arrives, and what it announces
 
 The `message` in-port takes an AI-agent **`TurnResult`** — `{text, items, ok}` — and it is declared
-over `TurnResultSchema` out of `@kampus/tuval/ai-agent/ports`, the *same object* cron declares its
+over `TurnResultSchema` out of `@kampus/tuval-sdk/ai-agent/ports`, the *same object* cron declares its
 `brief` out-port over. Not a lookalike: a route fits only on exact schema equality, so that identity
 is what lets `cron.brief → notify.message` ever be a line in a config (see below). A test asserts
 the two ports publish the same schema, so the day either side invents its own, the suite says so.
@@ -166,7 +166,7 @@ cannot be written in a config today** — but only one thing stands in the way n
 upstream, and it is pinned by a test in this package so that the day it is lifted, the suite says so.
 
 **Cron has somewhere to leave from.** Its `brief` out-port carries the whole finished `TurnResult`,
-declared over `TurnResultSchema` out of `@kampus/tuval/ai-agent/ports`. (Its `result` is still a
+declared over `TurnResultSchema` out of `@kampus/tuval-sdk/ai-agent/ports`. (Its `result` is still a
 cell over the reply its spawned job sends back — an internal arrival, not a port — so the line a
 graph node writes is `{port: "brief", to: …}`.)
 
@@ -361,8 +361,8 @@ The kernel is unaffected either way — the notifier still delivers and `:phone 
 but the desk has no page until it resolves.
 
 **The browser half sees no kernel, and that is checked twice.** `src/window.tsx` may reach
-`@kampus/tuval/window` (the browser-safe door), `effect`, `react` and this package's kernel-free
-`src/state.ts`; it may not reach `src/notify.ts`, which imports `@kampus/tuval/authoring` and
+`@kampus/tuval-sdk/window` (the browser-safe door), `effect`, `react` and this package's kernel-free
+`src/state.ts`; it may not reach `src/notify.ts`, which imports `@kampus/tuval-sdk/authoring` and
 through it `node:crypto`. `tsconfig.window.json` keeps that true at compile time by including
 nothing but the window and its leaves, and `state.unit.test.ts` walks the imports from
 `window.tsx` and names the whole reachable set — so a new edge across that line fails the suite by
@@ -384,7 +384,7 @@ before the restart. That is the truthful line about a history this version canno
 
 ## How it relates to Tuval
 
-This is a Tuval **program**, built on `defineProgram` out of `@kampus/tuval/authoring`. Everything
+This is a Tuval **program**, built on `defineProgram` out of `@kampus/tuval-sdk/authoring`. Everything
 around the program is the kernel's: the board tile is what the kernel renders from the `title` and
 `status` lines this program publishes; checkpoint and restore are the kernel's, and this program's
 only part in them is the `resume` that re-reads `id` and `kind` off your config; the
@@ -399,29 +399,29 @@ desk's page imports it, so this package writes a React component and nothing abo
 pnpm add @kampus/tuval-notify
 ```
 
-**No runtime dependencies.** Everything is a peer: `@kampus/tuval`, `effect`, `@demlik/tea`.
+**No runtime dependencies.** Everything is a peer: `@kampus/tuval-sdk`, `effect`, `@demlik/tea`.
 
-`@kampus/tuval` is **private and not published to npm**. This package now lives in the same
+`@kampus/tuval-sdk` is **publishable but not yet on npm**. This package now lives in the same
 workspace as Tuval does, so the dependency is a plain workspace one —
-`"@kampus/tuval": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
+`"@kampus/tuval-sdk": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
 link and no second checkout anywhere. It becomes a real version range the day Tuval ships to a
 registry; nothing in the source changes with it, because the source already imports only through
 the published doors (#8943, #9250):
 
-- `@kampus/tuval/authoring` — `defineProgram`, `port`, the effect constructors (`send`/`emit`),
+- `@kampus/tuval-sdk/authoring` — `defineProgram`, `port`, the effect constructors (`send`/`emit`),
   `testProgram`, `TITLE_PORT`/`STATUS_PORT`, and the types around them
 - `@kampus-apps/tuval/sessions` — `TuvalConfigInput`, which only a config needs
-- `@kampus/tuval/ai-agent/ports` — `TurnResultSchema`, which `message` is declared over; `state.ts`
+- `@kampus/tuval-sdk/ai-agent/ports` — `TurnResultSchema`, which `message` is declared over; `state.ts`
   names its encoded type **type-only**, so the built `state.js` a browser loads imports nothing of it
-- `@kampus/tuval/window` — `windowRenderer` and `WindowHost`, the browser-safe half, whose own import
+- `@kampus/tuval-sdk/window` — `windowRenderer` and `WindowHost`, the browser-safe half, whose own import
   closure reaches no `node:` builtin. `src/window.tsx` is the only file that touches it
 
-Nothing reaches `@kampus/tuval/src/...`; the exports map would refuse it anyway.
+Nothing reaches `@kampus/tuval-sdk/src/...`; the exports map would refuse it anyway.
 
 ## Settings this package borrows from Tuval
 
 Two settings here are not this package's taste. They are restatements of `apps/tuval`'s, and they
-exist because `@kampus/tuval` is consumed as **raw TypeScript source**: its `exports` map points at
+exist because `@kampus/tuval-sdk` is consumed as **raw TypeScript source**: its `exports` map points at
 `src/*.ts` and it ships no `.d.ts`. Both go away the day Tuval publishes built declarations.
 
 **`tsconfig.json`: `lib: ["ES2023", "DOM", "DOM.Iterable"]` and `exactOptionalPropertyTypes: false`.**

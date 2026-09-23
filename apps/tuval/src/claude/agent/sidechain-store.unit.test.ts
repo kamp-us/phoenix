@@ -5,7 +5,7 @@
 
 import {homedir} from "node:os";
 import {join} from "node:path";
-import {PageError} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {PageError} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Cause, Effect, Exit, FileSystem, Layer, Path, PlatformError} from "effect";
 import {describe, expect, it} from "vitest";
 import {loadSidechain, SIDECHAIN_AGENT_ID} from "../history/fixtures/load.ts";

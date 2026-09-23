@@ -85,7 +85,12 @@ const streamerProgram: AnyProgram = {
 	handlers: {},
 	checkpointWorthy: (state: StreamState) => !state.partial,
 	capabilities: [],
-	identity: {package: "@kampus/tuval", program: "streamer", version: "1.0.0", digest: "sha256:s"},
+	identity: {
+		package: "@kampus/tuval",
+		program: "streamer",
+		version: "1.0.0",
+		digest: "sha256:s",
+	},
 	placement: {host: "local"},
 } satisfies Program<StreamState, StreamMsg, never, never, unknown, never, never>;
 

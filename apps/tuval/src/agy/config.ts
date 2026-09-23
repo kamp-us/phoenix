@@ -12,7 +12,7 @@
  * written down, so nothing machine-local lands in the repo (ADR 0362).
  */
 
-import type {ModelRef} from "@kampus/tuval/ai-agent/ports";
+import type {ModelRef} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {Duration} from "effect";
 
 /**

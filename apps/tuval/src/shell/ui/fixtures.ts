@@ -3,7 +3,7 @@
  * cannot hold a `sizes` map the tree would never produce.
  */
 
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import type {ShellState, Workspace} from "../core/index.ts";
 import {disarmed} from "../core/index.ts";
 import {initialDesk} from "../desk/state.ts";

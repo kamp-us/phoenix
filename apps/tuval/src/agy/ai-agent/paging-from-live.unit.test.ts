@@ -19,7 +19,7 @@
  * trusted.
  */
 
-import type {ItemId, TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import type {ItemId, TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	foldEvent,
 	initialState,
@@ -28,8 +28,8 @@ import {
 	remarkCutReplies,
 	upsertItem,
 	type WindowLimits,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {isRefusal, type TranscriptPage} from "@kampus/tuval/kernel/ai-agent/history/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {isRefusal, type TranscriptPage} from "@kampus/tuval-sdk/kernel/ai-agent/history/index";
 import {describe, expect, it} from "vitest";
 // `rows.ts` rather than the chat barrel: the barrel re-exports `.tsx`, which the node tsconfig's
 // file list does not carry, so importing it from here is a TS6307 on `pnpm typecheck`.

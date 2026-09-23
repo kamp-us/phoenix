@@ -21,9 +21,9 @@
  */
 
 import {fauxAssistantMessage} from "@earendil-works/pi-ai";
-import {aiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
-import {ScriptedAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {aiAgentProgram} from "@kampus/tuval-sdk/kernel/ai-agent/program";
+import {ScriptedAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {TuvalConfigInput} from "../../config.ts";
 import {piSessionProgram} from "../../pi/program.ts";
 import {fauxPiLayer} from "../../pi/proof/faux.ts";

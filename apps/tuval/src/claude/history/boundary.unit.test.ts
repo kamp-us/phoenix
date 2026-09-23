@@ -68,8 +68,8 @@ describe("the Claude history mapping is pure", () => {
 		// The agent directories live in the SDK now, so they are named through its doors.
 		const allowed = [
 			/^\.\//,
-			/^@kampus\/tuval\/ai-agent\/ports$/,
-			/^@kampus\/tuval\/kernel\/ai-agent\/(ports|history|events)(\/|$)/,
+			/^@kampus\/tuval-sdk\/ai-agent\/ports$/,
+			/^@kampus\/tuval-sdk\/kernel\/ai-agent\/(ports|history|events)(\/|$)/,
 		];
 		const offenders = shipped().flatMap(({name, text}) =>
 			importsOf(text)

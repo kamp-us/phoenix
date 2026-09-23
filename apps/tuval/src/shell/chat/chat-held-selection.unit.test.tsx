@@ -17,8 +17,8 @@ import {
 	type AiAgentSessionState,
 	foldEvent,
 	initialState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {act, render, screen} from "@testing-library/react";
 import {Effect, Stream} from "effect";
 import type {ReactElement} from "react";

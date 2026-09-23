@@ -18,7 +18,7 @@
  * row, which names no SDK type. `config.unit.test.ts` pins the two against each other.
  */
 
-import {type Mode, Mode as ModeBrand} from "@kampus/tuval/ai-agent/ports";
+import {type Mode, Mode as ModeBrand} from "@kampus/tuval-sdk/ai-agent/ports";
 import {Effect, Schema} from "effect";
 
 /** The MCP server the three kernel tools are served under; `tools/server.ts` owns the other half. */

@@ -9,7 +9,7 @@
  * to nothing.
  */
 
-import {foldEvent, initialState, usageTotals} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {foldEvent, initialState, usageTotals} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import {render, screen} from "@testing-library/react";
 import {describe, expect, it} from "vitest";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";

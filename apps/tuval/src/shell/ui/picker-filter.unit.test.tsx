@@ -9,7 +9,7 @@
  * elements with the clock under the test's control.
  */
 
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {act, fireEvent, render} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {useState} from "react";

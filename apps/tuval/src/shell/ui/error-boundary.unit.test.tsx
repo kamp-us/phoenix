@@ -6,7 +6,7 @@
  * window renderer throws.
  */
 
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {act, fireEvent, render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";

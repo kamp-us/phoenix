@@ -2,15 +2,15 @@ import {readdirSync, readFileSync} from "node:fs";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
-import {TITLE_KIND, TITLE_PORT} from "@kampus/tuval/kernel/process/self-report";
+import {TITLE_KIND, TITLE_PORT} from "@kampus/tuval-sdk/kernel/process/self-report";
 import {
 	decodeKernelMessage,
 	decodePageMessage,
 	encodeKernelMessage,
 	encodePageMessage,
-} from "@kampus/tuval/kernel/protocol/codec";
-import type {ProtocolRefused} from "@kampus/tuval/kernel/protocol/errors";
-import * as fixtures from "@kampus/tuval/kernel/protocol/fixtures";
+} from "@kampus/tuval-sdk/kernel/protocol/codec";
+import type {ProtocolRefused} from "@kampus/tuval-sdk/kernel/protocol/errors";
+import * as fixtures from "@kampus/tuval-sdk/kernel/protocol/fixtures";
 import {
 	type KernelToPage,
 	type PageToKernel,
@@ -20,13 +20,13 @@ import {
 	SpellCall,
 	SpellReplyError,
 	SpellReplyOk,
-} from "@kampus/tuval/kernel/protocol/messages";
-import {ProcessRow} from "@kampus/tuval/kernel/protocol/process-row";
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {ProcessRow} from "@kampus/tuval-sdk/kernel/protocol/process-row";
 import {
 	CapabilityRequest,
 	RegistryDescription,
-} from "@kampus/tuval/kernel/protocol/registry-description";
-import type {CapabilityRequest as KernelCapabilityRequest} from "@kampus/tuval/kernel/registry/program";
+} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import type {CapabilityRequest as KernelCapabilityRequest} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Option, Schema} from "effect";
 import type {TableRow} from "../table/row.ts";
 

@@ -1,4 +1,4 @@
-import {newestFirst, sessionSummary} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {newestFirst, sessionSummary} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Effect} from "effect";
 import {historyItem} from "./history.ts";
 import {decode, Models, ReadThread, type Thread, Threads} from "./protocol.ts";

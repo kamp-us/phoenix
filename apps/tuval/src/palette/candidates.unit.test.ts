@@ -3,9 +3,9 @@
  * palette is right or wrong, and it is decidable without rendering anything.
  */
 
-import {jsonSchema} from "@kampus/tuval/kernel/commands/parse/fixtures";
-import {buildSpellIndex} from "@kampus/tuval/kernel/commands/parse/spell-index";
-import type {RegistryDescription} from "@kampus/tuval/kernel/protocol/registry-description";
+import {jsonSchema} from "@kampus/tuval-sdk/kernel/commands/parse/fixtures";
+import {buildSpellIndex} from "@kampus/tuval-sdk/kernel/commands/parse/spell-index";
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
 import {describe, expect, it} from "vitest";
 import {acceptCandidate, paletteCandidates} from "./candidates.ts";
 import {registry, snapshot} from "./fixtures.ts";

@@ -4,7 +4,7 @@ A **job** for [Tuval](https://github.com/kamp-us/phoenix/tree/main/apps/tuval): 
 and runs it as a shell command, then answers with the output, the exit code and how long it took.
 
 It fits [`@kampus/tuval-cron`](../tuval-cron)'s `jobShape` exactly — `prompt` in, `result` out,
-both over the payloads `@kampus/tuval/ai-agent/ports` publishes — and it is not an AI and has never
+both over the payloads `@kampus/tuval-sdk/ai-agent/ports` publishes — and it is not an AI and has never
 heard of one. That is the whole point of the package: cron was written against the AI-agent *port
 pair*, which is an interface and not a claim about what is behind it, so a scheduler built for
 Claude sessions schedules `git fetch` with no line of either package changed.
@@ -148,7 +148,7 @@ half of [kamp-us/phoenix#9297](https://github.com/kamp-us/phoenix/issues/9297).
 
 ## How it relates to Tuval
 
-This is a Tuval **program**, built on `defineProgram` out of `@kampus/tuval/authoring`. Everything
+This is a Tuval **program**, built on `defineProgram` out of `@kampus/tuval-sdk/authoring`. Everything
 around the program is the kernel's: the board tile is what the kernel renders from the `title` and
 `status` lines this program publishes, and checkpoint and restore are the kernel's, with this
 program's only part in them the `resume` above.
@@ -178,24 +178,24 @@ is a peer too.
 published-API change and belongs in its own release, not in a refactor — but nothing in this package
 resolves it, and its `resolve.dedupe` entry has already been removed.
 
-`@kampus/tuval` is **private and not published to npm**. This package now lives in the same
+`@kampus/tuval-sdk` is **publishable but not yet on npm**. This package now lives in the same
 workspace as Tuval does, so the dependency is a plain workspace one —
-`"@kampus/tuval": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
+`"@kampus/tuval-sdk": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
 link and no second checkout anywhere. It becomes a real version range the day Tuval ships to a
 registry; nothing in the source changes with it, because the source already imports only through
 the published doors (#8943, #9250):
 
-- `@kampus/tuval/authoring` — `defineProgram`, `port`, `emit`, `testProgram`, and the types around
+- `@kampus/tuval-sdk/authoring` — `defineProgram`, `port`, `emit`, `testProgram`, and the types around
   them (`Answer`, `ArrivalEvent`, `AuthoredEvent`, `AnyProgram`, `AuthoredProgram`)
-- `@kampus/tuval/ai-agent/ports` — `PromptPayloadSchema`, `TurnResultSchema`, `ItemId`,
+- `@kampus/tuval-sdk/ai-agent/ports` — `PromptPayloadSchema`, `TurnResultSchema`, `ItemId`,
   `boundToolResult`: the agent *interface*, which pulls in no agent
 
-Nothing reaches `@kampus/tuval/src/...`; the exports map would refuse it anyway.
+Nothing reaches `@kampus/tuval-sdk/src/...`; the exports map would refuse it anyway.
 
 ## Settings this package borrows from Tuval
 
 Two settings here are not this package's taste. They are restatements of `apps/tuval`'s, and they
-exist because `@kampus/tuval` is consumed as **raw TypeScript source**: its `exports` map points at
+exist because `@kampus/tuval-sdk` is consumed as **raw TypeScript source**: its `exports` map points at
 `src/*.ts` and it ships no `.d.ts`. Both go away the day Tuval publishes built declarations.
 
 **`tsconfig.json`: `lib: ["ES2023", "DOM", "DOM.Iterable"]` and `exactOptionalPropertyTypes: false`.**

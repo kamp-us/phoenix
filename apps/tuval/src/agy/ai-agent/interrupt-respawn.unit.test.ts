@@ -18,8 +18,8 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import type {AgentEvent, StartError} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import type {AgentEvent, StartError} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Cause, Effect, Exit, Fiber, Option, Queue, Stream} from "effect";
 import {agyChildrenStub, agyLayerOver, type StubChild} from "./child-stub.ts";
 import {init, resultInterrupted, userInput} from "./fixtures.ts";

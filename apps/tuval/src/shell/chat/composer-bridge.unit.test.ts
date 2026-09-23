@@ -5,8 +5,8 @@
  * here.
  */
 
-import type {CommandRef, ModelRef, ThinkingLevel} from "@kampus/tuval/ai-agent/ports";
-import type {ModelState, ThinkingState} from "@kampus/tuval/kernel/ai-agent/core/index";
+import type {CommandRef, ModelRef, ThinkingLevel} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {ModelState, ThinkingState} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import {describe, expect, it, vi} from "vitest";
 import {composerBridge} from "./composer-bridge.ts";
 

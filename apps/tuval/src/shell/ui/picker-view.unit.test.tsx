@@ -7,7 +7,7 @@
  * listbox keeps DOM focus so `aria-activedescendant` stays the one highlight.
  */
 
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {fireEvent, render} from "@testing-library/react";
 import {describe, expect, it} from "vitest";
 import type {ShellMsg} from "../core/index.ts";

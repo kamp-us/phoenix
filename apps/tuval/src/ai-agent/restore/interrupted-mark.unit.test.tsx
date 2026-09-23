@@ -18,17 +18,17 @@
  */
 
 import {applyCellChecked} from "@demlik/tea";
-import type {TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import type {TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {
 	AiAgentSessionCmd,
 	AiAgentSessionMsg,
 	AiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {loadCheckpoint} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {aiAgentSessionMachine} from "@kampus/tuval/kernel/ai-agent/core/machine";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {type TestProcess, testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {loadCheckpoint} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {aiAgentSessionMachine} from "@kampus/tuval-sdk/kernel/ai-agent/core/machine";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {type TestProcess, testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";

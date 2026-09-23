@@ -11,10 +11,10 @@
  * (`./fixtures.ts`).
  */
 
-import type {ProcessId} from "@kampus/tuval/kernel/process/process";
-import type {ProgramId, RendererRef} from "@kampus/tuval/kernel/registry/program";
-import type {AnyWindowHost, WindowId} from "@kampus/tuval/kernel/shell/window/host";
-import type {RendererRefusal} from "@kampus/tuval/kernel/shell/window/renderer";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {ProgramId, RendererRef} from "@kampus/tuval-sdk/kernel/registry/program";
+import type {AnyWindowHost, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import type {RendererRefusal} from "@kampus/tuval-sdk/kernel/shell/window/renderer";
 import type {AnyInspectorRenderer, AnyStatusRenderer} from "./renderer.ts";
 
 /** The two facts the shell states on the right of the bar. Nothing a program declares reaches them. */

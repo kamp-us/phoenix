@@ -41,9 +41,9 @@ import type {
 	Mode,
 	ModelRef,
 	PermissionDecision,
-} from "@kampus/tuval/ai-agent/ports";
-import {sameModel} from "@kampus/tuval/ai-agent/ports";
-import {isRefusal} from "@kampus/tuval/kernel/ai-agent/history/index";
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import {sameModel} from "@kampus/tuval-sdk/ai-agent/ports";
+import {isRefusal} from "@kampus/tuval-sdk/kernel/ai-agent/history/index";
 import {
 	type AgentEvent,
 	ModelUnsupported,
@@ -57,11 +57,11 @@ import {
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
 	UnknownRequest,
-} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
-import {withTurnResult} from "@kampus/tuval/kernel/ai-agent/turn-result";
-import {Features} from "@kampus/tuval/kernel/feature-flags";
-import {homeStateDir, piSessionStore, StateDir} from "@kampus/tuval/kernel/state-dir";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {KernelBridge} from "@kampus/tuval-sdk/kernel/ai-agent/tools/KernelBridge";
+import {withTurnResult} from "@kampus/tuval-sdk/kernel/ai-agent/turn-result";
+import {Features} from "@kampus/tuval-sdk/kernel/feature-flags";
+import {homeStateDir, piSessionStore, StateDir} from "@kampus/tuval-sdk/kernel/state-dir";
 import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
 import {PiClientService, type PiSessionRef, type SessionUpdate} from "../client/index.ts";
 import {retaining} from "../diagnostics.ts";

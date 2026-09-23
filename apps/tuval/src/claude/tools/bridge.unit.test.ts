@@ -17,27 +17,31 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {onlyPaths, SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
-import {SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
-import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
-import {type Client, WindowIndex, type WindowPlacement} from "@kampus/tuval/kernel/commands/scope";
+import {onlyPaths, SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {
+	type Client,
+	WindowIndex,
+	type WindowPlacement,
+} from "@kampus/tuval-sdk/kernel/commands/scope";
 import {
 	ClientId,
 	type Scope,
 	type SpellPath,
 	WindowId,
 	WorkspaceId,
-} from "@kampus/tuval/kernel/commands/spell";
-import {SpellSet} from "@kampus/tuval/kernel/commands/spell-set";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import type {PayloadRejected, PortNotWired} from "@kampus/tuval/kernel/ports/errors";
-import {ProcessPorts} from "@kampus/tuval/kernel/ports/ProcessPorts";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import type {PayloadRejected, PortNotWired} from "@kampus/tuval-sdk/kernel/ports/errors";
+import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer, Option} from "effect";
 import {coreSpells} from "../../boot.ts";
 import {KernelBridge} from "./KernelBridge.ts";

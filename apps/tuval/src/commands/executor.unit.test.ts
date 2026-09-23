@@ -1,8 +1,12 @@
 import {assert, describe, expect, expectTypeOf, it} from "@effect/vitest";
-import {SpellFailed} from "@kampus/tuval/kernel/commands/errors";
-import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
-import {SpellRegistry} from "@kampus/tuval/kernel/commands/registry";
-import {type Client, WindowIndex, type WindowPlacement} from "@kampus/tuval/kernel/commands/scope";
+import {SpellFailed} from "@kampus/tuval-sdk/kernel/commands/errors";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {SpellRegistry} from "@kampus/tuval-sdk/kernel/commands/registry";
+import {
+	type Client,
+	WindowIndex,
+	type WindowPlacement,
+} from "@kampus/tuval-sdk/kernel/commands/scope";
 import {
 	type AnySpell,
 	ClientId,
@@ -10,10 +14,14 @@ import {
 	type Scope,
 	WindowId,
 	WorkspaceId,
-} from "@kampus/tuval/kernel/commands/spell";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {CallId, type SpellPath} from "@kampus/tuval/kernel/protocol/ids";
-import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "@kampus/tuval/kernel/protocol/messages";
+} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId, type SpellPath} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {
+	PROTOCOL_VERSION,
+	SpellCall,
+	type SpellReply,
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {Cause, Effect, Exit, Layer, Schema} from "effect";
 import {
 	decodeServerFrame,

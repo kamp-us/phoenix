@@ -18,7 +18,7 @@
  * owes; adding one when a consumer needs it is a line, guessing at five today is a surface.
  */
 
-export {ClientId, type Scope, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
+export {ClientId, type Scope, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
 export {type ClaudeSessionProgram, claudeSession} from "./claude/program.ts";
 export {type CodexSessionProgram, codexSession} from "./codex/program.ts";
 /**

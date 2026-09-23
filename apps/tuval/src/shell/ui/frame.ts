@@ -11,7 +11,7 @@
  * cannot part company with the kernel about which key arms the prefix.
  */
 
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Duration} from "effect";
 import type {ShellState, Workspace} from "../core/index.ts";
 import {activeWorkspace} from "../core/index.ts";

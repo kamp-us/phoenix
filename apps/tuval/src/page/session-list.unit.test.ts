@@ -4,17 +4,17 @@
  * distinguishable from "this is my answer and there are no sessions".
  */
 
-import {CallId} from "@kampus/tuval/kernel/protocol/ids";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
 import {
 	PROTOCOL_VERSION,
 	SpellReplyError,
 	SpellReplyOk,
-} from "@kampus/tuval/kernel/protocol/messages";
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {
 	SESSION_LIST_CALL_PATH,
 	SESSION_LIST_DEADLINE_MILLIS,
 	SESSION_LIST_PATH,
-} from "@kampus/tuval/kernel/protocol/session-list";
+} from "@kampus/tuval-sdk/kernel/protocol/session-list";
 import {assert, describe, it} from "vitest";
 import {
 	atClock,

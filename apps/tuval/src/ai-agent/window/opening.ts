@@ -12,7 +12,7 @@
  * session by folder and id together, and inventing one would open somebody else's session or none.
  */
 
-import type {SessionRow} from "@kampus/tuval/kernel/protocol/session-list";
+import type {SessionRow} from "@kampus/tuval-sdk/kernel/protocol/session-list";
 
 /** Where an activated row lands. Plain activation is inline; Cmd+Enter is the other window. */
 export type OpenTarget = "inline" | "new-window";

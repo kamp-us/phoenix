@@ -18,7 +18,7 @@
 
 import features from "virtual:tuval/features";
 import moduleLoaders from "virtual:tuval/module-renderers";
-import type {RendererTable} from "@kampus/tuval/kernel/shell/window/index";
+import type {RendererTable} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect} from "effect";
 import {StrictMode, useEffect, useMemo, useState} from "react";
 import {createRoot} from "react-dom/client";

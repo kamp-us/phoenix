@@ -11,10 +11,10 @@
  * that it asks for one page rather than the transcript, and that the send transition happens once.
  */
 
-import {ItemId} from "@kampus/tuval/ai-agent/ports";
-import type {SessionRow} from "@kampus/tuval/kernel/protocol/session-list";
-import type {WindowHost} from "@kampus/tuval/kernel/shell/window/index";
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {ItemId} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {SessionRow} from "@kampus/tuval-sdk/kernel/protocol/session-list";
+import type {WindowHost} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {act, fireEvent, render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {describe, expect, it, vi} from "vitest";

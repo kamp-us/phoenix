@@ -1,6 +1,6 @@
 import {assert, describe, expect, it} from "@effect/vitest";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Option} from "effect";
 import type {TableRow} from "../../table/row.ts";
 import {shellId, shellProgram, unwiredShellEffects} from "../program.ts";

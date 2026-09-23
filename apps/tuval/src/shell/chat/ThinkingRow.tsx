@@ -13,7 +13,7 @@
  */
 
 import {Collapsible} from "@kampus/design";
-import type {ThinkingItem} from "@kampus/tuval/ai-agent/ports";
+import type {ThinkingItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {ReactElement} from "react";
 
 /** Longest preview the collapsed row shows, in characters. */

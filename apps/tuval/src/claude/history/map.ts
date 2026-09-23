@@ -22,9 +22,9 @@ import {
 	type JsonValue,
 	type SubagentSlot,
 	type TranscriptItem,
-} from "@kampus/tuval/ai-agent/ports";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
-import {boundToolOutput, kernelSpawnOf} from "@kampus/tuval/kernel/ai-agent/history/index";
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
+import {boundToolOutput, kernelSpawnOf} from "@kampus/tuval-sdk/kernel/ai-agent/history/index";
 import {
 	isRecord,
 	outputOf,

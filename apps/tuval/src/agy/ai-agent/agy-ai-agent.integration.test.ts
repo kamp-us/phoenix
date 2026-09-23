@@ -10,16 +10,16 @@
 import {existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {Mode, thinkingLevels} from "@kampus/tuval/ai-agent/ports";
+import {Mode, thinkingLevels} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	addUsage,
 	emptyUsage,
 	foldEvent,
 	initialState,
 	usageTotals,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {type Duration, Effect, Fiber, Stream} from "effect";
 import {beforeEach, describe, expect, it} from "vitest";
 import {AgyAiAgent} from "./index.ts";

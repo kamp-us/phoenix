@@ -11,16 +11,16 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {restore} from "@kampus/tuval/kernel/durability/restore";
-import {type CheckpointStores, memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import {PlannedProcesses} from "@kampus/tuval/kernel/process/PlannedProcesses";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
-import type {ProcessId} from "@kampus/tuval/kernel/process/process";
-import type {AnyProgram} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
-import type {WindowId} from "@kampus/tuval/kernel/shell/window/host";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {restore} from "@kampus/tuval-sdk/kernel/durability/restore";
+import {type CheckpointStores, memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {PlannedProcesses} from "@kampus/tuval-sdk/kernel/process/PlannedProcesses";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {Context, Effect, Layer} from "effect";
 import {toTableRow} from "../../table/row.ts";
 import {applyMsg, initialState, type ShellMsg} from "../core/machine.ts";

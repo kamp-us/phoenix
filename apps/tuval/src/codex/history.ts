@@ -1,4 +1,4 @@
-import {boundToolResult, ItemId, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import {boundToolResult, ItemId, type TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import {Schema} from "effect";
 import {WireItem} from "./protocol.ts";
 

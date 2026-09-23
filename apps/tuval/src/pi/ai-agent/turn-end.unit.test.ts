@@ -14,8 +14,8 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import type {AgentEvent, TransportError} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import type {AgentEvent, TransportError} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {type Cause, Deferred, Effect, Layer, Option, Queue, Stream} from "effect";
 import {
 	type PiClientApi,

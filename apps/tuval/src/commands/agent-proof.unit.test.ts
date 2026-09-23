@@ -18,27 +18,31 @@
 import {randomUUID} from "node:crypto";
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import type {TranscriptPayload} from "@kampus/tuval/ai-agent/ports";
-import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
-import {aiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
+import type {TranscriptPayload} from "@kampus/tuval-sdk/ai-agent/ports";
+import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
+import {aiAgentProgram} from "@kampus/tuval-sdk/kernel/ai-agent/program";
 import type {
 	AgentScript,
 	ScriptedAnswer,
 	ScriptedPlan,
-} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {ScriptedAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {ScriptedAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {
 	everyRegistered,
 	SpellBridge,
 	type SpellBridgeApi,
-} from "@kampus/tuval/kernel/commands/bridge/index";
-import {HelpRows} from "@kampus/tuval/kernel/commands/core/help";
-import {SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
-import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
-import {type ParamSpec, readParams} from "@kampus/tuval/kernel/commands/parse/spell-index";
-import {SpellRegistry, type SpellRow} from "@kampus/tuval/kernel/commands/registry";
-import {type Client, WindowIndex, type WindowPlacement} from "@kampus/tuval/kernel/commands/scope";
+} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
+import {HelpRows} from "@kampus/tuval-sdk/kernel/commands/core/help";
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {type ParamSpec, readParams} from "@kampus/tuval-sdk/kernel/commands/parse/spell-index";
+import {SpellRegistry, type SpellRow} from "@kampus/tuval-sdk/kernel/commands/registry";
+import {
+	type Client,
+	WindowIndex,
+	type WindowPlacement,
+} from "@kampus/tuval-sdk/kernel/commands/scope";
 import {
 	ClientId,
 	defineSpell,
@@ -47,34 +51,34 @@ import {
 	type Scope as SpellScope,
 	WindowId,
 	WorkspaceId,
-} from "@kampus/tuval/kernel/commands/spell";
-import {SpellSet} from "@kampus/tuval/kernel/commands/spell-set";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import type {PayloadRejected, PortNotWired} from "@kampus/tuval/kernel/ports/errors";
-import {ProcessPorts} from "@kampus/tuval/kernel/ports/ProcessPorts";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
+} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import type {PayloadRejected, PortNotWired} from "@kampus/tuval-sdk/kernel/ports/errors";
+import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {
 	decodeKernelMessage,
 	decodePageMessage,
 	encodeKernelMessage,
 	encodePageMessage,
-} from "@kampus/tuval/kernel/protocol/codec";
-import {CallId} from "@kampus/tuval/kernel/protocol/ids";
+} from "@kampus/tuval-sdk/kernel/protocol/codec";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
 import {
 	isSpellReply,
 	PROTOCOL_VERSION,
 	SpellCall,
 	type SpellFailure,
 	type SpellReply,
-} from "@kampus/tuval/kernel/protocol/messages";
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {
 	RegistryDescription,
 	type SpellDescription,
-} from "@kampus/tuval/kernel/protocol/registry-description";
-import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Deferred, Effect, Layer, Schema} from "effect";
 import {coreSpells} from "../boot.ts";
 

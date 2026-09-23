@@ -19,7 +19,7 @@
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
@@ -32,9 +32,9 @@ const renderers = pageRenderers(
 	() => undefined,
 );
 
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {type TestProcess, testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
-import {type WindowHost, WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {type TestProcess, testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
+import {type WindowHost, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import type {ChatWindowRenderer, ThinChatWindowOptions} from "../../shell/chat/index.ts";
 import {type ChatView, chatWindow, initialChatView} from "../../shell/chat/index.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";

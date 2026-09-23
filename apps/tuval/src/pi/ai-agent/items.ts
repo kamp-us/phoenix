@@ -27,8 +27,8 @@ import {
 	type ThinkingItem,
 	type ToolStatus,
 	type TranscriptItem,
-} from "@kampus/tuval/ai-agent/ports";
-import type {AgentEvent, Phase} from "@kampus/tuval/kernel/ai-agent/service/index";
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {AgentEvent, Phase} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Predicate} from "effect";
 import type {
 	TranscriptItem as PiTranscriptItem,

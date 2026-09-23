@@ -26,7 +26,12 @@ const row = (id: string, version = "1.0.0"): AnyProgram =>
 		},
 		handlers: {},
 		capabilities: [{family: "filesystem", detail: "~/.tuval"}],
-		identity: {package: "@kampus/tuval", program: id, version, digest: `sha256:${id}-${version}`},
+		identity: {
+			package: "@kampus/tuval",
+			program: id,
+			version,
+			digest: `sha256:${id}-${version}`,
+		},
 		placement: {host: "local"},
 	}) satisfies Program<State, Msg, Cmd<never>, never, unknown, never, never>;
 

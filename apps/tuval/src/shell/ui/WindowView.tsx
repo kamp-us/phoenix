@@ -15,7 +15,7 @@
  * second focus mechanism racing this one.
  */
 
-import type {ViewState, WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import type {ViewState, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import type {ReactElement} from "react";
 import type {ShellMsg} from "../core/index.ts";
 import {asPickerView, type PickerEntries} from "../picker/browser.ts";

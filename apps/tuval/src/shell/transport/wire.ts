@@ -28,11 +28,11 @@
  * transport's own.
  */
 
-import {readParams} from "@kampus/tuval/kernel/commands/parse/spell-index";
-import type {Lifecycle, ProcessId} from "@kampus/tuval/kernel/process/process";
-import {SpellCall, SpellReply} from "@kampus/tuval/kernel/protocol/messages";
-import {RegistryDescription} from "@kampus/tuval/kernel/protocol/registry-description";
-import type {ProgramId, RendererKind, RendererRef} from "@kampus/tuval/kernel/registry/program";
+import {readParams} from "@kampus/tuval-sdk/kernel/commands/parse/spell-index";
+import type {Lifecycle, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {SpellCall, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import type {ProgramId, RendererKind, RendererRef} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Duration, Option, Predicate, Result, Schema} from "effect";
 import type {PortDeclaration, TableEvent, TableEventKind, TableRow} from "../../table/row.ts";
 import {type Binding, CommandName, type PrefixTable} from "../keys/table.ts";

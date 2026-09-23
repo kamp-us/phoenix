@@ -18,18 +18,18 @@
  * leaves the history alone and the cursor where it was — is a case of it.
  */
 
-import type {WindowId} from "@kampus/tuval/kernel/protocol/ids";
-import {CallId} from "@kampus/tuval/kernel/protocol/ids";
-import type {SpellFailure, SpellReply} from "@kampus/tuval/kernel/protocol/messages";
-import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval/kernel/protocol/messages";
+import type {WindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import type {SpellFailure, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import type {
 	SessionTranscriptRequest,
 	TranscriptItemWire,
-} from "@kampus/tuval/kernel/protocol/session-transcript";
+} from "@kampus/tuval-sdk/kernel/protocol/session-transcript";
 import {
 	SESSION_TRANSCRIPT_CALL_PATH,
 	SessionTranscript,
-} from "@kampus/tuval/kernel/protocol/session-transcript";
+} from "@kampus/tuval-sdk/kernel/protocol/session-transcript";
 import {Result, Schema} from "effect";
 
 /** One page landed and decoded: the items it carried and the cursor for the page older than it. */

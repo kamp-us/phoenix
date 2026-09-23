@@ -9,7 +9,7 @@
  */
 
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {toAgentEvents} from "../events.ts";
 import {emptyMapping, type MappingOptions} from "../map.ts";
 import {type FixtureName, loadFixture} from "./load.ts";

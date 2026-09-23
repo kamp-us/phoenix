@@ -7,8 +7,8 @@
 
 import {readFileSync} from "node:fs";
 import {defineMachine} from "@demlik/tea";
-import {defineSpell} from "@kampus/tuval/kernel/commands/spell";
-import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {defineSpell} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Schema} from "effect";
 import type {TuvalConfigInput} from "../config.ts";
 

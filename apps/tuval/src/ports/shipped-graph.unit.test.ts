@@ -11,8 +11,8 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {compile} from "@kampus/tuval/kernel/ports/compile";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import {compile} from "@kampus/tuval-sdk/kernel/ports/compile";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Effect} from "effect";
 import shipped from "../../.tuval/tuval.config.ts";
 

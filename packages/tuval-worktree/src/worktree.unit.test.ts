@@ -12,7 +12,11 @@
  * and the fixture config's own rows.
  */
 
-import {PromptPayloadSchema, type TurnResult, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import {
+	PromptPayloadSchema,
+	type TurnResult,
+	TurnResultSchema,
+} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type Answer,
 	type AnyProgram,
@@ -27,7 +31,7 @@ import {
 	stop,
 	TITLE_PORT,
 	testProgram,
-} from "@kampus/tuval/authoring";
+} from "@kampus/tuval-sdk/authoring";
 import {ClientId, claudeSession, WorkspaceId} from "@kampus-apps/tuval/sessions";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";

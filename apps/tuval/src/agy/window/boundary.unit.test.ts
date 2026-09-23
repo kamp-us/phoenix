@@ -16,12 +16,12 @@ import {join} from "node:path";
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import type {
 	AnyWindowRenderer,
 	WindowHost,
 	WindowRenderer,
-} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {describe, expect, it} from "vitest";
 import type {ChatView, ChatWindowRenderer} from "../../shell/chat/index.ts";
 import {AGY_CHAT_WINDOW_REF} from "../renderer-ref.ts";
@@ -106,7 +106,7 @@ describe("the agy window boundary", () => {
 
 	it("keeps the row's renderer reference on a leaf that pulls in no window code", () => {
 		const leaf = readFileSync(join(import.meta.dirname, "..", "renderer-ref.ts"), "utf8");
-		expect(specifiers(leaf)).toEqual(["@kampus/tuval/kernel/registry/program"]);
+		expect(specifiers(leaf)).toEqual(["@kampus/tuval-sdk/kernel/registry/program"]);
 		expect(AGY_CHAT_WINDOW_REF.kind).toBe("host-native");
 	});
 });

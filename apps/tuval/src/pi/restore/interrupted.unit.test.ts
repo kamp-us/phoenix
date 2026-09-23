@@ -9,9 +9,9 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import type {ItemId} from "@kampus/tuval/ai-agent/ports";
-import type {AiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {restoreSession, resumeMessages} from "@kampus/tuval/kernel/ai-agent/restore/index";
+import type {ItemId} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {AiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {restoreSession, resumeMessages} from "@kampus/tuval-sdk/kernel/ai-agent/restore/index";
 import {itemOf} from "../ai-agent/items.ts";
 
 const at = 1_760_000_000_000;

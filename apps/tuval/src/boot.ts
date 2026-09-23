@@ -3,35 +3,38 @@ import {join} from "node:path";
 import {
 	AiAgentSessionList,
 	aiAgentSessionListKernel,
-} from "@kampus/tuval/kernel/ai-agent/session-list";
+} from "@kampus/tuval-sdk/kernel/ai-agent/session-list";
 import {
 	AiAgentTranscripts,
 	aiAgentTranscriptsKernel,
-} from "@kampus/tuval/kernel/ai-agent/session-transcript";
-import type {BindingError, BindingSource} from "@kampus/tuval/kernel/commands/bindings/index";
-import {everyRegistered, SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
-import {helpSpells} from "@kampus/tuval/kernel/commands/core/index";
-import {processSpells, SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
-import type {DuplicateSpellPath, SpellNotDescribable} from "@kampus/tuval/kernel/commands/errors";
-import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
-import type {SpellRegistry} from "@kampus/tuval/kernel/commands/registry";
-import type {WindowIndex} from "@kampus/tuval/kernel/commands/scope";
-import type {AnySpell} from "@kampus/tuval/kernel/commands/spell";
-import {SpellSet} from "@kampus/tuval/kernel/commands/spell-set";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {restore} from "@kampus/tuval/kernel/durability/restore";
-import {fileStores} from "@kampus/tuval/kernel/durability/stores";
-import {Features} from "@kampus/tuval/kernel/feature-flags";
-import {compile} from "@kampus/tuval/kernel/ports/compile";
-import type {Graph} from "@kampus/tuval/kernel/ports/graph";
-import {open} from "@kampus/tuval/kernel/ports/wiring";
-import {PlannedProcesses} from "@kampus/tuval/kernel/process/PlannedProcesses";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
-import type {ProcessHandle} from "@kampus/tuval/kernel/process/process";
-import type {AnyProgram} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
-import type {ModuleRendererRef} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/session-transcript";
+import type {BindingError, BindingSource} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
+import {everyRegistered, SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
+import {helpSpells} from "@kampus/tuval-sdk/kernel/commands/core/index";
+import {processSpells, SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import type {
+	DuplicateSpellPath,
+	SpellNotDescribable,
+} from "@kampus/tuval-sdk/kernel/commands/errors";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import type {SpellRegistry} from "@kampus/tuval-sdk/kernel/commands/registry";
+import type {WindowIndex} from "@kampus/tuval-sdk/kernel/commands/scope";
+import type {AnySpell} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {restore} from "@kampus/tuval-sdk/kernel/durability/restore";
+import {fileStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {Features} from "@kampus/tuval-sdk/kernel/feature-flags";
+import {compile} from "@kampus/tuval-sdk/kernel/ports/compile";
+import type {Graph} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {open} from "@kampus/tuval-sdk/kernel/ports/wiring";
+import {PlannedProcesses} from "@kampus/tuval-sdk/kernel/process/PlannedProcesses";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import type {ProcessHandle} from "@kampus/tuval-sdk/kernel/process/process";
+import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {
 	adoptInProjectState,
 	homeStateDir,
@@ -39,7 +42,7 @@ import {
 	prepareStateDir,
 	type StateAdoption,
 	StateDir,
-} from "@kampus/tuval/kernel/state-dir";
+} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Context, Effect, type FileSystem, Layer, Ref} from "effect";
 import {type ConfigLoadError, loadLayeredConfig, type TuvalFeatures} from "./config.ts";
 import {type LaunchedProcess, launch} from "./launch/launch.ts";

@@ -8,7 +8,7 @@
  * the prefix on the page to drift out of step with the first.
  */
 
-import type {DispatchResult} from "@kampus/tuval/kernel/shell/window/host";
+import type {DispatchResult} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import type {ShellState} from "../core/index.ts";
 import {isShellState} from "../core/index.ts";
 import type {Key} from "../keys/index.ts";

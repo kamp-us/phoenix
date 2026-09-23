@@ -3,9 +3,9 @@
  * specifiers `packages/tuval/package.json` declares — no relative path into `src/` anywhere below
  * this docblock — can write a program, declare a shaped arg, and fill it with a shipped session row.
  *
- * It lives in the app rather than in `@kampus/tuval` because the session rows are still the app's
+ * It lives in the app rather than in `@kampus/tuval-sdk` because the session rows are still the app's
  * (`@kampus-apps/tuval/sessions`), and the SDK depends on no app. Node and Vite resolve
- * `@kampus/tuval/authoring` through the SDK's own `name` + `exports`, walking the same map an
+ * `@kampus/tuval-sdk/authoring` through the SDK's own `name` + `exports`, walking the same map an
  * outside consumer walks, so a subpath missing from the map fails here exactly as it would fail
  * there. `tsc` over this file is the other half — the door has to be typed, not just resolvable.
  *
@@ -18,7 +18,11 @@ import {execFileSync} from "node:child_process";
 import {readFileSync, statSync} from "node:fs";
 import {createRequire} from "node:module";
 import {dirname, resolve} from "node:path";
-import {PromptPayloadSchema, type TurnResult, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import {
+	PromptPayloadSchema,
+	type TurnResult,
+	TurnResultSchema,
+} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type Answer,
 	type AnyProgram,
@@ -34,7 +38,7 @@ import {
 	spawn,
 	stop,
 	testProgram,
-} from "@kampus/tuval/authoring";
+} from "@kampus/tuval-sdk/authoring";
 import {ClientId, claudeSession, codexSession, WorkspaceId} from "@kampus-apps/tuval/sessions";
 import {Schema} from "effect";
 import {describe, expect, it} from "vitest";
@@ -97,7 +101,7 @@ describe("a consumer outside src/ reaches the authoring API through the package 
 
 describe("the exports map opens only doors that exist", () => {
 	it("every declared subpath of the SDK resolves to a file in it", () => {
-		const manifestPath = createRequire(import.meta.url).resolve("@kampus/tuval/package.json");
+		const manifestPath = createRequire(import.meta.url).resolve("@kampus/tuval-sdk/package.json");
 		const root = dirname(manifestPath);
 		const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
 			readonly exports: Readonly<Record<string, string>>;
@@ -152,9 +156,9 @@ describe("a consumer can emit declarations for a program that declares args", ()
 		// `./kernel/*` entry, which an author's published types must not lean on. Either way the
 		// emitted text, not the exit code, is what this pins.
 		const doors = [
-			"@kampus/tuval/authoring",
-			"@kampus/tuval/window",
-			"@kampus/tuval/ai-agent/ports",
+			"@kampus/tuval-sdk/authoring",
+			"@kampus/tuval-sdk/window",
+			"@kampus/tuval-sdk/ai-agent/ports",
 			"@kampus-apps/tuval/sessions",
 		];
 		expect(specifiers.filter((s) => !doors.includes(s))).toEqual([]);

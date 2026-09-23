@@ -14,12 +14,12 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import {NodeId} from "@kampus/tuval/kernel/ports/graph";
-import {ProcessPorts, unwired} from "@kampus/tuval/kernel/ports/ProcessPorts";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProcessPorts, unwired} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer} from "effect";
 import {counterId, counterProgram} from "../demo/counter.ts";
 

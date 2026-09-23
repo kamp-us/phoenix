@@ -6,8 +6,8 @@
  * substituted by `installDomShims` and asserted nowhere.
  */
 
-import type {SessionRow, UnreadableBackend} from "@kampus/tuval/kernel/protocol/session-list";
-import {SESSION_LIST_DEADLINE_MILLIS} from "@kampus/tuval/kernel/protocol/session-list";
+import type {SessionRow, UnreadableBackend} from "@kampus/tuval-sdk/kernel/protocol/session-list";
+import {SESSION_LIST_DEADLINE_MILLIS} from "@kampus/tuval-sdk/kernel/protocol/session-list";
 import {act, cleanup, fireEvent, render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {Profiler, useState} from "react";

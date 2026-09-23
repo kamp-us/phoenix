@@ -5,26 +5,26 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import {compile} from "@kampus/tuval/kernel/ports/compile";
-import {bound, isString} from "@kampus/tuval/kernel/ports/fixtures";
-import {type Graph, NodeId} from "@kampus/tuval/kernel/ports/graph";
-import {ProcessPorts, unwired} from "@kampus/tuval/kernel/ports/ProcessPorts";
-import {open} from "@kampus/tuval/kernel/ports/wiring";
-import type {PlannedProcesses} from "@kampus/tuval/kernel/process/PlannedProcesses";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
-import type {ProcessHandle, ProcessId} from "@kampus/tuval/kernel/process/process";
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {compile} from "@kampus/tuval-sdk/kernel/ports/compile";
+import {bound, isString} from "@kampus/tuval-sdk/kernel/ports/fixtures";
+import {type Graph, NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProcessPorts, unwired} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import {open} from "@kampus/tuval-sdk/kernel/ports/wiring";
+import type {PlannedProcesses} from "@kampus/tuval-sdk/kernel/process/PlannedProcesses";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import type {ProcessHandle, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {
 	STATUS_PORT,
 	statusPort,
 	TITLE_PORT,
 	titlePort,
-} from "@kampus/tuval/kernel/process/self-report";
-import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+} from "@kampus/tuval-sdk/kernel/process/self-report";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer, Option, type Scope} from "effect";
 import {launch} from "../launch/launch.ts";
 import {toTableRow} from "../table/row.ts";

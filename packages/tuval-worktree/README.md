@@ -307,7 +307,7 @@ find them for you.
 
 ## How it relates to Tuval
 
-This is a Tuval **program**, built on `defineProgram` out of `@kampus/tuval/authoring`. Everything
+This is a Tuval **program**, built on `defineProgram` out of `@kampus/tuval-sdk/authoring`. Everything
 around the program is the kernel's: the board tile is what the kernel renders from the `title` and
 `status` lines this program publishes; checkpoint and restore are the kernel's; the two spells are
 `commands` entries the kernel compiles and registers under the program id, so they are addressable
@@ -435,30 +435,30 @@ pnpm add @kampus/tuval-worktree
 There are no runtime dependencies at all — `node:child_process`, `node:net`, `node:fs/promises` and
 `node:path` are the whole of what provisioning needs. Everything else is a peer.
 
-`@kampus/tuval` is **private and not published to npm**. This package now lives in the same pnpm
+`@kampus/tuval-sdk` is **publishable but not yet on npm**. This package now lives in the same pnpm
 workspace as Tuval does, so the dependency is a plain workspace one —
-`"@kampus/tuval": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
+`"@kampus/tuval-sdk": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
 link and no second checkout anywhere. It becomes a real version range the day Tuval ships to a
 registry; nothing in the source changes with it, because the source already imports only through
 the published doors (#8943, #9250):
 
-- `@kampus/tuval/authoring` — `defineProgram`, `programArgs`, `port`, `Program.shape`, the effect
+- `@kampus/tuval-sdk/authoring` — `defineProgram`, `programArgs`, `port`, `Program.shape`, the effect
   constructors (`send`/`spawn`/`stop`), `testProgram`, `ProcessId`, `TITLE_PORT`/`STATUS_PORT`, and
   the types around them (`ArgRefs`, `Spawnable`, `PortSchema`)
-- `@kampus/tuval/window` — `windowRenderer` and `WindowHost`, the browser-safe half. `src/window.tsx`
+- `@kampus/tuval-sdk/window` — `windowRenderer` and `WindowHost`, the browser-safe half. `src/window.tsx`
   is the only file that touches it, and `src/state.ts` is the kernel-free leaf both halves share so
   a browser never has a path to `src/worktree.ts`
-- `@kampus/tuval/ai-agent/ports` — `PromptPayloadSchema`, `TurnResultSchema`: the agent *interface*,
+- `@kampus/tuval-sdk/ai-agent/ports` — `PromptPayloadSchema`, `TurnResultSchema`: the agent *interface*,
   which pulls in no agent
 - `@kampus-apps/tuval/sessions` — `claudeSession`/`codexSession`, the branded `ClientId`/`WorkspaceId`,
   and `TuvalConfigInput`, which only a config needs
 
-Nothing reaches `@kampus/tuval/src/...`; the exports map would refuse it anyway.
+Nothing reaches `@kampus/tuval-sdk/src/...`; the exports map would refuse it anyway.
 
 ## Settings this package borrows from Tuval
 
 Two settings here are not this package's taste. They are restatements of `apps/tuval`'s, and they
-exist because `@kampus/tuval` is consumed as **raw TypeScript source**: its `exports` map points at
+exist because `@kampus/tuval-sdk` is consumed as **raw TypeScript source**: its `exports` map points at
 `src/*.ts` and it ships no `.d.ts`. Both go away the day Tuval publishes built declarations.
 
 **`tsconfig.json`: `lib: ["ES2023", "DOM", "DOM.Iterable"]` and `exactOptionalPropertyTypes: false`.**

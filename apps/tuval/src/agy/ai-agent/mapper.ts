@@ -63,8 +63,8 @@
  * release that starts sending one, on a wire that ships no version to announce that it has.
  */
 
-import type {ItemId, JsonValue, ToolStatus} from "@kampus/tuval/ai-agent/ports";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+import type {ItemId, JsonValue, ToolStatus} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {
 	assistantItem,
 	interruptedItem,

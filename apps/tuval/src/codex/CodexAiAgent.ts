@@ -5,14 +5,14 @@ import {
 	type ModelRef,
 	sameModel,
 	type ThinkingLevel,
-} from "@kampus/tuval/ai-agent/ports";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {
 	isRefusal,
 	KERNEL_TOOL_SERVER,
 	kernelSpawnOf,
 	planTranscriptPage,
-} from "@kampus/tuval/kernel/ai-agent/history/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/history/index";
 import {
 	ListError,
 	ModelUnsupported,
@@ -26,9 +26,9 @@ import {
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
 	UnknownRequest,
-} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
-import {withTurnResult} from "@kampus/tuval/kernel/ai-agent/turn-result";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {KernelBridge} from "@kampus/tuval-sdk/kernel/ai-agent/tools/KernelBridge";
+import {withTurnResult} from "@kampus/tuval-sdk/kernel/ai-agent/turn-result";
 import {
 	type Cause,
 	Clock,

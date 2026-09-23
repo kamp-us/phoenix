@@ -30,7 +30,7 @@
  * `init` but inside the payload on the other two.
  */
 
-import {isJsonValue, type JsonValue} from "@kampus/tuval/ai-agent/ports";
+import {isJsonValue, type JsonValue} from "@kampus/tuval-sdk/ai-agent/ports";
 import {Predicate} from "effect";
 
 /**

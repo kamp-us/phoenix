@@ -23,10 +23,10 @@ import {runEnforcedInvariants} from "@kampus/design/a11y";
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
-import {type AnyWindowHost, WindowId} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
+import {type AnyWindowHost, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import fc from "fast-check";

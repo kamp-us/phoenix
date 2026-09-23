@@ -139,8 +139,9 @@ describe("commands vocabulary", () => {
 	it("names the product in a string only as a service tag or a span, the two conventions", () => {
 		// `tuval/<Name>` is the `Context.Service` / `Schema.TaggedError` id convention
 		// (`.patterns/effect-context-service.md`); `Tuval.<Service>.<method>` is the `Effect.fn`
-		// span convention (`.patterns/effect-fn-tracing.md`); `@kampus/tuval` is this workspace
-		// package's own name. All three are required, none is an identifier, and there is no fourth.
+		// span convention (`.patterns/effect-fn-tracing.md`); `@kampus/tuval` is a program's
+		// `identity.package`, durable data that stays apart from the npm name. All three are
+		// required, none is an identifier, and there is no fourth.
 		const sanctioned = /^(tuval\/[A-Za-z/]+|Tuval(\.[A-Za-z]+)+|@kampus\/tuval)$/;
 		const offenders = modules.flatMap(([name, source]) =>
 			[...source.matchAll(/"((?:[^"\\]|\\.)*)"/g)]

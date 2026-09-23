@@ -4,15 +4,15 @@
  * never guessed at.
  */
 
-import type {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {CallId} from "@kampus/tuval/kernel/protocol/ids";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
 import {
 	PROTOCOL_VERSION,
 	SpellCall,
 	SpellReplyError,
 	SpellReplyOk,
-} from "@kampus/tuval/kernel/protocol/messages";
-import type {ProgramId} from "@kampus/tuval/kernel/registry/program";
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import type {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Duration, Option} from "effect";
 import {assert, describe, expect, it} from "vitest";
 import type {TableRow} from "../../table/row.ts";

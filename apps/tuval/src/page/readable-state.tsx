@@ -14,15 +14,15 @@
  * the process keeps running.
  */
 
-import type {Message, ProcessId} from "@kampus/tuval/kernel/process/process";
-import type {RendererKind} from "@kampus/tuval/kernel/registry/program";
+import type {Message, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {RendererKind} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {
 	AnyWindowHost,
 	AnyWindowRenderer,
 	ViewState,
 	WindowHost,
 	WindowRenderer,
-} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement, ReactNode} from "react";
 import {useEffect, useState} from "react";

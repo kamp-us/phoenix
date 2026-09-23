@@ -14,8 +14,8 @@
 
 import type {CompactionEntry, SessionEntry} from "@earendil-works/pi-coding-agent";
 import {buildContextEntries, sessionEntryToContextMessages} from "@earendil-works/pi-coding-agent";
-import type {TranscriptItem} from "@kampus/tuval/ai-agent/ports";
-import {isRefusal} from "@kampus/tuval/kernel/ai-agent/history/index";
+import type {TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
+import {isRefusal} from "@kampus/tuval-sdk/kernel/ai-agent/history/index";
 import {describe, expect, it} from "vitest";
 import {projectTranscript, type SourceMessage} from "../server/index.ts";
 import {pageItems, planPageOverEntries} from "./entries.ts";

@@ -17,7 +17,7 @@
  * worker's when they are several workers' together.
  */
 
-import type {ItemId, SubagentSlot, SubagentStatus} from "@kampus/tuval/ai-agent/ports";
+import type {ItemId, SubagentSlot, SubagentStatus} from "@kampus/tuval-sdk/ai-agent/ports";
 import {workerCountLabel} from "./copy.ts";
 
 /** How many rows the list shows before the tail collapses into one "more" row (Q3). */

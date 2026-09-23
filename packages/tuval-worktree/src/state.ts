@@ -2,7 +2,7 @@
  * Worktree's state, and everything that is a pure function of it — the leaf both halves of this
  * package share and neither half owns.
  *
- * **Why it is a leaf.** `./worktree.ts` reaches `@kampus/tuval/authoring`, which reaches the
+ * **Why it is a leaf.** `./worktree.ts` reaches `@kampus/tuval-sdk/authoring`, which reaches the
  * kernel; `./window.tsx` runs in a browser tab, where the kernel's `node:crypto` chain is not a
  * thing that can load. The window needs the state's shape, the predicate over it and the lines
  * drawn from it — and needs none of the program. So those live here and the browser never has a
@@ -11,7 +11,7 @@
  *
  * **The one import is a type and stays one.** `ProcessId` is Tuval's type-only brand — a plain
  * string at runtime — and `import type` under `verbatimModuleSyntax` emits nothing, so the built
- * `state.js` a browser loads has no import of `@kampus/tuval` at all.
+ * `state.js` a browser loads has no import of `@kampus/tuval-sdk` at all.
  *
  * **Four fields the reducer never writes.** `repo`, `repoName`, `root` and `base` are env, not
  * state: the config chose them at `worktree(...)` and nothing that happens to a worktree moves
@@ -20,7 +20,7 @@
  * `init` seeds them, `restored` re-seeds them from the config, and no other cell touches them.
  */
 
-import type {ProcessId} from "@kampus/tuval/authoring";
+import type {ProcessId} from "@kampus/tuval-sdk/authoring";
 
 /**
  * Where a worktree is in its life. Five words and no sixth, because every one of them is a

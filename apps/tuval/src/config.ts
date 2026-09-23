@@ -22,17 +22,17 @@ import {
 	type ConfigLayer,
 	describeFile,
 	KeyBindings,
-} from "@kampus/tuval/kernel/commands/bindings/index";
+} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
 // Re-exported below rather than declared here: both ends of the node/browser wire need the resolved
 // flag record, and this module reaches `node:*` (#8439).
-import {featuresDefault, type TuvalFeatures} from "@kampus/tuval/kernel/features";
-import {type Graph, NodeId} from "@kampus/tuval/kernel/ports/graph";
-import {type AnyProgram, ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
+import {type Graph, NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {type AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {
 	type DeclaredProgram,
 	type ModuleRendererRef,
 	moduleRendererRefs,
-} from "@kampus/tuval/kernel/shell/window/renderer";
+} from "@kampus/tuval-sdk/kernel/shell/window/renderer";
 import {Effect, FileSystem, Option, Predicate, Schema, SchemaIssue} from "effect";
 
 const hasStringId = (row: unknown): row is {readonly id: string} =>
@@ -75,7 +75,7 @@ const declaredFeatureFields = Object.fromEntries(
 
 export const DeclaredFeatures = Schema.Struct(declaredFeatureFields);
 
-export {featuresDefault, type TuvalFeatures} from "@kampus/tuval/kernel/features";
+export {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
 
 /** Version 1 of the config shape. A config module default-exports its `Encoded` form. */
 export const TuvalConfig = Schema.Struct({

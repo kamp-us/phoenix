@@ -37,14 +37,14 @@
 	},
 	"peerDependencies": {
 		"@demlik/tea": "catalog:",
-		"@kampus/tuval": "workspace:*",
+		"@kampus/tuval-sdk": "workspace:*",
 		"effect": "catalog:"
 	},
 	"devDependencies": {
 		"@demlik/tea": "catalog:",
 		"@effect/tsgo": "catalog:",
 		"@kampus-apps/tuval": "workspace:*",
-		"@kampus/tuval": "workspace:*",
+		"@kampus/tuval-sdk": "workspace:*",
 		"@kampus/tuval-cron": "workspace:*",
 		"@types/node": "catalog:",
 		"effect": "catalog:",

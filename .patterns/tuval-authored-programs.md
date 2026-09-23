@@ -54,8 +54,8 @@ export const counterProgram = program({
 });
 
 // window.tsx — the module the page imports. `default` is the renderer, `admits` the predicate.
-import type {ProgramEvent} from "@kampus/tuval/window";
-import {windowRenderer, type WindowHost} from "@kampus/tuval/window";
+import type {ProgramEvent} from "@kampus/tuval-sdk/window";
+import {windowRenderer, type WindowHost} from "@kampus/tuval-sdk/window";
 import {type CounterState, isCounterState} from "./counter-state.ts";
 import type {counterProgram} from "./counter.ts"; // types only — erased by the bundler
 

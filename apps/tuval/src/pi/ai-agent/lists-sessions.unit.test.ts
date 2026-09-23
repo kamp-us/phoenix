@@ -11,7 +11,7 @@ import {appendFileSync, mkdirSync, mkdtempSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
-import {ListError, TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {ListError, TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Effect, Layer, Logger, Schema, Stream} from "effect";
 import {type PiClientApi, PiClientService} from "../client/index.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";

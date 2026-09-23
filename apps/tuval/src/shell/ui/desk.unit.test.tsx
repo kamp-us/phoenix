@@ -9,14 +9,14 @@
  * with a fake and nothing about the desk.
  */
 
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {
 	empty,
 	prefixArmedAround,
 	processGone,
 	type WindowId,
-} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {Duration} from "effect";
 import type {ReactElement} from "react";

@@ -21,8 +21,8 @@ import {
 	type AiAgentSessionState,
 	aiAgentSessionMachine,
 	initialState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {Effect, Stream} from "effect";
 import {CWD, message, messages, on, SESSION_ID, START_EVENTS} from "./fixtures/harness.ts";
 

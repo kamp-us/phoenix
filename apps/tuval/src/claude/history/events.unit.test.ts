@@ -15,10 +15,10 @@ import {
 	isSubagentSlot,
 	TOOL_RESULT_BYTE_LIMIT,
 	type TranscriptItem,
-} from "@kampus/tuval/ai-agent/ports";
-import {foldEvent, upsertItem} from "@kampus/tuval/kernel/ai-agent/core/fold";
-import {initialState} from "@kampus/tuval/kernel/ai-agent/core/state";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import {foldEvent, upsertItem} from "@kampus/tuval-sdk/kernel/ai-agent/core/fold";
+import {initialState} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {describe, expect, it} from "vitest";
 import {toAgentEvents} from "./events.ts";
 import {loadFixture} from "./fixtures/load.ts";

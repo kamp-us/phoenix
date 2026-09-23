@@ -9,10 +9,10 @@
 
 import {readdirSync, readFileSync, statSync} from "node:fs";
 import {join} from "node:path";
-import {Mode} from "@kampus/tuval/ai-agent/ports";
-import type {TuvalAiAgent, TuvalAiAgentApi} from "@kampus/tuval/kernel/ai-agent/service/index";
-import type {SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
-import {ClientId, type Scope, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
+import {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {TuvalAiAgent, TuvalAiAgentApi} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import type {SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
+import {ClientId, type Scope, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {Layer} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import {KernelBridge} from "../tools/index.ts";

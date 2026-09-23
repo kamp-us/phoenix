@@ -18,14 +18,14 @@
 
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
-import type {TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import type {TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {type TestProcess, testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
-import {type WindowHost, WindowId} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {type TestProcess, testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
+import {type WindowHost, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {Effect} from "effect";

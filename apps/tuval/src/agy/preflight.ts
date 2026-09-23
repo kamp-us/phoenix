@@ -27,8 +27,8 @@
 import {homedir} from "node:os";
 import {join} from "node:path";
 import {NodeChildProcessSpawner, NodeFileSystem, NodePath} from "@effect/platform-node";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
-import {StartError, TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
+import {StartError, TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Deferred, Effect, FileSystem, Layer, Stream} from "effect";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
 import {AgyAiAgent, type AgyAiAgentOptions} from "./ai-agent/index.ts";

@@ -1,5 +1,5 @@
 /**
- * The claim `@kampus/tuval/window` makes, checked rather than asserted in a docblock: nothing a
+ * The claim `@kampus/tuval-sdk/window` makes, checked rather than asserted in a docblock: nothing a
  * browser loads through that door reaches a `node:` builtin.
  *
  * This is the criterion #8943 states for the browser-side subpath, and it is a property of the

@@ -23,16 +23,16 @@ import type {
 	TranscriptItem,
 	TranscriptPagePayload,
 	TranscriptPayload,
-} from "@kampus/tuval/ai-agent/ports";
+} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type AiAgentSessionState,
 	isAiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
-import type {Arrival} from "@kampus/tuval/kernel/ai-agent/restore/fixtures/window";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {type ProcessHandle, ProcessId} from "@kampus/tuval/kernel/process/process";
-import {homeStateDir, piSessionStore} from "@kampus/tuval/kernel/state-dir";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
+import type {Arrival} from "@kampus/tuval-sdk/kernel/ai-agent/restore/fixtures/window";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {type ProcessHandle, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {homeStateDir, piSessionStore} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Effect, type FileSystem, Option, type Scope} from "effect";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {type Booted, boot, projectDir} from "../../boot.ts";

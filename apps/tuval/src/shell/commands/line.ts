@@ -1,12 +1,16 @@
 /** Shell rows resolve first; only an unknown shell verb reaches the shared registered-spell parser. */
 
-import {didYouMean} from "@kampus/tuval/kernel/commands/parse/did-you-mean";
-import {parse} from "@kampus/tuval/kernel/commands/parse/parse";
-import type {SpellIndex} from "@kampus/tuval/kernel/commands/parse/spell-index";
-import {tokenize} from "@kampus/tuval/kernel/commands/parse/tokenize";
-import type {CallId, WindowId} from "@kampus/tuval/kernel/protocol/ids";
-import {firstSchemaIssue} from "@kampus/tuval/kernel/protocol/issue";
-import {PROTOCOL_VERSION, type Snapshot, SpellCall} from "@kampus/tuval/kernel/protocol/messages";
+import {didYouMean} from "@kampus/tuval-sdk/kernel/commands/parse/did-you-mean";
+import {parse} from "@kampus/tuval-sdk/kernel/commands/parse/parse";
+import type {SpellIndex} from "@kampus/tuval-sdk/kernel/commands/parse/spell-index";
+import {tokenize} from "@kampus/tuval-sdk/kernel/commands/parse/tokenize";
+import type {CallId, WindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {firstSchemaIssue} from "@kampus/tuval-sdk/kernel/protocol/issue";
+import {
+	PROTOCOL_VERSION,
+	type Snapshot,
+	SpellCall,
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {Result, Schema} from "effect";
 import type {ShellMsg} from "../core/machine.ts";
 import {

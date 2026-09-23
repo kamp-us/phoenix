@@ -12,7 +12,7 @@ import {
 	newestFirst,
 	type SessionSummary,
 	sessionSummary,
-} from "@kampus/tuval/kernel/ai-agent/service/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 
 /** The row's backend tag for a session the Claude CLI stored. */
 export const CLAUDE_BACKEND = "claude";

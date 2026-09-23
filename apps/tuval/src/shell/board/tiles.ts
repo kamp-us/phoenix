@@ -9,7 +9,7 @@
  * tile is its program id, its state and its port count.
  */
 
-import type {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Option} from "effect";
 import type {TableRow} from "../../table/row.ts";
 

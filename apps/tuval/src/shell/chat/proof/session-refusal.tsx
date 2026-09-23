@@ -1,6 +1,6 @@
 import {useState} from "react";
 import "../../../page/styles.ts";
-import type {SessionRow} from "@kampus/tuval/kernel/protocol/session-list";
+import type {SessionRow} from "@kampus/tuval-sdk/kernel/protocol/session-list";
 import {createRoot} from "react-dom/client";
 import {bareSession, claudeSession, NOW} from "../../../ai-agent/window/fixtures.ts";
 import {SessionList} from "../../../ai-agent/window/SessionListWindow.tsx";

@@ -18,7 +18,7 @@
  */
 
 import {Button, Card, Input} from "@kampus/design";
-import type {PendingPermission, PermissionDecision} from "@kampus/tuval/ai-agent/ports";
+import type {PendingPermission, PermissionDecision} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {ReactElement} from "react";
 import {useCallback, useId, useState} from "react";
 

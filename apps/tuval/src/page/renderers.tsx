@@ -27,10 +27,10 @@
  */
 
 import features from "virtual:tuval/features";
-import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/snapshot";
-import {isSessionListState} from "@kampus/tuval/kernel/ai-agent/renderer-ref";
-import type {WindowHost} from "@kampus/tuval/kernel/shell/window/index";
-import {windowRenderer} from "@kampus/tuval/kernel/shell/window/index";
+import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/snapshot";
+import {isSessionListState} from "@kampus/tuval-sdk/kernel/ai-agent/renderer-ref";
+import type {WindowHost} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {windowRenderer} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect, Fiber} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useRef, useState} from "react";

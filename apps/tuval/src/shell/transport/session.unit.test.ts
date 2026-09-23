@@ -1,12 +1,12 @@
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {type AnyProgram, ProgramId} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {type AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {
 	Cause,
 	Context,
@@ -33,7 +33,12 @@ const program: AnyProgram = {
 	handlers: {},
 	capabilities: [],
 	placement: {host: "local"},
-	identity: {package: "@kampus/tuval", program: "socket-test", version: "1", digest: "socket-test"},
+	identity: {
+		package: "@kampus/tuval",
+		program: "socket-test",
+		version: "1",
+		digest: "socket-test",
+	},
 };
 
 const controlled = Effect.gen(function* () {

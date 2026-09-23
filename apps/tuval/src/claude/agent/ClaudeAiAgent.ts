@@ -43,10 +43,10 @@ import type {
 	PermissionRequest,
 	ThinkingLevel,
 	TranscriptItem,
-} from "@kampus/tuval/ai-agent/ports";
-import {sameModel} from "@kampus/tuval/ai-agent/ports";
-import type {AgentAccount, AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
-import {isRefusal, planTranscriptPage} from "@kampus/tuval/kernel/ai-agent/history/index";
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import {sameModel} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {AgentAccount, AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
+import {isRefusal, planTranscriptPage} from "@kampus/tuval-sdk/kernel/ai-agent/history/index";
 import {
 	ModelUnsupported,
 	ModeUnsupported,
@@ -58,8 +58,8 @@ import {
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
 	UnknownRequest,
-} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {withTurnResult} from "@kampus/tuval/kernel/ai-agent/turn-result";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {withTurnResult} from "@kampus/tuval-sdk/kernel/ai-agent/turn-result";
 import {type Cause, Effect, Exit, Layer, Queue, Ref, Scope, Stream} from "effect";
 import {
 	commandsOf,

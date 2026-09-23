@@ -3,7 +3,7 @@
  * that creates the process happens once (epic #8070, ruling 2).
  */
 
-import type {SessionRow} from "@kampus/tuval/kernel/protocol/session-list";
+import type {SessionRow} from "@kampus/tuval-sdk/kernel/protocol/session-list";
 import {describe, expect, it} from "vitest";
 import {openRead, send, TRANSCRIPT_PAGE_SIZE} from "./opening.ts";
 

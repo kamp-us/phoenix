@@ -3,9 +3,9 @@
  * what order, how many the tail collapses into — is decided here, so it is proven here.
  */
 
-import {foldEvent} from "@kampus/tuval/kernel/ai-agent/core/fold";
-import {initialState, settleTurn} from "@kampus/tuval/kernel/ai-agent/core/state";
-import {subagentSlot} from "@kampus/tuval/kernel/ai-agent-fixtures/transcripts";
+import {foldEvent} from "@kampus/tuval-sdk/kernel/ai-agent/core/fold";
+import {initialState, settleTurn} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
+import {subagentSlot} from "@kampus/tuval-sdk/kernel/ai-agent-fixtures/transcripts";
 import {describe, expect, it} from "vitest";
 import {fixtureEventFrames} from "../../claude/history/fixtures/events.ts";
 import {

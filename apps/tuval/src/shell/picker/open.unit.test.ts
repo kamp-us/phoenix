@@ -5,7 +5,7 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import type {AnyProgram} from "@kampus/tuval/kernel/registry/program";
+import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
 import {readCommandLine} from "../commands/line.ts";
 import type {ShellMsg} from "../core/machine.ts";

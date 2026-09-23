@@ -19,16 +19,16 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import {NodeId} from "@kampus/tuval/kernel/ports/graph";
-import {ProcessPorts} from "@kampus/tuval/kernel/ports/ProcessPorts";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import type {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
-import {WindowId} from "@kampus/tuval/kernel/shell/window/host";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import type {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {Cause, Context, Effect, Layer} from "effect";
 import {wiredShellEffects} from "../host/effects.ts";
 import {openProgram} from "./intent.ts";

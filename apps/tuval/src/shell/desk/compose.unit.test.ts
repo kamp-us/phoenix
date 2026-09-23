@@ -5,9 +5,9 @@
  */
 
 import {assert, describe, expect, it} from "@effect/vitest";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import type {AnyWindowHost} from "@kampus/tuval/kernel/shell/window/host";
-import {WindowId} from "@kampus/tuval/kernel/shell/window/host";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {AnyWindowHost} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {Effect} from "effect";
 import {inspectorFor, statusFor} from "./compose.ts";
 import {counterProgramId, deskSnapshot, focusedOn, testHost} from "./fixtures.ts";

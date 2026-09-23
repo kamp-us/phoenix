@@ -12,18 +12,18 @@ import {
 	aiAgentBackends,
 	isAiAgentBackend,
 	listAiAgentSessions,
-} from "@kampus/tuval/kernel/ai-agent/backends";
-import {aiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
-import {models, modes, thinking} from "@kampus/tuval/kernel/ai-agent/service/fixtures/scripts";
+} from "@kampus/tuval-sdk/kernel/ai-agent/backends";
+import {aiAgentProgram} from "@kampus/tuval-sdk/kernel/ai-agent/program";
+import {models, modes, thinking} from "@kampus/tuval-sdk/kernel/ai-agent/service/fixtures/scripts";
 import {
 	type AgentScript,
 	ListError,
 	ScriptedAiAgent,
 	type SessionSummary,
 	sessionSummary,
-} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Cause, Context, Effect, Option} from "effect";
 import {showsInAWindow} from "../shell/picker/entries.ts";
 

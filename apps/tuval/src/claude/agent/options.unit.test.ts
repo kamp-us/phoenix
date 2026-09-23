@@ -3,7 +3,7 @@
  * the spawned CLI runs under. Each is a plain function of the config, so none of it needs a layer.
  */
 
-import {Mode} from "@kampus/tuval/ai-agent/ports";
+import {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
 import {describe, expect, it} from "vitest";
 import {
 	advertisedModes,

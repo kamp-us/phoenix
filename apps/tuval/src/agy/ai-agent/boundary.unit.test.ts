@@ -12,7 +12,7 @@
 
 import {readdirSync, readFileSync, statSync} from "node:fs";
 import {join} from "node:path";
-import type {TuvalAiAgent, TuvalAiAgentApi} from "@kampus/tuval/kernel/ai-agent/service/index";
+import type {TuvalAiAgent, TuvalAiAgentApi} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import type {FileSystem, Layer} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {describe, expect, it} from "vitest";

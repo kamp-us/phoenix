@@ -19,12 +19,12 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert} from "@effect/vitest";
-import type {PermissionPayload, TranscriptPayload} from "@kampus/tuval/ai-agent/ports";
+import type {PermissionPayload, TranscriptPayload} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type AiAgentSessionState,
 	isAiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
 import {
 	AGENT_NODE,
 	afterTheCut,
@@ -33,9 +33,9 @@ import {
 	CWD,
 	SESSION,
 	WINDOW_NODE,
-} from "@kampus/tuval/kernel/ai-agent/restore/fixtures/agent-desk";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {type ProcessHandle, ProcessId} from "@kampus/tuval/kernel/process/process";
+} from "@kampus/tuval-sdk/kernel/ai-agent/restore/fixtures/agent-desk";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {type ProcessHandle, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Effect, type FileSystem, Option, type Scope} from "effect";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {type Booted, boot, projectDir} from "../../boot.ts";

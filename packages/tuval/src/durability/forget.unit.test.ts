@@ -36,7 +36,12 @@ const counterProgram: AnyProgram = {
 	ports: {},
 	handlers: {},
 	capabilities: [],
-	identity: {package: "@kampus/tuval", program: "counter", version: "1.0.0", digest: "sha256:c"},
+	identity: {
+		package: "@kampus/tuval",
+		program: "counter",
+		version: "1.0.0",
+		digest: "sha256:c",
+	},
 	placement: {host: "local"},
 } satisfies Program<State, Msg, never, never, unknown, never, never>;
 

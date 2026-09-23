@@ -1,12 +1,12 @@
 /** @vitest-environment jsdom */
 
-import {WindowId} from "@kampus/tuval/kernel/protocol/ids";
+import {WindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
 import {
 	PROTOCOL_VERSION,
 	type SpellCall,
 	SpellReplyOk,
-} from "@kampus/tuval/kernel/protocol/messages";
-import type {RegistryDescription} from "@kampus/tuval/kernel/protocol/registry-description";
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
 import {act, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {Effect, Schema} from "effect";
 import {expect, it, vi} from "vitest";

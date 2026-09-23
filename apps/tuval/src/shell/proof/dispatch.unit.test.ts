@@ -18,19 +18,23 @@ import {mkdtemp, rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
-import {SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
-import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
-import type {Client} from "@kampus/tuval/kernel/commands/scope";
+import {SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import type {Client} from "@kampus/tuval-sdk/kernel/commands/scope";
 import {
 	ClientId,
 	type SpellPath,
 	type Scope as SpellScope,
 	WorkspaceId,
-} from "@kampus/tuval/kernel/commands/spell";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {CallId} from "@kampus/tuval/kernel/protocol/ids";
-import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "@kampus/tuval/kernel/protocol/messages";
+} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {
+	PROTOCOL_VERSION,
+	SpellCall,
+	type SpellReply,
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {Cause, Context, Effect, Exit, Option, Schema} from "effect";
 import {start} from "../../boot.ts";
 import {ShellDispatch} from "../commands/dispatch.ts";

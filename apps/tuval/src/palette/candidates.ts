@@ -23,17 +23,17 @@
  * snapshot the page already holds, and never awaits the kernel to complete (#7617 R1.5).
  */
 
-import type {Candidate} from "@kampus/tuval/kernel/commands/parse/complete";
-import {candidatesFor} from "@kampus/tuval/kernel/commands/parse/complete";
-import {read} from "@kampus/tuval/kernel/commands/parse/reading";
+import type {Candidate} from "@kampus/tuval-sdk/kernel/commands/parse/complete";
+import {candidatesFor} from "@kampus/tuval-sdk/kernel/commands/parse/complete";
+import {read} from "@kampus/tuval-sdk/kernel/commands/parse/reading";
 import type {
 	IndexedSpell,
 	IndexNode,
 	SpellIndex,
-} from "@kampus/tuval/kernel/commands/parse/spell-index";
-import type {Token} from "@kampus/tuval/kernel/commands/parse/tokenize";
-import {tokenize} from "@kampus/tuval/kernel/commands/parse/tokenize";
-import type {Snapshot} from "@kampus/tuval/kernel/protocol/messages";
+} from "@kampus/tuval-sdk/kernel/commands/parse/spell-index";
+import type {Token} from "@kampus/tuval-sdk/kernel/commands/parse/tokenize";
+import {tokenize} from "@kampus/tuval-sdk/kernel/commands/parse/tokenize";
+import type {Snapshot} from "@kampus/tuval-sdk/kernel/protocol/messages";
 
 export type PaletteCandidateKind = "spell" | Candidate["kind"];
 

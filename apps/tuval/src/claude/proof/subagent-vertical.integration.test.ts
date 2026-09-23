@@ -32,10 +32,10 @@ import {assert, describe, it} from "@effect/vitest";
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import type {ProcessView, WindowHost} from "@kampus/tuval/kernel/shell/window/index";
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {ProcessView, WindowHost} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {act, fireEvent, render} from "@testing-library/react";
 import {Effect, type FileSystem, Queue, Schema, type Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";

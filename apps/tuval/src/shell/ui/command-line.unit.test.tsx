@@ -1,13 +1,13 @@
 /** @vitest-environment jsdom */
 
-import {descriptions, snapshot} from "@kampus/tuval/kernel/commands/parse/fixtures";
+import {descriptions, snapshot} from "@kampus/tuval-sdk/kernel/commands/parse/fixtures";
 import {
 	PROTOCOL_VERSION,
 	type SpellCall,
 	type SpellReply,
 	SpellReplyError,
 	SpellReplyOk,
-} from "@kampus/tuval/kernel/protocol/messages";
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {act, cleanup, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {Effect} from "effect";
 import {Socket} from "effect/unstable/socket";

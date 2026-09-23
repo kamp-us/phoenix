@@ -9,18 +9,18 @@
 import {readFileSync} from "node:fs";
 import {resolve} from "node:path";
 import {describe, it} from "@effect/vitest";
-import {isPromptPayload} from "@kampus/tuval/ai-agent/ports";
-import {emit, send, spawn, spawned} from "@kampus/tuval/kernel/authoring/effect";
-import {port} from "@kampus/tuval/kernel/authoring/port";
-import {ShapeMismatch} from "@kampus/tuval/kernel/authoring/shape";
-import {testProgram} from "@kampus/tuval/kernel/authoring/test-program";
-import {SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
-import {buildRegistry, lookupRow} from "@kampus/tuval/kernel/commands/registry";
-import {ClientId, type Scope, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
-import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {noSelfReport} from "@kampus/tuval/kernel/process/self-report";
-import {type AnyProgram, ProgramId, programLabel} from "@kampus/tuval/kernel/registry/program";
+import {isPromptPayload} from "@kampus/tuval-sdk/ai-agent/ports";
+import {emit, send, spawn, spawned} from "@kampus/tuval-sdk/kernel/authoring/effect";
+import {port} from "@kampus/tuval-sdk/kernel/authoring/port";
+import {ShapeMismatch} from "@kampus/tuval-sdk/kernel/authoring/shape";
+import {testProgram} from "@kampus/tuval-sdk/kernel/authoring/test-program";
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {buildRegistry, lookupRow} from "@kampus/tuval-sdk/kernel/commands/registry";
+import {ClientId, type Scope, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {noSelfReport} from "@kampus/tuval-sdk/kernel/process/self-report";
+import {type AnyProgram, ProgramId, programLabel} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Layer, Option, Schema, Stream} from "effect";
 import {expect} from "vitest";
 import config from "../../../.tuval/tuval.config.ts";
@@ -62,26 +62,26 @@ describe("authoring.example.pr-review is short enough to copy", () => {
 		// later edit that reaches back past the door, into the SDK's kernel, takes the room away again.
 		const specifiers = [...source.matchAll(/from "([^"]+)"/g)].map((match) => match[1] ?? "");
 		expect(specifiers.filter((from) => from.startsWith("."))).toEqual([]);
-		expect(specifiers.filter((from) => from.startsWith("@kampus/tuval/authoring"))).toEqual([
-			"@kampus/tuval/authoring",
-			"@kampus/tuval/authoring",
+		expect(specifiers.filter((from) => from.startsWith("@kampus/tuval-sdk/authoring"))).toEqual([
+			"@kampus/tuval-sdk/authoring",
+			"@kampus/tuval-sdk/authoring",
 		]);
 	});
 
 	it("imports no program package, so no reviewer's SDK rides along", () => {
 		const specifiers = [...source.matchAll(/from "([^"]+)"/g)].map((match) => match[1] ?? "");
 		expect(specifiers).not.toEqual([]);
-		// Matched whole, not by prefix: `@kampus/tuval/kernel/...` starts with the SDK's name too, and a
+		// Matched whole, not by prefix: `@kampus/tuval-sdk/kernel/...` starts with the SDK's name too, and a
 		// relative `../../codex/program.ts` is exactly the cross-package import this criterion forbids.
 		//
-		// Two doors are allowed, and the second is the one #8887 added. `@kampus/tuval/authoring` is the
-		// layer the example is written in. `@kampus/tuval/ai-agent/ports` is the port vocabulary every Tuval agent
+		// Two doors are allowed, and the second is the one #8887 added. `@kampus/tuval-sdk/authoring` is the
+		// layer the example is written in. `@kampus/tuval-sdk/ai-agent/ports` is the port vocabulary every Tuval agent
 		// speaks: its own `boundary.unit.test.ts` holds it closed over `effect` and the kernel's
 		// program row, so importing it drags in no agent implementation, and both ends naming one
 		// payload is exactly what R15.1's structural check compares. What the criterion forbids is a
 		// *program package* — `codex/`, `claude/`, `pi/`, `agy/`, `demo/`, `shell/` — and this still
 		// refuses every one of them.
-		const allowed = ["effect", "@kampus/tuval/authoring", "@kampus/tuval/ai-agent/ports"];
+		const allowed = ["effect", "@kampus/tuval-sdk/authoring", "@kampus/tuval-sdk/ai-agent/ports"];
 		const outside = specifiers.filter((from) => !allowed.includes(from));
 		expect(outside).toEqual([]);
 	});

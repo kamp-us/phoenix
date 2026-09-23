@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import {descriptions} from "@kampus/tuval/kernel/commands/parse/fixtures";
+import {descriptions} from "@kampus/tuval-sdk/kernel/commands/parse/fixtures";
 import {act, cleanup, render, screen, waitFor} from "@testing-library/react";
 import {Deferred, Effect, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";

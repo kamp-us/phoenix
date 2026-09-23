@@ -20,14 +20,14 @@
 
 import {applyCellChecked} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {aiAgentSessionMachine} from "@kampus/tuval/kernel/ai-agent/core/machine";
+import {aiAgentSessionMachine} from "@kampus/tuval-sdk/kernel/ai-agent/core/machine";
 import type {
 	AiAgentSessionCmd,
 	AiAgentSessionMsg,
-} from "@kampus/tuval/kernel/ai-agent/core/messages";
-import {type AiAgentSessionState, initialState} from "@kampus/tuval/kernel/ai-agent/core/state";
-import type {AgentEvent, TransportError} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/messages";
+import {type AiAgentSessionState, initialState} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
+import type {AgentEvent, TransportError} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {type Cause, Deferred, Effect, Layer, Option, Queue, Stream} from "effect";
 import {
 	type PiClientApi,

@@ -8,7 +8,7 @@
  * same made a window routing on the tag look correct (epic #8070's tail review).
  */
 
-import type {SessionRow} from "@kampus/tuval/kernel/protocol/session-list";
+import type {SessionRow} from "@kampus/tuval-sdk/kernel/protocol/session-list";
 
 /** The clock every relative timestamp below is measured against: 2026-09-05T00:00:00Z. */
 export const NOW = Date.UTC(2026, 8, 5);

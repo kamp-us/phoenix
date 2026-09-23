@@ -14,7 +14,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {applyCellChecked} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {agentPorts, Mode} from "@kampus/tuval/ai-agent/ports";
+import {agentPorts, Mode} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type AiAgentSessionCmd,
 	type AiAgentSessionMsg,
@@ -22,16 +22,16 @@ import {
 	aiAgentSessionMachine,
 	initialState,
 	isAiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
-import {AI_AGENT_INSPECTOR_REF} from "@kampus/tuval/kernel/ai-agent/renderer-ref";
-import {ScriptedAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
+import {AI_AGENT_INSPECTOR_REF} from "@kampus/tuval-sdk/kernel/ai-agent/renderer-ref";
+import {ScriptedAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer} from "effect";
 import {afterAll, expect} from "vitest";
 import {programEntries, showsInAWindow} from "../shell/picker/entries.ts";

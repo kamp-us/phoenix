@@ -31,7 +31,7 @@
  * live append-only log whose last line may be half-written.
  */
 
-import {isJsonValue, type JsonValue} from "@kampus/tuval/ai-agent/ports";
+import {isJsonValue, type JsonValue} from "@kampus/tuval-sdk/ai-agent/ports";
 import {Predicate} from "effect";
 
 /** One tool invocation. `args` is double-encoded in the wild — each value is itself JSON text. */

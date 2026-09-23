@@ -1,6 +1,6 @@
 import {defineMachine} from "@demlik/tea";
-import type {AnyProgram, Program} from "@kampus/tuval/kernel/registry/program";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import type {AnyProgram, Program} from "@kampus/tuval-sdk/kernel/registry/program";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
 
 type State = {readonly count: number};
@@ -18,7 +18,12 @@ const counter = {
 	ports: {},
 	handlers: {notify: () => Effect.succeed([] as ReadonlyArray<Msg>)},
 	capabilities: [],
-	identity: {package: "@kampus/tuval", program: "counter", version: "1.0.0", digest: "sha256:x"},
+	identity: {
+		package: "@kampus/tuval",
+		program: "counter",
+		version: "1.0.0",
+		digest: "sha256:x",
+	},
 	placement: {host: "local"},
 } satisfies Program<State, Msg, Notify, never, unknown, never, never>;
 

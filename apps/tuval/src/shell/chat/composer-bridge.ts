@@ -38,9 +38,9 @@ import type {
 	PiModel,
 	PiThinkingLevel,
 } from "@kampus/design";
-import type {CommandRef, ModelRef, ThinkingLevel} from "@kampus/tuval/ai-agent/ports";
-import type {ModelState, ThinkingState} from "@kampus/tuval/kernel/ai-agent/core/index";
-import type {Phase} from "@kampus/tuval/kernel/ai-agent/events";
+import type {CommandRef, ModelRef, ThinkingLevel} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {ModelState, ThinkingState} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import type {Phase} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {isWorking} from "./phase.ts";
 
 export interface ComposerHandlers {

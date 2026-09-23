@@ -10,20 +10,20 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {defineProgram} from "@kampus/tuval/kernel/authoring/define-program";
-import {send} from "@kampus/tuval/kernel/authoring/effect";
-import {port} from "@kampus/tuval/kernel/authoring/port";
-import {SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
-import {ClientId, type Scope, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import {compile} from "@kampus/tuval/kernel/ports/compile";
-import {type Graph, NodeId} from "@kampus/tuval/kernel/ports/graph";
-import {open} from "@kampus/tuval/kernel/ports/wiring";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import type {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {type AnyProgram, ProgramId} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import {defineProgram} from "@kampus/tuval-sdk/kernel/authoring/define-program";
+import {send} from "@kampus/tuval-sdk/kernel/authoring/effect";
+import {port} from "@kampus/tuval-sdk/kernel/authoring/port";
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {ClientId, type Scope, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {compile} from "@kampus/tuval-sdk/kernel/ports/compile";
+import {type Graph, NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {open} from "@kampus/tuval-sdk/kernel/ports/wiring";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {type AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Effect, Layer, Option, Schema} from "effect";
 import {launch} from "../launch/launch.ts";
 

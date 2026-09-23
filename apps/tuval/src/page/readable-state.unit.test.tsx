@@ -6,11 +6,11 @@
  * one process's state was a version behind.
  */
 
-import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/snapshot";
-import type {AiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/state";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
-import {empty, processGone, WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/snapshot";
+import type {AiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
+import {empty, processGone, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {act, render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";

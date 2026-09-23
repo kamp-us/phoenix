@@ -1,9 +1,9 @@
-import {aiAgentBackends} from "@kampus/tuval/kernel/ai-agent/backends";
-import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
-import {AI_AGENT_INSPECTOR_REF} from "@kampus/tuval/kernel/ai-agent/renderer-ref";
-import {emptySession} from "@kampus/tuval/kernel/ai-agent/service/fixtures/scripts";
-import {ScriptedAiAgent, type TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
+import {aiAgentBackends} from "@kampus/tuval-sdk/kernel/ai-agent/backends";
+import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
+import {AI_AGENT_INSPECTOR_REF} from "@kampus/tuval-sdk/kernel/ai-agent/renderer-ref";
+import {emptySession} from "@kampus/tuval-sdk/kernel/ai-agent/service/fixtures/scripts";
+import {ScriptedAiAgent, type TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {KernelBridge} from "@kampus/tuval-sdk/kernel/ai-agent/tools/KernelBridge";
 import type {Layer} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import {claudeSession} from "../claude/program.ts";

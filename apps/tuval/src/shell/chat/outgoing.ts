@@ -13,7 +13,7 @@
  * its draft.
  */
 
-import type {SendOutcome} from "@kampus/tuval/kernel/ai-agent/core/index";
+import type {SendOutcome} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 
 /**
  * A **type alias and not an interface**, for the reason `ChatView` is one (`./view.ts`): this rides

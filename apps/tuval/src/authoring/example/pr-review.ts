@@ -53,9 +53,18 @@
  * [#8888](https://github.com/kamp-us/phoenix/issues/8888#issuecomment-5625301355).
  */
 
-import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
-import type {Reply, ShapeSource} from "@kampus/tuval/authoring";
-import {defineProgram, emit, Program, port, program, programArgs, send, spawn} from "@kampus/tuval/authoring";
+import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {Reply, ShapeSource} from "@kampus/tuval-sdk/authoring";
+import {
+	defineProgram,
+	emit,
+	Program,
+	port,
+	program,
+	programArgs,
+	send,
+	spawn,
+} from "@kampus/tuval-sdk/authoring";
 import {Schema} from "effect";
 
 const agent = Program.shape({in: {prompt: PromptPayloadSchema}, out: {result: TurnResultSchema}});

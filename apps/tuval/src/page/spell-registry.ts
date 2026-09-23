@@ -1,4 +1,4 @@
-import type {RegistryDescription} from "@kampus/tuval/kernel/protocol/registry-description";
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
 import {Effect, Fiber, Stream} from "effect";
 import {useEffect, useState} from "react";
 import type {PageAttachment} from "../shell/transport/browser.ts";

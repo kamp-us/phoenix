@@ -31,15 +31,15 @@ import {
 	type PromptPayload,
 	PromptPayloadSchema,
 	TurnResultSchema,
-} from "@kampus/tuval/ai-agent/ports";
+} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type Answer,
 	type ArrivalEvent,
 	defineProgram,
-} from "@kampus/tuval/kernel/authoring/define-program";
-import {emit} from "@kampus/tuval/kernel/authoring/effect";
-import {port} from "@kampus/tuval/kernel/authoring/port";
-import type {AnyProgram} from "@kampus/tuval/kernel/registry/program";
+} from "@kampus/tuval-sdk/kernel/authoring/define-program";
+import {emit} from "@kampus/tuval-sdk/kernel/authoring/effect";
+import {port} from "@kampus/tuval-sdk/kernel/authoring/port";
+import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Schema} from "effect";
 import type {TuvalConfigInput} from "../../../config.ts";
 import {prReview} from "../../example/pr-review.ts";

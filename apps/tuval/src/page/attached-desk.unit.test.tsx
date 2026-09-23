@@ -7,9 +7,9 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
-import type {ProcessView} from "@kampus/tuval/kernel/shell/window/index";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import type {ProcessView} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {act, fireEvent, render, screen} from "@testing-library/react";
 import {Effect, Option, Schema, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";

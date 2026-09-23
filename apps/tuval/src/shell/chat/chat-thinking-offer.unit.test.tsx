@@ -10,8 +10,8 @@
  */
 
 import {AgentChatInput, DesignTranslationProvider} from "@kampus/design";
-import type {ModelState, ThinkingState} from "@kampus/tuval/kernel/ai-agent/core/index";
-import type {Phase} from "@kampus/tuval/kernel/ai-agent/events";
+import type {ModelState, ThinkingState} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import type {Phase} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {act, render, screen, waitFor} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";

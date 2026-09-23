@@ -13,8 +13,8 @@
  */
 
 import type {SDKMessage, SessionMessage} from "@anthropic-ai/claude-agent-sdk";
-import {byteLength, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
-import {itemBytes} from "@kampus/tuval/kernel/ai-agent/history/index";
+import {byteLength, type TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
+import {itemBytes} from "@kampus/tuval-sdk/kernel/ai-agent/history/index";
 import {describe, expect, it} from "vitest";
 import {toAgentEvents} from "./events.ts";
 import {loadFixture} from "./fixtures/load.ts";

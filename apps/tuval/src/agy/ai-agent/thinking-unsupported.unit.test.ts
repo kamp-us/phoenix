@@ -13,9 +13,9 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {Mode, thinkingLevels} from "@kampus/tuval/ai-agent/ports";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {Mode, thinkingLevels} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Effect, Fiber, Option, Queue, Stream} from "effect";
 import {agyChildrenStub, agyLayerOver, type StubChild} from "./child-stub.ts";
 import {init} from "./fixtures.ts";

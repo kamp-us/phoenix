@@ -29,7 +29,7 @@ import {
 	newestFirst,
 	type SessionSummary,
 	sessionSummary,
-} from "@kampus/tuval/kernel/ai-agent/service/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Effect} from "effect";
 
 /** Which of Pi's two stores a row came from, or a failure is about. */

@@ -15,11 +15,11 @@ import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
 	AiAgentSessionSub,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import type {AiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
-import type {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
-import type {SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
-import type {PortSchema, Program} from "@kampus/tuval/kernel/registry/program";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import type {AiAgentProgram} from "@kampus/tuval-sdk/kernel/ai-agent/program";
+import type {TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import type {SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
+import type {PortSchema, Program} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {Layer} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import type {ClaudeSessionSettings} from "./config.ts";

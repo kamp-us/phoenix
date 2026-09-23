@@ -4,7 +4,7 @@
  * with its reason, and a placement this transport does not serve is answered per attach.
  */
 
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Schema} from "effect";
 
 /**

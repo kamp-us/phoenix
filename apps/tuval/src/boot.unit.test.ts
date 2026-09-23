@@ -14,10 +14,10 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {sessionListProgram} from "@kampus/tuval/kernel/ai-agent/session-list";
-import {Features} from "@kampus/tuval/kernel/feature-flags";
-import {featuresDefault, type TuvalFeatures} from "@kampus/tuval/kernel/features";
-import {homeStateDir, PROJECT_MARKER} from "@kampus/tuval/kernel/state-dir";
+import {sessionListProgram} from "@kampus/tuval-sdk/kernel/ai-agent/session-list";
+import {Features} from "@kampus/tuval-sdk/kernel/feature-flags";
+import {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
+import {homeStateDir, PROJECT_MARKER} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Context, Effect, Layer, Schema} from "effect";
 import {afterEach, expect} from "vitest";
 import {

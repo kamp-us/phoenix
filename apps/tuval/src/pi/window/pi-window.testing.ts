@@ -11,9 +11,9 @@
  * would be testing a session Pi cannot produce.
  */
 
-import type {AiAgentSessionState, UsageLedger} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {initialState} from "@kampus/tuval/kernel/ai-agent/core/state";
-import {assistantItem, userItem} from "@kampus/tuval/kernel/ai-agent-fixtures/transcripts";
+import type {AiAgentSessionState, UsageLedger} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {initialState} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
+import {assistantItem, userItem} from "@kampus/tuval-sdk/kernel/ai-agent-fixtures/transcripts";
 
 export const FIRST_PROMPT = "what does this do?";
 

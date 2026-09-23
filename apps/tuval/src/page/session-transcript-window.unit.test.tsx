@@ -13,29 +13,29 @@
  * is `./session-transcript.unit.test.ts`.
  */
 
-import type {SessionListState} from "@kampus/tuval/kernel/ai-agent/renderer-ref";
-import {SESSION_LIST_STATE} from "@kampus/tuval/kernel/ai-agent/renderer-ref";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import type {SpellPath} from "@kampus/tuval/kernel/protocol/ids";
-import {CallId} from "@kampus/tuval/kernel/protocol/ids";
-import type {SpellFailure, SpellReply} from "@kampus/tuval/kernel/protocol/messages";
+import type {SessionListState} from "@kampus/tuval-sdk/kernel/ai-agent/renderer-ref";
+import {SESSION_LIST_STATE} from "@kampus/tuval-sdk/kernel/ai-agent/renderer-ref";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {SpellPath} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import type {SpellFailure, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {
 	PROTOCOL_VERSION,
 	SpellCall,
 	SpellReplyError,
 	SpellReplyOk,
-} from "@kampus/tuval/kernel/protocol/messages";
-import {SESSION_LIST_CALL_PATH} from "@kampus/tuval/kernel/protocol/session-list";
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {SESSION_LIST_CALL_PATH} from "@kampus/tuval-sdk/kernel/protocol/session-list";
 import type {
 	SessionTranscript,
 	TranscriptItemWire,
-} from "@kampus/tuval/kernel/protocol/session-transcript";
+} from "@kampus/tuval-sdk/kernel/protocol/session-transcript";
 import {
 	SESSION_TRANSCRIPT_CALL_PATH,
 	SESSION_TRANSCRIPT_PATH,
-} from "@kampus/tuval/kernel/protocol/session-transcript";
-import type {ProcessView, WindowHost} from "@kampus/tuval/kernel/shell/window/index";
-import {delivered, WindowId} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/protocol/session-transcript";
+import type {ProcessView, WindowHost} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {delivered, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {act, cleanup, fireEvent, render, screen, within} from "@testing-library/react";
 import {Effect, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";

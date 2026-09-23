@@ -21,7 +21,7 @@
  */
 
 import {MetaRow} from "@kampus/design";
-import {type UsageTotals, usageTotals} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {type UsageTotals, usageTotals} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import type {ReactElement} from "react";
 import type {ChatWindowOptions, ChatWindowRenderer} from "../../shell/chat/index.ts";
 import {chatWindow} from "../../shell/chat/index.ts";

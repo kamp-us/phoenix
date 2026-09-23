@@ -10,10 +10,10 @@
  * stubbed reducer would prove the surface agrees with a fake.
  */
 
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId, type RendererRef} from "@kampus/tuval/kernel/registry/program";
-import type {AnyWindowHost, WindowId} from "@kampus/tuval/kernel/shell/window/index";
-import {empty} from "@kampus/tuval/kernel/shell/window/index";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId, type RendererRef} from "@kampus/tuval-sdk/kernel/registry/program";
+import type {AnyWindowHost, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {empty} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {act, fireEvent, render, screen, within} from "@testing-library/react";
 import axe from "axe-core";
 import {Duration} from "effect";

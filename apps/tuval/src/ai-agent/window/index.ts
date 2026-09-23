@@ -10,7 +10,7 @@
 export {
 	AI_AGENT_INSPECTOR_REF,
 	SESSION_LIST_WINDOW_REF,
-} from "@kampus/tuval/kernel/ai-agent/renderer-ref";
+} from "@kampus/tuval-sdk/kernel/ai-agent/renderer-ref";
 export {AiAgentInspector} from "./AiAgentInspector.tsx";
 export {
 	listView,

@@ -1,9 +1,9 @@
 /** The `:` prompt: shell rows dispatch locally; registered commands call the attached kernel. */
 
-import {buildSpellIndex} from "@kampus/tuval/kernel/commands/parse/spell-index";
-import {CallId, type WindowId} from "@kampus/tuval/kernel/protocol/ids";
-import type {Snapshot} from "@kampus/tuval/kernel/protocol/messages";
-import type {RegistryDescription} from "@kampus/tuval/kernel/protocol/registry-description";
+import {buildSpellIndex} from "@kampus/tuval-sdk/kernel/commands/parse/spell-index";
+import {CallId, type WindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import type {Snapshot} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
 import {Effect, Fiber} from "effect";
 import type {FormEvent, KeyboardEvent, ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";

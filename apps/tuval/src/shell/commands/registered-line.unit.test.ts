@@ -1,5 +1,5 @@
-import {registry, snapshot} from "@kampus/tuval/kernel/commands/parse/fixtures";
-import {CallId, WindowId} from "@kampus/tuval/kernel/protocol/ids";
+import {registry, snapshot} from "@kampus/tuval-sdk/kernel/commands/parse/fixtures";
+import {CallId, WindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
 import {expect, it} from "vitest";
 import {readCommandLine} from "./line.ts";
 

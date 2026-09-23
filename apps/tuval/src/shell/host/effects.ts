@@ -17,12 +17,12 @@
  * tracks it.
  */
 
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import type {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
-import type {Registry} from "@kampus/tuval/kernel/registry/Registry";
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import type {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import type {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect, Option} from "effect";
 import {attachProcess, openProgram, runPickerIntent, runProcessRemoval} from "../picker/index.ts";
 import type {ShellEffects} from "../program.ts";
