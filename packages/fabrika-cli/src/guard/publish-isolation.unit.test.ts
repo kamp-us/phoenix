@@ -12,6 +12,7 @@ import {
 	parsePublishedTagPrefixes,
 	resolvePublished,
 	unscopedName,
+	workspaceTarget,
 } from "./publish-isolation.ts";
 
 const manifest = (
@@ -86,6 +87,49 @@ describe("judge", () => {
 		expect(v.pass).toBe(true);
 	});
 
+	it("passes a workspace: link whose target is ITSELF in the published set", () => {
+		const v = judge([
+			manifest("packages/demo-ui/package.json", "@kampus/demo-ui", [
+				{field: "dependencies", name: "@kampus/design", value: "workspace:*"},
+				{field: "peerDependencies", name: "@kampus/demo-sdk", value: "workspace:*"},
+			]),
+			manifest("packages/design/package.json", "@kampus/design", []),
+			manifest("packages/demo-sdk/package.json", "@kampus/demo-sdk", []),
+		]);
+		expect(v.pass).toBe(true);
+	});
+
+	it("reds a workspace: link to a package outside the published set, beside a published one", () => {
+		const v = judge([
+			manifest("packages/demo-ui/package.json", "@kampus/demo-ui", [
+				{field: "peerDependencies", name: "@kampus/demo-sdk", value: "workspace:*"},
+				{field: "dependencies", name: "@kampus/epic-ledger", value: "workspace:^"},
+			]),
+			manifest("packages/demo-sdk/package.json", "@kampus/demo-sdk", []),
+		]);
+		if (v.pass || v.reason !== "linked-private-deps") throw new Error("expected a violation");
+		expect(v.violations).toEqual([
+			{
+				path: "packages/demo-ui/package.json",
+				field: "dependencies",
+				name: "@kampus/epic-ledger",
+				value: "workspace:^",
+				kind: "workspace-link",
+			},
+		]);
+	});
+
+	it("judges an aliased workspace: link by the package it names, not the alias", () => {
+		const v = judge([
+			manifest("packages/demo-ui/package.json", "@kampus/demo-ui", [
+				{field: "dependencies", name: "@kampus/demo-sdk", value: "workspace:@kampus/epic-ledger@*"},
+			]),
+			manifest("packages/demo-sdk/package.json", "@kampus/demo-sdk", []),
+		]);
+		if (v.pass || v.reason !== "linked-private-deps") throw new Error("expected a violation");
+		expect(v.violations[0]?.kind).toBe("workspace-link");
+	});
+
 	it("fails closed when no published packages are in scope", () => {
 		const v = judge([]);
 		if (v.pass) throw new Error("expected a failure");
@@ -153,6 +197,22 @@ describe("manifestRuntimeDeps", () => {
 			{field: "optionalDependencies", name: "b", value: "^1.0.0"},
 			{field: "peerDependencies", name: "c", value: "workspace:*"},
 		]);
+	});
+});
+
+describe("workspaceTarget", () => {
+	const dep = (value: string) => ({field: "dependencies", name: "@kampus/demo-sdk", value});
+	it("names the dependency itself for a plain workspace: range", () => {
+		expect(workspaceTarget(dep("workspace:*"))).toBe("@kampus/demo-sdk");
+		expect(workspaceTarget(dep("workspace:^0.1.0"))).toBe("@kampus/demo-sdk");
+	});
+	it("names the aliased package for workspace:<name>@<range>", () => {
+		expect(workspaceTarget(dep("workspace:@kampus/design@*"))).toBe("@kampus/design");
+		expect(workspaceTarget(dep("workspace:effect@^3"))).toBe("effect");
+	});
+	it("answers undefined for a specifier that is not a workspace link", () => {
+		expect(workspaceTarget(dep("catalog:"))).toBeUndefined();
+		expect(workspaceTarget(dep("^1.0.0"))).toBeUndefined();
 	});
 });
 

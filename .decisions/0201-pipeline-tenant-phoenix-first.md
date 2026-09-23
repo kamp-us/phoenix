@@ -61,3 +61,26 @@ invariant instead of a hope.
   everything else and are prioritized under the phoenix-first rule.
 
 > Amendment 2026-08-19: the tenant's artifact set moved. `kampus-pipeline` (the plugin) is retired, `pipeline-crew` / `pipeline-crew-mcp` are gone (ADRs [0303](0303-retire-kampus-pipeline-plugin.md), [0279](0279-v1-crew-retired-in-full.md)), and `packages/pipeline-cli/` was deleted by PR #6326; the live set is `claude-plugins/fabrika` + `packages/fabrika-cli`. The release-tag grammar in Decision 4 now covers `fabrika-cli-v*` in place of `pipeline-cli-v*` — see `.github/workflows/publish.yml`. Tenancy, phoenix-first priority, and publish isolation stand unchanged.
+
+## Amendment (2026-09-23, [#9740](https://github.com/kamp-us/phoenix/issues/9740)) — a published package may link a published sibling with `workspace:`
+
+Founder ruling: <https://github.com/kamp-us/phoenix/issues/9740#issuecomment-5803759118>.
+
+Seven Tuval packages now publish beside the fabrika pair (`@kampus/design`, `@kampus/tuval-sdk`,
+`@kampus/tuval-ui` and the four harness packages), and they depend on each other with
+`workspace:*`. Decision 3 still holds: a published artifact installs from a clean registry. What
+changes is how the guard reads a `workspace:` link.
+
+1. **A `workspace:` runtime dep on a package in the published set passes.** `publish.yml`
+   publishes with `pnpm publish`, which rewrites `workspace:` to the sibling's in-repo version at
+   pack time, so the tarball names a registry version. Each Tuval package's
+   `public-surface.pack.test.ts` asserts no packed range starts with `workspace:`.
+2. **A `workspace:` runtime dep on a package outside the published set still reds.** That is the
+   #3802 class this record was written against: the rewritten version exists on no registry.
+   A pinned `@kampus/*` dep that is not published still reds as before.
+3. **Release order: a dependency publishes before its dependents.** The packed range pins the
+   sibling's in-repo version, which may not be on npm yet. So `tuval-sdk` and `design` release
+   first, then `tuval-ui`, then the harness packages. The guard does not check this. The order is
+   the order a human merges the per-package Release PRs in, and `release-please.yml` dispatches
+   the publishes of one push in that order. A dependent published early installs once the
+   sibling's version lands, because npm resolves the pinned version when it appears.

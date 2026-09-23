@@ -9,6 +9,11 @@
  * than hand-kept here: a parallel list drifts from what actually publishes, and the drift is only
  * discovered by an external install failing. A tag prefix that maps to no member is that drift, and
  * it fails closed at the IO boundary in `./publish-isolation-verb.ts`.
+ *
+ * A `workspace:` link to a sibling that is itself in the published set passes: `pnpm publish`
+ * rewrites the specifier to that sibling's registry version at pack time.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9740#issuecomment-5803759118
  */
 
 /**
@@ -42,7 +47,8 @@ export interface PublishedManifest {
 
 /**
  * A dep that breaks publish isolation. Two kinds, both unresolvable from a clean registry:
- * - `workspace-link`: a `workspace:` specifier — never resolvable from a registry.
+ * - `workspace-link`: a `workspace:` specifier whose target is not in the published set — pnpm
+ *   rewrites it to a version nothing on the registry carries.
  * - `private-kampus-dep`: a `@kampus/*` dep that is not itself published, so a clean registry has
  *   nothing to resolve it to.
  */
@@ -76,8 +82,18 @@ export const unscopedName = (name: string): string =>
 	name.startsWith("@") ? (name.split("/")[1] ?? name) : name;
 
 /**
- * Decide the verdict over the published manifests. A `@kampus/*` dep that IS itself in the
- * published set resolves cleanly, so it passes.
+ * The package a `workspace:` specifier links: the aliased name in `workspace:<name>@<range>`,
+ * else the dependency's own name. `undefined` for a specifier that is not a workspace link.
+ */
+export const workspaceTarget = (dep: DepEntry): string | undefined => {
+	if (!dep.value.startsWith("workspace:")) return undefined;
+	const alias = /^workspace:((?:@[^/@]+\/)?[^/@]+)@/.exec(dep.value)?.[1];
+	return alias ?? dep.name;
+};
+
+/**
+ * Decide the verdict over the published manifests. A dep whose target is itself in the published
+ * set resolves cleanly, whether it names a registry range or a `workspace:` link.
  */
 export const judge = (manifests: ReadonlyArray<PublishedManifest>): PublishIsolationVerdict => {
 	if (manifests.length === 0) {
@@ -88,9 +104,11 @@ export const judge = (manifests: ReadonlyArray<PublishedManifest>): PublishIsola
 	const violations: Array<IsolationViolation> = [];
 	for (const m of manifests) {
 		for (const dep of m.deps) {
+			const target = workspaceTarget(dep);
 			// `workspace:` is checked first: it is the most actionable diagnosis even when the dep
 			// is also `@kampus/*`-scoped.
-			if (dep.value.startsWith("workspace:")) {
+			if (target !== undefined) {
+				if (publishedNames.has(target)) continue;
 				violations.push({
 					path: m.path,
 					field: dep.field,
@@ -118,8 +136,8 @@ export const judge = (manifests: ReadonlyArray<PublishedManifest>): PublishIsola
 /** One violation as its own report line, carrying the why and the fix. */
 export const violationLine = (v: IsolationViolation): string =>
 	v.kind === "workspace-link"
-		? `  ${v.path}: ${v.field} \`${v.name}\` links \`${v.value}\` — a workspace: specifier never resolves from a clean registry. ` +
-			"Fix: inline it as a tool, or depend on a PUBLISHED version instead."
+		? `  ${v.path}: ${v.field} \`${v.name}\` links \`${v.value}\` — a workspace: link to a package publish.yml does not publish never resolves from a clean registry. ` +
+			"Fix: inline it, or publish that package so the link names a published sibling."
 		: `  ${v.path}: ${v.field} \`${v.name}\` (\`${v.value}\`) is a private/unpublished @kampus package — an external install cannot resolve it. ` +
 			"Fix: inline it, or publish that package and depend on its registry version.";
 

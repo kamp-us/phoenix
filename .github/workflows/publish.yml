@@ -24,6 +24,9 @@
 # the tarball at pack time, so the source package.json keeps the pnpm catalog as
 # the single source of truth. Every dep in this repo is `catalog:`, so `npm publish`
 # would ship a literal `"catalog:"` string and produce an uninstallable tarball.
+# A published package's `workspace:` link to a published sibling becomes that
+# sibling's in-repo version, so the sibling's release publishes first (ADR 0201,
+# amended 2026-09-23).
 #
 # ── One-time HUMAN setup, PER PACKAGE (until done, the run fails closed — correct) ─
 #   Register THIS repo + this workflow file (`publish.yml`) as a Trusted Publisher for
@@ -121,6 +124,27 @@ jobs:
             TAG_VERSION="${BASH_REMATCH[1]}"
           elif [[ "$TAG" =~ ^fabrika-pi-v([0-9].*)$ ]]; then
             PKG_DIR="packages/fabrika-pi"
+            TAG_VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ^design-v([0-9].*)$ ]]; then
+            PKG_DIR="packages/design"
+            TAG_VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ^tuval-sdk-v([0-9].*)$ ]]; then
+            PKG_DIR="packages/tuval"
+            TAG_VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ^tuval-ui-v([0-9].*)$ ]]; then
+            PKG_DIR="packages/tuval-ui"
+            TAG_VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ^tuval-claude-v([0-9].*)$ ]]; then
+            PKG_DIR="packages/tuval-claude"
+            TAG_VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ^tuval-codex-v([0-9].*)$ ]]; then
+            PKG_DIR="packages/tuval-codex"
+            TAG_VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ^tuval-pi-v([0-9].*)$ ]]; then
+            PKG_DIR="packages/tuval-pi"
+            TAG_VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ^tuval-agy-v([0-9].*)$ ]]; then
+            PKG_DIR="packages/tuval-agy"
             TAG_VERSION="${BASH_REMATCH[1]}"
           else
             echo "::error::release tag '$TAG' matches no published package's <name>-v<version> grammar — refusing to publish"

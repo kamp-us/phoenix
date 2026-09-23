@@ -63,6 +63,27 @@ Ruled by ADR [0076](../.decisions/0076-decisions-index-npm-publish-automated-rel
 ruling — so superseded-0076 remains this constraint's only ADR home, cited as live on that
 point alone (ADR 0239 §2 carries the same caveat).
 
+### 2a. A published package links a published sibling with `workspace:`, and the sibling releases first
+
+The Tuval packages depend on each other with `workspace:*` (`@kampus/tuval-ui` peers on
+`@kampus/tuval-sdk`, the harness packages depend on `@kampus/tuval-ui`). `pnpm publish` rewrites
+each link to the sibling's in-repo version at pack time, so the tarball names a registry range.
+Each package's `src/public-surface.pack.test.ts` asserts no packed range starts with `workspace:`.
+
+`publish-isolation-guard` accepts a `workspace:` runtime dep only when its target is in the
+published set (constraint 6). A `workspace:` link to a package `publish.yml` does not publish still
+reds the guard: the rewritten version exists on no registry, which is the `pipeline-cli@0.2.0`
+failure ADR [0201](../.decisions/0201-pipeline-tenant-phoenix-first.md) was written against.
+
+The packed range pins the sibling's version in this repo, so **the sibling publishes first**:
+`design` and `tuval-sdk`, then `tuval-ui`, then the harness packages. That is the order a human
+merges their Release PRs in. `release-please.yml` dispatches one push's publishes in the same order,
+but a dispatch does not wait for the run it starts, so the merge order is the rule. A dependent
+published early installs once its sibling's version reaches npm.
+
+Ruled on [#9740](https://github.com/kamp-us/phoenix/issues/9740#issuecomment-5803759118), recorded
+in ADR 0201's 2026-09-23 amendment.
+
 ### 3. The package ships compiled JS, never raw `.ts` — plus every asset `tsc` will not emit
 
 Node refuses to strip types under `node_modules`, so a source-only tarball is dead on
@@ -115,9 +136,10 @@ which. It is not "always true" — `release-please-action` sets it to `releases.
 which makes it worse rather than better, because it looks trustworthy while gating a
 pipeline-cli action on a fabrika-cli release.
 
-`release-please.yml`'s only condition keys on the per-path
-`<path>--release_created` outputs (`packages/fabrika-cli--release_created`,
-`packages/fabrika-pi--release_created`) and reports from the `paths_released` JSON array.
+`release-please.yml`'s dispatch and summary conditions key on the per-path
+`<path>--release_created` outputs, one per configured package root
+(`packages/fabrika-cli--release_created`, `packages/tuval--release_created`, and so on), and the
+summary reports from the `paths_released` JSON array.
 `releases_created` appears nowhere in the file, deliberately. A later "simplification" back
 to the single output is the regression ADR 0239 §5 Hazard A names.
 
@@ -184,12 +206,16 @@ step on npmjs.com and a first publish that CI cannot perform. In order:
    public`, `license`, `repository`; point `bin`/`exports` at `dist/` and set `files: [dist]`;
    add `build` (compile `src/` → `dist/`) and `prepublishOnly` scripts. Constraint 3 applies.
 2. **Add the resolve arm** to `.github/workflows/publish.yml` — a literal anchored
-   `^<name>-v([0-9].*)$` regex mapping to the package directory. This is what widens
-   `publish-isolation-guard`'s scope (constraint 6), so the guard now checks this package too.
+   `^<name>-v([0-9].*)$` regex mapping to the package directory. `<name>` is the package's
+   unscoped npm name, not its directory: `packages/tuval` publishes `@kampus/tuval-sdk`, so its
+   arm is `^tuval-sdk-v`. This is what widens `publish-isolation-guard`'s scope (constraint 6),
+   so the guard now checks this package too. A `workspace:` dep on another `@kampus/*` package
+   passes only when that package has an arm as well (constraint 2a).
 3. **Add the package root** to `release-please-config.json` (`component: <unscoped-name>`) and
    an entry to `.release-please-manifest.json` at its current version. Add its per-path
-   `<path>--release_created` output to `release-please.yml`'s condition — constraint 5 means
-   it cannot inherit another package's gate.
+   `<path>--release_created` output to both conditions in `release-please.yml`, and its
+   `<path>--tag_name` output to both steps' tag lists — constraint 5 means it cannot inherit
+   another package's gate. Place its tag after the siblings it depends on (constraint 2a).
 4. **Bootstrap-publish the first version by hand** (`pnpm publish` from the package
    directory, from a checkout that is **at** the merge you intend to ship — constraint 1).
    Trusted Publishing cannot be registered for a package that does not exist on the registry
@@ -205,7 +231,10 @@ corrupted by it — no version is consumed, because nothing was published.
 
 ## Current state
 
-Two package roots are configured today (`fabrika-cli`, `fabrika-pi`).
+Nine package roots are configured today: `fabrika-cli`, `fabrika-pi`, and the seven Tuval
+packages (`design`, `tuval-sdk`, `tuval-ui`, `tuval-claude`, `tuval-codex`, `tuval-pi`,
+`tuval-agy`). Each has a resolve arm in `publish.yml`. None of the seven has been bootstrapped or
+registered as a Trusted Publisher yet (steps 4 and 5).
 `pipeline-cli` was deleted from the repo with its release machinery (#6326) — its npm
 artifacts remain, so its history below stays recorded. Registrations that exist name this
 repo and this workflow file, but only some have ever been *exercised* by it, and those are
