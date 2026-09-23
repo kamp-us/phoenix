@@ -33,6 +33,13 @@ const RENDERED_PARKS = [
 	["ROUTED-ELSEWHERE", "no-rendered-delta"],
 ] as const;
 
+/**
+ * Every park the rendered gate records: the three above plus `ESCALATED`, a verdict that provably
+ * could not land. Under `parkCause.uncaused: "refuse"` an uncaused park is never recorded, so it
+ * names its own cause too.
+ */
+const UI_REVIEWER_PARKS = [...RENDERED_PARKS, ["ESCALATED", "write-unlanded"]] as const;
+
 describe("the builder's no-PR terminals", () => {
 	it("routes an epic child's BUILT-NO-PR to DONE, not to the BLOCKED a clean build never earned", () => {
 		expect(eventForToken("BUILT-NO-PR")).toEqual({
@@ -196,16 +203,14 @@ describe("the UI reviewer's vocabulary against the skill that owns it", () => {
 
 	// The emitting half: a cause the skill never tells the gate to pass is a cause nobody
 	// names, so the rows would sit in code while every rendered park still landed bare.
-	it.each(RENDERED_PARKS)("pairs %s with the --cause token %s", (token, cause) => {
+	it.each(UI_REVIEWER_PARKS)("pairs %s with the --cause token %s", (token, cause) => {
 		expect(section).toMatch(new RegExp(`${token}[\\s\\S]*?\`${cause}\``));
 	});
 
-	// The fourth park terminal, `ESCALATED`, is deliberately uncaused: the builder and reviewer
-	// groups spell it the same way, so seating a cause for it is a cross-shell change.
-	it("names those three causes and no fourth", () => {
+	it("names those four causes and no fifth", () => {
 		const named = PARK_CAUSE_TOKENS.filter((cause) => (section ?? "").includes(cause));
 
-		expect(new Set(named)).toEqual(new Set(RENDERED_PARKS.map(([, cause]) => cause)));
+		expect(new Set(named)).toEqual(new Set(UI_REVIEWER_PARKS.map(([, cause]) => cause)));
 	});
 });
 
@@ -278,6 +283,7 @@ describe("every park cause carries a route", () => {
 		"no-preview-render",
 		"no-design-manifest",
 		"no-rendered-delta",
+		"write-unlanded",
 	])("routes %s to the driver — it is machinery, and no product call is in it", (cause) => {
 		expect(routeForCause(cause)).toBe("driver");
 	});
