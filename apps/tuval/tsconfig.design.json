@@ -17,7 +17,7 @@
 	// side-effect stylesheet imports need as much as this slice's do.
 	"include": [
 		"src/chat",
-		"src/pi/window",
+		"src/pi-desk/window-proof",
 		"src/agy/window",
 		"src/page/main.tsx",
 		"src/page/boot.tsx",

@@ -10,6 +10,7 @@
  */
 
 import {claudeSession} from "@kampus/tuval-claude";
+import {piSessionProgram} from "@kampus/tuval-pi";
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
@@ -25,7 +26,6 @@ import {deskSnapshot} from "@kampus/tuval-ui/testing/desk";
 import {agentSessionState, CWD} from "@kampus/tuval-ui/testing/inspector";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {piSessionProgram} from "../pi/program.ts";
 import {pageInspectors} from "./renderers.tsx";
 
 const processId = ProcessId.make("p1");

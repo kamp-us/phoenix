@@ -270,18 +270,6 @@ importers:
       '@demlik/tea':
         specifier: 'catalog:'
         version: 0.12.0(fast-check@3.23.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))(ws@8.21.3)
-      '@earendil-works/pi-ai':
-        specifier: 0.85.1
-        version: 0.85.1(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)
-      '@earendil-works/pi-client':
-        specifier: 'catalog:'
-        version: 0.85.1
-      '@earendil-works/pi-coding-agent':
-        specifier: 'catalog:'
-        version: 0.85.1(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)
-      '@earendil-works/pi-protocol':
-        specifier: 'catalog:'
-        version: 0.85.1
       '@effect/platform-node':
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=aad6096dd5b19a9e6aa57e5f7752c4c561d1491ac6c22b311082497aee42cf11))(redis@6.2.1(@opentelemetry/api@1.9.1))
@@ -294,6 +282,9 @@ importers:
       '@kampus/tuval-codex':
         specifier: workspace:*
         version: link:../../packages/tuval-codex
+      '@kampus/tuval-pi':
+        specifier: workspace:*
+        version: link:../../packages/tuval-pi
       '@kampus/tuval-sdk':
         specifier: workspace:*
         version: link:../../packages/tuval
@@ -309,9 +300,6 @@ importers:
       fzf:
         specifier: catalog:tuval
         version: 0.5.2
-      pi-subagents:
-        specifier: 'catalog:'
-        version: 0.66.0(@earendil-works/pi-agent-core@0.85.1(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3))(@earendil-works/pi-ai@0.85.1(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3))(@earendil-works/pi-coding-agent@0.85.1(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3))(@earendil-works/pi-tui@0.85.1)(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)
       react:
         specifier: 19.2.7
         version: 19.2.7
@@ -321,9 +309,6 @@ importers:
       react-resizable-panels:
         specifier: 'catalog:'
         version: 4.12.3(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      typebox:
-        specifier: 'catalog:'
-        version: 1.3.7
       ws:
         specifier: 'catalog:'
         version: 8.21.3
@@ -1424,6 +1409,88 @@ importers:
       react:
         specifier: 19.2.7
         version: 19.2.7
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+
+  packages/tuval-pi:
+    dependencies:
+      '@earendil-works/pi-ai':
+        specifier: 0.85.1
+        version: 0.85.1(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)
+      '@earendil-works/pi-client':
+        specifier: 'catalog:'
+        version: 0.85.1
+      '@earendil-works/pi-coding-agent':
+        specifier: 'catalog:'
+        version: 0.85.1(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)
+      '@earendil-works/pi-protocol':
+        specifier: 'catalog:'
+        version: 0.85.1
+      '@kampus/tuval-ui':
+        specifier: workspace:*
+        version: link:../tuval-ui
+      pi-subagents:
+        specifier: 'catalog:'
+        version: 0.66.0(@earendil-works/pi-agent-core@0.85.1(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3))(@earendil-works/pi-ai@0.85.1(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3))(@earendil-works/pi-coding-agent@0.85.1(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3))(@earendil-works/pi-tui@0.85.1)(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)
+      typebox:
+        specifier: 'catalog:'
+        version: 1.3.7
+      ws:
+        specifier: 'catalog:'
+        version: 8.21.3
+    devDependencies:
+      '@demlik/tea':
+        specifier: 'catalog:'
+        version: 0.12.0(fast-check@3.23.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))(ws@8.21.3)
+      '@effect/tsgo':
+        specifier: 'catalog:'
+        version: 0.36.4
+      '@effect/vitest':
+        specifier: 4.0.0-rc.112
+        version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=aad6096dd5b19a9e6aa57e5f7752c4c561d1491ac6c22b311082497aee42cf11))(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+      '@kampus/design':
+        specifier: workspace:*
+        version: link:../design
+      '@kampus/tuval-sdk':
+        specifier: workspace:*
+        version: link:../tuval
+      '@testing-library/dom':
+        specifier: 'catalog:'
+        version: 10.4.1
+      '@testing-library/react':
+        specifier: 'catalog:'
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.6.2
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.3(@types/react@19.2.14)
+      '@types/ws':
+        specifier: 'catalog:'
+        version: 8.18.1
+      effect:
+        specifier: 4.0.0-rc.112
+        version: 4.0.0-rc.112(patch_hash=aad6096dd5b19a9e6aa57e5f7752c4c561d1491ac6c22b311082497aee42cf11)
+      fast-check:
+        specifier: 'catalog:'
+        version: 3.23.2
+      jsdom:
+        specifier: 'catalog:'
+        version: 26.1.0
+      react:
+        specifier: 19.2.7
+        version: 19.2.7
+      react-dom:
+        specifier: 19.2.7
+        version: 19.2.7(react@19.2.7)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2

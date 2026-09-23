@@ -157,7 +157,7 @@ describe("the agy AI agent layer's surface", () => {
 	});
 });
 
-describe("this row follows src/pi/, not @kampus/tuval-claude", () => {
+describe("this row follows @kampus/tuval-pi, not @kampus/tuval-claude", () => {
 	it("has no tools directory anywhere under src/agy/", () => {
 		expect(readdirSync(moduleDir).filter((entry) => entry === "tools")).toEqual([]);
 	});

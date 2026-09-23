@@ -1,7 +1,7 @@
 /**
  * The `agy-session` registry row: the generic agent program over `AgyAiAgent.layer`.
  *
- * `../pi/program.ts`'s shape, and for the reason that file gives: the core, the handlers, the port
+ * `@kampus/tuval-pi`'s `src/program.ts` shape, and for the reason that file gives: the core, the handlers, the port
  * keys, the restore rule and the shared desk inspector are `aiAgentProgram`'s, so a row is an id, a
  * cwd and a layer. This row follows Pi's and not Claude's (epic #8162's
  * no-gos) — **empty capability list, no open

@@ -41,7 +41,7 @@ export const assistantItem = (id: string, timestamp: number, text: string): Assi
  * The reply a stop cut short. The flag is the whole difference, and it is what the window renders the
  * break off — `shell/chat/rows.ts` reads it for the turn's "You stopped this response" summary — so an
  * interrupted turn has a trace in the transcript rather than only in a phase that has already moved
- * on (#8693). `pi/ai-agent/items.ts` makes the same row of an `aborted` item, empty text included.
+ * on (#8693). `@kampus/tuval-pi`'s `src/ai-agent/items.ts` makes the same row of an `aborted` item, empty text included.
  */
 export const interruptedItem = (id: string, timestamp: number, text: string): AssistantItem => ({
 	...assistantItem(id, timestamp, text),

@@ -17,7 +17,7 @@ one: the window keeps sending the live id it has, and `before: null` is not a fi
 
 **1. Mint the map where the items are minted.** One pass produces the stored rows and the
 `live id → stored id` map together, because the map's entries are facts about the same lines:
-`pageCursorAliases` beside `pageItems` in `apps/tuval/src/pi/ai-agent/entries.ts`, `toHistoryItems`
+`pageCursorAliases` beside `pageItems` in `packages/tuval-pi/src/ai-agent/entries.ts`, `toHistoryItems`
 returning `{items, cursorAliases}` in `packages/tuval-claude/src/history/items.ts`, and
 `transcriptProjection` in `apps/tuval/src/agy/ai-agent/transcript.ts`.
 
@@ -64,7 +64,7 @@ answer two different questions:
 
 Neither module's own test can see the mismatch, and hand-numbered ids pass while the real thing fails
 — the whole of #8204. So the case builds the live tail through the live mapper and the page through
-the shipped composition: `apps/tuval/src/pi/ai-agent/paging-from-live.unit.test.ts` and
+the shipped composition: `packages/tuval-pi/src/ai-agent/paging-from-live.unit.test.ts` and
 `apps/tuval/src/agy/ai-agent/paging-from-live.unit.test.ts`. For a backend whose wire carries no
 schema, the fixture is a **paired capture** — the stream and the log of one real conversation, which
 is the only thing that can say what the numbering actually is

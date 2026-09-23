@@ -196,7 +196,7 @@ Each layer's own test proves it rather than a shared conformance suite, because 
 the wrap compiles clean:
 [`agent/phases.unit.test.ts`](../packages/tuval-claude/src/agent/phases.unit.test.ts),
 [`agent.unit.test.ts`](../packages/tuval-codex/src/agent.unit.test.ts) (`@kampus/tuval-codex`),
-[`pi/ai-agent/turn-end.unit.test.ts`](../apps/tuval/src/pi/ai-agent/turn-end.unit.test.ts),
+[`pi/ai-agent/turn-end.unit.test.ts`](../packages/tuval-pi/src/ai-agent/turn-end.unit.test.ts),
 [`agy/ai-agent/pays-the-turn-result.unit.test.ts`](../apps/tuval/src/agy/ai-agent/pays-the-turn-result.unit.test.ts)
 and [`ai-agent/service/ScriptedAiAgent.unit.test.ts`](../packages/tuval/src/ai-agent/service/ScriptedAiAgent.unit.test.ts).
 The fold's own cases are [`ai-agent/turn-result.unit.test.ts`](../packages/tuval/src/ai-agent/turn-result.unit.test.ts).
@@ -210,7 +210,7 @@ The fold's own cases are [`ai-agent/turn-result.unit.test.ts`](../packages/tuval
   `init` frame is not that frame: it leads a turn rather than closing one, and taking it for the
   turn-end phase was #7963. Copy its turn handling, not its `start`: that emits a layer `starting`
   the core drops on the floor, and its own comment beside the line says so.
-- [`pi/ai-agent/items.ts`](../apps/tuval/src/pi/ai-agent/items.ts) — `phaseOf` derives the pair from
+- [`pi/ai-agent/items.ts`](../packages/tuval-pi/src/ai-agent/items.ts) — `phaseOf` derives the pair from
   the backend's own session phase (`idle` → `ready`, anything else → `prompting`) and the fold
   emits it only on a change. A snapshot-pushing backend gets the contract for free this way; what
   it does not get for free is delivery, and a queue between the layer and the core that coalesces

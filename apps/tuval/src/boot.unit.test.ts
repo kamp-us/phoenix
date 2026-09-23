@@ -14,6 +14,7 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
+import {subagentExtensionPaths} from "@kampus/tuval-pi/server";
 import {sessionListProgram} from "@kampus/tuval-sdk/kernel/ai-agent/session-list";
 import {Features} from "@kampus/tuval-sdk/kernel/feature-flags";
 import {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
@@ -28,7 +29,6 @@ import {
 	projectConfig,
 	projectDir,
 } from "./boot.ts";
-import {subagentExtensionPaths} from "./pi/server/index.ts";
 import {shellSpells} from "./shell/commands/spells.ts";
 
 /** Every boot registers these, whatever the config declares; no fixture program declares a spell. */
@@ -526,7 +526,7 @@ describe("boot", () => {
  * is built the way `ai-agent/backends.ts` builds a backend's layer — under the boot's own kernel
  * context. What `PiAiAgent.layer` does with the record it gets there is `subagentExtensionPaths`,
  * and that its `R` is this service and nothing else is pinned in
- * `pi/ai-agent/boundary.unit.test.ts`.
+ * `@kampus/tuval-pi`'s `src/ai-agent/boundary.unit.test.ts`.
  */
 describe("the merged feature flags on the node side", () => {
 	class Probe extends Context.Service<Probe, {readonly features: TuvalFeatures}>()(

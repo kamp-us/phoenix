@@ -6,7 +6,7 @@
  * sibling". The other half is the textual scan, which is the only thing that catches an import
  * added later by a builder who never read this file.
  *
- * The scan matters more here than on `../../pi/window/`'s twin, because this leaf landed first in
+ * The scan matters more here than on `@kampus/tuval-pi`'s `src/window/` twin, because this leaf landed first in
  * epic #8162 and the wire decoder, the subprocess and the layer under `../` came after it. Naming
  * them forbidden here is what keeps them reaching into the mapper and never back into the window.
  */

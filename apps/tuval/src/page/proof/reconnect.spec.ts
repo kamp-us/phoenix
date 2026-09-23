@@ -19,7 +19,7 @@
  */
 
 import {expect, test} from "@playwright/test";
-import {PROMPT_2, REPLY_1, REPLY_2} from "../../pi/proof/names.ts";
+import {PROMPT_2, REPLY_1, REPLY_2} from "../../pi-desk/proof/names.ts";
 import {CONTROL_PORTS} from "./names.ts";
 
 interface ProofState {

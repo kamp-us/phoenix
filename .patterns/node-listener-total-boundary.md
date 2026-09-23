@@ -13,16 +13,16 @@ total, and the listener catches anyway.** In a local server that rule is a secur
 robustness nicety — a single unauthenticated request that reaches a throwing callee is a remote kill
 of the whole process, before any credential is checked.
 
-Where this lives today: [`apps/tuval/src/pi/server/`](../apps/tuval/src/pi/server/) —
-[`PiServerService.ts`](../apps/tuval/src/pi/server/PiServerService.ts)'s `upgrade` listener over
-[`handshake.ts`](../apps/tuval/src/pi/server/handshake.ts), and the same file's `ws.on("message", …)`
+Where this lives today: [`packages/tuval-pi/src/server/`](../packages/tuval-pi/src/server/) —
+[`PiServerService.ts`](../packages/tuval-pi/src/server/PiServerService.ts)'s `upgrade` listener over
+[`handshake.ts`](../packages/tuval-pi/src/server/handshake.ts), and the same file's `ws.on("message", …)`
 over `decodeFrame`.
 
 **It reaches `EventTarget` too, which is where the client side lives.** Node's global `WebSocket` is
 an `EventTarget`, not an `EventEmitter`, and a throw out of one of its listeners is the same
 `uncaughtException` ([Node.js, `events`, "`EventTarget` error handling"](https://nodejs.org/api/events.html#eventtarget-error-handling));
 a probe on Node 26.2.0 confirms it. So the dial side holds the rule as well —
-[`apps/tuval/src/pi/client/transport.ts`](../apps/tuval/src/pi/client/transport.ts)'s four
+[`packages/tuval-pi/src/client/transport.ts`](../packages/tuval-pi/src/client/transport.ts)'s four
 `addEventListener` bodies each compute a verdict and hand it to a handler, and none of them can
 throw: the inbound frame is checked for being binary rather than assumed, and the terminal path is a
 single `terminate` that is idempotent by a flag. There is no `catch` fence there because there is no
@@ -98,7 +98,7 @@ where there is no caller.
 Assert the property, not the instance. The unit test drives the decision function over a table of
 hostile headers and targets and asserts `doesNotThrow` for each, so a new throwing callee fails a
 test instead of a process
-([`handshake.unit.test.ts`](../apps/tuval/src/pi/server/handshake.unit.test.ts)). The server test
+([`handshake.unit.test.ts`](../packages/tuval-pi/src/server/handshake.unit.test.ts)). The server test
 then dials the real socket with the same input and asserts two things: the refusal status, and that
 the server greets a *second* dial — the second half is the one that proves the process survived
-([`server.unit.test.ts`](../apps/tuval/src/pi/server/server.unit.test.ts)).
+([`server.unit.test.ts`](../packages/tuval-pi/src/server/server.unit.test.ts)).

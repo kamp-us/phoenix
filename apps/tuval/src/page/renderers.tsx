@@ -29,6 +29,7 @@
 import features from "virtual:tuval/features";
 import {CLAUDE_CHAT_WINDOW_REF, claudeChatWindow} from "@kampus/tuval-claude/window";
 import {CODEX_CHAT_WINDOW_REF, codexChatWindow} from "@kampus/tuval-codex/window";
+import {PI_CHAT_WINDOW_REF, piChatWindow} from "@kampus/tuval-pi/window";
 import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/snapshot";
 import {isSessionListState} from "@kampus/tuval-sdk/kernel/ai-agent/renderer-ref";
 import type {WindowHost} from "@kampus/tuval-sdk/kernel/shell/window/index";
@@ -64,7 +65,6 @@ import {useCallback, useEffect, useRef, useState} from "react";
 import {AGY_CHAT_WINDOW_REF, agyChatWindow} from "../agy/window/index.ts";
 import {type CounterState, isCounterState} from "../demo/counter.ts";
 import {isLogState, type LogState} from "../demo/log.ts";
-import {PI_CHAT_WINDOW_REF, piChatWindow} from "../pi/window/index.ts";
 import type {PageAttachment} from "../shell/transport/browser.ts";
 import {Pending, type ReadableRenderer, readsState, useProcessState} from "./readable-state.tsx";
 

@@ -37,7 +37,7 @@
  * `status: "ERROR"` / `error: "interrupted"` — measured, and the whole point of
  * [#8694](https://github.com/kamp-us/phoenix/issues/8694) — so this wire does name the stop. It
  * projects onto the cut reply row carrying `interrupted: true` and no `failure` event at all, which
- * is the mark `pi/ai-agent/items.ts` makes of an `aborted` item and `@kampus/tuval-codex`'s `src/history.ts` of an
+ * is the mark `@kampus/tuval-pi`'s `src/ai-agent/items.ts` makes of an `aborted` item and `@kampus/tuval-codex`'s `src/history.ts` of an
  * `interrupted` turn. A row is minted even when the reply had no text yet, for the reason Pi keeps an
  * empty aborted reply: the mark needs a row to sit on.
  *
@@ -140,7 +140,7 @@ const spent = (tokens: Tokens): boolean => tokens.inputTokens > 0 || tokens.outp
  * repeats ([#8695](https://github.com/kamp-us/phoenix/issues/8695)). Keyed on the conversation plus
  * the step or the turn agy itself numbers, a report lands on the entry it already wrote whatever
  * process reads it, so the dedupe does the work and the carry needs no memory across a restore —
- * which is how `pi/ai-agent/items.ts` keys usage (on the backend's own item id).
+ * which is how `@kampus/tuval-pi`'s `src/ai-agent/items.ts` keys usage (on the backend's own item id).
  *
  * `step_index` is numbered per conversation and continues across a resume (measured: a resumed child
  * opened at `4` on a conversation that had reached `3`), and `result.num_turns` counts that

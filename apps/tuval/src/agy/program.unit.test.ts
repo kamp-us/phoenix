@@ -4,7 +4,7 @@
  * refuse before a session rather than after a silent auto-denial, and that no checkpoint field
  * could carry a credential.
  *
- * The layer under the row is `ScriptedAiAgent`, for the reason `../pi/program.unit.test.ts` gives:
+ * The layer under the row is `ScriptedAiAgent`, for the reason `@kampus/tuval-pi`'s `src/program.unit.test.ts` gives:
  * none of the row's declarations is agy's, and the `layer?` override is what lets them be checked
  * with no `agy` on `PATH`. The preflight is the exception and builds the real layer, because the
  * whole point of it is that it answers before the transport does. It is pointed at a temp `$HOME`

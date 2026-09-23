@@ -7,7 +7,7 @@
  * with a short label beside it, and the label is still the micro uppercase line the divider needs.
  *
  * What the label is *not* is the payload. Pi's compaction item carries the whole summary the model
- * wrote — a markdown document opening `## Goal …` (`apps/tuval/src/pi/wire/compaction.ts`, #8588) — and
+ * wrote — a markdown document opening `## Goal …` (`packages/tuval-pi/src/wire/compaction.ts`, #8588) — and
  * uppercasing that onto one nowrap line scrolled the transcript sideways for the rest of the
  * session (#8608). So the line beside the rule is a cut preview, and the document itself renders
  * opened as ordinary markdown, wrapping like any other row.

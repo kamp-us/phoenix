@@ -4,7 +4,7 @@
  *
  * Its own state is checkpointed like any process, so what it saw before a restart is still there
  * after it, and a proof reads the new arrivals as the tail past a mark it took. One copy, because
- * both restore proofs — the scripted one beside this file and the Pi one under `src/pi/restore/` —
+ * both restore proofs — the scripted one beside this file and the Pi one under `apps/tuval/src/pi-desk/restore/` —
  * need the same eight port keys wired the same way, and two copies would be two things to keep in
  * step.
  */
