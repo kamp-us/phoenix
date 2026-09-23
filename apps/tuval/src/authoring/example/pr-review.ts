@@ -31,10 +31,12 @@
  * and nothing in the layer can read it back. `spawned` is not — it is the layer's own event with a
  * fixed name, and `UpdateTable` types it like `key`.
  *
- * That call's one-word name is this budget's doing. A longer one pushes the single import line
- * below past the formatter's width, which costs eight wrapped lines and breaks the ceiling
- * `pr-review.unit.test.ts` asserts — so the name was picked here, against this number, and
- * `program`'s own docblock points back to this paragraph rather than restating it.
+ * That call's one-word name is this budget's doing, and so is the `biome-ignore format` on the
+ * import below. The `@kampus/tuval-sdk/authoring` specifier already puts that import past the
+ * formatter's width, and wrapped one name per line it costs nine lines and breaks the ceiling
+ * `pr-review.unit.test.ts` asserts (#9699). So the import stays one line, the name was picked
+ * against this number, and `program`'s own docblock points back to this paragraph rather than
+ * restating it.
  *
  * The one command is `send("pr", pr)`: a bare port name, which means an in-port of *this* program's
  * own process, looked up against this program's live processes at the call (`../own-process.ts`).
@@ -55,16 +57,8 @@
 
 import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {Reply, ShapeSource} from "@kampus/tuval-sdk/authoring";
-import {
-	defineProgram,
-	emit,
-	Program,
-	port,
-	program,
-	programArgs,
-	send,
-	spawn,
-} from "@kampus/tuval-sdk/authoring";
+// biome-ignore format: wrapped, this import costs nine lines of the budget below (#9699)
+import {defineProgram, emit, Program, port, program, programArgs, send, spawn} from "@kampus/tuval-sdk/authoring";
 import {Schema} from "effect";
 
 const agent = Program.shape({in: {prompt: PromptPayloadSchema}, out: {result: TurnResultSchema}});

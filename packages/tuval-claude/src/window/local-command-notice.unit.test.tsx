@@ -4,11 +4,11 @@
  * The renderer half of #8211: a slash command's output reads as a session notice, never as a YOU
  * turn showing its own wrapper.
  *
- * The rows come off the real Claude mapper over the captured frames (`claude/history/fixtures`), so
- * this case and the mapper's own move together — a renderer case fed a hand-made item would still
- * pass with the mapping put back the way it was. The capture is driven through the boundary by
- * `fixtures/events.ts` and handed back as `AgentEvent`s, so this file names no SDK type: the Agent
- * SDK stops at `src/claude/`, and that rule exempts nothing (#9530).
+ * The rows come off the real Claude mapper over the captured frames (`../history/fixtures`), so this
+ * case and the mapper's own move together — a renderer case fed a hand-made item would still pass
+ * with the mapping put back the way it was. `../history/fixtures/events.ts` drives the capture and
+ * hands it back as `AgentEvent`s, so this file names no SDK type and reads only what a renderer is
+ * handed (#9530).
  */
 
 import type {TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";

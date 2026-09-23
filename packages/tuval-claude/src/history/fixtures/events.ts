@@ -1,11 +1,9 @@
 /**
  * A captured fixture as the agent events it maps to, frame by frame.
  *
- * The Agent SDK's surface stops at `src/claude/` (`../../agent/boundary.unit.test.ts`), and
- * `loadFixture` returns `unknown` — so a test outside this directory that wanted to drive a capture
- * through `toAgentEvents` had to name `SDKMessage` to bridge the two. That is the boundary breach
- * this file exists to remove: it does the naming here, once, and hands back `AgentEvent`s, which
- * every layer of the app already speaks.
+ * `loadFixture` returns `unknown`, so a test driving a capture through `toAgentEvents` would have
+ * to name `SDKMessage` to bridge the two. This file does that naming once and hands back
+ * `AgentEvent`s, the generic vocabulary a renderer or kernel test already speaks.
  */
 
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";

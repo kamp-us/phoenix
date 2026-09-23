@@ -1,6 +1,6 @@
 /**
  * `ClaudeAiAgent` — the `TuvalAiAgent` layer over `@anthropic-ai/claude-agent-sdk`. The SDK's
- * `query` / `Query` / `SDKMessage` surface stops at this directory; everything this hands a caller
+ * `query` / `Query` / `SDKMessage` surface stops at this layer; everything this hands a caller
  * is a generic event or a port value.
  *
  * The layer is the subprocess's lifetime (founder ruling 4, #7570). Building it stands up the

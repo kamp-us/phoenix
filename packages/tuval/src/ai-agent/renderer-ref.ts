@@ -2,9 +2,10 @@
  * The session-list row's renderer reference and the predicate over its state, as a leaf both ends
  * can import.
  *
- * Same split as `../pi/renderer-ref.ts` and `../claude/renderer-ref.ts`, for the same reason: the
- * row is kernel-side and reaches every backend's session store, the renderer is browser-side and
- * must reach none of it, so the one name they share lives alone in a file that imports one type.
+ * Same split as `apps/tuval/src/pi/renderer-ref.ts` and `@kampus/tuval-claude`'s
+ * `src/renderer-ref.ts`, for the same reason: the row is kernel-side and reaches every backend's
+ * session store, the renderer is browser-side and must reach none of it, so the one name they share
+ * lives alone in a file that imports one type.
  *
  * It sits here rather than inside `./window/`, because the strict lens must list every file it
  * compiles: `./window/` is excluded from it whole (it imports `@kampus/design`, which needs the

@@ -62,9 +62,10 @@ export interface QueryRecord {
 /**
  * One row of the catalog a scripted run advertises.
  *
- * Declared here rather than handed out as the SDK's `ModelInfo`: the Agent SDK's surface stops at
- * `src/claude/` (`../boundary.unit.test.ts`), so a test outside this directory scripting a catalog
- * needs a row type it is allowed to name (#9530). `supportedModels` below answers with these rows
+ * Declared here rather than handed out as the SDK's `ModelInfo`: this module is also the
+ * `./testing/scripted-query` door, and the desk app names no `@anthropic-ai/` specifier
+ * (`apps/tuval/src/claude-desk/agent-sdk.unit.test.ts`), so a desk test scripting a catalog needs a
+ * row type it is allowed to name (#9530, #9655). `supportedModels` below answers with these rows
  * under the SDK's own return type, which is the pin — a field the SDK makes required reds there
  * rather than drifting quietly.
  */

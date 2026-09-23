@@ -15,8 +15,8 @@ import type {SpawnClaudeCodeProcess} from "../subprocess.ts";
 import {type ScriptedBehaviour, type ScriptedSdk, scriptedSdk} from "./scripted-query.ts";
 
 /**
- * Re-exported beside `on`: a test scripting a catalog reaches this module for the run, and outside
- * `src/claude/` it may not name the SDK row type these stand in for (#9530).
+ * Re-exported beside `on`, so a test scripting a catalog takes the run and the row type from one
+ * module (#9530).
  */
 export type {ScriptedModel} from "./scripted-query.ts";
 
