@@ -2,7 +2,7 @@
  * `AgyAiAgent` — the `TuvalAiAgent` layer over the `agy` CLI. **A subprocess with a pipe**, and
  * deliberately none of Pi's `client/` + `server/` loopback RPC: this row follows `@kampus/tuval-pi`'s shape
  * and not `@kampus/tuval-claude`'s, so there is no `tools/`, no `KernelBridge`, no `SpellBridge`, no `scope`
- * option and no permission card anywhere under `src/agy/` (#8162).
+ * option and no permission card anywhere in `@kampus/tuval-agy` (#8162).
  *
  * The layer is the transport's lifetime (founder ruling 4, #7570). `R` is empty and `E` is `never`:
  * a process hands `AgyAiAgent.layer(options)` to `aiAgentProgram` and holds no agy value of its
@@ -696,7 +696,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 		 * that is there with no log yet is an empty conversation — a page — because agy writes the
 		 * log as the turns run; a directory that is nowhere is a conversation this store does not
 		 * hold; and a `$HOME` that would not answer at all is neither, and must not be spelled as
-		 * either (`../../ai-agent/service/errors.ts`).
+		 * either (`@kampus/tuval-sdk`'s `src/ai-agent/service/errors.ts`).
 		 */
 		const sessionTranscript = Effect.fn("TuvalAiAgent.sessionTranscript")(function* (
 			query: TranscriptQuery,
@@ -742,8 +742,8 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			sessionTranscript,
 			/**
 			 * `unsupported` rather than `[]`, which is the distinction the reason exists for
-			 * (`../../ai-agent/service/errors.ts`): agy's conversation store is not readable from
-			 * here at this pin — nothing in `agy`'s headless surface enumerates conversations — so
+			 * (`@kampus/tuval-sdk`'s `src/ai-agent/service/errors.ts`): agy's conversation store is
+			 * not readable from here at this pin — nothing in `agy`'s headless surface enumerates conversations — so
 			 * this backend has not looked, and must not tell the operator he has no agy sessions.
 			 */
 			listSessions: Effect.fail(

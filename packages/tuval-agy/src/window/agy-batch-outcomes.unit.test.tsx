@@ -4,7 +4,7 @@
  * The pixel half of #8689: both calls of an agy batch show *their own* outcome on screen.
  *
  * The rows come off the real agy transcript reader over the driven v1.1.28 capture
- * (`agy/ai-agent/fixtures/multi-call-transcript.jsonl`), not out of `chat.testing.ts` — a renderer
+ * (`../ai-agent/fixtures/multi-call-transcript.jsonl`), not out of `chat.testing.ts` — a renderer
  * case fed hand-made items would still pass with the pairing put back the way it was, and the
  * previous round's unit cases asserted on `item.text`, which is exactly the layer that cannot see
  * whether a reader ever reaches the screen. It lives beside agy's window rather than beside the chat

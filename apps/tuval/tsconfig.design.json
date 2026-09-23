@@ -18,7 +18,6 @@
 	"include": [
 		"src/chat",
 		"src/pi-desk/window-proof",
-		"src/agy/window",
 		"src/page/main.tsx",
 		"src/page/boot.tsx",
 		"src/page/AttachedDesk.tsx",
@@ -31,8 +30,6 @@
 		"src/claude-desk/proof/subagent-vertical.integration.test.ts",
 		"src/claude-desk/renderer-table.unit.test.tsx",
 		"src/ai-agent/restore/refill.unit.test.ts",
-		"src/ai-agent/restore/interrupted-mark.unit.test.tsx",
-		"src/agy/ai-agent/paging-from-live.unit.test.ts",
 		"src/page/assets.d.ts"
 	],
 	// `exclude` is inherited, and the base excludes exactly this directory.

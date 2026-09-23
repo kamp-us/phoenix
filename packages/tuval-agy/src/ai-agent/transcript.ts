@@ -102,8 +102,8 @@ const millisOf = (timestamp: string): number => {
  * the step number agy streams (`${conversation_id}:${step_index}` in `mapper.ts`) and this reader
  * keys it on the line's file position, so both would render `cid:<n>` over different numbers. The
  * shared pager gives an exact stored-id hit precedence over an alias
- * (`../../ai-agent/history/page.ts`), so under one shape a live step number that happened to equal
- * an unrelated line's ordinal would resolve to the wrong row with no refusal — a silently wrong page
+ * (`@kampus/tuval-sdk`'s `src/ai-agent/history/page.ts`), so under one shape a live step number
+ * that happened to equal an unrelated line's ordinal would resolve to the wrong row with no refusal — a silently wrong page
  * in place of a loud one (#8900). `line` is what makes the two spaces disjoint by construction:
  * nothing agy streams is ever shaped `cid:line:<n>`, so the precedence can never fire on a live
  * cursor and the alias below is the only thing that resolves one.

@@ -108,9 +108,9 @@ const reanchored = (state: AiAgentSessionState, item: TranscriptItem): ItemId | 
  * The cut-reply record after one item folded: a layer's marked reply is named in it from here on.
  *
  * Every backend marks the cut reply on the row itself — agy off the terminal `result`'s
- * `error: "interrupted"` (`../../agy/ai-agent/mapper.ts`), the Claude layer off `aborted`, Pi off an
- * `aborted` status, Codex off an `interrupted` turn — so this one arm catches all four, and a fifth
- * needs nothing added here. The record is what survives the tail the row does not (#8985).
+ * `error: "interrupted"` (`@kampus/tuval-agy`'s `src/ai-agent/mapper.ts`), the Claude layer off
+ * `aborted`, Pi off an `aborted` status, Codex off an `interrupted` turn — so this one arm catches
+ * all four, and a fifth needs nothing added here. The record is what survives the tail the row does not (#8985).
  */
 const cutRepliesAfter = (
 	state: AiAgentSessionState,

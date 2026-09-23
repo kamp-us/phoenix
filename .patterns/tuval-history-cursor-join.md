@@ -19,7 +19,7 @@ one: the window keeps sending the live id it has, and `before: null` is not a fi
 `live id → stored id` map together, because the map's entries are facts about the same lines:
 `pageCursorAliases` beside `pageItems` in `packages/tuval-pi/src/ai-agent/entries.ts`, `toHistoryItems`
 returning `{items, cursorAliases}` in `packages/tuval-claude/src/history/items.ts`, and
-`transcriptProjection` in `apps/tuval/src/agy/ai-agent/transcript.ts`.
+`transcriptProjection` in `packages/tuval-agy/src/ai-agent/transcript.ts`.
 
 **2. Compose the page in one function the call sites cannot step around.** `cursorAliases` and
 `cursorBoundary` are `PageOptions` fields (`apps/tuval/src/ai-agent/history/page.ts`), and a call site
@@ -65,7 +65,7 @@ answer two different questions:
 Neither module's own test can see the mismatch, and hand-numbered ids pass while the real thing fails
 — the whole of #8204. So the case builds the live tail through the live mapper and the page through
 the shipped composition: `packages/tuval-pi/src/ai-agent/paging-from-live.unit.test.ts` and
-`apps/tuval/src/agy/ai-agent/paging-from-live.unit.test.ts`. For a backend whose wire carries no
+`packages/tuval-agy/src/ai-agent/paging-from-live.unit.test.ts`. For a backend whose wire carries no
 schema, the fixture is a **paired capture** — the stream and the log of one real conversation, which
 is the only thing that can say what the numbering actually is
-(`apps/tuval/src/agy/ai-agent/fixtures/live-join-*`).
+(`packages/tuval-agy/src/ai-agent/fixtures/live-join-*`).

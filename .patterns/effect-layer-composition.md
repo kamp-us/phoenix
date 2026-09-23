@@ -118,7 +118,7 @@ wrapper spreads `...inner` so an eleventh member added later is carried without 
 
 Reach for this when the guard belongs to *this composition* rather than to the implementation — the
 `agy-session` row checks a launch precondition of the founder's desk, which is not a property of the
-`agy` transport ([`apps/tuval/src/agy/preflight.ts`](../apps/tuval/src/agy/preflight.ts)). When the
+`agy` transport ([`packages/tuval-agy/src/preflight.ts`](../packages/tuval-agy/src/preflight.ts)). When the
 check is a property of the implementation, put it in the implementation.
 
 ## One worker-level `ManagedRuntime`, built from the worker layer set — init-only

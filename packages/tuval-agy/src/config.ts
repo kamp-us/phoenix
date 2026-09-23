@@ -1,6 +1,6 @@
 /**
- * The agy launch surface: the binary, the Go-style flag set, the version everything under
- * `src/agy/` was measured against, the `$HOME`-relative vendor paths, the model catalog, and the
+ * The agy launch surface: the binary, the Go-style flag set, the version everything in
+ * this package was measured against, the `$HOME`-relative vendor paths, the model catalog, and the
  * options a process fills in.
  *
  * **Constants and a type, and deliberately nothing else.** `@kampus/tuval-pi` carries no `config.ts` at all
@@ -16,7 +16,7 @@ import type {ModelRef} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {Duration} from "effect";
 
 /**
- * The supported floor, and the release every shape under `src/agy/` was captured from. Re-exported
+ * The supported floor, and the release every shape in this package was captured from. Re-exported
  * rather than restated: the wire reader owns the one pin, and a second literal here is a second
  * thing to update. `./preflight.ts` refuses a launch below it.
  */

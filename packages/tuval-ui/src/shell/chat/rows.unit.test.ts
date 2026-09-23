@@ -1109,8 +1109,8 @@ describe("chatRows folds a settled turn", () => {
 	 * The record it is re-marked from is the session's own `cutReplies` (`ai-agent/core/state.ts`).
 	 *
 	 * The page is keyed the way a real agy page is: `<cid>:line:<n>` with the live id in `alias`
-	 * (`agy/ai-agent/transcript.ts`, and derived from the captured v1.2.0 log in
-	 * `agy/ai-agent/paging-from-live.unit.test.ts`), and the record names the *live* id — because a
+	 * (`@kampus/tuval-agy`'s `src/ai-agent/transcript.ts`, derived from the captured v1.2.0 log in
+	 * `src/ai-agent/paging-from-live.unit.test.ts`), and the record names the *live* id — because a
 	 * fixture giving the store's copy the live row's own id passed while every real desk still read
 	 * `Worked for …` (#9046).
 	 */

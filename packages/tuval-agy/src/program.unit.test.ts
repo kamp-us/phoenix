@@ -10,7 +10,8 @@
  * whole point of it is that it answers before the transport does. It is pointed at a temp `$HOME`
  * and at a four-line `sh` stub that answers `--version` and refuses every other argv, so no agy is
  * needed on `PATH` and no session is ever opened. The subprocess itself is proven in
- * `ai-agent/agy-ai-agent.integration.test.ts` against a scripted stand-in.
+ * `ai-agent/agy-ai-agent.integration.test.ts` against a scripted stand-in, and the case that needs
+ * the desk's picker lives beside the desk (`apps/tuval/src/agy-desk/`).
  */
 
 import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from "node:fs";
@@ -32,7 +33,6 @@ import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Fiber, Layer, Option, Stream} from "effect";
 import {afterAll, expect} from "vitest";
-import {programEntries, showsInAWindow} from "../shell/picker/entries.ts";
 import {AGY_SETTINGS_FILE, AGY_VERSION} from "./config.ts";
 import {
 	type AgyVersionVerdict,
@@ -93,16 +93,6 @@ describe("the agy-session program row", () => {
 			"a row declaring no inspector leaves the desk with nothing to paint for an agy session",
 		);
 		assert.isFunction(declared.resume, "a restored agy session has no way back without a resume");
-	});
-
-	it("shows in the picker, which is what declaring a renderer buys the row", () => {
-		const declared = row(tempProject());
-		assert.isTrue(showsInAWindow(declared));
-		assert.deepStrictEqual(
-			programEntries([declared]).map((entry) => entry.programId),
-			[ProgramId.make(AGY_SESSION_PROGRAM)],
-			"a row the picker leaves out is a program nobody can open a window on",
-		);
 	});
 
 	it.effect("spawns through the registry and opens its session in the project root", () =>
