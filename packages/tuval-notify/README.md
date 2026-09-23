@@ -178,8 +178,8 @@ is the worst of both. So `message` takes a `TurnResult` and nothing else, and no
 either side of the route.
 
 **What is left is the kind.** An authored port's `kind` carries its own program's id, and a route
-requires the two ends' kinds to be **identical** — `apps/tuval/src/authoring/port.ts`'s
-`portKind = (program, name) => \`${program}/${name}\`` against `apps/tuval/src/ports/compile.ts`'s
+requires the two ends' kinds to be **identical** — the SDK's `packages/tuval/src/authoring/port.ts`'s
+`portKind = (program, name) => \`${program}/${name}\`` against `packages/tuval/src/ports/compile.ts`'s
 `if (source.kind !== target.kind) …IncompatibleRoute`. So `morning-brief/brief` cannot reach
 `notify/message` whatever the payloads say — this is kamp-us/phoenix
 [#8923](https://github.com/kamp-us/phoenix/issues/8923), `p1`, answered by PR

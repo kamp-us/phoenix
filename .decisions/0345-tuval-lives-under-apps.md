@@ -1,7 +1,7 @@
 ---
 id: 0345
 title: Tuval lives at `apps/tuval` as a runnable local app, never as a shared package or a second repo
-status: accepted
+status: amended-in-part by [0407](0407-apps-are-never-imported.md)
 date: 2026-09-03
 tags: [repo-shape, tuval, apps]
 ---

@@ -133,7 +133,7 @@ and nothing else.
 
 v4 has no `autoSaveId`; persistence is opt-in through `useDefaultLayout`, which reads and writes
 `localStorage` under a `react-resizable-panels:<id>` key. Tuval's desk is checkpointed by the kernel
-(`apps/tuval/src/durability/`) and every tab renders that one desk, so a per-browser copy of the
+(the SDK's `packages/tuval/src/durability/`) and every tab renders that one desk, so a per-browser copy of the
 layout is a second source of truth that would fight the first on the next reload.
 
 The surface never calls that hook, and `layout.unit.test.tsx` asserts `localStorage` is untouched

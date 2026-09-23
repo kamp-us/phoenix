@@ -18,7 +18,7 @@ the store's did not; nothing reconciled them, and nothing red.
 
 **1. Record the fact beside the transcript, not only on the row.** The row is disposable; the record
 is checkpointed. `cutReplies` is a field on `AiAgentSessionState`
-(`apps/tuval/src/ai-agent/core/state.ts`) named in `checkpointFields`, holding the ids of every
+(`packages/tuval/src/ai-agent/core/state.ts`) named in `checkpointFields`, holding the ids of every
 assistant row this session cut.
 
 **2. Bound it, and state the bound where it is declared.** A checkpointed collection that only grows
@@ -26,7 +26,7 @@ pays storage per session forever. `cutReplyLimit` drops the oldest, and the docb
 sized against — what a window can page back to, not how often the operator presses Escape.
 
 **3. Fill it at the one place the fact is observed.** Every backend marks its own cut reply on the
-item it emits, so `foldEvent`'s `item` arm (`apps/tuval/src/ai-agent/core/fold.ts`) catches all of
+item it emits, so `foldEvent`'s `item` arm (`packages/tuval/src/ai-agent/core/fold.ts`) catches all of
 them and a fifth layer needs nothing added. `restore` (`state.ts`) adds the reply a checkpoint at
 `prompting` cut, which no event will ever report.
 
@@ -36,8 +36,8 @@ author happened to open. There are three today, and one function serves all thre
 
 | Entrance | Call |
 | --- | --- |
-| A resume's refill over the store's whole history | `refillTranscript`'s `cut` operand (`apps/tuval/src/ai-agent/core/fold.ts`) |
-| A checkpoint read back | `restore` (`apps/tuval/src/ai-agent/core/state.ts`) |
+| A resume's refill over the store's whole history | `refillTranscript`'s `cut` operand (`packages/tuval/src/ai-agent/core/fold.ts`) |
+| A checkpoint read back | `restore` (`packages/tuval/src/ai-agent/core/state.ts`) |
 | The window's own `Load earlier messages` | `remarkCutReplies` before `mergeOlder` (`packages/tuval-ui/src/shell/chat/ChatWindow.tsx`) |
 
 `remarkCutReplies` is total and idempotent, so an entrance that is already correct is unchanged by
@@ -46,7 +46,7 @@ calling it, and an empty record is a no-op.
 **4a. Join on the row's *whole* identity, because the record's ids are the live ones.** The fact is
 observed on the row the layer streams, so the record holds live ids — and a backend that keys its
 history in a second id space states the live id in the row's `alias`
-(`apps/tuval/src/ai-agent/ports/transcript-item.ts`), never in its `id`. A re-mark reading `id` alone
+(`packages/tuval/src/ai-agent/ports/transcript-item.ts`), never in its `id`. A re-mark reading `id` alone
 therefore marks nothing at all on such a backend: agy's stored rows are `<cid>:line:<n>` against a
 live `<cid>:<n>`, so every paged row missed and the cut turn came back reading "Worked for …"
 ([#9046](https://github.com/kamp-us/phoenix/issues/9046)). `remarkCutReplies` reads `id` **or**

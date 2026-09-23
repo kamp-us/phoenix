@@ -33,7 +33,7 @@ pnpm deploy       # vite build + alchemy deploy (use --stage <name> for isolatio
 
 ## Architecture
 
-phoenix is a pnpm monorepo with one runnable app per directory under `apps/` (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)). There are two today: `apps/web`, the Cloudflare Worker, and `apps/tuval`, a local app that carries no `alchemy.run.ts` and never deploys. The docs live alongside the code: `.decisions/` for the *why*, `.patterns/` for the *how*.
+phoenix is a pnpm monorepo with one runnable app per directory under `apps/` (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)). There are two today: `apps/web`, the Cloudflare Worker, and `apps/tuval`, a local app that carries no `alchemy.run.ts` and never deploys. An app is never imported: code another package needs ships as a package under `packages/`, and apps take `@kampus-apps/*` names (ADR [0407](./.decisions/0407-apps-are-never-imported.md)). The docs live alongside the code: `.decisions/` for the *why*, `.patterns/` for the *how*.
 
 One worker serves the React SPA (built to `dist/client`, served via the `assets` binding) and the API. It keeps precedence on its own paths — `/api/*`, `/fate`, `/fate/*` — and hands everything else to the SPA. The backend is one Effect program: it declares its bindings, hosts the Durable Object, and returns a `fetch` handler.
 
@@ -77,28 +77,32 @@ apps/web/
 
 **The live plane.** A single Durable Object, `LiveDO`, fans out SSE. One class plays both roles — it holds a tab's stream (`connection:<id>`) and owns a data key's subscriber registry and fan-out (`topic:<key>`), told apart by instance-name prefix. It reaches its sibling instances through its own namespace, resolved once at init, so every RPC method stays requirement-free. State is `state.storage` KV: subscriber rows plus a per-connection counter that invalidates dead instances. Mutations reach the DO through the per-request `LivePublisher` service, whose publish methods are `Effect<void>` — a failed publish cannot fail the committed mutation. Read [.patterns/effect-sse-externally-driven.md](./.patterns/effect-sse-externally-driven.md); ADRs [0037](./.decisions/0037-unified-void-aligned-live-do.md) (the DO) and [0039](./.decisions/0039-livebus-context-service.md) (the publish-capability service, since folded into `LivePublisher`) are the design.
 
-**The second app is local.** `apps/tuval` is a Node app you run on your machine: the program/process kernel and the programs that ship in the box. It has no `alchemy.run.ts`, no bindings and no deploy, and that missing stack is the marker that it never ships to Cloudflare (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)).
+**The second app is local.** `apps/tuval` (`@kampus-apps/tuval`) is the Tuval desk, a Node app you run on your machine: the shell, the page and the programs that ship in the box. It has no `alchemy.run.ts`, no bindings and no deploy, and that missing stack is the marker that it never ships to Cloudflare (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)). The kernel it runs on and the program-author API are the Tuval SDK in `packages/tuval`, the chat UI is `packages/tuval-ui`, and each AI harness is its own package. The desk uses all of them through their public exports only (ADR [0407](./.decisions/0407-apps-are-never-imported.md)).
 
 ```
-apps/tuval/
+apps/tuval/                # @kampus-apps/tuval — the desk; imported by nothing
 ├── src/
 │   ├── bin.ts             # entry: the local process the app's `dev` script runs
 │   ├── boot.ts            # boots a configured graph of programs
-│   ├── config.ts          # the graph config the kernel reads
-│   ├── host/              # the program/process kernel: actors, definitions, errors
-│   ├── registry/          # the program registry
-│   ├── commands/          # the spell registry, executor, parser, key bindings, agent bridge
-│   ├── protocol/          # the versioned page-to-kernel wire: messages, codec, patch
-│   ├── process/           # the running-process side of the table
+│   ├── config.ts          # loads and merges the global and project config layers
+│   ├── launch/            # launching a compiled graph into processes
 │   ├── table/             # the process-table port
-│   ├── ports/             # typed inter-program wiring: compile + open
-│   ├── launch/            # launching a program into a process
-│   ├── durability/        # saving and restoring process state
-│   ├── ai-agent/          # the backend-blind AI agent slice: core machine, ports, handlers, history
-│   ├── pi/                # the Pi backend: loopback server, lease client, the `TuvalAiAgent` layer
-│   ├── claude/            # the Claude backend: the Agent SDK layer, SDK-message mapping, the generic kernel tools
-│   └── demo/              # the programs that ship in the box
+│   ├── shell/             # the shell program: layout, core machine, picker, transport, host
+│   ├── page/              # the browser desk the page serves
+│   ├── palette/           # the command palette
+│   ├── pi-desk/ claude-desk/ codex-desk/ agy-desk/   # desk-level proofs per harness
+│   └── demo/              # the demo programs that ship in the box
 └── vitest.config.ts       # two projects, `unit` and `integration`; the repo-wide unit gate resolves here
+
+packages/tuval/            # @kampus/tuval-sdk — the Tuval SDK, published to npm
+└── src/
+    ├── authoring/         # the program-author API (`./authoring`, `./window`)
+    ├── config.ts          # `TuvalConfigInput` (`./config`)
+    ├── ai-agent/          # the backend-blind AI agent runtime; `ports/` is `./ai-agent/ports`
+    └── host/ registry/ process/ ports/ durability/ commands/ protocol/   # the kernel (`./kernel/*`, unstable)
+
+packages/tuval-ui/         # @kampus/tuval-ui — the desk chat UI and shared agent window
+packages/tuval-claude/ tuval-codex/ tuval-pi/ tuval-agy/   # one harness package per AI backend
 ```
 
 ## Commands

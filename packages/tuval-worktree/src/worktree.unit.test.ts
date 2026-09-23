@@ -70,7 +70,7 @@ type Authored = ReturnType<typeof worktreeProgram>;
  * The same record with its `update` narrowed back to the six kernel effects.
  *
  * `testProgram` is typed at `AuthoredProgram<S, D, U, C>` — four arguments, so the author's
- * own effect type sits on its `never` default (`apps/tuval/src/authoring/test-program.ts`) — and a
+ * own effect type sits on its `never` default (`@kampus/tuval-sdk`'s `authoring/test-program.ts`) — and a
  * program that answers an effect of its own therefore does not fit its signature, though the run
  * itself is entirely agnostic: it puts whatever a cell answered into `effects` and reads none of
  * it. This is that gap, in one place. Every other type survives the cast, so `.send`'s port names,
@@ -396,7 +396,7 @@ describe("provisioned, and the agent inside", () => {
 	});
 
 	it("attributes nothing when two agents are up, because a reply carries no sender", () => {
-		// phoenix#9287's sibling gap: `Reply` is `{type, payload}` (authoring/effect.ts:179-182), so
+		// phoenix#9287's sibling gap: `Reply` is `{type, payload}` (the SDK's authoring/effect.ts), so
 		// with B answering there is nothing in the event that distinguishes it from A. The old code
 		// took the first worktree holding an agent, which put B's reply on A's row.
 		const two = drive(withJob())

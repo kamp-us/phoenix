@@ -1,7 +1,8 @@
 # Effects on a Tuval program row
 
 How a Tuval program does work that needs a service, and how it holds a resource for as long as its
-process lives. Everything here is `apps/tuval/src/`; the row type is
+process lives. The kernel half is the Tuval SDK's `packages/tuval/src/` and the desk half is
+`apps/tuval/src/`; the row type is
 [`registry/program.ts`](../packages/tuval/src/registry/program.ts) and the runner is
 [`process/Processes.ts`](../packages/tuval/src/process/Processes.ts).
 

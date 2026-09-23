@@ -126,7 +126,7 @@ export const REFUSAL_TEXT: Readonly<Record<RefusalReason, string>> = {
 
 /**
  * A finished turn nobody could be told apart. Tuval's `Reply` is `{type, payload}` and carries no
- * process id (`apps/tuval/src/authoring/effect.ts:179-182`), so with two agents up there is no way
+ * process id (`Reply` in `@kampus/tuval-sdk`'s `authoring/effect.ts`), so with two agents up there is no way
  * to say whose reply this is — and guessing puts B's answer on A's row. It is kept here instead,
  * off every worktree, which is the honest place for a fact that belongs to no row.
  *

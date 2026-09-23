@@ -159,7 +159,7 @@ refusals rather than a log. A refusal that moved no state was a button that did 
 
 A turn result is attributed to a worktree **only when exactly one agent is running.** Tuval's
 `Reply` is `{type, payload}` and carries no process id
-(`apps/tuval/src/authoring/effect.ts:179-182`), so with two agents up there is nothing in the event
+(`Reply` in the SDK's `packages/tuval/src/authoring/effect.ts`), so with two agents up there is nothing in the event
 that says which one answered — and the honest answer to that is not a guess. With more than one
 running (or with none), the result goes to an `unattributed` list that belongs to no worktree, the
 status line says how many are there, and the window shows them with the reason.
@@ -178,16 +178,17 @@ kernel gap, not a shortcut taken here, and it is filed as
 What the kernel says, read at the current checkout:
 
 - `spawn(program, {on})` carries a program id and an out-port routing table and nothing else —
-  `apps/tuval/src/authoring/effect.ts:111-118`. `SpawnEffect` is `{type, program, on}`; there is no
+  `SpawnEffect` in the SDK's `packages/tuval/src/authoring/effect.ts`. It is `{type, program, on}`; there is no
   slot for arguments.
 - `cwd` is baked onto the registry row at config time: `claudeSession({cwd})` →
-  `packages/tuval-claude/src/program.ts:115` → `src/ai-agent/core/machine.ts:187` →
-  `packages/tuval-claude/src/agent/options.ts:135`, which is the SDK option the CLI launches under. It never
-  changes live (`packages/tuval-claude/src/program.ts:134`).
-- `claude-session`'s id is a constant (`packages/tuval-claude/src/renderer-ref.ts:12`) and a duplicate id fails the
+  the row's `cwd` in `packages/tuval-claude/src/program.ts` → the session core's `init` in the
+  SDK's `packages/tuval/src/ai-agent/core/machine.ts` → the `cwd` that `queryOptionsOf` puts on
+  the Agent SDK options in `packages/tuval-claude/src/agent/options.ts`, which the CLI launches
+  under. It never changes live (the hot-reload docblock in `packages/tuval-claude/src/program.ts`).
+- `claude-session`'s id is a constant (`CLAUDE_SESSION_PROGRAM` in `packages/tuval-claude/src/renderer-ref.ts`) and a duplicate id fails the
   registry layer, so "one row per cwd" is not available either. Rows are boot-time only.
 - `PromptPayloadSchema` is `{text, key, timestamp}` — no `cwd` field, so the prompt cannot carry one.
-- The one per-spawn cwd mechanism, `SessionOpening` (`src/ai-agent/opening.ts:17-25`), is produced
+- The one per-spawn cwd mechanism, `SessionOpening` (the SDK's `packages/tuval/src/ai-agent/opening.ts`), is produced
   by the shell picker and read by the `aiAgent.boot` handler; nothing an authored program can reach
   produces it, and its own docblock rules out growing `Processes.spawn` into a program-arguments
   system.
@@ -393,7 +394,7 @@ hand. That closes by construction the one race the Sub had: there is no window b
 record does not exist any more.
 
 **`Machine` is provided inside the handler, and it has to be.** A handler resolves exactly the
-services the *spawner* granted its process, sealed (`apps/tuval/src/process/Processes.ts`), and a
+services the *spawner* granted its process, sealed (the SDK's `packages/tuval/src/process/Processes.ts`), and a
 handler added by spread is not even arg-bound — so there is nowhere else to ask. Providing
 `machineLayer(settled.runner)` at the row-building site is not a convenience: it is the only place
 that knows which `Runner` this row was configured with, and it is what lets a test hand
@@ -410,7 +411,7 @@ kernel wrote. It is the only place that check can be made.
 is a session writing into a directory being deleted, so the `stop` has to come first — but
 `[stop(agent), teardownEffect(…)]` is not "first", it is "and only if the first one worked". The
 actor runs a cell's effects serially and a failing handler short-circuits the rest
-(`apps/tuval/src/host/actor.ts`), and `Processes.stop` fails `ProcessNotFound` on a process already
+(the SDK's `packages/tuval/src/host/actor.ts`), and `Processes.stop` fails `ProcessNotFound` on a process already
 gone. So an agent that crashed a moment before its `stopped` landed would cancel its own worktree's
 removal, leave `pending` set, and get every later spell refused "busy" until restart.
 
