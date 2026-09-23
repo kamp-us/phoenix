@@ -105,7 +105,7 @@ const UI_CONFIG = {
  * (one WIP), `review` (WIP then DONE), `review:ui` — the same path with `ui` standing from the
  * `WIP`, so the `PASS` out of `review` took the class-guarded arm — or the `blocked` park.
  */
-const laneAt = (state: "queued" | "build" | "review" | "review:ui" | "blocked") =>
+const laneAt = (state: "queued" | "build" | "build:ui" | "review" | "review:ui" | "blocked") =>
 	fakeFs({
 		files: {
 			...UI_CONFIG,
@@ -117,9 +117,12 @@ const laneAt = (state: "queued" | "build" | "review" | "review:ui" | "blocked") 
 const WIP_LINE = logLine("WIP", "2026-08-16T01:00:00Z");
 const DONE_LINE = logLine("DONE", "2026-08-16T02:00:00Z");
 
-const LOGS: Readonly<Record<"queued" | "build" | "review" | "review:ui" | "blocked", string>> = {
+const LOGS: Readonly<
+	Record<"queued" | "build" | "build:ui" | "review" | "review:ui" | "blocked", string>
+> = {
 	queued: "",
 	build: WIP_LINE,
+	"build:ui": logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]),
 	review: WIP_LINE + DONE_LINE,
 	"review:ui":
 		logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]) +
@@ -813,6 +816,35 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("whose body links #5747");
 		expect(out.stderr.join("\n")).toContain("type:investigation");
+	});
+
+	it("refuses a build:ui DONE with no open PR and no diagnosis, rather than answering not-required", async () => {
+		const seams = seamsWith([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated()],
+			[ISSUE, issue(["type:feature"])],
+			[ISSUE_COMMENTS, comments()],
+		]);
+
+		const out = await run(laneAt("build:ui"), seams, "DONE");
+
+		expect(out.code).toBe(PROOF_ABSENT);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("whose body links #5747");
+		expect(out.stderr.join("\n")).not.toContain("nothing to prove");
+	});
+
+	it("proves a build:ui DONE against the one open PR whose body links the issue", async () => {
+		const seams = seamsWith([
+			[CLOSERS, closingPulls(4318)],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+		]);
+
+		const out = await run(laneAt("build:ui"), seams, "DONE");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "proven", event: "DONE", issue: 5747});
 	});
 
 	it("refuses a build DONE when several open PRs link the issue", async () => {

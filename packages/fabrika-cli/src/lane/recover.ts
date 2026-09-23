@@ -22,7 +22,7 @@
  *   reviewer's run reached **no** verdict. A negative like that is proven by the absence of a
  *   contradiction rather than by an artifact somebody posted, so the sweep would park every lane
  *   whose reviewer has simply not finished yet.
- * - A `DONE` out of `build` claims `OpenPull`, which `./prove-verb.ts` answers `proven` for on the
+ * - A `DONE` out of `build` or `build:ui` claims `OpenPull`, which `./prove-verb.ts` answers `proven` for on the
  *   existence of one open PR whose body links the issue — a fact about the PR being *open*, never
  *   about the builder being *done* with it. A lane in a repair round carries exactly that PR for the
  *   whole round, so the sweep would move it to `review` while the builder is still pushing. The
@@ -54,8 +54,9 @@ import {REVIEW_STATE, REVIEW_UI_STATE} from "./prove.ts";
  * The event each leaf owes its ledger, keyed by the leaf a killed shell would have left the task in.
  *
  * Derived from the state names `./prove.ts` exports rather than spelled out again, so a machine that
- * renames a cell moves both readings at once or neither. `BUILD_STATE` is absent on purpose and the
- * module docblock carries why: its `DONE` proves on an open PR, which a live builder has too.
+ * renames a cell moves both readings at once or neither. Every one of `BUILD_STATES` is absent on
+ * purpose and the module docblock carries why: its `DONE` proves on an open PR, which a live builder
+ * has too.
  */
 export const OWED_EVENTS: Readonly<Record<string, string>> = {
 	[REVIEW_STATE]: "PASS",
@@ -153,11 +154,10 @@ export const buildingBy = (status: LaneStatus): ReadonlyArray<TaskLeaf> => {
  * the tail owns it — so a child's work is visible only as commits on its own lane branch.
  *
  * **This table exists because `./prove.ts`'s does not answer here.** `claimOf` says what a *recorded
- * event* asserts, and its `DONE` arm keys on the plain `build` leaf: a `build:ui` leaf answers
- * `None`, and a child answers `RangeCommits`. Borrowing it for this question gave a `build:ui` lane
- * an exit-0 `not-required` and a child a range read, and the arm reported both as a PR read that
- * "did not settle" — a reason naming an inspection nobody made, over a population that could then
- * never reach a park at all. So the arm asks this instead, and each answer names one read it makes:
+ * event* asserts, and a child's `DONE` answers `RangeCommits` there. Borrowing it for this question
+ * gave a child a range read, and the arm reported it as a PR read that "did not settle" — a reason
+ * naming an inspection nobody made, over a population that could then never reach a park at all.
+ * So the arm asks this instead, and each answer names one read it makes:
  * `OpenPull` is the board read, and `LaneBranch` is the branch read the conjunct before it already
  * took.
  */
