@@ -1,7 +1,7 @@
 ---
 id: 0359
 title: A Tuval program's window renderer may be a module specifier the page loads, keyed by the row's own ref
-status: accepted
+status: amended-in-part by [0407](0407-apps-are-never-imported.md)
 date: 2026-09-06
 tags: [tuval, shell, window, renderer, config, extensibility]
 ---

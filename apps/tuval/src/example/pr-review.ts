@@ -39,7 +39,7 @@
  * restating it.
  *
  * The one command is `send("pr", pr)`: a bare port name, which means an in-port of *this* program's
- * own process, looked up against this program's live processes at the call (`../own-process.ts`).
+ * own process, looked up against this program's live processes at the call (the SDK's `authoring/own-process.ts`).
  * It is the whole of what a command may ask for — `send` and nothing else (ADR 0372) — and it is
  * the shape #8716 R16.1 asked for, so the example is the thing to copy rather than a documented
  * gap.
@@ -49,7 +49,7 @@
  * address the reviewer's `prompt` port — without the cell the example starts a reviewer and never
  * asks it anything. `prompt` below stamps the turn, because `PromptPayload` requires all three of
  * its fields, and the key it stamps is the child's own id, so a redelivered send is dropped rather
- * than reviewed twice. The room for those four lines came from the barrel (`../index.ts`, the same
+ * than reviewed twice. The room for those four lines came from the barrel (the SDK's `authoring/index.ts`, the same
  * door a third-party program imports, #8943) rather than from a wider budget: the founder ruled the
  * ~30-line bar stands, at
  * [#8888](https://github.com/kamp-us/phoenix/issues/8888#issuecomment-5625301355).

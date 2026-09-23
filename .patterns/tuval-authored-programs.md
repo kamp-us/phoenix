@@ -1,14 +1,15 @@
 # Authoring a Tuval program
 
 How a program is written with `defineProgram`, and what a compiled row still owes the kernel that
-the authoring layer does not write for you. Everything here is `apps/tuval/src/authoring/`; the row
-it compiles to is [`registry/program.ts`](../packages/tuval/src/registry/program.ts), and where a
+the authoring layer does not write for you. Everything here is the Tuval SDK's authoring layer,
+[`packages/tuval/src/authoring/`](../packages/tuval/src/authoring), which a program imports as
+`@kampus/tuval-sdk/authoring`; the row it compiles to is [`registry/program.ts`](../packages/tuval/src/registry/program.ts), and where a
 program's Effects live is [`tuval-program-row-effects.md`](./tuval-program-row-effects.md) — this
 doc is the layer above it.
 
-The worked example is
-[`authoring/example/pr-review.ts`](../apps/tuval/src/authoring/example/pr-review.ts), thirty-odd
-lines end to end. Copy that first; read this when the copy runs out.
+The worked example ships with the desk app,
+[`pr-review.ts`](../apps/tuval/src/example/pr-review.ts), thirty-odd lines end to end,
+importing the SDK by the specifiers an outside author writes. Copy that first; read this when the copy runs out.
 
 ## What you write, and what compiles
 
@@ -149,9 +150,11 @@ So a `resume` that emits is safe on a graph node and loud on a spawned child. Th
 the alternative was a silent no-op — but it means a spawned child's `resume` should move state or
 send, not announce.
 
-`authoring/reload/authoring-reload.integration.test.ts` is both halves on a real kernel: the
-example's `verdict` route reaching its reader after a restart, and a restored spawned child's emit
-refused with the port named.
+The desk app's
+[`authoring-reload.integration.test.ts`](../apps/tuval/src/example/reload/authoring-reload.integration.test.ts)
+is both halves on a real
+kernel: the example's `verdict` route reaching its reader after a restart, and a restored spawned
+child's emit refused with the port named.
 
 ## Wiring one into a config graph
 
@@ -170,7 +173,8 @@ such as [`ai-agent/ports/ports.ts`](../packages/tuval/src/ai-agent/ports/ports.t
 — and then they must be identical, exactly as before. Either way the refusal happens before boot:
 `IncompatibleRoute` names both ends and a `reason` saying which clause refused and why.
 
-[`authoring/reload/fixtures/reviewing-desk.ts`](../apps/tuval/src/authoring/reload/fixtures/reviewing-desk.ts)
+The desk app's
+[`reviewing-desk.ts`](../apps/tuval/src/example/reload/fixtures/reviewing-desk.ts) fixture
 is the worked wiring — `desk.pr -> pr-review.pr` and `pr-review.verdict -> sink.verdict`, every end
 authored, no plain registry row standing in for one.
 

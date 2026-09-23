@@ -159,11 +159,10 @@ including on the failure path: a `fetch` that throws carries the URL in its own 
 cause is swallowed and the answer is `ok: false` with no status. `notify.unit.test.ts` checks this
 by stringifying the whole state *and* the whole effect list and grepping for the token.
 
-## The morning brief leaving the desk — and the one blocker left
+## The morning brief leaving the desk
 
-This package exists so that `@kampus/tuval-cron`'s 07:00 brief reaches a phone. **That wiring
-cannot be written in a config today** — but only one thing stands in the way now, and it is
-upstream, and it is pinned by a test in this package so that the day it is lifted, the suite says so.
+This package exists so that `@kampus/tuval-cron`'s 07:00 brief reaches a phone. Both ends of that
+route are in place, and a route between them compiles.
 
 **Cron has somewhere to leave from.** Its `brief` out-port carries the whole finished `TurnResult`,
 declared over `TurnResultSchema` out of `@kampus/tuval-sdk/ai-agent/ports`. (Its `result` is still a
@@ -177,20 +176,19 @@ because the fit rule is **exact schema equality**, not structural compatibility:
 is the worst of both. So `message` takes a `TurnResult` and nothing else, and no adapter sits on
 either side of the route.
 
-**What is left is the kind.** An authored port's `kind` carries its own program's id, and a route
-requires the two ends' kinds to be **identical** — `apps/tuval/src/authoring/port.ts`'s
-`portKind = (program, name) => \`${program}/${name}\`` against `apps/tuval/src/ports/compile.ts`'s
-`if (source.kind !== target.kind) …IncompatibleRoute`. So `morning-brief/brief` cannot reach
-`notify/message` whatever the payloads say — this is kamp-us/phoenix
-[#8923](https://github.com/kamp-us/phoenix/issues/8923), `p1`, answered by PR
-[#9292](https://github.com/kamp-us/phoenix/pull/9292), **in review**. It is refused at `compile`,
-before boot, so a config carrying the route does not start.
+**The kind does not decide it.** An authored port's `kind` still carries its own program's id —
+the SDK's `packages/tuval/src/authoring/port.ts`'s `portKind = (program, name) => \`${program}/${name}\``
+— so `morning-brief/brief` and `notify/message` never share one. A route no longer needs them to.
+When both ends publish a schema, `packages/tuval/src/ports/compile.ts`'s `whyNotRouted` compiles the
+route on payload fit, and it compares kinds only when an end publishes no schema
+([ADR 0395](https://github.com/kamp-us/phoenix/blob/main/.decisions/0395-a-graph-route-compiles-on-payload-fit-not-on-kind.md),
+[#8923](https://github.com/kamp-us/phoenix/issues/8923)). Both ends here publish `TurnResultSchema`,
+so the route fits.
 
-This is what it will look like the day #9292 lands — and it is the shape the fixture beside this
-package already holds, as `BLOCKED_ROUTE`, out of the default export:
+Written into a config, the route looks like this. The fixture beside this package holds the same
+route as `BLOCKED_ROUTE` and still keeps it out of its default export:
 
 ```ts
-// NOT YET: `IncompatibleRoute` at compile, before boot — phoenix #8923 / PR #9292.
 export default {
   version: 1,
   programs: [morningBrief, phone],
@@ -204,7 +202,7 @@ export default {
 } satisfies TuvalConfigInput;
 ```
 
-### What works today: the spell
+### The manual path: the spell
 
 ```
 :notify send 3 PRs merged on phoenix, 1 red on main
@@ -213,8 +211,7 @@ export default {
 A `commands` entry ([ADR 0372](https://github.com/kamp-us/phoenix/blob/main/.decisions/0372-a-tuval-command-may-only-send.md)
 as #8898 amended it) that does a bare `send("message", {text, items: [], ok: true})` into this
 program's own live process — so the manual path and the routed one are the same payload in the same
-cell, and the day the route compiles nothing about the program changes. Named notifiers get their own spell: `:phone send …`,
-`:desk send …`. The text is a rest parameter, so it needs no quotes.
+cell. Named notifiers get their own spell: `:phone send …`, `:desk send …`. The text is a rest parameter, so it needs no quotes.
 
 ## How it delivers
 

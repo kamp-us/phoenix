@@ -24,7 +24,7 @@ import {noSelfReport} from "@kampus/tuval-sdk/kernel/process/self-report";
 import {type AnyProgram, ProgramId, programLabel} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Layer, Option, Schema, Stream} from "effect";
 import {expect} from "vitest";
-import config from "../../../.tuval/tuval.config.ts";
+import config from "../../.tuval/tuval.config.ts";
 import {prReview, prReviewProgram} from "./pr-review.ts";
 
 const source = readFileSync(resolve(import.meta.dirname, "pr-review.ts"), "utf8");
@@ -136,7 +136,7 @@ describe("authoring.example.pr-review, driven with testProgram", () => {
 	});
 
 	// The command names a bare port and no process at all: which process of `pr-review` it lands on
-	// is resolved where the call lands (`../own-process.ts`, #8898), so the scope is beside the
+	// is resolved where the call lands (the SDK's `authoring/own-process.ts`, #8898), so the scope is beside the
 	// point here and the case below is the one that proves the payload reaches a process.
 	it("composes the `review` command's send at its own program's `pr` port", () => {
 		const run = testProgram(prReviewProgram).call("review", 8690);
@@ -154,7 +154,7 @@ describe("authoring.example.pr-review, driven with testProgram", () => {
 			client: ClientId.make("tuval/test"),
 		};
 		// `AnySpell` erases the spell's requirements, so the two layers below are what discharge them
-		// and the cast is where that obligation is spent — the same one `../../commands/executor.ts`
+		// and the cast is where that obligation is spent — the same one the SDK's `commands/executor.ts`
 		// describes at the composition root.
 		const call = review.execute(8690, scope) as Effect.Effect<
 			void,

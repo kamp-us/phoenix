@@ -11,7 +11,7 @@
  * renderer, which the page resolves from a specifier at runtime and imports as a module of its own.
  * A window module is the entry an author writes, and it is the one that met this hazard in a
  * browser rather than in CI — it imported its own program's file for a state type, and an authored
- * program's file reaches `node:crypto` through `../authoring/define-program.ts`.
+ * program's file reaches `node:crypto` through the SDK's `authoring/define-program.ts`.
  *
  * In-tree module windows are found rather than listed: a root-relative specifier (`/src/…`) is how
  * a module in this tree is named to the page and is a spelling nothing else uses, so scanning the

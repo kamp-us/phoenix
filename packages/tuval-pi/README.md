@@ -78,7 +78,7 @@ Inside the workspace the `exports` map points at `src`, which the desk runs with
 
 ## The loopback server
 
-`src/server/` is the WebSocket server Pi 0.84.3 does not ship — the spike's `spike-server.mjs`
+`src/server/` is the WebSocket server Pi 0.85.1 does not ship — the spike's `spike-server.mjs`
 (#7469) hand-ported into Effect, plus the production half the spike had no need for. One server
 per Pi process, on `127.0.0.1` and port 0: two Pi processes on one machine run two servers on two
 ports and share nothing.
@@ -122,8 +122,8 @@ the whole wire suite run in the unit tier.
 
 ## The client
 
-`src/client/` is the dial side, in Node inside the same Pi process: the `ByteTransport` the
-0.84.3 pin does not export, plus the lease handling around `PiClient`. Pi ships a Unix-socket
+`src/client/` is the dial side, in Node inside the same Pi process: a WebSocket `ByteTransport`, which
+the 0.85.1 pin does not export, plus the lease handling around `PiClient`. Pi ships a Unix-socket
 factory and nothing over a WebSocket, and Node 26 ships the WebSocket *client* as a global while
 `ws` supplies the server half — so `webSocketTransportFactory` is ours, hand-derived from the
 spike's `play.ts` (#7469) and shaped after the pin's own `unix.js`.
@@ -148,15 +148,17 @@ not-found and the reacquire run against the loopback server on Pi's faux provide
 ## The AI agent layer
 
 `src/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a
-`Layer<TuvalAiAgent, never, KernelBridge | Features>`, never-failing, asking for two of Tuval's own
-services and no Pi type in either channel. `KernelBridge` is what the row's three kernel tools call
+`Layer<TuvalAiAgent, never, KernelBridge | Features | StateDir>`, never-failing, asking for three of
+Tuval's own services and no Pi type in either channel. `KernelBridge` is what the row's three kernel tools call
 through, provided by the row from its own scope the way the Claude and Codex rows provide it (ruling
 R9.1 on [#8715](https://github.com/kamp-us/phoenix/issues/8715)); `Features` is the merged flag
 record the row's spawner hands over
-([#8595](https://github.com/kamp-us/phoenix/issues/8595)). Founder ruling 4
+([#8595](https://github.com/kamp-us/phoenix/issues/8595)); `StateDir` is the booted desk's state
+dir, handed over at spawn, and the layer puts Pi's session store under it
+([ADR 0402](../../.decisions/0402-tuval-state-lives-under-home.md)). Founder ruling 4
 ([#7570](https://github.com/kamp-us/phoenix/issues/7570)) is what puts the runtime inside the layer,
-and it required nothing at all until those two landed; what the ruling guards is unchanged, since
-both are Tuval services. Building it inside the process's scope stands up Pi's model runtime, the
+and it required nothing at all until those three landed; what the ruling guards is unchanged, since
+all three are Tuval services. Building it inside the process's scope stands up Pi's model runtime, the
 `PiSessionHost` over it, one loopback server and one client, and closing that scope closes the
 client, the server and every session exactly once. A process therefore holds no Pi value of its own
 — `PiAiAgentOptions` carries plain strings, and `agentDir` is the only path it usually sets. Nothing

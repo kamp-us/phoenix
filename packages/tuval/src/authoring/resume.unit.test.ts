@@ -2,7 +2,7 @@
  * The two lifecycle fields a restart runs on, and the ruling between them (#8735): `resume` is
  * sugared onto the authored record, `configChanged` is reached by spreading the compiled row.
  *
- * `../reload/authoring-reload.integration.test.ts` is the same pair on a real kernel; these are the
+ * The desk app's `authoring-reload.integration.test.ts` is the same pair on a real kernel; these are the
  * shapes, which is what a reader copying an authored program needs to see without booting one.
  */
 

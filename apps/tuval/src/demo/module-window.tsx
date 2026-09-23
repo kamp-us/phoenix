@@ -9,7 +9,7 @@
  *
  * **Its import list is the point of the file, and it is the law from #8946.** The page loads this
  * module in a browser tab, and `./module-counter.ts` calls `defineProgram`, whose graph reaches
- * `node:crypto` through `../authoring/define-program.ts` — Vite externalises the builtin and the
+ * `node:crypto` through the SDK's `authoring/define-program.ts` — Vite externalises the builtin and the
  * first property read throws, so the window renders a load failure where the program should be. So:
  *
  * - the predicate and the state type come from `./counter-state.ts`, a leaf that imports nothing;

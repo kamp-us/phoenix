@@ -16,7 +16,7 @@ Shared Effect concepts apply across consumers. Match API examples to the owning 
 | [effect-layer-composition.md](./effect-layer-composition.md) | apps/web worker | Wiring services into the worker, adding a feature Layer, guarding one member of an existing service |
 | [effect-errors.md](./effect-errors.md) | Web wire errors | Designing a new error or feature's error set |
 | [error-copy-law.md](./error-copy-law.md) | apps/web | Authoring a user-facing error `message`, or a `WIRE_MESSAGES` entry |
-| [backend-exception-translation.md](./backend-exception-translation.md) | Tuval backends | Catching a dependency's exception in an `apps/tuval` backend adapter |
+| [backend-exception-translation.md](./backend-exception-translation.md) | Tuval backends | Catching a dependency's exception in a Tuval harness package's backend adapter |
 | [effect-error-operators.md](./effect-error-operators.md) | Effect consumers | Catching, recovering, or inspecting failures at a boundary |
 | [effect-fn-tracing.md](./effect-fn-tracing.md) | Effect consumers | Writing or naming a service method |
 | [effect-platform-access.md](./effect-platform-access.md) | Effect consumers | Reading/writing files, building paths, or minting ids in Effect code ([#3461](https://github.com/kamp-us/phoenix/issues/3461)), or migrating a directory walk ([#3922](https://github.com/kamp-us/phoenix/issues/3922)) |

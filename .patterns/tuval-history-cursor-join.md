@@ -22,7 +22,7 @@ returning `{items, cursorAliases}` in `packages/tuval-claude/src/history/items.t
 `transcriptProjection` in `packages/tuval-agy/src/ai-agent/transcript.ts`.
 
 **2. Compose the page in one function the call sites cannot step around.** `cursorAliases` and
-`cursorBoundary` are `PageOptions` fields (`apps/tuval/src/ai-agent/history/page.ts`), and a call site
+`cursorBoundary` are `PageOptions` fields (`packages/tuval/src/ai-agent/history/page.ts`), and a call site
 that forgets one reds nothing — which is exactly how #8204's fix was lost and #8900's bug shipped. So
 the planner call lives next to the projection, and `page` and `sessionTranscript` both reach the page
 only through it: `planPageOverEntries` for Pi, `planPageOverTranscript` for agy. `cursorBoundary:
@@ -30,7 +30,7 @@ only through it: `planPageOverEntries` for Pi, `planPageOverTranscript` for agy.
 tool row in a batch is the common one.
 
 **3. Stamp the reverse direction on the row.** `TranscriptItem.alias`
-(`apps/tuval/src/ai-agent/ports/transcript-item.ts`) carries the live id of the same row, and it is
+(`packages/tuval/src/ai-agent/ports/transcript-item.ts`) carries the live id of the same row, and it is
 what stops a prepended page doubling a turn the tail already holds: `unheld` in
 `shell/chat/rows.ts` joins on `id` **and** `alias`. A map entry that names a row other than its own
 is a cursor-resolution hint and must not be stamped back — stamping it would make the stitch drop a

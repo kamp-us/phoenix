@@ -177,7 +177,7 @@ an ignore rule for Tuval state.
 
 A config module default-exports one versioned object, `TuvalConfigInput` from `@kampus/tuval-sdk/config`:
 `version: 1`, `programs`, an optional `graph`, and an optional `keys` (see "Spells"). A row is a
-`Program` (`src/registry/program.ts`):
+`Program` (the SDK's `packages/tuval/src/registry/program.ts`):
 one stable id, a private Demlik core machine, public typed ports, a `receive` map that turns what
 arrives on each in-port into the program's own Msg, host handlers, a capability request list, an
 optional renderer reference, and the identity / capability / placement records as inert data — the
@@ -189,7 +189,7 @@ programs and runs nothing.
 import {Console} from "effect";
 import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
-import {ProcessId} from "../src/process/process.ts";
+import {ProcessId} from "@kampus/tuval-sdk/authoring";
 import {wiredShellEffects} from "../src/shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../src/shell/program.ts";
 
@@ -222,13 +222,13 @@ harness packages carry the session rows a config fills a shaped arg with:
 
 | Subpath | What it carries |
 |---|---|
-| `@kampus/tuval-sdk/authoring` | `defineProgram`, `port`, `programArgs`, `Program`, the effect constructors (`spawn`, `send`, `ask`, `reply`, `emit`, `stop`), `testProgram`, `HostHandlers`, and the types an authored `update` annotates itself with. `src/authoring/index.ts` says at length what is on it and what is deliberately not. |
-| `@kampus/tuval-sdk/ai-agent/ports` | The AI-agent port vocabulary — `PromptPayloadSchema`, `TurnResultSchema` and the rest of `src/ai-agent/ports/index.ts`. It stays its own door because its `boundary.unit.test.ts` holds it closed over `effect` plus the kernel's program row, and folding it into the authoring door would make one surface owe two stabilities. |
+| `@kampus/tuval-sdk/authoring` | `defineProgram`, `port`, `programArgs`, `Program`, the effect constructors (`spawn`, `send`, `ask`, `reply`, `emit`, `stop`), `testProgram`, `HostHandlers`, and the types an authored `update` annotates itself with. The SDK's `packages/tuval/src/authoring/index.ts` says at length what is on it and what is deliberately not. |
+| `@kampus/tuval-sdk/ai-agent/ports` | The AI-agent port vocabulary — `PromptPayloadSchema`, `TurnResultSchema` and the rest of the SDK's `packages/tuval/src/ai-agent/ports/index.ts`. It stays its own door because its `boundary.unit.test.ts` holds it closed over `effect` plus the kernel's program row, and folding it into the authoring door would make one surface owe two stabilities. |
 | `@kampus/tuval-sdk/window` | The window half — `windowRenderer` and `WindowHost` for a `kind: module` window, and `ProgramEvent`, which types that host's dispatch at the program's own event union. Its own door because its closure is browser-safe and `./authoring`'s is not. |
 | `@kampus/tuval-claude` | The Claude harness package: `claudeSession`, the row a *config* fills a shaped arg with, and the `WorkspaceId` / `ClientId` constructors its `scope` is built from. |
 | `@kampus/tuval-codex` | The Codex harness package: `codexSession` and the same `WorkspaceId` / `ClientId` constructors. |
 
-A kernel-side program looks like this — the same shape `src/authoring/example/pr-review.ts`
+A kernel-side program looks like this — the same shape `src/example/pr-review.ts`
 has in-tree, with the specifiers an outside consumer writes:
 
 ```ts
@@ -316,29 +316,30 @@ added after it returns, so an effect the row has no handler for is skipped silen
 rather than refused at definition.
 
 The kernel is not on any of them: the compilers (`compilePorts`, `compileCommands`, `fillArgs`,
-`FIELD_COMPILERS`, …) stay reachable only by relative path from inside `src/`.
+`FIELD_COMPILERS`, …) are reachable only through the SDK's `./kernel/*` entry, which is public so
+this app can use the SDK through exports alone, and documented unstable.
 
 `./authoring` and `./window` are two doors rather than one because only one of them is
-browser-safe: the kernel-side barrel reaches `src/process/Processes.ts` and
+browser-safe: the kernel-side barrel reaches the SDK's `src/process/Processes.ts` and
 `src/commands/core/process.ts`, both `node:crypto` importers, while `./window`'s whole value-import
 closure is five modules and reaches no `node:` builtin and no package but `effect`.
-`src/authoring/window-closure.unit.test.ts` walks both at every run, so the day an import changes
+The SDK's `src/authoring/window-closure.unit.test.ts` walks both at every run, so the day an import changes
 that, a test says so rather than a browser does. The chain #8946 reported is the same law from the
 other side — a window module importing its *own program's* file, which reaches the kernel through
 `define-program.ts` — and nothing on `./window` makes that import safe. What a window shares with
 its program goes through an `import type` or a leaf file that imports nothing; see
 "Giving a program a window" below.
 
-`src/authoring/public-surface.unit.test.ts` is the other proof: it reaches the API through the
+`src/sdk-consumer/public-surface.unit.test.ts` is the other proof: it reaches the API through the
 specifiers above and nothing else, writes a program, and fills its shaped arg with a shipped row.
 
-The first consumer outside this package is `@kampus/tuval-cron`, a scheduler program written on
+The first consumer outside the SDK is `@kampus/tuval-cron`, a scheduler program written on
 `@kampus/tuval-sdk/authoring` and installed into a desk by naming its row in a config. It used to ship
 in-tree under `apps/tuval/src/cron/`; once the doors above existed there was no reason for a
-product feature to live in the kernel, so it moved out to `packages/tuval-cron` (#9408) and this
-package kept only the kernel behaviours it drove (#8955, #8959, #9221, #9229, #9230, #9250) and the
+product feature to live in the kernel, so it moved out to `packages/tuval-cron` (#9408) and the
+kernel kept only the behaviours it drove (#8955, #8959, #9221, #9229, #9230, #9250) and the
 tests that prove them. It is a sibling package rather than another repo now, and it is still an
-outside consumer in the sense this door cares about: it reaches this package through the published
+outside consumer in the sense this door cares about: it reaches the SDK through the published
 specifiers above and never by relative path.
 
 ## Spells
@@ -371,7 +372,7 @@ kernel's list:
 
 ```ts
 import {Effect, Schema} from "effect";
-import {defineSpell} from "../src/commands/spell.ts";
+import {defineSpell} from "@kampus/tuval-sdk/kernel/commands/spell";
 
 const repeat = defineSpell({
 	path: ["repeat"],
@@ -413,7 +414,7 @@ they keep going under the rows they were spawned from.
 
 ## The host
 
-`src/host/` runs a Demlik core machine as an Effect actor: `make(definition)` is a scoped Effect
+The SDK's [`src/host/`](../../packages/tuval/src/host) runs a Demlik core machine as an Effect actor: `make(definition)` is a scoped Effect
 yielding an `ActorHandle`, and `layer(key, definition)` provides that handle as a service. A
 definition is `defineActor({name, machine, interpret, subscribe, store?})` — the machine is Demlik's
 pure core (`init`, `update`, dep-keyed `subs`, `identity`, `subscriptions`), the handlers are
@@ -428,12 +429,12 @@ the failure as its Exit. Either way the Sub's id is marked `failed` and reconcil
 a restart is a new id from the reducer, so it replays.
 
 It stands in for Demlik's own `tea-effect` until kamp-us/demlik#36 ships. The places it still
-speaks Demlik 0.12's Promise and disposer shapes live in `src/host/demlik-bridges.ts`, which is the
+speaks Demlik 0.12's Promise and disposer shapes live in the SDK's `src/host/demlik-bridges.ts`, which is the
 swap point; `parity.unit.test.ts` runs one machine through both hosts and asserts they agree.
 
 ## Processes
 
-`src/process/` runs a program as a process: one running instance with a stable id, its own Effect
+The SDK's [`src/process/`](../../packages/tuval/src/process) runs a program as a process: one running instance with a stable id, its own Effect
 Scope forked from its parent's, and a row in the `ProcessTable`. `Processes.spawn(programId,
 {parent?})` resolves the row from the `Registry`, builds the actor through the host, and hands back
 a `ProcessHandle`; `Processes.stop(id)` (or `handle.stop`) closes the process Scope, which is the
@@ -453,7 +454,8 @@ one per process. The launcher uses this to hand each process its own `ProcessPor
 
 ## Durability
 
-Durability is the kernel's, not a program's (`src/durability/`). Every spawn opens the process's
+Durability is the kernel's, not a program's (the SDK's
+[`src/durability/`](../../packages/tuval/src/durability)). Every spawn opens the process's
 checkpoint through `Checkpoints.open`, an Effect acquire/release under the process Scope, and hands
 the host the `Store` it gets back; the host's own save-before-effects ordering does the rest, so
 the only persistence path is Demlik's stores — `fileStores(dir)` (Demlik's `fileStore`, the local
@@ -499,7 +501,7 @@ the shape spike #7379 routed on — not a schema system. An in-port also declare
 (`{capacity, overflow}`), because only an in-port owns a queue: `overflow` is Effect's own queue
 strategy (`suspend`, `dropping`, `sliding`), so no port queue is ever unbounded.
 
-`src/ports/` compiles a graph and opens its queues. A graph is authored as nodes that own their
+The SDK's [`src/ports/`](../../packages/tuval/src/ports) compiles a graph and opens its queues. A graph is authored as nodes that own their
 outbound routes as `on` entries; there is no top-level edge list. A node is a planned process,
 so it may name a `parent` — a node declared before it, which is what makes authoring order the
 spawn order.
@@ -526,7 +528,7 @@ the graph does not declare, a parent the graph does not declare before the child
 (`UnknownParent`), a duplicate node id, or an in-port whose capacity is not a positive integer.
 `open` builds one queue per in-port at its declared bound and delivers
 each `emit` to every routed target in authoring order, so a compatible route delivers in order.
-The slice never imports `src/process/`.
+The slice never imports the SDK's `src/process/`.
 
 `ProcessPorts` is the wiring as one running process sees it: `emit(port, payload)` on its own
 out-ports by name. A program's Cmd handler requires it as a service and never learns which node
@@ -749,10 +751,10 @@ carried on the process row, and renders it as-is: a Claude session reads
 `claude-session · Opus 5 · phoenix` because the AI-agent program published that string, not because
 the shell composed it — the shell reads nothing AI-specific (ruling R8.1 on
 [#8715](https://github.com/kamp-us/phoenix/issues/8715)). The AI-agent program composes it as
-`program · model · cwd` (`src/ai-agent/self-report.ts`, ruling R3.1), leaving out any segment it
+`program · model · cwd` (the SDK's `src/ai-agent/self-report.ts`, ruling R3.1), leaving out any segment it
 cannot fill — a session that has not heard its model yet reads `claude-session · phoenix`. The
 program segment is the row's `identity.program`, which defaults to the row id, so it is the id and
-not a display name: nothing on a row carries a shorter one, and `label` (`src/registry/program.ts`)
+not a display name: nothing on a row carries a shorter one, and `label` (the SDK's `src/registry/program.ts`)
 is the picker's name and is not read here
 ([#8722](https://github.com/kamp-us/phoenix/issues/8722) narrowed it there deliberately). A program
 re-emitting `title@1` mid-turn moves the title with no remount, a process that published no title is
@@ -861,13 +863,13 @@ at 32px and up the strokes already cover whole pixels.
 
 ## The AI agent slice
 
-`src/ai-agent/` is the backend-blind half of running an AI agent as a Tuval program. Nothing under
+The SDK's [`src/ai-agent/`](../../packages/tuval/src/ai-agent) is the backend-blind half of running an AI agent as a Tuval program. Nothing under
 it names Pi, Claude or any other backend: a row varies by the layer it is handed and by its identity,
 and that is all (founder ruling, 2026-09-02). It is the half a second backend builds against.
 
-**The service.** `TuvalAiAgent` (`src/ai-agent/service/`) is the one interface every backend
+**The service.** `TuvalAiAgent` (`service/`) is the one interface every backend
 implements — `start`, `prompt`, `interrupt`, `answer`, `setMode`, `page`, and one `events` stream.
-One subscription and one ordering: `AgentEvent` (`src/ai-agent/events.ts`) tags every kind —
+One subscription and one ordering: `AgentEvent` (`events.ts`) tags every kind —
 `item`, `phase`, `permission`, `permission-resolved`, `mode`, `usage` — so the core folds a single
 sequence rather than racing several (ruling 1, [#7570](https://github.com/kamp-us/phoenix/issues/7570)).
 Each method carries its own `Schema.TaggedError`; a backend's own refusals are `reason`s inside
@@ -876,7 +878,7 @@ every unit test runs on — a checked-in `AgentScript` is the whole backend, it 
 it holds no retry and no reconnect, so a test can prove the retry policy lives in the handlers'
 declared data rather than hiding in a layer.
 
-**The core.** `src/ai-agent/core/` is `ai-agent-session`, the one Demlik machine that drives any
+**The core.** `core/` is `ai-agent-session`, the one Demlik machine that drives any
 layer. It holds no Effect and names no backend: each Cmd is the name of work a handler performs, and
 the Sub is the name of the layer's event stream. Every refusal is data — a prompt outside `ready`, an
 answer to a card nobody raised, a mode the agent does not offer each record an `AgentFailure` and
@@ -887,17 +889,17 @@ disappears means the agent settled the request rather than that a decision was s
 ([#8006](https://github.com/kamp-us/phoenix/issues/8006)). A confirmation that never comes leaves it
 `unresolved`, which offers no second answer — the authorization may already stand.
 
-**The handlers.** `src/ai-agent/handlers/` is the one generic handler set. Each handler yields the
+**The handlers.** `handlers/` is the one generic handler set. Each handler yields the
 service and calls one of its members; a layer's typed error becomes a `failed` Msg carrying the tag
 as data, and the one thing that does fail a handler is a `PayloadRejected` — the route refused what
 this program emitted, which is a wiring bug in the graph rather than the agent's answer. The Sub is
 the outbound half: it dispatches each event as a Msg *and* runs the same fold the core runs over a
 local projection seeded from the core's state, so the tail published on `transcript` is the tail the
-core commits. Retry and deadline are three numbers on the row (`policy.ts`), not an `Effect.retry`
+core commits. Retry and deadline are three numbers on the row (`handlers/policy.ts`), not an `Effect.retry`
 buried in a handler, and only `start` and the reconnect that repeats it are retried
 ([#7371](https://github.com/kamp-us/phoenix/issues/7371)).
 
-**The ports.** `src/ai-agent/ports/` is the five ports that make a process an AI agent —
+**The ports.** `ports/` is the five ports that make a process an AI agent —
 `transcript`, `transcript-page`, `prompt`, `permission`, `mode` — each with one nominal kind, one
 payload predicate and one queue bound. Every payload is model-blind: no model name, cost, token
 count, session id or backend type appears on one. A program playing both ends of a two-way port
@@ -906,13 +908,13 @@ schema, so `compile` matches them on the kind and a cross-kind route still refus
 ports publish the `Schema` their predicate was written from, so their routes are compiled on payload
 fit instead ([ADR 0395](../../.decisions/0395-a-graph-route-compiles-on-payload-fit-not-on-kind.md)).
 
-**The history.** `src/ai-agent/history/` is pure and imports no Effect, no socket and no other
+**The history.** `history/` is pure and imports no Effect, no socket and no other
 `ai-agent/` directory but `ports/`. The window is the live tail only — the newest whole exchanges
 under both an item and a byte bound, plus what the bounds left out. Older history is backend-owned
 (ruling 5): `planTranscriptPage` is a bound over a slice the backend already returned, walking older,
 whole exchanges only, and Tuval keeps no second copy.
 
-**The row.** `aiAgentProgram` (`src/ai-agent/program.ts`) assembles all of it into one program row:
+**The row.** `aiAgentProgram` (`program.ts`) assembles all of it into one program row:
 the core, the eight port keys, the `receive` translations, the handlers and the Sub. A caller varies
 `layer`, `cwd` and the identity. Four backends fill it today: `PiAiAgent.layer`,
 `CodexAiAgent.layer`, `ClaudeAiAgent.layer` (`@kampus/tuval-claude`, `packages/tuval-claude/src/agent/ClaudeAiAgent.ts`) and
@@ -1001,5 +1003,5 @@ Two seams the scripted variant has to stand up for itself, both because it serve
 kernel resolves a parent from the caller's window, which under a real desk is the one the picker
 handed the process at the open (`CallingWindow`, #8758) and here is named directly. And
 `late.ts` hands the real variant's config module a `SpellBridge` that does not exist when the loader
-evaluates it (#7958). Both are the proof's own scaffolding; neither writes anything under `src/ai-agent/` or
+evaluates it (#7958). Both are the proof's own scaffolding; neither writes anything under the SDK's `src/ai-agent/` or
 changes what a row is.

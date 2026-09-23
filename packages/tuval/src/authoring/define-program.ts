@@ -317,7 +317,7 @@ export type NoStrayFields<A, T> = {
  *
  * **It was picked over widening `defineProgram`'s row to carry its authored record beside it**
  * because the row is not where the inference dies. An author who spreads the record — the worked
- * example's `{...prReviewProgram, fill, label}` (`./example/pr-review.ts`) — still holds the
+ * example's `{...prReviewProgram, fill, label}` (the desk app's `pr-review` example) — still holds the
  * literal in a `const` no matter what `defineProgram` answers, so a wider row would have left that
  * binding un-typed and bought a second shape on every compiled row for it.
  *
@@ -325,7 +325,7 @@ export type NoStrayFields<A, T> = {
  * (`./shape.ts`) in the barrel's import list. The two read differently at every use —
  * `Program.shape({...})` declares the ports a program is *named by*, `program({...})` holds the
  * program itself — and the length is what the worked example's ruled line budget could afford
- * (`./example/pr-review.ts` carries that reasoning, beside the budget it defends).
+ * (the desk app's `pr-review` example carries that reasoning, beside the budget it defends).
  *
  * **`A` is why the answer is the literal the author wrote and not the interface.** Every field this
  * layer does not require is optional on `AuthoredProgram`, so answering that interface flat would

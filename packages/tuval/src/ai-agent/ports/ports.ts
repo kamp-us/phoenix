@@ -20,7 +20,7 @@
  * (`./payloads.ts`). Nothing in the kernel routes on it — the predicate still does — but a
  * predicate cannot be compared with another predicate, and a `Program.shape` check in a config
  * file compares payloads (#8887). Publishing it is what lets a shipped row here fill a shaped arg:
- * `codexSession`'s `prompt` and `result` are the two ports `authoring/example/pr-review.ts` names.
+ * `codexSession`'s `prompt` and `result` are the two ports the desk app's `pr-review` example names.
  * The three two-way kinds carry a tagged union per end and have no schema yet, so a shape naming
  * one of them is still refused — by name, for publishing no payload schema, which is the refusal
  * `authoring/shape.ts` spells.

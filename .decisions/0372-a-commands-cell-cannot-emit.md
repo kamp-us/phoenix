@@ -105,7 +105,7 @@ and with one there is an out-port belonging to somebody else.
   the resolution widens what a compiled spell requires by one service the composition root was
   already providing, and by nothing else.
 - **The worked example is the thing to copy again.**
-  [`apps/tuval/src/authoring/example/pr-review.ts`](../apps/tuval/src/authoring/example/pr-review.ts)
+  [`apps/tuval/src/example/pr-review.ts`](../apps/tuval/src/example/pr-review.ts)
   declares `run: (pr) => send("pr", pr)` — the shape epic #8716 R16.1 and ticket #8734's criterion 7
   always specified. Those two live only in closed GitHub issues, so there is nothing in-tree left
   prescribing the old `send({process, port: "pr"}, …)` route.
