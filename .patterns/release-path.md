@@ -74,6 +74,8 @@ Each package's `src/public-surface.pack.test.ts` asserts no packed range starts 
 published set (constraint 6). A `workspace:` link to a package `publish.yml` does not publish still
 reds the guard: the rewritten version exists on no registry, which is the `pipeline-cli@0.2.0`
 failure ADR [0201](../.decisions/0201-pipeline-tenant-phoenix-first.md) was written against.
+A path-form link (`workspace:../<dir>`) always reds: pnpm packs it as whatever package sits in that
+directory, so the dep's own name does not say what ships. Link a published sibling by name.
 
 The packed range pins the sibling's version in this repo, so **the sibling publishes first**:
 `design` and `tuval-sdk`, then `tuval-ui`, then the harness packages. That is the order a human

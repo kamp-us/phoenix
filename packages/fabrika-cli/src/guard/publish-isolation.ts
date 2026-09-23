@@ -11,7 +11,9 @@
  * it fails closed at the IO boundary in `./publish-isolation-verb.ts`.
  *
  * A `workspace:` link to a sibling that is itself in the published set passes: `pnpm publish`
- * rewrites the specifier to that sibling's registry version at pack time.
+ * rewrites the specifier to that sibling's registry version at pack time. A relative-path link
+ * (`workspace:../<dir>`) always reds: pnpm resolves it by directory, so its dep name says nothing
+ * about which package ships.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9740#issuecomment-5803759118
  */
@@ -46,9 +48,12 @@ export interface PublishedManifest {
 }
 
 /**
- * A dep that breaks publish isolation. Two kinds, both unresolvable from a clean registry:
+ * A dep that breaks publish isolation. Three kinds, each unresolvable from a clean registry or not
+ * provably resolvable:
  * - `workspace-link`: a `workspace:` specifier whose target is not in the published set — pnpm
  *   rewrites it to a version nothing on the registry carries.
+ * - `workspace-path-link`: a `workspace:./…` or `workspace:../…` specifier — pnpm packs it as
+ *   `npm:<name at that directory>@<version>`, a package the guard cannot name from the manifest.
  * - `private-kampus-dep`: a `@kampus/*` dep that is not itself published, so a clean registry has
  *   nothing to resolve it to.
  */
@@ -57,7 +62,7 @@ export interface IsolationViolation {
 	readonly field: string;
 	readonly name: string;
 	readonly value: string;
-	readonly kind: "workspace-link" | "private-kampus-dep";
+	readonly kind: "workspace-link" | "workspace-path-link" | "private-kampus-dep";
 }
 
 /**
@@ -82,13 +87,24 @@ export const unscopedName = (name: string): string =>
 	name.startsWith("@") ? (name.split("/")[1] ?? name) : name;
 
 /**
- * The package a `workspace:` specifier links: the aliased name in `workspace:<name>@<range>`,
- * else the dependency's own name. `undefined` for a specifier that is not a workspace link.
+ * What a `workspace:` specifier links. A `package` link names the package pnpm resolves: the
+ * aliased name in `workspace:<name>@<range>`, else the dependency's own name. A `path` link
+ * (`workspace:./…`, `workspace:../…`, or an absolute path) is resolved by directory, so no name is
+ * read off it.
  */
-export const workspaceTarget = (dep: DepEntry): string | undefined => {
-	if (!dep.value.startsWith("workspace:")) return undefined;
-	const alias = /^workspace:((?:@[^/@]+\/)?[^/@]+)@/.exec(dep.value)?.[1];
-	return alias ?? dep.name;
+export type WorkspaceLink =
+	| {readonly kind: "package"; readonly name: string}
+	| {readonly kind: "path"; readonly path: string};
+
+const WORKSPACE_PROTOCOL = "workspace:";
+
+/** The link a dep's specifier makes, or `undefined` when it is not a `workspace:` specifier. */
+export const workspaceLink = (dep: DepEntry): WorkspaceLink | undefined => {
+	if (!dep.value.startsWith(WORKSPACE_PROTOCOL)) return undefined;
+	const rest = dep.value.slice(WORKSPACE_PROTOCOL.length);
+	if (rest.startsWith(".") || rest.startsWith("/")) return {kind: "path", path: rest};
+	const alias = /^((?:@[^/@]+\/)?[^/@]+)@/.exec(rest)?.[1];
+	return {kind: "package", name: alias ?? dep.name};
 };
 
 /**
@@ -104,17 +120,17 @@ export const judge = (manifests: ReadonlyArray<PublishedManifest>): PublishIsola
 	const violations: Array<IsolationViolation> = [];
 	for (const m of manifests) {
 		for (const dep of m.deps) {
-			const target = workspaceTarget(dep);
+			const link = workspaceLink(dep);
 			// `workspace:` is checked first: it is the most actionable diagnosis even when the dep
 			// is also `@kampus/*`-scoped.
-			if (target !== undefined) {
-				if (publishedNames.has(target)) continue;
+			if (link !== undefined) {
+				if (link.kind === "package" && publishedNames.has(link.name)) continue;
 				violations.push({
 					path: m.path,
 					field: dep.field,
 					name: dep.name,
 					value: dep.value,
-					kind: "workspace-link",
+					kind: link.kind === "path" ? "workspace-path-link" : "workspace-link",
 				});
 			} else if (dep.name.startsWith(KAMPUS_SCOPE) && !publishedNames.has(dep.name)) {
 				violations.push({
@@ -134,12 +150,25 @@ export const judge = (manifests: ReadonlyArray<PublishedManifest>): PublishIsola
 };
 
 /** One violation as its own report line, carrying the why and the fix. */
-export const violationLine = (v: IsolationViolation): string =>
-	v.kind === "workspace-link"
-		? `  ${v.path}: ${v.field} \`${v.name}\` links \`${v.value}\` — a workspace: link to a package publish.yml does not publish never resolves from a clean registry. ` +
-			"Fix: inline it, or publish that package so the link names a published sibling."
-		: `  ${v.path}: ${v.field} \`${v.name}\` (\`${v.value}\`) is a private/unpublished @kampus package — an external install cannot resolve it. ` +
-			"Fix: inline it, or publish that package and depend on its registry version.";
+export const violationLine = (v: IsolationViolation): string => {
+	switch (v.kind) {
+		case "workspace-link":
+			return (
+				`  ${v.path}: ${v.field} \`${v.name}\` links \`${v.value}\` — a workspace: link to a package publish.yml does not publish never resolves from a clean registry. ` +
+				"Fix: inline it, or publish that package so the link names a published sibling."
+			);
+		case "workspace-path-link":
+			return (
+				`  ${v.path}: ${v.field} \`${v.name}\` links \`${v.value}\` — a path-form workspace: link packs as whatever package sits in that directory, which the guard cannot prove is published. ` +
+				"Fix: link the published sibling by name (`workspace:*`), or inline it."
+			);
+		case "private-kampus-dep":
+			return (
+				`  ${v.path}: ${v.field} \`${v.name}\` (\`${v.value}\`) is a private/unpublished @kampus package — an external install cannot resolve it. ` +
+				"Fix: inline it, or publish that package and depend on its registry version."
+			);
+	}
+};
 
 /** The human report for a verdict — it names what was scanned, not only what failed. */
 export const renderReport = (verb: string, verdict: PublishIsolationVerdict): string => {

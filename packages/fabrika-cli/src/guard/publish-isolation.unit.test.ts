@@ -12,7 +12,7 @@ import {
 	parsePublishedTagPrefixes,
 	resolvePublished,
 	unscopedName,
-	workspaceTarget,
+	workspaceLink,
 } from "./publish-isolation.ts";
 
 const manifest = (
@@ -130,6 +130,33 @@ describe("judge", () => {
 		expect(v.violations[0]?.kind).toBe("workspace-link");
 	});
 
+	it("reds a path-form workspace: link even when the dep name is a published sibling", () => {
+		const v = judge([
+			manifest("packages/demo-ui/package.json", "@kampus/demo-ui", [
+				{field: "dependencies", name: "@kampus/demo-sdk", value: "workspace:../epic-ledger"},
+				{field: "peerDependencies", name: "@kampus/demo-sdk", value: "workspace:./vendor/private"},
+			]),
+			manifest("packages/demo-sdk/package.json", "@kampus/demo-sdk", []),
+		]);
+		if (v.pass || v.reason !== "linked-private-deps") throw new Error("expected a violation");
+		expect(v.violations).toEqual([
+			{
+				path: "packages/demo-ui/package.json",
+				field: "dependencies",
+				name: "@kampus/demo-sdk",
+				value: "workspace:../epic-ledger",
+				kind: "workspace-path-link",
+			},
+			{
+				path: "packages/demo-ui/package.json",
+				field: "peerDependencies",
+				name: "@kampus/demo-sdk",
+				value: "workspace:./vendor/private",
+				kind: "workspace-path-link",
+			},
+		]);
+	});
+
 	it("fails closed when no published packages are in scope", () => {
 		const v = judge([]);
 		if (v.pass) throw new Error("expected a failure");
@@ -200,19 +227,36 @@ describe("manifestRuntimeDeps", () => {
 	});
 });
 
-describe("workspaceTarget", () => {
+describe("workspaceLink", () => {
 	const dep = (value: string) => ({field: "dependencies", name: "@kampus/demo-sdk", value});
 	it("names the dependency itself for a plain workspace: range", () => {
-		expect(workspaceTarget(dep("workspace:*"))).toBe("@kampus/demo-sdk");
-		expect(workspaceTarget(dep("workspace:^0.1.0"))).toBe("@kampus/demo-sdk");
+		expect(workspaceLink(dep("workspace:*"))).toEqual({kind: "package", name: "@kampus/demo-sdk"});
+		expect(workspaceLink(dep("workspace:^0.1.0"))).toEqual({
+			kind: "package",
+			name: "@kampus/demo-sdk",
+		});
 	});
 	it("names the aliased package for workspace:<name>@<range>", () => {
-		expect(workspaceTarget(dep("workspace:@kampus/design@*"))).toBe("@kampus/design");
-		expect(workspaceTarget(dep("workspace:effect@^3"))).toBe("effect");
+		expect(workspaceLink(dep("workspace:@kampus/design@*"))).toEqual({
+			kind: "package",
+			name: "@kampus/design",
+		});
+		expect(workspaceLink(dep("workspace:effect@^3"))).toEqual({kind: "package", name: "effect"});
+	});
+	it("reads a path-form specifier as a path, never as the dep's own name", () => {
+		expect(workspaceLink(dep("workspace:../epic-ledger"))).toEqual({
+			kind: "path",
+			path: "../epic-ledger",
+		});
+		expect(workspaceLink(dep("workspace:./vendor/private"))).toEqual({
+			kind: "path",
+			path: "./vendor/private",
+		});
+		expect(workspaceLink(dep("workspace:/abs/pkg"))).toEqual({kind: "path", path: "/abs/pkg"});
 	});
 	it("answers undefined for a specifier that is not a workspace link", () => {
-		expect(workspaceTarget(dep("catalog:"))).toBeUndefined();
-		expect(workspaceTarget(dep("^1.0.0"))).toBeUndefined();
+		expect(workspaceLink(dep("catalog:"))).toBeUndefined();
+		expect(workspaceLink(dep("^1.0.0"))).toBeUndefined();
 	});
 });
 
