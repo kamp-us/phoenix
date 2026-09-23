@@ -5,6 +5,7 @@ import {
 	dependencyFindings,
 	EXIT,
 	importFindings,
+	inSourceScope,
 	isApp,
 	judge,
 	parseManifest,
@@ -86,6 +87,75 @@ describe("importFindings", () => {
 
 	it("passes imports of packages", () => {
 		expect(importFindings("f.ts", `import {x} from "@kampus/tuval-sdk/kernel";`)).toEqual([]);
+	});
+
+	// Spelled from pieces for the same reason `app` is: this file holds no real path into an app.
+	const up = (depth: number, rest: string): string => `${"../".repeat(depth)}${rest}`;
+
+	it.each([
+		["a static import", `import {x} from "${up(3, "apps/tuval/src/kernel.ts")}";`],
+		["a dynamic import", `await import('${up(3, "apps/tuval")}');`],
+		["a require", `require("${up(3, "apps")}");`],
+		["a vitest module double", `vi.mock("${up(3, "apps/web/src/x")}", () => ({}));`],
+	])("names a relative specifier that resolves under apps/ in %s", (_, statement) => {
+		const [finding, ...rest] = importFindings("packages/foo/src/a.ts", statement);
+		expect(rest).toEqual([]);
+		expect(finding).toMatchObject({_tag: "PathImport", file: "packages/foo/src/a.ts", line: 1});
+		expect(finding?._tag === "PathImport" && finding.resolved.startsWith("apps")).toBe(true);
+	});
+
+	it("resolves a root-level file's relative specifier from its own directory", () => {
+		expect(importFindings("scripts/x.ts", `import "./${"apps"}/web/y.ts";`)).toEqual([]);
+		expect(importFindings("scripts/x.ts", `import "${up(1, "apps/web/y.ts")}";`)).toEqual([
+			{
+				_tag: "PathImport",
+				file: "scripts/x.ts",
+				line: 1,
+				specifier: up(1, "apps/web/y.ts"),
+				resolved: "apps/web/y.ts",
+			},
+		]);
+	});
+
+	it("passes relative specifiers that stay outside apps/", () => {
+		const text = [
+			`import {a} from "./apps/local.ts";`,
+			`import {b} from "${up(1, "tuval/src/b.ts")}";`,
+			`import {c} from "${up(2, "appsx/c.ts")}";`,
+			`import {d} from "${up(9, "apps/d.ts")}";`,
+		].join("\n");
+		expect(importFindings("packages/foo/src/a.ts", text)).toEqual([]);
+	});
+
+	it("stays linear over long whitespace runs that never reach a quote", () => {
+		const text = `${"vi.mock(".repeat(2_000)}${" ".repeat(50_000)}x`;
+		const started = performance.now();
+		expect(importFindings("f.ts", text)).toEqual([]);
+		expect(performance.now() - started).toBeLessThan(1_000);
+	});
+});
+
+describe("inSourceScope", () => {
+	it.each([
+		"packages/foo/src/a.ts",
+		"scripts/check.ts",
+		"benchmarks/run.mjs",
+		".pnpmfile.cjs",
+		"claude-plugins/fabrika/hooks/x.js",
+		"packages/foo/.tuval/tuval.config.ts",
+	])("reads %s", (path) => {
+		expect(inSourceScope(path)).toBe(true);
+	});
+
+	it.each([
+		"apps/tuval/src/a.ts",
+		".claude/worktrees/agent-1/scripts/check.ts",
+		"packages/foo/node_modules/dep/index.js",
+		"packages/foo/dist/index.js",
+		"scripts/README.md",
+		"package.json",
+	])("skips %s", (path) => {
+		expect(inSourceScope(path)).toBe(false);
 	});
 });
 
