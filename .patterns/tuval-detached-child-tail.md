@@ -12,7 +12,7 @@ in [#8627](https://github.com/kamp-us/phoenix/issues/8627)).
 
 **1. Take the correlation off the event, not the snapshot.** The id that names the child's artifact
 reaches the host once, on a live event, and the snapshot cannot recover it. Keep it at the
-subscription — `apps/tuval/src/pi/server/AgentSessionHost.ts`'s `runDetails` reads the
+subscription — `packages/tuval-pi/src/server/AgentSessionHost.ts`'s `runDetails` reads the
 `tool_execution_update`'s `partialResult.details.runId` and holds it by `toolCallId` — and project it
 onto the tool row as `details`, so the id crosses the wire on the row it belongs to.
 
@@ -27,7 +27,7 @@ already in the process.
 `updateActiveRunIndex` drops an alias file at
 `<asyncRunRoot>/.active-runs/tool-calls/<encoded toolCallId>/<asyncRunId>` while the run is queued or
 running, and each run's `status.json` names its `toolCallId` and its `steps[]` — the worker run ids
-and agent names. `apps/tuval/src/pi/ai-agent/async-spawn.ts` reads that chain.
+and agent names. `packages/tuval-pi/src/ai-agent/async-spawn.ts` reads that chain.
 
 **The alias is a hint; the status is the proof.** An alias is a filename and survives a crash, so a
 run is trusted only when its own `status.toolCallId` is the one being asked for. Never parse a run id
@@ -47,8 +47,8 @@ is reading.
 
 **2. Reimplement the artifact's parse; do not import the backend's reader.** `pi-subagents`' own
 `readFleetTranscript` lives under `src/tui/` and pulls `@earendil-works/pi-tui`, which the paths-only
-rule in `apps/tuval/src/pi/server/subagents.ts` refuses. The grammar is versioned and small, so
-`apps/tuval/src/pi/ai-agent/child-transcript.ts` restates it — with a unit test that spells the
+rule in `packages/tuval-pi/src/server/subagents.ts` refuses. The grammar is versioned and small, so
+`packages/tuval-pi/src/ai-agent/child-transcript.ts` restates it — with a unit test that spells the
 records out, since nothing else holds the two in step. Copy the tail safety: the file is appended to
 while it is read, so a final line that does not parse is not a record and is dropped.
 
@@ -61,7 +61,7 @@ The one thing that has to hold: **both folds build the slot from one function.**
 between two reads refolds the same row, so if the wire fold cannot see what the tail last read, every
 silent revision blanks the rows the operator is looking at. That is why `eventsOf` / `deltaEventsOf`
 take the same child transcripts the tail last handed over
-(`apps/tuval/src/pi/ai-agent/PiAiAgent.ts`'s `follow`).
+(`packages/tuval-pi/src/ai-agent/PiAiAgent.ts`'s `follow`).
 
 ## Where it stops
 

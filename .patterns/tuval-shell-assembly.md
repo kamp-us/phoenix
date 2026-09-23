@@ -307,7 +307,7 @@ Three files, and the split between them is forced rather than stylistic.
 
 - **The row names the window and reaches none of it.** A row is kernel-side data and must stay free
   of React, so the `RendererRef` it declares lives on a leaf that imports one type and nothing else
-  — `src/pi/renderer-ref.ts` for `pi-session`, `packages/tuval-claude/src/renderer-ref.ts` for `claude-session`.
+  — `packages/tuval-pi/src/renderer-ref.ts` for `pi-session`, `packages/tuval-claude/src/renderer-ref.ts` for `claude-session`.
   Retyping the name at both ends instead would drift
   silently: an unresolved reference is a returned value, never a throw
   (`src/shell/window/renderer.ts`), so the window comes up blank and nothing fails.
@@ -318,10 +318,10 @@ Three files, and the split between them is forced rather than stylistic.
   every build.
 - **The leaf carries the program id too, and both names are imported rather than retyped.** The
   page's table keys on the `RendererRef.ref` the row declares (`src/page/renderers.tsx`), and it
-  reads that reference off the leaf through `src/pi/window/index.ts`. The program id sits on the
+  reads that reference off the leaf through `packages/tuval-pi/src/window/index.ts`. The program id sits on the
   same leaf for the same reason: importing it from the row would pull `node:path` and Pi's model
   runtime into the page bundle, which is the black page of #7836 — so `PI_SESSION_PROGRAM` is
-  declared on the leaf and `src/pi/program.ts` re-exports it.
+  declared on the leaf and `packages/tuval-pi/src/program.ts` re-exports it.
 - **The page's three React modules moved to the relaxed lens with it.** `main.tsx`,
   `AttachedDesk.tsx` and `renderers.tsx` reach `@kampus/design` through the table, so they are named
   in `tsconfig.json`'s `exclude` and in `tsconfig.design.json`'s `include`. `src/page/dev-server.ts`
@@ -574,7 +574,7 @@ frame is a *separate* write on the same socket, so assert by waiting for the nex
 satisfies a predicate (`deskWhere`) and not on the ack. And give that wait its own timeout that dies
 naming the last desk it saw — a bare vitest timeout tells you nothing about which key was lost.
 
-A third mechanic the Pi vertical added (`src/pi/proof/pi-vertical.integration.test.ts`): the desk
+A third mechanic the Pi vertical added (`src/pi-desk/proof/pi-vertical.integration.test.ts`): the desk
 stops emitting once the keys stop, so a predicate wait asked for a state that has *already gone past*
 blocks until its timeout. Reading "what does it look like now" is a separate move — drain whatever is
 queued with a short per-take timeout and keep the last frame (`settled`).
@@ -584,7 +584,7 @@ browser harness beside it.** jsdom has no layout, so height, scroll and contrast
 the unit tier; the harness is what lets a reviewer reproduce a load instead of taking a report for it
 (#7610). Two shapes exist and they answer different questions: a Vite page over a test double for one
 component (`pnpm proof:chat`, `pnpm proof:pi-window`), and a bin that boots the whole app on a faux
-provider and serves the real desk (`pnpm proof:pi-vertical`, `src/pi/proof/serve.ts`) for a claim
+provider and serves the real desk (`pnpm proof:pi-vertical`, `src/pi-desk/proof/serve.ts`) for a claim
 about the assembled surface. The second one found `.tuval-window` sizing to its content rather than
 to its panel — a 302px window in a 775px panel, transcript 2px — which no headless proof could see.
 

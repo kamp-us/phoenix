@@ -24,7 +24,7 @@ catalog:
   '@demlik/tea': 0.12.0
   '@distilled.cloud/cloudflare': 1.0.0-rc.9
   '@effect/language-service': ^0.85.1
-  # Pi 0.85.1, pinned exact: apps/tuval's loopback Pi host speaks protocol 8 end to end, and the
+  # Pi 0.85.1, pinned exact: @kampus/tuval-pi's loopback Pi host speaks protocol 8 end to end, and the
   # envelope is part of that contract (ADR 0366). The family's ninth entry, `@earendil-works/chord`,
   # is a runtime dependency of `pi-protocol` and `pi-client` rather than a direct one, so it is
   # pinned under `overrides:` below; all nine move in one commit.

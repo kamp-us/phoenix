@@ -20,6 +20,7 @@ import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {CLAUDE_SESSION_PROGRAM} from "@kampus/tuval-claude";
 import {KernelBridge} from "@kampus/tuval-claude/tools";
+import {PI_SESSION_PROGRAM} from "@kampus/tuval-pi";
 import {SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
@@ -29,7 +30,6 @@ import {afterAll} from "vitest";
 import {claudeSessionScope} from "../../.tuval/tuval.config.ts";
 import {boot, projectDir} from "../boot.ts";
 import {counterId} from "../demo/counter.ts";
-import {PI_SESSION_PROGRAM} from "../pi/renderer-ref.ts";
 import {scratchHome} from "../scratch-home.ts";
 import {programEntries} from "../shell/picker/entries.ts";
 

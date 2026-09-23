@@ -30,6 +30,7 @@
 
 import {claudeSession} from "@kampus/tuval-claude";
 import {codexSession} from "@kampus/tuval-codex";
+import {piSessionProgram, projectRootOf} from "@kampus/tuval-pi";
 import {sessionListProgram} from "@kampus/tuval-sdk/kernel/ai-agent/session-list";
 import {
 	ClientId,
@@ -43,7 +44,6 @@ import {prReview} from "../src/authoring/example/pr-review.ts";
 import type {TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
 import {moduleCounter} from "../src/demo/module-counter.ts";
-import {piSessionProgram, projectRootOf} from "../src/pi/program.ts";
 import {wiredShellEffects} from "../src/shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../src/shell/program.ts";
 

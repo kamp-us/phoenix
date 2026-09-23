@@ -3,7 +3,7 @@
  * `src/agy/` was measured against, the `$HOME`-relative vendor paths, the model catalog, and the
  * options a process fills in.
  *
- * **Constants and a type, and deliberately nothing else.** `src/pi/` carries no `config.ts` at all
+ * **Constants and a type, and deliberately nothing else.** `@kampus/tuval-pi` carries no `config.ts` at all
  * and `@kampus/tuval-claude`'s `config.ts` exists only to carry the spell `Scope` this epic's no-gos strike
  * (#8162), so this is not a Claude-shaped scope carrier. Composition — the argv, the stdin line —
  * is `ai-agent/launch.ts`'s, which reads these.

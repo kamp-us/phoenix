@@ -8,7 +8,7 @@
  * this file; the variant CI runs is `./claude-vertical.integration.test.ts`, on scripted layers with
  * zero model spend (founder ruling on #7582 and #7586).
  *
- * It chats nothing itself. Where the Pi harness (`../../pi/proof/serve.ts`) opens a session and
+ * It chats nothing itself. Where the Pi harness (`../../pi-desk/proof/serve.ts`) opens a session and
  * prompts it before serving, this one serves an empty desk on purpose: what the run is evidence
  * *of* is a person opening the picker, chatting, answering a real permission card, switching the
  * mode, restarting, and finding the chat still there with Pi in the other split.

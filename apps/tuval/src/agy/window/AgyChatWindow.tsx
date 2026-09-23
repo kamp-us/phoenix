@@ -2,8 +2,8 @@
  * `AgyChatWindow` — what the `agy-session` row renders: the shared `ChatWindow` plus agy's one
  * extra.
  *
- * Shaped on `../../pi/window/PiChatWindow.tsx`, which is epic #8162's scope call: agy follows
- * `src/pi/` and not `@kampus/tuval-claude`. Nothing here re-derives a transcript, a composer or a control —
+ * Shaped on `@kampus/tuval-pi`'s `src/window/PiChatWindow.tsx`, which is epic #8162's scope call: agy follows
+ * `@kampus/tuval-pi` and not `@kampus/tuval-claude`. Nothing here re-derives a transcript, a composer or a control —
  * the window is `packages/tuval-ui/src/shell/chat/`'s, and this module supplies its `extras` slot with a usage line
  * read straight off the session state.
  *

@@ -1,0 +1,67 @@
+{
+	"name": "@kampus/tuval-pi",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Tuval's Pi harness — the pi-session program row, its loopback Pi host and client, kernel tools, history and window, on the @kampus/tuval-sdk kernel",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/tuval-pi"
+	},
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./ai-agent": "./src/ai-agent/index.ts",
+		"./server": "./src/server/index.ts",
+		"./window": "./src/window/index.ts",
+		"./testing/faux": "./src/proof/faux.ts",
+		"./testing/window": "./src/window/pi-window.testing.ts",
+		"./testing/window-proof": "./src/window/proof.testing.ts",
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
+		"test": "vitest run",
+		"test:unit": "vitest run --project unit",
+		"test:integration": "vitest run --project integration"
+	},
+	"dependencies": {
+		"@earendil-works/pi-ai": "catalog:",
+		"@earendil-works/pi-client": "catalog:",
+		"@earendil-works/pi-coding-agent": "catalog:",
+		"@earendil-works/pi-protocol": "catalog:",
+		"@kampus/tuval-ui": "workspace:*",
+		"pi-subagents": "catalog:",
+		"typebox": "catalog:",
+		"ws": "catalog:"
+	},
+	"peerDependencies": {
+		"@kampus/tuval-sdk": "workspace:*",
+		"effect": "catalog:",
+		"react": "catalog:"
+	},
+	"devDependencies": {
+		"@demlik/tea": "catalog:",
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@kampus/design": "workspace:*",
+		"@kampus/tuval-sdk": "workspace:*",
+		"@testing-library/dom": "catalog:",
+		"@testing-library/react": "catalog:",
+		"@types/node": "catalog:",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"@types/ws": "catalog:",
+		"effect": "catalog:",
+		"fast-check": "catalog:",
+		"jsdom": "catalog:",
+		"react": "catalog:",
+		"react-dom": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}

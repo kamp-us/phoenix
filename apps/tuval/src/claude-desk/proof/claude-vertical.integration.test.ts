@@ -3,7 +3,7 @@
  * chatted with, a card answered, the mode switched, Pi running beside it, the app stopped and
  * booted again, the page re-attached, and a child spawned through the three kernel tools.
  *
- * It is the Pi vertical (`../../pi/proof/pi-vertical.integration.test.ts`) with a `claude-session`
+ * It is the Pi vertical (`../../pi-desk/proof/pi-vertical.integration.test.ts`) with a `claude-session`
  * where the `pi-session` was — same kernel, same `serveDesk` socket, same page `attach`, same
  * keys-and-Msgs input vocabulary — plus the three things a Claude row has that a Pi row does not: a
  * permission card, a four-mode switch, and the kernel tools. The one substitution is the layer:
@@ -25,6 +25,7 @@ import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {CLAUDE_SESSION_PROGRAM, DEFAULT_ALLOWED_TOOLS} from "@kampus/tuval-claude";
+import {PI_SESSION_PROGRAM} from "@kampus/tuval-pi";
 import {
 	type AiAgentSessionMsg,
 	type AiAgentSessionState,
@@ -36,7 +37,6 @@ import {defaultPrefixTable, type Key, parse} from "@kampus/tuval-ui/keys";
 import {Effect, type FileSystem, Queue, Result, Schema, Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {boot, projectDir} from "../../boot.ts";
-import {PI_SESSION_PROGRAM} from "../../pi/renderer-ref.ts";
 import {scratchHome} from "../../scratch-home.ts";
 import {
 	activeWorkspace,

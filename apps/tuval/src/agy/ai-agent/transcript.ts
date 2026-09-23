@@ -40,7 +40,7 @@
  *   the full file marks nothing as truncated. Ignoring it would serve a clipped transcript that
  *   reads exactly like a short message, which is the worst failure available here.
  *
- * `thinking` is dropped rather than folded into the reply, exactly as `pi/ai-agent/items.ts` drops
+ * `thinking` is dropped rather than folded into the reply, exactly as `@kampus/tuval-pi`'s `src/ai-agent/items.ts` drops
  * Pi's: the port union is text-only by design, and reasoning rendered as an assistant turn is text
  * the model never said.
  *
@@ -555,7 +555,7 @@ export interface PageBound {
  * mints them, rather than at each call site where dropping one reds nothing and silently restores
  * #8900: `cursorAliases` is the live-to-stored join, and `cursorBoundary` is what a cursor naming a
  * tool row *inside* an exchange needs — the boundary is that exchange's start, not the row itself
- * (the shape `pi/ai-agent/entries.ts`'s `planPageOverEntries` fixed for Pi in #8204).
+ * (the shape `@kampus/tuval-pi`'s `src/ai-agent/entries.ts`'s `planPageOverEntries` fixed for Pi in #8204).
  */
 export const planPageOverTranscript = (
 	conversationId: string,

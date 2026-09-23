@@ -2,7 +2,7 @@
  * The session-list row's renderer reference and the predicate over its state, as a leaf both ends
  * can import.
  *
- * Same split as `apps/tuval/src/pi/renderer-ref.ts` and `@kampus/tuval-claude`'s
+ * Same split as `packages/tuval-pi/src/renderer-ref.ts` and `@kampus/tuval-claude`'s
  * `src/renderer-ref.ts`, for the same reason: the row is kernel-side and reaches every backend's
  * session store, the renderer is browser-side and must reach none of it, so the one name they share
  * lives alone in a file that imports one type.

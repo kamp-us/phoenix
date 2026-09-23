@@ -8,7 +8,7 @@
  *
  * The two sides are joined here rather than in either module's own test, because neither can see the
  * mismatch alone — and both are built by the shipped functions rather than hand-numbered, for the
- * reason `pi/ai-agent/paging-from-live.unit.test.ts` gives: hand-numbering passes while the real thing
+ * reason `@kampus/tuval-pi`'s `src/ai-agent/paging-from-live.unit.test.ts` gives: hand-numbering passes while the real thing
  * fails. The live tail is `eventsOf` folded with the core's own `upsertItem`; the page is
  * `planPageOverTranscript`, the one function `AgyAiAgent`'s `page` and `sessionTranscript` both reach
  * through, so dropping the cursor aliases from the shipped path reds this file.

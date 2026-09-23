@@ -4,7 +4,7 @@
  * They live apart from `./desk.ts` because that module reads the proof's project root out of the
  * environment at import time, and a caller sets it only once its temp directory exists: a static
  * import of the config module from the test file would evaluate it first and throw. It is
- * `../../pi/proof/names.ts`'s split, for that file's reason.
+ * `../../pi-desk/proof/names.ts`'s split, for that file's reason.
  *
  * The replies are numbered by **position within one boot**, not by which prompt they answer. A boot
  * re-imports the config module and mints a fresh scripted layer (`src/config.ts` stamps a load

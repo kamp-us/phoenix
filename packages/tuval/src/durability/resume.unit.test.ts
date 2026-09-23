@@ -2,7 +2,7 @@
  * The seam both spawners take after bringing a process back: the row's own `resume`, dispatched.
  *
  * The two callers are proven where they run — `launch` by the restore proofs under
- * `src/ai-agent/restore/` and `src/pi/restore/`, `durability/restore.ts` by
+ * `src/ai-agent/restore/` and `apps/tuval/src/pi-desk/restore/`, `durability/restore.ts` by
  * `restore-services.unit.test.ts`. What is proven here is the step itself, including the case with
  * no test above it: a row that declares no `resume` is sent nothing at all.
  */
