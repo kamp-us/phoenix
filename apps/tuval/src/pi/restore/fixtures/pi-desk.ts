@@ -24,7 +24,13 @@ import {
 } from "../../../ai-agent/restore/fixtures/window.ts";
 import {PI_SESSION_PROGRAM, piSessionProgram} from "../../program.ts";
 import {FAUX_MODEL, fauxPiLayer} from "../../proof/faux.ts";
-import {AGENT_NODE, BEFORE_THE_TOOL, PROJECT_ROOT_VAR, WINDOW_NODE} from "./names.ts";
+import {
+	AFTER_THE_TOOL,
+	AGENT_NODE,
+	BEFORE_THE_TOOL,
+	PROJECT_ROOT_VAR,
+	WINDOW_NODE,
+} from "./names.ts";
 
 /** Re-exported so a reader of this fixture sees the model its assertions name (`../../proof/faux.ts`). */
 export const MODEL = FAUX_MODEL;
@@ -45,7 +51,7 @@ export const replies = [
 			stopReason: "toolUse",
 		},
 	),
-	fauxAssistantMessage("that tool is not available here"),
+	fauxAssistantMessage(AFTER_THE_TOOL),
 ];
 
 const projectRoot = (): string => {
