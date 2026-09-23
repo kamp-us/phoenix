@@ -564,7 +564,10 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 3. **Re-validate every capture against its manifest sha** (`15` on mismatch or invalidity).
 4. **Upload every capture and verify each upload individually, before anything posts** — the
    two-tier store exactly as `ui evidence` specifies it (store tier when the repo declares one;
-   the GitHub user-attachment tier otherwise, each upload probed back). The tier choice reads the
+   the GitHub user-attachment tier otherwise, each upload read back). A fresh user-attachment URL
+   reads `404` at its own address until posted content embeds it, so the attachment tier reads
+   each upload back through GitHub's markdown renderer instead: the signed link the renderer gives
+   the asset must answer `200` to an anonymous fetch and serve the capture's exact bytes. The tier choice reads the
    `uiCapture` key of `.fabrika.jsonc` at the repo root the delivery layer resolves — the reviewer's own
    checked-out tree, never the PR head, which this skill never checks out. Any failure is `17`,
    aggregated, **nothing posted**. This inverts v1's posture at the seam where a crashed capture
@@ -591,6 +594,10 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 8. **Read it back, unconditionally, from live PR state** — the format's `read` (or the advisory
    anchors), then the whole comment through `normalizeForReadback` (`9` on mismatch). A
    read-back that trusts a carried variable re-ships the false-PASS class.
+9. **Re-read the posted comment's evidence** — the comment's rendered HTML, each embedded
+   capture's signed link fetched anonymously and held to its judged bytes. A capture that does not
+   open is `9`, stated as posted: the verdict landed, so the verb never reports success over
+   evidence nobody can see and names the comment to inspect.
 
 **Exit status** (beyond the universal four)
 
@@ -602,7 +609,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `6` | the body is a bare `@` path reference — the body never arrived |
 | `7` | the PR is proven absent (404) or closed |
 | `8` | the create/edit failed — UNKNOWN whether a comment landed |
-| `9` | the comment landed but the read-back does not yield this marker |
+| `9` | the comment landed but the read-back does not yield this marker, or an embedded capture in the posted comment does not open as its judged bytes |
 | `10` | a bad `--polarity`; `--carrier advisory` with `--polarity FAIL`; a `--carrier` off its enum |
 | `11` | a precondition read failed — the PR, the live head, the evidence set's files, or the upload target's state; nothing was uploaded or posted |
 | `12` | refused: the live head moved past `--sha`, or the evidence set was rendered at a different head — the verdict or its pixels would bind a tree that is not the PR |
@@ -630,6 +637,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: the assembled comment carries a machine-local path at line <k> (<class>) — cite it repo-relative or by class root.` | 5 | refusal |
 | `review-ui post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; run \`fabrika review verdicts <n>\` before retrying.` | 8 | refusal |
 | `review-ui post: posted, but the read-back does not yield this marker (<wire reason>) — inspect comment <id>.` | 9 | refusal |
+| `review-ui post: POSTED, BUT ITS EVIDENCE DOES NOT OPEN — <k> of <m> embedded captures fail the read-back (<first reason>); the verdict in comment <id> stands over evidence nobody can see — inspect it before anything reads this verdict.` | 9 | refusal |
 | `review-ui post: a standing <PASS\|FAIL> for review-ui at <sha> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 18 | refusal |
 
 **Scope** — one PR (its live head, its comments), one evidence set (its manifest and every

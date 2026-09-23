@@ -17,7 +17,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {type CaptureManifest, serializeManifest, sha256Hex} from "./manifest.ts";
-import {runPost, type UploadLeg} from "./post-verb.ts";
+import {type EvidenceCheck, runPost, type UploadLeg} from "./post-verb.ts";
 import {classifyProbe} from "./upload-leg.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
@@ -127,6 +127,7 @@ const comments = (
 
 const hostingLeg: UploadLeg = () => Effect.succeed({_tag: "Hosted", url: HOSTED});
 const failingLeg: UploadLeg = () => Effect.succeed({_tag: "Failed", reason: "HTTP 500"});
+const opensCheck: EvidenceCheck = () => Effect.succeed({_tag: "Resolved"});
 
 const BODY = "| surface | verdict |\n|---|---|\n| /pano | FAIL |\n";
 
@@ -143,6 +144,7 @@ const options = {
 	tmpRoot: "/tmp",
 	cwd: "/repo",
 	upload: hostingLeg,
+	confirm: opensCheck,
 	supersede: false,
 	now: Effect.succeed(NOW_MILLIS),
 };
@@ -282,6 +284,46 @@ describe("runPost", () => {
 		expect(outcome.code).toBe(UPLOAD_FAILED);
 		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 		expect(outcome.stderr.join("\n")).toMatch(/probed back HTTP 404/);
+	});
+
+	it("re-checks the posted comment's evidence against the judged bytes, keyed on the landed comment", async () => {
+		const seen: Array<Parameters<EvidenceCheck>[0]> = [];
+		const recording: EvidenceCheck = (request) => {
+			seen.push(request);
+			return Effect.succeed({_tag: "Resolved"});
+		};
+		const {outcome} = await run(happy(), {confirm: recording});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([
+			{repo: "o/r", commentId: 5154902211, evidence: [{url: HOSTED, bytes: BYTES}]},
+		]);
+	});
+
+	it("never reports success when the POSTED comment's evidence does not open — 9, said loudly", async () => {
+		const broken: EvidenceCheck = () =>
+			Effect.succeed({
+				_tag: "Unresolved",
+				reasons: [`${HOSTED}: the hosted asset probed back HTTP 404`],
+			});
+		const {outcome, requests} = await run(happy(), {confirm: broken});
+		expect(outcome.code).toBe(READBACK_MISMATCH);
+		expect(outcome.stdout).toBe("");
+		expect(requests.some((request) => CREATE.test(request))).toBe(true);
+		const said = outcome.stderr.join("\n");
+		expect(said).toMatch(/POSTED, BUT ITS EVIDENCE DOES NOT OPEN/);
+		expect(said).toMatch(/comment 5154902211/);
+		expect(said).toMatch(/probed back HTTP 404/);
+	});
+
+	it("does not run the after-post check when nothing posted", async () => {
+		let ran = false;
+		const tracking: EvidenceCheck = () => {
+			ran = true;
+			return Effect.succeed({_tag: "Resolved"});
+		};
+		const {outcome} = await run(happy(), {upload: failingLeg, confirm: tracking});
+		expect(outcome.code).toBe(UPLOAD_FAILED);
+		expect(ran).toBe(false);
 	});
 
 	it("appends into this namespace's own comment instead of stacking a second marker", async () => {

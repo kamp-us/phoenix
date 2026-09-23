@@ -1,31 +1,45 @@
 /**
  * The production {@link UploadLeg}: upload one capture to the GitHub user-attachment tier and
- * **probe the result back** before calling it evidence.
+ * **read it back** before calling it evidence — plus the {@link EvidenceCheck} that re-reads the
+ * same evidence out of the posted comment.
  *
  * The upload itself is the capture module's `uploadAsset`, imported — what this file adds is the
  * half that module deliberately does not have. Its error channel is `never` by contract, because
  * for the v1 gate hosting was display-only; here the hosted URL is a precondition of the verdict,
  * so an unverified URL is a failure rather than a decoration.
  *
- * The probe is a real fetch of the returned URL, carrying the same token the upload used.
+ * LOAD-BEARING NOTE — a fresh `github.com/user-attachments/assets/<uuid>` is NOT readable at its own
+ * URL. Probed live on 2026-09-23: the upload answers `201 {"url": …}`, and that URL reads `404`
+ * with `authorization: token`, with `Bearer` and anonymously, right away and minutes later, while
+ * an asset some posted comment already embeds answers `302`. The bytes are stored, though: GitHub's
+ * renderer, asked to render `![…](<url>)` in this repo's context, rewrites a stored asset into a
+ * signed `private-user-images.githubusercontent.com/…-<uuid>.png?jwt=…` link that serves `200` with
+ * the uploaded bytes, and leaves an unknown uuid as a plain unsigned link. That signed link is also
+ * exactly what a posted comment's rendered HTML embeds, so it is what a human opening the PR loads.
  *
- * LOAD-BEARING NOTE — `github.com/user-attachments/assets/<uuid>` is AUTH-GATED ON READ. Probed
- * against the live endpoint: anonymous is `404`, `authorization: token <t>` is `302` to the
- * signed CDN URL, and following that redirect is `200`. So the probe must send the token or it
- * reads every healthy upload back as missing. A human opening the PR reads the attachment through
- * their own GitHub session, the same tier every drag-and-dropped screenshot on this repo uses.
+ * So the read-back is: render the URL, take the signed `<img>` whose path names this asset's uuid,
+ * fetch it anonymously, and require `200` plus the local capture's exact bytes. It runs twice —
+ * through `POST /markdown` before anything posts, and through the posted comment's `body_html` after.
+ * Anything short of that — a non-`200`, other bytes, no signed link, a transport fault — is a
+ * failure: before the post the caller refuses on `17` with nothing posted, after it the caller
+ * refuses rather than report success.
  *
- * Anything that is not a served response — a 4xx/5xx under that authenticated probe, a transport
- * fault — is `Failed`, and the caller refuses on `17` with nothing posted.
+ * @ruling https://github.com/kamp-us/phoenix/issues/9715#issuecomment-5792636866
  */
 import {Effect} from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import {uploadAsset} from "../capture/upload.ts";
-import {existenceOf, resolveToken, restRead} from "../io/gh-api.ts";
+import {existenceOf, type RestCall, resolveToken, restCall, restRead} from "../io/gh-api.ts";
 import {fail, ok} from "../io/git.ts";
 import {isRecord} from "../io/json.ts";
-import type {UploadLeg, UploadResult} from "./post-verb.ts";
+import type {
+	EvidenceCheck,
+	EvidenceCheckResult,
+	HostedEvidence,
+	UploadLeg,
+	UploadResult,
+} from "./post-verb.ts";
 
 /**
  * The repo's numeric id, which the undocumented attachment endpoint requires (404 without it).
@@ -44,32 +58,105 @@ const repositoryId = (token: string, repo: string) =>
 		return read._tag === "Present" ? read.value : null;
 	});
 
-/**
- * PURE: the probe request. The token is a required argument rather than something resolved in
- * here, so an unauthenticated probe — the shape that read every healthy upload back as `404` — has
- * no way to be constructed.
- */
-export const probeRequest = (url: string, token: string): HttpClientRequest.HttpClientRequest =>
-	HttpClientRequest.get(url).pipe(HttpClientRequest.setHeaders({authorization: `token ${token}`}));
+/** PURE: the render call that resolves a hosted URL to its signed link, in `repo`'s context. */
+export const renderCall = (hostedUrl: string, repo: string): RestCall => ({
+	method: "POST",
+	path: "markdown",
+	body: {text: `![evidence](${hostedUrl})`, mode: "gfm", context: repo},
+	accept: "text/html",
+});
+
+/** PURE: the posted comment read, asking for the rendered HTML a human's browser would load. */
+export const renderedCommentCall = (repo: string, commentId: number): RestCall => ({
+	method: "GET",
+	path: `repos/${repo}/issues/comments/${commentId}`,
+	accept: "application/vnd.github.html+json",
+});
 
 /**
- * PURE: classify a probe status. The `302` the authenticated probe answers with is the asset being
- * served, so the served band runs to 400; a `404` is the asset genuinely not resolving and stays a
- * failure, which is the refusal this verify exists to feed.
+ * PURE: the served link rendered HTML gives the asset at `hostedUrl` — the `<img src>` whose path
+ * names the asset's uuid — or `null` when the HTML carries none. Only an `https` link is taken, and
+ * the entity-escaped `&` in its signed query is restored.
+ */
+export const servedAssetUrl = (html: string, hostedUrl: string): string | null => {
+	const uuid = hostedUrl.split("/").at(-1) ?? "";
+	if (uuid === "") return null;
+	for (const match of html.matchAll(/<img\b[^>]*?\ssrc="([^"]+)"/g)) {
+		const src = (match[1] ?? "").replaceAll("&amp;", "&");
+		if (!URL.canParse(src)) continue;
+		const parsed = new URL(src);
+		if (parsed.protocol === "https:" && parsed.pathname.includes(uuid)) return src;
+	}
+	return null;
+};
+
+/**
+ * PURE: the probe request. It carries no credential: the signed link is what a rendered page hands
+ * any reader, so an anonymous `200` is the proof a human can open it, and the token never travels
+ * to the CDN host.
+ */
+export const probeRequest = (url: string): HttpClientRequest.HttpClientRequest =>
+	HttpClientRequest.get(url);
+
+/**
+ * PURE: classify a probe status. Only `200` is the asset served — the probe follows redirects, so a
+ * `3xx` left standing is a link that never landed on bytes; a `404` is the asset not resolving and
+ * stays a failure, which is the refusal this verify exists to feed.
  */
 export const classifyProbe = (status: number): string | null =>
-	status >= 200 && status < 400 ? null : `the hosted asset probed back HTTP ${status}`;
+	status === 200 ? null : `the hosted asset probed back HTTP ${status}`;
 
-const verify = (
-	url: string,
-	token: string,
-): Effect.Effect<string | null, never, HttpClient.HttpClient> =>
-	HttpClient.execute(probeRequest(url, token)).pipe(
-		Effect.map((response) => classifyProbe(response.status)),
+/** PURE: whether the served bytes are the capture's own. */
+export const classifyBytes = (served: Uint8Array, expected: Uint8Array): string | null =>
+	served.length === expected.length && served.every((byte, index) => byte === expected[index])
+		? null
+		: `the hosted asset served ${served.length} bytes that are not the ${expected.length}-byte capture`;
+
+/** Fetch the served link for one piece of evidence out of `html`, and hold it to the capture. */
+const readBack = (
+	html: string,
+	evidence: HostedEvidence,
+): Effect.Effect<string | null, never, HttpClient.HttpClient> => {
+	const served = servedAssetUrl(html, evidence.url);
+	if (served === null) {
+		return Effect.succeed(
+			"GitHub's renderer gave the hosted asset no served link — the upload did not store it",
+		);
+	}
+	return HttpClient.execute(probeRequest(served)).pipe(
+		Effect.flatMap((response) => {
+			const status = classifyProbe(response.status);
+			if (status !== null) return Effect.succeed(status);
+			return Effect.map(response.arrayBuffer, (buffer) =>
+				classifyBytes(new Uint8Array(buffer), evidence.bytes),
+			);
+		}),
 		Effect.catch((error: unknown) =>
 			Effect.succeed(`the hosted asset could not be probed back: ${String(error)}`),
 		),
 	);
+};
+
+/** The rendered HTML one call answers, or why there is none. */
+const htmlOf = (
+	token: string,
+	call: RestCall,
+	read: (response: {readonly body: unknown; readonly text: string}) => string | null,
+): Effect.Effect<
+	{readonly html: string} | {readonly reason: string},
+	never,
+	HttpClient.HttpClient
+> =>
+	Effect.map(restCall(token, call), (outcome) => {
+		if (outcome._tag === "Unreachable") return {reason: outcome.reason};
+		if (outcome.status !== 200) {
+			return {reason: `${call.method} ${call.path} answered HTTP ${outcome.status}`};
+		}
+		const html = read(outcome);
+		return html === null
+			? {reason: `${call.method} ${call.path} answered 200 with no rendered HTML`}
+			: {html};
+	});
 
 export const githubAttachmentUploadLeg = (
 	env: Readonly<Record<string, string | undefined>>,
@@ -98,8 +185,51 @@ export const githubAttachmentUploadLeg = (
 				reason: outcome.uploadError ?? "the upload returned no hosted URL",
 			} as UploadResult;
 		}
-		const unverified = yield* verify(outcome.hostedUrl, token.value);
+		const rendered = yield* htmlOf(token.value, renderCall(outcome.hostedUrl, request.repo), (r) =>
+			r.text === "" ? null : r.text,
+		);
+		if ("reason" in rendered) {
+			return {
+				_tag: "Failed",
+				reason: `the hosted asset could not be resolved: ${rendered.reason}`,
+			} as UploadResult;
+		}
+		const unverified = yield* readBack(rendered.html, {
+			url: outcome.hostedUrl,
+			bytes: request.bytes,
+		});
 		return unverified === null
 			? ({_tag: "Hosted", url: outcome.hostedUrl} as UploadResult)
 			: ({_tag: "Failed", reason: unverified} as UploadResult);
+	});
+
+const RESOLVED: EvidenceCheckResult = {_tag: "Resolved"};
+
+const unresolved = (reasons: readonly [string, ...string[]]): EvidenceCheckResult => ({
+	_tag: "Unresolved",
+	reasons,
+});
+
+/** Read the posted comment's rendered HTML and hold every embedded capture to its bytes. */
+export const githubPostedEvidenceCheck = (
+	env: Readonly<Record<string, string | undefined>>,
+): EvidenceCheck =>
+	Effect.fn(function* (request) {
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return unresolved([token.reason]);
+		const rendered = yield* htmlOf(
+			token.value,
+			renderedCommentCall(request.repo, request.commentId),
+			(r) => (isRecord(r.body) && typeof r.body.body_html === "string" ? r.body.body_html : null),
+		);
+		if ("reason" in rendered) {
+			return unresolved([`the posted comment could not be read: ${rendered.reason}`]);
+		}
+		const reasons: string[] = [];
+		for (const evidence of request.evidence) {
+			const failure = yield* readBack(rendered.html, evidence);
+			if (failure !== null) reasons.push(`${evidence.url}: ${failure}`);
+		}
+		const [first, ...rest] = reasons;
+		return first === undefined ? RESOLVED : unresolved([first, ...rest]);
 	});
