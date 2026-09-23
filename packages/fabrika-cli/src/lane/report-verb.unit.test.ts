@@ -396,6 +396,30 @@ describe("lane report — a cause-less park under `parkCause.uncaused: refuse`",
 		expect(out.code).toBe(0);
 	});
 
+	// A rendered verdict that provably could not land ends `ESCALATED`, and `requireCause` binds it
+	// like any other park: the cause names the unlanded write rather than exempting the token.
+	it("records a ui-reviewer ESCALATED that names the unlanded write", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+
+		const out = await run(fs, "ESCALATED", {parkCause: strict, cause: "write-unlanded"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "write-unlanded",
+		});
+	});
+
+	it("still refuses a ui-reviewer ESCALATED that names no cause", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+
+		const out = await run(fs, "ESCALATED", {parkCause: strict});
+
+		expect(out.code).toBe(PARK_UNCAUSED);
+		expect(out.stderr.join(" ")).toContain("write-unlanded");
+		expect(fs.written.size).toBe(0);
+	});
+
 	it("refuses UNKNOWN on a config nobody could read, rather than recording the bare park", async () => {
 		const fs = laneAt(LOG_AT.build);
 		const prover = fakeProver();

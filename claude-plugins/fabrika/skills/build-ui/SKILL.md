@@ -184,10 +184,12 @@ with its proven render code — a dark-flagged surface ships with its render gap
 and `review-ui`'s gate owns whether that is acceptable; only *silent* evidence absence is
 forbidden); `BLOCKED-NO-MANIFEST` (no design law in this repo — no branch cut, routed to
 front-door's bootstrap); `BACKED-OFF` (claim lost or lane proven not yours — a `ui` verb's
-exit 18 included — blocked, wrong modality, or empty pool; branch removed, or never cut); `ESCALATED` (repair cap reached, or evidence provably
-unattachable after the PR opened — branch pushed at its last verified head, escalation note
-posted); `STOPPED` (isolation or verdict UNKNOWN — branch left
-local, state named). This skill has **no success-without-PR terminal**: a constructed surface
+exit 18 included — blocked, wrong modality, or empty pool; branch removed, or never cut); `ESCALATED` (repair cap reached, cause
+`repair-budget-spent`; or evidence provably unattachable after the PR opened, cause
+`write-unlanded` — branch pushed at its last verified head, escalation note posted); `STOPPED` (isolation or verdict UNKNOWN — branch left
+local, state named). Record an `ESCALATED` with its cause on the `lane report` line
+(`--token ESCALATED --cause write-unlanded`, or `--cause repair-budget-spent`): under
+`parkCause.uncaused: "refuse"` a park that names none is refused at exit `52` and never recorded. This skill has **no success-without-PR terminal**: a constructed surface
 that opened no PR is not a success under any name. Each terminal names its branch disposition;
 cross-lane signals are closed-vocabulary — kind + action + branded ref, receiver re-fetches.
 
