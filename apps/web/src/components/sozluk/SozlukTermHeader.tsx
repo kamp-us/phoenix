@@ -5,6 +5,7 @@ import {toIsoOrNull} from "../../fate/wire";
 import {useT, useTPlural} from "../../i18n";
 import {formatAgoTR, formatDateTR} from "../../lib/datetime";
 import {sozlukLetterHref} from "../../lib/sozlukLetterHref";
+import {Breadcrumbs} from "../layout/Breadcrumbs";
 
 export const TermHeaderView = view<Term>()({
 	id: true,
@@ -33,15 +34,21 @@ export function SozlukTermHeader(props: SozlukTermHeaderProps) {
 	const lastEdit = toIsoOrNull(term.lastEdit);
 	return (
 		<header className="kp-sozluk-term__head">
-			<p className="kp-sozluk-term__crumbs">
-				<Link to="/sozluk">{t("sozluk.term.crumbRoot")}</Link> /{" "}
-				{firstLetter ? (
-					<>
-						<Link to={sozlukLetterHref(firstLetter, false)}>{firstLetter}</Link> /{" "}
-					</>
-				) : null}
-				{term.title}
-			</p>
+			<Breadcrumbs
+				className="kp-sozluk-term__crumbs"
+				trail={[
+					{key: "root", label: <Link to="/sozluk">{t("sozluk.term.crumbRoot")}</Link>},
+					...(firstLetter
+						? [
+								{
+									key: "letter",
+									label: <Link to={sozlukLetterHref(firstLetter, false)}>{firstLetter}</Link>,
+								},
+							]
+						: []),
+				]}
+				current={{key: "term", label: term.title}}
+			/>
 			<h1 className="kp-sozluk-term__title">{term.title}</h1>
 			<div className="kp-sozluk-term__meta">
 				<span>

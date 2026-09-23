@@ -5,6 +5,7 @@ export const layout = {
 	"layout.search.label": "Ara",
 	"layout.divan": "divan",
 	"layout.filter.clear": "× filtreyi kaldır",
+	"layout.breadcrumb.label": "sayfa yolu",
 	"layout.userMenu.profile": "profil",
 	"layout.userMenu.bildirimler": "bildirimler",
 	"layout.userMenu.settings": "ayarlar",
