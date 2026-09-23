@@ -1,0 +1,24 @@
+{
+	"name": "@kampus/app-boundary-guard",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Fail-closed CI gate: no workspace package outside apps/ lists an @kampus-apps/* name in a dependency field or imports an @kampus-apps/* specifier, because an app is never imported (#9660). Zero runtime dependencies; ci.yml runs `node src/bin.ts` with no install",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
+		"test": "vitest run",
+		"check": "node src/bin.ts"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@types/node": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
