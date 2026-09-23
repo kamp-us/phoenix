@@ -329,9 +329,9 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token CANT-SEE -
 `BLOCKED-NO-MANIFEST` reports `--cause no-design-manifest`, `ROUTED-ELSEWHERE` reports
 `--cause no-rendered-delta`, and `ESCALATED` reports `--cause write-unlanded`. Under
 `parkCause.uncaused: "refuse"` a park that names no cause is refused at exit `52`, so an `ESCALATED`
-without one is not recorded at all. Three of the four
-still route to a human, and the cause is what makes that route a gap somebody can write a row for
-rather than an anonymous dead end.
+without one is not recorded at all. Three of the four always park; `ROUTED-ELSEWHERE`
+parks only when it cannot advance (below). Each park routes to the driver by its cause, never to a human: the cause is what
+lets the driver read the failure, or a recipe row clear it, rather than an anonymous dead end.
 
 **`ROUTED-ELSEWHERE` is the one that may not park at all, and that is the verb's call rather than
 yours.** Your route is a *completed* review of a diff that renders nothing, and `lane prove` has
