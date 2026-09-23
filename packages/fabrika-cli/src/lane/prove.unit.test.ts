@@ -69,6 +69,24 @@ describe("claimOf", () => {
 		expect(claimOf("PASS", "review", TAIL, null)).toEqual({_tag: "HeadVerdicts", defers: []});
 	});
 
+	// Spelled out rather than read off `BUILD_STATES`, so dropping a cell from that set reds here: a
+	// `DONE` out of `build:ui` recorded on the ui-builder's word alone is the gap this pins shut.
+	describe.each(["build", "build:ui"])("a DONE out of the %s leaf", (leaf) => {
+		it("claims the open PR on a single lane and on an epic tail", () => {
+			expect(claimOf("DONE", leaf, SINGLE)).toEqual({_tag: "OpenPull"});
+			expect(claimOf("DONE", leaf, TAIL)).toEqual({_tag: "OpenPull"});
+		});
+
+		it("claims the child's range on an epic child", () => {
+			expect(claimOf("DONE", leaf, CHILD)).toEqual({_tag: "RangeCommits", epic: 5800});
+		});
+	});
+
+	it("names every build leaf in the answer for an event that claims nothing", () => {
+		const claim = claimOf("DONE", "queued", SINGLE);
+		expect(claim._tag === "None" && claim.why).toContain('DONE out of "build" / "build:ui"');
+	});
+
 	it("claims the same two artifacts for an epic tail — the tail is the one PR", () => {
 		expect(claimOf("DONE", "build", TAIL)).toEqual({_tag: "OpenPull"});
 		expect(claimOf("PASS", "review", TAIL, "review:ui")).toEqual({
