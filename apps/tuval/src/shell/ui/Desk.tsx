@@ -4,7 +4,7 @@
  * command line, and it owns the page's one application-level keyboard listener.
  *
  * The two desk-level regions are *composed*, never pushed into: `./desk-snapshot.ts` assembles one
- * `DeskSnapshot` and `../desk/compose.ts` answers what each region shows. Both read that one
+ * `DeskSnapshot` and `packages/tuval-ui/src/shell/desk/compose.ts` answers what each region shows. Both read that one
  * snapshot, so they cannot disagree about which window is focused.
  *
  * "One listener" is the invariant, and it has exactly two sanctioned exceptions, both of them

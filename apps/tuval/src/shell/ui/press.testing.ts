@@ -1,6 +1,6 @@
 /**
  * A kernel behind a desk, for a test that is not about the round trip — the same shape
- * `./dom.testing.ts` has, and shipped beside the code for the same reason: a test double for one
+ * `packages/tuval-ui/src/shell/ui/dom.testing.ts` has, and shipped beside the code for the same reason: a test double for one
  * seam belongs next to the seam.
  *
  * It folds the real reducer and answers as the acknowledgement does, at once. A test that types

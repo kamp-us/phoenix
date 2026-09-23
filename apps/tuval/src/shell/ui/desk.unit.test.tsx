@@ -66,7 +66,7 @@ const boundEverywhere: MountResolver = boundTo((host) => (
 /**
  * A window shaped like the chat one: the two places an operator's focus actually sits — a composer
  * that reads its own keys, and a scroll region that swallows a bare character exactly as
- * `../chat/ChatWindow.tsx` does. The rule is the shipped helper, not a paraphrase of it, so a desk
+ * `packages/tuval-ui/src/shell/chat/ChatWindow.tsx` does. The rule is the shipped helper, not a paraphrase of it, so a desk
  * that stopped honouring the armed mark fails here.
  */
 const chatShapedWindow: MountResolver = boundTo((host) => (

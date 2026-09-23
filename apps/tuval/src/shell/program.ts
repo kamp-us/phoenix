@@ -216,7 +216,7 @@ const isShellRow = (program: AnyProgram): program is ShellRow =>
  * both: `boot` calls it once, and everything downstream — the registry, the spell set, the grammar
  * the transport sends — reads the gated row rather than re-deriving the gate for itself (#8867).
  *
- * Gating is additive and lives in two lists, `boardBindings` in `./keys/table.ts` and
+ * Gating is additive and lives in two lists, `boardBindings` in `packages/tuval-ui/src/shell/keys/table.ts` and
  * `boardCommands` in `./commands/table.ts`. Both are keyed on the one flag, so a key can never name
  * a row this build does not hold.
  */

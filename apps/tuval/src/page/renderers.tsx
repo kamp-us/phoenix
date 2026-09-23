@@ -110,7 +110,7 @@ export type SpellCaller = PageAttachment["call"];
 /**
  * The session list, read from the kernel. One call per attempt, sent when the window mounts and
  * matched to its reply by the `CallId` it minted, so two open pickers never read each other's answer
- * (`./session-list.ts`). A socket that goes away is no answer at all: the read stays out until its
+ * (`packages/tuval-ui/src/page/session-list.ts`). A socket that goes away is no answer at all: the read stays out until its
  * deadline passes, and the desk's own connection banner is what says the link is gone.
  *
  * Retry is the second correlation, and the attempt number is what carries it: a superseded call's
@@ -160,7 +160,7 @@ const sessionListSource = (call: SpellCaller): SessionListSource => {
 /**
  * One session's transcript, read from the kernel a page at a time. The first page leaves when the
  * transcript mounts and every later one leaves when the operator asks for older history, each
- * correlated on the `CallId` it minted (`./session-transcript.ts`) so a reply belonging to another
+ * correlated on the `CallId` it minted (`packages/tuval-ui/src/page/session-transcript.ts`) so a reply belonging to another
  * call — the list's, the other window's, the page this one superseded — is never folded in.
  *
  * **The cursor is what a request is, and the attempt is what makes it a new one.** A page that

@@ -1,7 +1,7 @@
 /**
  * The status line: three groups, and which of them a program can reach is the whole point.
  *
- * `statusFor` (`../desk/compose.ts`) hands over a composed `StatusBar` whose `left` and `right` it
+ * `statusFor` (`packages/tuval-ui/src/shell/desk/compose.ts`) hands over a composed `StatusBar` whose `left` and `right` it
  * derived itself and whose `middle` is whatever the focused window's program returned. This binds
  * that answer verbatim — a program's segments go into the middle group and nowhere else, because
  * that is the only place this component reads them from (#7500 ruling 5). An empty middle is an
@@ -34,7 +34,7 @@ const Segments = ({segments}: {readonly segments: ReadonlyArray<StatusSegment>})
 	<>
 		{segments.map((segment) => (
 			// `tone` is a name, never a colour: the segment says "attention" and this surface decides
-			// what that looks like (`../desk/renderer.ts`).
+			// what that looks like (`packages/tuval-ui/src/shell/desk/renderer.ts`).
 			<span key={segment.id} className="tuval-status-segment" data-tone={segment.tone ?? "normal"}>
 				{segment.text}
 			</span>

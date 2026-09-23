@@ -3,7 +3,7 @@
  * window is `chat.css` — and that separation is the point: a rule that belongs to the harness must
  * never be mistaken for one the product ships.
  *
- * `.tuval-surface` is a flex *column* (`../../ui/tokens.css`), so the row direction is re-declared
+ * `.tuval-surface` is a flex *column* (`../../shell/ui/tokens.css`), so the row direction is re-declared
  * at equal specificity and wins on order. Every ancestor carries `min-block-size: 0`, because the
  * transcript is a flex child that scrolls: without it the default `min-height: auto` sizes each
  * pane to its content and the transcript collapses to nothing.

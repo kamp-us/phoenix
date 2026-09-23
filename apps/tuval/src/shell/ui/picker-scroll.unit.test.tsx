@@ -6,7 +6,7 @@
  * never handed one, and the highlight walks out of the window body (#8656).
  *
  * The keys arrive the way the desk sends them — one `ForwardedKey` per press, with a rising `seq` —
- * because that is the only channel a renderer has (`./forwarded-key.tsx`).
+ * because that is the only channel a renderer has (`packages/tuval-ui/src/shell/ui/forwarded-key.tsx`).
  */
 
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";

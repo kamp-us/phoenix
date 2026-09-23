@@ -10,7 +10,7 @@
  * because the fault this file exists to keep out was exactly a window whose seam was never bound:
  * the surface said "reading" forever and every unit around it passed (#8492's hand-verification).
  * The pure half — one reply becoming a landing, a sequence of landings folding into one history —
- * is `./session-transcript.unit.test.ts`.
+ * is `packages/tuval-ui/src/page/session-transcript.unit.test.ts`.
  */
 
 import type {SessionListState} from "@kampus/tuval-sdk/kernel/ai-agent/renderer-ref";

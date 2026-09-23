@@ -118,7 +118,7 @@ const press = async (key: string) => {
 
 /**
  * A desk the row's activation is driven into for real, wired the way the page wires it
- * (`../../page/boot.tsx`): the Msg goes through the shell reducer, so a case reads the window the
+ * (`../page/boot.tsx`): the Msg goes through the shell reducer, so a case reads the window the
  * operator gets rather than that some callback was called. A stub records the call and would have
  * agreed with an attach that consumed the parent's own window.
  */
