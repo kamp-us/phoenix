@@ -27,8 +27,8 @@
  * `href`. It does NOT prove that URL opens: a fresh asset reads `404` at its own
  * address, under any credential, until some posted content embeds it. So a caller
  * that needs the asset readable before it posts cannot probe the returned URL; it
- * reads the asset back through GitHub's markdown renderer, which the `review-ui`
- * upload leg does.
+ * reads the asset back through GitHub's markdown renderer, the shared read-back in
+ * `../io/attachment-read-back.ts` that `review-ui post` and `ui evidence` both run.
  */
 import {Effect} from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
