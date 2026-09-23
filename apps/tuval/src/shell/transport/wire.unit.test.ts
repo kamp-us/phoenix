@@ -207,7 +207,7 @@ describe("the transport wire", () => {
 
 	it("a reply whose result is absent round trips: JSON cannot carry a Void spell's `undefined`", () => {
 		// What `succeeded` builds for every authored spell, whose `result` is `Schema.Void`
-		// (`../../authoring/commands.ts`): `result: undefined`, which `JSON.stringify` drops. The key
+		// (the SDK's `authoring/commands.ts`): `result: undefined`, which `JSON.stringify` drops. The key
 		// comes back absent, and the page reads absent as "completed, returned nothing" (#9365).
 		const frame = spellReplyFrame(
 			new SpellReplyOk({

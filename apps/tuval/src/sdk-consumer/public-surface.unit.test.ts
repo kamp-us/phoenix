@@ -112,6 +112,7 @@ describe("the exports map opens only doors that exist", () => {
 			"./authoring",
 			"./window",
 			"./ai-agent/ports",
+			"./config",
 			"./kernel/*",
 			"./package.json",
 		]);

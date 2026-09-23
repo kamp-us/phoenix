@@ -1,6 +1,6 @@
 /**
  * The config layer the authoring reload/restore proof boots: the worked `pr-review` example
- * (`../../example/pr-review.ts`), the reviewer it is handed, and the two authored rows that drive it
+ * (`../../pr-review.ts`), the reviewer it is handed, and the two authored rows that drive it
  * and read it back.
  *
  * What each generation holds is read at import out of the JSON file `TUVAL_AUTHORING_FIXTURE`
@@ -19,7 +19,7 @@
  *
  * **Every row here is authored.** `desk` and `sink` were plain rows hand-writing `pr-review`'s own
  * kinds, because a graph route used to compile only between two ports of one `kind` and
- * `../../port.ts` derives a kind from the declaring program's id — so two authored programs could
+ * the SDK's `authoring/port.ts` derives a kind from the declaring program's id — so two authored programs could
  * never be wired. A route is decided by payload fit now (ADR 0395,
  * [#8923](https://github.com/kamp-us/phoenix/issues/8923)), so they say what they carry and the
  * graph does the rest: `desk.pr` carries a number and `pr-review.pr` takes one, `pr-review.verdict`
@@ -42,7 +42,7 @@ import {emit} from "@kampus/tuval-sdk/kernel/authoring/effect";
 import {port} from "@kampus/tuval-sdk/kernel/authoring/port";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Schema} from "effect";
-import {prReview} from "../../example/pr-review.ts";
+import {prReview} from "../../pr-review.ts";
 import {
 	DESK_NODE,
 	type DeclaredReview,

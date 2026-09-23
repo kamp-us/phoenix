@@ -1,6 +1,6 @@
 // This project's Tuval config. This file is yours: boot loads it over your global
 // ~/.tuval/tuval.config.ts, registers every program row in `programs`, and launches `graph`. A row
-// is a `Program` (src/registry/program.ts); the nine in the box today are the shell (#7558), the
+// is a `Program` (the SDK's src/registry/program.ts); the nine in the box today are the shell (#7558), the
 // demo counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the
 // agy chat session (#8184), the codex chat session (#8600), the AI-agent session list (#8102) and
 // the module-window demo (#8946). One more row sits behind a flag in the `features` block below,
@@ -41,9 +41,9 @@ import {
 } from "@kampus/tuval-sdk/kernel/commands/spell";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Console} from "effect";
-import {prReview} from "../src/authoring/example/pr-review.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
 import {moduleCounter} from "../src/demo/module-counter.ts";
+import {prReview} from "../src/example/pr-review.ts";
 import {wiredShellEffects} from "../src/shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../src/shell/program.ts";
 

@@ -3,7 +3,7 @@
  *
  * **What is public here is exactly what a program file needs and nothing else.** The set was read
  * off the one program in this repo written the way a third party writes one — the worked example
- * (`./example/pr-review.ts`) — plus `testProgram`, which is how an
+ * (the desk app's `pr-review` example) — plus `testProgram`, which is how an
  * author tests a program outside this repo. Every name below appears in one of those files' import
  * lists or is the declared type of something that does. Nothing else is here on the theory that
  * someone might want it: a name added to this file is a name this package then owes.

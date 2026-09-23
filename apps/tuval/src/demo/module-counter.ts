@@ -7,7 +7,7 @@
  * row, so a window importing it was never in danger: it reaches no `node:` builtin, and the demo of
  * a module window sitting beside it modelled the safe shape by accident rather than on purpose.
  * This file is a `defineProgram` program, so its own import graph reaches `node:crypto` through
- * `../authoring/define-program.ts` — which is exactly the graph a window must not join, and which
+ * the SDK's `authoring/define-program.ts` — which is exactly the graph a window must not join, and which
  * makes the three rules below load-bearing here instead of decorative.
  *
  * **The three rules, in the order a reader meets them.**

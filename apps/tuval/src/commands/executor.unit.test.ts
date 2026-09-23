@@ -114,7 +114,7 @@ const lie: AnySpell = {
 
 /**
  * A spell that returns nothing — the shape `compileCommands` gives every authored spell
- * (`../authoring/commands.ts`), and therefore the shape the desk actually runs most often (#9365).
+ * (the SDK's `authoring/commands.ts`), and therefore the shape the desk actually runs most often (#9365).
  */
 const vanish = defineSpell({
 	path: ["window", "vanish"],

@@ -228,7 +228,7 @@ harness packages carry the session rows a config fills a shaped arg with:
 | `@kampus/tuval-claude` | The Claude harness package: `claudeSession`, the row a *config* fills a shaped arg with, and the `WorkspaceId` / `ClientId` constructors its `scope` is built from. |
 | `@kampus/tuval-codex` | The Codex harness package: `codexSession` and the same `WorkspaceId` / `ClientId` constructors. |
 
-A kernel-side program looks like this — the same shape `src/authoring/example/pr-review.ts`
+A kernel-side program looks like this — the same shape `src/example/pr-review.ts`
 has in-tree, with the specifiers an outside consumer writes:
 
 ```ts
@@ -330,7 +330,7 @@ other side — a window module importing its *own program's* file, which reaches
 its program goes through an `import type` or a leaf file that imports nothing; see
 "Giving a program a window" below.
 
-`src/authoring/public-surface.unit.test.ts` is the other proof: it reaches the API through the
+`src/sdk-consumer/public-surface.unit.test.ts` is the other proof: it reaches the API through the
 specifiers above and nothing else, writes a program, and fills its shaped arg with a shipped row.
 
 The first consumer outside the SDK is `@kampus/tuval-cron`, a scheduler program written on

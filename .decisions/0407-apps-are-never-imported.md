@@ -135,8 +135,9 @@ package under `packages/`.**
   `packages/preview-seed` still depend on it. Rules 1 and 3 apply to it too, but the founder ruled
   the web imports out of #9646's scope. Until the app is renamed and
   those imports move, the guard's `@kampus-apps/*` match does not see them.
-- The desk app still carries a worked program (`apps/tuval/src/authoring/example/pr-review.ts`) and
-  the app-side tests of the authoring layer. That is the app using the SDK, not an SDK home.
+- The desk app still carries a worked program (`apps/tuval/src/example/pr-review.ts`) and the
+  app-side tests of the authoring layer (`apps/tuval/src/sdk-consumer/`). That is the app using
+  the SDK, not an SDK home, so neither sits under a directory named `authoring`.
 
 ## Records
 
