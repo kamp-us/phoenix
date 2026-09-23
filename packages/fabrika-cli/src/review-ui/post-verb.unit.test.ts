@@ -1,6 +1,7 @@
 import {Effect, FileSystem, Layer, Path, PlatformError} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
+import {classifyProbe} from "../io/attachment-read-back.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {compose as supersedeWith} from "../review/supersede.ts";
 import {
@@ -18,7 +19,6 @@ import {
 } from "./codes.ts";
 import {type CaptureManifest, serializeManifest, sha256Hex} from "./manifest.ts";
 import {type EvidenceCheck, runPost, type UploadLeg} from "./post-verb.ts";
-import {classifyProbe} from "./upload-leg.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const OLD_HEAD = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";

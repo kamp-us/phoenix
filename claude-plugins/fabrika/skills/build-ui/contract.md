@@ -633,8 +633,13 @@ verify each upload individually, before anything posts** — the two-tier store:
    the attachment tier — declaring no store is a fact, not an error, at evidence time; a
    `uiCapture` that does not decode is `11`, same key-read rule as in `ui render`.)
 2. **Attachment tier** — no `evidenceStore` declared: upload each PNG through GitHub's
-   user-attachment endpoint, then probe every returned URL (`HEAD`, expect 200). Any failed
-   upload or probe is `17`. Two facts about this tier stated rather than hidden: the endpoint
+   user-attachment endpoint, then read each one back through GitHub's renderer: render the
+   returned URL as an image through `POST /markdown` in the repo's context, take the signed
+   link the rendered HTML gives that asset, and `GET` it with no credential, expecting `200`
+   and bytes identical to the local capture. The returned URL itself is never fetched — a
+   fresh one reads `404` until posted content embeds it — and the token goes to the GitHub
+   API only, never to the served-asset host. `review-ui post` runs the same read-back. Any
+   failed upload, a render with no signed link, a non-`200` or other bytes is `17`. Two facts about this tier stated rather than hidden: the endpoint
    is **undocumented**, and its durability caveat rides along — hosted copies are
    display-grade, the set manifest in the lane scratch is the durable record — and it is an
    upload API, not an issues read/write, so it sits **outside** skill-conventions §11's

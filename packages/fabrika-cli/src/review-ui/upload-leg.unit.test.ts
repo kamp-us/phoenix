@@ -1,5 +1,6 @@
 /**
- * The read-back's pure core and the two legs over a scripted transport. The read-back exists
+ * The two legs over a scripted transport; the read-back's pure core is tested beside it in
+ * `../io/attachment-read-back.unit.test.ts`. The read-back exists
  * because a fresh user-attachment URL reads `404` at its own address until something posted embeds
  * it, so the leg proves the upload through GitHub's renderer instead: the signed link it
  * rewrites the URL into must serve `200` with the capture's exact bytes.
@@ -9,14 +10,9 @@ import {Effect, Layer} from "effect";
 import {fakeHttp, fakeShell} from "../fakes.test-support.ts";
 import {NO_TOKEN} from "../io/gh-api.ts";
 import {
-	classifyBytes,
-	classifyProbe,
 	githubAttachmentUploadLeg,
 	githubPostedEvidenceCheck,
-	probeRequest,
-	renderCall,
 	renderedCommentCall,
-	servedAssetUrl,
 } from "./upload-leg.ts";
 
 const UUID = "0a1b2c3d-4e5f-6789-abcd-ef0123456789";
@@ -28,17 +24,6 @@ const rendered = (src: string = SIGNED): string =>
 const BYTES = new Uint8Array([1, 2, 3]);
 const BYTES_BODY = "\u0001\u0002\u0003";
 
-describe("renderCall", () => {
-	it("renders the hosted URL as an image in the target repo's context", () => {
-		expect(renderCall(HOSTED, "o/r")).toEqual({
-			method: "POST",
-			path: "markdown",
-			body: {text: `![evidence](${HOSTED})`, mode: "gfm", context: "o/r"},
-			accept: "text/html",
-		});
-	});
-});
-
 describe("renderedCommentCall", () => {
 	it("reads the posted comment as the HTML a reader's browser renders", () => {
 		expect(renderedCommentCall("o/r", 42)).toEqual({
@@ -46,60 +31,6 @@ describe("renderedCommentCall", () => {
 			path: "repos/o/r/issues/comments/42",
 			accept: "application/vnd.github.html+json",
 		});
-	});
-});
-
-describe("servedAssetUrl", () => {
-	it("takes the signed image link whose path names the asset's uuid, unescaping `&`", () => {
-		expect(servedAssetUrl(rendered(), HOSTED)).toBe(SIGNED);
-	});
-
-	it("picks this asset's link out of a comment embedding several", () => {
-		const other = SIGNED.replace(UUID, "ffffffff-0000-1111-2222-333333333333");
-		expect(servedAssetUrl(rendered(other) + rendered(), HOSTED)).toBe(SIGNED);
-	});
-
-	it("finds nothing when the HTML carries no image naming the asset", () => {
-		expect(servedAssetUrl("<p>no image</p>", HOSTED)).toBeNull();
-		expect(
-			servedAssetUrl(
-				rendered(SIGNED.replace(UUID, "ffffffff-0000-1111-2222-333333333333")),
-				HOSTED,
-			),
-		).toBeNull();
-	});
-
-	it("never takes a non-https link", () => {
-		expect(servedAssetUrl(rendered(SIGNED.replace("https:", "http:")), HOSTED)).toBeNull();
-	});
-});
-
-describe("probeRequest", () => {
-	it("GETs the served link with no credential — the token never travels to the CDN host", () => {
-		const request = probeRequest(SIGNED);
-		expect(request.method).toBe("GET");
-		expect(request.url).toBe(SIGNED);
-		expect(request.headers.authorization).toBeUndefined();
-	});
-});
-
-describe("classifyProbe", () => {
-	it("accepts only the 200 the served link answers with", () => {
-		expect(classifyProbe(200)).toBeNull();
-		expect(classifyProbe(302)).toMatch(/probed back HTTP 302/);
-	});
-
-	it("keeps a 404 a failure — a URL that does not resolve is not evidence (#3925)", () => {
-		expect(classifyProbe(404)).toMatch(/probed back HTTP 404/);
-		expect(classifyProbe(500)).toMatch(/probed back HTTP 500/);
-	});
-});
-
-describe("classifyBytes", () => {
-	it("passes only the capture's exact bytes", () => {
-		expect(classifyBytes(new Uint8Array([1, 2, 3]), BYTES)).toBeNull();
-		expect(classifyBytes(new Uint8Array([1, 2, 4]), BYTES)).toMatch(/not the 3-byte capture/);
-		expect(classifyBytes(new Uint8Array([1, 2]), BYTES)).toMatch(/served 2 bytes/);
 	});
 });
 
