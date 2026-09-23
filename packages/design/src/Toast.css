@@ -29,3 +29,4 @@
 	margin: calc((var(--manti-space-6) - var(--kp-toast-close-hit)) / 2);
 	color: var(--text-secondary);
 }
+/* scratch: review scope evidence, do not merge */
