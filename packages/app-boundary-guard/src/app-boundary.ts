@@ -1,13 +1,15 @@
 /**
- * `@kampus/app-boundary-guard` core — the pure, IO-free verdict for whether any workspace package
- * outside `apps/` reaches an app (#9660).
+ * `@kampus/app-boundary-guard` core — the pure, IO-free verdict for whether any code outside
+ * `apps/` reaches an app (#9660, #9727).
  *
  * The rule is the founder ruling on #9646: anything under `apps/` is an app, apps are named
- * `@kampus-apps/*`, and an app is never imported. So a package outside `apps/` may neither list an
- * `@kampus-apps/*` name in a dependency field nor import an `@kampus-apps/*` specifier.
+ * `@kampus-apps/*`, and an app is never imported. So a package outside `apps/` may not list an
+ * `@kampus-apps/*` name in a dependency field, and no source file outside `apps/` may import an
+ * `@kampus-apps/*` specifier or a relative path that resolves under `apps/`.
  *
- * No IO and no runtime dependency: `./bin.ts` walks the tree and hands the texts in here.
+ * No IO and no runtime dependency: `./bin.ts` lists the tree and hands the texts in here.
  */
+import {posix} from "node:path";
 
 export const APP_SCOPE = "@kampus-apps/";
 
@@ -39,6 +41,17 @@ export type Finding =
 			/** 1-based. */
 			readonly line: number;
 			readonly specifier: string;
+	  }
+	| {
+			readonly _tag: "PathImport";
+			/** Repo-relative path of the importing file. */
+			readonly file: string;
+			/** 1-based. */
+			readonly line: number;
+			/** The relative specifier as written. */
+			readonly specifier: string;
+			/** The repo-relative path it resolves to, under `apps/`. */
+			readonly resolved: string;
 	  };
 
 type NonEmpty<A> = readonly [A, ...ReadonlyArray<A>];
@@ -124,9 +137,9 @@ export const parseWorkspaceGlobs = (yaml: string): WorkspaceGlobs => {
 		: {_tag: "Read", globs: read};
 };
 
-/** A member directory is an app when it sits under `apps/`. */
-export const isApp = (memberDir: string): boolean =>
-	memberDir === APPS_DIR || memberDir.startsWith(`${APPS_DIR}/`);
+/** A repo-relative path is an app's when it sits under `apps/`. */
+export const isApp = (path: string): boolean =>
+	path === APPS_DIR || path.startsWith(`${APPS_DIR}/`);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	value !== null && typeof value === "object" && !Array.isArray(value);
@@ -160,31 +173,66 @@ export const parseManifest = (text: string): Record<string, unknown> | null => {
 
 export const SOURCE_FILE = /\.(?:[cm]?ts|[cm]?js|tsx|jsx)$/;
 
+/** Directories that hold build output, installed code or git state, not source anyone wrote. */
+export const SKIPPED_DIRS: ReadonlySet<string> = new Set([
+	"node_modules",
+	"dist",
+	"coverage",
+	".turbo",
+	".git",
+]);
+
+/** Where agent worktrees check out whole copies of this repo; each copy is another tree's source. */
+export const WORKTREE_COPIES = ".claude/worktrees/";
+
+/**
+ * Whether a repo-relative path is source this guard reads: a source file outside `apps/`, outside
+ * every skipped directory, and outside the worktree copies.
+ */
+export const inSourceScope = (path: string): boolean =>
+	SOURCE_FILE.test(path) &&
+	!isApp(path) &&
+	!path.startsWith(WORKTREE_COPIES) &&
+	!path.split("/").some((segment) => SKIPPED_DIRS.has(segment));
+
 /**
  * The positions a module specifier takes: `from "x"` (static import and re-export), a bare
  * `import "x"`, `import("x")`, `require("x")`, and the vitest module doubles. Deliberately
  * over-inclusive over comments and strings — a false red costs a reword, a false green lets an app
- * import land.
+ * import land. The one `\s*` before the optional `(` is the only unbounded run between the keyword
+ * and the quote, so no two quantifiers can split the same whitespace.
  */
 const IMPORT_SITE =
-	/(?:\bfrom|\bimport|\brequire\s*\(|\.(?:mock|doMock|importActual|importMock)\s*\()\s*\(?\s*(["'`])(@kampus-apps\/[^"'`\s]*)\1/g;
+	/(?:\bfrom|\bimport|\brequire|\.(?:mock|doMock|importActual|importMock))\s*(?:\(\s*)?(["'`])([^"'`\s]*)\1/g;
 
-/** Every `@kampus-apps/*` specifier a source text imports, with its 1-based line. */
+const RELATIVE = /^\.\.?(?:\/|$)/;
+
+/** The repo-relative path a relative specifier names from `file`, or `null` for any other specifier. */
+export const resolveRelative = (file: string, specifier: string): string | null =>
+	RELATIVE.test(specifier) ? posix.normalize(posix.join(posix.dirname(file), specifier)) : null;
+
+const findingAt = (file: string, line: number, specifier: string): Finding | null => {
+	if (specifier.startsWith(APP_SCOPE)) return {_tag: "Import", file, line, specifier};
+	const resolved = resolveRelative(file, specifier);
+	return resolved !== null && isApp(resolved)
+		? {_tag: "PathImport", file, line, specifier, resolved}
+		: null;
+};
+
+/**
+ * Every import in a source text that reaches an app, with its 1-based line: an `@kampus-apps/*`
+ * specifier, or a relative specifier that resolves under `apps/` from `file`.
+ */
 export const importFindings = (file: string, text: string): ReadonlyArray<Finding> =>
-	[...text.matchAll(IMPORT_SITE)].map(
-		(match) =>
-			({
-				_tag: "Import",
-				file,
-				line: text.slice(0, match.index).split("\n").length,
-				specifier: match[2] ?? "",
-			}) as const,
-	);
+	[...text.matchAll(IMPORT_SITE)].flatMap((match) => {
+		const finding = findingAt(file, text.slice(0, match.index).split("\n").length, match[2] ?? "");
+		return finding === null ? [] : [finding];
+	});
 
 export interface ScanResult {
 	/** Package manifests read outside `apps/`, the workspace root's included. */
 	readonly packages: number;
-	/** Source files read inside those packages. */
+	/** Source files read outside `apps/`, in members and at the root alike. */
 	readonly files: number;
 	readonly findings: ReadonlyArray<Finding>;
 	/** Why a part of the scope could not be read. */
@@ -209,10 +257,16 @@ export const judge = (scan: ScanResult): Verdict => {
 
 const WHY = "an app is never imported (founder ruling on #9646)";
 
-const findingLine = (finding: Finding): string =>
-	finding._tag === "Dependency"
-		? `  ${finding.manifest}: ${finding.packageName} lists \`${finding.dependency}\` in ${finding.field} — ${WHY}. Fix: remove it, and move what the package needs out of the app into a package.`
-		: `  ${finding.file}:${finding.line}: imports \`${finding.specifier}\` — ${WHY}. Fix: import it from a package instead.`;
+const findingLine = (finding: Finding): string => {
+	switch (finding._tag) {
+		case "Dependency":
+			return `  ${finding.manifest}: ${finding.packageName} lists \`${finding.dependency}\` in ${finding.field} — ${WHY}. Fix: remove it, and move what the package needs out of the app into a package.`;
+		case "Import":
+			return `  ${finding.file}:${finding.line}: imports \`${finding.specifier}\` — ${WHY}. Fix: import it from a package instead.`;
+		case "PathImport":
+			return `  ${finding.file}:${finding.line}: imports \`${finding.specifier}\`, which resolves to ${finding.resolved} — ${WHY}. Fix: import it from a package instead.`;
+	}
+};
 
 export const EXIT = {clean: 0, violated: 1, unknown: 2} as const;
 
@@ -222,13 +276,13 @@ export const render = (verdict: Verdict): {readonly exitCode: number; readonly t
 		case "Clean":
 			return {
 				exitCode: EXIT.clean,
-				text: `app-boundary-guard: clean — ${verdict.packages} package manifests and ${verdict.files} source files outside apps/ name no ${APP_SCOPE}* package.`,
+				text: `app-boundary-guard: clean — ${verdict.packages} package manifests and ${verdict.files} source files outside apps/ name no ${APP_SCOPE}* package and no path under apps/.`,
 			};
 		case "Violated":
 			return {
 				exitCode: EXIT.violated,
 				text: [
-					`app-boundary-guard: ${verdict.findings.length} reference${verdict.findings.length === 1 ? "" : "s"} to an ${APP_SCOPE}* package outside apps/:`,
+					`app-boundary-guard: ${verdict.findings.length} reference${verdict.findings.length === 1 ? "" : "s"} to an app from outside apps/:`,
 					...verdict.findings.map(findingLine),
 					...verdict.unread.map((reason) => `  also unread: ${reason}`),
 				].join("\n"),
