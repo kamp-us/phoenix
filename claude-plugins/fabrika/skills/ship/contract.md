@@ -728,7 +728,9 @@ answer this contract bans.
 **Scope** — one PR's changed-file list (paginated to exhaustion, and the floor is derived from that
 list rather than from the pull-request record's `changed_files`; a list at GitHub's 3000-file
 ceiling refuses at `13`, because exhaustion cannot tell that case from a complete read), its verdict comments (paginated,
-count-checked) and native reviews (paginated to exhaustion), each candidate ACL-resolved. The verdict-marker and advisory grammars are the registered wire
+count-checked) and native reviews (paginated to exhaustion), each candidate ACL-resolved, plus, for
+an in-force `review-ui` verdict, that comment's rendered HTML (`GET issues/comments/<id>`) and one
+anonymous fetch of each capture its gallery links. The verdict-marker and advisory grammars are the registered wire
 formats (`packages/fabrika-cli/src/wire/verdict-marker.ts`, `src/review/advisory.ts`) —
 imported, never re-parsed; a hand-rolled marker regex is the drift the registry ended.
 

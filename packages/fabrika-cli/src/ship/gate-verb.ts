@@ -25,7 +25,7 @@
  *
  * `governance` is the one namespace the caller cannot decline: see {@link requiredWithFloor}.
  *
- * `routed` is the fifth state and the newest. It is not a verdict and not a weaker pass: it is a
+ * `routed` is the fifth state. It is not a verdict and not a weaker pass: it is a
  * gate recording that this PR's diff holds nothing its rubric is about, which `review-ui`
  * alone needed because its emit path cannot produce a verdict over zero rendered surfaces. See
  * {@link ROUTABLE} for why exactly one namespace may resolve that way.

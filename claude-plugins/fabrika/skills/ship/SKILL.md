@@ -120,7 +120,8 @@ whether or not you passed it, because the verb re-derives that requirement from 
 so an `ns governance` line you did not ask for is the gate working, not a bug. `blocked`
 naming a FAIL → route to repair (`build`) and stop. `blocked` naming absence → the namespace was
 never gated at this head; route to the gate that owns it — `review` for every `review-*` namespace,
-the `governance` skill for `governance` — and stop. **Absence and staleness are refusals, never
+the `governance` skill for `governance` — and stop. `blocked` naming `unopened` → the `review-ui`
+verdict's evidence does not open, so it counts as absent; route to `review-ui` and stop. **Absence and staleness are refusals, never
 passes.** A `pass` on a verdict posted at an *earlier* head is not a refusal it missed: the verb
 says so on stderr, having proved this head's content digest is the one that verdict bound. What it
 never does is pass a content binding it could not check — that reads `stale`. An `ns review-ui
