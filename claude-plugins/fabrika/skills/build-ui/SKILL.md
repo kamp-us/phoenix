@@ -193,9 +193,8 @@ cross-lane signals are closed-vocabulary — kind + action + branded ref, receiv
 
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
 step is the verb — pass back the `lane`, `root` and `task` its `## Task` section carries, one token
-per terminal above, mapped to a lane event in its code, with the PR as the event's evidence.
-`<fabrika>` is that same section's `fabrika:` entrypoint, the one path this repo's verbs actually
-run from:
+per terminal above, mapped to a lane event in its code. `<fabrika>` is that same section's
+`fabrika:` entrypoint, the one path this repo's verbs actually run from:
 
 ```bash
 node <fabrika> lane report <lane> --root <root> --task <task> --token SHIPPED-PR --pr <pr-url>
@@ -205,6 +204,11 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token SHIPPED-PR
 lane has more than one — every epic run. The verb resolves a missing one only on a single-task lane
 and otherwise refuses at exit `13` before it appends anything, so a report that omits it records
 nothing.
+
+`--pr` whenever the terminal names one, never otherwise. `SHIPPED-PR` and `ESCALATED` always do:
+both stand on an open PR. `BLOCKED-NO-MANIFEST` never does, because it cut no branch. `BACKED-OFF`
+and `STOPPED` carry one only when a PR was already open when you stopped — a repair round's —
+and carry none when the run ended before any PR opened.
 
 A park rides its cause on the same line: `ESCALATED` carries the cause its entry above names
 (`--token ESCALATED --cause write-unlanded`, or `--cause repair-budget-spent`), and
