@@ -6,8 +6,8 @@
  */
 
 import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/kernel/config";
 import {worktree} from "@kampus/tuval-worktree";
-import type {TuvalConfigInput} from "@kampus-apps/tuval/sessions";
 
 const REPO = "/code/my-app";
 

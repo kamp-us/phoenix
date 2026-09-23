@@ -216,9 +216,9 @@ tuval: refusing to boot — config module /path/to/tuval.config.ts: not a v1 con
 ## The public API
 
 The program-author doors belong to the Tuval SDK, [`@kampus/tuval-sdk`](../../packages/tuval), which
-also carries the kernel this app runs on. This app is `@kampus-apps/tuval`, and for now it keeps one
-door of its own, `./sessions`, until the harness packages take the session rows over. Four doors,
-and they are the whole program-author surface:
+also carries the kernel this app runs on. This app is `@kampus-apps/tuval`, and it opens no door of its
+own: an app is never imported. Three SDK doors are the whole program-author surface, and the
+harness packages carry the session rows a config fills a shaped arg with:
 
 | Subpath | What it carries |
 |---|---|
@@ -226,7 +226,7 @@ and they are the whole program-author surface:
 | `@kampus/tuval-sdk/ai-agent/ports` | The AI-agent port vocabulary — `PromptPayloadSchema`, `TurnResultSchema` and the rest of `src/ai-agent/ports/index.ts`. It stays its own door because its `boundary.unit.test.ts` holds it closed over `effect` plus the kernel's program row, and folding it into the authoring door would make one surface owe two stabilities. |
 | `@kampus/tuval-sdk/window` | The window half — `windowRenderer` and `WindowHost` for a `kind: module` window, and `ProgramEvent`, which types that host's dispatch at the program's own event union. Its own door because its closure is browser-safe and `./authoring`'s is not. |
 | `@kampus/tuval-claude` | The Claude harness package: `claudeSession`, the row a *config* fills a shaped arg with, and the `WorkspaceId` / `ClientId` constructors its `scope` is built from. |
-| `@kampus-apps/tuval/sessions` | The interim home of `codexSession` and the same `WorkspaceId` / `ClientId` constructors, until the Codex harness gets its own package. |
+| `@kampus/tuval-codex` | The Codex harness package: `codexSession` and the same `WorkspaceId` / `ClientId` constructors. |
 
 A kernel-side program looks like this — the same shape `src/authoring/example/pr-review.ts`
 has in-tree, with the specifiers an outside consumer writes:
@@ -932,7 +932,7 @@ The tracked config registers it without launching it at boot. Open it from the p
 or run `window:open codex-session` in the palette.
 
 Install the Codex CLI and use its existing login. This implementation was tested against
-**codex-cli 0.153.4**. Custom configs import `codexSession` from `src/codex/program.ts`
+**codex-cli 0.153.4**. Custom configs import `codexSession` from `@kampus/tuval-codex`
 and supply the same `cwd` and `scope` values as the Claude row. Its optional `codex`
 settings include `mode`, `model` and `streamPartialReplies`.
 
@@ -947,9 +947,9 @@ methods. Existing paginated sessions can fail to load rather than show false emp
 history before its first user message.
 
 ```bash
-pnpm exec vitest run --project unit src/codex
-pnpm exec vitest run --project integration src/codex
-TUVAL_CODEX_PROTOCOL_TEST=1 pnpm exec vitest run --project integration src/codex/codex-cli.integration.test.ts
+pnpm --filter @kampus/tuval-codex test:unit
+pnpm --filter @kampus/tuval-codex test:integration
+TUVAL_CODEX_PROTOCOL_TEST=1 pnpm --filter @kampus/tuval-codex exec vitest run --project integration src/codex-cli.integration.test.ts
 ```
 
 The last command runs the installed CLI with a temporary `CODEX_HOME`. It checks settings,

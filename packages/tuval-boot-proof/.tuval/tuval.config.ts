@@ -24,9 +24,9 @@ import {join, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {cron} from "@kampus/tuval-cron";
 import {notify} from "@kampus/tuval-notify";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/kernel/config";
 import {shell} from "@kampus/tuval-shell";
 import {worktree} from "@kampus/tuval-worktree";
-import type {TuvalConfigInput} from "@kampus-apps/tuval/sessions";
 
 /**
  * This checkout, read off this file's own location so the config carries no machine's path.

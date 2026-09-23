@@ -503,7 +503,7 @@ const make = (options: CodexAiAgentOptions) =>
 							approvalsReviewer: "user",
 							// The server name is what a settled spawn row is named by on this wire
 							// (`<server>.<tool>`, `./history.ts`), so it is the mapper's constant and not a
-							// second spelling of it (`../ai-agent/history/kernel-spawn.ts`).
+							// second spelling of it (`@kampus/tuval-sdk`'s `src/ai-agent/history/kernel-spawn.ts`).
 							config: {
 								[`mcp_servers.${KERNEL_TOOL_SERVER}`]: {...tools, enabled: true, required: true},
 							},

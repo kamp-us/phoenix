@@ -345,7 +345,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 		// the layer with it — which leaves nothing holding the last one when the layer itself closes,
 		// and the CLI outlived the desk that launched it (#8696). `ChildProcess.make`'s own kill is
 		// that Scope's finalizer, so closing it here is the whole fix; the codex transport gets this
-		// for free by spawning into its caller's ambient Scope (`codex/transport.ts`).
+		// for free by spawning into its caller's ambient Scope (`@kampus/tuval-codex`'s `src/transport.ts`).
 		yield* Scope.addFinalizer(
 			layerScope,
 			Effect.flatMap(Ref.get(session), (current) =>

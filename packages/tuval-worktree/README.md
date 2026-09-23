@@ -26,7 +26,7 @@ disposed of together.** nix-shell's idea, pointed at agents rather than at build
 ```ts
 // ~/.tuval/tuval.config.ts
 import {worktree} from "@kampus/tuval-worktree";
-import type {TuvalConfigInput} from "@kampus-apps/tuval/sessions";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/kernel/config";
 import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 
 const REPO = "/code/my-app";
@@ -452,7 +452,7 @@ the published doors (#8943, #9250):
 - `@kampus/tuval-sdk/ai-agent/ports` — `PromptPayloadSchema`, `TurnResultSchema`: the agent *interface*,
   which pulls in no agent
 - `@kampus/tuval-claude` — `claudeSession` and the branded `ClientId`/`WorkspaceId` its `scope` needs
-- `@kampus-apps/tuval/sessions` — `codexSession` and `TuvalConfigInput`, which only a config needs
+- `@kampus/tuval-sdk/kernel/config` — `TuvalConfigInput`, which only a config needs
 
 Nothing reaches `@kampus/tuval-sdk/src/...`; the exports map would refuse it anyway.
 
