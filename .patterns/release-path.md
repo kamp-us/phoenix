@@ -75,7 +75,8 @@ published set (constraint 6). A `workspace:` link to a package `publish.yml` doe
 reds the guard: the rewritten version exists on no registry, which is the `pipeline-cli@0.2.0`
 failure ADR [0201](../.decisions/0201-pipeline-tenant-phoenix-first.md) was written against.
 A path-form link (`workspace:../<dir>`) always reds: pnpm packs it as whatever package sits in that
-directory, so the dep's own name does not say what ships. Link a published sibling by name.
+directory, so the dep's own name does not say what ships. `link:`, `file:` and `portal:` always
+red too, because `pnpm publish` ships them unchanged. Link a published sibling by name.
 
 The packed range pins the sibling's version in this repo, so **the sibling publishes first**:
 `design` and `tuval-sdk`, then `tuval-ui`, then the harness packages. That is the order a human
@@ -150,6 +151,11 @@ to the single output is the regression ADR 0239 §5 Hazard A names.
 Tags are `<unscoped-name>-v<version>`. `publish.yml`'s resolve step holds the tag-match arms
 as **literal anchored regexes**, and `publish-isolation-guard` parses that file to derive
 which packages publish — the arms are the single source of truth for the published set.
+The guard keys the set on each arm's `PKG_DIR`, not on the package name: the published package is
+the member at that directory. It fails closed when an arm sets no `PKG_DIR`, when no member sits
+there, when that member's unscoped name is not the tag prefix, or when another member carries the
+same package name. pnpm links a `workspace:` dep by name, so a shared name could link the
+unpublished copy.
 
 So: adding an arm widens the guard's scope automatically, dropping one narrows it, and
 moving the grammar behind a shell variable or an external file zeroes the guard, which then
@@ -208,7 +214,7 @@ step on npmjs.com and a first publish that CI cannot perform. In order:
    public`, `license`, `repository`; point `bin`/`exports` at `dist/` and set `files: [dist]`;
    add `build` (compile `src/` → `dist/`) and `prepublishOnly` scripts. Constraint 3 applies.
 2. **Add the resolve arm** to `.github/workflows/publish.yml` — a literal anchored
-   `^<name>-v([0-9].*)$` regex mapping to the package directory. `<name>` is the package's
+   `^<name>-v([0-9].*)$` regex that sets `PKG_DIR="<package directory>"`. `<name>` is the package's
    unscoped npm name, not its directory: `packages/tuval` publishes `@kampus/tuval-sdk`, so its
    arm is `^tuval-sdk-v`. This is what widens `publish-isolation-guard`'s scope (constraint 6),
    so the guard now checks this package too. A `workspace:` dep on another `@kampus/*` package

@@ -13,18 +13,29 @@ const ROOT = "/repo";
 const WORKFLOW = `${ROOT}/.github/workflows/publish.yml`;
 const WORKSPACE = `${ROOT}/pnpm-workspace.yaml`;
 
-/** A publish.yml whose tag-grammar anchors declare exactly `prefixes` as published. */
-const workflow = (prefixes: ReadonlyArray<string>): string =>
+/**
+ * A publish.yml whose resolve arms publish exactly `arms` — tag prefix → `PKG_DIR`. A bare prefix
+ * publishes `packages/<prefix>`.
+ */
+const workflow = (arms: ReadonlyArray<string | readonly [string, string]>): string =>
 	[
 		"name: publish",
 		"jobs:",
 		"  publish:",
 		"    steps:",
-		...prefixes.map((p) => `      - run: if [[ ! "$TAG" =~ ^${p}-v([0-9].*)$ ]]; then exit 1; fi`),
+		"      - run: |",
+		...arms.flatMap((arm, i) => {
+			const [prefix, dir] = typeof arm === "string" ? [arm, `packages/${arm}`] : arm;
+			return [
+				`          ${i === 0 ? "if" : "elif"} [[ "$TAG" =~ ^${prefix}-v([0-9].*)$ ]]; then`,
+				`            PKG_DIR="${dir}"`,
+			];
+		}),
+		...(arms.length > 0 ? ["          fi"] : []),
 	].join("\n");
 
 interface Repo {
-	readonly prefixes?: ReadonlyArray<string>;
+	readonly prefixes?: ReadonlyArray<string | readonly [string, string]>;
 	/** Directory name under `packages/` → its `package.json` contents (a string stays verbatim). */
 	readonly packages: Readonly<Record<string, Record<string, unknown> | string>>;
 	readonly globs?: ReadonlyArray<string>;
@@ -162,7 +173,56 @@ describe("runPublishIsolationGuard", () => {
 			}),
 		);
 		expect(outcome.code).toBe(ZERO_SCOPE);
-		expect(outcome.stderr.join("\n")).toContain("map to no workspace member");
+		expect(outcome.stderr.join("\n")).toContain("maps to no workspace member");
+	});
+
+	// The arm publishes `packages/sdk-core`, so `@other/demo-sdk` is not trusted.
+	it("reds a workspace: link to a member that only shares a published unscoped name", async () => {
+		const outcome = await run(
+			repo({
+				prefixes: [["demo-sdk", "packages/sdk-core"], "demo-ui"],
+				packages: {
+					"sdk-core": {name: "@kampus/demo-sdk"},
+					"demo-ui": {
+						name: "@kampus/demo-ui",
+						dependencies: {"@other/demo-sdk": "workspace:*"},
+					},
+					x: {name: "@other/demo-sdk"},
+				},
+			}),
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.join("\n")).toContain("@other/demo-sdk");
+	});
+
+	it("fails closed when another member carries a published package's full name", async () => {
+		const outcome = await run(
+			repo({
+				prefixes: [["demo-sdk", "packages/sdk-core"]],
+				packages: {
+					"sdk-core": {name: "@kampus/demo-sdk"},
+					"demo-fork": {name: "@kampus/demo-sdk", version: "9.9.9"},
+				},
+			}),
+		);
+		expect(outcome.code).toBe(ZERO_SCOPE);
+		expect(outcome.stderr.join("\n")).toContain("shares its name with `packages/demo-fork`");
+	});
+
+	it("fails closed when an arm sets no PKG_DIR", async () => {
+		const options = repo({
+			packages: {"fabrika-cli": {name: "@kampus/fabrika-cli", dependencies: {effect: "catalog:"}}},
+		});
+		const outcome = await run({
+			...options,
+			files: {
+				...options.files,
+				[WORKFLOW]: 'if [[ "$TAG" =~ ^fabrika-cli-v([0-9].*)$ ]]; then exit 0; fi',
+			},
+		});
+		expect(outcome.code).toBe(ZERO_SCOPE);
+		expect(outcome.stderr.join("\n")).toContain("sets no `PKG_DIR");
 	});
 
 	it("fails closed when publish.yml declares no release-tag grammar", async () => {
