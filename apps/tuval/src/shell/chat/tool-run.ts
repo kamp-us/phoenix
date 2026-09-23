@@ -15,7 +15,7 @@
  * `edit_file` and the SDK's `Edit` from one code path.
  */
 
-import type {ToolItem, ToolStatus} from "../../ai-agent/ports/index.ts";
+import type {ToolItem, ToolStatus} from "@kampus/tuval/ai-agent/ports";
 import {type ToolAction, toolShape} from "./tool-detail.ts";
 
 const clause: Readonly<Record<ToolAction, (count: number) => string>> = {

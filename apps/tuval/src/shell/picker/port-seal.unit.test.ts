@@ -19,18 +19,18 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
+import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
+import {NodeId} from "@kampus/tuval/kernel/ports/graph";
+import {ProcessPorts} from "@kampus/tuval/kernel/ports/ProcessPorts";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import type {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/host";
 import {Cause, Context, Effect, Layer} from "effect";
-import {Checkpoints} from "../../durability/Checkpoints.ts";
-import {memoryStores} from "../../durability/stores.ts";
-import {NodeId} from "../../ports/graph.ts";
-import {ProcessPorts} from "../../ports/ProcessPorts.ts";
-import {Processes} from "../../process/Processes.ts";
-import type {ProcessTable} from "../../process/ProcessTable.ts";
-import {ProcessId} from "../../process/process.ts";
-import {type AnyProgram, type Program, ProgramId} from "../../registry/program.ts";
-import {Registry} from "../../registry/Registry.ts";
 import {wiredShellEffects} from "../host/effects.ts";
-import {WindowId} from "../window/host.ts";
 import {openProgram} from "./intent.ts";
 import {runPickerIntent} from "./open.ts";
 

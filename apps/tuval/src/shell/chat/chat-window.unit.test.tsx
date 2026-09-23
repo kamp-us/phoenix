@@ -11,21 +11,24 @@
  * the offsets it was asked for are what the scroll assertions read.
  */
 
-import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
-import {Deferred, Effect, Stream} from "effect";
-import {type ReactElement, StrictMode} from "react";
-import {afterEach, describe, expect, it} from "vitest";
+import {ItemId, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
 import {
 	type AiAgentSessionMsg,
 	type AiAgentSessionState,
 	foldEvent,
 	PAGE_ERROR,
 	PROMPT_ERROR,
-} from "../../ai-agent/core/index.ts";
-import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";
-import {phases} from "../../ai-agent/core/state.ts";
-import {ItemId, type TranscriptItem} from "../../ai-agent/ports/index.ts";
-import {ProcessId} from "../../process/process.ts";
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/snapshot";
+import {phases} from "@kampus/tuval/kernel/ai-agent/core/state";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {type TestProcess, testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import type {DispatchResult} from "@kampus/tuval/kernel/shell/window/host";
+import {PREFIX_ARMED_ATTRIBUTE, WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
+import {Deferred, Effect, Stream} from "effect";
+import {type ReactElement, StrictMode} from "react";
+import {afterEach, describe, expect, it} from "vitest";
 import {
 	DISPATCHED_KIND,
 	decodeServerFrame,
@@ -33,9 +36,6 @@ import {
 	PROCESS_STATE_KIND,
 } from "../transport/wire.ts";
 import {growObservedElement, installDomShims, TEST_VIEWPORT} from "../ui/dom.testing.ts";
-import {type TestProcess, testProcess} from "../window/fixtures.ts";
-import type {DispatchResult} from "../window/host.ts";
-import {PREFIX_ARMED_ATTRIBUTE, WindowId} from "../window/index.ts";
 import {type ChatWindowHost, type ChatWindowOptions, chatWindow} from "./ChatWindow.tsx";
 import {
 	assistantItem,

@@ -16,11 +16,18 @@
  * instead of a blank tab (#8004).
  */
 
+import type {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import type {RendererTable} from "@kampus/tuval/kernel/shell/window/index";
+import {
+	empty,
+	processGone,
+	resolverFromTable,
+	type ViewState,
+} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect, Fiber, Option, Stream} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import type {ProcessId} from "../process/process.ts";
-import type {ProgramId} from "../registry/program.ts";
 import {ProcessBoardOverlay} from "../shell/board/index.ts";
 import type {ShellMsg, ShellState} from "../shell/core/index.ts";
 import {openProcessMsg} from "../shell/core/machine.ts";
@@ -42,8 +49,6 @@ import type {
 	MountResolver,
 } from "../shell/ui/index.ts";
 import {boundMount, Desk, noRenderer, replyOf, useDeskAttachment} from "../shell/ui/index.ts";
-import type {RendererTable} from "../shell/window/index.ts";
-import {empty, processGone, resolverFromTable, type ViewState} from "../shell/window/index.ts";
 import type {TableRow} from "../table/row.ts";
 import {useSpellRegistry} from "./spell-registry.ts";
 

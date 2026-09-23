@@ -20,8 +20,8 @@
  */
 
 import {fauxAssistantMessage} from "@earendil-works/pi-ai";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
 import type {TuvalConfigInput} from "../../config.ts";
-import {ProcessId} from "../../process/process.ts";
 import {wiredShellEffects} from "../../shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../../shell/program.ts";
 import {piSessionProgram} from "../program.ts";

@@ -7,13 +7,13 @@
  * title-keyed boundary would cause and a text assertion alone would not notice.
  */
 
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
 import {noEntries} from "../picker/browser.ts";
-import {WindowId} from "../window/index.ts";
 import {installDomShims} from "./dom.testing.ts";
 import {boundMount, type ProcessName, type WindowMount} from "./mount.ts";
 import {WindowView} from "./WindowView.tsx";

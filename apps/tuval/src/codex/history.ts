@@ -1,5 +1,5 @@
+import {boundToolResult, ItemId, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
 import {Schema} from "effect";
-import {boundToolResult, ItemId, type TranscriptItem} from "../ai-agent/ports/index.ts";
 import {WireItem} from "./protocol.ts";
 
 const Text = Schema.Struct({text: Schema.String});

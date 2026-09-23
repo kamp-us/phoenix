@@ -1,6 +1,6 @@
 /**
  * The shipped AI-agent session rows, as a config outside this repo imports them —
- * `@kampus/tuval/sessions` (#8943).
+ * `@kampus-apps/tuval/sessions` (#8943).
  *
  * This is the door a *config* needs, not the door a program needs. A program declares the shape it
  * wants (`Program.shape` over `../ai-agent/ports/index.ts`'s payloads) and names no session; which
@@ -18,9 +18,9 @@
  * owes; adding one when a consumer needs it is a line, guessing at five today is a surface.
  */
 
+export {ClientId, type Scope, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
 export {type ClaudeSessionProgram, claudeSession} from "./claude/program.ts";
 export {type CodexSessionProgram, codexSession} from "./codex/program.ts";
-export {ClientId, type Scope, WorkspaceId} from "./commands/spell.ts";
 /**
  * The shape the module a config default-exports has to satisfy. It belongs on this door rather
  * than `./authoring` for the same reason the rows do: it is what a *config* author annotates, and

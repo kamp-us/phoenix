@@ -13,7 +13,7 @@ brief sits there until you look. This package is the part that makes the desk re
 ```ts
 // ~/.tuval/tuval.config.ts
 import {notify} from "@kampus/tuval-notify";
-import type {TuvalConfigInput} from "@kampus/tuval/sessions";
+import type {TuvalConfigInput} from "@kampus-apps/tuval/sessions";
 
 export const phone = notify({target: {kind: "ntfy", topic: "can-tuval-9f3a"}});
 
@@ -403,14 +403,14 @@ pnpm add @kampus/tuval-notify
 
 `@kampus/tuval` is **private and not published to npm**. This package now lives in the same
 workspace as Tuval does, so the dependency is a plain workspace one —
-`"@kampus/tuval": "workspace:*"` — and pnpm resolves it to `apps/tuval` in this repo with no path
+`"@kampus/tuval": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
 link and no second checkout anywhere. It becomes a real version range the day Tuval ships to a
 registry; nothing in the source changes with it, because the source already imports only through
 the published doors (#8943, #9250):
 
 - `@kampus/tuval/authoring` — `defineProgram`, `port`, the effect constructors (`send`/`emit`),
   `testProgram`, `TITLE_PORT`/`STATUS_PORT`, and the types around them
-- `@kampus/tuval/sessions` — `TuvalConfigInput`, which only a config needs
+- `@kampus-apps/tuval/sessions` — `TuvalConfigInput`, which only a config needs
 - `@kampus/tuval/ai-agent/ports` — `TurnResultSchema`, which `message` is declared over; `state.ts`
   names its encoded type **type-only**, so the built `state.js` a browser loads imports nothing of it
 - `@kampus/tuval/window` — `windowRenderer` and `WindowHost`, the browser-safe half, whose own import

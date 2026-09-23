@@ -1,11 +1,11 @@
 import {mkdtemp, rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {isThinkingLevel} from "@kampus/tuval/ai-agent/ports";
+import {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
 import {Effect, Layer, Stream} from "effect";
 import {describe, expect, it} from "vitest";
-import {isThinkingLevel} from "../ai-agent/ports/index.ts";
-import {TuvalAiAgent} from "../ai-agent/service/index.ts";
-import {KernelBridge} from "../ai-agent/tools/KernelBridge.ts";
 import {CodexAiAgent} from "./CodexAiAgent.ts";
 import {decode, Models, Opened} from "./protocol.ts";
 import {serveKernelTools} from "./tools.ts";

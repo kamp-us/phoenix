@@ -22,14 +22,14 @@
 
 import {dirname} from "node:path";
 import {fileURLToPath} from "node:url";
+import {type AiAgentProgram, aiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
+import type {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
+import type {SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
+import type {Scope as SpellScope} from "@kampus/tuval/kernel/commands/spell";
+import type {Features} from "@kampus/tuval/kernel/feature-flags";
+import type {StateDir} from "@kampus/tuval/kernel/state-dir";
 import {Layer} from "effect";
-import {type AiAgentProgram, aiAgentProgram} from "../ai-agent/program.ts";
-import type {TuvalAiAgent} from "../ai-agent/service/index.ts";
-import {KernelBridge} from "../ai-agent/tools/KernelBridge.ts";
-import type {SpellBridge} from "../commands/bridge/index.ts";
-import type {Scope as SpellScope} from "../commands/spell.ts";
-import type {Features} from "../feature-flags.ts";
-import type {StateDir} from "../state-dir.ts";
 import {PiAiAgent, type PiAiAgentOptions} from "./ai-agent/index.ts";
 import {PI_CHAT_WINDOW_REF, PI_SESSION_PROGRAM} from "./renderer-ref.ts";
 

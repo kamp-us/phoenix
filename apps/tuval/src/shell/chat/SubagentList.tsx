@@ -28,6 +28,8 @@
  */
 
 import {MetaRow} from "@kampus/design";
+import type {SubagentSlot} from "@kampus/tuval/ai-agent/ports";
+import {prefixArmedAround} from "@kampus/tuval/kernel/shell/window/index";
 import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode, Ref} from "react";
 import {
 	useCallback,
@@ -38,8 +40,6 @@ import {
 	useRef,
 	useState,
 } from "react";
-import type {SubagentSlot} from "../../ai-agent/ports/index.ts";
-import {prefixArmedAround} from "../window/index.ts";
 import {workerCountLabel} from "./copy.ts";
 import {
 	elapsedLabel,

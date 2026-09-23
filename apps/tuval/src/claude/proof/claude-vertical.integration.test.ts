@@ -24,16 +24,17 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, type FileSystem, Queue, Result, Schema, Scope, Stream} from "effect";
-import {Socket} from "effect/unstable/socket";
 import {
 	type AiAgentSessionMsg,
 	type AiAgentSessionState,
 	promptItemId,
-} from "../../ai-agent/core/index.ts";
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {ProcessView} from "@kampus/tuval/kernel/shell/window/index";
+import {Effect, type FileSystem, Queue, Result, Schema, Scope, Stream} from "effect";
+import {Socket} from "effect/unstable/socket";
 import {boot, projectDir} from "../../boot.ts";
 import {PI_SESSION_PROGRAM} from "../../pi/renderer-ref.ts";
-import {ProcessId} from "../../process/process.ts";
 import {scratchHome} from "../../scratch-home.ts";
 import {
 	activeWorkspace,
@@ -53,7 +54,6 @@ import {
 } from "../../shell/picker/index.ts";
 import {shellNode} from "../../shell/program.ts";
 import {attach, type PageAttachment} from "../../shell/transport/client.ts";
-import type {ProcessView} from "../../shell/window/index.ts";
 import type {TableRow} from "../../table/row.ts";
 import {DEFAULT_ALLOWED_TOOLS} from "../config.ts";
 import {CLAUDE_SESSION_PROGRAM} from "../renderer-ref.ts";

@@ -14,14 +14,14 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
+import {NodeId} from "@kampus/tuval/kernel/ports/graph";
+import {ProcessPorts, unwired} from "@kampus/tuval/kernel/ports/ProcessPorts";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
 import {Context, Effect, Layer} from "effect";
 import {counterId, counterProgram} from "../demo/counter.ts";
-import {Checkpoints} from "../durability/Checkpoints.ts";
-import {memoryStores} from "../durability/stores.ts";
-import {NodeId} from "../ports/graph.ts";
-import {ProcessPorts, unwired} from "../ports/ProcessPorts.ts";
-import {Registry} from "../registry/Registry.ts";
-import {Processes} from "./Processes.ts";
 
 /** Ports that accept every emit, standing in for a graph route to this process's `ticks`. */
 const wired = ProcessPorts.of({emit: () => Effect.succeed([])});

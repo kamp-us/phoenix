@@ -12,9 +12,9 @@
  * process the proof never opens is a process whose failure it would have to explain.
  */
 
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
 import {Layer} from "effect";
 import type {TuvalConfigInput} from "../../config.ts";
-import {ProcessId} from "../../process/process.ts";
 import {wiredShellEffects} from "../../shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../../shell/program.ts";
 import {ClaudeAiAgent} from "../agent/index.ts";

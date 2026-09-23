@@ -10,7 +10,7 @@
  */
 
 import type {CommandPaletteItem} from "@kampus/design";
-import type {SessionRow} from "../../protocol/session-list.ts";
+import type {SessionRow} from "@kampus/tuval/kernel/protocol/session-list";
 
 /** What the label says when the store reported no first prompt. Named, not blank, and not invented. */
 export const NO_FIRST_PROMPT = "(no first prompt)";

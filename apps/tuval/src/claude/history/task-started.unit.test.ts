@@ -16,10 +16,10 @@
  */
 
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
+import {foldEvent} from "@kampus/tuval/kernel/ai-agent/core/fold";
+import {initialState, settleTurn} from "@kampus/tuval/kernel/ai-agent/core/state";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
 import {describe, expect, it} from "vitest";
-import {foldEvent} from "../../ai-agent/core/fold.ts";
-import {initialState, settleTurn} from "../../ai-agent/core/state.ts";
-import type {AgentEvent} from "../../ai-agent/events.ts";
 import {toAgentEvents} from "./events.ts";
 import {emptyMapping, type Mapping} from "./map.ts";
 

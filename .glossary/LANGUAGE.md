@@ -458,7 +458,7 @@ slice of epic [#7496](https://github.com/kamp-us/phoenix/issues/7496) under `app
   schemas, host handlers, a capability request list, an optional renderer reference, and the
   #7467 identity / capability / placement records as inert data. A program is *exactly* one row;
   there is no second species and no view-only exemption. Source:
-  [`apps/tuval/src/registry/program.ts`](../apps/tuval/src/registry/program.ts).
+  [`packages/tuval/src/registry/program.ts`](../packages/tuval/src/registry/program.ts).
 - **process** — one running instance of a program: a stable id, a parent, ports, a lifecycle.
   Always say **"OS process"** for the operating-system kind; a bare "process" in Tuval prose is
   this one.
@@ -474,8 +474,8 @@ noted as a future-feeling alternative and is not adopted.
 What ends a process, and what ends it for good. The direction was ruled by the founder on 2026-09-07
 (epic [#8332](https://github.com/kamp-us/phoenix/issues/8332)) — removing a desk process durably
 forgets it and its descendants, so they stay gone after a restart — and first used in code by
-[`apps/tuval/src/durability/Checkpoints.ts`](../apps/tuval/src/durability/Checkpoints.ts) and
-[`apps/tuval/src/process/Processes.ts`](../apps/tuval/src/process/Processes.ts) (#9446). Prose that
+[`packages/tuval/src/durability/Checkpoints.ts`](../packages/tuval/src/durability/Checkpoints.ts) and
+[`packages/tuval/src/process/Processes.ts`](../packages/tuval/src/process/Processes.ts) (#9446). Prose that
 uses them interchangeably re-opens the question the ruling closed.
 
 - **stop** — end a *running* process: close its Effect Scope, which drains it, disposes its Subs and
@@ -543,13 +543,13 @@ shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
 
 - **spell** — one addressable command in Tuval's spell registry: a path, a one-sentence description,
   an Effect Schema for its parameters and one for its result, an Effect `execute`, and an inert
-  capability list. Source: [`apps/tuval/src/commands/spell.ts`](../apps/tuval/src/commands/spell.ts).
+  capability list. Source: [`packages/tuval/src/commands/spell.ts`](../packages/tuval/src/commands/spell.ts).
 - **registry** — ambiguous on its own in Tuval prose, so always qualify it. The **spell registry**
   is the one table of every callable spell, keyed by path, built from the core spell list plus each
   program row's `spells` and replaced whole on a config reload
-  ([`apps/tuval/src/commands/registry.ts`](../apps/tuval/src/commands/registry.ts)). The **program
+  ([`packages/tuval/src/commands/registry.ts`](../packages/tuval/src/commands/registry.ts)). The **program
   registry** is the separate kernel table of program rows
-  ([`apps/tuval/src/registry/Registry.ts`](../apps/tuval/src/registry/Registry.ts)); it never reads
+  ([`packages/tuval/src/registry/Registry.ts`](../packages/tuval/src/registry/Registry.ts)); it never reads
   a row's spells.
 - **palette (the Tuval palette)** — Tuval's desk-level command overlay at the top center of the app,
   fixed width and never anchored to a window, where a person types a spell and picks from ranked
@@ -563,10 +563,10 @@ shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
   on the wire. Not Effect's `Scope`, the resource-lifetime handle Tuval prose also uses (every
   process runs in its own Effect Scope forked from its parent's); a bare "scope" in Tuval spell
   prose is this record. Source:
-  [`apps/tuval/src/commands/scope.ts`](../apps/tuval/src/commands/scope.ts).
+  [`packages/tuval/src/commands/scope.ts`](../packages/tuval/src/commands/scope.ts).
 - **the Tuval protocol** — the one versioned page-to-kernel wire: four Effect Schema messages
   (`SpellCall`, `SpellReply`, `Snapshot`, `Patch`), one union per direction, JSON text only. Source:
-  [`apps/tuval/src/protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts).
+  [`packages/tuval/src/protocol/messages.ts`](../packages/tuval/src/protocol/messages.ts).
 
 ### Tuval: partial (a transcript item)
 
@@ -580,14 +580,14 @@ shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
   and the thinking row, since a turn's reasoning streams before its answer does
   ([#8288](https://github.com/kamp-us/phoenix/issues/8288)) — and every predicate that reads the
   marker reads it through `in`, so a third costs no arm. Source:
-  [`apps/tuval/src/ai-agent/ports/transcript-item.ts`](../apps/tuval/src/ai-agent/ports/transcript-item.ts).
+  [`packages/tuval/src/ai-agent/ports/transcript-item.ts`](../packages/tuval/src/ai-agent/ports/transcript-item.ts).
 
 ### Tuval: thinking row, compaction marker, session row
 
 Three of the six rows a Tuval chat window renders, minted by epic
 [#8142](https://github.com/kamp-us/phoenix/issues/8142) phase 1. English technical terms, per §3,
 and model-blind: none of them names a backend, a model or a session id. Source:
-[`apps/tuval/src/ai-agent/ports/transcript-item.ts`](../apps/tuval/src/ai-agent/ports/transcript-item.ts).
+[`packages/tuval/src/ai-agent/ports/transcript-item.ts`](../packages/tuval/src/ai-agent/ports/transcript-item.ts).
 
 - **thinking row** — the agent's reasoning for one turn, as content. Not `ports/thinking.ts`, which
   is the effort-level *control*; a bare "thinking" in Tuval transcript prose is this row, and the

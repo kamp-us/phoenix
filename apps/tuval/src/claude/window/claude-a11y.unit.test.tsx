@@ -21,17 +21,20 @@
 
 import type {PrimitiveSpec} from "@kampus/design/a11y";
 import {runEnforcedInvariants} from "@kampus/design/a11y";
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {type AnyWindowHost, WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import fc from "fast-check";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import {AiAgentInspector} from "../../ai-agent/window/index.ts";
-import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
-import {testProcess} from "../../shell/window/fixtures.ts";
-import {type AnyWindowHost, WindowId} from "../../shell/window/index.ts";
 import {claudeSessionState, usageOf} from "./claude-window.testing.ts";
 
 installDomShims();

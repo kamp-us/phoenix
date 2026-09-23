@@ -18,18 +18,21 @@
 
 import type {PrimitiveSpec} from "@kampus/design/a11y";
 import {runEnforcedInvariants} from "@kampus/design/a11y";
+import type {JsonValue, PermissionRequest, ToolStatus} from "@kampus/tuval/ai-agent/ports";
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {subagentSlot} from "@kampus/tuval/kernel/ai-agent-fixtures/transcripts";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {act, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {Effect} from "effect";
 import fc from "fast-check";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
-import type {JsonValue, PermissionRequest, ToolStatus} from "../../ai-agent/ports/index.ts";
-import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
-import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
-import {testProcess} from "../window/fixtures.ts";
-import {WindowId} from "../window/index.ts";
 import {chatWindow} from "./ChatWindow.tsx";
 import {
 	assistantItem,

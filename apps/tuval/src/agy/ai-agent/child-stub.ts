@@ -15,10 +15,10 @@
  */
 
 import {NodeFileSystem, NodePath} from "@effect/platform-node";
+import {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
 import {type Cause, Deferred, Effect, Layer, Queue, Ref, Sink, Stream} from "effect";
 import * as PlatformError from "effect/PlatformError";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
-import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {aiAgentOverSpawner} from "./AgyAiAgent.ts";
 
 const KILL_REFUSED = PlatformError.systemError({

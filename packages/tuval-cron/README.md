@@ -9,7 +9,7 @@ on a `brief` out-port so something downstream can have it.
 ```ts
 // ~/.tuval/tuval.config.ts
 import {cron} from "@kampus/tuval-cron";
-import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
+import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus-apps/tuval/sessions";
 
 const scope = {workspace: WorkspaceId.make("default"), client: ClientId.make("tuval-desk")};
 
@@ -213,7 +213,7 @@ what reads a `schedule`. Everything else here is a peer.
 
 `@kampus/tuval` is **private and not published to npm**. This package now lives in the same
 workspace as Tuval does, so the dependency is a plain workspace one —
-`"@kampus/tuval": "workspace:*"` — and pnpm resolves it to `apps/tuval` in this repo with no path
+`"@kampus/tuval": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
 link and no second checkout anywhere. It becomes a real version range the day Tuval ships to a
 registry; nothing in the source changes with it, because the source already imports only through
 the published doors (#8943, #9250):
@@ -227,7 +227,7 @@ the published doors (#8943, #9250):
   `src/cron.ts`
 - `@kampus/tuval/ai-agent/ports` — `PromptPayloadSchema`, `TurnResultSchema`: the agent
   *interface*, which pulls in no agent
-- `@kampus/tuval/sessions` — `claudeSession`/`codexSession`, the branded `ClientId`/`WorkspaceId`,
+- `@kampus-apps/tuval/sessions` — `claudeSession`/`codexSession`, the branded `ClientId`/`WorkspaceId`,
   and `TuvalConfigInput`, which only a config needs
 
 Nothing reaches `@kampus/tuval/src/...`; the exports map would refuse it anyway.

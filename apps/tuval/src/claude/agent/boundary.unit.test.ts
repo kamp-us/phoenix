@@ -9,12 +9,12 @@
 
 import {readdirSync, readFileSync, statSync} from "node:fs";
 import {join} from "node:path";
+import {Mode} from "@kampus/tuval/ai-agent/ports";
+import type {TuvalAiAgent, TuvalAiAgentApi} from "@kampus/tuval/kernel/ai-agent/service/index";
+import type {SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
+import {ClientId, type Scope, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
 import {Layer} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
-import {Mode} from "../../ai-agent/ports/index.ts";
-import type {TuvalAiAgent, TuvalAiAgentApi} from "../../ai-agent/service/index.ts";
-import type {SpellBridge} from "../../commands/bridge/index.ts";
-import {ClientId, type Scope, WorkspaceId} from "../../commands/spell.ts";
 import {KernelBridge} from "../tools/index.ts";
 import {ClaudeAiAgent} from "./ClaudeAiAgent.ts";
 import type {ClaudeAiAgentOptions} from "./options.ts";

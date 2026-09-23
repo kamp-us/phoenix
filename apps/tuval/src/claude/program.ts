@@ -20,13 +20,13 @@
  * the picker (`../shell/picker/entries.ts`); #7624 binds the window to that reference.
  */
 
+import type {AiAgentSessionMsg} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {type AiAgentProgram, aiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
+import type {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import type {SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
+import type {Scope as SpellScope} from "@kampus/tuval/kernel/commands/spell";
+import type {AnyProgram, CapabilityRequest} from "@kampus/tuval/kernel/registry/program";
 import {Layer} from "effect";
-import type {AiAgentSessionMsg} from "../ai-agent/core/index.ts";
-import {type AiAgentProgram, aiAgentProgram} from "../ai-agent/program.ts";
-import type {TuvalAiAgent} from "../ai-agent/service/index.ts";
-import type {SpellBridge} from "../commands/bridge/index.ts";
-import type {Scope as SpellScope} from "../commands/spell.ts";
-import type {AnyProgram, CapabilityRequest} from "../registry/program.ts";
 import {ClaudeAiAgent} from "./agent/index.ts";
 import {
 	type ClaudeSessionConfigInput,

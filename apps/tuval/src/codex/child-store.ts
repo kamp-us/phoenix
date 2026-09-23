@@ -1,6 +1,6 @@
+import type {TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import type {TransportError} from "@kampus/tuval/kernel/ai-agent/service/index";
 import {Effect, Schema} from "effect";
-import type {TranscriptItem} from "../ai-agent/ports/index.ts";
-import type {TransportError} from "../ai-agent/service/index.ts";
 import {historyItem} from "./history.ts";
 import {ReadThread} from "./protocol.ts";
 import type {CodexConnection} from "./transport.ts";

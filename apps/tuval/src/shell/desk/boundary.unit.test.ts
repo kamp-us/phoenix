@@ -10,8 +10,8 @@
 
 import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
+import type {WindowHost} from "@kampus/tuval/kernel/shell/window/host";
 import {describe, expect, it} from "vitest";
-import type {WindowHost} from "../window/host.ts";
 import type {InspectorRenderer, StatusRenderer, StatusSegment} from "./renderer.ts";
 
 type Chat = {readonly messages: ReadonlyArray<string>};

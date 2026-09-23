@@ -1,5 +1,5 @@
+import type {PermissionDecision, PermissionRequest} from "@kampus/tuval/ai-agent/ports";
 import {Schema} from "effect";
-import type {PermissionDecision, PermissionRequest} from "../ai-agent/ports/index.ts";
 import {Approval} from "./protocol.ts";
 import type {RequestId} from "./transport.ts";
 

@@ -30,11 +30,12 @@
  * end at the rows in `../commands/table.ts` (#7643, `./PaletteHost.tsx`).
  */
 
+import {WindowId as ProtocolWindowId} from "@kampus/tuval/kernel/protocol/ids";
+import type {RegistryDescription} from "@kampus/tuval/kernel/protocol/registry-description";
+import {PREFIX_ARMED_ATTRIBUTE, WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import type {ReactElement, ReactNode} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {usePalette} from "../../palette/index.ts";
-import {WindowId as ProtocolWindowId} from "../../protocol/ids.ts";
-import type {RegistryDescription} from "../../protocol/registry-description.ts";
 import {commandIndexFor} from "../commands/index.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
@@ -44,7 +45,6 @@ import {layoutSignature} from "../layout/index.ts";
 import type {PickerEntries} from "../picker/browser.ts";
 import {noEntries} from "../picker/browser.ts";
 import type {PageAttachment} from "../transport/browser.ts";
-import {PREFIX_ARMED_ATTRIBUTE, WindowId} from "../window/index.ts";
 import {CommandLine} from "./CommandLine.tsx";
 import {commandSnapshot} from "./command-snapshot.ts";
 import {DeskInspector} from "./DeskInspector.tsx";

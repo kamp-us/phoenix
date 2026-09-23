@@ -105,7 +105,7 @@ The fill runs as a child fiber (`Effect.forkChild`) and only the transport drop 
 ## Paging joins a separate identity space
 
 An item id used for live upserts is not necessarily a stored paging cursor. Keep the visual anchor
-and the cursor separate: [`history/cursor.ts`](../apps/tuval/src/ai-agent/history/cursor.ts) skips
+and the cursor separate: [`history/cursor.ts`](../packages/tuval/src/ai-agent/history/cursor.ts) skips
 local echoes and every partial row once for the handler and window, returning an explicit
 unavailable result rather than turning absence into `before: null` (the newest end). A partial row
 can arrive before its first completed block exists in storage; a live id alone does not prove that
@@ -113,7 +113,7 @@ an alias has a target. Completion makes that row eligible on the next request; t
 anchor stays independent.
 
 Backend mappers project their identity joins as `cursorAliases`; the shared
-[`page.ts`](../apps/tuval/src/ai-agent/history/page.ts) resolves them before validating the group
+[`page.ts`](../packages/tuval/src/ai-agent/history/page.ts) resolves them before validating the group
 boundary. A stored id wins over an alias, and a missing target still refuses. Neither transcript is
 re-keyed. The default remains a strict group-start cursor; adapters that page from a live row inside
 an exchange opt into `containing-group`.

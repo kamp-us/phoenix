@@ -10,8 +10,7 @@
 
 import {applyCellChecked} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer} from "effect";
-import {expect} from "vitest";
+import {Mode} from "@kampus/tuval/ai-agent/ports";
 import {
 	type AiAgentSessionCmd,
 	type AiAgentSessionMsg,
@@ -19,23 +18,24 @@ import {
 	aiAgentSessionMachine,
 	initialState,
 	isAiAgentSessionState,
-} from "../../ai-agent/core/index.ts";
-import {Mode} from "../../ai-agent/ports/index.ts";
-import {checkpointFields, resumeMessages} from "../../ai-agent/restore/index.ts";
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {checkpointFields, resumeMessages} from "@kampus/tuval/kernel/ai-agent/restore/index";
 import {
 	type AgentScript,
 	ScriptedAiAgent,
 	StartError,
 	type StartOptions,
 	TuvalAiAgent,
-} from "../../ai-agent/service/index.ts";
-import {Checkpoints} from "../../durability/Checkpoints.ts";
-import {memoryStores} from "../../durability/stores.ts";
-import {NodeId} from "../../ports/graph.ts";
-import {PortNotWired, ProcessPorts} from "../../ports/index.ts";
-import {Processes} from "../../process/Processes.ts";
-import type {ProcessHandle} from "../../process/process.ts";
-import {Registry} from "../../registry/Registry.ts";
+} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
+import {NodeId} from "@kampus/tuval/kernel/ports/graph";
+import {PortNotWired, ProcessPorts} from "@kampus/tuval/kernel/ports/index";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import type {ProcessHandle} from "@kampus/tuval/kernel/process/process";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import {Context, Effect, Layer} from "effect";
+import {expect} from "vitest";
 import {claudeSession} from "../program.ts";
 
 const CWD = "/work";

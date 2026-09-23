@@ -16,11 +16,14 @@
  * shared window never produced.
  */
 
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import {pageRenderers} from "../../page/renderers.tsx";
 
 /** The table over a socket that answers nothing: this file judges the Claude entry, never a call. */
@@ -29,12 +32,12 @@ const renderers = pageRenderers(
 	() => undefined,
 );
 
-import {ProcessId} from "../../process/process.ts";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {type TestProcess, testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {type WindowHost, WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import type {ChatWindowRenderer, ThinChatWindowOptions} from "../../shell/chat/index.ts";
 import {type ChatView, chatWindow, initialChatView} from "../../shell/chat/index.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
-import {type TestProcess, testProcess} from "../../shell/window/fixtures.ts";
-import {type WindowHost, WindowId} from "../../shell/window/index.ts";
 import {CLAUDE_CHAT_WINDOW_REF} from "../renderer-ref.ts";
 import {ClaudeChatWindow, claudeChatWindow} from "./ClaudeChatWindow.tsx";
 import {

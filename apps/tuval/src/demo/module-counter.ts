@@ -25,8 +25,8 @@
  * reaches the kernel a test says so rather than a browser does.
  */
 
-import {defineProgram, program} from "../authoring/index.ts";
-import type {AnyProgram} from "../registry/program.ts";
+import {defineProgram, program} from "@kampus/tuval/authoring";
+import type {AnyProgram} from "@kampus/tuval/kernel/registry/program";
 import type {CounterState} from "./counter-state.ts";
 
 export const moduleCounterId = "module-counter";

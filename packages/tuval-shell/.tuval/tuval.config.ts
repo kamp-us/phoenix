@@ -12,9 +12,9 @@
  * `jobShape` is about ports and never about what is behind them.
  */
 
-import type {TuvalConfigInput} from "@kampus/tuval/sessions";
 import {cron} from "@kampus/tuval-cron";
 import {shell} from "@kampus/tuval-shell";
+import type {TuvalConfigInput} from "@kampus-apps/tuval/sessions";
 
 /** Nightly, at 03:00 local: fetch every remote, and say on the tile how it went. */
 export const nightlyFetch = cron({

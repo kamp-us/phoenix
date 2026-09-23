@@ -10,14 +10,14 @@
  * `src/boot.ts` imports this.
  */
 
+import {NoSuchWindow} from "@kampus/tuval/kernel/commands/errors";
+import {WindowIndex, type WindowPlacement} from "@kampus/tuval/kernel/commands/scope";
+import {type WindowId, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {ProgramId} from "@kampus/tuval/kernel/registry/program";
 import {Effect, Layer, Option} from "effect";
-import {NoSuchWindow} from "../../commands/errors.ts";
-import {WindowIndex, type WindowPlacement} from "../../commands/scope.ts";
-import {type WindowId, WorkspaceId} from "../../commands/spell.ts";
-import {Processes} from "../../process/Processes.ts";
-import {ProcessTable} from "../../process/ProcessTable.ts";
-import {ProcessId} from "../../process/process.ts";
-import type {ProgramId} from "../../registry/program.ts";
 import {hasWindow, processOf, type ShellState} from "../core/index.ts";
 import {shellStateOf} from "../program.ts";
 import {NoDesk, ShellDispatch} from "./dispatch.ts";

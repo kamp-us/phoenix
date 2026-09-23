@@ -1,8 +1,8 @@
+import {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {KernelBridge} from "../ai-agent/tools/KernelBridge.ts";
 import {serveKernelTools} from "./tools.ts";
 import {disconnected} from "./transport.ts";
 

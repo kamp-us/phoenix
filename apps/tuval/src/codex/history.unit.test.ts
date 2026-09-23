@@ -1,5 +1,5 @@
+import {isTranscriptItem} from "@kampus/tuval/ai-agent/ports";
 import {describe, expect, it} from "vitest";
-import {isTranscriptItem} from "../ai-agent/ports/index.ts";
 import {historyItem, LiveTranscript} from "./history.ts";
 
 const command = {

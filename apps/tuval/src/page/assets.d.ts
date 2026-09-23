@@ -34,6 +34,6 @@ declare module "virtual:tuval/module-renderers" {
  * still walks a page that reaches nothing Node-only.
  */
 declare module "virtual:tuval/features" {
-	const features: import("../features.ts").TuvalFeatures;
+	const features: import("@kampus/tuval/kernel/features").TuvalFeatures;
 	export default features;
 }

@@ -23,13 +23,17 @@
  * snapshot the page already holds, and never awaits the kernel to complete (#7617 R1.5).
  */
 
-import type {Candidate} from "../commands/parse/complete.ts";
-import {candidatesFor} from "../commands/parse/complete.ts";
-import {read} from "../commands/parse/reading.ts";
-import type {IndexedSpell, IndexNode, SpellIndex} from "../commands/parse/spell-index.ts";
-import type {Token} from "../commands/parse/tokenize.ts";
-import {tokenize} from "../commands/parse/tokenize.ts";
-import type {Snapshot} from "../protocol/messages.ts";
+import type {Candidate} from "@kampus/tuval/kernel/commands/parse/complete";
+import {candidatesFor} from "@kampus/tuval/kernel/commands/parse/complete";
+import {read} from "@kampus/tuval/kernel/commands/parse/reading";
+import type {
+	IndexedSpell,
+	IndexNode,
+	SpellIndex,
+} from "@kampus/tuval/kernel/commands/parse/spell-index";
+import type {Token} from "@kampus/tuval/kernel/commands/parse/tokenize";
+import {tokenize} from "@kampus/tuval/kernel/commands/parse/tokenize";
+import type {Snapshot} from "@kampus/tuval/kernel/protocol/messages";
 
 export type PaletteCandidateKind = "spell" | Candidate["kind"];
 

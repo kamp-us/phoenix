@@ -13,12 +13,16 @@
  */
 
 import {AgentChatInput, DesignTranslationProvider} from "@kampus/design";
+import {
+	type AiAgentSessionState,
+	foldEvent,
+	initialState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
 import {act, render, screen} from "@testing-library/react";
 import {Effect, Stream} from "effect";
 import type {ReactElement} from "react";
 import {expect, it} from "vitest";
-import {type AiAgentSessionState, foldEvent, initialState} from "../../ai-agent/core/index.ts";
-import type {AgentEvent} from "../../ai-agent/events.ts";
 import {
 	CWD,
 	on,

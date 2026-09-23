@@ -3,4 +3,4 @@ export {
 	type ScriptedKernel,
 	type ScriptedProcess,
 	type Sent,
-} from "../../ai-agent/tools/KernelBridge.ts";
+} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";

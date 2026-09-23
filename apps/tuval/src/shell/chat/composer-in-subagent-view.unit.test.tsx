@@ -13,18 +13,21 @@
  * behaviour can depend on which layer owns the parent.
  */
 
+import type {SubagentSlot, TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import {ItemId} from "@kampus/tuval/ai-agent/ports";
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {subagentSlot} from "@kampus/tuval/kernel/ai-agent-fixtures/transcripts";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {act, fireEvent, render, waitFor, within} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
-import type {SubagentSlot, TranscriptItem} from "../../ai-agent/ports/index.ts";
-import {ItemId} from "../../ai-agent/ports/index.ts";
-import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
-import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
-import {testProcess} from "../window/fixtures.ts";
-import {WindowId} from "../window/index.ts";
 import {chatWindow} from "./ChatWindow.tsx";
 import {assistantItem, call, userItem, withTranscript} from "./chat.testing.ts";
 import {subagentViewPlaceholder, tuvalDesignMessages} from "./copy.ts";

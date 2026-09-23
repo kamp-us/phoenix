@@ -17,18 +17,14 @@
 import {mkdirSync, mkdtempSync, realpathSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert} from "@effect/vitest";
-import {Effect, type FileSystem, Option, type Scope} from "effect";
-import {afterAll, beforeAll, describe, expect, it} from "vitest";
-import {type Booted, boot, projectDir} from "../../boot.ts";
-import {Processes} from "../../process/Processes.ts";
-import {type ProcessHandle, ProcessId} from "../../process/process.ts";
-import {scratchHome} from "../../scratch-home.ts";
-import {type AiAgentSessionState, isAiAgentSessionState} from "../core/index.ts";
-import {aiAgentPortNames} from "../handlers/index.ts";
-import type {PermissionPayload, TranscriptPayload} from "../ports/index.ts";
+import type {PermissionPayload, TranscriptPayload} from "@kampus/tuval/ai-agent/ports";
+import {
+	type AiAgentSessionState,
+	isAiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
 import {
 	AGENT_NODE,
 	afterTheCut,
@@ -37,12 +33,19 @@ import {
 	CWD,
 	SESSION,
 	WINDOW_NODE,
-} from "./fixtures/agent-desk.ts";
+} from "@kampus/tuval/kernel/ai-agent/restore/fixtures/agent-desk";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import {type ProcessHandle, ProcessId} from "@kampus/tuval/kernel/process/process";
+import {Effect, type FileSystem, Option, type Scope} from "effect";
+import {afterAll, beforeAll, describe, expect, it} from "vitest";
+import {type Booted, boot, projectDir} from "../../boot.ts";
+import {scratchHome} from "../../scratch-home.ts";
+import {sdkModule} from "../../sdk-source.testing.ts";
 
 /** The scratch home every boot in this file runs under. */
 const home = scratchHome("restore-proof");
 
-const configModule = fileURLToPath(new URL("./fixtures/agent-desk.ts", import.meta.url));
+const configModule = sdkModule("ai-agent/restore/fixtures/agent-desk.ts");
 
 const tempDirs: string[] = [];
 

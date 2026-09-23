@@ -17,15 +17,15 @@
  * tracks it.
  */
 
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import type {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import type {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect, Option} from "effect";
-import {Processes} from "../../process/Processes.ts";
-import type {ProcessTable} from "../../process/ProcessTable.ts";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
-import type {Registry} from "../../registry/Registry.ts";
 import {attachProcess, openProgram, runPickerIntent, runProcessRemoval} from "../picker/index.ts";
 import type {ShellEffects} from "../program.ts";
-import {WindowId} from "../window/index.ts";
 
 export interface WiredShellOptions {
 	/**

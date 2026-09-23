@@ -28,14 +28,14 @@
 
 import type {CommandPaletteItem} from "@kampus/design";
 import {CommandPalette, Kbd} from "@kampus/design";
+import type {ParseResult} from "@kampus/tuval/kernel/commands/parse/parse";
+import {parse} from "@kampus/tuval/kernel/commands/parse/parse";
+import {describeExpected, type SpellIndex} from "@kampus/tuval/kernel/commands/parse/spell-index";
+import {renderPath} from "@kampus/tuval/kernel/commands/spell";
+import type {WindowId} from "@kampus/tuval/kernel/protocol/ids";
+import type {Snapshot, SpellCall, SpellReply} from "@kampus/tuval/kernel/protocol/messages";
 import type {KeyboardEvent, ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import type {ParseResult} from "../commands/parse/parse.ts";
-import {parse} from "../commands/parse/parse.ts";
-import {describeExpected, type SpellIndex} from "../commands/parse/spell-index.ts";
-import {renderPath} from "../commands/spell.ts";
-import type {WindowId} from "../protocol/ids.ts";
-import type {Snapshot, SpellCall, SpellReply} from "../protocol/messages.ts";
 import {failureLine, type MintCallId, randomCallId, spellCallFor} from "./call.ts";
 import {acceptCandidate, type PaletteCandidate, paletteCandidates} from "./candidates.ts";
 import "./palette.css";

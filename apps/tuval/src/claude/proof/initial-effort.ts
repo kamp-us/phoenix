@@ -1,6 +1,6 @@
 import type {ModelInfo} from "@anthropic-ai/claude-agent-sdk";
+import {foldEvent, initialState} from "@kampus/tuval/kernel/ai-agent/core/index";
 import {Effect, Stream} from "effect";
-import {foldEvent, initialState} from "../../ai-agent/core/index.ts";
 import {CWD, message, on, START_EVENTS} from "../agent/fixtures/harness.ts";
 
 const models: ReadonlyArray<ModelInfo> = [

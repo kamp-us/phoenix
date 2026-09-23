@@ -9,18 +9,23 @@
  * with a fake and nothing about the desk.
  */
 
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {
+	empty,
+	prefixArmedAround,
+	processGone,
+	type WindowId,
+} from "@kampus/tuval/kernel/shell/window/index";
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {Duration} from "effect";
 import type {ReactElement} from "react";
 import {StrictMode, useEffect, useRef, useState} from "react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {applyMsg} from "../core/index.ts";
 import {defaultPrefixTable} from "../keys/index.ts";
 import type {PickerEntries} from "../picker/index.ts";
-import {empty, prefixArmedAround, processGone, type WindowId} from "../window/index.ts";
 import {Desk} from "./Desk.tsx";
 import {installDomShims} from "./dom.testing.ts";
 import {threeWindowDesk} from "./fixtures.ts";

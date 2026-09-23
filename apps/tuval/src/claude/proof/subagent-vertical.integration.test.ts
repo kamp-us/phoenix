@@ -29,13 +29,18 @@ import {join} from "node:path";
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {ProcessView, WindowHost} from "@kampus/tuval/kernel/shell/window/index";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {act, fireEvent, render} from "@testing-library/react";
 import {Effect, type FileSystem, Queue, Schema, type Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import type {ReactElement} from "react";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import {boot, projectDir} from "../../boot.ts";
-import {ProcessId} from "../../process/process.ts";
 import {scratchHome} from "../../scratch-home.ts";
 import {type ChatView, initialChatView} from "../../shell/chat/index.ts";
 import {
@@ -57,8 +62,6 @@ import {
 import {shellNode} from "../../shell/program.ts";
 import {attach} from "../../shell/transport/client.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
-import type {ProcessView, WindowHost} from "../../shell/window/index.ts";
-import {WindowId} from "../../shell/window/index.ts";
 import {CLAUDE_SESSION_PROGRAM} from "../renderer-ref.ts";
 import {claudeChatWindow} from "../window/index.ts";
 import {PROJECT_ROOT_VAR} from "./names.ts";

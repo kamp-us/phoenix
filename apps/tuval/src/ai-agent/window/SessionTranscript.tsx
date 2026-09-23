@@ -20,12 +20,12 @@
  */
 
 import {AgentChatInput, Button, DesignTranslationProvider, EmptyState} from "@kampus/design";
+import type {SessionRow} from "@kampus/tuval/kernel/protocol/session-list";
+import type {SessionTranscript} from "@kampus/tuval/kernel/protocol/session-transcript";
 import type {ReactElement} from "react";
 import {useCallback, useMemo, useState} from "react";
 import type {OlderRead, TranscriptAnswer} from "../../page/session-transcript.ts";
 import {failureLine} from "../../palette/call.ts";
-import type {SessionRow} from "../../protocol/session-list.ts";
-import type {SessionTranscript} from "../../protocol/session-transcript.ts";
 import {composerBridge} from "../../shell/chat/composer-bridge.ts";
 import {tuvalDesignTranslate} from "../../shell/chat/copy.ts";
 import {sessionLabel} from "./rows.ts";

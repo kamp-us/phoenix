@@ -1,0 +1,39 @@
+{
+	"name": "@kampus/tuval",
+	"version": "0.0.0",
+	"private": true,
+	"description": "The Tuval SDK — the program authoring API, the window renderer contract, the AI-agent ports and the kernel runtime the desk app is built on",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/tuval"
+	},
+	"type": "module",
+	"exports": {
+		"./authoring": "./src/authoring/index.ts",
+		"./window": "./src/authoring/window.ts",
+		"./ai-agent/ports": "./src/ai-agent/ports/index.ts",
+		"./kernel/*": "./src/*.ts",
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@demlik/tea": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/platform-node": "catalog:",
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}

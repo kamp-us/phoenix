@@ -12,7 +12,8 @@
  * second answer to "what is this window showing".
  */
 
-import {ProcessId} from "../../process/process.ts";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import type {ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
 import type {
@@ -23,7 +24,6 @@ import type {
 	KernelFacts,
 	SnapshotProcess,
 } from "../desk/index.ts";
-import {WindowId} from "../window/index.ts";
 import type {MountResolver} from "./mount.ts";
 
 /**

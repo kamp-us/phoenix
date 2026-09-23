@@ -8,7 +8,11 @@
  */
 
 import type {SDKSessionInfo} from "@anthropic-ai/claude-agent-sdk";
-import {newestFirst, type SessionSummary, sessionSummary} from "../../ai-agent/service/index.ts";
+import {
+	newestFirst,
+	type SessionSummary,
+	sessionSummary,
+} from "@kampus/tuval/kernel/ai-agent/service/index";
 
 /** The row's backend tag for a session the Claude CLI stored. */
 export const CLAUDE_BACKEND = "claude";

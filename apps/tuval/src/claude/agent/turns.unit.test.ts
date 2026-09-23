@@ -8,9 +8,9 @@
 
 import type {SessionMessage} from "@anthropic-ai/claude-agent-sdk";
 import {assert, describe, it} from "@effect/vitest";
+import {ItemId, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import {pageCursor} from "@kampus/tuval/kernel/ai-agent/history/cursor";
 import {Cause, Effect, Exit, Logger, Option, Stream} from "effect";
-import {pageCursor} from "../../ai-agent/history/cursor.ts";
-import {ItemId, type TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {toHistoryItems} from "../history/items.ts";
 import {
 	CWD,

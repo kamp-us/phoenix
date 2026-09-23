@@ -25,15 +25,15 @@
 
 import type {SDKMessage, SessionMessage} from "@anthropic-ai/claude-agent-sdk";
 import {assert, describe, it} from "@effect/vitest";
-import {Cause, Effect, Exit, Option, Stream} from "effect";
-import {foldItem} from "../../ai-agent/core/fold.ts";
-import type {AgentEvent} from "../../ai-agent/events.ts";
 import {
 	isNoticeItem,
 	type SubagentSlot,
 	type TranscriptPayload,
-} from "../../ai-agent/ports/index.ts";
-import type {TuvalAiAgentApi} from "../../ai-agent/service/index.ts";
+} from "@kampus/tuval/ai-agent/ports";
+import {foldItem} from "@kampus/tuval/kernel/ai-agent/core/fold";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+import type {TuvalAiAgentApi} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {Cause, Effect, Exit, Option, Stream} from "effect";
 import {chatRows, olderPageRequest, subagentHeads} from "../../shell/chat/rows.ts";
 import {CWD, messages, on, rows, SESSION_ID, START_EVENTS} from "../agent/fixtures/harness.ts";
 

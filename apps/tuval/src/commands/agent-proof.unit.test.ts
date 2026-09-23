@@ -18,44 +18,27 @@
 import {randomUUID} from "node:crypto";
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Deferred, Effect, Layer, Schema} from "effect";
-import {isAiAgentSessionState} from "../ai-agent/core/index.ts";
-import {aiAgentPortNames} from "../ai-agent/handlers/index.ts";
-import type {TranscriptPayload} from "../ai-agent/ports/index.ts";
-import {aiAgentProgram} from "../ai-agent/program.ts";
-import type {AgentScript, ScriptedAnswer, ScriptedPlan} from "../ai-agent/service/index.ts";
-import {ScriptedAiAgent} from "../ai-agent/service/index.ts";
-import {coreSpells} from "../boot.ts";
-import {Checkpoints} from "../durability/Checkpoints.ts";
-import {memoryStores} from "../durability/stores.ts";
-import type {PayloadRejected, PortNotWired} from "../ports/errors.ts";
-import {ProcessPorts} from "../ports/ProcessPorts.ts";
-import {Processes} from "../process/Processes.ts";
-import {ProcessId} from "../process/process.ts";
+import type {TranscriptPayload} from "@kampus/tuval/ai-agent/ports";
+import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
+import {aiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
+import type {
+	AgentScript,
+	ScriptedAnswer,
+	ScriptedPlan,
+} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {ScriptedAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
 import {
-	decodeKernelMessage,
-	decodePageMessage,
-	encodeKernelMessage,
-	encodePageMessage,
-} from "../protocol/codec.ts";
-import {CallId} from "../protocol/ids.ts";
-import {
-	isSpellReply,
-	PROTOCOL_VERSION,
-	SpellCall,
-	type SpellFailure,
-	type SpellReply,
-} from "../protocol/messages.ts";
-import {RegistryDescription, type SpellDescription} from "../protocol/registry-description.ts";
-import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
-import {everyRegistered, SpellBridge, type SpellBridgeApi} from "./bridge/index.ts";
-import {HelpRows} from "./core/help.ts";
-import {SpawnedProcesses} from "./core/process.ts";
-import {SpellExecutor} from "./executor.ts";
-import {type ParamSpec, readParams} from "./parse/spell-index.ts";
-import {SpellRegistry, type SpellRow} from "./registry.ts";
-import {type Client, WindowIndex, type WindowPlacement} from "./scope.ts";
+	everyRegistered,
+	SpellBridge,
+	type SpellBridgeApi,
+} from "@kampus/tuval/kernel/commands/bridge/index";
+import {HelpRows} from "@kampus/tuval/kernel/commands/core/help";
+import {SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
+import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
+import {type ParamSpec, readParams} from "@kampus/tuval/kernel/commands/parse/spell-index";
+import {SpellRegistry, type SpellRow} from "@kampus/tuval/kernel/commands/registry";
+import {type Client, WindowIndex, type WindowPlacement} from "@kampus/tuval/kernel/commands/scope";
 import {
 	ClientId,
 	defineSpell,
@@ -64,8 +47,36 @@ import {
 	type Scope as SpellScope,
 	WindowId,
 	WorkspaceId,
-} from "./spell.ts";
-import {SpellSet} from "./spell-set.ts";
+} from "@kampus/tuval/kernel/commands/spell";
+import {SpellSet} from "@kampus/tuval/kernel/commands/spell-set";
+import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
+import type {PayloadRejected, PortNotWired} from "@kampus/tuval/kernel/ports/errors";
+import {ProcessPorts} from "@kampus/tuval/kernel/ports/ProcessPorts";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {
+	decodeKernelMessage,
+	decodePageMessage,
+	encodeKernelMessage,
+	encodePageMessage,
+} from "@kampus/tuval/kernel/protocol/codec";
+import {CallId} from "@kampus/tuval/kernel/protocol/ids";
+import {
+	isSpellReply,
+	PROTOCOL_VERSION,
+	SpellCall,
+	type SpellFailure,
+	type SpellReply,
+} from "@kampus/tuval/kernel/protocol/messages";
+import {
+	RegistryDescription,
+	type SpellDescription,
+} from "@kampus/tuval/kernel/protocol/registry-description";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import {Context, Deferred, Effect, Layer, Schema} from "effect";
+import {coreSpells} from "../boot.ts";
 
 const workspace = WorkspaceId.make("ws-1");
 const agentWindow = WindowId.make("w-agent");

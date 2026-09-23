@@ -12,6 +12,16 @@
 
 import {readFileSync} from "node:fs";
 import {join} from "node:path";
+import type {
+	AgentAccount,
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {ScriptedAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {type AnyWindowHost, WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {render, screen, waitFor, within} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
@@ -19,15 +29,9 @@ import {describe, expect, it} from "vitest";
 import {claudeSession} from "../../claude/program.ts";
 import {pageInspectors} from "../../page/renderers.tsx";
 import {piSessionProgram} from "../../pi/program.ts";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
 import {deskSnapshot} from "../../shell/desk/fixtures.ts";
 import {inspectorFor} from "../../shell/desk/index.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
-import {testProcess} from "../../shell/window/fixtures.ts";
-import {type AnyWindowHost, WindowId} from "../../shell/window/index.ts";
-import type {AgentAccount, AiAgentSessionMsg, AiAgentSessionState} from "../core/index.ts";
-import {ScriptedAiAgent} from "../service/index.ts";
 import {AiAgentInspector} from "./AiAgentInspector.tsx";
 import {agentSessionState, CWD, SESSION_ID, usageOf} from "./inspector.testing.ts";
 

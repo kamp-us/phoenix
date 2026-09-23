@@ -4,17 +4,17 @@
  * never guessed at.
  */
 
-import {Duration, Option} from "effect";
-import {assert, describe, expect, it} from "vitest";
-import type {ProcessId} from "../../process/process.ts";
-import {CallId} from "../../protocol/ids.ts";
+import type {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {CallId} from "@kampus/tuval/kernel/protocol/ids";
 import {
 	PROTOCOL_VERSION,
 	SpellCall,
 	SpellReplyError,
 	SpellReplyOk,
-} from "../../protocol/messages.ts";
-import type {ProgramId} from "../../registry/program.ts";
+} from "@kampus/tuval/kernel/protocol/messages";
+import type {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {Duration, Option} from "effect";
+import {assert, describe, expect, it} from "vitest";
 import type {TableRow} from "../../table/row.ts";
 import {defaultPrefixTable} from "../keys/table.ts";
 import {

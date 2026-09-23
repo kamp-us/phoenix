@@ -1,12 +1,16 @@
 /** The production inspector over a controllable in-memory process; no backend or model. */
+
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect} from "effect";
 import {createRoot} from "react-dom/client";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../../ai-agent/core/index.ts";
 import {AiAgentInspector} from "../../../ai-agent/window/AiAgentInspector.tsx";
 import {agentSessionState, usageOf} from "../../../ai-agent/window/inspector.testing.ts";
-import {ProcessId} from "../../../process/process.ts";
-import {testProcess} from "../../../shell/window/fixtures.ts";
-import {WindowId} from "../../../shell/window/index.ts";
 import "../../../page/styles.ts";
 import "./proof.css";
 

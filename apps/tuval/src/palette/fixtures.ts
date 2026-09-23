@@ -6,13 +6,22 @@
  * `spell-index.unit.test.ts`'s pin against a real `Schema.Struct` covers both.
  */
 
-import {jsonSchema} from "../commands/parse/fixtures.ts";
-import {buildSpellIndex, type SpellIndex} from "../commands/parse/spell-index.ts";
-import {ProcessId, ProgramId, type SpellPath, WindowId, WorkspaceId} from "../protocol/ids.ts";
-import type {JsonSchemaDocument} from "../protocol/json-schema-document.ts";
-import {PROTOCOL_VERSION, Snapshot} from "../protocol/messages.ts";
-import type {ProcessRow} from "../protocol/process-row.ts";
-import type {RegistryDescription, SpellDescription} from "../protocol/registry-description.ts";
+import {jsonSchema} from "@kampus/tuval/kernel/commands/parse/fixtures";
+import {buildSpellIndex, type SpellIndex} from "@kampus/tuval/kernel/commands/parse/spell-index";
+import {
+	ProcessId,
+	ProgramId,
+	type SpellPath,
+	WindowId,
+	WorkspaceId,
+} from "@kampus/tuval/kernel/protocol/ids";
+import type {JsonSchemaDocument} from "@kampus/tuval/kernel/protocol/json-schema-document";
+import {PROTOCOL_VERSION, Snapshot} from "@kampus/tuval/kernel/protocol/messages";
+import type {ProcessRow} from "@kampus/tuval/kernel/protocol/process-row";
+import type {
+	RegistryDescription,
+	SpellDescription,
+} from "@kampus/tuval/kernel/protocol/registry-description";
 
 const text = {type: "string"} as const;
 const direction = {type: "string", enum: ["left", "right", "up", "down"]} as const;

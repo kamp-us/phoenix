@@ -13,7 +13,7 @@
 
 import {dirname} from "node:path";
 import {fileURLToPath} from "node:url";
-import type {TuvalFeatures} from "../../features.ts";
+import type {TuvalFeatures} from "@kampus/tuval/kernel/features";
 
 /** The npm package, unscoped — it is not one of the `@earendil-works/*` family (#8555). */
 export const SUBAGENTS_PACKAGE = "pi-subagents";

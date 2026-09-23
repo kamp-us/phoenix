@@ -1,5 +1,12 @@
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
+import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {type AnyProgram, ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
 import {
 	Cause,
 	Context,
@@ -13,13 +20,6 @@ import {
 	Stream,
 } from "effect";
 import {Socket} from "effect/unstable/socket";
-import {Checkpoints} from "../../durability/Checkpoints.ts";
-import {memoryStores} from "../../durability/stores.ts";
-import {Processes} from "../../process/Processes.ts";
-import {ProcessTable} from "../../process/ProcessTable.ts";
-import {ProcessId} from "../../process/process.ts";
-import {type AnyProgram, ProgramId} from "../../registry/program.ts";
-import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {defaultPrefixTable} from "../keys/index.ts";
 import {session} from "./server.ts";

@@ -5,9 +5,9 @@
  * here.
  */
 
+import type {CommandRef, ModelRef, ThinkingLevel} from "@kampus/tuval/ai-agent/ports";
+import type {ModelState, ThinkingState} from "@kampus/tuval/kernel/ai-agent/core/index";
 import {describe, expect, it, vi} from "vitest";
-import type {ModelState, ThinkingState} from "../../ai-agent/core/index.ts";
-import type {CommandRef, ModelRef, ThinkingLevel} from "../../ai-agent/ports/index.ts";
 import {composerBridge} from "./composer-bridge.ts";
 
 const opus: ModelRef = {provider: "anthropic", id: "claude-opus-5", name: "Opus 5"};

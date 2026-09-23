@@ -16,13 +16,13 @@
  * lives on these two rows so nothing downstream has to know about it.
  */
 
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {Schema} from "effect";
 import type {ShellMsg} from "../core/machine.ts";
 import {FOCUS_LIST_KEY} from "../keys/syntax.ts";
 import type {CommandName} from "../keys/table.ts";
 import type {Direction} from "../layout/index.ts";
 import {type PickerCommand, pickerCommands} from "../picker/intent.ts";
-import {WindowId} from "../window/index.ts";
 import {
 	type AnyShellCommand,
 	commandName,

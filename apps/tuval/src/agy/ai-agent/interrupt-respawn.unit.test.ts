@@ -18,9 +18,9 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import type {AgentEvent, StartError} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
 import {Cause, Effect, Exit, Fiber, Option, Queue, Stream} from "effect";
-import type {AgentEvent, StartError} from "../../ai-agent/service/index.ts";
-import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {agyChildrenStub, agyLayerOver, type StubChild} from "./child-stub.ts";
 import {init, resultInterrupted, userInput} from "./fixtures.ts";
 

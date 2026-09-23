@@ -12,7 +12,7 @@
  * imports out of an excluded directory is a `TS6307` on every build.
  */
 
-import type {RendererRef} from "../registry/program.ts";
+import type {RendererRef} from "@kampus/tuval/kernel/registry/program";
 
 /**
  * The row's program id. It is declared here rather than on the row for the reason `../pi`'s twin

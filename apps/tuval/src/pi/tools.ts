@@ -21,12 +21,12 @@
  */
 
 import type {AgentToolResult, ToolDefinition} from "@earendil-works/pi-coding-agent";
+import type {BridgeError} from "@kampus/tuval/kernel/ai-agent/tools/errors";
+import type {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
 import {Effect, Option} from "effect";
 import {Type} from "typebox";
-import type {BridgeError} from "../ai-agent/tools/errors.ts";
-import type {KernelBridge} from "../ai-agent/tools/KernelBridge.ts";
-import {ProcessId} from "../process/process.ts";
-import {ProgramId} from "../registry/program.ts";
 
 /** How a handler runs its Effect: the calling process's own runtime, built once over its services. */
 export type ToolRun = <A>(effect: Effect.Effect<A>) => Promise<A>;

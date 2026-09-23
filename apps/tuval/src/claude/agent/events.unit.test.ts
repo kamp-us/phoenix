@@ -6,9 +6,9 @@
 
 import type {CanUseTool} from "@anthropic-ai/claude-agent-sdk";
 import {assert, describe, it} from "@effect/vitest";
+import {Mode} from "@kampus/tuval/ai-agent/ports";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
 import {Effect, Stream} from "effect";
-import type {AgentEvent} from "../../ai-agent/events.ts";
-import {Mode} from "../../ai-agent/ports/index.ts";
 import {CWD, MODES, messages, OPENED_EVENTS, on, settled} from "./fixtures/harness.ts";
 
 /**

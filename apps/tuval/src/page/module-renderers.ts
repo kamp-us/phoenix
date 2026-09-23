@@ -14,14 +14,14 @@
  * it is — the module exports it beside the renderer.
  */
 
-import {Effect, Predicate} from "effect";
-import type {ReactNode} from "react";
 import type {
 	AnyWindowRenderer,
 	RendererLoadFailure,
 	WindowRenderer,
-} from "../shell/window/index.ts";
-import {rendererLoadFailure} from "../shell/window/index.ts";
+} from "@kampus/tuval/kernel/shell/window/index";
+import {rendererLoadFailure} from "@kampus/tuval/kernel/shell/window/index";
+import {Effect, Predicate} from "effect";
+import type {ReactNode} from "react";
 import {type ReadableRenderer, readsState} from "./readable-state.tsx";
 
 /** One thunk per specifier, keyed by the reference string the row wrote: what the virtual module exports. */

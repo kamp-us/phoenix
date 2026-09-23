@@ -32,7 +32,12 @@ import {
 	stop,
 	TITLE_PORT,
 } from "@kampus/tuval/authoring";
-import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
+import {
+	ClientId,
+	claudeSession,
+	type TuvalConfigInput,
+	WorkspaceId,
+} from "@kampus-apps/tuval/sessions";
 import {Schema} from "effect";
 
 const worker = Program.shape({in: {prompt: PromptPayloadSchema}, out: {result: TurnResultSchema}});

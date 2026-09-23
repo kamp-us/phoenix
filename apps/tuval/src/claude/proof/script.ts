@@ -22,16 +22,16 @@
  * really produces it: the core's `prompt` cell, under `promptItemId(key)` (#7978).
  */
 
-import {promptItemId} from "../../ai-agent/core/index.ts";
-import type {AgentEvent} from "../../ai-agent/events.ts";
 import type {
 	ItemId,
 	PermissionRequest,
 	ToolItem,
 	TranscriptItem,
-} from "../../ai-agent/ports/index.ts";
-import {Mode} from "../../ai-agent/ports/index.ts";
-import type {AgentScript} from "../../ai-agent/service/index.ts";
+} from "@kampus/tuval/ai-agent/ports";
+import {Mode} from "@kampus/tuval/ai-agent/ports";
+import {promptItemId} from "@kampus/tuval/kernel/ai-agent/core/index";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+import type {AgentScript} from "@kampus/tuval/kernel/ai-agent/service/index";
 import {CLAUDE_MODES} from "../config.ts";
 import {CARD, CHILD_REPLY, REPLY_1, REPLY_2, REPLY_3, REPLY_4} from "./names.ts";
 

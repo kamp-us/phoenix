@@ -1,13 +1,17 @@
 /** The existing chat window fed through production projection/adapter; no model or socket. */
+
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {failureOf} from "@kampus/tuval/kernel/ai-agent/handlers/failures";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect} from "effect";
 import {createRoot} from "react-dom/client";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../../ai-agent/core/index.ts";
-import {failureOf} from "../../../ai-agent/handlers/failures.ts";
-import {ProcessId} from "../../../process/process.ts";
 import {sessionState} from "../../../shell/chat/chat.testing.ts";
 import {type ChatView, initialChatView} from "../../../shell/chat/index.ts";
-import {testProcess} from "../../../shell/window/fixtures.ts";
-import {WindowId} from "../../../shell/window/index.ts";
 import {startErrorOf} from "../../ai-agent/refusals.ts";
 import {connectionRefusalOf} from "../../client/refusals.ts";
 import {piChatWindow} from "../PiChatWindow.tsx";

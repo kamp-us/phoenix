@@ -9,20 +9,23 @@
  * `./subagents.unit.test.ts`, and the row-level removal in `./rows.unit.test.ts`.
  */
 
+import type {SubagentSlot} from "@kampus/tuval/ai-agent/ports";
+import {foldEvent} from "@kampus/tuval/kernel/ai-agent/core/fold";
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {initialState} from "@kampus/tuval/kernel/ai-agent/core/state";
+import {subagentSlot} from "@kampus/tuval/kernel/ai-agent-fixtures/transcripts";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {act, render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {afterEach, describe, expect, it, vi} from "vitest";
-import {foldEvent} from "../../ai-agent/core/fold.ts";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
-import {initialState} from "../../ai-agent/core/state.ts";
-import type {SubagentSlot} from "../../ai-agent/ports/index.ts";
-import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
 import {fixtureEventFrames} from "../../claude/history/fixtures/events.ts";
-import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
-import {testProcess} from "../window/fixtures.ts";
-import {WindowId} from "../window/index.ts";
 import {type ChatWindowOptions, chatWindow} from "./ChatWindow.tsx";
 import {assistantItem, call, userItem, withTranscript} from "./chat.testing.ts";
 import {type ChatView, initialChatView} from "./view.ts";

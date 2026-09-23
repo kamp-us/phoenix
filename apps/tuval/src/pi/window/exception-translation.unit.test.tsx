@@ -1,19 +1,22 @@
 /** @vitest-environment jsdom */
 import {ClientDisposedError, DisconnectedError, ServerError} from "@earendil-works/pi-client";
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {failureOf} from "@kampus/tuval/kernel/ai-agent/handlers/failures";
+import {TranscriptError} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {render, screen} from "@testing-library/react";
 import {Effect, Schema} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
-import {failureOf} from "../../ai-agent/handlers/failures.ts";
-import {TranscriptError} from "../../ai-agent/service/index.ts";
-import {ProcessId} from "../../process/process.ts";
 import {chatWindow} from "../../shell/chat/ChatWindow.tsx";
 import {sessionState} from "../../shell/chat/chat.testing.ts";
 import {type ChatView, initialChatView} from "../../shell/chat/view.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
-import {testProcess} from "../../shell/window/fixtures.ts";
-import {WindowId} from "../../shell/window/index.ts";
 import {
 	interruptFailureOf,
 	promptDropOf,

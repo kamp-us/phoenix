@@ -18,17 +18,20 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {
+	type AiAgentSessionState,
+	isAiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
+import {aiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
+import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
+import {NodeId} from "@kampus/tuval/kernel/ports/graph";
+import {PortNotWired, ProcessPorts} from "@kampus/tuval/kernel/ports/index";
+import {Processes, type ProcessHandle, ProcessTable} from "@kampus/tuval/kernel/process/index";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
 import {Context, Deferred, Effect, Layer, Queue, Stream} from "effect";
-import {type AiAgentSessionState, isAiAgentSessionState} from "../../ai-agent/core/index.ts";
-import {aiAgentPortNames} from "../../ai-agent/handlers/index.ts";
-import {aiAgentProgram} from "../../ai-agent/program.ts";
-import {Checkpoints} from "../../durability/Checkpoints.ts";
-import {memoryStores} from "../../durability/stores.ts";
-import {NodeId} from "../../ports/graph.ts";
-import {PortNotWired, ProcessPorts} from "../../ports/index.ts";
-import {Processes, type ProcessHandle, ProcessTable} from "../../process/index.ts";
-import {ProgramId} from "../../registry/program.ts";
-import {Registry} from "../../registry/Registry.ts";
 import {
 	type PiClientApi,
 	PiClientService,

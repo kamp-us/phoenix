@@ -9,16 +9,16 @@
  * the default arm exists to prevent, on a wire that ships no version field to warn anyone.
  */
 
-import {describe, expect, it} from "vitest";
-import {addUsage, emptyUsage, usageTotals} from "../../ai-agent/core/index.ts";
-import type {AgentEvent} from "../../ai-agent/events.ts";
 import {
 	boundToolResult,
 	isTranscriptItem,
 	TOOL_RESULT_BYTE_LIMIT,
 	type ToolItem,
 	type TranscriptItem,
-} from "../../ai-agent/ports/index.ts";
+} from "@kampus/tuval/ai-agent/ports";
+import {addUsage, emptyUsage, usageTotals} from "@kampus/tuval/kernel/ai-agent/core/index";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+import {describe, expect, it} from "vitest";
 import * as fixtures from "./fixtures.ts";
 import {type AgyTurn, eventsOf, idleTurn} from "./mapper.ts";
 

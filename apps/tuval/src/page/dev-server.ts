@@ -18,10 +18,10 @@
 
 import {readFile} from "node:fs/promises";
 import {dirname, join} from "node:path";
+import {featuresDefault, type TuvalFeatures} from "@kampus/tuval/kernel/features";
+import type {ModuleRendererRef} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect, Schema} from "effect";
-import {featuresDefault, type TuvalFeatures} from "../features.ts";
 import type {TransportServer} from "../shell/transport/server.ts";
-import type {ModuleRendererRef} from "../shell/window/index.ts";
 import {forwardLoopback, reserveLoopbackPort} from "./loopback.ts";
 
 /** The page did not start. The kernel is unaffected — the bin reports this and keeps running. */

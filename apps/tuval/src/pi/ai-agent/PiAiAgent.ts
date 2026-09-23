@@ -36,15 +36,14 @@ import {readdirSync} from "node:fs";
 import {homedir} from "node:os";
 import {dirname, join} from "node:path";
 import {getAgentDir, ModelRuntime, SessionManager} from "@earendil-works/pi-coding-agent";
-import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
-import {isRefusal} from "../../ai-agent/history/index.ts";
 import type {
 	ThinkingLevel as AgentThinkingLevel,
 	Mode,
 	ModelRef,
 	PermissionDecision,
-} from "../../ai-agent/ports/index.ts";
-import {sameModel} from "../../ai-agent/ports/index.ts";
+} from "@kampus/tuval/ai-agent/ports";
+import {sameModel} from "@kampus/tuval/ai-agent/ports";
+import {isRefusal} from "@kampus/tuval/kernel/ai-agent/history/index";
 import {
 	type AgentEvent,
 	ModelUnsupported,
@@ -58,11 +57,12 @@ import {
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
 	UnknownRequest,
-} from "../../ai-agent/service/index.ts";
-import {KernelBridge} from "../../ai-agent/tools/KernelBridge.ts";
-import {withTurnResult} from "../../ai-agent/turn-result.ts";
-import {Features} from "../../feature-flags.ts";
-import {homeStateDir, piSessionStore, StateDir} from "../../state-dir.ts";
+} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
+import {withTurnResult} from "@kampus/tuval/kernel/ai-agent/turn-result";
+import {Features} from "@kampus/tuval/kernel/feature-flags";
+import {homeStateDir, piSessionStore, StateDir} from "@kampus/tuval/kernel/state-dir";
+import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
 import {PiClientService, type PiSessionRef, type SessionUpdate} from "../client/index.ts";
 import {retaining} from "../diagnostics.ts";
 import {

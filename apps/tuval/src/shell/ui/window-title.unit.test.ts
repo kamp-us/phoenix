@@ -1,8 +1,8 @@
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {empty, processGone} from "@kampus/tuval/kernel/shell/window/host";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {describe, expect, it} from "vitest";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
-import {empty, processGone} from "../window/host.ts";
-import {WindowId} from "../window/index.ts";
 import {boundMount, noRenderer, type ProcessName, type WindowMount} from "./mount.ts";
 import {windowTitle} from "./window-title.ts";
 

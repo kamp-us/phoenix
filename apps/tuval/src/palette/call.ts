@@ -6,11 +6,11 @@
  * the whole outbound surface of the palette.
  */
 
-import type {SpellCallDraft} from "../commands/parse/parse.ts";
-import type {WindowId} from "../protocol/ids.ts";
-import {CallId} from "../protocol/ids.ts";
-import type {SpellFailure} from "../protocol/messages.ts";
-import {PROTOCOL_VERSION, SpellCall} from "../protocol/messages.ts";
+import type {SpellCallDraft} from "@kampus/tuval/kernel/commands/parse/parse";
+import type {WindowId} from "@kampus/tuval/kernel/protocol/ids";
+import {CallId} from "@kampus/tuval/kernel/protocol/ids";
+import type {SpellFailure} from "@kampus/tuval/kernel/protocol/messages";
+import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval/kernel/protocol/messages";
 
 /** How a correlation id is minted. The palette's default is the platform's; a test hands its own. */
 export type MintCallId = () => string;

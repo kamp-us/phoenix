@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import type {SessionMessage} from "@anthropic-ai/claude-agent-sdk";
+import {ItemId, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import {pageCursor} from "@kampus/tuval/kernel/ai-agent/history/cursor";
 import {Effect, Stream} from "effect";
-import {pageCursor} from "../../ai-agent/history/cursor.ts";
-import {ItemId, type TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {CWD, messages, on, rows, SESSION_ID, START_EVENTS} from "../agent/fixtures/harness.ts";
 import {toHistoryItems} from "../history/items.ts";
 

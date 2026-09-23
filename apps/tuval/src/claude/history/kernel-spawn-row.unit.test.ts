@@ -10,8 +10,8 @@
  */
 
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
 import {describe, expect, it} from "vitest";
-import type {AgentEvent} from "../../ai-agent/events.ts";
 import {toAgentEvents} from "./events.ts";
 import {loadFixture} from "./fixtures/load.ts";
 import {emptyMapping, type Mapping, type MappingStep} from "./map.ts";

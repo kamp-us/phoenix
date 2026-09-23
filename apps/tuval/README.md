@@ -215,17 +215,17 @@ tuval: refusing to boot — config module /path/to/tuval.config.ts: not a v1 con
 
 ## The public API
 
-`@kampus/tuval` stays `"private": true` — whether it publishes to npm is a distribution
-commitment, and #8943 leaves it to the founder. What it now declares is an `exports` map, so a
-package that resolves this one through the workspace (or a `git:` checkout) has a specifier to
-write instead of a relative path into `src/`. Four doors, and they are the whole surface:
+The program-author doors belong to the Tuval SDK, [`@kampus/tuval`](../../packages/tuval), which
+also carries the kernel this app runs on. This app is `@kampus-apps/tuval`, and for now it keeps one
+door of its own, `./sessions`, until the harness packages take the session rows over. Four doors,
+and they are the whole program-author surface:
 
 | Subpath | What it carries |
 |---|---|
 | `@kampus/tuval/authoring` | `defineProgram`, `port`, `programArgs`, `Program`, the effect constructors (`spawn`, `send`, `ask`, `reply`, `emit`, `stop`), `testProgram`, `HostHandlers`, and the types an authored `update` annotates itself with. `src/authoring/index.ts` says at length what is on it and what is deliberately not. |
 | `@kampus/tuval/ai-agent/ports` | The AI-agent port vocabulary — `PromptPayloadSchema`, `TurnResultSchema` and the rest of `src/ai-agent/ports/index.ts`. It stays its own door because its `boundary.unit.test.ts` holds it closed over `effect` plus the kernel's program row, and folding it into the authoring door would make one surface owe two stabilities. |
 | `@kampus/tuval/window` | The window half — `windowRenderer` and `WindowHost` for a `kind: module` window, and `ProgramEvent`, which types that host's dispatch at the program's own event union. Its own door because its closure is browser-safe and `./authoring`'s is not. |
-| `@kampus/tuval/sessions` | The shipped session rows a *config* fills a shaped arg with — `claudeSession`, `codexSession`, and the `WorkspaceId` / `ClientId` constructors a row's `scope` is built from. |
+| `@kampus-apps/tuval/sessions` | The shipped session rows a *config* fills a shaped arg with — `claudeSession`, `codexSession`, and the `WorkspaceId` / `ClientId` constructors a row's `scope` is built from. |
 
 A kernel-side program looks like this — the same shape `src/authoring/example/pr-review.ts`
 has in-tree, with the specifiers an outside consumer writes:
@@ -238,7 +238,7 @@ import {type Answer, type ArrivalEvent, defineProgram, emit, port, Program, prog
 and its config hands the shaped arg a real row:
 
 ```ts
-import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval/sessions";
+import {ClientId, claudeSession, WorkspaceId} from "@kampus-apps/tuval/sessions";
 ```
 
 ### Giving a program a window

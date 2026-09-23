@@ -17,12 +17,12 @@
 
 import type {McpSdkServerConfigWithInstance} from "@anthropic-ai/claude-agent-sdk";
 import {createSdkMcpServer, tool} from "@anthropic-ai/claude-agent-sdk";
+import {KERNEL_TOOL_SERVER} from "@kampus/tuval/kernel/ai-agent/history/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
 import type {CallToolResult} from "@modelcontextprotocol/sdk/types.js";
 import {Effect, Option} from "effect";
 import {z} from "zod";
-import {KERNEL_TOOL_SERVER} from "../../ai-agent/history/index.ts";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
 import type {BridgeError} from "./errors.ts";
 import type {KernelBridge} from "./KernelBridge.ts";
 

@@ -5,12 +5,12 @@
  * so the host these tests pass is the host the contract actually promises.
  */
 
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import type {AnyWindowHost} from "@kampus/tuval/kernel/shell/window/host";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/host";
 import {Effect} from "effect";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
-import {testProcess} from "../window/fixtures.ts";
-import type {AnyWindowHost} from "../window/host.ts";
-import {WindowId} from "../window/host.ts";
 import type {DeskSnapshot, FocusedWindow} from "./snapshot.ts";
 
 export interface CounterState {

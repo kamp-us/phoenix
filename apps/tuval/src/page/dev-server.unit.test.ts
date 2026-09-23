@@ -7,12 +7,12 @@
 
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
+import type {AnyProgram} from "@kampus/tuval/kernel/registry/program";
+import {counterRow, noRendererRow} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {type DeclaredProgram, moduleRendererRefs} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {loadLayeredConfig} from "../config.ts";
-import type {AnyProgram} from "../registry/program.ts";
-import {counterRow, noRendererRow} from "../shell/window/fixtures.ts";
-import {type DeclaredProgram, moduleRendererRefs} from "../shell/window/index.ts";
 import {
 	featuresSource,
 	moduleRenderersSource,

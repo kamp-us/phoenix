@@ -25,8 +25,12 @@
 import {existsSync, readdirSync} from "node:fs";
 import {join} from "node:path";
 import {type SessionInfo, SessionManager} from "@earendil-works/pi-coding-agent";
+import {
+	newestFirst,
+	type SessionSummary,
+	sessionSummary,
+} from "@kampus/tuval/kernel/ai-agent/service/index";
 import {Effect} from "effect";
-import {newestFirst, type SessionSummary, sessionSummary} from "../../ai-agent/service/index.ts";
 
 /** Which of Pi's two stores a row came from, or a failure is about. */
 export type PiSessionStore = "pi-cli" | "tuval";

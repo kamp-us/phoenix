@@ -6,10 +6,10 @@
  * window renderer throws.
  */
 
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
 import {act, fireEvent, render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
-import {ProcessId} from "../../process/process.ts";
 import type {ShellState} from "../core/index.ts";
 import {isShellState} from "../core/index.ts";
 import {defaultPrefixTable} from "../keys/index.ts";

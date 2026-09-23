@@ -1,7 +1,7 @@
 import {NodeServices} from "@effect/platform-node";
+import {TransportError} from "@kampus/tuval/kernel/ai-agent/service/index";
 import {type Cause, Deferred, Effect, Queue, Schema, Scope, Stream} from "effect";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
-import {TransportError} from "../ai-agent/service/index.ts";
 
 export const RequestId = Schema.Union([Schema.String, Schema.Finite]);
 export type RequestId = typeof RequestId.Type;

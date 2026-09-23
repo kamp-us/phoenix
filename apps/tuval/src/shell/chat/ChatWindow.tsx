@@ -38,18 +38,25 @@
  */
 
 import {AgentChatInput, Button, DesignTranslationProvider, Kbd, Markdown} from "@kampus/design";
+import type {Mode, SubagentSlot, TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/snapshot";
+import {remarkCutReplies} from "@kampus/tuval/kernel/ai-agent/core/state";
+import type {
+	ProcessView,
+	WindowHost,
+	WindowRenderer,
+} from "@kampus/tuval/kernel/shell/window/index";
+import {prefixArmedAround, windowRenderer} from "@kampus/tuval/kernel/shell/window/index";
 import {elementScroll, useVirtualizer, type VirtualizerOptions} from "@tanstack/react-virtual";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode, UIEvent} from "react";
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from "react";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
-import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";
-import {remarkCutReplies} from "../../ai-agent/core/state.ts";
-import type {Mode, SubagentSlot, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {FOCUS_LIST_KEY} from "../keys/syntax.ts";
 import {useForwardedKey} from "../ui/forwarded-key.tsx";
-import type {ProcessView, WindowHost, WindowRenderer} from "../window/index.ts";
-import {prefixArmedAround, windowRenderer} from "../window/index.ts";
 import {CompactionMarker} from "./CompactionMarker.tsx";
 import {composerBridge} from "./composer-bridge.ts";
 import {

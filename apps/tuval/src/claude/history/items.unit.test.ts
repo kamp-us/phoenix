@@ -5,8 +5,8 @@
  */
 
 import type {SDKAssistantMessage, SDKMessage, SessionMessage} from "@anthropic-ai/claude-agent-sdk";
+import {planTranscriptPage} from "@kampus/tuval/kernel/ai-agent/history/page";
 import {describe, expect, it} from "vitest";
-import {planTranscriptPage} from "../../ai-agent/history/page.ts";
 import {toAgentEvents} from "./events.ts";
 import {loadFixture} from "./fixtures/load.ts";
 import {toHistoryItems} from "./items.ts";

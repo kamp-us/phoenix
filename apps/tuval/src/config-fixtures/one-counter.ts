@@ -1,7 +1,7 @@
 import {defineMachine} from "@demlik/tea";
+import type {AnyProgram, Program} from "@kampus/tuval/kernel/registry/program";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
 import {Effect} from "effect";
-import type {AnyProgram, Program} from "../registry/program.ts";
-import {ProgramId} from "../registry/program.ts";
 
 type State = {readonly count: number};
 type Msg = {readonly type: "tick"};

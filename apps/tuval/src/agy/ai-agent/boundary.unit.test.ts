@@ -12,10 +12,11 @@
 
 import {readdirSync, readFileSync, statSync} from "node:fs";
 import {join} from "node:path";
+import type {TuvalAiAgent, TuvalAiAgentApi} from "@kampus/tuval/kernel/ai-agent/service/index";
 import type {FileSystem, Layer} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {describe, expect, it} from "vitest";
-import type {TuvalAiAgent, TuvalAiAgentApi} from "../../ai-agent/service/index.ts";
+import {sdkModule} from "../../sdk-source.testing.ts";
 import {AgyAiAgent} from "./index.ts";
 
 /**
@@ -63,7 +64,7 @@ const members: ReadonlyArray<keyof TuvalAiAgentApi> = [
 	"events",
 ];
 
-const portSource = join(import.meta.dirname, "..", "..", "ai-agent", "service", "TuvalAiAgent.ts");
+const portSource = sdkModule("ai-agent/service/TuvalAiAgent.ts");
 
 /** The member names the port's interface declares, read off its text so a new one cannot be missed. */
 const declaredMembers = (text: string): ReadonlyArray<string> => {

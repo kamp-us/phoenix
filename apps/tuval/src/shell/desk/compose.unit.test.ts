@@ -5,10 +5,10 @@
  */
 
 import {assert, describe, expect, it} from "@effect/vitest";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {AnyWindowHost} from "@kampus/tuval/kernel/shell/window/host";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/host";
 import {Effect} from "effect";
-import {ProcessId} from "../../process/process.ts";
-import type {AnyWindowHost} from "../window/host.ts";
-import {WindowId} from "../window/host.ts";
 import {inspectorFor, statusFor} from "./compose.ts";
 import {counterProgramId, deskSnapshot, focusedOn, testHost} from "./fixtures.ts";
 import {inspectorRenderer, statusRenderer} from "./renderer.ts";

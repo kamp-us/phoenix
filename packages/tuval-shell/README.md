@@ -17,7 +17,7 @@ The pairing, which is what you are almost certainly here for — a nightly fetch
 // ~/.tuval/tuval.config.ts
 import {cron} from "@kampus/tuval-cron";
 import {shell} from "@kampus/tuval-shell";
-import type {TuvalConfigInput} from "@kampus/tuval/sessions";
+import type {TuvalConfigInput} from "@kampus-apps/tuval/sessions";
 
 export const nightlyFetch = cron({
   id: "nightly-fetch",
@@ -180,7 +180,7 @@ resolves it, and its `resolve.dedupe` entry has already been removed.
 
 `@kampus/tuval` is **private and not published to npm**. This package now lives in the same
 workspace as Tuval does, so the dependency is a plain workspace one —
-`"@kampus/tuval": "workspace:*"` — and pnpm resolves it to `apps/tuval` in this repo with no path
+`"@kampus/tuval": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
 link and no second checkout anywhere. It becomes a real version range the day Tuval ships to a
 registry; nothing in the source changes with it, because the source already imports only through
 the published doors (#8943, #9250):

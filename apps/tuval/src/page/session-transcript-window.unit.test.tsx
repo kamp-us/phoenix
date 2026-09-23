@@ -13,29 +13,37 @@
  * is `./session-transcript.unit.test.ts`.
  */
 
+import type {SessionListState} from "@kampus/tuval/kernel/ai-agent/renderer-ref";
+import {SESSION_LIST_STATE} from "@kampus/tuval/kernel/ai-agent/renderer-ref";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {SpellPath} from "@kampus/tuval/kernel/protocol/ids";
+import {CallId} from "@kampus/tuval/kernel/protocol/ids";
+import type {SpellFailure, SpellReply} from "@kampus/tuval/kernel/protocol/messages";
+import {
+	PROTOCOL_VERSION,
+	SpellCall,
+	SpellReplyError,
+	SpellReplyOk,
+} from "@kampus/tuval/kernel/protocol/messages";
+import {SESSION_LIST_CALL_PATH} from "@kampus/tuval/kernel/protocol/session-list";
+import type {
+	SessionTranscript,
+	TranscriptItemWire,
+} from "@kampus/tuval/kernel/protocol/session-transcript";
+import {
+	SESSION_TRANSCRIPT_CALL_PATH,
+	SESSION_TRANSCRIPT_PATH,
+} from "@kampus/tuval/kernel/protocol/session-transcript";
+import type {ProcessView, WindowHost} from "@kampus/tuval/kernel/shell/window/index";
+import {delivered, WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {act, cleanup, fireEvent, render, screen, within} from "@testing-library/react";
 import {Effect, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import type {ReactElement} from "react";
 import {beforeEach, describe, expect, it} from "vitest";
-import type {SessionListState} from "../ai-agent/renderer-ref.ts";
-import {SESSION_LIST_STATE} from "../ai-agent/renderer-ref.ts";
 import {claudeSession} from "../ai-agent/window/fixtures.ts";
 import {SESSION_LIST_WINDOW_REF} from "../ai-agent/window/index.ts";
-import {ProcessId} from "../process/process.ts";
-import type {SpellPath} from "../protocol/ids.ts";
-import {CallId} from "../protocol/ids.ts";
-import type {SpellFailure, SpellReply} from "../protocol/messages.ts";
-import {PROTOCOL_VERSION, SpellCall, SpellReplyError, SpellReplyOk} from "../protocol/messages.ts";
-import {SESSION_LIST_CALL_PATH} from "../protocol/session-list.ts";
-import type {SessionTranscript, TranscriptItemWire} from "../protocol/session-transcript.ts";
-import {
-	SESSION_TRANSCRIPT_CALL_PATH,
-	SESSION_TRANSCRIPT_PATH,
-} from "../protocol/session-transcript.ts";
 import {installDomShims} from "../shell/ui/dom.testing.ts";
-import type {ProcessView, WindowHost} from "../shell/window/index.ts";
-import {delivered, WindowId} from "../shell/window/index.ts";
 import type {SpellCaller} from "./renderers.tsx";
 import {pageRenderers} from "./renderers.tsx";
 import {sessionTranscriptCall} from "./session-transcript.ts";

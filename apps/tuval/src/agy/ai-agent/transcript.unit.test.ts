@@ -12,16 +12,16 @@ import {mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {NodeFileSystem} from "@effect/platform-node";
-import {Effect} from "effect";
-import {afterAll, describe, expect, it} from "vitest";
-import {isRefusal, type TranscriptPage} from "../../ai-agent/history/index.ts";
 import {
 	boundToolResult,
 	isTranscriptItems,
 	TOOL_RESULT_BYTE_LIMIT,
 	type ToolItem,
 	type TranscriptItem,
-} from "../../ai-agent/ports/index.ts";
+} from "@kampus/tuval/ai-agent/ports";
+import {isRefusal, type TranscriptPage} from "@kampus/tuval/kernel/ai-agent/history/index";
+import {Effect} from "effect";
+import {afterAll, describe, expect, it} from "vitest";
 import {
 	CLIPPED_MARK,
 	readTranscriptPage,

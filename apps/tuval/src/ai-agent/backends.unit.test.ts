@@ -8,20 +8,24 @@
 
 import {type Cmd, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Cause, Context, Effect, Option} from "effect";
-import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
-import {showsInAWindow} from "../shell/picker/entries.ts";
-import {aiAgentBackends, isAiAgentBackend, listAiAgentSessions} from "./backends.ts";
-import {aiAgentProgram} from "./program.ts";
-import {models, modes, thinking} from "./service/fixtures/scripts.ts";
+import {
+	aiAgentBackends,
+	isAiAgentBackend,
+	listAiAgentSessions,
+} from "@kampus/tuval/kernel/ai-agent/backends";
+import {aiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
+import {models, modes, thinking} from "@kampus/tuval/kernel/ai-agent/service/fixtures/scripts";
 import {
 	type AgentScript,
 	ListError,
 	ScriptedAiAgent,
 	type SessionSummary,
 	sessionSummary,
-} from "./service/index.ts";
+} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import {Cause, Context, Effect, Option} from "effect";
+import {showsInAWindow} from "../shell/picker/entries.ts";
 
 type CountState = {readonly count: number};
 type CountMsg = {readonly type: "tick"};

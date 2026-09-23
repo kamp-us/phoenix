@@ -11,7 +11,7 @@
  * JSON for the other.
  */
 
-import type {JsonValue, ToolItem} from "../../ai-agent/ports/index.ts";
+import type {JsonValue, ToolItem} from "@kampus/tuval/ai-agent/ports";
 
 export type ToolDetail =
 	/**

@@ -14,15 +14,18 @@
 
 import {readdirSync, readFileSync, statSync} from "node:fs";
 import {join} from "node:path";
-import {describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
-import type {ChatView, ChatWindowRenderer} from "../../shell/chat/index.ts";
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
 import type {
 	AnyWindowRenderer,
 	ViewState,
 	WindowHost,
 	WindowRenderer,
-} from "../../shell/window/index.ts";
+} from "@kampus/tuval/kernel/shell/window/index";
+import {describe, expect, it} from "vitest";
+import type {ChatView, ChatWindowRenderer} from "../../shell/chat/index.ts";
 import {CLAUDE_CHAT_WINDOW_REF, CLAUDE_SESSION_PROGRAM} from "../renderer-ref.ts";
 import {ClaudeChatWindow} from "./ClaudeChatWindow.tsx";
 
@@ -114,7 +117,7 @@ describe("the Claude window boundary", () => {
 
 	it("keeps the row's renderer reference on a leaf that pulls in no window code", () => {
 		const leaf = readFileSync(join(import.meta.dirname, "..", "renderer-ref.ts"), "utf8");
-		expect(specifiers(leaf)).toEqual(["../registry/program.ts"]);
+		expect(specifiers(leaf)).toEqual(["@kampus/tuval/kernel/registry/program"]);
 		expect([CLAUDE_SESSION_PROGRAM, CLAUDE_CHAT_WINDOW_REF.kind]).toEqual([
 			"claude-session",
 			"host-native",

@@ -4,14 +4,18 @@
  * distinguishable from "this is my answer and there are no sessions".
  */
 
-import {assert, describe, it} from "vitest";
-import {CallId} from "../protocol/ids.ts";
-import {PROTOCOL_VERSION, SpellReplyError, SpellReplyOk} from "../protocol/messages.ts";
+import {CallId} from "@kampus/tuval/kernel/protocol/ids";
+import {
+	PROTOCOL_VERSION,
+	SpellReplyError,
+	SpellReplyOk,
+} from "@kampus/tuval/kernel/protocol/messages";
 import {
 	SESSION_LIST_CALL_PATH,
 	SESSION_LIST_DEADLINE_MILLIS,
 	SESSION_LIST_PATH,
-} from "../protocol/session-list.ts";
+} from "@kampus/tuval/kernel/protocol/session-list";
+import {assert, describe, it} from "vitest";
 import {
 	atClock,
 	elapsedMillis,

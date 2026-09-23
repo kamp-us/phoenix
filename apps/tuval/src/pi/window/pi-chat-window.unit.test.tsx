@@ -10,16 +10,19 @@
  * every claim is about what is in the tree and what a reader can name.
  */
 
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {type TestProcess, testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {type WindowHost, WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {render, screen, within} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
-import {ProcessId} from "../../process/process.ts";
 import {type ChatView, initialChatView} from "../../shell/chat/index.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
-import {type TestProcess, testProcess} from "../../shell/window/fixtures.ts";
-import {type WindowHost, WindowId} from "../../shell/window/index.ts";
 import {piChatWindow} from "./PiChatWindow.tsx";
 import {FIRST_PROMPT, piSession, usageOf} from "./pi-window.testing.ts";
 

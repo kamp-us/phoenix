@@ -5,7 +5,7 @@
  */
 
 import {applyCellChecked} from "@demlik/tea";
-import {describe, expect, it} from "vitest";
+import {TOOL_RESULT_BYTE_LIMIT, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
 import {
 	type AiAgentSessionCmd,
 	type AiAgentSessionMsg,
@@ -13,9 +13,9 @@ import {
 	aiAgentSessionMachine,
 	holdsPartialItem,
 	initialState,
-} from "../../ai-agent/core/index.ts";
-import type {AgentEvent} from "../../ai-agent/events.ts";
-import {TOOL_RESULT_BYTE_LIMIT, type TranscriptItem} from "../../ai-agent/ports/index.ts";
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+import {describe, expect, it} from "vitest";
 import type {
 	TranscriptItem as PiTranscriptItem,
 	SessionDelta,

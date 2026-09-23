@@ -9,12 +9,12 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {mode, permission, prompt, transcriptPage} from "@kampus/tuval/ai-agent/ports";
+import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
 import type {CallToolResult} from "@modelcontextprotocol/sdk/types.js";
 import {type Context, Effect, Schema} from "effect";
-import {aiAgentPortNames} from "../../ai-agent/handlers/index.ts";
-import {mode, permission, prompt, transcriptPage} from "../../ai-agent/ports/index.ts";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
 import {KernelBridge, type ScriptedKernel} from "./KernelBridge.ts";
 import {type ToolRuntime, tuvalToolServer, wireNameOf} from "./server.ts";
 

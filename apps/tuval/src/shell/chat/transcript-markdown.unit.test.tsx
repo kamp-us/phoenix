@@ -11,15 +11,18 @@
  * only becomes complete under `waitFor` would pass a laxer test and still break the scroll.
  */
 
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {render, screen, within} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
-import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
-import {testProcess} from "../window/fixtures.ts";
-import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, chatWindow} from "./ChatWindow.tsx";
 import {assistantItem, systemItem, userItem, withTranscript} from "./chat.testing.ts";
 import {tuvalDesignMessages} from "./copy.ts";

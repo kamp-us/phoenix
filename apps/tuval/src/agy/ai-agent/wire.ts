@@ -30,8 +30,8 @@
  * `init` but inside the payload on the other two.
  */
 
+import {isJsonValue, type JsonValue} from "@kampus/tuval/ai-agent/ports";
 import {Predicate} from "effect";
-import {isJsonValue, type JsonValue} from "../../ai-agent/ports/index.ts";
 
 /**
  * The **supported floor**: the oldest release this module's reader is known to read, and the release

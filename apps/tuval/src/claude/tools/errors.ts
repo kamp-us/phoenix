@@ -4,4 +4,4 @@ export {
 	UnknownPort,
 	UnknownProcess,
 	UnknownProgram,
-} from "../../ai-agent/tools/errors.ts";
+} from "@kampus/tuval/kernel/ai-agent/tools/errors";

@@ -27,18 +27,22 @@
  */
 
 import {readFileSync} from "node:fs";
-import {Schema} from "effect";
 import {
 	type PromptPayload,
 	PromptPayloadSchema,
 	TurnResultSchema,
-} from "../../../ai-agent/ports/index.ts";
+} from "@kampus/tuval/ai-agent/ports";
+import {
+	type Answer,
+	type ArrivalEvent,
+	defineProgram,
+} from "@kampus/tuval/kernel/authoring/define-program";
+import {emit} from "@kampus/tuval/kernel/authoring/effect";
+import {port} from "@kampus/tuval/kernel/authoring/port";
+import type {AnyProgram} from "@kampus/tuval/kernel/registry/program";
+import {Schema} from "effect";
 import type {TuvalConfigInput} from "../../../config.ts";
-import type {AnyProgram} from "../../../registry/program.ts";
-import {type Answer, type ArrivalEvent, defineProgram} from "../../define-program.ts";
-import {emit} from "../../effect.ts";
 import {prReview} from "../../example/pr-review.ts";
-import {port} from "../../port.ts";
 import {
 	DESK_NODE,
 	type DeclaredReview,

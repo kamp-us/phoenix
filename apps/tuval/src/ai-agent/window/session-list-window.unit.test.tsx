@@ -6,14 +6,14 @@
  * substituted by `installDomShims` and asserted nowhere.
  */
 
+import type {SessionRow, UnreadableBackend} from "@kampus/tuval/kernel/protocol/session-list";
+import {SESSION_LIST_DEADLINE_MILLIS} from "@kampus/tuval/kernel/protocol/session-list";
 import {act, cleanup, fireEvent, render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {Profiler, useState} from "react";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import type {SessionListStatus} from "../../page/session-list.ts";
 import {reading, settled} from "../../page/session-list.ts";
-import type {SessionRow, UnreadableBackend} from "../../protocol/session-list.ts";
-import {SESSION_LIST_DEADLINE_MILLIS} from "../../protocol/session-list.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
 import {bareSession, claudeSession, NOW, piSession, scrambled} from "./fixtures.ts";
 import type {OpenTarget} from "./opening.ts";

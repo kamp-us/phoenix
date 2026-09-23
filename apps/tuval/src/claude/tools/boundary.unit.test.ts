@@ -7,10 +7,10 @@
 
 import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
+import type {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {ProgramId} from "@kampus/tuval/kernel/registry/program";
 import type {Effect, Option} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
-import type {ProcessId} from "../../process/process.ts";
-import type {ProgramId} from "../../registry/program.ts";
 import type {PortRefused, UnknownPort, UnknownProcess, UnknownProgram} from "./errors.ts";
 import type {KernelBridge, Sent} from "./KernelBridge.ts";
 

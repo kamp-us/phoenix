@@ -19,9 +19,9 @@
  */
 
 import {type AgentSettingItem, AgentSettingMenu} from "@kampus/design";
+import type {Mode} from "@kampus/tuval/ai-agent/ports";
+import type {ModeState} from "@kampus/tuval/kernel/ai-agent/core/index";
 import type {ReactElement} from "react";
-import type {ModeState} from "../../ai-agent/core/index.ts";
-import type {Mode} from "../../ai-agent/ports/index.ts";
 
 export function ModeSwitch({
 	modes,

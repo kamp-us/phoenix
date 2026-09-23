@@ -10,7 +10,7 @@
  * they have always had.
  */
 
-import type {ProcessId} from "../../process/process.ts";
+import type {ProcessId} from "@kampus/tuval/kernel/process/process";
 import type {ProcessName, WindowMount} from "./mount.ts";
 
 /** The pre-#8721 title, and still what a window whose desk names no windows shows. */

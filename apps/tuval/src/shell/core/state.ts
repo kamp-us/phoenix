@@ -13,10 +13,10 @@
  * a restored desk keeps minting where it left off.
  */
 
+import {isViewState, type ViewState} from "@kampus/tuval/kernel/shell/window/host";
 import {Predicate} from "effect";
 import {type DeskState, isDeskState} from "../desk/state.ts";
 import {isLayoutTree, type LayoutTree, type WindowId, windows} from "../layout/index.ts";
-import {isViewState, type ViewState} from "../window/host.ts";
 
 /** A workspace id. The shell mints it; nothing outside this module generates one. */
 export type WorkspaceId = string;

@@ -14,18 +14,18 @@
  * the process keeps running.
  */
 
-import {Effect, Fiber, Stream} from "effect";
-import type {ReactElement, ReactNode} from "react";
-import {useEffect, useState} from "react";
-import type {Message, ProcessId} from "../process/process.ts";
-import type {RendererKind} from "../registry/program.ts";
+import type {Message, ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {RendererKind} from "@kampus/tuval/kernel/registry/program";
 import type {
 	AnyWindowHost,
 	AnyWindowRenderer,
 	ViewState,
 	WindowHost,
 	WindowRenderer,
-} from "../shell/window/index.ts";
+} from "@kampus/tuval/kernel/shell/window/index";
+import {Effect, Fiber, Stream} from "effect";
+import type {ReactElement, ReactNode} from "react";
+import {useEffect, useState} from "react";
 
 /**
  * The brand only `readsState` can set. It is a module-private `unique symbol`, so no other module

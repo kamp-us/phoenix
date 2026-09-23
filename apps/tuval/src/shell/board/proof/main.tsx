@@ -14,11 +14,11 @@
  * is the desk and nothing else, which is the whole point of #8867.
  */
 
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
 import {Option} from "effect";
 import {StrictMode} from "react";
 import {createRoot} from "react-dom/client";
-import {ProcessId} from "../../../process/process.ts";
-import {ProgramId} from "../../../registry/program.ts";
 import type {PortDeclaration, TableRow} from "../../../table/row.ts";
 import {ProcessBoardOverlay} from "../ProcessBoardOverlay.tsx";
 import "../../../page/styles.ts";

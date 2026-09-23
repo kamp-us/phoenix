@@ -5,13 +5,8 @@
  * component.
  */
 
+import {boundToolResult, ItemId, type JsonValue, type ToolItem} from "@kampus/tuval/ai-agent/ports";
 import {describe, expect, it} from "vitest";
-import {
-	boundToolResult,
-	ItemId,
-	type JsonValue,
-	type ToolItem,
-} from "../../ai-agent/ports/index.ts";
 import {callDisclosure, callLabel, canExpandCall, omissionLine, toolDetail} from "./tool-detail.ts";
 
 const call = (input: ToolItem["input"], name = "a_tool"): ToolItem => ({

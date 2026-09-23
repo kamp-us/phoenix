@@ -17,13 +17,14 @@ import {request} from "node:http";
 import {tmpdir} from "node:os";
 import {dirname, join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {ProcessView} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect, Queue, Result, Schema, Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {start} from "../../boot.ts";
 import {counterNode, demoGraph, demoPrograms} from "../../demo/index.ts";
 import {logId} from "../../demo/log.ts";
 import {LAUNCH_ENDPOINT, servePage} from "../../page/dev-server.ts";
-import {ProcessId} from "../../process/process.ts";
 import {readCommandLine} from "../commands/index.ts";
 import {activeWorkspace, type ShellMsg, type ShellState, windowIds} from "../core/index.ts";
 import {wiredShellEffects} from "../host/effects.ts";
@@ -39,7 +40,6 @@ import {
 } from "../picker/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../program.ts";
 import {attach} from "../transport/client.ts";
-import type {ProcessView} from "../window/index.ts";
 
 const TIMEOUT = 90_000;
 

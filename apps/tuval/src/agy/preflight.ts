@@ -27,10 +27,10 @@
 import {homedir} from "node:os";
 import {join} from "node:path";
 import {NodeChildProcessSpawner, NodeFileSystem, NodePath} from "@effect/platform-node";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+import {StartError, TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
 import {Deferred, Effect, FileSystem, Layer, Stream} from "effect";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
-import type {AgentEvent} from "../ai-agent/events.ts";
-import {StartError, TuvalAiAgent} from "../ai-agent/service/index.ts";
 import {AgyAiAgent, type AgyAiAgentOptions} from "./ai-agent/index.ts";
 import {AGY_BINARY, AGY_SETTINGS_FILE, AGY_VERSION} from "./config.ts";
 

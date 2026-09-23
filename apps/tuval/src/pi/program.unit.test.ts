@@ -13,25 +13,25 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {pathToFileURL} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer, Redacted} from "effect";
-import {afterAll, expect} from "vitest";
+import {ItemId, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
 import {
 	type AiAgentSessionState,
 	initialState,
 	isAiAgentSessionState,
-} from "../ai-agent/core/index.ts";
-import {ItemId, type TranscriptItem} from "../ai-agent/ports/index.ts";
-import {AI_AGENT_INSPECTOR_REF} from "../ai-agent/renderer-ref.ts";
-import {checkpointFields} from "../ai-agent/restore/index.ts";
-import {ScriptedAiAgent} from "../ai-agent/service/index.ts";
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {AI_AGENT_INSPECTOR_REF} from "@kampus/tuval/kernel/ai-agent/renderer-ref";
+import {checkpointFields} from "@kampus/tuval/kernel/ai-agent/restore/index";
+import {ScriptedAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {ClientId, type Scope as SpellScope, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
+import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import {Context, Effect, Layer, Redacted} from "effect";
+import {afterAll, expect} from "vitest";
 import {projectConfig} from "../boot.ts";
-import {ClientId, type Scope as SpellScope, WorkspaceId} from "../commands/spell.ts";
-import {Checkpoints} from "../durability/Checkpoints.ts";
-import {memoryStores} from "../durability/stores.ts";
-import {Processes} from "../process/Processes.ts";
-import {ProcessId} from "../process/process.ts";
-import {ProgramId} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
 import {programEntries, showsInAWindow} from "../shell/picker/entries.ts";
 import {
 	PI_SESSION_PROGRAM,

@@ -16,7 +16,7 @@
  */
 
 import type {SessionMessage} from "@anthropic-ai/claude-agent-sdk";
-import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {TranscriptItem} from "@kampus/tuval/ai-agent/ports";
 import {type HistoryItems, toHistoryItems} from "./items.ts";
 import type {MappingOptions} from "./map.ts";
 

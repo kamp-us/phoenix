@@ -27,9 +27,9 @@
  * is in flight, and both disappear at the beginning of history (founder ruling, 2026-09-02).
  */
 
-import {pageCursor} from "../../ai-agent/history/cursor.ts";
-import type {ItemId, SubagentSlot, SystemItem, TranscriptItem} from "../../ai-agent/ports/index.ts";
-import {isNamedItem, itemIds} from "../../ai-agent/ports/index.ts";
+import type {ItemId, SubagentSlot, SystemItem, TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import {isNamedItem, itemIds} from "@kampus/tuval/ai-agent/ports";
+import {pageCursor} from "@kampus/tuval/kernel/ai-agent/history/cursor";
 
 /**
  * What an `item` row may carry. A session notice is deliberately not one: every `SystemItem` lands
