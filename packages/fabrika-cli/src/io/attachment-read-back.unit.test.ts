@@ -2,9 +2,11 @@
  * The shared read-back's pure core: the render call, the signed link it yields, the anonymous
  * probe, and the two checks that hold the served asset to the capture.
  */
+import {createHash} from "node:crypto";
 import {describe, expect, it} from "@effect/vitest";
 import {
 	classifyBytes,
+	classifyDigest,
 	classifyProbe,
 	probeRequest,
 	renderCall,
@@ -81,5 +83,15 @@ describe("classifyBytes", () => {
 		expect(classifyBytes(new Uint8Array([1, 2, 3]), BYTES)).toBeNull();
 		expect(classifyBytes(new Uint8Array([1, 2, 4]), BYTES)).toMatch(/not the 3-byte capture/);
 		expect(classifyBytes(new Uint8Array([1, 2]), BYTES)).toMatch(/served 2 bytes/);
+	});
+});
+
+describe("classifyDigest", () => {
+	it("passes only bytes hashing to the recorded digest", () => {
+		const digest = createHash("sha256").update(BYTES).digest("hex");
+		expect(classifyDigest(new Uint8Array([1, 2, 3]), digest)).toBeNull();
+		expect(classifyDigest(new Uint8Array([1, 2, 4]), digest)).toMatch(
+			new RegExp(`not the recorded ${digest.slice(0, 12)}`),
+		);
 	});
 });

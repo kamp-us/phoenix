@@ -300,8 +300,9 @@ piece UNKNOWN. The marker format, the evidence-upload proof and every exit are t
 
 <!-- anchor: CAPABILITIES --> This skill opens no PR, mutates no branch, runs no PR code locally;
 it holds a shell, a repo-scoped token, a headless browser pointed at the repo's preview
-deployment, and **uses** four writes — the verdict comment (with its verified evidence), the
-can't-see/escalation comment, the routed-elsewhere record, and one append to the driver's lane
+deployment, and **uses** five writes — the verdict comment (with its verified evidence), the
+plain "does not count" note `review-ui post` leaves when that evidence fails its after-post check
+(exit `9`), the can't-see/escalation comment, the routed-elsewhere record, and one append to the driver's lane
 ledger through `lane report` at the `--root` your brief carries, a path outside this checkout. No push, no merge, no label. Every run ends as exactly one of:
 **verdict PASS** · **verdict FAIL** · **CANT-SEE** (no preview, stale preview unrepairable, or
 nothing renderable — no verdict posted, blocker named on the PR; cause `no-preview-render`) ·

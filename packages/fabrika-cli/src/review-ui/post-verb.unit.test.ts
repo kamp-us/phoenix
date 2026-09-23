@@ -3,7 +3,8 @@ import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import {classifyProbe} from "../io/attachment-read-back.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {compose as supersedeWith} from "../review/supersede.ts";
+import {FENCE, compose as supersedeWith} from "../review/supersede.ts";
+import {read as readMarker} from "../wire/verdict-marker.ts";
 import {
 	EMPTY_STDIN,
 	INVALID_CAPTURE,
@@ -17,8 +18,15 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
+import {read as readGallery} from "./evidence-gallery.ts";
 import {type CaptureManifest, serializeManifest, sha256Hex} from "./manifest.ts";
-import {type EvidenceCheck, runPost, runPostFlags, type UploadLeg} from "./post-verb.ts";
+import {
+	type EvidenceCheck,
+	runPost,
+	runPostFlags,
+	type UploadLeg,
+	unopenedNote,
+} from "./post-verb.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const OLD_HEAD = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
@@ -128,6 +136,11 @@ const comments = (
 const hostingLeg: UploadLeg = () => Effect.succeed({_tag: "Hosted", url: HOSTED});
 const failingLeg: UploadLeg = () => Effect.succeed({_tag: "Failed", reason: "HTTP 500"});
 const opensCheck: EvidenceCheck = () => Effect.succeed({_tag: "Resolved"});
+const broken: EvidenceCheck = () =>
+	Effect.succeed({
+		_tag: "Unresolved",
+		reasons: [`${HOSTED}: the hosted asset probed back HTTP 404`],
+	});
 
 const BODY = "| surface | verdict |\n|---|---|\n| /pano | FAIL |\n";
 
@@ -171,7 +184,8 @@ const run = (
 };
 
 const SHOT = "/pano @ desktop";
-const COMPOSED = `review-ui: FAIL @ ${HEAD} — changes-requested\n\n${BODY.trimEnd()}\n\n## Evidence\n\n### ${SHOT}\n\n![${SHOT}](${HOSTED})`;
+const DIGEST_LINE = `<!-- fabrika:evidence sha256=${sha256Hex(BYTES)} -->`;
+const COMPOSED = `review-ui: FAIL @ ${HEAD} — changes-requested\n\n${BODY.trimEnd()}\n\n## Evidence\n\n### ${SHOT}\n\n![${SHOT}](${HOSTED})\n${DIGEST_LINE}`;
 
 const happy = (): ReadonlyArray<Scripted> => [
 	[PULL, pull()],
@@ -300,11 +314,6 @@ describe("runPost", () => {
 	});
 
 	it("never reports success when the POSTED comment's evidence does not open — 9, said loudly", async () => {
-		const broken: EvidenceCheck = () =>
-			Effect.succeed({
-				_tag: "Unresolved",
-				reasons: [`${HOSTED}: the hosted asset probed back HTTP 404`],
-			});
 		const {outcome, requests} = await run(happy(), {confirm: broken});
 		expect(outcome.code).toBe(READBACK_MISMATCH);
 		expect(outcome.stdout).toBe("");
@@ -313,6 +322,85 @@ describe("runPost", () => {
 		expect(said).toMatch(/POSTED, BUT ITS EVIDENCE DOES NOT OPEN/);
 		expect(said).toMatch(/comment 5154902211/);
 		expect(said).toMatch(/probed back HTTP 404/);
+	});
+
+	// The ruling: the verb never withdraws or replaces a posted verdict; the gates re-check the
+	// gallery's evidence, and a plain note beside the verdict says why it does not count.
+	describe("step 9 when the posted evidence does not open", () => {
+		const writes = (requests: ReadonlyArray<string>, bodies: ReadonlyArray<string>) =>
+			requests.flatMap((request, index) =>
+				CREATE.test(request) || PATCH.test(request)
+					? [{request, body: String(JSON.parse(bodies[index] ?? "{}").body)}]
+					: [],
+			);
+
+		const pinNote = (body: string) => {
+			expect(body).toBe(unopenedNote(URL, [`${HOSTED}: the hosted asset probed back HTTP 404`]));
+			expect(body.split("\n")[0]).toBe(`This review-ui verdict does not count: ${URL}`);
+			expect(readMarker(body)._tag).toBe("Absent");
+		};
+
+		it("on the create path: the verdict stays as written, a note says why it does not count", async () => {
+			const {outcome, requests, bodies} = await run(happy(), {confirm: broken});
+			expect(outcome.code).toBe(READBACK_MISMATCH);
+			expect(outcome.stdout).toBe("");
+			const landed = writes(requests, bodies);
+			expect(landed).toHaveLength(2);
+			expect(requests.some((request) => /DELETE /.test(request))).toBe(false);
+			expect(CREATE.test(landed[0]?.request ?? "")).toBe(true);
+			expect(landed[0]?.body).toBe(`${COMPOSED}\n`);
+			// The gallery the gates re-check carries the judged bytes' digest.
+			expect(readGallery(landed[0]?.body ?? "")).toEqual({
+				_tag: "Found",
+				evidence: [{url: HOSTED, sha256: sha256Hex(BYTES)}],
+			});
+			expect(CREATE.test(landed[1]?.request ?? "")).toBe(true);
+			pinNote(landed[1]?.body ?? "");
+			expect(outcome.stderr.join("\n")).toMatch(/noted on the PR why this verdict does not count/);
+		});
+
+		it("on the supersede path: the prior verdict stays below the fence, never overwritten", async () => {
+			const prior = `review-ui: PASS @ ${OLD_HEAD} — older round`;
+			const {outcome, requests, bodies} = await run(
+				[
+					[PULL, pull()],
+					[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+					[COMMENTS, comments({id: 42, body: prior, author: "kampus-bot"})],
+					[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
+					[READBACK, posted(supersededBody(prior))],
+					[CREATE, {status: 201, body: JSON.stringify({id: 77, html_url: `${URL}-note`})}],
+				],
+				{confirm: broken},
+			);
+			expect(outcome.code).toBe(READBACK_MISMATCH);
+			expect(outcome.stdout).toBe("");
+			const landed = writes(requests, bodies);
+			expect(landed).toHaveLength(2);
+			expect(requests.some((request) => /DELETE /.test(request))).toBe(false);
+			expect(landed[0]?.request).toContain("issues/comments/42");
+			expect(landed[0]?.body).toBe(supersededBody(prior));
+			expect(landed[0]?.body).toContain(
+				`${FENCE}\n\n## Superseded verdict — 2026-08-29\n\n${prior}`,
+			);
+			expect(CREATE.test(landed[1]?.request ?? "")).toBe(true);
+			pinNote(landed[1]?.body ?? "");
+		});
+
+		it("still exits 9 and says so when the note itself does not land", async () => {
+			const {outcome} = await run(
+				[
+					[PULL, pull()],
+					[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+					[COMMENTS, comments()],
+					[once(CREATE), {status: 201, body: JSON.stringify({id: 5154902211, html_url: URL})}],
+					[READBACK, posted(COMPOSED)],
+					[CREATE, {status: 502, body: "{}"}],
+				],
+				{confirm: broken},
+			);
+			expect(outcome.code).toBe(READBACK_MISMATCH);
+			expect(outcome.stderr.join("\n")).toMatch(/did not land/);
+		});
 	});
 
 	it("does not run the after-post check when nothing posted", async () => {

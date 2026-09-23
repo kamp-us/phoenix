@@ -491,12 +491,23 @@ export interface VerdictFact {
 	 * passed".
 	 */
 	readonly polarity: "PASS" | "FAIL" | "ROUTED";
-	/** Whether the claim still binds this head — head equality, or the content it bound. */
-	readonly binding: "current" | "stale" | "unknown";
+	/**
+	 * Whether the claim still binds this head — head equality, or the content it bound. `unopened`
+	 * is a `review-ui` verdict that binds the head over evidence a reader cannot open, so it does not
+	 * count (`../review-ui/standing-evidence.ts`).
+	 */
+	readonly binding: "current" | "stale" | "unknown" | "unopened";
 	readonly commentId: number;
 }
 
-export type NamespaceState = "pass" | "fail" | "absent" | "stale" | "unknown" | "routed";
+export type NamespaceState =
+	| "pass"
+	| "fail"
+	| "absent"
+	| "stale"
+	| "unknown"
+	| "routed"
+	| "unopened";
 
 export interface NamespaceRow {
 	readonly namespace: string;
@@ -508,6 +519,7 @@ const stateOf = (verdict: VerdictFact | undefined): NamespaceState => {
 	if (verdict === undefined) return "absent";
 	if (verdict.binding === "stale") return "stale";
 	if (verdict.binding === "unknown") return "unknown";
+	if (verdict.binding === "unopened") return "unopened";
 	// The binding question is asked first, so a route at a head this claim no longer binds rows
 	// `stale` exactly as a verdict does — a route that survived a push would attest a tree nobody read.
 	if (verdict.polarity === "ROUTED") return "routed";

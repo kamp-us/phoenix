@@ -619,7 +619,7 @@ fabrika ship gate 4321 --sha 03135b91 --require review-code [--require review-do
 
 **Output** — machine channel. First line: `gate\t<satisfied|blocked>\t<sha>`. Then one line
 per required namespace, in the order required:
-`ns\t<namespace>\t<pass|fail|absent|stale|routed>\t<marker|advisory|review-fold|routed-elsewhere|->`
+`ns\t<namespace>\t<pass|fail|absent|stale|routed|unopened>\t<marker|advisory|review-fold|routed-elsewhere|->`
 — the fourth field names which carrier produced the in-force verdict (`-` on `absent`).
 `satisfied` iff every required namespace reads `pass` or `routed`.
 
@@ -681,6 +681,17 @@ moved — named a namespace nothing legal could fill, and a prose-only PR under 
 was permanently unshippable. A record aimed at any other namespace is read and ignored; that
 namespace stays `absent`. `ship floor` is unaffected — it asks for `governance` and requires `pass`.
 
+**`unopened` is the sixth state: a `review-ui` verdict counts only while its evidence opens.**
+`review-ui post` never withdraws a verdict it has posted, so a verdict whose captures stopped
+opening after the post stays on the PR. The gate therefore re-reads the in-force `review-ui`
+verdict (marker or advisory carrier, `pass` or `fail`) before it counts it: the comment's rendered
+HTML, each capture in the gallery above the supersede fence fetched anonymously through its signed
+link, and held to the sha256 the gallery records beside it. A capture that does not answer `200`
+with those bytes, or a gallery with no digest line, makes the namespace `unopened` — it does not
+count, it blocks as `absent` does, and a stderr notice names each reason. A rendered read that
+never reached GitHub is `11`, never `unopened`. The contract of the re-check lives with
+[`review-ui post`](../review-ui/contract.md#review-ui-post).
+
 **`--cp` is caller-asserted, deliberately** — the one input in this verb the caller vouches
 for, an exception to the group's re-derive habit and stated as such. Gate is a read: a wrongly
 passed `--cp` changes which *carrier* can satisfy the code namespace, never whether the §CP
@@ -694,7 +705,7 @@ answer this contract bans.
 |---|---|
 | `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — a conjunction over an empty diff proves nothing |
 | `10` | a `--require` value is not a known gateable namespace |
-| `11` | the changed-file list, comments, reviews, or ACL could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
+| `11` | the changed-file list, comments, reviews, ACL, or the in-force `review-ui` verdict's rendered comment could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
 | `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
@@ -712,11 +723,14 @@ answer this contract bans.
 | `ship gate: the review read never reached a terminal page — pagination is unexhausted, so the native-review fold would rest on a truncated set; refusing the partial resolution.` | 13 | refusal |
 | `ship gate: #<n>'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.` | 0 | notice |
 | `ship gate: #<n> carries a §CP advisory with a [FAIL] row — an invalid emission; treated as fail, report it.` | 0 | notice |
+| `ship gate: review-ui: the verdict in comment <id> does not count — its evidence does not open (<reason>; …).` | 0 | notice |
 
 **Scope** — one PR's changed-file list (paginated to exhaustion, and the floor is derived from that
 list rather than from the pull-request record's `changed_files`; a list at GitHub's 3000-file
 ceiling refuses at `13`, because exhaustion cannot tell that case from a complete read), its verdict comments (paginated,
-count-checked) and native reviews (paginated to exhaustion), each candidate ACL-resolved. The verdict-marker and advisory grammars are the registered wire
+count-checked) and native reviews (paginated to exhaustion), each candidate ACL-resolved, plus, for
+an in-force `review-ui` verdict, that comment's rendered HTML (`GET issues/comments/<id>`) and one
+anonymous fetch of each capture its gallery links. The verdict-marker and advisory grammars are the registered wire
 formats (`packages/fabrika-cli/src/wire/verdict-marker.ts`, `src/review/advisory.ts`) —
 imported, never re-parsed; a hand-rolled marker regex is the drift the registry ended.
 

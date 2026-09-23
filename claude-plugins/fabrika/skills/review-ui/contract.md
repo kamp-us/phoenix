@@ -578,7 +578,10 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
    `--polarity`, `--sha`, `--clause`), or with `--carrier advisory` the fixed advisory line plus
    the `Reviewed-head: @ <sha>` body line; `advisory` with FAIL is a `10` refusal (a §CP FAIL
    posts the ordinary FAIL marker). Below it, the stdin body, then the evidence gallery — per
-   surface, the verified hosted URL.
+   surface, the verified hosted URL, and on the line after it
+   `<!-- fabrika:evidence sha256=<hex> -->`, the digest of the judged capture. The digest renders
+   as nothing; it is what lets a gate hold the hosted capture to the judged bytes later
+   (`packages/fabrika-cli/src/review-ui/evidence-gallery.ts`).
 6. **Leak-scan the assembled comment** (`5` / `6` — the imported predicates; a finding that must
    cite a leak cites it by class root or repo-relative form).
 7. **Append into one comment for this namespace under this carrier** (the disjoint marker/advisory
@@ -597,7 +600,24 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 9. **Re-read the posted comment's evidence** — the comment's rendered HTML, each embedded
    capture's signed link fetched anonymously and held to its judged bytes. A capture that does not
    open is `9`, stated as posted: the verdict landed, so the verb never reports success over
-   evidence nobody can see and names the comment to inspect.
+   evidence nobody can see and names the comment to inspect. **The verb never withdraws or
+   replaces that verdict** — deleting it loses the record, and restoring a prior body would put an
+   older verdict back on the first line. It leaves the verdict as written (on a re-post, the prior
+   verdict stays below the fence exactly as step 7 put it) and creates one plain comment beside it:
+   `This review-ui verdict does not count: <verdict url>`, the reasons, and the re-post remedy. That
+   note is the PR's record that a verdict was attempted and why it does not count; its first line is
+   no verdict carrier. If the note fails to land, the exit is still `9` and stderr says so.
+
+**What the gates count.** A posted `review-ui` verdict counts only while its evidence opens.
+`ship gate` and `lane prove` re-read the in-force `review-ui` verdict before they count it — the
+same step-9 read-back, held to the gallery's recorded sha256 because a gate has no local bytes —
+and a verdict whose capture does not open, or whose gallery records no digest, does not count: the
+gate rows it `unopened` and blocks, `lane prove` rows it `unopened` and proves no `PASS` over it. A
+re-check that cannot read the comment is UNKNOWN (`ship gate` `11`, `lane prove` row `unknown`),
+never a count. Only the gallery above the supersede fence is read, so a superseded verdict's
+evidence never decides the one in force. This is the ruled direction — the readers re-check, the
+verb never withdraws — and the `@ruling` tag in
+`packages/fabrika-cli/src/review-ui/standing-evidence.ts` cites the ruling comment.
 
 **Exit status** (beyond the universal four)
 
@@ -638,7 +658,9 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: the assembled comment carries a machine-local path at line <k> (<class>) — cite it repo-relative or by class root.` | 5 | refusal |
 | `review-ui post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; run \`fabrika review verdicts <n>\` before retrying.` | 8 | refusal |
 | `review-ui post: posted, but the read-back does not yield this marker (<wire reason>) — inspect comment <id>.` | 9 | refusal |
-| `review-ui post: POSTED, BUT ITS EVIDENCE DOES NOT OPEN — <k> of <m> embedded captures fail the read-back (<first reason>); the verdict in comment <id> stands over evidence nobody can see — inspect it before anything reads this verdict.` | 9 | refusal |
+| `review-ui post: POSTED, BUT ITS EVIDENCE DOES NOT OPEN — <k> of <m> embedded captures fail the read-back (<first reason>); the verdict in comment <id> stays on the PR and does not count — ship gate and lane prove re-check its evidence and will not count it while it does not open. Re-render and post again.` | 9 | refusal |
+| `review-ui post: noted on the PR why this verdict does not count: <note url>` | 9 | notice |
+| `review-ui post: the note saying this verdict does not count did not land (<reason>) — the gates re-check its evidence either way.` | 9 | notice |
 | `review-ui post: a standing <PASS\|FAIL> for review-ui at <sha> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 18 | refusal |
 
 **Scope** — one PR (its live head, its comments), one evidence set (its manifest and every
