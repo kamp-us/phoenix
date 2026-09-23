@@ -10,7 +10,14 @@
 			"component": "design"
 		},
 		"packages/fabrika-cli": {
-			"component": "fabrika-cli"
+			"component": "fabrika-cli",
+			"extra-files": [
+				{
+					"type": "json",
+					"path": "/claude-plugins/fabrika/cli-floor.json",
+					"jsonpath": "$.minimum"
+				}
+			]
 		},
 		"packages/fabrika-pi": {
 			"component": "fabrika-pi"
