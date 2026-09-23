@@ -32,13 +32,22 @@ import {issueRefsIn} from "../build/commit-message.ts";
 import type {ParentedCommit} from "../io/git.ts";
 import type {PullScope} from "../io/pulls.ts";
 import {type IssueRefs, ROUTED_NAMESPACES} from "../review/classes.ts";
+import {isBuildState, SHELL_STATES} from "../wire/lane-brief.ts";
 import {rawKeyIssue} from "./key.ts";
 
 /** The branch grammar's own reader, re-exported so this module's callers take one derivation. */
 export {childLaneBranches} from "../build/lane.ts";
 
-/** The leaf state a builder runs in — a `DONE` out of it claims the built work exists. */
+/** The plain builder's leaf state — the text-construction member of {@link BUILD_STATES}. */
 export const BUILD_STATE = "build";
+
+/**
+ * Every leaf state a builder runs in — a `DONE` out of any of them claims the built work exists.
+ *
+ * Read off the shell-state table's own `isBuildState` rather than listed again, so every cell the
+ * brief routes to a builder is one this claim table proves.
+ */
+export const BUILD_STATES: ReadonlyArray<string> = SHELL_STATES.filter(isBuildState);
 
 /** The leaf state a reviewer runs in — a `PASS` out of it claims a verdict that still binds. */
 export const REVIEW_STATE = "review";
@@ -166,7 +175,7 @@ export const claimOf = (
 	next: string | null = null,
 ): Claim => {
 	const child = role._tag === "Child";
-	if (event === "DONE" && leaf === BUILD_STATE) {
+	if (event === "DONE" && BUILD_STATES.includes(leaf)) {
 		return child ? {_tag: "RangeCommits", epic: role.epic} : {_tag: "OpenPull"};
 	}
 	if (event === "PASS" && leaf === REVIEW_STATE) {
@@ -185,7 +194,7 @@ export const claimOf = (
 	}
 	return {
 		_tag: "None",
-		why: `${event} out of "${leaf}" asserts no artifact — only DONE out of "${BUILD_STATE}", PASS out of "${REVIEW_STATE}" / "${REVIEW_UI_STATE}" and BLOCKED out of those two review cells do`,
+		why: `${event} out of "${leaf}" asserts no artifact — only DONE out of ${BUILD_STATES.map((state) => `"${state}"`).join(" / ")}, PASS out of "${REVIEW_STATE}" / "${REVIEW_UI_STATE}" and BLOCKED out of those two review cells do`,
 	};
 };
 
@@ -468,7 +477,7 @@ export const traceDiagnosis = (
 	return latest === undefined
 		? {
 				_tag: "Absent",
-				why: `#${issue} carries no comment written since the task entered ${BUILD_STATE}${since === null ? "" : ` at ${since}`}, so no diagnosis was posted`,
+				why: `#${issue} carries no comment written since the task entered its build cell${since === null ? "" : ` at ${since}`}, so no diagnosis was posted`,
 			}
 		: {_tag: "Posted", commentId: latest.id};
 };
