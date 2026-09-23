@@ -15,5 +15,5 @@
 		"exactOptionalPropertyTypes": false,
 		"types": ["node"]
 	},
-	"include": ["src", "vitest.config.ts"]
+	"include": ["src", "proof", "vitest.config.ts"]
 }

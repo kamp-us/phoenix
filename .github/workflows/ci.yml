@@ -619,6 +619,13 @@ jobs:
 
       - run: pnpm --filter './packages/**' --filter @kampus/infra run test
 
+      # The Tuval SDK as an outside author installs it (#9654): packs `@kampus/tuval-sdk`,
+      # installs the tarball with npm into a temp directory outside the checkout, type-checks
+      # and tests `packages/tuval/example` there, and reds if either phase resolved a file
+      # inside the checkout.
+      - name: Prove an outside program builds and tests against the packed Tuval SDK
+        run: pnpm --filter @kampus/tuval-sdk run proof:outside
+
   skills:
     # The check name is a required status check on `main`, so it keeps its historical name
     # ("validate skill frontmatter") while the v1 skill validators it ran retired with the
