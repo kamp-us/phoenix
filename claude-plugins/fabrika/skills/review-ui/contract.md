@@ -164,7 +164,7 @@ sibling's numerals is not a goal the doctrine sets.
 | `7` | zero scope: the target is **proven** absent (404), or the PR is closed — a deliberate, declared widening of the base seat (existence-only) to closed-target, because a closed PR is provably not reviewable scope, matching the sibling `review` group's use |
 | `8` | a write was attempted and its outcome could not be proven — UNKNOWN |
 | `9` | the write landed but the read-back does not match |
-| `10` | a semantic refusal on a value or body: a supplied value off its closed vocabulary (a bad `--polarity`, `--carrier advisory` with FAIL, a non-kebab `--out`, a `:state` outside the realized set), or a `note` body whose first line parses as a verdict carrier |
+| `10` | a semantic refusal on a value or body: a supplied value off its closed vocabulary (a bad `--polarity`, `--carrier advisory` with FAIL, a non-kebab `--out`, a `:state` outside the realized set), a single-valued operand passed twice (a repeated `--evidence` on `post`), or a `note` body whose first line parses as a verdict carrier |
 | `11` | a required read or execution failed — no outcome is proven: the PR, its head, the preview probe, the harness, a capture's validity, or (at post time) the upload target's state. The same deliberate widening the `ui` group states: an execution that never became answerable leaves the run UNKNOWN exactly as a failed read does |
 | `12` | refused, proven: the artifact is not the PR's current tree — the live head moved past `--sha` at post time, or the preview's deployed head is not the live head at render time |
 | `13` | proven: at least one surface threw an uncaught page error during render — the render is red |
@@ -538,7 +538,7 @@ poster reads success.
 | `--polarity` | enum | yes | — | `PASS` or `FAIL` — a third token is not a polarity |
 | `--sha` | string | yes | — | the head the reviewer actually inspected (7–40 lowercase hex) |
 | `--clause` | string | yes | — | the human clause; blank is not a clause |
-| `--evidence` | string | yes | — | the `review-ui render` capture-set name whose verified upload is this verdict's evidence |
+| `--evidence` | string | yes | — | the `review-ui render` capture-set name whose verified upload is this verdict's evidence — exactly one per post; passing it twice is the `10` refusal, before anything is read, uploaded or posted |
 | `--carrier` | enum | no | `marker` | `marker` (first-line SHA-bound marker) or `advisory` (§CP: advisory first line, `Reviewed-head: @ <sha>` body line). `advisory` is a PASS path only |
 | `--supersede` | boolean | no | `false` | acknowledge that this verdict retires a standing one of the **opposite** polarity at this head; without it that post is the `18` refusal |
 | `--repo` | string | no | resolved | the repository |
@@ -564,7 +564,10 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 3. **Re-validate every capture against its manifest sha** (`15` on mismatch or invalidity).
 4. **Upload every capture and verify each upload individually, before anything posts** — the
    two-tier store exactly as `ui evidence` specifies it (store tier when the repo declares one;
-   the GitHub user-attachment tier otherwise, each upload probed back). The tier choice reads the
+   the GitHub user-attachment tier otherwise, each upload read back). A fresh user-attachment URL
+   reads `404` at its own address until posted content embeds it, so the attachment tier reads
+   each upload back through GitHub's markdown renderer instead: the signed link the renderer gives
+   the asset must answer `200` to an anonymous fetch and serve the capture's exact bytes. The tier choice reads the
    `uiCapture` key of `.fabrika.jsonc` at the repo root the delivery layer resolves — the reviewer's own
    checked-out tree, never the PR head, which this skill never checks out. Any failure is `17`,
    aggregated, **nothing posted**. This inverts v1's posture at the seam where a crashed capture
@@ -591,6 +594,10 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 8. **Read it back, unconditionally, from live PR state** — the format's `read` (or the advisory
    anchors), then the whole comment through `normalizeForReadback` (`9` on mismatch). A
    read-back that trusts a carried variable re-ships the false-PASS class.
+9. **Re-read the posted comment's evidence** — the comment's rendered HTML, each embedded
+   capture's signed link fetched anonymously and held to its judged bytes. A capture that does not
+   open is `9`, stated as posted: the verdict landed, so the verb never reports success over
+   evidence nobody can see and names the comment to inspect.
 
 **Exit status** (beyond the universal four)
 
@@ -602,8 +609,8 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `6` | the body is a bare `@` path reference — the body never arrived |
 | `7` | the PR is proven absent (404) or closed |
 | `8` | the create/edit failed — UNKNOWN whether a comment landed |
-| `9` | the comment landed but the read-back does not yield this marker |
-| `10` | a bad `--polarity`; `--carrier advisory` with `--polarity FAIL`; a `--carrier` off its enum |
+| `9` | the comment landed but the read-back does not yield this marker, or an embedded capture in the posted comment does not open as its judged bytes |
+| `10` | a bad `--polarity`; `--carrier advisory` with `--polarity FAIL`; a `--carrier` off its enum; `--evidence` passed more than once — a post carries one capture set, so the refusal names every set passed and lands before stdin, the manifest or any upload is touched |
 | `11` | a precondition read failed — the PR, the live head, the evidence set's files, or the upload target's state; nothing was uploaded or posted |
 | `12` | refused: the live head moved past `--sha`, or the evidence set was rendered at a different head — the verdict or its pixels would bind a tree that is not the PR |
 | `15` | proven: a capture in the evidence set is invalid or fails its manifest sha |
@@ -620,6 +627,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: PR #<n> is closed — a verdict on a closed PR gates nothing.` | 7 | refusal |
 | `review-ui post: --polarity must be PASS or FAIL — got "<v>".` | 10 | refusal |
 | `review-ui post: --carrier advisory is a PASS path only — post the FAIL marker instead.` | 10 | refusal |
+| `review-ui post: --evidence was passed <k> times ("<set>", "<set>", …) — a post carries one capture set, and every set past the first would drop out of the gallery while the verdict still cites its shots. Render every judged surface into one set and pass it once; nothing was read, uploaded or posted.` | 10 | refusal |
 | `review-ui post: cannot read <what> for #<n>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
 | `review-ui post: evidence set "<set>" has no readable manifest.json (<absent|parse reason>) — a set without its manifest is not a set; re-run review-ui render.` | 4 | refusal |
 | `review-ui post: .fabrika.jsonc declares a `uiCapture` that does not satisfy its schema: <first violation> — the tier choice is unmakeable.` | 4 | refusal |
@@ -630,6 +638,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: the assembled comment carries a machine-local path at line <k> (<class>) — cite it repo-relative or by class root.` | 5 | refusal |
 | `review-ui post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; run \`fabrika review verdicts <n>\` before retrying.` | 8 | refusal |
 | `review-ui post: posted, but the read-back does not yield this marker (<wire reason>) — inspect comment <id>.` | 9 | refusal |
+| `review-ui post: POSTED, BUT ITS EVIDENCE DOES NOT OPEN — <k> of <m> embedded captures fail the read-back (<first reason>); the verdict in comment <id> stands over evidence nobody can see — inspect it before anything reads this verdict.` | 9 | refusal |
 | `review-ui post: a standing <PASS\|FAIL> for review-ui at <sha> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 18 | refusal |
 
 **Scope** — one PR (its live head, its comments), one evidence set (its manifest and every

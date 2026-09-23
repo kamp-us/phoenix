@@ -467,6 +467,26 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
+	 * An `ESCALATED` whose work is done but whose write provably did not land: `review-ui`'s verdict
+	 * or its evidence upload, or `build-ui`'s capture attach on an open PR, refused again on its one
+	 * re-run. Nothing about the artifact was judged wrong — the channel that carries the judgment
+	 * failed.
+	 *
+	 * Distinct from `repair-budget-spent`, the builder's other `ESCALATED`: that one is a graded
+	 * artifact found wrong too often, and this one is an ungraded channel.
+	 *
+	 * No remedy: the fault sits in the upload or write path, and no verb reruns a proof that the path
+	 * works short of re-dispatching the shell that owed the write.
+	 *
+	 * Route `driver`: an upload or write failure is machinery, and no product call is in it.
+	 */
+	"write-unlanded": {
+		meaning:
+			"a verdict or evidence write provably could not land after its one re-run, so the judgment it carries never reached the PR",
+		route: "driver",
+		remedy: null,
+	},
+	/**
 	 * `ship enqueue`'s pre-arm read answered a definite `mergeable_state: dirty` — the base moved
 	 * under the branch and the merge now conflicts. Nothing about the artifact was judged, so the
 	 * round it owes is not one the repair budget is bounding.
@@ -526,8 +546,9 @@ export const PARK_CAUSES = {
 	 * to `human:budget-spent`. Nothing about the machinery went wrong — a reviewer graded the work
 	 * and found it wrong `RETRY_BUDGET` times.
 	 *
-	 * It is the one cause no recorder ever types, because no `FAIL` may carry a `--cause`: it is
-	 * bound to its park leaf in {@link STRUCTURAL_PARK_CAUSES} and read off the fold.
+	 * The budget park never has it typed, because no `FAIL` may carry a `--cause`: it is bound to its
+	 * park leaf in {@link STRUCTURAL_PARK_CAUSES} and read off the fold. A builder that stops at the
+	 * cap reports `ESCALATED`, a `BLOCKED`, and names it by hand.
 	 *
 	 * No remedy, because a remedy is a read a recipe reruns to prove the cause gone, and nothing a
 	 * verb runs makes a repeatedly-failed artifact right. The door out is a grant rather than a
@@ -551,8 +572,8 @@ export const PARK_CAUSES = {
 	 * every replay succeeding and the cycle never closing — two children's ranges chasing each other
 	 * — so what it owes is a person's read of the pair, not a judgment about one hunk.
 	 *
-	 * Typed by no recorder, exactly as `repair-budget-spent` is: the fallthrough arrives as a `WIP`,
-	 * which carries no `--cause`, so it is bound to its leaf in {@link STRUCTURAL_PARK_CAUSES}.
+	 * Typed by no recorder: the fallthrough arrives as a `WIP`, which carries no `--cause`, so it is
+	 * bound to its leaf in {@link STRUCTURAL_PARK_CAUSES}, as `repair-budget-spent`'s budget park is.
 	 *
 	 * No remedy: nothing a verb reruns proves two colliding ranges reconciled.
 	 *

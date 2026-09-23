@@ -75,7 +75,7 @@ export function Subnav({
 					{destinations}
 				</div>
 			) : null}
-			{leading ? <span className="kp-subnav__leading">{leading}</span> : null}
+			{leading ? <div className="kp-subnav__leading">{leading}</div> : null}
 			{title ? <span className="kp-subnav__title">{title}</span> : null}
 			{crumb ? (
 				<span className="kp-subnav__crumb">

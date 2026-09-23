@@ -14,3 +14,6 @@ export const PROJECT_ROOT_VAR = "PI_RESTORE_PROOF_ROOT";
 
 /** What the assistant says before reaching for a tool: the item the proof stops the app just after. */
 export const BEFORE_THE_TOOL = "thinking about it";
+
+/** The reply after the tool call comes back refused: the item that says the tool turn is over. */
+export const AFTER_THE_TOOL = "that tool is not available here";
