@@ -50,3 +50,20 @@ describe("Subnav CTA slot (#2598)", () => {
 		);
 	});
 });
+
+describe("Subnav crumb phone reflow (#9705)", () => {
+	// At 390px the crumb, meta and CTA overflowed the fixed one-row bar. The relaxed box is
+	// scoped to a bar showing a crumb, so an unfiltered bar keeps its single row.
+	it("wraps the bar only when it shows a crumb, and gives the crumb its own row", () => {
+		const phoneBlocks = SUBNAV_CSS.match(/@media \(max-width: 640px\) \{[\s\S]*?\n\}/g) ?? [];
+		const phone = phoneBlocks.find((block) => block.includes(".kp-subnav__crumb"));
+		expect(phone).toBeTruthy();
+		expect(phone).toMatch(
+			/\.kp-subnav:has\(\.kp-subnav__crumb\)\s*\{[^}]*height:\s*auto[^}]*min-height:\s*var\(--subnav-h\)[^}]*flex-wrap:\s*wrap/s,
+		);
+		expect(phone).toMatch(
+			/\.kp-subnav:has\(\.kp-subnav__crumb\)\s+\.kp-subnav__leading\s*\{[^}]*flex:\s*1 1 100%[^}]*min-width:\s*0/s,
+		);
+		expect(phone).not.toMatch(/(^|[^)\w-])\.kp-subnav\s*\{/m);
+	});
+});
