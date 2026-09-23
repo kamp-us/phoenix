@@ -15,11 +15,20 @@ import {SUBPROCESS_TEST_TIMEOUT_MS} from "./test-budget.ts";
 const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 /**
- * The doors npm serves. `./kernel/*` is public so the desk can use the SDK the way an outside
- * project does, and the README marks it unstable. Adding or removing a door is a change to what
- * this package owes its authors, so it lands here on purpose or not at all.
+ * The doors npm serves. `./config` is the stable home of the type a config author annotates
+ * with (#9717), though `./kernel/*` reaches the same module. `./kernel/*` is public so the desk can
+ * use the SDK the way an outside project does, and the README marks it unstable. Adding or removing
+ * a door is a change to what this package owes its authors, so it lands here on purpose or not at
+ * all.
  */
-const DOORS = ["./authoring", "./window", "./ai-agent/ports", "./kernel/*", "./package.json"];
+const DOORS = [
+	"./authoring",
+	"./window",
+	"./ai-agent/ports",
+	"./config",
+	"./kernel/*",
+	"./package.json",
+];
 
 type ExportTarget = string | {readonly [condition: string]: ExportTarget};
 

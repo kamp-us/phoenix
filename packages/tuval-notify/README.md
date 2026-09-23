@@ -13,7 +13,7 @@ brief sits there until you look. This package is the part that makes the desk re
 ```ts
 // ~/.tuval/tuval.config.ts
 import {notify} from "@kampus/tuval-notify";
-import type {TuvalConfigInput} from "@kampus/tuval-sdk/kernel/config";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 
 export const phone = notify({target: {kind: "ntfy", topic: "can-tuval-9f3a"}});
 
@@ -410,7 +410,7 @@ the published doors (#8943, #9250):
 
 - `@kampus/tuval-sdk/authoring` — `defineProgram`, `port`, the effect constructors (`send`/`emit`),
   `testProgram`, `TITLE_PORT`/`STATUS_PORT`, and the types around them
-- `@kampus/tuval-sdk/kernel/config` — `TuvalConfigInput`, which only a config needs
+- `@kampus/tuval-sdk/config` — `TuvalConfigInput`, which only a config needs
 - `@kampus/tuval-sdk/ai-agent/ports` — `TurnResultSchema`, which `message` is declared over; `state.ts`
   names its encoded type **type-only**, so the built `state.js` a browser loads imports nothing of it
 - `@kampus/tuval-sdk/window` — `windowRenderer` and `WindowHost`, the browser-safe half, whose own import

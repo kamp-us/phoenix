@@ -13,7 +13,7 @@
  */
 
 import {cron} from "@kampus/tuval-cron";
-import type {TuvalConfigInput} from "@kampus/tuval-sdk/kernel/config";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {shell} from "@kampus/tuval-shell";
 
 /** Nightly, at 03:00 local: fetch every remote, and say on the tile how it went. */

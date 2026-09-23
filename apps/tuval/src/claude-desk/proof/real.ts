@@ -22,9 +22,9 @@
 
 import {claudeSession} from "@kampus/tuval-claude";
 import {piSessionProgram} from "@kampus/tuval-pi";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {ClientId, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import type {TuvalConfigInput} from "../../config.ts";
 import {wiredShellEffects} from "../../shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../../shell/program.ts";
 import {PROJECT_ROOT_VAR} from "./names.ts";

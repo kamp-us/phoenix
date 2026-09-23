@@ -2,5 +2,10 @@
 	"packages/design": "0.0.0",
 	"packages/fabrika-cli": "0.7.1",
 	"packages/fabrika-pi": "0.2.0",
-	"packages/tuval": "0.0.0"
+	"packages/tuval": "0.0.0",
+	"packages/tuval-agy": "0.0.0",
+	"packages/tuval-claude": "0.0.0",
+	"packages/tuval-codex": "0.0.0",
+	"packages/tuval-pi": "0.0.0",
+	"packages/tuval-ui": "0.0.0"
 }

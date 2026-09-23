@@ -7,10 +7,10 @@
 
 import {readFileSync} from "node:fs";
 import {defineMachine} from "@demlik/tea";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {defineSpell} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Schema} from "effect";
-import type {TuvalConfigInput} from "../config.ts";
 
 /** One generation of the fixture: what the JSON file holds. */
 export interface DeclaredConfig {

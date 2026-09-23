@@ -9,6 +9,14 @@ exports maps the same way an outside program is. The desk app registers Codex by
 the MCP SDK the kernel tools run on is this package's dependency, not the SDK's or the app's. The
 protocol and lifetime rules are in [tuval-codex.md](../../.patterns/tuval-codex.md).
 
+## Install
+
+```sh
+npm install @kampus/tuval-codex
+```
+
+The package ships compiled ES modules with type declarations.
+
 ## Usage
 
 A config registers the row:
@@ -16,7 +24,7 @@ A config registers the row:
 ```ts
 // ~/.tuval/tuval.config.ts
 import {ClientId, codexSession, WorkspaceId} from "@kampus/tuval-codex";
-import type {TuvalConfigInput} from "@kampus/tuval-sdk/kernel/config";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 
 const scope = {workspace: WorkspaceId.make("default"), client: ClientId.make("tuval-desk")};
 
@@ -35,8 +43,8 @@ row starts nothing.
 each. `@kampus/tuval-ui`, `@modelcontextprotocol/sdk` and `@effect/platform-node` are regular
 dependencies.
 
-The package is workspace-only for now. It ships TypeScript source, and the window reaches
-stylesheets through `@kampus/tuval-ui`, so a consumer bundles it with Vite, as the desk does.
+The window reaches stylesheets through `@kampus/tuval-ui`, so a page that renders it bundles it with
+a bundler that handles CSS imports, as the desk does with Vite.
 
 ## Entries
 
@@ -51,8 +59,12 @@ stylesheets through `@kampus/tuval-ui`, so a consumer bundles it with Vite, as t
 pnpm --filter @kampus/tuval-codex typecheck
 pnpm --filter @kampus/tuval-codex test
 TUVAL_CODEX_PROTOCOL_TEST=1 pnpm --filter @kampus/tuval-codex exec vitest run --project integration src/codex-cli.integration.test.ts
+pnpm --filter @kampus/tuval-codex build
 ```
 
-The last command runs the installed CLI with a temporary `CODEX_HOME`, and needs no credentials.
+The `TUVAL_CODEX_PROTOCOL_TEST` command runs the installed CLI with a temporary `CODEX_HOME`, and
+needs no credentials. Inside the workspace the `exports` map points at `src`, which the desk runs
+with no build step. `pnpm pack` builds `dist` and swaps in `publishConfig.exports`, which points at
+`dist` only. `src/public-surface.pack.test.ts` packs the package and pins that published map.
 The desk-level cases that read Codex beside Claude or through the desk's picker live in the app
 under `apps/tuval/src/codex-desk/`.

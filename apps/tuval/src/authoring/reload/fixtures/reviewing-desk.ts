@@ -32,6 +32,7 @@ import {
 	PromptPayloadSchema,
 	TurnResultSchema,
 } from "@kampus/tuval-sdk/ai-agent/ports";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {
 	type Answer,
 	type ArrivalEvent,
@@ -41,7 +42,6 @@ import {emit} from "@kampus/tuval-sdk/kernel/authoring/effect";
 import {port} from "@kampus/tuval-sdk/kernel/authoring/port";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Schema} from "effect";
-import type {TuvalConfigInput} from "../../../config.ts";
 import {prReview} from "../../example/pr-review.ts";
 import {
 	DESK_NODE,

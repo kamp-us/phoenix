@@ -10,6 +10,14 @@ Pi packages (`@earendil-works/pi-*`, `pi-subagents`, `typebox`, `ws`) are this p
 dependencies, not the SDK's or the app's. The pin and why it is exact are in
 [ADR 0366](../../.decisions/0366-tuval-keeps-own-pi-host.md).
 
+## Install
+
+```sh
+npm install @kampus/tuval-pi
+```
+
+The package ships compiled ES modules with type declarations.
+
 ## Usage
 
 A config registers the row:
@@ -17,7 +25,7 @@ A config registers the row:
 ```ts
 // <project>/.tuval/tuval.config.ts
 import {ClientId, piSessionProgram, projectRootOf, WorkspaceId} from "@kampus/tuval-pi";
-import type {TuvalConfigInput} from "@kampus/tuval-sdk/kernel/config";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 
 const scope = {workspace: WorkspaceId.make("default"), client: ClientId.make("tuval-desk")};
 
@@ -36,8 +44,8 @@ Building the row starts nothing.
 each. `@kampus/tuval-ui`, the four `@earendil-works/pi-*` packages, `pi-subagents`, `typebox` and
 `ws` are regular dependencies.
 
-The package is workspace-only for now. It ships TypeScript source, and the window reaches
-stylesheets through `@kampus/tuval-ui`, so a consumer bundles it with Vite, as the desk does.
+The window reaches stylesheets through `@kampus/tuval-ui`, so a page that renders it bundles it with
+a bundler that handles CSS imports, as the desk does with Vite.
 
 ## Entries
 
@@ -57,11 +65,16 @@ stylesheets through `@kampus/tuval-ui`, so a consumer bundles it with Vite, as t
 pnpm --filter @kampus/tuval-pi typecheck
 pnpm --filter @kampus/tuval-pi test:unit
 pnpm --filter @kampus/tuval-pi test:integration
+pnpm --filter @kampus/tuval-pi build
 ```
 
 The integration tier runs a real Pi `AgentSession` behind the real loopback socket on Pi's faux
 provider, and needs no credentials. The desk-level proofs that boot the row in the real shell live
 in the app under `apps/tuval/src/pi-desk/`.
+
+Inside the workspace the `exports` map points at `src`, which the desk runs with no build step.
+`pnpm pack` builds `dist` and swaps in `publishConfig.exports`, which points at `dist` only.
+`src/public-surface.pack.test.ts` packs the package and pins that published map.
 
 ## The loopback server
 

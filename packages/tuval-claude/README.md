@@ -8,6 +8,14 @@ It is an official plugin package, built on `@kampus/tuval-sdk` and `@kampus/tuva
 exports maps the same way an outside program is. The desk app registers Claude by importing it, and
 the Agent SDK is this package's dependency, not the SDK's or the app's.
 
+## Install
+
+```sh
+npm install @kampus/tuval-claude
+```
+
+The package ships compiled ES modules with type declarations.
+
 ## Usage
 
 A config registers the row:
@@ -15,13 +23,14 @@ A config registers the row:
 ```ts
 // ~/.tuval/tuval.config.ts
 import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 
 const scope = {workspace: WorkspaceId.make("default"), client: ClientId.make("tuval-desk")};
 
 export default {
   version: 1,
   programs: [claudeSession({cwd: "/path/to/repo", scope})],
-};
+} satisfies TuvalConfigInput;
 ```
 
 ## Dependencies
@@ -30,8 +39,8 @@ export default {
 each. `@kampus/tuval-ui`, `@anthropic-ai/claude-agent-sdk` and the Agent SDK's three peers
 (`@anthropic-ai/sdk`, `@modelcontextprotocol/sdk`, `zod`) are regular dependencies.
 
-The package is workspace-only for now. It ships TypeScript source, and the window's `.tsx` reaches
-stylesheets through `@kampus/tuval-ui`, so a consumer bundles it with Vite, as the desk does.
+The window reaches stylesheets through `@kampus/tuval-ui`, so a page that renders it bundles it with
+a bundler that handles CSS imports, as the desk does with Vite.
 
 ## Entries
 
@@ -48,7 +57,12 @@ stylesheets through `@kampus/tuval-ui`, so a consumer bundles it with Vite, as t
 ```sh
 pnpm --filter @kampus/tuval-claude typecheck
 pnpm --filter @kampus/tuval-claude test
+pnpm --filter @kampus/tuval-claude build
 ```
+
+Inside the workspace the `exports` map points at `src`, which the desk runs with no build step.
+`pnpm pack` builds `dist` and swaps in `publishConfig.exports`, which points at `dist` only.
+`src/public-surface.pack.test.ts` packs the package and pins that published map.
 
 The desk-level proofs of this harness (the scripted vertical, the subagent vertical, the restore
 proof and the real-CLI `proof:claude-real`) boot the whole desk, so they live in the app under

@@ -9,6 +9,14 @@ exports maps the same way an outside program is. The desk app registers agy by i
 supported floor and the sandbox posture are in
 [ADR 0362](../../.decisions/0362-agy-sandbox-scoped-auto-approval.md).
 
+## Install
+
+```sh
+npm install @kampus/tuval-agy
+```
+
+The package ships compiled ES modules with type declarations.
+
 ## Usage
 
 A config registers the row:
@@ -16,7 +24,7 @@ A config registers the row:
 ```ts
 // <project>/.tuval/tuval.config.ts
 import {agySessionProgram} from "@kampus/tuval-agy";
-import type {TuvalConfigInput} from "@kampus/tuval-sdk/kernel/config";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 
 export default {
   version: 1,
@@ -38,5 +46,17 @@ refuses with the fix named. Building the row starts nothing.
 each. `@kampus/tuval-ui`, `@kampus/design` and `@effect/platform-node` are regular dependencies.
 agy itself is the operator's own binary, not an npm package.
 
-The package is workspace-only for now. It ships TypeScript source, and the window imports a
-stylesheet, so a consumer bundles it with Vite, as the desk does.
+The window imports a stylesheet, so a page that renders it bundles it with a bundler that handles
+CSS imports, as the desk does with Vite.
+
+## Develop
+
+```sh
+pnpm --filter @kampus/tuval-agy typecheck
+pnpm --filter @kampus/tuval-agy test
+pnpm --filter @kampus/tuval-agy build
+```
+
+Inside the workspace the `exports` map points at `src`, which the desk runs with no build step.
+`pnpm pack` builds `dist` and swaps in `publishConfig.exports`, which points at `dist` only.
+`src/public-surface.pack.test.ts` packs the package and pins that published map.

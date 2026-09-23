@@ -21,8 +21,8 @@
 
 import {piSessionProgram} from "@kampus/tuval-pi";
 import {fauxAssistantMessage, fauxPiLayer} from "@kampus/tuval-pi/testing/faux";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import type {TuvalConfigInput} from "../../config.ts";
 import {wiredShellEffects} from "../../shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../../shell/program.ts";
 import {PROJECT_ROOT_VAR, REPLY_1, REPLY_2, REPLY_3, REPLY_4} from "./names.ts";

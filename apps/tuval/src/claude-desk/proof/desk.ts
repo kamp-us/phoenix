@@ -23,10 +23,10 @@
 import {claudeSession} from "@kampus/tuval-claude";
 import {piSessionProgram} from "@kampus/tuval-pi";
 import {fauxAssistantMessage, fauxPiLayer} from "@kampus/tuval-pi/testing/faux";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {aiAgentProgram} from "@kampus/tuval-sdk/kernel/ai-agent/program";
 import {ScriptedAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import type {TuvalConfigInput} from "../../config.ts";
 import {wiredShellEffects} from "../../shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../../shell/program.ts";
 import {CHILD_PROGRAM, PROJECT_ROOT_VAR} from "./names.ts";
