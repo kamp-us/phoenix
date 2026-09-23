@@ -187,11 +187,35 @@ front-door's bootstrap); `BACKED-OFF` (claim lost or lane proven not yours — a
 exit 18 included — blocked, wrong modality, or empty pool; branch removed, or never cut); `ESCALATED` (repair cap reached, cause
 `repair-budget-spent`; or evidence provably unattachable after the PR opened, cause
 `write-unlanded` — branch pushed at its last verified head, escalation note posted); `STOPPED` (isolation or verdict UNKNOWN — branch left
-local, state named). Record an `ESCALATED` with its cause on the `lane report` line
-(`--token ESCALATED --cause write-unlanded`, or `--cause repair-budget-spent`): under
-`parkCause.uncaused: "refuse"` a park that names none is refused at exit `52` and never recorded. This skill has **no success-without-PR terminal**: a constructed surface
+local, state named). This skill has **no success-without-PR terminal**: a constructed surface
 that opened no PR is not a success under any name. Each terminal names its branch disposition;
 cross-lane signals are closed-vocabulary — kind + action + branded ref, receiver re-fetches.
+
+**Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
+step is the verb — pass back the `lane`, `root` and `task` its `## Task` section carries, one token
+per terminal above, mapped to a lane event in its code, with the PR as the event's evidence.
+`<fabrika>` is that same section's `fabrika:` entrypoint, the one path this repo's verbs actually
+run from:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token SHIPPED-PR --pr <pr-url>
+```
+
+`--task` names which task of the lane your terminal addresses, and it is not optional wherever a
+lane has more than one — every epic run. The verb resolves a missing one only on a single-task lane
+and otherwise refuses at exit `13` before it appends anything, so a report that omits it records
+nothing.
+
+A park rides its cause on the same line: `ESCALATED` carries the cause its entry above names
+(`--token ESCALATED --cause write-unlanded`, or `--cause repair-budget-spent`), and
+`BLOCKED-NO-MANIFEST` carries `--cause no-design-manifest`. Under `parkCause.uncaused: "refuse"` a
+park that names none is refused at exit `52` and never recorded. The vocabulary is closed and lives
+in code ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts));
+a token outside it is refused (exit `32`) rather than interpreted, and the verb proves the event
+before it records it — a `SHIPPED-PR` lands only against an open PR the board shows linking the
+issue. On any refusal, print the token and name the exit code; the operator re-reads and routes.
+Then print the token as the last line either way; a run whose caller named no lane prints the token
+only and records nothing.
 
 ## Repair
 
