@@ -1,14 +1,23 @@
 /* PanoCrumb — site-filter breadcrumb strip. Mirrors dense .pano-crumb. */
 
 .kp-pano-crumb {
+	/* One rhythm for the strip, the crumb list and each crumb: the separators and the clear link
+	   sit as far apart as they did when they were all siblings of one flex row. */
+	--kp-pano-crumb-gap: 8px;
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: var(--kp-pano-crumb-gap);
 	padding: var(--s-2) var(--s-4);
 	background: var(--surface-sunken);
 	border-bottom: 1px solid var(--border-faint);
 	font: var(--t-meta);
 	color: var(--text-muted);
+}
+.kp-pano-crumb .kp-breadcrumbs,
+.kp-pano-crumb .kp-breadcrumbs__item {
+	display: flex;
+	align-items: center;
+	gap: var(--kp-pano-crumb-gap);
 }
 .kp-pano-crumb a {
 	color: var(--text-secondary);
@@ -17,7 +26,7 @@
 .kp-pano-crumb a:hover {
 	color: var(--accent);
 }
-.kp-pano-crumb .sep {
+.kp-pano-crumb .kp-breadcrumbs__sep {
 	color: var(--border-strong);
 }
 .kp-pano-crumb .host {

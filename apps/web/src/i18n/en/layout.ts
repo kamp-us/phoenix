@@ -9,6 +9,7 @@ export const layout = {
 	"layout.search.label": "Search",
 	"layout.divan": "divan",
 	"layout.filter.clear": "× clear filter",
+	"layout.breadcrumb.label": "breadcrumb",
 	"layout.userMenu.profile": "profile",
 	"layout.userMenu.bildirimler": "notifications",
 	"layout.userMenu.settings": "settings",

@@ -3,7 +3,7 @@
  * page, so it goes home instead of rendering an index that is empty by construction. Only the
  * pre-fate half is exercised here — the list itself reads a connection, which the e2e walks.
  */
-import {render, screen} from "@testing-library/react";
+import {render, screen, within} from "@testing-library/react";
 import {MemoryRouter, Route, Routes} from "react-router";
 import {describe, expect, it} from "vitest";
 import {SozlukLetter} from "./SozlukLetter";
@@ -35,6 +35,19 @@ describe("SozlukLetter — the route guard", () => {
 		expect(screen.queryByTestId("home")).toBeNull();
 		// `i` uppercases to `İ`, never the ASCII `I`.
 		expect(container.querySelector(".kp-sozluk-letter__title")?.textContent).toBe("İ harfi");
+	});
+
+	// The landmark is named for what it is, not by its only crumb's text (#9629).
+	it("wraps the crumb in a breadcrumb landmark named by the catalog's breadcrumb label", () => {
+		renderRoute("/sozluk/harf/a");
+		const nav = screen.getByRole("navigation", {name: "sayfa yolu"});
+		expect(within(nav).getByRole("list").tagName).toBe("OL");
+		const [root] = within(nav).getAllByRole("listitem");
+		expect(
+			within(root as HTMLElement)
+				.getByRole("link", {name: "sözlük"})
+				.getAttribute("href"),
+		).toBe("/sozluk");
 	});
 
 	it("normalises an uppercase route value to its own letter, Turkish-wise", () => {

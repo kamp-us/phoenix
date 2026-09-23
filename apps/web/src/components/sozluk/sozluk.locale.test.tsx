@@ -56,6 +56,11 @@ describe("the sözlük surface reads English at locale en", () => {
 		expect(screen.getByText("3 votes")).toBeTruthy();
 	});
 
+	it("names the term header's breadcrumb landmark in English", async () => {
+		renderInEnglish(<SozlukTermHeader term={{} as ViewRef<"Term">} />);
+		await waitFor(() => expect(screen.getByRole("navigation", {name: "breadcrumb"})).toBeTruthy());
+	});
+
 	it("renders the alphabet's accessible names in English, keeping the Turkish letters", async () => {
 		renderInEnglish(<SozlukAlphabet value="a" emptyLetters={["z"]} />);
 		await waitFor(() => expect(screen.getByLabelText("letter A")).toBeTruthy());
