@@ -49,7 +49,7 @@ const bridgeProbe = {
 	resume: () => [{type: "resumed"}] as ReadonlyArray<BridgeProbeMsg>,
 	capabilities: [],
 	identity: {
-		package: "@kampus/tuval-sdk",
+		package: "@kampus/tuval",
 		program: "bridge-probe",
 		version: "1.0.0",
 		digest: "sha256:bridge-probe",

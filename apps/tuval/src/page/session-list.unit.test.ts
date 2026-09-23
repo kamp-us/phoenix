@@ -39,9 +39,7 @@ const rows = {
 		},
 		{sessionId: "s-1", lastModified: 1_000, programId: "claude-session", backend: "claude"},
 	],
-	unreadable: [
-		{programId: "pi", provenance: "@kampus/tuval-sdk/pi@1.0.0 (sha256:pi)", detail: "gone"},
-	],
+	unreadable: [{programId: "pi", provenance: "@kampus/tuval/pi@1.0.0 (sha256:pi)", detail: "gone"}],
 };
 
 describe("the page's session list", () => {

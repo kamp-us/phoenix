@@ -66,7 +66,7 @@ const allow: ReadonlyArray<SpellPath> = [
 ];
 
 const identity = (program: string) => ({
-	package: "@kampus/tuval-sdk",
+	package: "@kampus/tuval",
 	program,
 	version: "1.0.0",
 	digest: `sha256:${program}`,

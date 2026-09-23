@@ -19,7 +19,7 @@ const counter = {
 	handlers: {notify: () => Effect.succeed([] as ReadonlyArray<Msg>)},
 	capabilities: [],
 	identity: {
-		package: "@kampus/tuval-sdk",
+		package: "@kampus/tuval",
 		program: "counter",
 		version: "1.0.0",
 		digest: "sha256:x",

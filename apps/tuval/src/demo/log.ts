@@ -88,7 +88,7 @@ export const logProgram = ({write}: LogOptions): AnyProgram =>
 		// the page's renderer table answers to, as `./counter.ts` says.
 		renderer: {kind: "host-native", ref: "tuval/demo/log"} satisfies RendererRef,
 		identity: {
-			package: "@kampus/tuval-sdk",
+			package: "@kampus/tuval",
 			program: "log",
 			version: "1.0.0",
 			digest: "sha256:demo-log",

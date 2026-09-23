@@ -86,7 +86,7 @@ const callerProgram = (): AnyProgram =>
 		handlers: {},
 		capabilities: [],
 		identity: {
-			package: "@kampus/tuval-sdk",
+			package: "@kampus/tuval",
 			program: "caller",
 			version: "1.0.0",
 			digest: "sha256:caller",

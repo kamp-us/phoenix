@@ -34,7 +34,7 @@ const row = (id: string, resume?: (state: State) => ReadonlyArray<Msg>): AnyProg
 		handlers: {},
 		...(resume === undefined ? {} : {resume}),
 		capabilities: [],
-		identity: {package: "@kampus/tuval-sdk", program: id, version: "1.0.0", digest: `sha256:${id}`},
+		identity: {package: "@kampus/tuval", program: id, version: "1.0.0", digest: `sha256:${id}`},
 		placement: {host: "local"},
 	}) satisfies Program<State, Msg, never, never, unknown, never, never>;
 

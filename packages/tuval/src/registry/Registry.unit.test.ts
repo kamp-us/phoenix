@@ -27,7 +27,7 @@ const row = (id: string, version = "1.0.0"): AnyProgram =>
 		handlers: {},
 		capabilities: [{family: "filesystem", detail: "~/.tuval"}],
 		identity: {
-			package: "@kampus/tuval-sdk",
+			package: "@kampus/tuval",
 			program: id,
 			version,
 			digest: `sha256:${id}-${version}`,
@@ -70,7 +70,7 @@ describe("Registry", () => {
 			assert.deepStrictEqual(error.second, provenanceOf(second));
 			assert.strictEqual(
 				error.message,
-				'program id "a" is already registered by @kampus/tuval-sdk/a@1.0.0 (sha256:a-1.0.0); refusing @kampus/tuval-sdk/a@2.0.0 (sha256:a-2.0.0)',
+				'program id "a" is already registered by @kampus/tuval/a@1.0.0 (sha256:a-1.0.0); refusing @kampus/tuval/a@2.0.0 (sha256:a-2.0.0)',
 			);
 		}),
 	);

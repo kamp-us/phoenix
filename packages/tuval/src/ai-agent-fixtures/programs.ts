@@ -24,7 +24,7 @@ const row = (id: string, ports: Readonly<Record<string, PortSchema>>): AnyProgra
 		ports,
 		handlers: {},
 		capabilities: [],
-		identity: {package: "@kampus/tuval-sdk", program: id, version: "1.0.0", digest: `sha256:${id}`},
+		identity: {package: "@kampus/tuval", program: id, version: "1.0.0", digest: `sha256:${id}`},
 		placement: {host: "local"},
 	}) satisfies Program<State, Msg, Cmd<never>, never, unknown, never, never>;
 

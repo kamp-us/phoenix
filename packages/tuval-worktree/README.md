@@ -435,7 +435,7 @@ pnpm add @kampus/tuval-worktree
 There are no runtime dependencies at all — `node:child_process`, `node:net`, `node:fs/promises` and
 `node:path` are the whole of what provisioning needs. Everything else is a peer.
 
-`@kampus/tuval-sdk` is **private and not published to npm**. This package now lives in the same pnpm
+`@kampus/tuval-sdk` is **publishable but not yet on npm**. This package now lives in the same pnpm
 workspace as Tuval does, so the dependency is a plain workspace one —
 `"@kampus/tuval-sdk": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
 link and no second checkout anywhere. It becomes a real version range the day Tuval ships to a

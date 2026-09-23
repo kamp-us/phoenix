@@ -61,7 +61,7 @@ export const programRow = (
 		...(options?.renderer === false
 			? {}
 			: {renderer: {kind: "host-native" as const, ref: `tuval/${id}`}}),
-		identity: {package: "@kampus/tuval-sdk", program: id, version: "1.0.0", digest: `sha256:${id}`},
+		identity: {package: "@kampus/tuval", program: id, version: "1.0.0", digest: `sha256:${id}`},
 		placement: {host: "local"},
 	}) satisfies Program<CountState, CountMsg, Cmd<never>, never, unknown, never, never>;
 

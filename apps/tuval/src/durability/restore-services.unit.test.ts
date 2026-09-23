@@ -143,7 +143,7 @@ const probeProgram = (sink: Array<string>): AnyProgram =>
 		capabilities: [],
 		renderer: {kind: "host-native", ref: "tuval/test/kernel-probe"},
 		identity: {
-			package: "@kampus/tuval-sdk",
+			package: "@kampus/tuval",
 			program: "kernel-probe",
 			version: "1.0.0",
 			digest: "sha256:kernel-probe",

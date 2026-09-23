@@ -102,7 +102,7 @@ const deskRow = (id: ProgramId, host: "local" | "browser", renderer?: RendererRe
 		handlers: {},
 		capabilities: [],
 		...(renderer === undefined ? {} : {renderer}),
-		identity: {package: "@kampus/tuval-sdk", program: id, version: "1.0.0", digest: `sha256:${id}`},
+		identity: {package: "@kampus/tuval", program: id, version: "1.0.0", digest: `sha256:${id}`},
 		placement: {host},
 	}) satisfies Program<DeskState, DeskMsg, Cmd<never>, never, unknown, never, never>;
 
@@ -125,7 +125,7 @@ const stamperRow: AnyProgram = {
 	capabilities: [],
 	renderer: ref("tuval/stamper"),
 	identity: {
-		package: "@kampus/tuval-sdk",
+		package: "@kampus/tuval",
 		program: stamperProgramId,
 		version: "1.0.0",
 		digest: `sha256:${stamperProgramId}`,

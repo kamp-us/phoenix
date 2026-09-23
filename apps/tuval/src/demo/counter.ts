@@ -78,7 +78,7 @@ export const counterProgram = ({everyMs}: CounterOptions): AnyProgram =>
 		// answers by name (`../page/renderers.tsx`); nothing here names React.
 		renderer: {kind: "host-native", ref: "tuval/demo/counter"} satisfies RendererRef,
 		identity: {
-			package: "@kampus/tuval-sdk",
+			package: "@kampus/tuval",
 			program: "counter",
 			version: "1.0.0",
 			digest: "sha256:demo-counter",

@@ -151,7 +151,7 @@ const echoProgram = (): AnyProgram =>
 		spells: [repeatSpell],
 		capabilities: [],
 		identity: {
-			package: "@kampus/tuval-sdk",
+			package: "@kampus/tuval",
 			program: "echo",
 			version: "1.0.0",
 			digest: "sha256:echo",
@@ -354,7 +354,7 @@ const agentProgram = (done: Deferred.Deferred<Run>): AnyProgram =>
 		},
 		capabilities: [{family: "model"}],
 		identity: {
-			package: "@kampus/tuval-sdk",
+			package: "@kampus/tuval",
 			program: "agent",
 			version: "1.0.0",
 			digest: "sha256:agent",

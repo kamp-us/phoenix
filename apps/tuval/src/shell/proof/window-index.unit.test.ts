@@ -92,7 +92,7 @@ const probeProgram: AnyProgram = {
 	capabilities: [],
 	renderer: {kind: "host-native", ref: "tuval/proof/scope-probe"},
 	identity: {
-		package: "@kampus/tuval-sdk",
+		package: "@kampus/tuval",
 		program: "scope-probe",
 		version: "1.0.0",
 		digest: "sha256:scope-probe",

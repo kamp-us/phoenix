@@ -178,7 +178,7 @@ is a peer too.
 published-API change and belongs in its own release, not in a refactor — but nothing in this package
 resolves it, and its `resolve.dedupe` entry has already been removed.
 
-`@kampus/tuval-sdk` is **private and not published to npm**. This package now lives in the same
+`@kampus/tuval-sdk` is **publishable but not yet on npm**. This package now lives in the same
 workspace as Tuval does, so the dependency is a plain workspace one —
 `"@kampus/tuval-sdk": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
 link and no second checkout anywhere. It becomes a real version range the day Tuval ships to a

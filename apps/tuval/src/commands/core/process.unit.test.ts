@@ -96,7 +96,7 @@ const echoProgram = (bound: PortBound = {capacity: 4, overflow: "suspend"}): Any
 		},
 		capabilities: [],
 		identity: {
-			package: "@kampus/tuval-sdk",
+			package: "@kampus/tuval",
 			program: "echo",
 			version: "1.0.0",
 			digest: "sha256:echo",
@@ -166,7 +166,7 @@ const earProgram = (): AnyProgram =>
 		handlers: {},
 		capabilities: [],
 		identity: {
-			package: "@kampus/tuval-sdk",
+			package: "@kampus/tuval",
 			program: "ear",
 			version: "1.0.0",
 			digest: "sha256:ear",

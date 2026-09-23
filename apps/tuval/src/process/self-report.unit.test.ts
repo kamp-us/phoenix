@@ -34,7 +34,7 @@ type Say = {readonly type: "say"; readonly port: string; readonly line: string};
 type Publish = {readonly type: "publish"; readonly port: string; readonly line: string};
 
 const identity = (program: string) => ({
-	package: "@kampus/tuval-sdk",
+	package: "@kampus/tuval",
 	program,
 	version: "1.0.0",
 	digest: `sha256:${program}`,

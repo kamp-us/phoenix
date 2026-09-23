@@ -106,7 +106,7 @@ const windowProgram: AnyProgram = {
 	},
 	capabilities: [],
 	identity: {
-		package: "@kampus/tuval-sdk",
+		package: "@kampus/tuval",
 		program: "window-stand-in",
 		version: "1.0.0",
 		digest: "sha256:window-stand-in",

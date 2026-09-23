@@ -45,7 +45,7 @@ const program = (row: DeclaredConfig["programs"][number]): AnyProgram =>
 		spells: row.spells.map(spellNamed),
 		capabilities: [],
 		identity: {
-			package: "@kampus/tuval-sdk",
+			package: "@kampus/tuval",
 			program: row.id,
 			version: "1.0.0",
 			digest: `sha256:${row.id}`,

@@ -44,7 +44,7 @@ const plainRow = (id: string): AnyProgram =>
 		handlers: {},
 		capabilities: [],
 		renderer: {kind: "host-native", ref: `tuval/${id}`},
-		identity: {package: "@kampus/tuval-sdk", program: id, version: "1.0.0", digest: `sha256:${id}`},
+		identity: {package: "@kampus/tuval", program: id, version: "1.0.0", digest: `sha256:${id}`},
 		placement: {host: "local"},
 	}) satisfies Program<CountState, CountMsg, Cmd<never>, never, unknown, never, never>;
 
@@ -141,7 +141,7 @@ describe("ai-agent backend enumeration", () => {
 			);
 			assert.deepStrictEqual(
 				answer.failures.map((failure) => failure.provenance),
-				["@kampus/tuval-sdk/pi-session@1.0.0 (sha256:pi-session)"],
+				["@kampus/tuval/pi-session@1.0.0 (sha256:pi-session)"],
 			);
 			assert.deepStrictEqual(
 				answer.failures.map((failure) =>

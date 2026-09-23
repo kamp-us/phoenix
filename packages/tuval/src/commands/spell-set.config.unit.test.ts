@@ -46,7 +46,7 @@ const program = (list: ReadonlyArray<AnySpell>): AnyProgram =>
 		spells: list,
 		capabilities: [],
 		identity: {
-			package: "@kampus/tuval-sdk",
+			package: "@kampus/tuval",
 			program: "talker",
 			version: "1.0.0",
 			digest: "sha256:talker",

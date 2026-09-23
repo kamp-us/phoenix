@@ -390,7 +390,7 @@ const LOCAL: Placement = {host: "local"};
  * digest that says the row was compiled here rather than pretending to hash any bytes.
  */
 const defaultIdentity = (id: string): DefinitionIdentity => ({
-	package: "@kampus/tuval-sdk",
+	package: "@kampus/tuval",
 	program: id,
 	version: "0.0.0",
 	digest: `authored:${id}`,

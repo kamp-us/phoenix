@@ -67,7 +67,7 @@ export const program = (id: string, spells: ReadonlyArray<AnySpell>): AnyProgram
 		handlers: {},
 		spells,
 		capabilities: [],
-		identity: {package: "@kampus/tuval-sdk", program: id, version: "1.0.0", digest: `sha256:${id}`},
+		identity: {package: "@kampus/tuval", program: id, version: "1.0.0", digest: `sha256:${id}`},
 		placement: {host: "local"},
 	}) satisfies Program<
 		{readonly count: number},

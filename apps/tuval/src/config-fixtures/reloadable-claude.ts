@@ -61,7 +61,7 @@ const other: AnyProgram = {
 	handlers: {notify: () => Effect.succeed([] as ReadonlyArray<Msg>)},
 	capabilities: [],
 	identity: {
-		package: "@kampus/tuval-sdk",
+		package: "@kampus/tuval",
 		program: OTHER_PROGRAM,
 		version: "1.0.0",
 		digest: `sha256:${OTHER_PROGRAM}`,

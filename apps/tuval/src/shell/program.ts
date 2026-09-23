@@ -189,7 +189,7 @@ export const shellProgram = <E = never, R = never>({
 		migrations: shellMigrations,
 		capabilities: [],
 		identity: {
-			package: "@kampus/tuval-sdk",
+			package: "@kampus/tuval",
 			program: "shell",
 			version: SHELL_VERSION,
 			digest: "sha256:shell",

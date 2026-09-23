@@ -34,7 +34,7 @@ const program: AnyProgram = {
 	capabilities: [],
 	placement: {host: "local"},
 	identity: {
-		package: "@kampus/tuval-sdk",
+		package: "@kampus/tuval",
 		program: "socket-test",
 		version: "1",
 		digest: "socket-test",

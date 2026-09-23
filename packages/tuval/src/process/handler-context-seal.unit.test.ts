@@ -78,7 +78,7 @@ const proberProgram = (seen: Array<Sighting>): AnyProgram =>
 		},
 		capabilities: [],
 		identity: {
-			package: "@kampus/tuval-sdk",
+			package: "@kampus/tuval",
 			program: "prober",
 			version: "1.0.0",
 			digest: "sha256:prober",
