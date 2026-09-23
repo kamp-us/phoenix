@@ -19,6 +19,13 @@
 	font-weight: 500;
 }
 
+/* Manti lays the close button out as a --manti-space-6 box. The hit area grows to the tap floor
+   while its footprint stays that box: the negative margin spills the extra into the strip's
+   padding, so the strip keeps its height and the title keeps its line. The glyph stays 16px. */
 [data-scope="toast"][data-part="close-trigger"] {
+	--kp-toast-close-hit: max(var(--tap-min), var(--manti-space-6));
+	width: var(--kp-toast-close-hit);
+	height: var(--kp-toast-close-hit);
+	margin: calc((var(--manti-space-6) - var(--kp-toast-close-hit)) / 2);
 	color: var(--text-secondary);
 }
