@@ -39,13 +39,14 @@
 
 import {appendFileSync, readFileSync, writeFileSync} from "node:fs";
 
+// First, so a test holding a launch deadline gets the pid as early as this process can give it.
+const pidLog = process.env.AGY_FAKE_PID_LOG;
+if (pidLog !== undefined) appendFileSync(pidLog, `${process.pid}\n`);
+
 const argv = process.argv.slice(2);
 
 const log = process.env.AGY_FAKE_LOG;
 if (log !== undefined) appendFileSync(log, `${JSON.stringify(argv)}\n`);
-
-const pidLog = process.env.AGY_FAKE_PID_LOG;
-if (pidLog !== undefined) appendFileSync(pidLog, `${process.pid}\n`);
 
 // `AGY_FAKE_LINGER` makes this process outlive its own stdin, which is what lets a test tell a child
 // that was *killed* from one that merely noticed the pipe close — the distinction #8696 turns on.

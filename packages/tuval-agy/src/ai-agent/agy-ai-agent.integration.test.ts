@@ -36,12 +36,55 @@ beforeEach(() => {
 	writeFileSync(argvLog, "");
 });
 
-/** Whether a pid still names a live process. `kill(pid, 0)` signals nothing and only tests for one. */
+/**
+ * Whether a pid still names a live process. `kill(pid, 0)` signals nothing and only tests for one.
+ *
+ * Only a positive pid names one process: `kill(0, 0)` tests the caller's own process group and a
+ * negative pid tests a group too, so either would read "alive" forever.
+ */
 const alive = (pid: number): Effect.Effect<boolean> =>
-	Effect.try(() => {
-		process.kill(pid, 0);
-		return true;
-	}).pipe(Effect.orElseSucceed(() => false));
+	Number.isInteger(pid) && pid > 0
+		? Effect.try(() => {
+				process.kill(pid, 0);
+				return true;
+			}).pipe(Effect.orElseSucceed(() => false))
+		: Effect.die(new Error(`${pid} is not a single process's pid`));
+
+/**
+ * Every pid the fake appended to `AGY_FAKE_PID_LOG`. A line that is not a positive integer is a
+ * setup failure rather than a pid, because `Number("")` is 0.
+ */
+const recordedPids = (pidLog: string): ReadonlyArray<number> =>
+	readFileSync(pidLog, "utf8")
+		.split("\n")
+		.filter((line) => line.trim().length > 0)
+		.map((line) => {
+			const pid = Number(line);
+			if (!Number.isInteger(pid) || pid <= 0) {
+				throw new Error(`the fake's pid log holds ${JSON.stringify(line)}, which is not a pid`);
+			}
+			return pid;
+		});
+
+/**
+ * Whether the process is gone within ten seconds. A signal and its reap travel on the event loop,
+ * so the exit is met some ticks after the kill; the cap stays well under the suite budget.
+ */
+const goneWithin = (pid: number): Promise<boolean> =>
+	Effect.gen(function* () {
+		for (let attempt = 0; attempt < 200; attempt += 1) {
+			if (!(yield* alive(pid))) return true;
+			yield* Effect.sleep("50 millis");
+		}
+		return false;
+	}).pipe(Effect.runPromise);
+
+/**
+ * The launch deadline the withheld-init case runs under. The clock starts at spawn, and the child has
+ * to start node and write its pid before the deadline kills it, or there is no pid to check. 100 ms
+ * was shorter than that on a loaded CI runner.
+ */
+const WITHHELD_INIT_DEADLINE = "2 seconds";
 
 /** Every argv the fake was launched with, in order. */
 const launches = (): ReadonlyArray<ReadonlyArray<string>> =>
@@ -560,7 +603,7 @@ describe("the agy layer over a scripted binary", () => {
 		}).pipe(
 			Effect.provide(
 				layerFor({
-					startTimeout: "100 millis",
+					startTimeout: WITHHELD_INIT_DEADLINE,
 					env: {AGY_FAKE_PID_LOG: pidLog, AGY_FAKE_WITHHOLD_INIT: "1"},
 				}),
 			),
@@ -570,15 +613,16 @@ describe("the agy layer over a scripted binary", () => {
 		);
 		expect(refusal._tag).toBe("tuval/ai-agent/StartError");
 		expect(refusal.reason).toBe("session-not-found");
-		const pid = Number(readFileSync(pidLog, "utf8").trim());
-		const gone = await Effect.gen(function* () {
-			for (let attempt = 0; attempt < 100; attempt += 1) {
-				if (!(yield* alive(pid))) return true;
-				yield* Effect.sleep("20 millis");
-			}
-			return false;
-		}).pipe(Effect.runPromise);
-		if (!gone) expect.fail(`the timed-out launch left the agy child (pid ${pid}) running`);
+		const pids = recordedPids(pidLog);
+		if (pids.length !== 1) {
+			expect.fail(
+				`setup: the fake recorded ${pids.length} pids before the ${WITHHELD_INIT_DEADLINE} deadline, not 1, so no child can be checked`,
+			);
+		}
+		const pid = pids[0] as number;
+		if (!(await goneWithin(pid))) {
+			expect.fail(`the timed-out launch left the agy child (pid ${pid}) running`);
+		}
 	});
 
 	/**
@@ -607,22 +651,12 @@ describe("the agy layer over a scripted binary", () => {
 			Effect.orDie,
 			Effect.runPromise,
 		);
-		const pids = readFileSync(pidLog, "utf8")
-			.split("\n")
-			.filter((line) => line.trim().length > 0)
-			.map(Number);
+		const pids = recordedPids(pidLog);
 		expect(pids).toHaveLength(1);
 		const pid = pids[0] as number;
-		// A signal travels on the event loop, so the baseline is met a tick or two after the scope's
-		// last statement; the cap is well under the suite budget and names the pid that outlived it
-		// (`.patterns/ci-legible-integration-tests.md`).
-		const gone = await Effect.gen(function* () {
-			for (let attempt = 0; attempt < 100; attempt += 1) {
-				if (!(yield* alive(pid))) return true;
-				yield* Effect.sleep("50 millis");
-			}
-			return false;
-		}).pipe(Effect.runPromise);
-		if (!gone) expect.fail(`the closed layer scope left the agy child (pid ${pid}) running`);
+		// The failure names the pid that outlived the scope (`.patterns/ci-legible-integration-tests.md`).
+		if (!(await goneWithin(pid))) {
+			expect.fail(`the closed layer scope left the agy child (pid ${pid}) running`);
+		}
 	});
 });
