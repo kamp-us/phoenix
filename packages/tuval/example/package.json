@@ -1,0 +1,13 @@
+{
+	"name": "tuval-sdk-example",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"devDependencies": {
+		"typescript": "7.0.2",
+		"vitest": "3.2.7"
+	}
+}

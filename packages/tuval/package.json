@@ -46,7 +46,8 @@
 		"build": "rm -rf dist && tsc -p tsconfig.build.json",
 		"prepack": "pnpm run build",
 		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
-		"test": "vitest run"
+		"test": "vitest run",
+		"proof:outside": "node proof/outside.bin.ts"
 	},
 	"dependencies": {
 		"@demlik/tea": "catalog:",
