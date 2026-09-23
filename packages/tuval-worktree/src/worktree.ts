@@ -39,7 +39,7 @@
  * **The agent-inside half is honest about what it cannot do, and that is the whole of v1's caveat.**
  * A Tuval `spawn` carries a program id and an out-port routing table and nothing else
  * (`apps/tuval/src/authoring/effect.ts:111-118`); an AI-agent row's `cwd` is baked onto the
- * registry row at config time (`src/claude/program.ts:115` → `src/claude/agent/options.ts:135`) and
+ * registry row at config time (`packages/tuval-claude/src/program.ts:115` → `packages/tuval-claude/src/agent/options.ts:135`) and
  * `claude-session`'s id is a constant, so one kernel holds one such row and one cwd. The one
  * per-spawn cwd mechanism the kernel has, `SessionOpening`, is produced by the shell picker and by
  * nothing an authored program can reach. Filed as kamp-us/phoenix#9287.

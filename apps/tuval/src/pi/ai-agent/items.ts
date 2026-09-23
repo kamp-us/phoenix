@@ -133,7 +133,7 @@ const thinkingOf = (item: PiTranscriptItem): ThinkingItem | null => {
  * it is a reply the model has not begun writing. Such a turn earns no reply row — an `agent` label
  * over nothing reads as a message that was dropped or is still loading, and the calls it made are
  * already rows of their own (#8216). Claude's mapper holds the same rule on its own wire
- * (`../../claude/history/map.ts`, `settles && (text.length > 0 || interrupted)`).
+ * (`packages/tuval-claude/src/history/map.ts`, `settles && (text.length > 0 || interrupted)`).
  * Failed turns carry their explanation in a distinct session notice; empty interrupted replies
  * retain their resend control.
  */

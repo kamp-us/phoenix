@@ -5,9 +5,10 @@
  * A layer's mapper is the only thing that can tell a kernel child from a worker its own backend
  * spawned, because the difference is *which tool the model called* — and each harness spells the
  * same tool differently on the wire. The two spellings both come from one server name here, so a
- * renamed server moves one constant and both mappers follow (`../../claude/tools/server.ts` derives
- * its own wire name from `KERNEL_TOOL_SERVER`, and `../../codex/tools.ts`'s rows arrive as
- * `<server>.<tool>` — `../../codex/history.ts`).
+ * renamed server moves one constant and both mappers follow (`@kampus/tuval-claude`'s
+ * `src/tools/server.ts` derives its own wire name from `KERNEL_TOOL_SERVER`, and
+ * `apps/tuval/src/codex/tools.ts`'s rows arrive as `<server>.<tool>` —
+ * `apps/tuval/src/codex/history.ts`).
  *
  * The answer is read off the row's own result rather than off the bridge, because the mapper stands
  * where the transcript is and the bridge stands where the call was made. `read` walks the parsed

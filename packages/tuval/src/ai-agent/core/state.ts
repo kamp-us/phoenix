@@ -366,12 +366,12 @@ const settledItem = (item: TranscriptItem): TranscriptItem => {
  * Take the streaming marker off every item still wearing one, keeping the text already written.
  *
  * A partial is superseded by the frame after it, and the upsert a layer sends at the end of a turn
- * is what drops the last marker (`../../claude/history/map.ts`). A turn that errors and a stream
- * that dies both end without that upsert — and the marker they strand makes `holdsPartialItem`
- * true for *every* later state of the session, so nothing is ever checkpointed again and the
- * session's copy on disk freezes at the last save before the stream (#8170, criterion 7). Settling
- * rather than dropping: what streamed is what the operator read, and the cut is already carried by
- * `interrupted` and `interruption`.
+ * is what drops the last marker (`@kampus/tuval-claude`, `src/history/map.ts`). A turn that
+ * errors and a stream that dies both end without that upsert — and the marker they strand makes
+ * `holdsPartialItem` true for *every* later state of the session, so nothing is ever checkpointed
+ * again and the session's copy on disk freezes at the last save before the stream (#8170,
+ * criterion 7). Settling rather than dropping: what streamed is what the operator read, and the cut
+ * is already carried by `interrupted` and `interruption`.
  */
 export const settlePartialItems = (state: AiAgentSessionState): AiAgentSessionState =>
 	holdsPartialItem(state)

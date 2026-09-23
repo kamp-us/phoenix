@@ -26,7 +26,8 @@ disposed of together.** nix-shell's idea, pointed at agents rather than at build
 ```ts
 // ~/.tuval/tuval.config.ts
 import {worktree} from "@kampus/tuval-worktree";
-import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus-apps/tuval/sessions";
+import type {TuvalConfigInput} from "@kampus-apps/tuval/sessions";
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 
 const REPO = "/code/my-app";
 const scope = {workspace: WorkspaceId.make("default"), client: ClientId.make("tuval-desk")};
@@ -180,10 +181,10 @@ What the kernel says, read at the current checkout:
   `apps/tuval/src/authoring/effect.ts:111-118`. `SpawnEffect` is `{type, program, on}`; there is no
   slot for arguments.
 - `cwd` is baked onto the registry row at config time: `claudeSession({cwd})` →
-  `src/claude/program.ts:115` → `src/ai-agent/core/machine.ts:187` →
-  `src/claude/agent/options.ts:135`, which is the SDK option the CLI launches under. It never
-  changes live (`src/claude/program.ts:134`).
-- `claude-session`'s id is a constant (`src/claude/renderer-ref.ts:12`) and a duplicate id fails the
+  `packages/tuval-claude/src/program.ts:115` → `src/ai-agent/core/machine.ts:187` →
+  `packages/tuval-claude/src/agent/options.ts:135`, which is the SDK option the CLI launches under. It never
+  changes live (`packages/tuval-claude/src/program.ts:134`).
+- `claude-session`'s id is a constant (`packages/tuval-claude/src/renderer-ref.ts:12`) and a duplicate id fails the
   registry layer, so "one row per cwd" is not available either. Rows are boot-time only.
 - `PromptPayloadSchema` is `{text, key, timestamp}` — no `cwd` field, so the prompt cannot carry one.
 - The one per-spawn cwd mechanism, `SessionOpening` (`src/ai-agent/opening.ts:17-25`), is produced
@@ -450,8 +451,8 @@ the published doors (#8943, #9250):
   a browser never has a path to `src/worktree.ts`
 - `@kampus/tuval-sdk/ai-agent/ports` — `PromptPayloadSchema`, `TurnResultSchema`: the agent *interface*,
   which pulls in no agent
-- `@kampus-apps/tuval/sessions` — `claudeSession`/`codexSession`, the branded `ClientId`/`WorkspaceId`,
-  and `TuvalConfigInput`, which only a config needs
+- `@kampus/tuval-claude` — `claudeSession` and the branded `ClientId`/`WorkspaceId` its `scope` needs
+- `@kampus-apps/tuval/sessions` — `codexSession` and `TuvalConfigInput`, which only a config needs
 
 Nothing reaches `@kampus/tuval-sdk/src/...`; the exports map would refuse it anyway.
 

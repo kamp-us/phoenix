@@ -13,13 +13,9 @@
  * checked against the real config schema here rather than only when a desk boots it.
  */
 
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 import {cron} from "@kampus/tuval-cron";
-import {
-	ClientId,
-	claudeSession,
-	type TuvalConfigInput,
-	WorkspaceId,
-} from "@kampus-apps/tuval/sessions";
+import type {TuvalConfigInput} from "@kampus-apps/tuval/sessions";
 
 /** One workspace, one client — the two branded ids `claudeSession` will not build a row without. */
 const scope = {

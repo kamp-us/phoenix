@@ -6,6 +6,8 @@
  * one process's state was a version behind.
  */
 
+import {claudeSessionState} from "@kampus/tuval-claude/testing/window";
+import {CLAUDE_CHAT_WINDOW_REF} from "@kampus/tuval-claude/window";
 import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/snapshot";
 import type {AiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
@@ -16,8 +18,6 @@ import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {claudeSessionState} from "../claude/window/claude-window.testing.ts";
-import {CLAUDE_CHAT_WINDOW_REF} from "../claude/window/index.ts";
 import type {CounterState} from "../demo/counter.ts";
 import {createStack, createTree, createWindow} from "../shell/layout/index.ts";
 import {Desk} from "../shell/ui/Desk.tsx";

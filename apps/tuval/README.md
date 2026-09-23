@@ -78,7 +78,7 @@ transcript's top border, and leaves the other window's history cursor untouched.
 an unchanged pixel offset: the initial “Load earlier messages” row disappears. Twenty labelled,
 layout-only local echoes supply scroll height without supplying an eligible history cursor.
 
-These routes call the Node-side [paging replay](src/claude/proof/paging-replay.ts): real
+These routes call the Node-side [paging replay](../../packages/tuval-claude/src/proof/paging-replay.ts): real
 `ClaudeAiAgent` over the existing captured `streaming-turn` events, a scripted SDK/store and
 `KernelBridge.scripted`. It pauses after the first text delta, checks that both local and partial
 cursors cause zero store reads, then adds completed assistant frames and pages through the live
@@ -225,7 +225,8 @@ and they are the whole program-author surface:
 | `@kampus/tuval-sdk/authoring` | `defineProgram`, `port`, `programArgs`, `Program`, the effect constructors (`spawn`, `send`, `ask`, `reply`, `emit`, `stop`), `testProgram`, `HostHandlers`, and the types an authored `update` annotates itself with. `src/authoring/index.ts` says at length what is on it and what is deliberately not. |
 | `@kampus/tuval-sdk/ai-agent/ports` | The AI-agent port vocabulary — `PromptPayloadSchema`, `TurnResultSchema` and the rest of `src/ai-agent/ports/index.ts`. It stays its own door because its `boundary.unit.test.ts` holds it closed over `effect` plus the kernel's program row, and folding it into the authoring door would make one surface owe two stabilities. |
 | `@kampus/tuval-sdk/window` | The window half — `windowRenderer` and `WindowHost` for a `kind: module` window, and `ProgramEvent`, which types that host's dispatch at the program's own event union. Its own door because its closure is browser-safe and `./authoring`'s is not. |
-| `@kampus-apps/tuval/sessions` | The shipped session rows a *config* fills a shaped arg with — `claudeSession`, `codexSession`, and the `WorkspaceId` / `ClientId` constructors a row's `scope` is built from. |
+| `@kampus/tuval-claude` | The Claude harness package: `claudeSession`, the row a *config* fills a shaped arg with, and the `WorkspaceId` / `ClientId` constructors its `scope` is built from. |
+| `@kampus-apps/tuval/sessions` | The interim home of `codexSession` and the same `WorkspaceId` / `ClientId` constructors, until the Codex harness gets its own package. |
 
 A kernel-side program looks like this — the same shape `src/authoring/example/pr-review.ts`
 has in-tree, with the specifiers an outside consumer writes:
@@ -238,7 +239,7 @@ import {type Answer, type ArrivalEvent, defineProgram, emit, port, Program, prog
 and its config hands the shaped arg a real row:
 
 ```ts
-import {ClientId, claudeSession, WorkspaceId} from "@kampus-apps/tuval/sessions";
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 ```
 
 ### Giving a program a window
@@ -914,7 +915,7 @@ whole exchanges only, and Tuval keeps no second copy.
 **The row.** `aiAgentProgram` (`src/ai-agent/program.ts`) assembles all of it into one program row:
 the core, the eight port keys, the `receive` translations, the handlers and the Sub. A caller varies
 `layer`, `cwd` and the identity. Four backends fill it today: `PiAiAgent.layer`,
-`CodexAiAgent.layer`, `ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`) and
+`CodexAiAgent.layer`, `ClaudeAiAgent.layer` (`@kampus/tuval-claude`, `packages/tuval-claude/src/agent/ClaudeAiAgent.ts`) and
 `AgyAiAgent.layer` (`src/agy/ai-agent/AgyAiAgent.ts`). The first three are a
 `Layer<TuvalAiAgent, never, KernelBridge>` — never-failing, asking only for the kernel-tools bridge
 the row provides; agy reaches no kernel tool, so its layer asks for nothing
@@ -1068,7 +1069,7 @@ refuse as data.
 
 A vertical proof is one product opened in the real shell, from the real picker, over the real
 transport, and driven to the far end of what it claims: chatted with, restarted, re-attached. There
-are two, `src/pi/proof/` and `src/claude/proof/`, and they are the same proof with the layer
+are two, `src/pi/proof/` and `src/claude-desk/proof/`, and they are the same proof with the layer
 swapped — same kernel, same `serveDesk` socket, same page `attach`, same keys-and-Msgs vocabulary.
 Every assertion reads process state off the transport, never off a `ProcessHandle` and never off a
 DOM, so what a case proves is what a window would see.
@@ -1087,7 +1088,7 @@ read back with `read`.
 
 `pnpm proof:claude-real` is the real-CLI variant, and it is **local only — the founder's own run, on
 their own Claude Code login, spending real tokens.** No workflow reaches it and none may: it boots
-`src/claude/proof/real.ts`, which is `ClaudeAiAgent.layer` over the `claude` CLI with the real
+`src/claude-desk/proof/real.ts`, which is `ClaudeAiAgent.layer` over the `claude` CLI with the real
 `pi-session` row beside it. It serves an empty desk and chats nothing, because what the run is
 evidence of is a person doing it: open the picker, chat, answer a real card, switch the mode,
 Ctrl-C, run it again with the same `--project`, and find the chat where it was with Pi in the other

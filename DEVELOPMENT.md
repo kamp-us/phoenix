@@ -148,7 +148,7 @@ The key declares a **list of apps**, because this repo runs two (ADR [0345](./.d
 
 The five apps declared today: `web` (mount `/`, both dev legs, ready on `/api/health`), `web-lab` (mount `/lab`, Vite alone), and one per rendering `apps/tuval` proof script — `tuval-chat`, `tuval-pi-window`, `tuval-pi-vertical`, each mounted under `/tuval/…` and rooted at `/`.
 
-Two of `apps/tuval`'s proof scripts are deliberately **not** declared. `proof:claude-real` boots the real Claude Code CLI on the operator's own login and spends model tokens ([`apps/tuval/src/claude/proof/serve.ts`](./apps/tuval/src/claude/proof/serve.ts)) — it is the founder's run by hand, so no verb an agent invokes may reach it, and it serves an empty desk anyway, which is nothing to capture. `proof:page-reconnect` is tracked separately. Render either by starting it yourself.
+Two of `apps/tuval`'s proof scripts are deliberately **not** declared. `proof:claude-real` boots the real Claude Code CLI on the operator's own login and spends model tokens ([`apps/tuval/src/claude-desk/proof/serve.ts`](./apps/tuval/src/claude-desk/proof/serve.ts)) — it is the founder's run by hand, so no verb an agent invokes may reach it, and it serves an empty desk anyway, which is nothing to capture. `proof:page-reconnect` is tracked separately. Render either by starting it yourself.
 
 `apps/web` reads both dev ports through [`apps/web/dev-ports.ts`](./apps/web/dev-ports.ts) (`PHOENIX_SPA_PORT`, `PHOENIX_WORKER_PORT`), which is the one place the Vite proxy and the worker it proxies to can agree. Unset, they are the historical `3000` and `1337`, so `pnpm dev` by hand is unchanged.
 

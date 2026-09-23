@@ -1,3 +1,4 @@
+import type {PagingReplay} from "@kampus/tuval-claude/testing/paging-replay";
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
@@ -9,7 +10,6 @@ import {type ChatWindowHost, chatWindow, initialChatView} from "@kampus/tuval-ui
 import {userItem, withTranscript} from "@kampus/tuval-ui/testing/chat";
 import {Effect, Schema} from "effect";
 import {createRoot} from "react-dom/client";
-import type {PagingReplay} from "../../claude/proof/paging-replay.ts";
 
 class ReplayFailed extends Schema.TaggedError<ReplayFailed>()("tuval/chat-proof/ReplayFailed", {
 	detail: Schema.String,

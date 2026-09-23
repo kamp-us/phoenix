@@ -307,7 +307,7 @@ Three files, and the split between them is forced rather than stylistic.
 
 - **The row names the window and reaches none of it.** A row is kernel-side data and must stay free
   of React, so the `RendererRef` it declares lives on a leaf that imports one type and nothing else
-  — `src/pi/renderer-ref.ts` for `pi-session`, `src/claude/renderer-ref.ts` for `claude-session`.
+  — `src/pi/renderer-ref.ts` for `pi-session`, `packages/tuval-claude/src/renderer-ref.ts` for `claude-session`.
   Retyping the name at both ends instead would drift
   silently: an unresolved reference is a returned value, never a throw
   (`src/shell/window/renderer.ts`), so the window comes up blank and nothing fails.
@@ -603,7 +603,7 @@ stream leaves the request in flight and network-idle never arrives). The wider f
 set be produced by an interaction script so no gated state owes its own surface, is [#7306](https://github.com/kamp-us/phoenix/issues/7306).
 
 Two more mechanics the Claude vertical added
-(`apps/tuval/src/claude/proof/claude-vertical.integration.test.ts`).
+(`apps/tuval/src/claude-desk/proof/claude-vertical.integration.test.ts`).
 
 **Keep a log beside the queue when the claim is about the whole sequence.** A predicate wait consumes
 frames, so "the card opened and closed exactly once" cannot be asked of the queue afterwards — the

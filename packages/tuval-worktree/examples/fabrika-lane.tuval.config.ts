@@ -5,13 +5,9 @@
  * from the template, and a frozen install before the builder starts.
  */
 
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 import {worktree} from "@kampus/tuval-worktree";
-import {
-	ClientId,
-	claudeSession,
-	type TuvalConfigInput,
-	WorkspaceId,
-} from "@kampus-apps/tuval/sessions";
+import type {TuvalConfigInput} from "@kampus-apps/tuval/sessions";
 
 const REPO = "/code/phoenix";
 

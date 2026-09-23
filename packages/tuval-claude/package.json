@@ -1,0 +1,66 @@
+{
+	"name": "@kampus/tuval-claude",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Tuval's Claude harness — the claude-session program row, its Agent SDK adapter, kernel tools, history and window, on the @kampus/tuval-sdk kernel",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/tuval-claude"
+	},
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./agent": "./src/agent/index.ts",
+		"./tools": "./src/tools/index.ts",
+		"./window": "./src/window/index.ts",
+		"./testing/window": "./src/window/claude-window.testing.ts",
+		"./testing/scripted-query": "./src/agent/fixtures/scripted-query.ts",
+		"./testing/history-fixtures": "./src/history/fixtures/load.ts",
+		"./testing/initial-effort": "./src/proof/initial-effort.ts",
+		"./testing/paging-replay": "./src/proof/paging-replay.ts",
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
+		"test": "vitest run",
+		"test:unit": "vitest run --project unit",
+		"test:integration": "vitest run --project integration"
+	},
+	"dependencies": {
+		"@anthropic-ai/claude-agent-sdk": "catalog:",
+		"@anthropic-ai/sdk": "catalog:",
+		"@kampus/tuval-ui": "workspace:*",
+		"@modelcontextprotocol/sdk": "catalog:",
+		"zod": "catalog:"
+	},
+	"peerDependencies": {
+		"@kampus/tuval-sdk": "workspace:*",
+		"effect": "catalog:",
+		"react": "catalog:"
+	},
+	"devDependencies": {
+		"@demlik/tea": "catalog:",
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@kampus/design": "workspace:*",
+		"@kampus/tuval-sdk": "workspace:*",
+		"@testing-library/dom": "catalog:",
+		"@testing-library/react": "catalog:",
+		"@testing-library/user-event": "catalog:",
+		"@types/node": "catalog:",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"effect": "catalog:",
+		"fast-check": "catalog:",
+		"jsdom": "catalog:",
+		"react": "catalog:",
+		"react-dom": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}

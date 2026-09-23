@@ -280,7 +280,7 @@ describe("the composed status bar", () => {
  * builds. Widening it to the whole desk would red this gate on two defects it does not own and
  * cannot fix here — the empty window's picker `listbox` renders no `option` until a program is
  * typed (`aria-required-children`), and `react-resizable-panels` renders its separators outside any
- * landmark (`region`). Both are filed; scoping is the same call `../../claude/window/claude-a11y.unit.test.tsx`
+ * landmark (`region`). Both are filed; scoping is the same call `packages/tuval-claude/src/window/claude-a11y.unit.test.tsx`
  * makes for the same reason.
  */
 describe("axe over the desk with the inspector open", () => {

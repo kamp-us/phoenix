@@ -23,8 +23,8 @@
  * **This file lives outside Tuval.** It began beside the kernel, in `apps/tuval/src/cron/` of
  * `kamp-us/phoenix`, and it is here now — a separate npm package, in a separate repo, owned by
  * someone who is not the kernel's author. Nothing in it reaches into Tuval's source: every name it
- * imports comes through one of the three published doors (#8943) — `@kampus/tuval-sdk/authoring`,
- * `@kampus/tuval-sdk/ai-agent/ports`, `@kampus-apps/tuval/sessions` — which is the point of it being here.
+ * imports comes through a published door (#8943) — `@kampus/tuval-sdk/authoring`,
+ * `@kampus/tuval-sdk/ai-agent/ports`, `@kampus/tuval-claude` — which is the point of it being here.
  * A program a third party can write is only proven by a program a third party did write, from
  * outside, against the door and nothing else.
  *

@@ -3,8 +3,9 @@
  * specifiers `packages/tuval/package.json` declares — no relative path into `src/` anywhere below
  * this docblock — can write a program, declare a shaped arg, and fill it with a shipped session row.
  *
- * It lives in the app rather than in `@kampus/tuval-sdk` because the session rows are still the app's
- * (`@kampus-apps/tuval/sessions`), and the SDK depends on no app. Node and Vite resolve
+ * It lives in the app rather than in `@kampus/tuval-sdk` because the Codex session row is still the
+ * app's (`@kampus-apps/tuval/sessions`), and the SDK depends on no app. The Claude row is its
+ * harness package's (`@kampus/tuval-claude`). Node and Vite resolve
  * `@kampus/tuval-sdk/authoring` through the SDK's own `name` + `exports`, walking the same map an
  * outside consumer walks, so a subpath missing from the map fails here exactly as it would fail
  * there. `tsc` over this file is the other half — the door has to be typed, not just resolvable.
@@ -18,6 +19,7 @@ import {execFileSync} from "node:child_process";
 import {readFileSync, statSync} from "node:fs";
 import {createRequire} from "node:module";
 import {dirname, resolve} from "node:path";
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 import {
 	PromptPayloadSchema,
 	type TurnResult,
@@ -39,7 +41,7 @@ import {
 	stop,
 	testProgram,
 } from "@kampus/tuval-sdk/authoring";
-import {ClientId, claudeSession, codexSession, WorkspaceId} from "@kampus-apps/tuval/sessions";
+import {codexSession} from "@kampus-apps/tuval/sessions";
 import {Schema} from "effect";
 import {describe, expect, it} from "vitest";
 
@@ -160,6 +162,7 @@ describe("a consumer can emit declarations for a program that declares args", ()
 			"@kampus/tuval-sdk/window",
 			"@kampus/tuval-sdk/ai-agent/ports",
 			"@kampus-apps/tuval/sessions",
+			"@kampus/tuval-claude",
 		];
 		expect(specifiers.filter((s) => !doors.includes(s))).toEqual([]);
 	});

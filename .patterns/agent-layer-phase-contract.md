@@ -81,7 +81,7 @@ The per-turn `prompting` is the whole defence, and it is why the layer owes one 
 than leaving `admit`'s to stand. It rides the same queue *behind* the open's events, so the session
 is back on `prompting` before the turn's first frame whichever order the drain took
 ([#8156](https://github.com/kamp-us/phoenix/issues/8156)). Both orders are pinned in
-[`claude/agent/phases.unit.test.ts`](../apps/tuval/src/claude/agent/phases.unit.test.ts), which
+[`agent/phases.unit.test.ts`](../packages/tuval-claude/src/agent/phases.unit.test.ts), which
 folds the layer's real event stream through the real core — including the case with that one event
 removed, where the running turn reads idle for its whole length.
 
@@ -194,7 +194,7 @@ two of them has no bracket to close (which is exactly what the host does: one `r
 
 Each layer's own test proves it rather than a shared conformance suite, because a layer that drops
 the wrap compiles clean:
-[`claude/agent/phases.unit.test.ts`](../apps/tuval/src/claude/agent/phases.unit.test.ts),
+[`agent/phases.unit.test.ts`](../packages/tuval-claude/src/agent/phases.unit.test.ts),
 [`codex/agent.unit.test.ts`](../apps/tuval/src/codex/agent.unit.test.ts),
 [`pi/ai-agent/turn-end.unit.test.ts`](../apps/tuval/src/pi/ai-agent/turn-end.unit.test.ts),
 [`agy/ai-agent/pays-the-turn-result.unit.test.ts`](../apps/tuval/src/agy/ai-agent/pays-the-turn-result.unit.test.ts)
@@ -203,7 +203,7 @@ The fold's own cases are [`ai-agent/turn-result.unit.test.ts`](../packages/tuval
 
 ## Reference shapes
 
-- [`claude/agent/ClaudeAiAgent.ts`](../apps/tuval/src/claude/agent/ClaudeAiAgent.ts) — `prompt`
+- [`agent/ClaudeAiAgent.ts`](../packages/tuval-claude/src/agent/ClaudeAiAgent.ts) — `prompt`
   publishes `prompting` *before* the write to the CLI's input (a write that then fails is a turn
   nobody ran, and its `PromptError` settles the send on its own arm), and `drive` publishes `ready`
   on the SDK's `result` message, which is the one frame that means a turn is over. The per-turn
@@ -216,7 +216,7 @@ The fold's own cases are [`ai-agent/turn-result.unit.test.ts`](../packages/tuval
   it does not get for free is delivery, and a queue between the layer and the core that coalesces
   snapshots can drop the one carrying the change (#7897). See
   [snapshot-authoritative-to-delta-events.md](./snapshot-authoritative-to-delta-events.md).
-- [`claude/proof/script.ts`](../apps/tuval/src/claude/proof/script.ts) — the fixture scripts are
+- [`claude-desk/proof/script.ts`](../apps/tuval/src/claude-desk/proof/script.ts) — the fixture scripts are
   where a scripted session's narration lives, one `prompting` … `ready` bracket per turn, with the
   restart-cut turn deliberately missing its `ready` so a proof can assert what an unfinished turn
   looks like. `service/ScriptedAiAgent.ts` itself narrates no per-turn phase — it replays whatever

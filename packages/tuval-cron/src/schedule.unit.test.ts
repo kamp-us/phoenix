@@ -9,6 +9,7 @@
  * and nothing but a stated clock can say that.
  */
 
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 import {
 	emit,
 	type ShapeSource,
@@ -16,7 +17,6 @@ import {
 	TITLE_PORT,
 	testProgram,
 } from "@kampus/tuval-sdk/authoring";
-import {ClientId, claudeSession, WorkspaceId} from "@kampus-apps/tuval/sessions";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {type CronOptions, cron, cronProgram} from "./cron.ts";
 import {armSchedule, humanize, parseSchedule} from "./schedule.ts";

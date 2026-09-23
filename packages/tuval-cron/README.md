@@ -9,7 +9,8 @@ on a `brief` out-port so something downstream can have it.
 ```ts
 // ~/.tuval/tuval.config.ts
 import {cron} from "@kampus/tuval-cron";
-import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus-apps/tuval/sessions";
+import type {TuvalConfigInput} from "@kampus-apps/tuval/sessions";
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 
 const scope = {workspace: WorkspaceId.make("default"), client: ClientId.make("tuval-desk")};
 
@@ -227,8 +228,8 @@ the published doors (#8943, #9250):
   `src/cron.ts`
 - `@kampus/tuval-sdk/ai-agent/ports` — `PromptPayloadSchema`, `TurnResultSchema`: the agent
   *interface*, which pulls in no agent
-- `@kampus-apps/tuval/sessions` — `claudeSession`/`codexSession`, the branded `ClientId`/`WorkspaceId`,
-  and `TuvalConfigInput`, which only a config needs
+- `@kampus/tuval-claude` — `claudeSession` and the branded `ClientId`/`WorkspaceId` its `scope` needs
+- `@kampus-apps/tuval/sessions` — `codexSession` and `TuvalConfigInput`, which only a config needs
 
 Nothing reaches `@kampus/tuval-sdk/src/...`; the exports map would refuse it anyway.
 
