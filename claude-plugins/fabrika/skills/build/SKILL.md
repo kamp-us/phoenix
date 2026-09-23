@@ -484,8 +484,8 @@ epic child under the epic rules — your commit landed on the branch you cut fro
 and the `build-deviations` marker is posted on the child issue; branch left local, unpushed, for the
 epic driver to fold); `BACKED-OFF` (claim lost with no succession open to it, blocked, or no
 readable contract — branch removed,
-nothing written); `ESCALATED` (repair cap reached — branch left pushed at its last verified head,
-escalation note posted);
+nothing written); `ESCALATED` (repair cap reached, cause `repair-budget-spent` — branch left pushed
+at its last verified head, escalation note posted);
 `STOPPED` (isolation, a denied tool call, or verdict UNKNOWN — branch left local, state named). An
 empty pick pool is
 `BACKED-OFF` too — nothing to build, nothing written, and on a lost claim "branch removed" means
@@ -523,13 +523,23 @@ nothing.
 `--pr` whenever the terminal names one; `--comment` for the diagnosis comment behind a
 `SUCCESS-NO-PR`; a `BUILT-NO-PR` carries neither, because its evidence is the commits themselves.
 
-**Name the cause when your `STOPPED` has one.** `--cause <token>` rides a `STOPPED` and nothing
-else, because only a park has a cause to be gone. The one token that names a stop of yours is
-`worktree-holds-branch`, and it belongs on the `STOPPED` you take when `build resume-child` stops at
-its `resume-lane` step on exit `11` — another worktree still holds the lane branch:
+**Name the cause when your park has one.** `--cause <token>` rides a park and nothing else, because
+only a park has a cause to be gone. Two of your terminals are parks, `STOPPED` and `ESCALATED`, and
+`lane report` maps both to `BLOCKED`. Two tokens name a park of yours. `worktree-holds-branch`
+belongs on the `STOPPED` you take when `build resume-child` stops at its `resume-lane` step on exit
+`11`, because another worktree still holds the lane branch:
 
 ```bash
 node <fabrika> lane report <lane> --root <root> --task <task> --token STOPPED --cause worktree-holds-branch
+```
+
+`repair-budget-spent` belongs on the `ESCALATED` you take when the repair fold reads
+`capReached: true`. **It is not optional there**: under `parkCause.uncaused: "refuse"` a park that
+names no cause is refused at exit `52` and never recorded, and a repair-cap `ESCALATED` always has
+this cause to name:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token ESCALATED --cause repair-budget-spent --pr <pr-url>
 ```
 
 That cause is the whole difference between a park `recipe unpark` clears itself and one that spends
@@ -615,6 +625,8 @@ claiming there was nothing to fix.
 The budget is the
 fold's own `capReached` field, never a number you carry: on `true`, end `ESCALATED` and post the
 escalation via `fabrika build note <repair-pr> --token <claim-token>` instead of another push.
+Record that terminal with `--token ESCALATED --cause repair-budget-spent` on the `lane report`
+line; without the cause it is refused at exit `52` and never lands.
 
 **A CI red is produced from the merge ref, not from your head — reproduce it there before you call
 it false.** A `pull_request`-triggered workflow runs with `GITHUB_REF` set to `refs/pull/<n>/merge`
