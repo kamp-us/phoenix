@@ -9,6 +9,7 @@
  * `ai-agent-inspector.unit.test.tsx`.
  */
 
+import {claudeSession} from "@kampus/tuval-claude";
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
@@ -24,7 +25,6 @@ import {deskSnapshot} from "@kampus/tuval-ui/testing/desk";
 import {agentSessionState, CWD} from "@kampus/tuval-ui/testing/inspector";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {claudeSession} from "../claude/program.ts";
 import {piSessionProgram} from "../pi/program.ts";
 import {pageInspectors} from "./renderers.tsx";
 

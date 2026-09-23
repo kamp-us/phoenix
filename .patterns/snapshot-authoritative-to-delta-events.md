@@ -122,7 +122,7 @@ Pi's [`entries.ts`](../apps/tuval/src/pi/ai-agent/entries.ts) counts the current
 not all disk messages: at 0.84.3, `buildSessionContext` composes `buildContextEntries` and
 `sessionEntryToContextMessages`, including compaction summaries and invisible custom messages.
 Those same exports associate live positions with stored entry ids without a text or timestamp join.
-Claude's [`items.ts`](../apps/tuval/src/claude/history/items.ts) instead associates streaming
+Claude's [`items.ts`](../packages/tuval-claude/src/history/items.ts) instead associates streaming
 `message.id` with stored frame `uuid`, including the derived thinking id. Its SDK 0.3.259
 `SDKAssistantMessage` can deliver one frame per content block, so the first matching stored row owns
 the cursor boundary. These are backend projections, not copies of the shared cursor rule.

@@ -28,6 +28,7 @@
 // `CallingWindow` (`src/shell/picker/open.ts`), and the kernel resolves the parent of a tool
 // `spawn` from it, so a spawned process is a child of the Claude one (#8758).
 
+import {claudeSession} from "@kampus/tuval-claude";
 import {sessionListProgram} from "@kampus/tuval-sdk/kernel/ai-agent/session-list";
 import {
 	ClientId,
@@ -38,7 +39,6 @@ import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Console} from "effect";
 import {agySessionProgram} from "../src/agy/program.ts";
 import {prReview} from "../src/authoring/example/pr-review.ts";
-import {claudeSession} from "../src/claude/program.ts";
 import {codexSession} from "../src/codex/program.ts";
 import type {TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
@@ -51,7 +51,7 @@ const projectRoot = projectRootOf(import.meta.url);
 
 /**
  * The scope the Claude row's three kernel tools call under. Named rather than written inline so
- * `src/claude/tracked-config.integration.test.ts` can drive the bridge with the value this row is
+ * `src/claude-desk/tracked-config.integration.test.ts` can drive the bridge with the value this row is
  * actually built with, instead of a copy that could drift from it.
  */
 export const claudeSessionScope = {

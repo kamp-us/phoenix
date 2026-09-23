@@ -3,9 +3,9 @@
 How a Tuval backend adapter turns an arbitrary thrown value from its SDK into one of the generic
 `TuvalAiAgent` errors — and where the thrown value itself goes.
 
-The shape lives in [`apps/tuval/src/claude/agent/refusals.ts`](../apps/tuval/src/claude/agent/refusals.ts)
-and [`apps/tuval/src/claude/agent/diagnosis.ts`](../apps/tuval/src/claude/agent/diagnosis.ts), and is
-judged by [`refusals.unit.test.ts`](../apps/tuval/src/claude/agent/refusals.unit.test.ts) beside them.
+The shape lives in [`packages/tuval-claude/src/agent/refusals.ts`](../packages/tuval-claude/src/agent/refusals.ts)
+and [`packages/tuval-claude/src/agent/diagnosis.ts`](../packages/tuval-claude/src/agent/diagnosis.ts), and is
+judged by [`refusals.unit.test.ts`](../packages/tuval-claude/src/agent/refusals.unit.test.ts) beside them.
 It applies to any adapter under `apps/tuval/src/<backend>/` that catches a dependency's exception;
 it does not govern the error classes themselves ([`ai-agent/service/errors.ts`](../packages/tuval/src/ai-agent/service/errors.ts))
 or how the core folds them.

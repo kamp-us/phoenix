@@ -1,4 +1,5 @@
 import {readFileSync} from "node:fs";
+import {claudeSession} from "@kampus/tuval-claude";
 import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval-sdk/ai-agent/ports";
 import {argKey, argKeys, fillArgs, programArgs} from "@kampus/tuval-sdk/kernel/authoring/args";
 import {defineProgram} from "@kampus/tuval-sdk/kernel/authoring/define-program";
@@ -14,7 +15,6 @@ import {ClientId, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
 import type {AnyProgram, PortSchema} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Result, Schema} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
-import {claudeSession} from "../claude/program.ts";
 import {sdkModule} from "../sdk-source.testing.ts";
 
 const Prompt = Schema.Struct({pr: Schema.Number});

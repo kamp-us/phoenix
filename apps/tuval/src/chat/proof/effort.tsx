@@ -1,3 +1,4 @@
+import type {InitialEffortProof} from "@kampus/tuval-claude/testing/initial-effort";
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
@@ -8,7 +9,6 @@ import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {chatWindow, initialChatView} from "@kampus/tuval-ui/chat";
 import {Effect} from "effect";
 import {createRoot} from "react-dom/client";
-import type {InitialEffortProof} from "../../claude/proof/initial-effort.ts";
 import "../../page/styles.ts";
 import "./proof.css";
 

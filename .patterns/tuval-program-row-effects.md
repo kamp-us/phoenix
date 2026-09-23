@@ -305,7 +305,7 @@ the key table, and then hands every live process what its own row says the new c
 The field is `(next: AnyProgram) => ReadonlyArray<Msg>`
 ([`registry/program.ts`](../packages/tuval/src/registry/program.ts)), read off the row a process is
 *running under* and handed the reloaded row of the same id. `claude-session` is the worked example:
-`configChanged(previous, next)` in [`claude/program.ts`](../apps/tuval/src/claude/program.ts) maps a
+`configChanged(previous, next)` in [`program.ts`](../packages/tuval-claude/src/program.ts) maps a
 changed `permissionMode` to one `setMode` and every other field to nothing, because
 `Query.setPermissionMode` is the one thing the SDK lets a running session change — the model and the
 tool list are `Options` of a query that is already open, and `cwd` never changes live at all.

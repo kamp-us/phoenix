@@ -1,7 +1,7 @@
 /**
  * The boundaries this layer keeps: it is ruling 4's `Layer<TuvalAiAgent, never, never>` (#7570),
  * no agy wire type reaches its public surface, it implements every `TuvalAiAgentApi` member rather
- * than the brief's nine, and none of `src/claude/`'s kernel-tool apparatus exists anywhere under
+ * than the brief's nine, and none of `@kampus/tuval-claude`'s kernel-tool apparatus exists anywhere under
  * `src/agy/`.
  *
  * The surface probe states its expected answer on the right of an `=`, with positive controls

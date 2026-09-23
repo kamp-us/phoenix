@@ -1,10 +1,10 @@
 import {dirname, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
+import {initialEffortProof} from "@kampus/tuval-claude/testing/initial-effort";
+import {pagingReplay} from "@kampus/tuval-claude/testing/paging-replay";
 import react from "@vitejs/plugin-react";
 import {Effect} from "effect";
 import {defineConfig} from "vite";
-import {initialEffortProof} from "../../claude/proof/initial-effort.ts";
-import {pagingReplay} from "../../claude/proof/paging-replay.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 

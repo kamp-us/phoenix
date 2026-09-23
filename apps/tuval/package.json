@@ -22,11 +22,9 @@
 		"proof:picker": "vite --config src/shell/picker/proof/vite.config.ts",
 		"proof:page-reconnect": "node src/page/proof/serve.ts",
 		"proof:pi-vertical": "node src/pi/proof/serve.ts",
-		"proof:claude-real": "node src/claude/proof/serve.ts"
+		"proof:claude-real": "node src/claude-desk/proof/serve.ts"
 	},
 	"dependencies": {
-		"@anthropic-ai/claude-agent-sdk": "catalog:",
-		"@anthropic-ai/sdk": "catalog:",
 		"@demlik/tea": "catalog:",
 		"@earendil-works/pi-ai": "catalog:",
 		"@earendil-works/pi-client": "catalog:",
@@ -34,6 +32,7 @@
 		"@earendil-works/pi-protocol": "catalog:",
 		"@effect/platform-node": "catalog:",
 		"@kampus/design": "workspace:*",
+		"@kampus/tuval-claude": "workspace:*",
 		"@kampus/tuval-sdk": "workspace:*",
 		"@kampus/tuval-ui": "workspace:*",
 		"@manti-ui/styles": "catalog:",
@@ -45,8 +44,7 @@
 		"react-dom": "catalog:",
 		"react-resizable-panels": "catalog:",
 		"typebox": "catalog:",
-		"ws": "catalog:",
-		"zod": "catalog:"
+		"ws": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",

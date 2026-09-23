@@ -1,7 +1,7 @@
 /**
  * `AgyAiAgent` — the `TuvalAiAgent` layer over the `agy` CLI. **A subprocess with a pipe**, and
  * deliberately none of Pi's `client/` + `server/` loopback RPC: this row follows `src/pi/`'s shape
- * and not `src/claude/`'s, so there is no `tools/`, no `KernelBridge`, no `SpellBridge`, no `scope`
+ * and not `@kampus/tuval-claude`'s, so there is no `tools/`, no `KernelBridge`, no `SpellBridge`, no `scope`
  * option and no permission card anywhere under `src/agy/` (#8162).
  *
  * The layer is the transport's lifetime (founder ruling 4, #7570). `R` is empty and `E` is `never`:

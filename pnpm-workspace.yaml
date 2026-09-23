@@ -4,7 +4,7 @@ packages:
   - infra/*
 
 catalog:
-  # Exact pin (epic #7498): apps/tuval's Claude program is built against this SDK's `tool()` /
+  # Exact pin (epic #7498): @kampus/tuval-claude's Claude program is built against this SDK's `tool()` /
   # `createSdkMcpServer` surface, and its three peers below are pinned with it so one copy of each
   # lives in the tree. Dependabot bumps it; the CLI it spawns is the `claude` on PATH (#7580).
   '@anthropic-ai/claude-agent-sdk': 0.3.259

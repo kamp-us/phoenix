@@ -12,6 +12,7 @@
  * and the fixture config's own rows.
  */
 
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 import {
 	PromptPayloadSchema,
 	type TurnResult,
@@ -32,7 +33,6 @@ import {
 	TITLE_PORT,
 	testProgram,
 } from "@kampus/tuval-sdk/authoring";
-import {ClientId, claudeSession, WorkspaceId} from "@kampus-apps/tuval/sessions";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import config, {desk, reviews} from "../.tuval/tuval.config.ts";
@@ -1094,7 +1094,7 @@ describe("the window", () => {
 /**
  * The consumer path, end to end and from outside: the fixture `.tuval/tuval.config.ts` beside this
  * package builds its rows through `@kampus/tuval-worktree`'s own entry and
- * `@kampus-apps/tuval/sessions`, exactly as a user's config does. Nothing here boots a desk, spends a
+ * `@kampus/tuval-claude`, exactly as a user's config does. Nothing here boots a desk, spends a
  * token or touches git — the fixture's runner refuses everything.
  */
 describe("a user's `.tuval/tuval.config.ts`", () => {

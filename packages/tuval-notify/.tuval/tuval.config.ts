@@ -23,14 +23,10 @@
  * So the working path today is still the spell: `:notify send "…"`. See the README.
  */
 
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 import {cron} from "@kampus/tuval-cron";
 import {notify} from "@kampus/tuval-notify";
-import {
-	ClientId,
-	claudeSession,
-	type TuvalConfigInput,
-	WorkspaceId,
-} from "@kampus-apps/tuval/sessions";
+import type {TuvalConfigInput} from "@kampus-apps/tuval/sessions";
 
 /** One workspace, one client — the two branded ids `claudeSession` will not build a row without. */
 const scope = {

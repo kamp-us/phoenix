@@ -18,7 +18,7 @@ one: the window keeps sending the live id it has, and `before: null` is not a fi
 **1. Mint the map where the items are minted.** One pass produces the stored rows and the
 `live id → stored id` map together, because the map's entries are facts about the same lines:
 `pageCursorAliases` beside `pageItems` in `apps/tuval/src/pi/ai-agent/entries.ts`, `toHistoryItems`
-returning `{items, cursorAliases}` in `apps/tuval/src/claude/history/items.ts`, and
+returning `{items, cursorAliases}` in `packages/tuval-claude/src/history/items.ts`, and
 `transcriptProjection` in `apps/tuval/src/agy/ai-agent/transcript.ts`.
 
 **2. Compose the page in one function the call sites cannot step around.** `cursorAliases` and

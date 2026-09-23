@@ -13,6 +13,7 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
+import {KernelBridge} from "@kampus/tuval-claude/tools";
 import type {TurnResult} from "@kampus/tuval-sdk/ai-agent/ports";
 import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
 import {aiAgentProgram} from "@kampus/tuval-sdk/kernel/ai-agent/program";
@@ -47,7 +48,6 @@ import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer, Option} from "effect";
 import {coreSpells} from "../boot.ts";
-import {KernelBridge} from "../claude/tools/KernelBridge.ts";
 
 const AGENT = "ai-agent-result-test";
 const CWD = "/workspace/phoenix";

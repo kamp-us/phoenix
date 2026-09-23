@@ -5,7 +5,7 @@ How to wrap a dependency that (a) hands you an async generator you cannot interr
 death you only learn about by the generator ending.
 
 The instance is
-[`apps/tuval/src/claude/agent/ClaudeAiAgent.ts`](../apps/tuval/src/claude/agent/ClaudeAiAgent.ts),
+[`packages/tuval-claude/src/agent/ClaudeAiAgent.ts`](../packages/tuval-claude/src/agent/ClaudeAiAgent.ts),
 the `TuvalAiAgent` layer over `@anthropic-ai/claude-agent-sdk`. The three rules below are the ones a
 reader gets wrong by following the ordinary layer idiom, and each one cost a debugging round to
 find.

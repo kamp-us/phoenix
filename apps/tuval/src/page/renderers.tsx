@@ -27,6 +27,7 @@
  */
 
 import features from "virtual:tuval/features";
+import {CLAUDE_CHAT_WINDOW_REF, claudeChatWindow} from "@kampus/tuval-claude/window";
 import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/snapshot";
 import {isSessionListState} from "@kampus/tuval-sdk/kernel/ai-agent/renderer-ref";
 import type {WindowHost} from "@kampus/tuval-sdk/kernel/shell/window/index";
@@ -60,7 +61,6 @@ import {Effect, Fiber} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useRef, useState} from "react";
 import {AGY_CHAT_WINDOW_REF, agyChatWindow} from "../agy/window/index.ts";
-import {CLAUDE_CHAT_WINDOW_REF, claudeChatWindow} from "../claude/window/index.ts";
 import {CODEX_CHAT_WINDOW_REF, codexChatWindow} from "../codex/window/index.ts";
 import {type CounterState, isCounterState} from "../demo/counter.ts";
 import {isLogState, type LogState} from "../demo/log.ts";
