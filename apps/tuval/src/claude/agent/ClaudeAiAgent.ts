@@ -35,9 +35,6 @@ import type {
 	PermissionUpdate,
 	SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import {type Cause, Effect, Exit, Layer, Queue, Ref, Scope, Stream} from "effect";
-import type {AgentAccount, AgentEvent} from "../../ai-agent/events.ts";
-import {isRefusal, planTranscriptPage} from "../../ai-agent/history/index.ts";
 import type {
 	CommandRef,
 	Mode,
@@ -46,8 +43,10 @@ import type {
 	PermissionRequest,
 	ThinkingLevel,
 	TranscriptItem,
-} from "../../ai-agent/ports/index.ts";
-import {sameModel} from "../../ai-agent/ports/index.ts";
+} from "@kampus/tuval/ai-agent/ports";
+import {sameModel} from "@kampus/tuval/ai-agent/ports";
+import type {AgentAccount, AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+import {isRefusal, planTranscriptPage} from "@kampus/tuval/kernel/ai-agent/history/index";
 import {
 	ModelUnsupported,
 	ModeUnsupported,
@@ -59,8 +58,9 @@ import {
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
 	UnknownRequest,
-} from "../../ai-agent/service/index.ts";
-import {withTurnResult} from "../../ai-agent/turn-result.ts";
+} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {withTurnResult} from "@kampus/tuval/kernel/ai-agent/turn-result";
+import {type Cause, Effect, Exit, Layer, Queue, Ref, Scope, Stream} from "effect";
 import {
 	commandsOf,
 	emptyMapping,

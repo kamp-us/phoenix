@@ -19,15 +19,19 @@
  */
 
 import {EmptyState} from "@kampus/design";
+import {
+	type AgentAccount,
+	type AiAgentSessionState,
+	usageTotals,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/snapshot";
+import {agentCost} from "@kampus/tuval/kernel/ai-agent/self-report";
+import type {AnyWindowHost} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement} from "react";
 import {useEffect, useState} from "react";
 import type {AnyInspectorRenderer} from "../../shell/desk/index.ts";
 import {inspectorRenderer} from "../../shell/desk/index.ts";
-import type {AnyWindowHost} from "../../shell/window/index.ts";
-import {type AgentAccount, type AiAgentSessionState, usageTotals} from "../core/index.ts";
-import {isAiAgentSessionState} from "../core/snapshot.ts";
-import {agentCost} from "../self-report.ts";
 import "./ai-agent-inspector.css";
 
 const tokens = new Intl.NumberFormat("en-US");

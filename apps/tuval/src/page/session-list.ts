@@ -16,18 +16,18 @@
  * (`./AttachedDesk.tsx`): the session list is a third thing beside them.
  */
 
-import {Result, Schema} from "effect";
-import type {WindowId} from "../protocol/ids.ts";
-import {CallId} from "../protocol/ids.ts";
-import type {SpellFailure, SpellReply} from "../protocol/messages.ts";
-import {PROTOCOL_VERSION, SpellCall} from "../protocol/messages.ts";
-import type {SessionRow, UnreadableBackend} from "../protocol/session-list.ts";
+import type {WindowId} from "@kampus/tuval/kernel/protocol/ids";
+import {CallId} from "@kampus/tuval/kernel/protocol/ids";
+import type {SpellFailure, SpellReply} from "@kampus/tuval/kernel/protocol/messages";
+import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval/kernel/protocol/messages";
+import type {SessionRow, UnreadableBackend} from "@kampus/tuval/kernel/protocol/session-list";
 import {
 	SESSION_LIST_CALL_PATH,
 	SESSION_LIST_DEADLINE_MILLIS,
 	SESSION_LIST_TIMED_OUT_TAG,
 	SessionList,
-} from "../protocol/session-list.ts";
+} from "@kampus/tuval/kernel/protocol/session-list";
+import {Result, Schema} from "effect";
 
 /** The rows a window is handed, and the backends that could not be read beside them. */
 export interface ListedSessions {

@@ -9,22 +9,22 @@
 import {readFileSync} from "node:fs";
 import {resolve} from "node:path";
 import {describe, it} from "@effect/vitest";
+import {isPromptPayload} from "@kampus/tuval/ai-agent/ports";
+import {emit, send, spawn, spawned} from "@kampus/tuval/kernel/authoring/effect";
+import {port} from "@kampus/tuval/kernel/authoring/port";
+import {ShapeMismatch} from "@kampus/tuval/kernel/authoring/shape";
+import {testProgram} from "@kampus/tuval/kernel/authoring/test-program";
+import {SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
+import {buildRegistry, lookupRow} from "@kampus/tuval/kernel/commands/registry";
+import {ClientId, type Scope, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
+import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {noSelfReport} from "@kampus/tuval/kernel/process/self-report";
+import {type AnyProgram, ProgramId, programLabel} from "@kampus/tuval/kernel/registry/program";
 import {Effect, Layer, Option, Schema, Stream} from "effect";
 import {expect} from "vitest";
 import config from "../../../.tuval/tuval.config.ts";
-import {isPromptPayload} from "../../ai-agent/ports/index.ts";
 import {codexSession} from "../../codex/program.ts";
-import {SpawnedProcesses} from "../../commands/core/process.ts";
-import {buildRegistry, lookupRow} from "../../commands/registry.ts";
-import {ClientId, type Scope, WorkspaceId} from "../../commands/spell.ts";
-import {ProcessTable} from "../../process/ProcessTable.ts";
-import {ProcessId} from "../../process/process.ts";
-import {noSelfReport} from "../../process/self-report.ts";
-import {type AnyProgram, ProgramId, programLabel} from "../../registry/program.ts";
-import {emit, send, spawn, spawned} from "../effect.ts";
-import {port} from "../port.ts";
-import {ShapeMismatch} from "../shape.ts";
-import {testProgram} from "../test-program.ts";
 import {prReview, prReviewProgram} from "./pr-review.ts";
 
 const source = readFileSync(resolve(import.meta.dirname, "pr-review.ts"), "utf8");
@@ -59,35 +59,30 @@ describe("authoring.example.pr-review is short enough to copy", () => {
 
 	it("reaches the authoring layer through the one door a third-party program uses (#8943)", () => {
 		// Six relative modules collapsed to one specifier is what paid for the `spawned` cell, so a
-		// later edit that reaches back past the barrel takes the room away again.
-		const specifiers = [...source.matchAll(/from "(\.\.\/[^"]+)"/g)].map((match) => match[1] ?? "");
-		expect(
-			specifiers.filter((from) => from.startsWith("../") && !from.startsWith("../../")),
-		).toEqual(["../index.ts", "../index.ts"]);
+		// later edit that reaches back past the door, into the SDK's kernel, takes the room away again.
+		const specifiers = [...source.matchAll(/from "([^"]+)"/g)].map((match) => match[1] ?? "");
+		expect(specifiers.filter((from) => from.startsWith("."))).toEqual([]);
+		expect(specifiers.filter((from) => from.startsWith("@kampus/tuval/authoring"))).toEqual([
+			"@kampus/tuval/authoring",
+			"@kampus/tuval/authoring",
+		]);
 	});
 
 	it("imports no program package, so no reviewer's SDK rides along", () => {
 		const specifiers = [...source.matchAll(/from "([^"]+)"/g)].map((match) => match[1] ?? "");
 		expect(specifiers).not.toEqual([]);
-		// Resolved, not prefix-matched: `../../codex/program.ts` starts with `../` too, and it is
-		// exactly the cross-package import this criterion exists to forbid.
+		// Matched whole, not by prefix: `@kampus/tuval/kernel/...` starts with the SDK's name too, and a
+		// relative `../../codex/program.ts` is exactly the cross-package import this criterion forbids.
 		//
-		// Two roots are allowed, and the second is the one #8887 added. `src/authoring/` is the layer
-		// the example is written in. `src/ai-agent/ports/` is the port vocabulary every Tuval agent
+		// Two doors are allowed, and the second is the one #8887 added. `@kampus/tuval/authoring` is the
+		// layer the example is written in. `@kampus/tuval/ai-agent/ports` is the port vocabulary every Tuval agent
 		// speaks: its own `boundary.unit.test.ts` holds it closed over `effect` and the kernel's
 		// program row, so importing it drags in no agent implementation, and both ends naming one
 		// payload is exactly what R15.1's structural check compares. What the criterion forbids is a
 		// *program package* — `codex/`, `claude/`, `pi/`, `agy/`, `demo/`, `shell/` — and this still
 		// refuses every one of them.
-		const allowed = [
-			resolve(import.meta.dirname, ".."),
-			resolve(import.meta.dirname, "../../ai-agent/ports"),
-		];
-		const outside = specifiers.filter(
-			(from) =>
-				from !== "effect" &&
-				!allowed.some((root) => resolve(import.meta.dirname, from).startsWith(`${root}/`)),
-		);
+		const allowed = ["effect", "@kampus/tuval/authoring", "@kampus/tuval/ai-agent/ports"];
+		const outside = specifiers.filter((from) => !allowed.includes(from));
 		expect(outside).toEqual([]);
 	});
 });

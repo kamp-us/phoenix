@@ -1,10 +1,14 @@
 import {describe, it} from "@effect/vitest";
+import {Mode} from "@kampus/tuval/ai-agent/ports";
+import {foldEvent} from "@kampus/tuval/kernel/ai-agent/core/fold";
+import {initialState} from "@kampus/tuval/kernel/ai-agent/core/state";
+import {
+	type AgentEvent,
+	TransportError,
+	type TuvalAiAgentApi,
+} from "@kampus/tuval/kernel/ai-agent/service/index";
 import {Deferred, Effect, Exit, Fiber, Option, Queue, Stream} from "effect";
 import {expect} from "vitest";
-import {foldEvent} from "../ai-agent/core/fold.ts";
-import {initialState} from "../ai-agent/core/state.ts";
-import {Mode} from "../ai-agent/ports/index.ts";
-import {type AgentEvent, TransportError, type TuvalAiAgentApi} from "../ai-agent/service/index.ts";
 import {
 	fixtureTurns,
 	itemMessage,

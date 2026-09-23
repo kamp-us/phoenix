@@ -10,22 +10,22 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {defineProgram} from "@kampus/tuval/kernel/authoring/define-program";
+import {send} from "@kampus/tuval/kernel/authoring/effect";
+import {port} from "@kampus/tuval/kernel/authoring/port";
+import {SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
+import {ClientId, type Scope, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
+import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
+import {compile} from "@kampus/tuval/kernel/ports/compile";
+import {type Graph, NodeId} from "@kampus/tuval/kernel/ports/graph";
+import {open} from "@kampus/tuval/kernel/ports/wiring";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import type {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {type AnyProgram, ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
 import {Effect, Layer, Option, Schema} from "effect";
-import {SpawnedProcesses} from "../commands/core/process.ts";
-import {ClientId, type Scope, WorkspaceId} from "../commands/spell.ts";
-import {Checkpoints} from "../durability/Checkpoints.ts";
-import {memoryStores} from "../durability/stores.ts";
 import {launch} from "../launch/launch.ts";
-import {compile} from "../ports/compile.ts";
-import {type Graph, NodeId} from "../ports/graph.ts";
-import {open} from "../ports/wiring.ts";
-import {Processes} from "../process/Processes.ts";
-import type {ProcessId} from "../process/process.ts";
-import {type AnyProgram, ProgramId} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
-import {defineProgram} from "./define-program.ts";
-import {send} from "./effect.ts";
-import {port} from "./port.ts";
 
 const kernel = (programs: ReadonlyArray<AnyProgram>) =>
 	SpawnedProcesses.layer({readTimeout: "1 second"}).pipe(

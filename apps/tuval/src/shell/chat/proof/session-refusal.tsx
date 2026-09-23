@@ -1,11 +1,11 @@
 import {useState} from "react";
 import "../../../page/styles.ts";
+import type {SessionRow} from "@kampus/tuval/kernel/protocol/session-list";
 import {createRoot} from "react-dom/client";
 import {bareSession, claudeSession, NOW} from "../../../ai-agent/window/fixtures.ts";
 import {SessionList} from "../../../ai-agent/window/SessionListWindow.tsx";
 import {SessionTranscriptView} from "../../../ai-agent/window/SessionTranscript.tsx";
 import type {TranscriptAnswer} from "../../../page/session-transcript.ts";
-import type {SessionRow} from "../../../protocol/session-list.ts";
 
 const missing = {...bareSession, title: "Session without a folder"};
 const refused = {...claudeSession, title: "Transcript read refused"};

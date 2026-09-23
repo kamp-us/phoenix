@@ -8,31 +8,37 @@ import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
+import {processSpells, SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
+import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
+import {SpellRegistry} from "@kampus/tuval/kernel/commands/registry";
+import {type Client, WindowIndex, type WindowPlacement} from "@kampus/tuval/kernel/commands/scope";
+import {ClientId, type SpellPath, WindowId, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
+import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
+import {compile} from "@kampus/tuval/kernel/ports/compile";
+import type {PayloadRejected, PortNotWired} from "@kampus/tuval/kernel/ports/errors";
+import {type Graph, NodeId} from "@kampus/tuval/kernel/ports/graph";
+import {ProcessPorts} from "@kampus/tuval/kernel/ports/ProcessPorts";
+import {open} from "@kampus/tuval/kernel/ports/wiring";
+import {ProcessNotFound} from "@kampus/tuval/kernel/process/errors";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {CallId} from "@kampus/tuval/kernel/protocol/ids";
+import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "@kampus/tuval/kernel/protocol/messages";
+import {
+	type AnyProgram,
+	type PortBound,
+	type Program,
+	ProgramId,
+} from "@kampus/tuval/kernel/registry/program";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
 import {Context, Effect, Exit, Fiber, Layer, Option} from "effect";
 import {TestClock} from "effect/testing";
 import {counterId, counterProgram} from "../../demo/counter.ts";
 import {logId, logProgram} from "../../demo/log.ts";
-import {Checkpoints} from "../../durability/Checkpoints.ts";
-import {memoryStores} from "../../durability/stores.ts";
 import {launch} from "../../launch/launch.ts";
-import {compile} from "../../ports/compile.ts";
-import type {PayloadRejected, PortNotWired} from "../../ports/errors.ts";
-import {type Graph, NodeId} from "../../ports/graph.ts";
-import {ProcessPorts} from "../../ports/ProcessPorts.ts";
-import {open} from "../../ports/wiring.ts";
-import {ProcessNotFound} from "../../process/errors.ts";
-import {Processes} from "../../process/Processes.ts";
-import {ProcessTable} from "../../process/ProcessTable.ts";
-import {ProcessId} from "../../process/process.ts";
-import {CallId} from "../../protocol/ids.ts";
-import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../../protocol/messages.ts";
-import {type AnyProgram, type PortBound, type Program, ProgramId} from "../../registry/program.ts";
-import {Registry} from "../../registry/Registry.ts";
-import {SpellExecutor} from "../executor.ts";
-import {SpellRegistry} from "../registry.ts";
-import {type Client, WindowIndex, type WindowPlacement} from "../scope.ts";
-import {ClientId, type SpellPath, WindowId, WorkspaceId} from "../spell.ts";
-import {processSpells, SpawnedProcesses} from "./process.ts";
+import {sdkModule} from "../../sdk-source.testing.ts";
 
 const WORD_KIND = "text/v1";
 const isWord = (payload: unknown): payload is string => typeof payload === "string";
@@ -557,7 +563,7 @@ describe("the process spells reach a graph-launched process (#8944)", () => {
 });
 
 describe("the process spells name no program", () => {
-	const here = import.meta.dirname;
+	const here = sdkModule("commands/core");
 	const bridge = join(here, "..", "bridge");
 	const programIds = ["pi-session", "claude-session", counterId, logId, echoId];
 

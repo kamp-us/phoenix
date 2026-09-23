@@ -12,12 +12,12 @@
 
 import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
+import type {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import type {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
+import type {Features} from "@kampus/tuval/kernel/feature-flags";
+import type {StateDir} from "@kampus/tuval/kernel/state-dir";
 import type {Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import type {TuvalAiAgent} from "../../ai-agent/service/index.ts";
-import type {KernelBridge} from "../../ai-agent/tools/KernelBridge.ts";
-import type {Features} from "../../feature-flags.ts";
-import type {StateDir} from "../../state-dir.ts";
 import type {PiServerService, PiSessionHost, ServerBindFailed} from "../server/index.ts";
 import {PiAiAgent} from "./index.ts";
 

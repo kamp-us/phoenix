@@ -9,12 +9,17 @@
  * loaded by a test suite must not be able to provision anything.
  *
  * The default export is `satisfies TuvalConfigInput` — the encoded shape the loader decodes, which
- * `@kampus/tuval/sessions` publishes. A config written outside the repo is therefore checked
+ * `@kampus-apps/tuval/sessions` publishes. A config written outside the repo is therefore checked
  * against the real config schema here rather than only when a desk boots it.
  */
 
-import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
 import {type Runner, worktree} from "@kampus/tuval-worktree";
+import {
+	ClientId,
+	claudeSession,
+	type TuvalConfigInput,
+	WorkspaceId,
+} from "@kampus-apps/tuval/sessions";
 
 /** One `WorkspaceId`, one `ClientId` — the two branded ids `claudeSession` will not build a row without. */
 const scope = {

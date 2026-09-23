@@ -5,12 +5,12 @@
  * reaches `Processes`: the only service this slice takes is the read-only table.
  */
 
+import type {PayloadRejected, PortNotWired} from "@kampus/tuval/kernel/ports/errors";
+import type {PortRef} from "@kampus/tuval/kernel/ports/graph";
+import type {Wiring} from "@kampus/tuval/kernel/ports/wiring";
+import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
+import type {OutPort} from "@kampus/tuval/kernel/registry/program";
 import {Context, Effect, Layer, Stream} from "effect";
-import type {PayloadRejected, PortNotWired} from "../ports/errors.ts";
-import type {PortRef} from "../ports/graph.ts";
-import type {Wiring} from "../ports/wiring.ts";
-import {ProcessTable} from "../process/ProcessTable.ts";
-import type {OutPort} from "../registry/program.ts";
 import {isTableEvent, type TableEvent, type TableRow, toTableRow} from "./row.ts";
 
 export const PROCESS_TABLE_KIND = "tuval/process-table/v1";

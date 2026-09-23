@@ -8,10 +8,15 @@
  * takes a `MountResolver` and asks it per window; a test hands over a table.
  */
 
+import type {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import type {
+	AnyWindowHost,
+	Empty,
+	ProcessGone,
+	WindowId,
+} from "@kampus/tuval/kernel/shell/window/index";
 import type {ReactNode} from "react";
-import type {ProcessId} from "../../process/process.ts";
-import type {ProgramId} from "../../registry/program.ts";
-import type {AnyWindowHost, Empty, ProcessGone, WindowId} from "../window/index.ts";
 
 /** A program's window renderer, at the surface's own output type. */
 export type ReactWindowRenderer = (host: AnyWindowHost) => ReactNode;

@@ -27,18 +27,19 @@
 // — and it does not have to: opening the row into a window hands the process that window as
 // `CallingWindow` (`src/shell/picker/open.ts`), and the kernel resolves the parent of a tool
 // `spawn` from it, so a spawned process is a child of the Claude one (#8758).
+
+import {sessionListProgram} from "@kampus/tuval/kernel/ai-agent/session-list";
+import {ClientId, type Scope as SpellScope, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
 import {Console} from "effect";
 import {agySessionProgram} from "../src/agy/program.ts";
-import {sessionListProgram} from "../src/ai-agent/session-list.ts";
 import {prReview} from "../src/authoring/example/pr-review.ts";
 import {claudeSession} from "../src/claude/program.ts";
 import {codexSession} from "../src/codex/program.ts";
-import {ClientId, type Scope as SpellScope, WorkspaceId} from "../src/commands/spell.ts";
 import type {TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
 import {moduleCounter} from "../src/demo/module-counter.ts";
 import {piSessionProgram, projectRootOf} from "../src/pi/program.ts";
-import {ProcessId} from "../src/process/process.ts";
 import {wiredShellEffects} from "../src/shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../src/shell/program.ts";
 

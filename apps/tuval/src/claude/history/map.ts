@@ -14,8 +14,6 @@
  * and the text so far have to survive from the `message_start` that opened it.
  */
 
-import type {AgentEvent} from "../../ai-agent/events.ts";
-import {boundToolOutput, kernelSpawnOf} from "../../ai-agent/history/index.ts";
 import {
 	boundToolResult,
 	byteLength,
@@ -24,7 +22,9 @@ import {
 	type JsonValue,
 	type SubagentSlot,
 	type TranscriptItem,
-} from "../../ai-agent/ports/index.ts";
+} from "@kampus/tuval/ai-agent/ports";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+import {boundToolOutput, kernelSpawnOf} from "@kampus/tuval/kernel/ai-agent/history/index";
 import {
 	isRecord,
 	outputOf,

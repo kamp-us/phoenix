@@ -9,9 +9,9 @@
  * to nothing.
  */
 
+import {foldEvent, initialState, usageTotals} from "@kampus/tuval/kernel/ai-agent/core/index";
 import {render, screen} from "@testing-library/react";
 import {describe, expect, it} from "vitest";
-import {foldEvent, initialState, usageTotals} from "../../ai-agent/core/index.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
 import {UsageLine} from "./AgyChatWindow.tsx";
 

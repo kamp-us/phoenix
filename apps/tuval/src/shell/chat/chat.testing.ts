@@ -5,17 +5,20 @@
  * this file may import the agent module at runtime and the window itself may not.
  */
 
-import type {AiAgentSessionState} from "../../ai-agent/core/state.ts";
-import {initialState} from "../../ai-agent/core/state.ts";
 import type {
 	JsonValue,
 	ThinkingLevel,
 	ToolItem,
 	ToolStatus,
 	TranscriptItem,
-} from "../../ai-agent/ports/index.ts";
-import {boundToolResult, ItemId, Mode} from "../../ai-agent/ports/index.ts";
-import {pendingPermission, permissionCard} from "../../ai-agent-fixtures/permissions.ts";
+} from "@kampus/tuval/ai-agent/ports";
+import {boundToolResult, ItemId, Mode} from "@kampus/tuval/ai-agent/ports";
+import type {AiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/state";
+import {initialState} from "@kampus/tuval/kernel/ai-agent/core/state";
+import {
+	pendingPermission,
+	permissionCard,
+} from "@kampus/tuval/kernel/ai-agent-fixtures/permissions";
 import {
 	assistantItem,
 	compactionItem,
@@ -23,7 +26,7 @@ import {
 	thinkingItem,
 	toolItem,
 	userItem,
-} from "../../ai-agent-fixtures/transcripts.ts";
+} from "@kampus/tuval/kernel/ai-agent-fixtures/transcripts";
 
 export {
 	assistantItem,

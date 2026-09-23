@@ -12,8 +12,8 @@ import {mkdtempSync, readFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {SettingsManager} from "@earendil-works/pi-coding-agent";
+import {featuresDefault} from "@kampus/tuval/kernel/features";
 import {describe, expect, it} from "vitest";
-import {featuresDefault} from "../../features.ts";
 import {extensionLoader} from "./AgentSessionHost.ts";
 import {SUBAGENTS_PACKAGE, subagentExtensionPaths, subagentsPackageDir} from "./subagents.ts";
 

@@ -18,15 +18,18 @@
 
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {type TestProcess, testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {act, fireEvent, render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {beforeAll, describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
-import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
-import {type TestProcess, testProcess} from "../window/fixtures.ts";
-import {WindowId} from "../window/index.ts";
 import {chatWindow} from "./ChatWindow.tsx";
 import {compactionItem, withTranscript} from "./chat.testing.ts";
 import {type ChatView, initialChatView} from "./view.ts";

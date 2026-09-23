@@ -11,9 +11,9 @@
 
 import {readdirSync, readFileSync} from "node:fs";
 import {dirname, join} from "node:path";
+import type {ViewState} from "@kampus/tuval/kernel/shell/window/host";
 import {describe, expect, it} from "vitest";
 import type {PickerView} from "../picker/index.ts";
-import type {ViewState} from "../window/host.ts";
 import type {WindowMount} from "./mount.ts";
 
 type FitsTheSlot<V> = V extends ViewState ? true : false;

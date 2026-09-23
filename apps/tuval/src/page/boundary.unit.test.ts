@@ -27,6 +27,7 @@ import {existsSync, readdirSync, readFileSync} from "node:fs";
 import {builtinModules} from "node:module";
 import {dirname, join, relative, resolve} from "node:path";
 import {describe, expect, it} from "vitest";
+import {resolveSdkSpecifier, sdkModule} from "../sdk-source.testing.ts";
 
 const SRC = resolve(import.meta.dirname, "..");
 const APP_ROOT = resolve(SRC, "..");
@@ -84,7 +85,11 @@ const moduleWindowEntries = (): ReadonlyArray<string> => {
 	return [...found];
 };
 
-/** Depth-first over relative imports, recording each `node:` edge with the chain that reached it. */
+/**
+ * Depth-first over relative imports and into `@kampus/tuval` through its exports map, recording each
+ * `node:` edge with the chain that reached it. The kernel the page reaches lives in the SDK, so a
+ * walk that stopped at the package boundary would stop seeing it.
+ */
 const walk = (
 	entries: ReadonlyArray<string>,
 ): {
@@ -102,14 +107,18 @@ const walk = (
 				leaks.push(`${here.join(" -> ")} -> ${specifier}`);
 				continue;
 			}
-			if (!specifier.startsWith(".")) continue;
-			const next = resolveRelative(file, specifier);
+			const next = specifier.startsWith(".")
+				? resolveRelative(file, specifier)
+				: resolveSdkSpecifier(specifier);
 			if (next !== undefined) visit(next, here);
 		}
 	};
 	for (const entry of entries) visit(entry, []);
 	return {modules: [...seen].map((file) => relative(SRC, file)), leaks};
 };
+
+/** An SDK module as `walk` names it: relative to this app's `src/`. */
+const inSdk = (path: string): string => relative(SRC, sdkModule(path));
 
 describe("the page's import graph", () => {
 	const windows = moduleWindowEntries();
@@ -120,6 +129,8 @@ describe("the page's import graph", () => {
 		expect(graph.modules).toEqual(
 			expect.arrayContaining(["shell/commands/index.ts", "shell/commands/dispatch.ts"]),
 		);
+		// Into the SDK as well: the window contract the page renders through is its module.
+		expect(graph.modules).toContain(inSdk("shell/window/index.ts"));
 	});
 
 	it("covers the module windows this tree declares, not only the page's own entry", () => {
@@ -138,7 +149,7 @@ describe("the page's import graph", () => {
 		// that counted that edge would list the target. Flip-verified by dropping the `type` test in
 		// `specifiersOf`: the module appears and this fails.
 		expect(graph.modules).toContain("shell/commands/dispatch.ts");
-		expect(graph.modules).not.toContain("process/errors.ts");
+		expect(graph.modules).not.toContain(inSdk("process/errors.ts"));
 		expect(graph.modules).not.toContain("shell/commands/kernel.ts");
 	});
 
@@ -147,6 +158,6 @@ describe("the page's import graph", () => {
 		// file calls `defineProgram` and so reaches `node:crypto`; counting the edge would both list
 		// it here and red the leak test above, which is what #8946 reported from a browser.
 		expect(graph.modules).not.toContain("demo/module-counter.ts");
-		expect(graph.modules).not.toContain("authoring/define-program.ts");
+		expect(graph.modules).not.toContain(inSdk("authoring/define-program.ts"));
 	});
 });

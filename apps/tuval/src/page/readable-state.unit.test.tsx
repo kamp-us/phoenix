@@ -6,15 +6,17 @@
  * one process's state was a version behind.
  */
 
+import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/snapshot";
+import type {AiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/state";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {empty, processGone, WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {act, render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {isAiAgentSessionState} from "../ai-agent/core/snapshot.ts";
-import type {AiAgentSessionState} from "../ai-agent/core/state.ts";
 import {claudeSessionState} from "../claude/window/claude-window.testing.ts";
 import {CLAUDE_CHAT_WINDOW_REF} from "../claude/window/index.ts";
 import type {CounterState} from "../demo/counter.ts";
-import {ProcessId} from "../process/process.ts";
 import {defaultPrefixTable} from "../shell/keys/index.ts";
 import {createStack, createTree, createWindow} from "../shell/layout/index.ts";
 import {Desk} from "../shell/ui/Desk.tsx";
@@ -22,8 +24,6 @@ import {installDomShims} from "../shell/ui/dom.testing.ts";
 import {deskWith} from "../shell/ui/fixtures.ts";
 import {boundMount, type MountResolver} from "../shell/ui/mount.ts";
 import {refused} from "../shell/ui/press.ts";
-import {testProcess} from "../shell/window/fixtures.ts";
-import {empty, processGone, WindowId} from "../shell/window/index.ts";
 import type {ReadableRenderer} from "./readable-state.tsx";
 import {pageRenderers} from "./renderers.tsx";
 

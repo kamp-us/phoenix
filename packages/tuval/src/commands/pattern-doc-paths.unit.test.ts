@@ -88,7 +88,8 @@ describe(".patterns/tuval-spells.md", () => {
 		).toEqual([]);
 
 		const mispointed = rows.filter(
-			(row) => !row.target.endsWith(`/${row.module}`) || !row.target.includes("apps/tuval/src/"),
+			(row) =>
+				!row.target.endsWith(`/${row.module}`) || !row.target.includes("packages/tuval/src/"),
 		);
 		expect(
 			mispointed.map((row) => `${row.module} -> ${row.target}`),

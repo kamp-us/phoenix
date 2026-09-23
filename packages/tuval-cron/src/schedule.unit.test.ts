@@ -16,7 +16,7 @@ import {
 	TITLE_PORT,
 	testProgram,
 } from "@kampus/tuval/authoring";
-import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval/sessions";
+import {ClientId, claudeSession, WorkspaceId} from "@kampus-apps/tuval/sessions";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {type CronOptions, cron, cronProgram} from "./cron.ts";
 import {armSchedule, humanize, parseSchedule} from "./schedule.ts";

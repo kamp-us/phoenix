@@ -10,20 +10,20 @@
  * stubbed reducer would prove the surface agrees with a fake.
  */
 
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId, type RendererRef} from "@kampus/tuval/kernel/registry/program";
+import type {AnyWindowHost, WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {empty} from "@kampus/tuval/kernel/shell/window/index";
 import {act, fireEvent, render, screen, within} from "@testing-library/react";
 import axe from "axe-core";
 import {Duration} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId, type RendererRef} from "../../registry/program.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import type {DeskEmptyReason} from "../desk/index.ts";
 import {inspectorRenderer, statusRenderer} from "../desk/index.ts";
 import type {PrefixTable} from "../keys/index.ts";
 import {CommandName, defaultPrefixTable} from "../keys/index.ts";
-import type {AnyWindowHost, WindowId} from "../window/index.ts";
-import {empty} from "../window/index.ts";
 import {Desk} from "./Desk.tsx";
 import type {DeskTables} from "./desk-snapshot.ts";
 import {noDeskTables} from "./desk-snapshot.ts";

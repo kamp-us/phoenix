@@ -5,9 +5,9 @@
  * clause, two, three or more, and the distinct-file count an edit bucket carries.
  */
 
+import type {JsonValue, ToolItem, ToolStatus} from "@kampus/tuval/ai-agent/ports";
+import {boundToolResult, ItemId} from "@kampus/tuval/ai-agent/ports";
 import {describe, expect, it} from "vitest";
-import type {JsonValue, ToolItem, ToolStatus} from "../../ai-agent/ports/index.ts";
-import {boundToolResult, ItemId} from "../../ai-agent/ports/index.ts";
 import {runSentence, runStatus, runStatusWord} from "./tool-run.ts";
 
 let next = 0;

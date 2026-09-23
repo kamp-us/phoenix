@@ -12,12 +12,24 @@
  * whoever runs the desk, and this slice ships only the inert set (`unwiredShellEffects`).
  */
 
+import type {GraphNode} from "@kampus/tuval/kernel/ports/graph";
+import {NodeId} from "@kampus/tuval/kernel/ports/graph";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {
+	AnyProgram,
+	HostHandlers,
+	Migrations,
+	Program,
+} from "@kampus/tuval/kernel/registry/program";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {
+	type Empty,
+	empty,
+	type ProcessGone,
+	processGone,
+	WindowId,
+} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect, Option, Predicate} from "effect";
-import type {GraphNode} from "../ports/graph.ts";
-import {NodeId} from "../ports/graph.ts";
-import {ProcessId} from "../process/process.ts";
-import type {AnyProgram, HostHandlers, Migrations, Program} from "../registry/program.ts";
-import {ProgramId} from "../registry/program.ts";
 import {shellSpells, shellSpellsFor} from "./commands/spells.ts";
 import {commandIndexFor, type ShellCommandFeatures} from "./commands/table.ts";
 import {
@@ -30,7 +42,6 @@ import {
 import {initialDesk} from "./desk/state.ts";
 import {defaultPrefixTable, type PrefixTable, prefixTableFor} from "./keys/index.ts";
 import {windows} from "./layout/index.ts";
-import {type Empty, empty, type ProcessGone, processGone, WindowId} from "./window/index.ts";
 
 /** The row's stable id. A founder rebinding the shell in their own config replaces this id's row. */
 export const shellId = ProgramId.make("shell");

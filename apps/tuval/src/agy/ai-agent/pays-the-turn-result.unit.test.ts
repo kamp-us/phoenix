@@ -7,9 +7,9 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
 import {Effect, Option, Queue, Stream} from "effect";
-import type {AgentEvent} from "../../ai-agent/service/index.ts";
-import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {agyChildStub, agyLayerOver} from "./child-stub.ts";
 import {init, responseDone, resultSuccess, userInput} from "./fixtures.ts";
 

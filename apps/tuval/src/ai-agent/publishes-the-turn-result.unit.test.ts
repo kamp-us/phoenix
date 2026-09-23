@@ -13,27 +13,37 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
+import type {TurnResult} from "@kampus/tuval/ai-agent/ports";
+import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
+import {aiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
+import {
+	plainReply,
+	plainReplyPrompt,
+	plainReplyText,
+} from "@kampus/tuval/kernel/ai-agent/service/fixtures/scripts";
+import {ScriptedAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {onlyPaths, SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
+import {SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
+import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
+import {type Client, WindowIndex, type WindowPlacement} from "@kampus/tuval/kernel/commands/scope";
+import {
+	ClientId,
+	type Scope,
+	type SpellPath,
+	WindowId,
+	WorkspaceId,
+} from "@kampus/tuval/kernel/commands/spell";
+import {SpellSet} from "@kampus/tuval/kernel/commands/spell-set";
+import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {TITLE_PORT} from "@kampus/tuval/kernel/process/self-report";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
 import {Context, Effect, Layer, Option} from "effect";
 import {coreSpells} from "../boot.ts";
 import {KernelBridge} from "../claude/tools/KernelBridge.ts";
-import {onlyPaths, SpellBridge} from "../commands/bridge/index.ts";
-import {SpawnedProcesses} from "../commands/core/process.ts";
-import {SpellExecutor} from "../commands/executor.ts";
-import {type Client, WindowIndex, type WindowPlacement} from "../commands/scope.ts";
-import {ClientId, type Scope, type SpellPath, WindowId, WorkspaceId} from "../commands/spell.ts";
-import {SpellSet} from "../commands/spell-set.ts";
-import {Checkpoints} from "../durability/Checkpoints.ts";
-import {memoryStores} from "../durability/stores.ts";
-import {Processes} from "../process/Processes.ts";
-import {ProcessId} from "../process/process.ts";
-import {TITLE_PORT} from "../process/self-report.ts";
-import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
-import {aiAgentPortNames} from "./handlers/index.ts";
-import type {TurnResult} from "./ports/index.ts";
-import {aiAgentProgram} from "./program.ts";
-import {plainReply, plainReplyPrompt, plainReplyText} from "./service/fixtures/scripts.ts";
-import {ScriptedAiAgent} from "./service/index.ts";
 
 const AGENT = "ai-agent-result-test";
 const CWD = "/workspace/phoenix";

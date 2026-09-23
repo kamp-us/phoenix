@@ -5,13 +5,13 @@
  * entry animation that respects reduced motion, and one activation the mouse and the keyboard share.
  */
 
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
 import {render, screen, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import {Option} from "effect";
 import {describe, expect, it, vi} from "vitest";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
 import type {PortDeclaration, TableRow} from "../../table/row.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
 import {ProcessBoard} from "./ProcessBoard.tsx";

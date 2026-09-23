@@ -10,18 +10,18 @@
 
 import {readdirSync, readFileSync, statSync} from "node:fs";
 import {join} from "node:path";
-import type {Layer} from "effect";
-import {describe, expect, expectTypeOf, it} from "vitest";
 import type {
 	AiAgentSessionCmd,
 	AiAgentSessionMsg,
 	AiAgentSessionState,
 	AiAgentSessionSub,
-} from "../ai-agent/core/index.ts";
-import type {AiAgentProgram} from "../ai-agent/program.ts";
-import type {TuvalAiAgent} from "../ai-agent/service/index.ts";
-import type {SpellBridge} from "../commands/bridge/index.ts";
-import type {PortSchema, Program} from "../registry/program.ts";
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import type {AiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
+import type {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import type {SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
+import type {PortSchema, Program} from "@kampus/tuval/kernel/registry/program";
+import type {Layer} from "effect";
+import {describe, expect, expectTypeOf, it} from "vitest";
 import type {ClaudeSessionSettings} from "./config.ts";
 import {type ClaudeSessionProgram, claudeSession, claudeSessionLayer} from "./program.ts";
 

@@ -4,12 +4,15 @@
  * decided here, so it is proven here.
  */
 
+import {ItemId, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import {promptItem} from "@kampus/tuval/kernel/ai-agent/core/fold";
+import {remarkCutReplies} from "@kampus/tuval/kernel/ai-agent/core/state";
+import {
+	planTranscriptPage,
+	planTranscriptWindow,
+} from "@kampus/tuval/kernel/ai-agent/history/index";
+import {subagentSlot} from "@kampus/tuval/kernel/ai-agent-fixtures/transcripts";
 import {describe, expect, it} from "vitest";
-import {promptItem} from "../../ai-agent/core/fold.ts";
-import {remarkCutReplies} from "../../ai-agent/core/state.ts";
-import {planTranscriptPage, planTranscriptWindow} from "../../ai-agent/history/index.ts";
-import {ItemId, type TranscriptItem} from "../../ai-agent/ports/index.ts";
-import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
 import {
 	assistantItem,
 	call,

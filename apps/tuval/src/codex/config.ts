@@ -1,5 +1,5 @@
+import {Mode} from "@kampus/tuval/ai-agent/ports";
 import {Effect, Schema} from "effect";
-import {Mode} from "../ai-agent/ports/index.ts";
 
 export const CODEX_MODES = ["read-only", "workspace-write"] as const;
 export const CodexSessionConfig = Schema.Struct({

@@ -1,6 +1,9 @@
+import {
+	REST_PARAMETER_ANNOTATION,
+	RestParameter,
+} from "@kampus/tuval/kernel/commands/rest-parameter";
 import {Schema} from "effect";
 import {expect, it} from "vitest";
-import {REST_PARAMETER_ANNOTATION, RestParameter} from "../../commands/rest-parameter.ts";
 import {decodeServerFrame} from "./wire.ts";
 
 const description = {

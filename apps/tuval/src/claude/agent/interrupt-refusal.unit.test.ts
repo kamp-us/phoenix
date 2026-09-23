@@ -16,8 +16,8 @@
 
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {assert, describe, it} from "@effect/vitest";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
 import {Effect, Stream} from "effect";
-import type {AgentEvent} from "../../ai-agent/events.ts";
 import {CWD, messages, on, START_EVENTS} from "./fixtures/harness.ts";
 
 const REFUSAL = new Error("Operation aborted");

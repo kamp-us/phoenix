@@ -22,11 +22,11 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert} from "@effect/vitest";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import {type ProcessHandle, ProcessId} from "@kampus/tuval/kernel/process/process";
 import {Cause, Effect, Exit, type FileSystem, Option, type Scope} from "effect";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {type Booted, boot, projectDir} from "../../boot.ts";
-import {Processes} from "../../process/Processes.ts";
-import {type ProcessHandle, ProcessId} from "../../process/process.ts";
 import {scratchHome} from "../../scratch-home.ts";
 import {
 	DESK_NODE,

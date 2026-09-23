@@ -15,9 +15,9 @@
  * "the shell owns the left and the right" a type rather than a convention.
  */
 
-import type {Message} from "../../process/process.ts";
-import type {RendererKind} from "../../registry/program.ts";
-import type {ViewState, WindowHost} from "../window/host.ts";
+import type {Message} from "@kampus/tuval/kernel/process/process";
+import type {RendererKind} from "@kampus/tuval/kernel/registry/program";
+import type {ViewState, WindowHost} from "@kampus/tuval/kernel/shell/window/host";
 
 /**
  * The shape a program's optional `inspector` reference resolves to. `Out` is the renderer's own

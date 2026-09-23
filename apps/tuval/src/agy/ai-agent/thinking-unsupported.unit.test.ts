@@ -13,10 +13,10 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {Mode, thinkingLevels} from "@kampus/tuval/ai-agent/ports";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
 import {Effect, Fiber, Option, Queue, Stream} from "effect";
-import {Mode, thinkingLevels} from "../../ai-agent/ports/index.ts";
-import type {AgentEvent} from "../../ai-agent/service/index.ts";
-import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {agyChildrenStub, agyLayerOver, type StubChild} from "./child-stub.ts";
 import {init} from "./fixtures.ts";
 

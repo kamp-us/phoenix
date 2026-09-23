@@ -13,8 +13,8 @@
  */
 
 import {Collapsible} from "@kampus/design";
+import type {ThinkingItem} from "@kampus/tuval/ai-agent/ports";
 import type {ReactElement} from "react";
-import type {ThinkingItem} from "../../ai-agent/ports/index.ts";
 
 /** Longest preview the collapsed row shows, in characters. */
 const PREVIEW_CHARS = 96;

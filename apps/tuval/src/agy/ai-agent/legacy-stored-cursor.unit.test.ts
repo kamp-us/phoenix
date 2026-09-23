@@ -29,10 +29,14 @@
  * when it filed the criterion.
  */
 
+import type {TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import {
+	type AiAgentSessionState,
+	initialState,
+	restore,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {isRefusal} from "@kampus/tuval/kernel/ai-agent/history/index";
 import {describe, expect, it} from "vitest";
-import {type AiAgentSessionState, initialState, restore} from "../../ai-agent/core/index.ts";
-import {isRefusal} from "../../ai-agent/history/index.ts";
-import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {planPageOverTranscript, transcriptLines, transcriptProjection} from "./transcript.ts";
 import * as fixtures from "./transcript-fixtures.ts";
 

@@ -27,8 +27,8 @@
  */
 
 import {Button, Collapsible} from "@kampus/design";
+import type {SystemItem} from "@kampus/tuval/ai-agent/ports";
 import type {ReactElement} from "react";
-import type {SystemItem} from "../../ai-agent/ports/index.ts";
 import type {SessionRun} from "./rows.ts";
 
 /**

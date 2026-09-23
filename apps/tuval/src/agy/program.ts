@@ -18,9 +18,9 @@
  * and neither pulls the other's dependencies in.
  */
 
+import {type AiAgentProgram, aiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
+import type {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
 import type {Layer} from "effect";
-import {type AiAgentProgram, aiAgentProgram} from "../ai-agent/program.ts";
-import type {TuvalAiAgent} from "../ai-agent/service/index.ts";
 import type {AgyAiAgentOptions} from "./ai-agent/index.ts";
 import {preflightedAgyLayer} from "./preflight.ts";
 import {AGY_CHAT_WINDOW_REF, AGY_SESSION_PROGRAM} from "./renderer-ref.ts";

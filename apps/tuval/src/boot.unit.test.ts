@@ -14,9 +14,12 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
+import {sessionListProgram} from "@kampus/tuval/kernel/ai-agent/session-list";
+import {Features} from "@kampus/tuval/kernel/feature-flags";
+import {featuresDefault, type TuvalFeatures} from "@kampus/tuval/kernel/features";
+import {homeStateDir, PROJECT_MARKER} from "@kampus/tuval/kernel/state-dir";
 import {Context, Effect, Layer, Schema} from "effect";
 import {afterEach, expect} from "vitest";
-import {sessionListProgram} from "./ai-agent/session-list.ts";
 import {
 	boot,
 	coreSpells,
@@ -25,11 +28,8 @@ import {
 	projectConfig,
 	projectDir,
 } from "./boot.ts";
-import {Features} from "./feature-flags.ts";
-import {featuresDefault, type TuvalFeatures} from "./features.ts";
 import {subagentExtensionPaths} from "./pi/server/index.ts";
 import {shellSpells} from "./shell/commands/spells.ts";
-import {homeStateDir, PROJECT_MARKER} from "./state-dir.ts";
 
 /** Every boot registers these, whatever the config declares; no fixture program declares a spell. */
 const CORE_SPELLS = coreSpells.length;

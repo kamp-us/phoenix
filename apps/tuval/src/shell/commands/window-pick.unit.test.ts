@@ -6,8 +6,9 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect} from "effect";
-import {ProcessId} from "../../process/process.ts";
 import {applyMsg, initialState, type ShellMsg} from "../core/machine.ts";
 import {activeWorkspace, keyTargetOf, type ShellState} from "../core/state.ts";
 import {wiredShellEffects} from "../host/effects.ts";
@@ -26,7 +27,6 @@ import {
 	type PickerView,
 	pickerKey,
 } from "../picker/view.ts";
-import {WindowId} from "../window/index.ts";
 import {commandFor} from "./table.ts";
 
 const counter = programRow("counter", {label: "Counter"});

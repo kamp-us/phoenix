@@ -18,7 +18,6 @@
  * said. An item's `image` parts have no port field to land in and are dropped.
  */
 
-import {Predicate} from "effect";
 import {
 	boundToolResult,
 	type ItemId,
@@ -28,8 +27,9 @@ import {
 	type ThinkingItem,
 	type ToolStatus,
 	type TranscriptItem,
-} from "../../ai-agent/ports/index.ts";
-import type {AgentEvent, Phase} from "../../ai-agent/service/index.ts";
+} from "@kampus/tuval/ai-agent/ports";
+import type {AgentEvent, Phase} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {Predicate} from "effect";
 import type {
 	TranscriptItem as PiTranscriptItem,
 	SessionDelta,

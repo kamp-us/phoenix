@@ -21,17 +21,17 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {type Cause, Effect, Layer, Option, Queue, Stream} from "effect";
+import type {TranscriptItem} from "@kampus/tuval/ai-agent/ports";
 import {
 	type AiAgentSessionState,
 	foldEvent,
 	initialState,
 	restore,
 	usageTotals,
-} from "../../ai-agent/core/index.ts";
-import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
-import type {AgentEvent, Phase, TransportError} from "../../ai-agent/service/index.ts";
-import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import type {AgentEvent, Phase, TransportError} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {type Cause, Effect, Layer, Option, Queue, Stream} from "effect";
 import {
 	type PiClientApi,
 	PiClientService,

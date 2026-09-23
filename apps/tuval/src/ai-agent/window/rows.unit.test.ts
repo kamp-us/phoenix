@@ -3,8 +3,8 @@
  * says when the store said nothing, and what the filter box matches.
  */
 
+import type {SessionRow} from "@kampus/tuval/kernel/protocol/session-list";
 import {describe, expect, it} from "vitest";
-import type {SessionRow} from "../../protocol/session-list.ts";
 import {bareSession, claudeSession, NOW, piSession, renamedSession, scrambled} from "./fixtures.ts";
 import {
 	lastModifiedLabel,

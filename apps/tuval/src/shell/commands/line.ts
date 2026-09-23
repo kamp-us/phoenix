@@ -1,13 +1,13 @@
 /** Shell rows resolve first; only an unknown shell verb reaches the shared registered-spell parser. */
 
+import {didYouMean} from "@kampus/tuval/kernel/commands/parse/did-you-mean";
+import {parse} from "@kampus/tuval/kernel/commands/parse/parse";
+import type {SpellIndex} from "@kampus/tuval/kernel/commands/parse/spell-index";
+import {tokenize} from "@kampus/tuval/kernel/commands/parse/tokenize";
+import type {CallId, WindowId} from "@kampus/tuval/kernel/protocol/ids";
+import {firstSchemaIssue} from "@kampus/tuval/kernel/protocol/issue";
+import {PROTOCOL_VERSION, type Snapshot, SpellCall} from "@kampus/tuval/kernel/protocol/messages";
 import {Result, Schema} from "effect";
-import {didYouMean} from "../../commands/parse/did-you-mean.ts";
-import {parse} from "../../commands/parse/parse.ts";
-import type {SpellIndex} from "../../commands/parse/spell-index.ts";
-import {tokenize} from "../../commands/parse/tokenize.ts";
-import type {CallId, WindowId} from "../../protocol/ids.ts";
-import {firstSchemaIssue} from "../../protocol/issue.ts";
-import {PROTOCOL_VERSION, type Snapshot, SpellCall} from "../../protocol/messages.ts";
 import type {ShellMsg} from "../core/machine.ts";
 import {
 	badArgument,

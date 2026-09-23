@@ -1,6 +1,6 @@
+import {ItemId, type SubagentSlot, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
 import {Schema} from "effect";
-import type {AgentEvent} from "../ai-agent/events.ts";
-import {ItemId, type SubagentSlot, type TranscriptItem} from "../ai-agent/ports/index.ts";
 import type {ChildTranscript} from "./child-store.ts";
 import {historyItem, LiveTranscript} from "./history.ts";
 

@@ -20,6 +20,7 @@
  */
 
 import {defineMachine} from "@demlik/tea";
+import type {ViewState} from "@kampus/tuval/kernel/shell/window/host";
 import {Duration} from "effect";
 import {type CommandIndex, shellCommandIndex} from "../commands/table.ts";
 import {
@@ -50,7 +51,6 @@ import {
 } from "../layout/index.ts";
 import type {ProgramOpening} from "../picker/intent.ts";
 import {mountPicker} from "../picker/view.ts";
-import type {ViewState} from "../window/host.ts";
 import {
 	activeWorkspace,
 	disarmed,

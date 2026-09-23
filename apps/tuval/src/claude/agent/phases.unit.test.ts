@@ -15,15 +15,15 @@
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {applyCellChecked} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Stream} from "effect";
 import {
 	type AiAgentSessionCmd,
 	type AiAgentSessionMsg,
 	type AiAgentSessionState,
 	aiAgentSessionMachine,
 	initialState,
-} from "../../ai-agent/core/index.ts";
-import type {AgentEvent} from "../../ai-agent/events.ts";
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+import {Effect, Stream} from "effect";
 import {CWD, message, messages, on, SESSION_ID, START_EVENTS} from "./fixtures/harness.ts";
 
 /**

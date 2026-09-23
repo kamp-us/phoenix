@@ -6,8 +6,8 @@
  * on an answer that has not arrived.
  */
 
+import type {SendOutcome} from "@kampus/tuval/kernel/ai-agent/core/index";
 import {describe, expect, it} from "vitest";
-import type {SendOutcome} from "../../ai-agent/core/index.ts";
 import {
 	asOutgoing,
 	dropSend,

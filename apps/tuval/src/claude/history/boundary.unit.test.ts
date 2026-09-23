@@ -65,11 +65,16 @@ describe("the Claude history mapping is pure", () => {
 	});
 
 	it("reaches no other Claude slice and no agent directory but ports and history", () => {
-		const allowed = [/^\.\//, /^\.\.\/\.\.\/ai-agent\/(ports|history|events)/];
+		// The agent directories live in the SDK now, so they are named through its doors.
+		const allowed = [
+			/^\.\//,
+			/^@kampus\/tuval\/ai-agent\/ports$/,
+			/^@kampus\/tuval\/kernel\/ai-agent\/(ports|history|events)(\/|$)/,
+		];
 		const offenders = shipped().flatMap(({name, text}) =>
 			importsOf(text)
 				.map((one) => one.specifier)
-				.filter((specifier) => specifier.startsWith("."))
+				.filter((specifier) => specifier.startsWith(".") || specifier.startsWith("@kampus/"))
 				.filter((specifier) => !allowed.some((pattern) => pattern.test(specifier)))
 				.map((specifier) => `${name}: ${specifier}`),
 		);

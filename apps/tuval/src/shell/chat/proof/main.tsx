@@ -13,13 +13,16 @@
  * ClaudeAiAgent replay behind scripted SDK/store and WindowHost seams; see the app README.
  */
 
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect, Schema} from "effect";
 import {StrictMode} from "react";
 import {createRoot} from "react-dom/client";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../../ai-agent/core/index.ts";
-import {ProcessId} from "../../../process/process.ts";
-import {testProcess} from "../../window/fixtures.ts";
-import {WindowId} from "../../window/index.ts";
 import {type ChatWindowHost, chatWindow} from "../ChatWindow.tsx";
 import {
 	assistantItem,

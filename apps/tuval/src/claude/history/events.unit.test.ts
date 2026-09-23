@@ -9,17 +9,17 @@
  */
 
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
-import {describe, expect, it} from "vitest";
-import {foldEvent, upsertItem} from "../../ai-agent/core/fold.ts";
-import {initialState} from "../../ai-agent/core/state.ts";
-import type {AgentEvent} from "../../ai-agent/events.ts";
 import {
 	byteLength,
 	type ItemId,
 	isSubagentSlot,
 	TOOL_RESULT_BYTE_LIMIT,
 	type TranscriptItem,
-} from "../../ai-agent/ports/index.ts";
+} from "@kampus/tuval/ai-agent/ports";
+import {foldEvent, upsertItem} from "@kampus/tuval/kernel/ai-agent/core/fold";
+import {initialState} from "@kampus/tuval/kernel/ai-agent/core/state";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+import {describe, expect, it} from "vitest";
 import {toAgentEvents} from "./events.ts";
 import {loadFixture} from "./fixtures/load.ts";
 import {emptyMapping, type Mapping, type MappingStep} from "./map.ts";

@@ -14,22 +14,22 @@
  */
 
 import {applyCellChecked} from "@demlik/tea";
-import {fireEvent, render, screen} from "@testing-library/react";
-import {Effect} from "effect";
-import type {ReactElement} from "react";
-import {describe, expect, it} from "vitest";
 import type {
 	AiAgentSessionCmd,
 	AiAgentSessionMsg,
 	AiAgentSessionState,
-} from "../../ai-agent/core/index.ts";
-import {aiAgentSessionMachine} from "../../ai-agent/core/machine.ts";
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {aiAgentSessionMachine} from "@kampus/tuval/kernel/ai-agent/core/machine";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {type TestProcess, testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {fireEvent, render, screen} from "@testing-library/react";
+import {Effect} from "effect";
+import type {ReactElement} from "react";
+import {describe, expect, it} from "vitest";
 import {emptyProjection, eventsOf} from "../../pi/ai-agent/items.ts";
 import type {TranscriptItem as PiTranscriptItem, SessionSnapshot} from "../../pi/wire/index.ts";
-import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
-import {type TestProcess, testProcess} from "../window/fixtures.ts";
-import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, chatWindow} from "./ChatWindow.tsx";
 import {sessionState} from "./chat.testing.ts";
 import {type ChatView, initialChatView} from "./view.ts";

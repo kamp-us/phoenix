@@ -7,7 +7,7 @@ The shape lives in [`apps/tuval/src/claude/agent/refusals.ts`](../apps/tuval/src
 and [`apps/tuval/src/claude/agent/diagnosis.ts`](../apps/tuval/src/claude/agent/diagnosis.ts), and is
 judged by [`refusals.unit.test.ts`](../apps/tuval/src/claude/agent/refusals.unit.test.ts) beside them.
 It applies to any adapter under `apps/tuval/src/<backend>/` that catches a dependency's exception;
-it does not govern the error classes themselves ([`ai-agent/service/errors.ts`](../apps/tuval/src/ai-agent/service/errors.ts))
+it does not govern the error classes themselves ([`ai-agent/service/errors.ts`](../packages/tuval/src/ai-agent/service/errors.ts))
 or how the core folds them.
 
 ## The exception's text is not the error's `detail`

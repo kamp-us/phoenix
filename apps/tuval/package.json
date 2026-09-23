@@ -1,13 +1,10 @@
 {
-	"name": "@kampus/tuval",
+	"name": "@kampus-apps/tuval",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Tuval — a local runnable app (ADR 0345): the program/process kernel and the programs that ship in the box",
+	"description": "Tuval — a local runnable app (ADR 0345): the desk and the programs that ship in the box, on the @kampus/tuval kernel",
 	"type": "module",
 	"exports": {
-		"./authoring": "./src/authoring/index.ts",
-		"./window": "./src/authoring/window.ts",
-		"./ai-agent/ports": "./src/ai-agent/ports/index.ts",
 		"./sessions": "./src/sessions.ts",
 		"./package.json": "./package.json"
 	},
@@ -37,6 +34,7 @@
 		"@earendil-works/pi-protocol": "catalog:",
 		"@effect/platform-node": "catalog:",
 		"@kampus/design": "workspace:*",
+		"@kampus/tuval": "workspace:*",
 		"@manti-ui/styles": "catalog:",
 		"@modelcontextprotocol/sdk": "catalog:",
 		"@tanstack/react-virtual": "catalog:",

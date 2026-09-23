@@ -20,6 +20,7 @@
  * and answered by the same `pickerKey`. That is a React prop, not a second document listener.
  */
 
+import type {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import type {KeyboardEvent, ReactElement} from "react";
 import {useCallback, useEffect, useRef, useState} from "react";
 import type {ShellMsg} from "../core/index.ts";
@@ -32,7 +33,6 @@ import {
 	pickerPointer,
 	withFilter,
 } from "../picker/browser.ts";
-import type {WindowId} from "../window/index.ts";
 import {useForwardedKey} from "./forwarded-key.tsx";
 import {isTextEntry} from "./text-entry.ts";
 

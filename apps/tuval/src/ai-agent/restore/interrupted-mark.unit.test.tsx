@@ -18,6 +18,17 @@
  */
 
 import {applyCellChecked} from "@demlik/tea";
+import type {TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import type {
+	AiAgentSessionCmd,
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {loadCheckpoint} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {aiAgentSessionMachine} from "@kampus/tuval/kernel/ai-agent/core/machine";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {type TestProcess, testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
@@ -28,16 +39,9 @@ import {
 	liveJoinFullLines,
 	liveJoinLines,
 } from "../../agy/ai-agent/transcript-fixtures.ts";
-import {ProcessId} from "../../process/process.ts";
 import {type ChatWindowHost, chatWindow} from "../../shell/chat/ChatWindow.tsx";
 import {type ChatView, initialChatView} from "../../shell/chat/view.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
-import {type TestProcess, testProcess} from "../../shell/window/fixtures.ts";
-import {WindowId} from "../../shell/window/index.ts";
-import type {AiAgentSessionCmd, AiAgentSessionMsg, AiAgentSessionState} from "../core/index.ts";
-import {loadCheckpoint} from "../core/index.ts";
-import {aiAgentSessionMachine} from "../core/machine.ts";
-import type {TranscriptItem} from "../ports/index.ts";
 
 installDomShims();
 

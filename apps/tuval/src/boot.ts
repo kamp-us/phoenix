@@ -1,39 +1,37 @@
 import {homedir} from "node:os";
 import {join} from "node:path";
-import {Context, Effect, type FileSystem, Layer, Ref} from "effect";
-import {AiAgentSessionList, aiAgentSessionListKernel} from "./ai-agent/session-list.ts";
-import {AiAgentTranscripts, aiAgentTranscriptsKernel} from "./ai-agent/session-transcript.ts";
-import type {BindingError, BindingSource} from "./commands/bindings/index.ts";
-import {everyRegistered, SpellBridge} from "./commands/bridge/index.ts";
-import {helpSpells} from "./commands/core/index.ts";
-import {processSpells, SpawnedProcesses} from "./commands/core/process.ts";
-import type {DuplicateSpellPath, SpellNotDescribable} from "./commands/errors.ts";
-import {SpellExecutor} from "./commands/executor.ts";
-import type {SpellRegistry} from "./commands/registry.ts";
-import type {WindowIndex} from "./commands/scope.ts";
-import type {AnySpell} from "./commands/spell.ts";
-import {SpellSet} from "./commands/spell-set.ts";
-import {type ConfigLoadError, loadLayeredConfig, type TuvalFeatures} from "./config.ts";
-import {Checkpoints} from "./durability/Checkpoints.ts";
-import {restore} from "./durability/restore.ts";
-import {fileStores} from "./durability/stores.ts";
-import {Features} from "./feature-flags.ts";
-import {type LaunchedProcess, launch} from "./launch/launch.ts";
-import {compile} from "./ports/compile.ts";
-import type {Graph} from "./ports/graph.ts";
-import {open} from "./ports/wiring.ts";
-import {PlannedProcesses} from "./process/PlannedProcesses.ts";
-import {Processes} from "./process/Processes.ts";
-import {ProcessTable} from "./process/ProcessTable.ts";
-import type {ProcessHandle} from "./process/process.ts";
-import type {AnyProgram} from "./registry/program.ts";
-import {Registry} from "./registry/Registry.ts";
-import {dispatchConfigChanged} from "./reload.ts";
-import type {ShellDispatch} from "./shell/commands/dispatch.ts";
-import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kernel.ts";
-import type {PrefixTable} from "./shell/keys/index.ts";
-import {shellId, shellPrefixTable, withShellFeatures} from "./shell/program.ts";
-import type {ModuleRendererRef} from "./shell/window/index.ts";
+import {
+	AiAgentSessionList,
+	aiAgentSessionListKernel,
+} from "@kampus/tuval/kernel/ai-agent/session-list";
+import {
+	AiAgentTranscripts,
+	aiAgentTranscriptsKernel,
+} from "@kampus/tuval/kernel/ai-agent/session-transcript";
+import type {BindingError, BindingSource} from "@kampus/tuval/kernel/commands/bindings/index";
+import {everyRegistered, SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
+import {helpSpells} from "@kampus/tuval/kernel/commands/core/index";
+import {processSpells, SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
+import type {DuplicateSpellPath, SpellNotDescribable} from "@kampus/tuval/kernel/commands/errors";
+import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
+import type {SpellRegistry} from "@kampus/tuval/kernel/commands/registry";
+import type {WindowIndex} from "@kampus/tuval/kernel/commands/scope";
+import type {AnySpell} from "@kampus/tuval/kernel/commands/spell";
+import {SpellSet} from "@kampus/tuval/kernel/commands/spell-set";
+import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
+import {restore} from "@kampus/tuval/kernel/durability/restore";
+import {fileStores} from "@kampus/tuval/kernel/durability/stores";
+import {Features} from "@kampus/tuval/kernel/feature-flags";
+import {compile} from "@kampus/tuval/kernel/ports/compile";
+import type {Graph} from "@kampus/tuval/kernel/ports/graph";
+import {open} from "@kampus/tuval/kernel/ports/wiring";
+import {PlannedProcesses} from "@kampus/tuval/kernel/process/PlannedProcesses";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
+import type {ProcessHandle} from "@kampus/tuval/kernel/process/process";
+import type {AnyProgram} from "@kampus/tuval/kernel/registry/program";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import type {ModuleRendererRef} from "@kampus/tuval/kernel/shell/window/index";
 import {
 	adoptInProjectState,
 	homeStateDir,
@@ -41,7 +39,15 @@ import {
 	prepareStateDir,
 	type StateAdoption,
 	StateDir,
-} from "./state-dir.ts";
+} from "@kampus/tuval/kernel/state-dir";
+import {Context, Effect, type FileSystem, Layer, Ref} from "effect";
+import {type ConfigLoadError, loadLayeredConfig, type TuvalFeatures} from "./config.ts";
+import {type LaunchedProcess, launch} from "./launch/launch.ts";
+import {dispatchConfigChanged} from "./reload.ts";
+import type {ShellDispatch} from "./shell/commands/dispatch.ts";
+import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kernel.ts";
+import type {PrefixTable} from "./shell/keys/index.ts";
+import {shellId, shellPrefixTable, withShellFeatures} from "./shell/program.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 
 /** The global config module, `~/.tuval/tuval.config.ts`; the home dir is a parameter so a test can point it elsewhere. */

@@ -1,15 +1,21 @@
 import {readFileSync} from "node:fs";
+import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import {argKey, argKeys, fillArgs, programArgs} from "@kampus/tuval/kernel/authoring/args";
+import {defineProgram} from "@kampus/tuval/kernel/authoring/define-program";
+import {spawn} from "@kampus/tuval/kernel/authoring/effect";
+import {port} from "@kampus/tuval/kernel/authoring/port";
+import {
+	Program,
+	ShapeMismatch,
+	type ShapeSource,
+	shapeOf,
+} from "@kampus/tuval/kernel/authoring/shape";
+import {ClientId, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
+import type {AnyProgram, PortSchema} from "@kampus/tuval/kernel/registry/program";
 import {Effect, Result, Schema} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
-import {PromptPayloadSchema, TurnResultSchema} from "../ai-agent/ports/index.ts";
 import {claudeSession} from "../claude/program.ts";
-import {ClientId, WorkspaceId} from "../commands/spell.ts";
-import type {AnyProgram, PortSchema} from "../registry/program.ts";
-import {argKey, argKeys, fillArgs, programArgs} from "./args.ts";
-import {defineProgram} from "./define-program.ts";
-import {spawn} from "./effect.ts";
-import {port} from "./port.ts";
-import {Program, ShapeMismatch, type ShapeSource, shapeOf} from "./shape.ts";
+import {sdkModule} from "../sdk-source.testing.ts";
 
 const Prompt = Schema.Struct({pr: Schema.Number});
 const Verdict = Schema.Struct({verdict: Schema.String});
@@ -56,7 +62,7 @@ describe("authoring.args", () => {
 	});
 
 	it("is one key on the compiler's input and one line in its field-compiler record", () => {
-		const source = readFileSync(new URL("./define-program.ts", import.meta.url), "utf8");
+		const source = readFileSync(sdkModule("authoring/define-program.ts"), "utf8");
 		// Bounded at both ends: the claim is about the record's own lines, and `defineProgram` builds
 		// a `CompileContext` carrying an `args` of its own further down the same file.
 		const record = source.match(

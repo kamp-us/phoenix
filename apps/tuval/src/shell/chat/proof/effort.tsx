@@ -1,10 +1,13 @@
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect} from "effect";
 import {createRoot} from "react-dom/client";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../../ai-agent/core/index.ts";
 import type {InitialEffortProof} from "../../../claude/proof/initial-effort.ts";
-import {ProcessId} from "../../../process/process.ts";
-import {testProcess} from "../../window/fixtures.ts";
-import {WindowId} from "../../window/index.ts";
 import {chatWindow} from "../ChatWindow.tsx";
 import {initialChatView} from "../view.ts";
 import "../../../page/styles.ts";

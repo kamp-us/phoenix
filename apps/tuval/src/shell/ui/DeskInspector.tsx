@@ -13,8 +13,8 @@
  */
 
 import {Card, EmptyState} from "@kampus/design";
+import type {ProcessId} from "@kampus/tuval/kernel/process/process";
 import type {ReactElement, ReactNode} from "react";
-import type {ProcessId} from "../../process/process.ts";
 import type {DeskEmptyReason, InspectorRegion} from "../desk/index.ts";
 import "./desk.css";
 import {ErrorBoundary} from "./ErrorBoundary.tsx";

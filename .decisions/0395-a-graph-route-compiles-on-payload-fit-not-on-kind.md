@@ -45,7 +45,7 @@ comparison itself.
 
 1. **Both ends publish a schema: the route compiles iff the payloads fit.** The relation is
    `payloadFits`, moved from `apps/tuval/src/authoring/shape.ts` to
-   [`apps/tuval/src/registry/payload-fit.ts`](../apps/tuval/src/registry/payload-fit.ts) so the two
+   [`packages/tuval/src/registry/payload-fit.ts`](../packages/tuval/src/registry/payload-fit.ts) so the two
    slices that ask it share one implementation rather than two that could drift.
    `shape.ts` re-exports it and its behaviour is unchanged.
 2. **Fit is exact structural equality over the canonical JSON Schema.** Not assignability, not

@@ -20,10 +20,10 @@
  * has no desk and stands its own index up (`./kernel-tools.ts`).
  */
 
-import {ClientId, WorkspaceId} from "../../commands/spell.ts";
+import {ClientId, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
 import type {TuvalConfigInput} from "../../config.ts";
 import {piSessionProgram} from "../../pi/program.ts";
-import {ProcessId} from "../../process/process.ts";
 import {wiredShellEffects} from "../../shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../../shell/program.ts";
 import {claudeSession} from "../program.ts";

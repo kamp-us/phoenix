@@ -16,8 +16,8 @@
  * touched (#8279).
  */
 
+import type {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {createContext, useContext, useEffect, useRef} from "react";
-import type {WindowId} from "../window/index.ts";
 
 export interface ForwardedKey {
 	readonly windowId: WindowId;

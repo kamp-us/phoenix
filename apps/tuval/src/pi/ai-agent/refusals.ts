@@ -1,5 +1,5 @@
 /** Pi refusals become operation-specific generic errors; causes stay local (see backend-exception-translation.md). */
-import type {AgentFailure} from "../../ai-agent/events.ts";
+import type {AgentFailure} from "@kampus/tuval/kernel/ai-agent/events";
 import {
 	InterruptError,
 	ListError,
@@ -8,7 +8,7 @@ import {
 	StartError,
 	TranscriptError,
 	TransportError,
-} from "../../ai-agent/service/index.ts";
+} from "@kampus/tuval/kernel/ai-agent/service/index";
 import type {ConnectionRefusal, Disconnected, SessionRefusal} from "../client/index.ts";
 import {retaining} from "../diagnostics.ts";
 

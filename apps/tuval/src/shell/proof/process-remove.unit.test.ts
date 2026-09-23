@@ -11,16 +11,17 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
+import {restore} from "@kampus/tuval/kernel/durability/restore";
+import {type CheckpointStores, memoryStores} from "@kampus/tuval/kernel/durability/stores";
+import {PlannedProcesses} from "@kampus/tuval/kernel/process/PlannedProcesses";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
+import type {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {AnyProgram} from "@kampus/tuval/kernel/registry/program";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import type {WindowId} from "@kampus/tuval/kernel/shell/window/host";
 import {Context, Effect, Layer} from "effect";
-import {Checkpoints} from "../../durability/Checkpoints.ts";
-import {restore} from "../../durability/restore.ts";
-import {type CheckpointStores, memoryStores} from "../../durability/stores.ts";
-import {PlannedProcesses} from "../../process/PlannedProcesses.ts";
-import {Processes} from "../../process/Processes.ts";
-import {ProcessTable} from "../../process/ProcessTable.ts";
-import type {ProcessId} from "../../process/process.ts";
-import type {AnyProgram} from "../../registry/program.ts";
-import {Registry} from "../../registry/Registry.ts";
 import {toTableRow} from "../../table/row.ts";
 import {applyMsg, initialState, type ShellMsg} from "../core/machine.ts";
 import {activeWorkspace, type ShellState} from "../core/state.ts";
@@ -29,7 +30,6 @@ import {defaultPrefixTable} from "../keys/index.ts";
 import {type PickerEntries, processEntries, programEntries} from "../picker/entries.ts";
 import {programRow, shellProcessId} from "../picker/fixtures.ts";
 import {asPickerView, pickerKey} from "../picker/view.ts";
-import type {WindowId} from "../window/host.ts";
 
 const STRAY_COUNT = 20;
 const counter = programRow("counter", {label: "Counter"});

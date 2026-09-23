@@ -16,12 +16,17 @@
 import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {empty, WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {fireEvent, render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
-import {ProcessId} from "../../process/process.ts";
 import {defaultPrefixTable} from "../keys/index.ts";
 import {createStack, createTree, createWindow} from "../layout/index.ts";
 import {Desk} from "../ui/Desk.tsx";
@@ -30,8 +35,6 @@ import {deskWith} from "../ui/fixtures.ts";
 import {INPUT_MODALITY_ATTRIBUTE} from "../ui/input-modality.ts";
 import type {MountResolver} from "../ui/mount.ts";
 import {refused} from "../ui/press.ts";
-import {testProcess} from "../window/fixtures.ts";
-import {empty, WindowId} from "../window/index.ts";
 import {chatWindow} from "./ChatWindow.tsx";
 import {sessionState} from "./chat.testing.ts";
 import {initialChatView} from "./view.ts";

@@ -579,7 +579,7 @@ jobs:
       # `@kampus/web`'s `test:integration` (real remote D1) cannot. Scoped to the one app for
       # exactly that reason: `--filter './apps/**' test:integration` would drag web's D1 suite
       # into a job with no Cloudflare token.
-      - run: pnpm --filter @kampus/tuval test:integration
+      - run: pnpm --filter @kampus-apps/tuval test:integration
 
   # The `packages/**` vitest suites (#760). Every workspace tooling/guard package
   # ships a `test` script (fabrika-cli — the single home for the consolidated guard/tooling

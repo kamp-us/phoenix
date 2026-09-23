@@ -15,10 +15,10 @@ import type {
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import {assert, describe, it} from "@effect/vitest";
+import {KernelBridge, type ScriptedKernel} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
 import {type Context, Effect, Schema} from "effect";
-import {KernelBridge, type ScriptedKernel} from "../ai-agent/tools/KernelBridge.ts";
-import {ProcessId} from "../process/process.ts";
-import {ProgramId} from "../registry/program.ts";
 import {customToolsOption} from "./server/AgentSessionHost.ts";
 import {piKernelToolHandlers, piKernelTools, type ToolRun} from "./tools.ts";
 

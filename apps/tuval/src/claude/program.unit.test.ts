@@ -14,8 +14,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {applyCellChecked} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer} from "effect";
-import {afterAll, expect} from "vitest";
+import {agentPorts, Mode} from "@kampus/tuval/ai-agent/ports";
 import {
 	type AiAgentSessionCmd,
 	type AiAgentSessionMsg,
@@ -23,17 +22,18 @@ import {
 	aiAgentSessionMachine,
 	initialState,
 	isAiAgentSessionState,
-} from "../ai-agent/core/index.ts";
-import {aiAgentPortNames} from "../ai-agent/handlers/index.ts";
-import {agentPorts, Mode} from "../ai-agent/ports/index.ts";
-import {AI_AGENT_INSPECTOR_REF} from "../ai-agent/renderer-ref.ts";
-import {ScriptedAiAgent} from "../ai-agent/service/index.ts";
-import {Checkpoints} from "../durability/Checkpoints.ts";
-import {memoryStores} from "../durability/stores.ts";
-import {Processes} from "../process/Processes.ts";
-import {ProcessId} from "../process/process.ts";
-import {ProgramId} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
+import {AI_AGENT_INSPECTOR_REF} from "@kampus/tuval/kernel/ai-agent/renderer-ref";
+import {ScriptedAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import {Context, Effect, Layer} from "effect";
+import {afterAll, expect} from "vitest";
 import {programEntries, showsInAWindow} from "../shell/picker/entries.ts";
 import {
 	CLAUDE_MODES,

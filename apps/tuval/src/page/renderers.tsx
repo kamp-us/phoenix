@@ -27,12 +27,14 @@
  */
 
 import features from "virtual:tuval/features";
+import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/snapshot";
+import {isSessionListState} from "@kampus/tuval/kernel/ai-agent/renderer-ref";
+import type {WindowHost} from "@kampus/tuval/kernel/shell/window/index";
+import {windowRenderer} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect, Fiber} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useRef, useState} from "react";
 import {AGY_CHAT_WINDOW_REF, agyChatWindow} from "../agy/window/index.ts";
-import {isAiAgentSessionState} from "../ai-agent/core/snapshot.ts";
-import {isSessionListState} from "../ai-agent/renderer-ref.ts";
 import {
 	AI_AGENT_INSPECTOR_REF,
 	AiAgentInspector,
@@ -49,8 +51,6 @@ import {PI_CHAT_WINDOW_REF, piChatWindow} from "../pi/window/index.ts";
 import type {ThinChatWindowOptions} from "../shell/chat/index.ts";
 import type {AnyInspectorRenderer} from "../shell/desk/index.ts";
 import type {PageAttachment} from "../shell/transport/browser.ts";
-import type {WindowHost} from "../shell/window/index.ts";
-import {windowRenderer} from "../shell/window/index.ts";
 import {Pending, type ReadableRenderer, readsState, useProcessState} from "./readable-state.tsx";
 import {
 	reading,

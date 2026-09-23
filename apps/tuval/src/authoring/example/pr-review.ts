@@ -53,10 +53,10 @@
  * [#8888](https://github.com/kamp-us/phoenix/issues/8888#issuecomment-5625301355).
  */
 
+import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import type {Reply, ShapeSource} from "@kampus/tuval/authoring";
+import {defineProgram, emit, Program, port, program, programArgs, send, spawn} from "@kampus/tuval/authoring";
 import {Schema} from "effect";
-import {PromptPayloadSchema, TurnResultSchema} from "../../ai-agent/ports/index.ts";
-import type {Reply, ShapeSource} from "../index.ts";
-import {defineProgram, emit, Program, port, program, programArgs, send, spawn} from "../index.ts";
 
 const agent = Program.shape({in: {prompt: PromptPayloadSchema}, out: {result: TurnResultSchema}});
 const args = programArgs("pr-review", {reviewer: agent});

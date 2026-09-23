@@ -42,28 +42,14 @@
 import {homedir} from "node:os";
 import {NodeChildProcessSpawner, NodeFileSystem, NodePath} from "@effect/platform-node";
 import {
-	type Cause,
-	Deferred,
-	Effect,
-	Exit,
-	Fiber,
-	FileSystem,
-	Layer,
-	Queue,
-	Ref,
-	Scope,
-	Stream,
-} from "effect";
-import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
-import {isRefusal} from "../../ai-agent/history/index.ts";
-import {
 	type CommandRef,
 	Mode,
 	type ModelRef,
 	type PermissionDecision,
 	sameModel,
 	type ThinkingLevel,
-} from "../../ai-agent/ports/index.ts";
+} from "@kampus/tuval/ai-agent/ports";
+import {isRefusal} from "@kampus/tuval/kernel/ai-agent/history/index";
 import {
 	type AgentEvent,
 	ListError,
@@ -77,8 +63,22 @@ import {
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
 	UnknownRequest,
-} from "../../ai-agent/service/index.ts";
-import {withTurnResult} from "../../ai-agent/turn-result.ts";
+} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {withTurnResult} from "@kampus/tuval/kernel/ai-agent/turn-result";
+import {
+	type Cause,
+	Deferred,
+	Effect,
+	Exit,
+	Fiber,
+	FileSystem,
+	Layer,
+	Queue,
+	Ref,
+	Scope,
+	Stream,
+} from "effect";
+import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
 import {
 	AGY_BINARY,
 	AGY_MODELS,

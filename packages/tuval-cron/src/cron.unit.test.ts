@@ -36,7 +36,7 @@ import {
 	TITLE_PORT,
 	testProgram,
 } from "@kampus/tuval/authoring";
-import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval/sessions";
+import {ClientId, claudeSession, WorkspaceId} from "@kampus-apps/tuval/sessions";
 import {describe, expect, it} from "vitest";
 import config, {eveningSummary, standup} from "../.tuval/tuval.config.ts";
 import {BRIEF_PORT, cron, cronProgram, jobShape} from "./cron.ts";
@@ -459,7 +459,7 @@ describe("cron's job shape against a real session row", () => {
 
 /**
  * The consumer path, end to end and from outside: the fixture `.tuval/tuval.config.ts` beside this
- * package builds its row through `@kampus/tuval-cron`'s own entry and `@kampus/tuval/sessions`,
+ * package builds its row through `@kampus/tuval-cron`'s own entry and `@kampus-apps/tuval/sessions`,
  * exactly as a user's config does. Nothing here boots a desk or spends a token — a row is a record.
  */
 describe("a user's `.tuval/tuval.config.ts`", () => {

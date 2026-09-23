@@ -1,10 +1,10 @@
-import {type Cause, Effect, Layer, Queue, Schema, Stream} from "effect";
 import {
 	type TransportError,
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
-} from "../ai-agent/service/index.ts";
-import {KernelBridge} from "../ai-agent/tools/KernelBridge.ts";
+} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
+import {type Cause, Effect, Layer, Queue, Schema, Stream} from "effect";
 import {CodexAiAgent, type CodexAiAgentOptions} from "./CodexAiAgent.ts";
 import type {CodexConnect, CodexConnection, RequestId, ServerMessage} from "./transport.ts";
 

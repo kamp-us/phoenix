@@ -13,7 +13,7 @@
  */
 
 import type {PermissionResult, PermissionUpdate} from "@anthropic-ai/claude-agent-sdk";
-import {isJsonValue, type JsonValue, type PermissionRequest} from "../../ai-agent/ports/index.ts";
+import {isJsonValue, type JsonValue, type PermissionRequest} from "@kampus/tuval/ai-agent/ports";
 
 /** The `canUseTool` options this module reads, named structurally so no SDK type leaks past it. */
 export interface PromptContext {

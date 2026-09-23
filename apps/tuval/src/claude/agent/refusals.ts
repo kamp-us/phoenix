@@ -12,8 +12,7 @@
  * schema, where this process can read it and the core's plain data cannot carry it.
  */
 
-import {Effect} from "effect";
-import type {AgentFailure} from "../../ai-agent/events.ts";
+import type {AgentFailure} from "@kampus/tuval/kernel/ai-agent/events";
 import {
 	InterruptError,
 	ListError,
@@ -22,7 +21,8 @@ import {
 	StartError,
 	TranscriptError,
 	TransportError,
-} from "../../ai-agent/service/index.ts";
+} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {Effect} from "effect";
 import {diagnose} from "./diagnosis.ts";
 
 const retaining = <E extends Error>(cause: unknown, error: E): E => {

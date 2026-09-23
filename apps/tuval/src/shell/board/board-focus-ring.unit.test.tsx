@@ -19,11 +19,11 @@
 
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
 import {render, screen} from "@testing-library/react";
 import {Option} from "effect";
 import {describe, expect, it} from "vitest";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
 import type {TableRow} from "../../table/row.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
 import {ProcessBoardOverlay} from "./ProcessBoardOverlay.tsx";

@@ -6,9 +6,9 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
 import {Effect, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
-import {ProcessId} from "../process/process.ts";
 import type {ShellMsg} from "../shell/core/index.ts";
 import type {AttachedProcess, PageAttachment} from "../shell/transport/browser.ts";
 import {

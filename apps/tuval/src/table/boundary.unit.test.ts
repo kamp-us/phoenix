@@ -5,10 +5,10 @@
 
 import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
+import type {Lifecycle, ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {ProgramId} from "@kampus/tuval/kernel/registry/program";
 import type {Option} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
-import type {Lifecycle, ProcessId} from "../process/process.ts";
-import type {ProgramId} from "../registry/program.ts";
 import type {TableEvent, TableRow} from "./row.ts";
 
 describe("table boundary", () => {

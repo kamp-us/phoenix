@@ -3,8 +3,8 @@
  * that creates the process happens once (epic #8070, ruling 2).
  */
 
+import type {SessionRow} from "@kampus/tuval/kernel/protocol/session-list";
 import {describe, expect, it} from "vitest";
-import type {SessionRow} from "../../protocol/session-list.ts";
 import {openRead, send, TRANSCRIPT_PAGE_SIZE} from "./opening.ts";
 
 const row = (overrides: Partial<SessionRow> = {}): SessionRow => ({

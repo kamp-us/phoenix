@@ -9,11 +9,12 @@
  * because that is the only channel a renderer has (`./forwarded-key.tsx`).
  */
 
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {useState} from "react";
 import {describe, expect, it, vi} from "vitest";
-import {ProgramId} from "../../registry/program.ts";
 import type {ShellMsg} from "../core/index.ts";
 import {
 	asPickerView,
@@ -22,7 +23,6 @@ import {
 	type PickerEntries,
 	type PickerView as PickerViewState,
 } from "../picker/browser.ts";
-import {WindowId} from "../window/index.ts";
 import {installDomShims} from "./dom.testing.ts";
 import {type ForwardedKey, ForwardedKeyProvider} from "./forwarded-key.tsx";
 import {PickerView} from "./PickerView.tsx";

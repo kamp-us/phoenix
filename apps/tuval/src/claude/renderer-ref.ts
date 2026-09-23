@@ -7,7 +7,7 @@
  * alone in a file that imports one type. The window itself is #7624's; this file is what it binds to.
  */
 
-import type {RendererRef} from "../registry/program.ts";
+import type {RendererRef} from "@kampus/tuval/kernel/registry/program";
 
 export const CLAUDE_SESSION_PROGRAM = "claude-session";
 

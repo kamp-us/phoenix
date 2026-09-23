@@ -1,18 +1,21 @@
 /** @vitest-environment jsdom */
 import type {SessionEntry} from "@earendil-works/pi-coding-agent";
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {act, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
-import {ProcessId} from "../../process/process.ts";
 import {chatWindow} from "../../shell/chat/ChatWindow.tsx";
 import {withTranscript} from "../../shell/chat/chat.testing.ts";
 import {mergeOlder} from "../../shell/chat/rows.ts";
 import {type ChatView, initialChatView} from "../../shell/chat/view.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
-import {testProcess} from "../../shell/window/fixtures.ts";
-import {WindowId} from "../../shell/window/index.ts";
 import {pageCursorAliases, pageItems} from "../ai-agent/entries.ts";
 import {emptyProjection, eventsOf, itemsOf, paintOf, projectionOf} from "../ai-agent/items.ts";
 import {projectTranscript, type SourceMessage} from "../server/transcript.ts";

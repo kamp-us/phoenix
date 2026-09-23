@@ -17,18 +17,21 @@ import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from "node:
 import {tmpdir} from "node:os";
 import {dirname, join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
+import {
+	type AiAgentSessionState,
+	isAiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {AI_AGENT_INSPECTOR_REF} from "@kampus/tuval/kernel/ai-agent/renderer-ref";
+import {checkpointFields} from "@kampus/tuval/kernel/ai-agent/restore/index";
+import {ScriptedAiAgent, TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {Registry} from "@kampus/tuval/kernel/registry/Registry";
 import {Context, Effect, Fiber, Layer, Option, Stream} from "effect";
 import {afterAll, expect} from "vitest";
-import {type AiAgentSessionState, isAiAgentSessionState} from "../ai-agent/core/index.ts";
-import {AI_AGENT_INSPECTOR_REF} from "../ai-agent/renderer-ref.ts";
-import {checkpointFields} from "../ai-agent/restore/index.ts";
-import {ScriptedAiAgent, TuvalAiAgent} from "../ai-agent/service/index.ts";
-import {Checkpoints} from "../durability/Checkpoints.ts";
-import {memoryStores} from "../durability/stores.ts";
-import {Processes} from "../process/Processes.ts";
-import {ProcessId} from "../process/process.ts";
-import {ProgramId} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
 import {programEntries, showsInAWindow} from "../shell/picker/entries.ts";
 import {AGY_SETTINGS_FILE, AGY_VERSION} from "./config.ts";
 import {

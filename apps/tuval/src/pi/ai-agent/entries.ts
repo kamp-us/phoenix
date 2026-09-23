@@ -33,8 +33,11 @@ import {
 	type SessionMessageEntry,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
-import {planTranscriptPage, type TranscriptPageResult} from "../../ai-agent/history/index.ts";
-import type {SystemItem, TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {SystemItem, TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import {
+	planTranscriptPage,
+	type TranscriptPageResult,
+} from "@kampus/tuval/kernel/ai-agent/history/index";
 import {projectTranscript, type SourceMessage} from "../server/index.ts";
 import {compactionId} from "../wire/compaction.ts";
 import type {TranscriptItem as PiTranscriptItem} from "../wire/index.ts";

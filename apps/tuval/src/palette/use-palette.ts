@@ -8,8 +8,8 @@
  * dialog takes it the moment it mounts and only the opener knows where it came from.
  */
 
+import type {WindowId} from "@kampus/tuval/kernel/protocol/ids";
 import {useCallback, useRef, useState} from "react";
-import type {WindowId} from "../protocol/ids.ts";
 
 export interface PaletteHandle {
 	readonly open: boolean;

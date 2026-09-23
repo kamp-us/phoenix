@@ -1,6 +1,6 @@
 import {isDeepStrictEqual} from "node:util";
-import type {TranscriptItem} from "../ai-agent/ports/index.ts";
-import type {ResumeTarget} from "../ai-agent/service/index.ts";
+import type {TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import type {ResumeTarget} from "@kampus/tuval/kernel/ai-agent/service/index";
 
 const contents = ({timestamp: _timestamp, ...item}: TranscriptItem) => item;
 

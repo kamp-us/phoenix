@@ -13,14 +13,17 @@
  * involved, and nothing about Pi's backend is exercised or claimed.
  */
 
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {type TestProcess, testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect} from "effect";
 import {StrictMode} from "react";
 import {createRoot} from "react-dom/client";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../../ai-agent/core/index.ts";
-import {ProcessId} from "../../../process/process.ts";
 import {type ChatView, initialChatView} from "../../../shell/chat/index.ts";
-import {type TestProcess, testProcess} from "../../../shell/window/fixtures.ts";
-import {WindowId} from "../../../shell/window/index.ts";
 import {piChatWindow} from "../PiChatWindow.tsx";
 import {piSession, usageOf} from "../pi-window.testing.ts";
 import "../../../page/styles.ts";

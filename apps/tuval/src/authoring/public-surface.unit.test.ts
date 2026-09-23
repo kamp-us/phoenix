@@ -1,10 +1,11 @@
 /**
  * The consumer's proof for #8943: a module that reaches the authoring API only through the package
- * specifiers `apps/tuval/package.json` declares — no relative path into `src/` anywhere below this
- * docblock — can write a program, declare a shaped arg, and fill it with a shipped session row.
+ * specifiers `packages/tuval/package.json` declares — no relative path into `src/` anywhere below
+ * this docblock — can write a program, declare a shaped arg, and fill it with a shipped session row.
  *
- * Self-reference is what makes that honest inside this repo: Node and Vite resolve
- * `@kampus/tuval/authoring` from this package's own `name` + `exports`, walking the same map an
+ * It lives in the app rather than in `@kampus/tuval` because the session rows are still the app's
+ * (`@kampus-apps/tuval/sessions`), and the SDK depends on no app. Node and Vite resolve
+ * `@kampus/tuval/authoring` through the SDK's own `name` + `exports`, walking the same map an
  * outside consumer walks, so a subpath missing from the map fails here exactly as it would fail
  * there. `tsc` over this file is the other half — the door has to be typed, not just resolvable.
  *
@@ -14,8 +15,9 @@
  */
 
 import {execFileSync} from "node:child_process";
-import {readFileSync} from "node:fs";
-import {resolve} from "node:path";
+import {readFileSync, statSync} from "node:fs";
+import {createRequire} from "node:module";
+import {dirname, resolve} from "node:path";
 import {PromptPayloadSchema, type TurnResult, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
 import {
 	type Answer,
@@ -33,7 +35,7 @@ import {
 	stop,
 	testProgram,
 } from "@kampus/tuval/authoring";
-import {ClientId, claudeSession, codexSession, WorkspaceId} from "@kampus/tuval/sessions";
+import {ClientId, claudeSession, codexSession, WorkspaceId} from "@kampus-apps/tuval/sessions";
 import {Schema} from "effect";
 import {describe, expect, it} from "vitest";
 
@@ -94,18 +96,32 @@ describe("a consumer outside src/ reaches the authoring API through the package 
 });
 
 describe("the exports map opens only doors that exist", () => {
-	it("every declared subpath resolves to a file in this package", () => {
-		const root = resolve(import.meta.dirname, "../..");
-		const manifest = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as {
+	it("every declared subpath of the SDK resolves to a file in it", () => {
+		const manifestPath = createRequire(import.meta.url).resolve("@kampus/tuval/package.json");
+		const root = dirname(manifestPath);
+		const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
 			readonly exports: Readonly<Record<string, string>>;
 		};
 		expect(Object.keys(manifest.exports)).toEqual([
 			"./authoring",
 			"./window",
 			"./ai-agent/ports",
-			"./sessions",
+			"./kernel/*",
 			"./package.json",
 		]);
+		for (const [subpath, target] of Object.entries(manifest.exports)) {
+			// A pattern names a directory of modules, not one file; its prefix has to exist.
+			const file = subpath.endsWith("/*") ? target.slice(0, target.indexOf("*")) : target;
+			expect(() => statSync(resolve(root, file))).not.toThrow();
+		}
+	});
+
+	it("the app's own map opens only the sessions door", () => {
+		const root = resolve(import.meta.dirname, "../..");
+		const manifest = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as {
+			readonly exports: Readonly<Record<string, string>>;
+		};
+		expect(Object.keys(manifest.exports)).toEqual(["./sessions", "./package.json"]);
 		for (const target of Object.values(manifest.exports)) {
 			expect(() => readFileSync(resolve(root, target), "utf8")).not.toThrow();
 		}
@@ -131,9 +147,16 @@ describe("a consumer can emit declarations for a program that declares args", ()
 		);
 		const specifiers = [...emitted.matchAll(/import\("([^"]+)"\)/g)].map((m) => m[1] ?? "");
 		expect(specifiers).not.toEqual([]);
-		// A name missing from a door makes tsc reach for the source module by relative path. That
-		// path resolves in-tree and does not resolve from a real consumer, where it is TS2742 —
-		// which is why the emitted text, not the exit code, is what this pins.
-		expect(specifiers.filter((s) => !s.startsWith("@kampus/tuval/"))).toEqual([]);
+		// A name missing from a door makes tsc reach for the source module some other way: by relative
+		// path, which does not resolve from a real consumer (TS2742), or through the SDK's unstable
+		// `./kernel/*` entry, which an author's published types must not lean on. Either way the
+		// emitted text, not the exit code, is what this pins.
+		const doors = [
+			"@kampus/tuval/authoring",
+			"@kampus/tuval/window",
+			"@kampus/tuval/ai-agent/ports",
+			"@kampus-apps/tuval/sessions",
+		];
+		expect(specifiers.filter((s) => !doors.includes(s))).toEqual([]);
 	});
 }, 60_000);

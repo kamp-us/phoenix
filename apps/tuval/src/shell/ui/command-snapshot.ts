@@ -1,7 +1,7 @@
-import type {LayoutNode} from "../../protocol/desk.ts";
-import {WindowId} from "../../protocol/ids.ts";
-import {PROTOCOL_VERSION, Snapshot} from "../../protocol/messages.ts";
-import type {RegistryDescription} from "../../protocol/registry-description.ts";
+import type {LayoutNode} from "@kampus/tuval/kernel/protocol/desk";
+import {WindowId} from "@kampus/tuval/kernel/protocol/ids";
+import {PROTOCOL_VERSION, Snapshot} from "@kampus/tuval/kernel/protocol/messages";
+import type {RegistryDescription} from "@kampus/tuval/kernel/protocol/registry-description";
 import type {ShellState} from "../core/index.ts";
 import type {LayoutNode as ShellLayoutNode} from "../layout/index.ts";
 

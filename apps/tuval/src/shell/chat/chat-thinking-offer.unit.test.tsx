@@ -10,11 +10,11 @@
  */
 
 import {AgentChatInput, DesignTranslationProvider} from "@kampus/design";
+import type {ModelState, ThinkingState} from "@kampus/tuval/kernel/ai-agent/core/index";
+import type {Phase} from "@kampus/tuval/kernel/ai-agent/events";
 import {act, render, screen, waitFor} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import type {ModelState, ThinkingState} from "../../ai-agent/core/index.ts";
-import type {Phase} from "../../ai-agent/events.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
 import {type ComposerBridge, composerBridge} from "./composer-bridge.ts";
 import {tuvalDesignTranslate} from "./copy.ts";

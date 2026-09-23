@@ -1,30 +1,18 @@
 import {
-	type Cause,
-	Clock,
-	Effect,
-	Exit,
-	Layer,
-	Queue,
-	Schema,
-	Scope,
-	Semaphore,
-	Stream,
-} from "effect";
-import type {AgentEvent} from "../ai-agent/events.ts";
-import {
-	isRefusal,
-	KERNEL_TOOL_SERVER,
-	kernelSpawnOf,
-	planTranscriptPage,
-} from "../ai-agent/history/index.ts";
-import {
 	ItemId,
 	isThinkingLevel,
 	Mode,
 	type ModelRef,
 	sameModel,
 	type ThinkingLevel,
-} from "../ai-agent/ports/index.ts";
+} from "@kampus/tuval/ai-agent/ports";
+import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+import {
+	isRefusal,
+	KERNEL_TOOL_SERVER,
+	kernelSpawnOf,
+	planTranscriptPage,
+} from "@kampus/tuval/kernel/ai-agent/history/index";
 import {
 	ListError,
 	ModelUnsupported,
@@ -38,9 +26,21 @@ import {
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
 	UnknownRequest,
-} from "../ai-agent/service/index.ts";
-import {KernelBridge} from "../ai-agent/tools/KernelBridge.ts";
-import {withTurnResult} from "../ai-agent/turn-result.ts";
+} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
+import {withTurnResult} from "@kampus/tuval/kernel/ai-agent/turn-result";
+import {
+	type Cause,
+	Clock,
+	Effect,
+	Exit,
+	Layer,
+	Queue,
+	Schema,
+	Scope,
+	Semaphore,
+	Stream,
+} from "effect";
 import {ChildTranscriptError, readChildTranscript} from "./child-store.ts";
 import {type CodexSessionConfigInput, codexModes, codexSessionSettings} from "./config.ts";
 import {LiveTranscript} from "./history.ts";

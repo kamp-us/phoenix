@@ -1,5 +1,5 @@
+import {ItemId, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
 import {describe, expect, it} from "vitest";
-import {ItemId, type TranscriptItem} from "../ai-agent/ports/index.ts";
 import {resumeItems} from "./resume.ts";
 
 const history = [

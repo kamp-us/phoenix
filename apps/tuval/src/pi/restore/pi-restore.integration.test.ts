@@ -19,20 +19,23 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert} from "@effect/vitest";
-import {Effect, type FileSystem, Option, type Scope} from "effect";
-import {afterAll, beforeAll, describe, expect, it} from "vitest";
-import {type AiAgentSessionState, isAiAgentSessionState} from "../../ai-agent/core/index.ts";
-import {aiAgentPortNames} from "../../ai-agent/handlers/index.ts";
 import type {
 	TranscriptItem,
 	TranscriptPagePayload,
 	TranscriptPayload,
-} from "../../ai-agent/ports/index.ts";
-import type {Arrival} from "../../ai-agent/restore/fixtures/window.ts";
+} from "@kampus/tuval/ai-agent/ports";
+import {
+	type AiAgentSessionState,
+	isAiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
+import type {Arrival} from "@kampus/tuval/kernel/ai-agent/restore/fixtures/window";
+import {Processes} from "@kampus/tuval/kernel/process/Processes";
+import {type ProcessHandle, ProcessId} from "@kampus/tuval/kernel/process/process";
+import {homeStateDir, piSessionStore} from "@kampus/tuval/kernel/state-dir";
+import {Effect, type FileSystem, Option, type Scope} from "effect";
+import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {type Booted, boot, projectDir} from "../../boot.ts";
-import {Processes} from "../../process/Processes.ts";
-import {type ProcessHandle, ProcessId} from "../../process/process.ts";
-import {homeStateDir, piSessionStore} from "../../state-dir.ts";
 import {AGENT_NODE, PROJECT_ROOT_VAR, WINDOW_NODE} from "./fixtures/names.ts";
 
 const configModule = fileURLToPath(new URL("./fixtures/pi-desk.ts", import.meta.url));

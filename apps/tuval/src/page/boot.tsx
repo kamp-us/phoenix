@@ -18,12 +18,12 @@
 
 import features from "virtual:tuval/features";
 import moduleLoaders from "virtual:tuval/module-renderers";
+import type {RendererTable} from "@kampus/tuval/kernel/shell/window/index";
 import {Effect} from "effect";
 import {StrictMode, useEffect, useMemo, useState} from "react";
 import {createRoot} from "react-dom/client";
 import {openProcessMsg} from "../shell/core/machine.ts";
 import {ErrorBoundary} from "../shell/ui/index.ts";
-import type {RendererTable} from "../shell/window/index.ts";
 import {AttachedDesk} from "./AttachedDesk.tsx";
 import {defaultRecovery, type Recovery, usePageConnection} from "./connection.ts";
 import {type LoadedModuleRenderers, loadModuleRenderers} from "./module-renderers.ts";

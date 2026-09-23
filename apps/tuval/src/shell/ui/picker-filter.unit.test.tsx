@@ -9,6 +9,7 @@
  * elements with the clock under the test's control.
  */
 
+import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
 import {act, fireEvent, render} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {useState} from "react";
@@ -21,7 +22,6 @@ import {
 	withFilter,
 } from "../picker/browser.ts";
 import {processId, programId, programRow} from "../picker/fixtures.ts";
-import {WindowId} from "../window/index.ts";
 import {installDomShims} from "./dom.testing.ts";
 import {PickerView} from "./PickerView.tsx";
 

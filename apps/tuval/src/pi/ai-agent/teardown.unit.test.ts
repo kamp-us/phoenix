@@ -14,8 +14,8 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {type AgentEvent, TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
 import {Effect, Fiber, Layer, Option, Stream} from "effect";
-import {type AgentEvent, TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {makeScriptedHost} from "../server/fixtures.ts";
 import {aiAgentOverHost} from "./PiAiAgent.ts";
 

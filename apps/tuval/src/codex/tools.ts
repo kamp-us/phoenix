@@ -1,12 +1,12 @@
 import {randomUUID} from "node:crypto";
 import {createServer, type IncomingMessage, type ServerResponse} from "node:http";
+import {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {ProgramId} from "@kampus/tuval/kernel/registry/program";
 import {Server} from "@modelcontextprotocol/sdk/server/index.js";
 import {StreamableHTTPServerTransport} from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {CallToolRequestSchema, ListToolsRequestSchema} from "@modelcontextprotocol/sdk/types.js";
 import {Effect, Fiber, Option, Queue, Schema, Scope, Stream} from "effect";
-import {KernelBridge} from "../ai-agent/tools/KernelBridge.ts";
-import {ProcessId} from "../process/process.ts";
-import {ProgramId} from "../registry/program.ts";
 import {disconnected} from "./transport.ts";
 
 class UnknownKernelTool extends Schema.TaggedError<UnknownKernelTool>()(

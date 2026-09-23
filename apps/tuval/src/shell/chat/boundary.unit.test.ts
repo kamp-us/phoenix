@@ -8,9 +8,17 @@
 
 import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
+import type {
+	AiAgentSessionMsg,
+	AiAgentSessionState,
+} from "@kampus/tuval/kernel/ai-agent/core/index";
+import type {
+	AnyWindowRenderer,
+	ViewState,
+	WindowHost,
+} from "@kampus/tuval/kernel/shell/window/index";
 import {describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
-import type {AnyWindowRenderer, ViewState, WindowHost} from "../window/index.ts";
+import {sdkModule} from "../../sdk-source.testing.ts";
 import type {ChatWindowRenderer} from "./ChatWindow.tsx";
 import type {ChatView} from "./view.ts";
 
@@ -99,8 +107,18 @@ const sourceFiles = (): ReadonlyArray<readonly [string, string]> => {
 		.map((name) => [name, readFileSync(join(dir, name), "utf8")] as const);
 };
 
+/**
+ * Every import statement, a multi-line one folded onto one line in the formatter's single-line
+ * shape, so `import type {\n\tA,\n\tB,\n} from "x";` reads as `import type {A, B} from "x";` and keeps
+ * its `type` beside the specifier it qualifies.
+ */
 const importLines = (source: string): ReadonlyArray<string> =>
-	source.split("\n").filter((line) => /^import\b/.test(line) || /^\s*}\s*from\s+"/.test(line));
+	[...source.matchAll(/^import\b[^;]*;/gm)].map((match) =>
+		match[0]
+			.replace(/\s*\n\s*/g, " ")
+			.replace(/\{ /g, "{")
+			.replace(/,? \}/g, "}"),
+	);
 
 describe("chat window boundary", () => {
 	it("the view slot admits this window's record and refuses an interface-shaped one", () => {
@@ -149,10 +167,7 @@ describe("chat window boundary", () => {
 	});
 
 	it("writes only failure tags the core's own refusals declare", () => {
-		const failures = readFileSync(
-			join(import.meta.dirname, "..", "..", "ai-agent", "core", "failures.ts"),
-			"utf8",
-		);
+		const failures = readFileSync(sdkModule("ai-agent/core/failures.ts"), "utf8");
 		const declared = new Set(
 			[...failures.matchAll(/"(tuval\/ai-agent\/[A-Za-z]+)"/g)].map((match) => match[1]),
 		);
@@ -174,14 +189,14 @@ describe("chat window boundary", () => {
 		// The fourth is `itemIds` / `isNamedItem`: the same class again, and off the ports barrel this
 		// file's type imports already pull in — that barrel re-exports types and pure predicates only.
 		const admitted = [
-			'import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";',
-			'import {remarkCutReplies} from "../../ai-agent/core/state.ts";',
-			'import {isNamedItem, itemIds} from "../../ai-agent/ports/index.ts";',
+			'import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/snapshot";',
+			'import {remarkCutReplies} from "@kampus/tuval/kernel/ai-agent/core/state";',
+			'import {isNamedItem, itemIds} from "@kampus/tuval/ai-agent/ports";',
 		];
 		const offenders = sourceFiles().flatMap(([name, source]) =>
 			importLines(source)
 				.filter((line) => line.includes("ai-agent/"))
-				.filter((line) => !line.includes('"../../ai-agent/history/cursor.ts"'))
+				.filter((line) => !line.includes('"@kampus/tuval/kernel/ai-agent/history/cursor"'))
 				.filter((line) => !/^import type\b/.test(line))
 				.filter((line) => !admitted.includes(line))
 				.map((line) => `${name}: ${line.trim()}`),

@@ -1,19 +1,26 @@
 import {assert, describe, expect, expectTypeOf, it} from "@effect/vitest";
+import {SpellFailed} from "@kampus/tuval/kernel/commands/errors";
+import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
+import {SpellRegistry} from "@kampus/tuval/kernel/commands/registry";
+import {type Client, WindowIndex, type WindowPlacement} from "@kampus/tuval/kernel/commands/scope";
+import {
+	type AnySpell,
+	ClientId,
+	defineSpell,
+	type Scope,
+	WindowId,
+	WorkspaceId,
+} from "@kampus/tuval/kernel/commands/spell";
+import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {CallId, type SpellPath} from "@kampus/tuval/kernel/protocol/ids";
+import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "@kampus/tuval/kernel/protocol/messages";
 import {Cause, Effect, Exit, Layer, Schema} from "effect";
-import {ProcessId} from "../process/process.ts";
-import {CallId, type SpellPath} from "../protocol/ids.ts";
-import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../protocol/messages.ts";
 import {
 	decodeServerFrame,
 	encodeFrame,
 	SPELL_REPLY_KIND,
 	spellReplyFrame,
 } from "../shell/transport/wire.ts";
-import {SpellFailed} from "./errors.ts";
-import {SpellExecutor} from "./executor.ts";
-import {SpellRegistry} from "./registry.ts";
-import {type Client, WindowIndex, type WindowPlacement} from "./scope.ts";
-import {type AnySpell, ClientId, defineSpell, type Scope, WindowId, WorkspaceId} from "./spell.ts";
 
 class Refused extends Schema.TaggedError<Refused>()("test/Refused", {why: Schema.String}) {
 	override get message(): string {

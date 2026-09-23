@@ -14,16 +14,16 @@ import {fauxAssistantMessage, fauxProvider, fauxToolCall} from "@earendil-works/
 import type {ByteTransport, ByteTransportFactory} from "@earendil-works/pi-client";
 import {ModelRuntime} from "@earendil-works/pi-coding-agent";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer, Queue, Redacted, Stream} from "effect";
-import {pageCursor} from "../../ai-agent/history/cursor.ts";
-import {ItemId, type TranscriptItem} from "../../ai-agent/ports/index.ts";
+import {ItemId, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import {pageCursor} from "@kampus/tuval/kernel/ai-agent/history/cursor";
 import {
 	type AgentEvent,
 	StartError,
 	TransportError,
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
-} from "../../ai-agent/service/index.ts";
+} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {Effect, Layer, Queue, Redacted, Stream} from "effect";
 import {PiClientService, webSocketTransportFactory} from "../client/index.ts";
 import {agentSessionHostLayer, PiServerService, SessionOpenFailed} from "../server/index.ts";
 import {aiAgentOverClient, aiAgentOverHost} from "./PiAiAgent.ts";

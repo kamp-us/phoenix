@@ -2,8 +2,8 @@
 
 How a Tuval program does work that needs a service, and how it holds a resource for as long as its
 process lives. Everything here is `apps/tuval/src/`; the row type is
-[`registry/program.ts`](../apps/tuval/src/registry/program.ts) and the runner is
-[`process/Processes.ts`](../apps/tuval/src/process/Processes.ts).
+[`registry/program.ts`](../packages/tuval/src/registry/program.ts) and the runner is
+[`process/Processes.ts`](../packages/tuval/src/process/Processes.ts).
 
 ## The split: plain core, Effect row
 
@@ -35,7 +35,7 @@ arms it fresh, which is what makes the retry replay. Catch inside the handler an
 survive; let out only what should end the process.
 
 **A row declares the policy on its `core`, and the type it writes against lives in
-[`src/sub-failure.ts`](../apps/tuval/src/sub-failure.ts).** `SubFailure` and `SubFailurePolicy` sit
+[`src/sub-failure.ts`](../packages/tuval/src/sub-failure.ts).** `SubFailure` and `SubFailurePolicy` sit
 there rather than in the host, so the registry can name them while still importing nothing from the
 slice that runs a program (`registry/boundary.unit.test.ts` holds that line). A row's `core` is typed
 `ProgramCore`, which is Demlik's `Machine` widened by the optional `subFailure` field:
@@ -62,7 +62,7 @@ cell of the same type, and a core carrying both keeps the bridge for the types t
 
 ## `ProcessSelf`: the process's own Scope and state
 
-[`process/self.ts`](../apps/tuval/src/process/self.ts) is the one service a running process's own
+[`process/self.ts`](../packages/tuval/src/process/self.ts) is the one service a running process's own
 handlers may yield to learn about themselves. It carries two things:
 
 - **`scope`** — the process's Effect Scope (#7513). Acquire here anything that must live exactly as
@@ -91,7 +91,7 @@ and there is no race to lose.
 
 ## Ports from a handler
 
-A handler emits through [`ProcessPorts`](../apps/tuval/src/ports/ProcessPorts.ts), by port name. Two
+A handler emits through [`ProcessPorts`](../packages/tuval/src/ports/ProcessPorts.ts), by port name. Two
 failures come back and they are not the same thing:
 
 - `PortNotWired` — nobody is listening. Swallow it. A program with no window still runs, and
@@ -142,7 +142,7 @@ a spawner already hands a child is the context its handlers run under. So a spaw
 process *for* something names that thing as a service on the child's context and the boot Cmd's
 handler reads it with `Effect.serviceOption`: absence is the ordinary case and stays a value rather
 than a missing dependency, and the decision still lives in the one place that knows the process is
-new. [`SessionOpening`](../apps/tuval/src/ai-agent/opening.ts) is the worked example — `{cwd,
+new. [`SessionOpening`](../packages/tuval/src/ai-agent/opening.ts) is the worked example — `{cwd,
 resume}` and no third field, set by
 [`shell/picker/open.ts`](../apps/tuval/src/shell/picker/open.ts) when the operator picked a session
 out of the list, read only by `aiAgent.boot`. Keep such a service narrow on purpose: one that grows
@@ -176,7 +176,7 @@ them. Every other phase the layer reports is news and folds normally.
 
 ## Coming back from a checkpoint: a resume Msg, and a Cmd that republishes
 
-Durability is the kernel's ([`durability/Checkpoints.ts`](../apps/tuval/src/durability/Checkpoints.ts)),
+Durability is the kernel's ([`durability/Checkpoints.ts`](../packages/tuval/src/durability/Checkpoints.ts)),
 so a row does not write its own snapshot. What a row owes is the other half: what its state means
 after a restart, and what has to happen before it is usable again. Three rules, all of them visible
 in [`ai-agent/restore/`](../apps/tuval/src/ai-agent/restore/), plus one rule about the
@@ -203,9 +203,9 @@ may emit none.
 is not a restore: for two months every caller of `resumeMessages` was a proof, so a real restart
 left the session holding a live id and no transport
 ([#7877](https://github.com/kamp-us/phoenix/issues/7877)). The row declares
-`resume: (state) => ReadonlyArray<Msg>` ([`registry/program.ts`](../apps/tuval/src/registry/program.ts)),
+`resume: (state) => ReadonlyArray<Msg>` ([`registry/program.ts`](../packages/tuval/src/registry/program.ts)),
 and both spawners dispatch it through one shared step
-([`durability/resume.ts`](../apps/tuval/src/durability/resume.ts)) — `src/launch/` for a graph node
+([`durability/resume.ts`](../packages/tuval/src/durability/resume.ts)) — `src/launch/` for a graph node
 whose checkpoint existed, `durability/restore.ts` for a checkpointed process the graph does not
 plan. Launch dispatches after **every** node is spawned and pumped, never inside the loop, because a
 resume republishes on its out-ports and a reader that has not launched yet would leave those
@@ -218,7 +218,7 @@ it just refused. That costs the operator the transcript with no copy left to dia
 silences the refusal one restart later: the saved refusal state parses fine on the next boot, and
 the restore transform drops `failure` off it, so the window falls from the refusal sentence to the
 bare phase line ([#8112](https://github.com/kamp-us/phoenix/issues/8112)). The row declares
-`restorable: (raw) => boolean` ([`registry/program.ts`](../apps/tuval/src/registry/program.ts)) —
+`restorable: (raw) => boolean` ([`registry/program.ts`](../packages/tuval/src/registry/program.ts)) —
 the same read its `init` does, answered before `init` runs — and a `false` seals that process's
 store: `Checkpoints` hands the host a store whose `save` writes nothing for the process's life, so
 the bytes stay on disk and every later boot re-reads and re-refuses them. Answer it off the one
@@ -231,8 +231,8 @@ The host saves on every applied Msg, so a program re-upserting one growing item 
 its whole state through Demlik's `fileStore` — mkdir, `JSON.stringify`, write-temp, rename — awaited
 inside the single-permit transition tail, which puts each delta's fold behind the previous one's
 disk round trip. The row declares `checkpointWorthy: (state) => boolean`
-([`registry/program.ts`](../apps/tuval/src/registry/program.ts)) and the host asks it at every save
-site — the commit's, boot's and stop's ([`host/actor.ts`](../apps/tuval/src/host/actor.ts)) — so a
+([`registry/program.ts`](../packages/tuval/src/registry/program.ts)) and the host asks it at every save
+site — the commit's, boot's and stop's ([`host/actor.ts`](../packages/tuval/src/host/actor.ts)) — so a
 `false` writes nothing anywhere. One predicate is both halves of the fix: the mid-turn burst costs
 no disk, and the state that ends the turn is worthy again, so the commit landing it is the flush and
 it is on disk before the dispatch returns. The skipped writes are never owed, because a state the
@@ -253,7 +253,7 @@ rather than folding forward, and the reason is that there is no event to fold.
 ## A request's completion versus retained public state
 
 A window that needs the outcome of **its own** dispatch reads `Delivered.view`, not changes to a
-retained field on `readProcess`. [`Processes.dispatchFolded`](../apps/tuval/src/process/Processes.ts)
+retained field on `readProcess`. [`Processes.dispatchFolded`](../packages/tuval/src/process/Processes.ts)
 holds the external-dispatch semaphore through the actor's transitive `idle` and the state read;
 [`transport/server.ts`](../apps/tuval/src/shell/transport/server.ts) sends that sampled view back on
 the request's existing sequence. Broadcast snapshots can arrive independently and repeat old fields.
@@ -266,7 +266,7 @@ pending guard and rejects completions from a replaced session/connection; a miss
 is an unconfirmed request, not a success. The outcome is defaulted for old checkpoints and dropped
 on restore. See [`ChatWindow.tsx`](../apps/tuval/src/shell/chat/ChatWindow.tsx), its codec-round-trip
 regressions, and the real-process tests in
-[`handlers.unit.test.ts`](../apps/tuval/src/ai-agent/handlers/handlers.unit.test.ts).
+[`handlers.unit.test.ts`](../packages/tuval/src/ai-agent/handlers/handlers.unit.test.ts).
 
 This applies only to work completed by the dispatch's transitive handlers. A command that merely
 starts independent background work still needs that work's own correlated result; `idle` cannot
@@ -276,13 +276,13 @@ prove the background work finished.
 
 An ai-agent row hands `aiAgentProgram` the `TuvalAiAgent` layer it runs on, and that helper stamps
 the same layer back onto the row as `aiAgent`
-([`ai-agent/program.ts`](../apps/tuval/src/ai-agent/program.ts)). Nothing else about the row changes:
+([`ai-agent/program.ts`](../packages/tuval/src/ai-agent/program.ts)). Nothing else about the row changes:
 the declaration rides the helper rather than a new field on `Program`, so `pi-session` and
 `claude-session` both carry it with no line of their own, and the registry keeps describing programs
 without naming one program family's service.
 
 That is what makes "ask every registered ai-agent implementation" a real call
-([`ai-agent/backends.ts`](../apps/tuval/src/ai-agent/backends.ts)): the set of backends is filtered
+([`ai-agent/backends.ts`](../packages/tuval/src/ai-agent/backends.ts)): the set of backends is filtered
 out of `Registry.list` rather than maintained beside it, so registering a backend in the config is
 the whole act of adding one. `isAiAgentBackend` is a type predicate over the absent field, exactly
 like `showsInAWindow` ([`shell/picker/entries.ts`](../apps/tuval/src/shell/picker/entries.ts)), and
@@ -303,7 +303,7 @@ the key table, and then hands every live process what its own row says the new c
 
 **The row declares what applies live, under `configChanged`, or the reload reaches it with nothing.**
 The field is `(next: AnyProgram) => ReadonlyArray<Msg>`
-([`registry/program.ts`](../apps/tuval/src/registry/program.ts)), read off the row a process is
+([`registry/program.ts`](../packages/tuval/src/registry/program.ts)), read off the row a process is
 *running under* and handed the reloaded row of the same id. `claude-session` is the worked example:
 `configChanged(previous, next)` in [`claude/program.ts`](../apps/tuval/src/claude/program.ts) maps a
 changed `permissionMode` to one `setMode` and every other field to nothing, because
