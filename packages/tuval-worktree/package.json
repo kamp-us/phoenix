@@ -48,7 +48,6 @@
 	"devDependencies": {
 		"@demlik/tea": "catalog:",
 		"@effect/tsgo": "catalog:",
-		"@kampus-apps/tuval": "workspace:*",
 		"@kampus/tuval-claude": "workspace:*",
 		"@kampus/tuval-sdk": "workspace:*",
 		"@types/node": "catalog:",

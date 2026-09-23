@@ -195,7 +195,7 @@ two of them has no bracket to close (which is exactly what the host does: one `r
 Each layer's own test proves it rather than a shared conformance suite, because a layer that drops
 the wrap compiles clean:
 [`agent/phases.unit.test.ts`](../packages/tuval-claude/src/agent/phases.unit.test.ts),
-[`codex/agent.unit.test.ts`](../apps/tuval/src/codex/agent.unit.test.ts),
+[`agent.unit.test.ts`](../packages/tuval-codex/src/agent.unit.test.ts) (`@kampus/tuval-codex`),
 [`pi/ai-agent/turn-end.unit.test.ts`](../apps/tuval/src/pi/ai-agent/turn-end.unit.test.ts),
 [`agy/ai-agent/pays-the-turn-result.unit.test.ts`](../apps/tuval/src/agy/ai-agent/pays-the-turn-result.unit.test.ts)
 and [`ai-agent/service/ScriptedAiAgent.unit.test.ts`](../packages/tuval/src/ai-agent/service/ScriptedAiAgent.unit.test.ts).

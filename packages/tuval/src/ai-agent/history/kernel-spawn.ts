@@ -7,8 +7,8 @@
  * same tool differently on the wire. The two spellings both come from one server name here, so a
  * renamed server moves one constant and both mappers follow (`@kampus/tuval-claude`'s
  * `src/tools/server.ts` derives its own wire name from `KERNEL_TOOL_SERVER`, and
- * `apps/tuval/src/codex/tools.ts`'s rows arrive as `<server>.<tool>` —
- * `apps/tuval/src/codex/history.ts`).
+ * `@kampus/tuval-codex`'s `src/tools.ts` rows arrive as `<server>.<tool>` —
+ * `src/history.ts`).
  *
  * The answer is read off the row's own result rather than off the bridge, because the mapper stands
  * where the transcript is and the bridge stands where the call was made. `read` walks the parsed

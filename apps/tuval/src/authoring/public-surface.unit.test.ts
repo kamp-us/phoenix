@@ -3,9 +3,9 @@
  * specifiers `packages/tuval/package.json` declares — no relative path into `src/` anywhere below
  * this docblock — can write a program, declare a shaped arg, and fill it with a shipped session row.
  *
- * It lives in the app rather than in `@kampus/tuval-sdk` because the Codex session row is still the
- * app's (`@kampus-apps/tuval/sessions`), and the SDK depends on no app. The Claude row is its
- * harness package's (`@kampus/tuval-claude`). Node and Vite resolve
+ * It lives in the app rather than in `@kampus/tuval-sdk` because it fills the arg with the Claude
+ * and Codex rows, which are their harness packages' (`@kampus/tuval-claude`, `@kampus/tuval-codex`),
+ * and the SDK depends on no harness. Node and Vite resolve
  * `@kampus/tuval-sdk/authoring` through the SDK's own `name` + `exports`, walking the same map an
  * outside consumer walks, so a subpath missing from the map fails here exactly as it would fail
  * there. `tsc` over this file is the other half — the door has to be typed, not just resolvable.
@@ -20,6 +20,7 @@ import {readFileSync, statSync} from "node:fs";
 import {createRequire} from "node:module";
 import {dirname, resolve} from "node:path";
 import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
+import {codexSession} from "@kampus/tuval-codex";
 import {
 	PromptPayloadSchema,
 	type TurnResult,
@@ -41,7 +42,6 @@ import {
 	stop,
 	testProgram,
 } from "@kampus/tuval-sdk/authoring";
-import {codexSession} from "@kampus-apps/tuval/sessions";
 import {Schema} from "effect";
 import {describe, expect, it} from "vitest";
 
@@ -122,15 +122,12 @@ describe("the exports map opens only doors that exist", () => {
 		}
 	});
 
-	it("the app's own map opens only the sessions door", () => {
+	it("the app's own map opens no module door, because an app is never imported (#9656)", () => {
 		const root = resolve(import.meta.dirname, "../..");
 		const manifest = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as {
 			readonly exports: Readonly<Record<string, string>>;
 		};
-		expect(Object.keys(manifest.exports)).toEqual(["./sessions", "./package.json"]);
-		for (const target of Object.values(manifest.exports)) {
-			expect(() => readFileSync(resolve(root, target), "utf8")).not.toThrow();
-		}
+		expect(Object.keys(manifest.exports)).toEqual(["./package.json"]);
 	});
 });
 
@@ -161,7 +158,6 @@ describe("a consumer can emit declarations for a program that declares args", ()
 			"@kampus/tuval-sdk/authoring",
 			"@kampus/tuval-sdk/window",
 			"@kampus/tuval-sdk/ai-agent/ports",
-			"@kampus-apps/tuval/sessions",
 			"@kampus/tuval-claude",
 		];
 		expect(specifiers.filter((s) => !doors.includes(s))).toEqual([]);

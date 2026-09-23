@@ -1,6 +1,6 @@
 /**
  * The feature flags as everything downstream reads them, and the record a config that states none
- * means. Its own module, node-free on purpose: the flags are merged on the node side (`./config.ts`)
+ * means. Its own module, node-free on purpose: the flags are merged on the node side (`apps/tuval/src/config.ts`)
  * and read on the browser side, so both ends need this type and only one end may reach `node:*`.
  * `page/assets.d.ts` types the generated `virtual:tuval/features` module from here, and
  * `tsconfig.browser.json` — which compiles with `types: []` — is what would red if this file grew a
@@ -73,7 +73,7 @@ export interface TuvalFeatures {
  * What a config that declares no `features` block means. A user-facing change ships dark behind a
  * default-off flag (`product-development-cycle.md`) and is flipped on here once it has had its
  * runbook pass, so a flag's entry moves from `false` to `true` in this record and nowhere else. A
- * layer that states a flag still wins over it, in either direction (`./config.ts`'s merge).
+ * layer that states a flag still wins over it, in either direction (`apps/tuval/src/config.ts`'s merge).
  */
 export const featuresDefault: TuvalFeatures = {
 	subagentList: true,

@@ -9,6 +9,7 @@
 import {readFileSync} from "node:fs";
 import {resolve} from "node:path";
 import {describe, it} from "@effect/vitest";
+import {codexSession} from "@kampus/tuval-codex";
 import {isPromptPayload} from "@kampus/tuval-sdk/ai-agent/ports";
 import {emit, send, spawn, spawned} from "@kampus/tuval-sdk/kernel/authoring/effect";
 import {port} from "@kampus/tuval-sdk/kernel/authoring/port";
@@ -24,7 +25,6 @@ import {type AnyProgram, ProgramId, programLabel} from "@kampus/tuval-sdk/kernel
 import {Effect, Layer, Option, Schema, Stream} from "effect";
 import {expect} from "vitest";
 import config from "../../../.tuval/tuval.config.ts";
-import {codexSession} from "../../codex/program.ts";
 import {prReview, prReviewProgram} from "./pr-review.ts";
 
 const source = readFileSync(resolve(import.meta.dirname, "pr-review.ts"), "utf8");
@@ -72,7 +72,8 @@ describe("authoring.example.pr-review is short enough to copy", () => {
 		const specifiers = [...source.matchAll(/from "([^"]+)"/g)].map((match) => match[1] ?? "");
 		expect(specifiers).not.toEqual([]);
 		// Matched whole, not by prefix: `@kampus/tuval-sdk/kernel/...` starts with the SDK's name too, and a
-		// relative `../../codex/program.ts` is exactly the cross-package import this criterion forbids.
+		// harness package such as `@kampus/tuval-codex` is exactly the cross-package import this
+		// criterion forbids.
 		//
 		// Two doors are allowed, and the second is the one #8887 added. `@kampus/tuval-sdk/authoring` is the
 		// layer the example is written in. `@kampus/tuval-sdk/ai-agent/ports` is the port vocabulary every Tuval agent

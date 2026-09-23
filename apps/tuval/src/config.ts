@@ -1,7 +1,8 @@
 /**
- * The user-owned config: one versioned Schema for its shape, a fail-closed module loader, and the
- * two-layer merge — a global module under the home dir's `.tuval` and an optional project module
- * under the cwd's `.tuval`, project over global.
+ * The user-owned config's fail-closed module loader and the two-layer merge — a global module
+ * under the home dir's `.tuval` and an optional project module under the cwd's `.tuval`, project
+ * over global. The shape a module decodes against is the SDK's (`@kampus/tuval-sdk/kernel/config`),
+ * because a config is written against it outside this app.
  *
  * Configuration is code the user owns (the Neovim model, #7484 R1.1): a TypeScript module whose
  * default export is a `{version: 1, programs, features?, graph?, keys?}` config. Loading refuses on any defect the
@@ -9,10 +10,6 @@
  * every refusal names the module and the reason, so boot never runs on a half-read config. A
  * module that is not there is an empty layer, never a refusal: the layer is optional and the bin
  * refuses an explicitly named path before boot.
- *
- * Program rows stay opaque beyond the `id` the merge keys on — the row type is the registry
- * slice's, and Schema would strip a row's machine and handlers as excess keys. The graph is
- * decoded structurally; the ports slice refuses a malformed one when it compiles.
  */
 
 import {dirname} from "node:path";
@@ -21,75 +18,27 @@ import {
 	type BindingSource,
 	type ConfigLayer,
 	describeFile,
-	KeyBindings,
+	type KeyBindings,
 } from "@kampus/tuval-sdk/kernel/commands/bindings/index";
+import {TuvalConfig} from "@kampus/tuval-sdk/kernel/config";
 // Re-exported below rather than declared here: both ends of the node/browser wire need the resolved
 // flag record, and this module reaches `node:*` (#8439).
 import {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
-import {type Graph, NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
-import {type AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import type {Graph} from "@kampus/tuval-sdk/kernel/ports/graph";
+import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {
 	type DeclaredProgram,
 	type ModuleRendererRef,
 	moduleRendererRefs,
 } from "@kampus/tuval-sdk/kernel/shell/window/renderer";
-import {Effect, FileSystem, Option, Predicate, Schema, SchemaIssue} from "effect";
+import {Effect, FileSystem, Option, Schema, SchemaIssue} from "effect";
 
-const hasStringId = (row: unknown): row is {readonly id: string} =>
-	Predicate.isObject(row) && Predicate.isString((row as {readonly id?: unknown}).id);
-
-const ProgramRow = Schema.Unknown.check(
-	Schema.makeFilter(hasStringId, {message: "Expected a program row with a string id"}),
-);
-
-const PortRef = Schema.Struct({node: NodeId, port: Schema.String});
-
-const GraphNode = Schema.Struct({
-	id: NodeId,
-	program: ProgramId,
-	parent: Schema.optionalKey(NodeId),
-	on: Schema.Array(Schema.Struct({port: Schema.String, to: PortRef})),
-});
-
-const GraphSchema = Schema.Struct({nodes: Schema.Array(GraphNode)});
-
-/**
- * The feature flags a layer *states*, one optional boolean key per key of `TuvalFeatures`. Every
- * key is optional, and that is the whole point: absent means "this layer says nothing", not "off",
- * so a project layer naming one flag cannot put back to its default a flag the global layer turned
- * on. `featuresDefault` is where a flag nobody stated lands.
- *
- * Derived rather than hand-listed, because hand-listing drifted twice: a key on `TuvalFeatures`
- * that nobody re-typed here was dropped by the decode, so a layer stating it moved the browser and
- * nothing on the node side (#8595, #8783). The mapped type takes the key set from `TuvalFeatures`
- * and the runtime fields from `featuresDefault`'s own keys, and `featuresDefault` is annotated
- * `TuvalFeatures`, so the two cannot name different keys.
- */
-type DeclaredFeatureFields = {
-	readonly [K in keyof TuvalFeatures]: Schema.optionalKey<typeof Schema.Boolean>;
-};
-
-const declaredFeatureFields = Object.fromEntries(
-	Object.keys(featuresDefault).map((key) => [key, Schema.optionalKey(Schema.Boolean)]),
-) as DeclaredFeatureFields;
-
-export const DeclaredFeatures = Schema.Struct(declaredFeatureFields);
-
+export {
+	DeclaredFeatures,
+	TuvalConfig,
+	type TuvalConfigInput,
+} from "@kampus/tuval-sdk/kernel/config";
 export {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
-
-/** Version 1 of the config shape. A config module default-exports its `Encoded` form. */
-export const TuvalConfig = Schema.Struct({
-	version: Schema.Literal(1),
-	programs: Schema.Array(ProgramRow),
-	features: DeclaredFeatures.pipe(Schema.withDecodingDefaultKey(Effect.succeed({}))),
-	graph: GraphSchema.pipe(Schema.withDecodingDefaultKey(Effect.succeed({nodes: []}))),
-	/** Key to command string, read by the parser and compiled against the registry at boot. */
-	keys: KeyBindings.pipe(Schema.withDecodingDefaultKey(Effect.succeed({}))),
-});
-
-export type TuvalConfig = typeof TuvalConfig.Type;
-/** What a config module writes: plain strings for the ids, `graph` optional. */
-export type TuvalConfigInput = typeof TuvalConfig.Encoded;
 
 export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()(
 	"tuval/ConfigLoadError",

@@ -168,7 +168,7 @@ const tokensOf = (record: Record<string, unknown>): number => {
 	return (numberOf(usage.input) ?? 0) + (numberOf(usage.output) ?? 0);
 };
 
-/** The newest thing the worker wrote, whatever kind of row carried it (`../../codex/subagents.ts`). */
+/** The newest thing the worker wrote, whatever kind of row carried it (`@kampus/tuval-codex`'s `src/subagents.ts`). */
 const lineOf = (item: TranscriptItem): string =>
 	item.kind === "tool" ? item.result.text || item.name : item.text;
 

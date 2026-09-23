@@ -26,7 +26,7 @@
 import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 import {cron} from "@kampus/tuval-cron";
 import {notify} from "@kampus/tuval-notify";
-import type {TuvalConfigInput} from "@kampus-apps/tuval/sessions";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/kernel/config";
 
 /** One workspace, one client — the two branded ids `claudeSession` will not build a row without. */
 const scope = {

@@ -37,7 +37,7 @@
  * `status: "ERROR"` / `error: "interrupted"` — measured, and the whole point of
  * [#8694](https://github.com/kamp-us/phoenix/issues/8694) — so this wire does name the stop. It
  * projects onto the cut reply row carrying `interrupted: true` and no `failure` event at all, which
- * is the mark `pi/ai-agent/items.ts` makes of an `aborted` item and `codex/history.ts` of an
+ * is the mark `pi/ai-agent/items.ts` makes of an `aborted` item and `@kampus/tuval-codex`'s `src/history.ts` of an
  * `interrupted` turn. A row is minted even when the reply had no text yet, for the reason Pi keeps an
  * empty aborted reply: the mark needs a row to sit on.
  *

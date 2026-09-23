@@ -1,0 +1,53 @@
+{
+	"name": "@kampus/tuval-codex",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Tuval's Codex harness — the codex-session program row, its codex app-server adapter, kernel tools, history and window, on the @kampus/tuval-sdk kernel",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/tuval-codex"
+	},
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./window": "./src/window/index.ts",
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
+		"test": "vitest run",
+		"test:unit": "vitest run --project unit",
+		"test:integration": "vitest run --project integration"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"@kampus/tuval-ui": "workspace:*",
+		"@modelcontextprotocol/sdk": "catalog:"
+	},
+	"peerDependencies": {
+		"@kampus/tuval-sdk": "workspace:*",
+		"effect": "catalog:",
+		"react": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@kampus/tuval-sdk": "workspace:*",
+		"@testing-library/dom": "catalog:",
+		"@testing-library/react": "catalog:",
+		"@types/node": "catalog:",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"effect": "catalog:",
+		"jsdom": "catalog:",
+		"react": "catalog:",
+		"react-dom": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}

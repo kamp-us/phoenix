@@ -5,7 +5,7 @@
  * wrapper's own fork — its `exists` guard on the conversation directory, and its mapping of the
  * reader's `PlanRefusal` onto `TranscriptError` — i.e. that the three reasons come back *distinct*
  * at the port, and that an existing conversation with no log yet is a page rather than a missing
- * session. Shaped after `../../codex/agent.unit.test.ts`'s own distinctness case.
+ * session. Shaped after `@kampus/tuval-codex`'s `src/agent.unit.test.ts` distinctness case.
  *
  * Every home below is a disposable temporary directory: the layer resolves `homedir()` when it is
  * given none, and a test that read the invoking user's real store would assert about his machine.
