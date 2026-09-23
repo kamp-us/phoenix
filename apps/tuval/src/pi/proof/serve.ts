@@ -14,11 +14,11 @@
  */
 
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {servePage} from "../../page/dev-server.ts";
 import {serveDesk} from "../../shell/host/index.ts";
-import {defaultPrefixTable} from "../../shell/keys/index.ts";
 import {PROMPT_1, PROMPT_2} from "./names.ts";
 import {appRoot, bootChattedVertical} from "./vertical.ts";
 

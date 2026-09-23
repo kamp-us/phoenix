@@ -24,8 +24,8 @@ import type {
 	WindowHost,
 	WindowRenderer,
 } from "@kampus/tuval-sdk/kernel/shell/window/index";
+import type {ChatView, ChatWindowRenderer} from "@kampus/tuval-ui/chat";
 import {describe, expect, it} from "vitest";
-import type {ChatView, ChatWindowRenderer} from "../../shell/chat/index.ts";
 import {CLAUDE_CHAT_WINDOW_REF, CLAUDE_SESSION_PROGRAM} from "../renderer-ref.ts";
 import {ClaudeChatWindow} from "./ClaudeChatWindow.tsx";
 

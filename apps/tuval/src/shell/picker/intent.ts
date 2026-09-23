@@ -12,7 +12,7 @@
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
-import {CommandName} from "../keys/table.ts";
+import {CommandName} from "@kampus/tuval-ui/keys";
 import type {PickerEntry} from "./entries.ts";
 
 /**

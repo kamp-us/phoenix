@@ -8,6 +8,7 @@ import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
 import {CallId, WindowId, WorkspaceId} from "@kampus/tuval-sdk/kernel/protocol/ids";
 import {PROTOCOL_VERSION, Snapshot} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Effect, Queue, Schema, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {coreSpells, start} from "../../boot.ts";
@@ -15,7 +16,6 @@ import {counterProgram} from "../../demo/counter.ts";
 import {counterNode} from "../../demo/index.ts";
 import {readCommandLine} from "../commands/line.ts";
 import {serveDesk} from "../host/serve.ts";
-import {defaultPrefixTable} from "../keys/table.ts";
 import {attach} from "../transport/client.ts";
 
 const echo = defineSpell({

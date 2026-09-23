@@ -7,11 +7,11 @@ import {
 	SpellReplyOk,
 } from "@kampus/tuval-sdk/kernel/protocol/messages";
 import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {Effect, Schema} from "effect";
 import {expect, it, vi} from "vitest";
 import {initialState} from "../core/machine.ts";
-import {installDomShims} from "./dom.testing.ts";
 import {PaletteHost} from "./PaletteHost.tsx";
 
 installDomShims();

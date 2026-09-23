@@ -7,7 +7,7 @@
  * sheet comes after it and declares no role the package owns (#7884) — it carries the desk's chrome
  * and the two tokens the package has no member of (`../shell/ui/tokens.css`).
  *
- * Tuval's own markup carries `kp-visually-hidden` too (`../shell/chat/ToolRow.tsx`), so the page
+ * Tuval's own markup carries `kp-visually-hidden` too (`packages/tuval-ui/src/shell/chat/ToolRow.tsx`), so the page
  * takes the package's rule directly rather than inheriting it from whichever design component
  * happens to be in the bundle (#7984).
  */

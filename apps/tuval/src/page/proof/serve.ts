@@ -25,12 +25,12 @@
 
 import {createServer} from "node:http";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {Console, Deferred, Effect, Exit, Queue} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {PROMPT_1} from "../../pi/proof/names.ts";
 import {appRoot, bootChattedVertical} from "../../pi/proof/vertical.ts";
 import {serveDesk} from "../../shell/host/index.ts";
-import {defaultPrefixTable} from "../../shell/keys/index.ts";
 import type {TransportServer} from "../../shell/transport/server.ts";
 import {servePage} from "../dev-server.ts";
 import {CONTROL_PORTS, NO_RECOVERY_PATH} from "./names.ts";

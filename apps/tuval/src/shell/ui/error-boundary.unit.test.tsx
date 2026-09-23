@@ -7,15 +7,15 @@
  */
 
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, fireEvent, render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import type {ShellState} from "../core/index.ts";
 import {isShellState} from "../core/index.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
 import {createStack, createTree, createWindow} from "../layout/index.ts";
 import {Desk} from "./Desk.tsx";
-import {installDomShims} from "./dom.testing.ts";
 import {ErrorBoundary} from "./ErrorBoundary.tsx";
 import {deskWith} from "./fixtures.ts";
 import type {MountResolver} from "./mount.ts";

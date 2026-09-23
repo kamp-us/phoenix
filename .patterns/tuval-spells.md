@@ -622,7 +622,7 @@ rides on the Msg's own Cmd — `window:open` becomes `window.open`, whose cell e
 `commandName` joins the path with colons (`window:close`), which is the spelling a key binding uses;
 `commandPath` reads it back. One derivation each way, so a row cannot carry a name its path
 disagrees with, and the prefix table's `CommandName`
-([`shell/keys/table.ts`](../apps/tuval/src/shell/keys/table.ts)) needs no second vocabulary.
+([`shell/keys/table.ts`](../packages/tuval-ui/src/shell/keys/table.ts)) needs no second vocabulary.
 
 `msgForCommandName` is the one place a bound key's name becomes a Msg, and `shell/core/machine.ts`
 calls it — so a key press and a typed line run the same row. It answers `null` for a row that needs
@@ -681,7 +681,7 @@ already opens — never a second mechanism.
 |---|---|
 | [`Palette.tsx`](../apps/tuval/src/palette/Palette.tsx) | The overlay: `@kampus/design`'s `CommandPalette` fed the ranked candidates, plus the focused row's sentence and the last refusal |
 | [`candidates.ts`](../apps/tuval/src/palette/candidates.ts) | `paletteCandidates`, `acceptCandidate` — what the list holds and what accepting a row types |
-| [`call.ts`](../apps/tuval/src/palette/call.ts) | `spellCallFor`, `failureLine` — a read line into a `SpellCall`, a `SpellFailure` into one sentence |
+| [`call.ts`](../packages/tuval-ui/src/palette/call.ts) | `spellCallFor`, `failureLine` — a read line into a `SpellCall`, a `SpellFailure` into one sentence |
 | [`use-palette.ts`](../apps/tuval/src/palette/use-palette.ts) | `usePalette`: open/closed, the opener's window, the element the caret goes back to |
 | [`palette.css`](../apps/tuval/src/palette/palette.css) | Geometry only. Every colour is a `@kampus/design` role token; `tokens.unit.test.ts` scans for a literal one |
 
@@ -756,8 +756,8 @@ forms, then removes a command and reconnects without reloading the page.
 
 A spell answered on demand — the session list, one page of a session's transcript — reaches the
 surface through the page's socket rather than through a state frame, and the two live instances are
-[`page/session-list.ts`](../apps/tuval/src/page/session-list.ts) and
-[`page/session-transcript.ts`](../apps/tuval/src/page/session-transcript.ts). Both are the same three
+[`page/session-list.ts`](../packages/tuval-ui/src/page/session-list.ts) and
+[`page/session-transcript.ts`](../packages/tuval-ui/src/page/session-transcript.ts). Both are the same three
 pieces, and the split is what keeps the surface provable.
 
 **A pure call/read pair per spell, under `page/`.** One function builds the `SpellCall` and mints its

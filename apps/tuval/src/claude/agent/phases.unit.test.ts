@@ -178,7 +178,7 @@ describe("an interruption over the Claude event path", () => {
 describe("the core over what the layer emitted", () => {
 	// `prompting` is the whole claim the window's stop control and its Escape branch read:
 	// `isWorking` is `phase === "prompting"`, and that it is true of that phase alone is pinned in
-	// `../../shell/chat/phase.unit.test.ts`. It is not called here because the browser chat slice is
+	// `packages/tuval-ui/src/shell/chat/phase.unit.test.ts`. It is not called here because the browser chat slice is
 	// excluded from this project's lens (`apps/tuval/tsconfig.json`).
 	it.effect("keeps the session prompting for the whole turn, so the window reads working", () =>
 		Effect.gen(function* () {

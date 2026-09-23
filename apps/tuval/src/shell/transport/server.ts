@@ -33,10 +33,10 @@ import type {SpellCall, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/mess
 import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
 import {type AnyProgram, programLabel} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Deferred, Effect, type Option, type Redacted, Semaphore, Stream} from "effect";
 import {Socket, type SocketServer} from "effect/unstable/socket";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
-import type {PrefixTable} from "../keys/table.ts";
 import {showsInAWindow} from "../picker/entries.ts";
 import {checkHandshake, launchUrl, loopbackOrigins} from "./handshake.ts";
 import {

@@ -21,6 +21,7 @@
  */
 
 import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {useForwardedKey} from "@kampus/tuval-ui/forwarded-key";
 import type {KeyboardEvent, ReactElement} from "react";
 import {useCallback, useEffect, useRef, useState} from "react";
 import type {ShellMsg} from "../core/index.ts";
@@ -33,7 +34,6 @@ import {
 	pickerPointer,
 	withFilter,
 } from "../picker/browser.ts";
-import {useForwardedKey} from "./forwarded-key.tsx";
 import {isTextEntry} from "./text-entry.ts";
 
 /**

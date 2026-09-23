@@ -30,30 +30,23 @@
 	// Excluding them here is what keeps the kernel on the strict flag; `typecheck` runs both.
 	// `src/page/` is split rather than excluded whole: the React modules reach the chat window
 	// through the page's renderer table (#7573) and go to the other lens, while `dev-server.ts` is
-	// Node-side, is imported by `src/bin.ts`, and stays here. `session-transcript.ts` is on this
-	// lens with `session-list.ts` beside it — the page's wire halves reach no React — and only the
-	// test that mounts the table over them is split off (#8238).
-	// `src/claude/proof/subagent-vertical.integration.test.ts` is split the same way and for the same
-	// reason: it mounts the shipped chat window over a live process, so it reaches `@kampus/design`
-	// through it. Its two neighbours — the config module and the capture handle — reach no React and
-	// stay here. `subagent-paging.integration.test.ts` is split for the directory rather than the
-	// package: it joins the layer's history read to the window's own page request, so it reaches
-	// `src/shell/chat/rows.ts` — pure, but inside the slice this lens excludes whole.
-	// `src/ai-agent/restore/refill.unit.test.ts` is split for that same directory reason: it asserts
-	// what a restored tail *renders*, so it reaches `src/shell/chat/rows.ts` — pure, but inside the
-	// slice this lens excludes whole (#8855). `interrupted-mark.unit.test.tsx` beside it goes further
-	// and mounts the window itself, so it reaches `@kampus/design` through it (#8895).
-	// `src/agy/ai-agent/paging-from-live.unit.test.ts` is
-	// split for the same reason: it joins agy's history page to the live tail the window holds, so it
-	// reaches that same pure module for the stitch (#8900).
+	// Node-side, is imported by `src/bin.ts`, and stays here.
+	// `src/chat/` is the app's side of the chat window, whose source is `@kampus/tuval-ui` (#9652):
+	// every module there mounts it or reads its sheets, so the directory goes to the other lens whole.
+	// `src/claude/proof/subagent-vertical.integration.test.ts` is split for the same reason: it
+	// mounts the shipped chat window over a live process. Its two neighbours — the config module and
+	// the capture handle — reach no React and stay here. `subagent-paging.integration.test.ts`,
+	// `src/ai-agent/restore/refill.unit.test.ts` (#8855) and
+	// `src/agy/ai-agent/paging-from-live.unit.test.ts` (#8900) are split for the entry rather than
+	// the window: each takes a pure row helper off `@kampus/tuval-ui/chat`, and that entry's barrel
+	// reaches `@kampus/design`. `interrupted-mark.unit.test.tsx` mounts the window itself (#8895).
 	// `src/pi/renderer-ref.ts`, `src/claude/renderer-ref.ts`, `src/agy/renderer-ref.ts`,
 	// `src/codex/renderer-ref.ts` and `src/ai-agent/renderer-ref.ts` still enter this project by
 	// import from their rows, which is the point of those leaves: a row names its renderer without
 	// reaching any of it.
 	"exclude": [
 		"node_modules",
-		"src/ai-agent/window",
-		"src/shell/chat",
+		"src/chat",
 		"src/pi/window",
 		"src/claude/window",
 		"src/agy/window",
@@ -66,6 +59,7 @@
 		"src/page/attached-desk.unit.test.tsx",
 		"src/page/readable-state.unit.test.tsx",
 		"src/page/session-transcript-window.unit.test.tsx",
+		"src/page/ai-agent-inspector-ref.unit.test.tsx",
 		"src/claude/proof/subagent-vertical.integration.test.ts",
 		"src/claude/proof/subagent-paging.integration.test.ts",
 		"src/ai-agent/restore/refill.unit.test.ts",

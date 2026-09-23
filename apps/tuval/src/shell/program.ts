@@ -29,6 +29,8 @@ import {
 	processGone,
 	WindowId,
 } from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {initialDesk} from "@kampus/tuval-ui/desk";
+import {defaultPrefixTable, type PrefixTable, prefixTableFor} from "@kampus/tuval-ui/keys";
 import {Effect, Option, Predicate} from "effect";
 import {shellSpells, shellSpellsFor} from "./commands/spells.ts";
 import {commandIndexFor, type ShellCommandFeatures} from "./commands/table.ts";
@@ -39,8 +41,6 @@ import {
 	type ShellState,
 	shellCore,
 } from "./core/index.ts";
-import {initialDesk} from "./desk/state.ts";
-import {defaultPrefixTable, type PrefixTable, prefixTableFor} from "./keys/index.ts";
 import {windows} from "./layout/index.ts";
 
 /** The row's stable id. A founder rebinding the shell in their own config replaces this id's row. */
@@ -216,7 +216,7 @@ const isShellRow = (program: AnyProgram): program is ShellRow =>
  * both: `boot` calls it once, and everything downstream — the registry, the spell set, the grammar
  * the transport sends — reads the gated row rather than re-deriving the gate for itself (#8867).
  *
- * Gating is additive and lives in two lists, `boardBindings` in `./keys/table.ts` and
+ * Gating is additive and lives in two lists, `boardBindings` in `packages/tuval-ui/src/shell/keys/table.ts` and
  * `boardCommands` in `./commands/table.ts`. Both are keyed on the one flag, so a key can never name
  * a row this build does not hold.
  */

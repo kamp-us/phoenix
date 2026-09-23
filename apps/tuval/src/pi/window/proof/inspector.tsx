@@ -7,10 +7,10 @@ import type {
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {AiAgentInspector} from "@kampus/tuval-ui/agent-window";
+import {agentSessionState, usageOf} from "@kampus/tuval-ui/testing/inspector";
 import {Effect} from "effect";
 import {createRoot} from "react-dom/client";
-import {AiAgentInspector} from "../../../ai-agent/window/AiAgentInspector.tsx";
-import {agentSessionState, usageOf} from "../../../ai-agent/window/inspector.testing.ts";
 import "../../../page/styles.ts";
 import "./proof.css";
 

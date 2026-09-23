@@ -4,9 +4,9 @@
  */
 
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {initialDesk} from "@kampus/tuval-ui/desk";
 import type {ShellState, Workspace} from "../core/index.ts";
 import {disarmed} from "../core/index.ts";
-import {initialDesk} from "../desk/state.ts";
 import {createStack, createTree, createWindow, type LayoutTree} from "../layout/index.ts";
 
 /** `window-1 | (window-2 / window-3)` — one column beside a stacked pair, the three-window desk. */

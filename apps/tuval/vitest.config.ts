@@ -35,7 +35,7 @@ const maxWorkers = process.env.CI ? undefined : 2;
 // from the booted config (#8439) — so any test that reaches the renderer table has to be able to
 // resolve it. Served here at `featuresDefault`: a unit test renders the desk an operator who stated
 // no flags gets. A test wanting a flag at some other value passes `ChatWindowOptions` to
-// `chatWindow()` directly, which is what `src/shell/chat/subagent-list.unit.test.tsx` does.
+// `chatWindow()` directly, which is what `@kampus/tuval-ui`'s `subagent-list.unit.test.tsx` does.
 // Declared per project rather than at the root: Vitest 4 builds each project's own Vite server and
 // a root `plugins` entry does not reach one.
 const plugins = [featuresPlugin()];

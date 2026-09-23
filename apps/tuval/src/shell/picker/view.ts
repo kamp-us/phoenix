@@ -15,8 +15,8 @@
 
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import {normalize} from "@kampus/tuval-ui/keys";
 import {Result} from "effect";
-import {normalize} from "../keys/syntax.ts";
 import {flatten, type PickerEntries, type PickerEntry} from "./entries.ts";
 import {type PickerFilter, visibleEntries} from "./filter.ts";
 import {attachProcess, intentOf, type PickerIntent} from "./intent.ts";
@@ -164,10 +164,10 @@ const FILTER = ["/"];
 
 /**
  * The keys a feature flag adds, declared in their own list the way `../commands/table.ts` declares
- * `boardCommands` and `../keys/table.ts` declares `boardBindings`: with `processRemove` off the set
+ * `boardCommands` and `packages/tuval-ui/src/shell/keys/table.ts` declares `boardBindings`: with `processRemove` off the set
  * is empty, so `d` falls through to `ignored` exactly as it did before this key existed (#9447).
  *
- * `d` and never `x`: `../keys/table.ts` binds prefix `x` to `window:close`, which is why the epic's
+ * `d` and never `x`: `packages/tuval-ui/src/shell/keys/table.ts` binds prefix `x` to `window:close`, which is why the epic's
  * no-gos rule an `x` shortcut out. It is live only while the filter is not focused — every key typed
  * into the filter is the input's own (`../ui/PickerView.tsx`), which is already how `j`/`k`/`g`/`G`
  * behave.

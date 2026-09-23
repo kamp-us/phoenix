@@ -5,7 +5,7 @@
  * It used to supply two extra lines to the chat bar — the model, cost and token counts, then the
  * session id and the working directory. The founder's 2026-09-05 ruling (#8190) sent all five facts
  * to the desk inspector, so the bar carries the phase line alone and both backends' bars read
- * identically. The inspector is `../../ai-agent/window/AiAgentInspector.tsx`, declared as this row's
+ * identically. The inspector is `packages/tuval-ui/src/ai-agent/window/AiAgentInspector.tsx`, declared as this row's
  * `inspector` reference in `../program.ts`, and it is shared rather than per-backend because every
  * value in it is read off `AiAgentSessionState`.
  *
@@ -14,8 +14,8 @@
  * binding adds is nothing today, which is the ruling's point.
  */
 
-import type {ChatWindowRenderer, ThinChatWindowOptions} from "../../shell/chat/index.ts";
-import {chatWindow} from "../../shell/chat/index.ts";
+import type {ChatWindowRenderer, ThinChatWindowOptions} from "@kampus/tuval-ui/chat";
+import {chatWindow} from "@kampus/tuval-ui/chat";
 
 /**
  * The Claude renderer at whatever window options a caller needs — every option but `extras`, which

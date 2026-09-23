@@ -17,12 +17,12 @@ import type {
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {type TestProcess, testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
 import {type WindowHost, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {type ChatView, initialChatView} from "@kampus/tuval-ui/chat";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {render, screen, within} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import {type ChatView, initialChatView} from "../../shell/chat/index.ts";
-import {installDomShims} from "../../shell/ui/dom.testing.ts";
 import {piChatWindow} from "./PiChatWindow.tsx";
 import {FIRST_PROMPT, piSession, usageOf} from "./pi-window.testing.ts";
 
@@ -78,7 +78,7 @@ describe("what a Pi session does not offer", () => {
 		// Pi answers its own permission prompts and advertises an empty mode list, so both controls
 		// are absent rather than empty — an empty listbox is a control that lies about being
 		// operable, and the shared window drops each to `null` on an empty input
-		// (`../../shell/chat/ModeSwitch.tsx`, `PermissionCards.tsx`).
+		// (`packages/tuval-ui/src/shell/chat/ModeSwitch.tsx`, `PermissionCards.tsx`).
 		expect(screen.queryByRole("button", {name: /^Mode/})).toBeNull();
 		expect(document.querySelector(".tuval-chat-mode")).toBeNull();
 		expect(document.querySelector(".tuval-chat-permissions")).toBeNull();

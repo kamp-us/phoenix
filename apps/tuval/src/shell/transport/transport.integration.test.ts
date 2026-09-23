@@ -25,6 +25,7 @@ import {
 } from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import type {DispatchResult, ProcessView} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {
 	Context,
 	Effect,
@@ -42,7 +43,6 @@ import {Socket} from "effect/unstable/socket";
 import {WebSocket as NodeWebSocket} from "ws";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {scriptedDescriptions, scriptedSpellChannel} from "../host/fixtures.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
 import {attach} from "./client.ts";
 import {PlacementUnsupported} from "./errors.ts";
 import {mintLaunchToken, TOKEN_PARAM} from "./handshake.ts";

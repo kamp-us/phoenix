@@ -47,7 +47,7 @@
 	inline-size: 100%;
 }
 
-/* Gated on the last input the desk saw (`./input-modality.ts`), because a browser matches
+/* Gated on the last input the desk saw (`packages/tuval-ui/src/shell/ui/input-modality.ts`), because a browser matches
    `:focus-visible` on a text field for a *pointer* focus too — the composer got a ring on every
    click and the founder ruled it keyboard-only (#8786). Still the one rule on the root: for a
    button or a picker row the gate is a no-op, since a browser already withholds `:focus-visible`

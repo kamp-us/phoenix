@@ -9,9 +9,9 @@
  */
 
 import type {DispatchResult} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import type {Key} from "@kampus/tuval-ui/keys";
 import type {ShellState} from "../core/index.ts";
 import {isShellState} from "../core/index.ts";
-import type {Key} from "../keys/index.ts";
 
 /**
  * What the kernel answered about one key. The three `KeyOutcome` arms are the kernel's; `Refused`

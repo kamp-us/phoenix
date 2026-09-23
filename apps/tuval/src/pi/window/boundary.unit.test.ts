@@ -18,8 +18,8 @@ import type {
 	WindowHost,
 	WindowRenderer,
 } from "@kampus/tuval-sdk/kernel/shell/window/index";
+import type {ChatView, ChatWindowRenderer} from "@kampus/tuval-ui/chat";
 import {describe, expect, it} from "vitest";
-import type {ChatView, ChatWindowRenderer} from "../../shell/chat/index.ts";
 import {PI_CHAT_WINDOW_REF} from "../renderer-ref.ts";
 
 type CounterState = {readonly count: number};

@@ -13,10 +13,10 @@ import {
 	SpellReplyOk,
 } from "@kampus/tuval-sdk/kernel/protocol/messages";
 import type {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {Duration, Option} from "effect";
 import {assert, describe, expect, it} from "vitest";
 import type {TableRow} from "../../table/row.ts";
-import {defaultPrefixTable} from "../keys/table.ts";
 import {
 	ATTACH_KIND,
 	ATTACH_REFUSED_KIND,

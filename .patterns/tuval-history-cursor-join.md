@@ -1,7 +1,7 @@
 # Joining a live tail's ids to a stored history's, for the page cursor
 
 A Tuval AI-agent window pages by sending **a live row's own id back as the `before` cursor**
-(`oldestLoadedId` → `olderPageRequest` in `apps/tuval/src/shell/chat/rows.ts`). A backend whose live
+(`oldestLoadedId` → `olderPageRequest` in `packages/tuval-ui/src/shell/chat/rows.ts`). A backend whose live
 stream and whose stored history are keyed differently therefore hands the page planner a cursor its
 history does not contain, and `planTranscriptPage` correctly answers `cursor-not-found` — every page
 on a real desk, for as long as the gap stands. Pi shipped it

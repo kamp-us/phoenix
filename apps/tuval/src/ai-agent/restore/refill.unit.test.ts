@@ -29,8 +29,8 @@ import {
 	toolItem,
 	userItem,
 } from "@kampus/tuval-sdk/kernel/ai-agent-fixtures/transcripts";
+import {type ChatRow, chatRows, olderPageRequest} from "@kampus/tuval-ui/chat";
 import {describe, expect, it} from "vitest";
-import {type ChatRow, chatRows, olderPageRequest} from "../../shell/chat/rows.ts";
 
 const CWD = "/work";
 const SESSION = "session-3c82b30d";

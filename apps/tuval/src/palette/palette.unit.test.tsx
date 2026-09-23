@@ -15,12 +15,12 @@ import {
 	SpellReplyError,
 	SpellReplyOk,
 } from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
+import {registry, snapshot} from "@kampus/tuval-ui/testing/palette";
 import {act, fireEvent, render, screen} from "@testing-library/react";
 import axe from "axe-core";
 import {useState} from "react";
 import {describe, expect, it, vi} from "vitest";
-import {installDomShims} from "../shell/ui/dom.testing.ts";
-import {registry, snapshot} from "./fixtures.ts";
 import {Palette} from "./Palette.tsx";
 import {usePalette} from "./use-palette.ts";
 

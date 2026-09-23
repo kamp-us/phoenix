@@ -43,13 +43,13 @@ import {
 	type StateAdoption,
 	StateDir,
 } from "@kampus/tuval-sdk/kernel/state-dir";
+import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Effect, type FileSystem, Layer, Ref} from "effect";
 import {type ConfigLoadError, loadLayeredConfig, type TuvalFeatures} from "./config.ts";
 import {type LaunchedProcess, launch} from "./launch/launch.ts";
 import {dispatchConfigChanged} from "./reload.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
 import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kernel.ts";
-import type {PrefixTable} from "./shell/keys/index.ts";
 import {shellId, shellPrefixTable, withShellFeatures} from "./shell/program.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 

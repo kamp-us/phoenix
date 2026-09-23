@@ -17,6 +17,9 @@ import {
 	processGone,
 	type WindowId,
 } from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {useForwardedKey} from "@kampus/tuval-ui/forwarded-key";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {Duration} from "effect";
 import type {ReactElement} from "react";
@@ -24,12 +27,9 @@ import {StrictMode, useEffect, useRef, useState} from "react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {applyMsg} from "../core/index.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
 import type {PickerEntries} from "../picker/index.ts";
 import {Desk} from "./Desk.tsx";
-import {installDomShims} from "./dom.testing.ts";
 import {threeWindowDesk} from "./fixtures.ts";
-import {useForwardedKey} from "./forwarded-key.tsx";
 import {boundMount, type MountResolver, noRenderer, type ReactWindowRenderer} from "./mount.ts";
 import {type KeyPress, refused, replyIn} from "./press.ts";
 
@@ -66,7 +66,7 @@ const boundEverywhere: MountResolver = boundTo((host) => (
 /**
  * A window shaped like the chat one: the two places an operator's focus actually sits — a composer
  * that reads its own keys, and a scroll region that swallows a bare character exactly as
- * `../chat/ChatWindow.tsx` does. The rule is the shipped helper, not a paraphrase of it, so a desk
+ * `packages/tuval-ui/src/shell/chat/ChatWindow.tsx` does. The rule is the shipped helper, not a paraphrase of it, so a desk
  * that stopped honouring the armed mark fails here.
  */
 const chatShapedWindow: MountResolver = boundTo((host) => (

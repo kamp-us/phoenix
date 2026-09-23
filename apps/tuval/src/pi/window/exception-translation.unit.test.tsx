@@ -9,14 +9,13 @@ import {TranscriptError} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {type ChatView, chatWindow, initialChatView} from "@kampus/tuval-ui/chat";
+import {sessionState} from "@kampus/tuval-ui/testing/chat";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {render, screen} from "@testing-library/react";
 import {Effect, Schema} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import {chatWindow} from "../../shell/chat/ChatWindow.tsx";
-import {sessionState} from "../../shell/chat/chat.testing.ts";
-import {type ChatView, initialChatView} from "../../shell/chat/view.ts";
-import {installDomShims} from "../../shell/ui/dom.testing.ts";
 import {
 	interruptFailureOf,
 	promptDropOf,

@@ -33,8 +33,8 @@ import {
 import {foldItem} from "@kampus/tuval-sdk/kernel/ai-agent/core/fold";
 import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import type {TuvalAiAgentApi} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {chatRows, olderPageRequest, subagentHeads} from "@kampus/tuval-ui/chat";
 import {Cause, Effect, Exit, Option, Stream} from "effect";
-import {chatRows, olderPageRequest, subagentHeads} from "../../shell/chat/rows.ts";
 import {CWD, messages, on, rows, SESSION_ID, START_EVENTS} from "../agent/fixtures/harness.ts";
 
 const PROMPT = "spawn a worker";

@@ -10,6 +10,7 @@
  */
 
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, fireEvent, render} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {useState} from "react";
@@ -22,7 +23,6 @@ import {
 	withFilter,
 } from "../picker/browser.ts";
 import {processId, programId, programRow} from "../picker/fixtures.ts";
-import {installDomShims} from "./dom.testing.ts";
 import {PickerView} from "./PickerView.tsx";
 
 installDomShims();

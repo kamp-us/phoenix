@@ -37,9 +37,14 @@ import {
 import {renderPath} from "@kampus/tuval-sdk/kernel/commands/spell";
 import type {WindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
 import type {Snapshot, SpellCall, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {
+	failureLine,
+	type MintCallId,
+	randomCallId,
+	spellCallFor,
+} from "@kampus/tuval-ui/palette-call";
 import type {KeyboardEvent, ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {failureLine, type MintCallId, randomCallId, spellCallFor} from "./call.ts";
 import {acceptCandidate, type PaletteCandidate, paletteCandidates} from "./candidates.ts";
 import "./palette.css";
 

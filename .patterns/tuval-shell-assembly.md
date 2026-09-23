@@ -271,7 +271,7 @@ program-blind: a process's state still crosses as `unknown`.
   of the feature flags and resolves its flag-gated keys through one function, so a flag off leaves an
   empty set and the key falls through to `Ignored` exactly as it did before the key existed. It is
   the shape `boardCommands` (`src/shell/commands/table.ts`) and `boardBindings`
-  (`src/shell/keys/table.ts`) already have, and it is why "the key does nothing" and "the key does
+  (`packages/tuval-ui/src/shell/keys/table.ts`) already have, and it is why "the key does nothing" and "the key does
   not exist" are one thing to an operator: `pickerFrame`'s `keyHelp` reads the same flag, so a desk
   never names a key it does not answer (#9447).
 - **The `/` filter narrows before anything reads the list.** `visibleEntries`
@@ -349,7 +349,7 @@ Three files, and the split between them is forced rather than stylistic.
   `AgentChatInput` takes no `onSubmit`: it reads its whole world off an `AgentChatInputBridge` and
   re-runs all four of its loads whenever that object's identity changes, so a bridge rebuilt per
   state change drops the composer back to `loading` on every turn.
-  `src/shell/chat/composer-bridge.ts` is therefore built once in a `useMemo` whose dependencies are
+  `packages/tuval-ui/src/shell/chat/composer-bridge.ts` is therefore built once in a `useMemo` whose dependencies are
   only the dispatch closures — `phase`, `models` and `commands` *seed* it and are deliberately not
   dependencies — and each later change reaches the mounted composer through a setter that pushes one
   event at the bridge's own subscription: `setPhase` pushes `agent_start` / `agent_settled`, and
@@ -378,15 +378,15 @@ The row carries three optional references (`src/registry/program.ts`): `renderer
   a bar. That is the ruling as a type: the shell owns the left (the workspace) and the right (kernel
   facts) because `statusFor` derives them itself and a program's segments can only ever arrive in
   `middle` (#7500 ruling 5).
-- `inspectorFor` and `statusFor` (`src/shell/desk/compose.ts`) walk one chain — focused window → its
+- `inspectorFor` and `statusFor` (`packages/tuval-ui/src/shell/desk/compose.ts`) walk one chain — focused window → its
   process → its program row → the reference it declares → the renderer that reference names — and
   answer with a value on every step that does not resolve (`DeskEmptyReason`). A region is never a
   hole and never a throw; the surface renders its placeholder and reads nothing else.
 - **The inspector's open/collapsed flag is desk state, not workspace state**: it lives on
-  `ShellState.desk` (`src/shell/desk/state.ts`), so a workspace switch leaves it exactly as it was.
+  `ShellState.desk` (`packages/tuval-ui/src/shell/desk/state.ts`), so a workspace switch leaves it exactly as it was.
   `desk.inspector.toggle` is the one Msg that writes it, reachable from the `desk:inspector-toggle`
   command row like any other.
-- `src/shell/desk/` imports no socket, no React and nothing from `src/shell/ui/` — its own boundary
+- `packages/tuval-ui/src/shell/desk/` imports no socket, no React and nothing from the app's `src/shell/ui/` — its own boundary
   test is the gate, as `src/shell/window/`'s is.
 - **The snapshot is assembled on the surface**, in `src/shell/ui/desk-snapshot.ts`, because half of
   it only exists there: the live `WindowHost` a renderer mounts into, and the two renderer tables a

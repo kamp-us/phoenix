@@ -1,6 +1,6 @@
 /*
  * The two panes the desk would give these windows. Nothing here is the window's own paint — that is
- * `../../../shell/chat/chat.css` and `../pi-window.css` — and the separation is the point: a rule
+ * `packages/tuval-ui/src/shell/chat/chat.css` and `../pi-window.css` — and the separation is the point: a rule
  * that belongs to the harness must never be mistaken for one the product ships.
  *
  * `.tuval-surface` is a flex *column* (`../../../shell/ui/tokens.css`), so the row direction is
