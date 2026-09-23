@@ -39,12 +39,23 @@
  *   - CLOUDFLARE_ACCOUNT_ID  — which account to deploy into
  *   - ALCHEMY_PASSWORD       — encrypts/decrypts secrets in the Cloudflare-hosted
  *                              alchemy state store
- *   - BETTER_AUTH_SECRET     — the session-signing secret. The worker reads it at
- *                              runtime as a `secret_text` binding (`config.ts`:
+ *   - BETTER_AUTH_SECRET     — the session-signing secret for production, `audit` and
+ *                              every named stage. The worker reads it at runtime as a
+ *                              `secret_text` binding (`config.ts`:
  *                              `Config.redacted(ENV_BINDINGS.betterAuthSecret)`), so the
  *                              deploy needs the value. Minted here as a stable
  *                              `Random` (persisted in this stack's state) and
- *                              pushed so CI can bind it on every deploy.
+ *                              pushed so CI can bind it on every non-preview deploy.
+ *                              It is founder-held: the pushed Actions secret is
+ *                              write-only and this stack's state is the one readable
+ *                              copy, behind `$ALCHEMY_PASSWORD` (#9339).
+ *
+ * == WHAT IS DELIBERATELY NOT IN THE ROSTER ==
+ * The `pr-<n>` preview session-signing key is NOT one of this stack's secrets and never
+ * passes through here. It is committed in the clear at `infra/preview-auth-key/key.txt`
+ * and picked by stage name in `deploy.yml`, so a preview worker never verifies against
+ * the value above and any agent can sign a preview session with no credential at all
+ * (ADR 0406). Nothing to mint, nothing to push, nothing to rotate from this stack.
  */
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";

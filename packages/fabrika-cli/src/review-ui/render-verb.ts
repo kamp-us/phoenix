@@ -8,14 +8,16 @@
  * A placeholder signing key can return visitor pixels despite a well-formed cookie.
  * @ruling https://github.com/kamp-us/phoenix/issues/8796
  * @ruling https://github.com/kamp-us/phoenix/issues/9288#issuecomment-5703250637
+ * @ruling https://github.com/kamp-us/phoenix/issues/9533#issuecomment-5754589033
  */
-import {Effect, type FileSystem, type Path, Result} from "effect";
+import {Effect, type FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {
 	AUTH_SECRET_ENV,
 	type AuthSecretRead,
 	classifyAuthSecret,
 	type IdentityRead,
+	PREVIEW_AUTH_KEY_PATH,
 	readIdentity,
 	sessionCookies,
 } from "../capture/auth.ts";
@@ -39,6 +41,7 @@ import {
 	tierOf,
 } from "../capture/states.ts";
 import {previewAppOf, type UiSurface} from "../config/keys/ui-surfaces.ts";
+import {discoverRepoRoot} from "../delegate/root.ts";
 import {readFile, writeFile} from "../io/fs.ts";
 import {listComments} from "../io/issues.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
@@ -116,12 +119,14 @@ export interface RenderOptions {
 	 */
 	readonly surfaceRows: ReadonlyArray<UiSurface>;
 	/**
-	 * A file holding the `BETTER_AUTH_SECRET` the preview worker deploys with, exported from the
-	 * ci-credentials stack's alchemy state — one repo-wide value, not a per-stage one.
-	 * `null` falls back to the ambient variable, which is accepted only when it is
-	 * neither empty nor the `.env.example` placeholder.
+	 * A file holding a signing secret to use instead of the repo's own. `null` — the ordinary run —
+	 * resolves the committed preview key at {@link PREVIEW_AUTH_KEY_PATH}, which is what the
+	 * preview worker deploys with, and falls back to the ambient variable only in a checkout that
+	 * carries no such file.
 	 */
 	readonly authSecretFrom: string | null;
+	/** Where the run stands, so the committed preview key resolves against this checkout's root. */
+	readonly cwd: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** The OS temp root the deterministic set path hangs off — a port so a test can pin it. */
@@ -200,34 +205,60 @@ type UnreadableSecret = {
 };
 
 /**
- * The run's signing key, from the source the operator named.
+ * The run's signing key. Three sources, in this order, and the order is the whole design.
  *
- * `--auth-secret-from` is the only source that can be *known* to be the deployed one: the app
- * stack's `secret_text` binding does not read back and the GitHub Actions secret is write-only, so
- * the one readable copy is the ci-credentials stack's alchemy state, where
- * `infra/ci-credentials/github.ts` mints the single repo-wide value every auth-binding app's stages
- * deploy with, and an operator exports it from there. With no flag the ambient variable stands in,
- * and {@link classifyAuthSecret} is what keeps that fallback honest — a placeholder or empty value
- * refuses rather than signing.
+ * `--auth-secret-from` comes first because it is the operator overriding on purpose; a run that
+ * passed it and silently got something else would be a tool that did not listen.
+ *
+ * With no flag the source is the repo's own committed preview key — every `pr-<n>` preview worker
+ * deploys with it, it is public on purpose, and it is the reason a seat needs no credential to
+ * render an `:auth` surface at all. This verb only ever shoots a PR's preview, so that
+ * is always the right key for the origin it is shooting.
+ *
+ * The ambient variable is last and is now a fallback rather than a route: it stands in only where
+ * the checkout carries no committed key, which is a checkout predating that file. {@link
+ * classifyAuthSecret} keeps it honest — a placeholder or empty value refuses rather than signing.
+ *
+ * A root discovery that *failed* is not that fallback's case. It refuses instead, because
+ * {@link discoverRepoRoot} answers "no repo here" with `undefined` and "I could not look" on its `E`
+ * channel, and an unreadable ancestor handed to the ambient arm would report the second as the first.
  *
  * A run whose surfaces name no tier asks for no session, so nothing calls this: there is no key to
  * read and no cookie to sign.
  */
 const resolveAuthSecret = (
 	options: RenderOptions,
-): Effect.Effect<AuthSecretRead | UnreadableSecret, never, FileSystem.FileSystem> =>
+): Effect.Effect<AuthSecretRead | UnreadableSecret, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
-		const path = options.authSecretFrom;
-		if (path === null) {
-			return classifyAuthSecret(options.env[AUTH_SECRET_ENV] ?? "", {
-				_tag: "Ambient",
-				name: AUTH_SECRET_ENV,
-			});
+		const named = options.authSecretFrom;
+		if (named !== null) {
+			const read = yield* Effect.result(readFile(named));
+			return Result.isFailure(read)
+				? ({_tag: "Unreadable", path: named, reason: read.failure.reason} as const)
+				: classifyAuthSecret(read.success, {_tag: "RepoWideExport", path: named});
 		}
-		const read = yield* Effect.result(readFile(path));
-		return Result.isFailure(read)
-			? ({_tag: "Unreadable", path, reason: read.failure.reason} as const)
-			: classifyAuthSecret(read.success, {_tag: "RepoWideExport", path});
+		const root = yield* Effect.result(discoverRepoRoot(options.cwd));
+		// `discoverRepoRoot` keeps "I could not look" on its `E` channel and "there is no repo here"
+		// on `undefined`, so folding the failure into the ambient fallback would report an unreadable
+		// ancestor as a checkout that simply carries no committed key.
+		if (Result.isFailure(root)) {
+			return {
+				_tag: "Unreadable",
+				path: root.failure.path,
+				reason: `${root.failure.reason} — the repo root could not be located, so the committed preview key was never looked for`,
+			} as const;
+		}
+		if (root.success !== undefined) {
+			const path = (yield* Path.Path).join(root.success, PREVIEW_AUTH_KEY_PATH);
+			const committed = yield* Effect.result(readFile(path));
+			if (!Result.isFailure(committed)) {
+				return classifyAuthSecret(committed.success, {_tag: "CommittedPreviewKey", path});
+			}
+		}
+		return classifyAuthSecret(options.env[AUTH_SECRET_ENV] ?? "", {
+			_tag: "Ambient",
+			name: AUTH_SECRET_ENV,
+		});
 	});
 
 /**
@@ -238,7 +269,7 @@ const resolveAuthSecret = (
 const resolveTierIdentity = (
 	options: RenderOptions,
 	tiers: readonly CaptureTier[],
-): Effect.Effect<IdentityRead | UnreadableSecret, never, FileSystem.FileSystem> =>
+): Effect.Effect<IdentityRead | UnreadableSecret, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const secret = yield* resolveAuthSecret(options);
 		return secret._tag === "Unreadable" ? secret : readIdentity(options.env, tiers, secret);
@@ -420,18 +451,18 @@ export const runRender = (
 		if (identity?._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the exported repo-wide session-signing secret at ${identity.path}: ${identity.reason} — the named tier's render is UNKNOWN.`,
+				`${VERB}: cannot read the session-signing secret at ${identity.path}: ${identity.reason} — the named tier's render is UNKNOWN.`,
 				[scanned],
 			);
 		}
 		if (identity?._tag === "Unusable") {
-			// The route out differs by source: a named export that is unusable is the wrong export, and
-			// pointing the operator back at the flag they already passed reads as a tool that did not
-			// look.
+			// The route out differs by source. Neither arm sends a seat after a credential any more:
+			// the preview key is committed, so an unusable value is either a broken checkout or a flag
+			// the operator passed over it — never a secret they have to go and be given.
 			const route =
 				options.authSecretFrom === null
-					? " pass --auth-secret-from <file> holding the repo-wide BETTER_AUTH_SECRET, whose one readable copy is the ci-credentials stack's alchemy state (infra/ci-credentials/github.ts) behind $ALCHEMY_PASSWORD."
-					: " that file does not hold the deployed value: there is no preview-stage copy to export, so re-export the repo-wide BETTER_AUTH_SECRET from the ci-credentials stack's alchemy state (infra/ci-credentials/github.ts) behind $ALCHEMY_PASSWORD.";
+					? ` run from a checkout carrying ${PREVIEW_AUTH_KEY_PATH}, the committed preview key every pr-<n> worker deploys with — no flag, no credential and no environment variable are needed for it.`
+					: ` that file does not hold the value this preview verifies against; drop --auth-secret-from and the committed preview key at ${PREVIEW_AUTH_KEY_PATH} resolves on its own.`;
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: a tier-naming surface was requested but ${identity.reason} — the named tier's render is UNKNOWN, never a cookie the worker will reject;${route}`,

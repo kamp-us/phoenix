@@ -6,12 +6,15 @@
  * the `node:crypto` one that signed it, so a self-consistent-but-wrong signature cannot pass.
  */
 import {webcrypto} from "node:crypto";
+import {readFileSync} from "node:fs";
+import {join} from "node:path";
 import {describe, expect, it} from "vitest";
 import {
 	AUTH_SECRET_ENV,
 	classifyAuthSecret,
 	describeAuthSecretSource,
 	PLACEHOLDER_SECRET_PREFIX,
+	PREVIEW_AUTH_KEY_PATH,
 	readIdentity,
 	readSessionProof,
 	SECURE_COOKIE_PREFIX,
@@ -24,7 +27,7 @@ const SECRET = "a-preview-better-auth-secret";
 const TOKEN = "t".repeat(32);
 const PREVIEW = "https://app-pr-42.example.workers.dev";
 
-const verify = async (signed: string): Promise<boolean> => {
+const verify = async (signed: string, secret: string = SECRET): Promise<boolean> => {
 	const decoded = decodeURIComponent(signed);
 	const cut = decoded.lastIndexOf(".");
 	const value = decoded.slice(0, cut);
@@ -32,7 +35,7 @@ const verify = async (signed: string): Promise<boolean> => {
 	const bytes = Uint8Array.from(atob(signature), (c) => c.charCodeAt(0));
 	const key = await webcrypto.subtle.importKey(
 		"raw",
-		new TextEncoder().encode(SECRET),
+		new TextEncoder().encode(secret),
 		{name: "HMAC", hash: "SHA-256"},
 		false,
 		["verify"],
@@ -101,9 +104,38 @@ describe("classifyAuthSecret", () => {
 	});
 });
 
+/**
+ * The committed preview key is the source a seat uses with no flag and no credential, so a refusal
+ * here would strand every signed-in render on the very value the repo hands out to make them
+ * possible. Read the real file, not a fixture: the assertion is about what is committed today, and
+ * a fixture would keep passing through a rotation that broke it.
+ */
+describe("the committed preview key passes this module's own judgement", () => {
+	// `src/capture` → the repo root is four levels up.
+	const committed = readFileSync(
+		join(import.meta.dirname, "..", "..", "..", "..", PREVIEW_AUTH_KEY_PATH),
+		"utf8",
+	);
+	const source = {_tag: "CommittedPreviewKey", path: PREVIEW_AUTH_KEY_PATH} as const;
+
+	it("is Usable — neither empty nor placeholder-prefixed", () => {
+		const read = classifyAuthSecret(committed, source);
+		expect(read._tag).toBe("Usable");
+		expect(committed.trim().startsWith(PLACEHOLDER_SECRET_PREFIX)).toBe(false);
+	});
+
+	it("signs a cookie better-auth's own reader accepts", async () => {
+		const [cookie] = sessionCookies(PREVIEW, TOKEN, committed.trim());
+		expect(await verify((cookie as {value: string}).value, committed.trim())).toBe(true);
+	});
+});
+
 describe("describeAuthSecretSource", () => {
-	it("names the export by its path and the fallback by its variable", () => {
+	it("names each source by the thing an operator would go and look at", () => {
 		expect(describeAuthSecretSource({_tag: "RepoWideExport", path: "/run/s"})).toContain("/run/s");
+		expect(
+			describeAuthSecretSource({_tag: "CommittedPreviewKey", path: PREVIEW_AUTH_KEY_PATH}),
+		).toContain(PREVIEW_AUTH_KEY_PATH);
 		expect(describeAuthSecretSource({_tag: "Ambient", name: AUTH_SECRET_ENV})).toContain(
 			AUTH_SECRET_ENV,
 		);
