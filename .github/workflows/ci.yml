@@ -626,6 +626,23 @@ jobs:
       - name: Prove an outside program builds and tests against the packed Tuval SDK
         run: pnpm --filter @kampus/tuval-sdk run proof:outside
 
+  # No package outside `apps/` depends on or imports an `@kampus-apps/*` app (#9660). It runs on
+  # every event with no path filter, because a rename or a new package anywhere can break the
+  # rule, and `ci-required` requires it with a constant `'true'`. The bin has zero runtime
+  # dependencies, so the job needs no `pnpm install`.
+  app-boundary:
+    name: app boundary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+
+      - name: Check no package outside apps/ depends on or imports an app
+        run: node packages/app-boundary-guard/src/bin.ts
+
   skills:
     # The check name is a required status check on `main`, so it keeps its historical name
     # ("validate skill frontmatter") while the v1 skill validators it ran retired with the
@@ -1117,7 +1134,7 @@ jobs:
   # (which gates all `packages/**` suites, #760).
   ci-required:
     name: ci-required
-    needs: [changes, check, unit, packages-tests, actionlint, integration, e2e]
+    needs: [changes, check, unit, packages-tests, actionlint, integration, e2e, app-boundary]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -1136,7 +1153,7 @@ jobs:
           # run-ness cannot drift. `check` and `unit` are two jobs behind one `check_required`
           # output, which is why they carry two keys reading the one source. A declared job whose
           # keys are absent reds rather than reading as not-required.
-          CI_REQUIRED_JOBS: check unit packages-tests actionlint integration e2e
+          CI_REQUIRED_JOBS: check unit packages-tests actionlint integration e2e app-boundary
           CHANGES_RESULT: ${{ needs.changes.result }}
           CHECK_REQUIRED: ${{ needs.changes.outputs.check_required }}
           UNIT_REQUIRED: ${{ needs.changes.outputs.check_required }}
@@ -1144,10 +1161,13 @@ jobs:
           ACTIONLINT_REQUIRED: ${{ needs.changes.outputs.workflows_required }}
           INTEGRATION_REQUIRED: ${{ needs.changes.outputs.integration_required }}
           E2E_REQUIRED: ${{ needs.changes.outputs.e2e_required }}
+          # Unconditional: the job has no `if:`, so it should run on every event.
+          APP_BOUNDARY_REQUIRED: 'true'
           CHECK_RESULT: ${{ needs.check.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
           PACKAGES_TESTS_RESULT: ${{ needs.packages-tests.result }}
           ACTIONLINT_RESULT: ${{ needs.actionlint.result }}
           INTEGRATION_RESULT: ${{ needs.integration.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
+          APP_BOUNDARY_RESULT: ${{ needs.app-boundary.result }}
         run: node packages/fabrika-cli/src/ci/required-bin.ts
