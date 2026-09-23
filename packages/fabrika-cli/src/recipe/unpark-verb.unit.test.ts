@@ -15,6 +15,7 @@ import type {ExecResult} from "../io/exec.ts";
 import {parkCauseRead} from "../lane/fixtures.test-support.ts";
 import {foldLog, type LogEntry, parseLog} from "../lane/fold.ts";
 import {compileText} from "../lane/machine.ts";
+import {evidenced, evidenceOpens} from "../review-ui/evidence.test-support.ts";
 import {
 	CODEOWNERS,
 	checkRuns,
@@ -517,12 +518,13 @@ describe("recipe unpark — a routed-UI park clears once the review it routed to
 					comments(
 						{id: 1, body: marker("review-code", "PASS", HEAD)},
 						{id: 2, body: marker("review-doc", "PASS", HEAD)},
-						{id: 3, body: marker("review-ui", "PASS", HEAD)},
+						{id: 3, body: evidenced(marker("review-ui", "PASS", HEAD))},
 					),
 				),
 			],
 			[REVIEWS, reviewPage()],
 			[ACL, permission("write")],
+			...evidenceOpens("o/r", 3),
 		]);
 
 		expect(out.code).toBe(PARK_HOLDS);

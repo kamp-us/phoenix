@@ -18,6 +18,7 @@
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9715#issuecomment-5792636866
  */
+import {createHash} from "node:crypto";
 import {Effect} from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
@@ -28,6 +29,15 @@ import {isRecord} from "./json.ts";
 export interface HostedCapture {
 	readonly url: string;
 	readonly bytes: Uint8Array;
+}
+
+/**
+ * A capture held only by its digest — a gate reading a posted verdict has the sha256 the gallery
+ * recorded, not the reviewer's local bytes.
+ */
+export interface DigestedCapture {
+	readonly url: string;
+	readonly sha256: string;
 }
 
 /** PURE: the render call that resolves a hosted URL to its signed link, in `repo`'s context. */
@@ -77,6 +87,14 @@ export const classifyBytes = (served: Uint8Array, expected: Uint8Array): string 
 		? null
 		: `the hosted asset served ${served.length} bytes that are not the ${expected.length}-byte capture`;
 
+/** PURE: whether the served bytes hash to the recorded digest. */
+export const classifyDigest = (served: Uint8Array, sha256: string): string | null => {
+	const actual = createHash("sha256").update(served).digest("hex");
+	return actual === sha256
+		? null
+		: `the hosted asset served bytes hashing to ${actual.slice(0, 12)}, not the recorded ${sha256.slice(0, 12)}`;
+};
+
 /**
  * The fault's tag and nothing else: an HTTP client error prints its request, and the signed link's
  * query is a credential.
@@ -84,10 +102,10 @@ export const classifyBytes = (served: Uint8Array, expected: Uint8Array): string 
 const faultTag = (error: unknown): string =>
 	isRecord(error) && typeof error._tag === "string" ? error._tag : "unknown fault";
 
-/** Fetch the served link for one capture out of `html`, and hold it to the capture's bytes. */
+/** Fetch the served link for one capture out of `html`, and hold it to its bytes or their digest. */
 export const readBack = (
 	html: string,
-	capture: HostedCapture,
+	capture: HostedCapture | DigestedCapture,
 ): Effect.Effect<string | null, never, HttpClient.HttpClient> => {
 	const served = servedAssetUrl(html, capture.url);
 	if (served === null) {
@@ -100,7 +118,9 @@ export const readBack = (
 			const status = classifyProbe(response.status);
 			if (status !== null) return Effect.succeed(status);
 			return Effect.map(response.arrayBuffer, (buffer) =>
-				classifyBytes(new Uint8Array(buffer), capture.bytes),
+				"bytes" in capture
+					? classifyBytes(new Uint8Array(buffer), capture.bytes)
+					: classifyDigest(new Uint8Array(buffer), capture.sha256),
 			);
 		}),
 		Effect.catch((error: unknown) =>

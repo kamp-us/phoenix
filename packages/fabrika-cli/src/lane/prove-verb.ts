@@ -57,6 +57,7 @@ import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
 import {partitionWithUi, ROUTED_NAMESPACES, shipNamespacesOf} from "../review/classes.ts";
 import {bindRange, contentDigestAt, rangeContentAt} from "../review/content-binding.ts";
 import {bindHead} from "../review/head.ts";
+import {standingEvidence} from "../review-ui/standing-evidence.ts";
 import {CODEOWNERS_PATH, readBoundary} from "../ship/boundary.ts";
 import {classify} from "../ship/codeowners.ts";
 import {ROUTABLE} from "../ship/gate-verb.ts";
@@ -925,6 +926,25 @@ export const readNamespaceRows = (
 				commentId: claim.commentId,
 			};
 		});
+		// A review-ui verdict counts only while its evidence opens — `ship gate`'s re-check, one
+		// implementation, so the lane and the merge gate cannot count that verdict differently.
+		for (const [index, fact] of inForce.entries()) {
+			if (fact.namespace !== ROUTABLE || fact.polarity === "ROUTED" || fact.binding !== "current") {
+				continue;
+			}
+			const body = commented.value.find((comment) => comment.id === fact.commentId)?.body ?? "";
+			const standing = yield* standingEvidence(repo, {id: fact.commentId, body});
+			if (standing._tag === "Opens") continue;
+			notes.push(
+				standing._tag === "Unreadable"
+					? `${VERB}: ${fact.namespace} on #${pr}: the evidence of comment ${fact.commentId} could not be read (${standing.reason}) — whether it counts is UNKNOWN.`
+					: `${VERB}: ${fact.namespace} on #${pr}: the verdict in comment ${fact.commentId} does not count — its evidence does not open (${standing.reasons.join("; ")}).`,
+			);
+			inForce[index] = {
+				...fact,
+				binding: standing._tag === "Unreadable" ? "unknown" : "unopened",
+			};
+		}
 		const rows: ReadonlyArray<NamespaceRow> = judgeVerdicts(required, inForce);
 		notes.push(
 			`${VERB}: #${pr} at ${head} derives ${required.join(", ")}; read ${commented.value.length} comment(s).`,

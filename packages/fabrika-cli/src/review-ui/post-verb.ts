@@ -22,6 +22,13 @@
  * no comment-body history and a PATCH over a verdict is that verdict gone — a standing FAIL
  * became a PASS with nothing left showing a gate had ever blocked. A post that would retire
  * a standing verdict of the opposite polarity at the same head is `18` until `--supersede` says so.
+ *
+ * Step 9 **never withdraws** what step 7 wrote. When the posted evidence does not open, the verdict
+ * stays, a plain note beside it says why it does not count, and the verb exits `9`. Not counting it
+ * is the readers' job: `ship gate` and `lane prove` re-check the gallery's evidence before they
+ * count a `review-ui` verdict (`./standing-evidence.ts`).
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9725#issuecomment-5800916149
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -58,6 +65,7 @@ import {
 	UPLOAD_FAILED,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+import {emit as emitGallery} from "./evidence-gallery.ts";
 import {
 	type CaptureEntry,
 	manifestPath,
@@ -234,21 +242,35 @@ const mismatchOf = (
 };
 
 /**
- * The evidence gallery: per shot, the **verified** hosted URL — never a local path. A set is a
- * surface × viewport cross-product, so the heading names both: two shots of one surface
- * under one heading would read as a duplicate rather than as the two widths they are.
+ * The evidence gallery: per shot, the **verified** hosted URL — never a local path — and the digest
+ * of the bytes judged. A set is a surface × viewport cross-product, so the heading names both: two
+ * shots of one surface under one heading would read as a duplicate rather than as the two widths
+ * they are.
  */
 const gallery = (hosted: ReadonlyArray<readonly [CaptureEntry, string]>): string =>
+	emitGallery(
+		hosted.map(([entry, url]) => ({
+			title: `${entry.surface} @ ${entry.viewport}`,
+			url,
+			sha256: entry.sha256,
+		})),
+	);
+
+/**
+ * The plain note step 9 leaves beside a verdict whose evidence does not open. It is the PR's record
+ * that the verdict was attempted and why no gate counts it; its first line is no verdict carrier.
+ */
+export const unopenedNote = (verdictUrl: string, reasons: readonly [string, ...string[]]): string =>
 	[
-		"## Evidence",
+		`This review-ui verdict does not count: ${verdictUrl}`,
 		"",
-		...hosted.flatMap(([entry, url]) => {
-			const shot = `${entry.surface} @ ${entry.viewport}`;
-			return [`### ${shot}`, "", `![${shot}](${url})`, ""];
-		}),
-	]
-		.join("\n")
-		.replace(/\n+$/, "");
+		"Its evidence did not open when `review-ui post` read the posted comment back:",
+		"",
+		...reasons.map((reason) => `- ${reason}`),
+		"",
+		"`fabrika ship gate` and `fabrika lane prove` re-check a review-ui verdict's evidence before they count it, so neither counts this one while its evidence does not open. Re-render and post the verdict again.",
+		"",
+	].join("\n");
 
 /**
  * Which evidence tier this repo declares, read whole (`4` on a value that does not satisfy its
@@ -539,12 +561,16 @@ export const runPost = (
 		// way a reader's browser renders it rather than trusted from the step-4 read-back.
 		const opened = yield* options.confirm({repo, commentId: landed.id, evidence});
 		if (opened._tag === "Unresolved") {
+			const noted = yield* createComment(repo, pr, unopenedNote(landed.url, opened.reasons));
 			return refuse(
 				READBACK_MISMATCH,
-				`${VERB}: POSTED, BUT ITS EVIDENCE DOES NOT OPEN — ${opened.reasons.length} of ${evidence.length} embedded captures fail the read-back (${opened.reasons[0]}); the verdict in comment ${landed.id} stands over evidence nobody can see — inspect it before anything reads this verdict.`,
+				`${VERB}: POSTED, BUT ITS EVIDENCE DOES NOT OPEN — ${opened.reasons.length} of ${evidence.length} embedded captures fail the read-back (${opened.reasons[0]}); the verdict in comment ${landed.id} stays on the PR and does not count — ship gate and lane prove re-check its evidence and will not count it while it does not open. Re-render and post again.`,
 				[
 					...diagnostics,
 					...opened.reasons.map((reason) => `${VERB}: evidence does not open — ${reason}`),
+					noted._tag === "Failure"
+						? `${VERB}: the note saying this verdict does not count did not land (${noted.reason}) — the gates re-check its evidence either way.`
+						: `${VERB}: noted on the PR why this verdict does not count: ${noted.value.url}`,
 				],
 			);
 		}

@@ -30,6 +30,10 @@
  * alone needed because its emit path cannot produce a verdict over zero rendered surfaces. See
  * {@link ROUTABLE} for why exactly one namespace may resolve that way.
  *
+ * `unopened` is the sixth. A `review-ui` verdict is the one whose proof lives outside the comment —
+ * hosted captures a human must be able to open — so it counts only after its evidence is re-read
+ * and opens (`../review-ui/standing-evidence.ts`). One that does not open blocks like `absent`.
+ *
  * **The enumerated file list is the floor's file set, and `changed_files` no longer refuses.** This
  * verb used to stop at `13` whenever the list came up short of that count, and the count is the
  * stale side: GitHub computes it against a base it cached at the PR's last push, which nothing on
@@ -57,6 +61,7 @@ import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
 import {SHIP_NAMESPACES, touchesGovernanceRoot} from "../review/classes.ts";
 import {headContentFor} from "../review/head-content.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
+import {standingEvidence} from "../review-ui/standing-evidence.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
@@ -77,7 +82,12 @@ const VERB = "ship gate";
 /** The permission levels that count as an authorized verdict author. */
 const AUTHORIZED = new Set(["admin", "maintain", "write"]);
 
-export type NamespaceState = "pass" | "fail" | "absent" | "stale" | "routed";
+/**
+ * `unopened` is a `review-ui` verdict that binds this head but whose evidence a reader cannot open:
+ * it does not count, so it blocks as `absent` does, and it names a different remedy — re-render and
+ * re-post.
+ */
+export type NamespaceState = "pass" | "fail" | "absent" | "stale" | "routed" | "unopened";
 export type Carrier = "marker" | "advisory" | "review-fold" | "routed-elsewhere" | "-";
 
 /**
@@ -99,6 +109,21 @@ export interface NamespaceVerdict {
 	readonly carrier: Carrier;
 	readonly commentId: number | null;
 }
+
+/**
+ * Whether a resolved verdict stands on a `review-ui` evidence gallery that must still open before it
+ * counts: a formed verdict of that namespace, read off a comment. A route formed no verdict and
+ * carries no gallery, and a stale or absent row counts for nothing already.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9725#issuecomment-5800916149
+ */
+const evidenceBearing = (
+	verdict: NamespaceVerdict,
+): verdict is NamespaceVerdict & {readonly commentId: number} =>
+	verdict.name === ROUTABLE &&
+	(verdict.state === "pass" || verdict.state === "fail") &&
+	(verdict.carrier === "marker" || verdict.carrier === "advisory") &&
+	verdict.commentId !== null;
 
 export interface GateOptions {
 	readonly pr: number;
@@ -463,6 +488,27 @@ export const runGate = (
 				commentId,
 			};
 		});
+
+		// A review-ui verdict counts only while a reader can open its evidence, because `review-ui post`
+		// never withdraws a verdict whose evidence stopped opening after it posted.
+		for (const [index, verdict] of verdicts.entries()) {
+			if (!evidenceBearing(verdict)) continue;
+			const body = commented.value.find((comment) => comment.id === verdict.commentId)?.body ?? "";
+			const standing = yield* standingEvidence(repo, {id: verdict.commentId, body});
+			if (standing._tag === "Unreadable") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					unreadable(`the evidence of the ${verdict.name} verdict`, standing.reason),
+					diagnostics,
+				);
+			}
+			if (standing._tag === "DoesNotOpen") {
+				diagnostics.push(
+					`${VERB}: ${verdict.name}: the verdict in comment ${verdict.commentId} does not count — its evidence does not open (${standing.reasons.join("; ")}).`,
+				);
+				verdicts[index] = {...verdict, state: "unopened"};
+			}
+		}
 
 		// The coverage assertion runs BEFORE the answer is believed, not after it is printed.
 		const covered = new Set(verdicts.map((verdict) => verdict.name));
