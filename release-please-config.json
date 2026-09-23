@@ -6,6 +6,9 @@
 	"include-component-in-tag": true,
 	"separate-pull-requests": true,
 	"packages": {
+		"packages/design": {
+			"component": "design"
+		},
 		"packages/fabrika-cli": {
 			"component": "fabrika-cli"
 		},

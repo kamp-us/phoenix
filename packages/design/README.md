@@ -2,8 +2,10 @@
 
 ## Reference
 
-`@kampus/design` is a private workspace package. This page is the lookup index for its public
-entries and ownership boundaries.
+`@kampus/design` is published to npm as a `dist` build: JavaScript, `.d.ts` files and the
+stylesheets the components import. The published modules keep extensionless relative imports, so
+they need a bundler such as Vite. Inside this workspace the entries resolve to `src/`. This page is
+the lookup index for its public entries and ownership boundaries.
 
 | Entry | Contents |
 | --- | --- |

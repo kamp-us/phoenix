@@ -4,14 +4,14 @@
  * the geometry/paint ones (contrast, tap-target) never assert per render.
  */
 import axe from "axe-core";
-import type {InvariantId} from "./posture.ts";
-import type {InteractiveSpec, PrimitiveSpec} from "./registry.tsx";
+import type {InvariantId} from "./posture";
+import type {InteractiveSpec, PrimitiveSpec} from "./registry";
 
-export type {InvariantId, Posture} from "./posture.ts";
+export type {InvariantId, Posture} from "./posture";
 // Re-exported because this module is the package's `./a11y` entry point: a consumer running the
 // invariants over its own composed markup (apps/tuval's chat window, #7610) needs the spec type to
 // name what it is checking, and the registry itself is not a public entry.
-export type {InteractiveSpec, PresentationalSpec, PrimitiveSpec} from "./registry.tsx";
+export type {InteractiveSpec, PresentationalSpec, PrimitiveSpec} from "./registry";
 
 export interface InvariantViolation {
 	readonly id: InvariantId;
