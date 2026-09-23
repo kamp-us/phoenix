@@ -21,6 +21,14 @@
  * known durability risk. It works with a user
  * token today but can change or break without notice. The `uploadError` fallback
  * below is an acceptance criterion, unit-tested, NOT a TODO.
+ *
+ * What a `2xx` proves, as probed live on 2026-09-23: the bytes are stored and the
+ * body is `{"url": "https://github.com/user-attachments/assets/<uuid>"}` — no
+ * `href`. It does NOT prove that URL opens: a fresh asset reads `404` at its own
+ * address, under any credential, until some posted content embeds it. So a caller
+ * that needs the asset readable before it posts cannot probe the returned URL; it
+ * reads the asset back through GitHub's markdown renderer, which the `review-ui`
+ * upload leg does.
  */
 import {Effect} from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
@@ -49,9 +57,9 @@ const snippet = (body: string, max = 300): string =>
 
 /**
  * Pull the hosted asset URL out of a parsed response object. The endpoint is
- * undocumented, so read tolerantly: accept `href` or `url`, require a GitHub
- * user-attachments URL, and reject anything else so a shape change degrades to
- * the fallback rather than embedding a bogus link.
+ * undocumented, so read tolerantly: accept `href` or `url` (the live body carries
+ * `url` only), require a GitHub user-attachments URL, and reject anything else so
+ * a shape change degrades to the fallback rather than embedding a bogus link.
  */
 const extractHostedUrl = (parsed: unknown): string | null => {
 	if (typeof parsed !== "object" || parsed === null) return null;

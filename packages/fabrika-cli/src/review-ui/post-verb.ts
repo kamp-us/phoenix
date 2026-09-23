@@ -1,10 +1,11 @@
 /**
  * `review-ui post` — the single sanctioned `review-ui` verdict emit.
  *
- * Eight steps, each gating the next: re-resolve the live head, read the evidence set through its
+ * Nine steps, each gating the next: re-resolve the live head, read the evidence set through its
  * manifest, re-validate every capture against that manifest, **verify-upload every capture before
  * anything posts**, compose through the wire format, leak-scan the assembled comment, upsert one
- * comment for this namespace under this carrier, and read it back from live PR state.
+ * comment for this namespace under this carrier, read it back from live PR state, and **re-check
+ * that every capture the posted comment embeds opens as the bytes that were judged**.
  *
  * Step 4 is this verb's reason to exist. The capture package's upload leg is `never`-typed by
  * contract — every transport failure degrades to `{hostedUrl: null, uploadError}` and no consumer
@@ -92,8 +93,35 @@ export interface UploadRequest {
 	readonly bytes: Uint8Array;
 }
 
+/** One capture as posted evidence: the hosted URL the gallery embeds, and the bytes it must serve. */
+export interface HostedEvidence {
+	readonly url: string;
+	readonly bytes: Uint8Array;
+}
+
+/** Whether every embedded capture of a posted comment opens as its judged bytes. */
+export type EvidenceCheckResult =
+	| {readonly _tag: "Resolved"}
+	| {readonly _tag: "Unresolved"; readonly reasons: readonly [string, ...string[]]};
+
 /**
- * The evidence-upload seam: upload one capture and **probe it back**, individually.
+ * The after-post seam: re-read the posted comment as a reader renders it and hold every embedded
+ * capture to its bytes. The before-post read-back cannot see what the comment itself will serve, so
+ * a verdict whose evidence stopped resolving between the two is caught here rather than reported
+ * as posted.
+ */
+export type EvidenceCheck = (request: {
+	readonly repo: string;
+	readonly commentId: number;
+	readonly evidence: ReadonlyArray<HostedEvidence>;
+}) => Effect.Effect<
+	EvidenceCheckResult,
+	never,
+	HttpClient.HttpClient | ChildProcessSpawner.ChildProcessSpawner
+>;
+
+/**
+ * The evidence-upload seam: upload one capture and **read it back**, individually.
  *
  * Injected so the refusal path is testable without the network, and so the two tiers the contract
  * names (a repo-declared store, else the GitHub user-attachment tier) are a wiring choice rather
@@ -126,6 +154,7 @@ export interface PostOptions {
 	 */
 	readonly cwd: string;
 	readonly upload: UploadLeg;
+	readonly confirm: EvidenceCheck;
 	/** The explicit acknowledgement that this verdict retires a standing one of the other polarity. */
 	readonly supersede: boolean;
 	/** The wall clock the superseded heading is dated from — a port so a test can pin the day. */
@@ -394,6 +423,7 @@ export const runPost = (
 			);
 		}
 		const hosted: Array<readonly [CaptureEntry, string]> = [];
+		const evidence: HostedEvidence[] = [];
 		const failures: string[] = [];
 		for (const [entry, bytes] of bytesByEntry) {
 			const outcome = yield* options.upload({
@@ -401,8 +431,10 @@ export const runPost = (
 				fileName: `${entry.surface.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "root"}.png`,
 				bytes,
 			});
-			if (outcome._tag === "Hosted") hosted.push([entry, outcome.url]);
-			else failures.push(`${entry.surface}: ${outcome.reason}`);
+			if (outcome._tag === "Hosted") {
+				hosted.push([entry, outcome.url]);
+				evidence.push({url: outcome.url, bytes});
+			} else failures.push(`${entry.surface}: ${outcome.reason}`);
 		}
 		if (failures.length > 0) {
 			return refuse(
@@ -500,6 +532,20 @@ export const runPost = (
 				READBACK_MISMATCH,
 				`${VERB}: posted, but the read-back does not yield this marker (${mismatch}) — inspect comment ${landed.id}.`,
 				diagnostics,
+			);
+		}
+
+		// Step 9 — the verdict is only posted if a reader can open its evidence, so it is re-read the
+		// way a reader's browser renders it rather than trusted from the step-4 read-back.
+		const opened = yield* options.confirm({repo, commentId: landed.id, evidence});
+		if (opened._tag === "Unresolved") {
+			return refuse(
+				READBACK_MISMATCH,
+				`${VERB}: POSTED, BUT ITS EVIDENCE DOES NOT OPEN — ${opened.reasons.length} of ${evidence.length} embedded captures fail the read-back (${opened.reasons[0]}); the verdict in comment ${landed.id} stands over evidence nobody can see — inspect it before anything reads this verdict.`,
+				[
+					...diagnostics,
+					...opened.reasons.map((reason) => `${VERB}: evidence does not open — ${reason}`),
+				],
 			);
 		}
 
