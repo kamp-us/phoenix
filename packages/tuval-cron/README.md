@@ -107,7 +107,7 @@ A cron has one in-port and one out-port of its own, beside the two the kernel dr
 | Port | Way | Payload | When |
 |---|---|---|---|
 | `run` | in | `{}` | `:<id> run`, or the window's **Run now** — one job, now |
-| `brief` | out | `TurnResult` (`@kampus/tuval/ai-agent/ports`) | every time the job answers, ok or failed |
+| `brief` | out | `TurnResult` (`@kampus/tuval-sdk/ai-agent/ports`) | every time the job answers, ok or failed |
 
 `brief` is the finished turn itself — the whole `TurnResult`, not the one line the tile keeps — so
 whatever you wire it to gets the brief, and reads `payload.ok` to decide what a failed turn is
@@ -191,7 +191,7 @@ of being pinned by the old checkpoint.
 
 ## How it relates to Tuval
 
-This is a Tuval **program**, built on `defineProgram` out of `@kampus/tuval/authoring`. Everything
+This is a Tuval **program**, built on `defineProgram` out of `@kampus/tuval-sdk/authoring`. Everything
 around the program is the kernel's: the board tile is what the kernel renders from the `title` and
 `status` lines this program publishes; checkpoint and restore are the kernel's, and this program's
 only part in them is the `resume` that writes a run a restart cut in half down as failed; the
@@ -211,31 +211,31 @@ pnpm add @kampus/tuval-cron
 The one runtime dependency is [`cron-parser`](https://github.com/harrisiirak/cron-parser), which is
 what reads a `schedule`. Everything else here is a peer.
 
-`@kampus/tuval` is **private and not published to npm**. This package now lives in the same
+`@kampus/tuval-sdk` is **private and not published to npm**. This package now lives in the same
 workspace as Tuval does, so the dependency is a plain workspace one —
-`"@kampus/tuval": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
+`"@kampus/tuval-sdk": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
 link and no second checkout anywhere. It becomes a real version range the day Tuval ships to a
 registry; nothing in the source changes with it, because the source already imports only through
 the published doors (#8943, #9250):
 
-- `@kampus/tuval/authoring` — `defineProgram`, `programArgs`, `port`, `Program.shape`, the effect
+- `@kampus/tuval-sdk/authoring` — `defineProgram`, `programArgs`, `port`, `Program.shape`, the effect
   constructors (`send`/`spawn`/`stop`/`emit`), `testProgram`, `ProcessId`, `TITLE_PORT`/
   `STATUS_PORT`, and the types around them (`ArgRefs`, `Spawnable`, `PortSchema`)
-- `@kampus/tuval/window` — `windowRenderer` and `WindowHost`, the browser-safe half, whose own
+- `@kampus/tuval-sdk/window` — `windowRenderer` and `WindowHost`, the browser-safe half, whose own
   import closure reaches no `node:` builtin. `src/window.tsx` is the only file that touches it, and
   `src/state.ts` is the kernel-free leaf both halves share so a browser never has a path to
   `src/cron.ts`
-- `@kampus/tuval/ai-agent/ports` — `PromptPayloadSchema`, `TurnResultSchema`: the agent
+- `@kampus/tuval-sdk/ai-agent/ports` — `PromptPayloadSchema`, `TurnResultSchema`: the agent
   *interface*, which pulls in no agent
 - `@kampus-apps/tuval/sessions` — `claudeSession`/`codexSession`, the branded `ClientId`/`WorkspaceId`,
   and `TuvalConfigInput`, which only a config needs
 
-Nothing reaches `@kampus/tuval/src/...`; the exports map would refuse it anyway.
+Nothing reaches `@kampus/tuval-sdk/src/...`; the exports map would refuse it anyway.
 
 ## Settings this package borrows from Tuval
 
 Two settings here are not this package's taste. They are restatements of `apps/tuval`'s, and they
-exist because `@kampus/tuval` is consumed as **raw TypeScript source**: its `exports` map points at
+exist because `@kampus/tuval-sdk` is consumed as **raw TypeScript source**: its `exports` map points at
 `src/*.ts` and it ships no `.d.ts`. Both go away the day Tuval publishes built declarations.
 
 **`tsconfig.json`: `lib: ["ES2023", "DOM", "DOM.Iterable"]` and `exactOptionalPropertyTypes: false`.**

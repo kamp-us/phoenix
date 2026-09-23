@@ -12,8 +12,8 @@
  * second answer to "what is this window showing".
  */
 
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import type {ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
 import type {

@@ -1,4 +1,4 @@
-import {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
+import {KernelBridge} from "@kampus/tuval-sdk/kernel/ai-agent/tools/KernelBridge";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {Effect} from "effect";

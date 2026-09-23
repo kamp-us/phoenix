@@ -18,8 +18,8 @@ import type {
 	AnyWindowRenderer,
 	RendererLoadFailure,
 	WindowRenderer,
-} from "@kampus/tuval/kernel/shell/window/index";
-import {rendererLoadFailure} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {rendererLoadFailure} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect, Predicate} from "effect";
 import type {ReactNode} from "react";
 import {type ReadableRenderer, readsState} from "./readable-state.tsx";

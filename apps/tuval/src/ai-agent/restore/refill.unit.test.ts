@@ -10,17 +10,17 @@
  */
 
 import {applyCellChecked} from "@demlik/tea";
-import type {TranscriptItem} from "@kampus/tuval/ai-agent/ports";
-import {aiAgentSessionMachine} from "@kampus/tuval/kernel/ai-agent/core/machine";
+import type {TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
+import {aiAgentSessionMachine} from "@kampus/tuval-sdk/kernel/ai-agent/core/machine";
 import type {
 	AiAgentSessionCmd,
 	AiAgentSessionMsg,
-} from "@kampus/tuval/kernel/ai-agent/core/messages";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/messages";
 import {
 	type AiAgentSessionState,
 	initialState,
 	restore,
-} from "@kampus/tuval/kernel/ai-agent/core/state";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
 import {
 	assistantItem,
 	nestedUnder,
@@ -28,7 +28,7 @@ import {
 	systemItem,
 	toolItem,
 	userItem,
-} from "@kampus/tuval/kernel/ai-agent-fixtures/transcripts";
+} from "@kampus/tuval-sdk/kernel/ai-agent-fixtures/transcripts";
 import {describe, expect, it} from "vitest";
 import {type ChatRow, chatRows, olderPageRequest} from "../../shell/chat/rows.ts";
 

@@ -20,9 +20,9 @@
  * `../page/boundary.unit.test.ts` walks this module at every run to keep it that way.
  */
 
-import type {WindowHost} from "@kampus/tuval/kernel/shell/window/index";
-import {windowRenderer} from "@kampus/tuval/kernel/shell/window/index";
-import type {ProgramEvent} from "@kampus/tuval/window";
+import type {WindowHost} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {windowRenderer} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import type {ProgramEvent} from "@kampus/tuval-sdk/window";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement} from "react";
 import {useEffect, useState} from "react";

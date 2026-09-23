@@ -17,7 +17,7 @@
  */
 
 import {homedir} from "node:os";
-import type {TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import type {TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import {Effect, FileSystem, Path} from "effect";
 import {
 	isSidechainRefusal,

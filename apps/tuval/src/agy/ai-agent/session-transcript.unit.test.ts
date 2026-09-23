@@ -15,8 +15,11 @@ import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {afterAll, describe, expect, it} from "@effect/vitest";
-import type {TranscriptQuery, TuvalAiAgentApi} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
+import type {
+	TranscriptQuery,
+	TuvalAiAgentApi,
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Effect} from "effect";
 import {agyChildStub, agyLayerOver} from "./child-stub.ts";
 import {conversationDir, TRANSCRIPT_FILE, transcriptLogDir} from "./transcript.ts";

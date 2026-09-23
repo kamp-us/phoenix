@@ -9,7 +9,7 @@
 
 import type {CanUseTool, PermissionUpdate} from "@anthropic-ai/claude-agent-sdk";
 import {assert, describe, it} from "@effect/vitest";
-import type {TuvalAiAgentApi} from "@kampus/tuval/kernel/ai-agent/service/index";
+import type {TuvalAiAgentApi} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Cause, Effect, Exit, Option, Stream} from "effect";
 import {DENIED_MESSAGE} from "./cards.ts";
 import {CWD, on, START_EVENTS, settled} from "./fixtures/harness.ts";

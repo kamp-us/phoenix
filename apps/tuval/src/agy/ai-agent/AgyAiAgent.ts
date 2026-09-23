@@ -48,8 +48,8 @@ import {
 	type PermissionDecision,
 	sameModel,
 	type ThinkingLevel,
-} from "@kampus/tuval/ai-agent/ports";
-import {isRefusal} from "@kampus/tuval/kernel/ai-agent/history/index";
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import {isRefusal} from "@kampus/tuval-sdk/kernel/ai-agent/history/index";
 import {
 	type AgentEvent,
 	ListError,
@@ -63,8 +63,8 @@ import {
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
 	UnknownRequest,
-} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {withTurnResult} from "@kampus/tuval/kernel/ai-agent/turn-result";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {withTurnResult} from "@kampus/tuval-sdk/kernel/ai-agent/turn-result";
 import {
 	type Cause,
 	Deferred,

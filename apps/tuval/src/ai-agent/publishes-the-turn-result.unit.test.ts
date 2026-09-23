@@ -13,34 +13,38 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import type {TurnResult} from "@kampus/tuval/ai-agent/ports";
-import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
-import {aiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
+import type {TurnResult} from "@kampus/tuval-sdk/ai-agent/ports";
+import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
+import {aiAgentProgram} from "@kampus/tuval-sdk/kernel/ai-agent/program";
 import {
 	plainReply,
 	plainReplyPrompt,
 	plainReplyText,
-} from "@kampus/tuval/kernel/ai-agent/service/fixtures/scripts";
-import {ScriptedAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {onlyPaths, SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
-import {SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
-import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
-import {type Client, WindowIndex, type WindowPlacement} from "@kampus/tuval/kernel/commands/scope";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/fixtures/scripts";
+import {ScriptedAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {onlyPaths, SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {
+	type Client,
+	WindowIndex,
+	type WindowPlacement,
+} from "@kampus/tuval-sdk/kernel/commands/scope";
 import {
 	ClientId,
 	type Scope,
 	type SpellPath,
 	WindowId,
 	WorkspaceId,
-} from "@kampus/tuval/kernel/commands/spell";
-import {SpellSet} from "@kampus/tuval/kernel/commands/spell-set";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {TITLE_PORT} from "@kampus/tuval/kernel/process/self-report";
-import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {TITLE_PORT} from "@kampus/tuval-sdk/kernel/process/self-report";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer, Option} from "effect";
 import {coreSpells} from "../boot.ts";
 import {KernelBridge} from "../claude/tools/KernelBridge.ts";
@@ -82,7 +86,7 @@ const callerProgram = (): AnyProgram =>
 		handlers: {},
 		capabilities: [],
 		identity: {
-			package: "@kampus/tuval",
+			package: "@kampus/tuval-sdk",
 			program: "caller",
 			version: "1.0.0",
 			digest: "sha256:caller",

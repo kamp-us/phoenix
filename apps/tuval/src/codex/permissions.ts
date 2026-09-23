@@ -1,4 +1,4 @@
-import type {PermissionDecision, PermissionRequest} from "@kampus/tuval/ai-agent/ports";
+import type {PermissionDecision, PermissionRequest} from "@kampus/tuval-sdk/ai-agent/ports";
 import {Schema} from "effect";
 import {Approval} from "./protocol.ts";
 import type {RequestId} from "./transport.ts";

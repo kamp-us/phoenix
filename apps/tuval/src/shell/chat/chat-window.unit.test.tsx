@@ -11,20 +11,20 @@
  * the offsets it was asked for are what the scroll assertions read.
  */
 
-import {ItemId, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import {ItemId, type TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type AiAgentSessionMsg,
 	type AiAgentSessionState,
 	foldEvent,
 	PAGE_ERROR,
 	PROMPT_ERROR,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/snapshot";
-import {phases} from "@kampus/tuval/kernel/ai-agent/core/state";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {type TestProcess, testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
-import type {DispatchResult} from "@kampus/tuval/kernel/shell/window/host";
-import {PREFIX_ARMED_ATTRIBUTE, WindowId} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/snapshot";
+import {phases} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {type TestProcess, testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
+import type {DispatchResult} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import {PREFIX_ARMED_ATTRIBUTE, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {Deferred, Effect, Stream} from "effect";
 import {type ReactElement, StrictMode} from "react";

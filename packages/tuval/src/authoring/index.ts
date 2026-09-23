@@ -1,5 +1,5 @@
 /**
- * The authoring API's front door — what `@kampus/tuval/authoring` resolves to (#8943).
+ * The authoring API's front door — what `@kampus/tuval-sdk/authoring` resolves to (#8943).
  *
  * **What is public here is exactly what a program file needs and nothing else.** The set was read
  * off the one program in this repo written the way a third party writes one — the worked example
@@ -43,7 +43,7 @@
  * row, and `HostHandlers<Msg, MyEffect, Failure, Services>` is the type that handler record is
  * written against (#9294). Nothing else of the kernel's row types is on this door.
  *
- * **The window half is its own door, `@kampus/tuval/window` (`./window.ts`).** Not because
+ * **The window half is its own door, `@kampus/tuval-sdk/window` (`./window.ts`).** Not because
  * `./view.ts` is unsafe — its value-import closure reaches no `node:` builtin, and
  * `window-closure.unit.test.ts` pins that — but because *this* barrel is not: it reaches
  * `../process/Processes.ts` and `../commands/core/process.ts`, both `node:crypto` importers, so a
@@ -53,7 +53,7 @@
  * it is the specifier a program writes on its own row, which is a kernel-side file (#8946).
  *
  * The payload vocabulary a shaped arg is declared over is not here either: it is its own module
- * with its own boundary test (`../ai-agent/ports/index.ts`, `@kampus/tuval/ai-agent/ports`), held
+ * with its own boundary test (`../ai-agent/ports/index.ts`, `@kampus/tuval-sdk/ai-agent/ports`), held
  * closed over `effect` and the kernel's program row so that importing it drags in no agent. Folding
  * it in here would put the AI-agent interface behind the authoring door and make one surface owe
  * two stabilities.

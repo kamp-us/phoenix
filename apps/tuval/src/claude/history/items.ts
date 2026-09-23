@@ -12,7 +12,7 @@
  */
 
 import type {SessionMessage} from "@anthropic-ai/claude-agent-sdk";
-import type {ItemId, TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import type {ItemId, TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import {isRecord} from "./blocks.ts";
 import {
 	assistantEvents,

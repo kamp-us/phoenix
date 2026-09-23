@@ -18,11 +18,17 @@ import type {
 	PermissionPayload,
 	TranscriptPagePayload,
 	TranscriptPayload,
-} from "@kampus/tuval/ai-agent/ports";
-import {mode, permission, prompt, transcript, transcriptPage} from "@kampus/tuval/ai-agent/ports";
-import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
-import {aiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import {
+	mode,
+	permission,
+	prompt,
+	transcript,
+	transcriptPage,
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
+import {aiAgentProgram} from "@kampus/tuval-sdk/kernel/ai-agent/program";
 import {
 	history,
 	mode as modeBrand,
@@ -30,19 +36,19 @@ import {
 	PERMISSION_REQUEST,
 	permissionTurn,
 	plainReply,
-} from "@kampus/tuval/kernel/ai-agent/service/fixtures/scripts";
-import {type AgentScript, ScriptedAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import {compile} from "@kampus/tuval/kernel/ports/compile";
-import {PayloadRejected} from "@kampus/tuval/kernel/ports/errors";
-import {type Graph, NodeId} from "@kampus/tuval/kernel/ports/graph";
-import {ProcessPorts} from "@kampus/tuval/kernel/ports/ProcessPorts";
-import {open} from "@kampus/tuval/kernel/ports/wiring";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/fixtures/scripts";
+import {type AgentScript, ScriptedAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {compile} from "@kampus/tuval-sdk/kernel/ports/compile";
+import {PayloadRejected} from "@kampus/tuval-sdk/kernel/ports/errors";
+import {type Graph, NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import {open} from "@kampus/tuval-sdk/kernel/ports/wiring";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Effect, Layer, type Scope} from "effect";
 import {launch} from "../launch/launch.ts";
 
@@ -100,7 +106,7 @@ const windowProgram: AnyProgram = {
 	},
 	capabilities: [],
 	identity: {
-		package: "@kampus/tuval",
+		package: "@kampus/tuval-sdk",
 		program: "window-stand-in",
 		version: "1.0.0",
 		digest: "sha256:window-stand-in",

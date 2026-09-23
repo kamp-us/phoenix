@@ -62,7 +62,7 @@ const counterProgram = (probe: Probe, stores: CheckpointStores, version = "1.0.0
 				}),
 		},
 		capabilities: [],
-		identity: {package: "@kampus/tuval", program: "counter", version, digest: "sha256:counter"},
+		identity: {package: "@kampus/tuval-sdk", program: "counter", version, digest: "sha256:counter"},
 		placement: {host: "local"},
 	}) satisfies Program<State, Msg, Notify, never, unknown, TestIo, never>;
 
@@ -85,7 +85,12 @@ const streamerProgram: AnyProgram = {
 	handlers: {},
 	checkpointWorthy: (state: StreamState) => !state.partial,
 	capabilities: [],
-	identity: {package: "@kampus/tuval", program: "streamer", version: "1.0.0", digest: "sha256:s"},
+	identity: {
+		package: "@kampus/tuval-sdk",
+		program: "streamer",
+		version: "1.0.0",
+		digest: "sha256:s",
+	},
 	placement: {host: "local"},
 } satisfies Program<StreamState, StreamMsg, never, never, unknown, never, never>;
 

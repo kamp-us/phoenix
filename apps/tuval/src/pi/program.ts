@@ -22,13 +22,13 @@
 
 import {dirname} from "node:path";
 import {fileURLToPath} from "node:url";
-import {type AiAgentProgram, aiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
-import type {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
-import type {SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
-import type {Scope as SpellScope} from "@kampus/tuval/kernel/commands/spell";
-import type {Features} from "@kampus/tuval/kernel/feature-flags";
-import type {StateDir} from "@kampus/tuval/kernel/state-dir";
+import {type AiAgentProgram, aiAgentProgram} from "@kampus/tuval-sdk/kernel/ai-agent/program";
+import type {TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {KernelBridge} from "@kampus/tuval-sdk/kernel/ai-agent/tools/KernelBridge";
+import type {SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
+import type {Scope as SpellScope} from "@kampus/tuval-sdk/kernel/commands/spell";
+import type {Features} from "@kampus/tuval-sdk/kernel/feature-flags";
+import type {StateDir} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Layer} from "effect";
 import {PiAiAgent, type PiAiAgentOptions} from "./ai-agent/index.ts";
 import {PI_CHAT_WINDOW_REF, PI_SESSION_PROGRAM} from "./renderer-ref.ts";

@@ -16,7 +16,7 @@
 
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {assert, describe, it} from "@effect/vitest";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {Effect, Stream} from "effect";
 import {CWD, messages, on, START_EVENTS} from "./fixtures/harness.ts";
 

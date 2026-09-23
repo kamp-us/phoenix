@@ -1,0 +1,19 @@
+{
+	// The emit lens for the published tarball. `rewriteRelativeImportExtensions` turns the explicit
+	// `.ts` specifiers into `.js`, so the packed files resolve under plain `node`, which does not
+	// strip types under node_modules. `composite` is off so a typecheck's build info never marks an
+	// emptied `dist` as up to date.
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"composite": false,
+		"incremental": false,
+		"noEmit": false,
+		"rewriteRelativeImportExtensions": true,
+		"rootDir": "src",
+		"outDir": "dist",
+		"declaration": true,
+		"sourceMap": false
+	},
+	"include": ["src"],
+	"exclude": ["src/**/*.test.ts", "src/test-budget.ts"]
+}

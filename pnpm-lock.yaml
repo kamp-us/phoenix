@@ -294,7 +294,7 @@ importers:
       '@kampus/design':
         specifier: workspace:*
         version: link:../../packages/design
-      '@kampus/tuval':
+      '@kampus/tuval-sdk':
         specifier: workspace:*
         version: link:../../packages/tuval
       '@manti-ui/styles':
@@ -1214,15 +1214,15 @@ importers:
       '@kampus-apps/tuval':
         specifier: workspace:*
         version: link:../../apps/tuval
-      '@kampus/tuval':
-        specifier: workspace:*
-        version: link:../tuval
       '@kampus/tuval-cron':
         specifier: workspace:*
         version: link:../tuval-cron
       '@kampus/tuval-notify':
         specifier: workspace:*
         version: link:../tuval-notify
+      '@kampus/tuval-sdk':
+        specifier: workspace:*
+        version: link:../tuval
       '@kampus/tuval-shell':
         specifier: workspace:*
         version: link:../tuval-shell
@@ -1254,7 +1254,7 @@ importers:
       '@kampus-apps/tuval':
         specifier: workspace:*
         version: link:../../apps/tuval
-      '@kampus/tuval':
+      '@kampus/tuval-sdk':
         specifier: workspace:*
         version: link:../tuval
       '@types/node':
@@ -1287,12 +1287,12 @@ importers:
       '@kampus-apps/tuval':
         specifier: workspace:*
         version: link:../../apps/tuval
-      '@kampus/tuval':
-        specifier: workspace:*
-        version: link:../tuval
       '@kampus/tuval-cron':
         specifier: workspace:*
         version: link:../tuval-cron
+      '@kampus/tuval-sdk':
+        specifier: workspace:*
+        version: link:../tuval
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -1323,12 +1323,12 @@ importers:
       '@kampus-apps/tuval':
         specifier: workspace:*
         version: link:../../apps/tuval
-      '@kampus/tuval':
-        specifier: workspace:*
-        version: link:../tuval
       '@kampus/tuval-cron':
         specifier: workspace:*
         version: link:../tuval-cron
+      '@kampus/tuval-sdk':
+        specifier: workspace:*
+        version: link:../tuval
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -1353,7 +1353,7 @@ importers:
       '@kampus-apps/tuval':
         specifier: workspace:*
         version: link:../../apps/tuval
-      '@kampus/tuval':
+      '@kampus/tuval-sdk':
         specifier: workspace:*
         version: link:../tuval
       '@types/node':

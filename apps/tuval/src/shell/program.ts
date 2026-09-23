@@ -12,23 +12,23 @@
  * whoever runs the desk, and this slice ships only the inert set (`unwiredShellEffects`).
  */
 
-import type {GraphNode} from "@kampus/tuval/kernel/ports/graph";
-import {NodeId} from "@kampus/tuval/kernel/ports/graph";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {GraphNode} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {
 	AnyProgram,
 	HostHandlers,
 	Migrations,
 	Program,
-} from "@kampus/tuval/kernel/registry/program";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+} from "@kampus/tuval-sdk/kernel/registry/program";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {
 	type Empty,
 	empty,
 	type ProcessGone,
 	processGone,
 	WindowId,
-} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect, Option, Predicate} from "effect";
 import {shellSpells, shellSpellsFor} from "./commands/spells.ts";
 import {commandIndexFor, type ShellCommandFeatures} from "./commands/table.ts";
@@ -189,7 +189,7 @@ export const shellProgram = <E = never, R = never>({
 		migrations: shellMigrations,
 		capabilities: [],
 		identity: {
-			package: "@kampus/tuval",
+			package: "@kampus/tuval-sdk",
 			program: "shell",
 			version: SHELL_VERSION,
 			digest: "sha256:shell",

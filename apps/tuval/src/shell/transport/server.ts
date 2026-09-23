@@ -23,12 +23,16 @@
 
 import type {IncomingMessage} from "node:http";
 import {NodeSocketServer} from "@effect/platform-node";
-import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
-import type {ProcessChange, ProcessHandle, ProcessId} from "@kampus/tuval/kernel/process/process";
-import type {SpellCall, SpellReply} from "@kampus/tuval/kernel/protocol/messages";
-import type {RegistryDescription} from "@kampus/tuval/kernel/protocol/registry-description";
-import {type AnyProgram, programLabel} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import type {
+	ProcessChange,
+	ProcessHandle,
+	ProcessId,
+} from "@kampus/tuval-sdk/kernel/process/process";
+import type {SpellCall, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import {type AnyProgram, programLabel} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Deferred, Effect, type Option, type Redacted, Semaphore, Stream} from "effect";
 import {Socket, type SocketServer} from "effect/unstable/socket";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";

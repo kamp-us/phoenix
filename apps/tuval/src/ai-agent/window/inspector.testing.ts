@@ -8,8 +8,8 @@
  * fixture serves both backends' tests exactly as one renderer serves both rows.
  */
 
-import type {AiAgentSessionState, UsageLedger} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {initialState} from "@kampus/tuval/kernel/ai-agent/core/state";
+import type {AiAgentSessionState, UsageLedger} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {initialState} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
 
 export const CWD = "/tmp/project";
 

@@ -16,7 +16,7 @@
  * lives on these two rows so nothing downstream has to know about it.
  */
 
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Schema} from "effect";
 import type {ShellMsg} from "../core/machine.ts";
 import {FOCUS_LIST_KEY} from "../keys/syntax.ts";

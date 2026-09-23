@@ -13,22 +13,26 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {pathToFileURL} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
-import {ItemId, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import {ItemId, type TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type AiAgentSessionState,
 	initialState,
 	isAiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {AI_AGENT_INSPECTOR_REF} from "@kampus/tuval/kernel/ai-agent/renderer-ref";
-import {checkpointFields} from "@kampus/tuval/kernel/ai-agent/restore/index";
-import {ScriptedAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {ClientId, type Scope as SpellScope, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {AI_AGENT_INSPECTOR_REF} from "@kampus/tuval-sdk/kernel/ai-agent/renderer-ref";
+import {checkpointFields} from "@kampus/tuval-sdk/kernel/ai-agent/restore/index";
+import {ScriptedAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {
+	ClientId,
+	type Scope as SpellScope,
+	WorkspaceId,
+} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer, Redacted} from "effect";
 import {afterAll, expect} from "vitest";
 import {projectConfig} from "../boot.ts";

@@ -6,7 +6,7 @@ const maxWorkers = process.env.CI ? undefined : 2;
 
 export default defineConfig({
 	test: {
-		include: ["src/**/*.unit.test.ts"],
+		include: ["src/**/*.unit.test.ts", "src/**/*.pack.test.ts"],
 		pool: "forks",
 		maxWorkers,
 	},

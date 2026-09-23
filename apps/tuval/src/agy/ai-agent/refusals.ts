@@ -6,7 +6,7 @@
  * reaches a caller of `TuvalAiAgent`.
  */
 
-import type {AgentFailure} from "@kampus/tuval/kernel/ai-agent/events";
+import type {AgentFailure} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {
 	InterruptError,
 	PageError,
@@ -14,7 +14,7 @@ import {
 	StartError,
 	TranscriptError,
 	TransportError,
-} from "@kampus/tuval/kernel/ai-agent/service/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 
 /** A platform fault or a refusal, as the one sentence an error's `detail` carries. */
 export const detailOf = (cause: unknown): string =>

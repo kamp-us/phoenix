@@ -21,7 +21,7 @@ import {
 	agentRoutes,
 	windowProgram,
 	windowRoutes,
-} from "@kampus/tuval/kernel/ai-agent/restore/fixtures/window";
+} from "@kampus/tuval-sdk/kernel/ai-agent/restore/fixtures/window";
 import {PI_SESSION_PROGRAM, piSessionProgram} from "../../program.ts";
 import {FAUX_MODEL, fauxPiLayer} from "../../proof/faux.ts";
 import {AGENT_NODE, BEFORE_THE_TOOL, PROJECT_ROOT_VAR, WINDOW_NODE} from "./names.ts";

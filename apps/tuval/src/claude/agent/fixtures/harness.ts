@@ -4,8 +4,8 @@
  */
 
 import type {SDKMessage, SDKSessionInfo, SessionMessage} from "@anthropic-ai/claude-agent-sdk";
-import {Mode} from "@kampus/tuval/ai-agent/ports";
-import {TuvalAiAgent, type TuvalAiAgentApi} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
+import {TuvalAiAgent, type TuvalAiAgentApi} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Effect, Layer, Schema} from "effect";
 import {loadFixture} from "../../history/fixtures/load.ts";
 import {KernelBridge} from "../../tools/index.ts";

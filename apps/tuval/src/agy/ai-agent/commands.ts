@@ -21,7 +21,7 @@
  * mentioned it would list a command the picker could not produce.
  */
 
-import type {CommandRef} from "@kampus/tuval/ai-agent/ports";
+import type {CommandRef} from "@kampus/tuval-sdk/ai-agent/ports";
 
 interface Fields {
 	readonly [key: string]: unknown;

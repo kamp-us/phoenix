@@ -13,9 +13,9 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
-import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
-import type {Client} from "@kampus/tuval/kernel/commands/scope";
+import {SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import type {Client} from "@kampus/tuval-sdk/kernel/commands/scope";
 import {
 	ClientId,
 	defineSpell,
@@ -23,13 +23,17 @@ import {
 	type Scope as SpellScope,
 	WindowId,
 	WorkspaceId,
-} from "@kampus/tuval/kernel/commands/spell";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {CallId} from "@kampus/tuval/kernel/protocol/ids";
-import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "@kampus/tuval/kernel/protocol/messages";
-import {type AnyProgram, ProgramId} from "@kampus/tuval/kernel/registry/program";
+} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {
+	PROTOCOL_VERSION,
+	SpellCall,
+	type SpellReply,
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {type AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Context, Effect, Option, Schema} from "effect";
 import {start} from "../../boot.ts";
 import {ShellDispatch} from "../commands/dispatch.ts";
@@ -88,7 +92,7 @@ const probeProgram: AnyProgram = {
 	capabilities: [],
 	renderer: {kind: "host-native", ref: "tuval/proof/scope-probe"},
 	identity: {
-		package: "@kampus/tuval",
+		package: "@kampus/tuval-sdk",
 		program: "scope-probe",
 		version: "1.0.0",
 		digest: "sha256:scope-probe",

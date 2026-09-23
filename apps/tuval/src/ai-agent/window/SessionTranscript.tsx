@@ -20,8 +20,8 @@
  */
 
 import {AgentChatInput, Button, DesignTranslationProvider, EmptyState} from "@kampus/design";
-import type {SessionRow} from "@kampus/tuval/kernel/protocol/session-list";
-import type {SessionTranscript} from "@kampus/tuval/kernel/protocol/session-transcript";
+import type {SessionRow} from "@kampus/tuval-sdk/kernel/protocol/session-list";
+import type {SessionTranscript} from "@kampus/tuval-sdk/kernel/protocol/session-transcript";
 import type {ReactElement} from "react";
 import {useCallback, useMemo, useState} from "react";
 import type {OlderRead, TranscriptAnswer} from "../../page/session-transcript.ts";

@@ -1,5 +1,5 @@
 import {NodeServices} from "@effect/platform-node";
-import {TransportError} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {TransportError} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {type Cause, Deferred, Effect, Queue, Schema, Scope, Stream} from "effect";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
 

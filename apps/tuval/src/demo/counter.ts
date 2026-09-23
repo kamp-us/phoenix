@@ -6,14 +6,14 @@
  */
 
 import {defineMachine} from "@demlik/tea";
-import type {PayloadRejected, PortNotWired} from "@kampus/tuval/kernel/ports/errors";
-import {ProcessPorts} from "@kampus/tuval/kernel/ports/ProcessPorts";
+import type {PayloadRejected, PortNotWired} from "@kampus/tuval-sdk/kernel/ports/errors";
+import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
 import {
 	type AnyProgram,
 	type Program,
 	ProgramId,
 	type RendererRef,
-} from "@kampus/tuval/kernel/registry/program";
+} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
 import {COUNT_KIND, isCount} from "./count.ts";
 import type {CounterState} from "./counter-state.ts";
@@ -78,7 +78,7 @@ export const counterProgram = ({everyMs}: CounterOptions): AnyProgram =>
 		// answers by name (`../page/renderers.tsx`); nothing here names React.
 		renderer: {kind: "host-native", ref: "tuval/demo/counter"} satisfies RendererRef,
 		identity: {
-			package: "@kampus/tuval",
+			package: "@kampus/tuval-sdk",
 			program: "counter",
 			version: "1.0.0",
 			digest: "sha256:demo-counter",

@@ -20,15 +20,19 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert} from "@effect/vitest";
-import type {ModePayload, PermissionPayload, TranscriptPayload} from "@kampus/tuval/ai-agent/ports";
+import type {
+	ModePayload,
+	PermissionPayload,
+	TranscriptPayload,
+} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type AiAgentSessionState,
 	isAiAgentSessionState,
 	promptItemId,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {type ProcessHandle, ProcessId} from "@kampus/tuval/kernel/process/process";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {type ProcessHandle, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Effect, type FileSystem, Option, type Scope} from "effect";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {type Booted, boot, projectDir} from "../../boot.ts";

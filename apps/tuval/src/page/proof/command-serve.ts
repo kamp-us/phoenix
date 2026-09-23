@@ -2,10 +2,10 @@
 import {createServer} from "node:http";
 import {resolve} from "node:path";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {defineSpell} from "@kampus/tuval/kernel/commands/spell";
-import {SpellSet} from "@kampus/tuval/kernel/commands/spell-set";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {defineSpell} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Console, Context, Effect, FileSystem, Option, Schema} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {coreSpells, start} from "../../boot.ts";

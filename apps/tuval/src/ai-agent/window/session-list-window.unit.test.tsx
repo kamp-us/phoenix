@@ -6,8 +6,8 @@
  * substituted by `installDomShims` and asserted nowhere.
  */
 
-import type {SessionRow, UnreadableBackend} from "@kampus/tuval/kernel/protocol/session-list";
-import {SESSION_LIST_DEADLINE_MILLIS} from "@kampus/tuval/kernel/protocol/session-list";
+import type {SessionRow, UnreadableBackend} from "@kampus/tuval-sdk/kernel/protocol/session-list";
+import {SESSION_LIST_DEADLINE_MILLIS} from "@kampus/tuval-sdk/kernel/protocol/session-list";
 import {act, cleanup, fireEvent, render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {Profiler, useState} from "react";
@@ -240,7 +240,7 @@ describe("the states that are not a list", () => {
 					[
 						{
 							programId: "pi-session",
-							provenance: "@kampus/tuval/pi-session@1.0.0 (sha256:pi)",
+							provenance: "@kampus/tuval-sdk/pi-session@1.0.0 (sha256:pi)",
 							detail: "EACCES on the session directory",
 						},
 					],
@@ -259,7 +259,7 @@ describe("the states that are not a list", () => {
 					[
 						{
 							programId: "claude-session",
-							provenance: "@kampus/tuval/claude-session@1.0.0 (sha256:claude)",
+							provenance: "@kampus/tuval-sdk/claude-session@1.0.0 (sha256:claude)",
 							detail: "the CLI is not installed",
 						},
 					],

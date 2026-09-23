@@ -11,10 +11,10 @@
 
 import {readFileSync} from "node:fs";
 import {defineMachine} from "@demlik/tea";
-import {Mode} from "@kampus/tuval/ai-agent/ports";
-import {ScriptedAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
-import type {AgentScript} from "@kampus/tuval/kernel/ai-agent/service/script";
-import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
+import {ScriptedAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import type {AgentScript} from "@kampus/tuval-sdk/kernel/ai-agent/service/script";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
 import type {ClaudeSessionConfigInput} from "../claude/config.ts";
 import {CLAUDE_SESSION_PROGRAM, claudeSession} from "../claude/program.ts";
@@ -61,7 +61,7 @@ const other: AnyProgram = {
 	handlers: {notify: () => Effect.succeed([] as ReadonlyArray<Msg>)},
 	capabilities: [],
 	identity: {
-		package: "@kampus/tuval",
+		package: "@kampus/tuval-sdk",
 		program: OTHER_PROGRAM,
 		version: "1.0.0",
 		digest: `sha256:${OTHER_PROGRAM}`,

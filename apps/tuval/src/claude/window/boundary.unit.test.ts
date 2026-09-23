@@ -17,13 +17,13 @@ import {join} from "node:path";
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import type {
 	AnyWindowRenderer,
 	ViewState,
 	WindowHost,
 	WindowRenderer,
-} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {describe, expect, it} from "vitest";
 import type {ChatView, ChatWindowRenderer} from "../../shell/chat/index.ts";
 import {CLAUDE_CHAT_WINDOW_REF, CLAUDE_SESSION_PROGRAM} from "../renderer-ref.ts";
@@ -117,7 +117,7 @@ describe("the Claude window boundary", () => {
 
 	it("keeps the row's renderer reference on a leaf that pulls in no window code", () => {
 		const leaf = readFileSync(join(import.meta.dirname, "..", "renderer-ref.ts"), "utf8");
-		expect(specifiers(leaf)).toEqual(["@kampus/tuval/kernel/registry/program"]);
+		expect(specifiers(leaf)).toEqual(["@kampus/tuval-sdk/kernel/registry/program"]);
 		expect([CLAUDE_SESSION_PROGRAM, CLAUDE_CHAT_WINDOW_REF.kind]).toEqual([
 			"claude-session",
 			"host-native",

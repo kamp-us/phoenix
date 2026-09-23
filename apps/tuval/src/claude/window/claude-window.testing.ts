@@ -11,10 +11,10 @@
  * switch — which is the shared window's control, not one this binding adds.
  */
 
-import {Mode} from "@kampus/tuval/ai-agent/ports";
-import type {AiAgentSessionState, UsageLedger} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {initialState} from "@kampus/tuval/kernel/ai-agent/core/state";
-import {assistantItem, userItem} from "@kampus/tuval/kernel/ai-agent-fixtures/transcripts";
+import {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {AiAgentSessionState, UsageLedger} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {initialState} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
+import {assistantItem, userItem} from "@kampus/tuval-sdk/kernel/ai-agent-fixtures/transcripts";
 
 export const FIRST_PROMPT = "what does this window add?";
 

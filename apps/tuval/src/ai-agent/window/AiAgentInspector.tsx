@@ -23,10 +23,10 @@ import {
 	type AgentAccount,
 	type AiAgentSessionState,
 	usageTotals,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/snapshot";
-import {agentCost} from "@kampus/tuval/kernel/ai-agent/self-report";
-import type {AnyWindowHost} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/snapshot";
+import {agentCost} from "@kampus/tuval-sdk/kernel/ai-agent/self-report";
+import type {AnyWindowHost} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement} from "react";
 import {useEffect, useState} from "react";

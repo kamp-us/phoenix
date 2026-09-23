@@ -1,7 +1,7 @@
 import {
 	REST_PARAMETER_ANNOTATION,
 	RestParameter,
-} from "@kampus/tuval/kernel/commands/rest-parameter";
+} from "@kampus/tuval-sdk/kernel/commands/rest-parameter";
 import {Schema} from "effect";
 import {expect, it} from "vitest";
 import {decodeServerFrame} from "./wire.ts";

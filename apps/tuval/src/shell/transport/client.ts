@@ -14,17 +14,17 @@
  * gets the current value first and then every update — which is exactly `readProcess`'s promise.
  */
 
-import type {Message, ProcessId} from "@kampus/tuval/kernel/process/process";
-import type {CallId} from "@kampus/tuval/kernel/protocol/ids";
-import type {SpellCall, SpellReply} from "@kampus/tuval/kernel/protocol/messages";
-import type {RegistryDescription} from "@kampus/tuval/kernel/protocol/registry-description";
-import type {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import type {Message, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import type {SpellCall, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import type {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {
 	type DispatchResult,
 	delivered,
 	type ProcessView,
 	processGone,
-} from "@kampus/tuval/kernel/shell/window/host";
+} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {Deferred, Effect, Option, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";
 import type {TableRow} from "../../table/row.ts";

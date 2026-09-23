@@ -1,9 +1,9 @@
 import {mkdtemp, rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {isThinkingLevel} from "@kampus/tuval/ai-agent/ports";
-import {TuvalAiAgent} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
+import {isThinkingLevel} from "@kampus/tuval-sdk/ai-agent/ports";
+import {TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {KernelBridge} from "@kampus/tuval-sdk/kernel/ai-agent/tools/KernelBridge";
 import {Effect, Layer, Stream} from "effect";
 import {describe, expect, it} from "vitest";
 import {CodexAiAgent} from "./CodexAiAgent.ts";

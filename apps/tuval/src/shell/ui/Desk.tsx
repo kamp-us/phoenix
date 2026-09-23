@@ -30,9 +30,9 @@
  * end at the rows in `../commands/table.ts` (#7643, `./PaletteHost.tsx`).
  */
 
-import {WindowId as ProtocolWindowId} from "@kampus/tuval/kernel/protocol/ids";
-import type {RegistryDescription} from "@kampus/tuval/kernel/protocol/registry-description";
-import {PREFIX_ARMED_ATTRIBUTE, WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {WindowId as ProtocolWindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import {PREFIX_ARMED_ATTRIBUTE, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import type {ReactElement, ReactNode} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {usePalette} from "../../palette/index.ts";

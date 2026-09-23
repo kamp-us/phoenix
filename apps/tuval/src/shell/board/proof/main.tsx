@@ -14,8 +14,8 @@
  * is the desk and nothing else, which is the whole point of #8867.
  */
 
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Option} from "effect";
 import {StrictMode} from "react";
 import {createRoot} from "react-dom/client";

@@ -21,16 +21,16 @@ import {assert, describe, it} from "@effect/vitest";
 import {
 	type AiAgentSessionState,
 	isAiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {aiAgentPortNames} from "@kampus/tuval/kernel/ai-agent/handlers/index";
-import {aiAgentProgram} from "@kampus/tuval/kernel/ai-agent/program";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import {NodeId} from "@kampus/tuval/kernel/ports/graph";
-import {PortNotWired, ProcessPorts} from "@kampus/tuval/kernel/ports/index";
-import {Processes, type ProcessHandle, ProcessTable} from "@kampus/tuval/kernel/process/index";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
+import {aiAgentProgram} from "@kampus/tuval-sdk/kernel/ai-agent/program";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {PortNotWired, ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/index";
+import {Processes, type ProcessHandle, ProcessTable} from "@kampus/tuval-sdk/kernel/process/index";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Deferred, Effect, Layer, Queue, Stream} from "effect";
 import {
 	type PiClientApi,

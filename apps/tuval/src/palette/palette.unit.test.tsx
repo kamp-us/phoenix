@@ -8,13 +8,13 @@
  * would prove the palette agrees with a fake and nothing about what a founder sees.
  */
 
-import {WindowId} from "@kampus/tuval/kernel/protocol/ids";
-import type {SpellCall, SpellReply} from "@kampus/tuval/kernel/protocol/messages";
+import {WindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import type {SpellCall, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {
 	PROTOCOL_VERSION,
 	SpellReplyError,
 	SpellReplyOk,
-} from "@kampus/tuval/kernel/protocol/messages";
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {act, fireEvent, render, screen} from "@testing-library/react";
 import axe from "axe-core";
 import {useState} from "react";

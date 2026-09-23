@@ -12,8 +12,8 @@
  * `middle`, because that is the only place this function puts them.
  */
 
-import type {RendererRef} from "@kampus/tuval/kernel/registry/program";
-import type {AnyWindowHost} from "@kampus/tuval/kernel/shell/window/host";
+import type {RendererRef} from "@kampus/tuval-sdk/kernel/registry/program";
+import type {AnyWindowHost} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import type {AnyInspectorRenderer, AnyStatusRenderer, StatusSegment} from "./renderer.ts";
 import type {DeclaredRenderers, DeskEmptyReason, DeskSnapshot, FocusedWindow} from "./snapshot.ts";
 

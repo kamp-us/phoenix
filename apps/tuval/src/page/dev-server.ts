@@ -18,8 +18,8 @@
 
 import {readFile} from "node:fs/promises";
 import {dirname, join} from "node:path";
-import {featuresDefault, type TuvalFeatures} from "@kampus/tuval/kernel/features";
-import type {ModuleRendererRef} from "@kampus/tuval/kernel/shell/window/index";
+import {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
+import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect, Schema} from "effect";
 import type {TransportServer} from "../shell/transport/server.ts";
 import {forwardLoopback, reserveLoopbackPort} from "./loopback.ts";

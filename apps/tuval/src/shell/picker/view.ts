@@ -13,8 +13,8 @@
  * unbinding reducer — which cannot see the registry or the process table — knowing its index.
  */
 
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import type {WindowId} from "@kampus/tuval/kernel/shell/window/host";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {Result} from "effect";
 import {normalize} from "../keys/syntax.ts";
 import {flatten, type PickerEntries, type PickerEntry} from "./entries.ts";

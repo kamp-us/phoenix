@@ -9,9 +9,9 @@ import {mkdtemp, readdir, readFile, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
-import {IncompatibleRoute} from "@kampus/tuval/kernel/ports/errors";
-import {type Graph, NodeId} from "@kampus/tuval/kernel/ports/graph";
-import {type AnyProgram, ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {IncompatibleRoute} from "@kampus/tuval-sdk/kernel/ports/errors";
+import {type Graph, NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {type AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Option, Queue, Schema} from "effect";
 import {start} from "../boot.ts";
 import {ProcessTablePort} from "../table/ProcessTablePort.ts";
@@ -196,11 +196,11 @@ describe("tuval end to end", () => {
 
 	it("the demo programs import only the kernel's ports and registry slices, Demlik and Effect", () => {
 		const dir = import.meta.dirname;
-		// `@kampus/tuval/authoring` is the one door beyond that set, and `module-counter.ts` is the one
+		// `@kampus/tuval-sdk/authoring` is the one door beyond that set, and `module-counter.ts` is the one
 		// file that walks through it: it is the authored demo, so the authoring surface is its
 		// subject rather than a reach into the app (#8946).
 		const allowed =
-			/^(effect|@demlik\/tea|\.\/[a-z-]+\.ts|@kampus\/tuval\/kernel\/(ports|registry)\/[A-Za-z]+|@kampus\/tuval\/authoring)$/;
+			/^(effect|@demlik\/tea|\.\/[a-z-]+\.ts|@kampus\/tuval-sdk\/kernel\/(ports|registry)\/[A-Za-z]+|@kampus\/tuval-sdk\/authoring)$/;
 		const offenders = readdirSync(dir)
 			.filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
 			.flatMap((name) => {

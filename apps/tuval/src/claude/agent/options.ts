@@ -13,7 +13,7 @@
 
 import {userInfo} from "node:os";
 import type {McpServerConfig, Options, PermissionMode} from "@anthropic-ai/claude-agent-sdk";
-import type {Mode} from "@kampus/tuval/ai-agent/ports";
+import type {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
 import {TUVAL_SERVER_NAME} from "../tools/index.ts";
 import type {AgentSdk} from "./sdk.ts";
 import type {SpawnClaudeCodeProcess} from "./subprocess.ts";

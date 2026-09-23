@@ -1,4 +1,4 @@
-import {isTranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import {isTranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import {describe, expect, it} from "vitest";
 import {historyItem, LiveTranscript} from "./history.ts";
 

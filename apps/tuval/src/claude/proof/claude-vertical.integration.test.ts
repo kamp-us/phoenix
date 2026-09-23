@@ -28,9 +28,9 @@ import {
 	type AiAgentSessionMsg,
 	type AiAgentSessionState,
 	promptItemId,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import type {ProcessView} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {ProcessView} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect, type FileSystem, Queue, Result, Schema, Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {boot, projectDir} from "../../boot.ts";

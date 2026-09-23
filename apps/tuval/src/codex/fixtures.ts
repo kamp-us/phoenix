@@ -2,8 +2,8 @@ import {
 	type TransportError,
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
-} from "@kampus/tuval/kernel/ai-agent/service/index";
-import {KernelBridge} from "@kampus/tuval/kernel/ai-agent/tools/KernelBridge";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {KernelBridge} from "@kampus/tuval-sdk/kernel/ai-agent/tools/KernelBridge";
 import {type Cause, Effect, Layer, Queue, Schema, Stream} from "effect";
 import {CodexAiAgent, type CodexAiAgentOptions} from "./CodexAiAgent.ts";
 import type {CodexConnect, CodexConnection, RequestId, ServerMessage} from "./transport.ts";

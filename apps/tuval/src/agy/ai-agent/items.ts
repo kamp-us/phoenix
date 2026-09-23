@@ -18,7 +18,7 @@ import {
 	type ToolItem,
 	type ToolStatus,
 	type UserItem,
-} from "@kampus/tuval/ai-agent/ports";
+} from "@kampus/tuval-sdk/ai-agent/ports";
 
 /** `ItemId` is an opaque brand, minted here so no call site writes its own cast. */
 export const itemId = (value: string): ItemId => value as ItemId;

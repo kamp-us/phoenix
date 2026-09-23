@@ -41,7 +41,7 @@ const ports = {
 } as const;
 
 const identity = (program: string) => ({
-	package: "@kampus/tuval",
+	package: "@kampus/tuval-sdk",
 	program,
 	version: "1.0.0",
 	digest: `sha256:${program}`,

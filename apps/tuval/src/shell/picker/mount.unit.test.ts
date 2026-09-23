@@ -6,8 +6,8 @@
  */
 
 import {assert, describe, expect, it} from "@effect/vitest";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
 import {Effect, Stream} from "effect";
 import {readEntries} from "./entries.ts";
 import {pickerHarness, programRow, shellProcessId, windowId} from "./fixtures.ts";

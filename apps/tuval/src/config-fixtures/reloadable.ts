@@ -7,8 +7,8 @@
 
 import {readFileSync} from "node:fs";
 import {defineMachine} from "@demlik/tea";
-import {defineSpell} from "@kampus/tuval/kernel/commands/spell";
-import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {defineSpell} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Schema} from "effect";
 import type {TuvalConfigInput} from "../config.ts";
 
@@ -45,7 +45,7 @@ const program = (row: DeclaredConfig["programs"][number]): AnyProgram =>
 		spells: row.spells.map(spellNamed),
 		capabilities: [],
 		identity: {
-			package: "@kampus/tuval",
+			package: "@kampus/tuval-sdk",
 			program: row.id,
 			version: "1.0.0",
 			digest: `sha256:${row.id}`,

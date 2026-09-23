@@ -10,8 +10,8 @@
  * its name and why `motion` exists — no state may be signalled by colour alone or by motion alone.
  */
 
-import type {ProcessId} from "@kampus/tuval/kernel/process/process";
-import type {WindowId} from "@kampus/tuval/kernel/shell/window/host";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {flatten, type PickerEntries, type PickerEntry} from "./entries.ts";
 import {refusalMessage} from "./refusal.ts";
 import {cursorOf, type PickerView, visibleFor} from "./view.ts";

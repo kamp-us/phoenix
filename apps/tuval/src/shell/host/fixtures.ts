@@ -8,10 +8,14 @@
  * the real channel is minted in `./serve.ts`.
  */
 
-import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
-import {buildRegistry, describeSpell, SpellRegistry} from "@kampus/tuval/kernel/commands/registry";
-import {type Client, WindowIndex} from "@kampus/tuval/kernel/commands/scope";
-import {ClientId, defineSpell, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {
+	buildRegistry,
+	describeSpell,
+	SpellRegistry,
+} from "@kampus/tuval-sdk/kernel/commands/registry";
+import {type Client, WindowIndex} from "@kampus/tuval-sdk/kernel/commands/scope";
+import {ClientId, defineSpell, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {Context, Effect, Layer, Schema, Stream} from "effect";
 import type {SpellChannel} from "../transport/server.ts";
 

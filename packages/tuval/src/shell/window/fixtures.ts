@@ -111,7 +111,7 @@ const row = (id: string, renderer?: {readonly kind: "host-native"; readonly ref:
 		handlers: {},
 		capabilities: [],
 		...(renderer === undefined ? {} : {renderer}),
-		identity: {package: "@kampus/tuval", program: id, version: "1.0.0", digest: `sha256:${id}`},
+		identity: {package: "@kampus/tuval-sdk", program: id, version: "1.0.0", digest: `sha256:${id}`},
 		placement: {host: "local"},
 	}) satisfies Program<CounterState, CounterMsg, Cmd<never>, never, unknown, never, never>;
 

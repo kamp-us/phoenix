@@ -120,7 +120,7 @@ describe("authoring.defineProgram", () => {
 		expect(row.capabilities).toEqual([]);
 		expect(row.placement).toEqual({host: "local"});
 		expect(row.identity).toEqual({
-			package: "@kampus/tuval",
+			package: "@kampus/tuval-sdk",
 			program: "counter",
 			version: "0.0.0",
 			digest: "authored:counter",

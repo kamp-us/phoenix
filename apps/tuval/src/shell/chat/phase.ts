@@ -7,8 +7,8 @@
  * and never names a backend, which is what lets one window render any of them.
  */
 
-import type {AgentFailure, Interruption} from "@kampus/tuval/kernel/ai-agent/core/index";
-import type {Phase} from "@kampus/tuval/kernel/ai-agent/events";
+import type {AgentFailure, Interruption} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import type {Phase} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 
 /**
  * `StartError`'s tag, as a literal for the same reason `ai-agent/core/failures.ts` writes them as

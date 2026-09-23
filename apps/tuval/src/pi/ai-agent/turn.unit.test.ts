@@ -16,7 +16,7 @@ import {
 	type AgentEvent,
 	type TransportError,
 	TuvalAiAgent,
-} from "@kampus/tuval/kernel/ai-agent/service/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Deferred, Effect, Fiber, Layer, Queue, Ref, Stream} from "effect";
 import {
 	type PiClientApi,

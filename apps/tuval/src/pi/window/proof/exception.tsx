@@ -3,11 +3,11 @@
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {failureOf} from "@kampus/tuval/kernel/ai-agent/handlers/failures";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {failureOf} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/failures";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect} from "effect";
 import {createRoot} from "react-dom/client";
 import {sessionState} from "../../../shell/chat/chat.testing.ts";

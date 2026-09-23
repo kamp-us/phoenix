@@ -5,8 +5,8 @@
  * entry animation that respects reduced motion, and one activation the mouse and the keyboard share.
  */
 
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {render, screen, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";

@@ -10,7 +10,7 @@
 
 import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
-import type {ViewState} from "@kampus/tuval/kernel/shell/window/host";
+import type {ViewState} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {describe, expect, it} from "vitest";
 import type {PickerRefusal} from "./refusal.ts";
 import type {PickerView} from "./view.ts";

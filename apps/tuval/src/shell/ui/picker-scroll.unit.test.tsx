@@ -9,8 +9,8 @@
  * because that is the only channel a renderer has (`./forwarded-key.tsx`).
  */
 
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {useState} from "react";

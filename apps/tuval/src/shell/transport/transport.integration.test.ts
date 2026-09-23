@@ -8,23 +8,23 @@
 
 import {type Cmd, DispatchDiscardedError, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import type {SpellPath} from "@kampus/tuval/kernel/commands/spell";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {type CheckpointStores, memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import type {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
-import {type ProcessHandle, ProcessId} from "@kampus/tuval/kernel/process/process";
-import {CallId} from "@kampus/tuval/kernel/protocol/ids";
-import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval/kernel/protocol/messages";
-import {type DuplicateProgramId, ProgramNotFound} from "@kampus/tuval/kernel/registry/errors";
+import type {SpellPath} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {type CheckpointStores, memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import type {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {type ProcessHandle, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {type DuplicateProgramId, ProgramNotFound} from "@kampus/tuval-sdk/kernel/registry/errors";
 import {
 	type AnyProgram,
 	type Program,
 	ProgramId,
 	type RendererRef,
-} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
-import type {DispatchResult, ProcessView} from "@kampus/tuval/kernel/shell/window/host";
+} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import type {DispatchResult, ProcessView} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {
 	Context,
 	Effect,
@@ -102,7 +102,7 @@ const deskRow = (id: ProgramId, host: "local" | "browser", renderer?: RendererRe
 		handlers: {},
 		capabilities: [],
 		...(renderer === undefined ? {} : {renderer}),
-		identity: {package: "@kampus/tuval", program: id, version: "1.0.0", digest: `sha256:${id}`},
+		identity: {package: "@kampus/tuval-sdk", program: id, version: "1.0.0", digest: `sha256:${id}`},
 		placement: {host},
 	}) satisfies Program<DeskState, DeskMsg, Cmd<never>, never, unknown, never, never>;
 
@@ -125,7 +125,7 @@ const stamperRow: AnyProgram = {
 	capabilities: [],
 	renderer: ref("tuval/stamper"),
 	identity: {
-		package: "@kampus/tuval",
+		package: "@kampus/tuval-sdk",
 		program: stamperProgramId,
 		version: "1.0.0",
 		digest: `sha256:${stamperProgramId}`,

@@ -23,7 +23,7 @@
  */
 
 import {Button, Collapsible} from "@kampus/design";
-import type {ToolItem} from "@kampus/tuval/ai-agent/ports";
+import type {ToolItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {ReactElement} from "react";
 import {ToolCallDetail} from "./ToolCallDetail.tsx";
 import {callDisclosure} from "./tool-detail.ts";

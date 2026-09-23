@@ -86,7 +86,7 @@ const moduleWindowEntries = (): ReadonlyArray<string> => {
 };
 
 /**
- * Depth-first over relative imports and into `@kampus/tuval` through its exports map, recording each
+ * Depth-first over relative imports and into `@kampus/tuval-sdk` through its exports map, recording each
  * `node:` edge with the chain that reached it. The kernel the page reaches lives in the SDK, so a
  * walk that stopped at the package boundary would stop seeing it.
  */

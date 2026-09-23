@@ -30,10 +30,10 @@
  */
 
 import {Button, CommandPalette, type CommandPaletteItem} from "@kampus/design";
-import type {WindowId} from "@kampus/tuval/kernel/protocol/ids";
-import type {SessionRow, UnreadableBackend} from "@kampus/tuval/kernel/protocol/session-list";
-import type {AnyWindowRenderer, WindowHost} from "@kampus/tuval/kernel/shell/window/index";
-import {windowRenderer} from "@kampus/tuval/kernel/shell/window/index";
+import type {WindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import type {SessionRow, UnreadableBackend} from "@kampus/tuval-sdk/kernel/protocol/session-list";
+import type {AnyWindowRenderer, WindowHost} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {windowRenderer} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode} from "react";
 import {useCallback, useEffect, useMemo, useState} from "react";
 import type {ReadingSessions, SessionListStatus} from "../../page/session-list.ts";

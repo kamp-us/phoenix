@@ -12,7 +12,7 @@
  * error waiting to happen.
  */
 
-import {isJsonValue, type JsonValue} from "@kampus/tuval/ai-agent/ports";
+import {isJsonValue, type JsonValue} from "@kampus/tuval-sdk/ai-agent/ports";
 
 /**
  * The one hand-rolled record predicate left under `apps/tuval/src`; every other site reads

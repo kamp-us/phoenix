@@ -28,12 +28,15 @@
 
 import type {CommandPaletteItem} from "@kampus/design";
 import {CommandPalette, Kbd} from "@kampus/design";
-import type {ParseResult} from "@kampus/tuval/kernel/commands/parse/parse";
-import {parse} from "@kampus/tuval/kernel/commands/parse/parse";
-import {describeExpected, type SpellIndex} from "@kampus/tuval/kernel/commands/parse/spell-index";
-import {renderPath} from "@kampus/tuval/kernel/commands/spell";
-import type {WindowId} from "@kampus/tuval/kernel/protocol/ids";
-import type {Snapshot, SpellCall, SpellReply} from "@kampus/tuval/kernel/protocol/messages";
+import type {ParseResult} from "@kampus/tuval-sdk/kernel/commands/parse/parse";
+import {parse} from "@kampus/tuval-sdk/kernel/commands/parse/parse";
+import {
+	describeExpected,
+	type SpellIndex,
+} from "@kampus/tuval-sdk/kernel/commands/parse/spell-index";
+import {renderPath} from "@kampus/tuval-sdk/kernel/commands/spell";
+import type {WindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import type {Snapshot, SpellCall, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import type {KeyboardEvent, ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {failureLine, type MintCallId, randomCallId, spellCallFor} from "./call.ts";

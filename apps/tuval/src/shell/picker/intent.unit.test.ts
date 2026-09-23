@@ -1,5 +1,5 @@
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {describe, expect, it} from "vitest";
 import {CommandName} from "../keys/table.ts";
 import {windowId} from "./fixtures.ts";

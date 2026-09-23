@@ -8,14 +8,14 @@
  * takes a `MountResolver` and asks it per window; a test hands over a table.
  */
 
-import type {ProcessId} from "@kampus/tuval/kernel/process/process";
-import type {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {
 	AnyWindowHost,
 	Empty,
 	ProcessGone,
 	WindowId,
-} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import type {ReactNode} from "react";
 
 /** A program's window renderer, at the surface's own output type. */

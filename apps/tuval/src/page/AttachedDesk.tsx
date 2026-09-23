@@ -16,15 +16,15 @@
  * instead of a blank tab (#8004).
  */
 
-import type {ProcessId} from "@kampus/tuval/kernel/process/process";
-import type {ProgramId} from "@kampus/tuval/kernel/registry/program";
-import type {RendererTable} from "@kampus/tuval/kernel/shell/window/index";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import type {RendererTable} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {
 	empty,
 	processGone,
 	resolverFromTable,
 	type ViewState,
-} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect, Fiber, Option, Stream} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";

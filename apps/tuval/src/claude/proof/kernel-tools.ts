@@ -26,17 +26,17 @@
  * answers `NoSuchWindow` while looking correctly wired.
  */
 
-import {everyRegistered, SpellBridge} from "@kampus/tuval/kernel/commands/bridge/index";
-import {NoSuchWindow} from "@kampus/tuval/kernel/commands/errors";
-import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
-import {WindowIndex} from "@kampus/tuval/kernel/commands/scope";
+import {everyRegistered, SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
+import {NoSuchWindow} from "@kampus/tuval-sdk/kernel/commands/errors";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {WindowIndex} from "@kampus/tuval-sdk/kernel/commands/scope";
 import {
 	ClientId,
 	type Scope as SpellScope,
 	WindowId,
 	WorkspaceId,
-} from "@kampus/tuval/kernel/commands/spell";
-import type {ProcessId} from "@kampus/tuval/kernel/process/process";
+} from "@kampus/tuval-sdk/kernel/commands/spell";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Context, Effect, Layer} from "effect";
 import type {Kernel} from "../../boot.ts";
 import {

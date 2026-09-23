@@ -15,7 +15,7 @@
  */
 
 import {Card, EmptyState, MetaRow} from "@kampus/design";
-import type {ProcessId} from "@kampus/tuval/kernel/process/process";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {ReactElement, KeyboardEvent as ReactKeyboardEvent} from "react";
 import {useEffect, useMemo, useRef, useState} from "react";
 import type {TableRow} from "../../table/row.ts";

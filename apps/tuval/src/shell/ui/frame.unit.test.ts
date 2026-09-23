@@ -1,5 +1,5 @@
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {delivered, processGone} from "@kampus/tuval/kernel/shell/window/host";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {delivered, processGone} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {describe, expect, it} from "vitest";
 import type {ShellState} from "../core/index.ts";
 import {applyMsg} from "../core/index.ts";

@@ -1,4 +1,4 @@
-# @kampus/tuval
+# @kampus-apps/tuval
 
 Tuval is a local app you run on your own machine: "Neovim plus tmux for processes, in a browser".
 It hosts programs — a Pi session, a Claude session, a shell — as processes that talk to each other
@@ -215,24 +215,24 @@ tuval: refusing to boot — config module /path/to/tuval.config.ts: not a v1 con
 
 ## The public API
 
-The program-author doors belong to the Tuval SDK, [`@kampus/tuval`](../../packages/tuval), which
+The program-author doors belong to the Tuval SDK, [`@kampus/tuval-sdk`](../../packages/tuval), which
 also carries the kernel this app runs on. This app is `@kampus-apps/tuval`, and for now it keeps one
 door of its own, `./sessions`, until the harness packages take the session rows over. Four doors,
 and they are the whole program-author surface:
 
 | Subpath | What it carries |
 |---|---|
-| `@kampus/tuval/authoring` | `defineProgram`, `port`, `programArgs`, `Program`, the effect constructors (`spawn`, `send`, `ask`, `reply`, `emit`, `stop`), `testProgram`, `HostHandlers`, and the types an authored `update` annotates itself with. `src/authoring/index.ts` says at length what is on it and what is deliberately not. |
-| `@kampus/tuval/ai-agent/ports` | The AI-agent port vocabulary — `PromptPayloadSchema`, `TurnResultSchema` and the rest of `src/ai-agent/ports/index.ts`. It stays its own door because its `boundary.unit.test.ts` holds it closed over `effect` plus the kernel's program row, and folding it into the authoring door would make one surface owe two stabilities. |
-| `@kampus/tuval/window` | The window half — `windowRenderer` and `WindowHost` for a `kind: module` window, and `ProgramEvent`, which types that host's dispatch at the program's own event union. Its own door because its closure is browser-safe and `./authoring`'s is not. |
+| `@kampus/tuval-sdk/authoring` | `defineProgram`, `port`, `programArgs`, `Program`, the effect constructors (`spawn`, `send`, `ask`, `reply`, `emit`, `stop`), `testProgram`, `HostHandlers`, and the types an authored `update` annotates itself with. `src/authoring/index.ts` says at length what is on it and what is deliberately not. |
+| `@kampus/tuval-sdk/ai-agent/ports` | The AI-agent port vocabulary — `PromptPayloadSchema`, `TurnResultSchema` and the rest of `src/ai-agent/ports/index.ts`. It stays its own door because its `boundary.unit.test.ts` holds it closed over `effect` plus the kernel's program row, and folding it into the authoring door would make one surface owe two stabilities. |
+| `@kampus/tuval-sdk/window` | The window half — `windowRenderer` and `WindowHost` for a `kind: module` window, and `ProgramEvent`, which types that host's dispatch at the program's own event union. Its own door because its closure is browser-safe and `./authoring`'s is not. |
 | `@kampus-apps/tuval/sessions` | The shipped session rows a *config* fills a shaped arg with — `claudeSession`, `codexSession`, and the `WorkspaceId` / `ClientId` constructors a row's `scope` is built from. |
 
 A kernel-side program looks like this — the same shape `src/authoring/example/pr-review.ts`
 has in-tree, with the specifiers an outside consumer writes:
 
 ```ts
-import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
-import {type Answer, type ArrivalEvent, defineProgram, emit, port, Program, programArgs, type Reply, send, type ShapeSource, spawn} from "@kampus/tuval/authoring";
+import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval-sdk/ai-agent/ports";
+import {type Answer, type ArrivalEvent, defineProgram, emit, port, Program, programArgs, type Reply, send, type ShapeSource, spawn} from "@kampus/tuval-sdk/authoring";
 ```
 
 and its config hands the shaped arg a real row:
@@ -332,7 +332,7 @@ its program goes through an `import type` or a leaf file that imports nothing; s
 specifiers above and nothing else, writes a program, and fills its shaped arg with a shipped row.
 
 The first consumer outside this package is `@kampus/tuval-cron`, a scheduler program written on
-`@kampus/tuval/authoring` and installed into a desk by naming its row in a config. It used to ship
+`@kampus/tuval-sdk/authoring` and installed into a desk by naming its row in a config. It used to ship
 in-tree under `apps/tuval/src/cron/`; once the doors above existed there was no reason for a
 product feature to live in the kernel, so it moved out to `packages/tuval-cron` (#9408) and this
 package kept only the kernel behaviours it drove (#8955, #8959, #9221, #9229, #9230, #9250) and the

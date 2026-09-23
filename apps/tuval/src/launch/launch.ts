@@ -17,17 +17,17 @@
  * end goes through (#9227).
  */
 
-import {SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {dispatchResume} from "@kampus/tuval/kernel/durability/resume";
-import type {CompiledGraph, CompiledNode} from "@kampus/tuval/kernel/ports/graph";
-import {ProcessPorts} from "@kampus/tuval/kernel/ports/ProcessPorts";
-import type {Wiring} from "@kampus/tuval/kernel/ports/wiring";
-import {PlannedProcesses} from "@kampus/tuval/kernel/process/PlannedProcesses";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {type ProcessHandle, ProcessId} from "@kampus/tuval/kernel/process/process";
-import type {AnyProgram} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {dispatchResume} from "@kampus/tuval-sdk/kernel/durability/resume";
+import type {CompiledGraph, CompiledNode} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import type {Wiring} from "@kampus/tuval-sdk/kernel/ports/wiring";
+import {PlannedProcesses} from "@kampus/tuval-sdk/kernel/process/PlannedProcesses";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {type ProcessHandle, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Option, type Queue} from "effect";
 import {NoReceiver} from "./errors.ts";
 

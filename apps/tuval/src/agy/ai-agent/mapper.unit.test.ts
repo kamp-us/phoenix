@@ -15,9 +15,9 @@ import {
 	TOOL_RESULT_BYTE_LIMIT,
 	type ToolItem,
 	type TranscriptItem,
-} from "@kampus/tuval/ai-agent/ports";
-import {addUsage, emptyUsage, usageTotals} from "@kampus/tuval/kernel/ai-agent/core/index";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import {addUsage, emptyUsage, usageTotals} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {describe, expect, it} from "vitest";
 import * as fixtures from "./fixtures.ts";
 import {type AgyTurn, eventsOf, idleTurn} from "./mapper.ts";

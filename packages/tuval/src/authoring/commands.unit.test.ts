@@ -149,7 +149,7 @@ describe("authoring.commands", () => {
 			expect(paths).toEqual(["pr-review-2.review", "pr-review-2.session.start"]);
 			// Nothing in the declaration itself names a group, so there is nothing to derive one from.
 			expect(Object.keys(authored.commands)).toEqual(["review", "session.start"]);
-			expect(renamed.identity?.package).toBe("@kampus/tuval");
+			expect(renamed.identity?.package).toBe("@kampus/tuval-sdk");
 			expect(paths.every((path) => !path.includes("kampus"))).toBe(true);
 		});
 	});

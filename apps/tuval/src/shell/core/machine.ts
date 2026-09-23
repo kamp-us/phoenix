@@ -20,7 +20,7 @@
  */
 
 import {defineMachine} from "@demlik/tea";
-import type {ViewState} from "@kampus/tuval/kernel/shell/window/host";
+import type {ViewState} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {Duration} from "effect";
 import {type CommandIndex, shellCommandIndex} from "../commands/table.ts";
 import {

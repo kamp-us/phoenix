@@ -1,8 +1,8 @@
 /** The two translations between a read line and the wire. */
 
-import {parse} from "@kampus/tuval/kernel/commands/parse/parse";
-import {WindowId} from "@kampus/tuval/kernel/protocol/ids";
-import {PROTOCOL_VERSION} from "@kampus/tuval/kernel/protocol/messages";
+import {parse} from "@kampus/tuval-sdk/kernel/commands/parse/parse";
+import {WindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {PROTOCOL_VERSION} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {describe, expect, it} from "vitest";
 import {failureLine, spellCallFor} from "./call.ts";
 import {registry, snapshot} from "./fixtures.ts";

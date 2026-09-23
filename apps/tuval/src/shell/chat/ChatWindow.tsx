@@ -38,19 +38,19 @@
  */
 
 import {AgentChatInput, Button, DesignTranslationProvider, Kbd, Markdown} from "@kampus/design";
-import type {Mode, SubagentSlot, TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import type {Mode, SubagentSlot, TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/snapshot";
-import {remarkCutReplies} from "@kampus/tuval/kernel/ai-agent/core/state";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/snapshot";
+import {remarkCutReplies} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
 import type {
 	ProcessView,
 	WindowHost,
 	WindowRenderer,
-} from "@kampus/tuval/kernel/shell/window/index";
-import {prefixArmedAround, windowRenderer} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {prefixArmedAround, windowRenderer} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {elementScroll, useVirtualizer, type VirtualizerOptions} from "@tanstack/react-virtual";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode, UIEvent} from "react";

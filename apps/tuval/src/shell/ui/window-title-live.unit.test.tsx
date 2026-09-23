@@ -7,9 +7,9 @@
  * title-keyed boundary would cause and a text assertion alone would not notice.
  */
 
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";

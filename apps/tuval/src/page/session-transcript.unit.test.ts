@@ -7,22 +7,22 @@
  * one at a time, because each of them is a case a rendered assertion would only reach indirectly.
  */
 
-import {CallId} from "@kampus/tuval/kernel/protocol/ids";
-import type {SpellFailure, SpellReply} from "@kampus/tuval/kernel/protocol/messages";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import type {SpellFailure, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {
 	PROTOCOL_VERSION,
 	SpellReplyError,
 	SpellReplyOk,
-} from "@kampus/tuval/kernel/protocol/messages";
-import {SESSION_LIST_PROGRAM} from "@kampus/tuval/kernel/protocol/session-list";
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {SESSION_LIST_PROGRAM} from "@kampus/tuval-sdk/kernel/protocol/session-list";
 import type {
 	SessionTranscript,
 	TranscriptItemWire,
-} from "@kampus/tuval/kernel/protocol/session-transcript";
+} from "@kampus/tuval-sdk/kernel/protocol/session-transcript";
 import {
 	SESSION_TRANSCRIPT_CALL_PATH,
 	SESSION_TRANSCRIPT_PATH,
-} from "@kampus/tuval/kernel/protocol/session-transcript";
+} from "@kampus/tuval-sdk/kernel/protocol/session-transcript";
 import {describe, expect, it} from "vitest";
 import type {TranscriptPaging} from "./session-transcript.ts";
 import {

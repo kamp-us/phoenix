@@ -21,7 +21,7 @@
 
 import {applyCellChecked} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Mode, type TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import {Mode, type TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type AiAgentSessionCmd,
 	type AiAgentSessionMsg,
@@ -31,14 +31,14 @@ import {
 	isAiAgentSessionState,
 	promptItemId,
 	restore,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import {NodeId} from "@kampus/tuval/kernel/ports/graph";
-import {PortNotWired, ProcessPorts} from "@kampus/tuval/kernel/ports/index";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import type {ProcessHandle} from "@kampus/tuval/kernel/process/process";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {PortNotWired, ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/index";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import type {ProcessHandle} from "@kampus/tuval-sdk/kernel/process/process";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer} from "effect";
 import {rows, TOOL_SESSION_ID} from "../agent/fixtures/harness.ts";
 import {scriptedSdk} from "../agent/fixtures/scripted-query.ts";

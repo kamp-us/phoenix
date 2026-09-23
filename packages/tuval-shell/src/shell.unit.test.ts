@@ -9,7 +9,7 @@
  * are the program's own, exported for exactly this.
  */
 
-import {isTurnResult, type PromptPayload, type TurnResult} from "@kampus/tuval/ai-agent/ports";
+import {isTurnResult, type PromptPayload, type TurnResult} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type AnyProgram,
 	type AuthoredProgram,
@@ -17,7 +17,7 @@ import {
 	STATUS_PORT,
 	TITLE_PORT,
 	testProgram,
-} from "@kampus/tuval/authoring";
+} from "@kampus/tuval-sdk/authoring";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import type {Finished, ShellCommand} from "./run.ts";

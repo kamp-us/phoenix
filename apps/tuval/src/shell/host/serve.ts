@@ -12,13 +12,13 @@
  */
 
 import {randomUUID} from "node:crypto";
-import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
-import {SpellRegistry} from "@kampus/tuval/kernel/commands/registry";
-import type {Client} from "@kampus/tuval/kernel/commands/scope";
-import {ClientId, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
-import type {Registry} from "@kampus/tuval/kernel/registry/Registry";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {SpellRegistry} from "@kampus/tuval-sdk/kernel/commands/registry";
+import type {Client} from "@kampus/tuval-sdk/kernel/commands/scope";
+import {ClientId, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import type {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect} from "effect";
 import type {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import type {PrefixTable} from "../keys/index.ts";

@@ -166,7 +166,7 @@ export const sessionListProgram = (options: SessionListProgramOptions = {}): Any
 		handlers: {},
 		capabilities: [{family: "filesystem", detail: "every registered backend's session store"}],
 		identity: {
-			package: "@kampus/tuval",
+			package: "@kampus/tuval-sdk",
 			program: "ai-agent-sessions",
 			version: SESSION_LIST_VERSION,
 			digest: "sha256:ai-agent-sessions",

@@ -1,5 +1,5 @@
 import type {ModelInfo} from "@anthropic-ai/claude-agent-sdk";
-import {foldEvent, initialState} from "@kampus/tuval/kernel/ai-agent/core/index";
+import {foldEvent, initialState} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import {Effect, Stream} from "effect";
 import {CWD, message, on, START_EVENTS} from "../agent/fixtures/harness.ts";
 

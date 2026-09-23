@@ -1,5 +1,5 @@
 /**
- * The window half of the authoring API — what `@kampus/tuval/window` resolves to (#8943).
+ * The window half of the authoring API — what `@kampus/tuval-sdk/window` resolves to (#8943).
  *
  * It is its own door rather than a section of `./index.ts` because the two halves have different
  * closures and only one of them is browser-safe. The kernel-side barrel reaches

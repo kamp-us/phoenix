@@ -8,31 +8,44 @@ import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {processSpells, SpawnedProcesses} from "@kampus/tuval/kernel/commands/core/process";
-import {SpellExecutor} from "@kampus/tuval/kernel/commands/executor";
-import {SpellRegistry} from "@kampus/tuval/kernel/commands/registry";
-import {type Client, WindowIndex, type WindowPlacement} from "@kampus/tuval/kernel/commands/scope";
-import {ClientId, type SpellPath, WindowId, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
-import {Checkpoints} from "@kampus/tuval/kernel/durability/Checkpoints";
-import {memoryStores} from "@kampus/tuval/kernel/durability/stores";
-import {compile} from "@kampus/tuval/kernel/ports/compile";
-import type {PayloadRejected, PortNotWired} from "@kampus/tuval/kernel/ports/errors";
-import {type Graph, NodeId} from "@kampus/tuval/kernel/ports/graph";
-import {ProcessPorts} from "@kampus/tuval/kernel/ports/ProcessPorts";
-import {open} from "@kampus/tuval/kernel/ports/wiring";
-import {ProcessNotFound} from "@kampus/tuval/kernel/process/errors";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {CallId} from "@kampus/tuval/kernel/protocol/ids";
-import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "@kampus/tuval/kernel/protocol/messages";
+import {processSpells, SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {SpellRegistry} from "@kampus/tuval-sdk/kernel/commands/registry";
+import {
+	type Client,
+	WindowIndex,
+	type WindowPlacement,
+} from "@kampus/tuval-sdk/kernel/commands/scope";
+import {
+	ClientId,
+	type SpellPath,
+	WindowId,
+	WorkspaceId,
+} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {compile} from "@kampus/tuval-sdk/kernel/ports/compile";
+import type {PayloadRejected, PortNotWired} from "@kampus/tuval-sdk/kernel/ports/errors";
+import {type Graph, NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import {open} from "@kampus/tuval-sdk/kernel/ports/wiring";
+import {ProcessNotFound} from "@kampus/tuval-sdk/kernel/process/errors";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {
+	PROTOCOL_VERSION,
+	SpellCall,
+	type SpellReply,
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {
 	type AnyProgram,
 	type PortBound,
 	type Program,
 	ProgramId,
-} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
+} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Exit, Fiber, Layer, Option} from "effect";
 import {TestClock} from "effect/testing";
 import {counterId, counterProgram} from "../../demo/counter.ts";
@@ -83,7 +96,7 @@ const echoProgram = (bound: PortBound = {capacity: 4, overflow: "suspend"}): Any
 		},
 		capabilities: [],
 		identity: {
-			package: "@kampus/tuval",
+			package: "@kampus/tuval-sdk",
 			program: "echo",
 			version: "1.0.0",
 			digest: "sha256:echo",
@@ -152,7 +165,12 @@ const earProgram = (): AnyProgram =>
 		receive: {words: (word: string): EchoMsg => ({type: "hear", word})},
 		handlers: {},
 		capabilities: [],
-		identity: {package: "@kampus/tuval", program: "ear", version: "1.0.0", digest: "sha256:ear"},
+		identity: {
+			package: "@kampus/tuval-sdk",
+			program: "ear",
+			version: "1.0.0",
+			digest: "sha256:ear",
+		},
 		placement: {host: "local"},
 	}) satisfies Program<EchoState, EchoMsg, never, never, unknown, never, never>;
 

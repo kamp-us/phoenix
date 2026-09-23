@@ -18,9 +18,9 @@
  * and `bugfix` is on `:5175` and neither is about to trip over the other; one line cannot say that
  * and a list can.
  *
- * **What this module may import.** `@kampus/tuval/window` (the browser-safe door, whose own closure
+ * **What this module may import.** `@kampus/tuval-sdk/window` (the browser-safe door, whose own closure
  * reaches no `node:` builtin), `react`, and this package's kernel-free `./state.ts`. It must not
- * reach `./worktree.ts`: that file imports `@kampus/tuval/authoring` (and `node:path`), and the
+ * reach `./worktree.ts`: that file imports `@kampus/tuval-sdk/authoring` (and `node:path`), and the
  * page loads this module in a browser tab.
  *
  * **Open and Close are dispatches, not spell calls.** `WindowHost` carries `readProcess`,
@@ -29,8 +29,8 @@
  * are the same event landing in the same cell.
  */
 
-import type {WindowHost} from "@kampus/tuval/window";
-import {windowRenderer} from "@kampus/tuval/window";
+import type {WindowHost} from "@kampus/tuval-sdk/window";
+import {windowRenderer} from "@kampus/tuval-sdk/window";
 import {Effect, Fiber, Stream} from "effect";
 import type {CSSProperties, ReactElement} from "react";
 import {useCallback, useEffect, useState} from "react";

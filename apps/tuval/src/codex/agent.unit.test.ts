@@ -1,12 +1,12 @@
 import {describe, it} from "@effect/vitest";
-import {Mode} from "@kampus/tuval/ai-agent/ports";
-import {foldEvent} from "@kampus/tuval/kernel/ai-agent/core/fold";
-import {initialState} from "@kampus/tuval/kernel/ai-agent/core/state";
+import {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
+import {foldEvent} from "@kampus/tuval-sdk/kernel/ai-agent/core/fold";
+import {initialState} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
 import {
 	type AgentEvent,
 	TransportError,
 	type TuvalAiAgentApi,
-} from "@kampus/tuval/kernel/ai-agent/service/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Deferred, Effect, Exit, Fiber, Option, Queue, Stream} from "effect";
 import {expect} from "vitest";
 import {

@@ -18,15 +18,15 @@
 
 import type {PrimitiveSpec} from "@kampus/design/a11y";
 import {runEnforcedInvariants} from "@kampus/design/a11y";
-import type {JsonValue, PermissionRequest, ToolStatus} from "@kampus/tuval/ai-agent/ports";
+import type {JsonValue, PermissionRequest, ToolStatus} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {subagentSlot} from "@kampus/tuval/kernel/ai-agent-fixtures/transcripts";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {subagentSlot} from "@kampus/tuval-sdk/kernel/ai-agent-fixtures/transcripts";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {act, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {Effect} from "effect";
 import fc from "fast-check";

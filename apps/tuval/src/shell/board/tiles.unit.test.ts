@@ -3,8 +3,8 @@
  * `./process-board.unit.test.tsx`; what they *are* is here.
  */
 
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Option} from "effect";
 import {describe, expect, it} from "vitest";
 import type {PortDeclaration, TableRow} from "../../table/row.ts";

@@ -1,4 +1,4 @@
-import {Mode} from "@kampus/tuval/ai-agent/ports";
+import {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
 import {Effect, Schema} from "effect";
 
 export const CODEX_MODES = ["read-only", "workspace-write"] as const;

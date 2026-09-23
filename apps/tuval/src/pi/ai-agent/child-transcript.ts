@@ -27,7 +27,7 @@ import {
 	type ToolItem,
 	type ToolStatus,
 	type TranscriptItem,
-} from "@kampus/tuval/ai-agent/ports";
+} from "@kampus/tuval-sdk/ai-agent/ports";
 
 /** One worker's artifact as a slot reads it: its rows, its newest line, and what it has spent. */
 export interface ChildTranscript {

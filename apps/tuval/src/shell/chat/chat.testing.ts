@@ -11,14 +11,14 @@ import type {
 	ToolItem,
 	ToolStatus,
 	TranscriptItem,
-} from "@kampus/tuval/ai-agent/ports";
-import {boundToolResult, ItemId, Mode} from "@kampus/tuval/ai-agent/ports";
-import type {AiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/state";
-import {initialState} from "@kampus/tuval/kernel/ai-agent/core/state";
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import {boundToolResult, ItemId, Mode} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {AiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
+import {initialState} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
 import {
 	pendingPermission,
 	permissionCard,
-} from "@kampus/tuval/kernel/ai-agent-fixtures/permissions";
+} from "@kampus/tuval-sdk/kernel/ai-agent-fixtures/permissions";
 import {
 	assistantItem,
 	compactionItem,
@@ -26,7 +26,7 @@ import {
 	thinkingItem,
 	toolItem,
 	userItem,
-} from "@kampus/tuval/kernel/ai-agent-fixtures/transcripts";
+} from "@kampus/tuval-sdk/kernel/ai-agent-fixtures/transcripts";
 
 export {
 	assistantItem,

@@ -195,7 +195,7 @@ export const aiAgentProgram = <RIn = never>(
 		// and nothing in the types or the suite objects, which is how #9214 shipped (#9218).
 		inspector: options.inspector ?? AI_AGENT_INSPECTOR_REF,
 		identity: {
-			package: "@kampus/tuval",
+			package: "@kampus/tuval-sdk",
 			program: options.id,
 			version: "1.0.0",
 			digest: `sha256:${options.id}`,

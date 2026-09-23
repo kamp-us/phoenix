@@ -12,7 +12,7 @@
  * schema, where this process can read it and the core's plain data cannot carry it.
  */
 
-import type {AgentFailure} from "@kampus/tuval/kernel/ai-agent/events";
+import type {AgentFailure} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {
 	InterruptError,
 	ListError,
@@ -21,7 +21,7 @@ import {
 	StartError,
 	TranscriptError,
 	TransportError,
-} from "@kampus/tuval/kernel/ai-agent/service/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Effect} from "effect";
 import {diagnose} from "./diagnosis.ts";
 

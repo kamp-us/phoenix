@@ -10,21 +10,21 @@
  */
 
 import {randomUUID} from "node:crypto";
-import {SessionOpening} from "@kampus/tuval/kernel/ai-agent/opening";
-import {CallingWindow} from "@kampus/tuval/kernel/commands/scope";
-import {WindowId as CallWindowId} from "@kampus/tuval/kernel/commands/spell";
-import {NodeId} from "@kampus/tuval/kernel/ports/graph";
-import {ProcessPorts, unwired} from "@kampus/tuval/kernel/ports/ProcessPorts";
-import {Processes} from "@kampus/tuval/kernel/process/Processes";
-import {ProcessTable} from "@kampus/tuval/kernel/process/ProcessTable";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
+import {SessionOpening} from "@kampus/tuval-sdk/kernel/ai-agent/opening";
+import {CallingWindow} from "@kampus/tuval-sdk/kernel/commands/scope";
+import {WindowId as CallWindowId} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProcessPorts, unwired} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {
 	type AnyProgram,
 	type ProgramId,
 	takesForwardedKeys,
-} from "@kampus/tuval/kernel/registry/program";
-import {Registry} from "@kampus/tuval/kernel/registry/Registry";
-import type {ViewState, WindowId} from "@kampus/tuval/kernel/shell/window/host";
+} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import type {ViewState, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {Context, Effect} from "effect";
 import type {ShellMsg} from "../core/machine.ts";
 import {showsInAWindow} from "./entries.ts";

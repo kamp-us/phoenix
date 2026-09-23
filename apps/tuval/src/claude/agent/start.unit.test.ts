@@ -8,7 +8,7 @@
 
 import type {ModelInfo, SDKSessionInfo} from "@anthropic-ai/claude-agent-sdk";
 import {assert, describe, it} from "@effect/vitest";
-import {Mode} from "@kampus/tuval/ai-agent/ports";
+import {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
 import {Cause, Effect, Exit, Logger, Option, Stream} from "effect";
 import {TUVAL_SERVER_NAME, wireNameOf} from "../tools/index.ts";
 import {

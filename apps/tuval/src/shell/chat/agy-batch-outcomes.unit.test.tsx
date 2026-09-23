@@ -11,14 +11,14 @@
  * forbids a shipped file under `shell/chat/` from reaching a backend, and exempts tests.
  */
 
-import type {TranscriptItem} from "@kampus/tuval/ai-agent/ports";
+import type {TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {type TestProcess, testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {type TestProcess, testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {act, fireEvent, render, screen, within} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";

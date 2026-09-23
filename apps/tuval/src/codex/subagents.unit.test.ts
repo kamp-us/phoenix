@@ -1,10 +1,13 @@
 import {describe, it} from "@effect/vitest";
-import {ItemId, isSubagentSlots} from "@kampus/tuval/ai-agent/ports";
-import {foldEvent} from "@kampus/tuval/kernel/ai-agent/core/fold";
-import {parseSessionState} from "@kampus/tuval/kernel/ai-agent/core/snapshot";
-import {initialState} from "@kampus/tuval/kernel/ai-agent/core/state";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
-import {TransportError, type TuvalAiAgentApi} from "@kampus/tuval/kernel/ai-agent/service/index";
+import {ItemId, isSubagentSlots} from "@kampus/tuval-sdk/ai-agent/ports";
+import {foldEvent} from "@kampus/tuval-sdk/kernel/ai-agent/core/fold";
+import {parseSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/snapshot";
+import {initialState} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
+import {
+	TransportError,
+	type TuvalAiAgentApi,
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Deferred, Effect, Fiber, Stream} from "effect";
 import {TestClock} from "effect/testing";
 import {expect} from "vitest";

@@ -54,7 +54,11 @@
  */
 
 import {basename, join} from "node:path";
-import {PromptPayloadSchema, type TurnResult, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import {
+	PromptPayloadSchema,
+	type TurnResult,
+	TurnResultSchema,
+} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type Answer,
 	type AnyProgram,
@@ -73,7 +77,7 @@ import {
 	send,
 	spawn,
 	stop,
-} from "@kampus/tuval/authoring";
+} from "@kampus/tuval-sdk/authoring";
 import {Effect, Schema} from "effect";
 import {
 	type Machine,

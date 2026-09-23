@@ -10,16 +10,16 @@
  * `./subagents.unit.test.ts`.
  */
 
-import type {SubagentSlot, TranscriptItem} from "@kampus/tuval/ai-agent/ports";
-import {ItemId} from "@kampus/tuval/ai-agent/ports";
+import type {SubagentSlot, TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
+import {ItemId} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
-import {subagentSlot} from "@kampus/tuval/kernel/ai-agent-fixtures/transcripts";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {testProcess} from "@kampus/tuval/kernel/shell/window/fixtures";
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {subagentSlot} from "@kampus/tuval-sdk/kernel/ai-agent-fixtures/transcripts";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {act, fireEvent, render, within} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";

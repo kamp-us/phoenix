@@ -19,8 +19,8 @@
 
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {render, screen} from "@testing-library/react";
 import {Option} from "effect";
 import {describe, expect, it} from "vitest";

@@ -5,7 +5,12 @@
  * component.
  */
 
-import {boundToolResult, ItemId, type JsonValue, type ToolItem} from "@kampus/tuval/ai-agent/ports";
+import {
+	boundToolResult,
+	ItemId,
+	type JsonValue,
+	type ToolItem,
+} from "@kampus/tuval-sdk/ai-agent/ports";
 import {describe, expect, it} from "vitest";
 import {callDisclosure, callLabel, canExpandCall, omissionLine, toolDetail} from "./tool-detail.ts";
 

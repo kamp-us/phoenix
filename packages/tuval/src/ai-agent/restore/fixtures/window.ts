@@ -68,7 +68,7 @@ export const windowProgram: AnyProgram = {
 	},
 	capabilities: [],
 	identity: {
-		package: "@kampus/tuval",
+		package: "@kampus/tuval-sdk",
 		program: WINDOW_PROGRAM,
 		version: "1.0.0",
 		digest: `sha256:${WINDOW_PROGRAM}`,

@@ -14,6 +14,9 @@
 		},
 		"packages/fabrika-pi": {
 			"component": "fabrika-pi"
+		},
+		"packages/tuval": {
+			"component": "tuval-sdk"
 		}
 	}
 }

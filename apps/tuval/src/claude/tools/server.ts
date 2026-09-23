@@ -17,9 +17,9 @@
 
 import type {McpSdkServerConfigWithInstance} from "@anthropic-ai/claude-agent-sdk";
 import {createSdkMcpServer, tool} from "@anthropic-ai/claude-agent-sdk";
-import {KERNEL_TOOL_SERVER} from "@kampus/tuval/kernel/ai-agent/history/index";
-import {ProcessId} from "@kampus/tuval/kernel/process/process";
-import {ProgramId} from "@kampus/tuval/kernel/registry/program";
+import {KERNEL_TOOL_SERVER} from "@kampus/tuval-sdk/kernel/ai-agent/history/index";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {CallToolResult} from "@modelcontextprotocol/sdk/types.js";
 import {Effect, Option} from "effect";
 import {z} from "zod";

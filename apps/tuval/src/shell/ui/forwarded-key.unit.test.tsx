@@ -6,7 +6,7 @@
  * window that already had one is the ordinary case, not the exotic one.
  */
 
-import {WindowId} from "@kampus/tuval/kernel/shell/window/index";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {render} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {StrictMode} from "react";

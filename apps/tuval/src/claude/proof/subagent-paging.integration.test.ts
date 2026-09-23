@@ -29,10 +29,10 @@ import {
 	isNoticeItem,
 	type SubagentSlot,
 	type TranscriptPayload,
-} from "@kampus/tuval/ai-agent/ports";
-import {foldItem} from "@kampus/tuval/kernel/ai-agent/core/fold";
-import type {AgentEvent} from "@kampus/tuval/kernel/ai-agent/events";
-import type {TuvalAiAgentApi} from "@kampus/tuval/kernel/ai-agent/service/index";
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import {foldItem} from "@kampus/tuval-sdk/kernel/ai-agent/core/fold";
+import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
+import type {TuvalAiAgentApi} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Cause, Effect, Exit, Option, Stream} from "effect";
 import {chatRows, olderPageRequest, subagentHeads} from "../../shell/chat/rows.ts";
 import {CWD, messages, on, rows, SESSION_ID, START_EVENTS} from "../agent/fixtures/harness.ts";

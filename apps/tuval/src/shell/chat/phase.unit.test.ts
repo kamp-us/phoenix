@@ -6,8 +6,8 @@
  * session nobody ever started reads as, with the reason nowhere on screen.
  */
 
-import type {AgentFailure} from "@kampus/tuval/kernel/ai-agent/core/index";
-import type {Phase} from "@kampus/tuval/kernel/ai-agent/events";
+import type {AgentFailure} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import type {Phase} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {describe, expect, it} from "vitest";
 import {interruptionGraceMillis, isWorking, phaseLines, statusLine, workingTell} from "./phase.ts";
 

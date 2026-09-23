@@ -26,7 +26,7 @@
  * interface here type-checks nowhere it is used as the slot; `boundary.unit.test.ts` pins that.
  */
 
-import type {ViewState} from "@kampus/tuval/kernel/shell/window/index";
+import type {ViewState} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {asOutgoing, type OutgoingSend} from "./outgoing.ts";
 
 /**

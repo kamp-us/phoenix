@@ -13,7 +13,7 @@
  * alone, and every import below is a package specifier.
  */
 
-import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type Answer,
 	type AnyProgram,
@@ -31,7 +31,7 @@ import {
 	spawn,
 	stop,
 	TITLE_PORT,
-} from "@kampus/tuval/authoring";
+} from "@kampus/tuval-sdk/authoring";
 import {
 	ClientId,
 	claudeSession,

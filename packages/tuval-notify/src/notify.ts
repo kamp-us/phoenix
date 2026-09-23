@@ -4,8 +4,8 @@
  * board tile whether that landed.
  *
  * **This file lives outside Tuval.** Every name it imports comes through a published door
- * (#8943, #9250) — `@kampus/tuval/authoring` and `@kampus/tuval/ai-agent/ports` — the same rule
- * `@kampus/tuval-cron` holds itself to. Nothing reaches into `@kampus/tuval/src/...`.
+ * (#8943, #9250) — `@kampus/tuval-sdk/authoring` and `@kampus/tuval-sdk/ai-agent/ports` — the same rule
+ * `@kampus/tuval-cron` holds itself to. Nothing reaches into `@kampus/tuval-sdk/src/...`.
  *
  * **No secret is ever checkpointed, and no secret is ever logged.** A webhook URL is not a
  * coordinate, it is a credential: anyone holding `https://discord.com/api/webhooks/…/…` can post as
@@ -45,7 +45,7 @@
  * record on the history and on the `delivered` port.
  */
 
-import {TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import {TurnResultSchema} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type Answer,
 	type AnyProgram,
@@ -55,7 +55,7 @@ import {
 	emit,
 	port,
 	send,
-} from "@kampus/tuval/authoring";
+} from "@kampus/tuval-sdk/authoring";
 import {type Layer, Schema} from "effect";
 import {
 	DELIVER,
@@ -86,7 +86,7 @@ import type {Fetch, NotifyTarget, Outgoing, Write} from "./target.ts";
 
 /**
  * What may arrive on `message`, and it is `TurnResultSchema` itself — the shipped schema out of
- * `@kampus/tuval/ai-agent/ports`, the same object `@kampus/tuval-cron` declares its `brief`
+ * `@kampus/tuval-sdk/ai-agent/ports`, the same object `@kampus/tuval-cron` declares its `brief`
  * out-port over. Not a schema of this package's invention that a turn happens to satisfy: the
  * identical one.
  *

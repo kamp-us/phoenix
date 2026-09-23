@@ -11,12 +11,12 @@ import {join} from "node:path";
 import type {
 	AiAgentSessionMsg,
 	AiAgentSessionState,
-} from "@kampus/tuval/kernel/ai-agent/core/index";
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import type {
 	AnyWindowRenderer,
 	ViewState,
 	WindowHost,
-} from "@kampus/tuval/kernel/shell/window/index";
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {describe, expect, it} from "vitest";
 import {sdkModule} from "../../sdk-source.testing.ts";
 import type {ChatWindowRenderer} from "./ChatWindow.tsx";
@@ -189,14 +189,14 @@ describe("chat window boundary", () => {
 		// The fourth is `itemIds` / `isNamedItem`: the same class again, and off the ports barrel this
 		// file's type imports already pull in — that barrel re-exports types and pure predicates only.
 		const admitted = [
-			'import {isAiAgentSessionState} from "@kampus/tuval/kernel/ai-agent/core/snapshot";',
-			'import {remarkCutReplies} from "@kampus/tuval/kernel/ai-agent/core/state";',
-			'import {isNamedItem, itemIds} from "@kampus/tuval/ai-agent/ports";',
+			'import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/snapshot";',
+			'import {remarkCutReplies} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";',
+			'import {isNamedItem, itemIds} from "@kampus/tuval-sdk/ai-agent/ports";',
 		];
 		const offenders = sourceFiles().flatMap(([name, source]) =>
 			importLines(source)
 				.filter((line) => line.includes("ai-agent/"))
-				.filter((line) => !line.includes('"@kampus/tuval/kernel/ai-agent/history/cursor"'))
+				.filter((line) => !line.includes('"@kampus/tuval-sdk/kernel/ai-agent/history/cursor"'))
 				.filter((line) => !/^import type\b/.test(line))
 				.filter((line) => !admitted.includes(line))
 				.map((line) => `${name}: ${line.trim()}`),

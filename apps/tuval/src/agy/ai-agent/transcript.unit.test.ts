@@ -18,8 +18,8 @@ import {
 	TOOL_RESULT_BYTE_LIMIT,
 	type ToolItem,
 	type TranscriptItem,
-} from "@kampus/tuval/ai-agent/ports";
-import {isRefusal, type TranscriptPage} from "@kampus/tuval/kernel/ai-agent/history/index";
+} from "@kampus/tuval-sdk/ai-agent/ports";
+import {isRefusal, type TranscriptPage} from "@kampus/tuval-sdk/kernel/ai-agent/history/index";
 import {Effect} from "effect";
 import {afterAll, describe, expect, it} from "vitest";
 import {

@@ -1,17 +1,17 @@
 import {readFileSync} from "node:fs";
-import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
-import {argKey, argKeys, fillArgs, programArgs} from "@kampus/tuval/kernel/authoring/args";
-import {defineProgram} from "@kampus/tuval/kernel/authoring/define-program";
-import {spawn} from "@kampus/tuval/kernel/authoring/effect";
-import {port} from "@kampus/tuval/kernel/authoring/port";
+import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval-sdk/ai-agent/ports";
+import {argKey, argKeys, fillArgs, programArgs} from "@kampus/tuval-sdk/kernel/authoring/args";
+import {defineProgram} from "@kampus/tuval-sdk/kernel/authoring/define-program";
+import {spawn} from "@kampus/tuval-sdk/kernel/authoring/effect";
+import {port} from "@kampus/tuval-sdk/kernel/authoring/port";
 import {
 	Program,
 	ShapeMismatch,
 	type ShapeSource,
 	shapeOf,
-} from "@kampus/tuval/kernel/authoring/shape";
-import {ClientId, WorkspaceId} from "@kampus/tuval/kernel/commands/spell";
-import type {AnyProgram, PortSchema} from "@kampus/tuval/kernel/registry/program";
+} from "@kampus/tuval-sdk/kernel/authoring/shape";
+import {ClientId, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
+import type {AnyProgram, PortSchema} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Result, Schema} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import {claudeSession} from "../claude/program.ts";
