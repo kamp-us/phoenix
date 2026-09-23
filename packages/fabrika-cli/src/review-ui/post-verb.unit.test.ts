@@ -18,7 +18,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {type CaptureManifest, serializeManifest, sha256Hex} from "./manifest.ts";
-import {type EvidenceCheck, runPost, type UploadLeg} from "./post-verb.ts";
+import {type EvidenceCheck, runPost, runPostFlags, type UploadLeg} from "./post-verb.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const OLD_HEAD = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
@@ -409,5 +409,50 @@ describe("runPost", () => {
 			[once(READBACK), posted("someone else's comment entirely")],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
+	});
+});
+
+describe("runPostFlags", () => {
+	const runFlags = (evidence: ReadonlyArray<string>) => {
+		const uploads: string[] = [];
+		const recordingLeg: UploadLeg = (request) => {
+			uploads.push(request.fileName);
+			return hostingLeg(request);
+		};
+		let stdinRead = false;
+		const seams = fakeSeams(happy());
+		return Effect.runPromise(
+			Effect.provide(
+				runPostFlags({
+					...options,
+					evidence,
+					upload: recordingLeg,
+					stdin: Effect.sync<StdinRead>(() => {
+						stdinRead = true;
+						return {_tag: "Text", text: BODY};
+					}),
+				}),
+				Layer.merge(seams.layer, world()),
+			),
+		).then((outcome) => ({outcome, uploads, stdinRead, requests: seams.requests}));
+	};
+
+	it("refuses two --evidence sets on 10, naming both, before any read, upload or write", async () => {
+		const {outcome, uploads, stdinRead, requests} = await runFlags(["judged", "long-host"]);
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stdout).toBe("");
+		const reason = outcome.stderr.join("\n");
+		expect(reason).toContain('"judged"');
+		expect(reason).toContain('"long-host"');
+		expect(uploads).toEqual([]);
+		expect(stdinRead).toBe(false);
+		expect(requests).toEqual([]);
+	});
+
+	it("posts a single --evidence set exactly as runPost does", async () => {
+		const {outcome, uploads} = await runFlags(["judged"]);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({answer: "posted", surfaces: 1});
+		expect(uploads).toHaveLength(1);
 	});
 });

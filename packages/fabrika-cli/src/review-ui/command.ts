@@ -19,7 +19,7 @@ import {readStdin} from "../io/stdin.ts";
 import {refuse} from "../verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runNote} from "./note-verb.ts";
-import {runPost} from "./post-verb.ts";
+import {runPostFlags} from "./post-verb.ts";
 import {captureRenderLeg} from "./render-leg.ts";
 import {runRender} from "./render-verb.ts";
 import {runRoute} from "./route-verb.ts";
@@ -133,9 +133,11 @@ const post = leafCommand(
 		clause: Flag.string("clause").pipe(
 			Flag.withDescription("the human clause the marker ends with; blank is not a clause"),
 		),
+		// Repeatable only so the verb sees a repeat and refuses it — one capture set per post.
 		evidence: Flag.string("evidence").pipe(
+			Flag.atLeast(1),
 			Flag.withDescription(
-				"the review-ui render capture-set name whose verified upload is this verdict's evidence",
+				"the review-ui render capture-set name whose verified upload is this verdict's evidence — exactly one; passing it twice is refused on 10",
 			),
 		),
 		carrier: Flag.string("carrier").pipe(
@@ -154,7 +156,7 @@ const post = leafCommand(
 	},
 	Effect.fn(function* ({pr, polarity, sha, clause, evidence, carrier, supersede, repo}) {
 		yield* emit(
-			yield* runPost({
+			yield* runPostFlags({
 				pr,
 				polarity,
 				sha,
@@ -178,7 +180,7 @@ const post = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the review-ui verdict on stdin as one comment."),
 	Command.withDescription(
-		'Post the review-ui verdict on STDIN as ONE comment for this namespace — re-resolve the live head, read the evidence set through its manifest, re-validate every capture, verify-upload every capture BEFORE anything posts, compose the first line through the `verdict-marker` wire format, leak-scan, APPEND into this head\'s own comment, and read it back from live state. The prior verdict is never replaced: it survives verbatim under a dated `## Superseded verdict` heading below the fence, while the fresh verdict takes the first line, so every marker reader resolves the newest one. There is no --namespace: this group emits review-ui and nothing else. Prints one JSON object whose `upsert` field is `created` or `superseded`. Exits 3 (empty stdin), 4 (the evidence set has no readable manifest.json, or the declared `uiCapture` violates its schema), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker, or an embedded capture in the posted comment does not open as the judged bytes — POSTED, so inspect the comment), 10 (bad --polarity or --carrier, or advisory with FAIL), 11 (a precondition read failed — nothing uploaded or posted), 12 (the live head moved past --sha, or the set was rendered at another head), 15 (a capture fails its manifest sha), 17 (an evidence upload or its read-back failed — the hosted asset, rendered through the GitHub markdown renderer, must serve HTTP 200 with the exact capture bytes — nothing was posted), 18 (a standing verdict of the OPPOSITE polarity at this head would be retired and --supersede was not passed — nothing posted). Example: fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged < verdict.md',
+		'Post the review-ui verdict on STDIN as ONE comment for this namespace — re-resolve the live head, read the evidence set through its manifest, re-validate every capture, verify-upload every capture BEFORE anything posts, compose the first line through the `verdict-marker` wire format, leak-scan, APPEND into this head\'s own comment, and read it back from live state. The prior verdict is never replaced: it survives verbatim under a dated `## Superseded verdict` heading below the fence, while the fresh verdict takes the first line, so every marker reader resolves the newest one. There is no --namespace: this group emits review-ui and nothing else. Prints one JSON object whose `upsert` field is `created` or `superseded`. Exits 3 (empty stdin), 4 (the evidence set has no readable manifest.json, or the declared `uiCapture` violates its schema), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker, or an embedded capture in the posted comment does not open as the judged bytes — POSTED, so inspect the comment), 10 (bad --polarity or --carrier, advisory with FAIL, or --evidence passed more than once — one capture set per post, refused before anything is read, uploaded or posted), 11 (a precondition read failed — nothing uploaded or posted), 12 (the live head moved past --sha, or the set was rendered at another head), 15 (a capture fails its manifest sha), 17 (an evidence upload or its read-back failed — the hosted asset, rendered through the GitHub markdown renderer, must serve HTTP 200 with the exact capture bytes — nothing was posted), 18 (a standing verdict of the OPPOSITE polarity at this head would be retired and --supersede was not passed — nothing posted). Example: fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged < verdict.md',
 	),
 );
 

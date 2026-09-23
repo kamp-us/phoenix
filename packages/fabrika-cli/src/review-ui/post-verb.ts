@@ -563,3 +563,37 @@ export const runPost = (
 			diagnostics,
 		);
 	});
+
+/** {@link PostOptions} as the command line hands it: every `--evidence` value, in the order passed. */
+export interface PostFlags extends Omit<PostOptions, "evidence"> {
+	readonly evidence: ReadonlyArray<string>;
+}
+
+/**
+ * The adapter's entry: admit exactly one capture set, then {@link runPost}.
+ *
+ * The flag is repeatable only so a repeat is visible here. A plain string flag keeps one value and
+ * drops the rest without a word, which posted a gallery missing a set whose shots the verdict table
+ * still cited. The refusal lands before stdin, the manifest or any upload is touched.
+ */
+export const runPostFlags = (flags: PostFlags): ReturnType<typeof runPost> => {
+	const [set, ...rest] = flags.evidence;
+	if (set === undefined) {
+		return Effect.succeed(
+			refuse(
+				OFF_VOCABULARY,
+				`${VERB}: no --evidence set was named — a verdict needs its evidence.`,
+			),
+		);
+	}
+	if (rest.length > 0) {
+		const named = flags.evidence.map((name) => `"${name}"`).join(", ");
+		return Effect.succeed(
+			refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --evidence was passed ${flags.evidence.length} times (${named}) — a post carries one capture set, and every set past the first would drop out of the gallery while the verdict still cites its shots. Render every judged surface into one set and pass it once; nothing was read, uploaded or posted.`,
+			),
+		);
+	}
+	return runPost({...flags, evidence: set});
+};
