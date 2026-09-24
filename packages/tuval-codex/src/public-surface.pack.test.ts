@@ -115,4 +115,8 @@ describe("the packed @kampus/tuval-codex", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 		expect(manifest.peerDependenciesMeta?.["@kampus/tuval-sdk"]?.optional).not.toBe(true);
 		expect(manifest.dependencies?.["@kampus/tuval-sdk"]).toBeUndefined();
 	});
+
+	it("accepts a range of SDK versions, not one exact version", () => {
+		expect(manifest.peerDependencies?.["@kampus/tuval-sdk"]).toMatch(/^\^/);
+	});
 });

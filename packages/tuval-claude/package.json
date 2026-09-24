@@ -83,7 +83,7 @@
 		"zod": "catalog:"
 	},
 	"peerDependencies": {
-		"@kampus/tuval-sdk": "workspace:*",
+		"@kampus/tuval-sdk": "workspace:^",
 		"effect": "catalog:",
 		"react": "catalog:"
 	},
