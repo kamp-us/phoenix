@@ -1773,20 +1773,51 @@ Preconditions, guarded identically to `build tree`: a readable tree root (`11`),
 (`15` / `11`) — in create and child-repair mode on `<number>`, in resume mode on the `--resume` PR's
 number, which is the number repair mode claims.
 
+**The tree it would move is proven movable first, in every mode.** `git switch` refuses only a
+*conflicting* change, so a staged or modified file that does not conflict rides onto the new branch
+in silence — which is how one builder moved the primary checkout off `main` with a human's edits
+still in its index, and how two lanes on one demlik run each cut their branch inside a third lane's
+worktree and carried its finished, staged work with them. So once the claim is proven and the target
+name is composed, and before any fetch, switch, rename or create, the verb reads the tree's current
+branch and its status and refuses on two arms:
+
+- **`13` — the tree is dirty and the checkout would move HEAD.** A status read that fails is `13`
+  as UNKNOWN, never clean, like `build tree --require-clean`. A tree already standing on the branch
+  the verb would end on — an idempotent re-run, or a `--resume-lane` re-key of the branch this tree
+  holds — does not move HEAD, so the arm does not apply.
+- **`14` — the tree stands on another lane's branch.** Its current branch parses as a lane branch
+  (`parseLaneBranch`) for a different issue or PR than this invocation serves. A detached HEAD, a
+  non-lane branch, or this number's own lane branch under any nonce is not refused.
+
+Both arms are **location-neutral**: they read what the tree holds, never where it sits, so neither
+asks whether this is the main working tree or a linked worktree. That is the 2026-08-13 ruling's
+line — `13` and `14` survive, and `12` ("not in a linked worktree") stays retired and unused. A
+branch read that fails is `11`. Neither arm cleans, stashes or moves the work: that is the
+operator's.
+
 **Exit status** (beyond the universal four)
 
 | Code | Trigger |
 |---|---|
 | `7` | `--resume`'s PR is proven absent, closed, or merged; `--resume-lane` found no branch anywhere in this clone's refs cut for `<number>`; or the derived assembly branch `epic/<parent>` is proven absent from both origin and this clone |
 | `10` | `--slug` is not kebab-case, exceeds 5 words, or is flag-shaped; `--resume-lane` was given beside `--resume` or `--slug`; or `--base` names no configured remote and this clone has no `origin` to qualify it against — a clone with no remotes at all and a clone with several and no `origin` are the same refusal in two spellings |
-| `11` | the fetch failed, the claim state could not be read, the parent read or the assembly-branch read failed so which base this lane belongs on is UNKNOWN, an existing lane branch's merge base with the resolved base could not be read, or `--resume-lane` could not read this clone's branches or its worktrees, found several candidates, proved another worktree holds the branch, or could not re-key or check out the one it found |
+| `11` | the fetch failed, the claim state could not be read, the branch this tree holds could not be read, the parent read or the assembly-branch read failed so which base this lane belongs on is UNKNOWN, an existing lane branch's merge base with the resolved base could not be read, or `--resume-lane` could not read this clone's branches or its worktrees, found several candidates, proved another worktree holds the branch, or could not re-key or check out the one it found |
+| `13` | the tree has uncommitted changes and the checkout would move HEAD off the branch it stands on, or its status could not be read (UNKNOWN, never clean) — location-neutral; nothing was fetched, switched, renamed or created |
+| `14` | proven: the tree stands on a lane branch for a different issue or PR than this invocation serves — location-neutral; nothing was fetched, switched, renamed or created |
 | `15` | proven: the claim on `<number>` is foreign |
 | `36` | proven: the lane branch already exists and does not carry the base this run resolved — it was cut off a different one, or the base moved since |
+
+`12` is not used: it is the retired "not in a linked worktree" seat, and neither refusal above
+depends on where the tree is.
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
+| `build branch: <n> uncommitted change(s) in this tree, and checking out <branch> would carry them off <current branch, or "a detached HEAD"> — refusing; an unauthored hunk is not yours to move. Nothing was changed.` | 13 | refusal |
+| `build branch: cannot read the tree's status: <reason> — cleanliness is UNKNOWN, never clean; nothing was changed.` | 13 | refusal |
+| `build branch: this tree stands on <branch>, #<m>'s lane branch, not #<n>'s — switching it would take that lane's tree out from under it. Nothing was changed.` | 14 | refusal |
+| `build branch: cannot read which branch this tree holds: <reason> — whether checking out moves HEAD, and off whose branch, is UNKNOWN; nothing was changed.` | 11 | refusal |
 | `build branch: --slug "<value>" is not kebab-case (lowercase letters, digits, single hyphens, ≤5 words).` | 10 | refusal |
 | `build branch: cannot fetch <ref>: <reason> — refusing to cut a branch off a stale base.` | 11 | refusal |
 | `build branch: --base "<value>" names no configured remote and this clone has none to qualify it against. Nothing was cut.` | 10 | refusal |

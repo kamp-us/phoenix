@@ -22,6 +22,9 @@
  * blind is what made the idempotent re-run unable to be the recovery for a wrong first cut. Either
  * way create mode names the base commit it ended on, so a builder proves the cut off this verb's own
  * output rather than off a `git merge-base` of their own.
+ *
+ * Every mode asks {@link assertMovable} before it fetches, switches, renames or creates anything:
+ * a dirty tree it would carry work off refuses on `13`, a tree on another lane's branch on `14`.
  */
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -37,7 +40,6 @@ import {
 	bothResolve,
 	branchExists,
 	classifyBase,
-	currentBranch,
 	fetchBase,
 	mergeBaseOf,
 	remoteSha,
@@ -56,7 +58,7 @@ import {
 	resumeBranchName,
 } from "./lane.ts";
 import {resolveTargetRepo} from "./target.ts";
-import {assertGround} from "./tree.ts";
+import {assertGround, assertMovable} from "./tree.ts";
 
 const VERB = "build branch";
 
@@ -254,6 +256,9 @@ export const runBranch = (
 		const nonce = caller.nonce;
 
 		if (resume !== null) {
+			const name = resumeBranchName(resume, nonce);
+			const movable = yield* assertMovable(VERB, {serves: resume, ends: [name], notes: held.notes});
+			if (movable._tag === "Refused") return movable.outcome;
 			const head = yield* getPullHead(options.env, repo, resume);
 			if (head._tag === "Unknown") {
 				return refuse(
@@ -277,7 +282,6 @@ export const runBranch = (
 					held.notes,
 				);
 			}
-			const name = resumeBranchName(resume, nonce);
 			const switched = yield* checkout(name, fetched.value);
 			if (switched._tag === "Failure") {
 				return refuse(
@@ -331,6 +335,12 @@ export const runBranch = (
 				);
 			}
 			const name = createBranchName(issue, prior.slug, nonce);
+			const movable = yield* assertMovable(VERB, {
+				serves: issue,
+				ends: [name, only],
+				notes: held.notes,
+			});
+			if (movable._tag === "Refused") return movable.outcome;
 			// Re-keyed in place rather than cut off `only`, so exactly one branch keeps naming this
 			// child — two is the underivable range `lane prove` refuses on, and an idempotent re-run
 			// under the same nonce resolves the same name and has nothing to rename.
@@ -348,16 +358,8 @@ export const runBranch = (
 						held.notes,
 					);
 				}
-				const mine = yield* currentBranch;
-				if (mine._tag === "Failure") {
-					return refuse(
-						PRECONDITION_UNKNOWN,
-						`${VERB}: cannot read which branch this tree holds: ${mine.reason} — whether ${only} is held here or by another lane is UNKNOWN; nothing was changed.`,
-						held.notes,
-					);
-				}
 				const holder =
-					mine.value === only
+					movable.current === only
 						? undefined
 						: checkouts.value.find((checkout) => checkout.branch === only);
 				if (holder !== undefined) {
@@ -394,6 +396,10 @@ export const runBranch = (
 		}
 
 		const issue = number as number;
+		const name = createBranchName(issue, slug as string, nonce);
+		const movable = yield* assertMovable(VERB, {serves: issue, ends: [name], notes: held.notes});
+		if (movable._tag === "Refused") return movable.outcome;
+
 		const resolvedBase = yield* resolveBase(options.env, repo, issue, options.base);
 		if (resolvedBase._tag === "Refused")
 			return {...resolvedBase.outcome, stderr: [...held.notes, ...resolvedBase.outcome.stderr]};
@@ -413,7 +419,6 @@ export const runBranch = (
 			);
 		}
 		const at = fetched.value;
-		const name = createBranchName(issue, slug as string, nonce);
 
 		if (yield* branchExists(name)) {
 			const shared = yield* mergeBaseOf(at, `refs/heads/${name}`);
