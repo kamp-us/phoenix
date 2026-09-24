@@ -65,10 +65,18 @@ point alone (ADR 0239 §2 carries the same caveat).
 
 ### 2a. A published package links a published sibling with `workspace:`, and the sibling releases first
 
-The Tuval packages depend on each other with `workspace:*` (`@kampus/tuval-ui` peers on
-`@kampus/tuval-sdk`, the harness packages depend on `@kampus/tuval-ui`). `pnpm publish` rewrites
-each link to the sibling's in-repo version at pack time, so the tarball names a registry range.
-Each package's `src/public-surface.pack.test.ts` asserts no packed range starts with `workspace:`.
+The Tuval packages depend on each other with `workspace:*` (the harness packages depend on
+`@kampus/tuval-ui`). `pnpm publish` rewrites each link to the sibling's in-repo version at pack
+time, so the tarball names a registry range. Each package's `src/public-surface.pack.test.ts`
+asserts no packed range starts with `workspace:`.
+
+The peer on `@kampus/tuval-sdk` is the exception: `tuval-ui` and the harness packages link it with
+`workspace:^`, which packs as a caret range rather than one exact version. The desk supplies the
+single SDK copy and each program declares the SDK versions it supports
+([#9670 ruling](https://github.com/kamp-us/phoenix/issues/9670#issuecomment-5789628069)), so an
+exact pin would make every harness conflict with an SDK patch release. The same pack test asserts
+the packed SDK peer starts with `^`. Below 1.0 a caret admits patch releases at most
+(`^0.1.0` is `>=0.1.0 <0.2.0`).
 
 `publish-isolation-guard` accepts a `workspace:` runtime dep only when its target is in the
 published set (constraint 6). A `workspace:` link to a package `publish.yml` does not publish still

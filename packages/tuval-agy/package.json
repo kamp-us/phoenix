@@ -51,7 +51,7 @@
 		"@kampus/tuval-ui": "workspace:*"
 	},
 	"peerDependencies": {
-		"@kampus/tuval-sdk": "workspace:*",
+		"@kampus/tuval-sdk": "workspace:^",
 		"effect": "catalog:",
 		"react": "catalog:"
 	},
