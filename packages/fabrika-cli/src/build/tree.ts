@@ -13,7 +13,9 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {execCapture} from "../io/exec.ts";
 import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
-import {DIRTY_TREE, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {DIRTY_TREE, PRECONDITION_UNKNOWN, WRONG_LANE} from "./codes.ts";
+import {currentBranch} from "./git.ts";
+import {laneNumber, parseLaneBranch} from "./lane.ts";
 
 export interface TreeState {
 	/** This tree's own git dir — where a per-tree file such as `info/exclude` belongs. */
@@ -101,4 +103,68 @@ export const assertGround = (
 			};
 		}
 		return {_tag: "Tree" as const, root: state.value.root};
+	});
+
+export type Movable =
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {readonly _tag: "Movable"; readonly current: string | null};
+
+/**
+ * Whether a verb about to move this tree's HEAD may move it — asked before anything switches,
+ * renames or creates a branch.
+ *
+ * `git switch` refuses only a *conflicting* change, so a staged or modified file that does not
+ * conflict rides onto the new branch in silence; and a tree standing on another lane's branch is
+ * that lane's tree, whoever's cwd reached it. Both refusals read what the tree holds, never where
+ * it sits: the 2026-08-13 ruling kept `13` and `14` location-neutral and retired `12`.
+ *
+ * `ends` is every branch the verb could leave this tree on without moving HEAD — its target, plus
+ * the branch a `--resume-lane` re-key renames in place. A tree already on one of them is a re-run,
+ * so the dirty arm has nothing to protect.
+ */
+export const assertMovable = (
+	verb: string,
+	lane: {
+		readonly serves: number;
+		readonly ends: readonly [string, ...ReadonlyArray<string>];
+		readonly notes: ReadonlyArray<string>;
+	},
+): Effect.Effect<Movable, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const refused = (code: number, reason: string): Movable => ({
+			_tag: "Refused",
+			outcome: refuse(code, reason, lane.notes),
+		});
+		const held = yield* currentBranch;
+		if (held._tag === "Failure") {
+			return refused(
+				PRECONDITION_UNKNOWN,
+				`${verb}: cannot read which branch this tree holds: ${held.reason} — whether checking out moves HEAD, and off whose branch, is UNKNOWN; nothing was changed.`,
+			);
+		}
+		const current = held.value;
+		if (current !== null && lane.ends.includes(current)) return {_tag: "Movable", current};
+
+		const dirty = yield* uncommittedChanges;
+		if (dirty._tag === "Failure") {
+			return refused(
+				DIRTY_TREE,
+				`${verb}: cannot read the tree's status: ${dirty.reason} — cleanliness is UNKNOWN, never clean; nothing was changed.`,
+			);
+		}
+		const standing = current ?? "a detached HEAD";
+		if (dirty.value > 0) {
+			return refused(
+				DIRTY_TREE,
+				`${verb}: ${dirty.value} uncommitted change(s) in this tree, and checking out ${lane.ends[0]} would carry them off ${standing} — refusing; an unauthored hunk is not yours to move. Nothing was changed.`,
+			);
+		}
+		const foreign = current === null ? null : parseLaneBranch(current);
+		if (foreign !== null && laneNumber(foreign) !== lane.serves) {
+			return refused(
+				WRONG_LANE,
+				`${verb}: this tree stands on ${standing}, #${laneNumber(foreign)}'s lane branch, not #${lane.serves}'s — switching it would take that lane's tree out from under it. Nothing was changed.`,
+			);
+		}
+		return {_tag: "Movable", current};
 	});

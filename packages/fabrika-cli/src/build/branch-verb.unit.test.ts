@@ -5,8 +5,10 @@ import {runBranch} from "./branch-verb.ts";
 import {
 	BASE_MISMATCH,
 	CLAIM_NOT_MINE,
+	DIRTY_TREE,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
+	WRONG_LANE,
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {
@@ -36,6 +38,21 @@ const MERGE_BASE = /^git merge-base \S+ refs\/heads\/build\//;
 /** The read-back that splits a merge base git proves absent from one it could not compute. */
 const RESOLVE_SHA = /^git rev-parse --verify --quiet [0-9a-f]{40}\^/;
 
+const STATUS = /^git status --porcelain$/;
+const CURRENT = /^git branch --show-current$/;
+const SWITCHING = /^git (switch|branch -m) /;
+
+/**
+ * A clean tree on a detached HEAD — the ground a fresh lane worktree stands on. Appended last, so a
+ * test that scripts either read itself shadows it (the script is first-match).
+ */
+const CLEAN_DETACHED: ReadonlyArray<Scripted> = [
+	[STATUS, okOut("")],
+	[CURRENT, okOut("")],
+];
+
+const seams = (script: ReadonlyArray<Scripted>) => fakeSeams([...script, ...CLEAN_DETACHED]);
+
 const MINE = comments({id: 1, body: marker("s-9f2e", LANE_UUID)});
 
 /** The write permission the marker's author holds — what authorizes a claim. */
@@ -64,11 +81,11 @@ const CLAIMED: ReadonlyArray<Scripted> = [
 ];
 
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
-	Effect.runPromise(Effect.provide(runBranch({...options, ...overrides}), fakeSeams(script).layer));
+	Effect.runPromise(Effect.provide(runBranch({...options, ...overrides}), seams(script).layer));
 
 describe("runBranch — create mode", () => {
 	it("cuts the lane branch off FETCH_HEAD and prints its name", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[REMOTES, okOut("origin\n")],
 			[FETCH, okOut("")],
@@ -83,7 +100,7 @@ describe("runBranch — create mode", () => {
 	});
 
 	it("fetches BEFORE it cuts — never off a stale local ref (#1920)", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[REMOTES, okOut("origin\n")],
 			[FETCH, okOut("")],
@@ -98,7 +115,7 @@ describe("runBranch — create mode", () => {
 	});
 
 	it("resumes an existing branch of the same nonce instead of failing — a re-run is idempotent", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[REMOTES, okOut("origin\n")],
 			[FETCH, okOut("")],
@@ -113,7 +130,7 @@ describe("runBranch — create mode", () => {
 	});
 
 	it("refuses a flag-shaped slug on 10, before touching git (#4854)", async () => {
-		const shell = fakeSeams([]);
+		const shell = seams([]);
 		const out = await Effect.runPromise(
 			Effect.provide(runBranch({...options, slug: "-rf"}), shell.layer),
 		);
@@ -133,7 +150,7 @@ describe("runBranch — create mode", () => {
 	});
 
 	it("refuses a foreign claim on 15 — nothing is cut", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			[REV_PARSE, GIT_DIRS],
 			[ISSUE, issue()],
 			[COMMENTS, comments({id: 1, body: marker("s-77aa", LANE_UUID)})],
@@ -169,7 +186,7 @@ describe("runBranch — resume mode", () => {
 	const resumeOptions = {number: null, slug: null, resume: 4310};
 
 	it("checks the PR's head out under this claim's own local lane name, with the upstream set", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			[REV_PARSE, GIT_DIRS],
 			[RESUME_ISSUE, issue({number: 4310})],
 			[RESUME_COMMENTS, MINE],
@@ -248,7 +265,7 @@ describe("runBranch — --resume-lane", () => {
 	] as ReadonlyArray<Scripted>;
 
 	it("re-keys the prior lane's branch to this claim's nonce and checks it out", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[FOR_EACH_REF, okOut(`main\n${PRIOR}\nepic/5631\n`)],
 			...SAFE_TO_REKEY,
@@ -268,7 +285,7 @@ describe("runBranch — --resume-lane", () => {
 	});
 
 	it("fetches nothing — a child's branch is local, and the remote knows none of it", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[FOR_EACH_REF, okOut(`${PRIOR}\n`)],
 			...SAFE_TO_REKEY,
@@ -282,11 +299,7 @@ describe("runBranch — --resume-lane", () => {
 	});
 
 	it("renames nothing on a re-run under the same nonce — the name already resolves", async () => {
-		const shell = fakeSeams([
-			...CLAIMED,
-			[FOR_EACH_REF, okOut(`${RESUMED}\n`)],
-			[SWITCH, okOut("")],
-		]);
+		const shell = seams([...CLAIMED, [FOR_EACH_REF, okOut(`${RESUMED}\n`)], [SWITCH, okOut("")]]);
 		const out = await Effect.runPromise(
 			Effect.provide(runBranch({...options, ...resumeLaneOptions}), shell.layer),
 		);
@@ -321,7 +334,7 @@ describe("runBranch — --resume-lane", () => {
 	 * that landed under another lane.
 	 */
 	it("refuses on 11 BEFORE renaming when another worktree holds the branch, naming that worktree", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[FOR_EACH_REF, okOut(`${PRIOR}\n`)],
 			[WORKTREES, HELD],
@@ -337,7 +350,7 @@ describe("runBranch — --resume-lane", () => {
 	});
 
 	it("re-keys anyway when the tree holding the branch is this one — nobody else's HEAD moves", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[FOR_EACH_REF, okOut(`${PRIOR}\n`)],
 			[WORKTREES, okOut(`worktree /repo\nHEAD ${HEAD}\nbranch refs/heads/${PRIOR}\n`)],
@@ -353,7 +366,7 @@ describe("runBranch — --resume-lane", () => {
 	});
 
 	it("refuses on 11 when who holds the branch cannot be read — never 'free'", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[FOR_EACH_REF, okOut(`${PRIOR}\n`)],
 			[WORKTREES, errOut("fatal: not a git repository")],
@@ -410,7 +423,7 @@ describe("runBranch — create mode derives the base (#6730)", () => {
 	const published = (): Scripted => [LS_REMOTE, okOut(`${EPIC_TIP}\trefs/heads/epic/6505\n`)];
 
 	it("cuts an epic child off the run's assembly branch, fetched", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			parented(),
 			published(),
@@ -434,7 +447,7 @@ describe("runBranch — create mode derives the base (#6730)", () => {
 	});
 
 	it("cuts a proven-standalone issue off origin/main and invents no epic base", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			orphan(),
 			[REMOTES, okOut("origin\n")],
@@ -455,7 +468,7 @@ describe("runBranch — create mode derives the base (#6730)", () => {
 	});
 
 	it("honours an explicit --base on a child, and never reads the parent at all", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[REMOTES, okOut("origin\n")],
 			[/^git fetch --quiet origin release\/2$/, okOut("")],
@@ -475,7 +488,7 @@ describe("runBranch — create mode derives the base (#6730)", () => {
 	});
 
 	it("refuses an unreadable parent on 11 — never a fall back to origin/main", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[PARENT, {status: 500, body: '{"message":"upstream is having a moment"}'}],
 		]);
@@ -489,7 +502,7 @@ describe("runBranch — create mode derives the base (#6730)", () => {
 	});
 
 	it("refuses a proven-absent assembly branch on 7, naming the branch it derived", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			parented(),
 			[LS_REMOTE, okOut("")],
@@ -504,7 +517,7 @@ describe("runBranch — create mode derives the base (#6730)", () => {
 	});
 
 	it("refuses an unreadable assembly-branch read on 11, not on 7", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			parented(),
 			[LS_REMOTE, errOut("fatal: could not read from remote repository")],
@@ -518,7 +531,7 @@ describe("runBranch — create mode derives the base (#6730)", () => {
 	});
 
 	it("stays idempotent on a re-run under the same nonce — resolved and switched to, not re-cut", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			parented(),
 			published(),
@@ -550,7 +563,7 @@ describe("runBranch — create mode proves the base it cut from", () => {
 	const TRUNK_FORK = "0e1d2c3b4a5968778695a4b3c2d1e0f1c2b3a49f";
 
 	it("fetches a --base naming a local branch from origin, never reading the unmoved local ref", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[REMOTES, okOut("origin\n")],
 			[/^git fetch --quiet origin epic\/7497$/, okOut("")],
@@ -573,7 +586,7 @@ describe("runBranch — create mode proves the base it cut from", () => {
 	});
 
 	it("names the base commit it cut from, so nobody needs their own git merge-base", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[REMOTES, okOut("origin\n")],
 			[FETCH, okOut("")],
@@ -589,7 +602,7 @@ describe("runBranch — create mode proves the base it cut from", () => {
 	});
 
 	it("refuses on 36 when the existing lane branch was cut off a different base", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[REMOTES, okOut("origin\n")],
 			[/^git fetch --quiet origin epic\/7497$/, okOut("")],
@@ -607,7 +620,7 @@ describe("runBranch — create mode proves the base it cut from", () => {
 	});
 
 	it("names the git that clears a 36 — never build retire-branch, which retires the wrong branch", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[REMOTES, okOut("origin\n")],
 			[FETCH, okOut("")],
@@ -626,7 +639,7 @@ describe("runBranch — create mode proves the base it cut from", () => {
 	});
 
 	it("calls a merge base git PROVES absent a 36, not an 11 — both revisions read back fine", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[REMOTES, okOut("origin\n")],
 			[FETCH, okOut("")],
@@ -643,7 +656,7 @@ describe("runBranch — create mode proves the base it cut from", () => {
 	});
 
 	it("refuses an unreadable merge base on 11, never on 36 — an unread branch proves nothing", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[REMOTES, okOut("origin\n")],
 			[FETCH, okOut("")],
@@ -658,7 +671,7 @@ describe("runBranch — create mode proves the base it cut from", () => {
 	});
 
 	it("reads the assembly branch locally only where origin is proven to hold none", async () => {
-		const shell = fakeSeams([
+		const shell = seams([
 			...CLAIMED,
 			[/^GET \S+\/repos\/o\/r\/issues\/4312\/parent$/, served({number: 6505})],
 			[/^git ls-remote origin refs\/heads\/epic\/6505$/, okOut("")],
@@ -677,12 +690,205 @@ describe("runBranch — create mode proves the base it cut from", () => {
 	});
 
 	it("refuses a --base this clone cannot qualify against any remote, cutting nothing", async () => {
-		const shell = fakeSeams([...CLAIMED, [REMOTES, okOut("")]]);
+		const shell = seams([...CLAIMED, [REMOTES, okOut("")]]);
 		const out = await Effect.runPromise(
 			Effect.provide(runBranch({...options, base: "epic/7497"}), shell.layer),
 		);
 		expect(out.code).toBe(OFF_VOCABULARY);
 		expect(out.stderr.at(-1)).toContain("this clone has none to qualify it against");
 		expect(shell.calls.some((line) => /^git (fetch|switch)/.test(line))).toBe(false);
+	});
+});
+
+/**
+ * `git switch` refuses only a *conflicting* change, so a builder whose cwd reached a tree it
+ * does not own used to carry that tree's work onto its own branch in silence. Both refusals read
+ * what the tree holds, never where it sits.
+ */
+describe("runBranch — refuses to move a tree it would carry work off, or take from another lane", () => {
+	const TARGET = `build/4312-editor-focus-loss-${NONCE}`;
+	const PRIOR = "build/4312-path-surface-config-c4367b0b";
+	const FOREIGN = "build/337-guard-the-tree-11223344";
+	const FOR_EACH_REF = /^git for-each-ref /;
+	const RESUME_ISSUE = /^GET \S+\/repos\/o\/r\/issues\/4310$/;
+	const RESUME_COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4310\/comments/;
+	const PULL_HEAD = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4310$/;
+	const DIRTY = okOut(" M src/editor.ts\nA  src/new.ts\n");
+	const resumeOptions = {number: null, slug: null, resume: 4310};
+	const resumeLaneOptions = {slug: null, resumeLane: true};
+	const RESUME_CLAIMED: ReadonlyArray<Scripted> = [
+		[REV_PARSE, GIT_DIRS],
+		[RESUME_ISSUE, issue({number: 4310})],
+		[RESUME_COMMENTS, MINE],
+		[PERM, WRITE],
+	];
+	/** The rest of an ordinary fresh cut, for the arms that admit. */
+	const CUT: ReadonlyArray<Scripted> = [
+		[REMOTES, okOut("origin\n")],
+		[FETCH, okOut("")],
+		[RESOLVE, okOut(`${HEAD}\n`)],
+		[VERIFY_BRANCH, errOut("")],
+		[SWITCH_NEW, okOut("")],
+	];
+	const moved = (calls: ReadonlyArray<string>) => calls.some((line) => SWITCHING.test(line));
+	const fetched = (calls: ReadonlyArray<string>) => calls.some((line) => /^git fetch/.test(line));
+
+	it("refuses a dirty tree in create mode on 13, naming the count, before the fetch", async () => {
+		const shell = seams([...CLAIMED, [CURRENT, okOut("main\n")], [STATUS, DIRTY], ...CUT]);
+		const out = await Effect.runPromise(Effect.provide(runBranch(options), shell.layer));
+		expect(out.code).toBe(DIRTY_TREE);
+		expect(out.stderr.at(-1)).toBe(
+			`build branch: 2 uncommitted change(s) in this tree, and checking out ${TARGET} would carry them off main — refusing; an unauthored hunk is not yours to move. Nothing was changed.`,
+		);
+		expect(moved(shell.calls)).toBe(false);
+		expect(fetched(shell.calls)).toBe(false);
+	});
+
+	it("refuses a dirty tree in --resume mode on 13, before the PR's head is fetched", async () => {
+		const shell = seams([
+			...RESUME_CLAIMED,
+			[CURRENT, okOut("main\n")],
+			[STATUS, DIRTY],
+			[PULL_HEAD, served(pullPayload({number: 4310, head: {ref: "umut/fix-focus", sha: HEAD}}))],
+			...CUT,
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...resumeOptions}), shell.layer),
+		);
+		expect(out.code).toBe(DIRTY_TREE);
+		expect(out.stderr.at(-1)).toContain("2 uncommitted change(s)");
+		expect(out.stderr.at(-1)).toContain("Nothing was changed.");
+		expect(moved(shell.calls)).toBe(false);
+		expect(fetched(shell.calls)).toBe(false);
+	});
+
+	it("refuses a dirty tree in --resume-lane mode on 13, re-keying nothing", async () => {
+		const shell = seams([
+			...CLAIMED,
+			[FOR_EACH_REF, okOut(`${PRIOR}\n`)],
+			[CURRENT, okOut("main\n")],
+			[STATUS, DIRTY],
+			[
+				/^git worktree list --porcelain$/,
+				okOut(`worktree /repo\nHEAD ${HEAD}\nbranch refs/heads/main\n`),
+			],
+			[/^git (switch|branch -m) /, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...resumeLaneOptions}), shell.layer),
+		);
+		expect(out.code).toBe(DIRTY_TREE);
+		expect(out.stderr.at(-1)).toContain("2 uncommitted change(s)");
+		expect(moved(shell.calls)).toBe(false);
+	});
+
+	it("refuses an unreadable status on 13 as UNKNOWN — never read as clean", async () => {
+		const shell = seams([
+			...CLAIMED,
+			[CURRENT, okOut("main\n")],
+			[STATUS, errOut("fatal: index file corrupt")],
+			...CUT,
+		]);
+		const out = await Effect.runPromise(Effect.provide(runBranch(options), shell.layer));
+		expect(out.code).toBe(DIRTY_TREE);
+		expect(out.stderr.at(-1)).toBe(
+			"build branch: cannot read the tree's status: fatal: index file corrupt — cleanliness is UNKNOWN, never clean; nothing was changed.",
+		);
+		expect(moved(shell.calls)).toBe(false);
+		expect(fetched(shell.calls)).toBe(false);
+	});
+
+	it("refuses an unreadable current branch on 11 — whose tree this is stays UNKNOWN", async () => {
+		const shell = seams([...CLAIMED, [CURRENT, errOut("fatal: bad HEAD")], ...CUT]);
+		const out = await Effect.runPromise(Effect.provide(runBranch(options), shell.layer));
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("cannot read which branch this tree holds");
+		expect(moved(shell.calls)).toBe(false);
+	});
+
+	it("admits a dirty re-run already standing on the branch it would end on — HEAD does not move", async () => {
+		const shell = seams([
+			...CLAIMED,
+			[CURRENT, okOut(`${TARGET}\n`)],
+			[STATUS, DIRTY],
+			[REMOTES, okOut("origin\n")],
+			[FETCH, okOut("")],
+			[RESOLVE, okOut(`${HEAD}\n`)],
+			[VERIFY_BRANCH, okOut(`${HEAD}\n`)],
+			[MERGE_BASE, okOut(`${HEAD}\n`)],
+			[/^git switch build\//, okOut("")],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runBranch(options), shell.layer));
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(`${TARGET}\n`);
+		expect(shell.calls.some((line) => STATUS.test(line))).toBe(false);
+	});
+
+	it("admits a dirty --resume-lane re-key of the branch this tree already holds", async () => {
+		const RESUMED = `build/4312-path-surface-config-${NONCE}`;
+		const shell = seams([
+			...CLAIMED,
+			[FOR_EACH_REF, okOut(`${PRIOR}\n`)],
+			[CURRENT, okOut(`${PRIOR}\n`)],
+			[STATUS, DIRTY],
+			[
+				/^git worktree list --porcelain$/,
+				okOut(`worktree /repo\nHEAD ${HEAD}\nbranch refs/heads/${PRIOR}\n`),
+			],
+			[/^git branch -m /, okOut("")],
+			[/^git switch build\//, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...resumeLaneOptions}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(shell.calls).toContain(`git branch -m ${PRIOR} ${RESUMED}`);
+	});
+
+	it("refuses on 14 when this tree stands on another issue's lane branch, naming it", async () => {
+		const shell = seams([...CLAIMED, [CURRENT, okOut(`${FOREIGN}\n`)], ...CUT]);
+		const out = await Effect.runPromise(Effect.provide(runBranch(options), shell.layer));
+		expect(out.code).toBe(WRONG_LANE);
+		expect(out.stderr.at(-1)).toBe(
+			`build branch: this tree stands on ${FOREIGN}, #337's lane branch, not #4312's — switching it would take that lane's tree out from under it. Nothing was changed.`,
+		);
+		expect(moved(shell.calls)).toBe(false);
+		expect(fetched(shell.calls)).toBe(false);
+	});
+
+	it("refuses on 14 in --resume mode when this tree stands on a lane branch for another number", async () => {
+		const shell = seams([
+			...RESUME_CLAIMED,
+			[CURRENT, okOut(`${FOREIGN}\n`)],
+			[PULL_HEAD, served(pullPayload({number: 4310, head: {ref: "umut/fix-focus", sha: HEAD}}))],
+			...CUT,
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...resumeOptions}), shell.layer),
+		);
+		expect(out.code).toBe(WRONG_LANE);
+		expect(out.stderr.at(-1)).toContain(FOREIGN);
+		expect(moved(shell.calls)).toBe(false);
+		expect(fetched(shell.calls)).toBe(false);
+	});
+
+	it("admits a clean tree standing on this issue's lane branch under another nonce", async () => {
+		const shell = seams([...CLAIMED, [CURRENT, okOut(`${PRIOR}\n`)], ...CUT]);
+		const out = await Effect.runPromise(Effect.provide(runBranch(options), shell.layer));
+		expect(out.code).toBe(0);
+		expect(shell.calls).toContain(`git switch -c ${TARGET} ${HEAD}`);
+	});
+
+	it("admits a clean tree on a non-lane branch", async () => {
+		const shell = seams([...CLAIMED, [CURRENT, okOut("main\n")], ...CUT]);
+		const out = await Effect.runPromise(Effect.provide(runBranch(options), shell.layer));
+		expect(out.code).toBe(0);
+	});
+
+	it("admits a clean detached HEAD", async () => {
+		const shell = seams([...CLAIMED, [CURRENT, okOut("\n")], [STATUS, okOut("")], ...CUT]);
+		const out = await Effect.runPromise(Effect.provide(runBranch(options), shell.layer));
+		expect(out.code).toBe(0);
+		expect(shell.calls).toContain(`git switch -c ${TARGET} ${HEAD}`);
 	});
 });

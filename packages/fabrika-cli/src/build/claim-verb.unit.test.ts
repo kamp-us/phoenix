@@ -1222,6 +1222,25 @@ describe("runRelease", () => {
 		expect(shell.calls.some((line) => DETACH.test(line))).toBe(false);
 	});
 
+	// A sibling lane's `build branch` run in this tree once left it on that lane's branch, and
+	// release is scoped to the cwd's own lane — it never reaches past the tree it runs in.
+	it("detaches nothing when this tree stands on a different issue's lane branch, and reads no other tree", async () => {
+		const shell = unblocked([
+			[ISSUE, CLAIMABLE],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
+			[SHOW_CURRENT, okOut(`build/337-guard-the-tree-${NONCE}\n`)],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).freed).toBeNull();
+		expect(shell.calls.some((line) => DETACH.test(line))).toBe(false);
+		expect(shell.calls.some((line) => /^git (-C|worktree)\b/.test(line))).toBe(false);
+	});
+
 	it("reports a failed detach and stays exit 0 — the claim is already retracted by then", async () => {
 		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
