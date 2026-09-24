@@ -7,6 +7,7 @@
  * spawning a process.
  */
 import {randomUUID} from "node:crypto";
+import {tmpdir} from "node:os";
 import {fileURLToPath} from "node:url";
 import {Effect, type FileSystem, Option, Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
@@ -76,6 +77,7 @@ import {keyRefusal} from "./refusals.ts";
 import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
 import {runReport} from "./report-verb.ts";
 import {runRetrigger} from "./retrigger-verb.ts";
+import {runLaneScratch} from "./scratch-verb.ts";
 import {runSeats} from "./seats-verb.ts";
 import {boardReaders, runSettle} from "./settle-verb.ts";
 import {BUILD_CLAIM_BUDGET_MINUTES, DISPATCH_BUDGET, SHELL_BUDGETS} from "./shell-budget.ts";
@@ -1003,6 +1005,45 @@ const release = leafCommand(
 	),
 );
 
+const scratch = leafCommand(
+	"scratch",
+	{
+		lane: laneArgument,
+		slug: Flag.string("slug").pipe(
+			Flag.withDescription("the file's leaf name: kebab-case, no path separators"),
+		),
+		token: Flag.string("token").pipe(
+			Flag.withDescription("the lane-claim token `lane claim` handed this driver — its identity"),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, slug, token, repo}) {
+		yield* emit(
+			yield* onBoardKey(lane, (key) =>
+				runLaneScratch({
+					key,
+					lane,
+					slug,
+					token,
+					repo: Option.getOrNull(repo),
+					env: process.env,
+					tmpRoot: tmpdir(),
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("The driver's per-lane scratch directory path."),
+	Command.withDescription(
+		"The DRIVER's per-lane scratch path, allocated fail-closed: <temp root>/fabrika-lane/<session-id>/<issue>-<lane-claim-nonce>/<slug>, one absolute path on stdout, the directory created if absent. Every script, wrapper or helper file a driver writes goes here: the session scratchpad is shared by every lane of the session, so a helper written there is rewritten by a sibling driver and every verb run through it lands in that sibling's tree. --token's nonce keys the namespace per LANE, so two drivers of one session print different paths; the `fabrika-lane` segment keeps it apart from the builders' `build scratch` namespace. The token must be a live lane claim of this session on this lane's issue — proven off the board, never trusted. A `chore:<name>` lane holds no claim and so has no namespace. The printed path is machine-local and must never reach a posted artifact — every posting verb's leak scan reds on it. Exits 1 (the directory could not be created, no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, --token is not a lane-claim token of this session, or the key is a chore lane), 10 (--slug carries a path separator or is not kebab-case), 11 (the lane-claim markers could not be read — UNKNOWN), 21 (the key is not a lane key), 31 (proven: no live lane claim of this token stands on the issue — another driver holds it, or none does). Example: fabrika lane scratch 5492 --slug helpers --token lane:s-9f2e:c1a4d6f8-…",
+	),
+);
+
 const adopt = leafCommand(
 	"adopt",
 	{
@@ -1607,6 +1648,7 @@ export const laneCommand = Command.make("lane").pipe(
 		claim,
 		release,
 		adopt,
+		scratch,
 		view,
 	]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
