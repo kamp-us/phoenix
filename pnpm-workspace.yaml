@@ -135,6 +135,14 @@ catalog:
 catalogs:
   tuval:
     fzf: 0.5.2
+  # @kampus/fabrika-cli's own tea pin, moved apart from the root entry above (still Tuval's, until
+  # #9708 migrates it) so the published CLI stops carrying 0.12.0's `vitest: ^2 || ^3` peer onto
+  # adopters (#9771). Exact, like the root one: the lane ledger's machines fold over this engine's
+  # dispatch semantics (NoCellError refusal, Transitions-form cells), so the version is part of the
+  # contract (#5673). `src/tea-vitest-peer.unit.test.ts` reds when its vitest peer stops admitting
+  # the vitest this workspace installs.
+  fabrika:
+    '@demlik/tea': 0.17.0
 
 # Keep Effect's transitive companion packages on the same release too. Alchemy's
 # broad ranges otherwise pick rc.113, which removed APIs beta.77 still calls.

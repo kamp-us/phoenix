@@ -23,6 +23,9 @@
 			// accessibility dimension's `axe.min.js`, MPL-2.0) are not ours to
 			// format/lint — touching them breaks the pin + the license banner.
 			"!**/rite-audit/dimensions/vendor",
+			// The lane viewer's prebuilt page, vendored byte-for-byte out of the
+			// `@demlik/tea@0.13.0` tarball (#9771): minified bundle output, not source.
+			"!packages/fabrika-cli/src/lane/viewer",
 			"!**/worker-configuration.d.ts",
 			"!**/__generated__",
 			// Generated from the config-key registry by `fabrika config schema --write`

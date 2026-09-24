@@ -17,7 +17,7 @@ import {execFileSync} from "node:child_process";
 import {existsSync, mkdtempSync, readdirSync, readFileSync, symlinkSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {fileURLToPath} from "node:url";
+import {fileURLToPath, pathToFileURL} from "node:url";
 import {beforeAll, describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "./test-budget.ts";
 
@@ -135,6 +135,30 @@ describe("the packed package ships what it reads at run time (#6011)", {
 
 		expect(run.stderr).not.toContain("cannot read the committed template");
 		expect(run.stderr).toContain("cannot establish whether #6011 is an epic");
+	});
+
+	/**
+	 * The vendored lane viewer resolves its prebuilt page off `import.meta.url`, the same shape the
+	 * templates had, so `lane view` from the published package is proven by serving from the
+	 * tarball's own compiled module.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/9771
+	 */
+	it("serves the vendored lane viewer page from the tarball's dist", async () => {
+		const viewer: typeof import("./lane/viewer-server.ts") = await import(
+			pathToFileURL(join(tarballRoot, "dist", "lane", "viewer-server.js")).href
+		);
+		const server = await viewer.serveLaneViewer({lanes: () => [], port: 0});
+		try {
+			const html = await (await fetch(`${server.url}/`)).text();
+			expect(html).toContain("<title>fabrika lanes</title>");
+			const script = /src="(\/assets\/[^"]+\.js)"/.exec(html)?.[1];
+			expect(script).toBeDefined();
+			const res = await fetch(`${server.url}${script}`);
+			expect(res.headers.get("content-type")).toContain("text/javascript");
+		} finally {
+			await server.close();
+		}
 	});
 
 	it("boots a chore lane from the tarball, byte-identical to the committed template", () => {

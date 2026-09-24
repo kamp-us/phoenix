@@ -1,9 +1,10 @@
 /**
  * `lane view` — every lane on disk, on one screen, sorted by what needs a person.
  *
- * The page and the derivation are `@demlik/tea/chart/lane/server`'s, shipped prebuilt. This verb
- * supplies the two facts only fabrika knows: WHERE THE LANES ARE (the sweep `lane stale` does, over
- * the same roots) and HOW AN EVENT IS RECORDED ({@link runTransition}).
+ * The page and the derivation are {@link serveLaneViewer}'s, vendored in `./viewer-server.ts` with
+ * the page prebuilt. This verb supplies the two facts only fabrika knows: WHERE THE LANES ARE (the
+ * sweep `lane stale` does, over the same roots) and HOW AN EVENT IS RECORDED
+ * ({@link runTransition}).
  *
  * That second one is why this is safe to add. The page never touches `events.jsonl` — it asks this
  * verb, which asks `lane transition`, which validates against the folded state FIRST, proves the
@@ -11,7 +12,6 @@
  * exactly as before this verb existed: the screen cannot drift from the ledger because it cannot
  * write to it, and a park recorded from a button is proof-gated like one typed at the CLI.
  */
-import {serveLaneViewer, type TransitionRequest} from "@demlik/tea/chart/lane/server";
 import {Effect, type FileSystem, type Path, Result, Schema} from "effect";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
@@ -20,6 +20,7 @@ import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_UNREADABLE} from "./codes.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {runTransition} from "./transition-verb.ts";
+import {serveLaneViewer, type TransitionRequest} from "./viewer-server.ts";
 
 const VERB = "fabrika lane view";
 
