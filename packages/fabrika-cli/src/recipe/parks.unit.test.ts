@@ -73,12 +73,12 @@ describe("classifyPark", () => {
 	});
 
 	// A builder that stopped on a hijacked tree needs what a dead one needs before the brief goes out
-	// again, so the row reads the same clearance and names the same retirement.
+	// again, but not spawn-clear's age retraction, so its read is its own.
 	it("is Known for a BLOCKED whose cause is the tree-hijacked shape", () => {
 		const parked = classifyPark("blocked", "tree-hijacked");
 
 		expect(parked._tag).toBe("Known");
-		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("spawn-clear");
+		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("tree-released");
 		expect(parked._tag === "Known" && parked.recipe.route).toBe("driver");
 		expect(parked._tag === "Known" && parked.recipe.remedy).toBe("fabrika build retire");
 	});

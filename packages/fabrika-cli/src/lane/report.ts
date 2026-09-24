@@ -417,8 +417,9 @@ export const PARK_CAUSES = {
 	 *
 	 * Distinct from `worktree-holds-branch`, which is *another* tree holding *this* lane's branch: here
 	 * this lane's own seat was taken. What the next dispatch needs is what `spawn-dead` needs — no
-	 * claim of the stopped shell's standing and no tree holding this lane's branch — so its row reads
-	 * that clearance, and names the same retirement.
+	 * claim of the stopped shell's standing and no tree holding this lane's branch — so its row asks
+	 * that question and names the same retirement, through a read that never ends a claim: the
+	 * age-proved retraction is `spawn-dead`'s alone (`../build/dead-claim.ts`).
 	 *
 	 * Route `driver`: isolating a spawn is the driver's own act, and no product call is in it.
 	 */
@@ -432,9 +433,13 @@ export const PARK_CAUSES = {
 	 * `build claim` lost (exit `15`) to a claim a stopped shell of the same session left standing, so
 	 * `build adopt`, which refuses its own session, cannot reach it and the new shell cannot proceed.
 	 *
-	 * Its row clears only on the board reading the issue `unclaimed`, and it retracts nothing: the
-	 * claimant may be a live sibling rather than a stranded one, and no read here tells them apart.
-	 * Releasing it is the driver's act, under the stranded lane's token, so no remedy verb is named.
+	 * The driver records it, never the losing builder: "stopped" is proved only by the spawn that took
+	 * the claim having returned, and that return is the driver's read alone. A builder cannot tell a
+	 * live sibling from a stranded one, so its loss stays a back-off.
+	 *
+	 * Its row clears only on the board reading the issue and every open PR linking it `unclaimed` — a
+	 * repair claim sits on the PR — and it retracts nothing. Releasing it is the driver's act, under
+	 * the stranded lane's token, so no remedy verb is named.
 	 *
 	 * Route `driver`: the claim belongs to the driver's own session, so releasing it is residue
 	 * clean-up and not a product call.

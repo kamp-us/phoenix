@@ -883,57 +883,128 @@ describe("recipe unpark — a spawn-dead park clears once the dead shell's resid
 	});
 });
 
-describe("recipe unpark — a tree-hijacked park reads the spawn-clear clearance", () => {
-	it("clears once the stopped builder's claim and lane-branch tree are gone", async () => {
+/** A build claim marker by `owner`, posted a day before the stranded-claim cases' clock. */
+const claimMarker = (token: string): HttpReply => ({
+	status: 200,
+	body: JSON.stringify([
+		{
+			id: 1,
+			user: {login: "owner"},
+			created_at: "2026-08-29T00:00:00Z",
+			body: `build-claim: ${token} · 2026-08-29T00:00:00.000Z`,
+		},
+	]),
+});
+
+/** A day past {@link claimMarker} — far beyond any shell budget, so only a refusal to retract holds. */
+/** The open PR a repair lane's claim sits on. */
+const REPAIR = 4321;
+
+const A_DAY_LATER = "2026-08-30T00:00:00.000Z";
+
+const STRANDED = "build:driver-session:9f2cab41-1111-4222-8333-444455556666";
+const PERMISSION = /collaborators\/\S+\/permission/;
+const DELETE = /^DELETE /;
+
+/** The repair lane's shape: one open PR closing the lane issue, so its thread is a claim subject. */
+const REPAIR_PR: ReadonlyArray<Scripted> = [
+	[CLOSERS, reply(closingPulls(REPAIR))],
+	[PULL, reply(pull({body: `Fixes #${LANE}\n`}))],
+];
+
+/** A lane no PR links yet — the fresh build's shape, where the issue is the only claim subject. */
+const NO_PR: ReadonlyArray<Scripted> = [[CLOSERS, reply(closingPulls())]];
+
+/** Run a claim-reading park at `now`, recording every request the seams saw. */
+const runClaimRead = async (
+	fs: ReturnType<typeof fakeFs>,
+	script: ReadonlyArray<Scripted>,
+	now: string = A_DAY_LATER,
+) => {
+	const seams = fakeSeams([
+		...script,
+		[DELETE, {status: 204, body: ""}],
+		NO_NOMINATIONS,
+		...UNDECLARED,
+	]);
+	const out = await Effect.runPromise(
+		Effect.provide(
+			runUnpark({
+				root: LANES_ROOT,
+				lane: LANE,
+				task: null,
+				repo: null,
+				cwd: CWD,
+				env: ENV,
+				now,
+				parkCause: parkCauseRead(),
+				rationale: null,
+			}),
+			Layer.merge(fs.layer, seams.layer),
+		),
+	);
+	return {out, requests: seams.requests};
+};
+
+describe("recipe unpark — a tree-hijacked park reads claims and trees, and never ends a claim", () => {
+	it("clears once no claim stands and no tree holds the lane branch", async () => {
 		const fs = lane(parkedBlockedOn("tree-hijacked"));
 
-		const out = await run(
-			fs,
-			[[BRANCHES, branchList("main")]],
-			[
-				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
-				[LANE_COMMENTS, {status: 200, body: "[]"}],
-			],
-		);
+		const {out} = await runClaimRead(fs, [
+			...NO_PR,
+			[BRANCHES, branchList("main")],
+			[LANE_COMMENTS, {status: 200, body: "[]"}],
+		]);
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
 			park: "blocked",
-			clearance: "spawn-clear",
-			mechanism: `spawn-clear:#${LANE} unclaimed, no lane branch`,
+			clearance: "tree-released",
+			mechanism: `tree-released:#${LANE} unclaimed, no lane branch`,
 		});
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
+
+	// The fence on age retraction: spawn-clear would retract this claim on its age; this one holds.
+	it("is PARK_HOLDS on a claim a day past the budget, and retracts nothing", async () => {
+		const fs = lane(parkedBlockedOn("tree-hijacked"));
+
+		const {out, requests} = await runClaimRead(fs, [
+			...NO_PR,
+			[LANE_COMMENTS, claimMarker(STRANDED)],
+			[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
+		]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/held by build:driver-session:9f2cab41/);
+		expect(requests.filter((line) => DELETE.test(line))).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("holds on a repair claim standing on the lane's PR while the issue reads unclaimed", async () => {
+		const fs = lane(parkedBlockedOn("tree-hijacked"));
+
+		const {out, requests} = await runClaimRead(fs, [
+			...REPAIR_PR,
+			[LANE_COMMENTS, {status: 200, body: "[]"}],
+			[PR_COMMENTS, claimMarker(STRANDED)],
+			[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
+		]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toContain(`#${REPAIR} is held by ${STRANDED}`);
+		expect(requests.filter((line) => DELETE.test(line))).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
 });
 
-describe("recipe unpark — a claim-stranded park clears only on an unclaimed read", () => {
+describe("recipe unpark — a claim-stranded park clears only when every claim subject reads unclaimed", () => {
 	const PARKED_ON_CLAIM = parkedBlockedOn("claim-stranded");
-	const PERMISSION = /collaborators\/\S+\/permission/;
-	const DELETE = /^DELETE /;
-	const stranded = "build:driver-session:9f2cab41-1111-4222-8333-444455556666";
-	const marker: HttpReply = {
-		status: 200,
-		body: JSON.stringify([
-			{
-				id: 1,
-				user: {login: "owner"},
-				created_at: "2026-08-29T00:00:00Z",
-				body: `build-claim: ${stranded} · 2026-08-29T00:00:00.000Z`,
-			},
-		]),
-	};
 
-	it("clears when build claimants reads the issue unclaimed", async () => {
+	it("clears when the issue reads unclaimed and no PR links it", async () => {
 		const fs = lane(PARKED_ON_CLAIM);
 
-		const out = await run(
-			fs,
-			[],
-			[
-				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
-				[LANE_COMMENTS, {status: 200, body: "[]"}],
-			],
-		);
+		const {out} = await runClaimRead(fs, [...NO_PR, [LANE_COMMENTS, {status: 200, body: "[]"}]]);
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
@@ -945,57 +1016,73 @@ describe("recipe unpark — a claim-stranded park clears only on an unclaimed re
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
-	// The row that must never end a claim: a same-session claimant may be live, so however old the
-	// marker is, it holds the park and nothing is deleted.
-	it("is PARK_HOLDS while a claim marker still stands, and retracts nothing even past the budget", async () => {
+	it("clears on a repair lane only once the PR's thread reads unclaimed too", async () => {
 		const fs = lane(PARKED_ON_CLAIM);
-		const seams = fakeSeams([
-			[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
-			[LANE_COMMENTS, marker],
-			[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
-			[DELETE, {status: 204, body: ""}],
-			NO_NOMINATIONS,
-			...UNDECLARED,
+
+		const {out} = await runClaimRead(fs, [
+			...REPAIR_PR,
+			[LANE_COMMENTS, {status: 200, body: "[]"}],
+			[PR_COMMENTS, {status: 200, body: "[]"}],
 		]);
 
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runUnpark({
-					root: LANES_ROOT,
-					lane: LANE,
-					task: null,
-					repo: null,
-					cwd: CWD,
-					env: ENV,
-					// A day past the claim — far beyond any shell budget, so only this row's refusal to
-					// retract keeps the marker standing.
-					now: "2026-08-30T00:00:00.000Z",
-					parkCause: parkCauseRead(),
-					rationale: null,
-				}),
-				Layer.merge(fs.layer, seams.layer),
-			),
-		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).mechanism).toBe(`claim-released:#${LANE},#${REPAIR} unclaimed`);
+	});
+
+	// The repair lane's stranded claim sits on the PR (`build claim <repair-pr> --issue <served>`), so
+	// the issue reading unclaimed proves nothing about it.
+	it("holds at 13 on a claim standing on the lane's PR while the issue reads unclaimed", async () => {
+		const fs = lane(PARKED_ON_CLAIM);
+
+		const {out, requests} = await runClaimRead(fs, [
+			...REPAIR_PR,
+			[LANE_COMMENTS, {status: 200, body: "[]"}],
+			[PR_COMMENTS, claimMarker(STRANDED)],
+			[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
+		]);
 
 		expect(out.code).toBe(PARK_HOLDS);
 		const held = out.stderr.join("\n");
-		expect(held).toMatch(/"held" by build:driver-session:9f2cab41/);
+		expect(held).toContain(`#${REPAIR} is held by ${STRANDED}`);
 		expect(held).toMatch(/Nothing was retracted/);
-		expect(seams.requests.filter((line) => DELETE.test(line))).toEqual([]);
+		expect(requests.filter((line) => DELETE.test(line))).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+
+	// A same-session claimant may be live, so however old the marker is, it holds and nothing is deleted.
+	it("is PARK_HOLDS while a claim marker stands on the issue, and retracts nothing even past the budget", async () => {
+		const fs = lane(PARKED_ON_CLAIM);
+
+		const {out, requests} = await runClaimRead(fs, [
+			...NO_PR,
+			[LANE_COMMENTS, claimMarker(STRANDED)],
+			[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
+		]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		const held = out.stderr.join("\n");
+		expect(held).toMatch(/held by build:driver-session:9f2cab41/);
+		expect(held).toMatch(/Nothing was retracted/);
+		expect(requests.filter((line) => DELETE.test(line))).toEqual([]);
 		expect(fs.written.size).toBe(0);
 	});
 
 	it("is UNKNOWN when the claimant read fails — never a cleared park", async () => {
 		const fs = lane(PARKED_ON_CLAIM);
 
-		const out = await run(
-			fs,
-			[],
-			[
-				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
-				[LANE_COMMENTS, httpError(500)],
-			],
-		);
+		const {out} = await runClaimRead(fs, [...NO_PR, [LANE_COMMENTS, httpError(500)]]);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is UNKNOWN when the PRs linking the issue cannot be read — never a cleared park", async () => {
+		const fs = lane(PARKED_ON_CLAIM);
+
+		const {out} = await runClaimRead(fs, [
+			[CLOSERS, httpError(500)],
+			[LANE_COMMENTS, {status: 200, body: "[]"}],
+		]);
 
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(fs.written.size).toBe(0);

@@ -1517,14 +1517,27 @@ once on `head-ci-red`, which is the shipper's route to `heal-ci` folding to the 
 matched is the verb's answer, not a list you maintain here — the rows live in
 [`packages/fabrika-cli/src/recipe/parks.ts`](../../../../packages/fabrika-cli/src/recipe/parks.ts).
 
-Two of those are a builder's mechanical stops, and the clear is yours to set up. **`tree-hijacked`**
-is a builder whose checkout held another lane's branch or unauthored work: give the next spawn a
-tree of its own, and the row reads what `spawn-dead`'s reads — no claim of the stopped shell's
-standing and no tree holding this lane's branch. **`claim-stranded`** is a builder that lost
-`build claim` to a claim a stopped shell of your own session left standing, which `build adopt`
-cannot reach: release it under that shell's token (`build release <n> --token <its token>`, the
-token `build claimants <n>` names), and the row clears only once `build claimants` reads the issue
-`unclaimed`. That row retracts nothing, on any arm, so a claim still standing holds it at exit `13`.
+Two of those are mechanical stops, and the clear is yours to set up. **`tree-hijacked`** is a
+builder whose checkout held another lane's branch or unauthored work, and the builder records it:
+give the next spawn a tree of its own. The row asks what `spawn-dead`'s asks — no build claim standing
+on the issue or on an open PR linking it, and no tree holding this lane's branch — and it never ends a
+claim, so one still standing holds it at exit `13`.
+
+**`claim-stranded`** is yours to record, never a builder's. A builder that loses `build claim` on
+`15` to a sibling lane of your own session ends `BACKED-OFF` naming the winning token, because it
+cannot tell a live sibling from a stranded one. You can, and only one way: the token is one a spawn
+of yours printed or reported, and that spawn has **returned** to you — its return is the proof its
+shell ended. On that proof, record the park, release the stranded claim under its token on the number
+`build claimants` shows it on (the PR on a repair lane), then run `recipe unpark`:
+
+```bash
+node <fabrika> lane transition <lane> BLOCKED --task <task> --cause claim-stranded
+node <fabrika> build release <n> --token <its token>
+```
+
+The row clears only once the issue and every open PR linking it read `unclaimed`, and retracts
+nothing. A winner whose spawn has not returned, or one you cannot tie to a spawn of yours, is possibly
+live: record nothing and release nothing, and let that spawn's own return route the lane.
 
 Exit `0` cleared it — the verb recorded the `UNBLOCKED` itself and re-read the fold to prove the task
 left the park, so your next move is the state that re-fold reads, not a park comment. Exit `12` is
