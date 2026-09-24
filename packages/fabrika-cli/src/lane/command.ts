@@ -90,7 +90,6 @@ import {
 	type LaneRef,
 } from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
-import {DEFAULT_VIEW_PORT, listeningAt, runView} from "./view-verb.ts";
 
 const laneArgument = Argument.string("lane").pipe(
 	Argument.withDescription(
@@ -1420,7 +1419,7 @@ const settle = leafCommand(
 ).pipe(
 	Command.withShortDescription("End a lane against its issue's own closure, as a recorded event."),
 	Command.withDescription(
-		'Append the terminal the board\'s own closure proves, to a lane whose own flow never reached one. Two stranded shapes, one verb: a lane parked while its issue closed not planned or duplicate owes no artifact, and a lane sitting in build or review while its issue closed completed over a merged PR was hand-shipped past the ledger. Neither can be ended by the operator\'s six — DONE claims an open PR that is not there, BLOCKED only parks, UNBLOCKED resumes work that is already over — so the only remedy was deleting the lane directory, which erases an append-only history instead of recording an outcome. This appends ONE line and moves nothing on disk; `fabrika lane history <lane>` still reads the whole log. The board read is the whole entitlement. A `state_reason` of not_planned or duplicate records `<TASK>.CANCELLED`; `completed` PLUS at least one merged pull request whose body links the issue (closing keyword or `Part of`) records `<TASK>.LANDED`, carrying those pull request numbers as `landed` and the first one\'s merge commit as `sha`. The pull requests are read only on the completed arm, so a cancellation costs one board read. Everything else appends nothing: an open issue refuses at 49, and a read that failed, a close carrying no `state_reason`, a reason outside the three, or a completed close naming no merged linking PR are all UNKNOWN at 11 — a completed close with nothing that did it is genuinely unread, not a landing. --landed-by <pr> supplies exactly that missing link and nothing more, for a closure a human closed by hand over a merge whose body cites some other issue: the board must still read that PR merged, so an unmerged one refuses at 23 and one this repository does not hold at 22, both with the log unappended, and an unreadable read stays UNKNOWN at 11. A body-proven landing is judged FIRST and wins, so the flag can only ever fill a gap; the line it appends carries `assertedBy: "caller"` beside its `landed`/`sha`, which is how this verb\'s own stdout and `lane history` tell an asserted link from a body-proven one, and a body-proven line carries no such field at all. `lane view` does NOT show it: the viewer page rebuilds every log line as {task, event, at} and drops the rest, `landed` and `sha` included, so the distinction is readable through `lane history` and not on that screen. Neither event is an operator event: the operator\'s six are unchanged and `lane transition` refuses both, so `DONE`\'s proof semantics are untouched. A live authorized lane claim refuses at 31 unless --token names it, so a lane another session is driving is not ended underneath it; an unreadable claim thread is UNKNOWN, never "unclaimed". The lane then folds to the terminal stateValue "cancelled" or "landed" — its own, neither "complete" (which would claim this lane\'s flow finished it) nor "tripped" (which would claim it failed) — so `lane status`, `lane stale` and `lane view` read it done and it holds no seat against `laneConcurrencyCap`. The offline gate runs first, so a lane already carrying a terminal costs no board read at all. stdout is {answer:"settled", lane, issue, previous, event, current, taskAffected, outcome} plus `landed` and `sha` on a landing, and `assertedBy` on an asserted one. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there), 8 (the append did not land — the terminal is NOT recorded), 11 (the lane, the board closure, the pull requests, the --landed-by pull request or the claim thread could not be read, or the closure proves no terminal — UNKNOWN, never an append), 12 (this lane already carries a terminal, or the task is in a final — there is nothing here to settle), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 19 (the key names no issue, so the closure gate can never be satisfied — the refusal says which of the two: a chore lane, which is not settleable at all, or an issue-kind directory name carrying no leading issue number), 21 (the key is not a lane key), 22 (--landed-by names no pull request this repository holds), 23 (--landed-by names a pull request that has not merged), 31 (the issue carries a live lane claim this caller did not name), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root), 40 (another writer holds the ledger lock — retry). Examples: fabrika lane settle 5983 · fabrika lane settle 6100 --landed-by 6878',
+		'Append the terminal the board\'s own closure proves, to a lane whose own flow never reached one. Two stranded shapes, one verb: a lane parked while its issue closed not planned or duplicate owes no artifact, and a lane sitting in build or review while its issue closed completed over a merged PR was hand-shipped past the ledger. Neither can be ended by the operator\'s six — DONE claims an open PR that is not there, BLOCKED only parks, UNBLOCKED resumes work that is already over — so the only remedy was deleting the lane directory, which erases an append-only history instead of recording an outcome. This appends ONE line and moves nothing on disk; `fabrika lane history <lane>` still reads the whole log. The board read is the whole entitlement. A `state_reason` of not_planned or duplicate records `<TASK>.CANCELLED`; `completed` PLUS at least one merged pull request whose body links the issue (closing keyword or `Part of`) records `<TASK>.LANDED`, carrying those pull request numbers as `landed` and the first one\'s merge commit as `sha`. The pull requests are read only on the completed arm, so a cancellation costs one board read. Everything else appends nothing: an open issue refuses at 49, and a read that failed, a close carrying no `state_reason`, a reason outside the three, or a completed close naming no merged linking PR are all UNKNOWN at 11 — a completed close with nothing that did it is genuinely unread, not a landing. --landed-by <pr> supplies exactly that missing link and nothing more, for a closure a human closed by hand over a merge whose body cites some other issue: the board must still read that PR merged, so an unmerged one refuses at 23 and one this repository does not hold at 22, both with the log unappended, and an unreadable read stays UNKNOWN at 11. A body-proven landing is judged FIRST and wins, so the flag can only ever fill a gap; the line it appends carries `assertedBy: "caller"` beside its `landed`/`sha`, which is how this verb\'s own stdout and `lane history` tell an asserted link from a body-proven one, and a body-proven line carries no such field at all. Neither event is an operator event: the operator\'s six are unchanged and `lane transition` refuses both, so `DONE`\'s proof semantics are untouched. A live authorized lane claim refuses at 31 unless --token names it, so a lane another session is driving is not ended underneath it; an unreadable claim thread is UNKNOWN, never "unclaimed". The lane then folds to the terminal stateValue "cancelled" or "landed" — its own, neither "complete" (which would claim this lane\'s flow finished it) nor "tripped" (which would claim it failed) — so `lane status` and `lane stale` read it done and it holds no seat against `laneConcurrencyCap`. The offline gate runs first, so a lane already carrying a terminal costs no board read at all. stdout is {answer:"settled", lane, issue, previous, event, current, taskAffected, outcome} plus `landed` and `sha` on a landing, and `assertedBy` on an asserted one. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there), 8 (the append did not land — the terminal is NOT recorded), 11 (the lane, the board closure, the pull requests, the --landed-by pull request or the claim thread could not be read, or the closure proves no terminal — UNKNOWN, never an append), 12 (this lane already carries a terminal, or the task is in a final — there is nothing here to settle), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 19 (the key names no issue, so the closure gate can never be satisfied — the refusal says which of the two: a chore lane, which is not settleable at all, or an issue-kind directory name carrying no leading issue number), 21 (the key is not a lane key), 22 (--landed-by names no pull request this repository holds), 23 (--landed-by names a pull request that has not merged), 31 (the issue carries a live lane claim this caller did not name), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root), 40 (another writer holds the ledger lock — retry). Examples: fabrika lane settle 5983 · fabrika lane settle 6100 --landed-by 6878',
 	),
 );
 
@@ -1564,59 +1563,6 @@ const recover = leafCommand(
 	),
 );
 
-const view = leafCommand(
-	"view",
-	{
-		root: rootFlag,
-		port: Flag.integer("port").pipe(
-			Flag.optional,
-			Flag.withDescription(`the port to serve on (default: ${DEFAULT_VIEW_PORT})`),
-		),
-	},
-	Effect.fn(function* ({root, port}) {
-		const chosen = Option.getOrElse(port, () => DEFAULT_VIEW_PORT);
-		const resolvedRoot = yield* resolveRootOrRefuse(
-			"fabrika lane view",
-			root,
-			DEFAULT_LANES_ROOT,
-			process.cwd(),
-		);
-		if (typeof resolvedRoot !== "string") {
-			yield* emit(resolvedRoot);
-			return;
-		}
-		const configRoot = yield* configRootOrRefuse("fabrika lane view", process.cwd());
-		if (typeof configRoot !== "string") {
-			yield* emit(configRoot);
-			return;
-		}
-		const parkCause = yield* readKey(configRoot, parkCauseKey);
-		yield* Effect.logInfo(listeningAt(chosen));
-		yield* emit(
-			yield* onGround("view", [resolvedRoot], process.cwd(), () =>
-				runView(
-					{
-						root: resolvedRoot,
-						port: chosen,
-						parkCause,
-						repo: null,
-						cwd: process.cwd(),
-						env: process.env,
-					},
-					runProve,
-				),
-			),
-		);
-	}),
-).pipe(
-	Command.withShortDescription(
-		"Every lane on disk, on one screen, the ones needing a person first.",
-	),
-	Command.withDescription(
-		"Serve every lane under the root as one page and keep it current while lanes move — the fleet-wide answer to which of these needs a person, where `lane status` answers one lane and `lane stale` answers liveness. Lanes are ordered by attention: waiting on a human, then tripped, then gone quiet, then moving, then finished. Opening one shows its phases, each task's leaf, what it is waiting on, its retry budget and its region drawn with the edges the log walked. The page can send the operator's events, and every one goes through `lane transition` — validated against the folded state, proven against the artifact it claims, and appended only if both pass, so a refusal is that verb's own words and `events.jsonl` has exactly one writer. It serves on localhost and reads the disk it was started on: nothing is uploaded and no lane leaves the machine. Runs until interrupted. Exits 11 (the root is there and could not be listed — the lane set is UNKNOWN, never a short list), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root). Examples: fabrika lane view · fabrika lane view --port 6000",
-	),
-);
-
 export const laneCommand = Command.make("lane").pipe(
 	Command.withSubcommands([
 		status,
@@ -1649,7 +1595,6 @@ export const laneCommand = Command.make("lane").pipe(
 		release,
 		adopt,
 		scratch,
-		view,
 	]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
 	Command.withDescription(

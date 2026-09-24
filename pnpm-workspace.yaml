@@ -135,6 +135,13 @@ catalog:
 catalogs:
   tuval:
     fzf: 0.5.2
+  # fabrika-cli's own tea pin, split from the root entry that Tuval still resolves until #9708 moves
+  # it. Exact pin: the lane ledger's machines fold over this engine's dispatch semantics (NoCellError
+  # refusal, Transitions-form cells), so the version is part of the contract (#5673). 0.17.0 is the
+  # first release whose optional `vitest` peer admits `^4 || ^5`, so an adopter on current vitest
+  # installs the CLI without an unmet-peer warning (#9771); fabrika-cli's tea-peer test holds it there.
+  fabrika:
+    '@demlik/tea': 0.17.0
 
 # Keep Effect's transitive companion packages on the same release too. Alchemy's
 # broad ranges otherwise pick rc.113, which removed APIs beta.77 still calls.
