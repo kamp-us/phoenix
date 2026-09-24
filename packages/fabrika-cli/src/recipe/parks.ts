@@ -34,6 +34,7 @@ export type Clearance =
 	| "branch-free"
 	| "campaign-active"
 	| "spawn-clear"
+	| "claim-released"
 	| "queue-moved"
 	| "ci-green"
 	| "route-satisfied";
@@ -91,7 +92,7 @@ export interface ParkRecipe {
 export const QUEUE_MOVED_GRANT = 1;
 
 /**
- * The parks with a fixed fix today: two keyed by their leaf, five by their cause.
+ * The parks with a fixed fix today: two keyed by their leaf, seven by their cause.
  *
  * `human:cp-approval`'s clearance is `ship cp-approval`'s own discharge table, relayed rather than
  * re-derived — the §CP cardinality question has exactly one answer in this package, and a second
@@ -115,6 +116,16 @@ export const QUEUE_MOVED_GRANT = 1;
  * shell's is standing, and no working tree still holds its lane branch. Both are residue the driver
  * session owns, so a park whose obligations were discharged clears on the first pass and one whose
  * stranded claim still needs a successor's `build adopt` marker holds at exit 13.
+ *
+ * `blocked` + `tree-hijacked` reads that same `spawn-clear`: a builder that stopped because its
+ * checkout held another lane's work needs exactly what a dead one does before the brief can go out
+ * again — no claim of its own standing and no tree holding this lane's branch.
+ *
+ * `blocked` + `claim-stranded` is the one row that proves a claim gone without ever ending one. Its
+ * clearance is `build claimants`'s read — the issue reads `unclaimed` or the park holds — and it
+ * retracts nothing on any arm, age included: the claimant is a shell of the driver's own session,
+ * which `build adopt` refuses, so releasing it under its token is the driver's act and a live sibling
+ * must never be evicted by a sweep that cannot tell it from a stranded one.
  *
  * `human:queue-stall` is the second row keyed by its leaf alone: a `WIP` carries no park cause and
  * `lane report` refuses one on any non-`BLOCKED` event, so the leaf is all there is to key on. It
@@ -198,6 +209,20 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 		clearance: "spawn-clear",
 		waitingOn:
 			"the dead shell's claim and working tree to be gone so the brief can be dispatched again",
+	}),
+	row({
+		park: "blocked",
+		cause: "tree-hijacked",
+		clearance: "spawn-clear",
+		waitingOn:
+			"the stopped shell's claim and any working tree holding this lane's branch to be gone so the brief can be dispatched into a clean tree",
+	}),
+	row({
+		park: "blocked",
+		cause: "claim-stranded",
+		clearance: "claim-released",
+		waitingOn:
+			"the build claim standing on this lane's issue to be released, so the issue reads unclaimed",
 	}),
 	row({
 		park: "blocked",

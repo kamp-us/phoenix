@@ -411,6 +411,41 @@ export const PARK_CAUSES = {
 		remedy: "fabrika build retire",
 	},
 	/**
+	 * A builder's tree proof found the checkout it was spawned in holding another lane's branch or
+	 * work it did not author — `build tree` exit `13` or `14`, or `build branch` refusing the same
+	 * way — so it stopped before writing anything into a lane that is not its own.
+	 *
+	 * Distinct from `worktree-holds-branch`, which is *another* tree holding *this* lane's branch: here
+	 * this lane's own seat was taken. What the next dispatch needs is what `spawn-dead` needs — no
+	 * claim of the stopped shell's standing and no tree holding this lane's branch — so its row reads
+	 * that clearance, and names the same retirement.
+	 *
+	 * Route `driver`: isolating a spawn is the driver's own act, and no product call is in it.
+	 */
+	"tree-hijacked": {
+		meaning:
+			"the builder's checkout held another lane's branch or unauthored work, so it stopped before writing into a lane not its own",
+		route: "driver",
+		remedy: "fabrika build retire",
+	},
+	/**
+	 * `build claim` lost (exit `15`) to a claim a stopped shell of the same session left standing, so
+	 * `build adopt`, which refuses its own session, cannot reach it and the new shell cannot proceed.
+	 *
+	 * Its row clears only on the board reading the issue `unclaimed`, and it retracts nothing: the
+	 * claimant may be a live sibling rather than a stranded one, and no read here tells them apart.
+	 * Releasing it is the driver's act, under the stranded lane's token, so no remedy verb is named.
+	 *
+	 * Route `driver`: the claim belongs to the driver's own session, so releasing it is residue
+	 * clean-up and not a product call.
+	 */
+	"claim-stranded": {
+		meaning:
+			"a stopped shell of this session left its build claim standing, so a new shell lost the claim and adopt cannot reach it",
+		route: "driver",
+		remedy: null,
+	},
+	/**
 	 * The rendered gate's `CANT-SEE`: no preview deployment stands at the PR's head, or the
 	 * one that does is stale beyond repair, so there is no rendered surface to judge. It is the
 	 * routine outcome of the three, not the exceptional one — a PR whose preview has not finished

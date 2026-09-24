@@ -72,6 +72,27 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Known" && parked.recipe.remedy).toBe("fabrika build retire");
 	});
 
+	// A builder that stopped on a hijacked tree needs what a dead one needs before the brief goes out
+	// again, so the row reads the same clearance and names the same retirement.
+	it("is Known for a BLOCKED whose cause is the tree-hijacked shape", () => {
+		const parked = classifyPark("blocked", "tree-hijacked");
+
+		expect(parked._tag).toBe("Known");
+		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("spawn-clear");
+		expect(parked._tag === "Known" && parked.recipe.route).toBe("driver");
+		expect(parked._tag === "Known" && parked.recipe.remedy).toBe("fabrika build retire");
+	});
+
+	// A same-session claimant may still be live, so this row names no verb that could end its claim.
+	it("is Known for a BLOCKED whose cause is the claim-stranded shape", () => {
+		const parked = classifyPark("blocked", "claim-stranded");
+
+		expect(parked._tag).toBe("Known");
+		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("claim-released");
+		expect(parked._tag === "Known" && parked.recipe.route).toBe("driver");
+		expect(parked._tag === "Known" && parked.recipe.remedy).toBeNull();
+	});
+
 	// The lanes stranded before `lane report` learned to advance a satisfied route are still stranded;
 	// nothing in a ledger clears itself. The row is what lets a sweep clear them without a person.
 	it("is Known for a BLOCKED whose cause is the no-rendered-delta shape", () => {

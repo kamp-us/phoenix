@@ -40,7 +40,9 @@ fabrika build tree --require-clean
 
 Done when it printed this tree's root. Work wherever you were spawned; where that is, is
 the operator's call, not yours. On exit 13 (dirty) or 14 (wrong lane) **stop and report the
-code** — never clean up an unauthored hunk, never build on another lane's branch.
+code** — never clean up an unauthored hunk, never build on another lane's branch. That stop is
+`STOPPED` with the cause `tree-hijacked`, and so is the same refusal from any later `build tree` or
+`build branch` in this run.
 Re-prove before every mutation. Before `build branch` has cut the lane branch, use
 `fabrika build tree --require-clean`; there is no branch identity to prove yet. Once the lane branch
 exists, a fresh build uses `fabrika build tree --issue <n>`. A PR repair uses the complete relationship
@@ -128,6 +130,11 @@ is provably gone, `fabrika build adopt <n> --session <its session id> --reason "
 either: the succession is attested on the board with your reason on it, so post one you would defend
 and back off otherwise. The refusal withholds that route when the winner is a sibling lane of your
 own session, because `build adopt` refuses your own session and there is nothing there to adopt.
+**Where your caller named the number, that same-session loss is not a back-off**: the winner is a
+claim a stopped shell of your driver's session left standing, and only the driver can release it. End
+`STOPPED` with the cause `claim-stranded` and leave the claim alone. Its recipe clears only once
+`build claimants` reads the issue `unclaimed`, so a sibling that is in fact still live is never
+evicted by it.
 Exit
 `20` (out of scope) or `21` (audience not agent) means the fence refused before writing any marker,
 including on a number handed straight to you: end the run naming the code, and **never override on
@@ -490,7 +497,8 @@ epic driver to fold); `BACKED-OFF` (claim lost with no succession open to it, bl
 readable contract — branch removed,
 nothing written); `ESCALATED` (repair cap reached, cause `repair-budget-spent` — branch left pushed
 at its last verified head, escalation note posted);
-`STOPPED` (isolation, a denied tool call, or verdict UNKNOWN — branch left local, state named). An
+`STOPPED` (isolation, a denied tool call, or verdict UNKNOWN — branch left local, state named, and
+your own build claim released first). An
 empty pick pool is
 `BACKED-OFF` too — nothing to build, nothing written, and on a lost claim "branch removed" means
 none was ever cut. Each terminal names its branch disposition; **a back-off reported as a success
@@ -527,14 +535,39 @@ nothing.
 `--pr` whenever the terminal names one; `--comment` for the diagnosis comment behind a
 `SUCCESS-NO-PR`; a `BUILT-NO-PR` carries neither, because its evidence is the commits themselves.
 
+**Release your own claim before you end `STOPPED`.** A stop leaves the branch local, but a claim left
+standing makes the next shell on this number lose `build claim` to you — a stopped shell parking the
+repair that was sent to clear it. So when you hold a build claim, release it before `lane report`:
+
+```bash
+fabrika build release <n> --token <claim-token>
+```
+
+`<n>` is the number you claimed — the PR on a repair, the issue otherwise. When the stop came before
+any claim was won, or the claim was lost, there is nothing of yours to release. A release that
+refuses or reads back UNKNOWN is named in your terminal report beside the stop's own cause, never
+retried past its refusal.
+
 **Name the cause when your park has one.** `--cause <token>` rides a park and nothing else, because
 only a park has a cause to be gone. Two of your terminals are parks, `STOPPED` and `ESCALATED`, and
-`lane report` maps both to `BLOCKED`. Two tokens name a park of yours. `worktree-holds-branch`
+`lane report` maps both to `BLOCKED`. Four tokens name a park of yours. `worktree-holds-branch`
 belongs on the `STOPPED` you take when `build resume-child` stops at its `resume-lane` step on exit
 `11`, because another worktree still holds the lane branch:
 
 ```bash
 node <fabrika> lane report <lane> --root <root> --task <task> --token STOPPED --cause worktree-holds-branch
+```
+
+`tree-hijacked` belongs on the `STOPPED` you take when `build tree` refuses on `13` or `14`, or
+`build branch` refuses the same way — the checkout you were spawned in holds another lane's branch or
+work you did not author. `claim-stranded` belongs on the `STOPPED` you take when `build claim` loses
+on `15` to a sibling lane of your own session on a number your caller named (§2). Both are driver
+parks: the first clears once your claim and any tree holding this lane's branch are gone, and the
+second only once the issue reads `unclaimed`:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token STOPPED --cause tree-hijacked
+node <fabrika> lane report <lane> --root <root> --task <task> --token STOPPED --cause claim-stranded
 ```
 
 `repair-budget-spent` belongs on the `ESCALATED` you take when the repair fold reads

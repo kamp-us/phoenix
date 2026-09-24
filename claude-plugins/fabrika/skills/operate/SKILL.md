@@ -1510,12 +1510,21 @@ verb reads the cause for you:
 node <fabrika> recipe unpark <lane-key> --task <task>
 ```
 
-The table it keys on holds six rows today: `human:cp-approval` twice — once keyed on no cause at all,
+The table it keys on holds nine rows today: `human:cp-approval` twice — once keyed on no cause at all,
 once on `head-ci-red`, which is the shipper's route to `heal-ci` folding to the same leaf —
-`human:queue-stall`, and `blocked` carrying one of `worktree-holds-branch`, `campaign-paused` or
-`spawn-dead`. Reading which one
+`human:queue-stall`, and `blocked` carrying one of `worktree-holds-branch`, `campaign-paused`,
+`spawn-dead`, `no-rendered-delta`, `tree-hijacked` or `claim-stranded`. Reading which one
 matched is the verb's answer, not a list you maintain here — the rows live in
 [`packages/fabrika-cli/src/recipe/parks.ts`](../../../../packages/fabrika-cli/src/recipe/parks.ts).
+
+Two of those are a builder's mechanical stops, and the clear is yours to set up. **`tree-hijacked`**
+is a builder whose checkout held another lane's branch or unauthored work: give the next spawn a
+tree of its own, and the row reads what `spawn-dead`'s reads — no claim of the stopped shell's
+standing and no tree holding this lane's branch. **`claim-stranded`** is a builder that lost
+`build claim` to a claim a stopped shell of your own session left standing, which `build adopt`
+cannot reach: release it under that shell's token (`build release <n> --token <its token>`, the
+token `build claimants <n>` names), and the row clears only once `build claimants` reads the issue
+`unclaimed`. That row retracts nothing, on any arm, so a claim still standing holds it at exit `13`.
 
 Exit `0` cleared it — the verb recorded the `UNBLOCKED` itself and re-read the fold to prove the task
 left the park, so your next move is the state that re-fold reads, not a park comment. Exit `12` is

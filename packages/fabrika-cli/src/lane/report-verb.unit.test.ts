@@ -387,6 +387,20 @@ describe("lane report — a cause-less park under `parkCause.uncaused: refuse`",
 		expect(JSON.parse(appendedLine(fs)).cause).toBe("worktree-holds-branch");
 	});
 
+	// The builder's two mechanical stops: each lands caused under the strict key, where the same
+	// STOPPED with no cause is the refusal at 52 above.
+	it.each([
+		"tree-hijacked",
+		"claim-stranded",
+	])("records a builder STOPPED that names %s", async (cause) => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "STOPPED", {parkCause: strict, cause});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.BLOCKED", cause});
+	});
+
 	// The whole containment: a terminal that maps to anything but BLOCKED is untouched by the key.
 	it("leaves a non-park terminal alone", async () => {
 		const fs = laneAt(LOG_AT.build);

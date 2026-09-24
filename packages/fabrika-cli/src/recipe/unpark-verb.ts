@@ -30,6 +30,7 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {runClaimants} from "../build/claimants-verb.ts";
 import {WORKTREE_HELD} from "../build/codes.ts";
 import {reclaimDeadClaim} from "../build/dead-claim.ts";
 import {worktreeCheckouts} from "../build/git.ts";
@@ -297,6 +298,8 @@ const clear = (
 			return clearCampaignActive(options, task, recipe);
 		case "spawn-clear":
 			return clearSpawnClear(options, task, recipe);
+		case "claim-released":
+			return clearClaimReleased(options, task, recipe);
 		case "queue-moved":
 			return clearQueueMoved(options, task, recipe);
 		case "ci-green":
@@ -824,6 +827,63 @@ const clearSpawnClear = (
 					: `spawn-clear:#${issue} unclaimed${retracted}, ${candidates.join(",")} free (retired ${freed.retired} working tree(s))`,
 			waitGrant: null,
 		};
+	});
+
+/**
+ * Read whether the claim-stranded park's cause is gone: `build claimants` reads the lane's issue
+ * `unclaimed`.
+ *
+ * The answer is relayed, never re-derived, and nothing here writes. That is the whole difference from
+ * `spawn-clear`, which retracts a claim its age proves dead: the claimant this park names belongs to
+ * the driver's own session, so a same-session shell may still be working under it, and a sweep that
+ * ended it on any reading short of its own release would evict a live lane. Releasing it under the
+ * stranded token is the driver's act; this read is only the proof that act happened.
+ */
+const clearClaimReleased = (
+	options: UnparkOptions,
+	task: string,
+	recipe: ParkRecipe,
+): Effect.Effect<Clearance, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
+
+		const issue = issueOf(options.lane, task);
+		if (issue === null) {
+			return no(
+				refuse(
+					TASK_UNRESOLVED,
+					`${VERB}: neither task "${task}" nor lane "${options.lane}" names an issue number, so whose claim stands cannot be read.`,
+				),
+			);
+		}
+
+		const read = yield* runClaimants({number: issue, repo: options.repo, env: options.env});
+		if (read.code !== 0) {
+			return no(relayRefusal(VERB, `fabrika build claimants ${issue}`, read, buildExit(read.code)));
+		}
+		const answered = parseJson(read.stdout);
+		if (!isRecord(answered) || typeof answered.answer !== "string") {
+			return no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: fabrika build claimants ${issue} exited 0 and named no answer — whether the claim stands is UNKNOWN, never cleared.`,
+				),
+			);
+		}
+		if (answered.answer === "unclaimed") {
+			return {_tag: "Cleared", mechanism: `claim-released:#${issue} unclaimed`, waitGrant: null};
+		}
+		const holder =
+			isRecord(answered.holder) && typeof answered.holder.token === "string"
+				? answered.holder.token
+				: "a claim";
+		return no(
+			refuse(
+				PARK_HOLDS,
+				`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — build claimants reads #${issue} "${answered.answer}" by ${holder}. Nothing was retracted and nothing was written.`,
+				[...read.stderr],
+			),
+		);
 	});
 
 /**
