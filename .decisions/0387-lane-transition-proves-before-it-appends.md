@@ -8,6 +8,8 @@ tags: [fabrika, lane, pipeline, governance]
 
 # 0387 — `lane transition` proves before it appends
 
+> `lane view` was removed in #9771 (2026-09-24).
+
 **What this decides:** the proof `lane prove` performs moves inside `lane transition`, which now runs
 it and refuses on the prover's own code with the log byte-identical. The driver's path and the
 shell's carry one mechanical gate. The deliberate split recorded in `prove-verb.ts`'s docblock — the

@@ -7,6 +7,8 @@ date: 2026-09-01
 
 # A correction supersedes a recorded line
 
+> `lane view` was removed in #9771 (2026-09-24).
+
 ## Context
 
 ADR [0343](0343-a-partial-merge-sends-the-lane-round-again.md) taught the lane machine to send a

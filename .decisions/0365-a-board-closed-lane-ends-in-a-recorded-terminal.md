@@ -8,6 +8,8 @@ tags: [fabrika, lane, pipeline, state-machine]
 
 # 0365 — A lane whose issue closed elsewhere ends in a recorded terminal, not a deleted directory
 
+> `lane view` was removed in #9771 (2026-09-24).
+
 **Amends ADR [0322](0322-closed-issue-lanes-demote-at-read-time.md) in part.** 0322 ruled that a
 lane whose issue closed elsewhere is demoted at read time and nothing is written, and it barred three
 mechanisms by name: "No seventh operator event, no new terminal cell, no reconciliation verb." The
