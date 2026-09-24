@@ -349,7 +349,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `10` | a value off its closed vocabulary, or a classification claim where none is permitted (a non-kebab slug, an off-enum surface, a §CP claim in a body) — a semantic refusal, never a malformed-flag usage error, which is `1` |
 | `11` | a required read or validator execution failed — nothing was written, no outcome is proven |
 | `12` | **retired, left empty** — it meant "not in a linked worktree" until the 2026-08-13 ruling dropped fabrika's isolation opinion; nothing is renumbered into it, because renumbering would make an old transcript's code read as a live one |
-| `13` | proven: the tree was dirty at a `--require-clean` open |
+| `13` | the tree was dirty where the verb needed it clean — proven dirty at a `--require-clean` open, or (`build branch`) proven dirty when the checkout would move HEAD; a status read that fails is `13` as UNKNOWN, never clean |
 | `14` | proven: the checked-out branch does not belong to this lane's claim |
 | `15` | proven: this session does not hold the claim — lost, foreign, or none exists at all; the detail is on stderr |
 | `16` | proven: the issue is blocked — every open `blocked_by` edge is named on stderr |
@@ -1661,15 +1661,18 @@ also names the **base commit** it ended on, on stderr beside the base note — `
 idempotent, nothing was cut.` on a re-run. Four builders on one epic run had to prove their base
 with a `git merge-base` of their own, because the answer named the branch and nothing else.
 
-**Lane identity, defined once here and consumed by every code-`14` check.** A lane branch's name
+**Lane identity, defined once here and consumed by every code-`14` check but `build branch`'s own.** A lane branch's name
 carries the lane: `build/<number>-<slug>-<nonce>` in create mode, `build/pr-<pr>-<nonce>` in
 resume mode, where `<nonce>` is the first 8 hex of the **current** claim token's UUID. A verb
 proving "this lane's branch" (`tree --issue`, `check`, `push`, `pr`) parses `<number>` (or
 `<pr>`) and `<nonce>` out of the checked-out branch's name, re-reads that number's claim through
 the ACL check, and requires this session to hold it with a token whose UUID prefix equals the
-nonce. Wrong number, wrong nonce, or an unparseable branch name is `14`; a claim readable and
+nonce. For those verbs, wrong number, wrong nonce, or an unparseable branch name is `14`; a claim readable and
 held by another session is `15`; an unreadable claim is `11` — every code-`14` consumer can
-therefore also return `14`, `15` and `11`, and enumerates all three. No verb needs a flag to
+therefore also return `14`, `15` and `11`, and enumerates all three. `build branch`'s `14` is
+the one different predicate: it proves the tree it would move is not *another* lane's, so it
+refuses only a lane branch for a different number, reads no claim, and admits this number under
+any nonce, a non-lane branch and a detached HEAD (below). No verb needs a flag to
 find the lane — the branch name is the record, and there is no
 stamp file to duplicate or go stale (the stamp machinery is the accretion the 2026-08-03
 amendment measured, and it is not rebuilt).
@@ -1776,7 +1779,7 @@ number, which is the number repair mode claims.
 **The tree it would move is proven movable first, in every mode.** `git switch` refuses only a
 *conflicting* change, so a staged or modified file that does not conflict rides onto the new branch
 in silence — which is how one builder moved the primary checkout off `main` with a human's edits
-still in its index, and how two lanes on one demlik run each cut their branch inside a third lane's
+still in its index, and how two lanes on one consumer repo's run each cut their branch inside a third lane's
 worktree and carried its finished, staged work with them. So once the claim is proven and the target
 name is composed, and before any fetch, switch, rename or create, the verb reads the tree's current
 branch and its status and refuses on two arms:
