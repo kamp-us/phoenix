@@ -291,7 +291,11 @@ at a fixed `desk` leaf, and the second one's rebuild deleted the first one's liv
 no lock and no error. So allocate that desk's root with `--slug desk` and put the whole tree under
 it — the project directory the desk opens, the scratch agent home it runs under, the app's process
 checkpoints and the driver scripts. The allocated path is keyed on this lane's claim nonce, which is
-what makes it a name no concurrent lane writes.
+what makes it a name no concurrent lane writes. **Wrapper and helper scripts are lane-local files
+too**, the same as notes and desks. A wrapper that `cd`s into one tree and runs fabrika there, left
+in the shared scratchpad, is rewritten by a sibling lane, and every verb run through it then lands in
+that sibling's tree. Write it under `build scratch`, and never let it `cd` into a tree this run did
+not prove.
 
 <!-- anchor: STAGE-THE-BODY-RATHER-THAN-TRIM-IT --> **That verb is also how a body the harness
 refuses to carry reaches a verb — staged, never trimmed.** Four verbs below take their body on a

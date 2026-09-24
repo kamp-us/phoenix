@@ -6,6 +6,7 @@
 import {
 	BAD_SECTIONS as SHARED_BAD_SECTIONS,
 	BARE_AT_PATH as SHARED_BARE_AT_PATH,
+	CLASSIFIED as SHARED_CLASSIFIED,
 	EMPTY_STDIN as SHARED_EMPTY_STDIN,
 	LEAKED_PATH as SHARED_LEAKED_PATH,
 	NO_TARGET as SHARED_NO_TARGET,
@@ -60,6 +61,13 @@ export const MARKER_READBACK = SHARED_READBACK_MISMATCH;
  * failed read can be neither.
  */
 export const LANE_UNREADABLE = SHARED_PRECONDITION_UNKNOWN;
+
+/**
+ * `lane scratch`'s `--slug` is not a kebab-case leaf — it carries a path separator, or leaves the
+ * vocabulary a directory leaf may spell. The base's closed-vocabulary seat, the code `build scratch`
+ * spends on the same refusal, so one slug rule answers one way in both namespaces.
+ */
+export const SLUG_OFF_VOCABULARY = SHARED_CLASSIFIED;
 
 /**
  * The event is refused and the log is left unappended: the machine holds no cell for it in the

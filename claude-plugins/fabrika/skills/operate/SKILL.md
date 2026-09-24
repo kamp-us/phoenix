@@ -125,6 +125,21 @@ that left the lane reading unclaimed.
 Re-claiming with the token you already hold is the idempotent path — it answers `won` with the same
 marker and writes nothing, rather than stacking a second marker a single release cannot clear.
 
+**Never write a script, wrapper or helper file to a path another lane can reach.** The session
+scratchpad is shared by every lane of the session. A `fab` wrapper that `cd`'d into one worktree sat
+there, a sibling operator rewrote it to point at its own tree, and the builders calling it cut their
+branches in that sibling's worktree. So anything lane-local you write goes under the directory this
+prints, keyed on your lane-claim token's nonce:
+
+```bash
+node <fabrika> lane scratch $lane_key --slug helpers --token <lane-claim-token>
+```
+
+A helper there still never holds a `cd` into a tree it did not prove this run. The cwd resets
+between shell calls, so each verb call names its own tree. `lane scratch --help` gives the exits. A
+`chore:<name>` lane holds no claim, so it has no scratch directory and writes no helper. The printed
+path is machine-local and never goes into a brief, a comment or a PR body.
+
 The claim is the driver's own namespace, `lane-claim:`, not the builder's `build-claim:`. That is
 what lets the builder you spawn on this very number claim it and win: two markers on one thread,
 two races that never see each other. You never read the other namespace and never retract a marker

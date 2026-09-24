@@ -282,7 +282,9 @@ export const PATTERN_SEATS: SharedSeats = {
  * (`MARKER_READBACK`). `lane assembly-body` adds the three authored-text seats: it is the group's
  * one verb taking a body on stdin, so it alone can establish the read-but-empty pipe
  * (`EMPTY_STDIN`), the machine-local path headed for a public PR (`LEAKED_PATH`), and the body that
- * is a pointer rather than a body (`BARE_AT_PATH`). The private band runs `12`-`39`, skipping `27`
+ * is a pointer rather than a body (`BARE_AT_PATH`). `lane scratch` adds the classification seat
+(`SLUG_OFF_VOCABULARY`): a `--slug` off the kebab-leaf vocabulary, the fact `build scratch` seats on
+the same number. The private band runs `12`-`39`, skipping `27`
  * and `28` because the base already speaks for both, and reaches `58` for the epic-tail body seat.
  */
 export const LANE_SEATS: SharedSeats = {
@@ -294,6 +296,7 @@ export const LANE_SEATS: SharedSeats = {
 	APPEND_UNKNOWN: "WRITE_UNKNOWN",
 	MARKER_READBACK: "READBACK_MISMATCH",
 	LANE_UNREADABLE: "PRECONDITION_UNKNOWN",
+	SLUG_OFF_VOCABULARY: "CLASSIFIED",
 };
 
 /**
