@@ -8,8 +8,6 @@ tags: [fabrika, lane, pipeline, viewer, state-machine]
 
 # 0322 — A lane whose issue closed elsewhere is demoted at read time, not reconciled on disk
 
-> `lane view` was removed in #9771 (2026-09-24).
-
 **What this decides:** nothing new is written to a lane whose issue was closed outside the lane's own
 flow. `lane view` cross-checks the board when it renders and buckets such a lane into a "finished
 elsewhere" band, away from the needs-a-person band. No seventh operator event, no new terminal cell,
