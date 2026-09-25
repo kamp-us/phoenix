@@ -62,6 +62,7 @@
 export {ProcessId} from "../process/process.ts";
 export {STATUS_PORT, TITLE_PORT} from "../process/self-report.ts";
 export type {AnyProgram, HostHandlers, InPort, OutPort, PortSchema} from "../registry/program.ts";
+export type {DepKeyedSub, Sub} from "../registry/sub.ts";
 export {
 	type AnyArgRef,
 	type AnyArgRefs,
@@ -83,6 +84,7 @@ export {
 	type ArrivalEvent,
 	type AuthoredEvent,
 	type AuthoredProgram,
+	type AuthoredSubRunner,
 	defineProgram,
 	type EventHandler,
 	type ModuleWindowRef,

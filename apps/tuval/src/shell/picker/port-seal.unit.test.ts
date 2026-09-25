@@ -17,7 +17,6 @@
  * claim needs a child whose handler says out loud what it emitted through.
  */
 
-import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
 import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
@@ -26,6 +25,7 @@ import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import type {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";

@@ -11,7 +11,6 @@
  * said nothing yet, and under the test clock no wall time passes.
  */
 
-import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {KernelBridge} from "@kampus/tuval-claude/tools";
 import type {TurnResult} from "@kampus/tuval-sdk/ai-agent/ports";
@@ -44,6 +43,7 @@ import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {TITLE_PORT} from "@kampus/tuval-sdk/kernel/process/self-report";
+import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer, Option} from "effect";

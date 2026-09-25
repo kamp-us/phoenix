@@ -326,9 +326,9 @@ export const unresolvedAnswer = (
  *
  * Every layer narrates its own open on the event stream — `PiAiAgent.start` and
  * `ClaudeAiAgent.start` both emit `starting` and then `ready` — and that stream is opened by the
- * `started` the open already answered (`machine.ts`, `subscriptions`). So the `starting` a Sub
- * reads first is always a report about an open that is finished, and folding it walks a ready
- * session backwards into a phase that refuses every prompt (#7925).
+ * `started` the open already answered (`machine.ts`, the `events` `{type, deps}` entry). So the
+ * `starting` a Sub reads first is always a report about an open that is finished, and folding it
+ * walks a ready session backwards into a phase that refuses every prompt (#7925).
  */
 const coreOwned = (phase: Phase): boolean => phase === "starting" || phase === "reconnecting";
 

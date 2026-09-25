@@ -13,14 +13,14 @@ export {
 	type SubscribeHandlers,
 } from "./definition.ts";
 export {
+	disposerRunner,
 	interpretPromiseBridge,
-	subDisposerBridge,
-	subscribeDisposerBridge,
 	toDemlikMachine,
 } from "./demlik-bridges.ts";
 export {
 	ActorNameCollisionError,
 	ActorStoppedError,
+	MissingSubRunnerError,
 	StoreError,
 	SubDisposeError,
 } from "./errors.ts";

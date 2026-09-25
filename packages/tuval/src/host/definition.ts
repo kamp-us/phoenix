@@ -1,10 +1,10 @@
 /**
  * The actor definition: a Demlik core machine plus Effect-valued host handlers.
  *
- * The machine (`defineMachine({init, update, subs, identity, subscriptions})`) stays Demlik's:
- * pure data, no Effect in State, Cmd or Sub (#7371). The handlers are where Effect lives — a Cmd
- * handler is one-shot work, a Sub handler is long-lived scoped work — and their error and service
- * requirements are derived onto the definition (`ErrorOf`/`ServicesOf`), the same shape
+ * The machine (`init`, `update`, `subs`, `identity`) stays pure data, no Effect in State, Cmd or
+ * Sub (#7371): each Sub is a `{type, deps}` entry, and its runner is the handler of that `type`.
+ * The handlers are where Effect lives — a Cmd handler is one-shot work, a Sub handler is long-lived
+ * scoped work — and their error and service requirements are derived onto the definition (`ErrorOf`/`ServicesOf`), the same shape
  * `Effect.all` uses over a record (`All.ReturnObject` in `effect/Effect`, rc.112), so a program's `E`
  * and `R` fall out of its handlers rather than being hand-declared.
  */
@@ -12,30 +12,28 @@
 import type {
 	Cmd,
 	CtxArg,
-	DepKeyedSub,
 	Identity,
 	Reducer,
 	RuntimeErrorPhase,
 	Store,
-	Sub,
 	Supervision,
 	Transitions,
 	UpdateForm,
 } from "@demlik/tea";
 import type {Effect, Scope} from "effect";
+import type {DepKeyedSub, Sub} from "../registry/sub.ts";
 import {ActorNameCollisionError} from "./errors.ts";
 
 /**
- * A Demlik `Machine` minus its Promise-shaped `interpret` and `subscribe` — the pure core plus
- * the dep-keyed Subs and the manual `subscriptions` aggregate. A `defineMachine` result is one;
- * so is a plain literal, since `applyCellChecked` detects the update form when `__form` is absent.
+ * A Demlik `Machine` minus its Promise-shaped `interpret` — the pure core plus its `{type, deps}`
+ * Sub entries. A plain literal is one, since `applyCellChecked` detects the update form when
+ * `__form` is absent.
  */
 export interface CoreMachine<S, M extends {type: string}, C extends Cmd, U extends Sub, Ctx> {
 	readonly init: (loaded: S | null, ctx: Ctx) => readonly [S, readonly C[]];
 	readonly update: Reducer<S, M, C> | ([S] extends [{type: string}] ? Transitions<S, M, C> : never);
-	readonly subs?: ReadonlyArray<DepKeyedSub<S, M, Ctx>>;
+	readonly subs?: ReadonlyArray<DepKeyedSub<S, U>>;
 	readonly identity?: Identity<S, M>;
-	readonly subscriptions?: (state: S) => readonly U[];
 	readonly __form?: UpdateForm;
 }
 

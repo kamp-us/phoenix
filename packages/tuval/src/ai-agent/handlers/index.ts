@@ -379,7 +379,7 @@ export const aiAgentHandlers = <RIn = never>(
 
 			yield* Stream.runForEach(agent.events, (event) =>
 				Effect.gen(function* () {
-					dispatch({type: "event", sessionId: sub.sessionId, event});
+					dispatch({type: "event", sessionId: sub.deps.sessionId, event});
 					const next = yield* projection.fold((state) => foldEvent(state, event, limits));
 					if (next === null) return;
 					// A reset empties both projections rather than moving one row of either, so it

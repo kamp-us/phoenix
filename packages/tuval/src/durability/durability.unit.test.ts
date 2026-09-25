@@ -1,12 +1,12 @@
 import {mkdir, mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer, Option, Schema} from "effect";
 import {Processes} from "../process/Processes.ts";
 import {ProcessTable} from "../process/ProcessTable.ts";
 import {ProcessId} from "../process/process.ts";
+import {defineMachine} from "../registry/machine.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {Checkpoints} from "./Checkpoints.ts";

@@ -1,6 +1,6 @@
 /**
  * The spine of the authoring layer: `defineProgram` takes what a user writes — an id, ports,
- * `init`, an `update` table and Demlik's dep-keyed `subs` — and answers a registry row
+ * `init`, an `update` table, and `subs` with the runner for each — and answers a registry row
  * (`../registry/program.ts`) the kernel already knows how to launch, wire, checkpoint, restore,
  * reload, pick and window. It is a compiler, not a runtime: nothing here runs a program.
  *
@@ -31,7 +31,7 @@
  * always had for the same mistake.
  */
 
-import type {DepKeyedSub, Interpret} from "@demlik/tea";
+import type {Interpret} from "@demlik/tea";
 import {Context, Effect, Option, Result} from "effect";
 import {SessionOpening} from "../ai-agent/opening.ts";
 import type {
@@ -44,6 +44,7 @@ import type {
 } from "../commands/core/process.ts";
 import {SpawnedProcesses} from "../commands/core/process.ts";
 import type {OpenError} from "../durability/Checkpoints.ts";
+import {disposerRunner} from "../host/demlik-bridges.ts";
 import type {PayloadRejected, PortNotWired} from "../ports/errors.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import type {
@@ -67,6 +68,7 @@ import type {
 	RendererRef,
 } from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
+import type {DepKeyedSub, Sub} from "../registry/sub.ts";
 import {
 	type AnyArgRefs,
 	type ArgUnfilled,
@@ -115,6 +117,15 @@ import {
 export interface AuthoredEvent {
 	readonly type: string;
 }
+
+/**
+ * A Sub's runner: open whatever the Sub stands for now, send events through `dispatch`, and hand
+ * back the close. The kernel runs the close when the Sub's id leaves.
+ */
+export type AuthoredSubRunner = (
+	sub: Sub,
+	dispatch: (event: AuthoredEvent) => void,
+) => () => void | Promise<void>;
 
 /**
  * What one `update` cell answers: the next state, and the effects it asks for.
@@ -276,8 +287,13 @@ export interface AuthoredProgram<
 	 * process starts on its loaded state with no Cmds, so this is its only way back into the world.
 	 */
 	readonly resume?: AuthoredResume<S, U>;
-	/** Demlik's own dep-keyed Subs, taken as the row's core already takes them. */
-	readonly subs?: ReadonlyArray<DepKeyedSub<S, AuthoredEvent, unknown>>;
+	/**
+	 * The Subs this program declares, each a `{type, deps}` entry: on while `deps` answers a value,
+	 * restarted when that value changes, stopped when it answers `null`.
+	 */
+	readonly subs?: ReadonlyArray<DepKeyedSub<S, Sub>>;
+	/** The runner for each Sub type `subs` declares, keyed by that type. */
+	readonly subscribe?: Readonly<Record<string, AuthoredSubRunner>>;
 	/**
 	 * The three inert records, each defaulted so an author writes none of them. They are data the
 	 * kernel stores and enforces nothing on (`../registry/program.ts` says so at length), so a
@@ -665,6 +681,13 @@ const filledArgs = (authored: AnyAuthoredProgram): Context.Context<never> => {
 	return filled.success as Context.Context<never>;
 };
 
+const compileSubs = (authored: AnyAuthoredProgram): AnyProgram["subs"] =>
+	authored.subscribe === undefined
+		? undefined
+		: Object.fromEntries(
+				Object.entries(authored.subscribe).map(([type, open]) => [type, disposerRunner(open)]),
+			);
+
 const compileIdentity = (authored: AnyAuthoredProgram): DefinitionIdentity => ({
 	...defaultIdentity(authored.id),
 	...authored.identity,
@@ -681,6 +704,7 @@ export const FIELD_COMPILERS = {
 	ports: (_authored, context) => context.ports,
 	receive: (authored) => compileReceive(authored),
 	handlers: (_authored, context) => bindArgs(HANDLERS, context.args),
+	subs: (authored) => compileSubs(authored),
 	args: (authored) => (authored.args === undefined ? undefined : argKeys(authored.args)),
 	spells: (authored, context) => compileSpells(authored, context),
 	takesKeys: (authored) => compileTakesKeys(authored),

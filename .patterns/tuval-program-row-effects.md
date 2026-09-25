@@ -28,38 +28,33 @@ widen `R` by hand to make a spawn typecheck — the spawn is what has to supply 
 **A Sub handler's failure ends the process, so treat returning as the only clean exit.** ADR
 [0346](../.decisions/0346-sub-failure-policy-actor-identity.md) makes a failed Sub the machine's Msg
 or the process's death, never a host retry: the host reports the `Cause` under `"sub-fiber"`, marks
-that Sub's id `failed`, and — with no `subFailure` projection to address it — closes the process's
-Scope with the failure as its Exit. Marked ids are never re-armed, `ended` ones included, so a Sub
-that returns normally does not restart while the state keeps desiring it. Restart is data: emit the
-Sub under a new id (an attempt counter in the id, or in the dep-keyed `deps` slice) and reconcile
-arms it fresh, which is what makes the retry replay. Catch inside the handler anything you mean to
-survive; let out only what should end the process.
+that Sub's id `failed`, and closes the process's Scope with the failure as its Exit. Marked ids are
+never re-armed, `ended` ones included, so a Sub that returns normally does not restart while the
+state keeps desiring it. Restart is data: put an attempt counter in the Sub's `deps` slice, and the
+new id is armed fresh, which is what makes the retry replay. Catch inside the handler anything you
+mean to survive; let out only what should end the process.
 
-**A row declares the policy on its `core`, and the type it writes against lives in
-[`src/sub-failure.ts`](../packages/tuval/src/sub-failure.ts).** `SubFailure` and `SubFailurePolicy` sit
-there rather than in the host, so the registry can name them while still importing nothing from the
-slice that runs a program (`registry/boundary.unit.test.ts` holds that line). A row's `core` is typed
-`ProgramCore`, which is Demlik's `Machine` widened by the optional `subFailure` field:
+**The core declares each Sub as a `{type, deps}` entry, and the row's `subs` holds the runner for
+that type.** This is `@demlik/tea` 0.18's shape, held in
+[`registry/sub.ts`](../packages/tuval/src/registry/sub.ts) until the repo pins 0.18. `deps` answers
+the slice of state the Sub depends on, or `null` when it is off; the id is a hash of the type and
+that slice, so the host starts the runner when the entry turns on, leaves it while the id holds,
+restarts it when the slice changes and stops it on `null`. Two entries of one type with different
+deps are two ids and two runners.
 
 ```ts
-core: {
-  init: (loaded) => [loaded ?? {armed: false, seen: []}, []],
+core: defineMachine<State, Msg, Cmd<never>, Ticker, unknown>({
+  init: (loaded) => [loaded ?? {armed: false}, []],
   update: {…},
-  subscriptions: (state) => (state.armed ? [TICKER] : []),
-  subscribe: {ticker: () => () => {}},
-  subFailure: (sub, failure) => ({type: "noted", note: `${sub.type}:${failure.reason}`}),
-} satisfies ProgramCore<State, Msg, Cmd<never>, Ticker, unknown>,
+  subs: [{type: "ticker", deps: (state) => (state.armed ? {every: 1000} : null)}],
+}),
+subs: {ticker: (sub, dispatch) => …},
 ```
 
-Write that core as a plain literal, not through `defineMachine` — the helper takes Demlik's
-`Machine`, which has no `subFailure`, and the host detects the update form when `__form` is absent.
-The policy is only consulted for a Sub the `subscriptions` aggregate declared; a dep-keyed Sub has no
-`U` value to hand it, so its failure takes the unaddressed branch.
-
-**A Sub that needs a service belongs in `subs`, not on the machine.** Demlik 0.12's own `subscribe`
-map is Promise-shaped and synchronous (`host/demlik-bridges.ts` is the whole translation), so a cell
-there has nowhere to ask for a service. `Processes` prefers a row's `subs` entry over the bridged
-cell of the same type, and a core carrying both keeps the bridge for the types the row leaves alone.
+Build the core with Tuval's `defineMachine`
+([`registry/machine.ts`](../packages/tuval/src/registry/machine.ts)), not tea 0.12's: 0.12 types
+`subs` in its older inline-runner shape. A Sub type the core declares with no runner on the row is
+a reconcile failure, not a silent skip.
 
 ## `ProcessSelf`: the process's own Scope and state
 

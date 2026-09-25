@@ -95,8 +95,17 @@ describe("the core's import closure", () => {
 		expect(offenders).toEqual([]);
 	});
 
-	it("reaches no sibling directory but events, ports, history and the fixtures", () => {
-		const allowed = ["../events.ts", "../ports/", "../history/", "../../ai-agent-fixtures/"];
+	// `registry/machine.ts` and `registry/sub.ts` stand in for `@demlik/tea` 0.18's machine and Sub
+	// types until the pin (#9787), so they are allowed exactly as the tea import they replace.
+	it("reaches no sibling directory but events, ports, history, the fixtures and tea's stand-ins", () => {
+		const allowed = [
+			"../events.ts",
+			"../ports/",
+			"../history/",
+			"../../ai-agent-fixtures/",
+			"../../registry/machine.ts",
+			"../../registry/sub.ts",
+		];
 		const offenders = sources().flatMap(({name, text}) =>
 			importsOf(text)
 				.filter((specifier) => specifier.startsWith("."))

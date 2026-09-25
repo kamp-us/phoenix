@@ -1,12 +1,14 @@
-import {type Cmd, defineMachine, type Sub, subId} from "@demlik/tea";
+import type {Cmd} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer, Option, Scope} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {snapshotAt, watchingStores} from "../durability/fixtures.ts";
 import {type CheckpointStores, memoryStores} from "../durability/stores.ts";
 import {ProgramNotFound} from "../registry/errors.ts";
+import {defineMachine} from "../registry/machine.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
+import type {Sub} from "../registry/sub.ts";
 import {ForgetRefused, ProcessIsPlanned, ProcessNotFound} from "./errors.ts";
 import {PlannedProcesses} from "./PlannedProcesses.ts";
 import {Processes} from "./Processes.ts";
@@ -47,11 +49,13 @@ const identity = (program: string) => ({
 	digest: `sha256:${program}`,
 });
 
+type Run = Sub<"run", {readonly runId: string}>;
+
 /** A counter whose dep-keyed Sub logs its open and close, and whose `notify` Cmd follows up with `acked`. */
 const counterProgram = (probe: Probe): AnyProgram =>
 	({
 		id: ProgramId.make("counter"),
-		core: defineMachine<State, Msg, Notify, never, unknown>({
+		core: defineMachine<State, Msg, Notify, Run, unknown>({
 			init: (loaded) => [loaded ?? {type: "idle", count: 0}, []],
 			update: {
 				start: (state, msg) => [
@@ -69,14 +73,8 @@ const counterProgram = (probe: Probe): AnyProgram =>
 			},
 			subs: [
 				{
+					type: "run",
 					deps: (state) => (state.type === "running" ? {runId: state.runId} : null),
-					source: (state) => {
-						const runId = state.type === "running" ? state.runId : "?";
-						probe.log.push(`sub:start:${runId}`);
-						return () => {
-							probe.log.push(`sub:stop:${runId}`);
-						};
-					},
 				},
 			],
 			// Demlik's `Machine` demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576).
@@ -90,35 +88,40 @@ const counterProgram = (probe: Probe): AnyProgram =>
 					return [{type: "acked"}];
 				}),
 		},
+		subs: {
+			run: (sub: Run) =>
+				Effect.acquireRelease(
+					Effect.sync(() => void probe.log.push(`sub:start:${sub.deps.runId}`)),
+					() => Effect.sync(() => void probe.log.push(`sub:stop:${sub.deps.runId}`)),
+				).pipe(Effect.andThen(Effect.never)),
+		},
 		capabilities: [],
 		identity: identity("counter"),
 		placement: {host: "local"},
-	}) satisfies Program<State, Msg, Notify, never, unknown, never, never>;
+	}) satisfies Program<State, Msg, Notify, Run, unknown, never, never>;
 
 type Switch = {readonly type: "off"} | {readonly type: "on"};
 type Toggle = {readonly type: "toggle"};
-type Ticker = Sub<"ticker">;
+type Ticker = Sub<"ticker", true>;
 
-/** A machine on Demlik's manual-Sub map, so the `subscribe` disposer bridge is exercised end to end. */
+/** A Sub whose deps hold no data beyond on-or-off, run by the row's runner of its type. */
 const tickerProgram = (log: string[]): AnyProgram =>
 	({
 		id: ProgramId.make("ticker"),
 		core: defineMachine<Switch, Toggle, Cmd<never>, Ticker, unknown>({
 			init: () => [{type: "off"}, []],
 			update: {toggle: (state) => [{type: state.type === "off" ? "on" : "off"}, []]},
-			subscriptions: (state) =>
-				state.type === "on" ? [{id: subId("ticker"), type: "ticker"}] : [],
-			subscribe: {
-				ticker: () => {
-					log.push("ticker:open");
-					return () => {
-						log.push("ticker:close");
-					};
-				},
-			},
+			subs: [{type: "ticker", deps: (state) => (state.type === "on" ? true : null)}],
 		}),
 		ports: {},
 		handlers: {},
+		subs: {
+			ticker: () =>
+				Effect.acquireRelease(
+					Effect.sync(() => void log.push("ticker:open")),
+					() => Effect.sync(() => void log.push("ticker:close")),
+				).pipe(Effect.andThen(Effect.never)),
+		},
 		capabilities: [],
 		identity: identity("ticker"),
 		placement: {host: "local"},
@@ -513,31 +516,23 @@ describe("Processes", () => {
 		});
 	});
 
-	it.effect(
-		"a program on Demlik's manual-Sub map opens and closes its Sub through the process scope",
-		() => {
-			const log: string[] = [];
-			return withKernel(
-				[tickerProgram(log)],
-				Effect.gen(function* () {
-					const processes = yield* Processes;
-					const handle = yield* processes.spawn(ProgramId.make("ticker"), {
-						services: Context.empty(),
-					});
-					yield* handle.dispatch({type: "toggle"});
-					assert.deepStrictEqual(log, ["ticker:open"]);
-					yield* handle.dispatch({type: "toggle"});
-					assert.deepStrictEqual(log, ["ticker:open", "ticker:close"]);
-					yield* handle.dispatch({type: "toggle"});
-					yield* processes.stop(handle.id);
-					assert.deepStrictEqual(log, [
-						"ticker:open",
-						"ticker:close",
-						"ticker:open",
-						"ticker:close",
-					]);
-				}),
-			);
-		},
-	);
+	it.effect("a row's Sub runner opens and closes its Sub through the process scope", () => {
+		const log: string[] = [];
+		return withKernel(
+			[tickerProgram(log)],
+			Effect.gen(function* () {
+				const processes = yield* Processes;
+				const handle = yield* processes.spawn(ProgramId.make("ticker"), {
+					services: Context.empty(),
+				});
+				yield* handle.dispatch({type: "toggle"});
+				assert.deepStrictEqual(log, ["ticker:open"]);
+				yield* handle.dispatch({type: "toggle"});
+				assert.deepStrictEqual(log, ["ticker:open", "ticker:close"]);
+				yield* handle.dispatch({type: "toggle"});
+				yield* processes.stop(handle.id);
+				assert.deepStrictEqual(log, ["ticker:open", "ticker:close", "ticker:open", "ticker:close"]);
+			}),
+		);
+	});
 });

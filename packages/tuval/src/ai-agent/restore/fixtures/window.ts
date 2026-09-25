@@ -9,9 +9,9 @@
  * step.
  */
 
-import {defineMachine} from "@demlik/tea";
 import {Effect} from "effect";
 import {ProcessPorts} from "../../../ports/ProcessPorts.ts";
+import {defineMachine} from "../../../registry/machine.ts";
 import {type AnyProgram, type Program, ProgramId} from "../../../registry/program.ts";
 import {aiAgentPortNames} from "../../handlers/index.ts";
 import {mode, permission, prompt, transcript, transcriptPage} from "../../ports/index.ts";

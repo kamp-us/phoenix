@@ -417,8 +417,8 @@ they keep going under the rows they were spawned from.
 The SDK's [`src/host/`](../../packages/tuval/src/host) runs a Demlik core machine as an Effect actor: `make(definition)` is a scoped Effect
 yielding an `ActorHandle`, and `layer(key, definition)` provides that handle as a service. A
 definition is `defineActor({name, machine, interpret, subscribe, store?})` — the machine is Demlik's
-pure core (`init`, `update`, dep-keyed `subs`, `identity`, `subscriptions`), the handlers are
-Effect-valued, and their error and service requirements fall out onto the handle. The `name` is the
+pure core (`init`, `update`, `identity`, and `subs` as `{type, deps}` entries whose runners sit
+in `subscribe` under each `type`), the handlers are Effect-valued, and their error and service requirements fall out onto the handle. The `name` is the
 definition's nominal identity, unique per process; the instance id is the process's, minted at spawn.
 
 A Sub handler that expects an error maps it into a Msg itself, for example with

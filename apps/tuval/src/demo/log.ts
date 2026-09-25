@@ -4,7 +4,7 @@
  * boring as the counter, for the same reason.
  */
 
-import {defineMachine} from "@demlik/tea";
+import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {
 	type AnyProgram,
 	type Program,
