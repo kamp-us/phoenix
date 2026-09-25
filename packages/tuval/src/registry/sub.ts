@@ -1,7 +1,7 @@
 /**
  * Which Subs a machine's `{type, deps}` entries ask for in a state. The shapes are `@demlik/tea`'s
- * own `Sub` and `DepKeyedSub`; `desiredSub` mirrors tea's internal function of the same name, which
- * the in-tree host needs because it reconciles Subs itself.
+ * own `Sub` and `DepKeyedSub`; `desiredSub` mirrors tea's internal function of the same name, so
+ * a test can read which Subs a state asks for without running the engine.
  */
 
 import {type DepKeyedSub, type Sub, subIdOf} from "@demlik/tea";
@@ -11,7 +11,7 @@ export {subIdOf};
 
 /**
  * The Sub `entry` asks for in `state`, or `null` when its deps are off. Throws whatever `deps` or the
- * hash throws; the host reads that as a reconcile failure.
+ * hash throws; tea's run reads the same throw as a reconcile failure.
  */
 export const desiredSub = <S, U extends Sub>(entry: DepKeyedSub<S, U>, state: S): U | null => {
 	const {type, deps: depsOf} = entry as {

@@ -1,7 +1,7 @@
 /**
  * Durability is native to the kernel (#7514): every process opens its checkpoint here before
- * its actor boots, and the host does the rest — Demlik's save-before-effects ordering runs over
- * the `Store` this hands back (`commit` in `../host/actor.ts`), so there is no second
+ * tea's run boots it, and the run does the rest — Demlik's save-before-effects ordering runs over
+ * the `Store` this hands back (`runProgram` in `../process/Processes.ts`), so there is no second
  * persistence path. `open` is an acquire/release under the process Scope: acquire loads the
  * snapshot, migrates one written under an older version of the same program where the row declares
  * that step and refuses one it cannot reach the current version from, records the process in the
@@ -25,10 +25,15 @@
 
 import type {Store} from "@demlik/tea";
 import {Context, Effect, Layer, Option, type Scope} from "effect";
-import {StoreError} from "../host/errors.ts";
 import {ProcessId} from "../process/process.ts";
 import type {Migrations, ProgramId} from "../registry/program.ts";
-import {CheckpointHeld, ManifestMalformed, SnapshotMalformed, SnapshotRefused} from "./errors.ts";
+import {
+	CheckpointHeld,
+	ManifestMalformed,
+	SnapshotMalformed,
+	SnapshotRefused,
+	StoreError,
+} from "./errors.ts";
 import {migrateState} from "./migrations.ts";
 import {
 	emptyManifest,

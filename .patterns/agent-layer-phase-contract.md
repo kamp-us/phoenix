@@ -245,9 +245,10 @@ classification: an ordinary `failed` message has rebuilt nothing and cannot adva
 The existing failure fold still chooses `idle` for a refused open and `gone` for a missing resumed
 session; a process with no session id or a terminal session desires no event subscription.
 
-This distinction follows the current host's
-[`reconcile`](../packages/tuval/src/host/actor.ts): an ended or failed manual subscription keeps its
-registered id, and an unchanged id is never re-armed. A new generation closes that registration and
+This distinction follows the Sub reconcile in tea's Effect engine, which every process runs on
+([`Processes.ts`](../packages/tuval/src/process/Processes.ts)): an ended subscription keeps its
+registered id, an unchanged id is never re-armed, and a failure the runner lets escape stops the
+process instead. A new generation closes that registration and
 subscribes to the agent now held by the slot. The slot's child Scope independently closes the old
 transport on rebuild; Effect rc.112's `Scope.fork` documents that closing a child detaches it from
 its parent. Neither an ended event fiber nor a failed start can stand in for the new lifetime id.

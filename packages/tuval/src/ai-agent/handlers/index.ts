@@ -206,9 +206,9 @@ export const aiAgentHandlers = <RIn = never>(
 	const handlers: AiAgentHandlerSet<RIn>["handlers"] = {
 		// The one handler that calls nothing. It answers the fresh `init`'s Cmd with the Msg that
 		// opens the session, and the `start` cell does the rest — including refusing a second open.
-		// Doing the work here instead would run it inside the spawn (`host/actor.ts` awaits an init
-		// Cmd's handler before `make` returns), which would hold the spawning process's own tail
-		// for as long as the backend takes to answer.
+		// Doing the work here instead would run it inside the spawn (tea's `run` awaits an init
+		// Cmd's handler before `Processes.spawn` returns), which would hold the spawning process's
+		// own tail for as long as the backend takes to answer.
 		//
 		// The one thing it decides is which session this process comes up on. A spawner that added
 		// `SessionOpening` to the child's context is spawning for a session the operator picked out

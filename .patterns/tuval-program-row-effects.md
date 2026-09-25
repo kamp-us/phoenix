@@ -145,9 +145,9 @@ out of the list, read only by `aiAgent.boot`. Keep such a service narrow on purp
 fields is a program-arguments system by another name, and then every spawner has to know what every
 row wants.
 
-**The Cmd's handler answers with a Msg and does no work.** `runInterpret` awaits an init Cmd's
-handler before `make` returns (`host/actor.ts`), and a spawn runs inside the *spawning* process's
-serial step — so a boot handler that opened the connection itself would freeze the shell for as long
+**The Cmd's handler answers with a Msg and does no work.** A spawn awaits the run's boot, which
+awaits every init Cmd's handler ([`Processes.ts`](../packages/tuval/src/process/Processes.ts)), and
+a spawn runs inside the *spawning* process's serial step — so a boot handler that opened the connection itself would freeze the shell for as long
 as the backend took, or for the row's whole start deadline when the open fails. Answering with the
 Msg instead costs nothing at spawn and puts the real work on the new process's own tail: the boot
 Cmd is a trampoline from `init`, which cannot dispatch a Msg, into the cell that already owns the
@@ -223,13 +223,13 @@ the one the window renders would hold the wrong bytes. A row with no parse of it
 field and restores whatever loads.
 
 **A state no restore may read back is never written, and the row says so under `checkpointWorthy`.**
-The host saves on every applied Msg, so a program re-upserting one growing item per delta rewrites
+tea's run saves on every applied Msg, so a program re-upserting one growing item per delta rewrites
 its whole state through Demlik's `fileStore` — mkdir, `JSON.stringify`, write-temp, rename — awaited
 inside the single-permit transition tail, which puts each delta's fold behind the previous one's
 disk round trip. The row declares `checkpointWorthy: (state) => boolean`
-([`registry/program.ts`](../packages/tuval/src/registry/program.ts)) and the host asks it at every save
-site — the commit's, boot's and stop's ([`host/actor.ts`](../packages/tuval/src/host/actor.ts)) — so a
-`false` writes nothing anywhere. One predicate is both halves of the fix: the mid-turn burst costs
+([`registry/program.ts`](../packages/tuval/src/registry/program.ts)), and the store tea's run saves
+through asks it on every save — the commit's, boot's and stop's (`worthyOnly` in
+[`Processes.ts`](../packages/tuval/src/process/Processes.ts)) — so a `false` writes nothing anywhere. One predicate is both halves of the fix: the mid-turn burst costs
 no disk, and the state that ends the turn is worthy again, so the commit landing it is the flush and
 it is on disk before the dispatch returns. The skipped writes are never owed, because a state the
 row refuses is one no restore may show — a half-written reply must not come back as the reply. Keep

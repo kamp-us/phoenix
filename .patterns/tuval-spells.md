@@ -659,7 +659,7 @@ page's boundary test walks the runtime import graph from `src/page/main.tsx` and
 
 `dispatch` fails typed rather than dying, because a desk is a process: a config that registers the
 shell row but plans no node for it answers `NoDesk`, and a desk that stopped mid-call answers the
-actor's own `DispatchError`. Either way the executor turns it into a `SpellReplyError`, so `help`,
+process's own `DispatchError`. Either way the executor turns it into a `SpellReplyError`, so `help`,
 a typed line and an agent's bridge all read a refusal instead of meeting a defect. The proof is
 [`src/shell/proof/dispatch.unit.test.ts`](../apps/tuval/src/shell/proof/dispatch.unit.test.ts),
 which boots, calls a row through both the executor and the bridge, reads the desk back, and takes

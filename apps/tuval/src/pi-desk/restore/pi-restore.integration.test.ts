@@ -211,7 +211,8 @@ interface ThirdRun {
 
 /**
  * Boot, run two turns — a plain one and one through the tool loop — and stop. Closing the scope is
- * the stop: the host drains, closes its Subs and flushes the last save (`../../host/actor.ts`).
+ * the stop: tea's run drains, closes its Subs and flushes the last save (the SDK's
+ * `process/Processes.ts`).
  *
  * Transcript rows land mid-turn, not only once `prompt` resolves: the tool turn's text before the
  * tool call reaches the tail before its tool row does. So a turn's wait keys on that turn's own

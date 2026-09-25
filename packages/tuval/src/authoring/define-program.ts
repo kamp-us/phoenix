@@ -26,8 +26,8 @@
  * program that names none is typed exactly as it was and a typo'd effect is still refused at
  * compile. `handlers` is where the handler comes from — this compiler cannot see one added after
  * the spread, so it refuses nothing at definition time; an effect the row has no handler for is
- * skipped by the actor (`../host/actor.ts`), which is the same silence a hand-assembled row has
- * always had for the same mistake.
+ * skipped by tea's run (`../process/Processes.ts`), which is the same silence a hand-assembled row
+ * has always had for the same mistake.
  */
 
 import type {DepKeyedSub, Sub} from "@demlik/tea";
@@ -44,7 +44,6 @@ import type {
 } from "../commands/core/process.ts";
 import {SpawnedProcesses} from "../commands/core/process.ts";
 import type {OpenError} from "../durability/Checkpoints.ts";
-import {disposerStream} from "../host/demlik-bridges.ts";
 import type {PayloadRejected, PortNotWired} from "../ports/errors.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import type {
@@ -81,6 +80,7 @@ import {
 	type CommandTable,
 	compileCommands,
 } from "./commands.ts";
+import {disposerStream} from "./disposer-stream.ts";
 import {
 	type AskEffect,
 	type EmitEffect,
