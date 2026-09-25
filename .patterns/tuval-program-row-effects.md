@@ -18,7 +18,7 @@ lives on the row beside the core, in one of two records:
 | `subs` | `(sub) => Stream<Msg, E, R>` | long-lived, drained on a Scope of the Sub's own |
 
 A Cmd handler answers with a list of follow-up Msgs. A Sub handler has many answers over time, so it
-answers with a Stream of them: the host hands each element to `update` in order and interrupts the
+answers with a Stream of them: tea's run hands each element to `update` in order and interrupts the
 Stream when the core stops asking for that Sub, which runs the Stream's finalizers. This is
 `@demlik/tea` 0.18's `EffectRunner` shape.
 
@@ -79,7 +79,7 @@ subscribed to the transport it just replaced.
 - **`state()`** — the machine's committed state, as `unknown`. The registry erases a program's
   private types, so the program's own predicate reads it back (`isAiAgentSessionState` is the
   worked example). Use it to seed a projection, not to poll: a Msg a Sub's Stream emits is
-  applied on the host's serial tail, so a read straight after one may not see it yet.
+  applied on tea's run's serial tail, so a read straight after one may not see it yet.
 
 **Publish a projection by folding, not by reading back.** A Sub that emits a Msg and then wants
 to publish what the core just committed should apply the core's own fold function to a local value
@@ -154,12 +154,12 @@ Msg instead costs nothing at spawn and puts the real work on the new process's o
 Cmd is a trampoline from `init`, which cannot dispatch a Msg, into the cell that already owns the
 transition and its "one open at a time" guard.
 
-**A follow-up Msg can be interrupted before its fiber starts, so count it on the Exit.** The host
-forks each unawaited follow-up into the process Scope and settles its pending count on the fiber's
-Exit rather than inside its body: a stop taken in the same tick as the dispatch — ordinary once a
-session opens itself at spawn — interrupts a fiber that never ran, which produces an Exit and runs no
-`ensuring`, and an in-body decrement leaves the actor's stop waiting on a count that never reaches
-zero.
+**A follow-up Msg joins the dispatch tail, so a stop either applies it or reports it discarded.**
+tea's run chains each follow-up a handler answers onto its one serial tail rather than forking it.
+Its `stop` first closes the run to new dispatches and then awaits that tail, so a follow-up queued
+before the stop still applies, and one queued after it — ordinary once a session opens itself at
+spawn and is stopped in the same tick — is refused and reported under `"discard"`. No count of
+pending follow-ups exists for a program to keep in step.
 
 **The core owns the phases that mean "an open is in flight"; a layer's event may not enter one.**
 Every layer narrates its own open on the same event stream it publishes everything else on —
@@ -217,7 +217,7 @@ the restore transform drops `failure` off it, so the window falls from the refus
 bare phase line ([#8112](https://github.com/kamp-us/phoenix/issues/8112)). The row declares
 `restorable: (raw) => boolean` ([`registry/program.ts`](../packages/tuval/src/registry/program.ts)) —
 the same read its `init` does, answered before `init` runs — and a `false` seals that process's
-store: `Checkpoints` hands the host a store whose `save` writes nothing for the process's life, so
+store: `Checkpoints` hands tea's run a store whose `save` writes nothing for the process's life, so
 the bytes stay on disk and every later boot re-reads and re-refuses them. Answer it off the one
 function `init` uses, never a second copy of the parse: a store sealing on a different verdict than
 the one the window renders would hold the wrong bytes. A row with no parse of its own omits the
