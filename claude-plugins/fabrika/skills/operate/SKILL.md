@@ -939,10 +939,8 @@ unmerged one refuses at `23`, one this repository does not hold at `22`, and an 
 a body already proves is judged first and stays body-proven, so the flag can only fill a gap. The
 line it appends carries `assertedBy: "caller"` beside its `landed` and `sha`, which is a person's
 word standing where a body normally stands: the verb's own stdout and `lane history` show it, and a
-body-proven line carries no such field at all. **`lane view` does not show it** — the viewer page
-rebuilds every log line as `{task, event, at}` and drops the rest, `landed` and `sha` included, so
-an asserted landing and a body-proven one read identically on that screen. Read `lane history` when
-you need to tell them apart. **Use it only when you have read the merge and know it
+body-proven line carries no such field at all, so read `lane history` when you need to tell an
+asserted landing from a body-proven one. **Use it only when you have read the merge and know it
 discharged this lane** — this is the one place in the verb where the record rests on you rather than
 on the board, so a guess here is a lie nothing downstream can catch.
 
@@ -1510,12 +1508,34 @@ verb reads the cause for you:
 node <fabrika> recipe unpark <lane-key> --task <task>
 ```
 
-The table it keys on holds six rows today: `human:cp-approval` twice — once keyed on no cause at all,
+The table it keys on holds nine rows today: `human:cp-approval` twice — once keyed on no cause at all,
 once on `head-ci-red`, which is the shipper's route to `heal-ci` folding to the same leaf —
-`human:queue-stall`, and `blocked` carrying one of `worktree-holds-branch`, `campaign-paused` or
-`spawn-dead`. Reading which one
+`human:queue-stall`, and `blocked` carrying one of `worktree-holds-branch`, `campaign-paused`,
+`spawn-dead`, `no-rendered-delta`, `tree-hijacked` or `claim-stranded`. Reading which one
 matched is the verb's answer, not a list you maintain here — the rows live in
 [`packages/fabrika-cli/src/recipe/parks.ts`](../../../../packages/fabrika-cli/src/recipe/parks.ts).
+
+Two of those are mechanical stops, and the clear is yours to set up. **`tree-hijacked`** is a
+builder whose checkout held another lane's branch or unauthored work, and the builder records it:
+give the next spawn a tree of its own. The row asks what `spawn-dead`'s asks — no build claim standing
+on the issue or on an open PR linking it, and no tree holding this lane's branch — and it never ends a
+claim, so one still standing holds it at exit `13`.
+
+**`claim-stranded`** is yours to record, never a builder's. A builder that loses `build claim` on
+`15` to a sibling lane of your own session ends `BACKED-OFF` naming the winning token, because it
+cannot tell a live sibling from a stranded one. You can, and only one way: the token is one a spawn
+of yours printed or reported, and that spawn has **returned** to you — its return is the proof its
+shell ended. On that proof, record the park, release the stranded claim under its token on the number
+`build claimants` shows it on (the PR on a repair lane), then run `recipe unpark`:
+
+```bash
+node <fabrika> lane transition <lane> BLOCKED --task <task> --cause claim-stranded
+node <fabrika> build release <n> --token <its token>
+```
+
+The row clears only once the issue and every open PR linking it read `unclaimed`, and retracts
+nothing. A winner whose spawn has not returned, or one you cannot tie to a spawn of yours, is possibly
+live: record nothing and release nothing, and let that spawn's own return route the lane.
 
 Exit `0` cleared it — the verb recorded the `UNBLOCKED` itself and re-read the fold to prove the task
 left the park, so your next move is the state that re-fold reads, not a park comment. Exit `12` is

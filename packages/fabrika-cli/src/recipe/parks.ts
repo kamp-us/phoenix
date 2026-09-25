@@ -34,6 +34,8 @@ export type Clearance =
 	| "branch-free"
 	| "campaign-active"
 	| "spawn-clear"
+	| "tree-released"
+	| "claim-released"
 	| "queue-moved"
 	| "ci-green"
 	| "route-satisfied";
@@ -91,7 +93,7 @@ export interface ParkRecipe {
 export const QUEUE_MOVED_GRANT = 1;
 
 /**
- * The parks with a fixed fix today: two keyed by their leaf, five by their cause.
+ * The parks with a fixed fix today: two keyed by their leaf, seven by their cause.
  *
  * `human:cp-approval`'s clearance is `ship cp-approval`'s own discharge table, relayed rather than
  * re-derived — the §CP cardinality question has exactly one answer in this package, and a second
@@ -115,6 +117,17 @@ export const QUEUE_MOVED_GRANT = 1;
  * shell's is standing, and no working tree still holds its lane branch. Both are residue the driver
  * session owns, so a park whose obligations were discharged clears on the first pass and one whose
  * stranded claim still needs a successor's `build adopt` marker holds at exit 13.
+ *
+ * `blocked` + `tree-hijacked` asks what `spawn-clear` asks — no claim standing and no tree holding
+ * this lane's branch — through `tree-released`, which never ends a claim. The age-proved
+ * retraction is `spawn-dead`'s alone (`../build/dead-claim.ts`), and a builder that stopped on a
+ * hijacked tree released its own claim before it reported, so a claim still standing is some live
+ * shell's and holds the park.
+ *
+ * `blocked` + `claim-stranded` is the claim half of that read on its own: `claim-released` clears
+ * only when no build claim stands on the issue or on any open PR linking it — a repair claim sits on
+ * the PR — and it retracts nothing on any arm, age included. The claimant is a shell of the driver's
+ * own session, which `build adopt` refuses, so releasing it under its token is the driver's act.
  *
  * `human:queue-stall` is the second row keyed by its leaf alone: a `WIP` carries no park cause and
  * `lane report` refuses one on any non-`BLOCKED` event, so the leaf is all there is to key on. It
@@ -198,6 +211,20 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 		clearance: "spawn-clear",
 		waitingOn:
 			"the dead shell's claim and working tree to be gone so the brief can be dispatched again",
+	}),
+	row({
+		park: "blocked",
+		cause: "tree-hijacked",
+		clearance: "tree-released",
+		waitingOn:
+			"the stopped shell's claim and any working tree holding this lane's branch to be gone so the brief can be dispatched into a clean tree",
+	}),
+	row({
+		park: "blocked",
+		cause: "claim-stranded",
+		clearance: "claim-released",
+		waitingOn:
+			"the build claim standing on this lane's issue or an open PR linking it to be released, so each reads unclaimed",
 	}),
 	row({
 		park: "blocked",
