@@ -4,9 +4,8 @@
  * the grouping is exercised over both sources.
  */
 
-import type {Cmd} from "@demlik/tea";
+import {type Cmd, defineMachine} from "@demlik/tea";
 import {Effect, Schema} from "effect";
-import {defineMachine} from "../../registry/machine.ts";
 import {type AnyProgram, type Program, ProgramId} from "../../registry/program.ts";
 import {buildRegistry} from "../registry.ts";
 import {type AnySpell, ClientId, defineSpell, type Scope, WorkspaceId} from "../spell.ts";

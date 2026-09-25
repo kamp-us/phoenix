@@ -14,8 +14,7 @@
  * the turn's own end admits it.
  */
 
-import {defineMachine, type ProgramCore} from "../../registry/machine.ts";
-import type {DepKeyedSub} from "../../registry/sub.ts";
+import {type DepKeyedSub, defineMachine, type Machine} from "@demlik/tea";
 import {sameModel} from "../ports/index.ts";
 import {
 	answerNotOffered,
@@ -59,7 +58,7 @@ export interface AiAgentSessionOptions extends WindowLimits {
 	readonly cwd: string;
 }
 
-export type AiAgentSessionMachine = ProgramCore<
+export type AiAgentSessionMachine = Machine<
 	AiAgentSessionState,
 	AiAgentSessionMsg,
 	AiAgentSessionCmd,

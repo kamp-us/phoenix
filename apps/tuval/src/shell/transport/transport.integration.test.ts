@@ -6,7 +6,7 @@
  * stop and a real boot from the checkpoint the stop wrote.
  */
 
-import {type Cmd, DispatchDiscardedError} from "@demlik/tea";
+import {type Cmd, DispatchDiscardedError, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import type {SpellPath} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
@@ -17,7 +17,6 @@ import {type ProcessHandle, ProcessId} from "@kampus/tuval-sdk/kernel/process/pr
 import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
 import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {type DuplicateProgramId, ProgramNotFound} from "@kampus/tuval-sdk/kernel/registry/errors";
-import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {
 	type AnyProgram,
 	type Program,

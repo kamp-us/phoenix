@@ -1,9 +1,8 @@
 /** Test fixtures for the host: a small machine with a Cmd that follows up and a dep-keyed Sub. */
 
-import type {NoCtx, Store} from "@demlik/tea";
+import type {NoCtx, Store, Sub} from "@demlik/tea";
 import {Effect} from "effect";
 import type {ProgramCore} from "../registry/program.ts";
-import type {Sub} from "../registry/sub.ts";
 
 export type State =
 	| {readonly type: "idle"; readonly count: number}

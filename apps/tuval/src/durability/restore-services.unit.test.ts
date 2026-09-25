@@ -9,6 +9,7 @@
  * restored process resolves it exactly as the freshly spawned one did.
  */
 
+import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
 import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
@@ -20,7 +21,6 @@ import {HandlerFailed} from "@kampus/tuval-sdk/kernel/process/errors";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer, Option} from "effect";

@@ -1,10 +1,9 @@
 /** A Sub's lifetime on the host (ADR 0408), and the definition name. */
 
-import type {NoCtx} from "@demlik/tea";
+import {type NoCtx, type Sub, subIdOf} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit, Schema, Scope, Stream} from "effect";
 import type {ProgramCore} from "../registry/program.ts";
-import {type Sub, subIdOf} from "../registry/sub.ts";
 import {make} from "./actor.ts";
 import {defineActor, type HostErrorPhase, type OnError} from "./definition.ts";
 import {disposerStream} from "./demlik-bridges.ts";

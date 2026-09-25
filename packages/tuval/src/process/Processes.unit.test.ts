@@ -1,14 +1,12 @@
-import type {Cmd} from "@demlik/tea";
+import {type Cmd, defineMachine, type Sub} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer, Option, Scope, Stream} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {snapshotAt, watchingStores} from "../durability/fixtures.ts";
 import {type CheckpointStores, memoryStores} from "../durability/stores.ts";
 import {ProgramNotFound} from "../registry/errors.ts";
-import {defineMachine} from "../registry/machine.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
-import type {Sub} from "../registry/sub.ts";
 import {ForgetRefused, ProcessIsPlanned, ProcessNotFound} from "./errors.ts";
 import {PlannedProcesses} from "./PlannedProcesses.ts";
 import {Processes} from "./Processes.ts";

@@ -11,11 +11,7 @@ export {
 	type OnError,
 	type SubscribeHandlers,
 } from "./definition.ts";
-export {
-	disposerStream,
-	interpretPromiseBridge,
-	toDemlikMachine,
-} from "./demlik-bridges.ts";
+export {disposerStream} from "./demlik-bridges.ts";
 export {
 	ActorNameCollisionError,
 	ActorStoppedError,

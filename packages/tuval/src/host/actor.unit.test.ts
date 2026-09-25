@@ -1,9 +1,8 @@
-import type {DispatchDiscardedError, NoCtx} from "@demlik/tea";
+import type {DispatchDiscardedError, NoCtx, Sub} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Exit, Fiber, Schema, type Scope} from "effect";
 import {expectTypeOf} from "vitest";
 import type {ProgramCore} from "../registry/program.ts";
-import type {Sub} from "../registry/sub.ts";
 import {type ActorHandle, layer, make} from "./actor.ts";
 import {defineActor} from "./definition.ts";
 import type {ActorStoppedError, MsgNotAcceptedError, StoreError} from "./errors.ts";

@@ -12,11 +12,11 @@
  * "the paths agree" is the property, not just "the first one is sealed".
  */
 
+import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Context, Effect, Layer} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
-import {defineMachine} from "../registry/machine.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {Processes} from "./Processes.ts";

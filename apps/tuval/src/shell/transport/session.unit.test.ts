@@ -1,10 +1,10 @@
+import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
 import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {type AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {defaultPrefixTable} from "@kampus/tuval-ui/keys";

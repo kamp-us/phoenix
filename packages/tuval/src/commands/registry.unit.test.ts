@@ -1,7 +1,6 @@
-import type {Cmd} from "@demlik/tea";
+import {type Cmd, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Schema} from "effect";
-import {defineMachine} from "../registry/machine.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {DuplicateSpellPath, SpellNotDescribable, SpellNotFound} from "./errors.ts";
 import {buildRegistry, type RegistryTable, SpellRegistry} from "./registry.ts";

@@ -23,7 +23,7 @@
  * than a call the page waits on forever.
  */
 
-import type {Cmd} from "@demlik/tea";
+import {type Cmd, defineMachine} from "@demlik/tea";
 import {Cause, Context, Effect, Option, Schema} from "effect";
 import {defineSpell} from "../commands/spell.ts";
 import {
@@ -32,7 +32,6 @@ import {
 	SESSION_LIST_TIMED_OUT_TAG,
 	SessionList,
 } from "../protocol/session-list.ts";
-import {defineMachine} from "../registry/machine.ts";
 import type {AnyProgram, Program} from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
 import type {Registry} from "../registry/Registry.ts";

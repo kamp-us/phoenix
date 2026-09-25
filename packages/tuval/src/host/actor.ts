@@ -14,6 +14,7 @@ import {
 	DispatchDiscardedError,
 	IdentityDropNotice,
 	NoCellError,
+	Refusal,
 	RuntimeDiscardedError,
 	RuntimeDiscardNotice,
 	type Store,
@@ -32,7 +33,7 @@ import {
 	Scope,
 	Semaphore,
 } from "effect";
-import {desiredSub, type Sub} from "../registry/sub.ts";
+import {type DepKeyedSub, desiredSub, type Sub} from "../registry/sub.ts";
 import type {
 	ActorDefinition,
 	ErrorOf,
@@ -281,7 +282,9 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 
 	const desire = (entry: NonNullable<typeof machine.subs>[number]) =>
 		Effect.try({
-			try: () => desiredSub<S, U>(entry, state),
+			// tea's `subs` also admits its built-in `timer`; this host ships no runner for it, so a
+			// declared timer is run by the row's own `timer` runner or refused as a missing one.
+			try: () => desiredSub<S, U>(entry as DepKeyedSub<S, U>, state),
 			catch: (cause) => new UserCodeThrew({cause}),
 		});
 
@@ -429,6 +432,8 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 	});
 
 	const loaded = store ? store.migrate(yield* storeLoad(store)) : null;
+	// A refused save is never booted over: the boot fails as tea's own `run` fails on a `Refusal`.
+	if (loaded instanceof Refusal) return yield* new StoreError({operation: "load", cause: loaded});
 	const [initial, initCmds] = machine.init(loaded, ctx);
 	state = initial;
 	yield* checkpoint(state);

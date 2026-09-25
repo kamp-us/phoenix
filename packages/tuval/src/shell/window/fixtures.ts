@@ -10,10 +10,9 @@
  * update, which is exactly what `readProcess` promises.
  */
 
-import type {Cmd} from "@demlik/tea";
+import {type Cmd, defineMachine} from "@demlik/tea";
 import {Effect, type Stream, SubscriptionRef} from "effect";
 import type {Message, ProcessId} from "../../process/process.ts";
-import {defineMachine} from "../../registry/machine.ts";
 import {type AnyProgram, type Program, ProgramId} from "../../registry/program.ts";
 import {
 	type DispatchResult,

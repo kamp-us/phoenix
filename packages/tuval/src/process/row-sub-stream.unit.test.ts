@@ -3,14 +3,13 @@
  * in the order the Stream emits them, and interrupts the Stream when the Sub leaves the desired set.
  */
 
-import type {Cmd} from "@demlik/tea";
+import type {Cmd, Sub} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer, Stream} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
 import {type AnyProgram, type Program, type ProgramCore, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
-import type {Sub} from "../registry/sub.ts";
 import {Processes} from "./Processes.ts";
 import type {ProcessTable} from "./ProcessTable.ts";
 

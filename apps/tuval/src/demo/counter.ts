@@ -5,16 +5,15 @@
  * real program.
  */
 
+import {defineMachine, type Sub} from "@demlik/tea";
 import type {PayloadRejected, PortNotWired} from "@kampus/tuval-sdk/kernel/ports/errors";
 import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
-import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {
 	type AnyProgram,
 	type Program,
 	ProgramId,
 	type RendererRef,
 } from "@kampus/tuval-sdk/kernel/registry/program";
-import type {Sub} from "@kampus/tuval-sdk/kernel/registry/sub";
 import {Effect, Stream} from "effect";
 import {COUNT_KIND, isCount} from "./count.ts";
 import type {CounterState} from "./counter-state.ts";

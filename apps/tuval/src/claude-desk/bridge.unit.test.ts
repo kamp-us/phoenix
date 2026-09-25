@@ -15,6 +15,7 @@
  * reddens.
  */
 
+import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {KernelBridge} from "@kampus/tuval-claude/tools";
 import {onlyPaths, SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
@@ -40,7 +41,6 @@ import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer, Option} from "effect";

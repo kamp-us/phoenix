@@ -3,6 +3,7 @@
  * process can arrive by: the `process` spells, the graph, and a restore with no wiring at all.
  */
 
+import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
 import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
@@ -22,7 +23,6 @@ import {
 	TITLE_PORT,
 	titlePort,
 } from "@kampus/tuval-sdk/kernel/process/self-report";
-import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer, Option, type Scope} from "effect";

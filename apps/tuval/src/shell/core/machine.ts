@@ -19,7 +19,7 @@
  * left over from a spent repeat window would disarm a prefix the user has since re-armed.
  */
 
-import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
+import {defineMachine} from "@demlik/tea";
 import type {ViewState} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {
 	closeBoard,

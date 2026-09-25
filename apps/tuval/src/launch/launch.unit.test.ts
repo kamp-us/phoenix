@@ -1,4 +1,4 @@
-import type {Cmd} from "@demlik/tea";
+import {type Cmd, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
 import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
@@ -12,7 +12,6 @@ import {PlannedProcesses} from "@kampus/tuval-sdk/kernel/process/PlannedProcesse
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Effect, Layer, Option, Queue, type Scope} from "effect";
