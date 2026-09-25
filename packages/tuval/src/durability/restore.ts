@@ -1,5 +1,4 @@
 import {Context, Effect} from "effect";
-import type {StoreError} from "../host/errors.ts";
 import {NodeId} from "../ports/graph.ts";
 import {ProcessPorts, unwired} from "../ports/ProcessPorts.ts";
 import {Processes, type SpawnError} from "../process/Processes.ts";
@@ -8,7 +7,7 @@ import {type DispatchError, type ProcessHandle, ProcessId} from "../process/proc
 import {ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {Checkpoints} from "./Checkpoints.ts";
-import type {ManifestMalformed} from "./errors.ts";
+import type {ManifestMalformed, StoreError} from "./errors.ts";
 import {dispatchResume} from "./resume.ts";
 
 /**

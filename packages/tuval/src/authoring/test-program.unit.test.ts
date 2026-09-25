@@ -272,7 +272,7 @@ const reached = (entry: string): ReadonlySet<string> => {
 };
 
 describe("authoring.testProgram boots no kernel and no desk", () => {
-	it("reaches nothing under host/, launch/ or boot.ts", () => {
+	it("reaches neither process/Processes.ts, launch/ nor boot.ts", () => {
 		const root = resolve(import.meta.dirname, "..");
 		const modules = [...reached(resolve(import.meta.dirname, "test-program.ts"))].map((file) =>
 			relative(root, file),
@@ -282,7 +282,8 @@ describe("authoring.testProgram boots no kernel and no desk", () => {
 		expect(modules).toContain("authoring/view.ts");
 		expect(
 			modules.filter(
-				(file) => file.startsWith("host/") || file.startsWith("launch/") || file === "boot.ts",
+				(file) =>
+					file === "process/Processes.ts" || file.startsWith("launch/") || file === "boot.ts",
 			),
 		).toEqual([]);
 	});

@@ -268,10 +268,10 @@ export interface Program<
 	 */
 	readonly migrations?: Migrations;
 	/**
-	 * Whether a state of this program is worth a checkpoint. The host asks it at every save site,
-	 * and `false` writes nothing — so a program streaming a reply answers `false` for every
+	 * Whether a state of this program is worth a checkpoint. It is asked at every save tea's run
+	 * makes, and `false` writes nothing — so a program streaming a reply answers `false` for every
 	 * mid-turn state, pays no disk for the burst, and the state that ends the turn is the flush
-	 * (`src/host/actor.ts`, #8170). A state this refuses is one no restore ever reads back, which
+	 * (`worthyOnly` in `src/process/Processes.ts`, #8170). A state this refuses is one no restore ever reads back, which
 	 * is why the skipped write is not owed: a half-written reply must never come back as the reply.
 	 *
 	 * A row that omits it checkpoints every state, which is every program with nothing in flight.

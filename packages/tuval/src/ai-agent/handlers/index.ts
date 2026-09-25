@@ -13,7 +13,7 @@
  * dispatched as an `event` Msg and the same fold the core runs is applied to a local projection,
  * seeded from the core's own state when the Sub opened. Same function, same seed, same order, so
  * the tail published on `transcript` is the tail the core commits — a read-back after `dispatch`
- * could not promise that, because the host applies a dispatched Msg on its own serial tail.
+ * could not promise that, because tea's run applies a dispatched Msg on its own serial tail.
  *
  * The projection is the process's rather than the Sub's (`./projection.ts`), because the core's
  * transcript has a second entrance no event carries: the operator's own turn, recorded by the
@@ -206,9 +206,9 @@ export const aiAgentHandlers = <RIn = never>(
 	const handlers: AiAgentHandlerSet<RIn>["handlers"] = {
 		// The one handler that calls nothing. It answers the fresh `init`'s Cmd with the Msg that
 		// opens the session, and the `start` cell does the rest — including refusing a second open.
-		// Doing the work here instead would run it inside the spawn (`host/actor.ts` awaits an init
-		// Cmd's handler before `make` returns), which would hold the spawning process's own tail
-		// for as long as the backend takes to answer.
+		// Doing the work here instead would run it inside the spawn (tea's `run` awaits an init
+		// Cmd's handler before `Processes.spawn` returns), which would hold the spawning process's
+		// own tail for as long as the backend takes to answer.
 		//
 		// The one thing it decides is which session this process comes up on. A spawner that added
 		// `SessionOpening` to the child's context is spawning for a session the operator picked out
@@ -277,7 +277,7 @@ export const aiAgentHandlers = <RIn = never>(
 		// The turn the core recorded in the very commit that produced this Cmd (#7978) rides no
 		// layer event, so the Sub's projection would publish a tail with the operator's half
 		// missing (#7979). The committed state can be behind the projection while this runs — the
-		// Sub folds each event before the host applies its Msg — so the seed carries that tail
+		// Sub folds each event before tea's run applies its Msg — so the seed carries that tail
 		// across rather than replacing it (`./projection.ts`, #8034), and the emit publishes what
 		// the seed answered rather than the commit it started from.
 		//

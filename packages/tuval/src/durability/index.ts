@@ -5,7 +5,13 @@ export {
 	type OpenError,
 	type OpenedCheckpoint,
 } from "./Checkpoints.ts";
-export {CheckpointHeld, ManifestMalformed, SnapshotMalformed, SnapshotRefused} from "./errors.ts";
+export {
+	CheckpointHeld,
+	ManifestMalformed,
+	SnapshotMalformed,
+	SnapshotRefused,
+	StoreError,
+} from "./errors.ts";
 export {migrateState} from "./migrations.ts";
 export {restore} from "./restore.ts";
 export type {Manifest, ManifestEntry, Snapshot} from "./snapshot.ts";

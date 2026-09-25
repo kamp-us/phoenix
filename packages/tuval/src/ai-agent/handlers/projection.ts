@@ -10,9 +10,9 @@
  * where the `aiAgent.prompt` handler can put it back on the core's committed state.
  *
  * `seed` rebases rather than replaces, and #8034 is why. The Sub dispatches an event and folds it
- * in the same breath, and the host applies a dispatched Msg on a forked fiber that has to take the
- * transition tail first (`../../host/actor.ts`), so the projection legitimately leads the committed
- * state. A Cmd handler runs inside the permit its own commit holds, which puts it strictly ahead of
+ * in the same breath, and tea's run queues a dispatched Msg behind the transition tail (`run` from
+ * `@demlik/tea/effect`, called in `../../process/Processes.ts`), so the projection legitimately
+ * leads the committed state. A Cmd handler runs inside the permit its own commit holds, which puts it strictly ahead of
  * every event Msg still queued — so a plain replace drops whatever the Sub folded in that gap, and
  * drops it for good, because the Sub folds each event exactly once.
  *

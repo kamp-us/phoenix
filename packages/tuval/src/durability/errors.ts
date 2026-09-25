@@ -51,3 +51,14 @@ export class CheckpointHeld extends Schema.TaggedError<CheckpointHeld>()(
 		return `checkpoint for process "${this.processId}" is held by a live process`;
 	}
 }
+
+/**
+ * A `Store` rejected. Demlik lets the rejection propagate to the dispatcher; here it is typed.
+ * `delete` is `Checkpoints.forget` removing a snapshot through its `DeletableStore`
+ * (`./stores.ts`), which fails on its own terms rather than as a save that happened to write
+ * nothing.
+ */
+export class StoreError extends Schema.TaggedError<StoreError>()("tuval/durability/StoreError", {
+	operation: Schema.Literals(["load", "save", "delete"]),
+	cause: Schema.Defect(),
+}) {}

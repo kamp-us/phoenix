@@ -1,6 +1,6 @@
 /**
  * ADR 0408 through a registry row: a row's own Sub handler maps the errors it expects into Msgs, and
- * a failure it lets escape stops the process. `host/sub-lifetime.unit.test.ts` covers the host alone.
+ * a failure it lets escape stops the process.
  */
 
 import type {Cmd, Sub} from "@demlik/tea";

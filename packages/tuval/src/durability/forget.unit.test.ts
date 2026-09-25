@@ -163,7 +163,7 @@ describe("Checkpoints.forget", () => {
 
 			const refused = yield* Effect.flip(checkpoints.forget(root));
 
-			assert.strictEqual(refused._tag, "tuval/host/StoreError");
+			assert.strictEqual(refused._tag, "tuval/durability/StoreError");
 			watcher.refuseManifestSave = false;
 			assert.deepStrictEqual(
 				(yield* checkpoints.list).map((entry) => entry.id),

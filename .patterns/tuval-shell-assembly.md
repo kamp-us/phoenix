@@ -56,10 +56,11 @@ ride through. Two things follow, and both used to be false:
 - **A removal is a removal.** The picker's `Context.omit(ProcessPorts)` really does keep the shell's
   ports out of the child, including when the shell forwards a key into it from its own handler fiber
   — the path that made the guard a no-op.
-- **The two dispatch paths agree.** `handle.dispatch` runs on the caller's fiber and a follow-up Msg
-  runs on a forked one with no ambient (`src/host/actor.ts`), so before the seal a handler could
-  resolve a service on one and not the other, and a proof written over the wrong fiber passed for
-  the wrong reason.
+- **The two dispatch paths agree.** `handle.dispatch` starts on the caller's fiber and a follow-up
+  Msg is dispatched unawaited from inside the run, so before the seal a handler could resolve a
+  service on one and not the other, and a proof written over the wrong fiber passed for the wrong
+  reason. The seal wraps the whole `run` call (`sealed` in `src/process/Processes.ts`), so both
+  paths now resolve the spawn set alone.
 
 Effect's own runtime rides through the seal — the clock, the scheduler, the loggers and log level,
 the tracer and its parent span, and the `Scope` a sub handler is given, every one of them keyed
@@ -163,10 +164,10 @@ cell — every agent session — is therefore never sent a key at all (#7973). B
 stays underneath that: a process that stopped between the Cmd and the dispatch drops the key at
 debug, because a keystroke is not worth ending a desk over and the shell's error channel is `never`.
 
-The declaration is the shell's half. The host's half is that a wire `Msg` with no update cell fails
-that one dispatch as `MsgNotAcceptedError` (`src/host/errors.ts`) instead of reaching supervision as
-`UserCodeThrew` — Demlik throws `NoCellError` before any of the machine's own code runs, so it says
-the program does not take the Msg, never that the program is faulty. Without that split one stray
+The declaration is the shell's half. The engine's half is that tea's run refuses a wire `Msg` with no
+update cell on that one dispatch, as Demlik's `NoCellError`, and never hands it to supervision —
+Demlik throws `NoCellError` before any of the machine's own code runs, so it says the program does
+not take the Msg, never that the program is faulty. Without that split one stray
 key closed the process gate under the `stop` default and every later prompt was refused.
 
 **One keystroke has two deliveries, and only one of them is the Cmd.** Beside the kernel's dispatch
