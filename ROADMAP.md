@@ -125,8 +125,11 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Tuval programs | #55 | active |
 | Epic planning | #56 | paused |
 | Production-ready kamp.us | #57 | active |
+| Tuval on tea | #58 | active |
 
 **Tuval programs** carries the new Tuval scope after the first slice shipped: the program authoring API (#8716) and the desk showing kernel children (#8715). **Tuval first slice - fast follows** remains open and active for follow-up repairs discovered during Tuval work, including when its backlog is temporarily empty. Completing the current issues does not close this campaign; closure requires an explicit founder decision.
+
+**Tuval on tea** moves Tuval off its own Effect host onto `@demlik/tea` 0.18's Effect engine, and ends the repo on one tea pin (epic #9785). It is the phoenix half of demlik's campaign of the same name, which closes when this lands.
 
 **The table is a parsed contract.** It is the single source whatever writes a campaign row (appending it `paused` and later flipping its state) and the lifecycle guard that reads it both bind to, so the grammar is pinned here rather than re-derived at either end:
 
