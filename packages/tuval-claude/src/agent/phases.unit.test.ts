@@ -244,9 +244,9 @@ describe("the core over what the layer emitted", () => {
  * The first turn of a session the picker has just opened (#8358).
  *
  * The open's own events sit in the layer's queue until the core's `started` commit opens the events
- * Sub (`../../ai-agent/core/machine.ts`, `subscriptions`), so a prompt admitted in that window is
- * folded ahead of them: `admit` walks the session to `prompting` and the open's own `ready` lands on
- * top of it. That is the order the operator measured on PR #8199's head — a 30 s turn narrated
+ * Sub (`../../ai-agent/core/machine.ts`, the `events` `{type, deps}` entry), so a prompt admitted in
+ * that window is folded ahead of them: `admit` walks the session to `prompting` and the open's own
+ * `ready` lands on top of it. That is the order the operator measured on PR #8199's head — a 30 s turn narrated
  * `Ready.`, with no `Working…` and no Escape affordance.
  *
  * What closes it is the `prompting` the send itself narrates (#8156, `prompt` in

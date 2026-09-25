@@ -1,14 +1,13 @@
 /**
  * The spine of the authoring layer: `defineProgram` takes what a user writes — an id, ports,
- * `init`, an `update` table and Demlik's dep-keyed `subs` — and answers a registry row
+ * `init`, an `update` table, and `subs` with the runner for each — and answers a registry row
  * (`../registry/program.ts`) the kernel already knows how to launch, wire, checkpoint, restore,
  * reload, pick and window. It is a compiler, not a runtime: nothing here runs a program.
  *
  * Two things it exists to hide (#8716 R12.1). An in-port arrival is an `update` event carrying the
  * decoded payload, which is the row's `receive` map written for the author. A returned effect list
  * (`./effect.ts`) is the row's Cmd union, and the `handlers` that run those Cmds against
- * `ProcessPorts` and the process spells are written once here rather than by every author — as is
- * the dead `interpret` Demlik demands and the host never reads (#7576).
+ * `ProcessPorts` and the process spells are written once here rather than by every author.
  *
  * **`FIELD_COMPILERS` is the extension seam this epic's field children share.** One row field per
  * key, one key per line: `commands`, the `key` opt-in, the `title`/`status` children and the
@@ -27,11 +26,12 @@
  * program that names none is typed exactly as it was and a typo'd effect is still refused at
  * compile. `handlers` is where the handler comes from — this compiler cannot see one added after
  * the spread, so it refuses nothing at definition time; an effect the row has no handler for is
- * skipped by the actor (`../host/actor.ts`), which is the same silence a hand-assembled row has
- * always had for the same mistake.
+ * skipped by tea's run (`../process/Processes.ts`), which is the same silence a hand-assembled row
+ * has always had for the same mistake.
  */
 
-import type {DepKeyedSub, Interpret} from "@demlik/tea";
+import type {DepKeyedSub, Sub} from "@demlik/tea";
+import type {StoreFailed} from "@demlik/tea/effect";
 import {Context, Effect, Option, Result} from "effect";
 import {SessionOpening} from "../ai-agent/opening.ts";
 import type {
@@ -80,6 +80,7 @@ import {
 	type CommandTable,
 	compileCommands,
 } from "./commands.ts";
+import {disposerStream} from "./disposer-stream.ts";
 import {
 	type AskEffect,
 	type EmitEffect,
@@ -115,6 +116,15 @@ import {
 export interface AuthoredEvent {
 	readonly type: string;
 }
+
+/**
+ * A Sub's runner: open whatever the Sub stands for now, send events through `dispatch`, and hand
+ * back the close. The kernel runs the close when the Sub's id leaves.
+ */
+export type AuthoredSubRunner = (
+	sub: Sub,
+	dispatch: (event: AuthoredEvent) => void,
+) => () => void | Promise<void>;
 
 /**
  * What one `update` cell answers: the next state, and the effects it asks for.
@@ -276,8 +286,13 @@ export interface AuthoredProgram<
 	 * process starts on its loaded state with no Cmds, so this is its only way back into the world.
 	 */
 	readonly resume?: AuthoredResume<S, U>;
-	/** Demlik's own dep-keyed Subs, taken as the row's core already takes them. */
-	readonly subs?: ReadonlyArray<DepKeyedSub<S, AuthoredEvent, unknown>>;
+	/**
+	 * The Subs this program declares, each a `{type, deps}` entry: on while `deps` answers a value,
+	 * restarted when that value changes, stopped when it answers `null`.
+	 */
+	readonly subs?: ReadonlyArray<DepKeyedSub<S, Sub>>;
+	/** The runner for each Sub type `subs` declares, keyed by that type. */
+	readonly subscribe?: Readonly<Record<string, AuthoredSubRunner>>;
 	/**
 	 * The three inert records, each defaulted so an author writes none of them. They are data the
 	 * kernel stores and enforces nothing on (`../registry/program.ts` says so at length), so a
@@ -514,6 +529,7 @@ export type EffectFailure =
 	| PortRefused
 	| OpenError
 	| HandlerFailed
+	| StoreFailed
 	| ProcessNotFound
 	| ProcessIsPlanned
 	| ForgetRefused;
@@ -577,18 +593,6 @@ const bindArgs = <H extends AnyHandlers>(handlers: H, args: Context.Context<neve
 				// that correspondence, which is what this cast buys back.
 			) as H);
 
-/** Demlik demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576). */
-const dead = (): Promise<void> => Promise.resolve();
-
-const INTERPRET: Interpret<AuthoredEvent, ProgramEffect, unknown> = {
-	emit: dead,
-	spawn: dead,
-	send: dead,
-	ask: dead,
-	reply: dead,
-	stop: dead,
-};
-
 const compileCore = (authored: AnyAuthoredProgram): ProgramCore<any, any, any, any, any> => ({
 	// A loaded state is answered untouched and with no Cmds, which is Demlik's rehydrate contract
 	// (`@demlik/tea` 0.12, `Machine.init`: "when `loaded !== null`, init MUST return `[loaded, []]`").
@@ -604,7 +608,6 @@ const compileCore = (authored: AnyAuthoredProgram): ProgramCore<any, any, any, a
 	},
 	update: withSelfReport(authored, authored.update),
 	...(authored.subs === undefined ? {} : {subs: authored.subs}),
-	interpret: INTERPRET,
 });
 
 /**
@@ -665,6 +668,13 @@ const filledArgs = (authored: AnyAuthoredProgram): Context.Context<never> => {
 	return filled.success as Context.Context<never>;
 };
 
+const compileSubs = (authored: AnyAuthoredProgram): AnyProgram["subs"] =>
+	authored.subscribe === undefined
+		? undefined
+		: Object.fromEntries(
+				Object.entries(authored.subscribe).map(([type, open]) => [type, disposerStream(open)]),
+			);
+
 const compileIdentity = (authored: AnyAuthoredProgram): DefinitionIdentity => ({
 	...defaultIdentity(authored.id),
 	...authored.identity,
@@ -681,6 +691,7 @@ export const FIELD_COMPILERS = {
 	ports: (_authored, context) => context.ports,
 	receive: (authored) => compileReceive(authored),
 	handlers: (_authored, context) => bindArgs(HANDLERS, context.args),
+	subs: (authored) => compileSubs(authored),
 	args: (authored) => (authored.args === undefined ? undefined : argKeys(authored.args)),
 	spells: (authored, context) => compileSpells(authored, context),
 	takesKeys: (authored) => compileTakesKeys(authored),

@@ -20,8 +20,11 @@ catalog:
   '@biomejs/biome': ^2.4.15
   '@cloudflare/workers-types': 5.20260901.1
   # Exact pin: the lane ledger's machines fold over this engine's dispatch semantics
-  # (NoCellError refusal, Transitions-form cells), so the version is part of the contract (#5673).
-  '@demlik/tea': 0.12.0
+  # (NoCellError refusal, Transitions-form cells), so the version is part of the contract (#5673);
+  # fold.no-cell.unit.test.ts pins the no-cell half. 0.18.0's optional `vitest` peer admits
+  # `^4 || ^5`, so an adopter on current vitest installs fabrika-cli without an unmet-peer warning
+  # (#9771); fabrika-cli's tea-peer test holds it there.
+  '@demlik/tea': 0.18.0
   '@distilled.cloud/cloudflare': 1.0.0-rc.9
   '@effect/language-service': ^0.85.1
   # Pi 0.85.1, pinned exact: @kampus/tuval-pi's loopback Pi host speaks protocol 8 end to end, and the
@@ -135,15 +138,6 @@ catalog:
 catalogs:
   tuval:
     fzf: 0.5.2
-  # TEMPORARY BRIDGE (#9708): fabrika-cli's own tea pin, split from the root entry that Tuval still
-  # resolves. The end state is one root pin — fold this catalog back onto it once #9708 moves Tuval
-  # to 0.18, then delete it. Exact pin: the lane ledger's machines fold over this engine's dispatch
-  # semantics (NoCellError refusal, Transitions-form cells), so the version is part of the contract
-  # (#5673); fold.no-cell.unit.test.ts pins the no-cell half. 0.18.0's optional `vitest` peer admits
-  # `^4 || ^5`, so an adopter on current vitest installs the CLI without an unmet-peer warning
-  # (#9771); fabrika-cli's tea-peer test holds it there.
-  fabrika:
-    '@demlik/tea': 0.18.0
 
 # Keep Effect's transitive companion packages on the same release too. Alchemy's
 # broad ranges otherwise pick rc.113, which removed APIs beta.77 still calls.

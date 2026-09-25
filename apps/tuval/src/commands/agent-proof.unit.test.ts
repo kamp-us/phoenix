@@ -128,7 +128,6 @@ const echoProgram = (): AnyProgram =>
 					[{type: "say", word: msg.word.toUpperCase()}],
 				],
 			},
-			interpret: {say: () => Promise.resolve()},
 		}),
 		ports: {
 			words: {
@@ -342,7 +341,6 @@ const agentProgram = (done: Deferred.Deferred<Run>): AnyProgram =>
 				begin: (state) => [state, [{type: "drive"}]],
 				finished: (state) => [state, []],
 			},
-			interpret: {drive: () => Promise.resolve()},
 		}),
 		ports: {},
 		handlers: {

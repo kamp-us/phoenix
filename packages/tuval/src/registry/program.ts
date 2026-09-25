@@ -5,10 +5,9 @@
  */
 
 import type {Cmd, Machine, Sub} from "@demlik/tea";
-import {type Effect, type Option, Schema, type Scope} from "effect";
+import {type Effect, type Option, Schema, type Stream} from "effect";
 // Type-only, so the commands slice's runtime dependency on this file stays one-directional.
 import type {AnySpell} from "../commands/spell.ts";
-import type {SubFailurePolicy} from "../sub-failure.ts";
 
 // Type-only brand: a plain string at runtime, a distinct type to the checker (`.patterns/effect-schema-validation.md`).
 export const ProgramId = Schema.String.pipe(Schema.brand("tuval/ProgramId"));
@@ -86,17 +85,15 @@ export type HostHandlers<M extends {readonly type: string}, C extends Cmd, E, R>
 };
 
 /**
- * A Sub is long-lived scoped work, so its handler is an Effect the host forks into a Scope of the
- * Sub's own and pushes Msgs from through `dispatch` — a stream has many answers over time, which
- * is the whole difference from a Cmd handler's one list of follow-ups. It lives on the row beside
- * `handlers` rather than on the core machine because a Sub that needs a service has nowhere to ask
- * for one on Demlik's Promise-shaped `subscribe`: the core stays plain data, the Effect stays here.
+ * A Sub's runner, keyed by the `type` of the `{type, deps}` entry the core declares. A Sub has many
+ * answers over time, which is the whole difference from a Cmd handler's one list of follow-ups, so
+ * its runner is a Stream of Msgs: the host drains it while the Sub is desired and interrupts it when
+ * the Sub leaves, which runs the Stream's finalizers. The shape is `@demlik/tea` 0.18's
+ * `EffectRunner`. It lives on the row beside `handlers` rather than on the core machine because the
+ * core is plain data and the Effect stays here.
  */
 export type HostSubs<M, U extends Sub, E, R> = {
-	readonly [K in U["type"]]: (
-		sub: Extract<U, {readonly type: K}>,
-		dispatch: (msg: M) => void,
-	) => Effect.Effect<void, E, R | Scope.Scope>;
+	readonly [K in U["type"]]: (sub: Extract<U, {readonly type: K}>) => Stream.Stream<M, E, R>;
 };
 
 /**
@@ -163,9 +160,11 @@ export interface Placement {
 }
 
 /**
- * The core a row carries: Demlik's `Machine` widened by ADR 0346's Sub-failure policy. The policy's
- * type lives in `src/sub-failure.ts`, owned by neither slice, so a row declaring `subFailure` still
- * imports nothing from the host that reads it.
+ * The core a row carries: `@demlik/tea`'s data-only `Machine`. It holds no handlers — the row's
+ * `handlers` run its Cmds and its `subs` run its Subs, which are `{type, deps}` entries only. There is
+ * no Sub-failure hook: a runner maps the errors it expects into Msgs, and one it lets escape stops the
+ * process (ADR 0408). A plain literal is one, since the update form is detected when `__form` is
+ * absent.
  */
 export type ProgramCore<
 	S,
@@ -173,7 +172,7 @@ export type ProgramCore<
 	C extends Cmd,
 	U extends Sub,
 	Ctx,
-> = Machine<S, M, C, U, Ctx> & {readonly subFailure?: SubFailurePolicy<M, U>};
+> = Machine<S, M, C, U, Ctx>;
 
 export interface Program<
 	S,
@@ -204,7 +203,7 @@ export interface Program<
 	 */
 	readonly receive?: Readonly<Record<string, Receiver<M>>>;
 	readonly handlers: HostHandlers<M, C, E, R>;
-	/** Effect-valued Sub handlers, one per Sub the core subscribes to. A row with none omits it. */
+	/** The runner for each Sub type the core's `subs` declares. A row with none omits it. */
 	readonly subs?: HostSubs<M, U, E, R>;
 	/**
 	 * What a spawner dispatches into a process of this program that came back from a checkpoint.
@@ -248,9 +247,10 @@ export interface Program<
 	 * Whether this program could restore the raw checkpoint durability loaded for it — the same
 	 * verdict its `init` reaches, asked before `init` runs.
 	 *
-	 * `false` means the process boots on its own refusal, and durability holds the bytes for it: a
-	 * snapshot this refuses is never written over, so it stays on disk to be read and re-refused on
-	 * every later boot (`src/durability/Checkpoints.ts`, #8112). Without it the refusal was
+	 * `false` means the store's `migrate` refuses the snapshot and the process starts with no store,
+	 * booting `init` on those bytes: a snapshot this refuses is never written over, so it stays on
+	 * disk to be read and re-refused on every later boot (`src/durability/Checkpoints.ts`, #8112,
+	 * #9793). Without it the refusal was
 	 * one-shot — the state carrying it was saved straight back over the checkpoint it refused, and
 	 * the next boot restored that state with no failure on it. A row that omits the field restores
 	 * whatever loads, which is every program with no parse of its own.
@@ -268,10 +268,10 @@ export interface Program<
 	 */
 	readonly migrations?: Migrations;
 	/**
-	 * Whether a state of this program is worth a checkpoint. The host asks it at every save site,
-	 * and `false` writes nothing — so a program streaming a reply answers `false` for every
+	 * Whether a state of this program is worth a checkpoint. It is asked at every save tea's run
+	 * makes, and `false` writes nothing — so a program streaming a reply answers `false` for every
 	 * mid-turn state, pays no disk for the burst, and the state that ends the turn is the flush
-	 * (`src/host/actor.ts`, #8170). A state this refuses is one no restore ever reads back, which
+	 * (`worthyOnly` in `src/process/Processes.ts`, #8170). A state this refuses is one no restore ever reads back, which
 	 * is why the skipped write is not owed: a half-written reply must never come back as the reply.
 	 *
 	 * A row that omits it checkpoints every state, which is every program with nothing in flight.

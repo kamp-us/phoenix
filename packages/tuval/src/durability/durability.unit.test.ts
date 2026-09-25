@@ -48,7 +48,6 @@ const counterProgram = (probe: Probe, stores: CheckpointStores, version = "1.0.0
 				],
 				acked: (state) => [{...state, acks: state.acks + 1}, []],
 			},
-			interpret: {notify: () => Promise.resolve()},
 		}),
 		ports: {},
 		handlers: {
@@ -250,6 +249,56 @@ describe("durability", () => {
 					assert.deepStrictEqual(restored[0]!.getState(), {count: 1, acks: 0});
 					assert.strictEqual((yield* table.list).length, 1);
 				}).pipe(Effect.provide(kernel([migrated], stores)));
+			});
+		},
+	);
+
+	it.effect(
+		"a save two versions back walks every declared step to the current version, and the next save is written under it",
+		() => {
+			const stores = memoryStores();
+			const probe = probeOf();
+			const walked: Array<string> = [];
+			const current: AnyProgram = {
+				...counterProgram(probe, stores, "3.0.0"),
+				migrations: {
+					"1.0.0": {
+						to: "2.0.0",
+						migrate: (raw) => {
+							walked.push("1.0.0");
+							return Option.some({...(raw as State), acks: 0});
+						},
+					},
+					"2.0.0": {
+						to: "3.0.0",
+						migrate: (raw) => {
+							walked.push("2.0.0");
+							return Option.some({...(raw as State), count: (raw as State).count * 10});
+						},
+					},
+				},
+			};
+			return Effect.gen(function* () {
+				const id = yield* Effect.gen(function* () {
+					const processes = yield* Processes;
+					const handle = yield* processes.spawn(counter, {services: Context.empty()});
+					yield* handle.dispatch({type: "tick"});
+					return handle.id;
+				}).pipe(Effect.provide(kernel([counterProgram(probe, stores)], stores)));
+
+				yield* Effect.gen(function* () {
+					const [restored] = yield* restore(Context.empty());
+					assert.deepStrictEqual(walked, ["1.0.0", "2.0.0"]);
+					assert.deepStrictEqual(restored!.getState(), {count: 10, acks: 0});
+					probe.watched = id;
+					yield* restored!.dispatch({type: "tick"});
+				}).pipe(Effect.provide(kernel([current], stores)));
+
+				assert.deepStrictEqual(parseSnapshot(yield* io(() => stores.snapshot(id).load())), {
+					programId: "counter",
+					version: "3.0.0",
+					state: {count: 11, acks: 1},
+				});
 			});
 		},
 	);

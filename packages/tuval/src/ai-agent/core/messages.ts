@@ -7,7 +7,7 @@
  * from a session this instance has already replaced; every other Msg is identity-agnostic.
  */
 
-import {type Sub, type SubId, subId} from "@demlik/tea";
+import {type Sub, type SubId, subIdOf} from "@demlik/tea";
 import type {AgentEvent} from "../events.ts";
 import type {
 	Mode,
@@ -138,24 +138,25 @@ export type AiAgentSessionCmd =
 /**
  * The one subscription: this session's event stream, keyed by the session *and* the connection.
  *
- * Demlik reconciles Subs by id — an id still desired keeps running, one that leaves is stopped, one
- * that appears is started. A reconnect rebuilds the layer under the same session id (ruling 4,
- * #7570), so an id made of the session alone reads as "already running" and leaves the process
- * subscribed to the transport it just tore down.
+ * A Sub's id is its type and deps, so an id still desired keeps running, one that leaves is
+ * stopped, one that appears is started. A reconnect rebuilds the layer under the same session id
+ * (ruling 4, #7570), so deps made of the session alone read as "already running" and leave the
+ * process subscribed to the transport it just tore down.
  */
-export interface AiAgentEventsSub extends Sub<"aiAgent.events"> {
+export interface AiAgentEventsDeps {
 	readonly sessionId: string;
 	readonly connection: number;
 }
 
+export type AiAgentEventsSub = Sub<"aiAgent.events", AiAgentEventsDeps>;
+
 export type AiAgentSessionSub = AiAgentEventsSub;
 
 export const eventsSubId = (sessionId: string, connection: number): SubId =>
-	subId(`aiAgent.events:${sessionId}#${connection}`);
+	subIdOf("aiAgent.events", {sessionId, connection} satisfies AiAgentEventsDeps);
 
 export const eventsSub = (sessionId: string, connection: number): AiAgentEventsSub => ({
 	id: eventsSubId(sessionId, connection),
 	type: "aiAgent.events",
-	sessionId,
-	connection,
+	deps: {sessionId, connection},
 });

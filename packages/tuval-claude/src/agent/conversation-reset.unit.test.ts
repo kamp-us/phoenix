@@ -28,6 +28,7 @@ import {
 	restore,
 } from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
+import {desiredSubs} from "@kampus/tuval-sdk/kernel/registry/sub";
 import {Effect, Stream} from "effect";
 import {CWD, message, on, SESSION_ID, START_EVENTS} from "./fixtures/harness.ts";
 
@@ -149,8 +150,8 @@ describe("a local command that ends its own conversation", () => {
 			// The events Sub is keyed on the session id, so the swap re-opens it against the
 			// conversation the layer is now on rather than the one it just ended.
 			assert.notDeepEqual(
-				machine.subscriptions(settled).map((sub) => sub.id),
-				machine.subscriptions(opened).map((sub) => sub.id),
+				desiredSubs(machine.subs, settled).map((sub) => sub.id),
+				desiredSubs(machine.subs, opened).map((sub) => sub.id),
 			);
 		}),
 	);

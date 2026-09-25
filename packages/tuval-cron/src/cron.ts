@@ -60,7 +60,6 @@
  * changed for it, which is what writing the honest half rather than a workaround bought.
  */
 
-import type {DepKeyedSub} from "@demlik/tea";
 import {
 	PromptPayloadSchema,
 	type TurnResult,
@@ -71,6 +70,8 @@ import {
 	type AnyProgram,
 	type ArgRefs,
 	type AuthoredEvent,
+	type AuthoredSubRunner,
+	type DepKeyedSub,
 	defineProgram,
 	emit,
 	Program,
@@ -81,6 +82,7 @@ import {
 	type SpawnEffect,
 	type Spawned,
 	type Stopped,
+	type Sub,
 	send,
 	spawn,
 	stop,
@@ -243,10 +245,18 @@ const firstLine = (text: string): string => (text.split("\n")[0] ?? "").trim();
 const startIfIdle = (state: CronState, args: CronArgs): ReadonlyArray<SpawnEffect> =>
 	state.child === null ? [spawn(args.job, {on: {result: "result"}})] : [];
 
+/** The timer's Sub entries, and the runner for each entry's type. */
+interface Timer {
+	readonly subs: ReadonlyArray<DepKeyedSub<CronState, Sub>>;
+	readonly subscribe: Readonly<Record<string, AuthoredSubRunner>>;
+}
+
+const tickInto = (dispatch: (event: AuthoredEvent) => void) => (): void => dispatch({type: "tick"});
+
 /**
- * The timer, as Demlik's dep-keyed Sub. One of three: a `setInterval` on `everyMs`, a re-arming
- * one-shot on a cron expression, or nothing at all for an on-demand cron. Each is keyed on the one
- * thing that defines it — the interval, or the expression string — so nothing restarts it per tick.
+ * The timer, as a dep-keyed Sub. One of three: a `setInterval` on `everyMs`, a re-arming one-shot
+ * on a cron expression, or nothing at all for an on-demand cron. Each is keyed on the one thing
+ * that defines it — the interval, or the expression string — so nothing restarts it per tick.
  */
 const timer = (
 	woken: {
@@ -254,27 +264,27 @@ const timer = (
 		readonly schedule: Schedule | null;
 	},
 	now: () => number,
-): ReadonlyArray<DepKeyedSub<CronState, AuthoredEvent, unknown>> => {
+): Timer => {
 	const schedule = woken.schedule;
 	if (schedule !== null) {
-		return [
-			{
-				deps: () => ({schedule: schedule.expression}),
-				source: (_state, dispatch) => armSchedule(schedule, now, () => dispatch({type: "tick"})),
+		return {
+			subs: [{type: "schedule", deps: () => ({schedule: schedule.expression})}],
+			subscribe: {
+				schedule: (_sub, dispatch) => armSchedule(schedule, now, tickInto(dispatch)),
 			},
-		];
+		};
 	}
 	const everyMs = woken.everyMs;
-	if (everyMs === null) return [];
-	return [
-		{
-			deps: () => ({everyMs}),
-			source: (_state, dispatch) => {
-				const handle = setInterval(() => dispatch({type: "tick"}), everyMs);
+	if (everyMs === null) return {subs: [], subscribe: {}};
+	return {
+		subs: [{type: "interval", deps: () => ({everyMs})}],
+		subscribe: {
+			interval: (_sub, dispatch) => {
+				const handle = setInterval(tickInto(dispatch), everyMs);
 				return () => clearInterval(handle);
 			},
 		},
-	];
+	};
 };
 
 /**
@@ -501,7 +511,7 @@ export const cronProgram = (options: CronOptions) => {
 		 * same function rather than a second statement of it.
 		 */
 		status: statusLine,
-		subs: timer(woken, now),
+		...timer(woken, now),
 	};
 };
 

@@ -17,8 +17,7 @@
  * with a refusal a caller can read, never a defect.
  */
 
-import type {DispatchError} from "@kampus/tuval-sdk/kernel/host/actor";
-import type {HandlerFailed} from "@kampus/tuval-sdk/kernel/process/errors";
+import type {DispatchError} from "@kampus/tuval-sdk/kernel/process/process";
 import {Context, Effect, Layer, Schema} from "effect";
 import type {ShellMsg} from "../core/machine.ts";
 
@@ -32,7 +31,7 @@ export class NoDesk extends Schema.TaggedError<NoDesk>()("tuval/shell/NoDesk", {
 }
 
 /** Every way putting a Msg on the desk can be refused: no desk, or the desk's own dispatch. */
-export type ShellDispatchError = NoDesk | DispatchError<HandlerFailed>;
+export type ShellDispatchError = NoDesk | DispatchError;
 
 export class ShellDispatch extends Context.Service<
 	ShellDispatch,

@@ -56,7 +56,6 @@ const reporter = (id: string, ports: AnyProgram["ports"]): AnyProgram =>
 					[{type: "publish", port: msg.port, line: msg.line}],
 				],
 			},
-			interpret: {publish: () => Promise.resolve()},
 		}),
 		ports,
 		handlers: {

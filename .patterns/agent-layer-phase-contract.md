@@ -64,8 +64,8 @@ running; only that turn's end accepts it.
 ## The open's own `ready`, and the first turn it can swallow
 
 A layer narrates its open on the same stream it narrates turns on, and the core is not listening
-yet. `subscriptions` in [`core/machine.ts`](../packages/tuval/src/ai-agent/core/machine.ts) opens the
-events Sub off `state.sessionId`, which the `started` Msg sets — and `started` is what the layer's
+yet. The `events` entry in [`core/machine.ts`](../packages/tuval/src/ai-agent/core/machine.ts) is
+`{type, deps}` data whose deps turn on with `state.sessionId`, which the `started` Msg sets — and `started` is what the layer's
 own `start` call answered, so everything `start` emitted is already sitting in the layer's queue
 when the Sub attaches. The queue is unbounded and nothing is lost; what varies is *when* it drains.
 
@@ -245,9 +245,10 @@ classification: an ordinary `failed` message has rebuilt nothing and cannot adva
 The existing failure fold still chooses `idle` for a refused open and `gone` for a missing resumed
 session; a process with no session id or a terminal session desires no event subscription.
 
-This distinction follows the current host's
-[`reconcile`](../packages/tuval/src/host/actor.ts): an ended or failed manual subscription keeps its
-registered id, and an unchanged id is never re-armed. A new generation closes that registration and
+This distinction follows the Sub reconcile in tea's Effect engine, which every process runs on
+([`Processes.ts`](../packages/tuval/src/process/Processes.ts)): an ended subscription keeps its
+registered id, an unchanged id is never re-armed, and a failure the runner lets escape stops the
+process instead. A new generation closes that registration and
 subscribes to the agent now held by the slot. The slot's child Scope independently closes the old
 transport on rebuild; Effect rc.112's `Scope.fork` documents that closing a child detaches it from
 its parent. Neither an ended event fiber nor a failed start can stand in for the new lifetime id.

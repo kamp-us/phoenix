@@ -1,6 +1,6 @@
-import {type Cmd, defineMachine, type Sub, subId} from "@demlik/tea";
+import {type Cmd, defineMachine, type Sub} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer, Option, Scope} from "effect";
+import {Context, Deferred, Effect, Fiber, Layer, Option, Scope, Stream} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {snapshotAt, watchingStores} from "../durability/fixtures.ts";
 import {type CheckpointStores, memoryStores} from "../durability/stores.ts";
@@ -47,11 +47,13 @@ const identity = (program: string) => ({
 	digest: `sha256:${program}`,
 });
 
+type Run = Sub<"run", {readonly runId: string}>;
+
 /** A counter whose dep-keyed Sub logs its open and close, and whose `notify` Cmd follows up with `acked`. */
 const counterProgram = (probe: Probe): AnyProgram =>
 	({
 		id: ProgramId.make("counter"),
-		core: defineMachine<State, Msg, Notify, never, unknown>({
+		core: defineMachine<State, Msg, Notify, Run, unknown>({
 			init: (loaded) => [loaded ?? {type: "idle", count: 0}, []],
 			update: {
 				start: (state, msg) => [
@@ -69,18 +71,10 @@ const counterProgram = (probe: Probe): AnyProgram =>
 			},
 			subs: [
 				{
+					type: "run",
 					deps: (state) => (state.type === "running" ? {runId: state.runId} : null),
-					source: (state) => {
-						const runId = state.type === "running" ? state.runId : "?";
-						probe.log.push(`sub:start:${runId}`);
-						return () => {
-							probe.log.push(`sub:stop:${runId}`);
-						};
-					},
 				},
 			],
-			// Demlik's `Machine` demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576).
-			interpret: {notify: () => Promise.resolve()},
 		}),
 		ports,
 		handlers: {
@@ -90,39 +84,70 @@ const counterProgram = (probe: Probe): AnyProgram =>
 					return [{type: "acked"}];
 				}),
 		},
+		subs: {
+			run: (sub: Run) =>
+				Stream.never.pipe(
+					Stream.onStart(Effect.sync(() => void probe.log.push(`sub:start:${sub.deps.runId}`))),
+					Stream.ensuring(Effect.sync(() => void probe.log.push(`sub:stop:${sub.deps.runId}`))),
+				),
+		},
 		capabilities: [],
 		identity: identity("counter"),
 		placement: {host: "local"},
-	}) satisfies Program<State, Msg, Notify, never, unknown, never, never>;
+	}) satisfies Program<State, Msg, Notify, Run, unknown, never, never>;
 
 type Switch = {readonly type: "off"} | {readonly type: "on"};
 type Toggle = {readonly type: "toggle"};
-type Ticker = Sub<"ticker">;
+type Ticker = Sub<"ticker", true>;
 
-/** A machine on Demlik's manual-Sub map, so the `subscribe` disposer bridge is exercised end to end. */
+/** A Sub whose deps hold no data beyond on-or-off, run by the row's runner of its type. */
 const tickerProgram = (log: string[]): AnyProgram =>
 	({
 		id: ProgramId.make("ticker"),
 		core: defineMachine<Switch, Toggle, Cmd<never>, Ticker, unknown>({
 			init: () => [{type: "off"}, []],
 			update: {toggle: (state) => [{type: state.type === "off" ? "on" : "off"}, []]},
-			subscriptions: (state) =>
-				state.type === "on" ? [{id: subId("ticker"), type: "ticker"}] : [],
-			subscribe: {
-				ticker: () => {
-					log.push("ticker:open");
-					return () => {
-						log.push("ticker:close");
-					};
-				},
-			},
+			subs: [{type: "ticker", deps: (state) => (state.type === "on" ? true : null)}],
 		}),
 		ports: {},
 		handlers: {},
+		subs: {
+			ticker: () =>
+				Stream.never.pipe(
+					Stream.onStart(Effect.sync(() => void log.push("ticker:open"))),
+					Stream.ensuring(Effect.sync(() => void log.push("ticker:close"))),
+				),
+		},
 		capabilities: [],
 		identity: identity("ticker"),
 		placement: {host: "local"},
 	}) satisfies Program<Switch, Toggle, Cmd<never>, Ticker, unknown, never, never>;
+
+type Hang = {readonly type: "hang"};
+
+/**
+ * A row whose one Cmd never settles on its own: its handler says it started, then waits for ever, and
+ * records its finalizer — the in-flight work a stop has to interrupt rather than wait out.
+ */
+const hangingProgram = (started: Deferred.Deferred<void>, finalized: string[]): AnyProgram =>
+	({
+		id: ProgramId.make("hanging"),
+		core: defineMachine<{readonly hung: number}, Hang, Hang, never, unknown>({
+			init: (loaded) => [loaded ?? {hung: 0}, []],
+			update: {hang: (state) => [{hung: state.hung + 1}, [{type: "hang"}]]},
+		}),
+		ports: {},
+		handlers: {
+			hang: () =>
+				Deferred.succeed(started, undefined).pipe(
+					Effect.andThen(Effect.never),
+					Effect.ensuring(Effect.sync(() => void finalized.push("hang:finalized"))),
+				),
+		},
+		capabilities: [],
+		identity: identity("hanging"),
+		placement: {host: "local"},
+	}) satisfies Program<{readonly hung: number}, Hang, Hang, never, unknown, never, never>;
 
 const counter = ProgramId.make("counter");
 
@@ -269,7 +294,7 @@ describe("Processes", () => {
 					"sub:stop:root",
 				]);
 				const refused = yield* grandchild.dispatch({type: "tick"}).pipe(Effect.flip);
-				assert.strictEqual(refused._tag, "tuval/host/ActorStoppedError");
+				assert.strictEqual(refused._tag, "Stopped");
 			}),
 		);
 	});
@@ -287,7 +312,7 @@ describe("Processes", () => {
 
 				yield* handle.stop;
 				const refused = yield* handle.dispatch({type: "tick"}).pipe(Effect.flip);
-				assert.strictEqual(refused._tag, "tuval/host/ActorStoppedError");
+				assert.strictEqual(refused._tag, "Stopped");
 				assert.strictEqual(probe.reduced, 1);
 				assert.deepStrictEqual(handle.getState(), {
 					type: "running",
@@ -379,7 +404,7 @@ describe("Processes", () => {
 					yield* processes.remove(handle.id);
 
 					assert.deepStrictEqual(probe.log, [
-						`snapshot:drop:${handle.id}`,
+						`snapshot:delete:${handle.id}`,
 						"manifest:save",
 						"sub:stop:a",
 					]);
@@ -513,31 +538,51 @@ describe("Processes", () => {
 		});
 	});
 
-	it.effect(
-		"a program on Demlik's manual-Sub map opens and closes its Sub through the process scope",
-		() => {
-			const log: string[] = [];
-			return withKernel(
-				[tickerProgram(log)],
+	it.effect("a row's Sub runner opens and closes its Sub through the process scope", () => {
+		const log: string[] = [];
+		return withKernel(
+			[tickerProgram(log)],
+			Effect.gen(function* () {
+				const processes = yield* Processes;
+				const handle = yield* processes.spawn(ProgramId.make("ticker"), {
+					services: Context.empty(),
+				});
+				yield* handle.dispatch({type: "toggle"});
+				assert.deepStrictEqual(log, ["ticker:open"]);
+				yield* handle.dispatch({type: "toggle"});
+				assert.deepStrictEqual(log, ["ticker:open", "ticker:close"]);
+				yield* handle.dispatch({type: "toggle"});
+				yield* processes.stop(handle.id);
+				assert.deepStrictEqual(log, ["ticker:open", "ticker:close", "ticker:open", "ticker:close"]);
+			}),
+		);
+	});
+
+	it.effect("closing a process's Scope stops its run and interrupts its in-flight handlers", () =>
+		Effect.gen(function* () {
+			const started = yield* Deferred.make<void>();
+			const finalized: string[] = [];
+			return yield* withKernel(
+				[hangingProgram(started, finalized)],
 				Effect.gen(function* () {
 					const processes = yield* Processes;
-					const handle = yield* processes.spawn(ProgramId.make("ticker"), {
+					const handle = yield* processes.spawn(ProgramId.make("hanging"), {
 						services: Context.empty(),
 					});
-					yield* handle.dispatch({type: "toggle"});
-					assert.deepStrictEqual(log, ["ticker:open"]);
-					yield* handle.dispatch({type: "toggle"});
-					assert.deepStrictEqual(log, ["ticker:open", "ticker:close"]);
-					yield* handle.dispatch({type: "toggle"});
-					yield* processes.stop(handle.id);
-					assert.deepStrictEqual(log, [
-						"ticker:open",
-						"ticker:close",
-						"ticker:open",
-						"ticker:close",
-					]);
+					const dispatching = yield* Effect.forkChild(handle.dispatch({type: "hang"}));
+					yield* Deferred.await(started);
+					assert.deepStrictEqual(finalized, []);
+
+					// `stop` is the close of the process's own Scope and nothing more (`./Processes.ts`).
+					yield* handle.stop;
+
+					assert.deepStrictEqual(finalized, ["hang:finalized"]);
+					// The Msg was folded before the stop, so its own dispatch settles rather than hanging.
+					yield* Fiber.join(dispatching);
+					const refused = yield* Effect.flip(handle.dispatch({type: "hang"}));
+					assert.strictEqual(refused._tag, "Stopped");
 				}),
 			);
-		},
+		}),
 	);
 });

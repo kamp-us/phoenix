@@ -14,7 +14,7 @@
  * the turn's own end admits it.
  */
 
-import {defineMachine, type Machine} from "@demlik/tea";
+import {type DepKeyedSub, defineMachine, type Machine} from "@demlik/tea";
 import {sameModel} from "../ports/index.ts";
 import {
 	answerNotOffered,
@@ -41,12 +41,7 @@ import {
 	unresolvedAnswer,
 	type WindowLimits,
 } from "./fold.ts";
-import {
-	type AiAgentSessionCmd,
-	type AiAgentSessionMsg,
-	type AiAgentSessionSub,
-	eventsSub,
-} from "./messages.ts";
+import type {AiAgentSessionCmd, AiAgentSessionMsg, AiAgentSessionSub} from "./messages.ts";
 import {enqueue, isQueueFull, type QueuedPrompt, queueLimit, releaseQueued} from "./queue.ts";
 import {noteSend, settledBy, settleFailedTurn} from "./sends.ts";
 import {loadCheckpoint} from "./snapshot.ts";
@@ -73,7 +68,17 @@ export type AiAgentSessionMachine = Machine<
 
 const noCmds = [] as const;
 
-const noWork = (): Promise<void> => Promise.resolve();
+/**
+ * This session's event stream, on while a session exists and is not gone. The connection rides in
+ * the deps so every `started` — a reconnect included — is a new id and re-opens the stream.
+ */
+const events: DepKeyedSub<AiAgentSessionState, AiAgentSessionSub> = {
+	type: "aiAgent.events",
+	deps: (state) =>
+		state.sessionId === null || state.phase === "gone"
+			? null
+			: {sessionId: state.sessionId, connection: state.connection},
+};
 
 type Step = readonly [AiAgentSessionState, ReadonlyArray<AiAgentSessionCmd>];
 
@@ -510,31 +515,11 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			failed: (state, msg) => failed(state, msg.failure),
 		},
 
-		subscriptions: (state) =>
-			state.sessionId === null || state.phase === "gone"
-				? []
-				: [eventsSub(state.sessionId, state.connection)],
+		subs: [events],
 
 		identity: {
 			ofState: (state) => state.sessionId,
 			ofMsg: (msg) => (msg.type === "event" ? msg.sessionId : undefined),
 		},
-
-		// Demlik's `Machine` demands a Promise `interpret` and a `subscribe` beside the row's own
-		// Effect handlers; the host reads neither (#7576).
-		interpret: {
-			"aiAgent.boot": noWork,
-			"aiAgent.start": noWork,
-			"aiAgent.prompt": noWork,
-			"aiAgent.answer": noWork,
-			"aiAgent.setMode": noWork,
-			"aiAgent.setModel": noWork,
-			"aiAgent.setThinkingLevel": noWork,
-			"aiAgent.page": noWork,
-			"aiAgent.interrupt": noWork,
-			"aiAgent.reconnect": noWork,
-			"aiAgent.republish": noWork,
-		},
-		subscribe: {"aiAgent.events": () => () => {}},
 	});
 };

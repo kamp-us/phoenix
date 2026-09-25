@@ -9,9 +9,12 @@
  * store a correct one leaves, minus the crash nobody ran.
  */
 
+import {access, mkdtemp, rm} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer, Option} from "effect";
+import {Context, Effect, Layer, Option, Schema} from "effect";
 import {Processes} from "../process/Processes.ts";
 import {ProcessTable} from "../process/ProcessTable.ts";
 import {ProcessId} from "../process/process.ts";
@@ -20,7 +23,7 @@ import {Registry} from "../registry/Registry.ts";
 import {Checkpoints} from "./Checkpoints.ts";
 import {snapshotAt, watchingStores} from "./fixtures.ts";
 import {restore} from "./restore.ts";
-import {type CheckpointStores, memoryStores} from "./stores.ts";
+import {type CheckpointStores, fileStores, memoryStores} from "./stores.ts";
 
 type State = {readonly count: number};
 type Msg = {readonly type: "tick"};
@@ -51,6 +54,19 @@ const kernel = (stores: CheckpointStores) =>
 		Layer.provideMerge(Registry.layer([counterProgram])),
 	);
 
+class TestIo extends Schema.TaggedError<TestIo>()("TestIo", {cause: Schema.Defect()}) {}
+
+const io = <A>(body: () => Promise<A>) =>
+	Effect.tryPromise({try: body, catch: (cause) => new TestIo({cause})});
+
+const onDisk = (path: string) =>
+	io(() =>
+		access(path).then(
+			() => true,
+			() => false,
+		),
+	);
+
 /** A root with a child and a grandchild, each carrying a snapshot of its own. */
 const threeDeep = Effect.gen(function* () {
 	const processes = yield* Processes;
@@ -75,9 +91,9 @@ describe("Checkpoints.forget", () => {
 			yield* checkpoints.forget(root);
 
 			assert.deepStrictEqual(watcher.writes, [
-				`snapshot:drop:${grandchild}`,
-				`snapshot:drop:${child}`,
-				`snapshot:drop:${root}`,
+				`snapshot:delete:${grandchild}`,
+				`snapshot:delete:${child}`,
+				`snapshot:delete:${root}`,
 				"manifest:save",
 			]);
 			assert.deepStrictEqual(yield* checkpoints.list, []);
@@ -86,6 +102,23 @@ describe("Checkpoints.forget", () => {
 			}
 		}).pipe(Effect.provide(kernel(watcher.stores)), Effect.orDie);
 	});
+
+	it.effect("removing a process deletes every save file of its subtree off disk", () =>
+		Effect.gen(function* () {
+			const dir = yield* io(() => mkdtemp(join(tmpdir(), "tuval-forget-")));
+			yield* Effect.gen(function* () {
+				const processes = yield* Processes;
+				const {root, child, grandchild} = yield* threeDeep;
+				const saves = [root, child, grandchild].map((id) => join(dir, "processes", `${id}.json`));
+				for (const save of saves) assert.isTrue(yield* onDisk(save));
+
+				yield* processes.remove(root);
+
+				for (const save of saves) assert.isFalse(yield* onDisk(save));
+			}).pipe(Effect.provide(kernel(fileStores(dir))));
+			yield* io(() => rm(dir, {recursive: true, force: true}));
+		}).pipe(Effect.orDie),
+	);
 
 	it.effect("leaves a sibling subtree alone", () => {
 		const watcher = watchingStores();
@@ -130,7 +163,7 @@ describe("Checkpoints.forget", () => {
 
 			const refused = yield* Effect.flip(checkpoints.forget(root));
 
-			assert.strictEqual(refused._tag, "tuval/host/StoreError");
+			assert.strictEqual(refused._tag, "tuval/durability/StoreError");
 			watcher.refuseManifestSave = false;
 			assert.deepStrictEqual(
 				(yield* checkpoints.list).map((entry) => entry.id),

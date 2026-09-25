@@ -9,7 +9,7 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Scope} from "effect";
+import {Effect, Scope, Stream} from "effect";
 import {assistantItem} from "../../ai-agent-fixtures/transcripts.ts";
 import {ProcessPorts} from "../../ports/index.ts";
 import {ProcessId} from "../../process/process.ts";
@@ -88,9 +88,8 @@ describe("the prompt handler's re-seed", () => {
 				);
 				yield* Effect.forkScoped(
 					provide(
-						row.subs["aiAgent.events"](
-							eventsSub(SESSION_ID, 0),
-							(msg) => void dispatched.push(msg),
+						Stream.runForEach(row.subs["aiAgent.events"](eventsSub(SESSION_ID, 0)), (msg) =>
+							Effect.sync(() => void dispatched.push(msg)),
 						),
 					),
 				);

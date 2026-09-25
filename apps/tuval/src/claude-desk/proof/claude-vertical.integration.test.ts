@@ -960,7 +960,7 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 						Effect.gen(function* () {
 							const project = freshProject();
 							const app = yield* bootDesk(project);
-							const {desk, rows} = yield* attachDesk(app.server.launchUrl);
+							const {page, desk, rows} = yield* attachDesk(app.server.launchUrl);
 
 							const fresh = yield* liveWhere(desk.seen, "the first snapshot", () => true);
 							const window = windowsOf(fresh)[0] as string;
@@ -995,6 +995,18 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 							const child = table.find(
 								(entry: TableRow) => entry.id === spawned.process,
 							) as TableRow;
+
+							// The child's session opens on its own after the spawn answers, and a prompt that
+							// lands before it is ready is refused (`promptRefused`), so the send waits for it
+							// the way a window would: off the transport, not off a handle.
+							const childView = yield* page.attachProcess<AiAgentSessionState, AiAgentSessionMsg>(
+								ProcessId.make(spawned.process),
+							);
+							yield* liveWhere(
+								(yield* watch(childView.readProcess)).seen,
+								"the child's session to open",
+								(state) => state.phase === "ready",
+							);
 
 							// An unstamped prompt is refused at the send (#7991). Asserted here because the
 							// alternative is the failure this case used to have: a delivered nobody could

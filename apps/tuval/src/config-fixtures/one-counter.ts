@@ -13,7 +13,6 @@ const counter = {
 	core: defineMachine<State, Msg, Notify, never, unknown>({
 		init: (loaded) => [loaded ?? {count: 0}, []],
 		update: {tick: (state) => [{count: state.count + 1}, [{type: "notify"}]]},
-		interpret: {notify: () => Promise.resolve()},
 	}),
 	ports: {},
 	handlers: {notify: () => Effect.succeed([] as ReadonlyArray<Msg>)},

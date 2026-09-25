@@ -34,7 +34,6 @@ const bridgeProbe = {
 			resumed: (state) => [state, [{type: "count-spells"}]],
 			saw: (state, msg) => [{...state, spells: msg.spells}, []],
 		},
-		interpret: {"count-spells": () => Promise.resolve()},
 	}),
 	ports: {},
 	handlers: {

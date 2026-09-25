@@ -10,13 +10,11 @@
  */
 
 import {Effect} from "effect";
-import type {DispatchError} from "../host/actor.ts";
-import type {HandlerFailed} from "../process/errors.ts";
-import type {ProcessHandle} from "../process/process.ts";
+import type {DispatchError, ProcessHandle} from "../process/process.ts";
 import type {AnyProgram} from "../registry/program.ts";
 
 export const dispatchResume = (
 	row: AnyProgram | undefined,
 	handle: ProcessHandle,
-): Effect.Effect<void, DispatchError<HandlerFailed>> =>
+): Effect.Effect<void, DispatchError> =>
 	Effect.forEach(row?.resume?.(handle.getState()) ?? [], handle.dispatch, {discard: true});

@@ -67,8 +67,6 @@ export const logProgram = ({write}: LogOptions): AnyProgram =>
 					[{type: "print", line: `key ${msg.key}`}],
 				],
 			},
-			// Demlik's `Machine` demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576).
-			interpret: {print: () => Promise.resolve()},
 		}),
 		ports: {
 			ticks: {

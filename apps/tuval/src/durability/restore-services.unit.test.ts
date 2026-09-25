@@ -119,8 +119,8 @@ type ProbeCmd = {readonly type: "count"};
 /**
  * A row whose one handler needs a kernel service and no ports — the shape a picker-opened Claude row
  * has once its layer's own requirement rides out onto the row (#7951). It reports through a sink the
- * test owns rather than a follow-up Msg: the host dispatches follow-ups unawaited
- * (`src/host/actor.ts`), so a state read after `dispatch` would race one.
+ * test owns rather than a follow-up Msg: tea's run dispatches follow-ups unawaited
+ * (the SDK's `process/Processes.ts`), so a state read after `dispatch` would race one.
  */
 const probeProgram = (sink: Array<string>): AnyProgram =>
 	({
@@ -129,7 +129,6 @@ const probeProgram = (sink: Array<string>): AnyProgram =>
 			init: (loaded) => [loaded ?? {looks: 0}, []],
 			update: {look: (state) => [{looks: state.looks + 1}, [{type: "count"}]]},
 			subs: [],
-			interpret: {count: () => Promise.resolve()},
 		}),
 		ports: {},
 		handlers: {

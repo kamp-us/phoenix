@@ -13,7 +13,7 @@
  * dispatched as an `event` Msg and the same fold the core runs is applied to a local projection,
  * seeded from the core's own state when the Sub opened. Same function, same seed, same order, so
  * the tail published on `transcript` is the tail the core commits — a read-back after `dispatch`
- * could not promise that, because the host applies a dispatched Msg on its own serial tail.
+ * could not promise that, because tea's run applies a dispatched Msg on its own serial tail.
  *
  * The projection is the process's rather than the Sub's (`./projection.ts`), because the core's
  * transcript has a second entrance no event carries: the operator's own turn, recorded by the
@@ -37,6 +37,7 @@ import {
 	START_ERROR,
 	type WindowLimits,
 } from "../core/index.ts";
+import type {AgentEvent} from "../events.ts";
 import {isRefusal, pageCursor, planTranscriptPage, withoutLocalEchoes} from "../history/index.ts";
 import {SessionOpening} from "../opening.ts";
 import type {Mode, TranscriptPagePayload} from "../ports/index.ts";
@@ -205,9 +206,9 @@ export const aiAgentHandlers = <RIn = never>(
 	const handlers: AiAgentHandlerSet<RIn>["handlers"] = {
 		// The one handler that calls nothing. It answers the fresh `init`'s Cmd with the Msg that
 		// opens the session, and the `start` cell does the rest — including refusing a second open.
-		// Doing the work here instead would run it inside the spawn (`host/actor.ts` awaits an init
-		// Cmd's handler before `make` returns), which would hold the spawning process's own tail
-		// for as long as the backend takes to answer.
+		// Doing the work here instead would run it inside the spawn (tea's `run` awaits an init
+		// Cmd's handler before `Processes.spawn` returns), which would hold the spawning process's
+		// own tail for as long as the backend takes to answer.
 		//
 		// The one thing it decides is which session this process comes up on. A spawner that added
 		// `SessionOpening` to the child's context is spawning for a session the operator picked out
@@ -276,7 +277,7 @@ export const aiAgentHandlers = <RIn = never>(
 		// The turn the core recorded in the very commit that produced this Cmd (#7978) rides no
 		// layer event, so the Sub's projection would publish a tail with the operator's half
 		// missing (#7979). The committed state can be behind the projection while this runs — the
-		// Sub folds each event before the host applies its Msg — so the seed carries that tail
+		// Sub folds each event before tea's run applies its Msg — so the seed carries that tail
 		// across rather than replacing it (`./projection.ts`, #8034), and the emit publishes what
 		// the seed answered rather than the commit it started from.
 		//
@@ -369,40 +370,55 @@ export const aiAgentHandlers = <RIn = never>(
 			}),
 	};
 
-	const events = (sub: AiAgentEventsSub, dispatch: (msg: AiAgentSessionMsg) => void) =>
+	/** What one event publishes once the core has been handed its Msg, off the same fold the core runs. */
+	const publish = (event: AgentEvent) =>
 		Effect.gen(function* () {
-			const agent = yield* slot.current;
-			if (agent === null) return;
-			const seed = yield* readSession;
-			// The Sub opens on `started`, so this is the started session saying what it is (R3.1).
-			yield* selfReport(yield* projection.seed(seed ?? initialState(options.cwd)));
-
-			yield* Stream.runForEach(agent.events, (event) =>
-				Effect.gen(function* () {
-					dispatch({type: "event", sessionId: sub.sessionId, event});
-					const next = yield* projection.fold((state) => foldEvent(state, event, limits));
-					if (next === null) return;
-					// A reset empties both projections rather than moving one row of either, so it
-					// publishes on the same two ports an item and a card do — a window left rendering
-					// the old conversation's tail and its unanswerable cards is the reset half-done.
-					const reset = event.kind === "session-reset";
-					if (event.kind === "item" || reset) {
-						yield* emit(aiAgentPortNames.transcript, transcriptOf(next));
-					}
-					if (event.kind === "permission" || event.kind === "permission-resolved" || reset) {
-						yield* emit(aiAgentPortNames.permissionPending, pendingOf(next));
-					}
-					if (event.kind === "mode") yield* emit(aiAgentPortNames.modeState, modeStateOf(next));
-					if (event.kind === "result") yield* emit(aiAgentPortNames.result, event.result);
-					yield* selfReport(next);
-				}),
-			).pipe(
-				Effect.catchIf(
-					(error): error is TransportError => error instanceof TransportError,
-					(error) => Effect.sync(() => dispatch({type: "failed", failure: failureOf(error)})),
-				),
-			);
+			const next = yield* projection.fold((state) => foldEvent(state, event, limits));
+			if (next === null) return;
+			// A reset empties both projections rather than moving one row of either, so it
+			// publishes on the same two ports an item and a card do — a window left rendering
+			// the old conversation's tail and its unanswerable cards is the reset half-done.
+			const reset = event.kind === "session-reset";
+			if (event.kind === "item" || reset) {
+				yield* emit(aiAgentPortNames.transcript, transcriptOf(next));
+			}
+			if (event.kind === "permission" || event.kind === "permission-resolved" || reset) {
+				yield* emit(aiAgentPortNames.permissionPending, pendingOf(next));
+			}
+			if (event.kind === "mode") yield* emit(aiAgentPortNames.modeState, modeStateOf(next));
+			if (event.kind === "result") yield* emit(aiAgentPortNames.result, event.result);
+			yield* selfReport(next);
 		});
+
+	const events = (sub: AiAgentEventsSub) =>
+		Stream.unwrap(
+			Effect.gen(function* () {
+				const agent = yield* slot.current;
+				if (agent === null) return Stream.empty;
+				const seed = yield* readSession;
+				// The Sub opens on `started`, so this is the started session saying what it is (R3.1).
+				yield* selfReport(yield* projection.seed(seed ?? initialState(options.cwd)));
+				// Each event's Msg is emitted before its publication runs, so the host has the Msg
+				// before the ports move — the order the core and the projection fold it in.
+				return agent.events.pipe(
+					Stream.flatMap((event) =>
+						Stream.concat(
+							Stream.succeed<AiAgentSessionMsg>({
+								type: "event",
+								sessionId: sub.deps.sessionId,
+								event,
+							}),
+							Stream.drain(Stream.fromEffect(publish(event))),
+						),
+					),
+					Stream.catchIf(
+						(error): error is TransportError => error instanceof TransportError,
+						(error) =>
+							Stream.succeed<AiAgentSessionMsg>({type: "failed", failure: failureOf(error)}),
+					),
+				);
+			}),
+		);
 
 	return {handlers, subs: {"aiAgent.events": events}};
 };

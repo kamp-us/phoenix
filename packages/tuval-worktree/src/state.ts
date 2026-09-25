@@ -89,8 +89,8 @@ export type PendingJob =
 			 * on — `null` when none was up, in which case the removal was asked for on the spot.
 			 *
 			 * **It is here because a close is two steps and has to be.** `stop` and the teardown cannot
-			 * be answered as one list: the actor runs a cell's effects serially and a failing handler
-			 * short-circuits the rest (`apps/tuval/src/host/actor.ts`), and `Processes.stop` fails
+			 * be answered as one list: tea's run takes a cell's effects serially and a failing handler
+			 * short-circuits the rest (`runCmds` in `@demlik/tea`), and `Processes.stop` fails
 			 * `ProcessNotFound` on a process that is already gone — so an agent that crashed a moment
 			 * before its `stopped` landed would take the removal down with it and leave this job set for
 			 * ever, refusing every later spell "busy". Naming the process is what lets the `stopped` cell

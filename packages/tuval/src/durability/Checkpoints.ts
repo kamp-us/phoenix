@@ -1,7 +1,7 @@
 /**
  * Durability is native to the kernel (#7514): every process opens its checkpoint here before
- * its actor boots, and the host does the rest — Demlik's save-before-effects ordering runs over
- * the `Store` this hands back (`commit` in `../host/actor.ts`), so there is no second
+ * tea's run boots it, and the run does the rest — its save-before-effects ordering runs over the
+ * `Store` this hands back (`runProgram` in `../process/Processes.ts`), so there is no second
  * persistence path. `open` is an acquire/release under the process Scope: acquire loads the
  * snapshot, migrates one written under an older version of the same program where the row declares
  * that step and refuses one it cannot reach the current version from, records the process in the
@@ -10,10 +10,11 @@
  * https://github.com/kamp-us/phoenix/issues/8907#issuecomment-5625300780, which admitted the
  * migration and moved nothing else).
  *
- * A snapshot the program itself cannot restore (`CheckpointTarget.restorable`) is not refused
- * here — the program boots on its own refusal — but the store is sealed against writing, so
- * the bytes it could not read survive every later boot instead of being overwritten by the
- * state that refused them (#8112).
+ * A snapshot the program itself cannot restore (`CheckpointTarget.restorable`) does not fail the
+ * open: the store's `migrate` answers tea's `refuse` for it (demlik #316), so tea's run fails on
+ * load and writes nothing, and `../process/Processes.ts` starts the process again with no store
+ * at all. The bytes it could not read survive every later boot instead of being overwritten by
+ * the state that refused them (#8112, #9793).
  *
  * `forget` is the one operation that subtracts (#9446). Everything else here appends: `record`
  * adds a manifest row at every `open` and nothing used to take one away, so `./restore.ts` replayed
@@ -23,12 +24,17 @@
  * relies on exactly that to write the durable half before it closes the Scope.
  */
 
-import type {Store} from "@demlik/tea";
+import {refuse, type Store} from "@demlik/tea";
 import {Context, Effect, Layer, Option, type Scope} from "effect";
-import {StoreError} from "../host/errors.ts";
 import {ProcessId} from "../process/process.ts";
 import type {Migrations, ProgramId} from "../registry/program.ts";
-import {CheckpointHeld, ManifestMalformed, SnapshotMalformed, SnapshotRefused} from "./errors.ts";
+import {
+	CheckpointHeld,
+	ManifestMalformed,
+	SnapshotMalformed,
+	SnapshotRefused,
+	StoreError,
+} from "./errors.ts";
 import {migrateState} from "./migrations.ts";
 import {
 	emptyManifest,
@@ -57,16 +63,22 @@ export interface CheckpointTarget {
 	readonly migrations?: Migrations;
 	/**
 	 * The program's own read of a raw checkpoint (`Program.restorable`). A snapshot it answers
-	 * `false` for seals this store: nothing is written over those bytes for the process's life.
-	 * Absent means every snapshot is restorable, which is the answer for a program with no parse.
+	 * `false` for is refused by the store's `migrate`, so tea never boots a run over it and nothing
+	 * is written over those bytes. Absent means every snapshot is restorable, which is the answer
+	 * for a program with no parse.
 	 */
 	readonly restorable?: (raw: unknown) => boolean;
 }
 
 export interface OpenedCheckpoint {
-	/** For the host: loads the restored state (or `null` on a fresh spawn), saves the snapshot. */
+	/** For tea's run: loads the restored state (or `null` on a fresh spawn), saves the snapshot. */
 	readonly store: Store<unknown>;
-	readonly restored: boolean;
+	/**
+	 * The state `store` loads: the snapshot's, walked to the current version, or `null` on a fresh
+	 * spawn. It is what a process whose `migrate` refused it is shown with, since that process runs
+	 * with no store to load it from.
+	 */
+	readonly loaded: unknown;
 }
 
 export type OpenError =
@@ -195,10 +207,10 @@ const makeService = (stores: CheckpointStores): Checkpoints["Service"] => {
 		return {programId: target.programId, version: target.version, state: migrated.value};
 	});
 
-	const dropSnapshot = (id: string) =>
+	const deleteSnapshot = (id: string) =>
 		Effect.tryPromise({
-			try: () => stores.dropSnapshot(ProcessId.make(id)),
-			catch: (cause) => new StoreError({operation: "drop", cause}),
+			try: () => stores.snapshot(ProcessId.make(id)).delete(),
+			catch: (cause) => new StoreError({operation: "delete", cause}),
 		});
 
 	/**
@@ -214,7 +226,7 @@ const makeService = (stores: CheckpointStores): Checkpoints["Service"] => {
 		const subtree = subtreeOf(manifest, id);
 		if (subtree.length === 0) return;
 		const dropped = new Set(subtree);
-		for (const doomed of [...subtree].reverse()) yield* dropSnapshot(doomed);
+		for (const doomed of [...subtree].reverse()) yield* deleteSnapshot(doomed);
 		yield* save(stores.manifest, {
 			processes: manifest.processes.filter((entry) => !dropped.has(entry.id)),
 		});
@@ -231,16 +243,19 @@ const makeService = (stores: CheckpointStores): Checkpoints["Service"] => {
 		const snapshot = yield* loadSnapshot(target, backing);
 		yield* record(target);
 		held.add(target.id);
-		const sealed = snapshot !== null && target.restorable?.(snapshot.state) === false;
+		const loaded = snapshot === null ? null : snapshot.state;
 		const store: Store<unknown> = {
-			load: () => Promise.resolve(snapshot === null ? null : snapshot.state),
+			load: () => Promise.resolve(loaded),
 			save: (state) =>
-				sealed || forgotten.has(target.id)
+				forgotten.has(target.id)
 					? Promise.resolve()
 					: backing.save({programId: target.programId, version: target.version, state}),
-			migrate: (raw) => raw,
+			migrate: (raw) =>
+				raw === null || target.restorable?.(raw) !== false
+					? raw
+					: refuse(`${target.programId} cannot restore the checkpoint of process "${target.id}"`),
 		};
-		return {store, restored: snapshot !== null} satisfies OpenedCheckpoint;
+		return {store, loaded} satisfies OpenedCheckpoint;
 	});
 
 	return Checkpoints.of({

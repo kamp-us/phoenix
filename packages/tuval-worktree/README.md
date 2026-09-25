@@ -409,9 +409,9 @@ kernel wrote. It is the only place that check can be made.
 
 **A close is two effects in two folds, and that is not an accident.** A removal under a live session
 is a session writing into a directory being deleted, so the `stop` has to come first — but
-`[stop(agent), teardownEffect(…)]` is not "first", it is "and only if the first one worked". The
-actor runs a cell's effects serially and a failing handler short-circuits the rest
-(the SDK's `packages/tuval/src/host/actor.ts`), and `Processes.stop` fails `ProcessNotFound` on a process already
+`[stop(agent), teardownEffect(…)]` is not "first", it is "and only if the first one worked".
+tea's Effect engine, which runs every process (the SDK's `packages/tuval/src/process/Processes.ts`),
+takes a cell's effects serially, and a failing handler short-circuits the rest; and `Processes.stop` fails `ProcessNotFound` on a process already
 gone. So an agent that crashed a moment before its `stopped` landed would cancel its own worktree's
 removal, leave `pending` set, and get every later spell refused "busy" until restart.
 

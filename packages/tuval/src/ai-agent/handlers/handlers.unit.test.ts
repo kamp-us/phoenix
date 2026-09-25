@@ -18,6 +18,7 @@ import {Processes} from "../../process/Processes.ts";
 import type {ProcessTable} from "../../process/ProcessTable.ts";
 import type {ProcessHandle} from "../../process/process.ts";
 import {Registry} from "../../registry/Registry.ts";
+import {desiredSubs} from "../../registry/sub.ts";
 import {
 	type AiAgentSessionState,
 	aiAgentSessionMachine,
@@ -661,7 +662,7 @@ describe("the AI agent handlers under a process", () => {
 			const probe = probeOf();
 			const machine = aiAgentSessionMachine({cwd: "/work"});
 			const ids = (handle: ProcessHandle) =>
-				(machine.subscriptions?.(sessionOf(handle)) ?? []).map((sub) => sub.id);
+				desiredSubs(machine.subs, sessionOf(handle)).map((sub) => sub.id);
 			const script: ScriptSource = (build) => ({
 				...plainReply,
 				...(build === 2

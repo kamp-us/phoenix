@@ -14,12 +14,13 @@ import {
 	toolItem,
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
+import {desiredSubs} from "../../registry/sub.ts";
 import type {AgentEvent} from "../events.ts";
 import {Mode, type ModelRef, type PermissionRequest, type TranscriptItem} from "../ports/index.ts";
 import {checkpointUnreadable} from "./failures.ts";
 import {promptItemId} from "./fold.ts";
 import {aiAgentSessionMachine} from "./machine.ts";
-import type {AiAgentSessionCmd, AiAgentSessionMsg} from "./messages.ts";
+import {type AiAgentSessionCmd, type AiAgentSessionMsg, eventsSubId} from "./messages.ts";
 import {queueLimit} from "./queue.ts";
 import {isAiAgentSessionState, loadCheckpoint} from "./snapshot.ts";
 import {type AiAgentSessionState, checkpointFields, initialState, usageTotals} from "./state.ts";
@@ -1138,7 +1139,7 @@ describe("openFailed", () => {
 			connection: opening.connection + 1,
 			failure,
 		});
-		expect(machine.subscriptions?.(state)).toEqual([]);
+		expect(desiredSubs(machine.subs, state)).toEqual([]);
 		expect(cmds).toEqual([]);
 	});
 });
@@ -1167,7 +1168,7 @@ describe("failed", () => {
 		};
 		const [refused] = apply(started({phase: "reconnecting"}), {type, failure});
 		expect(refused).toMatchObject({phase: "gone", sessionId: "session-1", failure});
-		expect(machine.subscriptions?.(refused)).toEqual([]);
+		expect(desiredSubs(machine.subs, refused)).toEqual([]);
 	});
 });
 
@@ -1520,6 +1521,25 @@ describe("a send's outcome, under its own key", () => {
 	});
 });
 
+/**
+ * Every Cmd type the union declares. `satisfies` makes it exact both ways — a missing type and an
+ * extra one are each a type error — which is what the row's `handlers` record is too; this file
+ * cannot import that record, since the core's closure stops short of `handlers/` (`./boundary.unit.test.ts`).
+ */
+const declaredCmds = {
+	"aiAgent.boot": true,
+	"aiAgent.start": true,
+	"aiAgent.prompt": true,
+	"aiAgent.answer": true,
+	"aiAgent.setMode": true,
+	"aiAgent.setModel": true,
+	"aiAgent.setThinkingLevel": true,
+	"aiAgent.page": true,
+	"aiAgent.interrupt": true,
+	"aiAgent.reconnect": true,
+	"aiAgent.republish": true,
+} satisfies Record<AiAgentSessionCmd["type"], true>;
+
 describe("the Cmd each Msg answers for", () => {
 	const cases: ReadonlyArray<
 		readonly [AiAgentSessionState, AiAgentSessionMsg, ReadonlyArray<AiAgentSessionCmd["type"]>]
@@ -1623,18 +1643,17 @@ describe("the Cmd each Msg answers for", () => {
 			...machine.init(null, {})[1].map((cmd) => cmd.type),
 			...cases.flatMap(([state, msg]) => apply(state, msg)[1].map((c) => c.type)),
 		]);
-		expect(emitted).toEqual(new Set(Object.keys(machine.interpret ?? {})));
+		expect(emitted).toEqual(new Set(Object.keys(declaredCmds)));
 	});
 });
 
 describe("the events subscription", () => {
 	it("is keyed by the session id and the connection, as Sub data", () => {
-		expect(machine.subscriptions?.(started())).toEqual([
+		expect(desiredSubs(machine.subs, started())).toEqual([
 			{
-				id: "aiAgent.events:session-1#0",
+				id: eventsSubId("session-1", 0),
 				type: "aiAgent.events",
-				sessionId: "session-1",
-				connection: 0,
+				deps: {sessionId: "session-1", connection: 0},
 			},
 		]);
 	});
@@ -1646,12 +1665,12 @@ describe("the events subscription", () => {
 			type: "started",
 			sessionId: "session-1",
 		});
-		expect(machine.subscriptions?.(reopened)?.[0]?.id).toBe("aiAgent.events:session-1#1");
+		expect(desiredSubs(machine.subs, reopened)[0]?.id).toBe(eventsSubId("session-1", 1));
 	});
 
 	it("is absent before a session exists and once it is gone", () => {
-		expect(machine.subscriptions?.(initialState("/repo"))).toEqual([]);
-		expect(machine.subscriptions?.(started({phase: "gone"}))).toEqual([]);
+		expect(desiredSubs(machine.subs, initialState("/repo"))).toEqual([]);
+		expect(desiredSubs(machine.subs, started({phase: "gone"}))).toEqual([]);
 	});
 });
 

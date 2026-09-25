@@ -165,8 +165,8 @@ interface SecondRun {
 }
 
 /**
- * Boot, run two turns, stop in the middle of a third. Closing the scope is the stop: the host
- * drains, closes its Subs and flushes the last save (`../../host/actor.ts`).
+ * Boot, run two turns, stop in the middle of a third. Closing the scope is the stop: tea's run
+ * drains, closes its Subs and flushes the last save (the SDK's `process/Processes.ts`).
  */
 const runToTheCut = (project: string): Effect.Effect<FirstRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {

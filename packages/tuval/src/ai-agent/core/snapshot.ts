@@ -281,8 +281,8 @@ export const withSubagentWorkers = (raw: unknown): unknown => {
  * The checkpoint read, as the defaulting and the predicate composed once: the session, or `null`.
  *
  * One function rather than two call sites of the same pair, because `loadCheckpoint` wants the
- * session and the row's `restorable` (`../program.ts`) wants only the bit. A store that sealed on a
- * different verdict than the one the window renders would hold the wrong bytes (#8112).
+ * session and the row's `restorable` (`../program.ts`) wants only the bit. A store that refused on
+ * a different verdict than the one the window renders would hold the wrong bytes (#8112).
  */
 export const readCheckpoint = (loaded: unknown, cwd: string): AiAgentSessionState | null =>
 	parseSessionState(withSubagentWorkers(withUsageLedger(withCheckpointDefaults(loaded, cwd))));
@@ -292,8 +292,9 @@ export const readCheckpoint = (loaded: unknown, cwd: string): AiAgentSessionStat
  * `init` rehydrate branch is this and nothing else.
  *
  * It takes `unknown` because that is what arrives: Demlik types `init`'s argument as the state, but
- * the checkpoint store's `migrate` is identity and the envelope's parse never looks inside the
- * state, so before #8095 the load path trusted a type nothing had checked.
+ * the checkpoint store's `migrate` passes through every state `restorable` accepts, and on a
+ * refusal the process boots this branch over the refused bytes themselves, so before #8095 the load
+ * path trusted a type nothing had checked.
  *
  * A checkpoint still invalid once defaulted comes back `gone` carrying the refusal. `gone` is the
  * one phase `resumeMessages` dispatches nothing into (`../restore/checkpoint.ts`), so the failure
@@ -301,7 +302,8 @@ export const readCheckpoint = (loaded: unknown, cwd: string): AiAgentSessionStat
  * clears `failure`, which is the silent fresh session over an unreadable checkpoint #7514 refuses.
  *
  * The refused bytes are not destroyed by the save that follows `init`: the row answers `restorable`
- * off the same read, and durability seals the store on a `false` (#8112).
+ * off the same read, the store's `migrate` refuses on a `false`, and the process then runs with no
+ * store at all (#8112, #9793).
  */
 export const loadCheckpoint = (loaded: unknown, cwd: string): AiAgentSessionState => {
 	const checkpoint = readCheckpoint(loaded, cwd);

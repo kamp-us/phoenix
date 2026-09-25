@@ -3,18 +3,18 @@
  *
  * The founder sent a message in a Pi window and saw nothing until the reply landed. The layer was
  * the whole of it: the pin answers a `prompt` request with the snapshot the turn ended on, the
- * generic host awaits a Cmd handler before publishing the commit that handler came from, and
- * `enqueue` holds one transition permit for the whole step — so a `prompt` that resolved at the
- * turn's end held back the operator's own message *and* every event the turn produced.
+ * engine awaited a Cmd handler before publishing the commit that handler came from, and held one
+ * transition permit for the whole step — so a `prompt` that resolved at the turn's end held back
+ * the operator's own message *and* every event the turn produced.
  *
  * So this hosts the row as a real process over the real Pi mapping layer, on a pin whose `prompt`
  * does not settle until a latch opens, and reads the published states off `ProcessTable.changes` —
  * the same stream the chat window renders from (`shell/chat/ChatWindow.tsx`). The assertions are
- * about the host's publish rather than the port emits, because a window paints off process state.
+ * about the process's publish rather than the port emits, because a window paints off process
+ * state.
  *
- * The host is not the subject and is unchanged: `commit` still runs `runInterpret` before
- * `onCommit`, and `enqueue` still takes one permit. What changed is that the layer no longer parks
- * inside either.
+ * The engine is not the subject: the row runs on tea's `run` (`@demlik/tea/effect`), spawned by
+ * `process/Processes.ts`. What changed is that the layer no longer parks inside a Cmd handler.
  */
 
 import {assert, describe, it} from "@effect/vitest";
@@ -205,6 +205,8 @@ const onAReadySession = <A, E>(
 		const pinned = yield* pin(options);
 		const table = yield* ProcessTable;
 		const published: Array<AiAgentSessionState> = [];
+		// Started at once, so it is subscribed before the spawn: tea's engine can land the opening
+		// commits before `spawn` returns, ahead of a watcher left to start on a later tick.
 		yield* Effect.forkScoped(
 			Stream.runForEach(table.changes, (change) =>
 				Effect.sync(() => {
@@ -213,6 +215,7 @@ const onAReadySession = <A, E>(
 					if (isAiAgentSessionState(state)) published.push(state);
 				}),
 			),
+			{startImmediately: true},
 		);
 
 		const processes = yield* Processes;

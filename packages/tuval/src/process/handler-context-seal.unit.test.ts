@@ -5,11 +5,11 @@
  * on one dispatch path and not on another — and a spawn guard written as a removal, like the
  * picker's `Context.omit(ProcessPorts)`, removed nothing.
  *
- * The two paths carry different ambients, which is what makes the disagreement observable:
- * `handle.dispatch` runs `dispatchOnce` on the caller's own fiber (`../host/actor.ts:476`, `484`),
- * while a follow-up Msg goes through `dispatchUnawaited`, an `Effect.runFork` that carries none
- * (`../host/actor.ts:190`). One Msg is driven down both here and the two answers compared, because
- * "the paths agree" is the property, not just "the first one is sealed".
+ * The two paths are a Msg a caller dispatches and a follow-up a handler returns. On tea's Effect
+ * engine both run their handler under the context `run` captured at spawn, which `./Processes.ts`
+ * seals, and a dispatching fiber's context reaches neither. One Msg is driven down both here and the
+ * two answers compared, because "the paths agree" is the property, not just "the first one is
+ * sealed".
  */
 
 import {defineMachine} from "@demlik/tea";
@@ -64,9 +64,6 @@ const proberProgram = (seen: Array<Sighting>): AnyProgram =>
 					[{type: "probe", path: "follow-up"}],
 				],
 			},
-			// Demlik's `Machine` demands a Promise `interpret` beside the row's `handlers`; the host
-			// never reads it (#7576).
-			interpret: {probe: () => Promise.resolve()},
 		}),
 		ports: {},
 		handlers: {

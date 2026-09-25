@@ -47,7 +47,6 @@ const speaker: AnyProgram = {
 			say: (state, msg) => [state, [{type: "emit", n: msg.n}]],
 			stopped: (state, msg) => [{...state, ended: msg.process}, []],
 		},
-		interpret: {emit: () => Promise.resolve()},
 	}),
 	ports: {out: {kind: "tick/v1", direction: "out", accepts: isNumber}},
 	handlers: {

@@ -84,7 +84,6 @@ const probeProgram: AnyProgram = {
 	core: defineMachine<Record<string, never>, {readonly type: "noop"}, never, never, unknown>({
 		init: (loaded) => [loaded ?? {}, []],
 		update: {noop: (state) => [state, []]},
-		interpret: {},
 	}),
 	ports: {},
 	spells: [scopeSpell],

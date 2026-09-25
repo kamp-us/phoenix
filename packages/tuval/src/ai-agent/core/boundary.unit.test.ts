@@ -95,8 +95,15 @@ describe("the core's import closure", () => {
 		expect(offenders).toEqual([]);
 	});
 
-	it("reaches no sibling directory but events, ports, history and the fixtures", () => {
-		const allowed = ["../events.ts", "../ports/", "../history/", "../../ai-agent-fixtures/"];
+	// `registry/sub.ts` is the pure Sub reconcile over tea's own types, so it is allowed as tea is.
+	it("reaches no sibling directory but events, ports, history, the fixtures and the Sub reconcile", () => {
+		const allowed = [
+			"../events.ts",
+			"../ports/",
+			"../history/",
+			"../../ai-agent-fixtures/",
+			"../../registry/sub.ts",
+		];
 		const offenders = sources().flatMap(({name, text}) =>
 			importsOf(text)
 				.filter((specifier) => specifier.startsWith("."))

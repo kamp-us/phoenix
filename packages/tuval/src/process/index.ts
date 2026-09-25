@@ -3,6 +3,7 @@ export {PlannedProcesses} from "./PlannedProcesses.ts";
 export {Processes, type RemoveError, type SpawnError, type SpawnOptions} from "./Processes.ts";
 export {ProcessTable} from "./ProcessTable.ts";
 export {
+	type DispatchError,
 	type Lifecycle,
 	type Message,
 	type ProcessChange,

@@ -412,35 +412,32 @@ reader never sees new spells beside bindings compiled against the old ones
 (`src/reload-proof.unit.test.ts`). What a reload does not touch is the processes already running:
 they keep going under the rows they were spawned from.
 
-## The host
+## The engine
 
-The SDK's [`src/host/`](../../packages/tuval/src/host) runs a Demlik core machine as an Effect actor: `make(definition)` is a scoped Effect
-yielding an `ActorHandle`, and `layer(key, definition)` provides that handle as a service. A
-definition is `defineActor({name, machine, interpret, subscribe, store?})` — the machine is Demlik's
-pure core (`init`, `update`, dep-keyed `subs`, `identity`, `subscriptions`), the handlers are
-Effect-valued, and their error and service requirements fall out onto the handle. The `name` is the
-definition's nominal identity, unique per process; the instance id is the process's, minted at spawn.
+Every process runs on tea's Effect engine, `run` from `@demlik/tea/effect`. A program row's core is
+Demlik's pure machine (`init`, `update`, `identity`, and `subs` as `{type, deps}` entries); the row's
+`handlers` answer its Cmds as Effects, and its `subs` record holds one Stream runner per Sub `type`.
+The row's `ProgramId` is the definition's nominal identity, unique per process; the instance id is
+the process's, minted at spawn.
 
-A Sub that fails is the machine's Msg or the process's death, never a host retry (ADR 0346). The
-machine declares `subFailure(sub, failure)` beside `identity` and gets the failure as plain data —
-`id`, `type`, `reason`, `message`, nothing Effect-shaped. Returning a Msg dispatches it as an
-ordinary follow-up; returning `undefined`, or declaring nothing, closes the process's Scope with
-the failure as its Exit. Either way the Sub's id is marked `failed` and reconcile never re-arms it:
-a restart is a new id from the reducer, so it replays.
+A Sub runner that expects an error maps it into a Msg itself, for example with
+`Effect.catchTag`, and the reducer handles that Msg like any other. A failure the runner lets
+escape stops the process, and a later dispatch is refused as stopped. The engine never retries a
+Sub ([ADR 0408](../../.decisions/0408-tuval-subs-map-own-failures.md)).
 
-It stands in for Demlik's own `tea-effect` until kamp-us/demlik#36 ships. The places it still
-speaks Demlik 0.12's Promise and disposer shapes live in the SDK's `src/host/demlik-bridges.ts`, which is the
-swap point; `parity.unit.test.ts` runs one machine through both hosts and asserts they agree.
+An authored program opens a Sub Demlik's way, handing back a `Dispose`. `defineProgram` turns each
+one into a Stream runner in the SDK's `src/authoring/disposer-stream.ts`, the one place the SDK
+still speaks Demlik's disposer shape.
 
 ## Processes
 
 The SDK's [`src/process/`](../../packages/tuval/src/process) runs a program as a process: one running instance with a stable id, its own Effect
 Scope forked from its parent's, and a row in the `ProcessTable`. `Processes.spawn(programId,
-{parent?})` resolves the row from the `Registry`, builds the actor through the host, and hands back
+{parent?})` resolves the row from the `Registry`, runs it on tea's engine, and hands back
 a `ProcessHandle`; `Processes.stop(id)` (or `handle.stop`) closes the process Scope, which is the
-whole shutdown protocol — descendants first, then the actor's drain, Demlik Sub disposers and Effect
-finalizers, then the row leaves the table. A dispatch after stop is refused with
-`ActorStoppedError`; it never reaches the machine. Two processes of one program share nothing.
+whole shutdown protocol — descendants first, then the run's drain, Demlik Sub disposers and Effect
+finalizers, then the row leaves the table. A dispatch after stop is refused with tea's `Stopped`;
+it never reaches the machine. Two processes of one program share nothing.
 
 `Processes.layer` provides `Processes` and `ProcessTable` together over one live map and needs the
 `Registry` and `Checkpoints`. The table is in-memory and read-only from outside. Its `changes` stream reports every
@@ -457,7 +454,7 @@ one per process. The launcher uses this to hand each process its own `ProcessPor
 Durability is the kernel's, not a program's (the SDK's
 [`src/durability/`](../../packages/tuval/src/durability)). Every spawn opens the process's
 checkpoint through `Checkpoints.open`, an Effect acquire/release under the process Scope, and hands
-the host the `Store` it gets back; the host's own save-before-effects ordering does the rest, so
+tea's run the `Store` it gets back; the run's own save-before-effects ordering does the rest, so
 the only persistence path is Demlik's stores — `fileStores(dir)` (Demlik's `fileStore`, the local
 app's, at `<dir>/manifest.json` + `<dir>/processes/<id>.json`) or `memoryStores()` (Demlik's
 `memoryStore`, the tests'). A snapshot is the machine state under the program id and version that
