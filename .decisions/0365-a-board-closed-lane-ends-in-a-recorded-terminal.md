@@ -1,7 +1,7 @@
 ---
 id: 0365
 title: A lane whose issue closed elsewhere ends in a recorded terminal, not a deleted directory
-status: accepted
+status: amended-in-part by [0409](0409-remove-fabrika-lane-view.md)
 date: 2026-09-07
 tags: [fabrika, lane, pipeline, state-machine]
 ---
