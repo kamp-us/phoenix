@@ -14,16 +14,16 @@
  */
 
 import {randomUUID} from "node:crypto";
-import type {Cmd, Store, Sub, Subscribe} from "@demlik/tea";
+import type {Cmd, Store} from "@demlik/tea";
 import {Context, Effect, Exit, Layer, Option, PubSub, Scope, Semaphore, Stream} from "effect";
 import {Checkpoints, type OpenError} from "../durability/Checkpoints.ts";
 import {type ActorHandle, make as makeActor} from "../host/actor.ts";
 import type {ActorDefinition, CoreMachine, Dispatch} from "../host/definition.ts";
-import {subscribeDisposerBridge} from "../host/demlik-bridges.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import type {ProgramNotFound} from "../registry/errors.ts";
 import type {AnyProgram, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
+import type {Sub} from "../registry/sub.ts";
 import {ForgetRefused, HandlerFailed, ProcessIsPlanned, ProcessNotFound} from "./errors.ts";
 import {PlannedProcesses} from "./PlannedProcesses.ts";
 import {ProcessTable} from "./ProcessTable.ts";
@@ -207,17 +207,10 @@ const toDefinition = (
 	}
 	// The cast is for the erasure: `AnyProgram` erases S/M/C/U to `any`, and an `any`-parameterised
 	// `update` is the union of `Reducer` and `Transitions`, which no annotation accepts as either
-	// (TS2322 without the cast). `Machine`'s Promise `subscribe` rides along because `CoreMachine`
-	// drops it and the bridge below still needs it.
-	const core = program.core as CoreMachine<unknown, Message, Cmd, Sub, unknown> & {
-		readonly subscribe?: Subscribe<Message, Sub, unknown>;
-	};
-	// A row's own Effect Sub handler wins over the bridged Demlik cell of the same type: the core
-	// declares the Sub, the row says how it is run, and a core carrying both keeps the bridge for
-	// the types the row leaves alone.
-	const subscribe: Record<string, ErasedSubscribe[string]> = {
-		...(subscribeDisposerBridge(core.subscribe ?? {}) as ErasedSubscribe),
-	};
+	// (TS2322 without the cast).
+	const core = program.core as CoreMachine<unknown, Message, Cmd, Sub, unknown>;
+	// The core declares each Sub as `{type, deps}`; the row's runner of that type is how it is run.
+	const subscribe: Record<string, ErasedSubscribe[string]> = {};
 	for (const [type, handler] of Object.entries(program.subs ?? {})) {
 		const run = handler as (
 			sub: Sub,

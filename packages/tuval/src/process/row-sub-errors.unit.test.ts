@@ -3,7 +3,7 @@
  * a failure it lets escape stops the process. `host/sub-lifetime.unit.test.ts` covers the host alone.
  */
 
-import {type Cmd, type Sub, subId} from "@demlik/tea";
+import type {Cmd} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer, Schema} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
@@ -16,6 +16,7 @@ import {
 	ProgramId,
 } from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
+import type {Sub} from "../registry/sub.ts";
 import {Processes} from "./Processes.ts";
 import type {ProcessTable} from "./ProcessTable.ts";
 
@@ -23,9 +24,7 @@ class Boom extends Schema.TaggedError<Boom>()("test/Boom", {}) {}
 
 type State = {readonly armed: boolean; readonly seen: ReadonlyArray<string>};
 type Msg = {readonly type: "arm"} | {readonly type: "noted"; readonly note: string};
-type Ticker = Sub<"ticker">;
-
-const TICKER: Ticker = {id: subId("ticker"), type: "ticker"};
+type Ticker = Sub<"ticker", true>;
 
 const core: ProgramCore<State, Msg, Cmd<never>, Ticker, unknown> = {
 	init: (loaded) => [loaded ?? {armed: false, seen: []}, []],
@@ -36,9 +35,7 @@ const core: ProgramCore<State, Msg, Cmd<never>, Ticker, unknown> = {
 			[],
 		],
 	},
-	subscriptions: (state) => (state.armed ? [TICKER] : []),
-	// Demlik's `Machine` demands a cell beside the row's `subs`; the row's Effect handler wins (#7576).
-	subscribe: {ticker: () => () => {}},
+	subs: [{type: "ticker", deps: (state) => (state.armed ? true : null)}],
 };
 
 const rowWith = (id: string, subs: HostSubs<Msg, Ticker, Boom, never>): AnyProgram =>

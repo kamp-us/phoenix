@@ -17,8 +17,6 @@ import {
 	RuntimeDiscardedError,
 	RuntimeDiscardNotice,
 	type Store,
-	type Sub,
-	SubIdCollisionError,
 	type Supervision,
 	structuralHash,
 } from "@demlik/tea";
@@ -34,6 +32,7 @@ import {
 	Scope,
 	Semaphore,
 } from "effect";
+import {desiredSub, type Sub} from "../registry/sub.ts";
 import type {
 	ActorDefinition,
 	ErrorOf,
@@ -43,8 +42,13 @@ import type {
 	ServicesOf,
 	SubscribeHandlers,
 } from "./definition.ts";
-import {subDisposerBridge} from "./demlik-bridges.ts";
-import {ActorStoppedError, MsgNotAcceptedError, StoreError, UserCodeThrew} from "./errors.ts";
+import {
+	ActorStoppedError,
+	MissingSubRunnerError,
+	MsgNotAcceptedError,
+	StoreError,
+	UserCodeThrew,
+} from "./errors.ts";
 
 export type DispatchError<E> =
 	| E
@@ -95,8 +99,6 @@ type Reduced<S, C> =
 	| {readonly kind: "dropped"}
 	| {readonly kind: "applied"; readonly next: S; readonly cmds: readonly C[]};
 
-type Probe = {readonly kind: "inactive"} | {readonly kind: "active"; readonly id: string};
-
 /**
  * A Sub the host has armed. `mark` is its lifetime: `"running"` until its fiber exits, then
  * `"failed"` or `"ended"` — and reconcile re-arms neither, because the same id means the same
@@ -104,6 +106,7 @@ type Probe = {readonly kind: "inactive"} | {readonly kind: "active"; readonly id
  * Demlik-bridged `Dispose` runs, so only the state ceasing to desire the Sub releases it.
  */
 type ArmedSub = {
+	readonly type: string;
 	readonly scope: Scope.Closeable;
 	readonly mark: "running" | "failed" | "ended";
 };
@@ -151,8 +154,7 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 	let stopping = false;
 	let pending = 0;
 	let inFlightCmds = 0;
-	const manualSubs = new Map<string, ArmedSub>();
-	const keyedSubs = new Map<number, ArmedSub & {readonly id: string}>();
+	const armedSubs = new Map<string, ArmedSub>();
 
 	const report = (error: unknown, phase: HostErrorPhase) =>
 		onError(error, {phase}).pipe(
@@ -225,8 +227,7 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 
 	/**
 	 * Fork one Sub's work into its own Scope. `startImmediately` runs the handler's synchronous head
-	 * before this returns (`forkIn`, `effect/Effect` rc.112), which is what lets the dep-keyed caller
-	 * read an open failure straight off the fiber.
+	 * before this returns (`forkIn`, `effect/Effect` rc.112).
 	 */
 	const armSub = (
 		work: Effect.Effect<void, E, R | Scope.Scope>,
@@ -253,21 +254,12 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 		});
 	};
 
-	const settleManual =
+	const settleArmed =
 		(id: string, child: Scope.Closeable): SettleSub =>
 		(mark) => {
-			const armed = manualSubs.get(id);
+			const armed = armedSubs.get(id);
 			if (armed?.scope !== child) return false;
-			manualSubs.set(id, {scope: child, mark});
-			return true;
-		};
-
-	const settleKeyed =
-		(index: number, id: string, child: Scope.Closeable): SettleSub =>
-		(mark) => {
-			const armed = keyedSubs.get(index);
-			if (armed?.scope !== child) return false;
-			keyedSubs.set(index, {id, scope: child, mark});
+			armedSubs.set(id, {...armed, mark});
 			return true;
 		};
 
@@ -287,84 +279,52 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 		}
 	});
 
-	const probeKeyed = (deps: (state: S) => unknown) =>
+	const desire = (entry: NonNullable<typeof machine.subs>[number]) =>
 		Effect.try({
-			try: (): Probe => {
-				const slice = deps(state);
-				return slice === null || slice === undefined
-					? {kind: "inactive"}
-					: {kind: "active", id: structuralHash(slice)};
-			},
+			try: () => desiredSub<S, U>(entry, state),
 			catch: (cause) => new UserCodeThrew({cause}),
 		});
 
-	const disposeKeyed = Effect.fn("Tuval.host.disposeKeyed")(function* (index: number) {
-		const running = keyedSubs.get(index);
-		if (running === undefined) return;
-		keyedSubs.delete(index);
-		yield* closeSub(running.scope);
-	});
-
+	/**
+	 * The one Sub path, in the order `reconcileSubs` in `@demlik/tea` 0.18 takes: derive each entry's
+	 * id from its `type` and `deps`, stop every armed id no entry still asks for, then start the
+	 * runner for each id that is new. An id that holds is left alone whatever its mark, so a `failed`
+	 * or `ended` Sub is re-armed only under a new id. An entry whose `deps` throws leaves its type's
+	 * armed Subs standing: this state never said whether it still wants them.
+	 */
 	const reconcile = Effect.fn("Tuval.host.reconcile")(function* () {
 		let firstError: unknown = null;
-		for (const [index, entry] of (machine.subs ?? []).entries()) {
-			const probed = yield* probeKeyed(entry.deps).pipe(Effect.exit);
+		const desired = new Map<string, U>();
+		const unreadTypes = new Set<string>();
+		for (const entry of machine.subs ?? []) {
+			const probed = yield* desire(entry).pipe(Effect.exit);
 			if (Exit.isFailure(probed)) {
 				firstError ??= Cause.squash(probed.cause);
+				unreadTypes.add(entry.type);
 				continue;
 			}
-			const probe = probed.value;
-			if (probe.kind === "inactive") {
-				yield* disposeKeyed(index);
-				continue;
-			}
-			if (keyedSubs.get(index)?.id === probe.id) continue;
-			yield* disposeKeyed(index);
-			const child = yield* Scope.fork(subsScope);
-			keyedSubs.set(index, {id: probe.id, scope: child, mark: "running"});
-			const fiber = yield* armSub(subDisposerBridge(entry, state, dispatchUnawaited, ctx), child);
-			// The source has already run, so an Exit here is the open throwing — which Demlik
-			// propagates out of reconcile with nothing registered (`reconcileDepSubs`, 0.12).
-			const opened = fiber.pollUnsafe();
-			if (opened !== undefined && Exit.isFailure(opened)) {
-				firstError ??= Cause.squash(opened.cause);
-				keyedSubs.delete(index);
-				yield* closeSub(child);
-				continue;
-			}
-			observeSub(fiber, settleKeyed(index, probe.id, child));
+			if (probed.value !== null) desired.set(probed.value.id, probed.value);
 		}
-
-		if (machine.subscriptions) {
-			const desired = machine.subscriptions(state);
-			const desiredTypeById = new Map<string, string>();
-			for (const sub of desired) {
-				const existing = desiredTypeById.get(sub.id);
-				if (existing !== undefined && existing !== sub.type) {
-					return yield* Effect.die(new SubIdCollisionError(sub.id, existing, sub.type));
-				}
-				desiredTypeById.set(sub.id, sub.type);
+		for (const [id, armed] of armedSubs) {
+			if (desired.has(id) || unreadTypes.has(armed.type)) continue;
+			armedSubs.delete(id);
+			yield* closeSub(armed.scope);
+		}
+		for (const [id, sub] of desired) {
+			if (armedSubs.has(id)) continue;
+			const handler = definition.subscribe[sub.type as U["type"]];
+			if (!handler) {
+				firstError ??= new MissingSubRunnerError({subType: sub.type});
+				continue;
 			}
-			for (const [id, armed] of manualSubs) {
-				if (desiredTypeById.has(id)) continue;
-				manualSubs.delete(id);
-				yield* closeSub(armed.scope);
-			}
-			for (const sub of desired) {
-				// A `failed` or `ended` id keeps its entry, so this is also the re-arm refusal: the
-				// same id means the same lifetime, and a restart is a new id from the reducer.
-				if (manualSubs.has(sub.id)) continue;
-				const handler = definition.subscribe[sub.type as U["type"]];
-				if (!handler) continue;
-				const child = yield* Scope.fork(subsScope);
-				manualSubs.set(sub.id, {scope: child, mark: "running"});
-				const work = handler(
-					sub as Extract<U, {type: U["type"]}>,
-					ctx,
-					dispatchUnawaited,
-				) as Effect.Effect<void, E, R | Scope.Scope>;
-				observeSub(yield* armSub(work, child), settleManual(sub.id, child));
-			}
+			const child = yield* Scope.fork(subsScope);
+			armedSubs.set(id, {type: sub.type, scope: child, mark: "running"});
+			const work = handler(
+				sub as Extract<U, {type: U["type"]}>,
+				ctx,
+				dispatchUnawaited,
+			) as Effect.Effect<void, E, R | Scope.Scope>;
+			observeSub(yield* armSub(work, child), settleArmed(id, child));
 		}
 		if (firstError !== null) return yield* Effect.die(firstError);
 	});
@@ -454,8 +414,7 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 		if (inFlightCmds > 0) yield* report(new RuntimeDiscardedError(inFlightCmds), "discard");
 		yield* quiet.await;
 		gate = "closed";
-		manualSubs.clear();
-		keyedSubs.clear();
+		armedSubs.clear();
 		yield* closeSub(subsScope);
 		yield* checkpoint(state).pipe(Effect.catchCause(reportCause("stop-save")));
 	}).pipe(

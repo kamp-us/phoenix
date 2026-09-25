@@ -5,15 +5,16 @@
  * real program.
  */
 
-import {defineMachine} from "@demlik/tea";
 import type {PayloadRejected, PortNotWired} from "@kampus/tuval-sdk/kernel/ports/errors";
 import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {
 	type AnyProgram,
 	type Program,
 	ProgramId,
 	type RendererRef,
 } from "@kampus/tuval-sdk/kernel/registry/program";
+import type {Sub} from "@kampus/tuval-sdk/kernel/registry/sub";
 import {Effect} from "effect";
 import {COUNT_KIND, isCount} from "./count.ts";
 import type {CounterState} from "./counter-state.ts";
@@ -30,6 +31,8 @@ export {type CounterState, isCounterState} from "./counter-state.ts";
  */
 export type CounterMsg = {readonly type: "tick"} | {readonly type: "key"; readonly key: string};
 export type Announce = {readonly type: "announce"; readonly count: number};
+/** The timer, keyed on its interval. */
+export type CounterTimer = Sub<"timer", {readonly everyMs: number}>;
 
 export interface CounterOptions {
 	/** Tick on a timer this often; `null` ticks only when told to, which is what the tests want. */
@@ -41,24 +44,13 @@ export const counterId = ProgramId.make("counter");
 export const counterProgram = ({everyMs}: CounterOptions): AnyProgram =>
 	({
 		id: counterId,
-		core: defineMachine<CounterState, CounterMsg, Announce, never, unknown>({
+		core: defineMachine<CounterState, CounterMsg, Announce, CounterTimer, unknown>({
 			init: (loaded) => [loaded ?? {count: 0}, []],
 			update: {
 				tick: (state) => [{count: state.count + 1}, [{type: "announce", count: state.count + 1}]],
 				key: (state) => [{count: state.count + 1}, [{type: "announce", count: state.count + 1}]],
 			},
-			subs:
-				everyMs === null
-					? []
-					: [
-							{
-								deps: () => ({everyMs}),
-								source: (_state, dispatch) => {
-									const timer = setInterval(() => dispatch({type: "tick"}), everyMs);
-									return () => clearInterval(timer);
-								},
-							},
-						],
+			subs: everyMs === null ? [] : [{type: "timer", deps: () => ({everyMs})}],
 			// Demlik's `Machine` demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576).
 			interpret: {announce: () => Promise.resolve()},
 		}),
@@ -70,6 +62,13 @@ export const counterProgram = ({everyMs}: CounterOptions): AnyProgram =>
 					yield* ports.emit("ticks", cmd.count);
 					return [] as ReadonlyArray<CounterMsg>;
 				}),
+		},
+		subs: {
+			timer: (sub: CounterTimer, dispatch: (msg: CounterMsg) => void) =>
+				Effect.acquireRelease(
+					Effect.sync(() => setInterval(() => dispatch({type: "tick"}), sub.deps.everyMs)),
+					(timer) => Effect.sync(() => clearInterval(timer)),
+				).pipe(Effect.andThen(Effect.never)),
 		},
 		capabilities: [],
 		takesKeys: true,
@@ -88,7 +87,7 @@ export const counterProgram = ({everyMs}: CounterOptions): AnyProgram =>
 		CounterState,
 		CounterMsg,
 		Announce,
-		never,
+		CounterTimer,
 		unknown,
 		PayloadRejected | PortNotWired,
 		ProcessPorts

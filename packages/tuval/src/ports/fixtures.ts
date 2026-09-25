@@ -4,8 +4,9 @@
  * type-level test in `boundary.unit.test.ts` leans on.
  */
 
-import {type Cmd, defineMachine} from "@demlik/tea";
+import type {Cmd} from "@demlik/tea";
 import {Schema} from "effect";
+import {defineMachine} from "../registry/machine.ts";
 import type {AnyProgram, PortBound, PortSchema, Program} from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
 

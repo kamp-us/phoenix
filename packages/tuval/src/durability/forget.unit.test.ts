@@ -9,12 +9,12 @@
  * store a correct one leaves, minus the crash nobody ran.
  */
 
-import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer, Option} from "effect";
 import {Processes} from "../process/Processes.ts";
 import {ProcessTable} from "../process/ProcessTable.ts";
 import {ProcessId} from "../process/process.ts";
+import {defineMachine} from "../registry/machine.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {Checkpoints} from "./Checkpoints.ts";

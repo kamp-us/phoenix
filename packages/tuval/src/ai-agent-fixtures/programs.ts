@@ -5,8 +5,9 @@
  * inside the directory could not tell whether the closure held.
  */
 
-import {type Cmd, defineMachine} from "@demlik/tea";
+import type {Cmd} from "@demlik/tea";
 import {mode, permission, prompt, transcript, transcriptPage} from "../ai-agent/ports/index.ts";
+import {defineMachine} from "../registry/machine.ts";
 import {type AnyProgram, type PortSchema, type Program, ProgramId} from "../registry/program.ts";
 
 type State = {readonly turns: number};

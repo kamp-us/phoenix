@@ -1,11 +1,18 @@
-import {type DispatchDiscardedError, type NoCtx, subId} from "@demlik/tea";
+import type {DispatchDiscardedError, NoCtx} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Exit, Fiber, Schema, type Scope} from "effect";
 import {expectTypeOf} from "vitest";
+import type {Sub} from "../registry/sub.ts";
 import {type ActorHandle, layer, make} from "./actor.ts";
 import {type CoreMachine, defineActor} from "./definition.ts";
 import type {ActorStoppedError, MsgNotAcceptedError, StoreError} from "./errors.ts";
-import {counterMachine, type Msg, recordingStore, type State} from "./fixtures.ts";
+import {
+	counterMachine,
+	counterSubscribe,
+	type Msg,
+	recordingStore,
+	type State,
+} from "./fixtures.ts";
 
 describe("host actor", () => {
 	it.live("serializes interleaved dispatches through one Semaphore, in arrival order", () =>
@@ -50,12 +57,11 @@ describe("host actor", () => {
 			const events: string[] = [];
 			type S = {readonly type: "off"} | {readonly type: "on"};
 			type M = {readonly type: "toggle"};
-			type U = {readonly id: ReturnType<typeof subId>; readonly type: "ticker"};
+			type U = Sub<"ticker", true>;
 			const machine: CoreMachine<S, M, never, U, NoCtx> = {
 				init: () => [{type: "off"}, []],
 				update: {toggle: (state) => [{type: state.type === "off" ? "on" : "off"}, []]},
-				subscriptions: (state) =>
-					state.type === "on" ? [{id: subId("ticker"), type: "ticker"}] : [],
+				subs: [{type: "ticker", deps: (state) => (state.type === "on" ? true : null)}],
 			};
 			const definition = defineActor({
 				name: "test/sub-scope",
@@ -100,10 +106,10 @@ describe("host actor", () => {
 				Counter,
 				defineActor({
 					name: "test/layered",
-					machine: counterMachine(log),
+					machine: counterMachine(),
 					store: recordingStore(saves),
 					interpret: {notify: () => Effect.succeed<Msg>({type: "acked"})},
-					subscribe: {},
+					subscribe: counterSubscribe(log),
 				}),
 			);
 			const handle = yield* Effect.gen(function* () {
@@ -179,10 +185,10 @@ describe("host actor", () => {
 					const actor = yield* make(
 						defineActor({
 							name: "test/snapshots",
-							machine: counterMachine([]),
+							machine: counterMachine(),
 							store: recordingStore(saves),
 							interpret: {notify: () => Effect.succeed<Msg>({type: "acked"})},
-							subscribe: {},
+							subscribe: counterSubscribe([]),
 						}),
 					);
 					yield* actor.dispatch({type: "start", runId: "r1"});
@@ -204,7 +210,7 @@ describe("host actor", () => {
 		) {}
 		const definition = defineActor({
 			name: "test/typed",
-			machine: counterMachine([]),
+			machine: counterMachine(),
 			interpret: {
 				notify: (cmd) =>
 					Effect.gen(function* () {
@@ -213,7 +219,7 @@ describe("host actor", () => {
 						return {type: "acked"} as const;
 					}),
 			},
-			subscribe: {},
+			subscribe: counterSubscribe([]),
 		});
 		const built = make(definition);
 		expectTypeOf<Effect.Error<typeof built>>().toEqualTypeOf<Boom | StoreError>();
@@ -233,7 +239,7 @@ describe("host actor", () => {
 				const actor = yield* make(
 					defineActor({
 						name: "test/commits",
-						machine: counterMachine([]),
+						machine: counterMachine(),
 						interpret: {
 							notify: (cmd) =>
 								Effect.sync(() => {
@@ -241,7 +247,7 @@ describe("host actor", () => {
 									return {type: "acked"} as const;
 								}),
 						},
-						subscribe: {},
+						subscribe: counterSubscribe([]),
 						onCommit: (state) => Effect.sync(() => void log.push(`commit:${state.type}`)),
 					}),
 				);
@@ -382,10 +388,10 @@ describe("host actor", () => {
 					const actor = yield* make(
 						defineActor({
 							name: "test/worthy-absent",
-							machine: counterMachine([]),
+							machine: counterMachine(),
 							store: recordingStore(saves),
 							interpret: {notify: () => Effect.succeed<Msg>({type: "acked"})},
-							subscribe: {},
+							subscribe: counterSubscribe([]),
 						}),
 					);
 					yield* actor.dispatch({type: "start", runId: "r1"});

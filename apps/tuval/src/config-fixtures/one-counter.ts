@@ -1,4 +1,4 @@
-import {defineMachine} from "@demlik/tea";
+import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import type {AnyProgram, Program} from "@kampus/tuval-sdk/kernel/registry/program";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";

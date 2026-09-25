@@ -14,7 +14,8 @@
  * the turn's own end admits it.
  */
 
-import {defineMachine, type Machine} from "@demlik/tea";
+import {defineMachine, type ProgramCore} from "../../registry/machine.ts";
+import type {DepKeyedSub} from "../../registry/sub.ts";
 import {sameModel} from "../ports/index.ts";
 import {
 	answerNotOffered,
@@ -41,12 +42,7 @@ import {
 	unresolvedAnswer,
 	type WindowLimits,
 } from "./fold.ts";
-import {
-	type AiAgentSessionCmd,
-	type AiAgentSessionMsg,
-	type AiAgentSessionSub,
-	eventsSub,
-} from "./messages.ts";
+import type {AiAgentSessionCmd, AiAgentSessionMsg, AiAgentSessionSub} from "./messages.ts";
 import {enqueue, isQueueFull, type QueuedPrompt, queueLimit, releaseQueued} from "./queue.ts";
 import {noteSend, settledBy, settleFailedTurn} from "./sends.ts";
 import {loadCheckpoint} from "./snapshot.ts";
@@ -63,7 +59,7 @@ export interface AiAgentSessionOptions extends WindowLimits {
 	readonly cwd: string;
 }
 
-export type AiAgentSessionMachine = Machine<
+export type AiAgentSessionMachine = ProgramCore<
 	AiAgentSessionState,
 	AiAgentSessionMsg,
 	AiAgentSessionCmd,
@@ -72,6 +68,18 @@ export type AiAgentSessionMachine = Machine<
 >;
 
 const noCmds = [] as const;
+
+/**
+ * This session's event stream, on while a session exists and is not gone. The connection rides in
+ * the deps so every `started` — a reconnect included — is a new id and re-opens the stream.
+ */
+const events: DepKeyedSub<AiAgentSessionState, AiAgentSessionSub> = {
+	type: "aiAgent.events",
+	deps: (state) =>
+		state.sessionId === null || state.phase === "gone"
+			? null
+			: {sessionId: state.sessionId, connection: state.connection},
+};
 
 const noWork = (): Promise<void> => Promise.resolve();
 
@@ -510,18 +518,15 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			failed: (state, msg) => failed(state, msg.failure),
 		},
 
-		subscriptions: (state) =>
-			state.sessionId === null || state.phase === "gone"
-				? []
-				: [eventsSub(state.sessionId, state.connection)],
+		subs: [events],
 
 		identity: {
 			ofState: (state) => state.sessionId,
 			ofMsg: (msg) => (msg.type === "event" ? msg.sessionId : undefined),
 		},
 
-		// Demlik's `Machine` demands a Promise `interpret` and a `subscribe` beside the row's own
-		// Effect handlers; the host reads neither (#7576).
+		// Demlik's `Machine` demands a Promise `interpret` beside the row's own Effect handlers; the
+		// host never reads it (#7576).
 		interpret: {
 			"aiAgent.boot": noWork,
 			"aiAgent.start": noWork,
@@ -535,6 +540,5 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			"aiAgent.reconnect": noWork,
 			"aiAgent.republish": noWork,
 		},
-		subscribe: {"aiAgent.events": () => () => {}},
 	});
 };

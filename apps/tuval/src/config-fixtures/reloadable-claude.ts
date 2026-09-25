@@ -10,13 +10,13 @@
  */
 
 import {readFileSync} from "node:fs";
-import {defineMachine} from "@demlik/tea";
 import type {ClaudeSessionConfigInput} from "@kampus/tuval-claude";
 import {CLAUDE_SESSION_PROGRAM, claudeSession} from "@kampus/tuval-claude";
 import {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {ScriptedAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import type {AgentScript} from "@kampus/tuval-sdk/kernel/ai-agent/service/script";
+import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
 

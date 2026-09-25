@@ -4,7 +4,7 @@
  * is the shipped one — so a test that passes here is a test against the shapes the kernel serves.
  */
 
-import {type Cmd, defineMachine} from "@demlik/tea";
+import type {Cmd} from "@demlik/tea";
 import {SessionOpening} from "@kampus/tuval-sdk/kernel/ai-agent/opening";
 import {CallingWindow} from "@kampus/tuval-sdk/kernel/commands/scope";
 import type {WindowId as CallWindowId} from "@kampus/tuval-sdk/kernel/commands/spell";
@@ -27,6 +27,7 @@ import {
 	type ProcessRow,
 } from "@kampus/tuval-sdk/kernel/process/process";
 import {noSelfReport} from "@kampus/tuval-sdk/kernel/process/self-report";
+import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";

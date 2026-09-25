@@ -1,21 +1,30 @@
 /**
- * The two Demlik 0.12 bridges — and the kamp-us/demlik#36 swap point.
+ * The Demlik 0.12 bridges — and the kamp-us/demlik#36 swap point.
  *
  * Demlik 0.12 speaks Promise and synchronous disposer at its two host seams: an `Interpret` cell
  * returns `Promise<M | void>` (`src/pure/core.ts`, `Interpret`), and a dep-keyed Sub's `source`
- * returns a `Dispose` synchronously (`DepKeyedSub.source`). This host speaks Effect and Scope.
- * Everything that translates between the two lives here and nowhere else, so when demlik#36
- * ships `tea-effect` — Demlik accepting Effect handlers and Scope-owned Subs natively — this file
- * is deleted and the two call sites take Demlik's own types. Nothing outside this file names a
- * Promise or a `Dispose` on a handler's behalf.
+ * returns a `Dispose` synchronously (`DepKeyedSub.source`). This host speaks Effect and Scope, and
+ * declares its Subs as `{type, deps}` entries run by a runner of that type. Everything that
+ * translates between the two lives here and nowhere else, so when demlik#36 ships `tea-effect`
+ * this file is deleted. Nothing outside this file names a Promise or a `Dispose` on a handler's
+ * behalf.
  */
 
-import type {Cmd, DepKeyedSub, Interpret, Machine, PortEmitter, Sub, Subscribe} from "@demlik/tea";
-import {type Context, Effect, type Scope} from "effect";
+import type {
+	Cmd,
+	DepKeyedSub as DemlikDepKeyedSub,
+	Dispose,
+	Interpret,
+	Machine,
+	PortEmitter,
+} from "@demlik/tea";
+import {type Context, Effect, Fiber, type Scope} from "effect";
+import {type DepKeyedSub, desiredSub, type Sub} from "../registry/sub.ts";
 import type {
 	ActorDefinition,
 	Dispatch,
 	InterpretHandlers,
+	SubHandler,
 	SubscribeHandlers,
 } from "./definition.ts";
 import {SubDisposeError} from "./errors.ts";
@@ -47,78 +56,78 @@ export const interpretPromiseBridge =
 const noDispatch = (): void => {};
 
 /**
- * Synchronous disposer bridge for Sub: a Demlik 0.12 dep-keyed `source` — open now, hand back the
- * close — as a scoped acquisition. Opening runs the source under `Effect.acquireRelease`
- * (`LLMS.md` "Managing resources and Scopes"); the Scope's close awaits the `Dispose`, Promise or
- * not, so Demlik's disposer and the Effect finalizer are one shutdown step.
+ * Disposer bridge for a Sub runner: one that opens now and hands back the close — Demlik's own
+ * runner shape — as the Effect runner the host forks into a Sub scope. Opening runs under
+ * `Effect.acquireRelease` (`LLMS.md` "Managing resources and Scopes"); the Scope's close awaits the
+ * `Dispose`, Promise or not, so the disposer and the Effect finalizer are one shutdown step.
  *
- * It then holds instead of returning, so the effect's lifetime is the Sub's lifetime and its error
- * channel is the Sub's post-open failure channel — the one on which an unmapped failure stops the
- * process (ADR 0408). A dep-keyed `source` returning a `Dispose` has nothing to put on that channel yet; a
- * manual `subscribe` handler does return, and its return is the `ended` mark, which is why
- * `subscribeDisposerBridge` below does not hold.
+ * It then holds instead of returning, so the effect's lifetime is the Sub's lifetime: a runner that
+ * returned would be marked `ended` and never re-armed while its id holds.
  */
-export const subDisposerBridge = <S, M, Ctx>(
-	sub: DepKeyedSub<S, M, Ctx>,
-	state: S,
-	dispatch: Dispatch<M>,
-	ctx: Ctx,
-): Effect.Effect<void, never, Scope.Scope> =>
-	Effect.acquireRelease(
-		Effect.sync(() => sub.source(state, dispatch, ctx)),
-		(dispose) =>
-			Effect.tryPromise({
-				try: async () => {
-					await dispose();
-				},
-				catch: (cause) => new SubDisposeError({cause}),
-			}).pipe(Effect.orDie),
-	).pipe(Effect.andThen(Effect.never));
+export const disposerRunner =
+	<U extends Sub, M>(open: (sub: U, dispatch: Dispatch<M>) => Dispose) =>
+	(sub: U, dispatch: Dispatch<M>): Effect.Effect<void, never, Scope.Scope> =>
+		Effect.acquireRelease(
+			Effect.sync(() => open(sub, dispatch)),
+			(dispose) =>
+				Effect.tryPromise({
+					try: async () => {
+						await dispose();
+					},
+					catch: (cause) => new SubDisposeError({cause}),
+				}).pipe(Effect.orDie),
+		).pipe(Effect.andThen(Effect.never));
 
 /**
- * The same disposer bridge for the manual-Sub map: Demlik 0.12's `subscribe[type]` cells, each
- * returning a `Dispose`, as the Effect-valued `SubscribeHandlers` the host forks into a Sub scope.
- * The acquire opens the cell; the Scope the host provides awaits its `Dispose` on close.
+ * Runner bridge for Sub: one `{type, deps}` entry and the Effect runner of its type as the
+ * inline-runner entry Demlik 0.12 reconciles. Its `source` forks the runner scoped over the
+ * services captured at build time, and its `Dispose` interrupts that fiber, which closes the scope.
+ * 0.12 keys the entry on `deps` alone where this host keys it on `type` and `deps`; within one
+ * entry the two agree on every start and stop.
  */
-export const subscribeDisposerBridge = <M extends {type: string}, U extends Sub, Ctx>(
-	subscribe: Subscribe<M, U, Ctx>,
-): SubscribeHandlers<M, U, Ctx> => {
-	const cells: Partial<SubscribeHandlers<M, U, Ctx>> = {};
-	const bridge = <K extends U["type"]>(type: K): void => {
-		const open = subscribe[type];
-		cells[type] = (sub, ctx, dispatch) =>
-			Effect.acquireRelease(
-				Effect.sync(() => open(sub, ctx, dispatch)),
-				(dispose) =>
-					Effect.tryPromise({
-						try: async () => {
-							await dispose();
-						},
-						catch: (cause) => new SubDisposeError({cause}),
-					}).pipe(Effect.orDie),
-			).pipe(Effect.asVoid);
+const depKeyedBridge =
+	<R>(services: Context.Context<R>) =>
+	<S, M, U extends Sub, Ctx>(
+		entry: DepKeyedSub<S, U>,
+		runner: SubHandler<M, U, U["type"], Ctx>,
+	): DemlikDepKeyedSub<S, M, Ctx> => {
+		const runFork = Effect.runForkWith(services);
+		return {
+			deps: (state) => entry.deps(state),
+			source: (state, dispatch, ctx) => {
+				const sub = desiredSub(entry, state) as Extract<U, {type: U["type"]}>;
+				const fiber = runFork(
+					Effect.scoped(runner(sub, ctx, dispatch) as Effect.Effect<void, unknown, R>),
+				);
+				return () => Effect.runPromise(Fiber.interrupt(fiber));
+			},
+		};
 	};
-	for (const type of Object.keys(subscribe)) bridge(type as U["type"]);
-	return cells as SubscribeHandlers<M, U, Ctx>;
-};
 
 /**
  * A definition on Demlik 0.12's own Promise runtime: its Cmd handlers crossed through the
- * Interpret bridge, its core machine handed to `run` unchanged. Only a machine whose Subs are all
- * dep-keyed crosses — an Effect-valued `subscribe` handler has no Demlik shape to land on. The
- * parity test runs one machine both ways; nothing else should need this.
+ * Interpret bridge, each Sub entry crossed with its runner through the runner bridge. The parity
+ * test runs one machine both ways; nothing else should need this.
  */
 export const toDemlikMachine = <
 	S,
 	M extends {type: string},
 	C extends Cmd,
+	U extends Sub,
 	Ctx,
 	I extends InterpretHandlers<M, C, Ctx>,
+	B extends SubscribeHandlers<M, U, Ctx>,
 	R,
 >(
-	definition: ActorDefinition<S, M, C, never, Ctx, I, SubscribeHandlers<M, never, Ctx>>,
+	definition: ActorDefinition<S, M, C, U, Ctx, I, B>,
 	services: Context.Context<R>,
-): Machine<S, M, C, never, Ctx> => ({
-	...definition.machine,
-	interpret: interpretPromiseBridge(services)<M, C, Ctx>(definition.interpret),
-});
+): Machine<S, M, C, never, Ctx> => {
+	const bridge = depKeyedBridge(services);
+	return {
+		...definition.machine,
+		subs: (definition.machine.subs ?? []).map((entry) =>
+			bridge<S, M, U, Ctx>(entry, definition.subscribe[entry.type as U["type"]]),
+		),
+		interpret: interpretPromiseBridge(services)<M, C, Ctx>(definition.interpret),
+	};
+};

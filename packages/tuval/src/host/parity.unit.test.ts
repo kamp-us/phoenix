@@ -5,7 +5,13 @@ import {make} from "./actor.ts";
 import {defineActor} from "./definition.ts";
 import {toDemlikMachine} from "./demlik-bridges.ts";
 import {ActorStoppedError} from "./errors.ts";
-import {counterMachine, type Msg, recordingStore, type State} from "./fixtures.ts";
+import {
+	counterMachine,
+	counterSubscribe,
+	type Msg,
+	recordingStore,
+	type State,
+} from "./fixtures.ts";
 
 interface Run {
 	readonly states: State[];
@@ -24,7 +30,7 @@ const script: readonly Msg[] = [
 const definitionFor = (name: string, log: string[], store: Store<State>) =>
 	defineActor({
 		name,
-		machine: counterMachine(log),
+		machine: counterMachine(),
 		store,
 		interpret: {
 			notify: (cmd) =>
@@ -33,7 +39,7 @@ const definitionFor = (name: string, log: string[], store: Store<State>) =>
 					return {type: "acked"};
 				}),
 		},
-		subscribe: {},
+		subscribe: counterSubscribe(log),
 	});
 
 const throughHost = Effect.scoped(

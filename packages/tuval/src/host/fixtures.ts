@@ -1,6 +1,8 @@
 /** Test fixtures for the host: a small machine with a Cmd that follows up and a dep-keyed Sub. */
 
 import type {NoCtx, Store} from "@demlik/tea";
+import {Effect} from "effect";
+import type {Sub} from "../registry/sub.ts";
 import type {CoreMachine} from "./definition.ts";
 
 export type State =
@@ -20,7 +22,10 @@ export type Msg =
 
 export type Command = {readonly type: "notify"; readonly count: number};
 
-export const counterMachine = (log: string[]): CoreMachine<State, Msg, Command, never, NoCtx> => ({
+/** On while a run is going, keyed on its id. */
+export type Ticker = Sub<"ticker", {readonly runId: string}>;
+
+export const counterMachine = (): CoreMachine<State, Msg, Command, Ticker, NoCtx> => ({
 	init: (loaded) => [loaded ?? {type: "idle", count: 0}, []],
 	update: {
 		start: (state, msg) => [{type: "running", runId: msg.runId, count: state.count, acks: 0}, []],
@@ -34,15 +39,22 @@ export const counterMachine = (log: string[]): CoreMachine<State, Msg, Command, 
 	},
 	subs: [
 		{
+			type: "ticker",
 			deps: (state) => (state.type === "running" ? {runId: state.runId} : null),
-			source: () => {
-				log.push("sub:start");
-				return () => {
-					log.push("sub:stop");
-				};
-			},
 		},
 	],
+});
+
+/**
+ * The ticker's runner: logs its start, holds, and logs its stop when its scope closes. Left to
+ * inference, so a definition built on it reads no error or service off it.
+ */
+export const counterSubscribe = (log: string[]) => ({
+	ticker: () =>
+		Effect.acquireRelease(
+			Effect.sync(() => void log.push("sub:start")),
+			() => Effect.sync(() => void log.push("sub:stop")),
+		).pipe(Effect.andThen(Effect.never)),
 });
 
 export const recordingStore = <S>(saves: S[]): Store<S> => ({

@@ -16,7 +16,6 @@
  */
 
 import {randomUUID} from "node:crypto";
-import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import type {TranscriptPayload} from "@kampus/tuval-sdk/ai-agent/ports";
 import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
@@ -77,6 +76,7 @@ import {
 	RegistryDescription,
 	type SpellDescription,
 } from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Deferred, Effect, Layer, Schema} from "effect";

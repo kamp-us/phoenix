@@ -42,6 +42,19 @@ export class UserCodeThrew extends Schema.TaggedError<UserCodeThrew>()("tuval/ho
 }) {}
 
 /**
+ * The machine asked for a Sub whose `type` has no runner in the definition's `subscribe` record —
+ * the refusal `@demlik/tea` 0.18 raises for a Sub type `run` was given no runner for.
+ */
+export class MissingSubRunnerError extends Schema.TaggedError<MissingSubRunnerError>()(
+	"tuval/host/MissingSubRunnerError",
+	{subType: Schema.String},
+) {
+	override get message(): string {
+		return `no Sub runner for type "${this.subType}"`;
+	}
+}
+
+/**
  * `defineActor` was handed a name this process already defined (ADR 0346). Thrown, not failed:
  * a definition is built at module scope, outside any Effect, the way Demlik's `definePort` throws
  * `PortNameCollisionError`.

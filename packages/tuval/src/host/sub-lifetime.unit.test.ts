@@ -1,20 +1,19 @@
 /** A Sub's lifetime on the host (ADR 0408), and the definition name. */
 
-import {type DepKeyedSub, type NoCtx, type SubId, subId} from "@demlik/tea";
+import type {NoCtx} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit, Schema, Scope} from "effect";
+import {type Sub, subIdOf} from "../registry/sub.ts";
 import {make} from "./actor.ts";
 import {type CoreMachine, defineActor, type HostErrorPhase, type OnError} from "./definition.ts";
-import {subDisposerBridge} from "./demlik-bridges.ts";
-import {counterMachine} from "./fixtures.ts";
+import {disposerRunner} from "./demlik-bridges.ts";
+import {counterMachine, counterSubscribe} from "./fixtures.ts";
 
 class Boom extends Schema.TaggedError<Boom>()("test/Boom", {}) {}
 
 type State = {readonly armed: boolean; readonly seen: readonly string[]};
 type Msg = {readonly type: "arm"} | {readonly type: "noted"; readonly note: string};
-type Ticker = {readonly id: SubId; readonly type: "ticker"};
-
-const TICKER: Ticker = {id: subId("ticker"), type: "ticker"};
+type Ticker = Sub<"ticker", true>;
 
 const machine: CoreMachine<State, Msg, never, Ticker, NoCtx> = {
 	init: () => [{armed: false, seen: []}, []],
@@ -25,7 +24,7 @@ const machine: CoreMachine<State, Msg, never, Ticker, NoCtx> = {
 			[],
 		],
 	},
-	subscriptions: (state) => (state.armed ? [TICKER] : []),
+	subs: [{type: "ticker", deps: (state) => (state.armed ? true : null)}],
 };
 
 type Reported = {readonly error: unknown; readonly phase: HostErrorPhase};
@@ -157,37 +156,37 @@ describe("Sub lifetime", () => {
 		}),
 	);
 
-	it.effect("holds a dep-keyed Sub's fiber open, so its error channel is live after the open", () =>
-		Effect.gen(function* () {
-			const log: string[] = [];
-			const sub: DepKeyedSub<null, never, NoCtx> = {
-				deps: () => ({}),
-				source: () => {
+	it.effect(
+		"holds a disposer runner's fiber open, so its error channel is live after the open",
+		() =>
+			Effect.gen(function* () {
+				const log: string[] = [];
+				const runner = disposerRunner<Ticker, never>(() => {
 					log.push("open");
 					return () => void log.push("dispose");
-				},
-			};
-			const scope = yield* Scope.make();
-			const fiber = yield* Effect.forkIn(
-				subDisposerBridge(sub, null, () => {}, {}).pipe(Effect.provideService(Scope.Scope, scope)),
-				scope,
-				{startImmediately: true},
-			);
+				});
+				const sub: Ticker = {id: subIdOf("ticker", true), type: "ticker", deps: true};
+				const scope = yield* Scope.make();
+				const fiber = yield* Effect.forkIn(
+					runner(sub, () => {}).pipe(Effect.provideService(Scope.Scope, scope)),
+					scope,
+					{startImmediately: true},
+				);
 
-			assert.deepStrictEqual(log, ["open"]);
-			assert.isUndefined(fiber.pollUnsafe());
-			yield* Scope.close(scope, Exit.void);
-			assert.deepStrictEqual(log, ["open", "dispose"]);
-		}),
+				assert.deepStrictEqual(log, ["open"]);
+				assert.isUndefined(fiber.pollUnsafe());
+				yield* Scope.close(scope, Exit.void);
+				assert.deepStrictEqual(log, ["open", "dispose"]);
+			}),
 	);
 
 	it("refuses a definition name this process has already seen", () => {
 		const build = () =>
 			defineActor({
 				name: "sub-lifetime/duplicate",
-				machine: counterMachine([]),
+				machine: counterMachine(),
 				interpret: {notify: () => Effect.void},
-				subscribe: {},
+				subscribe: counterSubscribe([]),
 			});
 		build();
 		assert.throws(build, /already defined/);
