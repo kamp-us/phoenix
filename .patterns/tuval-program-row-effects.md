@@ -36,8 +36,9 @@ new id is armed fresh, which is what makes the retry replay. Catch inside the ha
 mean to survive; let out only what should end the process.
 
 **The core declares each Sub as a `{type, deps}` entry, and the row's `subs` holds the runner for
-that type.** This is `@demlik/tea` 0.18's shape, held in
-[`registry/sub.ts`](../packages/tuval/src/registry/sub.ts) until the repo pins 0.18. `deps` answers
+that type.** The entry is `@demlik/tea`'s own `DepKeyedSub`, and the Sub it asks for is tea's own
+`Sub`. [`registry/sub.ts`](../packages/tuval/src/registry/sub.ts) holds only the `desiredSub`
+reconcile helpers the host runs over those entries. `deps` answers
 the slice of state the Sub depends on, or `null` when it is off; the id is a hash of the type and
 that slice, so the host starts the runner when the entry turns on, leaves it while the id holds,
 restarts it when the slice changes and stops it on `null`. Two entries of one type with different
