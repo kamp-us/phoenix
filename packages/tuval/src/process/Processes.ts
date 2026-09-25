@@ -205,8 +205,7 @@ const toDefinition = (
 				sealed(services),
 			);
 	}
-	// Kept for the erasure, not for `subFailure` — the row's own type carries the policy now
-	// (`registry/program.ts`). `AnyProgram` erases S/M/C/U to `any`, and an `any`-parameterised
+	// The cast is for the erasure: `AnyProgram` erases S/M/C/U to `any`, and an `any`-parameterised
 	// `update` is the union of `Reducer` and `Transitions`, which no annotation accepts as either
 	// (TS2322 without the cast). `Machine`'s Promise `subscribe` rides along because `CoreMachine`
 	// drops it and the bridge below still needs it.

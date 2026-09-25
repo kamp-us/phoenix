@@ -1,4 +1,4 @@
-/** The ADR 0346 Sub-failure policy and the definition name, branch by branch. */
+/** A Sub's lifetime on the host (ADR 0408), and the definition name. */
 
 import {type DepKeyedSub, type NoCtx, type SubId, subId} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
@@ -16,9 +16,7 @@ type Ticker = {readonly id: SubId; readonly type: "ticker"};
 
 const TICKER: Ticker = {id: subId("ticker"), type: "ticker"};
 
-const machineWith = (
-	subFailure?: CoreMachine<State, Msg, never, Ticker, NoCtx>["subFailure"],
-): CoreMachine<State, Msg, never, Ticker, NoCtx> => ({
+const machine: CoreMachine<State, Msg, never, Ticker, NoCtx> = {
 	init: () => [{armed: false, seen: []}, []],
 	update: {
 		arm: (state: State) => [{...state, armed: true}, []],
@@ -28,8 +26,7 @@ const machineWith = (
 		],
 	},
 	subscriptions: (state) => (state.armed ? [TICKER] : []),
-	...(subFailure === undefined ? {} : {subFailure}),
-});
+};
 
 type Reported = {readonly error: unknown; readonly phase: HostErrorPhase};
 
@@ -38,29 +35,26 @@ const recordingOnError =
 	(error, context) =>
 		Effect.sync(() => void into.push({error, phase: context.phase}));
 
-/** The policy runs on a detached fiber, so a dispatch's own quiescence does not cover it. */
+/** A Sub's exit is observed on a detached fiber, so a dispatch's own quiescence does not cover it. */
 const settle = Effect.sleep("20 millis");
 
-describe("Sub-failure policy", () => {
-	it.live("reports the Cause under sub-fiber, then hands subFailure's Msg to the reducer", () =>
+describe("Sub lifetime", () => {
+	it.live("hands a Msg the Sub mapped from its own error to update, and keeps running", () =>
 		Effect.scoped(
 			Effect.gen(function* () {
 				const reported: Reported[] = [];
-				let opened = 0;
 				const actor = yield* make(
 					defineActor({
-						name: "sub-failure/addressed",
-						machine: machineWith((sub, failure) => ({
-							type: "noted",
-							note: `${sub.type}:${failure.reason}:${failure.id}`,
-						})),
+						name: "sub-lifetime/mapped",
+						machine,
 						interpret: {},
 						subscribe: {
-							ticker: () =>
-								Effect.suspend(() => {
-									opened++;
-									return new Boom({});
-								}),
+							ticker: (_sub, _ctx, dispatch) =>
+								new Boom({}).pipe(
+									Effect.catchTag("test/Boom", () =>
+										Effect.sync(() => dispatch({type: "noted", note: "ticker failed"})),
+									),
+								),
 						},
 						onError: recordingOnError(reported),
 					}),
@@ -69,82 +63,47 @@ describe("Sub-failure policy", () => {
 				yield* settle;
 				yield* actor.idle;
 
+				assert.deepStrictEqual(reported, []);
+				assert.deepStrictEqual(actor.getState().seen, ["ticker failed"]);
+				yield* actor.dispatch({type: "noted", note: "still running"});
+				assert.deepStrictEqual(actor.getState().seen, ["ticker failed", "still running"]);
+			}),
+		),
+	);
+
+	it.live(
+		"closes the process Scope with an unmapped failure as its Exit, then refuses dispatch",
+		() =>
+			Effect.gen(function* () {
+				const reported: Reported[] = [];
+				const exits: Array<Exit.Exit<unknown, unknown>> = [];
+				const scope = yield* Scope.make();
+				yield* Scope.addFinalizerExit(scope, (exit) => Effect.sync(() => void exits.push(exit)));
+				const actor = yield* make(
+					defineActor({
+						name: "sub-lifetime/unmapped",
+						machine,
+						interpret: {},
+						subscribe: {ticker: () => new Boom({})},
+						onError: recordingOnError(reported),
+					}),
+				).pipe(Effect.provideService(Scope.Scope, scope));
+
+				yield* actor.dispatch({type: "arm"});
+				yield* settle;
+
 				assert.deepStrictEqual(
 					reported.map((entry) => entry.phase),
 					["sub-fiber"],
 				);
 				assert.instanceOf(reported[0]?.error, Boom);
-				assert.deepStrictEqual(actor.getState().seen, ["ticker:failure:ticker"]);
-				// Still desired, and still not re-armed: the same id is the same lifetime.
-				yield* actor.dispatch({type: "arm"});
-				yield* settle;
-				assert.strictEqual(opened, 1);
+				assert.lengthOf(exits, 1);
+				const failed = exits.filter(Exit.isFailure);
+				assert.lengthOf(failed, 1);
+				for (const exit of failed) assert.instanceOf(Cause.squash(exit.cause), Boom);
+				const refused = yield* actor.dispatch({type: "arm"}).pipe(Effect.flip);
+				assert.strictEqual(refused._tag, "tuval/host/ActorStoppedError");
 			}),
-		),
-	);
-
-	it.live("closes the process Scope with the failure as its Exit when nothing addresses it", () =>
-		Effect.gen(function* () {
-			const reported: Reported[] = [];
-			const exits: Array<Exit.Exit<unknown, unknown>> = [];
-			const scope = yield* Scope.make();
-			yield* Scope.addFinalizerExit(scope, (exit) => Effect.sync(() => void exits.push(exit)));
-			const actor = yield* make(
-				defineActor({
-					name: "sub-failure/unaddressed",
-					machine: machineWith(),
-					interpret: {},
-					subscribe: {ticker: () => new Boom({})},
-					onError: recordingOnError(reported),
-				}),
-			).pipe(Effect.provideService(Scope.Scope, scope));
-
-			yield* actor.dispatch({type: "arm"});
-			yield* settle;
-
-			assert.lengthOf(exits, 1);
-			const failed = exits.filter(Exit.isFailure);
-			assert.lengthOf(failed, 1);
-			for (const exit of failed) assert.instanceOf(Cause.squash(exit.cause), Boom);
-			const refused = yield* actor.dispatch({type: "arm"}).pipe(Effect.flip);
-			assert.strictEqual(refused._tag, "tuval/host/ActorStoppedError");
-		}),
-	);
-
-	it.live("reports a throwing subFailure as UserCodeThrew and takes the unaddressed branch", () =>
-		Effect.gen(function* () {
-			const reported: Reported[] = [];
-			const exits: Array<Exit.Exit<unknown, unknown>> = [];
-			const scope = yield* Scope.make();
-			yield* Scope.addFinalizerExit(scope, (exit) => Effect.sync(() => void exits.push(exit)));
-			yield* make(
-				defineActor({
-					name: "sub-failure/throwing-policy",
-					machine: machineWith(() => {
-						// biome-ignore lint/plugin: the throw is the subject — this is the user-code-threw branch.
-						throw new Error("the policy itself broke");
-					}),
-					interpret: {},
-					subscribe: {ticker: () => new Boom({})},
-					onError: recordingOnError(reported),
-				}),
-			).pipe(
-				Effect.provideService(Scope.Scope, scope),
-				Effect.flatMap((actor) => actor.dispatch({type: "arm"})),
-			);
-			yield* settle;
-
-			assert.deepStrictEqual(
-				reported.map((entry) => entry.phase),
-				["sub-fiber", "sub-fiber"],
-			);
-			assert.instanceOf(reported[0]?.error, Boom);
-			assert.strictEqual(
-				(reported[1]?.error as {readonly _tag?: string})._tag,
-				"tuval/host/UserCodeThrew",
-			);
-			assert.lengthOf(exits, 1);
-		}),
 	);
 
 	it.live("marks a Sub that completes normally ended, sends no Msg, and never re-arms it", () =>
@@ -154,8 +113,8 @@ describe("Sub-failure policy", () => {
 				let opened = 0;
 				const actor = yield* make(
 					defineActor({
-						name: "sub-failure/ended",
-						machine: machineWith(() => ({type: "noted", note: "should not happen"})),
+						name: "sub-lifetime/ended",
+						machine,
 						interpret: {},
 						subscribe: {
 							ticker: () => Effect.sync(() => void opened++),
@@ -183,8 +142,8 @@ describe("Sub-failure policy", () => {
 				Effect.gen(function* () {
 					const actor = yield* make(
 						defineActor({
-							name: "sub-failure/quiet-teardown",
-							machine: machineWith(),
+							name: "sub-lifetime/quiet-teardown",
+							machine,
 							interpret: {},
 							subscribe: {ticker: () => Effect.never},
 							onError: recordingOnError(reported),
@@ -225,7 +184,7 @@ describe("Sub-failure policy", () => {
 	it("refuses a definition name this process has already seen", () => {
 		const build = () =>
 			defineActor({
-				name: "sub-failure/duplicate",
+				name: "sub-lifetime/duplicate",
 				machine: counterMachine([]),
 				interpret: {notify: () => Effect.void},
 				subscribe: {},

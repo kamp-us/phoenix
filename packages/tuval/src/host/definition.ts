@@ -23,11 +23,7 @@ import type {
 	UpdateForm,
 } from "@demlik/tea";
 import type {Effect, Scope} from "effect";
-import type {SubFailurePolicy} from "../sub-failure.ts";
 import {ActorNameCollisionError} from "./errors.ts";
-
-/** ADR 0346's failure types live outside both slices (`src/sub-failure.ts`); the host names them here as before. */
-export type {SubFailure, SubFailurePolicy} from "../sub-failure.ts";
 
 /**
  * A Demlik `Machine` minus its Promise-shaped `interpret` and `subscribe` — the pure core plus
@@ -40,7 +36,6 @@ export interface CoreMachine<S, M extends {type: string}, C extends Cmd, U exten
 	readonly subs?: ReadonlyArray<DepKeyedSub<S, M, Ctx>>;
 	readonly identity?: Identity<S, M>;
 	readonly subscriptions?: (state: S) => readonly U[];
-	readonly subFailure?: SubFailurePolicy<M, U>;
 	readonly __form?: UpdateForm;
 }
 

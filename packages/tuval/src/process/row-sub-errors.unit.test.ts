@@ -1,7 +1,6 @@
 /**
- * ADR 0346's two branches, proven through a registry row rather than a host-internal definition
- * literal (#7933): a row's `core.subFailure` is what the host consults when the row's own Effect Sub
- * handler fails. `host/sub-failure.unit.test.ts` covers the host in isolation; this covers the seam.
+ * ADR 0408 through a registry row: a row's own Sub handler maps the errors it expects into Msgs, and
+ * a failure it lets escape stops the process. `host/sub-lifetime.unit.test.ts` covers the host alone.
  */
 
 import {type Cmd, type Sub, subId} from "@demlik/tea";
@@ -9,7 +8,13 @@ import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer, Schema} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
-import {type AnyProgram, type Program, type ProgramCore, ProgramId} from "../registry/program.ts";
+import {
+	type AnyProgram,
+	type HostSubs,
+	type Program,
+	type ProgramCore,
+	ProgramId,
+} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {Processes} from "./Processes.ts";
 import type {ProcessTable} from "./ProcessTable.ts";
@@ -22,13 +27,7 @@ type Ticker = Sub<"ticker">;
 
 const TICKER: Ticker = {id: subId("ticker"), type: "ticker"};
 
-/**
- * A plain literal, not `defineMachine`: that helper takes Demlik's `Machine`, which has no
- * `subFailure`. The host detects the update form when `__form` is absent (`host/definition.ts`).
- */
-const coreWith = (
-	subFailure?: ProgramCore<State, Msg, Cmd<never>, Ticker, unknown>["subFailure"],
-): ProgramCore<State, Msg, Cmd<never>, Ticker, unknown> => ({
+const core: ProgramCore<State, Msg, Cmd<never>, Ticker, unknown> = {
 	init: (loaded) => [loaded ?? {armed: false, seen: []}, []],
 	update: {
 		arm: (state: State) => [{...state, armed: true}, []],
@@ -40,19 +39,15 @@ const coreWith = (
 	subscriptions: (state) => (state.armed ? [TICKER] : []),
 	// Demlik's `Machine` demands a cell beside the row's `subs`; the row's Effect handler wins (#7576).
 	subscribe: {ticker: () => () => {}},
-	...(subFailure === undefined ? {} : {subFailure}),
-});
+};
 
-const rowWith = (
-	id: string,
-	subFailure?: ProgramCore<State, Msg, Cmd<never>, Ticker, unknown>["subFailure"],
-): AnyProgram =>
+const rowWith = (id: string, subs: HostSubs<Msg, Ticker, Boom, never>): AnyProgram =>
 	({
 		id: ProgramId.make(id),
-		core: coreWith(subFailure),
+		core,
 		ports: {},
 		handlers: {},
-		subs: {ticker: () => new Boom({})},
+		subs,
 		capabilities: [],
 		identity: {package: "@kampus/tuval", program: id, version: "1.0.0", digest: `sha256:${id}`},
 		placement: {host: "local"},
@@ -70,40 +65,49 @@ const withKernel = <A, E>(
 		),
 	);
 
-/** The policy runs on a detached fiber, so a dispatch's own quiescence does not cover it. */
+/** A Sub runs on its own fiber, so a dispatch's own quiescence does not cover its failure. */
 const settle = Effect.sleep("20 millis");
 
-describe("a program row's Sub-failure policy", () => {
-	it.live("hands the Msg a row's subFailure returns to that process's update", () =>
+describe("a program row's Sub errors", () => {
+	it.live("keeps the process running when the Sub maps its own error into a Msg", () =>
 		Effect.scoped(
 			withKernel(
 				[
-					rowWith("addressed", (sub, failure) => ({
-						type: "noted",
-						note: `${sub.type}:${failure.reason}`,
-					})),
+					rowWith("mapped", {
+						ticker: (_sub, dispatch) =>
+							new Boom({}).pipe(
+								Effect.catchTag("test/Boom", () =>
+									Effect.sync(() => dispatch({type: "noted", note: "ticker failed"})),
+								),
+							),
+					}),
 				],
 				Effect.gen(function* () {
 					const processes = yield* Processes;
-					const handle = yield* processes.spawn(ProgramId.make("addressed"), {
+					const handle = yield* processes.spawn(ProgramId.make("mapped"), {
 						services: Context.empty(),
 					});
 					yield* handle.dispatch({type: "arm"});
 					yield* settle;
 
-					assert.deepStrictEqual((handle.getState() as State).seen, ["ticker:failure"]);
+					assert.deepStrictEqual((handle.getState() as State).seen, ["ticker failed"]);
+					yield* handle.dispatch({type: "noted", note: "still running"});
+					assert.deepStrictEqual((handle.getState() as State).seen, [
+						"ticker failed",
+						"still running",
+					]);
 				}),
 			),
 		),
 	);
 
-	it.live("ends the process when a row's subFailure returns undefined", () =>
+	it.live("stops the process when the Sub lets an error escape", () =>
 		Effect.scoped(
 			withKernel(
-				[rowWith("unaddressed", () => undefined)],
+				[rowWith("unmapped", {ticker: () => new Boom({})})],
 				Effect.gen(function* () {
 					const processes = yield* Processes;
-					const handle = yield* processes.spawn(ProgramId.make("unaddressed"), {
+					const handle = yield* processes.spawn(ProgramId.make("unmapped"), {
 						services: Context.empty(),
 					});
 					yield* handle.dispatch({type: "arm"});

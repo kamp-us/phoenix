@@ -53,8 +53,8 @@ const noDispatch = (): void => {};
  * not, so Demlik's disposer and the Effect finalizer are one shutdown step.
  *
  * It then holds instead of returning, so the effect's lifetime is the Sub's lifetime and its error
- * channel is the Sub's post-open failure channel — the one the host routes through the ADR 0346
- * policy. A dep-keyed `source` returning a `Dispose` has nothing to put on that channel yet; a
+ * channel is the Sub's post-open failure channel — the one on which an unmapped failure stops the
+ * process (ADR 0408). A dep-keyed `source` returning a `Dispose` has nothing to put on that channel yet; a
  * manual `subscribe` handler does return, and its return is the `ended` mark, which is why
  * `subscribeDisposerBridge` below does not hold.
  */

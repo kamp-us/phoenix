@@ -10,7 +10,6 @@ export {
 	type HostErrorPhase,
 	type InterpretHandlers,
 	type OnError,
-	type SubFailure,
 	type SubscribeHandlers,
 } from "./definition.ts";
 export {
