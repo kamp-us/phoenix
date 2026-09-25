@@ -205,6 +205,8 @@ const onAReadySession = <A, E>(
 		const pinned = yield* pin(options);
 		const table = yield* ProcessTable;
 		const published: Array<AiAgentSessionState> = [];
+		// Started at once, so it is subscribed before the spawn: tea's engine can land the opening
+		// commits before `spawn` returns, ahead of a watcher left to start on a later tick.
 		yield* Effect.forkScoped(
 			Stream.runForEach(table.changes, (change) =>
 				Effect.sync(() => {
@@ -213,6 +215,7 @@ const onAReadySession = <A, E>(
 					if (isAiAgentSessionState(state)) published.push(state);
 				}),
 			),
+			{startImmediately: true},
 		);
 
 		const processes = yield* Processes;

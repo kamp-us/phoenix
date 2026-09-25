@@ -31,6 +31,7 @@
  */
 
 import type {DepKeyedSub, Sub} from "@demlik/tea";
+import type {StoreFailed} from "@demlik/tea/effect";
 import {Context, Effect, Option, Result} from "effect";
 import {SessionOpening} from "../ai-agent/opening.ts";
 import type {
@@ -528,6 +529,7 @@ export type EffectFailure =
 	| PortRefused
 	| OpenError
 	| HandlerFailed
+	| StoreFailed
 	| ProcessNotFound
 	| ProcessIsPlanned
 	| ForgetRefused;

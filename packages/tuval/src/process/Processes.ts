@@ -1,10 +1,10 @@
 /**
  * Process lifetime: spawn resolves a registry row, opens the process's checkpoint and runs the
- * row through the host under a Scope of its own, forked from the parent's; stop closes that
- * Scope. Everything a stop must do — drain,
- * dispose Subs, flush, refuse later dispatches — is the host's shutdown protocol registered as the
- * actor's Scope finalizer (`make` in `../host/actor.ts`); this slice only closes the Scope, and a
- * parent's close reaches every descendant because `Scope.fork` closes children with the parent.
+ * row on tea's Effect engine (`run` from `@demlik/tea/effect`) under a Scope of its own, forked from
+ * the parent's; stop closes that Scope. Everything a stop must do — drain, interrupt in-flight
+ * handlers, stop Subs, flush, refuse later dispatches — is the run's own stop, which `run`
+ * registers on that Scope; this slice only closes the Scope, and a parent's close reaches every
+ * descendant because `Scope.fork` closes children with the parent.
  *
  * `remove` is stop's durable counterpart (#9446): the founder ruled that removing a process forgets
  * it and its descendants for good, so it drops the checkpoint first and closes the Scope second.
@@ -14,11 +14,10 @@
  */
 
 import {randomUUID} from "node:crypto";
-import type {Cmd, Store, Sub} from "@demlik/tea";
+import {type Cmd, type OnError, RuntimeDiscardNotice, type Store, type Sub} from "@demlik/tea";
+import {type EffectRuntime, run, type StoreFailed} from "@demlik/tea/effect";
 import {Context, Effect, Exit, Layer, Option, PubSub, Scope, Semaphore, Stream} from "effect";
 import {Checkpoints, type OpenError} from "../durability/Checkpoints.ts";
-import {type ActorHandle, make as makeActor} from "../host/actor.ts";
-import type {ActorDefinition, Dispatch} from "../host/definition.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import type {ProgramNotFound} from "../registry/errors.ts";
 import type {AnyProgram, ProgramCore, ProgramId} from "../registry/program.ts";
@@ -62,11 +61,16 @@ export interface SpawnOptions {
 }
 
 /**
- * `HandlerFailed` reaches spawn when an `init` Cmd's handler fails while the actor boots; an
- * `OpenError` when the process's checkpoint refuses — a snapshot under another definition never
- * fresh-boots (`../durability/Checkpoints.ts`).
+ * `HandlerFailed` reaches spawn when an `init` Cmd's handler fails while the run boots, and
+ * `StoreFailed` when boot's own save fails; an `OpenError` when the process's checkpoint refuses — a
+ * snapshot under another definition never fresh-boots (`../durability/Checkpoints.ts`).
  */
-export type SpawnError = ProgramNotFound | ProcessNotFound | OpenError | HandlerFailed;
+export type SpawnError =
+	| ProgramNotFound
+	| ProcessNotFound
+	| OpenError
+	| HandlerFailed
+	| StoreFailed;
 
 /**
  * Every way a `remove` refuses, and each one leaves the process exactly as it found it: unknown to
@@ -113,40 +117,21 @@ export class Processes extends Context.Service<
 interface Entry {
 	readonly row: ProcessRow;
 	readonly scope: Scope.Closeable;
-	/** The live actor behind the row. A row is what another process may see; this is what dispatches. */
+	/** tea's run behind the row. A row is what another process may see; this is what dispatches. */
 	readonly handle: ProcessHandle;
 }
 
 /**
- * The row's private types are erased (`AnyProgram`), so the definition the host runs is typed at
- * the erased shape: `{type: string}` messages, `unknown` state. Handlers yield their follow-ups as
- * a list; here each one is dispatched back through the host's own follow-up path.
+ * The row's private types are erased (`AnyProgram`), so the run is typed at the erased shape:
+ * `{type: string}` messages, `unknown` state. A handler yields its follow-ups as a list, which tea's
+ * Effect engine dispatches in order; its failure crosses the handle as `HandlerFailed`.
  */
-type ErasedHandlers = {
-	readonly [type: string]: (
-		cmd: Cmd,
-		ctx: unknown,
-		dispatch: Dispatch<Message>,
-	) => Effect.Effect<void, HandlerFailed, never>;
-};
+type ErasedCell = (cmd: Cmd) => Effect.Effect<ReadonlyArray<Message>, HandlerFailed>;
 
-type ErasedSubscribe = {
-	readonly [type: string]: (
-		sub: Sub,
-		ctx: unknown,
-		dispatch: Dispatch<Message>,
-	) => Effect.Effect<void, HandlerFailed, Scope.Scope>;
-};
+type ErasedRunner = (sub: Sub) => Stream.Stream<Message, HandlerFailed>;
 
-type ErasedDefinition = ActorDefinition<
-	unknown,
-	Message,
-	Cmd,
-	Sub,
-	unknown,
-	ErasedHandlers,
-	ErasedSubscribe
->;
+/** What a process's run answers with once booted: every dispatch fails as `DispatchError` says. */
+type Run = EffectRuntime<unknown, Message, never, HandlerFailed>;
 
 /**
  * Every key effect keeps its own runtime under is namespaced `effect/…` — the clock, the scheduler
@@ -160,16 +145,18 @@ const EFFECT_RUNTIME_PREFIX = "effect/";
 
 /**
  * The seal: a handler resolves exactly the set its spawn was given, never that set merged over
- * whatever the fiber that dispatched happened to carry (#7972). `Effect.provideContext` is
+ * whatever the spawning fiber happened to carry (#7972). `Effect.provideContext` is
  * `updateContext(self, Context.merge(context))` (rc.112, `src/internal/effect.ts:2197`), which
  * makes the spawn set a floor; `Effect.updateContext` sets the fiber context outright at the same
- * seam and restores it on exit (rc.112, `src/internal/effect.ts:2073`).
+ * seam and restores it on exit (rc.112, `src/internal/effect.ts:2073`). tea's `run` captures the
+ * context it runs in and runs every handler and Sub Stream with that one, so sealing the `run` call
+ * seals them all, and no dispatching fiber's context reaches a handler.
  *
  * effect's own runtime rides through, because `FiberImpl.setContext` re-derives the scheduler,
  * clock, log level, stack frame, tracer and parent span from the context on every replace (rc.112,
  * `src/internal/effect.ts:709`): dropping those would silently reset a handler's clock and logger
- * to the process defaults, and would take a sub handler's `Scope` — the one the host forks for it
- * (`../host/actor.ts`) — with them. Everything the runtime does not own is the spawn set's alone.
+ * to the process defaults, and would take the process `Scope` that `run` stops on with them.
+ * Everything the runtime does not own is the spawn set's alone.
  */
 const sealed =
 	(services: Context.Context<never>) =>
@@ -182,58 +169,59 @@ const sealed =
 			return Context.merge(Context.makeUnsafe<R>(runtime), services);
 		});
 
-const toDefinition = (
+/**
+ * The store tea's run saves through. A state the program calls not checkpoint-worthy is skipped at
+ * this one write path, so it is unreachable from every save the run makes — a commit, boot and the
+ * final save on stop alike (#8170).
+ */
+const worthyOnly = (store: Store<unknown>, program: AnyProgram): Store<unknown> => {
+	const worthy = program.checkpointWorthy;
+	if (worthy === undefined) return store;
+	return {
+		load: () => store.load(),
+		save: (state) => (worthy(state) ? store.save(state) : Promise.resolve()),
+		migrate: (raw) => store.migrate(raw),
+	};
+};
+
+/**
+ * A process's run on tea's Effect engine. The definition's nominal identity is the registry row's
+ * `ProgramId` (ADR 0346); one program is one row and many runs. The whole run is sealed, so every
+ * handler fiber and every Sub's Stream resolves the spawn set and nothing else.
+ */
+const runProgram = (
 	program: AnyProgram,
 	store: Store<unknown>,
 	services: Context.Context<never>,
-	onCommit: (state: unknown) => Effect.Effect<void>,
-): ErasedDefinition => {
-	const handlers: Record<string, ErasedHandlers[string]> = {};
+	onError: OnError,
+) => {
+	const interpret: Record<string, ErasedCell> = {};
 	for (const [type, handler] of Object.entries(program.handlers)) {
-		const run = handler as (cmd: Cmd) => Effect.Effect<ReadonlyArray<Message>, unknown, never>;
-		handlers[type] = (cmd, _ctx, dispatch) =>
-			run(cmd).pipe(
-				Effect.flatMap((follow) =>
-					Effect.sync(() => {
-						for (const msg of follow) dispatch(msg);
-					}),
-				),
-				Effect.mapError(
-					(cause) => new HandlerFailed({programId: program.id, cmdType: cmd.type, cause}),
-				),
-				sealed(services),
+		const cell = handler as (cmd: Cmd) => Effect.Effect<ReadonlyArray<Message>, unknown, never>;
+		interpret[type] = (cmd) =>
+			Effect.mapError(
+				cell(cmd),
+				(cause) => new HandlerFailed({programId: program.id, cmdType: cmd.type, cause}),
+			);
+	}
+	// The core declares each Sub as `{type, deps}`; the row's runner of that type is its Stream, which
+	// tea drains on its own fiber and interrupts when the Sub leaves. A failure the runner did not map
+	// into a Msg stops the process (ADR 0408).
+	const subscribe: Record<string, ErasedRunner> = {};
+	for (const [type, runner] of Object.entries(program.subs ?? {})) {
+		const stream = runner as (sub: Sub) => Stream.Stream<Message, unknown>;
+		subscribe[type] = (sub) =>
+			Stream.mapError(
+				stream(sub),
+				(cause) => new HandlerFailed({programId: program.id, cmdType: sub.type, cause}),
 			);
 	}
 	// The cast is for the erasure: `AnyProgram` erases S/M/C/U to `any`, and an `any`-parameterised
 	// `update` is the union of `Reducer` and `Transitions`, which no annotation accepts as either
 	// (TS2322 without the cast).
 	const core = program.core as ProgramCore<unknown, Message, Cmd, Sub, unknown>;
-	// The core declares each Sub as `{type, deps}`; the row's runner of that type is its Stream, and
-	// the host forks this drain into the Sub's own Scope, so the Sub leaving interrupts the Stream.
-	const subscribe: Record<string, ErasedSubscribe[string]> = {};
-	for (const [type, handler] of Object.entries(program.subs ?? {})) {
-		const run = handler as (sub: Sub) => Stream.Stream<Message, unknown>;
-		subscribe[type] = (sub, _ctx, dispatch) =>
-			Stream.runForEach(run(sub), (msg) => Effect.sync(() => dispatch(msg))).pipe(
-				Effect.mapError(
-					(cause) => new HandlerFailed({programId: program.id, cmdType: sub.type, cause}),
-				),
-				sealed(services),
-			);
-	}
-	return {
-		// The definition's nominal identity is the registry row's `ProgramId` (ADR 0346). Built as a
-		// literal, not through `defineActor`: one program is one definition and many processes, and
-		// `defineActor`'s per-process name registry would read the second spawn as a collision.
-		name: program.id,
-		machine: core,
-		store,
-		...(program.checkpointWorthy === undefined ? {} : {checkpointWorthy: program.checkpointWorthy}),
-		ctx: {},
-		interpret: handlers,
-		subscribe,
-		onCommit,
-	};
+	const booting = run(core, {interpret, subscribe, store: worthyOnly(store, program), onError});
+	return sealed(services)(booting);
 };
 
 function makeServices() {
@@ -267,10 +255,10 @@ function makeServices() {
 			let lifecycle: Lifecycle = "running";
 			let revision = 0;
 			let report = noSelfReport;
-			// Assigned once the actor is up; a commit before then (boot's own) is not the row's.
+			// Assigned once tea's run is ready; a commit before then (boot's own) is not the row's.
 			let row: ProcessRow | undefined;
-			// Read late on purpose: the definition that closes over this is built before the actor
-			// exists, and a handler only ever calls it once the actor is running.
+			// Read late on purpose: the services that close over this are built before `run` starts,
+			// so it is pointed at the run's `getState` once the run is ready.
 			let readState: () => unknown = () => undefined;
 			// What handlers actually get, and under the seal it is all they get: the spawner's set
 			// plus this process's own `ProcessSelf`. Never `options.services` directly — spawn is the
@@ -279,8 +267,9 @@ function makeServices() {
 			// graph's launcher, the picker, an ad-hoc spawn, a restore — mints or carries the id at
 			// this one call, so a handler's `self` is a free read on all four (#8757). The spawner's
 			// `Scope` is dropped on the way in: a spawner that passes its whole context on carries
-			// one, and the seal would let it beat the Scope the host forks for a sub handler. A
-			// handler that wants this process's own reads `ProcessSelf`.
+			// one, and the seal merges this set over effect's runtime, so it would replace the process
+			// Scope that `run` stops on (see `sealed`). A handler that wants this process's own reads
+			// `ProcessSelf`.
 			const granted = Context.add(Context.omit(Scope.Scope)(options.services), ProcessSelf, {
 				id,
 				scope,
@@ -309,13 +298,14 @@ function makeServices() {
 				scope,
 				Effect.sync(() => void live.delete(id)),
 			);
-			const onCommit = () =>
-				Effect.suspend(() => {
-					if (row === undefined) return Effect.void;
-					revision++;
-					return publish({kind: "state-changed", row});
-				});
-			const actor: ActorHandle<unknown, Message, HandlerFailed> = yield* Effect.gen(function* () {
+			// tea's sink is synchronous, so each report is forked onto the spawner's own runtime: its
+			// logger, not a default one.
+			const forkLog = Effect.runForkWith(yield* Effect.context<never>());
+			const onError: OnError = (error) =>
+				void forkLog(
+					error instanceof RuntimeDiscardNotice ? Effect.logWarning(error) : Effect.logError(error),
+				);
+			const runtime: Run = yield* Effect.gen(function* () {
 				const checkpoint = yield* checkpoints.open({
 					id,
 					programId,
@@ -324,18 +314,29 @@ function makeServices() {
 					...(program.migrations === undefined ? {} : {migrations: program.migrations}),
 					...(program.restorable === undefined ? {} : {restorable: program.restorable}),
 				});
-				return yield* makeActor(toDefinition(program, checkpoint.store, handlerServices, onCommit));
+				const booting = yield* runProgram(program, checkpoint.store, handlerServices, onError);
+				// Fires after every applied transition once its Cmds have settled, however they settled
+				// (demlik #311), and never for boot's own commit. An `init` Cmd's follow-ups land on
+				// tea's tail before this fiber resumes from `ready`, so a transition can precede the row:
+				// it is counted here and published once the row exists, below.
+				booting.observe(() => {
+					revision++;
+					if (row !== undefined) {
+						PubSub.publishUnsafe<ProcessChange>(changes, {kind: "state-changed", row});
+					}
+				});
+				return yield* booting.ready;
 			}).pipe(
 				Effect.provideService(Scope.Scope, scope),
 				Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))),
 			);
-			readState = actor.getState;
+			readState = runtime.getState;
 			// The latch only ever records what this process emitted, and a restored one emits nothing:
 			// a rehydrating `init` may answer no Cmds and the authored `update` publishes a derived
 			// line only on the transition that moves it, so a stable title would read back as absent
-			// forever (#8812). Seeding it off the state the actor actually booted on covers both arms
+			// forever (#8812). Seeding it off the state the run actually booted on covers both arms
 			// at once — a fresh boot's `init` derives the same lines from that same state.
-			seedSelfReport(program, actor.getState(), record);
+			seedSelfReport(program, runtime.getState(), record);
 			yield* Scope.addFinalizer(
 				scope,
 				Effect.sync(() => {
@@ -343,11 +344,12 @@ function makeServices() {
 				}),
 			);
 
-			const stateSummary = (): StateSummary => ({lifecycle, revision, state: actor.getState()});
+			const stateSummary = (): StateSummary => ({lifecycle, revision, state: runtime.getState()});
 			const selfReport = (): SelfReport => report;
 			row = {id, programId, parentId, ports: program.ports, stateSummary, selfReport};
+			const unpublished = revision;
 			// Every fold this process is asked for from outside runs alone, so a summary read beside
-			// one is that fold's and not a later one's. The actor's own tail serialises the transition
+			// one is that fold's and not a later one's. The run's own tail serialises the transition
 			// but releases before `dispatch` waits out the follow-ups, which is the window a caller
 			// reading state after its dispatch used to lose its Msg's answer in (#8274).
 			const folds = yield* Semaphore.make(1);
@@ -356,19 +358,20 @@ function makeServices() {
 				programId,
 				parentId: row.parentId,
 				scope,
-				dispatch: (msg) => folds.withPermits(1)(actor.dispatch(msg)),
+				dispatch: (msg) => folds.withPermits(1)(runtime.dispatch(msg)),
 				dispatchFolded: (msg) =>
 					folds.withPermits(1)(
-						Effect.map(Effect.exit(actor.dispatch(msg)), (settled) => ({
+						Effect.map(Effect.exit(runtime.dispatch(msg)), (settled) => ({
 							settled,
 							summary: stateSummary(),
 						})),
 					),
-				getState: actor.getState,
+				getState: runtime.getState,
 				stop: Scope.close(scope, Exit.void),
 			};
 			live.set(id, {row, scope, handle});
 			yield* publish({kind: "spawned", row});
+			if (unpublished > 0) yield* publish({kind: "state-changed", row});
 			return handle;
 		});
 

@@ -4,8 +4,8 @@
  * `{type: string}` messages and `unknown` state; the program's own module knows the real shapes.
  */
 
+import type {Stopped, StoreFailed} from "@demlik/tea/effect";
 import {type Effect, type Exit, type Option, Schema, type Scope} from "effect";
-import type {DispatchError} from "../host/actor.ts";
 import type {PortSchema, ProgramId} from "../registry/program.ts";
 import type {HandlerFailed} from "./errors.ts";
 import type {SelfReport} from "./self-report.ts";
@@ -31,13 +31,20 @@ export interface StateSummary {
 }
 
 /**
+ * Every way a dispatch into a process fails, off tea's Effect engine: `Stopped` when the process is
+ * stopping or has stopped and the Msg was never folded, `StoreFailed` when the Msg was folded and its
+ * checkpoint write was not, and `HandlerFailed` when one of its Cmd handlers failed.
+ */
+export type DispatchError = HandlerFailed | Stopped | StoreFailed;
+
+/**
  * One dispatch and what it left behind: how the Msg itself settled, and the summary read inside the
  * same critical section the fold ran in. The two travel together because a summary read *after* the
  * fold is a later Msg's state under concurrency, and an acknowledgement built from it answers about
  * somebody else's Msg (#8274).
  */
 export interface Folded {
-	readonly settled: Exit.Exit<void, DispatchError<HandlerFailed>>;
+	readonly settled: Exit.Exit<void, DispatchError>;
 	readonly summary: StateSummary;
 }
 
@@ -71,7 +78,7 @@ export interface ProcessHandle {
 	 */
 	readonly scope: Scope.Scope;
 	/** Apply `msg`, then wait for every transitive follow-up. Refused loudly once the process stopped. */
-	readonly dispatch: (msg: Message) => Effect.Effect<void, DispatchError<HandlerFailed>>;
+	readonly dispatch: (msg: Message) => Effect.Effect<void, DispatchError>;
 	/**
 	 * The same fold, answering with the state it left behind rather than with the error channel. A
 	 * caller that must tell what *its own* Msg did — an acknowledgement carrying a press's answer —
@@ -79,6 +86,6 @@ export interface ProcessHandle {
 	 */
 	readonly dispatchFolded: (msg: Message) => Effect.Effect<Folded>;
 	readonly getState: () => unknown;
-	/** Close the scope: descendants first, then the actor's drain, Sub disposers and finalizers. Idempotent. */
+	/** Close the scope: descendants first, then the run's drain, its Subs and finalizers. Idempotent. */
 	readonly stop: Effect.Effect<void>;
 }

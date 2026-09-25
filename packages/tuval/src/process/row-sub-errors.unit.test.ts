@@ -110,7 +110,7 @@ describe("a program row's Sub errors", () => {
 					yield* settle;
 
 					const refused = yield* Effect.flip(handle.dispatch({type: "arm"}));
-					assert.strictEqual(refused._tag, "tuval/host/ActorStoppedError");
+					assert.strictEqual(refused._tag, "Stopped");
 				}),
 			),
 		),
