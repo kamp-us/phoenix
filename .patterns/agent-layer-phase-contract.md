@@ -64,8 +64,8 @@ running; only that turn's end accepts it.
 ## The open's own `ready`, and the first turn it can swallow
 
 A layer narrates its open on the same stream it narrates turns on, and the core is not listening
-yet. `subscriptions` in [`core/machine.ts`](../packages/tuval/src/ai-agent/core/machine.ts) opens the
-events Sub off `state.sessionId`, which the `started` Msg sets — and `started` is what the layer's
+yet. The `events` entry in [`core/machine.ts`](../packages/tuval/src/ai-agent/core/machine.ts) is
+`{type, deps}` data whose deps turn on with `state.sessionId`, which the `started` Msg sets — and `started` is what the layer's
 own `start` call answered, so everything `start` emitted is already sitting in the layer's queue
 when the Sub attaches. The queue is unbounded and nothing is lost; what varies is *when* it drains.
 

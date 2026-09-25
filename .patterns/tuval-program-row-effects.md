@@ -31,8 +31,8 @@ or the process's death, never a host retry: the host reports the `Cause` under `
 that Sub's id `failed`, and closes the process's Scope with the failure as its Exit. Marked ids are
 never re-armed, `ended` ones included, so a Sub that returns normally does not restart while the
 state keeps desiring it. Restart is data: put an attempt counter in the Sub's `deps` slice, and the
-new id is armed fresh, which is what makes the retry replay. Catch inside the handler anything you mean to
-survive; let out only what should end the process.
+new id is armed fresh, which is what makes the retry replay. Catch inside the handler anything you
+mean to survive; let out only what should end the process.
 
 **The core declares each Sub as a `{type, deps}` entry, and the row's `subs` holds the runner for
 that type.** This is `@demlik/tea` 0.18's shape, held in
