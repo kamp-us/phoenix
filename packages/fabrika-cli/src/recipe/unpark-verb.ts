@@ -30,6 +30,7 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {readClaimants} from "../build/claim.ts";
 import {WORKTREE_HELD} from "../build/codes.ts";
 import {reclaimDeadClaim} from "../build/dead-claim.ts";
 import {worktreeCheckouts} from "../build/git.ts";
@@ -297,6 +298,10 @@ const clear = (
 			return clearCampaignActive(options, task, recipe);
 		case "spawn-clear":
 			return clearSpawnClear(options, task, recipe);
+		case "tree-released":
+			return clearTreeReleased(options, task, recipe);
+		case "claim-released":
+			return clearClaimReleased(options, task, recipe);
 		case "queue-moved":
 			return clearQueueMoved(options, task, recipe);
 		case "ci-green":
@@ -617,10 +622,10 @@ type TreeRead =
  * Whether any working tree of this clone still holds one of `candidates`, after the recipe's own
  * remedy verb has had its turn at them.
  *
- * Shared by the two rows that turn on the read — `branch-free`, whose whole cause it is, and
- * `spawn-clear`, for which it is the second half. Every listed tree counts as a hold, a prunable
- * record included: a checkout is blocked on a stale registration too, so reading one as free would
- * clear a park still standing.
+ * Shared by the rows that turn on the read — `branch-free`, whose whole cause it is, and
+ * `spawn-clear` and `tree-released`, for which it is the second half. Every listed tree counts as a
+ * hold, a prunable record included: a checkout is blocked on a stale registration too, so reading one
+ * as free would clear a park still standing.
  *
  * `scanned` carries the reads the caller already performed, so a refusal from here reports the whole
  * scope the caller covered rather than the tree half alone.
@@ -822,6 +827,187 @@ const clearSpawnClear = (
 				freed.retired === 0
 					? `spawn-clear:#${issue} unclaimed${retracted}, ${candidates.join(",")} free`
 					: `spawn-clear:#${issue} unclaimed${retracted}, ${candidates.join(",")} free (retired ${freed.retired} working tree(s))`,
+			waitGrant: null,
+		};
+	});
+
+type ClaimsRead =
+	| {readonly _tag: "Released"; readonly subjects: ReadonlyArray<number>; readonly scanned: string}
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+/**
+ * Whether any build claim still stands on the lane — on its issue, and on every open PR linking it —
+ * read and never ended.
+ *
+ * The PR half is not optional: a repair builder claims the PR (`build claim <repair-pr> --issue
+ * <served>`), so its marker sits on the PR's thread and the issue's own reads `unclaimed` while
+ * that claim stands. Reading the issue alone would clear a park over the very claim that parked the
+ * next shell. Several linking PRs need no choosing here, unlike {@link soleParkedPull}: every one is
+ * read, and any claim standing on any of them holds.
+ *
+ * **Nothing here retracts, on any arm, age included.** The claim protocol narrows the age-proved
+ * end of a claim to the `spawn-dead` row, and the rows that read this are not that park: a claim
+ * standing is a shell that may be live, and it holds at 13 until its holder or its driver releases
+ * it under its token.
+ */
+const claimsReleasedOf = (
+	repo: string,
+	issue: number,
+	recipe: ParkRecipe,
+): Effect.Effect<ClaimsRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): ClaimsRead => ({_tag: "Refused", outcome});
+
+		const nominated = yield* nominatePulls(repo, issue, "open");
+		if (nominated._tag === "Unreadable") {
+			return no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read ${nominated.what}: ${nominated.reason} — whether a repair claim stands on a PR of #${issue} is UNKNOWN, never cleared.`,
+				),
+			);
+		}
+		const traced = tracePulls(issue, nominated.pulls, "open");
+		const prs = traced._tag === "One" ? [traced.pr] : traced._tag === "Many" ? traced.prs : [];
+		const subjects = [issue, ...prs];
+
+		let markers = 0;
+		for (const subject of subjects) {
+			const read = yield* readClaimants(repo, subject);
+			if (read._tag === "Unknown") {
+				return no(
+					refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot read the build claims on #${subject}: ${read.reason} — whether a claim stands is UNKNOWN, never cleared.`,
+					),
+				);
+			}
+			markers += read.claimants.length;
+			if (read.holder !== null) {
+				return no(
+					refuse(
+						PARK_HOLDS,
+						`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${subject} is held by ${read.holder.token}. Nothing was retracted and nothing was written.`,
+					),
+				);
+			}
+		}
+		return {
+			_tag: "Released",
+			subjects,
+			scanned: scannedLine(
+				VERB,
+				markers,
+				"build claim marker",
+				subjects.map((subject) => `#${subject}`).join(", "),
+			),
+		};
+	});
+
+/** How a clear names the claim subjects it read, e.g. `#<issue>,#<pr> unclaimed`. */
+const unclaimedOn = (subjects: ReadonlyArray<number>): string =>
+	`${subjects.map((subject) => `#${subject}`).join(",")} unclaimed`;
+
+/**
+ * Read whether the claim-stranded park's cause is gone: no build claim stands on the lane's issue or
+ * on any open PR linking it ({@link claimsReleasedOf}).
+ *
+ * The claimant this park names belongs to the driver's own session, so releasing it under the
+ * stranded token is the driver's act; this read is only the proof that act happened, and it writes
+ * nothing.
+ */
+const clearClaimReleased = (
+	options: UnparkOptions,
+	task: string,
+	recipe: ParkRecipe,
+): Effect.Effect<Clearance, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
+
+		const issue = issueOf(options.lane, task);
+		if (issue === null) {
+			return no(
+				refuse(
+					TASK_UNRESOLVED,
+					`${VERB}: neither task "${task}" nor lane "${options.lane}" names an issue number, so whose claim stands cannot be read.`,
+				),
+			);
+		}
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return no(resolved.outcome);
+
+		const claims = yield* claimsReleasedOf(resolved.repo, issue, recipe);
+		if (claims._tag === "Refused") return no(claims.outcome);
+		return {
+			_tag: "Cleared",
+			mechanism: `claim-released:${unclaimedOn(claims.subjects)}`,
+			waitGrant: null,
+		};
+	});
+
+/**
+ * Read whether the tree-hijacked park's cause is gone: no build claim stands on the lane
+ * ({@link claimsReleasedOf}) and no working tree of this clone holds its lane branch
+ * ({@link treesFreedOf}).
+ *
+ * It asks what `spawn-clear` asks and differs in the one act the claim protocol reserves to that
+ * row: it never retracts a claim, whatever its age. The stopped builder released its own claim before it reported
+ * (the build skill's release-before-`STOPPED` rule), so a claim still standing here is one some shell
+ * may still be working under, and it holds at 13. The tree half keeps `build retire` as its remedy,
+ * which ends a hold only where the board already licenses it.
+ */
+const clearTreeReleased = (
+	options: UnparkOptions,
+	task: string,
+	recipe: ParkRecipe,
+): Effect.Effect<Clearance, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
+
+		const issue = issueOf(options.lane, task);
+		if (issue === null) {
+			return no(
+				refuse(
+					TASK_UNRESOLVED,
+					`${VERB}: neither task "${task}" nor lane "${options.lane}" names an issue number, so the stopped shell's residue cannot be resolved.`,
+				),
+			);
+		}
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return no(resolved.outcome);
+
+		const claims = yield* claimsReleasedOf(resolved.repo, issue, recipe);
+		if (claims._tag === "Refused") return no(claims.outcome);
+		const unclaimed = unclaimedOn(claims.subjects);
+
+		const branches = yield* localBranches;
+		if (branches._tag === "Failure") {
+			return no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read this clone's local branches: ${branches.reason} — whether a working tree still holds #${issue}'s lane branch is UNKNOWN, never cleared.`,
+					[claims.scanned],
+				),
+			);
+		}
+		const candidates = childLaneBranches(issue, branches.value);
+		if (candidates.length === 0) {
+			return {
+				_tag: "Cleared",
+				mechanism: `tree-released:${unclaimed}, no lane branch`,
+				waitGrant: null,
+			};
+		}
+
+		const freed = yield* treesFreedOf(options, issue, recipe, candidates, [claims.scanned]);
+		if (freed._tag === "Refused") return no(freed.outcome);
+
+		return {
+			_tag: "Cleared",
+			mechanism:
+				freed.retired === 0
+					? `tree-released:${unclaimed}, ${candidates.join(",")} free`
+					: `tree-released:${unclaimed}, ${candidates.join(",")} free (retired ${freed.retired} working tree(s))`,
 			waitGrant: null,
 		};
 	});
