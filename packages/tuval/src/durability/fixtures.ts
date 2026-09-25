@@ -14,7 +14,7 @@ import {type CheckpointStores, memoryStores} from "./stores.ts";
 
 export interface WatchedStores {
 	readonly stores: CheckpointStores;
-	/** Every durable write in order: `manifest:save`, `snapshot:drop:<id>`. */
+	/** Every durable write in order: `manifest:save`, `snapshot:delete:<id>`. */
 	readonly writes: Array<string>;
 	/** While true, every manifest write rejects. */
 	refuseManifestSave: boolean;
@@ -39,9 +39,15 @@ export const watchingStores = (writes: Array<string> = []): WatchedStores => {
 						: backing.manifest.save(state).then(() => void writes.push("manifest:save")),
 				migrate: (raw) => backing.manifest.migrate(raw),
 			},
-			snapshot: (id: ProcessId) => backing.snapshot(id),
-			dropSnapshot: (id: ProcessId) =>
-				backing.dropSnapshot(id).then(() => void writes.push(`snapshot:drop:${id}`)),
+			snapshot: (id: ProcessId) => {
+				const store = backing.snapshot(id);
+				return {
+					load: () => store.load(),
+					save: (snapshot) => store.save(snapshot),
+					migrate: (raw) => store.migrate(raw),
+					delete: () => store.delete().then(() => void writes.push(`snapshot:delete:${id}`)),
+				};
+			},
 		},
 	};
 	return watched;
