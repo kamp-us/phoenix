@@ -64,9 +64,6 @@ const proberProgram = (seen: Array<Sighting>): AnyProgram =>
 					[{type: "probe", path: "follow-up"}],
 				],
 			},
-			// Demlik's `Machine` demands a Promise `interpret` beside the row's `handlers`; the host
-			// never reads it (#7576).
-			interpret: {probe: () => Promise.resolve()},
 		}),
 		ports: {},
 		handlers: {

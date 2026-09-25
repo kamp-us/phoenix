@@ -1,7 +1,6 @@
 export {type ActorHandle, type DispatchError, layer, make} from "./actor.ts";
 export {
 	type ActorDefinition,
-	type CoreMachine,
 	type DefinitionError,
 	type DefinitionServices,
 	type Dispatch,

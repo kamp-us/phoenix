@@ -129,7 +129,6 @@ const probeProgram = (sink: Array<string>): AnyProgram =>
 			init: (loaded) => [loaded ?? {looks: 0}, []],
 			update: {look: (state) => [{looks: state.looks + 1}, [{type: "count"}]]},
 			subs: [],
-			interpret: {count: () => Promise.resolve()},
 		}),
 		ports: {},
 		handlers: {

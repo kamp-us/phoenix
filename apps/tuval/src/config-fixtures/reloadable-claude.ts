@@ -55,7 +55,6 @@ const other: AnyProgram = {
 	core: defineMachine<State, Msg, Notify, never, unknown>({
 		init: (loaded) => [loaded ?? {seen: 0}, []],
 		update: {tick: (state) => [{seen: state.seen + 1}, []]},
-		interpret: {notify: () => Promise.resolve()},
 	}),
 	ports: {},
 	handlers: {notify: () => Effect.succeed([] as ReadonlyArray<Msg>)},

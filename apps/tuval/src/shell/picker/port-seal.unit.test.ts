@@ -63,7 +63,6 @@ const leakyProgram = (opened: Opened): AnyProgram =>
 		core: defineMachine<{readonly keys: number}, ChildMsg, ChildCmd, never, unknown>({
 			init: (loaded) => [loaded ?? {keys: 0}, []],
 			update: {key: (state) => [{keys: state.keys + 1}, [{type: "emit"}]]},
-			interpret: {emit: () => Promise.resolve()},
 		}),
 		ports: {},
 		takesKeys: true,
@@ -112,7 +111,6 @@ const driverProgram = (opened: Opened): AnyProgram =>
 				open: (state) => [{steps: state.steps + 1}, [{type: "open"}]],
 				forward: (state) => [{steps: state.steps + 1}, [{type: "forward"}]],
 			},
-			interpret: {open: () => Promise.resolve(), forward: () => Promise.resolve()},
 		}),
 		ports: {},
 		handlers: {

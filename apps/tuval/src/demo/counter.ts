@@ -51,8 +51,6 @@ export const counterProgram = ({everyMs}: CounterOptions): AnyProgram =>
 				key: (state) => [{count: state.count + 1}, [{type: "announce", count: state.count + 1}]],
 			},
 			subs: everyMs === null ? [] : [{type: "timer", deps: () => ({everyMs})}],
-			// Demlik's `Machine` demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576).
-			interpret: {announce: () => Promise.resolve()},
 		}),
 		ports: {ticks: {kind: COUNT_KIND, direction: "out", accepts: isCount}},
 		handlers: {

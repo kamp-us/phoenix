@@ -18,10 +18,10 @@ import type {Cmd, Store} from "@demlik/tea";
 import {Context, Effect, Exit, Layer, Option, PubSub, Scope, Semaphore, Stream} from "effect";
 import {Checkpoints, type OpenError} from "../durability/Checkpoints.ts";
 import {type ActorHandle, make as makeActor} from "../host/actor.ts";
-import type {ActorDefinition, CoreMachine, Dispatch} from "../host/definition.ts";
+import type {ActorDefinition, Dispatch} from "../host/definition.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import type {ProgramNotFound} from "../registry/errors.ts";
-import type {AnyProgram, ProgramId} from "../registry/program.ts";
+import type {AnyProgram, ProgramCore, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import type {Sub} from "../registry/sub.ts";
 import {ForgetRefused, HandlerFailed, ProcessIsPlanned, ProcessNotFound} from "./errors.ts";
@@ -208,7 +208,7 @@ const toDefinition = (
 	// The cast is for the erasure: `AnyProgram` erases S/M/C/U to `any`, and an `any`-parameterised
 	// `update` is the union of `Reducer` and `Transitions`, which no annotation accepts as either
 	// (TS2322 without the cast).
-	const core = program.core as CoreMachine<unknown, Message, Cmd, Sub, unknown>;
+	const core = program.core as ProgramCore<unknown, Message, Cmd, Sub, unknown>;
 	// The core declares each Sub as `{type, deps}`; the row's runner of that type is its Stream, and
 	// the host forks this drain into the Sub's own Scope, so the Sub leaving interrupts the Stream.
 	const subscribe: Record<string, ErasedSubscribe[string]> = {};

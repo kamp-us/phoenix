@@ -1521,6 +1521,25 @@ describe("a send's outcome, under its own key", () => {
 	});
 });
 
+/**
+ * Every Cmd type the union declares. `satisfies` makes it exact both ways — a missing type and an
+ * extra one are each a type error — which is what the row's `handlers` record is too; this file
+ * cannot import that record, since the core's closure stops short of `handlers/` (`./boundary.unit.test.ts`).
+ */
+const declaredCmds = {
+	"aiAgent.boot": true,
+	"aiAgent.start": true,
+	"aiAgent.prompt": true,
+	"aiAgent.answer": true,
+	"aiAgent.setMode": true,
+	"aiAgent.setModel": true,
+	"aiAgent.setThinkingLevel": true,
+	"aiAgent.page": true,
+	"aiAgent.interrupt": true,
+	"aiAgent.reconnect": true,
+	"aiAgent.republish": true,
+} satisfies Record<AiAgentSessionCmd["type"], true>;
+
 describe("the Cmd each Msg answers for", () => {
 	const cases: ReadonlyArray<
 		readonly [AiAgentSessionState, AiAgentSessionMsg, ReadonlyArray<AiAgentSessionCmd["type"]>]
@@ -1624,7 +1643,7 @@ describe("the Cmd each Msg answers for", () => {
 			...machine.init(null, {})[1].map((cmd) => cmd.type),
 			...cases.flatMap(([state, msg]) => apply(state, msg)[1].map((c) => c.type)),
 		]);
-		expect(emitted).toEqual(new Set(Object.keys(machine.interpret ?? {})));
+		expect(emitted).toEqual(new Set(Object.keys(declaredCmds)));
 	});
 });
 

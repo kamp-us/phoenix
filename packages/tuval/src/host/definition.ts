@@ -9,33 +9,11 @@
  * and `R` fall out of its handlers rather than being hand-declared.
  */
 
-import type {
-	Cmd,
-	CtxArg,
-	Identity,
-	Reducer,
-	RuntimeErrorPhase,
-	Store,
-	Supervision,
-	Transitions,
-	UpdateForm,
-} from "@demlik/tea";
+import type {Cmd, CtxArg, RuntimeErrorPhase, Store, Supervision} from "@demlik/tea";
 import type {Effect, Scope} from "effect";
-import type {DepKeyedSub, Sub} from "../registry/sub.ts";
+import type {ProgramCore} from "../registry/program.ts";
+import type {Sub} from "../registry/sub.ts";
 import {ActorNameCollisionError} from "./errors.ts";
-
-/**
- * A Demlik `Machine` minus its Promise-shaped `interpret` — the pure core plus its `{type, deps}`
- * Sub entries. A plain literal is one, since `applyCellChecked` detects the update form when
- * `__form` is absent.
- */
-export interface CoreMachine<S, M extends {type: string}, C extends Cmd, U extends Sub, Ctx> {
-	readonly init: (loaded: S | null, ctx: Ctx) => readonly [S, readonly C[]];
-	readonly update: Reducer<S, M, C> | ([S] extends [{type: string}] ? Transitions<S, M, C> : never);
-	readonly subs?: ReadonlyArray<DepKeyedSub<S, U>>;
-	readonly identity?: Identity<S, M>;
-	readonly __form?: UpdateForm;
-}
 
 export type Dispatch<M> = (msg: M) => void;
 
@@ -100,7 +78,7 @@ export type ActorDefinition<
 	 * row's `ProgramId`. The instance id is the host's and lives in the process table.
 	 */
 	readonly name: string;
-	readonly machine: CoreMachine<S, M, C, U, Ctx>;
+	readonly machine: ProgramCore<S, M, C, U, Ctx>;
 	readonly interpret: I;
 	readonly subscribe: B;
 	readonly store?: Store<S>;
