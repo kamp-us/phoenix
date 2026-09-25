@@ -38,7 +38,6 @@ const ROOTED_VERBS = [
 	"stale",
 	"seats",
 	"migrate",
-	"view",
 ] as const;
 
 const leafNamed = (name: string): DescribedCommand => {
