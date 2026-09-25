@@ -37,6 +37,7 @@ import {
 	START_ERROR,
 	type WindowLimits,
 } from "../core/index.ts";
+import type {AgentEvent} from "../events.ts";
 import {isRefusal, pageCursor, planTranscriptPage, withoutLocalEchoes} from "../history/index.ts";
 import {SessionOpening} from "../opening.ts";
 import type {Mode, TranscriptPagePayload} from "../ports/index.ts";
@@ -369,40 +370,55 @@ export const aiAgentHandlers = <RIn = never>(
 			}),
 	};
 
-	const events = (sub: AiAgentEventsSub, dispatch: (msg: AiAgentSessionMsg) => void) =>
+	/** What one event publishes once the core has been handed its Msg, off the same fold the core runs. */
+	const publish = (event: AgentEvent) =>
 		Effect.gen(function* () {
-			const agent = yield* slot.current;
-			if (agent === null) return;
-			const seed = yield* readSession;
-			// The Sub opens on `started`, so this is the started session saying what it is (R3.1).
-			yield* selfReport(yield* projection.seed(seed ?? initialState(options.cwd)));
-
-			yield* Stream.runForEach(agent.events, (event) =>
-				Effect.gen(function* () {
-					dispatch({type: "event", sessionId: sub.deps.sessionId, event});
-					const next = yield* projection.fold((state) => foldEvent(state, event, limits));
-					if (next === null) return;
-					// A reset empties both projections rather than moving one row of either, so it
-					// publishes on the same two ports an item and a card do — a window left rendering
-					// the old conversation's tail and its unanswerable cards is the reset half-done.
-					const reset = event.kind === "session-reset";
-					if (event.kind === "item" || reset) {
-						yield* emit(aiAgentPortNames.transcript, transcriptOf(next));
-					}
-					if (event.kind === "permission" || event.kind === "permission-resolved" || reset) {
-						yield* emit(aiAgentPortNames.permissionPending, pendingOf(next));
-					}
-					if (event.kind === "mode") yield* emit(aiAgentPortNames.modeState, modeStateOf(next));
-					if (event.kind === "result") yield* emit(aiAgentPortNames.result, event.result);
-					yield* selfReport(next);
-				}),
-			).pipe(
-				Effect.catchIf(
-					(error): error is TransportError => error instanceof TransportError,
-					(error) => Effect.sync(() => dispatch({type: "failed", failure: failureOf(error)})),
-				),
-			);
+			const next = yield* projection.fold((state) => foldEvent(state, event, limits));
+			if (next === null) return;
+			// A reset empties both projections rather than moving one row of either, so it
+			// publishes on the same two ports an item and a card do — a window left rendering
+			// the old conversation's tail and its unanswerable cards is the reset half-done.
+			const reset = event.kind === "session-reset";
+			if (event.kind === "item" || reset) {
+				yield* emit(aiAgentPortNames.transcript, transcriptOf(next));
+			}
+			if (event.kind === "permission" || event.kind === "permission-resolved" || reset) {
+				yield* emit(aiAgentPortNames.permissionPending, pendingOf(next));
+			}
+			if (event.kind === "mode") yield* emit(aiAgentPortNames.modeState, modeStateOf(next));
+			if (event.kind === "result") yield* emit(aiAgentPortNames.result, event.result);
+			yield* selfReport(next);
 		});
+
+	const events = (sub: AiAgentEventsSub) =>
+		Stream.unwrap(
+			Effect.gen(function* () {
+				const agent = yield* slot.current;
+				if (agent === null) return Stream.empty;
+				const seed = yield* readSession;
+				// The Sub opens on `started`, so this is the started session saying what it is (R3.1).
+				yield* selfReport(yield* projection.seed(seed ?? initialState(options.cwd)));
+				// Each event's Msg is emitted before its publication runs, so the host has the Msg
+				// before the ports move — the order the core and the projection fold it in.
+				return agent.events.pipe(
+					Stream.flatMap((event) =>
+						Stream.concat(
+							Stream.succeed<AiAgentSessionMsg>({
+								type: "event",
+								sessionId: sub.deps.sessionId,
+								event,
+							}),
+							Stream.drain(Stream.fromEffect(publish(event))),
+						),
+					),
+					Stream.catchIf(
+						(error): error is TransportError => error instanceof TransportError,
+						(error) =>
+							Stream.succeed<AiAgentSessionMsg>({type: "failed", failure: failureOf(error)}),
+					),
+				);
+			}),
+		);
 
 	return {handlers, subs: {"aiAgent.events": events}};
 };

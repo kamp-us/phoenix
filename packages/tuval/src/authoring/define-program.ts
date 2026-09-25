@@ -44,7 +44,7 @@ import type {
 } from "../commands/core/process.ts";
 import {SpawnedProcesses} from "../commands/core/process.ts";
 import type {OpenError} from "../durability/Checkpoints.ts";
-import {disposerRunner} from "../host/demlik-bridges.ts";
+import {disposerStream} from "../host/demlik-bridges.ts";
 import type {PayloadRejected, PortNotWired} from "../ports/errors.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import type {
@@ -685,7 +685,7 @@ const compileSubs = (authored: AnyAuthoredProgram): AnyProgram["subs"] =>
 	authored.subscribe === undefined
 		? undefined
 		: Object.fromEntries(
-				Object.entries(authored.subscribe).map(([type, open]) => [type, disposerRunner(open)]),
+				Object.entries(authored.subscribe).map(([type, open]) => [type, disposerStream(open)]),
 			);
 
 const compileIdentity = (authored: AnyAuthoredProgram): DefinitionIdentity => ({

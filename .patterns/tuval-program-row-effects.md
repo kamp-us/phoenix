@@ -15,21 +15,22 @@ lives on the row beside the core, in one of two records:
 | Row field | Shape | Lifetime |
 |---|---|---|
 | `handlers` | `(cmd) => Effect<ReadonlyArray<Msg>, E, R>` | one shot, per Cmd |
-| `subs` | `(sub, dispatch) => Effect<void, E, R \| Scope>` | long-lived, forked into a Scope of the Sub's own |
+| `subs` | `(sub) => Stream<Msg, E, R>` | long-lived, drained on a Scope of the Sub's own |
 
 A Cmd handler answers with a list of follow-up Msgs. A Sub handler has many answers over time, so it
-pushes them through `dispatch` and returns nothing; the host closes its Scope when the core stops
-asking for that Sub.
+answers with a Stream of them: the host hands each element to `update` in order and interrupts the
+Stream when the core stops asking for that Sub, which runs the Stream's finalizers. This is
+`@demlik/tea` 0.18's `EffectRunner` shape.
 
 Both records' `E` and `R` are inferred onto the row (`Program<S, M, C, U, Ctx, E, R>`), so a
 program's failures and its service needs fall out of the code rather than being hand-declared. Never
 widen `R` by hand to make a spawn typecheck — the spawn is what has to supply it.
 
-**A Sub handler's failure ends the process, so treat returning as the only clean exit.** ADR
+**A Sub handler's failure ends the process, so treat the Stream ending as the only clean exit.** ADR
 [0346](../.decisions/0346-sub-failure-policy-actor-identity.md) makes a failed Sub the machine's Msg
 or the process's death, never a host retry: the host reports the `Cause` under `"sub-fiber"`, marks
 that Sub's id `failed`, and closes the process's Scope with the failure as its Exit. Marked ids are
-never re-armed, `ended` ones included, so a Sub that returns normally does not restart while the
+never re-armed, `ended` ones included, so a Sub whose Stream ends does not restart while the
 state keeps desiring it. Restart is data: put an attempt counter in the Sub's `deps` slice, and the
 new id is armed fresh, which is what makes the retry replay. Catch inside the handler anything you
 mean to survive; let out only what should end the process.
@@ -48,7 +49,7 @@ core: defineMachine<State, Msg, Cmd<never>, Ticker, unknown>({
   update: {…},
   subs: [{type: "ticker", deps: (state) => (state.armed ? {every: 1000} : null)}],
 }),
-subs: {ticker: (sub, dispatch) => …},
+subs: {ticker: (sub) => Stream.tick(sub.deps.every).pipe(Stream.drop(1), Stream.map(() => ({type: "tick"})))},
 ```
 
 Build the core with Tuval's `defineMachine`
@@ -77,11 +78,11 @@ Subs by id, so an id that does not change reads as "already running" and leaves 
 subscribed to the transport it just replaced.
 - **`state()`** — the machine's committed state, as `unknown`. The registry erases a program's
   private types, so the program's own predicate reads it back (`isAiAgentSessionState` is the
-  worked example). Use it to seed a projection, not to poll: a `dispatch` from a Sub handler is
+  worked example). Use it to seed a projection, not to poll: a Msg a Sub's Stream emits is
   applied on the host's serial tail, so a read straight after one may not see it yet.
 
-**Publish a projection by folding, not by reading back.** A Sub that dispatches a Msg and then wants
-to emit what the core just committed should apply the core's own fold function to a local value
+**Publish a projection by folding, not by reading back.** A Sub that emits a Msg and then wants
+to publish what the core just committed should apply the core's own fold function to a local value
 seeded from `ProcessSelf.state()` — same function, same seed, same order, so the two cannot diverge,
 and there is no race to lose.
 

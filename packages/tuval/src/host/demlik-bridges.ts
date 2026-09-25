@@ -18,7 +18,7 @@ import type {
 	Machine,
 	PortEmitter,
 } from "@demlik/tea";
-import {type Context, Effect, Fiber, type Scope} from "effect";
+import {type Context, Effect, Fiber, Queue, Stream} from "effect";
 import {type DepKeyedSub, desiredSub, type Sub} from "../registry/sub.ts";
 import type {
 	ActorDefinition,
@@ -56,27 +56,29 @@ export const interpretPromiseBridge =
 const noDispatch = (): void => {};
 
 /**
- * Disposer bridge for a Sub runner: one that opens now and hands back the close — Demlik's own
- * runner shape — as the Effect runner the host forks into a Sub scope. Opening runs under
- * `Effect.acquireRelease` (`LLMS.md` "Managing resources and Scopes"); the Scope's close awaits the
- * `Dispose`, Promise or not, so the disposer and the Effect finalizer are one shutdown step.
+ * Disposer bridge for a Sub runner: one that opens now, sends through a callback and hands back the
+ * close — Demlik's own runner shape — as the Stream runner a program row carries. Opening runs
+ * under `Effect.acquireRelease` inside `Stream.callback`, whose Scope is the Stream's, so the
+ * Stream's interruption awaits the `Dispose`, Promise or not, as one shutdown step.
  *
- * It then holds instead of returning, so the effect's lifetime is the Sub's lifetime: a runner that
- * returned would be marked `ended` and never re-armed while its id holds.
+ * The Stream never ends on its own, so its lifetime is the Sub's lifetime: a runner whose Stream
+ * ended would be marked `ended` and never re-armed while its id holds.
  */
-export const disposerRunner =
+export const disposerStream =
 	<U extends Sub, M>(open: (sub: U, dispatch: Dispatch<M>) => Dispose) =>
-	(sub: U, dispatch: Dispatch<M>): Effect.Effect<void, never, Scope.Scope> =>
-		Effect.acquireRelease(
-			Effect.sync(() => open(sub, dispatch)),
-			(dispose) =>
-				Effect.tryPromise({
-					try: async () => {
-						await dispose();
-					},
-					catch: (cause) => new SubDisposeError({cause}),
-				}).pipe(Effect.orDie),
-		).pipe(Effect.andThen(Effect.never));
+	(sub: U): Stream.Stream<M> =>
+		Stream.callback<M>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() => open(sub, (msg) => void Queue.offerUnsafe(queue, msg))),
+				(dispose) =>
+					Effect.tryPromise({
+						try: async () => {
+							await dispose();
+						},
+						catch: (cause) => new SubDisposeError({cause}),
+					}).pipe(Effect.orDie),
+			),
+		);
 
 /**
  * Runner bridge for Sub: one `{type, deps}` entry and the Effect runner of its type as the

@@ -2,11 +2,11 @@
 
 import type {NoCtx} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Cause, Effect, Exit, Schema, Scope} from "effect";
+import {Cause, Effect, Exit, Schema, Scope, Stream} from "effect";
 import {type Sub, subIdOf} from "../registry/sub.ts";
 import {make} from "./actor.ts";
 import {type CoreMachine, defineActor, type HostErrorPhase, type OnError} from "./definition.ts";
-import {disposerRunner} from "./demlik-bridges.ts";
+import {disposerStream} from "./demlik-bridges.ts";
 import {counterMachine, counterSubscribe} from "./fixtures.ts";
 
 class Boom extends Schema.TaggedError<Boom>()("test/Boom", {}) {}
@@ -157,21 +157,20 @@ describe("Sub lifetime", () => {
 	);
 
 	it.effect(
-		"holds a disposer runner's fiber open, so its error channel is live after the open",
+		"holds a disposer runner's Stream open until it is interrupted, then runs the dispose",
 		() =>
 			Effect.gen(function* () {
 				const log: string[] = [];
-				const runner = disposerRunner<Ticker, never>(() => {
+				const runner = disposerStream<Ticker, never>(() => {
 					log.push("open");
 					return () => void log.push("dispose");
 				});
 				const sub: Ticker = {id: subIdOf("ticker", true), type: "ticker", deps: true};
 				const scope = yield* Scope.make();
-				const fiber = yield* Effect.forkIn(
-					runner(sub, () => {}).pipe(Effect.provideService(Scope.Scope, scope)),
-					scope,
-					{startImmediately: true},
-				);
+				const fiber = yield* Effect.forkIn(Stream.runDrain(runner(sub)), scope, {
+					startImmediately: true,
+				});
+				yield* Effect.yieldNow;
 
 				assert.deepStrictEqual(log, ["open"]);
 				assert.isUndefined(fiber.pollUnsafe());

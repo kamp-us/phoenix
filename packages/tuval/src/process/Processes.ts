@@ -209,15 +209,13 @@ const toDefinition = (
 	// `update` is the union of `Reducer` and `Transitions`, which no annotation accepts as either
 	// (TS2322 without the cast).
 	const core = program.core as CoreMachine<unknown, Message, Cmd, Sub, unknown>;
-	// The core declares each Sub as `{type, deps}`; the row's runner of that type is how it is run.
+	// The core declares each Sub as `{type, deps}`; the row's runner of that type is its Stream, and
+	// the host forks this drain into the Sub's own Scope, so the Sub leaving interrupts the Stream.
 	const subscribe: Record<string, ErasedSubscribe[string]> = {};
 	for (const [type, handler] of Object.entries(program.subs ?? {})) {
-		const run = handler as (
-			sub: Sub,
-			dispatch: Dispatch<Message>,
-		) => Effect.Effect<void, unknown, Scope.Scope>;
+		const run = handler as (sub: Sub) => Stream.Stream<Message, unknown>;
 		subscribe[type] = (sub, _ctx, dispatch) =>
-			run(sub, dispatch).pipe(
+			Stream.runForEach(run(sub), (msg) => Effect.sync(() => dispatch(msg))).pipe(
 				Effect.mapError(
 					(cause) => new HandlerFailed({programId: program.id, cmdType: sub.type, cause}),
 				),
