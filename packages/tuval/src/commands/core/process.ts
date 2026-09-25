@@ -38,6 +38,7 @@
  */
 
 import {randomUUID} from "node:crypto";
+import type {StoreFailed} from "@demlik/tea/effect";
 import {Context, type Duration, Effect, Layer, Option, Queue, Ref, Schema, Scope} from "effect";
 import type {Stopped} from "../../authoring/effect.ts";
 import type {OpenError} from "../../durability/Checkpoints.ts";
@@ -589,7 +590,10 @@ export class SpawnedProcesses extends Context.Service<
 			parent: Option.Option<ProcessId>,
 			/** Which of the parent's events each named child out-port arrives as. Needs a parent to route to. */
 			on?: ChildRoutes,
-		) => Effect.Effect<ProcessId, UnknownProgram | UnknownProcess | OpenError | HandlerFailed>;
+		) => Effect.Effect<
+			ProcessId,
+			UnknownProgram | UnknownProcess | OpenError | HandlerFailed | StoreFailed
+		>;
 		/**
 		 * Enrol a process another spawner starts, so one table answers `send`, `ask` and `read` for a
 		 * graph-launched process and an ad-hoc one alike (#8944), and so its end reaches the parent

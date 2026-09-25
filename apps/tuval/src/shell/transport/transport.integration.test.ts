@@ -6,7 +6,7 @@
  * stop and a real boot from the checkpoint the stop wrote.
  */
 
-import {type Cmd, DispatchDiscardedError, defineMachine} from "@demlik/tea";
+import {type Cmd, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import type {SpellPath} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
@@ -36,6 +36,7 @@ import {
 	Option,
 	Queue,
 	Redacted,
+	Schema,
 	Scope,
 	Stream,
 } from "effect";
@@ -52,6 +53,9 @@ const TIMEOUT = 20_000;
 
 type DeskState = {readonly windows: ReadonlyArray<string>};
 type DeskMsg = {readonly type: "split"; readonly window: string};
+type ExplodeCmd = {readonly type: "explode"};
+/** A Msg no desk has a cell for. */
+type Stray = {readonly type: "nothing-takes-this"};
 
 const shellProgramId = ProgramId.make("tuval/shell");
 const painterProgramId = ProgramId.make("tuval/painter");
@@ -249,6 +253,67 @@ const rawSocket = (url: string) =>
 		);
 	});
 
+/**
+ * The given stores, with every snapshot save refused while `saving.fails` holds. Boot's own save
+ * lands first, so a test flips it once the process is up.
+ */
+const failingSaves = (
+	stores: CheckpointStores,
+	saving: {readonly fails: boolean},
+): CheckpointStores => ({
+	...stores,
+	snapshot: (id) => {
+		const inner = stores.snapshot(id);
+		return {
+			load: () => inner.load(),
+			save: (snapshot) =>
+				saving.fails ? Promise.reject(new Error("the disk is full")) : inner.save(snapshot),
+			migrate: (raw) => inner.migrate(raw),
+		};
+	},
+});
+
+const failingProgramId = ProgramId.make("tuval/failing");
+const failingProcess = ProcessId.make("failing");
+
+class BlewUp extends Schema.TaggedError<BlewUp>()("test/BlewUp", {}) {}
+
+/** A desk whose every split asks for a Cmd, and whose handler for that Cmd fails. */
+const failingRow: AnyProgram = {
+	id: failingProgramId,
+	core: defineMachine<DeskState, DeskMsg, ExplodeCmd, never, unknown>({
+		init: (loaded) => [loaded ?? {windows: ["root"]}, []],
+		update: {
+			split: (state: DeskState, msg: DeskMsg): readonly [DeskState, ReadonlyArray<ExplodeCmd>] => [
+				{windows: [...state.windows, msg.window]},
+				[{type: "explode"}],
+			],
+		},
+	}),
+	ports: {},
+	handlers: {explode: () => Effect.fail(new BlewUp({}))},
+	capabilities: [],
+	renderer: ref("tuval/failing"),
+	identity: {
+		package: "@kampus/tuval",
+		program: failingProgramId,
+		version: "1.0.0",
+		digest: `sha256:${failingProgramId}`,
+	},
+	placement: {host: "local"},
+} satisfies Program<DeskState, DeskMsg, ExplodeCmd, never, unknown, BlewUp, never>;
+
+/** Every log line's message, collected so a test can say a failure was not silent. */
+const capturing = (logs: unknown[]) =>
+	Logger.layer([
+		Logger.make(({message}) => {
+			logs.push(message);
+		}),
+	]);
+
+const logged = (logs: ReadonlyArray<unknown>, line: string): boolean =>
+	logs.some((message) => Array.isArray(message) && message.includes(line));
+
 describe("the page-to-kernel transport", () => {
 	it.live(
 		"an abruptly terminated page stays quiet in the actual socket-server reporter and reattaches",
@@ -353,46 +418,93 @@ describe("the page-to-kernel transport", () => {
 		TIMEOUT,
 	);
 
-	it.live(
-		"acks a Msg the actor discarded as ProcessGone, never as Delivered",
-		() =>
-			// A blanket `catchCause` answered Delivered for every failure `dispatch` raises, so a Msg
-			// the actor threw away came back to the page as if it had landed (#7499).
-			Effect.gen(function* () {
-				const built = yield* kernel(memoryStores());
-				const real = built.handles.get(shellProcess);
-				assert.ok(real !== undefined);
-				const discarding: ProcessHandle = {
-					...real,
-					dispatchFolded: (msg) =>
-						Effect.succeed({
-							settled: Exit.fail(new DispatchDiscardedError(msg.type)),
-							summary: {lifecycle: "running", revision: 0, state: {windows: ["root"]}},
-						}),
-				};
-				const server = yield* serve({
-					token: mintLaunchToken(),
-					port: 0,
-					table: defaultPrefixTable,
-					handles: (id) =>
-						Effect.sync(() =>
-							id === shellProcess
-								? Option.some(discarding)
-								: Option.fromNullishOr(built.handles.get(id)),
-						),
-					spells: yield* scriptedSpellChannel(),
-					descriptions: scriptedDescriptions,
-				}).pipe(Effect.provideContext(built.context), Effect.orDie);
+	describe("answers each way a dispatch settles on tea's engine", () => {
+		it.live(
+			"a Msg to a process whose run has stopped is ProcessGone, never Delivered",
+			() =>
+				// A blanket `catchCause` answered Delivered for every failure `dispatch` raises, so a Msg
+				// the run threw away came back to the page as if it had landed (#7499).
+				Effect.gen(function* () {
+					const app = yield* served(memoryStores());
+					const attached = yield* page(app.server.launchUrl);
+					const shell = yield* attached.attachProcess<DeskState, DeskMsg>(shellProcess);
+					const handle = app.handles.get(shellProcess);
+					assert.ok(handle !== undefined);
+					// The handle stays in the server's map, so the refusal is the run's `Stopped`, not a
+					// lookup that found nothing.
+					yield* handle.stop;
 
-				const attached = yield* page(server.launchUrl);
-				const shell = yield* attached.attachProcess<DeskState, DeskMsg>(shellProcess);
-				assert.deepStrictEqual(yield* shell.dispatch({type: "split", window: "w2"}), {
-					_tag: "ProcessGone",
-					processId: shellProcess,
-				});
-			}).pipe(Effect.scoped),
-		TIMEOUT,
-	);
+					assert.deepStrictEqual(yield* shell.dispatch({type: "split", window: "w2"}), {
+						_tag: "ProcessGone",
+						processId: shellProcess,
+					});
+				}).pipe(Effect.scoped),
+			TIMEOUT,
+		);
+
+		it.live(
+			"a Msg whose checkpoint write fails is Delivered, and the failure is logged",
+			() => {
+				const logs: unknown[] = [];
+				const saving = {fails: false};
+				return Effect.gen(function* () {
+					const app = yield* served(failingSaves(memoryStores(), saving));
+					const attached = yield* page(app.server.launchUrl);
+					const shell = yield* attached.attachProcess<DeskState, DeskMsg>(shellProcess);
+					saving.fails = true;
+
+					const result = yield* shell.dispatch({type: "split", window: "w2"});
+
+					assert.deepStrictEqual(answered(result), {windows: ["root", "w2"]});
+					assert.isTrue(
+						logged(logs, "tuval transport: the checkpoint write for a dispatched Msg failed"),
+					);
+				}).pipe(Effect.scoped, Effect.provide(capturing(logs)));
+			},
+			TIMEOUT,
+		);
+
+		it.live(
+			"a Msg whose Cmd handler fails is Delivered, and the failure is logged",
+			() => {
+				const logs: unknown[] = [];
+				return Effect.gen(function* () {
+					const app = yield* served(memoryStores(), Registry.layer([...programs, failingRow]));
+					const processes = Context.get(app.context, Processes);
+					app.handles.set(
+						failingProcess,
+						yield* Effect.orDie(
+							processes.spawn(failingProgramId, {id: failingProcess, services: Context.empty()}),
+						),
+					);
+					const attached = yield* page(app.server.launchUrl);
+					const failing = yield* attached.attachProcess<DeskState, DeskMsg>(failingProcess);
+
+					const result = yield* failing.dispatch({type: "split", window: "w2"});
+
+					assert.deepStrictEqual(answered(result), {windows: ["root", "w2"]});
+					assert.isTrue(logged(logs, "tuval transport: a Cmd handler of a dispatched Msg failed"));
+				}).pipe(Effect.scoped, Effect.provide(capturing(logs)));
+			},
+			TIMEOUT,
+		);
+
+		it.live(
+			"a Msg the process has no cell for leaves the process running",
+			() =>
+				Effect.gen(function* () {
+					const app = yield* served(memoryStores());
+					const attached = yield* page(app.server.launchUrl);
+					const shell = yield* attached.attachProcess<DeskState, DeskMsg | Stray>(shellProcess);
+
+					yield* shell.dispatch({type: "nothing-takes-this"});
+					const after = yield* shell.dispatch({type: "split", window: "w2"});
+
+					assert.deepStrictEqual(answered(after), {windows: ["root", "w2"]});
+				}).pipe(Effect.scoped),
+			TIMEOUT,
+		);
+	});
 
 	it.live(
 		"a socket drop followed by re-attach yields the same current state and replays no dispatch",

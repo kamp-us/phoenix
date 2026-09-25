@@ -1,6 +1,6 @@
 import {type Cmd, defineMachine, type Sub} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer, Option, Scope, Stream} from "effect";
+import {Context, Deferred, Effect, Fiber, Layer, Option, Scope, Stream} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {snapshotAt, watchingStores} from "../durability/fixtures.ts";
 import {type CheckpointStores, memoryStores} from "../durability/stores.ts";
@@ -122,6 +122,32 @@ const tickerProgram = (log: string[]): AnyProgram =>
 		identity: identity("ticker"),
 		placement: {host: "local"},
 	}) satisfies Program<Switch, Toggle, Cmd<never>, Ticker, unknown, never, never>;
+
+type Hang = {readonly type: "hang"};
+
+/**
+ * A row whose one Cmd never settles on its own: its handler says it started, then waits for ever, and
+ * records its finalizer — the in-flight work a stop has to interrupt rather than wait out.
+ */
+const hangingProgram = (started: Deferred.Deferred<void>, finalized: string[]): AnyProgram =>
+	({
+		id: ProgramId.make("hanging"),
+		core: defineMachine<{readonly hung: number}, Hang, Hang, never, unknown>({
+			init: (loaded) => [loaded ?? {hung: 0}, []],
+			update: {hang: (state) => [{hung: state.hung + 1}, [{type: "hang"}]]},
+		}),
+		ports: {},
+		handlers: {
+			hang: () =>
+				Deferred.succeed(started, undefined).pipe(
+					Effect.andThen(Effect.never),
+					Effect.ensuring(Effect.sync(() => void finalized.push("hang:finalized"))),
+				),
+		},
+		capabilities: [],
+		identity: identity("hanging"),
+		placement: {host: "local"},
+	}) satisfies Program<{readonly hung: number}, Hang, Hang, never, unknown, never, never>;
 
 const counter = ProgramId.make("counter");
 
@@ -268,7 +294,7 @@ describe("Processes", () => {
 					"sub:stop:root",
 				]);
 				const refused = yield* grandchild.dispatch({type: "tick"}).pipe(Effect.flip);
-				assert.strictEqual(refused._tag, "tuval/host/ActorStoppedError");
+				assert.strictEqual(refused._tag, "Stopped");
 			}),
 		);
 	});
@@ -286,7 +312,7 @@ describe("Processes", () => {
 
 				yield* handle.stop;
 				const refused = yield* handle.dispatch({type: "tick"}).pipe(Effect.flip);
-				assert.strictEqual(refused._tag, "tuval/host/ActorStoppedError");
+				assert.strictEqual(refused._tag, "Stopped");
 				assert.strictEqual(probe.reduced, 1);
 				assert.deepStrictEqual(handle.getState(), {
 					type: "running",
@@ -531,4 +557,32 @@ describe("Processes", () => {
 			}),
 		);
 	});
+
+	it.effect("closing a process's Scope stops its run and interrupts its in-flight handlers", () =>
+		Effect.gen(function* () {
+			const started = yield* Deferred.make<void>();
+			const finalized: string[] = [];
+			return yield* withKernel(
+				[hangingProgram(started, finalized)],
+				Effect.gen(function* () {
+					const processes = yield* Processes;
+					const handle = yield* processes.spawn(ProgramId.make("hanging"), {
+						services: Context.empty(),
+					});
+					const dispatching = yield* Effect.forkChild(handle.dispatch({type: "hang"}));
+					yield* Deferred.await(started);
+					assert.deepStrictEqual(finalized, []);
+
+					// `stop` is the close of the process's own Scope and nothing more (`./Processes.ts`).
+					yield* handle.stop;
+
+					assert.deepStrictEqual(finalized, ["hang:finalized"]);
+					// The Msg was folded before the stop, so its own dispatch settles rather than hanging.
+					yield* Fiber.join(dispatching);
+					const refused = yield* Effect.flip(handle.dispatch({type: "hang"}));
+					assert.strictEqual(refused._tag, "Stopped");
+				}),
+			);
+		}),
+	);
 });

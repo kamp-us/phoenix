@@ -1,12 +1,10 @@
 import {Context, Effect} from "effect";
-import type {DispatchError} from "../host/actor.ts";
 import type {StoreError} from "../host/errors.ts";
 import {NodeId} from "../ports/graph.ts";
 import {ProcessPorts, unwired} from "../ports/ProcessPorts.ts";
-import type {HandlerFailed} from "../process/errors.ts";
 import {Processes, type SpawnError} from "../process/Processes.ts";
 import {ProcessTable} from "../process/ProcessTable.ts";
-import {type ProcessHandle, ProcessId} from "../process/process.ts";
+import {type DispatchError, type ProcessHandle, ProcessId} from "../process/process.ts";
 import {ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {Checkpoints} from "./Checkpoints.ts";
@@ -34,7 +32,7 @@ export const restore = (
 	services: Context.Context<never>,
 ): Effect.Effect<
 	ReadonlyArray<ProcessHandle>,
-	SpawnError | ManifestMalformed | StoreError | DispatchError<HandlerFailed>,
+	SpawnError | ManifestMalformed | StoreError | DispatchError,
 	Checkpoints | Processes | ProcessTable | Registry
 > =>
 	Effect.gen(function* () {
