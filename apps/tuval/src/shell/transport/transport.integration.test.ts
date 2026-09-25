@@ -269,6 +269,7 @@ const failingSaves = (
 			save: (snapshot) =>
 				saving.fails ? Promise.reject(new Error("the disk is full")) : inner.save(snapshot),
 			migrate: (raw) => inner.migrate(raw),
+			delete: () => inner.delete(),
 		};
 	},
 });

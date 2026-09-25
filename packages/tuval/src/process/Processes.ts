@@ -14,7 +14,14 @@
  */
 
 import {randomUUID} from "node:crypto";
-import {type Cmd, type OnError, RuntimeDiscardNotice, type Store, type Sub} from "@demlik/tea";
+import {
+	type Cmd,
+	type OnError,
+	RuntimeDiscardNotice,
+	type Store,
+	StoreRefusedError,
+	type Sub,
+} from "@demlik/tea";
 import {type EffectRuntime, run, type StoreFailed} from "@demlik/tea/effect";
 import {Context, Effect, Exit, Layer, Option, PubSub, Scope, Semaphore, Stream} from "effect";
 import {Checkpoints, type OpenError} from "../durability/Checkpoints.ts";
@@ -63,7 +70,8 @@ export interface SpawnOptions {
 /**
  * `HandlerFailed` reaches spawn when an `init` Cmd's handler fails while the run boots, and
  * `StoreFailed` when boot's own save fails; an `OpenError` when the process's checkpoint refuses — a
- * snapshot under another definition never fresh-boots (`../durability/Checkpoints.ts`).
+ * snapshot under another definition never fresh-boots (`../durability/Checkpoints.ts`). A snapshot
+ * the program's own `restorable` refuses is not among them: that process starts with no store.
  */
 export type SpawnError =
 	| ProgramNotFound
@@ -191,7 +199,8 @@ const worthyOnly = (store: Store<unknown>, program: AnyProgram): Store<unknown> 
  */
 const runProgram = (
 	program: AnyProgram,
-	store: Store<unknown>,
+	core: ErasedCore,
+	store: Store<unknown> | undefined,
 	services: Context.Context<never>,
 	onError: OnError,
 ) => {
@@ -216,13 +225,31 @@ const runProgram = (
 				(cause) => new HandlerFailed({programId: program.id, cmdType: sub.type, cause}),
 			);
 	}
-	// The cast is for the erasure: `AnyProgram` erases S/M/C/U to `any`, and an `any`-parameterised
-	// `update` is the union of `Reducer` and `Transitions`, which no annotation accepts as either
-	// (TS2322 without the cast).
-	const core = program.core as ProgramCore<unknown, Message, Cmd, Sub, unknown>;
-	const booting = run(core, {interpret, subscribe, store: worthyOnly(store, program), onError});
+	const booting = run(core, {
+		interpret,
+		subscribe,
+		...(store === undefined ? {} : {store: worthyOnly(store, program)}),
+		onError,
+	});
 	return sealed(services)(booting);
 };
+
+type ErasedCore = ProgramCore<unknown, Message, Cmd, Sub, unknown>;
+
+/**
+ * The row's core with `init` bound to a checkpoint its store's `migrate` refused. tea hands a
+ * store-less run `null`, so without this the process would fresh-boot beside its own unread save;
+ * `init`'s rehydrate branch turns those bytes into the program's own "couldn't restore" state
+ * instead, and with no store there is nothing a later save could write over them (#8112, #9793).
+ */
+const bootedOnRefused = (core: ErasedCore, refused: unknown): ErasedCore => ({
+	...core,
+	init: (_loaded, ctx) => core.init(refused, ctx),
+});
+
+/** tea's `ready` failing because the store's `migrate` refused the saved state (demlik #316). */
+const isRefusedLoad = (failed: StoreFailed): boolean =>
+	failed.operation === "load" && failed.cause instanceof StoreRefusedError;
 
 function makeServices() {
 	return Effect.gen(function* () {
@@ -314,18 +341,32 @@ function makeServices() {
 					...(program.migrations === undefined ? {} : {migrations: program.migrations}),
 					...(program.restorable === undefined ? {} : {restorable: program.restorable}),
 				});
-				const booting = yield* runProgram(program, checkpoint.store, handlerServices, onError);
-				// Fires after every applied transition once its Cmds have settled, however they settled
-				// (demlik #311), and never for boot's own commit. An `init` Cmd's follow-ups land on
-				// tea's tail before this fiber resumes from `ready`, so a transition can precede the row:
-				// it is counted here and published once the row exists, below.
-				booting.observe(() => {
-					revision++;
-					if (row !== undefined) {
-						PubSub.publishUnsafe<ProcessChange>(changes, {kind: "state-changed", row});
-					}
-				});
-				return yield* booting.ready;
+				const boot = (core: ErasedCore, store: Store<unknown> | undefined) =>
+					Effect.gen(function* () {
+						const booting = yield* runProgram(program, core, store, handlerServices, onError);
+						// Fires after every applied transition once its Cmds have settled, however they
+						// settled (demlik #311), and never for boot's own commit. An `init` Cmd's follow-ups
+						// land on tea's tail before this fiber resumes from `ready`, so a transition can
+						// precede the row: it is counted here and published once the row exists, below.
+						booting.observe(() => {
+							revision++;
+							if (row !== undefined) {
+								PubSub.publishUnsafe<ProcessChange>(changes, {kind: "state-changed", row});
+							}
+						});
+						return yield* booting.ready;
+					});
+				// The cast is for the erasure: `AnyProgram` erases S/M/C/U to `any`, and an
+				// `any`-parameterised `update` is the union of `Reducer` and `Transitions`, which no
+				// annotation accepts as either (TS2322 without the cast).
+				const core = program.core as ErasedCore;
+				return yield* boot(core, checkpoint.store).pipe(
+					Effect.catchTag("StoreFailed", (failed) =>
+						isRefusedLoad(failed)
+							? boot(bootedOnRefused(core, checkpoint.loaded), undefined)
+							: Effect.fail(failed),
+					),
+				);
 			}).pipe(
 				Effect.provideService(Scope.Scope, scope),
 				Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))),

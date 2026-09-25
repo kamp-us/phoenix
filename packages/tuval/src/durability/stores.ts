@@ -6,9 +6,8 @@
  * built over the same object is a reload.
  */
 
-import {rm} from "node:fs/promises";
 import {join} from "node:path";
-import type {Store} from "@demlik/tea";
+import type {DeletableStore, Store} from "@demlik/tea";
 import {memoryStore} from "@demlik/tea/mem";
 import {fileStore} from "@demlik/tea/node";
 import type {ProcessId} from "../process/process.ts";
@@ -16,57 +15,33 @@ import {type Manifest, parseManifest, parseSnapshot, type Snapshot} from "./snap
 
 export interface CheckpointStores {
 	readonly manifest: Store<Manifest>;
-	readonly snapshot: (id: ProcessId) => Store<Snapshot>;
 	/**
-	 * Drop the process's snapshot bytes — what `Checkpoints.forget` needs and Demlik's `Store` has
-	 * no word for: it loads and saves, and a snapshot saved as `null` is not a snapshot. Dropping is
-	 * idempotent, because a store never written and one whose bytes are gone both load `null`.
+	 * A process's snapshot store. Deletable, because `Checkpoints.forget` removes a save through the
+	 * store that wrote it (demlik #314) and never through the path under it; tea's `delete()` is
+	 * idempotent, so forgetting a process that never committed succeeds.
 	 */
-	readonly dropSnapshot: (id: ProcessId) => Promise<void>;
+	readonly snapshot: (id: ProcessId) => DeletableStore<Snapshot>;
 }
-
-const snapshotPath = (dir: string, id: ProcessId) => join(dir, "processes", `${id}.json`);
 
 export const fileStores = (dir: string): CheckpointStores => ({
 	manifest: fileStore(join(dir, "manifest.json"), parseManifest),
-	snapshot: (id) => fileStore(snapshotPath(dir, id), parseSnapshot),
-	// `force` is the idempotence: a process that never committed has no file, and a forget of one
-	// is a success rather than the ENOENT that would refuse the whole removal.
-	dropSnapshot: (id) => rm(snapshotPath(dir, id), {force: true}),
+	snapshot: (id) => fileStore(join(dir, "processes", `${id}.json`), parseSnapshot),
 });
 
 export const memoryStores = (): CheckpointStores => {
-	// One cell per id, and the store handed out is a view onto it rather than the cell itself, so a
-	// drop empties the cell in place the way `rm` empties a path: a process that acquired its store
-	// before the drop keeps writing to the same cell a later reader loads from. Deleting the map
-	// entry instead would hand the next reader a fresh empty cell while the live process's saves
-	// land in a detached one — a store that lies about exactly the window `forget` is built for.
-	const cells = new Map<ProcessId, {value: Snapshot | null}>();
-	const cellFor = (id: ProcessId): {value: Snapshot | null} => {
-		let cell = cells.get(id);
-		if (cell === undefined) {
-			cell = {value: null};
-			cells.set(id, cell);
-		}
-		return cell;
-	};
+	// One store per id, handed out again on every ask, so a delete empties the same store a live
+	// process is still writing to — the way a file store's delete empties the path it writes. A fresh
+	// store per ask would let the live process's saves land where no later reader looks.
+	const snapshots = new Map<ProcessId, DeletableStore<Snapshot>>();
 	return {
 		manifest: memoryStore<Manifest>(null, parseManifest),
 		snapshot: (id) => {
-			const cell = cellFor(id);
-			return {
-				load: () => Promise.resolve(cell.value),
-				save: (snapshot) => {
-					cell.value = snapshot;
-					return Promise.resolve();
-				},
-				migrate: (raw) => parseSnapshot(raw),
-			};
-		},
-		dropSnapshot: (id) => {
-			const cell = cells.get(id);
-			if (cell !== undefined) cell.value = null;
-			return Promise.resolve();
+			let store = snapshots.get(id);
+			if (store === undefined) {
+				store = memoryStore<Snapshot>(null, parseSnapshot);
+				snapshots.set(id, store);
+			}
+			return store;
 		},
 	};
 };
