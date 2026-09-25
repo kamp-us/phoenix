@@ -8,7 +8,6 @@ import type {Cmd, Machine, Sub} from "@demlik/tea";
 import {type Effect, type Option, Schema, type Scope} from "effect";
 // Type-only, so the commands slice's runtime dependency on this file stays one-directional.
 import type {AnySpell} from "../commands/spell.ts";
-import type {SubFailurePolicy} from "../sub-failure.ts";
 
 // Type-only brand: a plain string at runtime, a distinct type to the checker (`.patterns/effect-schema-validation.md`).
 export const ProgramId = Schema.String.pipe(Schema.brand("tuval/ProgramId"));
@@ -163,9 +162,8 @@ export interface Placement {
 }
 
 /**
- * The core a row carries: Demlik's `Machine` widened by ADR 0346's Sub-failure policy. The policy's
- * type lives in `src/sub-failure.ts`, owned by neither slice, so a row declaring `subFailure` still
- * imports nothing from the host that reads it.
+ * The core a row carries: Demlik's `Machine`, with no Sub-failure hook. A Sub maps the errors it
+ * expects into Msgs in its own handler, and one it lets escape stops the process (ADR 0408).
  */
 export type ProgramCore<
 	S,
@@ -173,7 +171,7 @@ export type ProgramCore<
 	C extends Cmd,
 	U extends Sub,
 	Ctx,
-> = Machine<S, M, C, U, Ctx> & {readonly subFailure?: SubFailurePolicy<M, U>};
+> = Machine<S, M, C, U, Ctx>;
 
 export interface Program<
 	S,

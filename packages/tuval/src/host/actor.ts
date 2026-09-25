@@ -41,7 +41,6 @@ import type {
 	InterpretHandlers,
 	OnError,
 	ServicesOf,
-	SubFailure,
 	SubscribeHandlers,
 } from "./definition.ts";
 import {subDisposerBridge} from "./demlik-bridges.ts";
@@ -101,31 +100,16 @@ type Probe = {readonly kind: "inactive"} | {readonly kind: "active"; readonly id
 /**
  * A Sub the host has armed. `mark` is its lifetime: `"running"` until its fiber exits, then
  * `"failed"` or `"ended"` — and reconcile re-arms neither, because the same id means the same
- * lifetime (ADR 0346). The Scope outlives the mark: it is the Sub's registration, and its close is
- * where a Demlik-bridged `Dispose` runs, so only the state ceasing to desire the Sub releases it.
+ * lifetime. The Scope outlives the mark: it is the Sub's registration, and its close is where a
+ * Demlik-bridged `Dispose` runs, so only the state ceasing to desire the Sub releases it.
  */
 type ArmedSub = {
 	readonly scope: Scope.Closeable;
 	readonly mark: "running" | "failed" | "ended";
 };
 
-/**
- * One armed Sub as the failure policy sees it. `declared` is the `U` the machine's `subFailure`
- * projection takes, and a dep-keyed Sub has none — Demlik keys those on a state slice, not on a
- * declared Sub value — so a dep-keyed failure can never be addressed and always ends the process.
- */
-type SubSite<U> = {
-	readonly id: string;
-	readonly type: string;
-	readonly declared: U | undefined;
-	/** Records the mark, or answers `false` when this Sub's entry has already moved on. */
-	readonly settle: (mark: "failed" | "ended") => boolean;
-};
-
-const squashMessage = (cause: Cause.Cause<unknown>): string => {
-	const squashed = Cause.squash(cause);
-	return squashed instanceof Error ? squashed.message : String(squashed);
-};
+/** Records an armed Sub's exit mark, or answers `false` when its entry has already moved on. */
+type SettleSub = (mark: "failed" | "ended") => boolean;
 
 export const make = Effect.fn("Tuval.host.make")(function* <
 	S,
@@ -228,43 +212,14 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 		);
 	};
 
-	/** `subFailure`'s answer, or `undefined` when it is undeclared, has no `U` to read, or throws. */
-	const addressFailure = (site: SubSite<U>, cause: Cause.Cause<unknown>) =>
-		Effect.suspend((): Effect.Effect<M | undefined> => {
-			const project = machine.subFailure;
-			const declared = site.declared;
-			if (project === undefined || declared === undefined) return Effect.succeed(undefined);
-			const failure: SubFailure = {
-				id: site.id,
-				type: site.type,
-				reason: Cause.hasFails(cause) ? "failure" : "defect",
-				message: squashMessage(cause),
-			};
-			return Effect.try({
-				try: () => project(declared, failure) ?? undefined,
-				catch: (thrown) => new UserCodeThrew({cause: thrown}),
-			}).pipe(
-				Effect.catch((error: UserCodeThrew) =>
-					report(error, "sub-fiber").pipe(Effect.as(undefined)),
-				),
-			);
-		});
-
 	/**
-	 * ADR 0346 §Decision, mechanics 1 to 5 in their stated order: report the `Cause` under
-	 * `"sub-fiber"`, mark the id `failed`, hand the machine its `subFailure` Msg through the same
-	 * unawaited follow-up path a Sub's own `dispatch` uses, and close the process's Scope with the
-	 * failure as its Exit when nothing addressed it.
+	 * ADR 0408: a Sub failure its runner did not map into a Msg is reported under `"sub-fiber"` and
+	 * closes the process's Scope with that failure as its Exit.
 	 */
-	const onSubFailure = (site: SubSite<U>, cause: Cause.Cause<unknown>) =>
+	const closeOnSubError = (settle: SettleSub, cause: Cause.Cause<unknown>) =>
 		Effect.gen(function* () {
 			yield* report(Cause.squash(cause), "sub-fiber");
-			if (!site.settle("failed")) return;
-			const msg = yield* addressFailure(site, cause);
-			if (msg !== undefined) {
-				dispatchUnawaited(msg);
-				return;
-			}
+			if (!settle("failed")) return;
 			yield* Scope.close(scope, Exit.failCause(cause));
 		});
 
@@ -284,43 +239,37 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 		);
 
 	/**
-	 * The Sub's exit, read from a detached fiber: the unaddressed branch closes the process Scope,
-	 * and a fiber living under that Scope would end up waiting on its own interruption.
+	 * The Sub's exit, read from a detached fiber: a failure closes the process Scope, and a fiber
+	 * living under that Scope would end up waiting on its own interruption.
 	 */
-	const observeSub = (fiber: Fiber.Fiber<void, E>, site: SubSite<U>): void => {
+	const observeSub = (fiber: Fiber.Fiber<void, E>, settle: SettleSub): void => {
 		fiber.addObserver((exit) => {
 			if (Exit.isSuccess(exit)) {
-				site.settle("ended");
+				settle("ended");
 				return;
 			}
 			if (Cause.hasInterruptsOnly(exit.cause)) return;
-			Effect.runFork(onSubFailure(site, exit.cause));
+			Effect.runFork(closeOnSubError(settle, exit.cause));
 		});
 	};
 
-	const manualSite = (sub: U, child: Scope.Closeable): SubSite<U> => ({
-		id: sub.id,
-		type: sub.type,
-		declared: sub,
-		settle: (mark) => {
-			const armed = manualSubs.get(sub.id);
+	const settleManual =
+		(id: string, child: Scope.Closeable): SettleSub =>
+		(mark) => {
+			const armed = manualSubs.get(id);
 			if (armed?.scope !== child) return false;
-			manualSubs.set(sub.id, {scope: child, mark});
+			manualSubs.set(id, {scope: child, mark});
 			return true;
-		},
-	});
+		};
 
-	const keyedSite = (index: number, id: string, child: Scope.Closeable): SubSite<U> => ({
-		id,
-		type: "dep-keyed",
-		declared: undefined,
-		settle: (mark) => {
+	const settleKeyed =
+		(index: number, id: string, child: Scope.Closeable): SettleSub =>
+		(mark) => {
 			const armed = keyedSubs.get(index);
 			if (armed?.scope !== child) return false;
 			keyedSubs.set(index, {id, scope: child, mark});
 			return true;
-		},
-	});
+		};
 
 	const runInterpret = Effect.fn("Tuval.host.interpret")(function* (cmds: readonly C[]) {
 		for (const cmd of cmds) {
@@ -383,7 +332,7 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 				yield* closeSub(child);
 				continue;
 			}
-			observeSub(fiber, keyedSite(index, probe.id, child));
+			observeSub(fiber, settleKeyed(index, probe.id, child));
 		}
 
 		if (machine.subscriptions) {
@@ -414,7 +363,7 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 					ctx,
 					dispatchUnawaited,
 				) as Effect.Effect<void, E, R | Scope.Scope>;
-				observeSub(yield* armSub(work, child), manualSite(sub, child));
+				observeSub(yield* armSub(work, child), settleManual(sub.id, child));
 			}
 		}
 		if (firstError !== null) return yield* Effect.die(firstError);
