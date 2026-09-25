@@ -74,7 +74,6 @@ const echoProgram = (bound: PortBound = {capacity: 4, overflow: "suspend"}): Any
 					[{type: "say", word: msg.word.toUpperCase()}],
 				],
 			},
-			interpret: {say: () => Promise.resolve()},
 		}),
 		ports: {
 			words: {

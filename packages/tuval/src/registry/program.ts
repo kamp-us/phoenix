@@ -4,7 +4,7 @@
  * describes a program and never runs one, so it imports nothing from the host slice.
  */
 
-import type {Cmd, Machine} from "@demlik/tea";
+import type {Cmd, Identity, Reducer, Transitions, UpdateForm} from "@demlik/tea";
 import {type Effect, type Option, Schema, type Stream} from "effect";
 // Type-only, so the commands slice's runtime dependency on this file stays one-directional.
 import type {AnySpell} from "../commands/spell.ts";
@@ -161,19 +161,26 @@ export interface Placement {
 }
 
 /**
- * The core a row carries: Demlik's `Machine`, whose Subs are `{type, deps}` entries only — the
- * runner for each type is the row's `subs`. There is no Sub-failure hook: a runner maps the errors
- * it expects into Msgs, and one it lets escape stops the process (ADR 0408).
+ * The core a row carries: `@demlik/tea` 0.18's data-only `Machine`, owned here while the repo pins
+ * 0.12 (the pin child #9787 swaps it for tea's own). It holds no handlers — the row's `handlers`
+ * run its Cmds and its `subs` run its Subs, which are `{type, deps}` entries only. There is no
+ * Sub-failure hook: a runner maps the errors it expects into Msgs, and one it lets escape stops the
+ * process (ADR 0408). A plain literal is one, since the update form is detected when `__form` is
+ * absent.
  */
-export type ProgramCore<
+export interface ProgramCore<
 	S,
 	M extends {readonly type: string},
 	C extends Cmd,
 	U extends Sub,
 	Ctx,
-> = Omit<Machine<S, M, C, never, Ctx>, "subs" | "subscriptions" | "subscribe"> & {
+> {
+	readonly init: (loaded: S | null, ctx: Ctx) => readonly [S, readonly C[]];
+	readonly update: Reducer<S, M, C> | ([S] extends [{type: string}] ? Transitions<S, M, C> : never);
 	readonly subs?: ReadonlyArray<DepKeyedSub<S, U>>;
-};
+	readonly identity?: Identity<S, M>;
+	readonly __form?: UpdateForm;
+}
 
 export interface Program<
 	S,

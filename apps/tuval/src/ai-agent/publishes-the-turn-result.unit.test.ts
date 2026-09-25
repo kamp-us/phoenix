@@ -80,7 +80,6 @@ const callerProgram = (): AnyProgram =>
 		core: defineMachine<CallerState, CallerMsg, never, never, unknown>({
 			init: (loaded) => [loaded ?? {idle: true}, []],
 			update: {noop: (state) => [state, []]},
-			interpret: {},
 		}),
 		ports: {},
 		handlers: {},

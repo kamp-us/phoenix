@@ -90,7 +90,6 @@ const echoProgram = (): AnyProgram =>
 					[{type: "say", word: msg.word.toUpperCase()}],
 				],
 			},
-			interpret: {say: () => Promise.resolve()},
 		}),
 		ports: {
 			words: {
@@ -135,7 +134,6 @@ const callerProgram = (): AnyProgram =>
 		core: defineMachine<CallerState, CallerMsg, never, never, unknown>({
 			init: (loaded) => [loaded ?? {idle: true}, []],
 			update: {noop: (state) => [state, []]},
-			interpret: {},
 		}),
 		ports: {},
 		handlers: {},

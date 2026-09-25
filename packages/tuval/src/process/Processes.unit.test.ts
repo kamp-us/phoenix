@@ -77,8 +77,6 @@ const counterProgram = (probe: Probe): AnyProgram =>
 					deps: (state) => (state.type === "running" ? {runId: state.runId} : null),
 				},
 			],
-			// Demlik's `Machine` demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576).
-			interpret: {notify: () => Promise.resolve()},
 		}),
 		ports,
 		handlers: {

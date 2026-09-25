@@ -2,8 +2,8 @@
 
 import type {NoCtx, Store} from "@demlik/tea";
 import {Effect} from "effect";
+import type {ProgramCore} from "../registry/program.ts";
 import type {Sub} from "../registry/sub.ts";
-import type {CoreMachine} from "./definition.ts";
 
 export type State =
 	| {readonly type: "idle"; readonly count: number}
@@ -25,7 +25,7 @@ export type Command = {readonly type: "notify"; readonly count: number};
 /** On while a run is going, keyed on its id. */
 export type Ticker = Sub<"ticker", {readonly runId: string}>;
 
-export const counterMachine = (): CoreMachine<State, Msg, Command, Ticker, NoCtx> => ({
+export const counterMachine = (): ProgramCore<State, Msg, Command, Ticker, NoCtx> => ({
 	init: (loaded) => [loaded ?? {type: "idle", count: 0}, []],
 	update: {
 		start: (state, msg) => [{type: "running", runId: msg.runId, count: state.count, acks: 0}, []],

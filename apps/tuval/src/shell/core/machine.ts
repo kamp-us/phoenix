@@ -756,17 +756,4 @@ export const shellCore = ({table, commands}: ShellCoreOptions) =>
 	defineMachine<ShellState, ShellMsg, ShellCmd, never, unknown>({
 		init: (loaded) => [loaded ?? initialState(), []],
 		update: cellsFor(table, commands),
-		// Demlik's `Machine` demands a Promise `interpret` beside the row's own handlers; the host
-		// never reads it (#7576). The shell's Effect handlers land with its registry row (#7558).
-		interpret: {
-			forwardKey: () => Promise.resolve(),
-			startRepeatTimer: () => Promise.resolve(),
-			cancelRepeatTimer: () => Promise.resolve(),
-			runCommand: () => Promise.resolve(),
-			openProgram: () => Promise.resolve(),
-			attachProcess: () => Promise.resolve(),
-			removeProcess: () => Promise.resolve(),
-			openCommandLine: () => Promise.resolve(),
-			reloadConfig: () => Promise.resolve(),
-		},
 	});

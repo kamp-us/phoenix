@@ -48,7 +48,6 @@ const counterProgram = (probe: Probe, stores: CheckpointStores, version = "1.0.0
 				],
 				acked: (state) => [{...state, acks: state.acks + 1}, []],
 			},
-			interpret: {notify: () => Promise.resolve()},
 		}),
 		ports: {},
 		handlers: {

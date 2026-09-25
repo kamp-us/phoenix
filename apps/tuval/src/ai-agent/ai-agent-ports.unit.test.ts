@@ -79,7 +79,6 @@ const windowProgram: AnyProgram = {
 			took: (state, msg) => [{seen: [...state.seen, {port: msg.port, payload: msg.payload}]}, []],
 			say: (state, msg) => [state, [{type: "emit", port: msg.port, payload: msg.payload}]],
 		},
-		interpret: {emit: () => Promise.resolve()},
 	}),
 	ports: {
 		[aiAgentPortNames.transcript]: transcript.inbound(),

@@ -3,9 +3,10 @@
 import type {NoCtx} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit} from "effect";
+import type {ProgramCore} from "../registry/program.ts";
 import type {Sub} from "../registry/sub.ts";
 import {make} from "./actor.ts";
-import {type CoreMachine, defineActor} from "./definition.ts";
+import {defineActor} from "./definition.ts";
 import {MissingSubRunnerError} from "./errors.ts";
 
 type Slot = string | null;
@@ -30,7 +31,7 @@ const logging = (log: string[]) => ({
 		).pipe(Effect.andThen(Effect.never)),
 });
 
-type Machine = CoreMachine<State, Msg, never, Run, NoCtx>;
+type Machine = ProgramCore<State, Msg, never, Run, NoCtx>;
 
 const machineOf = (subs: Machine["subs"]): Machine => ({
 	init: () => [off, []],

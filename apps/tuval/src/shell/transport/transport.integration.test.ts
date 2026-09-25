@@ -80,9 +80,6 @@ const stamperCore = defineMachine<StampState, StampMsg, StampCmd, never, unknown
 			[{type: "settle"}],
 		],
 	},
-	// Demlik's `Machine` demands a Promise `interpret` beside the row's `handlers`; the host never
-	// reads it (#7576).
-	interpret: {settle: () => Promise.resolve()},
 });
 
 const deskCore = defineMachine<DeskState, DeskMsg, Cmd<never>, never, unknown>({

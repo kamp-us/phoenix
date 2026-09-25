@@ -7,8 +7,7 @@
  * Two things it exists to hide (#8716 R12.1). An in-port arrival is an `update` event carrying the
  * decoded payload, which is the row's `receive` map written for the author. A returned effect list
  * (`./effect.ts`) is the row's Cmd union, and the `handlers` that run those Cmds against
- * `ProcessPorts` and the process spells are written once here rather than by every author — as is
- * the dead `interpret` Demlik demands and the host never reads (#7576).
+ * `ProcessPorts` and the process spells are written once here rather than by every author.
  *
  * **`FIELD_COMPILERS` is the extension seam this epic's field children share.** One row field per
  * key, one key per line: `commands`, the `key` opt-in, the `title`/`status` children and the
@@ -31,7 +30,6 @@
  * always had for the same mistake.
  */
 
-import type {Interpret} from "@demlik/tea";
 import {Context, Effect, Option, Result} from "effect";
 import {SessionOpening} from "../ai-agent/opening.ts";
 import type {
@@ -593,18 +591,6 @@ const bindArgs = <H extends AnyHandlers>(handlers: H, args: Context.Context<neve
 				// that correspondence, which is what this cast buys back.
 			) as H);
 
-/** Demlik demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576). */
-const dead = (): Promise<void> => Promise.resolve();
-
-const INTERPRET: Interpret<AuthoredEvent, ProgramEffect, unknown> = {
-	emit: dead,
-	spawn: dead,
-	send: dead,
-	ask: dead,
-	reply: dead,
-	stop: dead,
-};
-
 const compileCore = (authored: AnyAuthoredProgram): ProgramCore<any, any, any, any, any> => ({
 	// A loaded state is answered untouched and with no Cmds, which is Demlik's rehydrate contract
 	// (`@demlik/tea` 0.12, `Machine.init`: "when `loaded !== null`, init MUST return `[loaded, []]`").
@@ -620,7 +606,6 @@ const compileCore = (authored: AnyAuthoredProgram): ProgramCore<any, any, any, a
 	},
 	update: withSelfReport(authored, authored.update),
 	...(authored.subs === undefined ? {} : {subs: authored.subs}),
-	interpret: INTERPRET,
 });
 
 /**

@@ -81,8 +81,6 @@ const events: DepKeyedSub<AiAgentSessionState, AiAgentSessionSub> = {
 			: {sessionId: state.sessionId, connection: state.connection},
 };
 
-const noWork = (): Promise<void> => Promise.resolve();
-
 type Step = readonly [AiAgentSessionState, ReadonlyArray<AiAgentSessionCmd>];
 
 /** A phase a start would trample: a session is already opening, open or coming back. */
@@ -523,22 +521,6 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 		identity: {
 			ofState: (state) => state.sessionId,
 			ofMsg: (msg) => (msg.type === "event" ? msg.sessionId : undefined),
-		},
-
-		// Demlik's `Machine` demands a Promise `interpret` beside the row's own Effect handlers; the
-		// host never reads it (#7576).
-		interpret: {
-			"aiAgent.boot": noWork,
-			"aiAgent.start": noWork,
-			"aiAgent.prompt": noWork,
-			"aiAgent.answer": noWork,
-			"aiAgent.setMode": noWork,
-			"aiAgent.setModel": noWork,
-			"aiAgent.setThinkingLevel": noWork,
-			"aiAgent.page": noWork,
-			"aiAgent.interrupt": noWork,
-			"aiAgent.reconnect": noWork,
-			"aiAgent.republish": noWork,
 		},
 	});
 };

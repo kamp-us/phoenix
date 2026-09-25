@@ -127,8 +127,8 @@ describe("authoring.defineProgram", () => {
 		});
 	});
 
-	it("fills `interpret` itself, so no authored program carries one", () => {
-		expect(Object.keys(counter.core.interpret ?? {}).sort()).toEqual([
+	it("fills the row's `handlers` itself, so no authored program carries one", () => {
+		expect(Object.keys(counter.handlers ?? {}).sort()).toEqual([
 			"ask",
 			"emit",
 			"reply",

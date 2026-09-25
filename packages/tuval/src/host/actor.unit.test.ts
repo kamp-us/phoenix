@@ -2,9 +2,10 @@ import type {DispatchDiscardedError, NoCtx} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Exit, Fiber, Schema, type Scope} from "effect";
 import {expectTypeOf} from "vitest";
+import type {ProgramCore} from "../registry/program.ts";
 import type {Sub} from "../registry/sub.ts";
 import {type ActorHandle, layer, make} from "./actor.ts";
-import {type CoreMachine, defineActor} from "./definition.ts";
+import {defineActor} from "./definition.ts";
 import type {ActorStoppedError, MsgNotAcceptedError, StoreError} from "./errors.ts";
 import {
 	counterMachine,
@@ -22,7 +23,7 @@ describe("host actor", () => {
 				type M = {readonly type: "add"; readonly n: number};
 				type C = {readonly type: "slow"; readonly n: number};
 				const finished: number[] = [];
-				const machine: CoreMachine<S, M, C, never, NoCtx> = {
+				const machine: ProgramCore<S, M, C, never, NoCtx> = {
 					init: () => [{applied: []}, []],
 					update: {
 						add: (state, msg) => [{applied: [...state.applied, msg.n]}, [{type: "slow", n: msg.n}]],
@@ -58,7 +59,7 @@ describe("host actor", () => {
 			type S = {readonly type: "off"} | {readonly type: "on"};
 			type M = {readonly type: "toggle"};
 			type U = Sub<"ticker", true>;
-			const machine: CoreMachine<S, M, never, U, NoCtx> = {
+			const machine: ProgramCore<S, M, never, U, NoCtx> = {
 				init: () => [{type: "off"}, []],
 				update: {toggle: (state) => [{type: state.type === "off" ? "on" : "off"}, []]},
 				subs: [{type: "ticker", deps: (state) => (state.type === "on" ? true : null)}],
@@ -134,7 +135,7 @@ describe("host actor", () => {
 				// closed `M`, so the machine that meets this bug is one whose Msg type is open — which
 				// is what a process handle erased to `AnyProgram` hands the shell's `forwardKey`.
 				type M = {readonly type: string; readonly key?: string};
-				const machine: CoreMachine<S, M, never, never, NoCtx> = {
+				const machine: ProgramCore<S, M, never, never, NoCtx> = {
 					init: () => [{count: 0}, []],
 					update: {tick: (state) => [{count: state.count + 1}, []]},
 				};
@@ -156,7 +157,7 @@ describe("host actor", () => {
 			Effect.gen(function* () {
 				type S = {readonly count: number};
 				type M = {readonly type: "tick"};
-				const machine: CoreMachine<S, M, never, never, NoCtx> = {
+				const machine: ProgramCore<S, M, never, never, NoCtx> = {
 					init: () => [{count: 0}, []],
 					update: {
 						tick: () => {
@@ -272,7 +273,7 @@ describe("host actor", () => {
 				type S = {readonly followed: boolean};
 				type M = {readonly type: "follow"};
 				type C = {readonly type: "boot"};
-				const machine: CoreMachine<S, M, C, never, NoCtx> = {
+				const machine: ProgramCore<S, M, C, never, NoCtx> = {
 					init: () => [{followed: false}, [{type: "boot"}]],
 					update: {follow: () => [{followed: true}, []]},
 				};
@@ -306,7 +307,7 @@ describe("host actor", () => {
 		type Streaming = {readonly text: string; readonly partial: boolean};
 		type Delta = {readonly type: "delta"; readonly chunk: string} | {readonly type: "done"};
 
-		const streaming: CoreMachine<Streaming, Delta, never, never, NoCtx> = {
+		const streaming: ProgramCore<Streaming, Delta, never, never, NoCtx> = {
 			init: (loaded) => [loaded ?? {text: "", partial: false}, []],
 			update: {
 				delta: (state, msg) => [{text: state.text + msg.chunk, partial: true}, []],

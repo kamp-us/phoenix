@@ -3,9 +3,10 @@
 import type {NoCtx} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit, Schema, Scope, Stream} from "effect";
+import type {ProgramCore} from "../registry/program.ts";
 import {type Sub, subIdOf} from "../registry/sub.ts";
 import {make} from "./actor.ts";
-import {type CoreMachine, defineActor, type HostErrorPhase, type OnError} from "./definition.ts";
+import {defineActor, type HostErrorPhase, type OnError} from "./definition.ts";
 import {disposerStream} from "./demlik-bridges.ts";
 import {counterMachine, counterSubscribe} from "./fixtures.ts";
 
@@ -15,7 +16,7 @@ type State = {readonly armed: boolean; readonly seen: readonly string[]};
 type Msg = {readonly type: "arm"} | {readonly type: "noted"; readonly note: string};
 type Ticker = Sub<"ticker", true>;
 
-const machine: CoreMachine<State, Msg, never, Ticker, NoCtx> = {
+const machine: ProgramCore<State, Msg, never, Ticker, NoCtx> = {
 	init: () => [{armed: false, seen: []}, []],
 	update: {
 		arm: (state: State) => [{...state, armed: true}, []],
