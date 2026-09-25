@@ -404,7 +404,7 @@ describe("Processes", () => {
 					yield* processes.remove(handle.id);
 
 					assert.deepStrictEqual(probe.log, [
-						`snapshot:drop:${handle.id}`,
+						`snapshot:delete:${handle.id}`,
 						"manifest:save",
 						"sub:stop:a",
 					]);

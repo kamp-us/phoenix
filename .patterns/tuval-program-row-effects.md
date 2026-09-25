@@ -215,11 +215,13 @@ silences the refusal one restart later: the saved refusal state parses fine on t
 the restore transform drops `failure` off it, so the window falls from the refusal sentence to the
 bare phase line ([#8112](https://github.com/kamp-us/phoenix/issues/8112)). The row declares
 `restorable: (raw) => boolean` ([`registry/program.ts`](../packages/tuval/src/registry/program.ts)) —
-the same read its `init` does, answered before `init` runs — and a `false` seals that process's
-store: `Checkpoints` hands the host a store whose `save` writes nothing for the process's life, so
-the bytes stay on disk and every later boot re-reads and re-refuses them. Answer it off the one
-function `init` uses, never a second copy of the parse: a store sealing on a different verdict than
-the one the window renders would hold the wrong bytes. A row with no parse of its own omits the
+the same read its `init` does, answered before `init` runs — and a `false` makes the store's
+`migrate` answer tea's `refuse`, so tea's run fails on load and writes nothing. `Processes` then
+starts the process with no store, its `init` bound to the refused bytes so the rehydrate branch
+shows the row's own refusal state, and every later boot re-reads and re-refuses the same bytes
+([#9793](https://github.com/kamp-us/phoenix/issues/9793)). Answer it off the one function `init`
+uses, never a second copy of the parse: a store refusing on a different verdict than the one the
+window renders would hold the wrong bytes. A row with no parse of its own omits the
 field and restores whatever loads.
 
 **A state no restore may read back is never written, and the row says so under `checkpointWorthy`.**
@@ -233,8 +235,9 @@ site — the commit's, boot's and stop's ([`host/actor.ts`](../packages/tuval/sr
 no disk, and the state that ends the turn is worthy again, so the commit landing it is the flush and
 it is on disk before the dispatch returns. The skipped writes are never owed, because a state the
 row refuses is one no restore may show — a half-written reply must not come back as the reply. Keep
-it total and cheap; it runs on the tail on every commit. It composes with the seal above rather than
-replacing it: the row refuses this state, the sealed store refuses every state. A row whose states
+it total and cheap; it runs on the tail on every commit. It composes with the refusal above rather
+than replacing it: the row skips this state, and a refused checkpoint leaves no store to save any
+state to. A row whose states
 are all worth keeping omits the field
 ([#8170](https://github.com/kamp-us/phoenix/issues/8170)).
 
