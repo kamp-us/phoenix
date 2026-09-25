@@ -18,7 +18,7 @@ lives on the row beside the core, in one of two records:
 | `subs` | `(sub) => Stream<Msg, E, R>` | long-lived, drained on a Scope of the Sub's own |
 
 A Cmd handler answers with a list of follow-up Msgs. A Sub handler has many answers over time, so it
-answers with a Stream of them: the host hands each element to `update` in order and interrupts the
+answers with a Stream of them: tea's run hands each element to `update` in order and interrupts the
 Stream when the core stops asking for that Sub, which runs the Stream's finalizers. This is
 `@demlik/tea` 0.18's `EffectRunner` shape.
 
@@ -28,7 +28,7 @@ widen `R` by hand to make a spawn typecheck — the spawn is what has to supply 
 
 **A Sub handler's failure ends the process, so treat the Stream ending as the only clean exit.** ADR
 [0346](../.decisions/0346-sub-failure-policy-actor-identity.md) makes a failed Sub the machine's Msg
-or the process's death, never a host retry: the host reports the `Cause` under `"sub-fiber"`, marks
+or the process's death, never an engine retry: tea's run reports the error under `"sub"`, marks
 that Sub's id `failed`, and closes the process's Scope with the failure as its Exit. Marked ids are
 never re-armed, `ended` ones included, so a Sub whose Stream ends does not restart while the
 state keeps desiring it. Restart is data: put an attempt counter in the Sub's `deps` slice, and the
@@ -37,10 +37,11 @@ mean to survive; let out only what should end the process.
 
 **The core declares each Sub as a `{type, deps}` entry, and the row's `subs` holds the runner for
 that type.** The entry is `@demlik/tea`'s own `DepKeyedSub`, and the Sub it asks for is tea's own
-`Sub`. [`registry/sub.ts`](../packages/tuval/src/registry/sub.ts) holds only the `desiredSub`
-reconcile helpers the host runs over those entries. `deps` answers
+`Sub`. tea's run reconciles those entries with its own internal `desiredSub`;
+[`registry/sub.ts`](../packages/tuval/src/registry/sub.ts) mirrors it so a test can read which Subs
+a state asks for without running the engine. `deps` answers
 the slice of state the Sub depends on, or `null` when it is off; the id is a hash of the type and
-that slice, so the host starts the runner when the entry turns on, leaves it while the id holds,
+that slice, so tea's run starts the runner when the entry turns on, leaves it while the id holds,
 restarts it when the slice changes and stops it on `null`. Two entries of one type with different
 deps are two ids and two runners.
 
@@ -78,7 +79,7 @@ subscribed to the transport it just replaced.
 - **`state()`** — the machine's committed state, as `unknown`. The registry erases a program's
   private types, so the program's own predicate reads it back (`isAiAgentSessionState` is the
   worked example). Use it to seed a projection, not to poll: a Msg a Sub's Stream emits is
-  applied on the host's serial tail, so a read straight after one may not see it yet.
+  applied on tea's run's serial tail, so a read straight after one may not see it yet.
 
 **Publish a projection by folding, not by reading back.** A Sub that emits a Msg and then wants
 to publish what the core just committed should apply the core's own fold function to a local value
@@ -145,20 +146,20 @@ out of the list, read only by `aiAgent.boot`. Keep such a service narrow on purp
 fields is a program-arguments system by another name, and then every spawner has to know what every
 row wants.
 
-**The Cmd's handler answers with a Msg and does no work.** `runInterpret` awaits an init Cmd's
-handler before `make` returns (`host/actor.ts`), and a spawn runs inside the *spawning* process's
-serial step — so a boot handler that opened the connection itself would freeze the shell for as long
+**The Cmd's handler answers with a Msg and does no work.** A spawn awaits the run's boot, which
+awaits every init Cmd's handler ([`Processes.ts`](../packages/tuval/src/process/Processes.ts)), and
+a spawn runs inside the *spawning* process's serial step — so a boot handler that opened the connection itself would freeze the shell for as long
 as the backend took, or for the row's whole start deadline when the open fails. Answering with the
 Msg instead costs nothing at spawn and puts the real work on the new process's own tail: the boot
 Cmd is a trampoline from `init`, which cannot dispatch a Msg, into the cell that already owns the
 transition and its "one open at a time" guard.
 
-**A follow-up Msg can be interrupted before its fiber starts, so count it on the Exit.** The host
-forks each unawaited follow-up into the process Scope and settles its pending count on the fiber's
-Exit rather than inside its body: a stop taken in the same tick as the dispatch — ordinary once a
-session opens itself at spawn — interrupts a fiber that never ran, which produces an Exit and runs no
-`ensuring`, and an in-body decrement leaves the actor's stop waiting on a count that never reaches
-zero.
+**A follow-up Msg joins the dispatch tail, so a stop either applies it or reports it discarded.**
+tea's run chains each follow-up a handler answers onto its one serial tail rather than forking it.
+Its `stop` first closes the run to new dispatches and then awaits that tail, so a follow-up queued
+before the stop still applies, and one queued after it — ordinary once a session opens itself at
+spawn and is stopped in the same tick — is refused and reported under `"discard"`. No count of
+pending follow-ups exists for a program to keep in step.
 
 **The core owns the phases that mean "an open is in flight"; a layer's event may not enter one.**
 Every layer narrates its own open on the same event stream it publishes everything else on —
@@ -209,7 +210,7 @@ payloads in a queue nobody drains.
 
 **A checkpoint the row cannot read is never written over, and the row says so under `restorable`.**
 A row that parses its checkpoint has a refusal branch, and the state that branch returns is a
-perfectly ordinary state — so the save the host runs straight after `init` writes it over the bytes
+perfectly ordinary state — so the save tea's run makes straight after `init` writes it over the bytes
 it just refused. That costs the operator the transcript with no copy left to diagnose from, and it
 silences the refusal one restart later: the saved refusal state parses fine on the next boot, and
 the restore transform drops `failure` off it, so the window falls from the refusal sentence to the
@@ -225,13 +226,13 @@ window renders would hold the wrong bytes. A row with no parse of its own omits 
 field and restores whatever loads.
 
 **A state no restore may read back is never written, and the row says so under `checkpointWorthy`.**
-The host saves on every applied Msg, so a program re-upserting one growing item per delta rewrites
+tea's run saves on every applied Msg, so a program re-upserting one growing item per delta rewrites
 its whole state through Demlik's `fileStore` — mkdir, `JSON.stringify`, write-temp, rename — awaited
 inside the single-permit transition tail, which puts each delta's fold behind the previous one's
 disk round trip. The row declares `checkpointWorthy: (state) => boolean`
-([`registry/program.ts`](../packages/tuval/src/registry/program.ts)) and the host asks it at every save
-site — the commit's, boot's and stop's ([`host/actor.ts`](../packages/tuval/src/host/actor.ts)) — so a
-`false` writes nothing anywhere. One predicate is both halves of the fix: the mid-turn burst costs
+([`registry/program.ts`](../packages/tuval/src/registry/program.ts)), and the store tea's run saves
+through asks it on every save — the commit's, boot's and stop's (`worthyOnly` in
+[`Processes.ts`](../packages/tuval/src/process/Processes.ts)) — so a `false` writes nothing anywhere. One predicate is both halves of the fix: the mid-turn burst costs
 no disk, and the state that ends the turn is worthy again, so the commit landing it is the flush and
 it is on disk before the dispatch returns. The skipped writes are never owed, because a state the
 row refuses is one no restore may show — a half-written reply must not come back as the reply. Keep
