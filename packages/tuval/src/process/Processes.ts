@@ -117,7 +117,7 @@ export class Processes extends Context.Service<
 interface Entry {
 	readonly row: ProcessRow;
 	readonly scope: Scope.Closeable;
-	/** The live actor behind the row. A row is what another process may see; this is what dispatches. */
+	/** tea's run behind the row. A row is what another process may see; this is what dispatches. */
 	readonly handle: ProcessHandle;
 }
 
@@ -255,10 +255,10 @@ function makeServices() {
 			let lifecycle: Lifecycle = "running";
 			let revision = 0;
 			let report = noSelfReport;
-			// Assigned once the actor is up; a commit before then (boot's own) is not the row's.
+			// Assigned once tea's run is ready; a commit before then (boot's own) is not the row's.
 			let row: ProcessRow | undefined;
-			// Read late on purpose: the definition that closes over this is built before the actor
-			// exists, and a handler only ever calls it once the actor is running.
+			// Read late on purpose: the services that close over this are built before `run` starts,
+			// so it is pointed at the run's `getState` once the run is ready.
 			let readState: () => unknown = () => undefined;
 			// What handlers actually get, and under the seal it is all they get: the spawner's set
 			// plus this process's own `ProcessSelf`. Never `options.services` directly — spawn is the
@@ -267,8 +267,9 @@ function makeServices() {
 			// graph's launcher, the picker, an ad-hoc spawn, a restore — mints or carries the id at
 			// this one call, so a handler's `self` is a free read on all four (#8757). The spawner's
 			// `Scope` is dropped on the way in: a spawner that passes its whole context on carries
-			// one, and the seal would let it beat the Scope the host forks for a sub handler. A
-			// handler that wants this process's own reads `ProcessSelf`.
+			// one, and the seal merges this set over effect's runtime, so it would replace the process
+			// Scope that `run` stops on (see `sealed`). A handler that wants this process's own reads
+			// `ProcessSelf`.
 			const granted = Context.add(Context.omit(Scope.Scope)(options.services), ProcessSelf, {
 				id,
 				scope,
