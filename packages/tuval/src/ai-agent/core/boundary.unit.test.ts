@@ -95,15 +95,13 @@ describe("the core's import closure", () => {
 		expect(offenders).toEqual([]);
 	});
 
-	// `registry/machine.ts` and `registry/sub.ts` stand in for `@demlik/tea` 0.18's machine and Sub
-	// types until the pin (#9787), so they are allowed exactly as the tea import they replace.
-	it("reaches no sibling directory but events, ports, history, the fixtures and tea's stand-ins", () => {
+	// `registry/sub.ts` is the pure Sub reconcile over tea's own types, so it is allowed as tea is.
+	it("reaches no sibling directory but events, ports, history, the fixtures and the Sub reconcile", () => {
 		const allowed = [
 			"../events.ts",
 			"../ports/",
 			"../history/",
 			"../../ai-agent-fixtures/",
-			"../../registry/machine.ts",
 			"../../registry/sub.ts",
 		];
 		const offenders = sources().flatMap(({name, text}) =>

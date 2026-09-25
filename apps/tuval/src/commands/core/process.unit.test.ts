@@ -6,6 +6,7 @@
 
 import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
+import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {processSpells, SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
 import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
@@ -38,7 +39,6 @@ import {
 	SpellCall,
 	type SpellReply,
 } from "@kampus/tuval-sdk/kernel/protocol/messages";
-import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {
 	type AnyProgram,
 	type PortBound,

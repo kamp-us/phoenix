@@ -52,10 +52,8 @@ core: defineMachine<State, Msg, Cmd<never>, Ticker, unknown>({
 subs: {ticker: (sub) => Stream.tick(sub.deps.every).pipe(Stream.drop(1), Stream.map(() => ({type: "tick"})))},
 ```
 
-Build the core with Tuval's `defineMachine`
-([`registry/machine.ts`](../packages/tuval/src/registry/machine.ts)), not tea 0.12's: 0.12 types
-`subs` in its older inline-runner shape. A Sub type the core declares with no runner on the row is
-a reconcile failure, not a silent skip.
+Build the core with `@demlik/tea`'s own `defineMachine`; the core is tea's data-only `Machine`.
+A Sub type the core declares with no runner on the row is a reconcile failure, not a silent skip.
 
 ## `ProcessSelf`: the process's own Scope and state
 

@@ -11,6 +11,7 @@
  * that, and the scripted layer talks to nothing.
  */
 
+import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import type {
 	ModePayload,
@@ -46,7 +47,6 @@ import {type Graph, NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
 import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
 import {open} from "@kampus/tuval-sdk/kernel/ports/wiring";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
-import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Effect, Layer, type Scope} from "effect";

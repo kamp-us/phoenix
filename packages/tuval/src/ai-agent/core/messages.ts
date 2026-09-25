@@ -7,8 +7,7 @@
  * from a session this instance has already replaced; every other Msg is identity-agnostic.
  */
 
-import type {SubId} from "@demlik/tea";
-import {type Sub, subIdOf} from "../../registry/sub.ts";
+import {type Sub, type SubId, subIdOf} from "@demlik/tea";
 import type {AgentEvent} from "../events.ts";
 import type {
 	Mode,

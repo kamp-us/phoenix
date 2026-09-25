@@ -1,10 +1,9 @@
 /** The host's one Sub path: `{type, deps}` entries, each run by the runner of its type. */
 
-import type {NoCtx} from "@demlik/tea";
+import type {NoCtx, Sub} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit} from "effect";
 import type {ProgramCore} from "../registry/program.ts";
-import type {Sub} from "../registry/sub.ts";
 import {make} from "./actor.ts";
 import {defineActor} from "./definition.ts";
 import {MissingSubRunnerError} from "./errors.ts";

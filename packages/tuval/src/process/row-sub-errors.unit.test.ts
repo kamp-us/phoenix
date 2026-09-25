@@ -3,7 +3,7 @@
  * a failure it lets escape stops the process. `host/sub-lifetime.unit.test.ts` covers the host alone.
  */
 
-import type {Cmd} from "@demlik/tea";
+import type {Cmd, Sub} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer, Schema, Stream} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
@@ -16,7 +16,6 @@ import {
 	ProgramId,
 } from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
-import type {Sub} from "../registry/sub.ts";
 import {Processes} from "./Processes.ts";
 import type {ProcessTable} from "./ProcessTable.ts";
 

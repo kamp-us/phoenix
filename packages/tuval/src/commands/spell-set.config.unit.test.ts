@@ -9,9 +9,9 @@
  * generation and race properties on its own fixtures; this file reads the compiled config.
  */
 
+import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Schema} from "effect";
-import {defineMachine} from "../registry/machine.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {spells} from "./bindings/fixtures.ts";
 import type {BindingSource} from "./bindings/index.ts";

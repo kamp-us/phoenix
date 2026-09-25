@@ -6,7 +6,7 @@
  * never an empty list standing in for "you have no sessions".
  */
 
-import type {Cmd} from "@demlik/tea";
+import {type Cmd, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {
 	aiAgentBackends,
@@ -22,7 +22,6 @@ import {
 	type SessionSummary,
 	sessionSummary,
 } from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
-import {defineMachine} from "@kampus/tuval-sdk/kernel/registry/machine";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Cause, Context, Effect, Option} from "effect";

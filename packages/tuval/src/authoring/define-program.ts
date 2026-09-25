@@ -30,6 +30,7 @@
  * always had for the same mistake.
  */
 
+import type {DepKeyedSub, Sub} from "@demlik/tea";
 import {Context, Effect, Option, Result} from "effect";
 import {SessionOpening} from "../ai-agent/opening.ts";
 import type {
@@ -66,7 +67,6 @@ import type {
 	RendererRef,
 } from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
-import type {DepKeyedSub, Sub} from "../registry/sub.ts";
 import {
 	type AnyArgRefs,
 	type ArgUnfilled,

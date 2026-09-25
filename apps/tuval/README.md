@@ -427,9 +427,9 @@ escape closes the process's Scope with the failure as its Exit, and a later disp
 stopped. The host never retries a Sub
 ([ADR 0408](../../.decisions/0408-tuval-subs-map-own-failures.md)).
 
-It stands in for Demlik's own `tea-effect` until kamp-us/demlik#36 ships. The places it still
-speaks Demlik 0.12's Promise and disposer shapes live in the SDK's `src/host/demlik-bridges.ts`, which is the
-swap point; `parity.unit.test.ts` runs one machine through both hosts and asserts they agree.
+It stands in for tea's own Effect engine until Tuval runs on it. The one place it still speaks
+Demlik's disposer shape, an authored Sub that returns a `Dispose`, lives in the SDK's
+`src/host/demlik-bridges.ts`.
 
 ## Processes
 

@@ -14,7 +14,7 @@
  */
 
 import {randomUUID} from "node:crypto";
-import type {Cmd, Store} from "@demlik/tea";
+import type {Cmd, Store, Sub} from "@demlik/tea";
 import {Context, Effect, Exit, Layer, Option, PubSub, Scope, Semaphore, Stream} from "effect";
 import {Checkpoints, type OpenError} from "../durability/Checkpoints.ts";
 import {type ActorHandle, make as makeActor} from "../host/actor.ts";
@@ -23,7 +23,6 @@ import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import type {ProgramNotFound} from "../registry/errors.ts";
 import type {AnyProgram, ProgramCore, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
-import type {Sub} from "../registry/sub.ts";
 import {ForgetRefused, HandlerFailed, ProcessIsPlanned, ProcessNotFound} from "./errors.ts";
 import {PlannedProcesses} from "./PlannedProcesses.ts";
 import {ProcessTable} from "./ProcessTable.ts";

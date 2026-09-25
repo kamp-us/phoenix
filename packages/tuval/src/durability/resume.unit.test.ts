@@ -7,11 +7,11 @@
  * no test above it: a row that declares no `resume` is sent nothing at all.
  */
 
+import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer} from "effect";
 import {Processes} from "../process/Processes.ts";
 import {ProcessId} from "../process/process.ts";
-import {defineMachine} from "../registry/machine.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {Checkpoints} from "./Checkpoints.ts";

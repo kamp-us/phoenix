@@ -9,10 +9,9 @@
  * and `R` fall out of its handlers rather than being hand-declared.
  */
 
-import type {Cmd, CtxArg, RuntimeErrorPhase, Store, Supervision} from "@demlik/tea";
+import type {Cmd, CtxArg, RuntimeErrorPhase, Store, Sub, Supervision} from "@demlik/tea";
 import type {Effect, Scope} from "effect";
 import type {ProgramCore} from "../registry/program.ts";
-import type {Sub} from "../registry/sub.ts";
 import {ActorNameCollisionError} from "./errors.ts";
 
 export type Dispatch<M> = (msg: M) => void;
