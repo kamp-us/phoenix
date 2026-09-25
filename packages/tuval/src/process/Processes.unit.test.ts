@@ -1,6 +1,6 @@
 import type {Cmd} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer, Option, Scope} from "effect";
+import {Context, Effect, Layer, Option, Scope, Stream} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {snapshotAt, watchingStores} from "../durability/fixtures.ts";
 import {type CheckpointStores, memoryStores} from "../durability/stores.ts";
@@ -90,10 +90,10 @@ const counterProgram = (probe: Probe): AnyProgram =>
 		},
 		subs: {
 			run: (sub: Run) =>
-				Effect.acquireRelease(
-					Effect.sync(() => void probe.log.push(`sub:start:${sub.deps.runId}`)),
-					() => Effect.sync(() => void probe.log.push(`sub:stop:${sub.deps.runId}`)),
-				).pipe(Effect.andThen(Effect.never)),
+				Stream.never.pipe(
+					Stream.onStart(Effect.sync(() => void probe.log.push(`sub:start:${sub.deps.runId}`))),
+					Stream.ensuring(Effect.sync(() => void probe.log.push(`sub:stop:${sub.deps.runId}`))),
+				),
 		},
 		capabilities: [],
 		identity: identity("counter"),
@@ -117,10 +117,10 @@ const tickerProgram = (log: string[]): AnyProgram =>
 		handlers: {},
 		subs: {
 			ticker: () =>
-				Effect.acquireRelease(
-					Effect.sync(() => void log.push("ticker:open")),
-					() => Effect.sync(() => void log.push("ticker:close")),
-				).pipe(Effect.andThen(Effect.never)),
+				Stream.never.pipe(
+					Stream.onStart(Effect.sync(() => void log.push("ticker:open"))),
+					Stream.ensuring(Effect.sync(() => void log.push("ticker:close"))),
+				),
 		},
 		capabilities: [],
 		identity: identity("ticker"),

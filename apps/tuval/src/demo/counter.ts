@@ -15,7 +15,7 @@ import {
 	type RendererRef,
 } from "@kampus/tuval-sdk/kernel/registry/program";
 import type {Sub} from "@kampus/tuval-sdk/kernel/registry/sub";
-import {Effect} from "effect";
+import {Effect, Stream} from "effect";
 import {COUNT_KIND, isCount} from "./count.ts";
 import type {CounterState} from "./counter-state.ts";
 
@@ -64,11 +64,12 @@ export const counterProgram = ({everyMs}: CounterOptions): AnyProgram =>
 				}),
 		},
 		subs: {
-			timer: (sub: CounterTimer, dispatch: (msg: CounterMsg) => void) =>
-				Effect.acquireRelease(
-					Effect.sync(() => setInterval(() => dispatch({type: "tick"}), sub.deps.everyMs)),
-					(timer) => Effect.sync(() => clearInterval(timer)),
-				).pipe(Effect.andThen(Effect.never)),
+			// `Stream.tick` emits once at once, so the first is dropped: the first tick lands one interval in.
+			timer: (sub: CounterTimer) =>
+				Stream.tick(sub.deps.everyMs).pipe(
+					Stream.drop(1),
+					Stream.map((): CounterMsg => ({type: "tick"})),
+				),
 		},
 		capabilities: [],
 		takesKeys: true,

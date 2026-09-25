@@ -5,7 +5,7 @@
 
 import type {Cmd} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer, Schema} from "effect";
+import {Context, Effect, Layer, Schema, Stream} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
 import {
@@ -71,10 +71,10 @@ describe("a program row's Sub errors", () => {
 			withKernel(
 				[
 					rowWith("mapped", {
-						ticker: (_sub, dispatch) =>
-							new Boom({}).pipe(
-								Effect.catchTag("test/Boom", () =>
-									Effect.sync(() => dispatch({type: "noted", note: "ticker failed"})),
+						ticker: () =>
+							Stream.fail(new Boom({})).pipe(
+								Stream.catchTag("test/Boom", () =>
+									Stream.succeed<Msg>({type: "noted", note: "ticker failed"}),
 								),
 							),
 					}),
@@ -101,7 +101,7 @@ describe("a program row's Sub errors", () => {
 	it.live("stops the process when the Sub lets an error escape", () =>
 		Effect.scoped(
 			withKernel(
-				[rowWith("unmapped", {ticker: () => new Boom({})})],
+				[rowWith("unmapped", {ticker: () => Stream.fail(new Boom({}))})],
 				Effect.gen(function* () {
 					const processes = yield* Processes;
 					const handle = yield* processes.spawn(ProgramId.make("unmapped"), {

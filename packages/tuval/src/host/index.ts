@@ -13,7 +13,7 @@ export {
 	type SubscribeHandlers,
 } from "./definition.ts";
 export {
-	disposerRunner,
+	disposerStream,
 	interpretPromiseBridge,
 	toDemlikMachine,
 } from "./demlik-bridges.ts";

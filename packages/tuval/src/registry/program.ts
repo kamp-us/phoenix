@@ -5,7 +5,7 @@
  */
 
 import type {Cmd, Machine} from "@demlik/tea";
-import {type Effect, type Option, Schema, type Scope} from "effect";
+import {type Effect, type Option, Schema, type Stream} from "effect";
 // Type-only, so the commands slice's runtime dependency on this file stays one-directional.
 import type {AnySpell} from "../commands/spell.ts";
 import type {DepKeyedSub, Sub} from "./sub.ts";
@@ -86,17 +86,15 @@ export type HostHandlers<M extends {readonly type: string}, C extends Cmd, E, R>
 };
 
 /**
- * A Sub's runner, keyed by the `type` of the `{type, deps}` entry the core declares. A Sub is
- * long-lived scoped work, so its runner is an Effect the host forks into a Scope of the Sub's own
- * and pushes Msgs from through `dispatch` — a stream has many answers over time, which is the whole
- * difference from a Cmd handler's one list of follow-ups. It lives on the row beside `handlers`
- * rather than on the core machine because the core is plain data and the Effect stays here.
+ * A Sub's runner, keyed by the `type` of the `{type, deps}` entry the core declares. A Sub has many
+ * answers over time, which is the whole difference from a Cmd handler's one list of follow-ups, so
+ * its runner is a Stream of Msgs: the host drains it while the Sub is desired and interrupts it when
+ * the Sub leaves, which runs the Stream's finalizers. The shape is `@demlik/tea` 0.18's
+ * `EffectRunner`. It lives on the row beside `handlers` rather than on the core machine because the
+ * core is plain data and the Effect stays here.
  */
 export type HostSubs<M, U extends Sub, E, R> = {
-	readonly [K in U["type"]]: (
-		sub: Extract<U, {readonly type: K}>,
-		dispatch: (msg: M) => void,
-	) => Effect.Effect<void, E, R | Scope.Scope>;
+	readonly [K in U["type"]]: (sub: Extract<U, {readonly type: K}>) => Stream.Stream<M, E, R>;
 };
 
 /**
