@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/tuval-codex",
-	"version": "0.0.0",
+	"version": "1.0.0",
 	"description": "Tuval's Codex harness — the codex-session program row, its codex app-server adapter, kernel tools, history and window, on the @kampus/tuval-sdk kernel",
 	"license": "MIT",
 	"repository": {
