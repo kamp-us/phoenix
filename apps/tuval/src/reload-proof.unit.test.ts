@@ -19,13 +19,16 @@ import {HelpRows} from "@kampus/tuval-sdk/kernel/commands/core/help";
 import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
 import {ClientId, renderPath, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
 import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval-sdk/kernel/protocol/messages";
-import {Effect, Fiber, type FileSystem, Schema, type Scope} from "effect";
+import {Effect, Fiber, type FileSystem, Option, Schedule, Schema, type Scope} from "effect";
 import {afterEach} from "vitest";
 import {type Booted, boot, coreSpells, projectDir} from "./boot.ts";
 import type {DeclaredConfig} from "./config-fixtures/reloadable.ts";
 import {scratchHome} from "./scratch-home.ts";
+import {shellNode} from "./shell/program.ts";
 
 /** The scratch home every boot in this file runs under. */
 const home = scratchHome("reload-proof");
@@ -298,6 +301,48 @@ describe("a config reload", () => {
 					["beta.greet"],
 					"the reader never saw the reloaded bindings",
 				);
+			}),
+		),
+	);
+});
+
+const reloadableDesk = fileURLToPath(
+	new URL("./config-fixtures/reloadable-desk.ts", import.meta.url),
+);
+
+describe("the config:reload command", () => {
+	it.live("reloads the config the desk is running, from inside the shell (#9667)", () =>
+		run(
+			Effect.gen(function* () {
+				const project = freshDir("tuval-reload-desk-");
+				mkdirSync(projectDir(project));
+				const declaration = join(freshDir("tuval-declared-"), "config.json");
+				declare(declaration, first);
+				process.env.TUVAL_RELOAD_FIXTURE = declaration;
+				const booted = yield* boot({global: reloadableDesk, project, home});
+				assert.include(yield* spellPaths(booted), "alpha.say");
+
+				declare(declaration, second);
+				const shell = yield* Processes.use((processes) =>
+					processes.handle(ProcessId.make(shellNode)),
+				).pipe(Effect.provideContext(booted.kernel));
+				assert.isTrue(Option.isSome(shell), "the desk's shell is not running");
+				if (Option.isNone(shell)) return;
+				yield* shell.value.dispatch({type: "config.reload"});
+
+				// The handler runs on the shell's own fiber, so the swap is waited for, not assumed.
+				const paths = yield* spellPaths(booted).pipe(
+					Effect.repeat({
+						until: (read) => read.includes("alpha.sey"),
+						schedule: Schedule.spaced("10 millis"),
+					}),
+					Effect.timeoutOrElse({
+						duration: "2 seconds",
+						orElse: () => spellPaths(booted),
+					}),
+				);
+				assert.include(paths, "alpha.sey", "config.reload never reached the reloader");
+				assert.notInclude(paths, "alpha.say", "the reload left the old spell registered");
 			}),
 		),
 	);

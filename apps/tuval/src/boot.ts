@@ -12,10 +12,6 @@ import type {BindingError, BindingSource} from "@kampus/tuval-sdk/kernel/command
 import {everyRegistered, SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
 import {helpSpells} from "@kampus/tuval-sdk/kernel/commands/core/index";
 import {processSpells, SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
-import type {
-	DuplicateSpellPath,
-	SpellNotDescribable,
-} from "@kampus/tuval-sdk/kernel/commands/errors";
 import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
 import type {SpellRegistry} from "@kampus/tuval-sdk/kernel/commands/registry";
 import type {WindowIndex} from "@kampus/tuval-sdk/kernel/commands/scope";
@@ -44,10 +40,15 @@ import {
 	StateDir,
 } from "@kampus/tuval-sdk/kernel/state-dir";
 import type {PrefixTable} from "@kampus/tuval-ui/keys";
-import {Context, Effect, type FileSystem, Layer, Ref} from "effect";
-import {type ConfigLoadError, loadLayeredConfig, type TuvalFeatures} from "./config.ts";
+import {Context, Effect, FileSystem, Layer} from "effect";
+import {
+	type ConfigLoadError,
+	type LoadedConfig,
+	loadLayeredConfig,
+	type TuvalFeatures,
+} from "./config.ts";
 import {type LaunchedProcess, launch} from "./launch/launch.ts";
-import {dispatchConfigChanged} from "./reload.ts";
+import {type ConfigRead, ConfigReloader, type ReloadError, type ReloadReport} from "./reload.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
 import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kernel.ts";
 import {shellId, shellPrefixTable, withShellFeatures} from "./shell/program.ts";
@@ -93,6 +94,9 @@ export type Kernel =
 	| WindowIndex
 	| SpellExecutor
 	| SpellBridge
+	// What the shell's `config:reload` handler runs (`./reload.ts`): a handler reaches only its row's
+	// `R`, so the reload has to be a kernel service to be reachable from a key at all.
+	| ConfigReloader
 	// Naming it here is what makes the provider load-bearing to the checker: `Context` is
 	// contravariant in its services, so dropping `shellDispatchKernel` below stops `start`'s
 	// answer from satisfying `Started` rather than leaving a defect for the first caller (#7774).
@@ -118,6 +122,12 @@ export interface StartOptions {
 	 * merge — every caller but `boot` — which is what `featuresDefault` means.
 	 */
 	readonly features?: TuvalFeatures;
+	/**
+	 * How to read the config these rows came from again. Absent for a caller that was handed rows
+	 * and no config — every caller but `boot` — and that kernel's reload refuses with
+	 * `NoConfigToReload`.
+	 */
+	readonly reread?: Effect.Effect<ConfigRead, ConfigLoadError>;
 }
 
 export interface Started {
@@ -142,6 +152,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	stateDir,
 	keys,
 	features,
+	reread,
 }: StartOptions) {
 	const registry = yield* Layer.build(Registry.layer(programs));
 	const compiled = yield* compile(graph).pipe(Effect.provideContext(registry));
@@ -163,12 +174,19 @@ export const start = Effect.fn("Tuval.start")(function* ({
 			Layer.mergeAll(Layer.succeedContext(spells), shellWindowIndexKernel(shellId)),
 		),
 	);
+	const reloader =
+		reread === undefined
+			? ConfigReloader.none
+			: ConfigReloader.fromConfig({core: coreSpells, initial: programs, read: reread}).pipe(
+					Layer.provide(Layer.succeedContext(spells)),
+				);
 	const built = yield* Layer.build(
 		Layer.mergeAll(
 			ProcessTablePort.layer,
 			Features.layer(features),
 			StateDir.layer(stateDir),
 			commands,
+			reloader,
 		).pipe(
 			Layer.provideMerge(Processes.layer),
 			Layer.provideMerge(Checkpoints.layer(fileStores(stateDir))),
@@ -238,20 +256,6 @@ export interface BootReport {
 	readonly restoredCount: number;
 }
 
-/** What a reload replaced, and how many running processes it told. See `Booted.reload`. */
-export interface ReloadReport {
-	readonly sources: ReadonlyArray<string>;
-	readonly spellCount: number;
-	readonly bindingCount: number;
-	readonly bindingErrors: ReadonlyArray<BindingError>;
-	/**
-	 * Live processes handed a config change by their own row's `configChanged`. A row whose
-	 * settings did not move, one that applies nothing live, and one the reloaded config dropped
-	 * all leave their processes uncounted and untouched.
-	 */
-	readonly notified: number;
-}
-
 export interface Booted {
 	readonly report: BootReport;
 	readonly kernel: Context.Context<Kernel>;
@@ -274,27 +278,33 @@ export interface Booted {
 	 * so a config-set table reached the shell row and nothing else (#7890).
 	 */
 	readonly keyTable: PrefixTable;
-	/**
-	 * The config read again, its spells registered and its bindings compiled against them in one
-	 * write, and then every live process handed what its own row says the new config means for it
-	 * (`reload.ts`). Nothing restarts and nothing respawns: a process keeps running under the row
-	 * it was spawned from, and what applies live is the row's own call (#7509 ruling 3).
-	 */
-	readonly reload: Effect.Effect<
-		ReloadReport,
-		ConfigLoadError | DuplicateSpellPath | SpellNotDescribable,
-		FileSystem.FileSystem
-	>;
+	/** Every file boot read the config from, which is what a desk watches (`LoadedConfig.files`). */
+	readonly files: ReadonlyArray<string>;
+	/** The kernel's `ConfigReloader`, run once (`./reload.ts`). */
+	readonly reload: Effect.Effect<ReloadReport, ReloadError>;
 }
+
+/** A loaded config's rows as the kernel runs them, beside where they were read from. */
+const configRead = (config: LoadedConfig): ConfigRead => ({
+	// Config rows are trusted local code (#7484 R1.1); the loader checks each row's id, not its shape.
+	// The flags are applied here: a config module is evaluated before the merge exists (#8595), so
+	// this is the only place that holds both the rows and what the layers said about them (#8867).
+	programs: withShellFeatures(config.programs as ReadonlyArray<AnyProgram>, config.features),
+	keys: config.keys,
+	sources: config.sources,
+	files: config.files,
+});
 
 /** `start` from the layered config: the `pnpm dev` path. */
 export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 	const layers = {global: options.global, project: projectConfig(options.project)};
 	const config = yield* loadLayeredConfig(layers);
-	// Config rows are trusted local code (#7484 R1.1); the loader checks each row's id, not its shape.
-	// The flags are applied once, here: a config module is evaluated before the merge exists (#8595),
-	// so this is the only place that holds both the rows and what the layers said about them (#8867).
-	const programs = withShellFeatures(config.programs as ReadonlyArray<AnyProgram>, config.features);
+	const {programs} = configRead(config);
+	const fs = yield* FileSystem.FileSystem;
+	const reread = loadLayeredConfig(layers).pipe(
+		Effect.map(configRead),
+		Effect.provideService(FileSystem.FileSystem, fs),
+	);
 	// The state dir is derived from the project's absolute path and never joined onto the project
 	// (ADR 0402). The adoption runs before anything reads a checkpoint, so a desk whose state was
 	// written under `<project>/.tuval` by an older build comes back whole on its first boot here.
@@ -309,6 +319,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 		stateDir,
 		keys: config.keys,
 		features: config.features,
+		reread,
 	});
 	const live = yield* ProcessTable.use((table) => table.list).pipe(
 		Effect.provideContext(started.kernel),
@@ -327,33 +338,15 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 			started.launched.filter((process) => process.restored).length + started.restored.length,
 	};
 
-	// The generation the live processes are running under. `Registry` cannot answer this: it is
-	// built once at boot and a reload never rewrites it, so after the first reload it names rows
-	// no running process has seen a change against.
-	const generation = yield* Ref.make(programs);
-
-	const reload = Effect.fn("Tuval.reload")(function* () {
-		const next = yield* loadLayeredConfig(layers);
-		const rows = withShellFeatures(next.programs as ReadonlyArray<AnyProgram>, next.features);
-		const set = yield* SpellSet;
-		yield* set.reload({core: coreSpells, programs: rows, keys: next.keys});
-		const notified = yield* dispatchConfigChanged(yield* Ref.getAndSet(generation, rows), rows);
-		const current = yield* set.read;
-		return {
-			sources: next.sources,
-			spellCount: current.table.rows.length,
-			bindingCount: current.bindings.bindings.length,
-			bindingErrors: current.bindings.errors,
-			notified,
-		} satisfies ReloadReport;
-	});
-
 	return {
 		report,
 		kernel: started.kernel,
 		moduleRenderers: config.moduleRenderers,
 		features: config.features,
 		keyTable: shellPrefixTable(programs),
-		reload: reload().pipe(Effect.provideContext(started.kernel)),
+		files: config.files,
+		reload: ConfigReloader.use((reloader) => reloader.reload).pipe(
+			Effect.provideContext(started.kernel),
+		),
 	} satisfies Booted;
 });

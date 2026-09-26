@@ -23,6 +23,7 @@ import {renderAdoption} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Cause, Console, Effect, Exit, Option, Runtime} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {boot, defaultGlobalConfig} from "./boot.ts";
+import {watchConfig} from "./config-watch.ts";
 import {servePage} from "./page/dev-server.ts";
 import {displayHost} from "./page/loopback.ts";
 import {serveDesk} from "./shell/host/index.ts";
@@ -68,7 +69,7 @@ const tuval = Command.make(
 		),
 	},
 	Effect.fn(function* ({config, project, noPage, pagePort}) {
-		const {report, kernel, keyTable, moduleRenderers, features} = yield* boot({
+		const {report, kernel, keyTable, moduleRenderers, features, files, reload} = yield* boot({
 			global: Option.getOrElse(config, defaultGlobalConfig),
 			project: Option.getOrElse(project, () => process.cwd()),
 			// The one boot that means the operator's own home dir. Every other call site names a
@@ -127,6 +128,14 @@ const tuval = Command.make(
 				Effect.catch((error) => Console.error(`tuval: ${error.message}`)),
 			);
 		}
+		// Saving the config, or a program file it imports, reloads the desk. A watch that fails costs
+		// the hot reload and nothing else: `config:reload` still reads the config on demand.
+		yield* watchConfig({files, reload}).pipe(
+			Effect.catch((error) =>
+				Console.error(`tuval: stopped watching the config — ${error.message}`),
+			),
+			Effect.forkScoped,
+		);
 		yield* Console.log("tuval: running — Ctrl-C stops and checkpoints");
 		return yield* Effect.never.pipe(Effect.onInterrupt(() => Console.log("tuval: stopping")));
 	}, Effect.scoped),

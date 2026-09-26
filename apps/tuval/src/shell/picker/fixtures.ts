@@ -31,6 +31,7 @@ import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {Context, Effect, Exit, Layer, Option, PubSub, type Scope, Stream} from "effect";
+import {ConfigReloader} from "../../reload.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {toTableRow} from "../../table/row.ts";
 
@@ -92,7 +93,9 @@ export interface PickerHarness {
 	readonly spawns: () => ReadonlyArray<SpawnCall>;
 	/** Put a process in the table without going through `spawn`, as a prior mount would have left it. */
 	readonly seed: (id: string, programId: string, parent?: string) => Effect.Effect<ProcessId>;
-	readonly layer: Layer.Layer<Registry | Processes | ProcessTable | ProcessTablePort>;
+	readonly layer: Layer.Layer<
+		Registry | Processes | ProcessTable | ProcessTablePort | ConfigReloader
+	>;
 }
 
 /**
@@ -212,6 +215,8 @@ export const pickerHarness = (
 			),
 			Layer.succeed(ProcessTable, processTable),
 			Layer.succeed(ProcessTablePort, port),
+			// The wired shell handlers name it in their `R`; nothing here reloads a config.
+			ConfigReloader.none,
 		);
 
 		return {spawns: () => [...calls], seed, layer};

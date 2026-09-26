@@ -412,6 +412,11 @@ reader never sees new spells beside bindings compiled against the old ones
 (`src/reload-proof.unit.test.ts`). What a reload does not touch is the processes already running:
 they keep going under the rows they were spawned from.
 
+A running desk reloads when you save its config, or any file the config imports by path, and
+`config:reload` reloads on demand (`src/config-watch.ts`). Each reload reads your edited files as
+they stand now rather than the copies Node cached, while packages stay the one copy the desk
+loaded (`src/module-generations.ts`). The old copies stay in memory until the desk restarts.
+
 ## The engine
 
 Every process runs on tea's Effect engine, `run` from `@demlik/tea/effect`. A program row's core is
@@ -782,7 +787,7 @@ disk, since the middleware answering `/__tuval/launch` closes over the URL in me
 Three of the eight Cmds are the kernel's: `openProgram` and `attachProcess` run the picker's one
 handler, and `forwardKey` dispatches `{type: "key", key}` into the focused window's process. The
 prefix countdown and the command line stay the surface's — a kernel handler returns its follow-ups
-and cannot dispatch one a second later — and `config:reload` is still unwired (#7743).
+and cannot dispatch one a second later — and `config:reload` runs the kernel's config reloader.
 
 `src/shell/proof/end-to-end.integration.test.ts` is the ticket's three proofs over the real socket
 and the real demo programs: a scripted key sequence that splits, walks focus, switches workspaces,

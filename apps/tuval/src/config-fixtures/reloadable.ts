@@ -32,7 +32,7 @@ const spellNamed = (name: string) =>
 		capabilities: [],
 	});
 
-const program = (row: DeclaredConfig["programs"][number]): AnyProgram =>
+export const declaredProgram = (row: DeclaredConfig["programs"][number]): AnyProgram =>
 	({
 		id: ProgramId.make(row.id),
 		core: defineMachine<State, Msg, Notify, never, unknown>({
@@ -58,6 +58,6 @@ const declared = JSON.parse(
 
 export default {
 	version: 1,
-	programs: declared.programs.map(program),
+	programs: declared.programs.map(declaredProgram),
 	keys: declared.keys,
 } satisfies TuvalConfigInput;
