@@ -13,7 +13,7 @@ import type {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Effect, Layer} from "effect";
-import {applyReload} from "./reload.ts";
+import {applyReload, rowsOnly} from "./reload.ts";
 
 type State = {readonly by: string; readonly pending: ReadonlyArray<string>};
 type Msg =
@@ -45,7 +45,7 @@ const deskRow = (stamp: Stamp, next: () => ReadonlyArray<AnyProgram>): AnyProgra
 		handlers: {
 			reload: () =>
 				Effect.map(
-					applyReload([current], next()),
+					applyReload(rowsOnly([current]), rowsOnly(next())),
 					(applied): ReadonlyArray<Msg> => [{type: "reloaded", pending: applied.pending}],
 				),
 		},

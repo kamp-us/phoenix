@@ -1,6 +1,6 @@
 /**
- * Boots a desk over a project whose config imports two program files, edits one of them between
- * reloads, and prints what the live processes held at each step as the last line of stdout, in JSON.
+ * Boots a desk over a project whose config imports three program files, edits them and the helpers
+ * they call between reloads, and prints what the live processes held at each step as the last line of stdout, in JSON.
  * `./hot-swap.unit.test.ts` runs it as a child for the same reason `./module-generations.probe.ts`
  * is one: only a plain `node` process re-reads a file the config imports by path.
  *
@@ -73,23 +73,61 @@ export const steady = {
 };
 `;
 
+/**
+ * The program whose edits stay inside helpers: `restore`, in its own file, which its `init` calls,
+ * and `shout`, in a file it imports. Its rows' functions carry types, so their text is what Node's
+ * type stripping left, not the file as written.
+ */
+const echoSource = (restoredBy: string): string => `
+import {shout} from "./shout.ts";
+type Echo = {readonly said: string; readonly restoredBy: string};
+const restore = (loaded: Partial<Echo> | null | undefined): Echo => ({
+	said: loaded?.said ?? "",
+	restoredBy: ${JSON.stringify(restoredBy)},
+});
+export const echo = {
+	id: "echo",
+	core: {
+		init: (loaded: Partial<Echo> | null | undefined) => [restore(loaded), []],
+		update: {say: (state: Echo, msg: {readonly text: string}) => [{...state, said: shout(msg.text)}, []]},
+	},
+	ports: {},
+	handlers: {},
+	capabilities: [],
+	identity: {package: "probe", program: "echo", version: "1.0.0", digest: "sha256:echo"},
+	placement: {host: "local"},
+};
+`;
+
+const shoutSource = (suffix: string): string =>
+	`export const shout = (text: string): string => text.toUpperCase() + ${JSON.stringify(suffix)};\n`;
+
 const configSource = `
+import {echo} from "../programs/echo.ts";
 import {steady} from "../programs/steady.ts";
 import {tally} from "../programs/tally.ts";
 export default {
 	version: 1,
-	programs: [tally, steady],
-	graph: {nodes: [{id: "tally", program: "tally", on: []}, {id: "steady", program: "steady", on: []}]},
+	programs: [tally, steady, echo],
+	graph: {nodes: [
+		{id: "tally", program: "tally", on: []},
+		{id: "steady", program: "steady", on: []},
+		{id: "echo", program: "echo", on: []},
+	]},
 };
 `;
 
 const tallyFile = join(project, "programs", "tally.ts");
+const echoFile = join(project, "programs", "echo.ts");
+const shoutFile = join(project, "programs", "shout.ts");
 mkdirSync(join(project, ".tuval"), {recursive: true});
 mkdirSync(join(project, "programs"), {recursive: true});
 writeFileSync(join(project, "package.json"), JSON.stringify({type: "module"}));
 writeFileSync(join(project, ".tuval", "tuval.config.ts"), configSource);
 writeFileSync(join(project, "programs", "steady.ts"), steadySource);
 writeFileSync(tallyFile, tallySource({step: 1, by: "v1", version: "1.0.0"}));
+writeFileSync(echoFile, echoSource("restore-v1"));
+writeFileSync(shoutFile, shoutSource("!"));
 
 const handleOf = (booted: Booted, id: string) =>
 	Processes.use((processes) => processes.handle(ProcessId.make(id))).pipe(
@@ -138,6 +176,21 @@ const probe = Effect.gen(function* () {
 	const bumpedVersion = yield* reloaded(booted);
 	const afterVersion = tally.getState();
 
+	const echo = yield* handleOf(booted, "echo");
+	yield* echo.dispatch({type: "say", text: "hi"});
+	const echoBefore = echo.getState();
+
+	const unedited = yield* reloaded(booted);
+
+	writeFileSync(echoFile, echoSource("restore-v2"));
+	const restoreEdited = yield* reloaded(booted);
+	const afterRestoreEdit = echo.getState();
+
+	writeFileSync(shoutFile, shoutSource("?"));
+	const shoutEdited = yield* reloaded(booted);
+	yield* echo.dispatch({type: "say", text: "again"});
+	const afterShoutEdit = echo.getState();
+
 	return {
 		before,
 		edited,
@@ -147,6 +200,12 @@ const probe = Effect.gen(function* () {
 		afterBroken,
 		bumpedVersion,
 		afterVersion,
+		echoBefore,
+		unedited,
+		restoreEdited,
+		afterRestoreEdit,
+		shoutEdited,
+		afterShoutEdit,
 		steady: steady.getState(),
 	};
 });

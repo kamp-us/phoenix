@@ -18,7 +18,7 @@ import {
 } from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer, Option} from "effect";
-import {applyReload, codeOf} from "./reload.ts";
+import {applyReload, codeOf, rowsOnly} from "./reload.ts";
 
 type Tally = {readonly count: number; readonly migrated: boolean};
 type Bump = {readonly type: "bump"};
@@ -67,7 +67,7 @@ describe("a reload that moves only a row's version", () => {
 			yield* handle.dispatch({type: "bump"});
 			assert.deepStrictEqual(handle.getState(), {count: 2, migrated: false});
 
-			const applied = yield* applyReload([v1], [v2]);
+			const applied = yield* applyReload(rowsOnly([v1]), rowsOnly([v2]));
 
 			assert.deepStrictEqual(applied.switched, [handle.id]);
 			assert.deepStrictEqual(applied.restoreRefused, []);

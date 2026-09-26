@@ -41,6 +41,7 @@ import {
 } from "@kampus/tuval-sdk/kernel/state-dir";
 import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Effect, FileSystem, Layer} from "effect";
+import {AuthoredModules} from "./authored-modules.ts";
 import {
 	type ConfigLoadError,
 	type LoadedConfig,
@@ -128,6 +129,11 @@ export interface StartOptions {
 	 * `NoConfigToReload`.
 	 */
 	readonly reread?: Effect.Effect<ConfigRead, ConfigLoadError>;
+	/**
+	 * The author's modules `programs` were built from, so the first reload can tell an edited helper.
+	 * Absent for a caller handed rows and no config.
+	 */
+	readonly modules?: AuthoredModules;
 }
 
 export interface Started {
@@ -153,6 +159,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	keys,
 	features,
 	reread,
+	modules = AuthoredModules.none,
 }: StartOptions) {
 	const registry = yield* Layer.build(Registry.layer(programs));
 	const compiled = yield* compile(graph).pipe(Effect.provideContext(registry));
@@ -177,9 +184,11 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	const reloader =
 		reread === undefined
 			? ConfigReloader.none
-			: ConfigReloader.fromConfig({core: coreSpells, initial: programs, read: reread}).pipe(
-					Layer.provide(Layer.succeedContext(spells)),
-				);
+			: ConfigReloader.fromConfig({
+					core: coreSpells,
+					initial: {programs, modules},
+					read: reread,
+				}).pipe(Layer.provide(Layer.succeedContext(spells)));
 	const built = yield* Layer.build(
 		Layer.mergeAll(
 			ProcessTablePort.layer,
@@ -293,6 +302,7 @@ const configRead = (config: LoadedConfig): ConfigRead => ({
 	keys: config.keys,
 	sources: config.sources,
 	files: config.files,
+	modules: config.modules,
 });
 
 /** `start` from the layered config: the `pnpm dev` path. */
@@ -320,6 +330,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 		keys: config.keys,
 		features: config.features,
 		reread,
+		modules: config.modules,
 	});
 	const live = yield* ProcessTable.use((table) => table.list).pipe(
 		Effect.provideContext(started.kernel),

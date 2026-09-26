@@ -5,6 +5,7 @@ import {featuresDefault} from "@kampus/tuval-sdk/kernel/features";
 import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
+import {AuthoredModules} from "./authored-modules.ts";
 import {ConfigLoadError, DeclaredFeatures, loadConfigModule, loadLayeredConfig} from "./config.ts";
 
 const fixture = (name: string) =>
@@ -253,6 +254,7 @@ describe("loadLayeredConfig", () => {
 					],
 					sources: [fixture("global-layer"), fixture("project-layer")],
 					files: [fixture("global-layer"), fixture("project-layer")],
+					modules: AuthoredModules.none,
 				});
 			}),
 	);
@@ -277,6 +279,7 @@ describe("loadLayeredConfig", () => {
 				keys: [{file: `project ${layerName("with-graph")}`, bindings: {}}],
 				sources: [fixture("with-graph")],
 				files: [fixture("with-graph")],
+				modules: AuthoredModules.none,
 			});
 			assert.deepStrictEqual(yield* layered(fixture("two-rows"), missing), {
 				programs: [{id: "a"}, {id: "b"}],
@@ -295,6 +298,7 @@ describe("loadLayeredConfig", () => {
 				keys: [{file: `global ${layerName("two-rows")}`, bindings: {}}],
 				sources: [fixture("two-rows")],
 				files: [fixture("two-rows")],
+				modules: AuthoredModules.none,
 			});
 			assert.deepStrictEqual(yield* layered(missing, missing), {
 				programs: [],
@@ -313,6 +317,7 @@ describe("loadLayeredConfig", () => {
 				keys: [],
 				sources: [],
 				files: [],
+				modules: AuthoredModules.none,
 			});
 		}),
 	);
