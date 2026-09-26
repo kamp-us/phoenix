@@ -39,6 +39,7 @@ import {runPublishIsolationGuard} from "./publish-isolation-verb.ts";
 import {runReadmeGuard} from "./readme-verb.ts";
 import {runRoadmapGuard} from "./roadmap-verb.ts";
 import {runSettingsEnvGuard} from "./settings-env-verb.ts";
+import {runSkillEvidenceGuard} from "./skill-evidence-verb.ts";
 import {runSkillLint} from "./skill-lint-verb.ts";
 import {runUnresolvedThreadsGuard} from "./unresolved-threads-verb.ts";
 
@@ -701,6 +702,62 @@ const designInventoryGuard = Command.make("design-inventory").pipe(
 );
 
 /**
+ * Like `leak-guard scan`, the scope is the CHANGE: the caller resolves the diff and hands the file
+ * list in, and `atLeast(0)` rather than `atLeast(1)` on purpose — a zero-file invocation must reach
+ * the verb and red there, not bounce off the parser's arity error, which a caller could read as a
+ * usage problem rather than as a broken scope.
+ */
+const skillEvidenceCheck = leafCommand(
+	"check",
+	{
+		root: rootFlag,
+		base: Flag.string("base").pipe(
+			Flag.withDescription(
+				"the base commit SHA — an updated skill's previous-version baseline binds here",
+			),
+		),
+		head: Flag.string("head").pipe(
+			Flag.withDescription("the head commit SHA whose skill tree the report must attest"),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.withDescription(
+				"the owner/name whose workflow runs the benchmark evidence is read from",
+			),
+		),
+		files: Argument.string("file").pipe(
+			Argument.atLeast(0),
+			Argument.withDescription("the changed files to judge, as the workflow resolved them"),
+		),
+	},
+	Effect.fn(function* ({root, base, head, repo, files}) {
+		yield* emit(
+			yield* runSkillEvidenceGuard({
+				files,
+				baseSha: base,
+				headSha: head,
+				repo,
+				root: Option.getOrNull(root),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Red on a skill change with no trusted benchmark evidence."),
+	Command.withDescription(
+		"Judge the handed changed files' skills under claude-plugins/fabrika/skills: every behavior-affecting skill change must carry a committed report under benchmarks/skill-evidence/reports/<skill>/report.json, produced by the trusted in-repo runner (.github/workflows/skill-benchmark.yml) and byte-verified against the report artifact that run published, attesting the PR's exact skill tree, a correctly-kind and fresh baseline (previous-version for an update, without-skill for a new skill), and measured arms that meet the policy's thresholds. The policy is read from the BASE commit, so a PR cannot relax its own thresholds or typo exemption. Typo-only .md edits under the policy's word cap are exempt, with their numbers named in the summary. A removed skill needs no evidence. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations under Actions. Exits 7 (zero scope: an empty file list — fail-closed), 11 (the policy, a report file, a git read, or a GitHub read on the provenance path could not be made, so the verdict is UNKNOWN), 12 (evidence is missing, stale, mis-provenanced, not the run's own bytes, or fails a threshold). Example: node packages/fabrika-cli/src/bin.ts guard skill-evidence-guard check --base <sha> --head <sha> --repo owner/name <file...>",
+	),
+);
+
+const skillEvidenceGuard = Command.make("skill-evidence-guard").pipe(
+	Command.withSubcommands([skillEvidenceCheck]),
+	Command.withShortDescription("Skill changes carry trusted benchmark evidence."),
+	Command.withDescription(
+		"Skills merged without measured benefit are merged on vibes; the founder ruled (2026-09-21) that a skill change must prove its benefit over a baseline before it merges, and that CI — not prose — is the enforcement surface.",
+	),
+);
+
+/**
  * The registered guards, each row carrying its **local-tree membership** beside the registration.
  *
  * One appended row per port; the order is the `--help` order. The second field is the contract:
@@ -726,6 +783,7 @@ const registry = [
 		runPublishIsolationGuard({root: o.root, cwd: o.root, env: o.env}),
 	),
 	notLocalTree(leakGuard, "takes the changed files as arguments"),
+	notLocalTree(skillEvidenceGuard, "takes the changed files and base/head SHAs as arguments"),
 	localTree(pathFilterGuard, "check", (o) =>
 		runPathFilterGuard({root: o.root, cwd: o.root, env: o.env}),
 	),
