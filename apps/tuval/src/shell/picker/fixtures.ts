@@ -175,6 +175,7 @@ export const pickerHarness = (
 							settled: Exit.void,
 							summary: {lifecycle: "running" as const, revision: 0, state: {count: 0}},
 						}),
+					receive: () => Effect.void,
 					getState: () => ({count: 0}),
 					stop: Effect.void,
 				};

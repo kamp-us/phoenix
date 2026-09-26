@@ -40,11 +40,13 @@ import {
 	HandlerFailed,
 	ProcessIsPlanned,
 	ProcessNotFound,
+	ReceiverMissing,
 	SwapProgramMismatch,
 } from "./errors.ts";
 import {PlannedProcesses} from "./PlannedProcesses.ts";
 import {ProcessTable} from "./ProcessTable.ts";
 import {
+	type DispatchError,
 	type Lifecycle,
 	type Message,
 	type ProcessChange,
@@ -494,6 +496,15 @@ function makeServices() {
 			// the same permit, so no Msg is folded by a run that is being replaced.
 			const folds = yield* Semaphore.make(1);
 			const dispatch = (msg: Message) => Effect.suspend(() => current.runtime.dispatch(msg));
+			// Resolved inside the permit, like the run it dispatches into: a receiver read before a
+			// swap and applied after it would hand the reloaded `update` a Msg the old row made.
+			const receive = (port: string, payload: unknown) =>
+				Effect.suspend((): Effect.Effect<void, DispatchError | ReceiverMissing> => {
+					const receiver = current.program.receive?.[port];
+					return receiver === undefined
+						? Effect.fail(new ReceiverMissing({id, programId, port}))
+						: current.runtime.dispatch(receiver(payload as never) as Message);
+				});
 			const handle: ProcessHandle = {
 				id,
 				programId,
@@ -507,6 +518,7 @@ function makeServices() {
 							summary: stateSummary(),
 						})),
 					),
+				receive: (port, payload) => folds.withPermits(1)(receive(port, payload)),
 				getState: readState,
 				stop: Scope.close(scope, Exit.void),
 			};

@@ -49,8 +49,8 @@ import type {Delivery} from "../../ports/wiring.ts";
 import type {HandlerFailed} from "../../process/errors.ts";
 import {asked, deliver, type ReplyTo} from "../../process/inbox.ts";
 import {Processes} from "../../process/Processes.ts";
-import {type Message, type ProcessHandle, ProcessId} from "../../process/process.ts";
-import {type AnyProgram, type InPort, ProgramId, type Receiver} from "../../registry/program.ts";
+import {type ProcessHandle, ProcessId} from "../../process/process.ts";
+import {type AnyProgram, type InPort, ProgramId} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {type AnySpell, defineSpell} from "../spell.ts";
 
@@ -187,17 +187,19 @@ interface Entry {
 }
 
 /**
- * One in-port's pump: take, translate through the program's own receiver, dispatch, for as long as
- * the process lives — the fiber is forked into the process Scope, so a stop interrupts it before
+ * One in-port's pump: take, then hand the payload to the process as arriving on `port`, for as long
+ * as the process lives — the fiber is forked into the process Scope, so a stop interrupts it before
  * the actor drains. This is the only pump in the kernel: `src/launch/launch.ts` carried a second,
- * identical one keyed on a node id until #8944 folded the two paths into `adopt` below. A dispatch
- * the target refuses is the target's failure, reported and not retried.
+ * identical one keyed on a node id until #8944 folded the two paths into `adopt` below. The pump
+ * holds no receiver of its own: `handle.receive` reads the one on the row the process runs now, so
+ * a swap reaches this port too (#9823). A payload the target refuses — including one its current
+ * row has no receiver for — is the target's failure, reported and not retried.
  */
-const pump = (handle: ProcessHandle, inbox: Queue.Dequeue<unknown>, receive: Receiver<Message>) =>
+const pump = (handle: ProcessHandle, inbox: Queue.Dequeue<unknown>, port: string) =>
 	Effect.forkIn(
 		Effect.forever(
 			Queue.take(inbox).pipe(
-				Effect.flatMap((payload) => handle.dispatch(receive(payload as never))),
+				Effect.flatMap((payload) => handle.receive(port, payload)),
 				Effect.catch((error: unknown) => Effect.logError(error)),
 			),
 		),
@@ -234,8 +236,7 @@ const wireInPorts = Effect.fn("Tuval.SpawnedProcesses.wireInPorts")(function* (
 	const inboxes = new Map<string, Inbox>();
 	for (const [name, port] of Object.entries(row.ports)) {
 		if (port.direction !== "in") continue;
-		const receive = row.receive?.[name] as Receiver<Message> | undefined;
-		if (receive === undefined) {
+		if (row.receive?.[name] === undefined) {
 			// `launch` refuses this at boot with `NoReceiver`; there is no boot to refuse here, and a
 			// caller cannot act on another program's authoring bug — so it dies, as the executor dies
 			// on a spell whose value its own `result` schema refuses.
@@ -244,7 +245,7 @@ const wireInPorts = Effect.fn("Tuval.SpawnedProcesses.wireInPorts")(function* (
 			);
 		}
 		const queue = yield* queueOf(name, port);
-		yield* pump(handle, queue, receive);
+		yield* pump(handle, queue, name);
 		inboxes.set(name, {port, queue});
 	}
 	return inboxes as ReadonlyMap<string, Inbox>;

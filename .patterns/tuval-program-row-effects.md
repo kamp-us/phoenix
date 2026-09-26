@@ -300,8 +300,10 @@ to keep meaning "you have no sessions".
 A reload is not a restart. `Booted.reload` re-reads the layered config, swaps the spell registry and
 the key table, and then hands every live process what its own row says the new config means for it
 (#7509 ruling 3). A process whose row's code changed is first switched onto the reloaded row under
-the same id, keeping its state (`Processes.swap`, #9820); a process whose row's code did not change
-keeps running and gets only what `configChanged` answers.
+the same id, keeping its state (`Processes.swap`, #9820). Its in-ports switch with it: each port's
+pump hands payloads to `ProcessHandle.receive`, which reads the receiver off the row the process runs
+now, so a payload queued before the swap goes through the reloaded receiver too (#9823). A process
+whose row's code did not change keeps running and gets only what `configChanged` answers.
 
 **The row declares what applies live, under `configChanged`, or the reload reaches it with nothing.**
 The field is `(next: AnyProgram) => ReadonlyArray<Msg>`
