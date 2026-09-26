@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/tuval-ui",
-	"version": "0.0.0",
+	"version": "1.0.0",
 	"description": "Tuval's desk chat UI and shared agent window — the React surfaces an AI-agent program's window is built from, on the @kampus/tuval-sdk kernel",
 	"license": "MIT",
 	"repository": {
