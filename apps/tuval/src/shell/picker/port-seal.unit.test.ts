@@ -24,13 +24,13 @@ import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
 import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
 import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
-import type {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {Cause, Context, Effect, Layer} from "effect";
-import {wiredShellEffects} from "../host/effects.ts";
+import {ConfigReloader} from "../../reload.ts";
+import {type ShellHostServices, wiredShellEffects} from "../host/effects.ts";
 import {openProgram} from "./intent.ts";
 import {runPickerIntent} from "./open.ts";
 
@@ -145,7 +145,7 @@ const driverProgram = (opened: Opened): AnyProgram =>
 		never,
 		unknown,
 		never,
-		Registry | Processes | ProcessTable
+		ShellHostServices
 	>;
 
 const run = Effect.fnUntraced(function* () {
@@ -177,6 +177,7 @@ const run = Effect.fnUntraced(function* () {
 					Layer.mergeAll(
 						Registry.layer([driverProgram(opened), leakyProgram(opened)]),
 						Checkpoints.layer(memoryStores()),
+						ConfigReloader.none,
 					),
 				),
 			),

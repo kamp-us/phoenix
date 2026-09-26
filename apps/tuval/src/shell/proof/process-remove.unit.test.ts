@@ -23,6 +23,7 @@ import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Effect, Layer} from "effect";
+import {ConfigReloader} from "../../reload.ts";
 import {toTableRow} from "../../table/row.ts";
 import {applyMsg, initialState, type ShellMsg} from "../core/machine.ts";
 import {activeWorkspace, type ShellState} from "../core/state.ts";
@@ -35,12 +36,16 @@ const STRAY_COUNT = 20;
 const counter = programRow("counter", {label: "Counter"});
 const rows: ReadonlyArray<AnyProgram> = [counter];
 
-type Kernel = Processes | ProcessTable | PlannedProcesses | Registry | Checkpoints;
+type Kernel = Processes | ProcessTable | PlannedProcesses | Registry | Checkpoints | ConfigReloader;
 
 const kernel = (stores: CheckpointStores): Layer.Layer<Kernel> =>
 	Processes.layer.pipe(
 		Layer.provideMerge(
-			Layer.mergeAll(Registry.layer(rows).pipe(Layer.orDie), Checkpoints.layer(stores)),
+			Layer.mergeAll(
+				Registry.layer(rows).pipe(Layer.orDie),
+				Checkpoints.layer(stores),
+				ConfigReloader.none,
+			),
 		),
 	);
 

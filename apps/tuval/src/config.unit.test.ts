@@ -252,6 +252,7 @@ describe("loadLayeredConfig", () => {
 						{file: `project ${layerName("project-layer")}`, bindings: {}},
 					],
 					sources: [fixture("global-layer"), fixture("project-layer")],
+					files: [fixture("global-layer"), fixture("project-layer")],
 				});
 			}),
 	);
@@ -275,6 +276,7 @@ describe("loadLayeredConfig", () => {
 				graph: {nodes: [{id: NodeId.make("n"), program: ProgramId.make("a"), on: []}]},
 				keys: [{file: `project ${layerName("with-graph")}`, bindings: {}}],
 				sources: [fixture("with-graph")],
+				files: [fixture("with-graph")],
 			});
 			assert.deepStrictEqual(yield* layered(fixture("two-rows"), missing), {
 				programs: [{id: "a"}, {id: "b"}],
@@ -292,6 +294,7 @@ describe("loadLayeredConfig", () => {
 				graph: {nodes: []},
 				keys: [{file: `global ${layerName("two-rows")}`, bindings: {}}],
 				sources: [fixture("two-rows")],
+				files: [fixture("two-rows")],
 			});
 			assert.deepStrictEqual(yield* layered(missing, missing), {
 				programs: [],
@@ -309,6 +312,7 @@ describe("loadLayeredConfig", () => {
 				graph: {nodes: []},
 				keys: [],
 				sources: [],
+				files: [],
 			});
 		}),
 	);
