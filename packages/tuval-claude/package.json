@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/tuval-claude",
-	"version": "0.0.0",
+	"version": "1.0.0",
 	"description": "Tuval's Claude harness — the claude-session program row, its Agent SDK adapter, kernel tools, history and window, on the @kampus/tuval-sdk kernel",
 	"license": "MIT",
 	"repository": {
