@@ -77,9 +77,9 @@ import {
  * leaves that handler as a `window.setView` written back over it, and the slot is state only the
  * core can read — a refusal handed no slot is the one that throws away the picker's `previous`
  * (#8265). `forwardKey` is here too — a key belongs to the focused window's
- * *process*, and delivering it is a dispatch into that process. `runCommand` and `reloadConfig`
- * have no runner yet and are still the kernel's: resolving a name the command table does not hold
- * needs the spell registry, and `Booted.reload` sits above the kernel (#7743).
+ * *process*, and delivering it is a dispatch into that process. `runCommand` has no runner yet and
+ * is still the kernel's: resolving a name the command table does not hold needs the spell registry.
+ * `reloadConfig` runs the kernel's `ConfigReloader` (`../../reload.ts`).
  */
 export type KernelCmd =
 	| {

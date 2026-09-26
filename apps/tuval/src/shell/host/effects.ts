@@ -12,9 +12,7 @@
  * prefix-timer Cmds belong to whoever is showing the desk: a kernel handler returns its follow-ups
  * and cannot dispatch one a second later, and the snapshot already carries the armed window's
  * length, so the surface runs the countdown off state alone (`../ui/Desk.tsx`). `openCommandLine` is
- * the same shape — the line is a page's own element, not a process. `reloadConfig` is the one that
- * is simply not built: `Booted.reload` lives above the kernel, out of a handler's reach, and #7743
- * tracks it.
+ * the same shape — the line is a page's own element, not a process.
  */
 
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
@@ -24,6 +22,7 @@ import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect, Option} from "effect";
+import {ConfigReloader} from "../../reload.ts";
 import {attachProcess, openProgram, runPickerIntent, runProcessRemoval} from "../picker/index.ts";
 import type {ShellEffects} from "../program.ts";
 
@@ -37,7 +36,7 @@ export interface WiredShellOptions {
 }
 
 /** What the handlers need from the kernel. Declared once so the row's `R` and this list agree. */
-export type ShellHostServices = Registry | Processes | ProcessTable;
+export type ShellHostServices = Registry | Processes | ProcessTable | ConfigReloader;
 
 /**
  * A key belongs to the focused window's process, so it is delivered as that program's own `key` Msg
@@ -73,10 +72,17 @@ export const wiredShellEffects = ({
 			Effect.logDebug(`shell: runCommand "${cmd.name}" names no command row — dropped`),
 			[],
 		),
+	// A refused reload leaves the desk on the generation it was running, so it is a warning and not
+	// a failure: the shell's error channel is `never`, and a config with a typo is not worth a desk.
 	reloadConfig: () =>
-		Effect.as(
-			Effect.logDebug("shell: config:reload is not wired to the config loader (#7743)"),
-			[],
+		ConfigReloader.use((reloader) => reloader.reload).pipe(
+			Effect.flatMap((report) =>
+				Effect.logInfo(
+					`shell: config reloaded — ${report.spellCount} spell(s), ${report.notified} process(es) told`,
+				),
+			),
+			Effect.catch((error) => Effect.logWarning(`shell: config reload refused — ${error.message}`)),
+			Effect.as([]),
 		),
 	openProgram: (cmd) =>
 		runPickerIntent(
