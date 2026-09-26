@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/tuval-pi",
-	"version": "0.0.0",
+	"version": "1.0.0",
 	"description": "Tuval's Pi harness — the pi-session program row, its loopback Pi host and client, kernel tools, history and window, on the @kampus/tuval-sdk kernel",
 	"license": "MIT",
 	"repository": {
