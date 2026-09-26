@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/fabrika-cli",
-	"version": "0.7.1",
+	"version": "1.0.0",
 	"description": "@kampus/fabrika-cli — the deterministic verb package fabrika skills call; `fabrika <group> <verb> …` (epic #4650)",
 	"license": "MIT",
 	"repository": {

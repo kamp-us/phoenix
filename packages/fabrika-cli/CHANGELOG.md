@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.0.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.7.1...fabrika-cli-v1.0.0) (2026-09-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **fabrika-cli:** `fabrika lane view` is removed. Invoking it now exits with the CLI's unknown-subcommand error; read a lane with `fabrika lane status` or `fabrika lane history`, and sweep lanes with `fabrika lane stale`.
+
+### Features
+
+* A red post-merge run on main reaches nobody: 8 failed web deploys sat unseen for 3 days ([#9522](https://github.com/kamp-us/phoenix/issues/9522)) ([5d7fe34](https://github.com/kamp-us/phoenix/commit/5d7fe34d6912d3ccb846391cf40ca7bd2766877d))
+* **epic:** Tuval still runs its own Effect host on tea 0.12.0 while tea 0.18.0 ships the engine it needs ([#9798](https://github.com/kamp-us/phoenix/issues/9798)) ([7194b7d](https://github.com/kamp-us/phoenix/commit/7194b7dca048216d31d835999a2cb9809a421d3a))
+* **fabrika-cli:** warn when the CLI is older than the plugin's minimum ([#9675](https://github.com/kamp-us/phoenix/issues/9675)) ([#9709](https://github.com/kamp-us/phoenix/issues/9709)) ([0780689](https://github.com/kamp-us/phoenix/commit/0780689bd1908def09d0ffe4cc8b7bdb7fe79b26))
+* **fabrika:** land skill-doctor — byte-exact upstream vendor, fabrika-shaped ([#8048](https://github.com/kamp-us/phoenix/issues/8048)) ([#8063](https://github.com/kamp-us/phoenix/issues/8063)) ([ec50a41](https://github.com/kamp-us/phoenix/commit/ec50a41c1104392f6b15018b46419acec80d6dea))
+* **fabrika:** lane scratch gives the driver a lane-keyed path for helpers ([#9768](https://github.com/kamp-us/phoenix/issues/9768)) ([#9775](https://github.com/kamp-us/phoenix/issues/9775)) ([9753bb9](https://github.com/kamp-us/phoenix/commit/9753bb999b49759ec0589a1802905f2b2c5cc7ea))
+* Publishable Tuval packages have no publish arm, and adding one reds publish-isolation-guard ([#9757](https://github.com/kamp-us/phoenix/issues/9757)) ([1aa6bdb](https://github.com/kamp-us/phoenix/commit/1aa6bdbc8f6225389afe0d54eb909d1d76f80879))
+* **report:** retrieve duplicate candidates from a cached lexical index ([#9503](https://github.com/kamp-us/phoenix/issues/9503)) ([0cb9588](https://github.com/kamp-us/phoenix/commit/0cb9588f210bc4a6eed429d32d9f2d262406d8b5))
+* **review:** filter noisy diffs without removing required reviews ([#9476](https://github.com/kamp-us/phoenix/issues/9476)) ([eeb9966](https://github.com/kamp-us/phoenix/commit/eeb9966ecb6fc4450837798c755030a7ca385fe3))
+
+
+### Bug Fixes
+
+* A lane whose ledger was written by another machine leaves its green PR unreachable at exit 63 ([#9580](https://github.com/kamp-us/phoenix/issues/9580)) ([0d57332](https://github.com/kamp-us/phoenix/commit/0d57332fe2c0112fb910533eb03c703df9269a24))
+* ADR 0404 is recorded but no verb reads the required set as the blocking authority ([#9601](https://github.com/kamp-us/phoenix/issues/9601)) ([fe9126d](https://github.com/kamp-us/phoenix/commit/fe9126dbf7ed827484ed58d61827a2ff9fe7faf5))
+* build branch cuts its lane branch in the shared primary checkout and switches it off main ([#9765](https://github.com/kamp-us/phoenix/issues/9765)) ([84710c8](https://github.com/kamp-us/phoenix/commit/84710c868ceeaa15bce40f389c3e8cdd42bde11e))
+* build skill's repair-cap ESCALATED names no park cause ([#9732](https://github.com/kamp-us/phoenix/issues/9732)) ([cbeb60d](https://github.com/kamp-us/phoenix/commit/cbeb60dcaf26378f2bc8c053d5c0f13f6bb7a434))
+* **fabrika-cli:** remove lane view and pin @demlik/tea 0.18.0, whose vitest peer admits the vitest adopters run ([#9784](https://github.com/kamp-us/phoenix/issues/9784)) ([6238e24](https://github.com/kamp-us/phoenix/commit/6238e24f71df9eece8e1edd4a37b32c347535d7c))
+* **hook:** lead every plugin-sync refusal with its reason ([#9460](https://github.com/kamp-us/phoenix/issues/9460)) ([#9462](https://github.com/kamp-us/phoenix/issues/9462)) ([be72614](https://github.com/kamp-us/phoenix/commit/be72614342651aa08070fb44277bb08b73dec4ab))
+* lane report refuses an uncaused ESCALATED that review-ui says carries no cause ([#9724](https://github.com/kamp-us/phoenix/issues/9724)) ([56df132](https://github.com/kamp-us/phoenix/commit/56df1324e13748c967e4ad8fd003f5d8e9d06cf5))
+* **lane:** prove a DONE out of build:ui like one out of build ([#9706](https://github.com/kamp-us/phoenix/issues/9706)) ([#9711](https://github.com/kamp-us/phoenix/issues/9711)) ([2ef3ff6](https://github.com/kamp-us/phoenix/commit/2ef3ff6c1acc5e68b6a1c4bfa0aa5b52f10c8e76))
+* plugin-sync refuses to advance main when the uncommitted files do not overlap the incoming commits ([#9466](https://github.com/kamp-us/phoenix/issues/9466)) ([8fcbee9](https://github.com/kamp-us/phoenix/commit/8fcbee95554f52e4c52663ac099cc90661cbca7d))
+* review-ui post leaves a counted verdict when its posted evidence fails the after-post check ([#9747](https://github.com/kamp-us/phoenix/issues/9747)) ([f1dda43](https://github.com/kamp-us/phoenix/commit/f1dda430008267de0000930bcb5982456f25eaef))
+* **review-ui:** read evidence back through the GitHub renderer, before and after the post ([#9715](https://github.com/kamp-us/phoenix/issues/9715)) ([#9722](https://github.com/kamp-us/phoenix/issues/9722)) ([46b75f3](https://github.com/kamp-us/phoenix/commit/46b75f325f68583fd0936337c1521cb9b631d002))
+* **review-ui:** refuse a repeated --evidence on post ([#9729](https://github.com/kamp-us/phoenix/issues/9729)) ([#9733](https://github.com/kamp-us/phoenix/issues/9733)) ([8fe4932](https://github.com/kamp-us/phoenix/commit/8fe4932767ea47b4ff4b38cba8ae593a560dfaba))
+* The review gate grades the body criteria only, so a founder ruling posted as a comment never binds a PR ([#9549](https://github.com/kamp-us/phoenix/issues/9549)) ([587da21](https://github.com/kamp-us/phoenix/commit/587da21ebf9f392cb079950bf7d256ba1831a971))
+* Three mechanical shell stops park a lane with no cause: hijacked tree, denied push, stranded claim ([#9778](https://github.com/kamp-us/phoenix/issues/9778)) ([8cfb489](https://github.com/kamp-us/phoenix/commit/8cfb489df1935f9e0a53b6d7aeb39f438d27f2c1))
+* **ui:** read evidence uploads back through GitHub's renderer ([#9723](https://github.com/kamp-us/phoenix/issues/9723)) ([#9730](https://github.com/kamp-us/phoenix/issues/9730)) ([5ab5f82](https://github.com/kamp-us/phoenix/commit/5ab5f825e3b0ef2a7f7a5f19a61e9ba37ca00c25))
+
 ## [0.7.1](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.7.0...fabrika-cli-v0.7.1) (2026-09-18)
 
 
