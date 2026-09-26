@@ -188,7 +188,7 @@ arrives on each in-port into the program's own Msg, host handlers, a capability 
 optional renderer reference, and the identity / capability / placement records as inert data — the
 kernel enforces nothing on them, local code is fully trusted. The graph names the processes to run
 and the routes between them (see "Ports" and "Launch" below); a config without one registers its
-programs and runs nothing.
+programs and runs only the desk's shell.
 
 ```ts
 import {Console} from "effect";

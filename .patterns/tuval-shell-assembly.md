@@ -11,7 +11,7 @@ The parts below it are their own docs: the command framework is
 [tuval-spells.md](./tuval-spells.md), the layout binding is
 [layout-tree-with-resizable-panels.md](./layout-tree-with-resizable-panels.md).
 
-## The four pieces, and who owns what
+## The five pieces, and who owns what
 
 ```
 src/desk-layer.ts          the shell row + its graph node, below every file (desk-owned)
@@ -245,8 +245,9 @@ program-blind: a process's state still crosses as `unknown`.
   reads it back off the booted rows, `boot` reports that as `Booted.keyTable`, and `src/bin.ts`
   hands that value to `serveDesk`. Before this the bin named the default itself, so a config that
   passed `shellProgram` a table put the kernel on its grammar and every page on the default, with
-  nothing failing (#7890). The row now comes from the desk layer, not a config file (#9683). A new caller that needs the grammar reads it off the row the same way —
-  it never reaches for `defaultPrefixTable`, which is why the single namer holds.
+  nothing failing (#7890). The row now comes from the desk layer, not a config file (#9683). A
+  new caller that needs the grammar reads it off the row the same way — it never reaches for
+  `defaultPrefixTable`, which is why the single namer holds.
 
 - The kernel decides what is in the catalog, and it decides with `showsInAWindow`
   (`src/shell/picker/entries.ts`) — the one place the headless test lives. A row with no `renderer`
