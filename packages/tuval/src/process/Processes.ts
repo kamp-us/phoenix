@@ -3,14 +3,19 @@
  * row on tea's Effect engine (`run` from `@demlik/tea/effect`) under a Scope of its own, forked from
  * the parent's; stop closes that Scope. Everything a stop must do — drain, interrupt in-flight
  * handlers, stop Subs, flush, refuse later dispatches — is the run's own stop, which `run`
- * registers on that Scope; this slice only closes the Scope, and a parent's close reaches every
- * descendant because `Scope.fork` closes children with the parent.
+ * registers on the run's Scope and the process Scope's close reaches; this slice only closes the
+ * Scope, and a parent's close reaches every descendant because `Scope.fork` closes children with
+ * the parent.
  *
  * `remove` is stop's durable counterpart (#9446): the founder ruled that removing a process forgets
  * it and its descendants for good, so it drops the checkpoint first and closes the Scope second.
  * That order is the whole guarantee — a Scope closed ahead of a failed manifest write would leave a
  * process gone from the table and still queued for the next `restore`, which is the half-forgotten
  * state this exists to make unwritable.
+ *
+ * The run's Scope is its own, closed by one finalizer on the process Scope, because `swap` replaces
+ * the run and nothing else (#9820): the id, the Scope children fork from, the handle and the row all
+ * outlive it.
  */
 
 import {randomUUID} from "node:crypto";
@@ -22,14 +27,21 @@ import {
 	StoreRefusedError,
 	type Sub,
 } from "@demlik/tea";
-import {type EffectRuntime, run, type StoreFailed} from "@demlik/tea/effect";
+import {type EffectRuntime, run, type Stopped, type StoreFailed} from "@demlik/tea/effect";
 import {Context, Effect, Exit, Layer, Option, PubSub, Scope, Semaphore, Stream} from "effect";
-import {Checkpoints, type OpenError} from "../durability/Checkpoints.ts";
+import {type Carried, Checkpoints, type OpenError} from "../durability/Checkpoints.ts";
+import {dispatchResume} from "../durability/resume.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import type {ProgramNotFound} from "../registry/errors.ts";
 import type {AnyProgram, ProgramCore, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
-import {ForgetRefused, HandlerFailed, ProcessIsPlanned, ProcessNotFound} from "./errors.ts";
+import {
+	ForgetRefused,
+	HandlerFailed,
+	ProcessIsPlanned,
+	ProcessNotFound,
+	SwapProgramMismatch,
+} from "./errors.ts";
 import {PlannedProcesses} from "./PlannedProcesses.ts";
 import {ProcessTable} from "./ProcessTable.ts";
 import {
@@ -86,6 +98,26 @@ export type SpawnError =
  */
 export type RemoveError = ProcessNotFound | ProcessIsPlanned | ForgetRefused;
 
+/**
+ * Where a swapped process landed: on the reloaded row with its state admitted, or in that row's own
+ * refused-restore branch because the row's `migrations` or `restorable` refused the state it carried.
+ */
+export type SwapOutcome = "switched" | "restore-refused";
+
+/**
+ * Every way a swap fails. The id and row checks refuse before anything closes. A boot failure ends
+ * the process, because its old run is already closed: a process is on the reloaded row or gone,
+ * never on no run at all. `Stopped` and the dispatch errors are the reloaded row's resume Msgs,
+ * sent once its run is up.
+ */
+export type SwapError =
+	| ProcessNotFound
+	| SwapProgramMismatch
+	| OpenError
+	| HandlerFailed
+	| StoreFailed
+	| Stopped;
+
 export class Processes extends Context.Service<
 	Processes,
 	{
@@ -109,6 +141,15 @@ export class Processes extends Context.Service<
 		 * Absence is a value, not a failure: a process that has stopped is the ordinary case.
 		 */
 		readonly handle: (id: ProcessId) => Effect.Effect<Option.Option<ProcessHandle>>;
+		/**
+		 * Move a live process onto `program`, a reloaded row of the program it runs, keeping its id,
+		 * Scope, children, handle and state (#9820). Its run is closed and a run of `program` boots
+		 * over the state the old one held, through the same checkpoint admission a restore takes.
+		 *
+		 * It waits for the fold in flight, so a caller running inside that process's own handler
+		 * must not wait for it: that handler is the fold.
+		 */
+		readonly swap: (id: ProcessId, program: AnyProgram) => Effect.Effect<SwapOutcome, SwapError>;
 	}
 >()("tuval/Processes") {
 	/**
@@ -127,6 +168,16 @@ interface Entry {
 	readonly scope: Scope.Closeable;
 	/** tea's run behind the row. A row is what another process may see; this is what dispatches. */
 	readonly handle: ProcessHandle;
+	readonly swap: (program: AnyProgram) => Effect.Effect<SwapOutcome, SwapError>;
+}
+
+/** The run a process is on now, and the row it was booted from. */
+interface CurrentRun {
+	readonly program: AnyProgram;
+	readonly runtime: Run;
+	readonly scope: Scope.Closeable;
+	/** `refused` is a run booted into the row's refused-restore branch, with no store behind it. */
+	readonly restore: "admitted" | "refused";
 }
 
 /**
@@ -313,9 +364,10 @@ function makeServices() {
 						? {...report, title: Option.some(line)}
 						: {...report, status: Option.some(line)};
 			};
-			const handlerServices = Option.isNone(spawnerPorts)
-				? granted
-				: Context.add(granted, ProcessPorts, latching(program, spawnerPorts.value, record));
+			const servicesFor = (program: AnyProgram) =>
+				Option.isNone(spawnerPorts)
+					? granted
+					: Context.add(granted, ProcessPorts, latching(program, spawnerPorts.value, record));
 
 			yield* Scope.addFinalizer(
 				scope,
@@ -332,87 +384,166 @@ function makeServices() {
 				void forkLog(
 					error instanceof RuntimeDiscardNotice ? Effect.logWarning(error) : Effect.logError(error),
 				);
-			const runtime: Run = yield* Effect.gen(function* () {
-				const checkpoint = yield* checkpoints.open({
-					id,
-					programId,
-					parentId,
-					version: program.identity.version,
-					...(program.migrations === undefined ? {} : {migrations: program.migrations}),
-					...(program.restorable === undefined ? {} : {restorable: program.restorable}),
-				});
-				const boot = (core: ErasedCore, store: Store<unknown> | undefined) =>
-					Effect.gen(function* () {
-						const booting = yield* runProgram(program, core, store, handlerServices, onError);
-						// Fires after every applied transition once its Cmds have settled, however they
-						// settled (demlik #311), and never for boot's own commit. An `init` Cmd's follow-ups
-						// land on tea's tail before this fiber resumes from `ready`, so a transition can
-						// precede the row: it is counted here and published once the row exists, below.
-						booting.observe(() => {
-							revision++;
-							if (row !== undefined) {
-								PubSub.publishUnsafe<ProcessChange>(changes, {kind: "state-changed", row});
-							}
+			/**
+			 * One run of `program` on a Scope of its own, which the process Scope closes through the one
+			 * finalizer below. The run is not the process: a swap closes it and boots the reloaded row in
+			 * its place, and the process's id, Scope, children, handle and row all stay (#9820).
+			 */
+			const bootRun = (program: AnyProgram, carried: Carried | undefined) =>
+				Effect.gen(function* () {
+					const runScope = yield* Scope.make();
+					const boot = (core: ErasedCore, store: Store<unknown> | undefined) =>
+						Effect.gen(function* () {
+							const booting = yield* runProgram(
+								program,
+								core,
+								store,
+								servicesFor(program),
+								onError,
+							);
+							// Fires after every applied transition once its Cmds have settled, however they
+							// settled (demlik #311), and never for boot's own commit. An `init` Cmd's follow-ups
+							// land on tea's tail before this fiber resumes from `ready`, so a transition can
+							// precede the row: it is counted here and published once the row exists, below.
+							booting.observe(() => {
+								revision++;
+								if (row !== undefined) {
+									PubSub.publishUnsafe<ProcessChange>(changes, {kind: "state-changed", row});
+								}
+							});
+							return yield* booting.ready;
 						});
-						return yield* booting.ready;
+					// The cast is for the erasure: `AnyProgram` erases S/M/C/U to `any`, and an
+					// `any`-parameterised `update` is the union of `Reducer` and `Transitions`, which no
+					// annotation accepts as either (TS2322 without the cast).
+					const core = program.core as ErasedCore;
+					const opened = checkpoints.open({
+						id,
+						programId,
+						parentId,
+						version: program.identity.version,
+						...(program.migrations === undefined ? {} : {migrations: program.migrations}),
+						...(program.restorable === undefined ? {} : {restorable: program.restorable}),
+						...(carried === undefined ? {} : {carried}),
 					});
-				// The cast is for the erasure: `AnyProgram` erases S/M/C/U to `any`, and an
-				// `any`-parameterised `update` is the union of `Reducer` and `Transitions`, which no
-				// annotation accepts as either (TS2322 without the cast).
-				const core = program.core as ErasedCore;
-				return yield* boot(core, checkpoint.store).pipe(
-					Effect.catchTag("StoreFailed", (failed) =>
-						isRefusedLoad(failed)
-							? boot(bootedOnRefused(core, checkpoint.loaded), undefined)
-							: Effect.fail(failed),
-					),
-				);
-			}).pipe(
-				Effect.provideService(Scope.Scope, scope),
+					const booted = yield* Effect.gen(function* () {
+						// A carried state no migration reaches the reloaded version from is the swap's
+						// refused restore. On a spawn the same refusal fails the spawn, as it always has.
+						const checkpoint =
+							carried === undefined
+								? yield* opened
+								: yield* opened.pipe(
+										Effect.catchTag("tuval/durability/SnapshotRefused", () =>
+											Effect.succeed(undefined),
+										),
+									);
+						if (checkpoint === undefined) {
+							const runtime = yield* boot(bootedOnRefused(core, carried?.state), undefined);
+							return {runtime, restore: "refused"} as const;
+						}
+						return yield* boot(core, checkpoint.store).pipe(
+							Effect.map((runtime) => ({runtime, restore: "admitted"}) as const),
+							Effect.catchTag("StoreFailed", (failed) =>
+								isRefusedLoad(failed)
+									? Effect.map(
+											boot(bootedOnRefused(core, checkpoint.loaded), undefined),
+											(runtime) => ({runtime, restore: "refused"}) as const,
+										)
+									: Effect.fail(failed),
+							),
+						);
+					}).pipe(
+						Effect.provideService(Scope.Scope, runScope),
+						Effect.onError((cause) => Scope.close(runScope, Exit.failCause(cause))),
+					);
+					return {...booted, program, scope: runScope} satisfies CurrentRun;
+				});
+			let current: CurrentRun = yield* bootRun(program, undefined).pipe(
 				Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))),
 			);
-			readState = runtime.getState;
+			readState = () => current.runtime.getState();
 			// The latch only ever records what this process emitted, and a restored one emits nothing:
 			// a rehydrating `init` may answer no Cmds and the authored `update` publishes a derived
 			// line only on the transition that moves it, so a stable title would read back as absent
 			// forever (#8812). Seeding it off the state the run actually booted on covers both arms
 			// at once — a fresh boot's `init` derives the same lines from that same state.
-			seedSelfReport(program, runtime.getState(), record);
-			yield* Scope.addFinalizer(
-				scope,
-				Effect.sync(() => {
+			seedSelfReport(program, readState(), record);
+			yield* Scope.addFinalizerExit(scope, (exit) =>
+				Effect.suspend(() => {
 					lifecycle = "stopping";
+					return Scope.close(current.scope, exit);
 				}),
 			);
 
-			const stateSummary = (): StateSummary => ({lifecycle, revision, state: runtime.getState()});
+			const stateSummary = (): StateSummary => ({lifecycle, revision, state: readState()});
 			const selfReport = (): SelfReport => report;
-			row = {id, programId, parentId, ports: program.ports, stateSummary, selfReport};
+			const spawnedRow: ProcessRow = {
+				id,
+				programId,
+				parentId,
+				ports: program.ports,
+				stateSummary,
+				selfReport,
+			};
+			row = spawnedRow;
 			const unpublished = revision;
 			// Every fold this process is asked for from outside runs alone, so a summary read beside
 			// one is that fold's and not a later one's. The run's own tail serialises the transition
 			// but releases before `dispatch` waits out the follow-ups, which is the window a caller
-			// reading state after its dispatch used to lose its Msg's answer in (#8274).
+			// reading state after its dispatch used to lose its Msg's answer in (#8274). A swap takes
+			// the same permit, so no Msg is folded by a run that is being replaced.
 			const folds = yield* Semaphore.make(1);
+			const dispatch = (msg: Message) => Effect.suspend(() => current.runtime.dispatch(msg));
 			const handle: ProcessHandle = {
 				id,
 				programId,
-				parentId: row.parentId,
+				parentId,
 				scope,
-				dispatch: (msg) => folds.withPermits(1)(runtime.dispatch(msg)),
+				dispatch: (msg) => folds.withPermits(1)(dispatch(msg)),
 				dispatchFolded: (msg) =>
 					folds.withPermits(1)(
-						Effect.map(Effect.exit(runtime.dispatch(msg)), (settled) => ({
+						Effect.map(Effect.exit(dispatch(msg)), (settled) => ({
 							settled,
 							summary: stateSummary(),
 						})),
 					),
-				getState: runtime.getState,
+				getState: readState,
 				stop: Scope.close(scope, Exit.void),
 			};
-			live.set(id, {row, scope, handle});
-			yield* publish({kind: "spawned", row});
-			if (unpublished > 0) yield* publish({kind: "state-changed", row});
+			/**
+			 * Close the running run, which flushes its checkpoint and releases it, then boot `next` over
+			 * the state that run held. A run that cannot boot takes the process with it: a live row with
+			 * no run behind it is not a state this table can show.
+			 */
+			const swap = (next: AnyProgram): Effect.Effect<SwapOutcome, SwapError> =>
+				folds
+					.withPermits(1)(
+						Effect.gen(function* () {
+							const carried: Carried = {
+								version: current.program.identity.version,
+								state: current.runtime.getState(),
+							};
+							yield* Scope.close(current.scope, Exit.void);
+							current = yield* bootRun(next, carried).pipe(
+								Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))),
+							);
+							// Stopped while the new run booted: the finalizer that closes `current` has
+							// already run, over the old one.
+							if (lifecycle === "stopping") yield* Scope.close(current.scope, Exit.void);
+							seedSelfReport(next, readState(), record);
+							yield* publish({kind: "state-changed", row: spawnedRow});
+							return current.restore === "admitted" ? "switched" : "restore-refused";
+						}),
+					)
+					.pipe(
+						// After the permit, since each resume Msg takes it: a swap is a restore under the
+						// same id, and a restore's last step is the row's own resume.
+						Effect.tap(() => dispatchResume(next, handle)),
+						Effect.withSpan("Tuval.Processes.swap"),
+					);
+			live.set(id, {row: spawnedRow, scope, handle, swap});
+			yield* publish({kind: "spawned", row: spawnedRow});
+			if (unpublished > 0) yield* publish({kind: "state-changed", row: spawnedRow});
 			return handle;
 		});
 
@@ -440,7 +571,16 @@ function makeServices() {
 		const handleOf = (id: ProcessId) =>
 			Effect.sync(() => Option.fromNullishOr(live.get(id)?.handle));
 
-		return Context.make(Processes, {spawn, stop, remove, handle: handleOf}).pipe(
+		const swap = (id: ProcessId, program: AnyProgram) =>
+			Effect.flatMap(lookup(id), (entry) =>
+				program.id === entry.row.programId
+					? entry.swap(program)
+					: Effect.fail(
+							new SwapProgramMismatch({id, running: entry.row.programId, offered: program.id}),
+						),
+			);
+
+		return Context.make(Processes, {spawn, stop, remove, handle: handleOf, swap}).pipe(
 			Context.add(ProcessTable, table),
 			Context.add(PlannedProcesses, {
 				declare: (ids) =>

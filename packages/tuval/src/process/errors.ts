@@ -59,3 +59,13 @@ export class ForgetRefused extends Schema.TaggedError<ForgetRefused>()("tuval/Fo
 		return `process "${this.id}" was not removed: its durable forget failed, so the process is still running and still in the manifest`;
 	}
 }
+
+/** A swap offered a process the row of a program other than the one it runs. Nothing is closed. */
+export class SwapProgramMismatch extends Schema.TaggedError<SwapProgramMismatch>()(
+	"tuval/SwapProgramMismatch",
+	{id: ProcessId, running: ProgramId, offered: ProgramId},
+) {
+	override get message(): string {
+		return `process "${this.id}" runs program "${this.running}", so it cannot be moved onto "${this.offered}"`;
+	}
+}

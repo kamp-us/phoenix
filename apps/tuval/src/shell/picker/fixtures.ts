@@ -211,6 +211,7 @@ export const pickerHarness = (
 					stop: () => Effect.void,
 					remove: () => Effect.void,
 					handle: () => Effect.succeed(Option.none()),
+					swap: () => Effect.die("no picker test reloads a config"),
 				}),
 			),
 			Layer.succeed(ProcessTable, processTable),
@@ -276,6 +277,7 @@ export const removeHarness = (options?: {
 							return refusalOf(id);
 						}),
 					handle: () => Effect.succeed(Option.none()),
+					swap: () => Effect.die("no picker test reloads a config"),
 				}),
 			),
 		};

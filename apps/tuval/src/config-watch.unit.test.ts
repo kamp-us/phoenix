@@ -34,6 +34,9 @@ const report = (files: ReadonlyArray<string>): ReloadReport => ({
 	bindingCount: 0,
 	bindingErrors: [],
 	notified: 0,
+	switched: [],
+	restoreRefused: [],
+	pending: [],
 });
 
 /** Long enough for the OS to arm a fresh directory watch before the test writes. */
