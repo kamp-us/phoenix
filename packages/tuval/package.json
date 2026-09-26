@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/tuval-sdk",
-	"version": "0.0.0",
+	"version": "1.0.0",
 	"description": "The Tuval SDK — the program authoring API, the window renderer contract, the AI-agent ports and the kernel runtime the desk app is built on",
 	"license": "MIT",
 	"repository": {
