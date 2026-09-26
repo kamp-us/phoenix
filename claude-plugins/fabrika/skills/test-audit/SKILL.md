@@ -1,6 +1,6 @@
 ---
 name: test-audit
-description: "Gate a new test at write time, or audit and prune existing tests that are low-value, implementation-coupled or duplicative, along with the test-only production seams they keep alive. Fire it when a new test is being authored, or when an audit or prune of existing tests is explicitly asked for: \"audit these tests\", \"prune the test suite\", \"which of these tests are junk\", \"sweep the tests in <subsystem>\". Not PR review, which is `review`'s, and not mechanical test edits such as a timeout bump, a snapshot update or test config."
+description: "Gate a new test as it's written, or audit and prune existing low-value tests on request. Not PR review."
 ---
 
 <!--
