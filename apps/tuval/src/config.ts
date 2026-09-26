@@ -13,7 +13,6 @@
  */
 
 import {dirname} from "node:path";
-import {pathToFileURL} from "node:url";
 import {TuvalConfig} from "@kampus/tuval-sdk/config";
 import {
 	type BindingSource,
@@ -32,6 +31,7 @@ import {
 	moduleRendererRefs,
 } from "@kampus/tuval-sdk/kernel/shell/window/renderer";
 import {Effect, FileSystem, Option, Schema, SchemaIssue} from "effect";
+import {generationUrl, nextGeneration, takeGenerationFiles} from "./module-generations.ts";
 
 export {DeclaredFeatures, TuvalConfig} from "@kampus/tuval-sdk/config";
 export {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
@@ -41,6 +41,11 @@ export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()(
 	{
 		module: Schema.String,
 		reason: Schema.String,
+		/**
+		 * Every file the refused load read before it refused, the refusing module among them. A desk
+		 * watches these after a refusal, so fixing a file only the refused config imports reloads it.
+		 */
+		files: Schema.Array(Schema.String),
 	},
 ) {
 	override get message(): string {
@@ -74,26 +79,15 @@ const describeIssue = (error: Schema.SchemaError): string => {
 
 const decodeConfig = Schema.decodeUnknownEffect(TuvalConfig);
 
-/**
- * Node caches an ES module by URL for the life of the process, so a second load of the same path
- * would answer with the config the first one read and a reload could never see an edit. Each load
- * stamps its own number on the URL to read the file as it stands now; the copy it replaces stays in
- * Node's cache, which is what reading a config twice costs. The number is per load and not per
- * module, so one load importing both layers imports a module they share exactly once.
- */
-let loads = 0;
-const nextLoad = (): number => (loads += 1);
-
-const moduleUrl = (modulePath: string, load: number): string =>
-	`${pathToFileURL(modulePath).href}?tuval-load=${load}`;
-
 export const loadConfigModule = Effect.fn("Tuval.loadConfigModule")(function* (
 	modulePath: string,
-	load: number = nextLoad(),
+	load: number = nextGeneration(),
 ) {
-	const refuse = (reason: string) => new ConfigLoadError({module: modulePath, reason});
+	// Only the module itself: what it imports is recorded per load, which `loadLayeredConfig` owns.
+	const refuse = (reason: string) =>
+		new ConfigLoadError({module: modulePath, reason, files: [modulePath]});
 	const loaded = yield* Effect.tryPromise({
-		try: (): Promise<Record<string, unknown>> => import(moduleUrl(modulePath, load)),
+		try: (): Promise<Record<string, unknown>> => import(generationUrl(modulePath, load)),
 		catch: (cause) => refuse(`module threw while loading: ${thrownMessage(cause)}`),
 	});
 	if (!("default" in loaded)) {
@@ -132,6 +126,11 @@ export interface LoadedConfig {
 	readonly keys: ReadonlyArray<BindingSource>;
 	/** The layer modules that existed and were merged, global first. */
 	readonly sources: ReadonlyArray<string>;
+	/**
+	 * Every file this load read the config from: the layer modules in `sources`, and each file they
+	 * import by path, transitively (`./module-generations.ts`). Packages are not in it.
+	 */
+	readonly files: ReadonlyArray<string>;
 }
 
 /**
@@ -162,10 +161,13 @@ const mergeById = <T>(base: ReadonlyArray<T>, over: ReadonlyArray<T>, key: (item
 	return [...merged, ...over.filter((item) => !baseKeys.has(key(item)))];
 };
 
-const loadOptional = Effect.fn("Tuval.loadOptional")(function* (modulePath: string, load: number) {
+const present = Effect.fn("Tuval.present")(function* (modulePath: string) {
 	const fs = yield* FileSystem.FileSystem;
-	const present = yield* fs.exists(modulePath).pipe(Effect.orElseSucceed(() => false));
-	return present
+	return yield* fs.exists(modulePath).pipe(Effect.orElseSucceed(() => false));
+});
+
+const loadOptional = Effect.fn("Tuval.loadOptional")(function* (modulePath: string, load: number) {
+	return (yield* present(modulePath))
 		? Option.some(yield* loadConfigModule(modulePath, load))
 		: Option.none<TuvalConfig>();
 });
@@ -174,9 +176,28 @@ const loadOptional = Effect.fn("Tuval.loadOptional")(function* (modulePath: stri
 export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* (
 	layers: ConfigLayers,
 ) {
-	const load = nextLoad();
-	const global = yield* loadOptional(layers.global, load);
-	const project = yield* loadOptional(layers.project, load);
+	const load = nextGeneration();
+	const [global, project] = yield* Effect.all(
+		[loadOptional(layers.global, load), loadOptional(layers.project, load)],
+		{concurrency: 1},
+	).pipe(
+		Effect.catch((error) =>
+			Effect.gen(function* () {
+				const imported = takeGenerationFiles(load);
+				// The project layer loads second, so a refusal there read the global one first.
+				const global =
+					error.module === layers.project && (yield* present(layers.global)) ? [layers.global] : [];
+				return yield* new ConfigLoadError({
+					module: error.module,
+					reason: error.reason,
+					files: [...new Set([...global, ...error.files, ...imported])],
+				});
+			}),
+		),
+		// A defect or an interrupt still drops the record; the refusal above already took it.
+		Effect.onError(() => Effect.sync(() => takeGenerationFiles(load))),
+	);
+	const imported = takeGenerationFiles(load);
 	const empty: TuvalConfig = {
 		version: 1,
 		programs: [],
@@ -184,6 +205,10 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 		graph: {nodes: []},
 		keys: {},
 	};
+	const sources = [
+		...(Option.isSome(global) ? [layers.global] : []),
+		...(Option.isSome(project) ? [layers.project] : []),
+	];
 	const base = Option.getOrElse(global, () => empty);
 	const over = Option.getOrElse(project, () => empty);
 	// Merged as declared rows rather than as bare rows: the merge is the last place a row and its
@@ -205,9 +230,7 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 			...(Option.isSome(global) ? [bindingSource("global", layers.global, base.keys)] : []),
 			...(Option.isSome(project) ? [bindingSource("project", layers.project, over.keys)] : []),
 		],
-		sources: [
-			...(Option.isSome(global) ? [layers.global] : []),
-			...(Option.isSome(project) ? [layers.project] : []),
-		],
+		sources,
+		files: [...new Set([...sources, ...imported])],
 	} satisfies LoadedConfig;
 });
