@@ -61,6 +61,9 @@ https://github.com/kamp-us/phoenix/issues/9815#issuecomment-5850297119.
 - crabbox and its `0.31.0` pin are dropped. Its only test run duplicated the `unit` job.
 
 This supersedes ADR 0054 and ADR 0056 in full. 0056 decided nothing beyond the bundle's storage.
+It also supersedes ADR [0086](0086-ship-it-foreign-repo-degradation.md), which decided how ship
+degrades its run-evidence guard in a repo with no producer. With no guard left, there is nothing to
+degrade.
 
 **Banned.** Reintroducing a merge-gate read of a CI-produced bundle without a record that supersedes
 this one. A check that must block a merge runs as a job `ci-required` covers.
@@ -80,5 +83,6 @@ request and on the merge-queue batch.
 
 - Issue: https://github.com/kamp-us/phoenix/issues/9815
 - Ruling: https://github.com/kamp-us/phoenix/issues/9815#issuecomment-5850297119
-- Supersedes: ADR [0054](0054-run-evidence-bundle.md), ADR [0056](0056-bundle-storage-transport.md)
+- Supersedes: ADR [0054](0054-run-evidence-bundle.md), ADR [0056](0056-bundle-storage-transport.md),
+  ADR [0086](0086-ship-it-foreign-repo-degradation.md)
 - Vocabulary: retires the glossary's `run-evidence bundle` and `crabbox` rows in `.glossary/TERMS.md`.
