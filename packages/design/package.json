@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/design",
-	"version": "0.0.0",
+	"version": "1.0.0",
 	"description": "Shared Kampüs UI primitives, design tokens, fonts, and accessibility contract",
 	"license": "MIT",
 	"repository": {
