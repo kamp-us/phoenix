@@ -1,8 +1,9 @@
 /**
  * Loads a project's config twice in one real Node process, with one file rewritten between the
- * loads, and prints what each load read as one JSON line. `./module-generations.unit.test.ts` runs
- * it as a child: Vitest imports modules through its own runner, so the Node module cache and the
- * `resolve` hook that stamps past it are only in play in a plain `node` process.
+ * loads, and prints what each load read as one JSON line; a refused load prints its reason and the
+ * files it read. `./module-generations.unit.test.ts` runs it as a child: Vitest imports modules
+ * through its own runner, so the Node module cache and the `resolve` hook that stamps past it are
+ * only in play in a plain `node` process.
  *
  *   node src/module-generations.probe.ts <project> <file-to-rewrite> <new-contents>
  */
@@ -22,10 +23,13 @@ const read = loadLayeredConfig({
 	global: join(project, "no-global-layer.ts"),
 	project: join(project, ".tuval", "tuval.config.ts"),
 }).pipe(
-	Effect.map((config) => ({
-		ids: config.programs.map((row) => (row as {readonly id: string}).id),
-		files: config.files,
-	})),
+	Effect.match({
+		onSuccess: (config) => ({
+			ids: config.programs.map((row) => (row as {readonly id: string}).id),
+			files: config.files,
+		}),
+		onFailure: (refused) => ({refused: refused.reason, files: refused.files}),
+	}),
 );
 
 const probe = Effect.gen(function* () {

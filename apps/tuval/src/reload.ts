@@ -14,10 +14,7 @@
  */
 
 import type {BindingError, BindingSource} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
-import type {
-	DuplicateSpellPath,
-	SpellNotDescribable,
-} from "@kampus/tuval-sdk/kernel/commands/errors";
+import {DuplicateSpellPath, SpellNotDescribable} from "@kampus/tuval-sdk/kernel/commands/errors";
 import type {AnySpell} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
@@ -25,7 +22,7 @@ import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import type {Message} from "@kampus/tuval-sdk/kernel/process/process";
 import type {AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Context, Effect, Layer, Option, Ref, Schema, Semaphore} from "effect";
-import type {ConfigLoadError} from "./config.ts";
+import {ConfigLoadError} from "./config.ts";
 
 const byId = (rows: ReadonlyArray<AnyProgram>): ReadonlyMap<ProgramId, AnyProgram> =>
 	new Map(rows.map((row) => [row.id, row]));
@@ -89,6 +86,25 @@ export type ReloadError =
 	| SpellNotDescribable
 	| NoConfigToReload;
 
+/**
+ * A reload that refused, beside every file its read imported. The desk stays on the generation it
+ * was running, and a watcher adds these files to the ones it watches: the file that broke the reload
+ * may be one only the refused config imports.
+ */
+export class ReloadRefused extends Schema.TaggedError<ReloadRefused>()("tuval/ReloadRefused", {
+	reason: Schema.Union([
+		ConfigLoadError,
+		DuplicateSpellPath,
+		SpellNotDescribable,
+		NoConfigToReload,
+	]),
+	files: Schema.Array(Schema.String),
+}) {
+	override get message(): string {
+		return this.reason.message;
+	}
+}
+
 /** What a reload replaced, and how many running processes it told. */
 export interface ReloadReport {
 	readonly sources: ReadonlyArray<string>;
@@ -120,7 +136,7 @@ export interface FromConfigOptions {
  */
 export class ConfigReloader extends Context.Service<
 	ConfigReloader,
-	{readonly reload: Effect.Effect<ReloadReport, ReloadError>}
+	{readonly reload: Effect.Effect<ReloadReport, ReloadRefused>}
 >()("tuval/ConfigReloader") {
 	static readonly fromConfig = ({
 		core,
@@ -135,8 +151,12 @@ export class ConfigReloader extends Context.Service<
 				const generation = yield* Ref.make(initial);
 				const lock = yield* Semaphore.make(1);
 				const reload = Effect.gen(function* () {
-					const next = yield* read;
-					yield* set.reload({core, programs: next.programs, keys: next.keys});
+					const next = yield* read.pipe(
+						Effect.mapError((reason) => new ReloadRefused({reason, files: reason.files})),
+					);
+					yield* set
+						.reload({core, programs: next.programs, keys: next.keys})
+						.pipe(Effect.mapError((reason) => new ReloadRefused({reason, files: next.files})));
 					const notified = yield* dispatchConfigChanged(
 						yield* Ref.getAndSet(generation, next.programs),
 						next.programs,
@@ -158,6 +178,8 @@ export class ConfigReloader extends Context.Service<
 	/** A kernel started from rows: every reload refuses, naming why. */
 	static readonly none: Layer.Layer<ConfigReloader> = Layer.succeed(
 		ConfigReloader,
-		ConfigReloader.of({reload: Effect.fail(new NoConfigToReload())}),
+		ConfigReloader.of({
+			reload: Effect.fail(new ReloadRefused({reason: new NoConfigToReload(), files: []})),
+		}),
 	);
 }

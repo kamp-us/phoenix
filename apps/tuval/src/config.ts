@@ -41,6 +41,11 @@ export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()(
 	{
 		module: Schema.String,
 		reason: Schema.String,
+		/**
+		 * Every file the refused load read before it refused, the refusing module among them. A desk
+		 * watches these after a refusal, so fixing a file only the refused config imports reloads it.
+		 */
+		files: Schema.Array(Schema.String),
 	},
 ) {
 	override get message(): string {
@@ -78,7 +83,9 @@ export const loadConfigModule = Effect.fn("Tuval.loadConfigModule")(function* (
 	modulePath: string,
 	load: number = nextGeneration(),
 ) {
-	const refuse = (reason: string) => new ConfigLoadError({module: modulePath, reason});
+	// Only the module itself: what it imports is recorded per load, which `loadLayeredConfig` owns.
+	const refuse = (reason: string) =>
+		new ConfigLoadError({module: modulePath, reason, files: [modulePath]});
 	const loaded = yield* Effect.tryPromise({
 		try: (): Promise<Record<string, unknown>> => import(generationUrl(modulePath, load)),
 		catch: (cause) => refuse(`module threw while loading: ${thrownMessage(cause)}`),
@@ -154,10 +161,13 @@ const mergeById = <T>(base: ReadonlyArray<T>, over: ReadonlyArray<T>, key: (item
 	return [...merged, ...over.filter((item) => !baseKeys.has(key(item)))];
 };
 
-const loadOptional = Effect.fn("Tuval.loadOptional")(function* (modulePath: string, load: number) {
+const present = Effect.fn("Tuval.present")(function* (modulePath: string) {
 	const fs = yield* FileSystem.FileSystem;
-	const present = yield* fs.exists(modulePath).pipe(Effect.orElseSucceed(() => false));
-	return present
+	return yield* fs.exists(modulePath).pipe(Effect.orElseSucceed(() => false));
+});
+
+const loadOptional = Effect.fn("Tuval.loadOptional")(function* (modulePath: string, load: number) {
+	return (yield* present(modulePath))
 		? Option.some(yield* loadConfigModule(modulePath, load))
 		: Option.none<TuvalConfig>();
 });
@@ -170,7 +180,23 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 	const [global, project] = yield* Effect.all(
 		[loadOptional(layers.global, load), loadOptional(layers.project, load)],
 		{concurrency: 1},
-	).pipe(Effect.onError(() => Effect.sync(() => takeGenerationFiles(load))));
+	).pipe(
+		Effect.catch((error) =>
+			Effect.gen(function* () {
+				const imported = takeGenerationFiles(load);
+				// The project layer loads second, so a refusal there read the global one first.
+				const global =
+					error.module === layers.project && (yield* present(layers.global)) ? [layers.global] : [];
+				return yield* new ConfigLoadError({
+					module: error.module,
+					reason: error.reason,
+					files: [...new Set([...global, ...error.files, ...imported])],
+				});
+			}),
+		),
+		// A defect or an interrupt still drops the record; the refusal above already took it.
+		Effect.onError(() => Effect.sync(() => takeGenerationFiles(load))),
+	);
 	const imported = takeGenerationFiles(load);
 	const empty: TuvalConfig = {
 		version: 1,

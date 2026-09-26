@@ -48,7 +48,7 @@ import {
 	type TuvalFeatures,
 } from "./config.ts";
 import {type LaunchedProcess, launch} from "./launch/launch.ts";
-import {type ConfigRead, ConfigReloader, type ReloadError, type ReloadReport} from "./reload.ts";
+import {type ConfigRead, ConfigReloader, type ReloadRefused, type ReloadReport} from "./reload.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
 import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kernel.ts";
 import {shellId, shellPrefixTable, withShellFeatures} from "./shell/program.ts";
@@ -281,7 +281,7 @@ export interface Booted {
 	/** Every file boot read the config from, which is what a desk watches (`LoadedConfig.files`). */
 	readonly files: ReadonlyArray<string>;
 	/** The kernel's `ConfigReloader`, run once (`./reload.ts`). */
-	readonly reload: Effect.Effect<ReloadReport, ReloadError>;
+	readonly reload: Effect.Effect<ReloadReport, ReloadRefused>;
 }
 
 /** A loaded config's rows as the kernel runs them, beside where they were read from. */

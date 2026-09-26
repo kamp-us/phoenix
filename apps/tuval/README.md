@@ -413,7 +413,9 @@ reader never sees new spells beside bindings compiled against the old ones
 they keep going under the rows they were spawned from.
 
 A running desk reloads when you save its config, or any file the config imports by path, and
-`config:reload` reloads on demand (`src/config-watch.ts`). Each reload reads your edited files as
+`config:reload` reloads on demand (`src/config-watch.ts`). A save that lands while a reload runs
+reloads again once it finishes. A refused reload leaves the desk as it was and also watches the
+files the refused config imported, so fixing the file that broke it reloads. Each reload reads your edited files as
 they stand now rather than the copies Node cached, while packages stay the one copy the desk
 loaded (`src/module-generations.ts`). The old copies stay in memory until the desk restarts.
 

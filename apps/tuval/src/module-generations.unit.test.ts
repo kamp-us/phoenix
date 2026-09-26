@@ -23,9 +23,20 @@ afterEach(() => {
 });
 
 interface Read {
-	readonly ids: ReadonlyArray<string>;
+	/** Absent on a refused load, which carries `refused` instead. */
+	readonly ids?: ReadonlyArray<string>;
+	readonly refused?: string;
 	readonly files: ReadonlyArray<string>;
 }
+
+const runProbe = (project: string, edited: string, contents: string) => {
+	const result = spawnSync(process.execPath, [probe, project, edited, contents], {
+		encoding: "utf8",
+	});
+	expect(result.stderr).toBe("");
+	expect(result.status).toBe(0);
+	return JSON.parse(result.stdout) as {readonly before: Read; readonly after: Read};
+};
 
 /** A project whose config imports a program file, which imports a second file one level down. */
 const authoredProject = () => {
@@ -54,23 +65,33 @@ describe("a config read again in the same process", () => {
 		"runs the edited code of a module the config imports, not Node's cached copy",
 		() => {
 			const {project, config, program, word} = authoredProject();
-			const result = spawnSync(
-				process.execPath,
-				[probe, project, word, 'export const word: string = "second";\n'],
-				{encoding: "utf8"},
-			);
-			expect(result.stderr).toBe("");
-			expect(result.status).toBe(0);
-			const {before, after} = JSON.parse(result.stdout) as {
-				readonly before: Read;
-				readonly after: Read;
-			};
+			const {before, after} = runProbe(project, word, 'export const word: string = "second";\n');
 
 			expect(before.ids).toEqual(["greeting-first"]);
 			expect(after.ids).toEqual(["greeting-second"]);
 			// The files a desk watches: the config and everything it imports by path, on both reads.
 			expect(before.files).toEqual([config, program, word]);
 			expect(after.files).toEqual([config, program, word]);
+		},
+		SPAWN_MS,
+	);
+
+	it(
+		"names a newly imported file that refused the load among the files the refused load read",
+		() => {
+			const {project, config, program, word} = authoredProject();
+			const broken = join(project, "programs", "broken.ts");
+			writeFileSync(broken, 'throw new Error("broken at import time");\n');
+			const {before, after} = runProbe(
+				project,
+				program,
+				'import {word} from "./word.ts";\nimport "./broken.ts";\nexport const greeting: string = "greeting-" + word;\n',
+			);
+
+			expect(before.files).toEqual([config, program, word]);
+			expect(after.ids).toBeUndefined();
+			expect(after.refused).toContain("broken at import time");
+			expect([...after.files].sort()).toEqual([config, broken, program, word].sort());
 		},
 		SPAWN_MS,
 	);

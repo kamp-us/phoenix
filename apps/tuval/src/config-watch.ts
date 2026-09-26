@@ -8,18 +8,24 @@
  * over the old one leaves a watch on the old file watching nothing. A burst of events from one save
  * is one reload, after the directory has been quiet for `quiet`.
  *
- * A refused reload keeps the previous set. The desk stays on the generation it was running, and the
- * author's next save of the file that broke it is still seen.
+ * A save is a file whose modification time moved past the stamp the watcher holds for it, and a
+ * file's stamp is taken before the reload that reads it. So a save that lands while a reload runs,
+ * whose event fired when no watch was armed, still differs from its stamp, and the next watch's
+ * sweep reloads again.
+ *
+ * A refused reload keeps the previous set and adds every file the refused read imported
+ * (`ReloadRefused.files`). The desk stays on the generation it was running, and the author's next
+ * save of the file that broke it is seen, including a file only the refused config imports.
  */
 
 import {basename, dirname, join} from "node:path";
 import {Console, Duration, Effect, FileSystem, Option, Stream} from "effect";
-import type {ReloadError, ReloadReport} from "./reload.ts";
+import type {ReloadRefused, ReloadReport} from "./reload.ts";
 
 export interface WatchConfigOptions {
 	/** The files the running generation was read from. */
 	readonly files: ReadonlyArray<string>;
-	readonly reload: Effect.Effect<ReloadReport, ReloadError>;
+	readonly reload: Effect.Effect<ReloadReport, ReloadRefused>;
 	/** How long a directory has to be quiet before a save counts. Defaults to 100 ms. */
 	readonly quiet?: Duration.Input;
 }
@@ -31,30 +37,53 @@ const modifiedAt = (fs: FileSystem.FileSystem, path: string) =>
 		Effect.orElseSucceed(() => undefined),
 	);
 
+/** Each file beside its modification time when it was stamped, `undefined` when it was absent. */
+type Stamps = ReadonlyMap<string, number | undefined>;
+
+const stampAll = (fs: FileSystem.FileSystem, files: Iterable<string>) =>
+	Effect.map(
+		Effect.forEach(files, (file) => Effect.map(modifiedAt(fs, file), (at) => [file, at] as const), {
+			concurrency: "unbounded",
+		}),
+		(entries): Stamps => new Map(entries),
+	);
+
 /**
- * Resolves on the first save of any of `files` once their directories have gone quiet. A save is an
- * event whose file's modification time moved since the watch began: FSEvents on macOS can replay a
- * write from just before the watch was armed, and a replay is not a save.
+ * `files`, each keeping the stamp `before` holds for it. A file `before` never held is one the
+ * reload read for the first time, and it is stamped now.
  */
-const nextSave = (fs: FileSystem.FileSystem, files: ReadonlyArray<string>, quiet: Duration.Input) =>
+const restamp = (fs: FileSystem.FileSystem, before: Stamps, files: ReadonlyArray<string>) =>
+	Effect.map(
+		stampAll(
+			fs,
+			files.filter((file) => !before.has(file)),
+		),
+		(fresh): Stamps =>
+			new Map(files.map((file) => [file, before.has(file) ? before.get(file) : fresh.get(file)])),
+	);
+
+/**
+ * Resolves on the first save of any stamped file once its directory has gone quiet. Watch events
+ * are one way to notice a save, and one sweep of every file, once the watches have had `quiet` to
+ * arm, is the other: it finds a save that landed before the watch existed. Comparing against the
+ * stamp also drops FSEvents on macOS replaying a write from just before the watch was armed.
+ */
+const nextSave = (fs: FileSystem.FileSystem, stamps: Stamps, quiet: Duration.Input) =>
 	Effect.gen(function* () {
 		// A desk booted from no config module has nothing to save; an empty merge would end at once.
-		if (files.length === 0) return yield* Effect.never;
-		const armedAt = new Map(
-			yield* Effect.forEach(files, (file) =>
-				Effect.map(modifiedAt(fs, file), (at) => [file, at] as const),
-			),
-		);
+		if (stamps.size === 0) return yield* Effect.never;
+		const files = [...stamps.keys()];
 		const directories = [...new Set(files.map(dirname))];
-		yield* Stream.mergeAll(
-			directories.map((directory) =>
-				fs.watch(directory).pipe(Stream.map((event) => join(directory, basename(event.path)))),
-			),
-			{concurrency: "unbounded"},
-		).pipe(
+		const events = directories.map((directory) =>
+			fs.watch(directory).pipe(Stream.map((event) => join(directory, basename(event.path)))),
+		);
+		const sweep = Stream.fromEffect(Effect.sleep(quiet)).pipe(
+			Stream.flatMap(() => Stream.fromIterable(files)),
+		);
+		yield* Stream.mergeAll([...events, sweep], {concurrency: "unbounded"}).pipe(
 			Stream.filterEffect((path) =>
-				armedAt.has(path)
-					? Effect.map(modifiedAt(fs, path), (at) => at !== armedAt.get(path))
+				stamps.has(path)
+					? Effect.map(modifiedAt(fs, path), (at) => at !== stamps.get(path))
 					: Effect.succeed(false),
 			),
 			Stream.debounce(quiet),
@@ -70,18 +99,23 @@ export const watchConfig = Effect.fn("Tuval.watchConfig")(function* ({
 	quiet = Duration.millis(100),
 }: WatchConfigOptions) {
 	const fs = yield* FileSystem.FileSystem;
-	let current = files;
+	let stamps = yield* stampAll(fs, files);
 	while (true) {
-		yield* nextSave(fs, current, quiet);
-		current = yield* reload.pipe(
+		yield* nextSave(fs, stamps, quiet);
+		const current = [...stamps.keys()];
+		const before = yield* stampAll(fs, current);
+		const next = yield* reload.pipe(
 			Effect.matchEffect({
 				onSuccess: (report) =>
 					Console.log(
 						`tuval: config reloaded — ${report.spellCount} spell(s), ${report.notified} process(es) told, ${report.files.length} file(s) watched`,
 					).pipe(Effect.as(report.files)),
-				onFailure: (error) =>
-					Console.error(`tuval: config reload refused — ${error.message}`).pipe(Effect.as(current)),
+				onFailure: (refused) =>
+					Console.error(`tuval: config reload refused — ${refused.message}`).pipe(
+						Effect.as([...new Set([...current, ...refused.files])]),
+					),
 			}),
 		);
+		stamps = yield* restamp(fs, before, next);
 	}
 });

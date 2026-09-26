@@ -357,4 +357,12 @@ describe("loadLayeredConfig", () => {
 			assert.strictEqual(error.module, fixture("throws"));
 		}),
 	);
+
+	it.effect("names the layers a refused load read, the refusing one among them", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(layered(fixture("two-rows"), fixture("throws")));
+			assert.strictEqual(error.module, fixture("throws"));
+			assert.includeMembers([...error.files], [fixture("two-rows"), fixture("throws")]);
+		}),
+	);
 });
