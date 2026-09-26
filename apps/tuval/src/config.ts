@@ -1,8 +1,10 @@
 /**
- * The user-owned config's fail-closed module loader and the two-layer merge — a global module
- * under the home dir's `.tuval` and an optional project module under the cwd's `.tuval`, project
- * over global. The shape a module decodes against is the SDK's (`@kampus/tuval-sdk/config`),
- * because a config is written against it outside this app.
+ * The user-owned config's fail-closed module loader and the three-layer merge — the desk's own
+ * layer, then a global module under the home dir's `.tuval`, then an optional project module under
+ * the cwd's `.tuval`, project over global. The desk layer is code, not a file: it carries the rows
+ * and graph nodes the desk supplies itself (its shell, #9683), and a file layer that declares one of
+ * their ids is refused rather than merged. The shape a module decodes against is the SDK's
+ * (`@kampus/tuval-sdk/config`), because a config is written against it outside this app.
  *
  * Configuration is code the user owns (the Neovim model, #7484 R1.1): a TypeScript module whose
  * default export is a `{version: 1, programs, features?, graph?, keys?}` config. Loading refuses on any defect the
@@ -100,7 +102,21 @@ export const loadConfigModule = Effect.fn("Tuval.loadConfigModule")(function* (
 	);
 });
 
+/**
+ * The rows and graph nodes the desk supplies itself, below every config file. No file layer may
+ * declare one of their ids: a stale config still carrying the shell row would otherwise replace the
+ * desk's own, or run beside it once project rows stop replacing by id.
+ */
+export interface DeskLayer {
+	/** The module that built these rows, which is where a desk row's module renderer resolves from. */
+	readonly origin: string;
+	readonly programs: ReadonlyArray<AnyProgram>;
+	readonly graph: Graph;
+}
+
 export interface ConfigLayers {
+	/** The desk's own layer, read first. */
+	readonly desk: DeskLayer;
 	/** The global module: `<home>/.tuval/tuval.config.ts` unless the bin's `--config` names one. */
 	readonly global: string;
 	/** The project module: `<project>/.tuval/tuval.config.ts`. */
@@ -108,6 +124,7 @@ export interface ConfigLayers {
 }
 
 export interface LoadedConfig {
+	/** The desk's rows first, then the file layers' rows merged project over global. */
 	readonly programs: ReadonlyArray<unknown>;
 	/** The merged flags, project over global — one flag at a time, not one block replacing another. */
 	readonly features: TuvalFeatures;
@@ -166,19 +183,56 @@ const present = Effect.fn("Tuval.present")(function* (modulePath: string) {
 	return yield* fs.exists(modulePath).pipe(Effect.orElseSucceed(() => false));
 });
 
-const loadOptional = Effect.fn("Tuval.loadOptional")(function* (modulePath: string, load: number) {
-	return (yield* present(modulePath))
-		? Option.some(yield* loadConfigModule(modulePath, load))
-		: Option.none<TuvalConfig>();
+/** Why a file layer may not stand over the desk: the first desk row or node id it redeclares. */
+const deskConflict = (desk: DeskLayer, config: TuvalConfig): Option.Option<string> => {
+	const rows = new Set<string>(desk.programs.map(rowId));
+	const nodes = new Set<string>(desk.graph.nodes.map((node) => node.id));
+	const row = config.programs.map(rowId).find((id) => rows.has(id));
+	if (row !== undefined) {
+		return Option.some(
+			`declares program row "${row}", which the desk supplies itself; remove the row and its graph node`,
+		);
+	}
+	const node = config.graph.nodes.find((candidate) => nodes.has(candidate.id));
+	return node === undefined
+		? Option.none()
+		: Option.some(
+				`declares graph node "${node.id}", which the desk supplies itself; remove the node`,
+			);
+};
+
+const loadOptional = Effect.fn("Tuval.loadOptional")(function* (
+	modulePath: string,
+	load: number,
+	desk: DeskLayer,
+) {
+	if (!(yield* present(modulePath))) return Option.none<TuvalConfig>();
+	const config = yield* loadConfigModule(modulePath, load);
+	const conflict = deskConflict(desk, config);
+	if (Option.isSome(conflict)) {
+		return yield* new ConfigLoadError({
+			module: modulePath,
+			reason: conflict.value,
+			files: [modulePath],
+		});
+	}
+	return Option.some(config);
 });
 
-/** Both layers, absent ones empty, merged project-over-global by program id and node id. */
+/**
+ * The desk layer, then both file layers, absent ones empty. The file layers merge project over
+ * global by program id and node id; the desk's rows and nodes come first and no file may redeclare
+ * them.
+ */
 export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* (
 	layers: ConfigLayers,
 ) {
 	const load = nextGeneration();
 	const [global, project] = yield* Effect.all(
-		[loadOptional(layers.global, load), loadOptional(layers.project, load)],
+		[
+			loadOptional(layers.global, load, layers.desk),
+			loadOptional(layers.project, load, layers.desk),
+		],
 		{concurrency: 1},
 	).pipe(
 		Effect.catch((error) =>
@@ -214,18 +268,24 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 	// Merged as declared rows rather than as bare rows: the merge is the last place a row and its
 	// layer module are still together, and a project row that replaces a global one by id has to come
 	// out carrying the project module as its origin.
-	const declared = mergeById(
-		declaredIn(base, layers.global),
-		declaredIn(over, layers.project),
-		(program) => rowId(program.row),
-	);
+	const declared = [
+		...layers.desk.programs.map((row) => ({row, origin: layers.desk.origin})),
+		...mergeById(declaredIn(base, layers.global), declaredIn(over, layers.project), (program) =>
+			rowId(program.row),
+		),
+	];
 	return {
 		// Widened back: the loader checked each row's id and nothing else, and that is all a caller
 		// may assume of one.
 		programs: declared.map((program): unknown => program.row),
 		features: {...featuresDefault, ...base.features, ...over.features},
 		moduleRenderers: moduleRendererRefs(declared),
-		graph: {nodes: mergeById(base.graph.nodes, over.graph.nodes, (node) => node.id)},
+		graph: {
+			nodes: [
+				...layers.desk.graph.nodes,
+				...mergeById(base.graph.nodes, over.graph.nodes, (node) => node.id),
+			],
+		},
 		keys: [
 			...(Option.isSome(global) ? [bindingSource("global", layers.global, base.keys)] : []),
 			...(Option.isSome(project) ? [bindingSource("project", layers.project, over.keys)] : []),

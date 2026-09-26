@@ -13,6 +13,7 @@ import {join} from "node:path";
 import {NodeFileSystem} from "@effect/platform-node";
 import {Effect} from "effect";
 import {loadLayeredConfig} from "./config.ts";
+import {noDesk} from "./config-fixtures/desk-layers.ts";
 
 const [project, edited, contents] = process.argv.slice(2);
 if (project === undefined || edited === undefined || contents === undefined) {
@@ -20,6 +21,7 @@ if (project === undefined || edited === undefined || contents === undefined) {
 }
 
 const read = loadLayeredConfig({
+	desk: noDesk,
 	global: join(project, "no-global-layer.ts"),
 	project: join(project, ".tuval", "tuval.config.ts"),
 }).pipe(

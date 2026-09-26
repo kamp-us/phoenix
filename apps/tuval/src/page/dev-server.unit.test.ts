@@ -16,6 +16,7 @@ import {
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {loadLayeredConfig} from "../config.ts";
+import {noDesk} from "../config-fixtures/desk-layers.ts";
 import {
 	featuresSource,
 	moduleRenderersSource,
@@ -65,7 +66,7 @@ describe("the feature-flag module", () => {
 
 	const generated = (global: string, project: string) =>
 		Effect.runPromise(
-			loadLayeredConfig({global: fixture(global), project: fixture(project)}).pipe(
+			loadLayeredConfig({desk: noDesk, global: fixture(global), project: fixture(project)}).pipe(
 				Effect.map((config) => featuresSource(config.features)),
 				Effect.provide(NodeFileSystem.layer),
 			),

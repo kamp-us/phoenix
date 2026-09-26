@@ -6,6 +6,7 @@ import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
 import {ConfigLoadError, DeclaredFeatures, loadConfigModule, loadLayeredConfig} from "./config.ts";
+import {fixtureDesk, noDesk} from "./config-fixtures/desk-layers.ts";
 
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));
@@ -19,8 +20,8 @@ const refusal = (name: string) =>
 		return error;
 	});
 
-const layered = (global: string, project: string) =>
-	loadLayeredConfig({global, project}).pipe(Effect.provide(NodeFileSystem.layer));
+const layered = (global: string, project: string, desk = noDesk) =>
+	loadLayeredConfig({desk, global, project}).pipe(Effect.provide(NodeFileSystem.layer));
 
 describe("loadConfigModule", () => {
 	it.effect(
@@ -349,12 +350,85 @@ describe("loadLayeredConfig", () => {
 	it.effect("still refuses a layer that exists and is broken", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
-				loadLayeredConfig({global: fixture("throws"), project: fixture("two-rows")}).pipe(
-					Effect.provide(NodeFileSystem.layer),
-				),
+				loadLayeredConfig({
+					desk: noDesk,
+					global: fixture("throws"),
+					project: fixture("two-rows"),
+				}).pipe(Effect.provide(NodeFileSystem.layer)),
 			);
 			assert.instanceOf(error, ConfigLoadError);
 			assert.strictEqual(error.module, fixture("throws"));
+		}),
+	);
+
+	it.effect(
+		"reads desk, then global, then project: the desk's rows and nodes first, then the file layers",
+		() =>
+			Effect.gen(function* () {
+				const config = yield* layered(
+					fixture("global-layer"),
+					fixture("project-layer"),
+					fixtureDesk,
+				);
+				assert.deepStrictEqual(config.programs, [
+					{id: "desk"},
+					{id: "a"},
+					{id: "b", core: "project"},
+				]);
+				assert.deepStrictEqual(config.graph.nodes, [
+					{id: NodeId.make("desk"), program: ProgramId.make("desk"), on: []},
+					{id: NodeId.make("n"), program: ProgramId.make("b"), on: []},
+					{id: NodeId.make("m"), program: ProgramId.make("a"), on: []},
+				]);
+				// The desk is code, not a file: it is neither a source nor a watched file.
+				assert.deepStrictEqual(config.sources, [fixture("global-layer"), fixture("project-layer")]);
+			}),
+	);
+
+	it.effect("supplies the desk's rows when no file layer exists at all", () =>
+		Effect.gen(function* () {
+			const missing = fixture("does-not-exist");
+			const config = yield* layered(missing, missing, fixtureDesk);
+			assert.deepStrictEqual(config.programs, [{id: "desk"}]);
+			assert.deepStrictEqual(config.graph.nodes, fixtureDesk.graph.nodes);
+			assert.deepStrictEqual(config.sources, []);
+		}),
+	);
+
+	it.effect(
+		"refuses a global or project layer that declares a desk row, naming the file and the desk",
+		() =>
+			Effect.gen(function* () {
+				const missing = fixture("does-not-exist");
+				const stale = fixture("redeclares-desk-row");
+				for (const [global, project] of [
+					[stale, missing],
+					[missing, stale],
+				] as const) {
+					const error = yield* Effect.flip(layered(global, project, fixtureDesk));
+					assert.instanceOf(error, ConfigLoadError);
+					assert.strictEqual(error.module, stale);
+					assert.strictEqual(
+						error.reason,
+						'declares program row "desk", which the desk supplies itself; remove the row and its graph node',
+					);
+					assert.include(error.message, stale);
+					assert.include([...error.files], stale);
+				}
+			}),
+	);
+
+	it.effect("refuses a layer that declares a desk graph node under a row of its own", () =>
+		Effect.gen(function* () {
+			const stale = fixture("redeclares-desk-node");
+			const error = yield* Effect.flip(layered(fixture("two-rows"), stale, fixtureDesk));
+			assert.strictEqual(error.module, stale);
+			assert.strictEqual(
+				error.reason,
+				'declares graph node "desk", which the desk supplies itself; remove the node',
+			);
+			// The global layer loaded first and passed, so the refusal names it among the files read.
+			assert.includeMembers([...error.files], [fixture("two-rows"), stale]);
 		}),
 	);
 

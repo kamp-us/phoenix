@@ -1,16 +1,16 @@
 // This project's Tuval config. This file is yours: boot loads it over your global
 // ~/.tuval/tuval.config.ts, registers every program row in `programs`, and launches `graph`. A row
-// is a `Program` (the SDK's src/registry/program.ts); the nine in the box today are the shell (#7558), the
-// demo counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the
-// agy chat session (#8184), the codex chat session (#8600), the AI-agent session list (#8102) and
-// the module-window demo (#8946). One more row sits behind a flag in the `features` block below,
-// default-off, so a desk booted today carries the nine: the worked `pr-review` example (#8734)
+// is a `Program` (the SDK's src/registry/program.ts); the eight in the box today are the demo
+// counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the agy
+// chat session (#8184), the codex chat session (#8600), the AI-agent session list (#8102) and the
+// module-window demo (#8946). One more row sits behind a flag in the `features` block below,
+// default-off, so a desk booted today carries the eight: the worked `pr-review` example (#8734)
 // behind `prReviewExample`. Flip that line and restart the desk to get the row, its graph node and
 // its spells.
 // The shape is `TuvalConfigInput` (`@kampus/tuval-sdk/config`), version 1.
 //
-// The shell is registered here and nowhere else — it is a program row like any other, so dropping
-// its row and its graph node is how you boot without a desk.
+// The shell is not declared here: the desk supplies it below every config file (#9683), and a
+// config that declares a row or node with the shell's id is refused at load.
 //
 // No session is planned in `graph`, and that is the point: each row's layer stands a real agent up
 // when a process spawns — Pi's model runtime, Claude's `claude` CLI, agy's `agy` CLI, codex's
@@ -39,13 +39,10 @@ import {
 	type Scope as SpellScope,
 	WorkspaceId,
 } from "@kampus/tuval-sdk/kernel/commands/spell";
-import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Console} from "effect";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
 import {moduleCounter} from "../src/demo/module-counter.ts";
 import {prReview} from "../src/example/pr-review.ts";
-import {wiredShellEffects} from "../src/shell/host/index.ts";
-import {shellGraphNode, shellNode, shellProgram} from "../src/shell/program.ts";
 
 const projectRoot = projectRootOf(import.meta.url);
 
@@ -80,8 +77,6 @@ const features = {prReviewExample: false};
 export default {
 	version: 1,
 	programs: [
-		// The shell is spawned at its graph node's id, so that is the process the picker opens under.
-		shellProgram({effects: wiredShellEffects({shellProcessId: ProcessId.make(shellNode)})}),
 		...demoPrograms({everyMs: 1000, write: (line) => Console.log(line)}),
 		// The model is named rather than left to Pi's default so a fresh clone opens the session the
 		// founder actually runs; swap it for any id your `~/.pi` catalog carries.
@@ -112,6 +107,6 @@ export default {
 	],
 	features,
 	graph: {
-		nodes: [shellGraphNode, ...demoGraph.nodes],
+		nodes: demoGraph.nodes,
 	},
 } satisfies TuvalConfigInput;

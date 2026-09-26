@@ -657,8 +657,8 @@ defect for the first caller. The layer lives in its own module rather than besid
 page's boundary test walks the runtime import graph from `src/page/main.tsx` and refuses any
 `node:` specifier, so the split is proven rather than remembered (#7910).
 
-`dispatch` fails typed rather than dying, because a desk is a process: a config that registers the
-shell row but plans no node for it answers `NoDesk`, and a desk that stopped mid-call answers the
+`dispatch` fails typed rather than dying, because a desk is a process: a `start` caller that hands
+rows without the shell answers `NoDesk`, and a desk that stopped mid-call answers the
 process's own `DispatchError`. Either way the executor turns it into a `SpellReplyError`, so `help`,
 a typed line and an agent's bridge all read a refusal instead of meeting a defect. The proof is
 [`src/shell/proof/dispatch.unit.test.ts`](../apps/tuval/src/shell/proof/dispatch.unit.test.ts),

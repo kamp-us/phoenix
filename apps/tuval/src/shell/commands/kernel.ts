@@ -26,7 +26,7 @@ import {NoDesk, ShellDispatch} from "./dispatch.ts";
  * The row is resolved per dispatch rather than at layer build, because the kernel is built before
  * any process exists and a desk can be stopped and spawned again under the same program id.
  * `program` is a parameter so this module stays a layer over the process table and nothing else:
- * boot names the shell row's id, and a boot whose config registered no shell row answers `NoDesk`.
+ * boot names the shell row's id, and a `start` handed rows without a shell row answers `NoDesk`.
  */
 export const shellDispatchKernel = (
 	program: ProgramId,
@@ -73,7 +73,7 @@ const placementOf = (state: ShellState, window: WindowId): WindowPlacement | und
  *
  * A window bound to a process the table no longer holds resolves to its workspace and no process
  * rather than failing: the desk keeps such a window as a placeholder (`windowBindings`), so the
- * scope a spell sees has to say the same thing. A boot whose config registered no shell row has no
+ * scope a spell sees has to say the same thing. A `start` handed rows without a shell row has no
  * state to read, which is `NoSuchWindow` for every window — the index's shape of `NoDesk`.
  */
 export const shellWindowIndexKernel = (
