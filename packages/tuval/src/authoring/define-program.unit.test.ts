@@ -319,6 +319,7 @@ describe("authoring.defineProgram", () => {
 							halted.push(id);
 						}),
 					handle: () => Effect.succeed(Option.none<ProcessHandle>()),
+					swap: () => Effect.die("an authored `stop` swaps nothing"),
 				});
 
 				const events = yield* runEffect(counter, stop(child)).pipe(

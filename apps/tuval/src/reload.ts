@@ -1,7 +1,10 @@
 /**
  * A config reload: read the config again, swap the spell registry and key bindings in one write,
- * and hand every live process the Msgs its own row says the re-read config means for it
- * (`registry/program.ts`'s `configChanged`, #7509 ruling 3).
+ * then bring every live process up to the rows it just read. Running processes move to the new code
+ * and keep their state: a process whose row's code changed is switched onto the reloaded row under
+ * the same id (#9820, the founder's ruling recorded on that issue). Every process is then handed the
+ * Msgs its own row says the re-read config means for it (`registry/program.ts`'s `configChanged`,
+ * #7509 ruling 3).
  *
  * It sits beside `boot.ts` rather than in either slice because it is the one place the two
  * generations of program rows meet: the reloader holds the config it just read, and the processes
@@ -9,17 +12,18 @@
  * the boot generation after any number of reloads, which is exactly why the running generation is
  * carried in the reloader's own `Ref` instead.
  *
- * A dispatch that fails is logged and the walk goes on: a reload is a read of the config, and one
- * process refusing a Msg must not turn it into a refusal of the whole re-read.
+ * A swap or dispatch that fails is logged and the walk goes on: a reload is a read of the config,
+ * and one process refusing it must not turn it into a refusal of the whole re-read.
  */
 
 import type {BindingError, BindingSource} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
 import {DuplicateSpellPath, SpellNotDescribable} from "@kampus/tuval-sdk/kernel/commands/errors";
 import type {AnySpell} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
-import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {Processes, type SwapOutcome} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
-import type {Message} from "@kampus/tuval-sdk/kernel/process/process";
+import type {Message, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProcessSelf} from "@kampus/tuval-sdk/kernel/process/self";
 import type {AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Context, Effect, Layer, Option, Ref, Schema, Semaphore} from "effect";
 import {ConfigLoadError} from "./config.ts";
@@ -27,24 +31,103 @@ import {ConfigLoadError} from "./config.ts";
 const byId = (rows: ReadonlyArray<AnyProgram>): ReadonlyMap<ProgramId, AnyProgram> =>
 	new Map(rows.map((row) => [row.id, row]));
 
+const sourceOf = (value: unknown, seen: Set<object>): string => {
+	if (typeof value === "function") return value.toString();
+	// A primitive leaf is part of the row's text too: the version, and every migration's `to`.
+	if (typeof value !== "object" || value === null) return `${typeof value}:${String(value)}`;
+	if (seen.has(value)) return "";
+	seen.add(value);
+	return Object.entries(value)
+		.map(([key, field]) => `${key}(${sourceOf(field, seen)})`)
+		.join();
+};
+
 /**
- * Answers how many live processes were handed a change, which is what `ReloadReport` carries: a
- * reload that moved no row a process is running under answers zero.
+ * The source text of everything on a row that runs, beside the version its state is written under.
+ * Every module the config imports by path is evaluated again on each read, so a row's functions are
+ * new objects whether or not anyone edited them; their text is what an edit moves. A value a
+ * function closes over is config rather than code, and reaches a running process through
+ * `configChanged`. An edit confined to a helper the row's functions call does not show here.
  */
-export const dispatchConfigChanged = (
+export const codeOf = (row: AnyProgram): string =>
+	sourceOf(
+		[
+			row.identity.version,
+			row.core,
+			row.handlers,
+			row.subs,
+			row.receive,
+			row.resume,
+			row.derivedLines,
+			row.configChanged,
+			row.restorable,
+			row.migrations,
+			row.checkpointWorthy,
+		],
+		new Set(),
+	);
+
+/** What a reload did to the live processes, which `ReloadReport` carries. */
+export interface Applied {
+	readonly notified: number;
+	readonly switched: ReadonlyArray<ProcessId>;
+	readonly restoreRefused: ReadonlyArray<ProcessId>;
+	readonly pending: ReadonlyArray<ProcessId>;
+}
+
+const swapLine = (id: ProcessId, outcome: SwapOutcome): string =>
+	outcome === "switched"
+		? `tuval: process "${id}" switched to its reloaded code`
+		: `tuval: process "${id}" switched to its reloaded code, which refused its state`;
+
+/**
+ * Brings every live process up to the reloaded rows: a changed row's processes are switched onto
+ * it, then every process is handed its row's `configChanged` Msgs. A process whose row the reloaded
+ * config dropped is left running and untold.
+ */
+export const applyReload = (
 	previous: ReadonlyArray<AnyProgram>,
 	next: ReadonlyArray<AnyProgram>,
-): Effect.Effect<number, never, ProcessTable | Processes> =>
+): Effect.Effect<Applied, never, ProcessTable | Processes> =>
 	Effect.gen(function* () {
 		const table = yield* ProcessTable;
 		const processes = yield* Processes;
+		// The process whose own handler is running this reload, when a key asked for it.
+		const self = yield* Effect.serviceOption(ProcessSelf);
 		const running = byId(previous);
 		const reloaded = byId(next);
 		let notified = 0;
+		const switched: Array<ProcessId> = [];
+		const restoreRefused: Array<ProcessId> = [];
+		const pending: Array<ProcessId> = [];
 		for (const row of yield* table.list) {
 			const spawnedFrom = running.get(row.programId);
 			const replacement = reloaded.get(row.programId);
-			if (spawnedFrom?.configChanged === undefined || replacement === undefined) continue;
+			if (spawnedFrom === undefined || replacement === undefined) continue;
+			if (codeOf(spawnedFrom) !== codeOf(replacement)) {
+				const swap = processes.swap(row.id, replacement);
+				if (Option.isSome(self) && self.value.id === row.id) {
+					// A swap waits for the fold in flight, and here that fold is the one running this
+					// reload: it goes after the fold, on the process's own Scope, and logs for itself.
+					yield* Effect.forkIn(
+						swap.pipe(
+							Effect.flatMap((outcome) => Effect.logInfo(swapLine(row.id, outcome))),
+							Effect.catch((error) => Effect.logError(error)),
+						),
+						self.value.scope,
+					);
+					pending.push(row.id);
+				} else {
+					const outcome = yield* swap.pipe(
+						Effect.map(Option.some),
+						Effect.catch((error) => Effect.as(Effect.logError(error), Option.none())),
+					);
+					if (Option.isSome(outcome)) {
+						(outcome.value === "switched" ? switched : restoreRefused).push(row.id);
+					}
+				}
+			}
+			if (spawnedFrom.configChanged === undefined) continue;
 			const messages = spawnedFrom.configChanged(replacement) as ReadonlyArray<Message>;
 			if (messages.length === 0) continue;
 			const handle = yield* processes.handle(row.id);
@@ -57,8 +140,8 @@ export const dispatchConfigChanged = (
 			}).pipe(Effect.catch((error) => Effect.logError(error)));
 			notified += 1;
 		}
-		return notified;
-	}).pipe(Effect.withSpan("Tuval.reload.dispatchConfigChanged"));
+		return {notified, switched, restoreRefused, pending} satisfies Applied;
+	}).pipe(Effect.withSpan("Tuval.reload.applyReload"));
 
 /** One read of the config, as `boot` runs it: the rows with their flags applied, and their keys. */
 export interface ConfigRead {
@@ -105,7 +188,7 @@ export class ReloadRefused extends Schema.TaggedError<ReloadRefused>()("tuval/Re
 	}
 }
 
-/** What a reload replaced, and how many running processes it told. */
+/** What a reload replaced, and what it did to the running processes. */
 export interface ReloadReport {
 	readonly sources: ReadonlyArray<string>;
 	readonly files: ReadonlyArray<string>;
@@ -118,7 +201,32 @@ export interface ReloadReport {
 	 * all leave their processes uncounted and untouched.
 	 */
 	readonly notified: number;
+	/** Live processes now running their reloaded row's code over the state they had. */
+	readonly switched: ReadonlyArray<ProcessId>;
+	/**
+	 * Live processes moved onto their reloaded row, whose `migrations` or `restorable` refused the
+	 * state they carried: each sits in that program's own refused-restore state.
+	 */
+	readonly restoreRefused: ReadonlyArray<ProcessId>;
+	/**
+	 * The process whose own handler ran this reload, when its row changed. Its swap runs once that
+	 * handler has finished, and logs its own outcome.
+	 */
+	readonly pending: ReadonlyArray<ProcessId>;
 }
+
+/** The processes a reload moved, as the tail of the line a desk logs for it; empty when none moved. */
+export const describeSwaps = (report: ReloadReport): string =>
+	(
+		[
+			["switched", report.switched],
+			["restore refused", report.restoreRefused],
+			["switching once its own key is handled", report.pending],
+		] as const
+	)
+		.filter(([, ids]) => ids.length > 0)
+		.map(([label, ids]) => `, ${label}: ${ids.join(" ")}`)
+		.join("");
 
 export interface FromConfigOptions {
 	/** The kernel's own spells, registered beside every reloaded row's. */
@@ -130,9 +238,11 @@ export interface FromConfigOptions {
 
 /**
  * The reload as a kernel service, so the shell's `config:reload` handler reaches it like any other
- * `R`. Nothing restarts and nothing respawns: a process keeps running under the row it was spawned
- * from, and what applies live is the row's own call. Reloads run one at a time, because each swaps
- * the generation the live processes are diffed against.
+ * `R`. Running processes move to the new code and keep their state: a process whose row's code
+ * changed is switched onto the reloaded row under the same id, and one whose row did not is left
+ * running and handed only what its row's `configChanged` answers. A refused reload switches nothing,
+ * because the read and the registry swap both come first. Reloads run one at a time, because each
+ * swaps the generation the live processes are diffed against.
  */
 export class ConfigReloader extends Context.Service<
 	ConfigReloader,
@@ -157,7 +267,7 @@ export class ConfigReloader extends Context.Service<
 					yield* set
 						.reload({core, programs: next.programs, keys: next.keys})
 						.pipe(Effect.mapError((reason) => new ReloadRefused({reason, files: next.files})));
-					const notified = yield* dispatchConfigChanged(
+					const applied = yield* applyReload(
 						yield* Ref.getAndSet(generation, next.programs),
 						next.programs,
 					).pipe(Effect.provideContext(services));
@@ -168,7 +278,7 @@ export class ConfigReloader extends Context.Service<
 						spellCount: current.table.rows.length,
 						bindingCount: current.bindings.bindings.length,
 						bindingErrors: current.bindings.errors,
-						notified,
+						...applied,
 					} satisfies ReloadReport;
 				}).pipe(lock.withPermits(1), Effect.withSpan("Tuval.reload"));
 				return ConfigReloader.of({reload});
