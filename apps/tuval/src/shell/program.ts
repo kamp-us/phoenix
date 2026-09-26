@@ -144,7 +144,7 @@ export interface ShellProgramOptions<E = never, R = never> {
 
 /**
  * The one place on the boot path that names `defaultPrefixTable`. Both readers go through it — the
- * row resolving its own option, and `shellPrefixTable` reading a config's rows back — so the value
+ * row resolving its own option, and `shellPrefixTable` reading the booted rows back — so the value
  * the kernel routes over and the value the transport sends cannot be two different tables (#7890,
  * the open consequence ADR 0353 left).
  */
@@ -237,7 +237,7 @@ export const withShellFeatures = (
 	});
 
 /**
- * The key grammar a config's rows put the kernel on: the shell row's resolved table, or the same
+ * The key grammar the booted rows put the kernel on: the shell row's resolved table, or the same
  * default that row would have taken when the rows carry no shell at all (a kernel `start`ed with no
  * desk still serves a socket, and the grammar it sends a page is that default).
  *

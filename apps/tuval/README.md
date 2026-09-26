@@ -714,7 +714,8 @@ conversion, through the brand's own constructor.
 
 The core's Cmds are handed in as `effects`. This slice ships only `unwiredShellEffects`, which does
 none of them and logs each drop at debug; the set that runs them against the kernel is
-`wiredShellEffects` in `src/shell/host/`, and that is what the config registers.
+`wiredShellEffects` in `src/shell/host/`, and the desk layer (`src/desk-layer.ts`) is what registers
+it.
 
 ## Shell: the browser surface
 
