@@ -29,6 +29,7 @@ import {
 	projectConfig,
 	projectDir,
 } from "./boot.ts";
+import {ProjectId} from "./project-id.ts";
 import {shellSpells} from "./shell/commands/spells.ts";
 
 /**
@@ -208,6 +209,7 @@ describe("boot", () => {
 					bindingErrors: [],
 					stateDir: homeStateDir(project, home),
 					adopted: {moved: [], kept: [], unowned: []},
+					scoped: {moved: []},
 					// The desk's shell: the fixture plans no process of its own.
 					processCount: 1,
 					restoredCount: 0,
@@ -519,6 +521,62 @@ describe("boot", () => {
 				});
 				// The counter, and the shell the first boot checkpointed.
 				assert.strictEqual(again.report.restoredCount, 2);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it.effect(
+		"boots on checkpoints saved before project scoping, moving project rows and nodes onto scoped ids once",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				const project = projectWithConfig("planned-counter");
+				const id = ProjectId.of(project);
+				// What a build before #9684 saved: the planned node at its bare id, and an ad-hoc child
+				// of it, both running the project's `counter` row under its bare id.
+				const stateDir = homeStateDir(project, home);
+				mkdirSync(join(stateDir, "processes"), {recursive: true});
+				writeFileSync(
+					join(stateDir, "manifest.json"),
+					JSON.stringify({
+						processes: [
+							{id: "main", programId: "counter", parentId: null},
+							{id: "p-1", programId: "counter", parentId: "main"},
+						],
+					}),
+				);
+				for (const [process, count] of [
+					["main", 5],
+					["p-1", 3],
+				] as const) {
+					writeFileSync(
+						join(stateDir, "processes", `${process}.json`),
+						JSON.stringify({programId: "counter", version: "1.0.0", state: {count}}),
+					);
+				}
+				const {report} = yield* bootDirect(fixture("does-not-exist"), project, home);
+				assert.deepStrictEqual(report.scoped.moved, [
+					{from: "main", to: id.scope("main")},
+					{from: "p-1", to: "p-1"},
+				]);
+				// Both came back: the planned node at its scoped id, and its child under it.
+				assert.strictEqual(report.restoredCount, 2);
+				const manifest = JSON.parse(readFileSync(join(stateDir, "manifest.json"), "utf8"));
+				assert.deepStrictEqual(manifest.processes.slice(0, 2), [
+					{id: id.scope("main"), programId: id.scope("counter"), parentId: null},
+					{id: "p-1", programId: id.scope("counter"), parentId: id.scope("main")},
+				]);
+				assert.deepStrictEqual(
+					JSON.parse(readFileSync(join(stateDir, "processes", `${id.scope("main")}.json`), "utf8"))
+						.state,
+					{count: 5},
+				);
+				assert.isFalse(existsSync(join(stateDir, "processes", "main.json")));
+				// Once: the next boot finds the directory already scoped and restores off it.
+				const again = yield* bootDirect(fixture("does-not-exist"), project, home);
+				assert.deepStrictEqual(again.report.scoped.moved, []);
+				// The node, its child, and the shell the first boot checkpointed.
+				assert.strictEqual(again.report.restoredCount, 3);
 			}),
 		DIRECT_BOOT_MS,
 	);

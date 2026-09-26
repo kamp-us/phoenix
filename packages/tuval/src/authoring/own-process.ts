@@ -28,6 +28,7 @@ import type {Scope} from "../commands/spell.ts";
 import {ProcessTable} from "../process/ProcessTable.ts";
 import {ProcessId} from "../process/process.ts";
 import {ProgramId} from "../registry/program.ts";
+import {localId} from "../registry/scoped-id.ts";
 
 /** No process of the declaring program is running, so its in-ports are nobody's to write to yet. */
 export class NoLiveProcess extends Schema.TaggedError<NoLiveProcess>()(
@@ -65,7 +66,11 @@ export const resolveOwnProcess = Effect.fn("Tuval.Authoring.resolveOwnProcess")(
 ) {
 	const table = yield* ProcessTable;
 	const rows = yield* table.list;
-	const mine = rows.filter((row) => row.programId === program).map((row) => row.id);
+	// Matched on the local id: `program` is the id the author declared, baked in when the row was
+	// compiled, and a project's config runs that row under `<project>/<id>` (`../registry/scoped-id.ts`).
+	const mine = rows
+		.filter((row) => localId(row.programId) === localId(program))
+		.map((row) => row.id);
 	const [only] = mine;
 	if (only === undefined) return yield* new NoLiveProcess({program, port});
 	if (mine.length === 1) return only;

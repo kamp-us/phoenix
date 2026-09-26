@@ -154,8 +154,9 @@ names that address (ADR [0370](../../.decisions/0370-desk-serves-localhost-on-bo
 Open that URL and the desk is yours by keyboard: `<c-b> |` and `<c-b> -` split, `<c-b> h/j/k/l`
 walk focus, `<c-b> N` makes a workspace and `<c-b> <c-h>` / `<c-b> <c-l>` walk them, `<c-b> z`
 zooms, `<c-b> w` puts the focused window back on the picker with its process still running, and
-`<c-b> :` opens the command line — `window:open log` fills the focused window with a demo
-program. With the prefix unarmed every key belongs to the focused window's process.
+`<c-b> :` opens the command line — `window:open <program>` fills the focused window with a
+program, and an empty window's picker lists them all. With the prefix unarmed every key belongs to
+the focused window's process.
 
 Beside the shell (below), the box holds the demo counter and log (`src/demo/`, #7517): the counter
 ticks once a second and announces each count on its `ticks` out-port, the log records what arrives on
@@ -172,10 +173,22 @@ the project dir (the cwd, or `--project`). The loader reads the desk layer first
 project. The desk layer is not a file: it is the shell row and its graph node, which the desk
 supplies itself (`src/desk-layer.ts`, #9683), so your config declares only your own programs. Either
 file may be absent — an absent layer is empty, and a boot with neither, or a folder with no `.tuval`
-at all, runs the desk's shell and nothing else. The two file layers merge project-over-global: a
-program row or a graph node in the project layer replaces the global one with the same id, in place;
-the rest append. A file layer that declares the shell's row or node id is refused at load, naming
-the file and saying the desk supplies it.
+at all, runs the desk's shell and nothing else. No layer replaces another's row (ruling #9668 R4.1,
+#9684). A global row keeps its bare id; a project row and a project graph node run as
+`<project>/<id>`, where `<project>` is the folder's state key (ADR 0402), so a project row with a
+global row's id loads beside it and a node's process id never collides with another project's. A bare
+id in the project's `graph` — a node's `program`, its `parent`, a route's target — names the
+project's own row or node when there is one and the global one otherwise. A project graph naming
+another project's id is refused at load with both ends named, and so is a global graph naming any
+project's: the global layer reaches a project only through a connection the project declares. `/` is
+reserved for that scope, so a declared id carrying one is refused. On the command line a project
+row goes by its scoped id. A file layer that declares the shell's row or node id is refused at load,
+naming the file and saying the desk supplies it.
+
+The first boot on a build with project scoping moves the checkpoints an older build saved onto the
+scoped ids: a process of a project row runs that row's scoped id, a planned node's process takes the
+node's scoped id, and a parent link follows its parent. A `scoped-ids.json` in the state directory
+records that it ran, so it runs once.
 This repo's `apps/tuval/.tuval/tuval.config.ts` is the project layer `pnpm dev` runs against. The
 checkpoints do not land beside it — they land under the home dir, which is why no repository needs
 an ignore rule for Tuval state.

@@ -6,6 +6,7 @@ import {KernelBridge} from "@kampus/tuval-sdk/kernel/ai-agent/tools/KernelBridge
 import type {SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
 import type {Scope as SpellScope} from "@kampus/tuval-sdk/kernel/commands/spell";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
+import {localId} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
 import {Layer} from "effect";
 import {CodexAiAgent} from "./CodexAiAgent.ts";
 import {
@@ -32,7 +33,7 @@ export interface CodexSessionProgram extends AiAgentProgram<SpellBridge> {
 	readonly settings: CodexSessionSettings;
 }
 const isCodexSession = (row: AnyProgram): row is CodexSessionProgram =>
-	row.id === CODEX_SESSION_PROGRAM && "settings" in row;
+	localId(row.id) === CODEX_SESSION_PROGRAM && "settings" in row;
 
 export const codexSession = (options: CodexSessionProgramOptions): CodexSessionProgram => {
 	const settings = codexSessionSettings(options.codex ?? {});

@@ -1,5 +1,7 @@
-// This project's Tuval config. This file is yours: boot loads it over your global
-// ~/.tuval/tuval.config.ts, registers every program row in `programs`, and launches `graph`. A row
+// This project's Tuval config. This file is yours: boot loads it beside your global
+// ~/.tuval/tuval.config.ts, registers every program row in `programs`, and launches `graph`. Each
+// row and graph node here runs as `<project>/<id>`, so it never replaces a global row of the same
+// id, and a bare id in `graph` names this file's row or node first and a global one second. A row
 // is a `Program` (the SDK's src/registry/program.ts); the eight in the box today are the demo
 // counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the agy
 // chat session (#8184), the codex chat session (#8600), the AI-agent session list (#8102) and the
@@ -15,9 +17,8 @@
 // No session is planned in `graph`, and that is the point: each row's layer stands a real agent up
 // when a process spawns — Pi's model runtime, Claude's `claude` CLI, agy's `agy` CLI, codex's
 // `codex` CLI — so a planned node would reach for your credentials on every boot. Open one when
-// you want one: focus an empty window and pick it, or `prefix :` then `window:open pi-session` /
-// `window:open claude-session` / `window:open agy-session` / `window:open codex-session`.
-// Either route spawns the process under the shell, and it opens in this project root, which is
+// you want one: focus an empty window and pick it, or `prefix :` then `window:open` with the row's
+// scoped id, `<project>/pi-session` and the like, since this is a project layer. Either route spawns the process under the shell, and it opens in this project root, which is
 // what `projectRootOf` reads off this module's own location.
 //
 // The Claude row names only the `scope` its three kernel tools call under — four plain ids. The
@@ -98,11 +99,12 @@ export default {
 		// verdict. Default-off, so a desk booted today is the one it was before this row existed.
 		...(features.prReviewExample ? [prReview({reviewer: codexReviewer})] : []),
 		// Windowed and, like the four sessions above, unplanned — nothing needs it running until you
-		// want to read it. Open it from the picker, or `window:open ai-agent-sessions`.
+		// want to read it. Open it from the picker, or `window:open <project>/ai-agent-sessions`.
 		sessionListProgram(),
 		// The in-tree demo of a program that ships its own window (ADR 0359, #8946): its row names a
 		// module specifier, the page imports that module itself at boot, and pressing a key in the
-		// window counts. Unplanned — `window:open module-counter`, or pick it from an empty window.
+		// window counts. Unplanned — `window:open <project>/module-counter`, or pick it from an empty
+		// window.
 		moduleCounter(),
 	],
 	features,

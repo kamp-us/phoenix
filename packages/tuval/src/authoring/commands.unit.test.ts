@@ -244,6 +244,22 @@ describe("authoring.commands", () => {
 			);
 		});
 
+		it.effect(
+			"lands on the program's process when a project runs it under a scoped id (#9684)",
+			() => {
+				const sent: Array<readonly [ProcessId, string, unknown]> = [];
+				return Effect.map(
+					Effect.provide(call(review, 8898), [
+						capturingTargets(sent),
+						liveProcesses([row("-work-alpha/main", "-work-alpha/pr-review")]),
+					]),
+					() => {
+						expect(sent).toEqual([[ProcessId.make("-work-alpha/main"), "pr", 8898]]);
+					},
+				);
+			},
+		);
+
 		it.effect("lands on the caller's own process when several are live", () => {
 			const sent: Array<readonly [ProcessId, string, unknown]> = [];
 			const mine = ProcessId.make("proc-b");

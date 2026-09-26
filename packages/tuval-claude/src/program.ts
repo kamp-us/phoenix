@@ -26,6 +26,7 @@ import type {TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index
 import type {SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
 import type {Scope as SpellScope} from "@kampus/tuval-sdk/kernel/commands/spell";
 import type {AnyProgram, CapabilityRequest} from "@kampus/tuval-sdk/kernel/registry/program";
+import {localId} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
 import {Layer} from "effect";
 import {ClaudeAiAgent} from "./agent/index.ts";
 import {
@@ -105,7 +106,7 @@ export interface ClaudeSessionProgram extends AiAgentProgram<SpellBridge> {
 }
 
 const isClaudeSessionRow = (row: AnyProgram): row is ClaudeSessionProgram =>
-	row.id === CLAUDE_SESSION_PROGRAM && "settings" in row;
+	localId(row.id) === CLAUDE_SESSION_PROGRAM && "settings" in row;
 
 export const claudeSession = (options: ClaudeSessionProgramOptions): ClaudeSessionProgram => {
 	const settings = claudeSessionSettings(options.claude ?? {});

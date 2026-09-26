@@ -5,8 +5,15 @@ import {featuresDefault} from "@kampus/tuval-sdk/kernel/features";
 import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
-import {ConfigLoadError, DeclaredFeatures, loadConfigModule, loadLayeredConfig} from "./config.ts";
+import {
+	ConfigLoadError,
+	DeclaredFeatures,
+	type LoadedConfig,
+	loadConfigModule,
+	loadLayeredConfig,
+} from "./config.ts";
 import {fixtureDesk, noDesk} from "./config-fixtures/desk-layers.ts";
+import {ProjectId} from "./project-id.ts";
 
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));
@@ -20,8 +27,13 @@ const refusal = (name: string) =>
 		return error;
 	});
 
-const layered = (global: string, project: string, desk = noDesk) =>
-	loadLayeredConfig({desk, global, project}).pipe(Effect.provide(NodeFileSystem.layer));
+/** The project a fixture project layer loads as; its key is what scopes that layer's ids. */
+const alpha = ProjectId.of("/work/alpha");
+
+const layered = (global: string, project: string, desk = noDesk, id = alpha) =>
+	loadLayeredConfig({desk, global, project: {id, module: project}}).pipe(
+		Effect.provide(NodeFileSystem.layer),
+	);
 
 describe("loadConfigModule", () => {
 	it.effect(
@@ -225,12 +237,17 @@ describe("the feature flags", () => {
 
 describe("loadLayeredConfig", () => {
 	it.effect(
-		"merges the project layer over the global one by program id and node id, global order first",
+		"keeps a global row and a same-id project row side by side, as <id> and <project>/<id>",
 		() =>
 			Effect.gen(function* () {
 				const config = yield* layered(fixture("global-layer"), fixture("project-layer"));
 				assert.deepStrictEqual(config, {
-					programs: [{id: "a"}, {id: "b", core: "project"}],
+					programs: [
+						{id: "a"},
+						{id: "b", core: "global"},
+						{id: alpha.scope("a")},
+						{id: alpha.scope("b"), core: "project"},
+					],
 					features: {
 						subagentList: true,
 						piSubagents: true,
@@ -244,8 +261,17 @@ describe("loadLayeredConfig", () => {
 					moduleRenderers: [],
 					graph: {
 						nodes: [
-							{id: NodeId.make("n"), program: ProgramId.make("b"), on: []},
-							{id: NodeId.make("m"), program: ProgramId.make("a"), on: []},
+							{id: NodeId.make("n"), program: ProgramId.make("a"), on: []},
+							{
+								id: NodeId.make(alpha.scope("n")),
+								program: ProgramId.make(alpha.scope("b")),
+								on: [],
+							},
+							{
+								id: NodeId.make(alpha.scope("m")),
+								program: ProgramId.make(alpha.scope("a")),
+								on: [],
+							},
 						],
 					},
 					keys: [
@@ -262,7 +288,7 @@ describe("loadLayeredConfig", () => {
 		Effect.gen(function* () {
 			const missing = fixture("does-not-exist");
 			assert.deepStrictEqual(yield* layered(missing, fixture("with-graph")), {
-				programs: [{id: "a"}],
+				programs: [{id: alpha.scope("a")}],
 				features: {
 					subagentList: true,
 					piSubagents: true,
@@ -274,7 +300,15 @@ describe("loadLayeredConfig", () => {
 					processRemove: false,
 				},
 				moduleRenderers: [],
-				graph: {nodes: [{id: NodeId.make("n"), program: ProgramId.make("a"), on: []}]},
+				graph: {
+					nodes: [
+						{
+							id: NodeId.make(alpha.scope("n")),
+							program: ProgramId.make(alpha.scope("a")),
+							on: [],
+						},
+					],
+				},
 				keys: [{file: `project ${layerName("with-graph")}`, bindings: {}}],
 				sources: [fixture("with-graph")],
 				files: [fixture("with-graph")],
@@ -331,7 +365,7 @@ describe("loadLayeredConfig", () => {
 	);
 
 	it.effect(
-		"names each module renderer beside the layer module that declared it, project origin winning",
+		"names each module renderer beside the layer module that declared it, first declaration winning",
 		() =>
 			Effect.gen(function* () {
 				const global = fixture("module-renderer-global");
@@ -339,9 +373,9 @@ describe("loadLayeredConfig", () => {
 				const config = yield* layered(global, project);
 				assert.deepStrictEqual(config.moduleRenderers, [
 					{ref: "@global/win/window", origin: global},
-					// Row `b` is declared in both layers; the project row replaced the global one in
-					// place, so the specifier resolves from the project config, not the global one.
-					{ref: "@shared/win/window", origin: project},
+					// Row `b` is declared in both layers and both rows load, naming one specifier. The page
+					// resolves a specifier once, from the first layer that named it.
+					{ref: "@shared/win/window", origin: global},
 					{ref: "@project/win/window", origin: project},
 				]);
 			}),
@@ -353,7 +387,7 @@ describe("loadLayeredConfig", () => {
 				loadLayeredConfig({
 					desk: noDesk,
 					global: fixture("throws"),
-					project: fixture("two-rows"),
+					project: {id: alpha, module: fixture("two-rows")},
 				}).pipe(Effect.provide(NodeFileSystem.layer)),
 			);
 			assert.instanceOf(error, ConfigLoadError);
@@ -373,13 +407,14 @@ describe("loadLayeredConfig", () => {
 				assert.deepStrictEqual(config.programs, [
 					{id: "desk"},
 					{id: "a"},
-					{id: "b", core: "project"},
+					{id: "b", core: "global"},
+					{id: alpha.scope("a")},
+					{id: alpha.scope("b"), core: "project"},
 				]);
-				assert.deepStrictEqual(config.graph.nodes, [
-					{id: NodeId.make("desk"), program: ProgramId.make("desk"), on: []},
-					{id: NodeId.make("n"), program: ProgramId.make("b"), on: []},
-					{id: NodeId.make("m"), program: ProgramId.make("a"), on: []},
-				]);
+				assert.deepStrictEqual(
+					config.graph.nodes.map((node) => node.id),
+					["desk", "n", alpha.scope("n"), alpha.scope("m")],
+				);
 				// The desk is code, not a file: it is neither a source nor a watched file.
 				assert.deepStrictEqual(config.sources, [fixture("global-layer"), fixture("project-layer")]);
 			}),
@@ -437,6 +472,102 @@ describe("loadLayeredConfig", () => {
 			const error = yield* Effect.flip(layered(fixture("two-rows"), fixture("throws")));
 			assert.strictEqual(error.module, fixture("throws"));
 			assert.includeMembers([...error.files], [fixture("two-rows"), fixture("throws")]);
+		}),
+	);
+});
+
+describe("project-scoped ids (#9684)", () => {
+	const node = (id: string) => (config: LoadedConfig) =>
+		config.graph.nodes.find((candidate) => candidate.id === id);
+
+	it.effect(
+		"resolves a project's bare connection to its own row or node first, and to the global one otherwise",
+		() =>
+			Effect.gen(function* () {
+				const config = yield* layered(fixture("scoped-global"), fixture("scoped-project"));
+				// `counter` is declared in both layers, and the project's node reaches its own.
+				// `log` and `hub` are global only, so the project's connections to them stay bare.
+				assert.deepStrictEqual(node(alpha.scope("main"))(config), {
+					id: NodeId.make(alpha.scope("main")),
+					program: ProgramId.make(alpha.scope("counter")),
+					on: [
+						{port: "out", to: {node: NodeId.make(alpha.scope("sink")), port: "in"}},
+						{port: "out", to: {node: NodeId.make("hub"), port: "in"}},
+					],
+				});
+				assert.deepStrictEqual(node(alpha.scope("sink"))(config), {
+					id: NodeId.make(alpha.scope("sink")),
+					program: ProgramId.make("log"),
+					parent: NodeId.make(alpha.scope("main")),
+					on: [],
+				});
+				// The global node of the same name still runs the global row.
+				assert.deepStrictEqual(node("main")(config), {
+					id: NodeId.make("main"),
+					program: ProgramId.make("counter"),
+					on: [],
+				});
+			}),
+	);
+
+	it.effect("gives two projects' `main` nodes two distinct process ids", () =>
+		Effect.gen(function* () {
+			const beta = ProjectId.of("/work/beta");
+			const first = yield* layered(fixture("scoped-global"), fixture("scoped-project"));
+			const second = yield* layered(
+				fixture("scoped-global"),
+				fixture("scoped-project"),
+				noDesk,
+				beta,
+			);
+			const mains = [first, second].map((config) =>
+				config.graph.nodes.map((candidate) => candidate.id).filter((id) => id.endsWith("/main")),
+			);
+			assert.deepStrictEqual(mains, [[alpha.scope("main")], [beta.scope("main")]]);
+			assert.notStrictEqual(alpha.scope("main"), beta.scope("main"));
+		}),
+	);
+
+	it.effect("refuses a project connection to another project's program, naming both ends", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(layered(fixture("scoped-global"), fixture("cross-project")));
+			assert.instanceOf(error, ConfigLoadError);
+			assert.strictEqual(error.module, fixture("cross-project"));
+			assert.strictEqual(
+				error.reason,
+				`project node "${alpha.scope("main")}" connects to "-work-beta/sink", another project's; a project connects only to its own programs and global ones`,
+			);
+		}),
+	);
+
+	it.effect("refuses a global connection into a project", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(
+				layered(fixture("global-into-project"), fixture("does-not-exist")),
+			);
+			assert.strictEqual(error.module, fixture("global-into-project"));
+			assert.strictEqual(
+				error.reason,
+				`global node "hub" connects to "${alpha.scope("counter")}", a project's; a global program reaches a project only through a connection that project's config declares`,
+			);
+		}),
+	);
+
+	it.effect("refuses a declared id carrying the scope separator, in either layer", () =>
+		Effect.gen(function* () {
+			const missing = fixture("does-not-exist");
+			const reserved = fixture("separator-row");
+			for (const [global, project] of [
+				[reserved, missing],
+				[missing, reserved],
+			] as const) {
+				const error = yield* Effect.flip(layered(global, project));
+				assert.strictEqual(error.module, reserved);
+				assert.strictEqual(
+					error.reason,
+					'declares program row "tools/counter"; "/" is reserved for project-scoped ids',
+				);
+			}
 		}),
 	);
 });
