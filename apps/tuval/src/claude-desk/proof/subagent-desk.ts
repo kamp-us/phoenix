@@ -1,6 +1,6 @@
 /**
- * The user config the subagent proof boots: the real shell row and the real `claude-session` row on
- * the **real** `ClaudeAiAgent.layer`.
+ * The user config the subagent proof boots: the real `claude-session` row on the **real**
+ * `ClaudeAiAgent.layer`, under the shell the desk supplies itself (`../../desk-layer.ts`).
  *
  * The one substitution is the SDK seam (`packages/tuval-claude/src/agent/sdk.ts`), which hands the layer a scripted `Query`
  * replaying `two-subagent-turn.json` instead of spawning the `claude` CLI. Everything downstream of
@@ -16,10 +16,7 @@ import {claudeSession, claudeSessionSettings} from "@kampus/tuval-claude";
 import {ClaudeAiAgent} from "@kampus/tuval-claude/agent";
 import {KernelBridge} from "@kampus/tuval-claude/tools";
 import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
-import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Layer} from "effect";
-import {wiredShellEffects} from "../../shell/host/index.ts";
-import {shellGraphNode, shellNode, shellProgram} from "../../shell/program.ts";
 import {PROJECT_ROOT_VAR} from "./names.ts";
 import {CAPTURE_SESSION_ID, captureHandle} from "./two-subagents.ts";
 
@@ -38,7 +35,6 @@ const settings = claudeSessionSettings({streamPartialReplies: true});
 export default {
 	version: 1,
 	programs: [
-		shellProgram({effects: wiredShellEffects({shellProcessId: ProcessId.make(shellNode)})}),
 		claudeSession({
 			cwd: root,
 			claude: {streamPartialReplies: true},
@@ -49,5 +45,4 @@ export default {
 			}).pipe(Layer.provide(KernelBridge.scripted({}))),
 		}),
 	],
-	graph: {nodes: [shellGraphNode]},
 } satisfies TuvalConfigInput;

@@ -43,10 +43,12 @@ import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Effect, FileSystem, Layer} from "effect";
 import {
 	type ConfigLoadError,
+	type DeskLayer,
 	type LoadedConfig,
 	loadLayeredConfig,
 	type TuvalFeatures,
 } from "./config.ts";
+import {deskLayer} from "./desk-layer.ts";
 import {type LaunchedProcess, launch} from "./launch/launch.ts";
 import {type ConfigRead, ConfigReloader, type ReloadRefused, type ReloadReport} from "./reload.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
@@ -165,8 +167,8 @@ export const start = Effect.fn("Tuval.start")(function* ({
 		SpawnedProcesses.layer({readTimeout: READ_TIMEOUT}),
 		// Every shell command row is registered as a spell whose `execute` needs this, and the
 		// registry erases that requirement, so the composition root is where it is owed (#7774).
-		// The desk stays a program row like any other: a config that registers no shell row leaves
-		// this dispatcher with no process to find, which is a `NoDesk` refusal, not a failed boot.
+		// `boot` always hands `start` the desk layer's shell; a caller that hands rows without one
+		// leaves this dispatcher with no process to find, which is a `NoDesk` refusal, not a failed boot.
 		shellDispatchKernel(shellId),
 	).pipe(
 		Layer.provideMerge(SpellExecutor.layer),
@@ -237,6 +239,11 @@ export interface BootOptions {
 	 * caller that names the real home dir.
 	 */
 	readonly home: string;
+	/**
+	 * The layer the desk supplies below the global config. Absent means `deskLayer`, the shell every
+	 * desk runs; a test that boots a shell with a rebound key table hands its own.
+	 */
+	readonly desk?: DeskLayer;
 }
 
 export interface BootReport {
@@ -297,7 +304,11 @@ const configRead = (config: LoadedConfig): ConfigRead => ({
 
 /** `start` from the layered config: the `pnpm dev` path. */
 export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
-	const layers = {global: options.global, project: projectConfig(options.project)};
+	const layers = {
+		desk: options.desk ?? deskLayer,
+		global: options.global,
+		project: projectConfig(options.project),
+	};
 	const config = yield* loadLayeredConfig(layers);
 	const {programs} = configRead(config);
 	const fs = yield* FileSystem.FileSystem;

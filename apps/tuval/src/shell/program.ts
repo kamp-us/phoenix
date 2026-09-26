@@ -1,6 +1,6 @@
 /**
- * The shell as one ordinary program row (#7558). There is no built-in shell: the desk is a
- * `Program` like the demo counter is, registered through the user-owned config module, spawned by
+ * The shell as one ordinary program row (#7558). The desk is a `Program` like the demo counter
+ * is, registered by the desk layer below every config file (`../desk-layer.ts`, #9683), spawned by
  * the graph as a root process, and checkpointed by the kernel's own durability. Nothing here opens
  * a store, and nothing under `src/shell/` may — the shell's desk comes back because
  * `src/durability/` brings every process back, not because the shell saves itself (#7514).
@@ -43,7 +43,7 @@ import {
 } from "./core/index.ts";
 import {windows} from "./layout/index.ts";
 
-/** The row's stable id. A founder rebinding the shell in their own config replaces this id's row. */
+/** The row's stable id, which no config file may declare: the desk layer supplies this row. */
 export const shellId = ProgramId.make("shell");
 
 /**
@@ -238,7 +238,7 @@ export const withShellFeatures = (
 
 /**
  * The key grammar a config's rows put the kernel on: the shell row's resolved table, or the same
- * default that row would have taken when the config registers no shell at all (a kernel with no
+ * default that row would have taken when the rows carry no shell at all (a kernel `start`ed with no
  * desk still serves a socket, and the grammar it sends a page is that default).
  *
  * `boot` reports this as `Booted.keyTable` and `src/bin.ts` hands that to `serveDesk`, which is
@@ -248,8 +248,8 @@ export const shellPrefixTable = (programs: ReadonlyArray<AnyProgram>): PrefixTab
 	resolveTable(programs.find(isShellRow)?.table);
 
 /**
- * The shell's node: a root — no `parent` — with no routes, because it speaks over no port. A config
- * module spreads this into its own graph, so a founder can drop the shell by dropping the node.
+ * The shell's node: a root — no `parent` — with no routes, because it speaks over no port. The desk
+ * layer plans it below every config file's graph.
  */
 export const shellGraphNode: GraphNode = {id: shellNode, program: shellId, on: []};
 

@@ -14,7 +14,8 @@ The parts below it are their own docs: the command framework is
 ## The four pieces, and who owns what
 
 ```
-.tuval/tuval.config.ts     the shell row + the demo rows + the graph        (user-owned)
+src/desk-layer.ts          the shell row + its graph node, below every file (desk-owned)
+.tuval/tuval.config.ts     the demo rows + the sessions + the graph         (user-owned)
   └─ boot / start          registry → wiring → kernel → launch → restore    (src/boot.ts)
        ├─ shell process    the desk's state; its Cmds run in src/shell/host/effects.ts
        ├─ serveDesk        one WebSocket per page                           (src/shell/host/serve.ts)
@@ -241,10 +242,10 @@ program-blind: a process's state still crosses as `unknown`.
 
 - **The grammar has one namer, and it is the shell row.** `shellProgram` resolves its `table` option
   against `defaultPrefixTable` and publishes the answer on the row it returns; `shellPrefixTable`
-  reads it back off a config's rows, `boot` reports that as `Booted.keyTable`, and `src/bin.ts`
+  reads it back off the booted rows, `boot` reports that as `Booted.keyTable`, and `src/bin.ts`
   hands that value to `serveDesk`. Before this the bin named the default itself, so a config that
   passed `shellProgram` a table put the kernel on its grammar and every page on the default, with
-  nothing failing (#7890). A new caller that needs the grammar reads it off the row the same way —
+  nothing failing (#7890). The row now comes from the desk layer, not a config file (#9683). A new caller that needs the grammar reads it off the row the same way —
   it never reaches for `defaultPrefixTable`, which is why the single namer holds.
 
 - The kernel decides what is in the catalog, and it decides with `showsInAWindow`

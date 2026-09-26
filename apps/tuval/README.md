@@ -166,11 +166,16 @@ state, the counter picks up where it left off, and `restored` counts them.
 
 ## Your config
 
-Configuration is code you own, the Neovim model, in two layers: a global module at
-`~/.tuval/tuval.config.ts` and an optional project module at `.tuval/tuval.config.ts` in the
-project dir (the cwd, or `--project`). Either may be absent — an absent layer is empty, and a
-boot with neither registers nothing. The two merge project-over-global: a program row or a graph
-node in the project layer replaces the global one with the same id, in place; the rest append.
+Configuration is code you own, the Neovim model, in two file layers over the desk's own: a global
+module at `~/.tuval/tuval.config.ts` and an optional project module at `.tuval/tuval.config.ts` in
+the project dir (the cwd, or `--project`). The loader reads the desk layer first, then global, then
+project. The desk layer is not a file: it is the shell row and its graph node, which the desk
+supplies itself (`src/desk-layer.ts`, #9683), so your config declares only your own programs. Either
+file may be absent — an absent layer is empty, and a boot with neither, or a folder with no `.tuval`
+at all, runs the desk's shell and nothing else. The two file layers merge project-over-global: a
+program row or a graph node in the project layer replaces the global one with the same id, in place;
+the rest append. A file layer that declares the shell's row or node id is refused at load, naming
+the file and saying the desk supplies it.
 This repo's `apps/tuval/.tuval/tuval.config.ts` is the project layer `pnpm dev` runs against. The
 checkpoints do not land beside it — they land under the home dir, which is why no repository needs
 an ignore rule for Tuval state.
@@ -189,17 +194,11 @@ programs and runs nothing.
 import {Console} from "effect";
 import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
-import {ProcessId} from "@kampus/tuval-sdk/authoring";
-import {wiredShellEffects} from "../src/shell/host/index.ts";
-import {shellGraphNode, shellNode, shellProgram} from "../src/shell/program.ts";
 
 export default {
 	version: 1,
-	programs: [
-		shellProgram({effects: wiredShellEffects({shellProcessId: ProcessId.make(shellNode)})}),
-		...demoPrograms({everyMs: 1000, write: (line) => Console.log(line)}),
-	],
-	graph: {nodes: [shellGraphNode, ...demoGraph.nodes]},
+	programs: demoPrograms({everyMs: 1000, write: (line) => Console.log(line)}),
+	graph: demoGraph,
 } satisfies TuvalConfigInput;
 ```
 
@@ -211,6 +210,7 @@ place and the reason:
 ```
 tuval: refusing to boot — config module /path/to/tuval.config.ts: module threw while loading: boom
 tuval: refusing to boot — config module /path/to/tuval.config.ts: not a v1 config at graph: Expected object
+tuval: refusing to boot — config module /path/to/tuval.config.ts: declares program row "shell", which the desk supplies itself; remove the row and its graph node
 ```
 
 ## The public API
@@ -686,9 +686,9 @@ Its proof binds a real loopback socket, so it runs as this app's `integration` t
 ## Shell: the shell as a program
 
 `src/shell/program.ts` is the whole of the shell's claim on the kernel: one registry row, one graph
-node. There is no built-in shell and no special path — the desk is a `Program` exactly as the demo
-counter is, registered through your own config module, and dropping its row and node is how you boot
-without one.
+node. The desk is a `Program` exactly as the demo counter is, with no special path through the
+kernel. The one thing that differs is who registers it: the desk layer (`src/desk-layer.ts`) supplies
+the row and node below every config file (#9683), and no config may declare them.
 
 ```ts
 shellProgram({effects}); // id "shell", core from src/shell/core/, no ports
