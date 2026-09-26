@@ -33,7 +33,9 @@ const byId = (rows: ReadonlyArray<AnyProgram>): ReadonlyMap<ProgramId, AnyProgra
 
 const sourceOf = (value: unknown, seen: Set<object>): string => {
 	if (typeof value === "function") return value.toString();
-	if (typeof value !== "object" || value === null || seen.has(value)) return "";
+	// A primitive leaf is part of the row's text too: the version, and every migration's `to`.
+	if (typeof value !== "object" || value === null) return `${typeof value}:${String(value)}`;
+	if (seen.has(value)) return "";
 	seen.add(value);
 	return Object.entries(value)
 		.map(([key, field]) => `${key}(${sourceOf(field, seen)})`)
