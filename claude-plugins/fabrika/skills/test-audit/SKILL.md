@@ -1,25 +1,31 @@
 ---
 name: test-audit
-description: "Invoke whenever writing, changing, reviewing, or sweeping tests. Authoring gate for new tests plus audit workflow for low-value, implementation-coupled, or duplicative tests and the test-only production seams they demand."
+description: "Gate a new test at write time, or audit and prune existing tests that are low-value, implementation-coupled or duplicative, along with the test-only production seams they keep alive. Fire it when a new test is being authored, or when an audit or prune of existing tests is explicitly asked for: \"audit these tests\", \"prune the test suite\", \"which of these tests are junk\", \"sweep the tests in <subsystem>\". Not PR review, which is `review`'s, and not mechanical test edits such as a timeout bump, a snapshot update or test config."
 ---
 
 <!--
-Adapted from OpenClaw's test-audit skill
+Adapted from OpenClaw's test-audit skill, file SKILL.md
 (https://github.com/openclaw/openclaw/tree/80930af448eb/.agents/skills/test-audit),
-MIT License, Copyright (c) 2026 OpenClaw Foundation. Discovery lanes,
-Validation and Landing are made repository-neutral; the rest is as published.
-See LICENSE-OPENCLAW.
+MIT License, Copyright (c) 2026 OpenClaw Foundation. See LICENSE-OPENCLAW.
+Changes: the description is narrowed and names its non-scopes; the whole-
+subsystem mode is renamed "subsystem sweep" (SWEEP.md); Discovery, Validation
+and Landing are made repository-neutral and bounded to one ticket and one
+pull request, with outside work routed to fabrika's report skill.
 -->
 
 # Test Audit
 
-Three modes, one value bar. Authoring mode gates every new or changed test at
-write time. Audit mode runs focused sweeps of tests that re-assert source,
-duplicate stronger proof, couple behavior to implementation, or keep test-only
-production seams alive. Continue broad audits as separate coherent follow-up
-PRs; optimize for confidence, not deletion count. Campaign mode prunes one
-whole subsystem's test surface (every test file a plugin or core area owns);
-before starting one, read [CAMPAIGN.md](CAMPAIGN.md).
+Three modes, one value bar. Authoring mode gates a new test at write time.
+Audit mode runs a focused sweep of tests that re-assert source, duplicate
+stronger proof, couple behavior to implementation, or keep test-only production
+seams alive; optimize for confidence, not deletion count. A **subsystem sweep**
+prunes one whole subsystem's test surface (every test file a plugin or core area
+owns); before starting one, read [SWEEP.md](SWEEP.md).
+
+Every mode works inside the current ticket and lands as at most one pull
+request. Candidates, defects or cleanups found outside that ticket leave
+through [`report`](../report/SKILL.md) as follow-up issues, never as more
+edits here.
 
 ## Authoring gate
 
@@ -49,7 +55,7 @@ covers the bug; do not replay the same scenario at every layer it crosses.
 
 ## Junk patterns
 
-The shared checklist for both modes: the authoring gate rejects a new test that
+The shared checklist for every mode: the authoring gate rejects a new test that
 matches one, and audits hunt for existing tests that do.
 
 - assertion-free coverage probes;
@@ -88,15 +94,18 @@ or types directly.
 
 ## Discovery
 
-Keep discovery read-only and report evidence before editing. For broad scope,
-run parallel discovery lanes when available:
+Keep discovery read-only and report evidence before editing. For a broad scope
+the ticket names, run parallel read-only passes when available:
 
-- one lane per top-level source area the repository's `AGENTS.md` names;
+- one pass per top-level source area the repository's `AGENTS.md` names;
 - UI, apps, scripts, and tooling;
 - a cross-cutting pattern sweep.
 
-Outside campaign mode, prefer a few high-confidence candidates over a large
+Outside a subsystem sweep, prefer a few high-confidence candidates over a large
 speculative inventory. Hunt for the [junk patterns](#junk-patterns).
+
+Done when each candidate in scope has its [candidate evidence](#candidate-evidence)
+recorded, and candidates outside the ticket are filed through `report`.
 
 ## Retention bar
 
@@ -110,7 +119,8 @@ cross-language, package, release, or architecture contract. Also keep:
   the contract changes (the user-facing key, byte, or path) and survives an
   identifier-only refactor;
 - a retained test that fails on the baseline: treat it as a possible product
-  bug, reproduce it, and repair the owner rather than deleting it.
+  bug, reproduce it, and repair the owner when the ticket covers it, else file
+  it through `report`, rather than deleting it.
 
 Static or slow is not a deletion reason. A test that resembles implementation
 may still be the independent contract; prove otherwise before removing it.
@@ -130,34 +140,39 @@ not ready for deletion:
 
 ## Edit shape
 
-Choose one coherent owner-boundary batch. Delete obsolete test-only exports,
-globals, wrappers, and dead production paths instead of preserving aliases.
-Move retained regressions to their canonical owners. Consolidate repeated
-package or dependency assertions into one generic contract.
+Choose one coherent owner-boundary batch inside the ticket. Within it, delete
+obsolete test-only exports, globals, wrappers, and production paths whose only
+callers were the deleted tests, instead of preserving aliases. Move retained
+regressions to their canonical owners. Consolidate repeated package or
+dependency assertions into one generic contract.
 
 Prefer net-negative production LOC. Do not add replacement tests that restate
 the same implementation, and do not convert uncertain candidates into cleanup
 to increase deletion counts.
 
+Done when every edit traces to a candidate with full evidence and nothing
+outside the batch changed.
+
 ## Validation
 
-Use the repository's own test commands, from its `AGENTS.md`, `DEVELOPMENT.md`
-or `package.json`. Never edit source or tests while a test run is going in the
-same checkout.
+Validate through the loaded [`build`](../build/SKILL.md) skill; it owns which
+checks and tests run. This skill adds only what a deletion needs. Never edit
+source or tests while a test run is going in the same checkout.
 
 1. Run the smallest owner and sibling tests first.
 2. For a removed source grep or plan assertion, run the script or dry run that
    owns the real contract.
-3. Run the repository's typecheck and full test command, then `git diff --check`.
-4. Inspect `git diff --numstat`; report production code separately from tests
+3. Inspect the diff's line counts; report production code separately from tests
    and test support.
 
-## Landing and continuation
+Done when `build`'s validation is green and steps 1 to 3 are recorded for the
+hand-off.
 
-Follow the repository's own flow and the loaded fabrika skill: open a pull
-request when the task asks for one, never merge, never review your own change.
-Land one coherent batch per pull request; after it merges, refresh from the
-default branch and rerun read-only discovery for the next high-confidence batch.
+## Landing
+
+Follow the loaded `build` skill: open a pull request only when the task asks
+for one, never merge, and never review your own change. One ticket lands one
+coherent batch; the next batch is a new ticket filed through `report`.
 
 ## Handoff
 
@@ -166,7 +181,6 @@ Report:
 - root cause and removed low-value categories;
 - production owner simplifications;
 - retained false positives and why they remain valuable;
-- focused and full proof actually run;
+- focused proof actually run;
 - production versus test LOC;
-- PR and merge state;
-- named follow-ups.
+- follow-ups filed through `report`.
