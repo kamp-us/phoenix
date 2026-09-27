@@ -80,7 +80,20 @@
 	background: var(--accent-faint);
 }
 
+/* The heading takes the room and wraps; the project chip holds the line's end and wraps under the
+   heading only when the tile is too narrow for both. */
+.tuval-board-tile-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--s-1) var(--s-2);
+	inline-size: 100%;
+}
+
 .tuval-board-tile-heading {
+	flex: 1 1 auto;
+	min-inline-size: 0;
 	font: var(--t-body);
 	font-weight: 600;
 	color: var(--text-primary);

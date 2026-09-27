@@ -28,6 +28,7 @@ import {
 import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Deferred, Effect, Option, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";
+import {ProjectLabels} from "../../projects/labels.ts";
 import type {TableRow} from "../../table/row.ts";
 import {
 	type AttachRefused,
@@ -105,6 +106,11 @@ export interface PageAttachment {
 	 * emitted before the kernel has sent one, so a surface that has been told nothing shows nothing.
 	 */
 	readonly keys: Stream.Stream<PrefixTable>;
+	/**
+	 * Which open project each scoped program id is under, and the label a tile or window of it
+	 * carries (#9692). Starts as `ProjectLabels.none` and is replaced whole on every `projects` frame.
+	 */
+	readonly projects: Stream.Stream<ProjectLabels>;
 	readonly attachProcess: <S = unknown, M extends Message = Message>(
 		processId: ProcessId,
 	) => Effect.Effect<AttachedProcess<S, M>, AttachRefused | Socket.SocketError>;
@@ -148,6 +154,7 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 	const programsRef = yield* SubscriptionRef.make<ReadonlyArray<WireProgram>>([]);
 	const keysRef = yield* SubscriptionRef.make<PrefixTable | null>(null);
 	const spellsRef = yield* SubscriptionRef.make<RegistryDescription | null>(null);
+	const projectsRef = yield* SubscriptionRef.make(ProjectLabels.none);
 	const views = new Map<ProcessId, SubscriptionRef.SubscriptionRef<ProcessView<unknown>>>();
 	const pendingAttach = new Map<ProcessId, Deferred.Deferred<void, AttachRefused>>();
 	const pendingDispatch = new Map<number, Deferred.Deferred<DispatchResult>>();
@@ -182,6 +189,8 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 				return SubscriptionRef.set(programsRef, frame.programs);
 			case "tuval/transport/keys/v1":
 				return SubscriptionRef.set(keysRef, fromWirePrefixTable(frame.table));
+			case "tuval/transport/projects/v1":
+				return SubscriptionRef.set(projectsRef, ProjectLabels.of(frame.projects));
 			case "tuval/transport/process-state/v1":
 				return Effect.gen(function* () {
 					const ref = yield* viewRef(frame.processId);
@@ -338,6 +347,7 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 			SubscriptionRef.changes(keysRef),
 			(table): table is PrefixTable => table !== null,
 		),
+		projects: SubscriptionRef.changes(projectsRef),
 		attachProcess,
 		call,
 		detach,

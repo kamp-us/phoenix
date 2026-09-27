@@ -42,6 +42,7 @@ import {
 } from "effect";
 import {Socket} from "effect/unstable/socket";
 import {WebSocket as NodeWebSocket} from "ws";
+import {ProjectLabels} from "../../projects/labels.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {scriptedDescriptions, scriptedSpellChannel} from "../host/fixtures.ts";
 import {attach} from "./client.ts";
@@ -192,6 +193,12 @@ const kernel = Effect.fn("test.kernel")(function* (
 	return {context, handles} satisfies Kernel;
 });
 
+/** Two open projects whose folders share a name, as `serveDesk` would label them (#9692). */
+const scriptedProjects = Stream.make([
+	{key: "-code-kamp_-us-phoenix", label: "kamp-us/phoenix"},
+	{key: "-code-usirin-phoenix", label: "usirin/phoenix"},
+]);
+
 /** A kernel plus a served socket on an ephemeral loopback port, torn down with the caller's Scope. */
 const served = Effect.fn("test.served")(function* (
 	stores: CheckpointStores,
@@ -206,6 +213,7 @@ const served = Effect.fn("test.served")(function* (
 		handles: (id) => Effect.sync(() => Option.fromNullishOr(built.handles.get(id))),
 		spells: yield* scriptedSpellChannel(),
 		descriptions: scriptedDescriptions,
+		projects: scriptedProjects,
 	}).pipe(Effect.provideContext(built.context), Effect.orDie);
 	return {...built, token, server};
 });
@@ -640,6 +648,23 @@ describe("the page-to-kernel transport", () => {
 						[shellProgramId, shellProgramId, "tuval/shell"],
 					],
 				);
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"a page is sent every open project's label and reads a scoped program id's label from it",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* served(memoryStores());
+				const attached = yield* page(app.server.launchUrl);
+				const labels = yield* Stream.runHead(
+					Stream.filter(attached.projects, (held) => held !== ProjectLabels.none),
+				);
+				const read = Option.getOrThrow(labels);
+				assert.strictEqual(read.labelOf("-code-kamp_-us-phoenix/counter"), "kamp-us/phoenix");
+				assert.strictEqual(read.labelOf("-code-usirin-phoenix/counter"), "usirin/phoenix");
+				assert.isNull(read.labelOf(shellProgramId));
 			}).pipe(Effect.scoped),
 		TIMEOUT,
 	);

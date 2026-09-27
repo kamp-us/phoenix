@@ -32,6 +32,7 @@ const throwingMount =
 	(windowId, processId) => ({
 		_tag: "Bound",
 		name: null,
+		project: null,
 		host: {
 			windowId,
 			processId: ProcessId.make(processId ?? "process-1"),
@@ -111,6 +112,7 @@ describe("a window renderer that throws", () => {
 const oneThrowingMount: MountResolver = (windowId, processId) => ({
 	_tag: "Bound",
 	name: null,
+	project: null,
 	host: {
 		windowId,
 		processId: ProcessId.make(processId ?? "process-1"),

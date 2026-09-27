@@ -16,6 +16,7 @@ import {act, fireEvent, render, screen} from "@testing-library/react";
 import {Effect, Option, Schema, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {counterId} from "../demo/counter.ts";
+import {ProjectLabels} from "../projects/labels.ts";
 import {readCommandLine} from "../shell/commands/index.ts";
 import {applyMsg, type ShellCmd, type ShellMsg, type ShellState} from "../shell/core/index.ts";
 import {openProcessMsg} from "../shell/core/machine.ts";
@@ -128,6 +129,7 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 	readonly state?: ShellState;
 	readonly rows?: ReadonlyArray<TableRow>;
 	readonly programs?: ReadonlyArray<WireProgram>;
+	readonly projects?: ProjectLabels;
 	/** `null` scripts a kernel that has not sent its grammar yet — the desk must not render. */
 	readonly keys?: PrefixTable | null;
 	/** When this socket ends. The default never does, which is what every claim but the drop wants. */
@@ -155,6 +157,7 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 		spells: Stream.empty,
 		rows: Stream.succeed(options?.rows ?? [counterRow]),
 		programs: Stream.succeed(options?.programs ?? catalog),
+		projects: Stream.succeed(options?.projects ?? ProjectLabels.none),
 		call: () => Effect.never,
 		keys:
 			options?.keys === null ? Stream.never : Stream.succeed(options?.keys ?? defaultPrefixTable),
@@ -185,6 +188,53 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 	};
 	return {page, shell, attaches, sent} satisfies Scripted;
 });
+
+/**
+ * One workspace mixing windows from two open projects and a global program (#9692, ruling #9668
+ * R1.1): the two projects' counters share a declared id, so only the scope tells them apart.
+ */
+const phoenix = ProgramId.make(`-code-phoenix/${counterId}`);
+const demlik = ProgramId.make(`-code-demlik/${counterId}`);
+const mixedProjects = ProjectLabels.of([
+	{key: "-code-phoenix", label: "phoenix"},
+	{key: "-code-demlik", label: "demlik"},
+]);
+const mixedRow = (id: string, programId: ProgramId): TableRow => ({
+	...counterRow,
+	id: ProcessId.make(id),
+	programId,
+});
+const mixedRows = [
+	mixedRow("p-phoenix", phoenix),
+	mixedRow("p-demlik", demlik),
+	mixedRow("p-global", counterId),
+];
+const mixedCatalog: ReadonlyArray<WireProgram> = [phoenix, demlik, counterId].map((programId) => ({
+	programId,
+	label: "Counter",
+	renderer: {kind: "host-native", ref: "tuval/demo/counter"},
+}));
+const mixedDesk = (boardOpen = false): ShellState => ({
+	...twoWindowDesk(),
+	workspaces: {
+		"workspace-0": {
+			id: "workspace-0",
+			layout: createTree(
+				createStack("stack-root", "horizontal", [
+					createWindow("window-1", ProcessId.make("p-phoenix")),
+					createWindow("window-2", ProcessId.make("p-demlik")),
+					createWindow("window-3", ProcessId.make("p-global")),
+				]),
+			),
+			focused: "window-1",
+		},
+	},
+	desk: {inspectorOpen: false, boardOpen},
+	nextId: 4,
+});
+
+const projectOf = (node: Element): string | null =>
+	node.querySelector('[data-field="project"]')?.textContent ?? null;
 
 class TestIo extends Schema.TaggedError<TestIo>()("TestIo", {cause: Schema.Defect()}) {}
 
@@ -615,6 +665,75 @@ describe("the process board flag", () => {
 			assert.isNull(screen.queryByRole("dialog", {name: "Processes"}));
 			assert.lengthOf(screen.getAllByRole("region", {name: /^Window /}), 2);
 		}),
+	);
+
+	it.effect(
+		"labels each window by its own project in one workspace, and a global one not at all",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* scripted({
+					state: mixedDesk(),
+					rows: mixedRows,
+					programs: mixedCatalog,
+					projects: mixedProjects,
+				});
+				render(
+					<AttachedDesk
+						page={app.page}
+						shell={app.shell}
+						renderers={renderers}
+						reducedMotion={true}
+						refusal={null}
+						windowTitles={true}
+					/>,
+				);
+				yield* settle;
+
+				const windows = screen.getAllByRole("region", {name: /^Window /});
+				assert.deepStrictEqual(windows.map(projectOf), ["phoenix", "demlik", null]);
+				// The title names the program by its declared id, since the label already says which project.
+				const titles = windows.map(
+					(node) => node.querySelector(".tuval-window-title")?.textContent,
+				);
+				assert.deepStrictEqual(titles, [
+					"▸counterproject phoenix(focused)",
+					" counterproject demlik",
+					" counter",
+				]);
+			}),
+	);
+
+	it.effect(
+		"labels each tile on the board by its project, and a global program's tile not at all",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* scripted({
+					state: mixedDesk(true),
+					rows: mixedRows,
+					programs: mixedCatalog,
+					projects: mixedProjects,
+				});
+				render(
+					<AttachedDesk
+						page={app.page}
+						shell={app.shell}
+						renderers={renderers}
+						reducedMotion={true}
+						board={true}
+						refusal={null}
+					/>,
+				);
+				yield* settle;
+
+				const dialog = screen.getByRole("dialog", {name: "Processes"});
+				const tile = (id: string) => dialog.querySelector(`[data-process="${id}"]`) as Element;
+				assert.strictEqual(projectOf(tile("p-phoenix")), "phoenix");
+				assert.strictEqual(projectOf(tile("p-demlik")), "demlik");
+				assert.isNull(projectOf(tile("p-global")));
+				// The label is part of the tile's accessible name, with the word that says what it is.
+				const open = tile("p-phoenix").querySelector("button") as HTMLElement;
+				assert.include(open.textContent ?? "", "project phoenix");
+			}),
 	);
 
 	it.effect("pulls the board up as a named dialog when the shell says it is open", () =>
