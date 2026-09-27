@@ -1,12 +1,12 @@
 ---
-id: 0426
+id: 0428
 title: A criterion that needs a render lives on the ticket whose diff renders it, never on the tooling ticket
 status: accepted
 date: 2026-09-27
 tags: [process, triage, review, pipeline]
 ---
 
-# 0426 — A criterion that needs a render lives on the ticket whose diff renders it, never on the tooling ticket
+# 0428 — A criterion that needs a render lives on the ticket whose diff renders it, never on the tooling ticket
 
 **What this decides:** When a ticket builds tooling or data and the reason for it is something a
 user will see, the "prove it renders" criterion goes on the ticket whose PR renders that thing. It
