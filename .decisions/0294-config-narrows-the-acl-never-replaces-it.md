@@ -1,7 +1,7 @@
 ---
 id: 0294
 title: A `.fabrika.jsonc` authority set narrows the live repo ACL, it never replaces one
-status: accepted
+status: amended-in-part by [0417](0417-campaigns-are-themes-not-dispatch-permission.md)
 date: 2026-08-18
 tags: [fabrika, config, security, pipeline, plugin-portability]
 ---
