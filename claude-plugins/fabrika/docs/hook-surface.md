@@ -1,6 +1,6 @@
 # fabrika hook surface
 
-The reference for fabrika's Claude Code hook layer: **the surface** — where a fabrika hook is declared and how it invokes a verb — and **the record format** a grading pass writes its verdicts into.
+The reference for fabrika's Claude Code hook layer: **the surface** — where a fabrika hook is declared and how it invokes a verb — [**the hook verbs' derivations**](#the-hook-verbs-derivations) each hook verb's help points to, and **the record format** a grading pass writes its verdicts into.
 
 ## The surface
 
@@ -225,10 +225,10 @@ derivation facts behind four of them live here; `hook claude-spend`'s live in th
 
 The minimum is the `minimum` in `cli-floor.json` under `$CLAUDE_PLUGIN_ROOT`: the fabrika plugin's
 declared minimum `@kampus/fabrika-cli` version, a variable the harness sets for the plugin's own
-hooks. The verb reads no stdin. Its stdout is one hook-output JSON object at exit `0`. Below the
-minimum it carries `systemMessage`, the warning the harness shows the user, naming both versions and
-the upgrade command. At or above it carries `suppressOutput` and a `fabrika` token
-(`outcome: met`), so the user sees nothing new. Both carry `fabrika.installed` and
+hooks. The verb reads no stdin. Its stdout is one hook-output JSON object at exit `0`. What the user
+sees on each side of the minimum is stated [above](#the-declared-hooks-and-how-they-are-proven).
+Below the minimum the object carries that warning as `systemMessage`; at or above it, it carries
+`suppressOutput` and a `fabrika` token (`outcome: met`). Both carry `fabrika.installed` and
 `fabrika.minimum`. Exit `23` is no plugin root, or the floor file or a version in it unreadable — the
 comparison was not made, so it is UNKNOWN and never a pass. A non-zero exit on `SessionStart` shows
 stderr and lets the session start.
@@ -238,8 +238,8 @@ stderr and lets the session start.
 The jump is read through the wrappers named [above](#the-declared-hooks-and-how-they-are-proven). A
 jump behind a word whose meaning is run-time — `eval`, a wrapper script — is out of key and allowed.
 A jump whose target expands at run time is refused, because where it lands cannot be decided before
-it runs. The verb arms only inside a linked worktree: the primary checkout and a cwd under no
-repository are allowed untouched, since isolation is the operator's call. Exit `19` is the one arm
+it runs. Where the verb arms, and why, is stated [above](#the-declared-hooks-and-how-they-are-proven);
+the primary checkout and a cwd under no repository are therefore allowed untouched. Exit `19` is the one arm
 where the cwd's working tree could not be established: the jump was NOT judged, and the command
 proceeds. Why a deny is JSON at exit `0` and an allow carries no decision field is
 [the harness exit-code contract](#the-harness-exit-code-contract).
@@ -270,7 +270,8 @@ attempt. Every non-zero exit blocks the spawn.
 
 It reads the `SessionStart` envelope on stdin and resolves the clone's primary worktree from its
 `cwd` through the shared git common dir — never the session's own linked worktree. It fetches
-`origin/<default>` and takes a fast-forward and nothing else.
+`origin/<default>`; what it then does to the checkout, and what it leaves to the harness, is the
+[`SessionStart` / `plugin-sync` note](#sessionstart-plugin-sync--a-checkout-move-left-to-the-repo).
 
 **What it refuses.** A parked branch, a detached HEAD, a diverged branch, or uncommitted work the
 incoming commits would write over is refused with its reason, because where a human's checkout sits
@@ -283,10 +284,10 @@ the same overlap `git merge --ff-only` itself refuses on.
 after it. A failed `SessionStart` hook surfaces one line in the session, so a refusal whose first
 line named the directory it judged named no cause at all.
 
-**It reads the harness's own install records and reports.** Re-copying the advanced directory into
-the plugin cache is the harness's `autoUpdate` pass, so every install still bound to an earlier
-commit is named on stderr. The verb names no repository, marketplace or plugin: the marketplace is
-selected by the directory it declares.
+**It reads the harness's own install records.** Every install still bound to an earlier commit is
+named on stderr. Beyond the repository the
+[note](#sessionstart-plugin-sync--a-checkout-move-left-to-the-repo) already rules out, the verb names
+no marketplace or plugin either: the marketplace is selected by the directory it declares.
 
 ## The record format
 
