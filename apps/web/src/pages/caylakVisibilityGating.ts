@@ -1,6 +1,6 @@
 /**
  * What `/caylak-gorunurlugu` renders, as a pure function of the four signals the page
- * reads (#6426, epic #4306). Extracted DOM-free — the `landingGating` / `mecmua-write-gate`
+ * reads (#6426, epic #4306). Extracted DOM-free — the `landingGating`
  * idiom — so the order of the gates is pinned without a render.
  *
  * The order is load-bearing. `loading` outranks everything — the deferred-404 gate,

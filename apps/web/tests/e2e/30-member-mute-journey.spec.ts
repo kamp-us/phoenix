@@ -128,7 +128,7 @@ test.describe("member mute (sustur) @journey:member-mute", () => {
 		await expect(page.locator(".kp-pano-post").first()).toBeVisible({timeout: 10_000});
 		await expect(page.locator('[data-testid^="member-mute-"]')).toHaveCount(0);
 
-		// The manage route is absent while the flag is off — it self-404s (the mecmua/bildirim idiom).
+		// The manage route is absent while the flag is off — it self-404s (the bildirim idiom).
 		await page.goto("/susturduklarim");
 		await expect(page.locator('[data-testid="not-found-page"]')).toBeVisible({timeout: 10_000});
 		await expect(page.locator('[data-testid="mutes-page"]')).toHaveCount(0);

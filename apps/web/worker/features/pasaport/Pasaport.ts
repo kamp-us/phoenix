@@ -1322,15 +1322,6 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
 		.delete(schema.userMute)
 		.where(or(eq(schema.userMute.muterId, userId), eq(schema.userMute.mutedId, userId)));
 
-	const dropSubscriptions = db
-		.delete(schema.mecmuaSubscription)
-		.where(
-			or(
-				eq(schema.mecmuaSubscription.subscriberId, userId),
-				eq(schema.mecmuaSubscription.authorId, userId),
-			),
-		);
-
 	const dropCaylakVisibility = db
 		.delete(schema.caylakVisibilityPreference)
 		.where(eq(schema.caylakVisibilityPreference.userId, userId));
@@ -1353,7 +1344,6 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
 		dropAccounts,
 		dropApikeys,
 		dropMutes,
-		dropSubscriptions,
 		dropCaylakVisibility,
 		scrubUser,
 	] as const;

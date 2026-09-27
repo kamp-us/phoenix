@@ -13,7 +13,7 @@ const shell = (head: string): string =>
 
 describe("classifyEdgeBootAttempt — the three unusable modes stay told apart", () => {
 	it("resolves the edge's user off the worker's own injection", () => {
-		const html = shell(bootTag({"mecmua-feed": true, user: {id: "u_1", username: "nazim"}}));
+		const html = shell(bootTag({user: {id: "u_1", username: "nazim"}}));
 
 		expect(classifyEdgeBootAttempt(1, html)).toEqual({
 			outcome: "resolved",
@@ -32,7 +32,7 @@ describe("classifyEdgeBootAttempt — the three unusable modes stay told apart",
 	});
 
 	it("names a null user separately, because that is a session failure and not a degrade", () => {
-		const seen = classifyEdgeBootAttempt(3, shell(bootTag({"mecmua-feed": true, user: null})));
+		const seen = classifyEdgeBootAttempt(3, shell(bootTag({user: null})));
 
 		expect(seen.outcome).toBe("unusable");
 		expect(seen.outcome === "unusable" && seen.reason).toContain("__BOOT__.user as null");

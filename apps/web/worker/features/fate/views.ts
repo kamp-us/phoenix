@@ -21,7 +21,6 @@ import type {
 	DivanVoteReceiptView,
 } from "../divan/views.ts";
 import type {FunnelCohortsView, FunnelCohortWeekView, FunnelSummaryView} from "../funnel/views.ts";
-import type {MecmuaPostView, MecmuaSubscriptionReceiptView} from "../mecmua/views.ts";
 import type {MutedMemberView, MuteReceiptView} from "../mute/views.ts";
 import type {CommentView, PostOverlayView, PostView, TagView} from "../pano/views.ts";
 import type {
@@ -82,8 +81,6 @@ export {
 	funnelCohortWeekDataView,
 	funnelSummaryDataView,
 } from "../funnel/views.ts";
-export type {MecmuaPost, MecmuaSubscriptionReceipt} from "../mecmua/views.ts";
-export {mecmuaPostDataView, mecmuaSubscriptionReceiptDataView} from "../mecmua/views.ts";
 export type {MutedMember, MuteReceipt} from "../mute/views.ts";
 export {mutedMemberDataView, muteReceiptDataView} from "../mute/views.ts";
 export type {Comment, Post, PostOverlay, Tag} from "../pano/views.ts";
@@ -183,11 +180,6 @@ type _FateViewsFieldMapResolved = [
 	AssertResolved<typeof FunnelSummaryView, AssertFieldMapResolved<typeof FunnelSummaryView>>,
 	AssertResolved<typeof FunnelCohortsView, AssertFieldMapResolved<typeof FunnelCohortsView>>,
 	AssertResolved<typeof FunnelCohortWeekView, AssertFieldMapResolved<typeof FunnelCohortWeekView>>,
-	AssertResolved<typeof MecmuaPostView, AssertFieldMapResolved<typeof MecmuaPostView>>,
-	AssertResolved<
-		typeof MecmuaSubscriptionReceiptView,
-		AssertFieldMapResolved<typeof MecmuaSubscriptionReceiptView>
-	>,
 	AssertResolved<typeof MuteReceiptView, AssertFieldMapResolved<typeof MuteReceiptView>>,
 	AssertResolved<typeof MutedMemberView, AssertFieldMapResolved<typeof MutedMemberView>>,
 	AssertResolved<typeof TagView, AssertFieldMapResolved<typeof TagView>>,

@@ -22,7 +22,6 @@ import {
 } from "@kampus/fate-effect";
 import {describe, expect, it} from "vitest";
 import {Denied, InsufficientKarma, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
-import {MecmuaDisabled, MecmuaPostNotFound, MecmuaTitleRequired} from "../mecmua/errors.ts";
 import {MuteDisabled, SelfMuteRejected} from "../mute/errors.ts";
 import {
 	CommentBodyRequired,
@@ -75,9 +74,6 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	[CommentNotFound, "COMMENT_NOT_FOUND"],
 	[UnauthorizedPostMutation, "UNAUTHORIZED"],
 	[UnauthorizedCommentMutation, "UNAUTHORIZED"],
-	[MecmuaDisabled, "MECMUA_DISABLED"],
-	[MecmuaPostNotFound, "MECMUA_POST_NOT_FOUND"],
-	[MecmuaTitleRequired, "TITLE_REQUIRED"],
 	[MuteDisabled, "MUTE_DISABLED"],
 	[SelfMuteRejected, "SELF_MUTE_REJECTED"],
 	[BodyRequired, "BODY_REQUIRED"],
@@ -122,8 +118,6 @@ const ROUND_TRIP_CLASSES = [
 	CommentBodyTooLong,
 	ParentCommentNotFound,
 	PostDeleteFailed,
-	MecmuaDisabled,
-	MecmuaPostNotFound,
 	BodyRequired,
 	UsernameInvalidFormat,
 	UsernameTooShort,

@@ -1,5 +1,5 @@
 /**
- * Regression proof for #2593 (the mecmua-reader hard-crash regression from #2584): a re-seed
+ * Regression proof for #2593 (the read-only renderer crash from #2584): a re-seed
  * `setContent` that fires against a torn-down tiptap editor must NOT throw
  * `Cannot read properties of null (reading 'commands')`. The re-seed effect routes setContent
  * through the handle, so the crash surfaces at that seam — pinned here, plus a check that the
@@ -37,7 +37,7 @@ describe("setContent readiness guard (#2593)", () => {
 		const staleHandle = createComposerHandle(editor);
 
 		// Before the fix, setContent read `editor.commands` unconditionally and threw right here —
-		// the exact frame the mecmua reader unwound to its error boundary on.
+		// the exact frame the read-only renderer unwound to its error boundary on.
 		expect(() => staleHandle.setContent("yeni gövde")).not.toThrow();
 	});
 

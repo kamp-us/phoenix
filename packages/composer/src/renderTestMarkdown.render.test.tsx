@@ -7,7 +7,7 @@
  * Two properties are pinned: the markdown round-trips (`setContent(renderTestMarkdown)` →
  * `getMarkdown()` is idempotent, the load-bearing "equivalent in, equivalent out"), and every
  * block node type the fixture claims to cover actually appears in `toJSON()` — a real render
- * checklist that would catch a regression in the base before mecmua/sözlük/pano depend on it.
+ * checklist that would catch a regression in the base before the Atölye exhibits depend on it.
  */
 import {act, renderHook, waitFor} from "@testing-library/react";
 import {describe, expect, it} from "vitest";

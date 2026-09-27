@@ -476,45 +476,6 @@ export const notification = sqliteTable(
 );
 
 /**
- * mecmua's own long-form authoring store, deliberately NOT a reuse of pano
- * `post_record`. `published_at` IS the draft/publish lifecycle: null ⇒ an unpublished
- * draft, masked from public reads by `MecmuaPostVisibility`. Multiple drafts per author
- * are allowed — the deliberate divergence from pano, so no partial unique index here.
- */
-export const mecmuaPost = sqliteTable(
-	"mecmua_post",
-	{
-		id: text("id").primaryKey(),
-		title: text("title").notNull(),
-		body: text("body").notNull().default(""),
-		slug: text("slug"),
-		authorId: text("author_id").notNull(),
-		publishedAt: timestamp("published_at"),
-		createdAt: timestamp("created_at").notNull(),
-		updatedAt: timestamp("updated_at").notNull(),
-	},
-	(t) => [index("mecmua_post_author_created").on(t.authorId, sql`${t.createdAt} DESC`)],
-);
-
-/**
- * The mecmua reader→author follow edge. A dedicated table rather than the generic
- * `relation_tuple`, which has no runtime write path.
- */
-export const mecmuaSubscription = sqliteTable(
-	"mecmua_subscription",
-	{
-		authorId: text("author_id").notNull(),
-		subscriberId: text("subscriber_id").notNull(),
-		createdAt: timestamp("created_at").notNull(),
-	},
-	(t) => [
-		// One subscription per (subscriber, author) — a re-subscribe is an idempotent no-op.
-		primaryKey({columns: [t.subscriberId, t.authorId]}),
-		index("mecmua_subscription_subscriber").on(t.subscriberId, sql`${t.createdAt} DESC`),
-	],
-);
-
-/**
  * The yazar's "çaylak katkılarını yerinde göster" opt-in (#6422, epic #4306).
  * Presence IS the preference: a row means this account opted in, its absence means
  * it did not — there is no `false` row, so "opted in but we don't know when" is

@@ -13,8 +13,6 @@ import {liveRoute} from "../features/fate-live/route.ts";
 import {flagsEvaluateRoute, flagsProbeRoute} from "../features/flagship/route.ts";
 import {flagsDevApplyRoute, flagsDevPageRoute} from "../features/flagship/route-dev.ts";
 import {shellBootRoute} from "../features/flagship/shell-boot-route.ts";
-import {mecmuaIndexRoute} from "../features/mecmua/index-route.ts";
-import {mecmuaPublicReadRoute} from "../features/mecmua/public-read-route.ts";
 import {baseFeedRoute} from "../features/pano/base-feed-route.ts";
 import {linkMetadataRoute} from "../features/pano/link-metadata-route.ts";
 import {authRoute} from "../features/pasaport/route.ts";
@@ -42,10 +40,6 @@ export const rawWorkerRoutes: readonly [WorkerRoute, ...WorkerRoute[]] = [
 	{path: "/fate", glob: "/fate", route: fateRoute},
 	{path: "/fate/live", glob: "/fate/*", route: liveRoute},
 	{path: "/fate/pano/feed", glob: "/fate/*", route: baseFeedRoute},
-	// Dark behind `MECMUA_PUBLIC_READ` (404 until flipped).
-	{path: "/fate/mecmua/post/:slug", glob: "/fate/*", route: mecmuaPublicReadRoute},
-	// Dark behind `MECMUA_PUBLIC_READ` (404 until flipped).
-	{path: "/fate/mecmua/index", glob: "/fate/*", route: mecmuaIndexRoute},
 	{path: "/api/auth/*", glob: "/api/*", route: authRoute},
 	{path: "/api/flags/probe", glob: "/api/*", route: flagsProbeRoute},
 	{path: "/api/flags/evaluate", glob: "/api/*", route: flagsEvaluateRoute},

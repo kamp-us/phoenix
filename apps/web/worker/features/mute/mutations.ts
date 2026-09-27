@@ -33,7 +33,7 @@ const toReceipt = (r: MuteSetResult): MuteReceipt => ({
 });
 
 // Branded wire input (type-only, byte-identical decode): `mutedId` arrives tagged
-// `UserId`, so a transposed service call is a compile error (the mecmua #2700 idiom).
+// `UserId`, so a transposed service call is a compile error.
 const MuteInput = Schema.Struct({
 	mutedId: UserId,
 });

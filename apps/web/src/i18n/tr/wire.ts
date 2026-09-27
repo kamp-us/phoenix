@@ -42,8 +42,6 @@ const codes: Record<WireCodeKey, string> = {
 	"wire.DISPLAY_NAME_EMPTY": "görünen ad boş olamaz",
 	"wire.BAN_REASON_REQUIRED": "yasaklama gerekçesi zorunludur",
 	"wire.EMAIL_FAILING_REASON_REQUIRED": "işaretleme gerekçesi zorunludur",
-	"wire.MECMUA_DISABLED": "mecmua şu an kapalı",
-	"wire.MECMUA_POST_NOT_FOUND": "yazı bulunamadı",
 	"wire.MUTE_DISABLED": "sustur şu an kapalı",
 	"wire.SELF_MUTE_REJECTED": "kendini susturamazsın",
 	"wire.BAD_REQUEST": "geçersiz istek",

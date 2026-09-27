@@ -42,24 +42,6 @@ interface LayoutShiftEntry extends PerformanceEntry {
 // plain shape, not typed here against BootPayload (the worker owns that type).
 type SeedBoot = Record<string, unknown>;
 
-// On-path: the two mecmua nav flags on, signed out — the nav shows mecmua in its final
-// geometry from the first frame.
-const BOOT_NAV_ON: SeedBoot = {
-	"mecmua-public-read": true,
-	"mecmua-feed": true,
-	user: null,
-};
-
-// The flag half of the signed-in payload. Its `user` half is NOT fixture data — it is read back
-// off the edge's own injection for a real session ({@link edgeBootUser}), because a fabricated
-// user with no session behind it is a divergence the app correctly collapses: `reserveSignedInSlots`
-// (App.tsx) goes false the moment `/api/auth/get-session` settles signed-out and the pill drops
-// mid-assertion (#6573).
-const BOOT_SIGNED_IN_FLAGS: SeedBoot = {
-	"mecmua-public-read": false,
-	"mecmua-feed": false,
-};
-
 /**
  * The worker's injected boot tag, as `bootScriptTag` emits it (`shell-boot.ts`). `JSON.stringify`
  * output is `<`-escaped there, so no payload value can contain a literal `</script>` — the lazy
@@ -166,21 +148,20 @@ function installShellClsObserver(): void {
 }
 
 test.describe("edge-resolved shell boot", () => {
-	test("edge-resolved __BOOT__ paints the topnav in final geometry with zero shell layout shift", async ({
+	test("edge-resolved __BOOT__.user paints the topbar in final geometry with zero shell layout shift", async ({
 		page,
 	}) => {
 		await page.addInitScript(installShellClsObserver);
-		await routeBoot(page, BOOT_NAV_ON);
+		await signUpViaApi(page);
+		await routeBoot(page, {user: await edgeBootUser(page)});
 		await page.goto("/");
 
 		const topbar = page.locator(".kp-topbar");
 		await expect(topbar).toBeVisible({timeout: 10_000});
 
-		// The nav is in its final geometry at first paint: the mecmua entry is present immediately,
-		// resolved synchronously off __BOOT__ by useFlag (no fetch, no pop-in). akış is not a
-		// topbar entry — it is a mecmua SUB-destination in the mecmua Subnav zone (#2603).
-		const mecmua = page.locator(".kp-topbar__nav a", {hasText: /^mecmua$/i});
-		await expect(mecmua).toBeVisible();
+		const userPill = page.locator(".kp-topbar__user");
+		await expect(userPill).toBeVisible();
+		await expect(page.getByRole("button", {name: /giriş yap/i})).toHaveCount(0);
 
 		await expect(page.locator('[data-testid="edge-shell-boot"]')).toHaveAttribute(
 			"data-active",
@@ -200,14 +181,14 @@ test.describe("edge-resolved shell boot", () => {
 		// that hydration and the session/flag settle move nothing.
 		await page.evaluate(() => document.fonts.ready);
 		const topbarBefore = await topbar.boundingBox();
-		const mecmuaBefore = await mecmua.boundingBox();
+		const userPillBefore = await userPill.boundingBox();
 
 		await page.waitForLoadState("networkidle").catch(() => {});
 		await page.waitForTimeout(1_500);
 
 		expect(await navEntries()).toEqual(entriesAtFirstPaint);
 		expect(await topbar.boundingBox()).toEqual(topbarBefore);
-		expect(await mecmua.boundingBox()).toEqual(mecmuaBefore);
+		expect(await userPill.boundingBox()).toEqual(userPillBefore);
 
 		// And the shell's cumulative layout shift stays effectively zero across first-paint →
 		// hydrate → settle. This is the one assertion that spans the font swap too, so the epsilon
@@ -220,7 +201,7 @@ test.describe("edge-resolved shell boot", () => {
 		page,
 	}) => {
 		await signUpViaApi(page);
-		await routeBoot(page, {...BOOT_SIGNED_IN_FLAGS, user: await edgeBootUser(page)});
+		await routeBoot(page, {user: await edgeBootUser(page)});
 		await page.goto("/");
 
 		await expect(page.locator(".kp-topbar")).toBeVisible({timeout: 10_000});

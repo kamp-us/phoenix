@@ -36,7 +36,7 @@ export function createComposerHandle(editor: Editor): ComposerHandle {
 		// No-op once the editor is torn down: tiptap's `destroy()` nulls `commandManager`, so the
 		// `editor.commands` getter throws `Cannot read properties of null (reading 'commands')` — a
 		// stale re-seed after a StrictMode/remount teardown hit exactly that and hard-crashed the
-		// read-only mecmua reader (#2593). `isDestroyed` is the readiness signal safe to read
+		// read-only Atölye exhibit (#2593). `isDestroyed` is the readiness signal safe to read
 		// post-teardown; gating here fixes every consumer of setContent, not just one call site.
 		setContent: (markdown, options) => {
 			if (editor.isDestroyed) return;

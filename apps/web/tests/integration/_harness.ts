@@ -158,12 +158,11 @@ export interface Harness {
 	 * How many rows one SELECT returns, over the same REST seam as {@link execD1}.
 	 *
 	 * The narrow exception to "assert over HTTP only": a row whose every public read path
-	 * ships dark. All three surfaces over the rows `account.delete` sweeps are behind
+	 * ships dark. Both surfaces over the rows `account.delete` sweeps are behind
 	 * default-off flags (ADR 0083) — `mute.listMine` fails `MuteDisabled` under
-	 * `MEMBER_MUTE`, `mecmuaSubscription` resolves `subscribed: false` under
-	 * `MECMUA_FEED`, and `caylakVisibility.mine` short-circuits to "not opted in" under
+	 * `MEMBER_MUTE`, and `caylakVisibility.mine` short-circuits to "not opted in" under
 	 * `PHOENIX_CAYLAK_VISIBILITY` — so no session can observe them, the surviving peer's
-	 * included, and that peer is the muter / subscriber on half the seeded edges
+	 * included, and that peer is the muter on half the seeded edges
 	 * (ADR 0097 amendment / #6733). Not a session-scoping argument: the peer's session
 	 * outlives the delete. Reach for `countD1` only for that shape, and when a flag here
 	 * flips, move the assertion back onto the public read.

@@ -15,7 +15,6 @@ export const BRAND_NOUNS: readonly string[] = [
 	"künye",
 	"depo",
 	"divan",
-	"mecmua",
 	"sustur",
 	"engelle",
 	"yazar",

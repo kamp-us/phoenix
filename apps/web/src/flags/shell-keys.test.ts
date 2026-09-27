@@ -3,7 +3,6 @@
  * unit test, NOT a CI guard, so this slice stays NON-§CP (#2928).
  */
 import {describe, expect, it} from "vitest";
-import {MECMUA_FEED, MECMUA_PUBLIC_READ} from "./keys";
 import {
 	assertShellBootKeysSingleSourced,
 	BOOT_MEMBER_KEYS,
@@ -13,8 +12,7 @@ import {
 
 describe("shell-key manifest — the geometry-law member set", () => {
 	it("names exactly the shell-critical flag keys", () => {
-		expect([...SHELL_FLAG_KEYS]).toEqual([MECMUA_PUBLIC_READ, MECMUA_FEED]);
-		expect([...SHELL_FLAG_KEYS]).toEqual(["mecmua-public-read", "mecmua-feed"]);
+		expect([...SHELL_FLAG_KEYS]).toEqual([]);
 	});
 
 	it("the __BOOT__ boolean-member keys are exactly the flag keys — the user is not a member key", () => {
@@ -31,15 +29,8 @@ describe("assertShellBootKeysSingleSourced — fail-closed single-source guard",
 		expect(() => assertShellBootKeysSingleSourced(canonical, canonical)).not.toThrow();
 	});
 
-	it("accepts regardless of key ordering (a set, not a sequence)", () => {
-		expect(() =>
-			assertShellBootKeysSingleSourced(canonical, [...canonical].reverse()),
-		).not.toThrow();
-	});
-
-	it("FAILS when the worker injection omits a manifest key (worker-side drift)", () => {
-		const injectedMissingFeed = canonical.filter((k) => k !== MECMUA_FEED);
-		expect(() => assertShellBootKeysSingleSourced(injectedMissingFeed, canonical)).toThrow(
+	it("FAILS when the worker injects a flag absent from the empty manifest", () => {
+		expect(() => assertShellBootKeysSingleSourced(["phoenix-rogue-key"], canonical)).toThrow(
 			ShellKeyDriftError,
 		);
 	});
@@ -51,26 +42,16 @@ describe("assertShellBootKeysSingleSourced — fail-closed single-source guard",
 		);
 	});
 
-	it("FAILS when the client omits a manifest flag key (client-side drift)", () => {
-		const consumedMissingFeed = canonical.filter((k) => k !== MECMUA_FEED);
-		expect(() => assertShellBootKeysSingleSourced(canonical, consumedMissingFeed)).toThrow(
-			ShellKeyDriftError,
-		);
-	});
-
 	it("names the drifting side and the missing/extra keys in the error", () => {
 		try {
-			assertShellBootKeysSingleSourced(
-				canonical.filter((k) => k !== MECMUA_PUBLIC_READ),
-				canonical,
-			);
+			assertShellBootKeysSingleSourced(["phoenix-rogue-key"], canonical);
 			expect.unreachable("expected a ShellKeyDriftError");
 		} catch (err) {
 			expect(err).toBeInstanceOf(ShellKeyDriftError);
 			const drift = err as ShellKeyDriftError;
 			expect(drift.side).toContain("worker");
-			expect(drift.missing).toContain(MECMUA_PUBLIC_READ);
-			expect(drift.extra).toEqual([]);
+			expect(drift.missing).toEqual([]);
+			expect(drift.extra).toEqual(["phoenix-rogue-key"]);
 		}
 	});
 });

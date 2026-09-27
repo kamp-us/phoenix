@@ -7,7 +7,7 @@
  *
  * This is the SINGLE SOURCE for that content: `/lab/composer` seeds its playground from
  * this export and the base's round-trip test drives it, so the public render checklist
- * and the base fixture can never drift. A downstream consumer (mecmua / sözlük / pano)
+ * and the base fixture can never drift. A downstream consumer (the Atölye exhibits)
  * reuses it to prove the base round-trips before depending on it.
  *
  * NOT included — tables and task-lists: the v1 set is StarterKit-only, which ships no

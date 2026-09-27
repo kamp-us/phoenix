@@ -17,7 +17,7 @@ nothing in `plan-epic`, `triage`, `review-code`, `ship-it`, or `/release` ties "
 reached 100%" to "a consuming UI exists and is reachable." The feature then presents as
 DONE/RELEASED while delivering zero user value, caught only when a human happens to notice.
 
-This is not one bad feature; it is a systemic blind spot with three confirmed instances (epic
+The reactions example shows a systemic blind spot (epic
 [#1943](https://github.com/kamp-us/phoenix/issues/1943)):
 
 - **reactions** — the backend vertical shipped in full (react/change/retract mutations, the
@@ -29,11 +29,9 @@ This is not one bad feature; it is a systemic blind spot with three confirmed in
   `apps/web/src/components/reaction/ReactionBarSlot.tsx`, PR #2055, landed 2026-07-05 — has since
   consumed the flag, so `phoenix-reactions` now **passes** the consuming-UI assertion. UI slice
   externally owned by #1867 under epic #1840.)
-- **mecmua discovery** (#2512) — no nav entry / index page; reachable only by direct slug URL.
-- **mecmua subscribe** (#2527) — subscribe/unsubscribe mutations exist, no UI to subscribe.
 
-The last two sat inside a *single* epic — which is exactly why `plan-epic`'s existing
-story-coverage invariant (every story has ≥1 child at plan time) did not catch them: it proves
+The gap can occur inside a *single* epic: `plan-epic`'s existing
+story-coverage invariant (every story has ≥1 child at plan time) cannot catch it: it proves
 *stories-have-children*, never *the UI slice actually shipped before graduation*.
 
 The flag flip is the human release act (ADR
@@ -116,8 +114,8 @@ refuses unreachable **user-facing** flags without blocking infra-containment fla
 ### 4. Relationship to the concrete instances — upstream of, and independent of, each UI build
 
 This gate is **upstream of and independent of** each UI build. It does **not** build the
-reactions UI (#1867 under epic #1840) or the mecmua UIs (#2512, #2527); it makes their absence
-**block graduation**. Those three UI builds proceed on their own tracks; the gate is the
+reactions UI (#1867 under epic #1840); it makes its absence
+**block graduation**. That UI build proceeds on its own track; the gate is the
 process change that guarantees the *next* such feature cannot silently graduate without them.
 
 The four downstream units of epic #1943 land on a strict spine: this ADR (root) → the
@@ -129,7 +127,7 @@ at reviewed-ready for human merge at ship-it Step 0 (ADR [0048](0048-ship-it-mer
 ## Consequences
 
 - **A dark-ship flag can no longer graduate to 100% with no UI behind it.** "Released" recovers
-  its meaning: at 100%, a user can always see and use the feature. The reactions/mecmua class of
+  its meaning: at 100%, a user can always see and use the feature. The reactions class of
   silent zero-UI graduation becomes impossible-by-construction on the release path.
 - **New authoring obligations.** Every user-facing dark-ship flag now needs a consuming `.tsx`
   and a `@journey:<flag-key>`-tagged e2e before `/release` will flip it; `plan-epic` bakes that

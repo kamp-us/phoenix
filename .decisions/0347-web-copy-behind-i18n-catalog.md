@@ -49,7 +49,7 @@ stays English.**
 
 - `apps/web` user-facing copy renders in the reader's locale, `tr` or `en`. Turkish is the default:
   a reader who chooses nothing gets Turkish, and dropping Turkish is not on the table.
-- Product and brand nouns are **never** translated in either locale. `sözlük`, `pano`, `mecmua`,
+- Product and brand nouns are **never** translated in either locale. `sözlük`, `pano`,
   `kampus`, `divan`, `yazar`, `çaylak`, `kefil`, `bildir`, `künye`, `depo`, `sustur`, `engelle` —
   the whole `.glossary/LANGUAGE.md` §3 table — read identically in the English interface. The brand
   reads the same to both readers.
