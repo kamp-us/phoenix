@@ -1,7 +1,7 @@
 ---
 id: 0347
 title: apps/web copy is Turkish and English behind a typed catalog, never Turkish only
-status: accepted
+status: amended-in-part by [0414](0414-five-product-names-stay-turkish.md)
 date: 2026-09-03
 tags: [i18n, language, apps-web, glossary]
 ---

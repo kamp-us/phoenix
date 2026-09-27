@@ -53,17 +53,17 @@ beforeEach(() => {
 });
 
 describe("WelcomePage in English", () => {
-	it("renders the çaylak welcome in English, brand nouns untranslated", async () => {
+	it("renders the çaylak welcome in English", async () => {
 		mount();
 		await waitFor(() =>
-			expect(screen.getByTestId("welcome-title").textContent).toBe("welcome, çaylak"),
+			expect(screen.getByTestId("welcome-title").textContent).toBe("welcome, newcomer"),
 		);
 		expect(screen.getByText("where you stand")).toBeTruthy();
 		expect(screen.getByText("the road ahead")).toBeTruthy();
 		expect(screen.getByRole("button", {name: "continue"})).toBeTruthy();
-		expect(screen.getByText("your account is new; you are still a çaylak.")).toBeTruthy();
-		// `kefil` is the dt of the vouch fact and reads the same in either interface.
-		expect(screen.getByText("kefil")).toBeTruthy();
+		expect(screen.getByText("your account is new; you are still a newcomer.")).toBeTruthy();
+		// The dt of the vouch fact is translated like every non-product word (ADR 0414).
+		expect(screen.getByText("vouched")).toBeTruthy();
 	});
 
 	it("renders the first-contribution ask in English (#7044)", async () => {
@@ -91,7 +91,7 @@ describe("WelcomePage in English", () => {
 		mount();
 		await waitFor(() =>
 			expect(screen.getByTestId("welcome-yazar-note").textContent).toBe(
-				"you are already a yazar; what you write goes live directly.",
+				"you are already an author; what you write goes live directly.",
 			),
 		);
 		expect(screen.getByTestId("welcome-title").textContent).toBe("welcome");
