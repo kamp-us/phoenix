@@ -81,9 +81,6 @@ export const REVIEW_UI_STATE = "review:ui";
  */
 export const SHIP_STATES: ReadonlyArray<string> = ["ship", "ship:queued"];
 
-/** The label a no-PR builder outcome is only legal under (`build`'s `SUCCESS-NO-PR`). */
-export const INVESTIGATION_LABEL = "type:investigation";
-
 /**
  * Which of the two shapes a task sits in — the union that makes "a child with no epic" unwritable.
  *
@@ -505,23 +502,18 @@ export type Diagnosis =
 /**
  * The no-PR arm: `build`'s `SUCCESS-NO-PR`, proven rather than taken on the spawn's word.
  *
- * That terminal is legal only for a `type:investigation`, and its deliverable is a diagnosis posted
- * with `build note` — so the two artifacts are the label and a comment written **after** the task
- * entered build. Without the recency the issue's own triage comment would prove a diagnosis nobody
- * wrote; `since` is the log's own timestamp for the event that moved the task here.
+ * Its one artifact is a comment written **after** the task entered build, the note a no-PR builder
+ * posts with `build note`. The issue's type is not read: a board-data repair ends with no diff just
+ * as an investigation does. Without the recency the issue's own triage comment would prove a note
+ * nobody wrote; `since` is the log's own timestamp for the event that moved the task here.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/6911#issuecomment-5519863361
  */
 export const traceDiagnosis = (
 	issue: number,
-	labels: ReadonlyArray<string>,
 	comments: ReadonlyArray<CommentFact>,
 	since: string | null,
 ): Diagnosis => {
-	if (!labels.includes(INVESTIGATION_LABEL)) {
-		return {
-			_tag: "Absent",
-			why: `#${issue} does not carry ${INVESTIGATION_LABEL}, so a no-PR outcome is not one it may have`,
-		};
-	}
 	const posted = comments.filter((comment) => since === null || comment.createdAt > since);
 	const latest = posted.at(-1);
 	return latest === undefined

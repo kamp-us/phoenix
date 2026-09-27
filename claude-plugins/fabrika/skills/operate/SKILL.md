@@ -1272,23 +1272,23 @@ and the `PASS` after it is the read that binds.
 | `0` `proven` | the artifact is there | record the event |
 | `0` `not-required` | the leaf walks this event and it claims no artifact | record the event |
 | `0` `not-walkable` | the machine walks no such event out of this leaf | record **nothing** — record the event the leaf does walk |
-| `22` | the artifact is provably absent — no open PR links the task's issue and no legal no-PR outcome is proven either (the issue is not a `type:investigation`, or it is one but no diagnosis was posted since the task entered `build`); on an epic child, no branch in this tree carries commits naming it | the report is unproven — record `BLOCKED`, never the `DONE` |
+| `22` | the artifact is provably absent — no open PR links the task's issue and no no-PR outcome is proven either (no comment was posted on the issue since the task entered `build`); on an epic child, no branch in this tree carries commits naming it | the report is unproven — record `BLOCKED`, never the `DONE` |
 | `23` | a derived namespace has no verdict that still binds — no current-head one on a PR, or, on an epic child, none whose content digest matches what the range carries now | record **nothing**; re-read this pass |
 | `24` | a still-binding `FAIL` under a claimed `PASS`, or under a reviewer's claimed park; or, under a claimed review rewind, an open PR still linking the issue or the issue closed | record the event the artifact supports (`FAIL`); on a rewind, record nothing — brief the reviewer on the PR that links, or run `lane settle` over the closed issue |
 | `25` | several candidates — open PRs linking the issue, or lane branches carrying an epic child's commits that no one of them contains, so a repair round's superseding branch is not one of these | park — step 4, naming the ambiguity |
 | `11` | a lane, board or tree read failed | the proof is UNKNOWN — end `STOPPED` naming the code |
 
 A builder's `SUCCESS-NO-PR` is a proven `DONE`, not an unproven one: the verb takes the no-PR arm
-only for a `type:investigation`, and proves it from the diagnosis comment posted since the task
-entered `build` — the artifact the builder's terminal names, read off the issue rather than off
+whatever the issue's type, and proves it from the comment posted since the task entered `build` —
+the artifact the builder's terminal names, read off the issue rather than off
 the report. An epic child's `BUILT-NO-PR` is the other proven `DONE` without a PR, and its artifact
 is the range's own commits — a child opens no PR to prove one against.
 
-**That proof is also what routes the fold, and only the investigation's is.** All three builder
+**That proof is also what routes the fold, and only the no-PR one is.** All three builder
 terminals map to one `DONE`, so the machine reads the prover's answer rather than the token: a
 `DONE` proven off the diagnosis comment carries `diagnosis: true` onto its recorded line and takes
 the `done:diagnosis` arm straight to `diagnosed`, a final. It never enters `review`, and you never
-park it — the review it used to reach needs an open PR an investigation never opens, so `lane brief`
+park it — the review it used to reach needs an open PR a no-PR build never opens, so `lane brief`
 refused at `20` and the only move left was a `BLOCKED` over a lane that had finished correctly.
 A `SHIPPED-PR` and an epic child's `BUILT-NO-PR` carry no such field and fold to `review` exactly as
 they always did.

@@ -489,8 +489,9 @@ fabrika build release $issue_or_pr_number --token <claim-token>
 ```
 
 **Terminal vocabulary** — end on exactly one: `SHIPPED-PR` (PR open, branch pushed);
-`SUCCESS-NO-PR` (a `type:investigation` answered by a diagnosis posted with `build note` — branch
-removed, findings filed via `/report`; closing the issue is triage's, not yours); `BUILT-NO-PR` (an
+`SUCCESS-NO-PR` (work finished with no diff to ship, such as an investigation's diagnosis, proven
+by the note you posted with `build note` since the lane entered build — branch removed, findings
+filed via `/report`; closing the issue is triage's, not yours); `BUILT-NO-PR` (an
 epic child under the epic rules — your commit landed on the branch you cut from the assembly branch
 and the `build-deviations` marker is posted on the child issue; branch left local, unpushed, for the
 epic driver to fold); `BACKED-OFF` (claim lost with no succession open to it — a sibling of your

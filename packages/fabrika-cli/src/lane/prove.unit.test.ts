@@ -571,23 +571,31 @@ describe("traceClosure", () => {
 
 describe("traceDiagnosis", () => {
 	const comment = {id: 900, createdAt: "2026-08-16T02:00:00Z"};
-	const labels = ["type:investigation", "status:triaged"];
 
-	it("proves a no-PR outcome from the label and a comment written since the task entered build", () => {
-		expect(traceDiagnosis(4312, labels, [comment], "2026-08-16T01:00:00Z")).toEqual({
+	it("proves a no-PR outcome from a comment written since the task entered build", () => {
+		expect(traceDiagnosis(4312, [comment], "2026-08-16T01:00:00Z")).toEqual({
 			_tag: "Posted",
 			commentId: 900,
 		});
 	});
 
-	it("refuses when the issue is not one a no-PR outcome is legal on", () => {
-		const traced = traceDiagnosis(4312, ["type:feature"], [comment], null);
+	it("proves it with no build entry on record, off the newest comment", () => {
+		expect(
+			traceDiagnosis(4312, [{id: 800, createdAt: "2026-08-15T00:00:00Z"}, comment], null),
+		).toEqual({
+			_tag: "Posted",
+			commentId: 900,
+		});
+	});
+
+	it("refuses with no comment at all", () => {
+		const traced = traceDiagnosis(4312, [], "2026-08-16T01:00:00Z");
 		expect(traced._tag).toBe("Absent");
-		expect(traced._tag === "Absent" && traced.why).toContain("type:investigation");
+		expect(traced._tag === "Absent" && traced.why).toContain("no diagnosis");
 	});
 
 	it("refuses on a comment that predates the build — a triage note is not a diagnosis", () => {
-		const traced = traceDiagnosis(4312, labels, [comment], "2026-08-16T03:00:00Z");
+		const traced = traceDiagnosis(4312, [comment], "2026-08-16T03:00:00Z");
 		expect(traced._tag).toBe("Absent");
 		expect(traced._tag === "Absent" && traced.why).toContain("no diagnosis");
 	});
