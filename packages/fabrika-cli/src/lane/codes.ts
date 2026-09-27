@@ -664,7 +664,8 @@ export const ROUTE_UNDERIVED = 67;
 
 /**
  * `lane report`'s integrate evidence is missing, malformed, or on the wrong line — refused with the
- * log unappended.
+ * log unappended. `lane attach-integrate` refuses on the same code when the line it names may not
+ * take the pair: not an integrate FAIL, already answered by a later DONE, or already carrying one.
  *
  * A `FAIL` out of an epic child's `integrate` cell writes no verdict on the child, so the exit and
  * assembly head on its ledger line are the only record a repair builder's `build claim` can key on.

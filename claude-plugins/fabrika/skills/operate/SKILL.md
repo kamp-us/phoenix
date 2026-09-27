@@ -1360,6 +1360,21 @@ report` refuses a `FAIL` out of `integrate` without the pair, and the pair on an
 node <fabrika> lane report <lane> --root <root> --task <task> --token FAIL --integrate-exit 44 --assembly-head <sha>
 ```
 
+**A `FAIL` recorded before the pair existed is fixed with `lane attach-integrate`, not by recording
+it again.** That old `FAIL` already folded the child back into `build`, where `lane report` refuses
+the pair at `68`, so running `lane integrate` again to report a new `FAIL` hits the same refusal.
+The builder's claim refuses on `31` in the meantime. Read the `FAIL` line's `at` off `lane history`,
+take the exit and head from that integrate run's output, and attach them:
+
+```bash
+node <fabrika> lane attach-integrate <lane> --root <root> --task <task> --at <fail-at> --integrate-exit 43 --assembly-head <sha>
+```
+
+It appends one `CORRECTED` line and rewrites nothing. It refuses at `68` with the log unchanged when
+the line is not an integrate `FAIL`, when a later `DONE` already answered it, or when it already
+carries a pair. After that, the repair builder's `build resume-child <child> --lane <lane>
+--lane-root <root>` is admitted, exactly as for a `FAIL` recorded with the pair.
+
 A `41` (no tree holds `epic/<n>`, placed
 with `lane assembly`), a `33` (the main checkout is standing on that branch), a `22` (a `--child`
 branch that is not this repo's, so not the one `lane prove` printed) or a `45` (the assembly seat

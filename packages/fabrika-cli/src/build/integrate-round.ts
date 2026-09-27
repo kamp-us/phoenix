@@ -4,13 +4,16 @@
  * A child that passed review and then failed `lane integrate` carries only `PASS` range verdicts, so
  * the comments alone read it as finished. The machine sent it back to `build` all the same, and the
  * one record of why is the `FAIL` line `lane report` wrote with the exit and assembly head on it
- * (`../lane/integrate-failure.ts`). The ledger is local to the driver's machine, so the caller names
+ * (`../lane/integrate-failure.ts`), or the `CORRECTED` line `lane attach-integrate` appended to put
+ * them on a `FAIL` recorded before the pair existed. The ledger is local to the driver's machine, so the caller names
  * it — the `lane` and `root` its brief carries — and nothing here guesses a path.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9761
+ * @ruling https://github.com/kamp-us/phoenix/issues/9882
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import {childTaskId} from "../lane/emit.ts";
+import {applyCorrections} from "../lane/fold.ts";
 import {
 	INTEGRATE_STATE,
 	type IntegrateFailure,
@@ -99,7 +102,20 @@ export const readIntegrateRound = (
 				),
 			};
 		}
-		const failure = standingIntegrateFailure(loaded.entries, task);
+		// A `CORRECTED` line is how a pair reaches a `FAIL` recorded without one (`lane
+		// attach-integrate`), so the read stands on the resolved log, never on the raw lines.
+		const resolved = applyCorrections(loaded.entries);
+		if (resolved._tag === "Undecidable") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${verb}: ${loaded.logPath} holds a correction that resolves to no single line: ${resolved.defects.join("; ")} — whether #${child} holds an integrate FAIL is UNKNOWN, never "no"; nothing was written.`,
+					lines,
+				),
+			};
+		}
+		const failure = standingIntegrateFailure(resolved.entries, task);
 		return {
 			_tag: "Read",
 			failure,

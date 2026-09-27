@@ -34,6 +34,7 @@ import {boardClaimSeams, runArchive} from "./archive-verb.ts";
 import {runAssemblyBody} from "./assembly-body-verb.ts";
 import {FIELDS, runAssemblyPr} from "./assembly-pr-verb.ts";
 import {runAssembly} from "./assembly-verb.ts";
+import {runAttachIntegrate} from "./attach-integrate-verb.ts";
 import {boardRecorder, boardSeatReader} from "./board-seat.ts";
 import {runBrief} from "./brief-verb.ts";
 import {claimHoldReader} from "./claim-hold.ts";
@@ -293,6 +294,52 @@ const transition = leafCommand(
 	),
 	Command.withDescription(
 		"Record one operator event on the lane's append-only log — after the machine accepts it, never before, and after `lane prove`'s own read proves the artifact behind it. The proof is this verb's, not a command a driver is told to run first: a DONE and a PASS reach the log only with their artifact behind them, a reviewer's park only while no FAIL at the head says the run reached a verdict, and every other event answers `not-required` — or `not-walkable`, where this lane's machine walks no such event out of the task's leaf — without a board read; a refusal comes back on the prover's own code with the log byte-identical, and the remedies are `lane prove`'s, unchanged. stdout is `{previous, event, current, taskAffected}` with the two stateValues around the fold, plus `waitGrant` when the resume granted waits, `rationale` when it named why the park was cleared, and the prover's own `deferred`/`partial`/`landed`/`diagnosis` where the read answered them — the same fields `lane report` records, so the driver's line and a shell's carry the same facts. An invalid event — no cell in the task's current state (tea's NoCellError, surfaced verbatim), outside the operator's set, a task outside the active phase, a finished workflow — is refused loudly and the log is left byte-identical. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (a lane, board or tree read failed — whether the event is proven is UNKNOWN), 12 (the event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 22/23/24/25 (`lane prove`'s own refusals — artifact provably absent, a namespace with no still-binding verdict, a FAIL under a claimed PASS or park, several candidates — log unappended, remedies unchanged), 35 (--cause is outside the closed park-cause set, or rides on an event that is neither BLOCKED nor the machinery LAP), 52 (a BLOCKED names no cause at all, under a repo declaring `parkCause.uncaused: \"refuse\"` — name one), 38 (--class is outside the closed lane-class set), 36 (a resume would restore the state and not the budget it lands on — out of an error final, record the cleared round first and the two land in either order, `build clear` where a pull request carries the founder's grant and `lane clear` where the lane has none; out of a wait park, grant the waits on this same resume, which `recipe unpark` does once it has proven the queue moved), 47 (--grant-wait is not a whole grant of at least one wait, or rides on an event that is not UNBLOCKED), 53 (--rationale says nothing, or rides on an event that is not UNBLOCKED), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root). A cleared round is NOT recorded here: it is a `<TASK>.CLEARED` event `build clear` or `lane clear` appends, it targets no state, and the operator's set is unchanged. An optional --cause lands on a BLOCKED's event line and is what `recipe unpark` keys its recipe table on; every cause also carries a route — `driver` or `founder` — saying whose failure the park is. A BLOCKED with no cause is the bare park it always was and routes to a human, unless `.fabrika.jsonc` declares `parkCause.uncaused: \"refuse\"`, which refuses it at 52 with the log unappended. A repeatable --class lands the lane classes standing at the event on the same line, and is the fact the machine's `class:<name>` arms route on — `--class ui` on a WIP sends the lane to `build:ui`, and it stands until another event names a different set. An optional --grant-wait lands the waits a resume buys on the same UNBLOCKED line, so one recorded event both clears the park and pays for the read the lane resumes to take; it is the human fallback for a `human:queue-stall` whose `recipe unpark` proving read cannot run, and `build clear` is not it — that buys a repair round and never a longer wait. An optional --rationale rides the same UNBLOCKED and says why the park was cleared — the driver's own recommendation, which `recipe unpark` passes when it clears a driver-routed park, and which `lane status` reads back as the task's standing `rationale`. Examples: fabrika lane transition 5673 DONE · fabrika lane transition 5673 UNBLOCKED --grant-wait 1",
+	),
+);
+
+const attachIntegrate = leafCommand(
+	"attach-integrate",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the epic child's task (issue_<n>) whose integrate FAIL takes the pair; omittable on a single-task lane",
+			),
+		),
+		at: Flag.string("at").pipe(
+			Flag.withDescription(
+				"the `at` of the recorded integrate FAIL line the pair attaches to, exactly as `lane history` prints it",
+			),
+		),
+		integrateExit: Flag.integer("integrate-exit").pipe(
+			Flag.withDescription("the lane integrate exit that FAIL stood on: 42, 43 or 44"),
+		),
+		assemblyHead: Flag.string("assembly-head").pipe(
+			Flag.withDescription("the assembly branch head that integrate FAIL was refused against"),
+		),
+	},
+	Effect.fn(function* ({lane, root, task, at, integrateExit, assemblyHead}) {
+		yield* emit(
+			yield* onKey("attach-integrate", lane, root, (_key, ref) =>
+				runAttachIntegrate({
+					...ref,
+					task: Option.getOrNull(task),
+					at,
+					integrateExit,
+					assemblyHead,
+					now: () => new Date(),
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Attach the integrate exit and assembly head to an integrate FAIL recorded without them.",
+	),
+	Command.withDescription(
+		"Attach the `lane integrate` exit and assembly head to an epic child's integrate FAIL that was recorded before `lane report` carried them. `build claim --lane` reads an integrate FAIL only off that pair, and once the pair-less FAIL folded the task back into `build`, `lane report` refuses the pair there at 68 — so a lane in that state has no builder that can take its repair. This verb appends one `<TASK>.CORRECTED` line naming the FAIL by its `at` and carrying `integrate: {exit, head}`; no recorded line is rewritten or dropped, and `build claim` and `build resume-child` read the FAIL through the correction exactly as if it had been recorded with the pair. The line is judged before the ledger lock and again under it. It is refused, log byte-identical, when the named line is not a FAIL recorded out of `integrate`, when a later DONE on the task already answered it, when it already carries its own pair, when no line or more than one of the task stands at that `at`, or when the exit is not 42, 43 or 44 or the head is not a commit sha. stdout is `{lane, task, event, corrects, integrate}`. Exits 4 (lane record read in full and not the shape, or the log does not replay), 7 (no lane there), 8 (the append did not land — the pair is NOT attached), 11 (the lane could not be read), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository to derive the default lanes root from), 40 (another writer held the ledger lock), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it), 68 (the named line may not take the pair, or the pair is malformed — log unappended). Example: fabrika lane attach-integrate 900 --task issue_4312 --at 2026-09-20T18:04:11.000Z --integrate-exit 43 --assembly-head 03135b9",
 	),
 );
 
@@ -1595,6 +1642,7 @@ export const laneCommand = Command.make("lane").pipe(
 		transition,
 		clear,
 		report,
+		attachIntegrate,
 		prove,
 		history,
 		print,
