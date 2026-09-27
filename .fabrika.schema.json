@@ -42,6 +42,36 @@
 						"off",
 						"on"
 					]
+				},
+				"lockfileRegenerator": {
+					"type": [
+						"object",
+						"null"
+					],
+					"description": "The repo's write-mode command that regenerates a lockfile from the merged manifests. When every unmerged path of a replayed pick is one of `lockfiles` and `.gitattributes` marks it `merge=binary`, the replay runs `command` in the assembly worktree, stages the regenerated lockfile(s), and continues the pick. Absent or null, that collision parks like any other.",
+					"properties": {
+						"command": {
+							"type": "array",
+							"description": "The argv to spawn — e.g. [\"pnpm\", \"install\", \"--lockfile-only\"].",
+							"items": {
+								"type": "string"
+							},
+							"minItems": 1
+						},
+						"lockfiles": {
+							"type": "array",
+							"description": "The repo-relative lockfile paths the command regenerates — e.g. [\"pnpm-lock.yaml\"].",
+							"items": {
+								"type": "string"
+							},
+							"minItems": 1
+						}
+					},
+					"required": [
+						"command",
+						"lockfiles"
+					],
+					"additionalProperties": false
 				}
 			},
 			"additionalProperties": false

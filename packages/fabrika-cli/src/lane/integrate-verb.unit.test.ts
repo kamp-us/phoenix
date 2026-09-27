@@ -447,6 +447,7 @@ describe("runIntegrate", () => {
 				onto: BEFORE,
 				range: {from: BEFORE, to: REPLAY},
 				resolved: [REGISTRY],
+				regenerated: [],
 				commits: 1,
 				reReview: "required",
 				budget: "unspent",
@@ -555,6 +556,97 @@ describe("runIntegrate", () => {
 			expect(calls).toContain(`git -C ${SEAT} reset --hard ${BEFORE}`);
 			expect(calls).not.toContain(INSTALL);
 			expect(calls).not.toContain(TYPECHECK);
+		});
+
+		describe("with a lockfile regenerator declared", () => {
+			const LOCK = "pnpm-lock.yaml";
+			const REGENERATE = /^pnpm install --lockfile-only$/;
+			const ATTRIBUTES = /^git -C .* check-attr -z merge -- /;
+			const WORKTREE_CHANGES = /^git -C .* diff --name-only$/;
+			const REGEN_FILES = {
+				...REPLAY_FILES,
+				[`${SEAT}/.fabrika.jsonc`]: JSON.stringify({
+					...JSON.parse(REPLAY_CONFIG),
+					assemblyReplay: {
+						onCollision: "on",
+						lockfileRegenerator: {
+							command: ["pnpm", "install", "--lockfile-only"],
+							lockfiles: [LOCK],
+						},
+					},
+				}),
+				[`${SEAT}/${LOCK}`]: "lockfileVersion: '9.0'\n",
+			};
+			const upToRegenerate = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+				...upToMerge(),
+				[once(MERGE), errOut(`CONFLICT (content): Merge conflict in ${LOCK}`)],
+				[ABORT, okOut("")],
+				[once(HEAD), okOut(BEFORE)],
+				[REV_LIST, okOut(`${PICK}\n`)],
+				[DETACH, okOut("")],
+				[PICK_START, errOut(`CONFLICT (content): Merge conflict in ${LOCK}`)],
+				[UNMERGED, okOut(`${LOCK}\n`)],
+				[ATTRIBUTES, okOut(`${LOCK}\0merge\0binary\0`)],
+			];
+
+			it("regenerates the lockfile, still owes a review round, and still reconciles fail-closed", async () => {
+				const {outcome, calls} = await run(
+					[
+						...upToRegenerate(),
+						[REGENERATE, okOut("")],
+						[WORKTREE_CHANGES, okOut(`${LOCK}\n`)],
+						[STAGE, okOut("")],
+						[PICK_CONTINUE, okOut("")],
+						[once(HEAD), okOut(REPLAY)],
+						[NAME_REPLAY, okOut("")],
+						[CHECKOUT_BRANCH, okOut("")],
+						[MERGE_REPLAY, okOut("")],
+						[RECONCILE, okOut("")],
+						[STATUS, okOut("")],
+						[VALIDATE, okOut("")],
+						[once(HEAD), okOut(AFTER)],
+					],
+					REGEN_FILES,
+				);
+
+				expect(outcome.code).toBe(0);
+				const lines = outcome.stdout.trim().split("\n");
+				expect(lines.at(-1)).toBe("INTEGRATE-VERDICT: REPLAYED");
+				expect(JSON.parse(lines[0] ?? "")).toMatchObject({
+					event: "replayed",
+					resolved: [],
+					regenerated: [LOCK],
+					reReview: "required",
+					budget: "unspent",
+				});
+				// The frozen install still runs after the merge and its tracked-change probe still reads.
+				expect(calls).toContain(INSTALL);
+				expect(
+					calls.lastIndexOf(`git -C ${SEAT} status --porcelain --untracked-files=no`),
+				).toBeGreaterThan(calls.indexOf(INSTALL));
+			});
+
+			it("parks a regenerator that fails, naming the command and the lockfile, and proves the reset", async () => {
+				const {outcome, calls} = await run(
+					[
+						...upToRegenerate(),
+						[REGENERATE, errOut("ERR_PNPM_NO_MATCHING_VERSION")],
+						[PICK_ABORT, okOut("")],
+						[CHECKOUT_BRANCH, okOut("")],
+						[RESET_TO_HEAD, okOut("")],
+						[once(HEAD), okOut(BEFORE)],
+					],
+					REGEN_FILES,
+				);
+
+				expect(outcome.code).toBe(MERGE_CONFLICT);
+				const stderr = outcome.stderr.join("\n");
+				expect(stderr).toContain("pnpm install --lockfile-only");
+				expect(stderr).toContain(LOCK);
+				expect(stderr).toContain("--cause replay-conflict");
+				expect(calls).toContain(`git -C ${SEAT} reset --hard ${BEFORE}`);
+				expect(calls).not.toContain(INSTALL);
+			});
 		});
 
 		it("is UNKNOWN when the pick stops and the unmerged paths cannot be read", async () => {
