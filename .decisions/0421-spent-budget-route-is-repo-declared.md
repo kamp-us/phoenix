@@ -81,9 +81,11 @@ and its rationale requirement all stand.
 An adopter's driver reads its own repo's setting instead of phoenix's decision records, and a repo
 that wants every spent budget in front of a person can say so.
 
-`lane clear` does not read the setting yet, so under `founder` a driver's grant on a lane with no pull
-request is held back only by `recipe unpark` and `operate`'s text.
-[#9963](https://github.com/kamp-us/phoenix/issues/9963) tracks closing that gap in the verb.
+`lane clear` does not read the setting, so under `founder` a driver's grant on a lane with no pull
+request is held back only by `recipe unpark` and `operate`'s text. That gap is an accepted tradeoff,
+not pending work: `lane clear` is also the human's grant path and cannot tell a driver from a person,
+so [#9827](https://github.com/kamp-us/phoenix/issues/9827) rules making the verb enforce the setting
+out of scope.
 
 ## Records
 
