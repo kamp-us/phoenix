@@ -10,9 +10,12 @@ import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
 import {type LabelUniverse, PRESENT} from "./label-universe.ts";
 import {
 	type Appetite,
+	type BetRow,
+	type BetTable,
 	type Candidate,
 	type Comment,
 	describeAppetite,
+	describeBetTable,
 	disposition,
 	isAgentStamped,
 	isLaneEntering,
@@ -26,6 +29,7 @@ import {
 	readPitch,
 	renderReport,
 	resolveApproval,
+	resolveBetApproval,
 	SCOPE_LABELS,
 	type Scope,
 	toGuardVerdict,
@@ -430,5 +434,93 @@ describe("the remedy names each size's dollar amount", () => {
 		const report = renderReport(judge([candidate({comments: []})], BACKLOG), {S: 10, M: 20, L: 30});
 		expect(report).toContain("S = $10, M = $20, L = $30 per epic child");
 		expect(report).toContain("pitch-approved: appetite <S|M|L>");
+	});
+});
+
+describe("the bet arm — a `bet` on the table approves the pitch", () => {
+	const sized = (over: Partial<Candidate> = {}): Candidate =>
+		candidate({body: SIZED_PITCH, comments: [], ...over});
+	const row = (over: Partial<BetRow> = {}): BetRow => ({
+		head: 4312,
+		covers: [4312],
+		size: "M",
+		setter: "founder",
+		authorized: true,
+		...over,
+	});
+	const table = (...rows: ReadonlyArray<BetRow>): BetTable => ({
+		_tag: "read",
+		source: "o#1",
+		rows,
+	});
+
+	it("passes a size pitch whose row a write+ collaborator set to `bet` at the same Size", () => {
+		expect(disposition(sized(), table(row()))).toEqual({_tag: "pitched", appetite: size("M")});
+		expect(judge([sized()], BACKLOG, table(row()))).toMatchObject({pass: true, pitched: 1});
+	});
+
+	it("counts a `bet` an agent set under a write+ token — the setter's ACL is the whole bar", () => {
+		const agent = table(row({setter: "agent-under-founder-token"}));
+		expect(resolveBetApproval(4312, agent, size("M"))).toMatchObject({_tag: "approved"});
+	});
+
+	it("refuses a `bet` set below write+, naming the setter", () => {
+		const verdict = disposition(sized(), table(row({setter: "drive-by", authorized: false})));
+		expect(verdict).toMatchObject({
+			_tag: "unpitched",
+			detail: expect.stringContaining("set by drive-by, not a write+ collaborator"),
+		});
+	});
+
+	it("approves the head and every member of a group row, whatever a member's own size", () => {
+		const group = table(row({head: 50, covers: [50, 51, 52], size: "L"}));
+		expect(resolveBetApproval(50, group, size("L"))).toMatchObject({_tag: "approved"});
+		expect(resolveBetApproval(51, group, size("S"))).toMatchObject({_tag: "approved"});
+		expect(resolveBetApproval(52, group, cycles(2))).toMatchObject({_tag: "approved"});
+		const head = sized({
+			number: 50,
+			body: SIZED_PITCH.replace("**Appetite:** M", "**Appetite:** L"),
+		});
+		expect(judge([head, sized({number: 51})], BACKLOG, group)).toMatchObject({
+			pass: true,
+			pitched: 2,
+		});
+	});
+
+	it("refuses a `bet` whose Size disagrees with the body, asking for re-approval", () => {
+		expect(disposition(sized(), table(row({size: "S"})))).toMatchObject({
+			_tag: "unpitched",
+			detail: expect.stringContaining("is sized S but the body declares M — re-approval needed"),
+		});
+	});
+
+	it("refuses a `bet` row with no Size, and one over a legacy cycles pitch", () => {
+		expect(resolveBetApproval(4312, table(row({size: null})), size("M"))).toEqual({
+			_tag: "no-size",
+			head: 4312,
+		});
+		expect(disposition(candidate({comments: []}), table(row()))).toMatchObject({
+			detail: expect.stringContaining("cannot approve a legacy `<N> cycles` pitch"),
+		});
+	});
+
+	it("names the table's miss beside the comment's when neither carrier approves", () => {
+		expect(disposition(sized(), table())).toMatchObject({
+			detail: expect.stringContaining("; and no `bet` row on the table covers it"),
+		});
+	});
+
+	it("leaves the comment path unchanged, and an unread table approves nothing", () => {
+		const unread: BetTable = {_tag: "unread", reason: "no table project"};
+		expect(disposition(sized({comments: [SIZE_APPROVED]}), unread)).toMatchObject({
+			_tag: "pitched",
+		});
+		expect(disposition(sized(), unread)).toEqual(disposition(sized()));
+		expect(describeBetTable(unread)).toContain("bet arm unread — no table project");
+	});
+
+	it("says in the remedy that a `bet` on the table is the approval", () => {
+		const report = renderReport(judge([sized()], BACKLOG), SIZES);
+		expect(report).toContain("a `bet` on the table");
 	});
 });
