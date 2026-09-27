@@ -282,8 +282,10 @@
 }
 
 .tuval-picker-detail {
+	min-inline-size: 0;
 	color: var(--text-muted);
 	font: var(--t-meta);
+	overflow-wrap: anywhere;
 }
 
 .tuval-picker-group-label {
@@ -291,6 +293,15 @@
 	font: var(--t-meta);
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
+}
+
+/* A folder path heading the folder browser (#9697): its case is part of the path, so it is never
+   re-cased, and one long path breaks anywhere rather than pushing the window wider. */
+.tuval-picker-group-label[data-label-kind="path"] {
+	font: var(--t-mono);
+	text-transform: none;
+	letter-spacing: normal;
+	overflow-wrap: anywhere;
 }
 
 .tuval-placeholder {

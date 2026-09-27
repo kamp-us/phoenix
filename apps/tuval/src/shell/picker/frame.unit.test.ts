@@ -50,6 +50,8 @@ describe("picker frame", () => {
 			refusal: null,
 			previous: null,
 			filter: null,
+			step: null,
+			landing: null,
 		});
 		const options = frame.groups.flatMap((group) => group.options);
 		expect(frame.activeDescendant).toBe("picker-window-1-option-2");

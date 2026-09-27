@@ -190,6 +190,7 @@ const world: Readonly<Record<string, unknown>> = {
 	"echo.repeat.word": "ha",
 	"project.open.folder": "/work/agent-proof",
 	"project.close.folder": "/work/agent-proof",
+	"project.browse.folder": "/work",
 };
 
 /**
@@ -226,6 +227,16 @@ const scriptedProjects = Layer.effect(
 					});
 				}),
 			list: Effect.map(Ref.get(open), (current) => current.projects),
+			recent: Effect.map(Ref.get(open), (current) => current.recentProjects),
+			browse: (folder) =>
+				Effect.succeed({
+					folder: folder ?? "/nowhere",
+					name: "nowhere",
+					key: "-nowhere",
+					parent: null,
+					open: false,
+					folders: [],
+				}),
 			changes: Projects.none.changes,
 			renderers: Projects.none.renderers,
 		}),

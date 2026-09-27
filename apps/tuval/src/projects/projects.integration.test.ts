@@ -22,7 +22,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import {tmpdir} from "node:os";
-import {dirname, join} from "node:path";
+import {basename, dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
@@ -42,6 +42,7 @@ import {servePage} from "../page/dev-server.ts";
 import {ProjectId} from "../project-id.ts";
 import {scratchHome} from "../scratch-home.ts";
 import type {TransportServer} from "../shell/transport/server.ts";
+import type {BrowsedFolder} from "./open-project-wire.ts";
 import {OpenProjects, readOpenProjects, saveOpenProjects} from "./open-projects.ts";
 import {Projects} from "./Projects.ts";
 import {RecommendPrompts} from "./RecommendPrompts.ts";
@@ -250,6 +251,7 @@ describe("a project opened into a running desk", () => {
 					projects: [{folder: first}, {folder: second}],
 					trusted: [second],
 					recommends: [],
+					recent: [second, first],
 				});
 
 				const closed = yield* spell(kernel, ["project", "close"], {folder: second});
@@ -261,11 +263,35 @@ describe("a project opened into a running desk", () => {
 					Effect.flip(registry.resolve(ProgramId.make(beta.scope("counter")))),
 				).pipe(Effect.provideContext(kernel));
 				assert.strictEqual(gone._tag, "tuval/ProgramNotFound");
+
+				// "Open project…" reads the closed project back as recent, and not open (#9697).
+				const recent = yield* spell(kernel, ["project", "recent"], {});
+				assert.isTrue(recent.ok, JSON.stringify(recent));
+				if (recent.ok) {
+					assert.deepStrictEqual(recent.result, [
+						{folder: second, name: ProjectId.of(second).name, key: beta.key, open: false},
+						{folder: first, name: ProjectId.of(first).name, key: alpha.key, open: true},
+					]);
+				}
+				// Its folder browser lists the folder the closed project sits in, marking its config.
+				const browsed = yield* spell(kernel, ["project", "browse"], {folder: dirname(second)});
+				assert.isTrue(browsed.ok, JSON.stringify(browsed));
+				if (browsed.ok) {
+					const listed = (browsed.result as {readonly folders: ReadonlyArray<BrowsedFolder>})
+						.folders;
+					assert.deepInclude(listed, {
+						name: basename(second),
+						folder: second,
+						hasConfig: true,
+						open: false,
+					});
+				}
 				assert.deepStrictEqual(yield* readOpenProjects(home), {
 					version: 1,
 					projects: [{folder: first}],
 					trusted: [second],
 					recommends: [],
+					recent: [second, first],
 				});
 
 				// Reopening brings the counter back at its checkpoint, with its connection restored. The
@@ -363,6 +389,7 @@ describe("the first open of a folder", () => {
 					projects: [{folder: first}],
 					trusted: [],
 					recommends: [],
+					recent: [first],
 				});
 			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
 		TIMEOUT,
@@ -612,6 +639,7 @@ describe("a desk restart", () => {
 					projects: [gone, revoked, kept].map((folder) => ({folder})),
 					trusted: [gone, kept],
 					recommends: [],
+					recent: [],
 				});
 				yield* saveOpenProjects(home, stopped);
 				rmSync(gone, {recursive: true, force: true});

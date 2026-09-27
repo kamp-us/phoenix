@@ -746,6 +746,16 @@ that no longer resolves, a spawn that failed, an unreadable command line — eac
 written to the view slot through `window.setView`, so the picker stays mounted and announces it.
 Nothing here throws and nothing here fails an Effect.
 
+**Open project… ends the list** on a page that can ask the kernel (#9697). Choosing it moves the same
+listbox onto two steps: the recent projects, newest first, from the `recent` list the saved
+open-projects record keeps, then "Browse for a folder…", a folder browser that starts at the home
+folder. Enter or → goes into a folder, ← goes up, Enter on "Open <folder>" opens it, and Escape goes
+back one step. An open is the `project open` spell, the request `tuval open` sends, so a first open
+asks "Trust this folder?". A recent project that is already open says so, and choosing it lands the
+program list on that project's sessions instead of opening it twice. The steps live in the view slot
+(`src/shell/picker/open-project.ts`); what they list is read through the `project recent` and
+`project browse` spells as each step is shown (`src/shell/ui/use-open-project.ts`).
+
 `pickerFrame` is the render, as data: an ARIA listbox of two named groups, an accessible name on
 every option, the active option named for `aria-activedescendant`, and the refusal on an assertive
 live region. Movement answers the arrow keys and their vim and readline spellings (`j`/`k`,

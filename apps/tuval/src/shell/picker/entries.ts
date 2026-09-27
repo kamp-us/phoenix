@@ -47,6 +47,21 @@ export interface ProcessEntry {
 
 export type PickerEntry = ProgramEntry | ProcessEntry;
 
+/**
+ * The row that starts "Open project…" (#9697, ruling #9668 R6.1). It names nothing to spawn or
+ * attach, so it is no `PickerEntry`: a page that can open projects offers it after every entry, and
+ * choosing it moves the picker onto its steps (`./open-project.ts`).
+ */
+export interface OpenProjectEntry {
+	readonly _tag: "OpenProject";
+	readonly label: string;
+}
+
+export const OPEN_PROJECT_ENTRY: OpenProjectEntry = {_tag: "OpenProject", label: "Open project…"};
+
+/** One row of the program list: an entry, or the row that starts "Open project…". */
+export type PickerRow = PickerEntry | OpenProjectEntry;
+
 export interface PickerEntries {
 	readonly programs: ReadonlyArray<ProgramEntry>;
 	readonly processes: ReadonlyArray<ProcessEntry>;
@@ -163,11 +178,12 @@ export const readEntries: Effect.Effect<PickerEntries, never, Registry | Process
 	});
 
 /**
- * The group an entry is listed under, as a key: one per place a session is offered in, one for the
- * other programs, one for the running processes. Entries of one group are always adjacent in
+ * The group a row is listed under, as a key: one per place a session is offered in, one for the
+ * other programs, one for the running processes, and one for "Open project…". Entries of one group are always adjacent in
  * `flatten`'s order, which the filter keeps (`./filter.ts`) and the frame and the page keys read.
  */
-export const groupKeyOf = (entry: PickerEntry): string => {
+export const groupKeyOf = (entry: PickerRow): string => {
+	if (entry._tag === "OpenProject") return "projects";
 	if (entry._tag === "Process") return "processes";
 	if (entry.place === undefined) return "programs";
 	return entry.place._tag === "Home" ? "place:home" : `place:${entry.place.key}`;
