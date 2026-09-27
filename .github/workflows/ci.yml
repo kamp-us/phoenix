@@ -244,7 +244,7 @@ jobs:
       # getChangedFilesFromApi(...)`, else "Github token is not available - changes will be
       # detected using git diff"). That live API read is the sole flake surface in this job:
       # a transient GitHub-API-HTML blip served an error page where JSON was expected
-      # (`invalid character '<'`), hard-failing this step → `produce run-evidence bundle` →
+      # (`invalid character '<'`), hard-failing this step →
       # the `ci-required` aggregate went RED on a defect-free docs-only PR (#3244). Setting
       # `token: ''` forces the git-diff path, removing the API read entirely so the transient
       # CANNOT occur — a stronger fix than retrying a read we don't need to make. The
@@ -653,6 +653,31 @@ jobs:
 
       - name: Check no package outside apps/ depends on or imports an app
         run: node packages/app-boundary-guard/src/bin.ts
+
+  # The worker-bundle node-core assertion (ADR 0118, #1836): build the `apps/web` worker with the
+  # same bundler the deploy uses (rolldown + the cloudflare plugin, resolved through alchemy) and
+  # red when the emitted bundle reaches a forbidden Node-only module. No deploy and no Cloudflare
+  # account. It runs on every event with no path filter, as it did inside the retired run-evidence
+  # producer: a lockfile bump or a new import anywhere the worker reaches can pull a module in,
+  # and no path filter here names that set. `ci-required` requires it with a constant `'true'`.
+  bundle-assert:
+    name: worker bundle excludes node-core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Assert the worker bundle reaches no forbidden node-core module
+        working-directory: apps/web
+        run: node scripts/bundle-assert/main.ts
 
   skills:
     # The check name is a required status check on `main`, so it keeps its historical name
@@ -1145,7 +1170,7 @@ jobs:
   # (which gates all `packages/**` suites, #760).
   ci-required:
     name: ci-required
-    needs: [changes, check, unit, packages-tests, actionlint, integration, e2e, app-boundary]
+    needs: [changes, check, unit, packages-tests, actionlint, integration, e2e, app-boundary, bundle-assert]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -1164,7 +1189,7 @@ jobs:
           # run-ness cannot drift. `check` and `unit` are two jobs behind one `check_required`
           # output, which is why they carry two keys reading the one source. A declared job whose
           # keys are absent reds rather than reading as not-required.
-          CI_REQUIRED_JOBS: check unit packages-tests actionlint integration e2e app-boundary
+          CI_REQUIRED_JOBS: check unit packages-tests actionlint integration e2e app-boundary bundle-assert
           CHANGES_RESULT: ${{ needs.changes.result }}
           CHECK_REQUIRED: ${{ needs.changes.outputs.check_required }}
           UNIT_REQUIRED: ${{ needs.changes.outputs.check_required }}
@@ -1172,8 +1197,9 @@ jobs:
           ACTIONLINT_REQUIRED: ${{ needs.changes.outputs.workflows_required }}
           INTEGRATION_REQUIRED: ${{ needs.changes.outputs.integration_required }}
           E2E_REQUIRED: ${{ needs.changes.outputs.e2e_required }}
-          # Unconditional: the job has no `if:`, so it should run on every event.
+          # Unconditional: neither job has an `if:`, so each should run on every event.
           APP_BOUNDARY_REQUIRED: 'true'
+          BUNDLE_ASSERT_REQUIRED: 'true'
           CHECK_RESULT: ${{ needs.check.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
           PACKAGES_TESTS_RESULT: ${{ needs.packages-tests.result }}
@@ -1181,4 +1207,5 @@ jobs:
           INTEGRATION_RESULT: ${{ needs.integration.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
           APP_BOUNDARY_RESULT: ${{ needs.app-boundary.result }}
+          BUNDLE_ASSERT_RESULT: ${{ needs.bundle-assert.result }}
         run: node packages/fabrika-cli/src/ci/required-bin.ts

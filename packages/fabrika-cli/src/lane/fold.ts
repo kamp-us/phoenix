@@ -12,6 +12,7 @@
  */
 import {acceptsOf, applyCell, foldMsgs, msgKeysOf, NoCellError} from "@demlik/tea";
 import {type Deferral, deferredTasks, resolveDeferrals} from "./deferral.ts";
+import {type IntegrateFailure, isIntegrateFailure} from "./integrate-failure.ts";
 import {
 	AMENDED_EVENT,
 	BOARD_TERMINALS,
@@ -155,6 +156,12 @@ export interface LogEntry {
 	 * [`settle.ts`](settle.ts)'s.
 	 */
 	readonly assertedBy?: string;
+	/**
+	 * The `lane integrate` exit and assembly head an epic child's integrate `FAIL` stands on —
+	 * evidence on that one line, read back by `build claim` as the repair round it opens
+	 * ([`integrate-failure.ts`](integrate-failure.ts)).
+	 */
+	readonly integrate?: IntegrateFailure;
 }
 
 /**
@@ -221,6 +228,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			outcome?: unknown;
 			sha?: unknown;
 			assertedBy?: unknown;
+			integrate?: unknown;
 		};
 		if (
 			typeof record !== "object" ||
@@ -436,6 +444,18 @@ export const parseLog = (text: string): ParseLogResult => {
 			);
 			continue;
 		}
+		if (record.integrate !== undefined && !isIntegrateFailure(record.integrate)) {
+			defects.push(
+				`line ${index + 1} carries an \`integrate\` field that is not {exit: 42|43|44, head: <sha>}`,
+			);
+			continue;
+		}
+		if (record.integrate !== undefined && bareEvent(record.event) !== "FAIL") {
+			defects.push(
+				`line ${index + 1} carries \`integrate\` on a "${bareEvent(record.event)}" event — only an integrate FAIL names the exit and head it failed on`,
+			);
+			continue;
+		}
 		if (!corrected && record.corrects !== undefined) {
 			defects.push(
 				`line ${index + 1} carries \`corrects\` on a "${bareEvent(record.event)}" event — only a ${CORRECTED_EVENT} supersedes another line`,
@@ -466,6 +486,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.outcome === undefined ? {} : {outcome: record.outcome as string}),
 			...(record.sha === undefined ? {} : {sha: record.sha as string}),
 			...(record.assertedBy === undefined ? {} : {assertedBy: record.assertedBy as string}),
+			...(record.integrate === undefined ? {} : {integrate: record.integrate as IntegrateFailure}),
 		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};

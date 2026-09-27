@@ -273,3 +273,54 @@ export const readChildBack = (
 				: ok(payload);
 		});
 	});
+
+/**
+ * An already-filed issue a plan is adopting: the child read-back plus the two fields adoption turns
+ * on and the shipped shape drops — the database `id` the link takes, and whether the number is a
+ * pull request, which shares the issues endpoint and can never be a child.
+ */
+export interface Adoptee extends ChildReadback {
+	readonly id: number;
+	readonly title: string;
+	readonly isPullRequest: boolean;
+}
+
+/** One issue a plan would adopt, re-read from the API. */
+export const readAdoptee = (
+	env: Readonly<Record<string, string | undefined>>,
+	repo: string,
+	issue: number,
+): Called<Existence<Adoptee>> =>
+	Effect.gen(function* () {
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return unknown<Adoptee>(token.reason);
+		const outcome = yield* restRead(token.value, "GET", `repos/${repo}/issues/${issue}`);
+		return existenceOf(outcome, (body) => {
+			const payload = toChildReadback(body);
+			if (payload === null || !isRecord(body) || typeof body.id !== "number") {
+				return fail("GitHub answered 200 but its body is not an issue");
+			}
+			return ok({
+				...payload,
+				id: body.id,
+				title: typeof body.title === "string" ? body.title : "",
+				isPullRequest: body.pull_request !== undefined && body.pull_request !== null,
+			});
+		});
+	});
+
+/** Replace one issue's body. The caller composes an append and proves both halves on a re-read. */
+export const patchIssueBodyOver = (
+	env: Readonly<Record<string, string | undefined>>,
+	repo: string,
+	issue: number,
+	body: string,
+): Called<Attempt<void>> =>
+	Effect.gen(function* () {
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return token;
+		const outcome = yield* restWrite(token.value, "PATCH", `repos/${repo}/issues/${issue}`, {
+			body,
+		});
+		return attemptOf(outcome, () => ok<void>(undefined));
+	});

@@ -7,7 +7,7 @@ import {Link} from "react-router";
 import type {Notification, NotificationMarkReceipt} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
 import {LoadMoreButton} from "../../fate/wire";
-import {plural, useLocale} from "../../i18n";
+import {plural, useDateFormatter, useLocale} from "../../i18n";
 import {bildirimCopy, bildirimTarget, rowUnread, targetLinkLabelKey} from "./bildirim";
 import {useBildirimUnread} from "./useBildirimUnread";
 
@@ -158,6 +158,7 @@ function BildirimRow({
 	onMarkRead: (id: string) => void;
 }) {
 	const {t, locale} = useLocale();
+	const formatDate = useDateFormatter();
 	const data = useView(BildirimRowView, node);
 	const unread = rowUnread(data.readAt, markedThisSession, allMarkedThisSession);
 	const target = bildirimTarget(data.targetUrl);
@@ -174,7 +175,7 @@ function BildirimRow({
 				{bildirimCopy(data.kind, {t, locale, count: data.count})}
 			</span>
 			<time className="kp-bildirim__meta" dateTime={data.createdAt}>
-				{new Date(data.createdAt).toLocaleDateString("tr-TR")}
+				{formatDate.date(data.createdAt)}
 			</time>
 			<span className="kp-bildirim__spacer" />
 			{target.kind === "link" ? (

@@ -14,8 +14,7 @@ export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 
 /**
  * An input document parsed and then violated its schema: an entries JSON that is not
- * `ChangelogEntry[]`, a crabbox run-summary that is not a run summary, an `--extra-checks` file
- * that is not a `Check`. The base's reading of a body whose sections are missing or out of order,
+ * `ChangelogEntry[]`. The base's reading of a body whose sections are missing or out of order,
  * widened to a whole derived document exactly as `review-ui` widens it.
  */
 export const MALFORMED_DOCUMENT = SHARED_BAD_SECTIONS;

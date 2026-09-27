@@ -15,6 +15,7 @@ import {campaignAuthorsKey} from "./keys/campaign-authors.ts";
 import {capClearAuthorsKey} from "./keys/cap-clear-authors.ts";
 import {ciKey} from "./keys/ci.ts";
 import {codeValidatorsKey} from "./keys/code-validators.ts";
+import {configValidatorsKey} from "./keys/config-validators.ts";
 import {containmentVocabularyKey} from "./keys/containment-vocabulary.ts";
 import {unreadableCodeownersKey} from "./keys/control-plane.ts";
 import {dependencyReconcilerKey} from "./keys/dependency-reconciler.ts";
@@ -41,6 +42,7 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(capClearAuthorsKey),
 	register(ciKey),
 	register(codeValidatorsKey),
+	register(configValidatorsKey),
 	register(containmentVocabularyKey),
 	register(cycleDocKey),
 	register(decisionsDirKey),

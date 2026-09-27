@@ -8,6 +8,7 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
+import type {LockfileRegenerator} from "../config/keys/assembly-replay.ts";
 import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {replayBranchName, replayChild} from "./replay.ts";
@@ -36,14 +37,25 @@ const cleanPick = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[once(HEAD), okOut(REPLAY)],
 ];
 
-const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
-	const shell = fakeShell(script);
+const run = (
+	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	{
+		regenerator = null,
+		files = {},
+		unstartable = [],
+	}: {
+		readonly regenerator?: LockfileRegenerator | null;
+		readonly files?: Record<string, string>;
+		readonly unstartable?: ReadonlyArray<RegExp>;
+	} = {},
+) => {
+	const shell = fakeShell(script, undefined, unstartable);
 	return Effect.runPromise(
 		Effect.provide(
-			replayChild({path: SEAT, branch: BRANCH, child: CHILD, tip: TIP}),
-			Layer.merge(shell.layer, fakeFs({files: {}}).layer),
+			replayChild({path: SEAT, branch: BRANCH, child: CHILD, tip: TIP, regenerator}),
+			Layer.merge(shell.layer, fakeFs({files}).layer),
 		),
-	).then((outcome) => ({outcome, calls: shell.calls}));
+	).then((outcome) => ({outcome, calls: shell.calls, cwds: shell.cwds}));
 };
 
 describe("replayBranchName", () => {
@@ -70,6 +82,7 @@ describe("replayChild", () => {
 			range: {from: TIP, to: REPLAY},
 			commits: 1,
 			resolved: [],
+			regenerated: [],
 		});
 		expect(calls).toContain(
 			`git -C ${SEAT} branch --force ${replayBranchName(CHILD, TIP)} ${REPLAY}`,
@@ -163,5 +176,188 @@ describe("replayChild", () => {
 
 		expect(outcome._tag).toBe("Unreadable");
 		expect(calls).toContain(`git -C ${SEAT} merge --abort`);
+	});
+});
+
+describe("replayChild over a lockfile collision", () => {
+	const LOCK = "pnpm-lock.yaml";
+	const MANIFEST = "package.json";
+	const REGENERATOR: LockfileRegenerator = {
+		argv: ["pnpm", "install", "--lockfile-only"],
+		lockfiles: [LOCK],
+	};
+	const REGENERATE_LINE = "pnpm install --lockfile-only";
+
+	const UNMERGED = /^git -C .* diff --name-only --diff-filter=U$/;
+	const ATTRIBUTES = /^git -C .* check-attr -z merge -- /;
+	const REGENERATE = /^pnpm install --lockfile-only$/;
+	const WORKTREE_CHANGES = /^git -C .* diff --name-only$/;
+	const STAGE = /^git -C .* add -- /;
+	const CONTINUE = /^git -C .* -c core\.editor=true cherry-pick --continue$/;
+	const ABORT_PICK = /^git -C .* cherry-pick --abort$/;
+
+	const attrs = (...rows: ReadonlyArray<readonly [string, string]>): ExecResult =>
+		okOut(rows.map(([file, value]) => `${file}\0merge\0${value}\0`).join(""));
+
+	/** A binary merge leaves "ours" in place with no markers — the file keep-both cannot read. */
+	const LOCK_FILES = {[`${SEAT}/${LOCK}`]: "lockfileVersion: '9.0'\n"};
+
+	/** The pick stops on the named unmerged paths, before anything resolves them. */
+	const stoppedOn = (
+		...paths: ReadonlyArray<string>
+	): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+		[REV_LIST, okOut(`${PICK}\n`)],
+		[DETACH, okOut("")],
+		[PICK_START, errOut(`CONFLICT (content): Merge conflict in ${paths[0]}`)],
+		[UNMERGED, okOut(`${paths.join("\n")}\n`)],
+	];
+
+	/** Everything after a resolved pick: the replayed head named, merged and reseated. */
+	const landed = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+		[CONTINUE, okOut("")],
+		[once(HEAD), okOut(REPLAY)],
+		[NAME_REPLAY, okOut("")],
+		[CHECKOUT_BRANCH, okOut("")],
+		[MERGE_REPLAY, okOut("")],
+	];
+
+	/** A refused pick put back on its branch. */
+	const putBack = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+		[ABORT_PICK, okOut("")],
+		[CHECKOUT_BRANCH, okOut("")],
+	];
+
+	it("regenerates a lockfile-only collision in the seat, stages it and continues the pick", async () => {
+		const {outcome, calls, cwds} = await run(
+			[
+				...stoppedOn(LOCK),
+				[ATTRIBUTES, attrs([LOCK, "binary"])],
+				[REGENERATE, okOut("")],
+				[WORKTREE_CHANGES, okOut(`${LOCK}\n`)],
+				[STAGE, okOut("")],
+				...landed(),
+			],
+			{regenerator: REGENERATOR, files: LOCK_FILES},
+		);
+
+		expect(outcome).toEqual({
+			_tag: "Replayed",
+			replayBranch: replayBranchName(CHILD, TIP),
+			range: {from: TIP, to: REPLAY},
+			commits: 1,
+			resolved: [],
+			regenerated: [LOCK],
+		});
+		expect(cwds[calls.indexOf(REGENERATE_LINE)]).toBe(SEAT);
+		expect(calls.indexOf(`git -C ${SEAT} add -- ${LOCK}`)).toBeGreaterThan(
+			calls.indexOf(REGENERATE_LINE),
+		);
+		expect(calls.indexOf(`git -C ${SEAT} add -- ${LOCK}`)).toBeLessThan(
+			calls.findIndex((line) => CONTINUE.test(line)),
+		);
+	});
+
+	it("refuses a mixed collision exactly as it does with no regenerator declared", async () => {
+		const script = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+			...stoppedOn(LOCK, MANIFEST),
+			[ATTRIBUTES, attrs([LOCK, "binary"], [MANIFEST, "unspecified"])],
+			...putBack(),
+		];
+		const files = {...LOCK_FILES, [`${SEAT}/${MANIFEST}`]: '{"name": "x"}\n'};
+
+		const declared = await run(script(), {regenerator: REGENERATOR, files});
+		const undeclared = await run(script(), {regenerator: null, files});
+
+		expect(declared.outcome._tag).toBe("NotKeepBoth");
+		expect(declared.outcome).toEqual(undeclared.outcome);
+		expect(declared.calls).not.toContain(REGENERATE_LINE);
+	});
+
+	it("refuses a lockfile-only collision as before when no regenerator is declared", async () => {
+		const {outcome, calls} = await run([...stoppedOn(LOCK), ...putBack()], {
+			regenerator: null,
+			files: LOCK_FILES,
+		});
+
+		expect(outcome).toEqual({
+			_tag: "NotKeepBoth",
+			reason: `${LOCK}: the file carries no conflict markers — a delete/modify or a binary collision, which no textual resolution reaches`,
+			paths: [LOCK],
+		});
+		// Nothing new runs: the attributes are never read and no command is spawned.
+		expect(calls.some((line) => ATTRIBUTES.test(line))).toBe(false);
+		expect(calls).not.toContain(REGENERATE_LINE);
+	});
+
+	it("leaves a declared lockfile that is not `merge=binary` to the keep-both judgment", async () => {
+		const {outcome, calls} = await run(
+			[...stoppedOn(LOCK), [ATTRIBUTES, attrs([LOCK, "unspecified"])], ...putBack()],
+			{regenerator: REGENERATOR, files: LOCK_FILES},
+		);
+
+		expect(outcome._tag).toBe("NotKeepBoth");
+		expect(calls).not.toContain(REGENERATE_LINE);
+	});
+
+	it("abandons the replay naming the command and the lockfile when the regenerator fails", async () => {
+		const {outcome, calls} = await run(
+			[
+				...stoppedOn(LOCK),
+				[ATTRIBUTES, attrs([LOCK, "binary"])],
+				[REGENERATE, errOut("ERR_PNPM_NO_MATCHING_VERSION No matching version")],
+				...putBack(),
+			],
+			{regenerator: REGENERATOR, files: LOCK_FILES},
+		);
+
+		expect(outcome._tag).toBe("NotRegenerated");
+		if (outcome._tag !== "NotRegenerated") return;
+		expect(outcome.reason).toContain(REGENERATE_LINE);
+		expect(outcome.reason).toContain(LOCK);
+		expect(outcome.paths).toEqual([LOCK]);
+		expect(calls).toContain(`git -C ${SEAT} cherry-pick --abort`);
+		expect(calls).toContain(`git -C ${SEAT} checkout ${BRANCH}`);
+		expect(calls.some((line) => STAGE.test(line))).toBe(false);
+	});
+
+	it("abandons the replay naming the command and the lockfile when the regenerator cannot start", async () => {
+		const {outcome, calls} = await run(
+			[...stoppedOn(LOCK), [ATTRIBUTES, attrs([LOCK, "binary"])], ...putBack()],
+			{regenerator: REGENERATOR, files: LOCK_FILES, unstartable: [REGENERATE]},
+		);
+
+		expect(outcome._tag).toBe("NotRegenerated");
+		if (outcome._tag !== "NotRegenerated") return;
+		expect(outcome.reason).toContain(`\`${REGENERATE_LINE}\` could not be executed`);
+		expect(outcome.reason).toContain(LOCK);
+		expect(calls).toContain(`git -C ${SEAT} checkout ${BRANCH}`);
+	});
+
+	it("refuses a regenerator that also rewrote a tracked file beside the lockfile", async () => {
+		const {outcome, calls} = await run(
+			[
+				...stoppedOn(LOCK),
+				[ATTRIBUTES, attrs([LOCK, "binary"])],
+				[REGENERATE, okOut("")],
+				[WORKTREE_CHANGES, okOut(`${LOCK}\n${MANIFEST}\n`)],
+				...putBack(),
+			],
+			{regenerator: REGENERATOR, files: LOCK_FILES},
+		);
+
+		expect(outcome._tag).toBe("NotRegenerated");
+		if (outcome._tag !== "NotRegenerated") return;
+		expect(outcome.reason).toContain(MANIFEST);
+		expect(calls.some((line) => STAGE.test(line))).toBe(false);
+	});
+
+	it("is UNKNOWN when which paths are `merge=binary` cannot be read", async () => {
+		const {outcome, calls} = await run(
+			[...stoppedOn(LOCK), [ATTRIBUTES, errOut("fatal: bad attribute")], ...putBack()],
+			{regenerator: REGENERATOR, files: LOCK_FILES},
+		);
+
+		expect(outcome._tag).toBe("Unreadable");
+		expect(calls).not.toContain(REGENERATE_LINE);
 	});
 });

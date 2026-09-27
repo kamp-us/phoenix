@@ -362,7 +362,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `23` | proven: the local head does not contain the published remote head — the push would drop its commits |
 | `24` | proven: `git commit` ran and HEAD did not move — no commit was created |
 | `30` | proven: not admitted on the type axis — the issue is `type:decision` or `type:epic`, whose deliverable is not a pull request a build lane produces |
-| `31` | proven: the claim's mode and the child's standing range verdict disagree — a fresh build over a child holding a `FAIL`, or a `--resume` over a child holding none |
+| `31` | proven: the claim's mode and the child's standing range verdict disagree — a fresh build over a child holding a `FAIL`, or a `--resume` over a child holding none. Under `--lane`, a standing integrate `FAIL` on the ledger counts as that `FAIL` |
 | `32` | proven: not admitted on the criteria axis — the issue body carries no readable `### Acceptance criteria` block, absent or malformed, so there is no contract to build against |
 | `33` | proven: a working tree of this clone holds the lane branch, and the board licenses no release of it |
 | `34` | proven: no authorized claim marker attests a single survivor among a child's lane branches, so none is superseded |
@@ -885,6 +885,7 @@ because retracting another lane's claim is the one write this protocol must neve
 ```
 fabrika build claim 4 [--repo <owner/name>] [--purpose plan|gate|build] [--token <token>]
                          [--issue <served-issue>]
+                         [--resume] [--lane <lane> --lane-root <root>]
                          [--override <reason> --override-lane <lane>]
 fabrika build confirm 4 --token <token> [--repo <owner/name>]
 fabrika build release 4 --token <token> [--repo <owner/name>]
@@ -903,6 +904,8 @@ rows are `claim`'s alone:
 | `--purpose` | `plan` \| `gate` \| `build` | no | `build` | why this lane claims; the audience axis binds `build` only. An off-enum value is `10`, never a fallback |
 | `--override` | string | no | — | claim an issue the admission test refused on either axis, naming why; requires `--override-lane` |
 | `--override-lane` | string | no | — | the lane the override is taken for; refused without `--override`. Lane and reason are both written into the claim marker |
+| `--lane` | string | epic child only, with `--lane-root` | — | the epic lane key the brief's `## Task` names; its ledger is read for a standing integrate `FAIL` on this child. Half the pair is `1`; the pair on a plan, gate or PR claim is `10` |
+| `--lane-root` | string | with `--lane` | — | the lanes root the brief's `## Task` names as `root:` |
 
 **`claim` runs the fence before it writes anything.** After the target-open check and **before
 any marker is posted**, `claim` puts `<number>` through the
@@ -1107,15 +1110,15 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `7` | the issue is proven absent (404) or closed |
 | `8` | the marker write failed — it may or may not have landed; run `confirm` with the token named on stderr before anything else, and never re-run `claim` |
 | `9` | the marker landed but the read-back does not match |
-| `10` | `claim` only: `--purpose` is off the `plan` \| `gate` \| `build` enum, or `--issue` was passed for a non-PR target |
+| `10` | `claim` only: `--purpose` is off the `plan` \| `gate` \| `build` enum, `--issue` was passed for a non-PR target, or `--lane` was passed on a claim that is not a build claim on an issue |
 | `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the campaigns table or the issue's home could not be read — scope admission is UNKNOWN, never admitted; or, `claim --purpose build` against an issue only, its `blocked_by` list or a blocker's own state could not be read — blockedness is UNKNOWN, never "not blocked" |
-| `14` | `claim --issue` only: the repair PR's complete linkage set does not contain the explicitly requested served issue — no marker was written |
+| `14` | `claim --issue` only: the repair PR's complete linkage set does not contain the explicitly requested served issue — no marker was written. Or `claim --lane` only: that lane's machine holds no task for this child, so it is not the child's epic lane |
 | `15` | proven: another lane's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this lane does not hold. `claim` also refuses here over a claim this lane has *adopted* — release it first |
 | `16` | `claim --purpose build` against an **issue** only, proven: a `blocked_by` blocker is still open — every one is named on stderr, and no marker was written. Not overridable: the remedy is waiting, and the edge clears when the blocker closes or its work lands on the epic run's assembly branch. Unreachable under `--purpose plan` and `--purpose gate`, which skip the graph read |
 | `20` | `claim` only, proven: the issue's home is pinned by no `active` campaign row — no marker was written |
 | `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written. Unreachable when the target is an open PR serving a `type:decision` issue |
 | `30` | `claim --purpose build` against an **issue** only, proven: the issue is `type:decision` or `type:epic` — no marker was written. Not overridable: a decision opens it with `--cites <ruling-comment-url>`, an epic with `--purpose plan` or `--purpose gate` |
-| `31` | `claim --purpose build` against an **issue** only, proven: the claim's mode disagrees with the child's standing range verdicts — a fresh claim over a child holding any standing verdict (`PASS` as well as `FAIL`), or `--resume` over a child holding no `FAIL`. No marker was written, and neither direction is overridable: `--override` admits a *scope* refusal, and this is not one |
+| `31` | `claim --purpose build` against an **issue** only, proven: the claim's mode disagrees with the child's standing range verdicts — a fresh claim over a child holding any standing verdict (`PASS` as well as `FAIL`) or, under `--lane`, a standing integrate `FAIL`; or `--resume` over a child holding neither a `FAIL` verdict nor a standing integrate `FAIL`. No marker was written, and neither direction is overridable: `--override` admits a *scope* refusal, and this is not one |
 | `32` | `claim --purpose build` against an **issue** only, proven: the body carries no readable `### Acceptance criteria` block — absent, or a heading that drifted. No marker was written. Not overridable: the repair belongs on the issue (`triage enrich` for an absent block, `triage repair-criteria` for a drifted one), not on a branch |
 
 **The prior-build gate — "no lane holds this" is not "this has no reviewed build"**
@@ -1149,13 +1152,29 @@ trips it, and the remedy is to repost or delete the comment.
 
 `--resume` is the other side, and it is **checked, not trusted**: it admits a claim over a standing
 `FAIL` and refuses on `31` over a child holding none — including a child holding only `PASS`
-verdicts, whose fresh claim the gate has already refused, so both doors are shut on it. Repair is otherwise derived from the target
+verdicts, whose fresh claim the gate has already refused, so both doors are shut on it — unless the
+integrate arm below reads a standing integrate `FAIL` for it. Repair is otherwise derived from the target
 being an open PR and never typed, by founder ruling; the objection there was that a
 typed mode is passable in a state where it means nothing, and a child has no PR to derive from — so
 the word is admitted here exactly because the seam checks the fact it asserts. The route it opens is
 `build resume-child`, which passes `--resume` here itself and carries the lane on to
 `build branch --resume-lane` — the refusal names that entry rather than the pieces, because naming
 the pieces is what handed a builder an ordering decision it then got wrong.
+
+**The integrate arm — a `FAIL` that writes no verdict.** `lane integrate`'s exits `42` (no replay),
+`43` and `44` are a `FAIL` the child region sends back to `build`, and none of them writes a verdict
+on the child: its range verdicts stay `PASS`, so the comments alone read a finished child and both
+doors above shut on the repair the machine routed to. The record is the ledger line `lane report`
+writes for that `FAIL`, which must carry `--integrate-exit` and `--assembly-head` and lands them as
+`integrate: {exit, head}` (`packages/fabrika-cli/src/lane/integrate-failure.ts`). With
+`--lane <lane> --lane-root <root>` the claim loads that lane and reads the child's task,
+`issue_<n>`: the newest line carrying `integrate` stands until the task records a `DONE`. A standing
+integrate `FAIL` counts as a repair round beside a standing `FAIL` verdict — a fresh claim refuses on
+`31` naming the exit and head and pointing at `build resume-child <n> --lane <lane> --lane-root
+<root>`, and `--resume` admits, printing `"integrate":{"exit":42|43|44,"head":"<sha>"}` in its
+answer. A child with no standing integrate `FAIL` reads exactly as it did without the flags. The
+ledger read is fail-closed: an absent, unreadable or malformed lane is `11`, never "no integrate
+FAIL", and a lane holding no task for this child is `14`.
 
 **Errors**
 
@@ -1188,6 +1207,12 @@ the pieces is what handed a builder an ordering decision it then got wrong.
 | `build claim: #<n> already carries a build a reviewer failed — <gate> <polarity> over <base>..<tip> (comment <id>); …. A fresh build would re-implement it; run "fabrika build resume-child <n>" instead, which takes the repair lane and stands this tree on the branch that build left, in the one order those steps work in. Nothing was written.` — every standing verdict is named, `PASS` ones included, whenever at least one is a `FAIL` | 31 | refusal |
 | `build claim: #<n> is already built and graded — <gate> PASS over <base>..<tip> (comment <id>); …. A fresh build would re-implement work a reviewer passed, and there is nothing to repair, so --resume does not apply either. The next step is the epic driver's: fold the branch that build left, then close the child. Nothing was written.` — when every standing verdict is a `PASS` | 31 | refusal |
 | `build claim: --resume says #<n> holds a build to repair, and no gate holds a standing FAIL over it — drop --resume and claim it as the fresh build it is. Nothing was written.` | 31 | refusal |
+| `build claim: #<n> was built and passed review, then failed to integrate — lane integrate exit <code> against assembly head <sha> (<what that exit leaves to fix>). A fresh build would re-implement it; run "fabrika build resume-child <n> --lane <lane> --lane-root <root>" instead, which takes the repair lane and stands this tree on the branch that build left. Nothing was written.` — a fresh claim under `--lane` whose ledger holds a standing integrate `FAIL` and whose verdicts hold no `FAIL` | 31 | refusal |
+| `build claim: lane <lane> records a standing integrate FAIL for issue_<n> — lane integrate exit <code> against assembly head <sha>.` or `build claim: lane <lane> records no standing integrate FAIL for issue_<n>.` | 0 or 31 | detail line, once, under `--lane` |
+| `build claim: --lane and --lane-root name one ledger — pass both, as the brief's \`lane\` and \`root\`, or neither; nothing was written.` | 1 | usage error |
+| `build claim: --lane reads an epic child's integrate FAIL, which only a build claim on an issue asks about — drop --lane and --lane-root; nothing was written.` | 10 | refusal |
+| `build claim: <no lane at <dir> \| cannot read <path>: <reason> \| <path> is not the shape: <defects>> — whether #<n> holds an integrate FAIL is UNKNOWN, never "no"; nothing was written.` | 11 | refusal |
+| `build claim: lane <lane> holds no task issue_<n> — it is not #<n>'s epic lane, so it records nothing about this child; nothing was written.` | 14 | refusal |
 | `build claim: cannot read the comments on #<n>: <reason> — whether it already carries a graded build is UNKNOWN, never "no"; nothing was written.` | 11 | refusal |
 | `build claim: <n> comment(s) on #<n> reach for a verdict marker and are not readable range ones — <#id: why>; …. A verdict that cannot be read is UNKNOWN, never "no prior build"; repost or delete the comment(s), then claim again. Nothing was written.` | 11 | refusal |
 | `build claim: lost to <token> (posted <timestamp>, authorized).` | 15 | refusal |
@@ -1904,7 +1929,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika build resume-child 9 [--cites <url>] [--token <token>]
+fabrika build resume-child 9 [--cites <url>] [--token <token>] [--lane <lane> --lane-root <root>]
 ```
 
 **Inputs**
@@ -1914,6 +1939,7 @@ fabrika build resume-child 9 [--cites <url>] [--token <token>]
 | `<number>` | positional integer | yes | — | the epic child whose standing-`FAIL` repair lane this opens |
 | `--token` | string | no | — | the repair claim this lane already holds, when it is re-running; the claim step then answers off the standing marker and writes nothing. Omitting it on a re-run over a held claim is not a shorter spelling of the same run: the claim step mints a second marker, loses the earliest-wins tiebreak to this lane's own prior claim and refuses on `15` |
 | `--cites` | string | no | — | the founder ruling comment a `type:decision` child's repair transcribes, as `https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>`. Carried to the claim step unchanged and read by no other step here; `build claim` binds it to this repository and this child and opens its type axis with it. Needed on a first entry only — a `--token` continuation answers off the standing marker, so the citation is not asked for twice |
+| `--lane` / `--lane-root` | string | epic child, both or neither | — | the brief's `lane` and `root`, carried to the claim step unchanged: it reads that lane's ledger for a standing integrate `FAIL` on this child, the one record of a child that passed review and then failed `lane integrate` ([the integrate arm](#build-claim-build-confirm-build-release-build-adopt)) |
 
 **Output** — machine. One JSON object:
 
@@ -1922,13 +1948,17 @@ fabrika build resume-child 9 [--cites <url>] [--token <token>]
 ```
 
 `token` is the winning repair claim every later verb of the lane takes as `--token`; `branch` is the
-branch this run left checked out, and its trailing nonce is `claim.nonce` by construction.
+branch this run left checked out, and its trailing nonce is `claim.nonce` by construction. When the
+claim step admitted the repair on an integrate `FAIL`, the object also carries
+`"integrate":{"exit":42|43|44,"head":"<sha>"}` — relayed off the claim's answer, never re-read —
+because that pair is the round's whole finding: there is no verdict for `build verdicts` to print.
 
 **The five steps, in the one order that works.** An epic child's repair opens on facts that must be
 established in sequence, and each step needs what the one before it produced:
 
 1. `build claim <n> --resume` — the repair claim. `--resume` is checked against the child's own
-   range-scoped verdicts, so a child holding no standing `FAIL` refuses on `31` here, before any
+   range-scoped verdicts and, under `--lane`, its epic lane's ledger, so a child holding neither a
+   standing `FAIL` verdict nor a standing integrate `FAIL` refuses on `31` here, before any
    marker is written. `--cites` rides here too, and only here: a `type:decision` child otherwise
    refuses on `30`, which would leave a ruled decision the epic already built and a reviewer already
    failed with no route through the one entry the skill sanctions.
@@ -1966,10 +1996,10 @@ branch is re-keyed only once the claim and cleanliness steps have passed.
 | `10` | a composed usage refusal |
 | `11` | a read is UNKNOWN, several prior branches name the child, another worktree still holds the branch, or a composed verb answered outside its documented shape |
 | `13` | the generic checkout is dirty at step 3 |
-| `14` | the armed proof reads the wrong lane — including a tree still on a generic harness branch |
+| `14` | the armed proof reads the wrong lane — including a tree still on a generic harness branch — or the `--lane` ledger holds no task for this child |
 | `15` | the claim is foreign |
 | `20` / `21` / `30` / `32` | the admission test, at the claim step |
-| `31` | the child holds no standing `FAIL`, so there is nothing to repair |
+| `31` | the child holds no standing `FAIL` and no standing integrate `FAIL`, so there is nothing to repair |
 
 **Errors**
 
@@ -2421,6 +2451,24 @@ them was opened — nothing ran at all, or everything that ran reads other files
 that green is exactly the one the named-class design exists to refuse. This is why `reads` is
 mandatory and non-empty: an entry that names no file can only buy the false green back.
 
+**A declared config file is the same remedy again, taken by declaration.** A root config file
+such as `lefthook.yml` matches no surface's pattern, and its validator is the repo's own tool, so
+`.fabrika.jsonc`'s `configValidators` declares it in the `workflowValidators` grammar: an argv plus
+the exact repo-relative files it `reads`, never a glob. A file the patterns leave unclaimed and some
+entry reads leaves the unvalidatable class for a `config` class no surface owns. **Every** run whose
+diff touches such a file spawns the entries that read it, whatever `--surface` names, beside the
+local-tree guard sweep, and names each in `ran`. So a diff of config files alone contradicts no
+surface and greens or reds under any token, and a config file no entry reads stays unvalidatable and
+still refuses `22`. `SURFACES` gains no member. A `.fabrika.jsonc` whose `configValidators` cannot be
+read or does not decode is `11` — but only over a diff holding an unclaimed file, the one diff whose
+answer depends on it.
+
+**Non-JS source takes the same key.** A `.java` file under a Gradle tree matches no surface's
+pattern either, and the extension patterns do not widen to take it: `pnpm typecheck` and Biome never
+open it. A repo declares its own build (for example `./gradlew testDebugUnitTest`) under
+`configValidators`, naming each source file the entry claims in `reads` — exact paths, as for config
+files — and a Java-only diff then greens or reds exactly as a config-only one does.
+
 Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`).
 
 **Exit status** (beyond the universal four)
@@ -2428,12 +2476,12 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | Code | Trigger |
 |---|---|
 | `7` | the diff against the branch base is empty — nothing to validate, zero scope |
-| `10` | `--surface` is off-enum, or the diff contains none of the file classes that surface's validators open |
+| `10` | `--surface` is off-enum, or the diff contains none of the file classes that surface's validators open and is not made only of declared config files |
 | `11` | a validator could not be executed, a changed file could not be read for a reason other than absence, or the lane's claim could not be read — the verdict is UNKNOWN, never green |
 | `14` | proven: the checked-out branch is not this lane's (lane-identity rule) |
 | `15` | proven: the lane's claim is held by another session |
 | `18` | proven red — the failing runner and its diagnostics are on stderr |
-| `22` | proven: no changed file falls in any surface's validators — nothing to run, never a green |
+| `22` | proven: no changed file falls in any surface's validators or any declared config validator's `reads` — nothing to run, never a green |
 
 **Errors**
 
@@ -2449,6 +2497,8 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | `build check: no workflow validator could be executed — actionlint is not installed here (<reason>) and this repo declares none — so no file was opened and the verdict is UNKNOWN, never green.` | 11 | refusal |
 | `build check: <n> workflow validator(s) ran, but none of them opened any of the <m> changed workflow file(s) (<files>) — actionlint did not run here (<reason>) and no declared validator reads them, so the verdict is UNKNOWN, never green.` | 11 | refusal |
 | `build check: no validator that ran opens <files> — reported in \`unvalidated\`, so this green claims nothing about them.` | 0 | scope note beside a green |
+| `build check: cannot read \`configValidators\` from .fabrika.jsonc (<reason>) — whether any of <files> has a declared validator is UNKNOWN, never green.` | 11 | refusal |
+| `build check: <n> changed file(s) read by \`configValidators\` in .fabrika.jsonc: <files>.` | 0 | scope note |
 | `build check: <n> workflow validator(s) declared in .fabrika.jsonc.` | 0 | scope note |
 | `build check: no repo workflow validator is declared — <reason>.` | 0 | scope note |
 | `build check: actionlint did NOT run (<reason>) — <ci.gateWorkflow>'s actionlint job supersedes this verdict on workflow syntax.` | 0 | scope note beside a green |

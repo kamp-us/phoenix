@@ -20,6 +20,8 @@ import {
 	remedyForCause,
 	routeForCause,
 	SHELL_VOCABULARIES,
+	TERMINAL_PARK_CAUSES,
+	tokenCause,
 } from "./report.ts";
 
 /**
@@ -430,6 +432,31 @@ describe("the machinery terminals a driver records about the pipeline itself", (
 		expect(integrate).toMatchObject({event: MACHINERY_EVENT});
 		expect(review).toMatchObject({event: "FAIL"});
 		expect(integrate).not.toMatchObject({event: "FAIL"});
+	});
+});
+
+describe("the park terminals whose token names their own cause", () => {
+	it.each(Object.entries(TERMINAL_PARK_CAUSES))("%s parks, and names %s", (token, cause) => {
+		expect(eventForToken(token)).toMatchObject({event: "BLOCKED"});
+		expect(tokenCause(token)).toBe(cause);
+		expect(PARK_CAUSE_TOKENS).toContain(cause);
+	});
+
+	it("reads the machinery table through the same lookup", () => {
+		expect(tokenCause(" base-drifted ")).toBe("head-behind-base");
+	});
+
+	// `ship`'s other parks fold to `human:cp-approval` for other reasons, so none may inherit the
+	// approval wait's cause and match its recipe row.
+	it("names no cause for a ship park that is not an approval wait", () => {
+		for (const token of ["REFUSED", "UNKNOWN", "ROUTED-REVIEW", "ROUTED-HEAL-CI"]) {
+			expect(tokenCause(token)).toBeNull();
+		}
+	});
+
+	it("routes the approval wait to the founder and names no remedy", () => {
+		expect(routeForCause("awaiting-cp-approval")).toBe("founder");
+		expect(remedyForCause("awaiting-cp-approval")).toBeNull();
 	});
 });
 

@@ -1,7 +1,7 @@
 ---
 id: 0054
 title: Run-evidence bundle — the auto-merge gate trusts a SHA-bound structured run bundle, not prose; the bundle *contract* is the spec, the *producer* is crabbox (spike #235 confirmed; CI-emits-bundle fallback, native DO last resort)
-status: accepted
+status: superseded by [0410](0410-ship-checks-is-ship-ci-trust.md)
 date: 2026-06-14
 tags: [pipeline, ci, review-code, ship-it, auto-merge]
 ---

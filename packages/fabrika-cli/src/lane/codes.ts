@@ -661,3 +661,16 @@ export const GRANT_UNAUTHORIZED = 66;
  * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
  */
 export const ROUTE_UNDERIVED = 67;
+
+/**
+ * `lane report`'s integrate evidence is missing, malformed, or on the wrong line — refused with the
+ * log unappended.
+ *
+ * A `FAIL` out of an epic child's `integrate` cell writes no verdict on the child, so the exit and
+ * assembly head on its ledger line are the only record a repair builder's `build claim` can key on.
+ * A line without them sends the child to a repair round no builder can take, and the same fields on
+ * any other line would name a repair that was never owed.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9761
+ */
+export const INTEGRATE_EVIDENCE = 68;

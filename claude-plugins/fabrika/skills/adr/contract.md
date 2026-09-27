@@ -582,9 +582,10 @@ The written value resolves `--by`'s slug **off disk**, never from its title:
 
 **The one-line invariant, enforced in code.** The verb reads the file, rewrites exactly the
 `status:` line, and asserts before writing that the resulting text differs from the original on that
-line alone. A diff of any other line is a bug and aborts the write with exit `15`. An accepted ADR's
-decision text is immutable; the relationship is named in the *newer* ADR's `## Context`, which this
-verb never touches. This assertion is the deterministic test the implementation owes.
+line alone. A diff of any other line is a bug and aborts the write with exit `15`. This assertion is
+the deterministic test the implementation owes. The verb writes nothing beyond that line: the optional
+bounded pointer [`SKILL.md` step 4](SKILL.md#4--resolve-every-reference-then-edit-the-status-lines)
+allows is hand-added by the author, never by the verb.
 
 **Exit status**
 
@@ -638,8 +639,9 @@ $ echo $?
   it has no record, is why exit `13` exists.
 - **The append case is real, not hypothetical.** Records carrying several `amended-in-part by` links
   at once are ordinary in a live corpus, so the list-append is the common path rather than an edge.
-- The immutability rule: never edit an accepted ADR's decision text; supersede it, or amend it in
-  part on the status line alone. Exit `15` is that rule made mechanical rather than remembered.
+- Exit `15` makes the verb's own write mechanical rather than remembered: it rewrites the `status:`
+  line and nothing else. What an author may still hand-add to the older record, the optional bounded
+  pointer, is answered in [`SKILL.md` step 4](SKILL.md#4--resolve-every-reference-then-edit-the-status-lines).
 
 ---
 

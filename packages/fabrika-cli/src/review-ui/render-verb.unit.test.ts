@@ -1,6 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {signSessionToken} from "../capture/auth.ts";
+import {PREVIEW_AUTH_KEY_PATH, signSessionToken} from "../capture/auth.ts";
+import type {LocaleDeclaration} from "../capture/locale-seed.ts";
 import type {UiSurface} from "../config/keys/ui-surfaces.ts";
 import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {
@@ -98,9 +99,15 @@ const options = {
 	surfaces: ["/pano"],
 	viewports: [] as readonly string[],
 	flags: [] as readonly string[],
+	locale: null as string | null,
+	localeDeclaration: null as LocaleDeclaration | null,
 	app: null,
 	surfaceRows: ROWS,
 	authSecretFrom: null as string | null,
+	// A directory in no package tree, so the committed-preview-key source finds nothing and the
+	// ambient fallback is what these cases exercise. The cases that mean to read the committed key
+	// override this with `/repo`, whose fake tree carries the file.
+	cwd: "/work",
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 	tmpRoot: "/tmp",
@@ -111,8 +118,9 @@ const run = (
 	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	files: Readonly<Record<string, string>> = {},
+	unreadable: ReadonlyArray<string> = [],
 ) => {
-	const fs = fakeFs({files});
+	const fs = fakeFs({files, unreadable: [...unreadable]});
 	return Effect.runPromise(
 		Effect.provide(
 			runRender({...options, ...overrides}),
@@ -216,7 +224,92 @@ describe("runRender", () => {
 		const said = outcome.stderr.join("\n");
 		expect(said).toContain("insecure_");
 		expect(said).toContain("$BETTER_AUTH_SECRET");
-		expect(said).toContain("--auth-secret-from");
+		// The route out is the committed preview key, never a credential the seat has to be handed
+		// — this checkout simply carries no such file.
+		expect(said).toContain(PREVIEW_AUTH_KEY_PATH);
+		expect(said).not.toContain("ALCHEMY_PASSWORD");
+	});
+
+	/**
+	 * The route the whole ruling exists to open: a seat holding no credential at all renders an
+	 * `:auth` surface, because the key its preview verifies against is committed in the repo.
+	 */
+	it("signs with the committed preview key, with no flag and no ambient secret", async () => {
+		const seen = new Map<string, readonly {name: string; value: string}[]>();
+		const {outcome} = await run(
+			happy(),
+			{
+				surfaces: ["/pano:auth"],
+				cwd: "/repo",
+				env: {CLAUDE_PIPELINE_REPO: "o/r", PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32)},
+				render: (request) => {
+					seen.set(request.surface, request.cookies);
+					return Effect.succeed(rendered(request.surface, request.outDir));
+				},
+			},
+			{
+				"/repo/package.json": "{}",
+				[`/repo/${PREVIEW_AUTH_KEY_PATH}`]: "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0\n",
+			},
+		);
+		expect(outcome.code).toBe(0);
+		expect(seen.get("/pano:auth")?.[0]?.value).toBe(
+			signSessionToken("t".repeat(32), "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0"),
+		);
+	});
+
+	it("prefers the committed preview key over a usable ambient secret", async () => {
+		const seen = new Map<string, readonly {name: string; value: string}[]>();
+		await run(
+			happy(),
+			{
+				surfaces: ["/pano:auth"],
+				cwd: "/repo",
+				env: {
+					CLAUDE_PIPELINE_REPO: "o/r",
+					PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+					BETTER_AUTH_SECRET: "a".repeat(32),
+				},
+				render: (request) => {
+					seen.set(request.surface, request.cookies);
+					return Effect.succeed(rendered(request.surface, request.outDir));
+				},
+			},
+			{
+				"/repo/package.json": "{}",
+				[`/repo/${PREVIEW_AUTH_KEY_PATH}`]: "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0\n",
+			},
+		);
+		// The ambient variable is a seat's guess at what some stage deploys with; the committed key
+		// is what this preview provably deploys with, so it wins.
+		expect(seen.get("/pano:auth")?.[0]?.value).toBe(
+			signSessionToken("t".repeat(32), "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0"),
+		);
+	});
+
+	it("lets --auth-secret-from override the committed preview key", async () => {
+		const seen = new Map<string, readonly {name: string; value: string}[]>();
+		await run(
+			happy(),
+			{
+				surfaces: ["/pano:auth"],
+				cwd: "/repo",
+				authSecretFrom: "/run/named-secret",
+				env: {CLAUDE_PIPELINE_REPO: "o/r", PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32)},
+				render: (request) => {
+					seen.set(request.surface, request.cookies);
+					return Effect.succeed(rendered(request.surface, request.outDir));
+				},
+			},
+			{
+				"/repo/package.json": "{}",
+				[`/repo/${PREVIEW_AUTH_KEY_PATH}`]: "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0\n",
+				"/run/named-secret": `${"d".repeat(32)}\n`,
+			},
+		);
+		expect(seen.get("/pano:auth")?.[0]?.value).toBe(
+			signSessionToken("t".repeat(32), "d".repeat(32)),
+		);
 	});
 
 	it("signs with the exported repo-wide secret when --auth-secret-from names it", async () => {
@@ -242,6 +335,29 @@ describe("runRender", () => {
 		// The named source wins over the ambient placeholder, which is the whole point of the flag.
 		const value = seen.get("/pano:auth")?.[0]?.value;
 		expect(value).toBe(signSessionToken("t".repeat(32), "d".repeat(32)));
+	});
+
+	/**
+	 * "I could not look" and "there is no repo here" are two facts, and only the second one is the
+	 * ambient fallback's case. An unreadable ancestor folded into that arm would refuse on the
+	 * ambient variable being empty and never mention the directory that actually stopped the read.
+	 */
+	it("refuses on 11 naming the unreadable ancestor when the repo root cannot be located", async () => {
+		const {outcome} = await run(
+			happy(),
+			{
+				surfaces: ["/pano:auth"],
+				cwd: "/repo",
+				env: {CLAUDE_PIPELINE_REPO: "o/r", PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32)},
+			},
+			{"/repo/package.json": "{}"},
+			["/repo/package.json"],
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		const said = outcome.stderr.join("\n");
+		expect(said).toContain("/repo/package.json");
+		expect(said).toContain("the repo root could not be located");
+		expect(said).not.toContain("$BETTER_AUTH_SECRET");
 	});
 
 	it("refuses an unreadable --auth-secret-from on 11, naming the path", async () => {
@@ -458,6 +574,83 @@ describe("runRender", () => {
 		expect(outcome.stdout).toBe("");
 		expect(written.size).toBe(0);
 		expect(outcome.stderr.at(-1)).toMatch(/did not render with its forced flags/);
+	});
+
+	// The locale operand's own refusals, decided before any read or browser launch, on the same `10`
+	// a malformed --flag takes: both would shoot the default page under the requested name.
+	const LOCALES: LocaleDeclaration = {storageKey: "app.locale", values: ["tr", "en"]};
+
+	it("refuses --locale when the repo declares no locale, before anything is read", async () => {
+		const legCalls: string[] = [];
+		const {outcome} = await run([], {
+			locale: "en",
+			render: (request) => {
+				legCalls.push(request.surface);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain('--locale "en" cannot be seeded');
+		expect(outcome.stderr.join("\n")).toContain("declares no uiCapture.locale");
+		expect(legCalls).toEqual([]);
+	});
+
+	it("refuses a --locale value outside the declared list on 10, naming the list", async () => {
+		const {outcome} = await run([], {locale: "de", localeDeclaration: LOCALES});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain("the declared locales are tr, en");
+	});
+
+	it("seeds the declared key in every shot, anonymous and tier-naming alike", async () => {
+		const seen: unknown[] = [];
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano", "/b"],
+			viewports: ["desktop", "mobile"],
+			locale: "en",
+			localeDeclaration: LOCALES,
+			render: (request) => {
+				seen.push(request.locale);
+				return Effect.succeed(
+					rendered(request.surface, request.outDir, request.viewport.label, request.viewport.width),
+				);
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual(Array(4).fill({storageKey: "app.locale", value: "en"}));
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/pano" at desktop in locale en captured: 1280x2140, 0 page error(s)',
+		);
+	});
+
+	it("seeds nothing without --locale, even when the repo declares one", async () => {
+		const seen: unknown[] = [];
+		const {outcome} = await run(happy(), {
+			localeDeclaration: LOCALES,
+			render: (request) => {
+				seen.push(request.locale);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([null]);
+	});
+
+	it("refuses a shot whose lang did not come back as the seeded locale on 11, recording nothing", async () => {
+		const {outcome, written} = await run(happy(), {
+			surfaces: ["/pano", "/b"],
+			locale: "en",
+			localeDeclaration: LOCALES,
+			render: legOf({
+				"/pano": {_tag: "WrongLocale", wanted: "en", reason: `the page's lang read back "tr"`},
+				"/b": {_tag: "Crashed", firstError: "TypeError: x is null"},
+			}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(written.size).toBe(0);
+		expect(outcome.stderr.at(-1)).toBe(
+			`review-ui render: surface "/pano" at desktop in locale en did not render in its seeded locale (the page's lang read back "tr") — the seeded locale's render is UNKNOWN, never the default one.`,
+		);
 	});
 
 	it("refuses a closed PR on 7 — a closed PR is provably not reviewable scope", async () => {

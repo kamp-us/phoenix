@@ -58,12 +58,14 @@ import {
 	CLASS_UNRECOGNISED,
 	CONCURRENT_WRITE,
 	EVENT_REFUSED,
+	INTEGRATE_EVIDENCE,
 	PARK_UNCAUSED,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
 	WAIT_TOO_SOON,
 } from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
+import {integrateEvidenceRefusal, readIntegrateEvidence} from "./integrate-failure.ts";
 import type {CompiledLane, OperatorEvent, TaskState} from "./machine.ts";
 import {parkCauseRefusal} from "./park-cause-rule.ts";
 import {gateOnProof} from "./proof-gate.ts";
@@ -76,7 +78,7 @@ import {
 	conditionalTerminal,
 	eventForToken,
 	floorQueueWait,
-	machineryCause,
+	tokenCause,
 } from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
@@ -93,6 +95,13 @@ export interface ReportOptions extends LaneRef {
 	readonly comment: string | null;
 	/** Why the lane parked, from the closed set in [`report.ts`](report.ts); `BLOCKED` only. */
 	readonly cause: string | null;
+	/**
+	 * The `lane integrate` exit and the assembly head a `FAIL` out of an epic child's `integrate`
+	 * failed against — required there, refused on every other line
+	 * ([`integrate-failure.ts`](integrate-failure.ts)).
+	 */
+	readonly integrateExit: number | null;
+	readonly assemblyHead: string | null;
 	/**
 	 * The repo's declared `parkCause`, read by the adapter off the `.fabrika.jsonc` of the repository
 	 * that OWNS the cwd — never the cwd's own copy. The rule is weighed against the shared lane ledger,
@@ -209,7 +218,7 @@ export const runReport = <R>(
 		const rule = parkCauseRefusal(VERB, options.parkCause);
 		if (rule._tag === "Refused") return rule.outcome;
 		const caused = causeForEvent(
-			options.cause ?? machineryCause(resolved.token),
+			options.cause ?? tokenCause(resolved.token),
 			resolved.event,
 			rule.requireCause,
 		);
@@ -223,6 +232,11 @@ export const runReport = <R>(
 		if (classed._tag === "Rejected") {
 			return refuse(CLASS_UNRECOGNISED, `${VERB}: refused (log unappended): ${classed.reason}.`);
 		}
+		const evidence = readIntegrateEvidence(options.integrateExit, options.assemblyHead);
+		if (evidence._tag === "Rejected") {
+			return refuse(INTEGRATE_EVIDENCE, `${VERB}: refused (log unappended): ${evidence.reason}.`);
+		}
+		const integrate = evidence._tag === "Read" ? evidence.failure : null;
 		const loaded = yield* loadLane(options);
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
 		const task = resolveTask(loaded.lane, options.task);
@@ -276,6 +290,10 @@ export const runReport = <R>(
 		// refused for having passed one, because at the moment it typed the flag the park was the only
 		// reading its token had. The line records the route instead.
 		const cause = advanced === null && caused._tag === "Caused" ? caused.cause : null;
+		const misplaced = integrateEvidenceRefusal(leaf, event, integrate);
+		if (misplaced !== null) {
+			return refuse(INTEGRATE_EVIDENCE, `${VERB}: refused (log unappended): ${misplaced}.`);
+		}
 
 		const applied = applyEvent(
 			loaded.lane,
@@ -339,6 +357,21 @@ export const runReport = <R>(
 					);
 				}
 
+				// Keyed on the leaf like the conditional reading above, and re-read under the lock for the
+				// same reason: a task another writer moved out of `integrate` is not the cell this evidence
+				// names.
+				const freshMisplaced = integrateEvidenceRefusal(
+					freshLeafOf(freshFold, freshTask.taskId),
+					event,
+					integrate,
+				);
+				if (freshMisplaced !== null) {
+					return refuse(
+						INTEGRATE_EVIDENCE,
+						`${VERB}: refused (log unappended): ${freshMisplaced}.`,
+					);
+				}
+
 				const now = yield* Effect.sync(() => new Date().toISOString());
 				// The floor is read here and not in the pre-lock pass because the line it measures from is
 				// exactly what a concurrent writer moves: a re-fold that cleared the floor before the lock
@@ -381,6 +414,7 @@ export const runReport = <R>(
 					...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
 					...(proved.routed.length === 0 ? {} : {routed: proved.routed}),
 					...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
+					...(integrate === null ? {} : {integrate}),
 				};
 				const wrote = yield* Effect.result(appendText(fresh.logPath, `${JSON.stringify(entry)}\n`));
 				if (Result.isFailure(wrote)) {
@@ -405,6 +439,7 @@ export const runReport = <R>(
 							...(proved.partial === null ? {} : {partial: proved.partial}),
 							...(proved.diagnosis ? {diagnosis: true} : {}),
 							...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
+							...(integrate === null ? {} : {integrate}),
 						},
 						null,
 						2,
