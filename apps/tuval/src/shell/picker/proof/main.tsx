@@ -32,10 +32,11 @@
  * `offerEntries` over labels `projectLabels` would give these folders — written out, because that
  * module reads Node's path separator and this is a browser page.
  *
- * The last six panes are #9697's "Open project…", answered by a fixture kernel
+ * The last eight panes are #9697's "Open project…", answered by a fixture kernel
  * (`./open-project-fixtures.ts`): the program list ending on the new row with the highlight on it,
  * the recent projects with two already open, a desk that has opened nothing yet, the folder browser,
- * the browser narrowed by its filter, and the refusal a failed open leaves in the step. Each step is
+ * the browser narrowed by its filter, the recent list narrowed to one project and the browser
+ * narrowed to nothing (#9981), and the refusal a failed open leaves in the step. Each step is
  * reached the way the desk reaches it, through the window's view slot, so the pane reads its rows off
  * the fixture exactly as the page reads them off the kernel.
  */
@@ -277,8 +278,8 @@ createRoot(host).render(
 				focused={false}
 				offered={homeEntries}
 			/>
-			{/* #9697, six panes: the row, both steps, the empty recent list, a narrowed browser, and
-			    an open's refusal. */}
+			{/* #9697, eight panes: the row, both steps, the empty recent list, a narrowed browser, a
+			    narrowed recent list and a browser narrowed to nothing (#9981), and an open's refusal. */}
 			<Pane
 				name="picker-open-project-row"
 				start={{...mountPicker(), cursor: LAST_ROW}}
@@ -310,6 +311,20 @@ createRoot(host).render(
 			<Pane
 				name="picker-open-project-browse-filtered"
 				start={withFilter(inCode, "so")}
+				focused={false}
+				offered={twoOpen}
+				opener={withRecent}
+			/>
+			<Pane
+				name="picker-open-project-recent-filtered"
+				start={withFilter(onRecent, "dem")}
+				focused={false}
+				offered={twoOpen}
+				opener={withRecent}
+			/>
+			<Pane
+				name="picker-open-project-browse-unmatched"
+				start={withFilter(inCode, "zzz")}
 				focused={false}
 				offered={twoOpen}
 				opener={withRecent}

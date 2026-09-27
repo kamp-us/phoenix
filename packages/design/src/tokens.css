@@ -442,7 +442,8 @@
 	--accent-fg: var(--accent-contrast);
 }
 
-/* status / categorical (theme-invariant — same in every accent) */
+/* status / categorical — same in every accent, but one value per scheme: status
+   colours are painted as text, so each must clear 4.5:1 on its own scheme's surfaces. */
 :root,
 [data-theme="dark"] {
 	--success: oklch(0.72 0.1 145);
@@ -472,6 +473,10 @@
 	--shadow-overlay: inset 0 1px 0 0 var(--white-a08), 0 16px 40px -8px var(--black-a60);
 }
 [data-theme="light"] {
+	--success: oklch(0.52 0.12 145);
+	--warning: oklch(0.52 0.11 70);
+	--danger: oklch(0.54 0.18 25);
+
 	--tag-discuss-bg: oklch(0.95 0.04 260);
 	--tag-discuss-fg: oklch(0.36 0.1 260);
 	--tag-ask-bg: oklch(0.94 0.05 145);
