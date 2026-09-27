@@ -1,6 +1,14 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
+import {
+	AUTHORIZATION,
+	answerComment,
+	ROUND_BODY,
+	roundComment,
+	roundDigestOf,
+	rulingComment,
+} from "../grill/fixtures.test-support.ts";
 import * as graduateEmitted from "../wire/graduate-emitted.ts";
 import {markerTime} from "../wire/grill-marker.ts";
 import {
@@ -12,9 +20,10 @@ import {
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
-import type {DocumentRead} from "./compose-verb.ts";
+import {type DocumentRead, runCompose} from "./compose-verb.ts";
 import {INTAKE_LABEL, runEmit} from "./emit-verb.ts";
 import {
+	AUTHORED,
 	CLEARED_DECISIONS,
 	CLEARED_SESSION,
 	commentsPayload,
@@ -24,7 +33,7 @@ import {
 	specFor,
 } from "./fixtures.test-support.ts";
 import {renderFooter, withFooter} from "./spec.ts";
-import {digestOfDecisions} from "./trail.ts";
+import {digestOfDecisions, trailOf} from "./trail.ts";
 
 const ISSUE = /^GET .*\/repos\/o\/r\/issues\/9412$/;
 const COMMENTS = /^GET .*\/repos\/o\/r\/issues\/9412\/comments\?/;
@@ -98,6 +107,65 @@ const healthy = (): ReadonlyArray<Scripted> => [
 ];
 
 describe("the whole transaction", () => {
+	it("emits compose's multiline decisions and still refuses edited decision text", async () => {
+		const decisions = CLEARED_DECISIONS.map((row) => ({
+			...row,
+			text:
+				row.provenance === "established"
+					? `${row.text}\n\nCheck the stored history too.`
+					: `${row.text}\n- Cap each account.\n- Keep the history.`,
+		}));
+		const roundBody = CLEARED_DECISIONS.reduce(
+			(body, row, index) => body.replace(row.text, decisions[index]?.text ?? row.text),
+			ROUND_BODY,
+		);
+		const bound = roundDigestOf(1, roundBody);
+		const comments = commentsPayload([
+			{id: 1, author: "acme-founder", body: roundComment(1, roundBody)},
+			{id: 2, author: "acme-founder", body: answerComment("R1.1", bound)},
+			{id: 3, author: "acme-founder", body: AUTHORIZATION},
+			{id: 4, author: "acme-founder", body: rulingComment("R1.2", bound)},
+		]);
+		const composed = await Effect.runPromise(
+			runCompose({
+				trailPath: "trail.json",
+				trail: Effect.succeed({
+					_tag: "Text",
+					text: JSON.stringify(
+						trailOf({source: SESSION, kind: "grilling", decisions, unresolved: [], outOfScope: []}),
+					),
+				}),
+				decisions: [],
+				stdin: Effect.succeed({_tag: "Text", text: AUTHORED}),
+			}),
+		);
+		expect(composed.code).toBe(0);
+		const digest = digestOfDecisions(decisions);
+		const landed = withFooter(
+			composed.stdout,
+			renderFooter({source: SESSION, specDigest: digest, timestamp: AT}),
+		);
+		const script: ReadonlyArray<Scripted> = [
+			...healthy().filter(([pattern]) => pattern !== COMMENTS && pattern !== CREATED_ISSUE),
+			[COMMENTS, served(comments)],
+			[
+				CREATED_ISSUE,
+				served(issueJson({number: 9520, title: TITLE, body: landed, labels: [INTAKE_LABEL]})),
+			],
+		];
+		const {outcome, seams} = await emit(script, {_tag: "Text", text: composed.stdout});
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout).specDigest).toBe(digest);
+		expect(JSON.parse(bodyOf(seams, CREATE)).body).toBe(landed);
+		const edited = await emit(script, {
+			_tag: "Text",
+			text: composed.stdout.replace("Cap each account.", "Uncap each account."),
+		});
+		expect(edited.outcome.code).toBe(DECISIONS_STALE);
+		expect(edited.outcome.stderr.join("\n")).toContain("text");
+		expect(edited.seams.requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
 	it("files one issue at status:needs-triage, reads it back, then posts the marker", async () => {
 		const {outcome, seams} = await emit(healthy());
 		expect(outcome.code).toBe(0);

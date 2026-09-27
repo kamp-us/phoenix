@@ -9,6 +9,7 @@ import {
 	renderDecision,
 	renderFooter,
 	SPEC_SECTIONS,
+	sectionsOf,
 	unplacedContent,
 	withFooter,
 } from "./spec.ts";
@@ -80,6 +81,38 @@ describe("the rendered decisions section", () => {
 	it("reads every rendered line back to the row it came from", () => {
 		const read = readDecisionsSection(composeSpec(AUTHORED, CLEARED_DECISIONS));
 		expect(read).toEqual({_tag: "Decisions", value: CLEARED_DECISIONS});
+	});
+
+	it("keeps bulleted and multi-paragraph questions on one line per decision", () => {
+		const rows: ReadonlyArray<DecisionRow> = [
+			{ref: "R1.1", provenance: "established", text: "What exists?\n\nThe table has no cap."},
+			{
+				ref: "R1.2",
+				provenance: "ruled",
+				text: "What changes?\n- Cap each account.\n- Keep the history.",
+			},
+		];
+		const body = composeSpec(AUTHORED, rows);
+		expect(
+			sectionsOf(body)
+				.find((section) => section.heading === "## Decisions")
+				?.content.trim()
+				.split("\n"),
+		).toEqual([
+			"- What exists? The table has no cap. — **established** · R1.1",
+			"- What changes? - Cap each account. - Keep the history. — **ruled** · R1.2",
+		]);
+		expect(readDecisionsSection(body)).toEqual({
+			_tag: "Decisions",
+			value: [
+				{ref: "R1.1", provenance: "established", text: "What exists? The table has no cap."},
+				{
+					ref: "R1.2",
+					provenance: "ruled",
+					text: "What changes? - Cap each account. - Keep the history.",
+				},
+			],
+		});
 	});
 
 	it("recovers a ref that carries a space and a `#`, and text carrying its own em dash", () => {
