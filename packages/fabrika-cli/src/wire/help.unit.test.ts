@@ -21,6 +21,7 @@ interface FlagNode {
 
 interface DescribedCommand extends Omit<CommandNode, "subcommands"> {
 	readonly description: string | undefined;
+	readonly examples: ReadonlyArray<{readonly command: string}>;
 	readonly config?: {readonly flags?: ReadonlyArray<FlagNode>} | undefined;
 	readonly subcommands: ReadonlyArray<{readonly commands: ReadonlyArray<DescribedCommand>}>;
 }
@@ -53,13 +54,14 @@ describe("the wire group's help", () => {
 	it.each(LEAF_NAMES)("%s states its exit codes and a literal example invocation", (name) => {
 		const description = describedBy(name);
 		expect(description).not.toBe("");
-		expect(description).toMatch(/[Ee]xits? \d|always exits 0/);
-		expect(description).toContain(`Example: fabrika wire ${name}`);
+		expect(description).toMatch(/^ {2}\d+: \S|always succeeds/m);
+		const examples = leaves.find((leaf) => leaf.name === name)?.examples ?? [];
+		expect(examples.map((example) => example.command).join("\n")).toContain(`fabrika wire ${name}`);
 	});
 
 	it("states the stdout shape for every verb that prints one", () => {
 		for (const name of ["codes", "formats", "read", "check", "doc-section", "index"]) {
-			expect(describedBy(name)).toMatch(/stdout/i);
+			expect(describedBy(name)).toMatch(/^Prints /);
 		}
 	});
 

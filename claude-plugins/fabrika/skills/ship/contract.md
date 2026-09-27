@@ -661,7 +661,12 @@ With `--cp`, the code namespace additionally resolves the §CP advisory carrier 
 `Reviewed-head:` + all-`[PASS]` rows — an advisory carrying any `[FAIL]` row is an invalid
 emission, reported on stderr and treated as `fail`); the same `--cp` value must
 reach every resolution in one run — v1 passed it to the gate and not the fold, and a
-discharged FAIL stayed in force forever. The native-review fold is inside this verb:
+discharged FAIL stayed in force forever. Without `--cp` an advisory never resolves a namespace, but
+an authorized one bound to `--sha` in a required namespace is named on stderr, newest per
+namespace: the printed row then describes whichever older comment the other carriers left
+(`stale`, `fail`, `pass` or `absent`), not the current verdict, and the notice says passing `--cp`
+is what resolves it. No state or carrier token changes, and an unreadable ACL on such an advisory
+is a notice, never `11`. The native-review fold is inside this verb:
 a decisive native review (APPROVED / CHANGES_REQUESTED) whose `commit_id` prefix-matches
 `--sha` folds into the code namespace newest-wins by write time — never FAIL-precedence,
 which wedges the repair loop.
@@ -723,6 +728,8 @@ answer this contract bans.
 | `ship gate: the review read never reached a terminal page — pagination is unexhausted, so the native-review fold would rest on a truncated set; refusing the partial resolution.` | 13 | refusal |
 | `ship gate: #<n>'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.` | 0 | notice |
 | `ship gate: #<n> carries a §CP advisory with a [FAIL] row — an invalid emission; treated as fail, report it.` | 0 | notice |
+| `ship gate: <namespace>: the §CP advisory verdict in comment <id> binds this head, but without --cp no advisory resolves a namespace — this row reads <state> off the other carriers, not that verdict; passing --cp, once ship cp-approval discharges, is what resolves it.` | 0 | notice |
+| `ship gate: <namespace>: cannot read the ACL for <author> (<reason>), so the §CP advisory in comment <id> is not reported.` | 0 | notice |
 | `ship gate: review-ui: the verdict in comment <id> does not count — its evidence does not open (<reason>; …).` | 0 | notice |
 
 **Scope** — one PR's changed-file list (paginated to exhaustion, and the floor is derived from that
@@ -833,7 +840,8 @@ open PRs were red on exactly that, all healthy, and a red meaning "not yet" is a
 reading. A check-run has the state a job conclusion does not: it can stay `in_progress`.
 
 So `--publish-check` writes the answer to a check-run named **`governance floor at head`** — a stable
-name, distinct from the job's — and this map is the whole of it:
+name, distinct from the job's — which needs a token holding `checks: write`, and this map is the
+whole of it:
 
 | Floor | Check-run | Why |
 |---|---|---|
@@ -1024,6 +1032,7 @@ fabrika ship floor-batch --sha 03135b91 [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the result object |
 
 There is no PR argument, and its absence is the point: a `merge_group` ref is not a pull request.
+It writes a check-run, so its token needs `checks: write`, as the check-run mode of `ship floor` does.
 
 **Output** — three lines, the same grammar the check-run mode prints:
 
@@ -1214,7 +1223,8 @@ is on the informational name list.
 **Zero workflows is `no-producer`, and it no longer collapses into `pending`.** A repo with
 no CI and a repo whose CI has not reported yet are different facts, and printing the second over the
 first tells an operator to wait for a run nothing will ever start. Workflow *existence* is the whole
-test — nothing inspects what a workflow does. That case refuses on `7` unless the
+test — nothing inspects what a workflow does — and only a repo-authored `.github/workflows/*` path
+counts: the platform-provided `dynamic/<provider>/<name>` entries do not. That case refuses on `7` unless the
 repo declares `ci.noProducer: "degrade"` in `.fabrika.jsonc`, which prints the `no-producer` rollup
 at exit `0` with the fact on stderr. With `--wait`, progress goes to stderr and
 the final stdout adds `settle\t<settled|budget-exhausted|head-moved>` before the first line's
@@ -1250,7 +1260,7 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR or the `--sha` commit is proven absent; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
+| `7` | the PR or the `--sha` commit is proven absent; **or the repo has zero repo-authored `.github/workflows/*` workflows** (platform-provided `dynamic/*` entries do not count) under the shipped `ci.noProducer: "refuse"` |
 | `11` | the check-run read, the workflow read, the base branch's required-set read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
 | `13` | entries received < declared `total_count` — never read as "no red checks"; **or the base branch's ruleset walk never reached a terminal page** — the declared required set is provably short, so which checks block is UNKNOWN |
 | `20` | every check at the head passed and **no workflow the repo authors inspected it** — every repo-authored run here carries another commit or ran against another ref, so `green` is UNKNOWN, never merged |
@@ -1261,9 +1271,9 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 |---|---|---|
 | `ship checks: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship checks: no commit <sha> on PR #<n>.` | 7 | refusal |
-| `ship checks: <repo> has zero workflows — no CI producer, so no head can be evidenced (ADR 0092). A repo that runs no workflows declares \`ci.noProducer: "degrade"\`.` | 7 | refusal |
+| `ship checks: <repo> has zero repo-authored workflows (platform-provided \`dynamic/*\` entries do not count) — no CI producer, so no head can be evidenced. A repo that runs no workflows declares \`ci.noProducer: "degrade"\`.` | 7 | refusal |
 | `ship checks: cannot read \`ci\` from the repo config (<reason>) — whether <repo> produces CI is UNKNOWN, never green.` | 11 | refusal |
-| `ship checks: <repo> declares \`ci.noProducer: degrade\` and has zero workflows — no producer, so there is nothing to roll up.` | 0 | notice |
+| `ship checks: <repo> declares \`ci.noProducer: degrade\` and has zero repo-authored workflows — no producer, so there is nothing to roll up.` | 0 | notice |
 | `ship checks: cannot enumerate <what> at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
 | `ship checks: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration.` | 13 | refusal |
 | `ship checks: the live head is <live>, you are enumerating <sha> — the head moved.` | 0 | notice |
@@ -1281,11 +1291,14 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `ship checks: <base>'s ruleset read never reached a terminal page after <n> rule(s) — pagination is unexhausted, so which checks block is UNKNOWN, never none.` | 13 | refusal |
 
 **Scope** — the check runs and workflow inventory at one commit, paginated,
-count-verified. Zero *declared* check runs with zero workflows is `green`-ineligible and
-`no-runs`-ineligible too — it is the repo that produces no CI at all, and what it costs is
-`ci.noProducer`'s answer. Under the shipped `refuse` it is exit `7`: a head whose checks will
+count-verified. Zero *declared* check runs with zero repo-authored `.github/workflows/*`
+workflows is `green`-ineligible and `no-runs`-ineligible too — it is the repo that produces no CI
+of its own, and what it costs is `ci.noProducer`'s answer. The platform-provided
+`dynamic/<provider>/<name>` entries (default CodeQL setup, Dependabot, the Copilot reviewer) do not
+make a producer. Under the shipped `refuse` it is exit `7`: a head whose checks will
 never report is not a head to wait on. Where the repo declared `degrade` it is rollup
-`no-producer` at exit 0, printed with `facts	workflows:0	runs:0`. Neither arm greens, and
+`no-producer` at exit 0, printed with `facts	workflows:<n>	runs:<n>`, where `workflows` counts
+the whole active inventory — `dynamic/*` entries included — so it can be non-zero here. Neither arm greens, and
 neither prints `pending` — that collapse is what made this state read as *wait longer* forever.
 
 **Examples**

@@ -683,35 +683,19 @@ export const exclusionReasonOf = (
 };
 
 /**
- * Every non-zero code this test can produce, with the condition that produces it — single-sourced so a
- * consuming verb's `--help` enumerates them rather than restating them.
+ * Every non-zero code this test can produce, with a few words naming it — single-sourced so a
+ * consuming verb's `--help` enumerates them rather than restating them. Each code's full trigger
+ * is the build skill's contract.md, "build claim".
  */
 export const ADMISSION_EXIT_CODES: ReadonlyArray<{
 	readonly code: number;
 	readonly condition: string;
 }> = [
-	{
-		code: PRECONDITION_UNKNOWN,
-		condition: "the issue a pull request serves could not be read — admission is UNKNOWN",
-	},
-	{
-		code: TYPE_NOT_BUILDABLE,
-		condition: `proven: not admitted on the type axis — the issue carries ${DECISION_TYPE_LABEL} or ${EPIC_TYPE_LABEL}, not one of ${BUILDABLE_TYPE_LABELS.join(" / ")}; reachable only under purpose build against an issue, and opened on a decision by --cites naming a founder ruling comment recorded on that issue`,
-	},
-	{
-		code: AUDIENCE_NOT_AGENT,
-		condition: `proven: not admitted on the audience axis — the issue's ${READY_FOR_PREFIX} label is not ${READY_FOR_AGENT}, or is absent; reachable only under purpose build, and never when an open PR serves a ${DECISION_TYPE_LABEL} issue`,
-	},
-	{
-		code: NO_ACCEPTANCE_CRITERIA,
-		condition:
-			"proven: not admitted on the criteria axis — the body carries no readable ### Acceptance criteria block, absent or malformed; reachable only under purpose build against an issue",
-	},
-	{
-		code: NO_SERVED_ISSUE,
-		condition:
-			'proven: the target is a pull request naming no issue to judge — its body carries neither a closing keyword nor "Part of #<n>", or the issue it names is proven absent; bound whatever the campaigns say, and overridable',
-	},
+	{code: PRECONDITION_UNKNOWN, condition: "served issue unreadable"},
+	{code: TYPE_NOT_BUILDABLE, condition: `${DECISION_TYPE_LABEL} or ${EPIC_TYPE_LABEL}`},
+	{code: AUDIENCE_NOT_AGENT, condition: `not ${READY_FOR_AGENT}`},
+	{code: NO_ACCEPTANCE_CRITERIA, condition: "no acceptance criteria"},
+	{code: NO_SERVED_ISSUE, condition: "pull request names no served issue"},
 ];
 
 /** The purpose line the claim seam prints, so an exempted audience is read rather than inferred. */

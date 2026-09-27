@@ -44,6 +44,10 @@ The cost is that `prompting` is no longer a refusing phase, which changed four p
 
 Steer and follow-up are still one thing to Tuval. The generic `TuvalAiAgent` interface has no steer — injecting into a running turn is a capability no port declares — so both delivery modes queue, which is at least what the copy now truthfully says.
 
+## Amendments
+
+- **#9805 — Queue prompts during startup (2026-09-26).** The [founder ruling](https://github.com/kamp-us/phoenix/issues/9805#issuecomment-5852542133) extends this decision to `starting`. A prompt arriving while the session opens joins the same bounded queue. The `started` transition to `ready` admits its head; later prompts wait for each turn to end. This adds successful startup to the flush rule above. Failed startup releases the waiting prompts as refused sends, and restore still releases them without resending. `idle`, `reconnecting` and `gone` continue to refuse new prompts.
+
 ## Records
 
 no vocabulary impact

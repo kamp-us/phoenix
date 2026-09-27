@@ -33,7 +33,8 @@ subcommands and exit codes inline.
     wraps nor truncates it, so it must fit one terminal line beside the padded name column; the
     budget and the checks are `packages/fabrika-cli/src/short-description.ts`, asserted for every
     registered leaf by `short-description.unit.test.ts`.
-  - the **long** description (`Command.withDescription`) is the verb-level contract below.
+  - the **long** description (`Command.withDescription`) is the caller-facing block below, shaped
+    by [leaf help size and shape](#leaf-help-size-and-shape); derivation stays in the contract.
 
   Reusing the long form as the list row is the defect this split fixes: a group whose verbs each
   contributed a thousand-character unwrapped row emitted a list no reader could parse.
@@ -41,9 +42,11 @@ subcommands and exit codes inline.
   and the renderer falls back to `description` when it is absent, so nothing is truncated and the
   contract below is untouched.
 - `--help` states, for the verb: what it answers, its output **shape** (rule 2), its exit codes
-  (rule 3), and at least one example (rule 5). This is the **long** description's job — the "one
-  line" rule above governs the list row, not this block, and the two stop contradicting each other
-  once they are separate strings.
+  (rule 3), and at least one example (rule 5). The long description carries the first three; the
+  example goes through `Command.withExamples`, never as prose inside the description, as
+  [leaf help size and shape](#leaf-help-size-and-shape) requires. The "one sentence" rule above
+  governs the list row, not this block, and the two stop contradicting each other once they are
+  separate strings.
 - The index of verbs is **derived from the registry**, never hand-maintained: it reads name +
   description off the same `Command` objects the router dispatches on, so a new verb appears
   automatically and a verb shipped without a description is mechanically detectable. A parallel
@@ -83,7 +86,10 @@ drifts.
   - **machine** — stdout is parsed, split, or fed to another command. Nothing but the answer lands
     there, and the shape is fixed (a JSON object with named keys, or a line grammar).
   - **prose** — stdout is a human-readable verdict the caller greps for a state word.
-- `--help` shows the caller's answer shape with an example of the actual bytes. Contracts add the
+- `--help` shows the caller's answer shape as bytes, in full when it fits the
+  [leaf help budget](#leaf-help-size-and-shape). A shape too long for that budget is elided with
+  `…` in help, and the contract or wire format that help's pointer line names carries the full
+  bytes. Contracts add the
   implementation requirements under [command documentation ownership](#command-documentation-ownership).
   Prose describing a shape is not a shape.
 - **The positive answer is a positive token, never an absence.** A verb whose "nothing found" answer
@@ -93,8 +99,9 @@ drifts.
 
 Each document serves a distinct reader:
 
-- **Runtime help** owns calling the command: invocation, inputs, defaults, answer bytes, exit
-  meanings and a runnable example. The registry supplies discovery through group help.
+- **Runtime help** owns calling the command: invocation, inputs, defaults, the answer shape, exit
+  meanings and a runnable example. A shape past the leaf help budget is elided in help and carried
+  in full by the contract or wire format help points to. The registry supplies discovery through group help.
 - **Contracts** own implementing the command: how values are derived, mutation ordering, authority
   checks, scope, failure conditions and examples that exercise those requirements. A shipped
   command's contract may point to its help for caller facts; a new command specifies them in the
@@ -110,6 +117,76 @@ When behavior changes, update each affected owner in the implementation PR. Keep
 when it demonstrates a requirement or use the other examples do not. A caller fact needed in both
 help and a skill's routing step earns that overlap through its use; there is no requirement to copy
 every fact into both, or to edit a reference row and source comment for every command change.
+
+#### Leaf help size and shape
+
+A leaf verb's `Command.withDescription` string is a pointer an agent reads on every `--help`, so it
+holds the caller facts and nothing else:
+
+- **One-line summary first.** Line one says what the verb does and what it prints on stdout, as one
+  sentence ending in a full stop.
+- **An answer shape that does not fit is elided, not dropped.** When the full stdout bytes would push
+  a line past 98 characters or the description past its budget, help shows the answer token or the
+  leading keys and elides the rest with `…`, as in `{"answer":"ruled",…}`. The full bytes live in
+  the section the pointer line names: the verb's contract section, or the wire format it links.
+- **Flag detail on the flag.** Each flag's meaning, default and constraints go on its own
+  `Flag.withDescription`, and each argument's on `Argument.withDescription`. The renderer prints
+  them in the `FLAGS` and `ARGUMENTS` tables, so the description does not repeat them.
+- **One line per exit.** Each exit code the verb seats a proven outcome on gets one line,
+  `  <code>: <meaning>`, in ascending order. The meaning is a few words; a code with several causes
+  names the class and leaves the causes to the contract. `0` and `1` need no line, because
+  [§3](#3-the-exit-status-is-the-answer-empty-stdout-never-is) fixes them for every verb.
+- **Examples through `Command.withExamples`.** A runnable example is an `Example` entry, never
+  `Example:` prose inside the description.
+- **Derivation in the contract.** How a value is derived, why a check exists and what order
+  mutations run in belong in the verb's contract. Help keeps at most one pointer line to it, as the
+  description's last line.
+
+The whole description is at most **600 characters**, and every line at most 98 characters of text
+after its two-space indent. Both numbers start from the renderer, the way
+[`short-description.ts`](../../../packages/fabrika-cli/src/short-description.ts) derives its row
+budget. `formatHelpDocImpl` in `effect@4.0.0-rc.112`'s `src/unstable/cli/CliOutput.ts` prints the
+block as `  ${doc.description}`, so at the 100-column terminal `short-description.ts` also assumes,
+a line holds 98 characters. The total is one 98-character summary plus twelve lines averaging 41
+characters with their newlines: 98 + 12 × 41 = 590, rounded up to 600. Twelve lines are sized
+off `review-ui render`, which seats nine exit codes past `0` and `1` (7, 10 to 16, and 19):
+nine exit lines, one pointer line and two to spare.
+
+The mechanical checks are [`leaf-help.ts`](../../../packages/fabrika-cli/src/leaf-help.ts), and
+`leaf-help.unit.test.ts` holds every registered leaf to them. Every registered leaf verb passes the
+rule, and no group carries a `leaf-help-baseline.json`. The ratchet reds any verb that breaks the
+rule and is not in its group's baseline, so a new wall fails the unit suite.
+
+The exit lines carry their own two-space indent, and that choice is also the renderer's. The pinned
+`formatHelpDocImpl` indents only the description's first line: an embedded `\n` passes through
+untouched, so a bare newline starts the next line at column zero, flush with the `DESCRIPTION`
+heading. Writing `\n  ` before each exit line puts it under the summary. Rendered through the pinned
+formatter, a bare `\n` gives the first block and `\n  ` the second:
+
+```text
+DESCRIPTION
+  Summary line.
+3: not found
+11: read failed, UNKNOWN
+```
+
+```text
+DESCRIPTION
+  Summary line.
+  3: not found
+  11: read failed, UNKNOWN
+```
+
+A compliant description for `build eligible`, 302 characters, with its example on
+`Command.withExamples([{command: "fabrika build eligible 4312"}])`:
+
+```text
+Prints {"answer":"eligible","number":n,"parent":n|null} when one issue's dependency gate is open.
+  7: the issue is absent or closed
+  11: a read failed and nothing was proven open (UNKNOWN)
+  16: blocked; every open edge is named on stderr
+  Derivation: the build skill's contract.md, "build eligible"
+```
 
 ## 3. The exit status is the answer; empty stdout never is
 
@@ -298,6 +375,6 @@ list of things to call.
 ## Enforcement
 
 Per-verb tests check behavior. The shared data checks
-`exit-code-alignment.unit.test.ts` and `short-description.unit.test.ts` check code allocation and
-registered descriptions. They do not prove every rule on this page; reviewers check the remaining
+`exit-code-alignment.unit.test.ts`, `short-description.unit.test.ts` and `leaf-help.unit.test.ts`
+check code allocation, registered descriptions and long description size and shape. They do not prove every rule on this page; reviewers check the remaining
 interface requirements against the verb and its contract.

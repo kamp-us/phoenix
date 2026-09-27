@@ -54,7 +54,7 @@ import {
 	latestPerContext,
 	listReviews,
 	listShipCheckRuns,
-	listWorkflows,
+	listWorkflowPaths,
 	pullTimeline,
 	type ShipCheckRun,
 } from "../ship/github.ts";
@@ -315,7 +315,7 @@ export const diagnoseOne = (
 		// read below — so nothing here narrows the set before the authority that owns it is known.
 		const latest = latestPerContext(enumerated.value.runs);
 
-		const workflows = yield* listWorkflows(repo);
+		const workflows = yield* listWorkflowPaths(repo);
 		if (workflows._tag === "Failure") {
 			return refused(
 				PRECONDITION_UNKNOWN,

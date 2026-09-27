@@ -16,7 +16,7 @@
  * names its key, and the decoder's words are the ones that repair the file.
  */
 
-import type {DocumentState} from "./document.ts";
+import {type DocumentState, LOCAL_CONFIG_PATH} from "./document.ts";
 import type {Load} from "./load.ts";
 import {KEY_GROUPS} from "./registry.ts";
 
@@ -32,12 +32,26 @@ const documentReason = (state: DocumentState): string | null => {
 	}
 };
 
+/**
+ * The local layer's own two document arms, named as its own.
+ *
+ * Worded apart from the tracked file's because the repair is a different file: relaying "it could
+ * not be read" over a machine-local fault would send an operator to the tracked config they never
+ * touched.
+ */
+const localReason = (state: DocumentState): string | null => {
+	const reason = documentReason(state);
+	return reason === null ? null : `${LOCAL_CONFIG_PATH} is unusable: ${reason}`;
+};
+
 export const unusableReason = (load: Load): string | null => {
 	if (load._tag === "Refused") return load.reason;
-	const document = documentReason(load.state);
+	const local = localReason(load.documents.local);
+	if (local !== null) return local;
+	const document = documentReason(load.documents.tracked);
 	if (document !== null) return document;
 	for (const group of KEY_GROUPS) {
-		const resolved = group.resolve(load.state);
+		const resolved = group.resolve(load.documents);
 		if (resolved._tag === "Malformed" || resolved._tag === "Unknown") return resolved.reason;
 	}
 	return null;

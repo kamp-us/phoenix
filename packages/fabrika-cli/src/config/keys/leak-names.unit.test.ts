@@ -17,6 +17,7 @@ describe("leakNames", () => {
 	it("decodes both lists, trimmed", () => {
 		expect(declared({privateRepos: [" acme/secret "], identifiers: ["Jane Roe"]})).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: {privateRepos: ["acme/secret"], identifiers: ["Jane Roe"]},
 		});
 	});
@@ -24,6 +25,7 @@ describe("leakNames", () => {
 	it("reads an absent list as empty", () => {
 		expect(declared({identifiers: ["handle"]})).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: {privateRepos: [], identifiers: ["handle"]},
 		});
 	});

@@ -21,6 +21,7 @@ describe("a declared on-call board", () => {
 	it("splits on the shipped values when it declares nothing else", () => {
 		expect(declared({onCall: {}})).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: {_tag: "Split", onCall: SHIPPED_ON_CALL},
 		});
 		expect(SHIPPED_ON_CALL).toEqual({
@@ -49,6 +50,7 @@ describe("a declared on-call board", () => {
 			}),
 		).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: {
 				_tag: "Split",
 				onCall: {

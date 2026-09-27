@@ -213,8 +213,8 @@ export interface AiAgentSessionState {
 	 */
 	readonly sends: ReadonlyArray<SendOutcome>;
 	/**
-	 * The prompts written while the turn was running, in the order they were written (`./queue.ts`).
-	 * The head is admitted when the turn ends; nothing here has been sent, so nothing here is in the
+	 * Prompts waiting for startup or a turn, in the order they were written (`./queue.ts`).
+	 * The head is admitted on `ready`; nothing here has been sent, so nothing here is in the
 	 * transcript yet.
 	 */
 	readonly queued: ReadonlyArray<QueuedPrompt>;
@@ -610,7 +610,7 @@ export const remarkCutReplies = (
  * one saved at any other phase keeps them: it comes back `idle`, where `offerResolved` is false, so
  * nothing paints them before the reconnect re-announces what this session offers.
  *
- * A queued prompt does not come back queued. The turn it was waiting for ended with the process, so
+ * A queued prompt does not come back queued. Its startup or turn ended with the process, so
  * there is nothing left to flush it, and it is released to its window as an unsent send the same way
  * an interrupted queue is — recoverable, never resent on the operator's behalf.
  *

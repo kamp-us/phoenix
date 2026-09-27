@@ -42,6 +42,10 @@ import {runSettingsEnvGuard} from "./settings-env-verb.ts";
 import {runSkillLint} from "./skill-lint-verb.ts";
 import {runUnresolvedThreadsGuard} from "./unresolved-threads-verb.ts";
 
+/** A leaf's help in the leaf help rule's shape, ending on the pointer to its contract section. */
+const leafHelp = (verb: string, lines: ReadonlyArray<string>): string =>
+	[...lines, `  Derivation: the fabrika plugin's docs/guard-contract.md, "${verb}"`].join("\n");
+
 const rootFlag = Flag.string("root").pipe(
 	Flag.optional,
 	Flag.withDescription("the repo root to scan (default: walk up from the cwd for one)"),
@@ -71,8 +75,15 @@ const readmeCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red unless every packages/* member carries a README.md."),
 	Command.withDescription(
-		"Fail the build unless every real packages/* workspace member (a directory carrying a package.json) holds a README.md. Dead-shell directories are ignored. This leaf judges every member; `fabrika build check` runs the same rule over only the members its diff adds or edits, so a tree whose older packages predate the rule is not red on a lane that never touched them. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: no member scanned, or pnpm-workspace.yaml no longer declares packages/* — fail-closed), 11 (a read failed, so the verdict is UNKNOWN), 12 (a member has no README.md). Example: fabrika guard readme-guard check",
+		leafHelp("readme-guard check", [
+			"Prints a one-line all-clear when every packages/* workspace member holds a README.md.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: no member, or packages/* no longer declared",
+			"  11: a read failed, so the verdict is UNKNOWN",
+			"  12: a member has no README.md",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard readme-guard check"}]),
 );
 
 const readmeGuard = Command.make("readme-guard").pipe(
@@ -98,8 +109,15 @@ const skillLintCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a broken gh call, frontmatter, push or path in a skill."),
 	Command.withDescription(
-		"Walk claude-plugins/ and red on any of four mechanical defects in the skill + agent corpus: a GraphQL-path `gh` invocation (REST only on this org), a SKILL.md / agents/*.md frontmatter block that does not parse as strict YAML, a bare `git push` in a runnable block, and a repo-relative `./claude-plugins/…` literal inside a fence, which cannot resolve in a consumer's install. Prose naming a forbidden form is untouched; only runnable text is judged. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: nothing walked, a plugin dir contributed no file, or a check saw no file — fail-closed), 11 (a read failed, so the verdict is UNKNOWN), 12 (a defect was found). Example: fabrika guard skill-lint check",
+		leafHelp("skill-lint check", [
+			"Prints a one-line all-clear when the claude-plugins/ skill corpus holds none of four defects.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: nothing walked, or a plugin dir or a check saw no file",
+			"  11: a read failed, so the verdict is UNKNOWN",
+			"  12: a defect was found",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard skill-lint check"}]),
 );
 
 const skillLint = Command.make("skill-lint").pipe(
@@ -125,8 +143,15 @@ const noGhCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a `gh` invocation left in fabrika-cli's source."),
 	Command.withDescription(
-		"Walk packages/fabrika-cli/src/ and red on any invocation of the `gh` binary in it, in all three spellings: the binary named in argv position to any spawner, a shell string that runs it under a -c argument, and the same string reached after a shell operator. Every GitHub call belongs on the fetch client in src/io/gh-api.ts, so a verb runs where no `gh` is installed. Comments are stripped before matching and a command string is judged only beside a spawn, so the package's own prose and test fixtures are untouched; the sanctioned credential leg is allowed by file AND by matched text, never file-wide. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: nothing walked, or a directory contributed no file — fail-closed), 11 (a read failed, so the verdict is UNKNOWN), 12 (an invocation was found). Example: fabrika guard no-gh check",
+		leafHelp("no-gh check", [
+			"Prints a one-line all-clear when packages/fabrika-cli/src/ invokes no `gh` binary.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: nothing walked, or a directory contributed no file",
+			"  11: a read failed, so the verdict is UNKNOWN",
+			"  12: an invocation was found",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard no-gh check"}]),
 );
 
 const noGhGuard = Command.make("no-gh").pipe(
@@ -152,8 +177,15 @@ const portabilityCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a reference in fabrika's text that only resolves here."),
 	Command.withDescription(
-		"Walk claude-plugins/fabrika/ and packages/fabrika-cli/src/ and red on any reference that resolves only in the repository fabrika is developed in: a ticket number, a decision-record number in either spelling, a decision-corpus path, a hosted issue or pull-request URL, and any name declared under the `portability` key of the repo config. A markdown heading, a hex colour and a ticket number that is test data (a string literal in a *.test.ts file, or anything under a fixtures directory) are not references. Neither is an `@ruling <issue or pull-request URL>` citation under packages/fabrika-cli/, which is how a docblock there names the ruling that governs it; only the tag's own span is admitted, and a tag naming no URL admits nothing. The allow-list at portability-guard.config.json carries two buckets, each entry with a mandatory `why`: `exempt` is a permanent per-file cap, `unmigrated` is the sweep floor and only shrinks, so a ceiling left above the count reds too. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: a root walked to nothing, a directory contributed no file, or the allow-list is unusable — fail-closed), 11 (a read failed, so the verdict is UNKNOWN), 12 (a reference was found, a ceiling was exceeded, or a floor row sits above its count). Example: fabrika guard portability-guard check",
+		leafHelp("portability-guard check", [
+			"Prints a one-line all-clear when fabrika's shipped text holds no reference only its home resolves.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: an empty walk, or an unusable allow-list",
+			"  11: a read failed, so the verdict is UNKNOWN",
+			"  12: a reference found, or an allow-list ceiling or floor out of line",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard portability-guard check"}]),
 );
 
 const portabilityGuard = Command.make("portability-guard").pipe(
@@ -185,8 +217,16 @@ const homingCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red unless every triaged issue is homed or standing-lane exempt."),
 	Command.withDescription(
-		"Every `status:triaged` issue must carry EITHER an arc/campaign milestone OR exactly one of the two standing-lane labels (`wayfinder:backlog`, `axis:pipeline-hardening`) — never neither, and never both, which is banned outright. `--issue N` scopes the scan to the one issue triage just stamped, which is the seam the invariant binds at; a bare run sweeps the whole open triaged backlog. Prints the one-line all-clear on stdout; a red puts the per-class remedy on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: the backlog sweep found no triaged issue at all — fail-closed), 11 (the board, the label set or the issue could not be read, so the verdict is UNKNOWN), 12 (an issue has no home, or claims two). Example: fabrika guard homing-guard check --issue 4312",
+		leafHelp("homing-guard check", [
+			"Prints a one-line all-clear when every status:triaged issue carries exactly one home.",
+			"  A home is an arc/campaign milestone or one standing-lane label, never both.",
+			"  A red puts the per-class remedy on stderr, with ::error annotations under Actions.",
+			"  7: zero scope: the backlog sweep found no triaged issue",
+			"  11: the board, the label set or the issue was unreadable (UNKNOWN)",
+			"  12: an issue has no home, or claims two",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard homing-guard check --issue 4312"}]),
 );
 
 const homingGuard = Command.make("homing-guard").pipe(
@@ -221,8 +261,16 @@ const pitchCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red unless every pickable bet carries a founder-approved pitch."),
 	Command.withDescription(
-		"Every lane-entering issue — a `status:triaged` `type:epic`, or a `status:triaged` `type:feature` with no parent — must carry a five-field `## Pitch` section (Problem / Arc / Appetite / Rabbit-holes / No-gos) and a founder approval, which either carrier gives: a `bet` on the table (the issue's row on the table project with Stage `bet` and a Size equal to the body's size; a `bet` on an epic or chain row approves the head and every member, bound by the row's Size), or a `pitch-approved: appetite <S|M|L>` comment naming the same size the body declares. A `bet` counts when a write+ collaborator set the Stage, an agent under their token included. A table that does not read (none configured, a token without the `project` scope, or a failed read) approves nothing and is named on stderr, and the comments decide as before. `**Appetite:**` is a size, `S`, `M` or `L`, whose dollar amount per epic child `.fabrika.jsonc` `appetiteSizes` sets (shipped S = $15, M = $35, L = $40); a legacy `<N> cycles` appetite still reads, approved only by a `pitch-approved: appetite <N> cycles` comment. An optional `**Success:**` line names the one sentence the two-week check judges; a pitch without it is still well-formed. A body appetite that differs from the approved one needs re-approval. Approval is resolved at the GitHub ACL, write+ only and fail-closed, and an agent-provenance-stamped marker never counts. `--issue N` scopes the scan to the issue triage just stamped, which is the intake seam the requirement binds at; a bare run sweeps the whole open lane-entering backlog. This guard binds at INTAKE only — it is never wired to red a pull request. Prints the one-line all-clear on stdout; a red puts the per-issue remedy on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: the backlog sweep found no lane-entering issue at all — fail-closed), 11 (the board, the label set, an issue or its comments could not be read, or `.fabrika.jsonc` refused, so the verdict is UNKNOWN), 12 (a pickable bet carries no founder-approved pitch). Example: fabrika guard pitch-guard check --issue 4312",
+		leafHelp("pitch-guard check", [
+			"Prints a one-line all-clear when every lane-entering issue carries a founder-approved pitch.",
+			"  Binds at intake only; it is never wired to red a pull request.",
+			"  A red puts the per-issue remedy on stderr, with ::error annotations under Actions.",
+			"  7: zero scope: the backlog sweep found no lane-entering issue",
+			"  11: the board, the label set, an issue, its comments or .fabrika.jsonc was unreadable (UNKNOWN)",
+			"  12: a pickable bet carries no founder-approved pitch",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard pitch-guard check --issue 4312"}]),
 );
 
 const pitchGuard = Command.make("pitch-guard").pipe(
@@ -249,8 +297,15 @@ const roadmapCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on ROADMAP.md ↔ GitHub-milestone drift."),
 	Command.withDescription(
-		"Validate ROADMAP.md's founder-voice `## Arcs`/`## Campaigns` tables against the live GitHub milestone projection. ROADMAP.md is the sole parsed surface; the invariants are I1 every arc/campaign pinned to an existing milestone by number (a queued arc may defer), I2 exactly one active arc, I3 no unclaimed open milestone, I4 fail-closed on zero scope, I5 active↔done state symmetry (an active row's milestone open, a done row's closed), I6 exactly one focus row naming a campaign the table declares. Prints the one-line all-clear with its scanned counts on stdout; a red names every drifted row on stderr, with GitHub ::error annotations on ROADMAP.md under Actions. Exits 7 (zero scope: no row parsed or no milestone read), 11 (ROADMAP.md or the projection could not be read, so the verdict is UNKNOWN), 12 (drift). Example: fabrika guard roadmap-guard check",
+		leafHelp("roadmap-guard check", [
+			"Prints a one-line all-clear with counts when ROADMAP.md agrees with the GitHub milestones.",
+			"  A red names every drifted row on stderr, with ::error annotations under Actions.",
+			"  7: zero scope: no row parsed or no milestone read",
+			"  11: ROADMAP.md or the milestones could not be read (UNKNOWN)",
+			"  12: drift",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard roadmap-guard check"}]),
 );
 
 const roadmapGuard = Command.make("roadmap-guard").pipe(
@@ -277,8 +332,16 @@ const unresolvedThreadsCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on an unresolved review thread the verdict never named."),
 	Command.withDescription(
-		"Red when a live-unresolved inline review thread — human or CodeQL/GHAS bot — is unaccounted-for in the latest authorized `review-code` verdict, which accounts for a thread by naming its `path:line`. Polarity-blind: a FAIL row naming the site accounts for it exactly as a PASS does, so what this catches is the silent omission, not the objection. Zero threads is a clean, proven pass — the fail-closed case is a thread channel that could not be READ. Exits 11 (the threads, the comments or an author's permission could not be read, so the verdict is UNKNOWN, never clean), 12 (a live thread is unaccounted-for). Example: fabrika guard unresolved-threads-guard check --pr 4321",
+		leafHelp("unresolved-threads-guard check", [
+			"Prints a one-line all-clear when the review-code verdict names every live unresolved thread.",
+			"  Zero threads is a clean pass.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: the pull request was not found",
+			"  11: the threads, comments or an author's permission was unreadable (UNKNOWN)",
+			"  12: a live thread is unaccounted-for",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard unresolved-threads-guard check --pr 4321"}]),
 );
 
 const unresolvedThreadsGuard = Command.make("unresolved-threads-guard").pipe(
@@ -305,8 +368,15 @@ const settingsEnvCheck = leafCommand(
 	// biome-ignore-start lint/suspicious/noTemplateCurlyInString: the brace token IS this guard's subject — help text that spelled it any other way would not name the thing a reader is searching for.
 	Command.withShortDescription("Red on an unexpanded ${...} in a settings.json env value."),
 	Command.withDescription(
-		"Red when any `.claude/settings.json` `env` VALUE carries an unexpanded `${...}` token. Claude Code applies env values verbatim and expands nothing in them, so such a token never resolves — it is consumed literally. An empty or absent `env` block is a real pass; the fail-closed case is the file. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: no .claude/settings.json to scan — fail-closed), 11 (the file could not be read or does not parse, so the verdict is UNKNOWN), 12 (an env value carries a brace token). Example: fabrika guard settings-env-guard check",
+		leafHelp("settings-env-guard check", [
+			"Prints a one-line all-clear when no .claude/settings.json env value holds a ${...} token.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: no .claude/settings.json to scan",
+			"  11: the file could not be read or does not parse (UNKNOWN)",
+			"  12: an env value carries a brace token",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard settings-env-guard check"}]),
 );
 
 const settingsEnvGuard = Command.make("settings-env-guard").pipe(
@@ -333,8 +403,15 @@ const catalogCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a package.json dep pinning a hardcoded version."),
 	Command.withDescription(
-		"Every dependency in every workspace `package.json` — the root manifest included — must be sourced from the pnpm `catalog:` or a `workspace:` ref, never a hardcoded version string — a second version of one dep breaks frozen-lockfile CI downstream. A genuinely unavoidable exception lives in the guard's explicit reasoned allowlist, never a silent tolerance. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on the offending manifest line under Actions. Exits 7 (zero scope: no manifest scanned — fail-closed), 11 (a manifest could not be read or does not parse, so the verdict is UNKNOWN), 12 (a dep pins a hardcoded version). Example: fabrika guard catalog-guard check",
+		leafHelp("catalog-guard check", [
+			"Prints a one-line all-clear when every package.json dependency is a catalog: or workspace: ref.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: no manifest scanned",
+			"  11: a manifest could not be read or does not parse (UNKNOWN)",
+			"  12: a dependency pins a hardcoded version",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard catalog-guard check"}]),
 );
 
 const catalogGuard = Command.make("catalog-guard").pipe(
@@ -360,8 +437,15 @@ const fanoutCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a fanned mutation that omits its /fate/live publish."),
 	Command.withDescription(
-		"Three invariants over the worker's `Fate.mutation` set: every mutation is classified fanned/not in the fanned-mutations manifest, every fanned mutation's feature publishes a `/fate/live` invalidation, and every declared topic is still reachable from that feature's `live.ts` binding. The omission is invisible at the mutation site — the publisher's error channel is `never` — so nothing at the call site forces it, and the mis-aim class needs the third invariant on top. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: no mutation discovered, or the manifest parsed to no rows — fail-closed), 11 (a source could not be read, so the verdict is UNKNOWN), 12 (drift, a missing publish, or a mis-aimed topic). Example: fabrika guard fanout-guard check",
+		leafHelp("fanout-guard check", [
+			"Prints a one-line all-clear when every fanned mutation publishes its /fate/live invalidation.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: no mutation discovered, or the manifest has no rows",
+			"  11: a read failed, so the verdict is UNKNOWN",
+			"  12: drift, a missing publish, or a mis-aimed topic",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard fanout-guard check"}]),
 );
 
 const fanoutGuard = Command.make("fanout-guard").pipe(
@@ -387,8 +471,15 @@ const patchCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a pnpm patch with no behavior-pinning test."),
 	Command.withDescription(
-		"Every maintained `pnpm patch` must carry at least one registered behavior-pinning test, and no pin may be stale. A patch is a silent fork of a dependency's behaviour, so the rule requires a test that fails if the patched behaviour regresses; that test self-registers with a `// @patch-pin: <name>@<version>` marker keyed to the exact `patchedDependencies` entry (`.patterns/dependency-patch-behavior-pins.md`). Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: no patchedDependencies in scope — fail-closed), 11 (a read failed, so the verdict is UNKNOWN), 12 (an unpinned patch or a stale pin). Example: fabrika guard patch-guard check",
+		leafHelp("patch-guard check", [
+			"Prints a one-line all-clear when every pnpm patch has a registered behavior-pinning test.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: no patchedDependencies in scope",
+			"  11: a read failed, so the verdict is UNKNOWN",
+			"  12: an unpinned patch or a stale pin",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard patch-guard check"}]),
 );
 
 const patchGuard = Command.make("patch-guard").pipe(
@@ -414,8 +505,15 @@ const pointerCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a backticked CLAUDE.md path that no longer resolves."),
 	Command.withDescription(
-		"Every backticked repo-root-relative path in a git-tracked `CLAUDE.md` must resolve on disk, or be gitignored — a deliberately-absent generated path like `apps/site/.env` is a valid pointer, not rot. This is the class the `doc-links` gate cannot see: it validates `[text](path)` links and masks code spans by construction, so a backticked prose pointer rots unseen when its target moves. Only unambiguous root-relative tokens are read, so a bare basename or an app-relative fragment is left alone. Prints the one-line all-clear on stdout; a red puts the file:line → path report on stderr, with GitHub ::error annotations on the pointer's line under Actions. Exits 7 (zero scope: no tracked CLAUDE.md — fail-closed), 11 (git could not list the docs, or one could not be read, so the verdict is UNKNOWN), 12 (a pointer does not resolve). Example: fabrika guard pointer-guard check",
+		leafHelp("pointer-guard check", [
+			"Prints a one-line all-clear when every backticked path in a tracked CLAUDE.md resolves.",
+			"  A red puts a file:line → path report on stderr, with ::error annotations under Actions.",
+			"  7: zero scope: no tracked CLAUDE.md",
+			"  11: git could not list the docs, or one could not be read (UNKNOWN)",
+			"  12: a pointer does not resolve",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard pointer-guard check"}]),
 );
 
 const pointerGuard = Command.make("pointer-guard").pipe(
@@ -441,8 +539,15 @@ const publishIsolationCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a published package linking a private or workspace dep."),
 	Command.withDescription(
-		"Every package the release pipeline ships must be installable from a clean registry state: a `workspace:` link or `@kampus/*` dependency (direct or `npm:`-aliased) passes only when its target is itself published, and a path-form `workspace:../…`, `link:`, `file:` or `portal:` dependency always reds. The published set is DERIVED from `publish.yml`'s resolve arms, keyed on the directory each arm publishes rather than hand-kept, so it cannot drift from what actually publishes. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on the offending manifest under Actions. Exits 7 (zero scope: no published package derived, or an arm names no single member — no `PKG_DIR`, no member there, a package name that does not match the tag prefix, or a name another member shares — fail-closed), 11 (a manifest could not be read or does not parse, so the verdict is UNKNOWN), 12 (a published package links a private or workspace dep). Example: fabrika guard publish-isolation-guard check",
+		leafHelp("publish-isolation-guard check", [
+			"Prints a one-line all-clear when every published package depends only on published packages.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: no published package, or an arm names no single member",
+			"  11: a manifest could not be read or does not parse (UNKNOWN)",
+			"  12: a published package links a private or workspace dependency",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard publish-isolation-guard check"}]),
 );
 
 const publishIsolationGuard = Command.make("publish-isolation-guard").pipe(
@@ -473,8 +578,16 @@ const leakScan = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a machine-local path in a changed doc or shell file."),
 	Command.withDescription(
-		"Scan the handed files for machine-local filesystem paths in shared-artifact surfaces — markdown docs and `.sh` scripts, which a whole-file scan covers because a shell comment is the likeliest place for one to land. The scanner self-scopes, so a caller may hand it every changed file. Prints the one-line all-clear with its per-surface scope on stdout; a red puts the report on stderr, with GitHub ::error annotations on each file under Actions. Exits 7 (zero scope: an empty file list — fail-closed), 11 (a handed file exists and could not be read, so the verdict is UNKNOWN), 12 (a machine-local path is in a scanned surface). Example: fabrika guard leak-guard scan docs/guide.md scripts/run.sh",
+		leafHelp("leak-guard scan", [
+			"Prints a one-line all-clear with its scope when no handed file holds a machine-local path.",
+			"  It scans markdown docs and .sh scripts and scopes itself, so hand it every changed file.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: an empty file list",
+			"  11: a handed file exists and could not be read (UNKNOWN)",
+			"  12: a machine-local path is in a scanned surface",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard leak-guard scan docs/guide.md scripts/run.sh"}]),
 );
 
 const leakGuard = Command.make("leak-guard").pipe(
@@ -502,8 +615,15 @@ const pathFilterCheck = leafCommand(
 		"Red when ci.yml's e2e filter and deploy.yml's deploy filter drift.",
 	),
 	Command.withDescription(
-		"ci.yml's `changes.e2e` and deploy.yml's `changes.deploy` dorny/paths-filter steps must classify a PR's diff identically — the same globs AND the same `(token, base)` diff basis. deploy's RUN-set must be a superset of e2e's, because ci.yml's `e2e` job polls deploy.yml's sticky preview-deploy comment on a 10-minute deadline: a PR that trips e2e while its deploy skips times that poll out and wedges the required `ci-required` check. Equal globs are not enough — the two steps' `token`/`base` inputs decide WHICH changed-file set the globs are applied to, so the two can drift while the lists stay byte-identical. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on both workflows under Actions. Exits 7 (zero scope: a missing file/job/step/key or an empty list — fail-closed), 11 (a workflow could not be read, so the verdict is UNKNOWN), 12 (the globs or the diff basis drifted). Example: fabrika guard path-filter-guard check",
+		leafHelp("path-filter-guard check", [
+			"Prints a one-line all-clear when ci.yml's e2e and deploy.yml's deploy path filters agree.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: a missing file, job, step or key, or an empty list",
+			"  11: a workflow could not be read (UNKNOWN)",
+			"  12: the globs or the diff basis drifted",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard path-filter-guard check"}]),
 );
 
 const pathFilterGuard = Command.make("path-filter-guard").pipe(
@@ -529,8 +649,15 @@ const changeDetectCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red when ci.yml's change detection reads the GitHub API."),
 	Command.withDescription(
-		"ci.yml's `changes` job must detect changed files with a pure `git diff`, never the GitHub API. dorny/paths-filter calls `pulls.listFiles` whenever a `token` is set and falls back to `git diff` only when it is empty — and the action DEFAULTS the token, so an absent `token:` selects API mode too. That live API read is the job's only flake surface, and a transient blip in it reds the `ci-required` aggregate on a defect-free PR. Prints the one-line all-clear on stdout; a red puts the report on stderr, with a GitHub ::error annotation on ci.yml under Actions. Exits 7 (zero scope: no changes job, no paths-filter step, or no `with:` block — fail-closed), 11 (ci.yml could not be read, so the verdict is UNKNOWN), 12 (the step is in API mode). Example: fabrika guard change-detect-guard check",
+		leafHelp("change-detect-guard check", [
+			"Prints a one-line all-clear when ci.yml's changes job detects files with git diff, not the API.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: no changes job, paths-filter step or with: block",
+			"  11: ci.yml could not be read (UNKNOWN)",
+			"  12: the step is in API mode",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard change-detect-guard check"}]),
 );
 
 const changeDetectGuard = Command.make("change-detect-guard").pipe(
@@ -556,8 +683,15 @@ const codeownersCpCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a §CP control-plane path with no CODEOWNERS owner."),
 	Command.withDescription(
-		"Every path the §CP boundary regex marks control-plane must have a covering `.github/CODEOWNERS` row. The boundary is one anchored regex and CODEOWNERS enumerates the same paths literally, so the two drift silently — and the `main` ruleset pairs `required_approving_review_count: 0` with `require_code_owner_review: true`, which means a path matching NO row merges with ZERO approvals. The §CP set is derived FROM the boundary const, never a re-hardcoded copy. Prints the one-line all-clear on stdout; a red names every uncovered path on stderr, with GitHub ::error annotations on CODEOWNERS under Actions. Exits 7 (zero scope: no CODEOWNERS, no owned rows, or a boundary resolving to no paths — fail-closed), 11 (CODEOWNERS could not be read, so the verdict is UNKNOWN), 12 (a §CP path is unowned). Example: fabrika guard codeowners-cp check",
+		leafHelp("codeowners-cp check", [
+			"Prints a one-line all-clear when every §CP control-plane path has a covering CODEOWNERS row.",
+			"  A red names every uncovered path on stderr, with ::error annotations under Actions.",
+			"  7: zero scope: no CODEOWNERS, no owned rows, or a boundary with no paths",
+			"  11: CODEOWNERS could not be read (UNKNOWN)",
+			"  12: a §CP path is unowned",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard codeowners-cp check"}]),
 );
 
 const codeownersCpGuard = Command.make("codeowners-cp").pipe(
@@ -583,8 +717,16 @@ const decisionsIndexValidate = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a duplicate ADR id or a filename/frontmatter mismatch."),
 	Command.withDescription(
-		"The ADR number lock: every record in the corpus `decisionsDir` declares carries the four index fields, its filename number and its frontmatter `id` name the same ADR, and no two records claim one id. The two halves compose — the duplicate check only sees a filename collision because the prefix↔id lock forces both axes to agree — so two branches each minting the same number, green apart, are caught once both land. Prints the one-line all-clear on stdout; a red names every defect on stderr, with GitHub ::error annotations on each record under Actions. A repo declaring `decisionsDir: null` keeps no corpus, so the guard is skipped on exit 0 with that declaration named — a declared absence is not the zero-scope red. Exits 7 (zero scope: the declared corpus directory is missing or holds no records — fail-closed), 11 (a record or `.fabrika.jsonc` could not be read, so the verdict is UNKNOWN), 12 (a defect). Example: fabrika guard decisions-index validate",
+		leafHelp("decisions-index validate", [
+			"Prints a one-line all-clear when every ADR's filename matches its id and no id repeats.",
+			"  A repo declaring decisionsDir: null keeps no corpus, so the guard is skipped as a success.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: the declared corpus directory is missing or empty",
+			"  11: a record or .fabrika.jsonc could not be read (UNKNOWN)",
+			"  12: a defect",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard decisions-index validate"}]),
 );
 
 const decisionsIndexGuard = Command.make("decisions-index").pipe(
@@ -617,8 +759,15 @@ const designTokenCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a dead token ref, a raw hex, or an off-grid px."),
 	Command.withDescription(
-		"The first deterministic rung of the four-pillars design law (design-system-manifest.md): a component CSS file must consume the design-token seam. Three rules — every `var(--…)` resolves to a declared, runtime-injected or grandfathered property (a dead ref renders unstyled with nothing failing), no hex literal outside the raw-scale layer `tokens.css` (Pillar 2), and no raw `px` > 2px beyond each file's grandfathered ceiling (the 4px grid sanctions only 1px and 2px). The bounded allow-lists in `packages/design/design-token-lint.config.json` grandfather the catalogued debt so the gate is green on main while still redding any NEW bypass; `--write-baseline` re-snapshots the ceilings after a real cleanup leg. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on each offending line under Actions. Exits 7 (zero scope: no CSS file discovered, or a malformed allow-list config — fail-closed), 11 (a file could not be read, so the verdict is UNKNOWN), 12 (the seam is broken). Example: fabrika guard design-token-guard check",
+		leafHelp("design-token-guard check", [
+			"Prints a one-line all-clear when component CSS has no dead token ref, raw hex or off-grid px.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: no CSS file, or a malformed allow-list config",
+			"  11: a read failed, so the verdict is UNKNOWN",
+			"  12: the token layer is bypassed",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard design-token-guard check"}]),
 );
 
 const designTokenGuard = Command.make("design-token-guard").pipe(
@@ -644,8 +793,15 @@ const i18nCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on product copy left outside the i18n catalog."),
 	Command.withDescription(
-		"Scan every non-test `src/**/*.{ts,tsx}` in the scanned app, outside its `i18n/` and `lab/` directories, and red on a Turkish character (\u00e7\u011f\u0131\u00f6\u015f\u00fc, either case) inside a string literal or a run of JSX text. Copy that lives in a component can never render in English, which is why it belongs behind the typed catalog. Comments, regex literals and unquoted object keys are not copy and are not judged. The bounded allow-list beside the catalog carries two buckets \u2014 `exempt` for the permanently-Turkish (a wire enum value, a product alphabet, a lab surface) and `unmigrated` for tracked debt \u2014 each entry a per-file ceiling with a mandatory `why`, so the gate is green today while redding any NEW literal. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on each offending line under Actions. Exits 7 (zero scope: no file scanned, or a malformed allow-list config \u2014 fail-closed), 11 (a file could not be read, so the verdict is UNKNOWN), 12 (Turkish copy sits outside the catalog). Example: fabrika guard i18n-guard check",
+		leafHelp("i18n-guard check", [
+			"Prints a one-line all-clear when no Turkish product copy sits outside the i18n catalog.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: no file scanned, or a malformed allow-list config",
+			"  11: a read failed, so the verdict is UNKNOWN",
+			"  12: Turkish copy sits outside the catalog",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard i18n-guard check"}]),
 );
 
 const i18nGuard = Command.make("i18n-guard").pipe(
@@ -671,8 +827,15 @@ const designInventoryCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red when the committed component inventory has gone stale."),
 	Command.withDescription(
-		"Re-extract the descriptive component inventory from the JSDoc on the annotated `packages/design/src` primitives and red when the committed `design-system-inventory.md` no longer matches it. The inventory is what an agent reads to pick a primitive, so a stale one silently routes every reader to a component contract that is not what ships. Prints the one-line all-clear on stdout; a red puts the report on stderr, with a GitHub ::error annotation on the artifact under Actions. Exits 7 (zero scope: no annotated primitive discovered — fail-closed), 11 (a source could not be read, so the verdict is UNKNOWN), 12 (the inventory is stale or missing). Example: fabrika guard design-inventory check",
+		leafHelp("design-inventory check", [
+			"Prints a one-line all-clear when design-system-inventory.md matches the extracted inventory.",
+			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
+			"  7: zero scope: no annotated primitive discovered",
+			"  11: a read failed, so the verdict is UNKNOWN",
+			"  12: the inventory is stale or missing",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard design-inventory check"}]),
 );
 
 const designInventoryGenerate = leafCommand(
@@ -690,8 +853,13 @@ const designInventoryGenerate = leafCommand(
 ).pipe(
 	Command.withShortDescription("Rewrite the descriptive component inventory from the JSDoc."),
 	Command.withDescription(
-		"Regenerate `design-system-inventory.md` from the annotated `packages/design/src` primitives — the one write in this group, and the only command whose output `design-inventory check` compares against. The write routes through the descriptive/normative firewall, which admits the inventory artifact and nothing else: the founder-authored `design-system-manifest.md` — the four pillars, the prohibitions, the role-token values — has no path here, so normative law can only ever change by a human's hand. Exits 7 (zero scope: no annotated primitive — fail-closed), 11 (a source could not be read, or the write did not land). Example: fabrika guard design-inventory generate",
+		leafHelp("design-inventory generate", [
+			"Rewrites design-system-inventory.md and prints the file written and its primitive count.",
+			"  7: zero scope: no annotated primitive",
+			"  11: a source could not be read, or the write did not land (UNKNOWN)",
+		]),
 	),
+	Command.withExamples([{command: "fabrika guard design-inventory generate"}]),
 );
 
 const designInventoryGuard = Command.make("design-inventory").pipe(

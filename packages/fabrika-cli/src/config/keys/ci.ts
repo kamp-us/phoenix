@@ -2,7 +2,9 @@
  * `ci` — what fabrika may assume about the repo's continuous-integration producer.
  *
  * Three sub-keys, one question each. `noProducer` says what a repo with **zero Actions workflows**
- * gets; `gateWorkflow` is the filename fabrika names when it points a reader at the gate that
+ * gets — zero repo-authored `.github/workflows/*` workflows, because the platform-provided
+ * `dynamic/<provider>/<name>` entries GitHub lists for default CodeQL setup, Dependabot and the
+ * Copilot reviewer do not count; `gateWorkflow` is the filename fabrika names when it points a reader at the gate that
  * supersedes an in-tree prediction; `mainAlarm` is who the main-went-red alarm wakes and which
  * label carries its issue.
  *
@@ -22,7 +24,7 @@ import type {Decoded, KeyGroup} from "../key-group.ts";
 
 export const CI = "ci";
 
-/** What a repo with zero workflows gets: refused, or answered with the no-producer fact. */
+/** What a repo with zero repo-authored workflows gets: refused, or answered with the no-producer fact. */
 export type NoProducer = "refuse" | "degrade";
 
 const NO_PRODUCER_VALUES: ReadonlyArray<NoProducer> = ["refuse", "degrade"];
@@ -217,7 +219,7 @@ export const ciKey: KeyGroup<CiSurface> = {
 			noProducer: {
 				type: "string",
 				description:
-					"What a repo with zero Actions workflows gets: `refuse` (a rollup over no producer is vacuous) or `degrade`.",
+					"What a repo with zero repo-authored `.github/workflows/*` workflows gets — platform-provided `dynamic/*` entries do not count: `refuse` (a rollup over no producer is vacuous) or `degrade`.",
 				enum: ["refuse", "degrade"],
 			},
 			gateWorkflow: {

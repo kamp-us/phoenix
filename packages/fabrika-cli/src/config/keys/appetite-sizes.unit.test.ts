@@ -27,6 +27,7 @@ describe("a declared table names all three sizes, rising from S to L", () => {
 	it("takes the amounts the repo wrote, fractions included", () => {
 		expect(declared({S: 10, M: 22.5, L: 60})).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: {S: 10, M: 22.5, L: 60},
 		});
 	});

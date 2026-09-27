@@ -35,7 +35,10 @@ const edited = (name: string, over: Record<string, unknown>): ReadonlyArray<unkn
 describe("the shipped default", () => {
 	it("is the vocabulary `triage/facets.ts` carries, and it conforms", () => {
 		expect(triageFacetsKey.shippedDefault).toBe(FACET_VOCABULARY);
-		expect(loadConfig({_tag: "Absent"})).toEqual({_tag: "Config", state: {_tag: "Absent"}});
+		expect(loadConfig({_tag: "Absent"})).toEqual({
+			_tag: "Config",
+			documents: {tracked: {_tag: "Absent"}, local: {_tag: "Absent"}},
+		});
 	});
 
 	it("resolves for a repo that declares no config at all", () => {

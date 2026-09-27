@@ -184,8 +184,9 @@ in ten places is nine chances to drift, so the fact has one place.
 
 **`14` is allocated in code and missing from this matrix, and that is a known gap this spec does not
 close.** `packages/fabrika-cli/src/triage/codes.ts` seats `UNREPAIRABLE = 14` for `triage
-repair-criteria`, a tenth verb this document does not yet specify at all — it has no column above
-and no section below. Writing its row here would be guessing at a spec nobody has written, so `15`
+repair-criteria`, a tenth verb this document does not yet fully specify — it has no column above,
+and its section below carries only the derivation moved out of its help. Writing its row here would
+be guessing at a spec nobody has written, so `15`
 takes the next free seat instead of compacting into `14`, and the gap is disclosed rather than
 silently filled.
 
@@ -2497,6 +2498,35 @@ $ fabrika triage kill 7 --confirm --json < reason.md
 
 ---
 
+## `triage repair-criteria`
+
+This section carries the derivation the verb's `--help` used to state. Its callers read the
+invocation, outcomes and exits from `fabrika triage repair-criteria --help`; it is not yet a full
+specification, which is why the exit matrix above still has no `14` row.
+
+**What it rewrites.** An acceptance-criteria block's shape, and nothing else: a level-drifted
+`## Acceptance criteria` heading to the conforming `### Acceptance criteria`, and, when the block
+carries no checkbox at all, its plain list bullets to unchecked checkboxes. Each item's text stays
+byte-for-byte unchanged. It touches the authored region only and leaves preserved originals
+byte-for-byte untouched, and the repair is pre-verified through the wire read before anything is
+written.
+
+**What it refuses on `14`.** Only a pure shape rewrite on the exact heading text is repaired. A
+drifted heading text, a block mixing prose or another block into the list, an empty item, a block
+that already carries a checkbox beside its bullets, and a converted bullet the reader counts no
+criterion at are all refused, never guessed. A `Repaired` plan reads back exactly one criterion per
+line it rewrote.
+
+**One issue or the board.** One issue by number, or `--sweep` for every open issue with one outcome
+line each. A sweep re-reads each issue immediately before its write and answers `moved` instead of
+writing when the body changed after the board snapshot. `--dry-run` plans everything and writes
+nothing, answering `would-repair` with the repairs it would make.
+
+**Write order.** Every repaired body gets one disclosure comment naming its repairs, posted after the
+read-back.
+
+---
+
 ## `triage audit-set`
 
 **Invocation**
@@ -2520,6 +2550,8 @@ truncated.
 With `--json`, one object with keys `outcome`, `label`, `repo`, `issues` (array of
 `{number, title}`), and `scanned` (integer, equal to the length of `issues`). This object is the
 `--input` document `triage audit-merge` reads.
+
+Stderr carries the scanned count as a scope line in both modes.
 
 **Exit status**
 

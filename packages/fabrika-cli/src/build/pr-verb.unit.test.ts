@@ -71,6 +71,16 @@ const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options>
 
 const withBody = (text: string) => ({stdin: Effect.succeed<StdinRead>({_tag: "Text", text})});
 
+/** Names the boundary module and the CODEOWNERS team inside backticks — a mention, not a verdict. */
+const MENTION_BODY =
+	"Fixes #4312\n\nThe boundary regex lives in `packages/pipeline-cli/src/tools/control-plane-paths/`, owned by `@acme/control-plane`.\n\n" +
+	"## Deviations\n\n- **Out-of-scope change** — **Said:** the regex only. **Did:** also edited `control-plane-paths/`. " +
+	"**Why:** its suite sits there. **Disposition:** stated here.\n";
+
+/** The same mention beside a plain-prose assertion — the backticks shelter the mention, never the claim. */
+const ASSERTING_BODY =
+	"Fixes #4312\n\nThis touches `control-plane-paths/`, and this PR is not control-plane.\n\n## Deviations\nNone.\n";
+
 describe("runPr — the body guards run before any write", () => {
 	it("refuses empty stdin on 3, and touches nothing", async () => {
 		const shell = fakeSeams([]);
@@ -132,6 +142,14 @@ describe("runPr — the body guards run before any write", () => {
 			"build pr: the body asserts a control-plane classification — that verdict is the merge gate's.",
 		);
 	});
+
+	it("still refuses a plain-prose assertion on 10 beside a backticked mention (#6207)", async () => {
+		const out = await run([], withBody(ASSERTING_BODY));
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.at(-1)).toBe(
+			"build pr: the body asserts a control-plane classification — that verdict is the merge gate's.",
+		);
+	});
 });
 
 describe("runPr — the write path", () => {
@@ -149,6 +167,21 @@ describe("runPr — the write path", () => {
 			number: 4318,
 			url: "https://example.test/o/r/pull/4318",
 		});
+	});
+
+	it("opens a PR whose body names the boundary module and team in backticks (#6207)", async () => {
+		const out = await run(
+			[
+				...LANE_OK,
+				[OPEN_PULLS, served([])],
+				[REPO_META, served({default_branch: "main"})],
+				[CREATE, served({number: 4318, html_url: "https://example.test/o/r/pull/4318"})],
+				[READ_BACK, pull({body: MENTION_BODY})],
+			],
+			withBody(MENTION_BODY),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).answer).toBe("opened");
 	});
 
 	it("sends the body as the request's own JSON, never a path the transport would read (#4683)", async () => {
@@ -395,6 +428,33 @@ describe("runPrBody — the guarded body-only repair (#5618)", () => {
 			"build pr-body: the body asserts a control-plane classification — that verdict is the merge gate's.",
 		);
 		expect(shell.calls).toEqual([]);
+	});
+
+	it("still refuses a plain-prose assertion on 10 beside a backticked mention (#6207)", async () => {
+		const shell = fakeSeams([]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runPrBody({
+					...bodyOptions,
+					stdin: Effect.succeed<StdinRead>({_tag: "Text", text: ASSERTING_BODY}),
+				}),
+				shell.layer,
+			),
+		);
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.at(-1)).toBe(
+			"build pr-body: the body asserts a control-plane classification — that verdict is the merge gate's.",
+		);
+		expect(shell.calls).toEqual([]);
+	});
+
+	it("replaces a body that names the boundary module and team in backticks (#6207)", async () => {
+		const out = await runBody(
+			[...LANE_ONLY, head(), [PATCH_BODY, PATCHED], [READ_BACK, pull({body: MENTION_BODY})]],
+			{stdin: Effect.succeed<StdinRead>({_tag: "Text", text: MENTION_BODY})},
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).answer).toBe("updated");
 	});
 
 	it("refuses a closed PR on 7 — there is no body to rewrite", async () => {

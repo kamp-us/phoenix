@@ -53,10 +53,11 @@ describe("a repo that declares nothing gets the shipped paths", () => {
 describe("a declared path", () => {
 	it("takes the repo's value, trimmed", () => {
 		expect(resolve(load({[ROADMAP_FILE_KEY]: "  docs/roadmap.md "}), roadmapFileKey)).toMatchObject(
-			{_tag: "Declared", value: "docs/roadmap.md"},
+			{_tag: "Declared", layer: "tracked", value: "docs/roadmap.md"},
 		);
 		expect(resolve(load({[CYCLE_DOC_KEY]: "docs/cycle.md"}), cycleDocKey)).toMatchObject({
 			_tag: "Declared",
+			layer: "tracked",
 			value: "docs/cycle.md",
 		});
 	});
@@ -72,6 +73,7 @@ describe("`decisionsDir` is the one declinable key", () => {
 	it("reads null as a repo that keeps no decision corpus", () => {
 		expect(resolve(load({[DECISIONS_DIR]: null}), decisionsDirKey)).toMatchObject({
 			_tag: "Declared",
+			layer: "tracked",
 			value: {_tag: "Declined"},
 		});
 	});

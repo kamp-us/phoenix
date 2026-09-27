@@ -21,7 +21,10 @@
  *
  * The one caller-asserted input is `--cp`, and it reaches **every** resolution in one run — v1
  * passed it to the gate and not the native fold, and a discharged FAIL stayed in force forever.
- * The fold living inside this verb is what makes that seam unrepresentable.
+ * The fold living inside this verb is what makes that seam unrepresentable. Without `--cp` a
+ * head-bound advisory still never resolves a namespace, but it is named on stderr: the row then
+ * describes whichever older comment the other carriers left, and read alone it sends a driver to
+ * re-review a head that already holds a current verdict. That is a notice, not a seventh state.
  *
  * `governance` is the one namespace the caller cannot decline: see {@link requiredWithFloor}.
  *
@@ -51,6 +54,7 @@
  * scope nobody saw.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
+ * @ruling https://github.com/kamp-us/phoenix/issues/6796#issuecomment-5519868349
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -155,7 +159,11 @@ interface Candidate {
 	readonly commentId: number;
 }
 
-const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
+/**
+ * The claim one comment makes, whatever `--cp` says. Whether an advisory may resolve a namespace is
+ * `runGate`'s call, because an advisory it withholds is still reported on stderr.
+ */
+const candidateOf = (comment: CommentRecord): Candidate | null => {
 	const marker = readMarker(comment.body);
 	if (marker._tag === "Found") {
 		return {
@@ -184,7 +192,6 @@ const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
 					commentId: comment.id,
 				};
 	}
-	if (!cp) return null;
 	const advisory = readAdvisory(comment.body);
 	return advisory === null
 		? null
@@ -410,14 +417,27 @@ export const runGate = (
 		}
 
 		// The ACL is resolved once per distinct author, and a lookup FAILURE is fail-closed: the
-		// namespace is UNKNOWN, never `absent`.
+		// namespace is UNKNOWN, never `absent`. The exception is an advisory withheld for want of
+		// `--cp`: it decides nothing, is kept only to be named on stderr, and its lookup failure is a
+		// notice rather than `11`.
 		const authorized = new Map<string, boolean>();
 		const candidates: Candidate[] = [];
+		const withheld: Candidate[] = [];
 		for (const comment of commented.value) {
-			const claim = candidateOf(comment, cp);
+			const claim = candidateOf(comment);
 			if (claim === null) continue;
+			const withholding = claim.carrier === "advisory" && !cp;
+			if (withholding && !(required.includes(claim.namespace) && prefixMatch(claim.sha, bound))) {
+				continue;
+			}
 			if (!authorized.has(comment.author)) {
 				const permission = yield* permissionFor(repo, comment.author);
+				if (permission._tag === "Unknown" && withholding) {
+					diagnostics.push(
+						`${VERB}: ${claim.namespace}: cannot read the ACL for ${comment.author} (${permission.reason}), so the §CP advisory in comment ${comment.id} is not reported.`,
+					);
+					continue;
+				}
 				if (permission._tag === "Unknown") {
 					return refuse(
 						PRECONDITION_UNKNOWN,
@@ -431,6 +451,10 @@ export const runGate = (
 				);
 			}
 			if (authorized.get(comment.author) !== true) continue;
+			if (withholding) {
+				withheld.push(claim);
+				continue;
+			}
 			if (claim.carrier === "advisory" && claim.polarity === "FAIL") {
 				diagnostics.push(
 					`${VERB}: #${pr} carries a §CP advisory with a [FAIL] row — an invalid emission; treated as fail, report it.`,
@@ -517,6 +541,17 @@ export const runGate = (
 				PRECONDITION_UNKNOWN,
 				`${VERB}: resolved ${covered.size} of ${required.length} required namespaces — refusing to answer over narrowed coverage.`,
 				diagnostics,
+			);
+		}
+
+		for (const verdict of verdicts) {
+			const skipped = inForce(
+				withheld.filter((claim) => claim.namespace === verdict.name),
+				bound,
+			);
+			if (skipped === null) continue;
+			diagnostics.push(
+				`${VERB}: ${verdict.name}: the §CP advisory verdict in comment ${skipped.commentId} binds this head, but without --cp no advisory resolves a namespace — this row reads ${verdict.state} off the other carriers, not that verdict; passing --cp, once ship cp-approval discharges, is what resolves it.`,
 			);
 		}
 

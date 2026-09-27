@@ -253,6 +253,9 @@ Filtering is opt-in for `review scope` and `review diff`: `--filter-placement=af
 omitting the flag preserves unfiltered output. `before` and every other value refuse on `10`.
 `--exclude` adds comma-separated patterns only when filtering is enabled. Patterns support `*`
 within a path segment and `**` across segments; every other character, including `?`, is literal.
+The shipped defaults are `pnpm-lock.yaml`, `**/__snapshots__/**`, `**/__generated__/**`,
+`**/schema.graphql.generated` and `**/__mutation__/**`: the lockfile, snapshot directories and the
+generated-schema and build-output shapes.
 The effective set is shipped defaults minus `reviewFilterUnexclude`, then `reviewFilterExclusions`
 and caller additions, deduplicated by pattern in declaration order. Re-adding a removed default
 restores it and removes it from the removal report.
@@ -352,7 +355,8 @@ the `governance` skill; the flag only makes the seam mechanical.
 
 **`governance` is a fourth-root answer, and it is why `harness` must not be read as one.** The line
 is `touchesGovernanceRoot` over the same file list, against the **declared** governance roots
-(`governedRoots`, whose shipped value here is the decision corpus plus the three `harness` roots) — the
+(`governedRoots`, whose shipped value is five roots: the decision corpus, the three `harness` roots and
+`.fabrika.jsonc` itself) — the
 one derivation `governance scope` prints, imported rather than recomputed. So a
 decision-corpus-only diff prints `harness\tfalse` and `governance\trequired`, which is exactly the
 pair a reviewer keying the governance obligation off `harness` gets wrong: a clean PASS,
@@ -574,7 +578,7 @@ follow [Review content filtering](#review-content-filtering). Omitted placement,
 subjects/modifiers, or `--emit-diff` with `--json` refuse on `10`.
 
 PR and range subjects read the object database and prove diff completeness against the same
-range's path list before filtering. A local diff file has no range to verify; it reads bytes as
+range's path list before filtering, so a deliberate exclusion can never masquerade as a truncation. A local diff file has no range to verify; it reads bytes as
 given through the filesystem service. An unreadable input or config refuses on `11`, a stale PR
 head on `12`, a provably incomplete diff on `13`, and a governed exclusion on `21`.
 
@@ -824,13 +828,16 @@ is `red`, never silently dropped.
 
 **An empty enumeration asks one further question: does this repo produce CI at all?** The two
 facts are different and no longer share an answer — a repo whose checks have not reported yet is
-still going to report, and a repo with no Actions workflows never will. The evidence is the
+still going to report, and a repo with no workflow of its own never will. The evidence is the
 workflow *inventory* and nothing else: **existence is the whole test, and nothing inspects what a
-workflow does**. Zero workflows refuses on
+workflow does**. A producer is a workflow the repo authors itself, a `.github/workflows/*` path:
+the `dynamic/<provider>/<name>` entries the platform lists on the repo's behalf (default CodeQL
+setup, Dependabot, the Copilot reviewer) do not count. Zero repo-authored workflows refuses on
 `7`, unless the repo declares `ci.noProducer: "degrade"` in `.fabrika.jsonc`, which rolls up
 `no-producer` at exit `0` with `run\t0` — its own token, never `green` and never `pending`. The
-inventory is read only when the enumeration came back empty: a check run that reported already
-proves a producer.
+inventory is read only when the enumeration came back empty. A check run that reported proves no
+producer, because a `dynamic/*` workflow reports runs too: a non-empty enumeration skips the
+producer question, and gate coverage below names the repo that authors no workflow of its own.
 
 **A passing check set is not gate coverage, and the verb no longer lets the two share a word.**
 A complete, all-green enumeration that came from no workflow this repo authors is refused on `16`
@@ -903,7 +910,7 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR or the `--sha` is proven absent — no commit to enumerate; **or zero check runs are declared at the commit** — a vacuous green is a fail-open and is refused; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
+| `7` | the PR or the `--sha` is proven absent — no commit to enumerate; **or zero check runs are declared at the commit** — a vacuous green is a fail-open and is refused; **or the repo has zero repo-authored `.github/workflows/*` workflows** (platform-provided `dynamic/*` entries do not count) under the shipped `ci.noProducer: "refuse"` |
 | `11` | the check-run read, the workflow-inventory read, the runs-at-head read, the base branch's required-set read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green` |
 | `13` | entries received < declared `total_count` — the enumeration is provably incomplete and is never read as "no red checks"; **or the base branch's ruleset walk never reached a terminal page** — the declared required set is provably short, so which checks block is UNKNOWN |
 | `16` | the rollup is not `red` and **no workflow this repo authors inspected the head** — the enumeration is complete, every repo-authored run here carries another commit or ran against another ref, and the CI state is UNKNOWN, never `green` |
@@ -915,11 +922,11 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | `review ci: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review ci: no commit <sha> on PR #<n> in <repo>.` | 7 | refusal |
 | `review ci: zero check runs declared at <sha> — refusing to report green over an empty enumeration (ADR 0092).` | 7 | refusal |
-| `review ci: <repo> has zero workflows — no CI producer, so no head can be evidenced (ADR 0092). A repo that runs no workflows declares \`ci.noProducer: "degrade"\`.` | 7 | refusal |
+| `review ci: <repo> has zero repo-authored workflows (platform-provided \`dynamic/*\` entries do not count) — no CI producer, so no head can be evidenced. A repo that runs no workflows declares \`ci.noProducer: "degrade"\`.` | 7 | refusal |
 | `review ci: cannot enumerate check runs at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
 | `review ci: cannot enumerate the workflow inventory of <repo>: <reason> — whether a producer exists is UNKNOWN, never green.` | 11 | refusal |
 | `review ci: cannot read \`ci\` from the repo config (<reason>) — whether <repo> produces CI is UNKNOWN, never green.` | 11 | refusal |
-| `review ci: <repo> declares \`ci.noProducer: degrade\` and has zero workflows — no producer, so there is nothing to roll up.` | 0 | notice |
+| `review ci: <repo> declares \`ci.noProducer: degrade\` and has zero repo-authored workflows — no producer, so there is nothing to roll up.` | 0 | notice |
 | `review ci: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration (#3999).` | 13 | refusal |
 | `review ci: none of the <g> workflow(s) <repo> authors inspected <head> — the <n> check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected these bytes: the CI state is UNKNOWN, never green.` | 16 | refusal |
 | `review ci: cannot enumerate the workflow inventory of <repo>: <reason> — which gates exist is UNKNOWN, never green.` | 11 | refusal |
