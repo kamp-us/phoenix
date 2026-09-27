@@ -125,17 +125,17 @@ export type Claim =
 	 */
 	| {readonly _tag: "HeadVerdicts"; readonly defers: ReadonlyArray<string>}
 	/**
-	 * A reviewer's park out of a review cell, which claims the run reached no verdict. It is the one
-	 * negative claim here, so it is refused only by a still-binding `FAIL` and by nothing else — see
+	 * A reviewer's park out of a review cell, which claims the run reached no verdict. It is a
+	 * negative claim, so it is refused only by a still-binding `FAIL` and by nothing else — see
 	 * {@link foldPark}.
 	 */
 	| {readonly _tag: "ParkUncontradicted"}
 	/**
-	 * A rewind out of a review cell, which claims no open PR links the task's issue any more — the
-	 * PR the review was for now serves another issue. It is the second negative claim, and it runs
-	 * the other way from the park: an unread board refuses it rather than letting it through, because
-	 * the rewind sends the lane back to `queued` and doing that over a PR that still links would drop
-	 * a review in flight. See {@link traceUnlinked}.
+	 * A rewind out of a review cell, which claims the task's issue is still open and no open PR links
+	 * it any more — the PR the review was for now serves another issue. It is the second negative
+	 * claim, and it runs the other way from the park: an unread board refuses it rather than letting
+	 * it through, because the rewind sends the lane back to `queued` and doing that over a PR that
+	 * still links would drop a review in flight. See {@link traceUnlinked}.
 	 *
 	 * @ruling https://github.com/kamp-us/phoenix/issues/9910
 	 */
@@ -413,15 +413,29 @@ export const tracePulls = (
 		: {_tag: "Many", prs: matched.map((fact) => fact.number)};
 };
 
+/** An issue's state as the board reports it — the one fact a rewind asks of the issue itself. */
+export type IssueState = "open" | "closed";
+
 /**
- * The verdict a rewind out of a review cell earns: proven only when no open PR links the issue.
+ * The verdict a rewind out of a review cell earns: proven only when the issue is open and no open
+ * PR links it.
  *
  * It reads the same trace a `DONE` stands on, with the polarity flipped. `None` is the rewind's
  * evidence: the PR the review was for now points at another issue, so `lane brief` has nothing to
  * hand a reviewer and the work is buildable again. `One` and `Many` both contradict it, because
  * either way a PR still links the issue and the review cell still has a subject.
+ *
+ * A closed issue contradicts it first. A PR merged past the ledger also leaves no open PR linking
+ * the issue, so the trace alone cannot tell a re-pointed PR from finished work; the issue's state
+ * can, and finished work is `lane settle`'s, never another build round.
  */
-export const traceUnlinked = (issue: number, trace: PullTrace): Proof => {
+export const traceUnlinked = (issue: number, state: IssueState, trace: PullTrace): Proof => {
+	if (state === "closed") {
+		return {
+			_tag: "Contradicted",
+			what: `#${issue} is closed — the work is finished, not re-pointed, so no rewind is recorded; settle the lane with \`lane settle\` instead`,
+		};
+	}
 	if (trace._tag === "None") {
 		return {
 			_tag: "Proven",

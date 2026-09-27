@@ -375,12 +375,24 @@ const prove = (
 
 		// Asked before the namespace reads: the rewind judges links, never verdicts.
 		if (claim._tag === "Unlinked") {
+			const found = yield* getIssue(repo, issue);
+			if (found._tag === "Unknown") return unreadable(`issue #${issue}`, found.reason);
+			if (found._tag === "Absent") {
+				return seat(
+					{_tag: "Absent", what: `#${issue} is not there, so there is no work to rewind`},
+					[],
+				);
+			}
+			const state = found.value.state;
+			if (state !== "open" && state !== "closed") {
+				return unreadable(`issue #${issue}`, `GitHub reported its state as "${state}"`);
+			}
 			const unlinked = yield* traceOpenPull(repo, issue);
 			if (unlinked._tag === "Refused") return unlinked.outcome;
 			const scanned = [
-				`${VERB}: looked for an open PR in ${repo} whose body links #${issue} (any closing keyword, or Part of, anywhere in the body); ${unlinked.scanned} candidate(s) read.`,
+				`${VERB}: read #${issue} as ${state}, and looked for an open PR in ${repo} whose body links it (any closing keyword, or Part of, anywhere in the body); ${unlinked.scanned} candidate(s) read.`,
 			];
-			const proof = traceUnlinked(issue, unlinked.trace);
+			const proof = traceUnlinked(issue, state, unlinked.trace);
 			if (proof._tag !== "Proven") return seat(proof, scanned);
 			return answer(
 				JSON.stringify(
