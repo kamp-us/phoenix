@@ -3144,6 +3144,9 @@ all, so a reader could not tell whether it addressed the head they were looking 
 Guards: stdin non-empty (`3`), leak predicates (`5`, `6`), claim confirmed (`15`/`11`), target
 open (`7`), read-back through `normalizeForReadback` (`9`), write-unknown (`8`).
 
+Those are the posting guards and the only ones: the verb runs none of the tree assertions (`13`,
+`14`), so a stop report stays postable from a tree another verb refused.
+
 **Exit status** (beyond the universal four): `3`, `5`, `6`, `7`, `8`, `9`, `11`, `15` — triggers
 exactly as in `build pr`, minus the body-shape and classification rows (`4`, `10` are
 unreachable: a note has no required sections and no closing keywords; a classification *claim* in
