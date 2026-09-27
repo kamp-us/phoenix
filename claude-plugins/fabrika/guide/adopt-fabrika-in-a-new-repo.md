@@ -255,7 +255,8 @@ README's "One-time setup" section lists them:
    Inbox view (filtered `is:open no:label`), so nothing sits where triage can't see it.
 
 To tune the table, add a `table` block to `.fabrika.jsonc`: cadence and day, the agenda sections and
-their order, the agenda cap, the size dollars and every flag threshold. Leave out what you don't
-change. To point setup at a project you already have, set `table.project.number` (and
-`table.project.owner` if it lives under another account). `fabrika config schema` documents each
-key.
+their order, the agenda cap and every flag threshold. Leave out what you don't change. The size
+dollars are not in that block: set them in `appetiteSizes`, the key pitch-guard reads, and the Size
+options and the project README show the same amounts your pitches are approved against. To point
+setup at a project you already have, set `table.project.number` (and `table.project.owner` if it
+lives under another account). `fabrika config schema` documents each key.

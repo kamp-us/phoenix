@@ -16,7 +16,6 @@ describe("the shipped table", () => {
 			day: "monday",
 			sections: ["Tails", "Customers", "New bets", "Outside the bets"],
 			agendaCap: 25,
-			sizes: {S: 15, M: 35, L: 40},
 			stopMultiple: 2,
 			asksFlag: 3,
 			stuckDays: 3,
@@ -64,16 +63,9 @@ describe("the schema's numeric bounds", () => {
 		path.reduceRight<unknown>((inner, key) => ({[key]: inner}), value);
 	const cases = leaves(tableKey.jsonSchema ?? {}, []);
 
-	it("covers the sizes, the percentages and the stop multiple", () => {
+	it("covers the percentages and the stop multiple", () => {
 		expect(cases.map(([path]) => path.join("."))).toEqual(
-			expect.arrayContaining([
-				"sizes.S",
-				"sizes.M",
-				"sizes.L",
-				"stopMultiple",
-				"fabrikaShare.percent",
-				"fabrikaShare.thenPercent",
-			]),
+			expect.arrayContaining(["stopMultiple", "fabrikaShare.percent", "fabrikaShare.thenPercent"]),
 		);
 	});
 
@@ -90,12 +82,12 @@ describe("the schema's numeric bounds", () => {
 
 describe("a declared table block", () => {
 	it("keeps the shipped value for every sub-key it leaves out", () => {
-		const resolved = declared({agendaCap: 10, sizes: {S: 20}});
+		const resolved = declared({agendaCap: 10, fabrikaShare: {percent: 50}});
 
 		expect(resolved._tag).toBe("Declared");
 		if (resolved._tag !== "Declared") return;
 		expect(resolved.value.agendaCap).toBe(10);
-		expect(resolved.value.sizes).toEqual({S: 20, M: 35, L: 40});
+		expect(resolved.value.fabrikaShare).toEqual({percent: 50, forTables: 4, thenPercent: 30});
 		expect(resolved.value.stuckDays).toBe(SHIPPED_TABLE.stuckDays);
 	});
 
@@ -113,7 +105,8 @@ describe("a declared table block", () => {
 		[{day: "someday"}, "`table.day`"],
 		[{agendaCap: 0}, "`table.agendaCap`"],
 		[{stopMultiple: 1}, "`table.stopMultiple`"],
-		[{sizes: {XL: 90}}, "`table.sizes.XL`"],
+		[{sizes: {S: 50}}, "`table.sizes`"],
+		[{fabrikaShare: {share: 90}}, "`table.fabrikaShare.share`"],
 		[{fabrikaShare: {percent: 140}}, "`table.fabrikaShare.percent`"],
 		[{project: {number: -1}}, "`table.project.number`"],
 		[{project: {owner: "not a login"}}, "`table.project.owner`"],

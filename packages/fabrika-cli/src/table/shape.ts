@@ -1,7 +1,8 @@
 /**
  * The shape a table's project has: its fields and their options, its views, its README, and the
- * manual steps GitHub's API cannot take. Derived from the `table` settings alone, so a repo with no
- * config and a repo with a tuned block get the same project shape with their own numbers in it.
+ * manual steps GitHub's API cannot take. Derived from the `table` settings and the `appetiteSizes`
+ * dollars alone, so a repo with no config and a repo with a tuned block get the same project shape
+ * with their own numbers in it.
  *
  * Field and view names are the vocabulary later table slices read back, so they are fixed here and
  * not configurable: a renamed `Stage` field would be a field no sync could find.
@@ -9,6 +10,7 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  */
 
+import type {AppetiteSizes} from "../config/keys/appetite-sizes.ts";
 import {
 	type Cadence,
 	OUTSIDE_THE_BETS,
@@ -188,7 +190,11 @@ const capitalized = (word: string): string => `${word.charAt(0).toUpperCase()}${
 
 const dollars = (amount: number): string => `$${amount}`;
 
-export const renderReadme = (settings: TableSettings, repo: string): string => {
+export const renderReadme = (
+	settings: TableSettings,
+	sizes: AppetiteSizes,
+	repo: string,
+): string => {
 	const day = capitalized(settings.day);
 	const steps = manualSteps(repo);
 	const agendaOrder = settings.sections.filter((name) => name !== OUTSIDE_THE_BETS).join(", then ");
@@ -230,9 +236,9 @@ export const renderReadme = (settings: TableSettings, repo: string): string => {
 		...STAGES.map((stage) => `- **${stage.name}**: ${stage.description}`),
 		"",
 		`## ${FIELD.size}: how much the bet may spend`,
-		`- **S**: about ${dollars(settings.sizes.S)}.`,
-		`- **M**: about ${dollars(settings.sizes.M)}.`,
-		`- **L**: an epic, about ${dollars(settings.sizes.L)} per child.`,
+		`- **S**: about ${dollars(sizes.S)}.`,
+		`- **M**: about ${dollars(sizes.M)}.`,
+		`- **L**: an epic, about ${dollars(sizes.L)} per child.`,
 		`Passing the size brings the row back to the table; the lane stops at ${settings.stopMultiple}x its size.`,
 		"",
 		`## ${FIELD.spent}`,
@@ -259,6 +265,7 @@ export const defaultTitle = (repo: string): string => `${repo.split("/")[1] ?? r
 
 export const tableShape = (
 	settings: TableSettings,
+	sizes: AppetiteSizes,
 	repo: string,
 	title: string,
 	today: Date,
@@ -267,7 +274,7 @@ export const tableShape = (
 	return {
 		title,
 		shortDescription: `The betting table for ${repo}: what gets bet on, and whether it worked.`,
-		readme: renderReadme(settings, repo),
+		readme: renderReadme(settings, sizes, repo),
 		fields: [
 			{_tag: "SingleSelect", name: FIELD.stage, options: options(STAGES)},
 			{
@@ -281,9 +288,9 @@ export const tableShape = (
 				_tag: "SingleSelect",
 				name: FIELD.size,
 				options: options([
-					{name: "S", description: `About ${dollars(settings.sizes.S)}.`},
-					{name: "M", description: `About ${dollars(settings.sizes.M)}.`},
-					{name: "L", description: `About ${dollars(settings.sizes.L)} per epic child.`},
+					{name: "S", description: `About ${dollars(sizes.S)}.`},
+					{name: "M", description: `About ${dollars(sizes.M)}.`},
+					{name: "L", description: `About ${dollars(sizes.L)} per epic child.`},
 				]),
 			},
 			{_tag: "Number", name: FIELD.spent},

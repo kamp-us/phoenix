@@ -5,6 +5,9 @@
  * table**: config only tunes it. A declared block that leaves a sub-key out gets that sub-key's
  * shipped value, so a repo writes only the numbers it disagrees with.
  *
+ * The dollars each size is worth are not a sub-key: they are `appetiteSizes`, the key pitch-guard
+ * reads, so the table and a pitch approval never name two amounts for one size.
+ *
  * No shipped value names a repository, path, issue number or login. The one per-repo fact the table
  * needs, which project it lives in, defaults to `null`: `table setup` finds or creates the project
  * on the repository's own owner.
@@ -52,13 +55,6 @@ export const WEEKDAYS: ReadonlyArray<Weekday> = [
  */
 export const OUTSIDE_THE_BETS = "Outside the bets";
 
-/** A size's dollar appetite. `L` is per epic child. */
-export interface SizeDollars {
-	readonly S: number;
-	readonly M: number;
-	readonly L: number;
-}
-
 /** The flagged target share of weekly spend on fabrika's own work: one share at first, then another. */
 export interface FabrikaShare {
 	readonly percent: number;
@@ -78,7 +74,6 @@ export interface TableSettings {
 	/** Agenda sections in agenda order. Non-empty, unique, and always holding {@link OUTSIDE_THE_BETS}. */
 	readonly sections: ReadonlyArray<string>;
 	readonly agendaCap: number;
-	readonly sizes: SizeDollars;
 	/** A lane over its size keeps going; at this multiple of its size it stops. */
 	readonly stopMultiple: number;
 	/** The ask count at which a bet is flagged onto the next table. */
@@ -98,7 +93,6 @@ export const SHIPPED_TABLE: TableSettings = {
 	day: "monday",
 	sections: ["Tails", "Customers", "New bets", OUTSIDE_THE_BETS],
 	agendaCap: 25,
-	sizes: {S: 15, M: 35, L: 40},
 	stopMultiple: 2,
 	asksFlag: 3,
 	stuckDays: 3,
@@ -135,11 +129,6 @@ const positiveInteger: Field<number> = (raw, path) =>
 	typeof raw === "number" && Number.isInteger(raw) && raw >= 1
 		? {_tag: "Value", value: raw}
 		: malformed(`${named(path)} is not a positive integer`);
-
-const positiveNumber: Field<number> = (raw, path) =>
-	typeof raw === "number" && Number.isFinite(raw) && raw > 0
-		? {_tag: "Value", value: raw}
-		: malformed(`${named(path)} is not a positive number`);
 
 const percent: Field<number> = (raw, path) =>
 	typeof raw === "number" && Number.isFinite(raw) && raw > 0 && raw <= 100
@@ -219,10 +208,6 @@ const SUB_KEYS: {readonly [K in keyof TableSettings]: Field<TableSettings[K]>} =
 	day: oneOf(WEEKDAYS),
 	sections: sectionList,
 	agendaCap: positiveInteger,
-	sizes: objectOf<SizeDollars>(
-		{S: positiveNumber, M: positiveNumber, L: positiveNumber},
-		SHIPPED_TABLE.sizes,
-	),
 	stopMultiple: multiple,
 	asksFlag: positiveInteger,
 	stuckDays: positiveInteger,
@@ -249,12 +234,6 @@ const integer = (description: string, minimum = 1): JsonSchema => ({
 	description,
 });
 
-const dollars = (description: string): JsonSchema => ({
-	type: "number",
-	exclusiveMinimum: 0,
-	description,
-});
-
 const percentage = (description: string): JsonSchema => ({
 	type: "number",
 	exclusiveMinimum: 0,
@@ -269,7 +248,7 @@ export const tableKey: KeyGroup<TableSettings> = {
 	jsonSchema: {
 		type: "object",
 		description:
-			"The weekly betting table on GitHub Projects: its cadence, agenda and every threshold its flags read. Leave it out for a working table on the shipped values; declare only the sub-keys you want to change.",
+			"The weekly betting table on GitHub Projects: its cadence, agenda and every threshold its flags read. Its size dollars come from `appetiteSizes`. Leave it out for a working table on the shipped values; declare only the sub-keys you want to change.",
 		properties: {
 			cadence: {
 				type: "string",
@@ -290,21 +269,11 @@ export const tableKey: KeyGroup<TableSettings> = {
 				description: `Agenda sections in agenda order. Default Tails, Customers, New bets, ${OUTSIDE_THE_BETS}. Must include "${OUTSIDE_THE_BETS}", where un-bet lanes land.`,
 			},
 			agendaCap: integer("The most proposed rows agenda prep adds for one table. Default 25."),
-			sizes: {
-				type: "object",
-				description: "Each size's dollar appetite. Default S 15, M 35, L 40 (L is per epic child).",
-				properties: {
-					S: dollars("Dollars for a size-S bet. Default 15."),
-					M: dollars("Dollars for a size-M bet. Default 35."),
-					L: dollars("Dollars per epic child for a size-L bet. Default 40."),
-				},
-				additionalProperties: false,
-			},
 			stopMultiple: {
 				type: "number",
 				exclusiveMinimum: 1,
 				description:
-					"A lane over its size keeps going and is flagged; at this multiple of its size it stops. Default 2. Must be above 1.",
+					"A lane over its size keeps going and is flagged; at this multiple of its size it stops. Default 2. Must be above 1. What each size is worth is `appetiteSizes`, not a `table` sub-key.",
 			},
 			asksFlag: integer("The ask count at which a bet is flagged onto the next table. Default 3."),
 			stuckDays: integer("Days without activity before a lane is flagged as stuck. Default 3."),

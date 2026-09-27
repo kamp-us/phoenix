@@ -309,3 +309,58 @@ describe("table setup honours the table block", () => {
 		expect(week?.iteration).toEqual({duration: 14, startDay: 6});
 	});
 });
+
+describe("table setup reads the size dollars from appetiteSizes", () => {
+	const withConfig = (config: unknown): Layer.Layer<FileSystem.FileSystem | Path.Path> =>
+		fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}}).layer;
+
+	const sizeDescriptions = (github: ReturnType<typeof fakeProjects>) =>
+		github.projects[0]?.fields
+			.find((field) => field.name === "Size")
+			?.options?.map((option) => option.description);
+
+	it("shows the shipped amounts when no key is set", async () => {
+		const {outcome, github} = await run();
+
+		expect(outcome.code).toBe(0);
+		expect(sizeDescriptions(github)).toEqual([
+			"About $15.",
+			"About $35.",
+			"About $40 per epic child.",
+		]);
+	});
+
+	it("shows the amounts a repo configured for its pitches, in the Size options and the README", async () => {
+		const github = fakeProjects({repo: REPO});
+		const outcome = await setupOn(github, withConfig({appetiteSizes: {S: 20, M: 50, L: 90}}));
+
+		expect(outcome.code).toBe(0);
+		expect(sizeDescriptions(github)).toEqual([
+			"About $20.",
+			"About $50.",
+			"About $90 per epic child.",
+		]);
+		const readme = github.projects[0]?.readme ?? "";
+		expect(readme).toContain("- **S**: about $20.");
+		expect(readme).toContain("- **M**: about $50.");
+		expect(readme).toContain("- **L**: an epic, about $90 per child.");
+	});
+
+	it("refuses a malformed appetiteSizes before reading GitHub", async () => {
+		const github = fakeProjects({repo: REPO});
+		const outcome = await setupOn(github, withConfig({appetiteSizes: {S: 50, M: 35, L: 40}}));
+
+		expect(outcome.code).toBe(CONFIG_MALFORMED);
+		expect(outcome.stderr.join("\n")).toContain("appetiteSizes");
+		expect(github.operations).toEqual([]);
+	});
+
+	it("refuses a table block that names its own sizes, so no second key can disagree", async () => {
+		const github = fakeProjects({repo: REPO});
+		const outcome = await setupOn(github, configured({sizes: {S: 50}}));
+
+		expect(outcome.code).toBe(CONFIG_MALFORMED);
+		expect(outcome.stderr.join("\n")).toContain("`table.sizes`");
+		expect(github.operations).toEqual([]);
+	});
+});

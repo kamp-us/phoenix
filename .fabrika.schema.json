@@ -546,7 +546,7 @@
 		},
 		"table": {
 			"type": "object",
-			"description": "The weekly betting table on GitHub Projects: its cadence, agenda and every threshold its flags read. Leave it out for a working table on the shipped values; declare only the sub-keys you want to change.",
+			"description": "The weekly betting table on GitHub Projects: its cadence, agenda and every threshold its flags read. Its size dollars come from `appetiteSizes`. Leave it out for a working table on the shipped values; declare only the sub-keys you want to change.",
 			"properties": {
 				"cadence": {
 					"type": "string",
@@ -585,32 +585,10 @@
 					"minimum": 1,
 					"description": "The most proposed rows agenda prep adds for one table. Default 25."
 				},
-				"sizes": {
-					"type": "object",
-					"description": "Each size's dollar appetite. Default S 15, M 35, L 40 (L is per epic child).",
-					"properties": {
-						"S": {
-							"type": "number",
-							"exclusiveMinimum": 0,
-							"description": "Dollars for a size-S bet. Default 15."
-						},
-						"M": {
-							"type": "number",
-							"exclusiveMinimum": 0,
-							"description": "Dollars for a size-M bet. Default 35."
-						},
-						"L": {
-							"type": "number",
-							"exclusiveMinimum": 0,
-							"description": "Dollars per epic child for a size-L bet. Default 40."
-						}
-					},
-					"additionalProperties": false
-				},
 				"stopMultiple": {
 					"type": "number",
 					"exclusiveMinimum": 1,
-					"description": "A lane over its size keeps going and is flagged; at this multiple of its size it stops. Default 2. Must be above 1."
+					"description": "A lane over its size keeps going and is flagged; at this multiple of its size it stops. Default 2. Must be above 1. What each size is worth is `appetiteSizes`, not a `table` sub-key."
 				},
 				"asksFlag": {
 					"type": "integer",

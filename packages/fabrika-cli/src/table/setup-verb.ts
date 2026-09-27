@@ -15,6 +15,7 @@
 
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {type AppetiteSizes, appetiteSizesKey} from "../config/keys/appetite-sizes.ts";
 import {type TableSettings, tableKey} from "../config/keys/table.ts";
 import {readKey} from "../config/read-key.ts";
 import type {Api} from "../io/gh-api.ts";
@@ -262,7 +263,7 @@ const locateWrote = (origin: Origin, project: ProjectSnapshot, repo: string): st
 	}
 };
 
-const conflictReason = (plan: Plan, project: ProjectSnapshot, wrote: string | null): string => {
+const conflictReason = (plan: Plan, wrote: string | null): string => {
 	const listed = plan.conflicts
 		.map((conflict) => `${conflict.field} is ${conflict.found}, the table needs ${conflict.wanted}`)
 		.join("; ");
@@ -307,7 +308,13 @@ const reread = (token: string, project: ProjectSnapshot, landed: ReadonlyArray<s
 				} as const),
 	);
 
-const converge = (token: string, repo: string, settings: TableSettings, now: Date): Api<Run> =>
+const converge = (
+	token: string,
+	repo: string,
+	settings: TableSettings,
+	sizes: AppetiteSizes,
+	now: Date,
+): Api<Run> =>
 	Effect.gen(function* () {
 		const node = yield* readRepository(token, repo);
 		if (node._tag !== "Ok") return stop(node, PRECONDITION_UNKNOWN, `cannot read ${repo}`);
@@ -315,12 +322,12 @@ const converge = (token: string, repo: string, settings: TableSettings, now: Dat
 		const located = yield* locate(token, repo, node.value, settings);
 		if (located._tag === "Refused") return located.run;
 		const {origin} = located;
-		const shape: TableShape = tableShape(settings, repo, located.project.title, now);
+		const shape: TableShape = tableShape(settings, sizes, repo, located.project.title, now);
 
 		const wrote = locateWrote(origin, located.project, repo);
 		const first = plan(shape, located.project);
 		if (first.conflicts.length > 0) {
-			return refused(SHAPE_CONFLICT, conflictReason(first, located.project, wrote));
+			return refused(SHAPE_CONFLICT, conflictReason(first, wrote));
 		}
 
 		const landed: string[] = wrote === null ? [] : [wrote];
@@ -368,6 +375,10 @@ export const runSetup = (
 		if (settings._tag === "Refused") {
 			return refuse(CONFIG_MALFORMED, `${VERB}: ${settings.reason}. Nothing was read from GitHub.`);
 		}
+		const sizes = yield* readKey(options.cwd, appetiteSizesKey);
+		if (sizes._tag === "Refused") {
+			return refuse(CONFIG_MALFORMED, `${VERB}: ${sizes.reason}. Nothing was read from GitHub.`);
+		}
 
 		const resolved = yield* resolveRepo(options.repo, options.env);
 		if (resolved._tag === "Failure") {
@@ -379,7 +390,7 @@ export const runSetup = (
 		const repo = resolved.value;
 
 		const run = yield* withProjects<Run>((token) =>
-			Effect.map(converge(token, repo, settings.value, options.now()), (value) => ({
+			Effect.map(converge(token, repo, settings.value, sizes.value, options.now()), (value) => ({
 				_tag: "Ok" as const,
 				value,
 			})),
@@ -398,6 +409,7 @@ export const runSetup = (
 		const {project} = outcome;
 		const notes = [
 			`${VERB}: read ${settings.note}.`,
+			`${VERB}: read ${sizes.note}.`,
 			`${VERB}: ${outcome.origin} project #${project.number} "${project.title}" (${project.url}) for ${repo}.`,
 			...(outcome.changes.length > 0
 				? outcome.changes.map((change) => `${VERB}: ${change}.`)
