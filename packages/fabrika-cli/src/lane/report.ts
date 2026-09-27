@@ -393,8 +393,11 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
-	 * The lane is homed on a milestone whose `## Campaigns` row reads `paused`, and
-	 * that cell is the whole dispatch permission — so no stage may open against it.
+	 * The lane is homed on a milestone whose `## Campaigns` row reads `paused`.
+	 *
+	 * No verb refuses a lane on that cell any more — a campaign groups work and never gates it — so
+	 * nothing produces this park now. It stays in the vocabulary so a lane parked on it earlier can
+	 * still be read and cleared.
 	 *
 	 * A pause is open-ended, which is why this is a park and not a bounded wait (the merge-queue
 	 * dwell is the other side of that line). Its `KNOWN_PARKS` row clears by re-reading the same cell:
@@ -404,7 +407,7 @@ export const PARK_CAUSES = {
 	 */
 	"campaign-paused": {
 		meaning:
-			"the campaign homing this lane's milestone reads paused, so no stage may dispatch against it",
+			"the campaign homing this lane's milestone read paused when the lane parked; no verb parks on this now, and the cause stays so an earlier park still clears",
 		route: "founder",
 		remedy: null,
 	},

@@ -5,19 +5,20 @@ import type {FakeFsOptions, Scripted} from "../fakes.test-support.ts";
 import {
 	approving,
 	CITES,
+	CODEOWNERS,
+	codeowners,
 	comment,
 	config,
 	env,
 	FILE,
 	GET_COMMENT,
-	MEMBERSHIP,
 	marker,
 	PERMISSION,
 	permission,
 	ROADMAP_PATH,
 	ROOT,
 	seams,
-	TEAM,
+	TEAM_MEMBERS,
 	TWO_ROWS,
 	tree,
 } from "./fixtures.test-support.ts";
@@ -63,11 +64,11 @@ describe("campaign open — the answer", () => {
 		});
 	});
 
-	it("names the citation, the declared set and the ACL level on the scope line", async () => {
+	it("names the citation, the control-plane owners and the ACL level on the scope line", async () => {
 		const {outcome} = await run(APPROVED);
-		expect(outcome.stderr.at(-1)).toBe(
-			`campaign open: cited ${CITES} by @usirin (campaignAuthors: @usirin; write on o/r); appended "${NEW}" #52 paused to ROADMAP.md — dispatches nothing until it is flipped to active.`,
-		);
+		expect(outcome.stderr).toEqual([
+			`campaign open: cited ${CITES} by @usirin (control plane: @usirin; write on o/r); appended "${NEW}" #52 paused to ROADMAP.md.`,
+		]);
 	});
 
 	it("emits the documented object under --json", async () => {
@@ -78,12 +79,34 @@ describe("campaign open — the answer", () => {
 		});
 	});
 
-	it("admits an author reached through a team entry", async () => {
-		const {outcome} = await run(
-			[...APPROVED, [MEMBERSHIP, {status: 200, body: '{"state":"active"}'}]],
-			tree(TWO_ROWS, config("@acme/founders")),
-		);
+	it("admits an author reached through a CODEOWNERS team", async () => {
+		const {outcome} = await run([
+			...APPROVED,
+			[CODEOWNERS, codeowners("@acme/founders")],
+			[TEAM_MEMBERS, {status: 200, body: '[{"login":"usirin"}]'}],
+		]);
 		expect(outcome.code).toBe(0);
+	});
+
+	/**
+	 * The author-key fold: a `campaignAuthors` the config still declares keeps the config
+	 * valid, is named in a notice, and decides nothing.
+	 */
+	it("names a still-declared campaignAuthors in a deprecation notice, and still writes", async () => {
+		const {outcome} = await run(APPROVED, tree(TWO_ROWS, config("@someone-else")));
+		expect(outcome.code).toBe(0);
+		expect(outcome.stderr[0]).toBe(
+			"campaign open: `campaignAuthors` in .fabrika.jsonc is deprecated and ignored — the control-plane set in .github/CODEOWNERS decides this now; remove the key.",
+		);
+	});
+
+	it("refuses an author campaignAuthors names but CODEOWNERS does not, on 16 — the key grants nothing", async () => {
+		const {outcome} = await run(
+			[[GET_COMMENT, comment(marker(52, "paused"), "stranger")]],
+			tree(TWO_ROWS, config("@stranger")),
+		);
+		expect(outcome.code).toBe(16);
+		expect(outcome.stderr[0]).toContain("deprecated and ignored");
 	});
 });
 
@@ -149,11 +172,20 @@ describe("campaign open — the duplicate check runs before the trace", () => {
 });
 
 describe("campaign open — the approval trace", () => {
-	it("refuses an empty campaignAuthors on 17 before reading anything", async () => {
-		const {outcome, requests} = await run(APPROVED, tree(TWO_ROWS, config()));
+	it("refuses a CODEOWNERS naming nobody on 17 before reading the comment", async () => {
+		const {outcome, requests} = await run([[CODEOWNERS, codeowners()], ...APPROVED]);
 		expect(outcome.code).toBe(17);
-		expect(outcome.stderr.at(-1)).toContain("nobody may declare a campaign in this repo");
-		expect(requests).toEqual([]);
+		expect(outcome.stderr.at(-1)).toBe(
+			"campaign open: o/r's CODEOWNERS names no control-plane owner at main — nobody may declare a campaign in this repo. NOTHING was written.",
+		);
+		expect(requests.some((line) => GET_COMMENT.test(line))).toBe(false);
+	});
+
+	it("refuses an unreadable roster on 13 — UNKNOWN, never an empty set", async () => {
+		const {outcome, written} = await run([[CODEOWNERS, {status: 500, body: "{}"}], ...APPROVED]);
+		expect(outcome.code).toBe(13);
+		expect(outcome.stderr.at(-1)).toContain("cannot read the control-plane set");
+		expect(written.size).toBe(0);
 	});
 
 	it("refuses a citation in another repository on 15", async () => {
@@ -171,10 +203,12 @@ describe("campaign open — the approval trace", () => {
 		expect(written.size).toBe(0);
 	});
 
-	it("refuses an author outside campaignAuthors on 16, ahead of any marker check", async () => {
+	it("refuses an author outside the control-plane set on 16, ahead of any marker check", async () => {
 		const {outcome} = await run([[GET_COMMENT, comment("no marker here", "stranger")]]);
 		expect(outcome.code).toBe(16);
-		expect(outcome.stderr.at(-1)).toContain("who is not in campaignAuthors (@usirin)");
+		expect(outcome.stderr.at(-1)).toContain(
+			"who is not in the control-plane set (@usirin at main)",
+		);
 	});
 
 	it("refuses a comment with no marker on its first line on 14", async () => {
@@ -202,7 +236,7 @@ describe("campaign open — the approval trace", () => {
 		]);
 		expect(outcome.code).toBe(21);
 		expect(outcome.stderr.at(-1)).toBe(
-			`campaign open: ${CITES} was authored by @usirin, who resolves to read on o/r, below write — authority is the ACL's, never .fabrika.jsonc's alone. NOTHING was written.`,
+			`campaign open: ${CITES} was authored by @usirin, who resolves to read on o/r, below write — authority is the ACL's, never CODEOWNERS' alone. NOTHING was written.`,
 		);
 		expect(written.size).toBe(0);
 	});
@@ -225,26 +259,12 @@ describe("campaign open — the approval trace", () => {
 		expect(outcome.stderr.at(-1)).toContain("cannot resolve @usirin's permission on o/r");
 	});
 
-	it("refuses a campaignAuthors team the org does not have on 13, pointing at the key", async () => {
-		const {outcome} = await run(
-			[...APPROVED, [MEMBERSHIP, {status: 404, body: "{}"}], [TEAM, {status: 404, body: "{}"}]],
-			tree(TWO_ROWS, config("@acme/founders")),
-		);
-		expect(outcome.code).toBe(13);
-		expect(outcome.stderr.at(-1)).toBe(
-			"campaign open: campaignAuthors names @acme/founders, which acme does not have — fix the key; authority is UNKNOWN, NOTHING was written.",
-		);
-	});
-
-	it("reads a 404 membership on a real team as a proven miss, which is 16", async () => {
-		const {outcome} = await run(
-			[
-				...APPROVED,
-				[MEMBERSHIP, {status: 404, body: "{}"}],
-				[TEAM, {status: 200, body: '{"slug":"founders"}'}],
-			],
-			tree(TWO_ROWS, config("@acme/founders")),
-		);
+	it("reads a CODEOWNERS team the author is not in as a proven miss, which is 16", async () => {
+		const {outcome} = await run([
+			...APPROVED,
+			[CODEOWNERS, codeowners("@acme/founders")],
+			[TEAM_MEMBERS, {status: 200, body: '[{"login":"somebody"}]'}],
+		]);
 		expect(outcome.code).toBe(16);
 	});
 });
@@ -261,7 +281,7 @@ describe("campaign open — the write and its read-back", () => {
 
 	it("refuses an unreadable roadmap on 11, saying nothing was written", async () => {
 		const {outcome} = await run(APPROVED, {
-			files: {[ROADMAP_PATH]: TWO_ROWS, [`${ROOT}/.fabrika.jsonc`]: config("@usirin")},
+			files: {[ROADMAP_PATH]: TWO_ROWS, [`${ROOT}/.fabrika.jsonc`]: "{}"},
 			unreadable: [ROADMAP_PATH],
 		});
 		expect(outcome.code).toBe(11);

@@ -882,6 +882,160 @@ export const readItemValues = (token: string, itemId: string): Api<ProjectsAnswe
 		});
 	});
 
+/** One project item as the bet order reads it: which issue, and the three cells that place it. */
+export interface BoardItem {
+	/** The issue the item stands for; `null` for a draft or a pull request, which is never a bet. */
+	readonly issue: number | null;
+	readonly archived: boolean;
+	/** The option name set in each single-select, or `null` when the cell is empty. */
+	readonly stage: string | null;
+	readonly section: string | null;
+	/** The iteration the item is in, or `null` when its iteration cell is empty. */
+	readonly iterationId: string | null;
+}
+
+/** One iteration the iteration field still runs — the current one and those after it. */
+export interface BoardIteration {
+	readonly id: string;
+	readonly title: string;
+	/** `YYYY-MM-DD`, the day the iteration starts. */
+	readonly startDate: string;
+	/** In days. */
+	readonly duration: number;
+}
+
+export interface Board {
+	readonly items: ReadonlyArray<BoardItem>;
+	/** `null` when the project has no iteration field under the name asked for. */
+	readonly iterations: ReadonlyArray<BoardIteration> | null;
+}
+
+/** The field names a board read places items by — the table's fixed vocabulary, passed in. */
+export interface BoardFields {
+	readonly stage: string;
+	readonly section: string;
+	readonly iteration: string;
+}
+
+const BOARD_QUERY = `
+query TableBoard($id: ID!, $stage: String!, $section: String!, $week: String!, $cursor: String) {
+  node(id: $id) {
+    ... on ProjectV2 {
+      weekField: field(name: $week) {
+        __typename
+        ... on ProjectV2IterationField { configuration { iterations { id title startDate duration } } }
+      }
+      items(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          isArchived
+          content { __typename ... on Issue { number } }
+          stage: fieldValueByName(name: $stage) { ... on ProjectV2ItemFieldSingleSelectValue { name } }
+          section: fieldValueByName(name: $section) { ... on ProjectV2ItemFieldSingleSelectValue { name } }
+          week: fieldValueByName(name: $week) { ... on ProjectV2ItemFieldIterationValue { iterationId } }
+        }
+      }
+    }
+  }
+}`;
+
+const optionName = (cell: unknown): string | null =>
+	isRecord(cell) && str(cell.name) ? cell.name : null;
+
+const readIterations = (field: unknown): Attempt<ReadonlyArray<BoardIteration> | null> => {
+	if (!isRecord(field) || field.__typename !== "ProjectV2IterationField") return ok(null);
+	const config = isRecord(field.configuration) ? field.configuration : null;
+	if (config === null || !Array.isArray(config.iterations)) {
+		return fail("GitHub answered 200 but the iteration field lists no iterations");
+	}
+	const iterations: BoardIteration[] = [];
+	for (const node of config.iterations) {
+		if (
+			!isRecord(node) ||
+			!str(node.id) ||
+			!str(node.title) ||
+			!str(node.startDate) ||
+			typeof node.duration !== "number"
+		) {
+			return fail("GitHub answered 200 but one iteration is malformed");
+		}
+		iterations.push({
+			id: node.id,
+			title: node.title,
+			startDate: node.startDate,
+			duration: node.duration,
+		});
+	}
+	return ok(iterations);
+};
+
+const readBoardItem = (node: unknown): Attempt<BoardItem> => {
+	if (!isRecord(node) || typeof node.isArchived !== "boolean") {
+		return fail("GitHub answered 200 but one item is not a project item");
+	}
+	const content = isRecord(node.content) ? node.content : null;
+	const week = isRecord(node.week) ? node.week : null;
+	return ok({
+		issue:
+			content !== null && content.__typename === "Issue" && typeof content.number === "number"
+				? content.number
+				: null,
+		archived: node.isArchived,
+		stage: optionName(node.stage),
+		section: optionName(node.section),
+		iterationId: week !== null && str(week.iterationId) ? week.iterationId : null,
+	});
+};
+
+/**
+ * Every item on the project with its stage, section and iteration cells, and the iterations the
+ * iteration field still runs — read to the last page, so a bet on page two is never left out.
+ */
+export const readBoard = (
+	token: string,
+	projectId: string,
+	fields: BoardFields,
+): Api<ProjectsAnswer<Board>> =>
+	Effect.gen(function* () {
+		const items: BoardItem[] = [];
+		let iterations: ReadonlyArray<BoardIteration> | null = null;
+		let cursor: string | null = null;
+		const variables = {
+			id: projectId,
+			stage: fields.stage,
+			section: fields.section,
+			week: fields.iteration,
+		};
+		for (let page = 0; page < PAGE_CAP; page++) {
+			const answer: ProjectsAnswer<{
+				readonly items: ReadonlyArray<BoardItem>;
+				readonly iterations: ReadonlyArray<BoardIteration> | null;
+				readonly next: string | null;
+			}> = yield* exchange(token, BOARD_QUERY, {...variables, cursor}, (data) => {
+				const project = isRecord(data.node) ? data.node : null;
+				const connection = project !== null && isRecord(project.items) ? project.items : null;
+				if (project === null || connection === null || !Array.isArray(connection.nodes)) {
+					return fail(`GitHub knows no project ${projectId}`);
+				}
+				const read = readIterations(project.weekField);
+				if (read._tag === "Failure") return read;
+				const pageItems: BoardItem[] = [];
+				for (const node of connection.nodes) {
+					const item = readBoardItem(node);
+					if (item._tag === "Failure") return item;
+					pageItems.push(item.value);
+				}
+				return ok({items: pageItems, iterations: read.value, next: nextCursor(connection)});
+			});
+			if (answer._tag !== "Ok") return answer;
+			iterations = answer.value.iterations;
+			items.push(...answer.value.items);
+			if (answer.value.next === null) return done({items, iterations});
+			cursor = answer.value.next;
+		}
+		return failed(`project ${projectId} holds more items than ${PAGE_CAP} pages hold`);
+	});
+
 const STATUS_UPDATE = `
 mutation TableStatusUpdate($input: CreateProjectV2StatusUpdateInput!) {
   createProjectV2StatusUpdate(input: $input) { statusUpdate { id } }

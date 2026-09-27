@@ -199,7 +199,7 @@ export const runVerdicts = (
 		}
 
 		const rounds = roundsOn(listed.value);
-		const cleared = yield* clearancesOn(repo, target.pull.baseRef, listed.value);
+		const cleared = yield* clearancesOn(repo, listed.value);
 		if (cleared._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,

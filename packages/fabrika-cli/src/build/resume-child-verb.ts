@@ -109,7 +109,6 @@ export const runResumeChild = (
 			number: issue,
 			issue: null,
 			repo,
-			cwd: options.cwd,
 			env,
 			uuid: options.uuid,
 			at: options.at,

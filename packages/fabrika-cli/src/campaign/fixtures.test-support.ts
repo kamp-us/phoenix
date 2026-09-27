@@ -1,6 +1,6 @@
 /**
  * The one repo all three `campaign` verb tests drive against: a two-row `ROADMAP.md`, a
- * `.fabrika.jsonc` naming one author, and one cited comment carrying the marker.
+ * `.github/CODEOWNERS` naming one control-plane owner, and one cited comment carrying the marker.
  *
  * Each helper takes what the case under test varies and holds everything else fixed, so a test reads
  * as the one fact it pins.
@@ -48,6 +48,7 @@ export const TWO_ROWS = `# Roadmap
 nothing here.
 `;
 
+/** A `.fabrika.jsonc` still declaring the retired `campaignAuthors` — the deprecation case. */
 export const config = (...authors: ReadonlyArray<string>): string =>
 	JSON.stringify({campaignAuthors: authors}, null, 2);
 
@@ -58,10 +59,10 @@ export const GET_COMMENT = new RegExp(
 export const PERMISSION = new RegExp(
 	`^GET ${API}\\/repos\\/${REPO}\\/collaborators\\/${AUTHOR}\\/permission$`,
 );
-export const MEMBERSHIP = new RegExp(
-	`^GET ${API}\\/orgs\\/acme\\/teams\\/founders\\/memberships\\/${AUTHOR}$`,
-);
-export const TEAM = new RegExp(`^GET ${API}\\/orgs\\/acme\\/teams\\/founders$`);
+/** The three reads the control-plane roster makes: the default branch, CODEOWNERS on it, a team. */
+export const TRUNK = new RegExp(`^GET ${API}\\/repos\\/${REPO}$`);
+export const CODEOWNERS = /contents\/\.github\/CODEOWNERS\?ref=main$/;
+export const TEAM_MEMBERS = new RegExp(`^GET ${API}\\/orgs\\/acme\\/teams\\/founders\\/members`);
 
 const served = (body: unknown): HttpReply => ({status: 200, body: JSON.stringify(body)});
 
@@ -80,6 +81,21 @@ export const marker = (milestone: number, state: string): string =>
 
 export const permission = (level: string): HttpReply => served({permission: level});
 
+/** `.github/CODEOWNERS` on the default branch, naming these owners on one row. */
+export const codeowners = (...owners: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: owners.length === 0 ? "" : `/.github/ ${owners.join(" ")}\n`,
+});
+
+/**
+ * The roster the default board resolves: `@usirin` is the one control-plane owner. Appended after
+ * every case's own script, so a case scripting its own CODEOWNERS wins on first match.
+ */
+export const ROSTER: ReadonlyArray<Scripted> = [
+	[TRUNK, served({default_branch: "main"})],
+	[CODEOWNERS, codeowners(`@${AUTHOR}`)],
+];
+
 /** The scripted board an authorized write runs against. */
 export const approving = (milestone: number, state: string): ReadonlyArray<Scripted> => [
 	[GET_COMMENT, comment(marker(milestone, state))],
@@ -95,7 +111,7 @@ export interface Seams {
 /** Both IO seams over one scripted board and one in-memory tree. */
 export const seams = (script: ReadonlyArray<Scripted>, fs: FakeFsOptions) => {
 	const tree = fakeFs(fs);
-	const board = fakeSeams(script);
+	const board = fakeSeams([...script, ...ROSTER]);
 	return {
 		layer: Layer.merge(tree.layer, board.layer),
 		written: tree.written,
@@ -103,8 +119,7 @@ export const seams = (script: ReadonlyArray<Scripted>, fs: FakeFsOptions) => {
 	};
 };
 
-/** The default tree: the two-row roadmap and a config naming `@usirin`. */
-export const tree = (
-	roadmap: string = TWO_ROWS,
-	fabrika: string = config(`@${AUTHOR}`),
-): FakeFsOptions => ({files: {[ROADMAP_PATH]: roadmap, [CONFIG_FILE]: fabrika}});
+/** The default tree: the two-row roadmap and a config declaring nothing about authority. */
+export const tree = (roadmap: string = TWO_ROWS, fabrika = "{}"): FakeFsOptions => ({
+	files: {[ROADMAP_PATH]: roadmap, [CONFIG_FILE]: fabrika},
+});

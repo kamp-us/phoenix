@@ -216,7 +216,7 @@ to. The marker names the round it clears and nothing else — deliberately no he
 clearance exists so a *new* head can be pushed, and a head-bound grant would be void the moment it
 was used. Naming the round is also what spends it exactly once: the grant covers the round it names,
 and the next FAIL round leaves it behind. Like the ruling marker, it is not authority on its own —
-the reader settles that against the repo's configured grant-author set and a dated authorization
+the reader settles that against the repo's control-plane set (`.github/CODEOWNERS`) and a dated authorization
 comment beside it.
 
 ### `grill-answer`

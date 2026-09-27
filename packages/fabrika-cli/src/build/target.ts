@@ -14,11 +14,8 @@ import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
 	type Admission,
-	type Dispatch,
-	dispatchMilestones,
 	type IssueFacts,
 	NOT_REPAIR,
-	noServedIssue,
 	type RepairClaim,
 	repairClaimOf,
 	scopeSubjectOf,
@@ -93,9 +90,9 @@ export const openIssue = (
 /**
  * The record the admission test runs over, resolved from the target the operator named.
  *
- * `Refused` carries an {@link Admission} rather than a seated outcome so the claim seam applies the
- * one override rule it already has — a resolution refusal is overridable exactly like a scope one,
- * and an unreadable served issue is UNKNOWN and so is not.
+ * `Refused` carries an {@link Admission} rather than a seated outcome so the claim seam seats it
+ * through the one refusal table. The only refusal left is an unreadable served issue, which is
+ * UNKNOWN and so is never overridable.
  */
 export type AdmissionSubject =
 	| {
@@ -114,14 +111,13 @@ export type AdmissionSubject =
 	| {readonly _tag: "Refused"; readonly admission: Admission};
 
 /**
- * Resolve a claim target to the record whose home and audience the fence judges.
+ * Resolve a claim target to the record the admission axes judge.
  *
- * An issue judges itself. A pull request judges the issue its lane serves. The resolution
- * runs whether or not a campaign is active, because the audience axis reads the served issue either
- * way; only the *scope* refusal is gated on an active campaign, so an **unresolvable** PR falls back
- * to its own record while the fence is inert instead of refusing at `20`. A served issue that cannot be
- * READ is UNKNOWN at either setting — `11`, and outside the overridable set, because a fence that
- * could not read its input has proven nothing.
+ * An issue judges itself. A pull request judges the issue its lane serves, and an **unresolvable**
+ * PR — one naming no issue, or naming one proven absent — falls back to its own record. No campaign
+ * state changes that: the refusal a PR naming no issue used to meet existed only while some campaign
+ * was `active`, and it went with the campaign axis. A served issue that cannot be READ is UNKNOWN —
+ * `11`, and never overridable, because an axis that could not read its input has proven nothing.
  *
  * Resolving the subject is also what proves the {@link RepairClaim}: only a PR's path reaches a
  * served issue, so this is the one place that can answer "is an open PR already in flight here".
@@ -129,28 +125,15 @@ export type AdmissionSubject =
 export const resolveAdmissionSubject = (
 	verb: string,
 	repo: string,
-	dispatch: Dispatch,
 	target: IssueRecord,
 	requestedIssue: number | null = null,
 ): Effect.Effect<AdmissionSubject, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const own = {_tag: "Judged" as const, facts: target, note: null, repair: NOT_REPAIR};
 		const subject = scopeSubjectOf(target, requestedIssue);
-		if (subject._tag === "Own") return own;
-		const unresolved = (reason: string): AdmissionSubject =>
-			dispatch._tag === "Active"
-				? {
-						_tag: "Refused" as const,
-						admission: noServedIssue(target.number, dispatchMilestones(dispatch), reason),
-					}
-				: own;
-		if (subject._tag === "Unserved") {
-			return unresolved('carries neither a closing keyword nor "Part of #<n>" in its body');
-		}
+		if (subject._tag !== "Served") return own;
 		const served = yield* getIssue(repo, subject.number);
-		if (served._tag === "Absent") {
-			return unresolved(`names #${subject.number}, which is proven absent`);
-		}
+		if (served._tag === "Absent") return own;
 		if (served._tag === "Unknown") {
 			return {
 				_tag: "Refused" as const,

@@ -29,7 +29,7 @@ reused as landed verbs** ([`build`'s contract](../build/contract.md)) — the cr
 it with `fabrika build release`, and posts a successor note with `fabrika build note`. The purpose is
 part of the reuse, not a detail of it: `build claim`'s audience axis asks whether an agent should
 pick the issue up to *build*, and an epic earns `ready-for:agent` only after it has been planned and
-gated, so a `gate` claim is admitted without it. The scope axis is unchanged by the purpose,
+gated, so a `gate` claim is admitted without it. No campaign state is an axis,
 and `--override` stays the exception it was — it now has to name its lane as well as its reason.
 **No second lock is
 derived**, and v1's `epic-lock` is why: its `acquire` short-circuits on a held label *before* any

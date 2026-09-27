@@ -27,6 +27,8 @@ export interface FakeField {
 	dataType: string;
 	options?: FakeOption[];
 	iteration?: {duration: number; startDay: number};
+	/** The iterations an iteration field still runs, as `configuration.iterations` answers them. */
+	iterations?: Array<{id: string; title: string; startDate: string; duration: number}>;
 }
 
 export interface FakeView {
@@ -49,7 +51,15 @@ export interface FakeProject {
 	readme: string | null;
 	fields: FakeField[];
 	views: FakeView[];
-	items: Array<{id: string; contentId: string; values: Record<string, unknown>}>;
+	items: Array<{
+		id: string;
+		contentId: string;
+		/** The issue the item stands for; absent for a draft. */
+		number?: number;
+		archived?: boolean;
+		/** Keyed by field id, holding the value input `TableSetValue` wrote. */
+		values: Record<string, unknown>;
+	}>;
 	statusUpdates: Array<Record<string, unknown>>;
 }
 
@@ -374,6 +384,48 @@ export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects =>
 					return {data: null, errors: [{type: "NOT_FOUND", message: "no item"}]};
 				item.values[String(input.fieldId)] = input.value;
 				return {data: {updateProjectV2ItemFieldValue: {projectV2Item: {id: item.id}}}};
+			}
+			case "TableBoard": {
+				const project = byId(vars.id);
+				if (project === undefined) return {data: {node: null}};
+				const named = (name: unknown) => project.fields.find((field) => field.name === name);
+				const cell = (values: Record<string, unknown>, name: unknown): unknown => {
+					const field = named(name);
+					const raw = field === undefined ? undefined : values[field.id];
+					if (!isRecord(raw)) return null;
+					if (typeof raw.singleSelectOptionId === "string") {
+						const option = field?.options?.find((one) => one.id === raw.singleSelectOptionId);
+						return option === undefined ? null : {name: option.name};
+					}
+					return typeof raw.iterationId === "string" ? {iterationId: raw.iterationId} : null;
+				};
+				const week = named(vars.week);
+				return {
+					data: {
+						node: {
+							weekField:
+								week === undefined
+									? null
+									: week.dataType === "ITERATION"
+										? {
+												__typename: "ProjectV2IterationField",
+												configuration: {iterations: week.iterations ?? []},
+											}
+										: {__typename: "ProjectV2Field"},
+							items: {
+								pageInfo: {hasNextPage: false, endCursor: null},
+								nodes: project.items.map((item) => ({
+									isArchived: item.archived === true,
+									content:
+										item.number === undefined ? null : {__typename: "Issue", number: item.number},
+									stage: cell(item.values, vars.stage),
+									section: cell(item.values, vars.section),
+									week: cell(item.values, vars.week),
+								})),
+							},
+						},
+					},
+				};
 			}
 			case "TableStatusUpdate": {
 				const project = byId(input.projectId);

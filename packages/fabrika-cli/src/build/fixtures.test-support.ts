@@ -127,6 +127,41 @@ export const NO_BLOCKERS: readonly [RegExp, HttpReply] = [
 	served([]),
 ];
 
+/**
+ * A repository that links no project, so it keeps no table and `build pick` ranks in its own order.
+ *
+ * Every GraphQL request gets this answer, so it belongs LAST in a script beside {@link NO_BLOCKERS}.
+ * Without it every pick reads an unscripted request and refuses the pool on `11`.
+ */
+export const NO_TABLE: readonly [RegExp, HttpReply] = [
+	/^POST https:\/\/api\.github\.com\/graphql/,
+	served({
+		data: {
+			repository: {
+				id: "R_repo",
+				owner: {id: "O_o", login: "o"},
+				projectsV2: {pageInfo: {hasNextPage: false, endCursor: null}, nodes: []},
+			},
+		},
+	}),
+];
+
+/** The control-plane roster's two reads: the repository (for its default branch), then CODEOWNERS on it. */
+export const TRUNK_READ = /^GET \S+\/repos\/o\/r$/;
+export const CODEOWNERS_READ = /contents\/\.github\/CODEOWNERS\?ref=main$/;
+
+/** `.github/CODEOWNERS` on `main`, naming these owners on one row; none is an empty file. */
+export const codeownersNaming = (...owners: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: owners.length === 0 ? "" : `/.github/ ${owners.join(" ")}\n`,
+});
+
+/** A control plane of one account, `@usirin` — who may clear a round, and whose grant counts. */
+export const CP_ROSTER: ReadonlyArray<readonly [RegExp, HttpReply]> = [
+	[TRUNK_READ, served({default_branch: "main"})],
+	[CODEOWNERS_READ, codeownersNaming("@usirin")],
+];
+
 /** The same edge list, naming one blocker — pair it with that blocker's own `issues/<n>` read. */
 export const blockedBy = (...blockers: ReadonlyArray<number>): HttpReply =>
 	served(blockers.map((number) => ({number, state: "open"})));

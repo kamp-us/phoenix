@@ -9,7 +9,7 @@
  * clearance authorizes the *next* tree, so binding one to a head would void it on first use.
  *
  * The marker is never proof on its own. What `build verdicts` folds as budget is this marker
- * **plus** an author in the repo's configured grant-author set plus the dated authorization comment
+ * **plus** an author in the repo's control-plane set plus the dated authorization comment
  * beside it, exactly as `grill-ruled` means the four clauses `grill read` applies and not the bytes.
  */
 

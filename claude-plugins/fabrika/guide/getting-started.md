@@ -167,8 +167,8 @@ lane	axis:pipeline-hardening	the standing pipeline and reliability lane
 ```
 
 That output is from a repo already set up, so yours will differ: one `milestone` row, the one you
-just created, and a line reading `campaigns: none active — scope fence inert.` because your roadmap
-has no campaigns table. You get no `lane` rows either — those are the standing lanes that repo
+just created, and a line reading `campaigns: none active.` because your roadmap has no campaigns
+table. You get no `lane` rows either — those are the standing lanes that repo
 declared, and a lane is offered only where your board carries its label
 ([the how-to](adopt-fabrika-in-a-new-repo.md) covers them).
 

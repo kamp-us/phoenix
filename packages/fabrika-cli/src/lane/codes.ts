@@ -628,9 +628,8 @@ export const DEFERRAL_REFUSED = 64;
 export const ROOT_NOT_OWNED = 65;
 
 /**
- * `lane clear`'s PR-side grant would be posted by an account that cannot make one: outside
- * `.fabrika.jsonc`'s grant-author set at the pull request's base ref, or below `write+` at GitHub's
- * live ACL. Nothing is posted and the log is unappended.
+ * `lane clear`'s PR-side grant would be posted by an account that cannot make one: outside the
+ * control-plane set `.github/CODEOWNERS` names, or below `write+` at GitHub's live ACL. Nothing is posted and the log is unappended.
  *
  * The ruling that gave a driver the PR-side seat moved the founder *document* off that grant and
  * never the ACL: the marker `lane clear` posts is honoured through `../build/clearances.ts`'s same
