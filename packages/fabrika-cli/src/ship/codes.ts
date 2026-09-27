@@ -117,6 +117,17 @@ export const NO_GATE_COVERAGE = 20;
 export const BASE_CONFLICTED = 21;
 
 /**
+ * Refused: the PR was opened by an author outside the repo's own accounts and no valid takeover
+ * grant stands on it — it is its author's to land, and nothing was armed or merged.
+ *
+ * A *proven* refusal — the author, the base-ref config, the running account and every grant marker
+ * were read in full — so it never borrows {@link PRECONDITION_UNKNOWN}. `build`'s `37` states the
+ * same fact for a repair claim; the number differs because each group's private band is its own,
+ * and this group's next free seat is `22`.
+ */
+export const PR_NOT_OURS = 22;
+
+/**
  * Refused: the verb is standing in the repository's **main working tree** — the driver's own
  * checkout rather than a worktree of the shipper's own.
  *

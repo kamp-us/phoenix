@@ -4,6 +4,7 @@ import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-supp
 import type {ExecResult} from "../io/exec.ts";
 import {
 	NO_LANDING_METHOD,
+	PR_NOT_OURS,
 	PRECONDITION_UNKNOWN,
 	PROVEN_NOT_IN_STATE,
 	READBACK_MISMATCH,
@@ -18,6 +19,8 @@ import {
 	MERGE_COMMIT,
 	mergeProofServed,
 	OTHER_HEAD,
+	OURS,
+	OWNERSHIP_CASES,
 	type PullShape,
 	pull,
 	repositoryServed,
@@ -62,7 +65,7 @@ const options = {
 };
 
 const land = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
-	const seams = fakeSeams(script);
+	const seams = fakeSeams([...script, ...OURS]);
 	return Effect.runPromise(Effect.provide(runMerge({...options, ...overrides}), seams.layer)).then(
 		(outcome) => ({outcome, calls: seams.requests, bodies: seams.bodies}),
 	);
@@ -264,5 +267,25 @@ describe("runMerge", () => {
 			method: "squash",
 			mergeCommit: MERGE_COMMIT,
 		});
+	});
+});
+
+describe("runMerge — a PR is its author's until the pipeline owns it", () => {
+	it.each(OWNERSHIP_CASES)("$name", async ({author, reads, drivable}) => {
+		const {outcome, calls} = await land([
+			...reads,
+			livePull({author}),
+			mergeabilityRead({author}),
+			UNQUEUED,
+			[REPO, repositoryServed()],
+			MERGED,
+			[PULL, mergeProofServed()],
+		]);
+		expect({code: outcome.code, merged: !withoutWrite(calls)}).toEqual(
+			drivable ? {code: 0, merged: true} : {code: PR_NOT_OURS, merged: false},
+		);
+		expect(
+			outcome.stderr.join("\n").includes(`is ${author}'s to finish — nothing was merged.`),
+		).toBe(!drivable);
 	});
 });

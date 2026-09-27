@@ -1,10 +1,10 @@
 import {describe, expect, it} from "vitest";
-import {LANE_TOKENS, laneFor} from "./lane.ts";
+import {buildBound, LANE_TOKENS, laneFor, STANDINGS} from "./lane.ts";
 import {STALL_TOKENS} from "./stall.ts";
 
-const HOLDER = {ownerLogin: "someone-else", authorLogin: "the-author"};
-const NOBODY = {ownerLogin: null, authorLogin: "the-author"};
-const SELF = {ownerLogin: "the-author", authorLogin: "the-author"};
+const HOLDER = {ownerLogin: "someone-else", authorLogin: "the-author", standing: "ours"} as const;
+const NOBODY = {ownerLogin: null, authorLogin: "the-author", standing: "ours"} as const;
+const SELF = {ownerLogin: "the-author", authorLogin: "the-author", standing: "ours"} as const;
 
 describe("the arrow SKILL.md §2 assigns each class", () => {
 	it("sends the two classes the sweep exists to catch to review and ship", () => {
@@ -28,13 +28,38 @@ describe("the arrow SKILL.md §2 assigns each class", () => {
 		expect(laneFor("blocked-human", NOBODY)).toBe("human");
 	});
 
-	// The filer suggested `author`. Every PR on this board is agent-authored and the rebase is a
-	// repair round, so `build` is the lane that exists to take it — and it is never `human`, which is
-	// the false operator escalation this class was minted to end.
-	it("sends conflicted to build, whatever holds the PR", () => {
+	// The rebase is a repair round, so `build` takes a conflicted PR the pipeline owns — and it is
+	// never `human`, which is the false operator escalation this class was minted to end.
+	it("sends conflicted to build over a PR the pipeline owns, whatever holds it", () => {
 		expect(laneFor("conflicted", NOBODY)).toBe("build");
 		expect(laneFor("conflicted", HOLDER)).toBe("build");
 		expect(laneFor("conflicted", SELF)).toBe("build");
+		expect(laneFor("conflicted", {...NOBODY, standing: "granted"})).toBe("build");
+	});
+
+	it("never sends a PR the pipeline does not own to build — its author takes it", () => {
+		for (const standing of ["foreign", "unknown", "unread"] as const) {
+			expect(laneFor("conflicted", {...NOBODY, standing})).toBe("author");
+			expect(laneFor("linkage-refused", {...HOLDER, standing})).toBe("author");
+		}
+	});
+
+	// `red` is the one class whose route to `build` is not this arrow: SKILL.md §3's `logic` route
+	// names it after the log is read, and only on `ours` or `granted`, so its standing is read too.
+	it("asks for the standing exactly where the work can reach build", () => {
+		expect(buildBound("conflicted", null)).toBe(true);
+		expect(buildBound("linkage-refused", "someone-else")).toBe(true);
+		expect(buildBound("linkage-refused", null)).toBe(false);
+		expect(buildBound("red", null)).toBe(true);
+		expect(buildBound("red", "someone-else")).toBe(true);
+		for (const token of STALL_TOKENS) {
+			for (const facts of [NOBODY, HOLDER]) {
+				const reachesBuild =
+					token === "red" ||
+					STANDINGS.some((standing) => laneFor(token, {...facts, standing}) === "build");
+				expect(buildBound(token, facts.ownerLogin)).toBe(reachesBuild);
+			}
+		}
 	});
 
 	it("answers nobody on red, whose lane the class alone cannot name", () => {

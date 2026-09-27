@@ -99,7 +99,7 @@ export const succeeded = (outcome: ChildOutcome): boolean =>
 const diagnostics = (outcome: ChildOutcome): string =>
 	outcome._tag === "Ran" && !outcome.timedOut ? new TextDecoder().decode(outcome.stderr) : "";
 
-const git = (
+export const git = (
 	args: ReadonlyArray<string>,
 	cwd: string,
 	env: Record<string, string>,
