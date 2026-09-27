@@ -209,15 +209,6 @@ const call = <A>(
 	});
 
 /**
- * One session's JSONL, by id, in the directory this host writes them to.
- *
- * `SessionManager.create` names a file `<timestamp>_<sessionId>.jsonl` (`dist/core/session-manager.js`),
- * so the id locates the file and no second index has to be kept in step. Raw `node:fs` under
- * `.patterns/effect-platform-access.md`'s "a `node:*`-only API the platform service doesn't expose"
- * case, for the reason the Pi agent layer's own `readBranch` reads that way: `SessionManager.open`
- * does its own synchronous reads with no seam to substitute.
- */
-/**
  * The folder a stored session resumes in: the one its file's header records, because a session's
  * folder is set at start and never changes (#9694). Read from the header and never from
  * `SessionManager.getCwd()`, which fills a missing header folder with the kernel process's own
@@ -233,6 +224,15 @@ export const resumeFolder = (
 	return projectRoot === "" ? undefined : projectRoot;
 };
 
+/**
+ * One session's JSONL, by id, in the directory this host writes them to.
+ *
+ * `SessionManager.create` names a file `<timestamp>_<sessionId>.jsonl` (`dist/core/session-manager.js`),
+ * so the id locates the file and no second index has to be kept in step. Raw `node:fs` under
+ * `.patterns/effect-platform-access.md`'s "a `node:*`-only API the platform service doesn't expose"
+ * case, for the reason the Pi agent layer's own `readBranch` reads that way: `SessionManager.open`
+ * does its own synchronous reads with no seam to substitute.
+ */
 const sessionFile = (dir: string, sessionId: string): string | undefined => {
 	const name = readdirSync(dir).find((entry) => entry.endsWith(`_${sessionId}.jsonl`));
 	return name === undefined ? undefined : join(dir, name);

@@ -103,11 +103,12 @@ This proves the layer-to-component state and paint, **not** the real CLI, login,
 or model execution; the in-memory host records UI dispatches without executing them.
 
 `pnpm dev` runs `node src/bin.ts --config global/tuval.config.ts`, an Effect CLI
-(`effect/unstable/cli`) over the pure `boot`. Node strips the TypeScript itself, so the kernel has no build step. Boot loads your config layers
-(see "Your config"), registers their programs, launches the processes the graph plans, restores any
-other checkpointed process from this project's state dir, prints the process table, binds the page
-socket, serves the desk, and stays up until Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints
-every process and exits 0; a config that plans no process exits right after the report.
+(`effect/unstable/cli`) over the pure `boot`. Node strips the TypeScript itself, so the kernel has
+no build step. Boot loads your config layers (see "Your config"), registers their programs,
+launches the processes the graph plans, restores any other checkpointed process from this project's
+state dir, prints the process table, binds the page socket, serves the desk, and stays up until
+Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints every process and exits 0; a config that
+plans no process exits right after the report.
 
 ```
 tuval [flags]
