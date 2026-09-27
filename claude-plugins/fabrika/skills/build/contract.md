@@ -94,6 +94,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build deviations` | post an epic child's `## Deviations` disclosure as the ONE `build-deviations` marker on its issue, edited in place on every later round and carrying every standing entry; `--standing` reads what stands | a claim-gated upsert with a read-back, over a section validated by the wire format and compared against the standing disclosure; *authoring* the disclosure stays in the skill |
 | `build verdicts` | the paginated, per-gate verdict fold: content-bound at a PR's live head, range-bound on an epic child | fetch-all + fold via the wire module; *acting on rows* stays in the skill |
 | `build clear` | record the founder's clearance of one extra repair round on a PR | a conjunctive ACL/authorization protocol with read-back; *whether to grant* is the founder's, never the verb's |
+| `build takeover` | hand a PR another author opened to the pipeline, as a `takeover-granted` marker over a dated authorization | the reader's own conjunctive clauses, run before one write with read-back; *whether to take a teammate's PR over* is a trusted account's call, never the verb's |
 
 **Considered and not derived: a surface classifier.** Naming the surface (code / prose / plan) is
 a judgment the skill makes reading the issue; a verb that guessed it from file extensions would be
@@ -367,6 +368,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `33` | proven: a working tree of this clone holds the lane branch, and the board licenses no release of it |
 | `34` | proven: no authorized claim marker attests a single survivor among a child's lane branches, so none is superseded |
 | `35` | proven: a replacement disclosure drops an entry the standing marker discloses — a well-formed section that discloses less of the range than the round before it, which is why it is not `4` |
+| `37` | proven: the pull request a claim names was opened by an author outside the repo's own accounts, and no valid takeover grant stands on it — it is its author's to finish |
 | `127` | the verb never ran at all (unresolved binary — the shell's code, not this process's) |
 
 **`7` versus `11` is the split the whole group rests on** (the `wire` group's `ABSENT` vs
@@ -1120,6 +1122,29 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `30` | `claim --purpose build` against an **issue** only, proven: the issue is `type:decision` or `type:epic` — no marker was written. Not overridable: a decision opens it with `--cites <ruling-comment-url>`, an epic with `--purpose plan` or `--purpose gate` |
 | `31` | `claim --purpose build` against an **issue** only, proven: the claim's mode disagrees with the child's standing range verdicts — a fresh claim over a child holding any standing verdict (`PASS` as well as `FAIL`) or, under `--lane`, a standing integrate `FAIL`; or `--resume` over a child holding neither a `FAIL` verdict nor a standing integrate `FAIL`. No marker was written, and neither direction is overridable: `--override` admits a *scope* refusal, and this is not one |
 | `32` | `claim --purpose build` against an **issue** only, proven: the body carries no readable `### Acceptance criteria` block — absent, or a heading that drifted. No marker was written. Not overridable: the repair belongs on the issue (`triage enrich` for an absent block, `triage repair-criteria` for a drifted one), not on a branch |
+| `37` | `claim` against a **pull request** only, proven: the PR's author is outside the repo's own accounts and no valid takeover grant stands on it — no marker was written. Not overridable: the PR is its author's to finish, and the one way to hand it to the pipeline is [`build takeover`](#build-takeover), run by an account the repo trusts to grant |
+
+**The ownership gate — a pull request belongs to its author**
+
+Repair pushes onto a PR's own branch, so a claim over a PR reads who opened it before any marker is
+written, after the admission test and before the blockedness gate. The PR is the pipeline's to
+repair when either holds:
+
+- its author is one of the repo's own accounts: `.fabrika.jsonc`'s `ownAccounts` (`@user` or
+  `@org/team` entries), read at the PR's **base** ref so a PR cannot add its own author. When that
+  key is absent, empty or unusable, the **running** (authenticated) account is the only account
+  that counts as ours; a declared set replaces it rather than adding to it;
+- a valid [`takeover-grant`](../../docs/wire-formats.md#takeover-grant) marker stands on it: a
+  comment whose first line is `takeover-granted: #<pr> · <ISO-8601 UTC>`, naming this PR, whose
+  author is in the grant-author set (`capClearAuthors`, read at the same base ref; empty by
+  default, so nobody may grant), holds `write+` at the ACL, and **is not the PR's own author**. A
+  grant by the PR's author or by any account outside that set is ignored and named on stderr as
+  void.
+
+Anything else refuses on `37`. A read the answer depends on — the config at the base, the running
+account, the comments, a granter's permission — that cannot complete is `11`: ownership is UNKNOWN,
+never ours. Each read happens only when the answer still depends on it, so a PR one of ours opened
+costs the config read and, with no set declared, the running account, and nothing else.
 
 **The prior-build gate — "no lane holds this" is not "this has no reviewed build"**
 
@@ -1233,6 +1258,8 @@ FAIL", and a lane holding no task for this child is `14`.
 | `build adopt: --session "<value>" carries whitespace or "·" — a session id is one unbroken word, and this one would compose a marker no reader can read back; nothing was written.` | 1 | usage error |
 | `build adopt: --reason spans more than one line — the marker records one line, so the rest would be dropped silently; restate it as one line. Nothing was written.` | 1 | usage error |
 | `build claim: #<n> still carries the adopted claim <winning token> — run "fabrika build release <n> --token <the adopt's token>" to retract it and the adopt together, then claim.` | 15 | refusal |
+| `build claim: PR #<n> is <author>'s to finish — nothing was written. To hand it to the pipeline, an account the repo trusts to grant runs "fabrika build takeover <n> --authorization <file>".` — preceded by the ownership line and one `the takeover grant in comment <id> by <login> is void: <reason>.` line per void grant | 37 | refusal |
+| `build claim: cannot read whose PR #<n> is: <reason> — ownership is UNKNOWN, never ours; nothing was written.` | 11 | refusal |
 
 **Proven-unclaimed sits on `15` too**: zero markers means this lane does not hold the claim,
 which is the one fact every `15` consumer acts on (stop mutating; claim first). The stderr detail
@@ -3444,6 +3471,101 @@ $ fabrika build clear --pr 5953 --authorization authorization.md
   be the comment immediately before the marker.
 - Repo configuration is read at the base ref, never from the PR that would change it.
 - Authority is the live ACL's; the configured set narrows it, never replaces it.
+
+---
+
+## `build takeover`
+
+**Purpose** — hand a pull request another author opened to the pipeline: the "take over #N" path. A
+PR belongs to its author, so `build claim` refuses to repair it (`37`), `ship` refuses to land it and
+`heal-ci` routes it to its author until this verb's marker stands on it. The verb of an account the
+repo trusts to grant, acting on a dated authorization; *whether* to take a teammate's PR over is
+theirs, never the verb's.
+
+**Invocation**
+
+```
+fabrika build takeover 7 --authorization authorization.md [--repo <owner/name>]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `<pr>` | integer | yes | — | the open pull request handed over |
+| `--authorization` | path | yes | — | a file quoting the "take over" authorization verbatim, carrying an ISO-8601 date |
+| `--repo` | string | no | the `origin` remote's `owner/name` | the repository written |
+
+**Output** — machine. One JSON object:
+
+```
+{"pr": 7, "author": "ada", "by": "octocat", "comment": 512401,
+ "at": "2026-09-26T07:16:03Z", "resolvesTo": "granted"}
+```
+
+`resolvesTo` is `granted` when this run posted the grant, and `already-granted` when an honoured
+grant already stood — then nothing is posted, `by` and `comment` are the standing grant's, and there
+is no `at`.
+
+**The marker** — one comment. Its first line is the
+[`takeover-grant`](../../docs/wire-formats.md#takeover-grant) marker, and the quoted authorization
+follows it after a blank line:
+
+```
+takeover-granted: #7 · 2026-09-26T07:16:03Z
+
+Founder, 2026-09-26: "take over #7, Ada is away."
+```
+
+`#<pr>` names the PR the grant hands over, so a marker read on any other thread grants nothing; the
+timestamp is the posting instant, to the second, Z-suffixed.
+
+**Who may grant** — the clauses the reader applies (see the ownership gate under
+[`build claim`](#build-claim-build-confirm-build-release-build-adopt)), run before the write so a grant this verb posts is
+one every reader honours: the invoking account is in `capClearAuthors` at the PR's base ref, holds
+`write+` at the ACL, and did not open the PR. The set's shipped default is empty, so a repo that
+declares nobody can hand nothing over. A PR one of ours opened needs no grant and refuses on `7`.
+
+**What `granted` proves, exactly.** That a configured account posted a marker naming this PR over a
+dated quote. It does not prove the quote is a truthful record of what was said; in a repo where
+agents run on a granting account's own token, the agent's restraint is what holds — the same
+residue `build clear` carries.
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `5` | the authorization carries a machine-local path |
+| `6` | the authorization is a bare `@` path reference |
+| `7` | the PR is proven absent or closed, or it is already ours — there is nothing to hand over |
+| `8` | the write failed — UNKNOWN; read the PR before re-running |
+| `9` | the grant posted and does not read back |
+| `11` | a precondition read failed — the invoking account, the config, a team's membership, a permission, the comments |
+| `25` | the invoking account is not in the grant-author set, resolves below `write`, or opened the PR itself |
+| `26` | `--authorization` is empty or undated |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `build takeover: --authorization <path> is empty — a grant with no quoted authorization is void.` | 26 | refusal |
+| `build takeover: --authorization <path> carries no ISO-8601 date — the authorization must be dated.` | 26 | refusal |
+| `build takeover: <login> opened PR #<n> — an author cannot hand their own PR over. Nothing was posted.` | 25 | refusal |
+| `build takeover: <login> is not in .fabrika.jsonc's grant-author set at <ref> — refusing to record a takeover.` | 25 | refusal |
+| `build takeover: <login> resolves to <level> on <repo>, below write — authority is the ACL's, never .fabrika.jsonc's alone.` | 25 | refusal |
+| `build takeover: PR #<n> was opened by <author>, one of ours under <basis> — it needs no grant, so there is nothing to hand over.` | 7 | refusal |
+| `build takeover: the grant write failed: <reason> — whether it posted is UNKNOWN; read #<n> before re-running.` | 8 | refusal |
+
+**Scope** — one PR: its record, its comments, the config at its base ref and the invoking account's
+repository permission.
+
+**Grounding**
+
+- A PR belongs to its author: an agent pushing repair commits to, or enqueueing, a teammate's PR
+  takes over work that person is still doing.
+- Who counts as ours is committed config, empty by default, with the running account the only one
+  when it is empty; the per-PR override is a grant comment, counted only from a trusted account.
+- Repo configuration is read at the base ref, never from the PR that would change it.
 
 ---
 

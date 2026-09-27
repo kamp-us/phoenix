@@ -21,9 +21,12 @@
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {listComments} from "../io/issues.ts";
+import {ownershipGate} from "../ownership/gate.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	NO_LANDING_METHOD,
+	PR_NOT_OURS,
 	PRECONDITION_UNKNOWN,
 	PROVEN_NOT_IN_STATE,
 	READBACK_MISMATCH,
@@ -86,6 +89,16 @@ export const runMerge = (
 			);
 		}
 
+		const owned = yield* ownershipGate(
+			VERB,
+			repo,
+			{number: pr, author: pull.authorLogin, baseRef: pull.baseRef},
+			listComments(repo, pr),
+			{notOurs: PR_NOT_OURS, unknown: PRECONDITION_UNKNOWN},
+			"nothing was merged.",
+		);
+		if (owned._tag === "Refused") return owned.outcome;
+
 		const landing = yield* readLanding(repo, pull.baseRef, options.env);
 		if (landing._tag === "Failure") {
 			return refuse(
@@ -107,6 +120,7 @@ export const runMerge = (
 			);
 		}
 		const diagnostics = [
+			owned.line,
 			`${VERB}: ${pull.baseRef} is not queue-governed and ${repo} permits ${method} — landing directly.`,
 		];
 

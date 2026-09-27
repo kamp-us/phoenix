@@ -38,6 +38,7 @@ import * as mapTicket from "./map-ticket.ts";
 import * as planApproval from "./plan-approval.ts";
 import * as rangeVerdictMarker from "./range-verdict-marker.ts";
 import * as routedElsewhere from "./routed-elsewhere.ts";
+import * as takeoverGrant from "./takeover-grant.ts";
 import * as verdictMarker from "./verdict-marker.ts";
 
 /**
@@ -658,6 +659,47 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			],
 		},
 		brands: brandWitnesses<capClearance.CapClearance>({at: true}),
+	},
+	{
+		key: "takeover-grant",
+		purpose:
+			"the grant that hands a pull request another author opened to the pipeline, carried as a marker comment over its dated authorization and read by `build`, `ship` and `heal-ci` before they drive that PR",
+		module: "packages/fabrika-cli/src/wire/takeover-grant.ts",
+		producers: ["build"],
+		consumers: ["build", "ship", "heal-ci"],
+		emit: takeoverGrant.emitFromFields,
+		read: takeoverGrant.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: "pr: 7\nat: 2026-09-26T07:16:03Z\n",
+				values: ["7", "2026-09-26T07:16:03Z"],
+			},
+			found: [
+				{
+					shape:
+						"the marker over the dated authorization it rests on, as `build takeover` posts it",
+					artifact:
+						"takeover-granted: #7 · 2026-09-26T07:16:03Z\n\nTake over #7, the author is away. — 2026-09-26\n",
+					values: ["7", "2026-09-26T07:16:03Z"],
+				},
+			],
+			absent: "Re-ran the gate at the new head and it is green now.\n",
+			malformed: [
+				{
+					drift: "the pull request is not a #<n> reference",
+					artifact: "takeover-granted: 7 · 2026-09-26T07:16:03Z\n",
+				},
+				{
+					drift: "the marker names no pull request, so the grant hands over nothing",
+					artifact: "takeover-granted: 2026-09-26T07:16:03Z\n",
+				},
+				{
+					drift: "the timestamp is not an ISO-8601 UTC instant",
+					artifact: "takeover-granted: #7 · this morning\n",
+				},
+			],
+		},
+		brands: brandWitnesses<takeoverGrant.TakeoverGrant>({at: true}),
 	},
 	{
 		key: "grill-answer",
