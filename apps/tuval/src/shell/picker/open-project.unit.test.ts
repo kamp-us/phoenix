@@ -1,6 +1,6 @@
 /**
  * The "Open project…" frame's empty messages (#9981): under a filter, "nothing matches" is said of the
- * whole list, once, and never under a group while another group still holds a match.
+ * whole list, once, by the status line, and never under a group.
  */
 
 import {describe, expect, it} from "vitest";
@@ -41,20 +41,20 @@ const emptyMessages = (frame: ReturnType<typeof openProjectFrame>) =>
 	frame.groups.map((group) => group.emptyMessage);
 
 describe("open project frame, empty messages", () => {
-	it("says nothing under the folder path while the folders group holds the match", () => {
+	it("drops the folder path group while the folders group holds the match", () => {
 		const frame = openProjectFrame(window, browse, folderData, filtered("so"));
 		expect(frame.groups.map((group) => group.options.map((option) => option.entry.label))).toEqual([
-			[],
 			["sozluk"],
 		]);
-		expect(emptyMessages(frame)).toEqual([null, null]);
+		expect(frame.groups.map((group) => group.label)).toEqual(["Folders in code"]);
+		expect(emptyMessages(frame)).toEqual([null]);
 		expect(frame.announcement.text).toBe("1 of 5 rows");
 	});
 
-	it("says nothing under Other folders while a recent project holds the match", () => {
+	it("drops Other folders while a recent project holds the match", () => {
 		const frame = openProjectFrame(window, RECENT_STEP, recentData, filtered("phoe"));
-		expect(frame.groups.map((group) => group.options.length)).toEqual([1, 0]);
-		expect(emptyMessages(frame)).toEqual([null, null]);
+		expect(frame.groups.map((group) => group.options.length)).toEqual([1]);
+		expect(emptyMessages(frame)).toEqual([null]);
 	});
 
 	it("says nothing matches exactly once when no group holds a row", () => {
@@ -63,9 +63,9 @@ describe("open project frame, empty messages", () => {
 			[RECENT_STEP, recentData],
 		] as const) {
 			const frame = openProjectFrame(window, step, data, filtered("zzz"));
-			expect(emptyMessages(frame).filter((message) => message !== null)).toEqual([
-				"Nothing matches this filter.",
-			]);
+			const said = [...emptyMessages(frame), frame.announcement.text];
+			expect(said.filter((text) => text === "Nothing matches this filter.")).toHaveLength(1);
+			expect(frame.groups).toEqual([]);
 		}
 	});
 

@@ -453,14 +453,9 @@ export const openProjectFrame = (
 							step.folder === null ? "section" : "path",
 						),
 					];
-	// Under a filter an empty group is not news while another group still has a match, so the "nothing
-	// matches" text belongs to the whole list: said once, on the first group, and only when no row is left.
-	const groups = filtering
-		? listed.map((group, index) => ({
-				...group,
-				emptyMessage: rows.length === 0 && index === 0 ? NOTHING_MATCHES : null,
-			}))
-		: listed;
+	// Under a filter a group the filter emptied is dropped, not labelled: "nothing matches" speaks for the
+	// whole list, and the visible status line already says it once.
+	const groups = filtering ? listed.filter((group) => group.options.length > 0) : listed;
 
 	const opening = options?.opening ?? null;
 	const settled =
