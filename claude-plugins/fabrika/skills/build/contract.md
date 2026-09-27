@@ -81,6 +81,9 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build adopt` | record that a dead session's claim passes to the lane this marker names, which may then release it or carry on | a marker write with a read-back; *whether the session is really gone* is the driver's judgment |
 | `build claimants` | who holds the claim on one issue, asked by a caller holding no token | the same ownership fold `confirm` runs, reported instead of tested against a caller; *what to do about a stranded claim* stays with the driver |
 | `build claims stale` | which claim markers stand on the board past a horizon, asked by a caller holding no token | the same ownership fold, run over an index-narrowed candidate set and filtered on the marker's own posted instant; *whether a session is gone* stays with the driver |
+| `build retire` | remove the worktrees of this clone holding one issue's lane branch, under a board-written or tree-proven license | positive board states plus, for an unheld lane, a clean-and-carried tree proof; *filing a refused removal* stays with the caller |
+| `build retire-branch` | rename an epic child's superseded lane branches out of `build/` so one carrying branch is left | the survivor is the branch an authorized claim marker's nonce names; no guess, no delete |
+| `build reap` | classify finished agent worktrees KEEP/REMOVE/PRUNE and, with `--execute`, remove and prune them | four positive proofs per removal, absence proved by one stat; *when to sweep* stays with the operator |
 | `build issue` | the claimed issue's body + parsed acceptance criteria, through the content gate | fetch + parse via the wire module; *judging* the criteria stays in the skill |
 | `build branch` | cut (or resume) the lane's nonce branch off a freshly fetched base | fetch, derive, create — the nonce is a function of the claim token |
 | `build resume-child` | open an epic child's standing-`FAIL` repair lane: claim, confirm, clean tree, resume the branch, prove the armed lane — in that order | a fixed sequence of five verbs whose order is derivable from what each one needs; every refusal is the composed verb's own, and *fixing the FAIL* stays in the skill |
@@ -1050,6 +1053,16 @@ adopt, resolved off the `by <token>` exactly as a win is, so a sibling lane's su
 sweepable than its claim would be; every other lane reads the thread as unclaimed. `confirm` and the
 shared precondition refuse it on `15` and name that release, because an adoption is not a claim.
 
+**`release` also frees this tree's checkout of the released lane's branch.** After the claim
+comments are retracted, when this tree stands on the lane branch whose nonce the released token
+carries, `release` detaches HEAD at the commit it already holds. The branch stays, the commit is
+unchanged and an uncommitted edit carries over; only the checkout goes, so the pin that makes a
+later `build branch --resume-lane` refuse never forms and `build retire` is left for the trees a
+killed session leaves behind. The branch detached is reported as `freed`. A tree on any other
+branch frees nothing (`"freed": null`), and a branch read or a detach that fails is reported on
+stderr and is never fatal: the claim is already retracted by then, so refusing would report a
+failure over work that had finished.
+
 **An adopt fences and confers only over a claim marker it postdates.** The fence that keeps one
 succession from answering `mine` to two lanes reads an adopt over the winning marker's session; a
 succession adopts a claim that already stands, so an adopt older than that marker adopted some earlier claim and says
@@ -1090,8 +1103,9 @@ These are consecutive proofs, not substitutes.
 - `confirm` when held: `{"answer": "mine", "number": 4, "token": "..."}` — the winning marker's
   token on the ordinary path, and on a succession the **adopt's** token, never the dead session's,
   which every verb of this session refuses on `1`.
-- `release` when released: `{"answer": "released", "number": 4}` — plus `"adopted":
-  "<dead-session>"` when the release came through a succession.
+- `release` when released: `{"answer": "released", "number": 4, "freed": "<branch>" | null}` —
+  plus `"adopted": "<dead-session>"` when the release came through a succession. A stranded adopt
+  retracted alone answers `{"answer": "released", "number": 4, "adopted": "<dead-session>"}`.
 - `adopt` when recorded: `{"answer": "adopted", "number": 4, "session": "<dead-session>", "token":
   "build:<sid>:<uuid>"}`.
 
@@ -1581,6 +1595,176 @@ $ echo $?
   three readers cannot answer three different winners for one issue.
 - A read that failed is UNKNOWN on `11`. A short list of stranded claims says an issue is free when
   nobody looked at it, which is worse than no list at all.
+
+---
+
+## `build retire`
+
+**Invocation**
+
+```
+fabrika build retire 6567 [--repo <owner/name>]
+```
+
+Retires the working trees of this clone that hold `#<n>`'s lane branch, so a repair lane refused
+at `build branch --resume-lane` can stand where it needs to.
+
+**Three licenses, and only the third reads the tree.** The first two are written positive board
+states and never an inference from a tree that looks idle: the ticket is **terminal** (a closed
+issue, a merged PR), or an authorized build-adopt marker on `#<n>` names the session whose claim
+carries that branch's lane nonce. The third is for the lane **nobody holds** — no authorized claim
+marker on `#<n>` carries that branch's lane nonce, because the claim was released — and it reads the
+tree because it has no board statement to lean on. That tree goes only on proof its removal would
+strand nothing: clean, and every commit its HEAD reaches named by some branch, remote-tracking ref or
+tag. Anything short of both holds, naming the count that blocked it. A commit on the tree's **own**
+lane branch is not carried by the tree: the removal leaves the branch, so committing the work the
+dirty clause named is the way out rather than a second refusal. A branch a **live** claim still
+carries holds before the tree is read at all.
+
+**Dirtiness is not a refusal.** An agent routinely leaves a worktree dirty after its ticket merged,
+and it costs nobody their only copy either: the salvage runs first, committing whatever the tree
+holds uncommitted onto its own branch, and only then is the tree removed **without `--force`**,
+which is banned on every path. A removal that still refuses (a locked tree does, however clean) is
+reported as an incident to file, never overridden. The removal takes the tree, never the branch. It
+first prunes registrations whose directory is already gone, never removes the tree the run is
+standing in, and reads every removal back off a second worktree list.
+
+A worktree-isolated caller may run it: the harness rule that refuses a typed cross-worktree git does
+not bind a verb's own child process.
+
+**Output** — machine, one JSON object:
+`{"answer": "retired" | "held" | "none", "number": n, "retired": […], "held": […]}`.
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `7` | `#<n>` is proven absent |
+| `8` | the salvage or the removal failed — UNKNOWN |
+| `9` | git reported a removal and the registration survives |
+| `11` | a precondition read failed, including an unclaimed tree's status or its stranded-commit count |
+| `33` | a tree still holds the branch and no license releases it |
+
+---
+
+## `build retire-branch`
+
+**Invocation**
+
+```
+fabrika build retire-branch 6296 [--repo <owner/name>]
+```
+
+Clears the two-branch deadlock on epic child `#<n>` by **renaming** each superseded lane branch out
+of the `build/` namespace into `retired/`.
+
+**No path of this verb deletes a branch.** After the rename every commit is still there and still
+reachable by the new name, so a mistaken retirement costs a rename back rather than the work — which
+matters because a child opens no PR and its branch is the only copy.
+
+**Which branch is superseded is proven, never guessed.** The survivor is the candidate whose lane
+nonce an **authorized** claim marker on `#<n>` carries; where no marker attests one, or several do,
+nothing is renamed and the verb refuses on `34`. Before any rename it proves no working tree of this
+clone holds a branch it is about to move: `git branch -m` does not refuse a held branch, it renames
+it and silently retargets that tree's HEAD. Fewer than two branches is not a deadlock — zero is a
+refusal on `7`, one answers `"none"`. Every rename is read back off a second local-branch read.
+
+A worktree-isolated lane may run it against a branch it never cut, because refs are shared across
+every worktree of a clone.
+
+**Output** — machine, one JSON object:
+`{"answer": "retired" | "none", "number": n, "survivor": "<branch>", "retired": [{"from": …, "to": …}]}`.
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `7` | no branch in this clone was cut for `#<n>` |
+| `8` | git refused a rename — UNKNOWN |
+| `9` | git reported a rename and the read-back disagrees |
+| `11` | a precondition read failed |
+| `33` | a working tree holds a branch to be renamed — clear it with `fabrika build retire <n>` |
+| `34` | the board attests no single survivor |
+
+---
+
+## `build reap`
+
+**Invocation**
+
+```
+fabrika build reap [--execute] [--limit <n>]
+```
+
+Sweeps the registrations the harness provisions, under **both** namings: `.claude/worktrees/agent-*`
+and the harness's own `pi-worktree-*`, which does not sit under the repository at all and was 78 of
+the 78 removable trees on the clone this was measured against. Each is classified `KEEP`, `REMOVE` or
+`PRUNE`.
+
+**`REMOVE` needs four positive proofs together.** The tree holds nothing uncommitted; it carries no
+lock; its HEAD is already on the trunk — reachable from `origin/HEAD`, or landed there as a squash,
+matched by comparing the patch id of what the HEAD adds against the trunk's own patches over exactly
+those paths; and the tree reads **quiet**, its directory untouched for 24h. The subject of the third
+is the HEAD commit, not a branch: the harness detaches the trees it registers, so a branch-keyed rule
+would judge almost none of them. The fourth is not a git fact and cannot be: an operator or reviewer
+seat drives its lane without ever committing or editing, so the three git proofs read a live seat as
+carrying nothing — the shape that removed one mid-drive. Any live signal, and any liveness read that
+failed, is `KEEP`, and the `KEEP` line names which signal held.
+
+**Everything else is `KEEP`, per tree** — dirty, locked, unlanded, live, and every read that failed
+— so one unreadable directory costs its own row and not the sweep.
+
+**The one exception is absence.** A registration whose directory is gone is seated `PRUNE`, not
+`KEEP`, because there is no checkout to be unsafe about and only the record is left. Absence is
+proved by one stat's own `NotFound` and by nothing else: never by a read that merely failed — a
+`PermissionDenied` keeps the tree — and never by git's own `prunable` flag, whose condition is the
+worktree's `.git` file rather than its directory, so it reports a checkout that still holds
+uncommitted work. Only the arms answerable off the registration's own fields plus that one stat run
+for every tree; the git status and the containment scan are paid only by what those leave open,
+which is 13 trees of 243 on the clone this was measured against and the difference between a 42.8s
+scan and an 18.3s one.
+
+**The default run mutates nothing**: it prints the per-tree classification with its reason and
+stops; `--execute` is what removes. Each removal runs plain `git worktree remove` and never
+`--force`, which is banned on every path; a removal git refuses leaves the tree registered and is
+reported, and every removal is read back off a second worktree list. The removal takes the tree,
+never the branch. Both halves of the report — what went and what was deliberately kept — are on
+stderr on every path, so a survivor is visible without re-running.
+
+**Every removal is journalled as it happens.** The moment git reports one, a line naming this run,
+the trunk, the removed path and its license is appended to `.fabrika/reap.jsonl` under this run's
+tree root, before the next candidate is attempted. A sweep the harness kills mid-loop — which is what
+a large population does to the 600s no-progress watchdog — still leaves its executed set readable on
+disk, where the terminal JSON does not exist at all. A journal write that fails is reported and
+demotes nothing: a removal is proven by git and the read-back, never by the record.
+
+**`--limit` bounds the executed set** so that population is walked in watchdog-sized pieces: at most
+that many removals are attempted, and every removable tree past the bound stays registered, is
+reported `unattempted` and is removable on the next run.
+
+**The stale registrations go in the same `--execute` pass.** One `git worktree prune` clears the
+entries whose directory was already gone and the ones each removal just left behind, and it is
+clone-wide, so it also reaches stale entries outside the swept population — the population filter
+bounds what is judged, not what is cleared. `--limit` does not bound it either, because a
+registration is a line in a file rather than a tree to delete. An entry locked by a dead process with
+its directory gone is unlocked first — prune skips a locked entry, and a lock whose tree is gone
+guards nothing — and unlock runs only where absence is proved. A stale registration that survives
+the prune is reported and does not red the sweep, and neither does an unlock git refuses: neither
+costs disk anything nor risks work.
+
+**Output** — machine, one JSON object:
+`{"answer": "planned" | "reaped" | "none", "executed": bool, "trunk": "origin/main", "scanned": n, "journal": "<path>", "removable" | "removed": […], "stale" | "pruned": […], "unpruned": […], "unattempted": […], "kept": […]}`.
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `8` | git refused a removal — the tree stays |
+| `9` | git reported a removal and the registration survives, or the read-back failed |
+| `11` | this run's own root, the registrations, or the trunk could not be read — nothing was removed |
+
+A `--limit` that is not a positive integer is a usage error, `1`: nothing was read and nothing was
+removed.
 
 ---
 
