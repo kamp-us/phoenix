@@ -31,7 +31,7 @@ describe("renderTemplate", () => {
 		expect(rendered).toContain("**What this decides:**");
 	});
 
-	it("scaffolds Context / Decision / Consequences and NOT Records / Amendments", () => {
+	it("scaffolds core sections and leaves conditional Records / Amendments to the author", () => {
 		expect(rendered).toContain("## Context");
 		expect(rendered).toContain("## Decision");
 		expect(rendered).toContain("## Consequences");
