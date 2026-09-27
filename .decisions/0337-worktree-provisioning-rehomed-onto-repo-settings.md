@@ -1,7 +1,7 @@
 ---
 id: 0337
 title: Worktree Provisioning Is Rehomed onto This Repo's Own Settings, Not fabrika's Plugin Surface
-status: accepted
+status: amended-in-part by [0420](0420-worktree-creation-locks-installs-outside.md)
 date: 2026-08-28
 tags: [fabrika, hooks, worktree, tooling, harness]
 ---
@@ -83,6 +83,10 @@ fires the same `post-checkout` `bootstrap-deps`; `--ignore-scripts` and the pinn
 untouched. What the verb adds is the environment that install needs: the OS-standard toolchain dirs
 prepended to the inherited `PATH` (never a per-machine volta/fnm shim — 0109's prohibition), so
 `bootstrap-deps` resolves a runner instead of clean-SKIPping.
+
+> **Amended in part by [0420](0420-worktree-creation-locks-installs-outside.md).** The hook's add no
+> longer fires the install: it adds with hooks off inside a repo-level lock, then runs the same
+> `post-checkout` hook itself after the lock is released. The reuse and 0109's rules above still hold.
 
 **4. The base is fetched before it is branched from**, carrying ADR 0178's #3621 amendment forward:
 `git fetch --quiet origin <base>` then `git worktree add --detach <path> FETCH_HEAD`. The fetch moves

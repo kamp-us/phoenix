@@ -143,6 +143,17 @@ export const FAST_FORWARD_FAILED = 22;
  */
 export const FLOOR_UNKNOWN = 23;
 
+/**
+ * The repo-level lock around the base fetch and `git worktree add` could not be taken — a live holder
+ * kept it past the wait budget, or the lock could not be created in the clone's common git dir.
+ * Nothing was fetched or added.
+ *
+ * Its own seat because the remedy is neither of its neighbours': the base and the add were never
+ * tried, so this is not {@link BASE_FETCH_FAILED} or {@link WORKTREE_ADD_FAILED}, and a re-run once
+ * the named holder finishes is the whole fix.
+ */
+export const CREATION_LOCK_UNAVAILABLE = 24;
+
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
 
@@ -183,6 +194,10 @@ export const HOOK_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{
 		code: FLOOR_UNKNOWN,
 		meaning: "the CLI could not be compared with the plugin's minimum version — UNKNOWN",
+	},
+	{
+		code: CREATION_LOCK_UNAVAILABLE,
+		meaning: "the repo-level worktree creation lock could not be taken — nothing was created",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},
