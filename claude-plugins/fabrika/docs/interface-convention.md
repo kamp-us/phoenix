@@ -147,7 +147,7 @@ nine exit lines, one pointer line and two to spare.
 The mechanical checks are [`leaf-help.ts`](../../../packages/fabrika-cli/src/leaf-help.ts), and
 `leaf-help.unit.test.ts` holds every registered leaf to them through a ratchet. A verb that broke
 the rule when the guard landed is listed with its length in `src/<group>/leaf-help-baseline.json`.
-It may shrink but not grow, and its row must be deleted once it passes. A verb not listed must pass.
+It may not grow past its listed length, and its row must be deleted once it passes. A verb not listed must pass.
 
 The exit lines carry their own two-space indent, and that choice is also the renderer's. The pinned
 `formatHelpDocImpl` indents only the description's first line: an embedded `\n` passes through
@@ -367,6 +367,6 @@ list of things to call.
 ## Enforcement
 
 Per-verb tests check behavior. The shared data checks
-`exit-code-alignment.unit.test.ts` and `short-description.unit.test.ts` check code allocation and
-registered descriptions. They do not prove every rule on this page; reviewers check the remaining
+`exit-code-alignment.unit.test.ts`, `short-description.unit.test.ts` and `leaf-help.unit.test.ts`
+check code allocation, registered descriptions and long description size and shape. They do not prove every rule on this page; reviewers check the remaining
 interface requirements against the verb and its contract.
