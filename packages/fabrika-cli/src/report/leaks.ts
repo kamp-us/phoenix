@@ -1,17 +1,30 @@
 /**
- * The body-surface leak predicate, shared by `report file`, `report note` and `report amend`.
+ * The body-surface leak predicate, shared by every verb that posts authored text to a public
+ * artifact.
  *
- * A machine-local path in a body posted to a public issue is a leak, and no merge gate covers it —
- * the repo's committed-file leak gate decides whether a *file in a diff* carries one, and a runtime
- * issue body is never in a diff. This is the ungated surface, not a second verdict on a gated one.
+ * A machine-local path, an email address or a name the repo keeps private, in a body posted to a
+ * public issue, is a leak, and no merge gate covers it — the repo's committed-file leak gate decides
+ * whether a *file in a diff* carries one, and a runtime issue body is never in a diff. This is the
+ * ungated surface, not a second verdict on a gated one.
  *
- * **Three generic shapes and no name list.** Every shape is structural, so a new operator, a
- * renamed tool directory or a different machine needs no edit here.
+ * **Four structural shapes, and names only from the adopter's own config.** The three path roots and
+ * the email shape are structural, so a new operator, a renamed tool directory or a different machine
+ * needs no edit here. The only names this predicate refuses are the ones a repo declares under
+ * `leakNames` ([`config/keys/leak-names.ts`](../config/keys/leak-names.ts)); a caller that passes
+ * none gets the structural shapes alone.
  */
 
+import {type LeakNames, NO_LEAK_NAMES} from "../config/keys/leak-names.ts";
 import {type ReasonHistogram, reasonHistogram} from "../evidence.ts";
 
-export type LeakClass = "home-relative" | "absolute home root" | "temp root";
+export type LeakClass =
+	| "home-relative"
+	| "absolute home root"
+	| "temp root"
+	| "email"
+	| "private repo link"
+	| "private repo reference"
+	| "named identifier";
 
 export interface Leak {
 	/** 1-based line number in the scanned body — what the refusal prints. */
@@ -66,26 +79,136 @@ const rootOf = (path: string): {cls: LeakClass; mask: string} =>
 	ROOTS.find((r) => path.startsWith(r.prefix)) ?? {cls: "temp root", mask: "/tmp/<redacted>"};
 
 /**
- * Scan a body for machine-local paths, and produce the masked body alongside.
+ * An email address: a local part, `@`, and a dotted domain ending in an alphabetic label.
  *
- * The mask keeps the class root — `/var/folders/<redacted>`, not one collapsed marker — because
+ * The left lookbehind keeps an address from starting mid-token, and the right lookahead keeps a
+ * longer label from being cut to a shorter one that happens to match.
+ */
+const EMAIL_RE =
+	/(?<![A-Za-z0-9._%+-])([A-Za-z0-9._%+-]+)@((?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+([A-Za-z]{2,}))(?![A-Za-z0-9-])/g;
+
+/** Role local parts that name a service rather than a person: commit trailers and SSH remotes. */
+const ROLE_LOCAL_PARTS = new Set(["noreply", "no-reply", "git"]);
+
+/** The top-level names RFC 2606 and RFC 6761 reserve, so an address under them names nobody. */
+const RESERVED_TLDS = new Set(["test", "example", "invalid", "localhost"]);
+const RESERVED_DOMAIN = /(?:^|\.)example\.(?:com|net|org)$/i;
+
+/**
+ * File extensions, which make `name@version.patch` and `shot@desktop.png` look like addresses.
+ * `md` and `zip` are also delegated top-level domains, kept here because a filename is far likelier
+ * in a body than an address under either.
+ */
+const FILE_EXTENSIONS = new Set(
+	"png jpg jpeg gif webp svg avif ico patch diff md mdx txt log json jsonc yml yaml toml ts tsx mts cts js jsx mjs cjs html css lock tgz zip".split(
+		" ",
+	),
+);
+
+const isPersonalAddress = (local: string, domain: string, tld: string): boolean =>
+	!ROLE_LOCAL_PARTS.has(local.toLowerCase()) &&
+	!RESERVED_TLDS.has(tld.toLowerCase()) &&
+	!RESERVED_DOMAIN.test(domain) &&
+	!FILE_EXTENSIONS.has(tld.toLowerCase());
+
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Characters that end a link in prose or markdown, as {@link SEG} does for a path. */
+const LINK_TAIL = String.raw`[^\s\x60'"<>)\]}]*`;
+
+/** One pass over a line: a pattern, and what each match becomes — a leak, or `null` to keep it. */
+interface Rule {
+	readonly re: RegExp;
+	readonly judge: (
+		match: string,
+		groups: ReadonlyArray<string | undefined>,
+	) => {cls: LeakClass; mask: string} | null;
+	/** Whether trailing sentence punctuation is split off before judging, as a path's is. */
+	readonly trims: boolean;
+}
+
+const PATH_RULE: Rule = {
+	re: PATH_RE,
+	trims: true,
+	judge: (path) => (CARVE_OUTS.has(path) ? null : rootOf(path)),
+};
+
+const EMAIL_RULE: Rule = {
+	re: EMAIL_RE,
+	trims: false,
+	judge: (_match, [local = "", domain = "", tld = ""]) =>
+		isPersonalAddress(local, domain, tld) ? {cls: "email", mask: "<redacted email>"} : null,
+};
+
+/**
+ * The rules a repo's declared names add. A private repo's link is `github.com/<slug>` with or
+ * without a scheme, optionally `.git`, and whatever path follows; its reference is `<slug>#<n>`.
+ * Neither matches the bare slug, which is the one form a public body may carry.
+ */
+const nameRules = (names: LeakNames): ReadonlyArray<Rule> => {
+	const rules: Rule[] = [];
+	for (const slug of names.privateRepos) {
+		const escaped = escapeRegExp(slug);
+		rules.push({
+			re: new RegExp(
+				String.raw`(?:https?://)?(?:www\.)?github\.com/${escaped}(?:\.git)?(?![A-Za-z0-9_-]|\.[A-Za-z0-9_-])${LINK_TAIL}`,
+				"gi",
+			),
+			trims: true,
+			judge: () => ({cls: "private repo link", mask: "<redacted private repo link>"}),
+		});
+		rules.push({
+			re: new RegExp(String.raw`(?<![A-Za-z0-9_./-])(${escaped})#\d+(?![0-9])`, "gi"),
+			trims: false,
+			judge: (_match, [written = slug]) => ({
+				cls: "private repo reference",
+				mask: `${written}#<redacted>`,
+			}),
+		});
+	}
+	for (const identifier of names.identifiers) {
+		rules.push({
+			re: new RegExp(escapeRegExp(identifier), "gi"),
+			trims: false,
+			judge: () => ({cls: "named identifier", mask: "<redacted>"}),
+		});
+	}
+	return rules;
+};
+
+/**
+ * Scan a body for leaks, and produce the masked body alongside.
+ *
+ * The rules run in order over each line, each over what the one before left: paths first, so a
+ * path whose segments hold an address or a name is masked whole as the path it is.
+ *
+ * A path's mask keeps the class root — `/var/folders/<redacted>`, not one collapsed marker — because
  * *which* root a path came from is itself the evidence. The leaf filename does not survive, and
  * that is deliberate: a filename can identify a person or a machine, and a reader who needs it can
- * ask the reporter.
+ * ask the reporter. An address is masked whole, domain included, because the domain alone can name
+ * an employer.
  */
-export const scanBody = (body: string): Scan => {
+export const scanBody = (body: string, names: LeakNames = NO_LEAK_NAMES): Scan => {
+	const rules = [PATH_RULE, ...nameRules(names), EMAIL_RULE];
 	const leaks: Leak[] = [];
-	const lines = body.split("\n").map((line, index) => {
-		PATH_RE.lastIndex = 0;
-		return line.replace(PATH_RE, (raw) => {
-			const path = trimPunctuation(raw);
-			const tail = raw.slice(path.length);
-			if (CARVE_OUTS.has(path)) return raw;
-			const {cls, mask} = rootOf(path);
-			leaks.push({line: index + 1, class: cls, text: path});
-			return mask + tail;
-		});
-	});
+	const lines = body.split("\n").map((line, index) =>
+		rules.reduce((text, rule) => {
+			rule.re.lastIndex = 0;
+			return text.replace(rule.re, (raw: string, ...rest: unknown[]) => {
+				// `replace` hands the capture groups first, then the numeric offset.
+				const groups = rest.slice(
+					0,
+					rest.findIndex((part) => typeof part === "number"),
+				) as ReadonlyArray<string | undefined>;
+				const match = rule.trims ? trimPunctuation(raw) : raw;
+				const tail = raw.slice(match.length);
+				const verdict = rule.judge(match, groups);
+				if (verdict === null) return raw;
+				leaks.push({line: index + 1, class: verdict.cls, text: match});
+				return verdict.mask + tail;
+			});
+		}, line),
+	);
 	return {leaks, redacted: leaks.length === 0 ? body : lines.join("\n")};
 };
 

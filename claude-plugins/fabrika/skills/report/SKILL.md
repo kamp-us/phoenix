@@ -87,8 +87,8 @@ EOF
 ```
 
 **When the verb refuses, fix the input and run it again.** A refusal names one thing — an empty
-section, a machine-local path in the body, a body that never reached stdin, a title that classifies
-— and each is a thing to correct. **A refusal is never a signal to post some other way.** Retrying a
+section, a leak in the body (a machine-local path, an email address, a name the repo declares
+private), a body that never reached stdin, a title that classifies — and each is a thing to correct. **A refusal is never a signal to post some other way.** Retrying a
 blocked command through a form that passes the body as a *file path* posts the path text instead of
 the file's contents, which is how a machine-local path reaches a public artifact while the poster
 reads success — the rule and its reasoning are one section

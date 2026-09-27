@@ -22,6 +22,7 @@ import {docLeakExemptKey} from "./keys/doc-leak-exempt.ts";
 import {reviewFilterExclusionsKey, reviewFilterUnexcludeKey} from "./keys/filter-exclusions.ts";
 import {governedRootsKey} from "./keys/governed-roots.ts";
 import {laneConcurrencyCapKey} from "./keys/lane-concurrency-cap.ts";
+import {leakNamesKey} from "./keys/leak-names.ts";
 import {machineryLapsKey} from "./keys/machinery-laps.ts";
 import {parkCauseKey} from "./keys/park-cause.ts";
 import {cycleDocKey, decisionsDirKey, roadmapFileKey} from "./keys/paths.ts";
@@ -48,6 +49,7 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(docLeakExemptKey),
 	register(governedRootsKey),
 	register(laneConcurrencyCapKey),
+	register(leakNamesKey),
 	register(machineryLapsKey),
 	register(parkCauseKey),
 	register(portabilityKey),
