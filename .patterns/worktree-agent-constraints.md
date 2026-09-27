@@ -32,7 +32,12 @@ replaces the default worktree-creation logic is declared and live (ADR
 [0337](../.decisions/0337-worktree-provisioning-rehomed-onto-repo-settings.md)), so the
 base path is now ours to choose; it deliberately keeps laying trees at
 `<repo>/.claude/worktrees/<name>`, because moving them is a separate decision from
-provisioning them. A base with no `.claude/` substring would dodge the protected-path
+provisioning them. That base is single by construction, not by assumption: the hook
+resolves `<repo>` with `git rev-parse --show-toplevel` in the envelope's `cwd`, so a
+session launched in a subdirectory still gets its tree under the repository toplevel,
+and a `cwd` in no repository refuses the spawn rather than falling back to itself
+([`worktree-create.ts`](../packages/fabrika-cli/src/hook/worktree-create.ts),
+`planAtToplevel`). A base with no `.claude/` substring would dodge the protected-path
 guard entirely. Making that move
 is NOT free: the biome config and [ADR 0060](../.decisions/0060-worktree-lint-changed-paths.md)
 key on the literal base segment `/.claude/worktrees/`, so both would have to track a new base in

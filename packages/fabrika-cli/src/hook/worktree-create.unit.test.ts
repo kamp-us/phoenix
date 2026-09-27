@@ -1,21 +1,22 @@
 import {describe, expect, it} from "vitest";
 import {loadGoldenPayload} from "../golden-fixture.ts";
-import {childEnv, planWorktree, toolchainPath, worktreePathFor} from "./worktree-create.ts";
+import {
+	childEnv,
+	planAtToplevel,
+	readWorktreeRequest,
+	toolchainPath,
+	worktreePathFor,
+} from "./worktree-create.ts";
 
-describe("planning a worktree from a WorktreeCreate payload", () => {
-	it("constructs the path from the captured envelope's cwd and name", () => {
+describe("reading a worktree request from a WorktreeCreate payload", () => {
+	it("reads the captured envelope's cwd and name as a request, not yet a plan", () => {
 		const payload = loadGoldenPayload(
 			import.meta.url,
 			"__fixtures__/worktree-create.payload.golden.json",
 		);
-		const read = planWorktree(payload);
-		expect(read).toEqual({
-			_tag: "Plan",
-			plan: {
-				repoRoot: "/private/tmp/fabrika-worktree-capture/repo",
-				name: "capture-probe",
-				worktreePath: "/private/tmp/fabrika-worktree-capture/repo/.claude/worktrees/capture-probe",
-			},
+		expect(readWorktreeRequest(payload)).toEqual({
+			_tag: "Request",
+			request: {cwd: "/private/tmp/fabrika-worktree-capture/repo", name: "capture-probe"},
 		});
 	});
 
@@ -24,14 +25,12 @@ describe("planning a worktree from a WorktreeCreate payload", () => {
 	});
 
 	it.each([
-		["an absent cwd", {name: "agent-1"}, "carries no `cwd`"],
-		["a relative cwd", {cwd: "repo", name: "agent-1"}, "not an absolute path"],
-		["an absent name", {cwd: "/repo"}, "carries no `name`"],
-		["a blank name", {cwd: "/repo", name: "   "}, "carries no `name`"],
+		["an absent cwd", {name: "agent-1"}, "the payload carries no `cwd`"],
+		["a relative cwd", {cwd: "repo", name: "agent-1"}, "`cwd` is not an absolute path: repo"],
+		["an absent name", {cwd: "/repo"}, "the payload carries no `name`"],
+		["a blank name", {cwd: "/repo", name: "   "}, "the payload carries no `name`"],
 	])("refuses %s rather than composing a path from it", (_label, payload, reason) => {
-		const read = planWorktree(payload);
-		expect(read._tag).toBe("Unplannable");
-		if (read._tag === "Unplannable") expect(read.reason).toContain(reason);
+		expect(readWorktreeRequest(payload)).toEqual({_tag: "Unplannable", reason});
 	});
 
 	/**
@@ -45,7 +44,33 @@ describe("planning a worktree from a WorktreeCreate payload", () => {
 		[".hidden"],
 		["-leading-dash"],
 	])("refuses the traversing or odd slug %s before any git command runs", (name) => {
-		expect(planWorktree({cwd: "/repo", name})._tag).toBe("Unplannable");
+		expect(readWorktreeRequest({cwd: "/repo", name})).toEqual({
+			_tag: "Unplannable",
+			reason: `\`name\` is not a plain worktree slug and could escape the worktree root: ${name}`,
+		});
+	});
+});
+
+describe("planning a worktree at the toplevel the request's cwd resolved to", () => {
+	const request = {cwd: "/repo/packages/fabrika-cli", name: "agent-1"};
+
+	it("roots the plan at the resolved toplevel, never at the session's cwd", () => {
+		expect(planAtToplevel(request, "/repo\n")).toEqual({
+			_tag: "Plan",
+			plan: {repoRoot: "/repo", name: "agent-1", worktreePath: "/repo/.claude/worktrees/agent-1"},
+		});
+	});
+
+	it.each([
+		["a failed resolution", null],
+		["an empty answer", ""],
+		["a relative answer", "repo"],
+		["a multi-line answer", "/repo\n/other"],
+	])("refuses %s and names the cwd that did not resolve", (_label, toplevel) => {
+		expect(planAtToplevel(request, toplevel)).toEqual({
+			_tag: "Unplannable",
+			reason: "`cwd` resolves to no repository toplevel: /repo/packages/fabrika-cli",
+		});
 	});
 });
 

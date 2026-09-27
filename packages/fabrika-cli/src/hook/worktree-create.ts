@@ -10,11 +10,27 @@
  * Two facts this module encodes are captured, not assumed: the payload carries `cwd` and `name` and
  * **no** `worktree_path` or `base_ref`, and the path is therefore *constructed* rather than read.
  * `__fixtures__/worktree-create.payload.golden.json` is the capture.
+ *
+ * `cwd` is the session's working directory, which is not always the repository root. So it makes a
+ * {@link WorktreeRequest} and never a plan: only {@link planAtToplevel}, handed what
+ * `git rev-parse --show-toplevel` printed in that directory, composes a {@link WorktreePlan}.
  */
+
+/** A payload that passed every check needing no subprocess — where the session is, not the repo. */
+export interface WorktreeRequest {
+	/** The session's working directory, absolute. Possibly a subdirectory of the repository. */
+	readonly cwd: string;
+	/** The harness's suggested slug, verbatim. */
+	readonly name: string;
+}
+
+export type RequestRead =
+	| {readonly _tag: "Request"; readonly request: WorktreeRequest}
+	| {readonly _tag: "Unplannable"; readonly reason: string};
 
 /** Where a hook-provisioned worktree goes, and the repo the git commands run in. */
 export interface WorktreePlan {
-	/** The repository root the payload named. Every git command runs here, not in `process.cwd()`. */
+	/** The toplevel the request's `cwd` resolved to. Every git command runs here, not in `process.cwd()`. */
 	readonly repoRoot: string;
 	/** The harness's suggested slug, verbatim. */
 	readonly name: string;
@@ -222,19 +238,19 @@ const COMMIT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 export const isCommitId = (candidate: string): boolean => COMMIT_ID.test(candidate);
 
 /**
- * Turn a captured `WorktreeCreate` payload into the plan, or say why there is none.
+ * Turn a captured `WorktreeCreate` payload into a request, or say why there is none.
  *
  * Every arm is fail-closed on purpose: the verb's caller is the harness, a refusal there blocks the
  * spawn, and a spawn that never happens is strictly better than one landing in a tree this hook
- * could not fully build.
+ * could not fully build. Nothing here runs a subprocess, so each refusal lands before any git does.
  */
-export const planWorktree = (payload: Record<string, unknown>): PlanRead => {
-	const repoRoot = typeof payload.cwd === "string" ? payload.cwd.trim() : "";
+export const readWorktreeRequest = (payload: Record<string, unknown>): RequestRead => {
+	const cwd = typeof payload.cwd === "string" ? payload.cwd.trim() : "";
 	const name = typeof payload.name === "string" ? payload.name.trim() : "";
 
-	if (repoRoot === "") return {_tag: "Unplannable", reason: "the payload carries no `cwd`"};
-	if (!repoRoot.startsWith("/")) {
-		return {_tag: "Unplannable", reason: `\`cwd\` is not an absolute path: ${repoRoot}`};
+	if (cwd === "") return {_tag: "Unplannable", reason: "the payload carries no `cwd`"};
+	if (!cwd.startsWith("/")) {
+		return {_tag: "Unplannable", reason: `\`cwd\` is not an absolute path: ${cwd}`};
 	}
 	if (name === "") return {_tag: "Unplannable", reason: "the payload carries no `name`"};
 	if (!SAFE_NAME.test(name)) {
@@ -244,7 +260,31 @@ export const planWorktree = (payload: Record<string, unknown>): PlanRead => {
 		};
 	}
 
-	return {_tag: "Plan", plan: {repoRoot, name, worktreePath: worktreePathFor(repoRoot, name)}};
+	return {_tag: "Request", request: {cwd, name}};
+};
+
+/** Run in the request's `cwd`; its stdout is the only root {@link planAtToplevel} accepts. */
+export const showToplevelArgs: ReadonlyArray<string> = ["rev-parse", "--show-toplevel"];
+
+/**
+ * The plan rooted at the toplevel `cwd` resolved to, or a refusal naming the `cwd` that did not.
+ *
+ * `toplevel` is `null` when the resolution itself failed; anything but one absolute path counts the
+ * same. There is no fallback to `cwd`: a tree under a subdirectory lands where the root-anchored
+ * ignore rules and the single worktree base do not reach.
+ */
+export const planAtToplevel = (request: WorktreeRequest, toplevel: string | null): PlanRead => {
+	const repoRoot = toplevel?.trim() ?? "";
+	if (!repoRoot.startsWith("/") || repoRoot.includes("\n")) {
+		return {
+			_tag: "Unplannable",
+			reason: `\`cwd\` resolves to no repository toplevel: ${request.cwd}`,
+		};
+	}
+	return {
+		_tag: "Plan",
+		plan: {repoRoot, name: request.name, worktreePath: worktreePathFor(repoRoot, request.name)},
+	};
 };
 
 /**

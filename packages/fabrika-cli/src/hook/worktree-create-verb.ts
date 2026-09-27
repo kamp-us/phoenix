@@ -44,14 +44,16 @@ import {
 	dropBaseRefArgs,
 	fetchBaseArgs,
 	isCommitId,
-	planWorktree,
+	planAtToplevel,
 	pruneWorktreesArgs,
 	REAP_LIMIT,
 	REAP_TIMEOUT_SECONDS,
 	RECOVERY_ATTEMPTS,
+	readWorktreeRequest,
 	reapArgs,
 	recoveryBackoffMs,
 	resolveBaseArgs,
+	showToplevelArgs,
 	type WorktreePlan,
 } from "./worktree-create.ts";
 
@@ -384,16 +386,29 @@ export const runWorktreeCreate = ({
 			);
 		}
 
-		const planned = planWorktree(read.envelope.payload);
+		const requested = readWorktreeRequest(read.envelope.payload);
+		if (requested._tag === "Unplannable") {
+			return refuse(UNPLANNABLE_WORKTREE, `${VERB}: ${requested.reason}`);
+		}
+
+		const child = childEnv(env);
+		const resolved = yield* git(showToplevelArgs, requested.request.cwd, child);
+		const planned = planAtToplevel(
+			requested.request,
+			succeeded(resolved) && resolved._tag === "Ran"
+				? new TextDecoder().decode(resolved.stdout)
+				: null,
+		);
 		if (planned._tag === "Unplannable") {
-			return refuse(UNPLANNABLE_WORKTREE, `${VERB}: ${planned.reason}`);
+			return refuse(UNPLANNABLE_WORKTREE, `${VERB}: ${planned.reason}`, [
+				`${VERB}: git rev-parse --show-toplevel: ${describeOutcome(resolved)}`,
+			]);
 		}
 
 		const scope = `${VERB}: ${dryRun ? "would provision" : "provisioning"} ${planned.plan.worktreePath}`;
 		if (dryRun) return answer(planned.plan.worktreePath, [scope]);
 
 		const nonce = randomUUID().replaceAll("-", "").slice(0, 12);
-		const child = childEnv(env);
 		const swept = yield* reapFirst(cli, planned.plan.repoRoot, child);
 		return yield* provision(planned.plan, child, nonce).pipe(
 			Effect.map((outcome) => ({...outcome, stderr: [scope, ...swept, ...outcome.stderr]})),
