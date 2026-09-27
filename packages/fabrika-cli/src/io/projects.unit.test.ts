@@ -17,8 +17,10 @@ import {
 	postStatusUpdate,
 	readItems,
 	readItemValues,
+	readIterationHistory,
 	readProjectByNumber,
 	readRepository,
+	readWeekField,
 	scopeWithheld,
 	setFieldValue,
 	updateView,
@@ -513,5 +515,45 @@ describe("the table's sync reads", () => {
 			itemId: "PVTI_1",
 			fieldId: "F_section",
 		});
+	});
+});
+
+describe("the Week field's history", () => {
+	const week = {
+		__typename: "ProjectV2IterationField",
+		configuration: {
+			iterations: [{id: "it_3", title: "Sep 28", startDate: "2026-09-28", duration: 7}],
+			completedIterations: [
+				{id: "it_1", title: "Sep 14", startDate: "2026-09-14", duration: 7},
+				{id: "it_2", title: "Sep 21", startDate: "2026-09-21", duration: 7},
+			],
+		},
+	};
+
+	it("reads the running iterations apart from the finished ones", async () => {
+		const {result} = await runWith([reply({data: {node: {field: week}}})], () =>
+			readIterationHistory(TOKEN, "PVT_1", "Week"),
+		);
+
+		expect(result).toEqual({
+			_tag: "Ok",
+			value: {
+				running: [{id: "it_3", title: "Sep 28", startDate: "2026-09-28", duration: 7}],
+				completed: [
+					{id: "it_1", title: "Sep 14", startDate: "2026-09-14", duration: 7},
+					{id: "it_2", title: "Sep 21", startDate: "2026-09-21", duration: 7},
+				],
+			},
+		});
+	});
+
+	it("answers null for a project with no iteration field under that name", () => {
+		expect(readWeekField({node: {field: null}})).toEqual({_tag: "Ok", value: null});
+	});
+
+	it("fails rather than read a missing finished list as none", () => {
+		const cut = {...week, configuration: {iterations: week.configuration.iterations}};
+
+		expect(readWeekField({node: {field: cut}})._tag).toBe("Failure");
 	});
 });

@@ -646,7 +646,7 @@
 				},
 				"fabrikaShare": {
 					"type": "object",
-					"description": "The flagged target share of weekly spend on fabrika's own work. Default 40 percent for the first 4 tables, then 30.",
+					"description": "The flagged target share of weekly spend on fabrika's own work, and the labels that mark that work. Default 40 percent for the first 4 tables, then 30, with no label.",
 					"properties": {
 						"percent": {
 							"type": "number",
@@ -664,6 +664,15 @@
 							"exclusiveMinimum": 0,
 							"maximum": 100,
 							"description": "The target share, in percent, after that. Default 30."
+						},
+						"labels": {
+							"type": "array",
+							"items": {
+								"type": "string",
+								"minLength": 1
+							},
+							"uniqueItems": true,
+							"description": "The issue labels that mark fabrika's own work; a lane on an issue carrying any of them counts toward the share. Default none, so nothing counts until the repo names its labels."
 						}
 					},
 					"additionalProperties": false

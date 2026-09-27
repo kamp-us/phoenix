@@ -17,7 +17,11 @@ import {asksOf, type LaneRecord} from "../wire/lane-record.ts";
 
 export type Spend =
 	| {readonly _tag: "Measured"; readonly usd: number}
-	| {readonly _tag: "Unmeasured"; readonly lanes: number};
+	/**
+	 * `measuredUsd` is what the measured lanes add up to: a floor on the real spend, never the spend.
+	 * It is what lets a flag prove a row over its size while one of its lanes went unmeasured.
+	 */
+	| {readonly _tag: "Unmeasured"; readonly lanes: number; readonly measuredUsd: number};
 
 export interface Tally {
 	/** Lanes counted: one per distinct `startedAt` inside the window. */
@@ -60,10 +64,14 @@ export const tally = (records: ReadonlyArray<LaneRecord>, since: string | null):
 		asks: lanes.reduce((sum, record) => sum + asksOf(record), 0),
 		spend:
 			unmeasured > 0
-				? {_tag: "Unmeasured", lanes: unmeasured}
+				? {_tag: "Unmeasured", lanes: unmeasured, measuredUsd: cents(usd)}
 				: {_tag: "Measured", usd: cents(usd)},
 	};
 };
+
+/** The dollars the measured lanes add up to — the whole spend when every lane was measured. */
+export const measuredUsd = (spend: Spend): number =>
+	spend._tag === "Measured" ? spend.usd : spend.measuredUsd;
 
 export const addTallies = (a: Tally, b: Tally): Tally => ({
 	lanes: a.lanes + b.lanes,
@@ -75,6 +83,7 @@ export const addTallies = (a: Tally, b: Tally): Tally => ({
 					lanes:
 						(a.spend._tag === "Unmeasured" ? a.spend.lanes : 0) +
 						(b.spend._tag === "Unmeasured" ? b.spend.lanes : 0),
+					measuredUsd: cents(measuredUsd(a.spend) + measuredUsd(b.spend)),
 				}
 			: {_tag: "Measured", usd: cents(a.spend.usd + b.spend.usd)},
 });

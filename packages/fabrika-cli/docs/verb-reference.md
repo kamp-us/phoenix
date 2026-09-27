@@ -227,8 +227,9 @@ Read the board, settings and installed skill roster for a new session. Use `stat
 
 ## The `table` group
 
-Set up the repository's weekly betting table on GitHub Projects (v2) and fill its columns from lane
-records. Use `table --help`, `table setup --help` and `table sync --help`. The token needs the
+Set up the repository's weekly betting table on GitHub Projects (v2), fill its columns from lane
+records, and read the flags that bring work back to it. Use `table --help`, `table setup --help`,
+`table sync --help` and `table flags --help`. The token needs the
 `project` scope; the
 [adopter guide](../../../claude-plugins/fabrika/guide/adopt-fabrika-in-a-new-repo.md#11-set-up-the-betting-table)
 covers the scope and the two manual steps setup prints.

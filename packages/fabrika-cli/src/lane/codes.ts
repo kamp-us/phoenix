@@ -693,3 +693,12 @@ export const LANE_NOT_TERMINAL = 69;
  * @ruling https://github.com/kamp-us/phoenix/issues/9855
  */
 export const FACT_REFUSED = 70;
+
+/**
+ * `lane brief` stopped the lane: a table row standing for its issue has spent the stop multiple of
+ * its size (`table.stopMultiple`, 2 shipped). No shell is briefed; record the park the refusal names
+ * (`--cause size-stop`) and the table decides whether to extend, re-shape or drop the work.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ */
+export const SIZE_STOPPED = 71;

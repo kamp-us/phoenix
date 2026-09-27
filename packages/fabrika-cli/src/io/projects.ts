@@ -1150,6 +1150,79 @@ export const readBoard = (
 		return failed(`project ${projectId} holds more items than ${PAGE_CAP} pages hold`);
 	});
 
+/** An iteration field's whole history: the iterations it still runs and those it has finished. */
+export interface IterationHistory {
+	readonly running: ReadonlyArray<BoardIteration>;
+	readonly completed: ReadonlyArray<BoardIteration>;
+}
+
+const WEEK_QUERY = `
+query TableWeek($id: ID!, $week: String!) {
+  node(id: $id) {
+    ... on ProjectV2 {
+      field(name: $week) {
+        __typename
+        ... on ProjectV2IterationField {
+          configuration {
+            iterations { id title startDate duration }
+            completedIterations { id title startDate duration }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+const iterationList = (nodes: unknown): Attempt<ReadonlyArray<BoardIteration>> => {
+	if (!Array.isArray(nodes)) return fail("GitHub answered 200 but an iteration list is missing");
+	const iterations: BoardIteration[] = [];
+	for (const node of nodes) {
+		if (
+			!isRecord(node) ||
+			!str(node.id) ||
+			!str(node.title) ||
+			!str(node.startDate) ||
+			typeof node.duration !== "number"
+		) {
+			return fail("GitHub answered 200 but one iteration is malformed");
+		}
+		iterations.push({
+			id: node.id,
+			title: node.title,
+			startDate: node.startDate,
+			duration: node.duration,
+		});
+	}
+	return ok(iterations);
+};
+
+/**
+ * One iteration field's history off a `TableWeek` answer; `null` when the project has no iteration
+ * field under that name. Exported so a recorded answer can prove the parse.
+ */
+export const readWeekField = (data: Record<string, unknown>): Attempt<IterationHistory | null> => {
+	const project = isRecord(data.node) ? data.node : null;
+	if (project === null) return fail("GitHub answered 200 but names no project");
+	const field = isRecord(project.field) ? project.field : null;
+	if (field === null || field.__typename !== "ProjectV2IterationField") return ok(null);
+	const config = isRecord(field.configuration) ? field.configuration : null;
+	if (config === null)
+		return fail("GitHub answered 200 but the iteration field has no configuration");
+	const running = iterationList(config.iterations);
+	if (running._tag === "Failure") return running;
+	const completed = iterationList(config.completedIterations);
+	if (completed._tag === "Failure") return completed;
+	return ok({running: running.value, completed: completed.value});
+};
+
+/** The iteration field `week` names: every iteration it runs, and every one it has finished. */
+export const readIterationHistory = (
+	token: string,
+	projectId: string,
+	week: string,
+): Api<ProjectsAnswer<IterationHistory | null>> =>
+	exchange(token, WEEK_QUERY, {id: projectId, week}, readWeekField);
+
 const STATUS_UPDATE = `
 mutation TableStatusUpdate($input: CreateProjectV2StatusUpdateInput!) {
   createProjectV2StatusUpdate(input: $input) { statusUpdate { id } }

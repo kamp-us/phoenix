@@ -1,5 +1,5 @@
 /**
- * The `table` verb group — `fabrika table <setup|sync>`.
+ * The `table` verb group — `fabrika table <setup|sync|flags>`.
  *
  * The adapter and nothing else: flags, the pure verb, and its emitted outcome. Every leaf is a
  * `leafCommand`, never a bare `Command.make`, so the excess-operand guard covers it.
@@ -9,6 +9,7 @@ import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
+import {flagsBoard, runFlags} from "./flags-verb.ts";
 import {runSetup} from "./setup-verb.ts";
 import {runSync, syncBoard} from "./sync-verb.ts";
 
@@ -73,8 +74,38 @@ const sync = leafCommand(
 	),
 );
 
+const flags = leafCommand(
+	"flags",
+	{
+		issues: Argument.integer("issue").pipe(
+			Argument.withDescription(
+				"an issue whose rows to flag; none flags the whole table and asks the table-wide checks",
+			),
+			Argument.atLeast(0),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({issues, repo}) {
+		yield* emit(
+			yield* runFlags({
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+				issues,
+				now: new Date(),
+				board: flagsBoard,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Read what the next table must look at; writes nothing."),
+	Command.withDescription(
+		'Read the table and name what needs a person, each flag with a one-line rec. Read-only: it writes no field and reverts no value. Per group row, judged once on the head over the sums of the head and every member (the same sums `table sync` writes, and a `bet` row counts only lanes ending at or after it became `bet`), and only while the head or a member is `bet` or `in lane`: over-size, when Spent $ passes the Size\'s `appetiteSizes` dollars (an epic row\'s size counts once per sub-issue) — the lane keeps going, and the flag reads `stopped` at `table.stopMultiple` times the size, where `lane brief` stops the lane (exit 71, park cause size-stop); asks, at `table.asksFlag` asks or more whatever the size; stuck, when nothing happened on any of the group\'s issues (a lane record ending, or the Stage being set) for `table.stuckDays` days, naming the wait or park it knows of, and never while a lane record declares a wait (`lane wait`) until a date still to come. Per `bet` row: unknown-decider, when the account that set Stage `bet` is not in the control-plane set `.github/CODEOWNERS` names — the bet stands as set. With no issue named it also asks two table-wide checks: campaigns, when ROADMAP\'s `## Campaigns` table has more `active` rows than `table.activeCampaignFlag`; and fabrika-share, when lanes on issues carrying a `table.fabrikaShare.labels` label took more of the current Week iteration\'s spend than `table.fabrikaShare.percent` for the first `forTables` tables, then `thenPercent`. A check it could not answer — a lane unmeasured, a set or roadmap that would not read, no label declared, no current iteration — is named under `unread`, never passed. Prints {"answer":"flagged"|"clear","repo":"…","project":{"number":n,"title":"…","url":"…"},"scope":"table"|"issues","rows":[n…],"flags":[{"flag":"over-size"|"asks"|"stuck"|"unknown-decider"|"campaigns"|"fabrika-share",…,"rec":"…"}],"unread":[{"check":"…","issue":n|null,"reason":"…"}]}; row flags carry "head", "group" ("epic"|"chain"|null) and "covers". The token needs the `project` scope. Exits 1 (usage), 7 (no table project — run `table setup` — or a named number is no issue), 11 (the project, an issue or its comments could not be read — UNKNOWN), 12 (the `table` or `appetiteSizes` block in .fabrika.jsonc does not decode), 20 (the token lacks the `project` scope — run `gh auth refresh -h github.com -s project`), 22 (two open projects carry the table\'s title — set `table.project.number`), 24 (an issue carries a lane record that does not read). Example: fabrika table flags',
+	),
+);
+
 export const tableCommand = Command.make("table").pipe(
-	Command.withSubcommands([setup, sync]),
+	Command.withSubcommands([setup, sync, flags]),
 	Command.withShortDescription("Set up and fill the weekly betting table on GitHub Projects."),
 	Command.withDescription(
 		"The weekly betting table: a GitHub project per repository where control-plane owners decide what gets bet on. Only this group touches Projects, so only its verbs need the token's `project` scope.",

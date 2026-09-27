@@ -269,3 +269,16 @@ a rate card exists. It never changes a Stage of `bet`, `not now` or `check`. A l
 with no Section yet, lands under Outside the bets; a row already under another Section keeps it. An
 epic, or a row with open blockers, shows as one group row that sums its members; the members show
 only in the Group members view. Run `fabrika table sync` with no issue to refresh every row.
+
+**Flags bring work back to the table; nothing refuses it.** `fabrika table flags` reads the table and
+names what needs a person, each with a one-line rec. A live row is flagged when it spends past its
+size, reaches the asks threshold, or goes quiet for the stuck days (a lane that ran `lane wait` is
+left alone until its date). A `bet` set by someone outside the CODEOWNERS control-plane set is
+flagged and left as set. The whole-table run also flags more active campaigns than the cap, and
+fabrika's own work taking more than its share of the week's spend. That share counts only issues
+carrying a label you name in `table.fabrikaShare.labels`, so it stays unread until you name one.
+The one stop: a lane whose row has spent `table.stopMultiple` times its size (2 by default) gets no
+next shell. `lane brief` refuses at exit 71 and the driver parks the lane with cause `size-stop`.
+The stop needs the `project` scope on the driver's token. Without it, a repo whose `.fabrika.jsonc`
+has no `table` block is not stopped: `lane brief` goes on and prints `size stop NOT checked`. Once
+you declare `table.project.number`, a missing scope refuses the brief at 11 instead.

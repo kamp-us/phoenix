@@ -60,6 +60,11 @@ export interface FabrikaShare {
 	readonly percent: number;
 	readonly forTables: number;
 	readonly thenPercent: number;
+	/**
+	 * The issue labels that mark fabrika's own work. Shipped empty, because which label means that is
+	 * a fact about one repository: with none declared nothing counts, and the share flag says so.
+	 */
+	readonly labels: ReadonlyArray<string>;
 }
 
 /** Which project the table lives in. A `null` field is derived: the repo's owner, or a new project. */
@@ -97,7 +102,7 @@ export const SHIPPED_TABLE: TableSettings = {
 	asksFlag: 3,
 	stuckDays: 3,
 	activeCampaignFlag: 3,
-	fabrikaShare: {percent: 40, forTables: 4, thenPercent: 30},
+	fabrikaShare: {percent: 40, forTables: 4, thenPercent: 30, labels: []},
 	checkDelayDays: 14,
 	project: {owner: null, number: null},
 };
@@ -164,6 +169,20 @@ const sectionList: Field<ReadonlyArray<string>> = (raw, path) => {
 	return {_tag: "Value", value: names};
 };
 
+const labelList: Field<ReadonlyArray<string>> = (raw, path) => {
+	if (!Array.isArray(raw)) return malformed(`${named(path)} is not a list of label names`);
+	const names: string[] = [];
+	for (const entry of raw) {
+		if (typeof entry !== "string" || entry.trim() === "") {
+			return malformed(`${named(path)} holds an entry that is not a label name`);
+		}
+		if (names.includes(entry.trim()))
+			return malformed(`${named(path)} names "${entry.trim()}" twice`);
+		names.push(entry.trim());
+	}
+	return {_tag: "Value", value: names};
+};
+
 /** An object sub-key: unknown keys refuse, absent keys take the shipped value. */
 const objectOf =
 	<A extends object>(fields: {readonly [K in keyof A]: Field<A[K]>}, shipped: A): Field<A> =>
@@ -213,7 +232,7 @@ const SUB_KEYS: {readonly [K in keyof TableSettings]: Field<TableSettings[K]>} =
 	stuckDays: positiveInteger,
 	activeCampaignFlag: positiveInteger,
 	fabrikaShare: objectOf<FabrikaShare>(
-		{percent, forTables: positiveInteger, thenPercent: percent},
+		{percent, forTables: positiveInteger, thenPercent: percent, labels: labelList},
 		SHIPPED_TABLE.fabrikaShare,
 	),
 	checkDelayDays: positiveInteger,
@@ -281,11 +300,18 @@ export const tableKey: KeyGroup<TableSettings> = {
 			fabrikaShare: {
 				type: "object",
 				description:
-					"The flagged target share of weekly spend on fabrika's own work. Default 40 percent for the first 4 tables, then 30.",
+					"The flagged target share of weekly spend on fabrika's own work, and the labels that mark that work. Default 40 percent for the first 4 tables, then 30, with no label.",
 				properties: {
 					percent: percentage("The target share, in percent, for the first tables. Default 40."),
 					forTables: integer("How many tables the first share holds for. Default 4."),
 					thenPercent: percentage("The target share, in percent, after that. Default 30."),
+					labels: {
+						type: "array",
+						items: {type: "string", minLength: 1},
+						uniqueItems: true,
+						description:
+							"The issue labels that mark fabrika's own work; a lane on an issue carrying any of them counts toward the share. Default none, so nothing counts until the repo names its labels.",
+					},
 				},
 				additionalProperties: false,
 			},

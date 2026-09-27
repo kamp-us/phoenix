@@ -29,6 +29,7 @@ import {Effect, type FileSystem, Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import type {EntrypointRead} from "../delegate/entrypoint.ts";
 import {getIssue, resolveRepo} from "../io/issues.ts";
+import type {SizeStop} from "../table/size-stop.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	type ArtifactUrl,
@@ -56,6 +57,7 @@ import {
 	PR_AMBIGUOUS,
 	PROOF_ABSENT,
 	PROOF_AMBIGUOUS,
+	SIZE_STOPPED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {foldLog, resolveTask} from "./fold.ts";
@@ -78,7 +80,54 @@ export interface BriefOptions extends LaneRef {
 	 * rather than the developing repo's in-tree path.
 	 */
 	readonly entrypoint: EntrypointRead;
+	/**
+	 * Whether the issue's table row has spent its stop, read before any shell is briefed. Absent, no
+	 * table is read, which is how a caller with no table in reach asks for the brief alone.
+	 */
+	readonly sizeStop?: (
+		repo: string,
+		issue: number,
+	) => Effect.Effect<
+		SizeStop,
+		never,
+		FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+	>;
 }
+
+/**
+ * The refusal a lane at its size stop owes instead of a brief, `null` when it may go on. A table
+ * that could not be read is UNKNOWN, never a pass: the stop is the one guardrail behind the flags.
+ * `Unchecked` is the one pass without a read, and it says so on stderr.
+ */
+const sizeStopRefusal = (
+	stop: SizeStop,
+	lane: string,
+	task: string,
+	notes: string[],
+): VerbOutcome | null => {
+	switch (stop._tag) {
+		case "Clear":
+			notes.push(`${VERB}: size stop: ${stop.note}.`);
+			return null;
+		case "Unchecked":
+			notes.push(
+				`${VERB}: size stop NOT checked: ${stop.reason} — .fabrika.jsonc declares no \`table\` block, so nothing says a table exists and the lane goes on. Grant the scope (\`gh auth refresh -h github.com -s project\`) to check it, or declare \`table.project.number\` to make an unreadable table UNKNOWN (11).`,
+			);
+			return null;
+		case "Unknown":
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot read the table for the size stop: ${stop.reason.replace(/\.$/, "")} — whether this lane has spent past its stop is UNKNOWN.`,
+				notes,
+			);
+		case "Stopped":
+			return refuse(
+				SIZE_STOPPED,
+				`${VERB}: #${stop.flag.head}'s row has spent $${stop.flag.spentUsd}, past the stop for its ${stop.flag.size} size of $${stop.flag.limitUsd} — the lane stops here and no shell is briefed. Park it: \`fabrika lane transition ${lane} BLOCKED --task ${task} --cause size-stop\`.`,
+				[...notes, `${VERB}: rec: ${stop.rec}`],
+			);
+	}
+};
 
 type UrlRead =
 	| {readonly _tag: "Url"; readonly url: ArtifactUrl}
@@ -309,6 +358,15 @@ export const runBrief = (
 		}
 		const read = yield* issueUrl(VERB, repo.value, issue, notes);
 		if (read._tag === "Refused") return read.outcome;
+		if (options.sizeStop !== undefined) {
+			const stopped = sizeStopRefusal(
+				yield* options.sizeStop(repo.value, issue),
+				options.lane,
+				task,
+				notes,
+			);
+			if (stopped !== null) return stopped;
+		}
 
 		const epic = epicOf(Object.keys(loaded.lane.tasks));
 		if (epic !== null && task !== `epic_${epic}`) {

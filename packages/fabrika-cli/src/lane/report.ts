@@ -653,6 +653,24 @@ export const PARK_CAUSES = {
 		route: "driver",
 		remedy: null,
 	},
+	/**
+	 * `lane brief` refused at `71`: a table row standing for this lane's issue has spent the stop
+	 * multiple of its size, so no next shell is briefed. It is the one stop the table's rulings allow;
+	 * everything short of it is a flag and the lane keeps going.
+	 *
+	 * No remedy: the spend does not go down, so no verb can prove the cause gone. What moves the lane
+	 * is the table's answer — a new bet restarts the count, a larger size or stop multiple lifts it,
+	 * or the work is dropped.
+	 *
+	 * Route `founder`: extend, re-shape or drop is a call about what the work is worth, which is the
+	 * table's and no driver's.
+	 */
+	"size-stop": {
+		meaning:
+			"a table row standing for this lane's issue spent the stop multiple of its size, so the lane stopped for the table to extend, re-shape or drop it",
+		route: "founder",
+		remedy: null,
+	},
 } as const satisfies Record<string, ParkCauseEntry>;
 
 export type ParkCause = keyof typeof PARK_CAUSES;
