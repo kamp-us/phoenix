@@ -41,13 +41,14 @@ sends one a layer writing to a channel nobody reads
   on a phase line — it is the event four pieces of state wait on.
 - [`core/machine.ts`](../packages/tuval/src/ai-agent/core/machine.ts) — the `prompt` cell, which has an
   arm per case and records every answer as data rather than throwing it. At `ready` the send is
-  admitted. At `starting` or `prompting` it is **queued** (`enqueue`, bounded by `queueLimit` in
+  admitted unless earlier prompts are still queued; then it joins them. At `starting` or `prompting`
+  it is **queued** (`enqueue`, bounded by `queueLimit` in
   [`core/queue.ts`](../packages/tuval/src/ai-agent/core/queue.ts)) and answered `promptQueueFull` only
   once the queue is full — a prompt written while the turn runs waits rather than being refused
   ([#8159](https://github.com/kamp-us/phoenix/issues/8159),
   [#9805](https://github.com/kamp-us/phoenix/issues/9805)). Every other phase, `idle`,
   `reconnecting` or `gone`, is `promptRefused`. What drains the queue is `settleQueue`,
-  and it admits the head when startup or a turn lands on `ready` (at `gone` or `idle` it
+  and it admits the head at `ready` once no earlier send remains pending (at `gone` or `idle` it
   releases what is queued with `promptUnqueued` instead).
 
 So a session wedged at `prompting` by a missing turn-end `ready` does not refuse anything at first:
