@@ -37,6 +37,7 @@ import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Deferred, Effect, type Option, type Redacted, Semaphore, Stream} from "effect";
 import {Socket, type SocketServer} from "effect/unstable/socket";
 import type {ProjectLabel} from "../../projects/labels.ts";
+import type {RecommendAnswer, RecommendPrompt} from "../../projects/recommend-prompt.ts";
 import type {TrustAnswer, TrustPrompt} from "../../projects/trust-prompt.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {showsInAWindow} from "../picker/entries.ts";
@@ -53,6 +54,7 @@ import {
 	projectsFrame,
 	REGISTRY_KIND,
 	type RegistryFrame,
+	recommendPromptsFrame,
 	type ServerFrame,
 	spellReplyFrame,
 	TABLE_KIND,
@@ -105,16 +107,24 @@ export interface ServeOptions {
 	readonly projects: Stream.Stream<ReadonlyArray<ProjectLabel>>;
 	/** The "Trust this folder?" questions every page is sent, and where a page's answer goes. */
 	readonly trust: TrustChannel;
+	/** The recommended-package questions every page is sent, and where a page's answer goes. */
+	readonly recommend: RecommendChannel;
 }
 
 /**
- * The trust questions an open is waiting on (`../../projects/TrustPrompts.ts`), as far as a socket
- * needs them: the list to send, and the one place an answer is delivered (#9693).
+ * Questions the kernel waits on the person to answer (`../../projects/questions.ts`), as far as a
+ * socket needs them: the list to send, and the one place an answer is delivered.
  */
-export interface TrustChannel {
-	readonly pending: Stream.Stream<ReadonlyArray<TrustPrompt>>;
-	readonly answer: (question: string, answer: TrustAnswer) => Effect.Effect<boolean>;
+export interface QuestionChannel<P, A> {
+	readonly pending: Stream.Stream<ReadonlyArray<P>>;
+	readonly answer: (question: string, answer: A) => Effect.Effect<boolean>;
 }
+
+/** The trust questions an open is waiting on (#9693). */
+export type TrustChannel = QuestionChannel<TrustPrompt, TrustAnswer>;
+
+/** The recommended packages trusted projects are waiting on (#9695). */
+export type RecommendChannel = QuestionChannel<RecommendPrompt, RecommendAnswer>;
 
 export interface TransportServer {
 	readonly port: number;
@@ -237,7 +247,7 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 					options.spells,
 					options.descriptions,
 					options.projects,
-					options.trust,
+					{trust: options.trust, recommend: options.recommend},
 					options.table,
 					pages,
 					catalogLock,
@@ -269,7 +279,7 @@ export const session = Effect.fn("Tuval.transport.session")(function* (
 	spells: SpellChannel,
 	descriptions: Stream.Stream<RegistryDescription>,
 	projects: Stream.Stream<ReadonlyArray<ProjectLabel>>,
-	trust: TrustChannel,
+	questions: Pick<ServeOptions, "trust" | "recommend">,
 	keyTable: PrefixTable,
 	pages: Attached,
 	catalogLock: Semaphore.Semaphore,
@@ -401,7 +411,9 @@ export const session = Effect.fn("Tuval.transport.session")(function* (
 			case "tuval/transport/trust-answer/v1":
 				// An answer to a question no open is waiting on any more — a second page answered it
 				// first, or its open was interrupted — changes nothing, so there is nothing to say back.
-				return Effect.asVoid(trust.answer(frame.question, frame.answer));
+				return Effect.asVoid(questions.trust.answer(frame.question, frame.answer));
+			case "tuval/transport/recommend-answer/v1":
+				return Effect.asVoid(questions.recommend.answer(frame.question, frame.answer));
 			case "tuval/transport/spell-call/v1":
 				// Forked, because a call is the one frame that can take real time — the session list
 				// walks two stores off disk under a 10s deadline — and awaiting it here would stall the
@@ -454,7 +466,13 @@ export const session = Effect.fn("Tuval.transport.session")(function* (
 			scope,
 		);
 		yield* Effect.forkIn(
-			Stream.runForEach(trust.pending, (prompts) => send(trustPromptsFrame(prompts))),
+			Stream.runForEach(questions.trust.pending, (prompts) => send(trustPromptsFrame(prompts))),
+			scope,
+		);
+		yield* Effect.forkIn(
+			Stream.runForEach(questions.recommend.pending, (prompts) =>
+				send(recommendPromptsFrame(prompts)),
+			),
 			scope,
 		);
 		yield* Effect.forkIn(

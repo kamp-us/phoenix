@@ -58,6 +58,16 @@ const declaredFeatureFields = Object.fromEntries(
 
 export const DeclaredFeatures = Schema.Struct(declaredFeatureFields);
 
+/**
+ * An npm package name as a project recommends it: lower case, optionally scoped. A version range is
+ * not part of it, because the version check belongs to the installer (#9668 R2.2, R6.2).
+ */
+export const RecommendedPackage = Schema.String.check(
+	Schema.isPattern(/^(@[a-z0-9~-][a-z0-9._~-]*\/)?[a-z0-9~-][a-z0-9._~-]*$/, {
+		message: "Expected an npm package name, such as @kampus/tuval-worktree",
+	}),
+);
+
 /** Version 1 of the config shape. A config module default-exports its `Encoded` form. */
 export const TuvalConfig = Schema.Struct({
 	version: Schema.Literal(1),
@@ -66,6 +76,13 @@ export const TuvalConfig = Schema.Struct({
 	graph: GraphSchema.pipe(Schema.withDecodingDefaultKey(Effect.succeed({nodes: []}))),
 	/** Key to command string, read by the parser and compiled against the registry at boot. */
 	keys: KeyBindings.pipe(Schema.withDecodingDefaultKey(Effect.succeed({}))),
+	/**
+	 * Program packages a project suggests to whoever opens it. The desk asks about each one and never
+	 * installs anything on its own (#9695, ruling #9668 R6.2). Only a project layer may list any.
+	 */
+	recommends: Schema.Array(RecommendedPackage).pipe(
+		Schema.withDecodingDefaultKey(Effect.succeed([])),
+	),
 });
 
 export type TuvalConfig = typeof TuvalConfig.Type;

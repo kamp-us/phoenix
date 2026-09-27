@@ -107,6 +107,7 @@ describe("OpenProjects", () => {
 			version: 1,
 			projects: [{folder: "/work/a"}, {folder: "/work/b"}],
 			trusted: [],
+			recommends: [],
 			recent: ["/work/b", "/work/a"],
 		});
 		const closing = projects.close("/work/a");
@@ -115,6 +116,7 @@ describe("OpenProjects", () => {
 			version: 1,
 			projects: [{folder: "/work/b"}],
 			trusted: [],
+			recommends: [],
 			recent: ["/work/b", "/work/a"],
 		});
 	});
@@ -130,6 +132,7 @@ describe("OpenProjects", () => {
 			version: 1,
 			projects: [{folder: "/work/a"}],
 			trusted: ["/work/a", "/work/b"],
+			recommends: [],
 			recent: ["/work/a"],
 		});
 	});
@@ -139,6 +142,7 @@ describe("OpenProjects", () => {
 			version: 1,
 			projects: [{folder: "/work/a"}, {folder: "/work/b"}, {folder: "/work/a/"}],
 			trusted: ["/work/a"],
+			recommends: [],
 			recent: [],
 		});
 		assert.deepStrictEqual(restored.projects, []);
@@ -153,6 +157,7 @@ describe("OpenProjects", () => {
 			version: 1,
 			projects: [{folder: "/work/a"}, {folder: "/work/b"}, {folder: "/work/c"}],
 			trusted: [],
+			recommends: [],
 			recent: [],
 		});
 		// The boot project opens first, whether or not the list had it.
@@ -172,12 +177,29 @@ describe("OpenProjects", () => {
 		assert.strictEqual(skipped.skip("/work/a"), skipped);
 	});
 
+	it("keeps a project's recommend answers across its close, and restores them from the record", () => {
+		const answered = opened(OpenProjects.none, "/work/demlik").answerRecommend(
+			"/work/demlik",
+			"tuval-cron",
+			"decline",
+		);
+		const closing = answered.close("/work/demlik");
+		if (Result.isFailure(closing)) throw closing.failure;
+		const {record} = closing.success.projects;
+		assert.deepStrictEqual(record.recommends, [
+			{folder: "/work/demlik", answers: {"tuval-cron": "decline"}},
+		]);
+		const restored = OpenProjects.restoring(record);
+		assert.deepStrictEqual(restored.recommends.unasked("/work/demlik", ["tuval-cron"]), []);
+	});
+
 	it("carries the pending folders across a trust and a close", () => {
 		const restored = opened(
 			OpenProjects.restoring({
 				version: 1,
 				projects: [{folder: "/work/a"}],
 				trusted: [],
+				recommends: [],
 				recent: [],
 			}),
 			"/work/z",
@@ -198,6 +220,7 @@ describe("the saved open-projects list", () => {
 				version: 1,
 				projects: [{folder: "/work/a"}, {folder: "/work/b"}],
 				trusted: [],
+				recommends: [],
 				recent: ["/work/b", "/work/a"],
 			});
 			yield* saveOpenProjects(home, OpenProjects.none.trust("/work/c"));
@@ -205,6 +228,7 @@ describe("the saved open-projects list", () => {
 				version: 1,
 				projects: [],
 				trusted: ["/work/c"],
+				recommends: [],
 				recent: [],
 			});
 		}).pipe(Effect.provide(NodeFileSystem.layer)),
@@ -223,6 +247,7 @@ describe("the saved open-projects list", () => {
 				version: 1,
 				projects: [{folder: "/work/a"}],
 				trusted: [],
+				recommends: [],
 				recent: [],
 			});
 		}).pipe(Effect.provide(NodeFileSystem.layer)),
@@ -273,6 +298,7 @@ describe("recent projects", () => {
 			version: 1,
 			projects: [],
 			trusted: [],
+			recommends: [],
 			recent: ["/work/b", "/work/a", "/work/b/"],
 		});
 		assert.deepStrictEqual(restored.recent, ["/work/b", "/work/a"]);

@@ -43,6 +43,7 @@ import {
 import {Socket} from "effect/unstable/socket";
 import {WebSocket as NodeWebSocket} from "ws";
 import {ProjectLabels} from "../../projects/labels.ts";
+import {makeRecommendPrompts} from "../../projects/RecommendPrompts.ts";
 import {makeTrustPrompts} from "../../projects/TrustPrompts.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {scriptedDescriptions, scriptedSpellChannel} from "../host/fixtures.ts";
@@ -207,6 +208,7 @@ const served = Effect.fn("test.served")(function* (
 ) {
 	const built = yield* kernel(stores, registry);
 	const prompts = yield* makeTrustPrompts;
+	const recommends = yield* makeRecommendPrompts;
 	const token = mintLaunchToken();
 	const server = yield* serve({
 		token,
@@ -217,8 +219,9 @@ const served = Effect.fn("test.served")(function* (
 		descriptions: scriptedDescriptions,
 		projects: scriptedProjects,
 		trust: prompts,
+		recommend: recommends,
 	}).pipe(Effect.provideContext(built.context), Effect.orDie);
-	return {...built, token, server, prompts};
+	return {...built, token, server, prompts, recommends};
 });
 
 const page = (url: string) =>
@@ -690,6 +693,30 @@ describe("the page-to-kernel transport", () => {
 				// The answered question leaves every page on the next frame.
 				yield* Stream.runHead(
 					Stream.filter(attached.trustPrompts, (prompts) => prompts.length === 0),
+				);
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"a page is asked about a recommended package, and its answer reaches the kernel",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* served(memoryStores());
+				const attached = yield* page(app.server.launchUrl);
+				const asking = yield* Effect.forkChild(
+					app.recommends.ask("/code/kamp-us/demlik", "demlik", "@kampus/tuval-worktree"),
+				);
+				const asked = yield* Stream.runHead(
+					Stream.filter(attached.recommendPrompts, (prompts) => prompts.length > 0),
+				);
+				const [prompt] = Option.getOrThrow(asked);
+				assert.strictEqual(prompt?.package, "@kampus/tuval-worktree");
+				assert.strictEqual(prompt?.name, "demlik");
+				yield* attached.answerRecommend(prompt?.question ?? "", "decline");
+				assert.strictEqual(yield* Fiber.join(asking), "decline");
+				yield* Stream.runHead(
+					Stream.filter(attached.recommendPrompts, (prompts) => prompts.length === 0),
 				);
 			}).pipe(Effect.scoped),
 		TIMEOUT,

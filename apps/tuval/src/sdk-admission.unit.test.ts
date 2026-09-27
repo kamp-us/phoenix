@@ -25,6 +25,7 @@ const config = (
 	programs: [...programs],
 	graph: {nodes},
 	keys: {},
+	recommends: [],
 });
 
 describe("admitRows", () => {

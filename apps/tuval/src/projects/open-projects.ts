@@ -1,9 +1,9 @@
 /**
  * Which projects a desk has open, and the one saved list of them under the home `.tuval` (#9685,
- * ruling #9668 R1.1 and R6.1). The list is one record per folder: labels, reopening and a project's
- * remembered "no" to its recommends are later fields on that same record, so nothing here is keyed
- * on anything but the folder. The folders the person has trusted ride beside it (#9693), because a
- * folder stays trusted after it closes.
+ * ruling #9668 R1.1 and R6.1). The list is one record per folder, so nothing here is keyed on
+ * anything but the folder. The folders the person has trusted (#9693) and their answers to each
+ * folder's recommended packages (#9695) ride beside it, because both outlive the folder closing:
+ * a project reopened after a close is not asked again.
  *
  * Two spellings of one folder are one project: the identity is the ADR 0402 path key, the name the
  * project's rows and state directory are already keyed by (`../project-id.ts`).
@@ -26,6 +26,8 @@ import {homeTuvalDir} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Effect, FileSystem, Result, Schema} from "effect";
 import {ProjectId} from "../project-id.ts";
 import type {ProjectLabel} from "./labels.ts";
+import type {RecommendAnswer} from "./recommend-prompt.ts";
+import {RecommendAnswers} from "./recommends.ts";
 import {TrustedFolders} from "./trust.ts";
 
 /** Where a subproject sits: the project it is nested under, and the process that opened it. */
@@ -82,11 +84,24 @@ export interface RecentProject {
 	readonly open: boolean;
 }
 
+/** One folder's answers to its recommended packages: package name to answer (#9695). */
+export const RecommendAnswersRecord = Schema.Struct({
+	folder: Schema.String,
+	answers: Schema.Record(Schema.String, Schema.Literals(["install", "decline"])),
+});
+
 export const OpenProjectsRecord = Schema.Struct({
 	version: Schema.Literal(1),
 	projects: Schema.Array(OpenProjectRecord),
 	/** Every folder the person answered yes for, open or not. A list written before #9693 has none. */
 	trusted: Schema.Array(Schema.String).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
+	/**
+	 * Every folder whose recommended packages the person answered about, open or not. A list written
+	 * before #9695 has none.
+	 */
+	recommends: Schema.Array(RecommendAnswersRecord).pipe(
+		Schema.withDecodingDefaultKey(Effect.succeed([])),
+	),
 	/** The folders opened most recently, newest first. A list written before #9697 has none. */
 	recent: Schema.Array(Schema.String).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
 });
@@ -105,35 +120,61 @@ const distinctRecent = (folders: ReadonlyArray<string>): ReadonlyArray<string> =
 };
 
 /**
- * The desk's open projects, in the order they opened, the folders trusted so far, the folders a
- * restart has still to reopen, and the folders opened most recently. A folder is never both open
- * and pending: opening it or skipping it takes it off the pending list.
+ * The desk's open projects, in the order they opened, the folders trusted so far, the answers given
+ * to recommended packages, the folders a restart has still to reopen, and the folders opened most
+ * recently. A folder is never both open and pending: opening it or skipping it takes it off the
+ * pending list.
  */
 export class OpenProjects {
-	static readonly none = new OpenProjects([], TrustedFolders.none, [], []);
+	static readonly none = new OpenProjects({
+		projects: [],
+		trusted: TrustedFolders.none,
+		recommends: RecommendAnswers.none,
+		pending: [],
+		recent: [],
+	});
 
 	readonly projects: ReadonlyArray<OpenProject>;
 	readonly trusted: TrustedFolders;
+	/** What the person answered about each folder's recommended packages (#9695). */
+	readonly recommends: RecommendAnswers;
 	/** The saved list's open folders this desk has not yet reopened or skipped, in saved order. */
 	readonly pending: ReadonlyArray<string>;
 	/** The top-level folders opened most recently, newest first, open or not. */
 	readonly recent: ReadonlyArray<string>;
 
-	private constructor(
-		projects: ReadonlyArray<OpenProject>,
-		trusted: TrustedFolders,
-		pending: ReadonlyArray<string>,
-		recent: ReadonlyArray<string>,
-	) {
-		this.projects = projects;
-		this.trusted = trusted;
-		this.pending = pending;
-		this.recent = recent;
+	private constructor(state: {
+		readonly projects: ReadonlyArray<OpenProject>;
+		readonly trusted: TrustedFolders;
+		readonly recommends: RecommendAnswers;
+		readonly pending: ReadonlyArray<string>;
+		readonly recent: ReadonlyArray<string>;
+	}) {
+		this.projects = state.projects;
+		this.trusted = state.trusted;
+		this.recommends = state.recommends;
+		this.pending = state.pending;
+		this.recent = state.recent;
+	}
+
+	private with(
+		change: Partial<
+			Pick<OpenProjects, "projects" | "trusted" | "recommends" | "pending" | "recent">
+		>,
+	): OpenProjects {
+		return new OpenProjects({
+			projects: change.projects ?? this.projects,
+			trusted: change.trusted ?? this.trusted,
+			recommends: change.recommends ?? this.recommends,
+			pending: change.pending ?? this.pending,
+			recent: change.recent ?? this.recent,
+		});
 	}
 
 	/**
-	 * A desk starting over a saved list: every folder it trusted is still trusted, nothing is open
-	 * yet, and every folder that was open is pending, a folder listed twice counted once.
+	 * A desk starting over a saved list: every folder it trusted is still trusted, every answer it
+	 * gave is still given, nothing is open yet, and every folder that was open is pending, a folder
+	 * listed twice counted once.
 	 */
 	static restoring(record: OpenProjectsRecord | null): OpenProjects {
 		const pending = new Map<string, string>();
@@ -141,28 +182,31 @@ export class OpenProjects {
 			const key = keyOf(folder);
 			if (!pending.has(key)) pending.set(key, resolve(folder));
 		}
-		return new OpenProjects(
-			[],
-			TrustedFolders.of(record?.trusted ?? []),
-			[...pending.values()],
-			distinctRecent(record?.recent ?? []),
-		);
+		return new OpenProjects({
+			projects: [],
+			trusted: TrustedFolders.of(record?.trusted ?? []),
+			recommends: RecommendAnswers.of(record?.recommends ?? []),
+			pending: [...pending.values()],
+			recent: distinctRecent(record?.recent ?? []),
+		});
 	}
 
 	/** The same projects, with `folder` trusted from now on. */
 	trust(folder: string): OpenProjects {
 		const trusted = this.trusted.trust(folder);
-		return trusted === this.trusted
-			? this
-			: new OpenProjects(this.projects, trusted, this.pending, this.recent);
+		return trusted === this.trusted ? this : this.with({trusted});
+	}
+
+	/** The same projects, with `answer` remembered for `pkg` in the project at `folder`. */
+	answerRecommend(folder: string, pkg: string, answer: RecommendAnswer): OpenProjects {
+		const recommends = this.recommends.answer(folder, pkg, answer);
+		return recommends === this.recommends ? this : this.with({recommends});
 	}
 
 	/** The same projects, with `folder` no longer waiting to be reopened. */
 	skip(folder: string): OpenProjects {
 		const pending = this.withoutPending(folder);
-		return pending === this.pending
-			? this
-			: new OpenProjects(this.projects, this.trusted, pending, this.recent);
+		return pending === this.pending ? this : this.with({pending});
 	}
 
 	private withoutPending(folder: string): ReadonlyArray<string> {
@@ -226,13 +270,12 @@ export class OpenProjects {
 			...(under === undefined ? {} : {under}),
 		};
 		return Result.succeed({
-			projects: new OpenProjects(
-				[...this.projects, project],
-				this.trusted,
-				this.withoutPending(absolute),
+			projects: this.with({
+				projects: [...this.projects, project],
+				pending: this.withoutPending(absolute),
 				// A subproject is its opener's to bring back, so it is never offered as recent.
-				under === undefined ? distinctRecent([absolute, ...this.recent]) : this.recent,
-			),
+				...(under === undefined ? {recent: distinctRecent([absolute, ...this.recent])} : {}),
+			}),
 			project,
 		});
 	}
@@ -253,12 +296,7 @@ export class OpenProjects {
 		if (project === undefined) return Result.fail(new ProjectNotOpen({folder: resolve(folder)}));
 		const closed = [...this.nestedUnder(project), project];
 		return Result.succeed({
-			projects: new OpenProjects(
-				this.projects.filter((open) => !closed.includes(open)),
-				this.trusted,
-				this.pending,
-				this.recent,
-			),
+			projects: this.with({projects: this.projects.filter((open) => !closed.includes(open))}),
 			project,
 			closed,
 		});
@@ -282,6 +320,7 @@ export class OpenProjects {
 				folder,
 			})),
 			trusted: this.trusted.folders,
+			recommends: this.recommends.record,
 			recent: this.recent,
 		};
 	}

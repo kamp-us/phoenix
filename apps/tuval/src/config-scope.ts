@@ -50,8 +50,17 @@ export const reservedSeparator = (config: TuvalConfig): Result.Result<TuvalConfi
 			);
 };
 
-/** The global layer as it runs: unchanged, once no node of it connects into a project. */
+/**
+ * The global layer as it runs: unchanged, once no node of it connects into a project and it
+ * recommends nothing. A recommendation is a project's suggestion to whoever opens it (#9695), and
+ * nobody opens the home config.
+ */
 export const globalLayer = (config: TuvalConfig): Result.Result<TuvalConfig, string> => {
+	if (config.recommends.length > 0) {
+		return Result.fail(
+			`recommends ${config.recommends.join(", ")}; only a project's config recommends packages, because nobody opens the global one`,
+		);
+	}
 	for (const node of config.graph.nodes) {
 		const into = connections(node).find(scoped);
 		if (into !== undefined) {

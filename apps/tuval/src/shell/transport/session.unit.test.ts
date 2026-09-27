@@ -85,7 +85,10 @@ const kernel = Effect.gen(function* () {
 			Effect.succeed(() => Effect.die("unexpected spell")),
 			Stream.never,
 			Stream.never,
-			{pending: Stream.never, answer: () => Effect.succeed(false)},
+			{
+				trust: {pending: Stream.never, answer: () => Effect.succeed(false)},
+				recommend: {pending: Stream.never, answer: () => Effect.succeed(false)},
+			},
 			defaultPrefixTable,
 			pages,
 			lock,

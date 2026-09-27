@@ -32,6 +32,8 @@ import {
 	fromWireRow,
 	KEYS_KIND,
 	PROCESS_STATE_KIND,
+	RECOMMEND_ANSWER_KIND,
+	RECOMMEND_PROMPTS_KIND,
 	REGISTRY_KIND,
 	type ServerFrame,
 	SPELL_CALL_KIND,
@@ -74,6 +76,8 @@ const clientFrames: ReadonlyArray<ClientFrame> = [
 	{kind: SPELL_CALL_KIND, call},
 	{kind: TRUST_ANSWER_KIND, question: "q-1", answer: "trust"},
 	{kind: TRUST_ANSWER_KIND, question: "q-2", answer: "refuse"},
+	{kind: RECOMMEND_ANSWER_KIND, question: "r-1", answer: "install"},
+	{kind: RECOMMEND_ANSWER_KIND, question: "r-2", answer: "decline"},
 ];
 
 const serverFrames: ReadonlyArray<ServerFrame> = [
@@ -114,6 +118,17 @@ const serverFrames: ReadonlyArray<ServerFrame> = [
 	},
 	{kind: TRUST_PROMPTS_KIND, prompts: []},
 	{
+		kind: RECOMMEND_PROMPTS_KIND,
+		prompts: [
+			{
+				question: "r-1",
+				folder: "/code/kamp-us/demlik",
+				name: "demlik",
+				package: "@kampus/tuval-worktree",
+			},
+		],
+	},
+	{
 		kind: SPELL_REPLY_KIND,
 		reply: new SpellReplyOk({
 			type: "spell.reply",
@@ -136,6 +151,23 @@ const serverFrames: ReadonlyArray<ServerFrame> = [
 ];
 
 describe("the transport wire", () => {
+	it("refuses a recommend answer outside install and decline, and a prompt with no package", () => {
+		expect([
+			decodeClientFrame(
+				JSON.stringify({kind: RECOMMEND_ANSWER_KIND, question: "r-1", answer: "later"}),
+			),
+			decodeServerFrame(
+				JSON.stringify({
+					kind: RECOMMEND_PROMPTS_KIND,
+					prompts: [{question: "r-1", folder: "/code/demlik", name: "demlik"}],
+				}),
+			),
+		]).toEqual([
+			{_tag: "Undecodable", reason: "malformed-payload"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
+		]);
+	});
+
 	it("refuses a trust answer that is neither yes nor no, and a prompt with no folder", () => {
 		expect([
 			decodeClientFrame(
