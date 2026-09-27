@@ -15,8 +15,11 @@
  *   question, and a false one shipped.
  *
  * **The classification pattern set is closed on purpose.** Two implementers must ship the same guard,
- * and "refuse any spelling of it" is two guards. Fences and block quotes are excluded before matching,
- * so a body that *quotes* a classification to discuss it is not refused for the quotation.
+ * and "refuse any spelling of it" is two guards. Fences, block quotes and inline-code spans are
+ * excluded before matching, so a body that *quotes* a classification to discuss it, or names a path or
+ * handle that happens to contain one (`control-plane-paths/`, `@acme/control-plane`), is not
+ * refused for the quotation. That reach is the same for all three patterns: a `type:` or `p0` inside
+ * backticks escapes the guard too.
  */
 
 import {read as readDeviations} from "../wire/deviations.ts";
@@ -32,10 +35,16 @@ const CLASSIFICATION_PATTERNS: ReadonlyArray<{readonly name: string; readonly re
 ];
 
 /**
- * The body with fenced code blocks and block quotes removed.
+ * A CommonMark code span on one line: a backtick run closed by the next run of exactly its length.
+ * An unmatched run stays literal, so a stray backtick never swallows the rest of the line.
+ */
+const INLINE_CODE_RE = /(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)/g;
+
+/**
+ * The body with fenced code blocks, block quotes and inline-code spans removed.
  *
- * Both are places an author reproduces text rather than asserts it, and a guard that cannot tell the
- * two apart refuses a body for quoting the thing it is explaining.
+ * All three are places an author reproduces text rather than asserts it, and a guard that cannot tell
+ * the two apart refuses a body for quoting the thing it is explaining.
  */
 export const proseOf = (body: string): string => {
 	const lines: string[] = [];
@@ -46,7 +55,7 @@ export const proseOf = (body: string): string => {
 			continue;
 		}
 		if (fenced || /^\s*>/.test(line)) continue;
-		lines.push(line);
+		lines.push(line.replace(INLINE_CODE_RE, ""));
 	}
 	return lines.join("\n");
 };
