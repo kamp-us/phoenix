@@ -165,7 +165,7 @@ const render = leafCommand(
 			"Captures the named surfaces from a PR's preview deployment and prints one JSON capture record.",
 			"  7: PR absent or closed",
 			"  10: an operand off its closed set, or --flag, --locale or --scheme it cannot honor",
-			"  11: a read, a session, flag, locale or scheme proof, or a capture check failed (UNKNOWN)",
+			"  11: a read, a proof or a capture check failed (UNKNOWN)",
 			"  12: the preview deploys a stale head",
 			"  13: a surface threw during render",
 			"  14: a surface is unreachable",
