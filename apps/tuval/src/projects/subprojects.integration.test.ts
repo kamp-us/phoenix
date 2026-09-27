@@ -176,12 +176,11 @@ describe("a subproject a program opens", () => {
 						openFolders(kernel),
 						(open) => open.includes(kept) && open.includes(closed),
 					);
+					assert.include(yield* liveIds(kernel), ProjectId.of(closed).scope("main"));
 					yield* dispatch(kernel, p.scope("opener"), {type: "close", folder: closed});
-					yield* eventually(
-						"the closed one closes",
-						openFolders(kernel),
-						(open) => !open.includes(closed),
-					);
+					// The close answered only once the subproject had closed and its processes stopped.
+					assert.notInclude(yield* openFolders(kernel), closed);
+					assert.notInclude(yield* liveIds(kernel), ProjectId.of(closed).scope("main"));
 				}).pipe(Effect.scoped);
 
 				const {kernel} = yield* boot({global: fixture("does-not-exist"), project: parent, home});

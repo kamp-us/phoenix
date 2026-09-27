@@ -1,12 +1,15 @@
 /**
- * An authored `send`, `ask` and `spawn` ask the `ProcessBoundary` in their process's spawn set
- * before they reach anything (#9689), naming the process they run as. A refusal fails the effect,
- * so nothing is delivered and nothing is spawned; with no boundary, nothing is asked.
+ * An authored `send`, `ask`, `stop` and `spawn` ask the `ProcessBoundary` in their process's spawn
+ * set before they reach anything (#9689), naming the process they run as. A refusal fails the
+ * effect, so nothing is delivered, stopped or spawned; with no boundary, nothing is asked. The
+ * `process spawn`, `process send` and `process read` spells ask it the same way when a process
+ * calls them.
  */
 
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit, Layer, Option} from "effect";
-import {SpawnedProcesses} from "../commands/core/process.ts";
+import {processSpells, SpawnedProcesses} from "../commands/core/process.ts";
+import {ClientId, type Scope as SpellScope, WorkspaceId} from "../commands/spell.ts";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
 import {Processes} from "../process/Processes.ts";
@@ -16,7 +19,7 @@ import {CrossingRefused, ProcessBoundary} from "../process/subprojects.ts";
 import {ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {defineProgram} from "./define-program.ts";
-import {ask, send, spawn} from "./effect.ts";
+import {ask, send, spawn, stop} from "./effect.ts";
 
 const targetId = ProgramId.make("target");
 const callerId = ProgramId.make("caller");
@@ -31,6 +34,7 @@ const caller = defineProgram({
 		send: (state: object) => [state, [send({process: beyond, port: "in"}, 1)]],
 		ask: (state: object) => [state, [ask({process: beyond, port: "in"}, 1, {reply: "answered"})]],
 		spawn: (state: object) => [state, [spawn({programId: targetId, out: {}})]],
+		stop: (state: object) => [state, [stop(beyond)]],
 	},
 });
 
@@ -58,7 +62,7 @@ const refusing = (asked: Array<string>) =>
 
 /** Spawn a caller under `boundary`, dispatch `type` into it, and read what followed. */
 const poke = (
-	type: "send" | "ask" | "spawn",
+	type: "send" | "ask" | "stop" | "spawn",
 	boundary: Option.Option<ProcessBoundary["Service"]>,
 ) =>
 	Effect.gen(function* () {
@@ -74,7 +78,7 @@ const poke = (
 	}).pipe(Effect.provide(kernel));
 
 describe("an authored reach across the subproject boundary", () => {
-	for (const type of ["send", "ask"] as const) {
+	for (const type of ["send", "ask", "stop"] as const) {
 		it.effect(`asks the boundary before a ${type}, and a refusal fails it`, () =>
 			Effect.gen(function* () {
 				const asked: Array<string> = [];
@@ -102,4 +106,54 @@ describe("an authored reach across the subproject boundary", () => {
 			assert.deepStrictEqual(live, [callerId, targetId]);
 		}),
 	);
+});
+
+/** The spell at `process.<verb>`, called as `from` when a process calls it. */
+const callSpell = (verb: "spawn" | "send" | "read", args: unknown, from: ProcessId | undefined) => {
+	const spell = processSpells.find((each) => each.path[1] === verb);
+	if (spell === undefined) throw new Error(`no process.${verb} spell`);
+	const scope: SpellScope = {
+		workspace: WorkspaceId.make("ws-1"),
+		client: ClientId.make("test"),
+		...(from === undefined ? {} : {process: from}),
+	};
+	return spell.execute(args, scope) as Effect.Effect<unknown, unknown, SpawnedProcesses>;
+};
+
+describe("a process spell called across the subproject boundary", () => {
+	const from = ProcessId.make("bystander/main");
+	const cases = [
+		{verb: "spawn", args: {program: targetId}, asked: `spawn ${from} -> ${targetId}`},
+		{
+			verb: "send",
+			args: {process: beyond, port: "in", payload: 1},
+			asked: `reach ${from} -> ${beyond}`,
+		},
+		{verb: "read", args: {process: beyond, port: "out"}, asked: `reach ${from} -> ${beyond}`},
+	] as const;
+
+	for (const {verb, args, asked: expected} of cases) {
+		it.effect(`asks the boundary before process.${verb}, and a refusal fails it`, () =>
+			Effect.gen(function* () {
+				const asked: Array<string> = [];
+				const exit = yield* Effect.exit(
+					Effect.provideService(callSpell(verb, args, from), ProcessBoundary, refusing(asked)),
+				);
+				assert.isTrue(Exit.isFailure(exit));
+				assert.deepStrictEqual(asked, [expected]);
+				const live = yield* ProcessTable.use((table) => table.list);
+				assert.deepStrictEqual(live, []);
+			}).pipe(Effect.provide(kernel)),
+		);
+
+		it.effect(`asks nothing before process.${verb} called from outside any process`, () =>
+			Effect.gen(function* () {
+				const asked: Array<string> = [];
+				yield* Effect.exit(
+					Effect.provideService(callSpell(verb, args, undefined), ProcessBoundary, refusing(asked)),
+				);
+				assert.deepStrictEqual(asked, []);
+			}).pipe(Effect.provide(kernel)),
+		);
+	}
 });

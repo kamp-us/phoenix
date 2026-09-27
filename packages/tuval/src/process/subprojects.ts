@@ -9,13 +9,14 @@
  * naming it, and a process the desk's own graph runs has none. Absent is legal, and `openSubproject`
  * refuses there rather than guessing a parent.
  *
- * An open or a close is a request. It is answered once the desk has taken it, and the project opens
- * or closes after that, because a program asking from its own restore runs inside its project's
- * open, which the desk has not finished yet. A request that fails later is logged by the desk,
- * naming the folder.
+ * An open is a request. It is answered once the desk has taken it, and the project opens after
+ * that, because a program asking from its own restore runs inside its project's open, which the desk
+ * has not finished yet. An open that fails later is logged by the desk, naming the folder. A close
+ * answers only once the subproject has closed and its processes have stopped, so its opener can take
+ * the folder away after it.
  *
- * `ProcessBoundary` is the other half: what the kernel asks before a process sends to, asks or
- * spawns into another process, so a subproject's programs cannot reach up to its parent and the
+ * `ProcessBoundary` is the other half: what the kernel asks before a process sends to, asks, stops,
+ * reads or spawns into another process, so a subproject's programs cannot reach up to its parent and the
  * parent's programs other than the opener cannot reach down. The desk owns the rule; a kernel with
  * no desk has no boundary and refuses nothing.
  */
@@ -50,7 +51,7 @@ export class Subprojects extends Context.Service<
 	{
 		/** Ask to open `folder`, an absolute path, as a subproject opened by `opener`. */
 		readonly open: (opener: ProcessId, folder: string) => Effect.Effect<void, SubprojectRefused>;
-		/** Ask to close the subproject at `folder`. Only its opener may. */
+		/** Close the subproject at `folder`, answering once its processes have stopped. Only its opener may. */
 		readonly close: (opener: ProcessId, folder: string) => Effect.Effect<void, SubprojectRefused>;
 	}
 >()("tuval/Subprojects") {}
@@ -58,7 +59,7 @@ export class Subprojects extends Context.Service<
 export class ProcessBoundary extends Context.Service<
 	ProcessBoundary,
 	{
-		/** Refuses when `from` may not send to or ask `to`. */
+		/** Refuses when `from` may not send to, ask, stop or read `to`. */
 		readonly reach: (from: ProcessId, to: ProcessId) => Effect.Effect<void, CrossingRefused>;
 		/** Refuses when `from` may not spawn a process of `program`. */
 		readonly spawn: (from: ProcessId, program: ProgramId) => Effect.Effect<void, CrossingRefused>;
@@ -86,7 +87,7 @@ const asking = (folder: string) =>
 export const openSubproject = (folder: string): Effect.Effect<void, SubprojectRefused> =>
 	Effect.flatMap(asking(folder), ({opener, subprojects}) => subprojects.open(opener, folder));
 
-/** Close the subproject at `folder`, which this handler's process opened. */
+/** Close the subproject at `folder`, which this handler's process opened, and wait until it has. */
 export const closeSubproject = (folder: string): Effect.Effect<void, SubprojectRefused> =>
 	Effect.flatMap(asking(folder), ({opener, subprojects}) => subprojects.close(opener, folder));
 

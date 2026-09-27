@@ -603,9 +603,12 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 	}, lock.withPermits(1));
 
 	/**
-	 * What a project's processes open subprojects through. A request is taken at once and carried out
+	 * What a project's processes open subprojects through. An open is taken at once and carried out
 	 * on the project's own scope once the project is recorded open, because a process asking from its
-	 * restore runs inside that open; a request left when the project closes goes with it.
+	 * restore runs inside that open; an open left when the project closes goes with it. A close is
+	 * carried out before it answers, so its opener can act on a subproject that has stopped: only an
+	 * open subproject closes, and one is open only after its parent is recorded open, so a close never
+	 * waits on the open it runs inside.
 	 */
 	const subprojectsOf = (
 		parent: OpenProject,
@@ -653,7 +656,9 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 							reason: "only the program that opened it closes it",
 						});
 					}
-					yield* later(folder, closeFolder(folder));
+					yield* closeFolder(folder).pipe(
+						Effect.mapError((cause) => new SubprojectRefused({folder, reason: reasonOf(cause)})),
+					);
 				}),
 		});
 	};
@@ -692,7 +697,7 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		readonly programId: string;
 	}
 
-	/** Asked before a process sends to, asks or spawns into another (`./boundary.ts`). */
+	/** Asked before a process sends to, asks, stops, reads or spawns into another (`./boundary.ts`). */
 	const crossing = (
 		from: ProcessId,
 		target: (rows: ReadonlyMap<string, ProcessRow>, projects: ReadonlyArray<OpenProject>) => Target,

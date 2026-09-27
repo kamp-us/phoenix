@@ -1128,12 +1128,22 @@ describe("a user's `.tuval/tuval.config.ts`", () => {
 describe("each worktree, opened as a subproject", () => {
 	const self = ProcessId.make("phoenix/worktree");
 
-	/** Run `effect` as process `self` in a project whose subproject requests are recorded. */
-	const asOpener = <A, E>(effect: Effect.Effect<A, E>) => {
+	/**
+	 * Run `effect` as process `self` in a project whose subproject requests are recorded. `closing`
+	 * stands in for the desk's close, which runs to the end before the close answers.
+	 */
+	const asOpener = <A, E>(
+		effect: Effect.Effect<A, E>,
+		closing: Effect.Effect<void> = Effect.void,
+	) => {
 		const calls: Array<string> = [];
 		const recorded = Subprojects.of({
 			open: (opener, folder) => Effect.sync(() => void calls.push(`open ${folder} by ${opener}`)),
-			close: (opener, folder) => Effect.sync(() => void calls.push(`close ${folder} by ${opener}`)),
+			close: (opener, folder) =>
+				Effect.andThen(
+					closing,
+					Effect.sync(() => void calls.push(`close ${folder} by ${opener}`)),
+				),
 		});
 		const run = Effect.gen(function* () {
 			const scope = yield* Effect.scope;
@@ -1186,6 +1196,30 @@ describe("each worktree, opened as a subproject", () => {
 			worktreeHandlers(settle(withRunner))["worktree.teardown"](only(closed, "worktree.teardown")),
 		);
 		expect(calls).toEqual([`close /repo/.worktrees/feature-x by ${self}`]);
+	});
+
+	it("removes the worktree only once its subproject's close has answered", async () => {
+		const runner = fakeRunner();
+		const withRunner = {...options, runner};
+		const closed = drive(worktreeProgram(withRunner))
+			.send("open", {name: "feature-x"})
+			.event({type: "provisioned", name: "feature-x", port: 5174})
+			.send("close", {name: "feature-x"});
+		const removals = () =>
+			runner.commands().filter((command) => command.includes("worktree remove"));
+		let removedWhileClosing: number | undefined;
+		await asOpener(
+			worktreeHandlers(settle(withRunner))["worktree.teardown"](only(closed, "worktree.teardown")),
+			// The desk's close takes time: the subproject's processes stop before it answers.
+			Effect.andThen(
+				Effect.sleep("20 millis"),
+				Effect.sync(() => {
+					removedWhileClosing = removals().length;
+				}),
+			),
+		);
+		expect(removedWhileClosing).toBe(0);
+		expect(removals()).toHaveLength(1);
 	});
 
 	it("opens again, on a restore, only the open worktrees the disk still has", async () => {

@@ -299,8 +299,8 @@ When the program runs in a desk project, each worktree opens as a subproject of 
 it is provisioned (phoenix [#9689](https://github.com/kamp-us/phoenix/issues/9689)). Its tile reads
 `phoenix › feature-x`, it trusts what the parent trusts, a `.tuval` config inside it runs as that
 subproject's own, and closing the parent closes it. This program is its opener, the only program
-of the parent that reaches its processes. `close` and `discard` ask for the subproject to close
-before the removal. The desk does not reopen subprojects on a restart; the `resume` above opens
+of the parent that reaches its processes. `close` and `discard` close the subproject and wait for
+its processes to stop before the removal. The desk does not reopen subprojects on a restart; the `resume` above opens
 again each worktree that was `open` and whose directory is still there, so a closed lane stays
 closed. A worktree program the desk's global graph runs is in no project, so it opens no
 subproject and works as before.

@@ -534,6 +534,7 @@ const replyHandler = (cmd: ReplyEffect) =>
 const stopHandler = (cmd: StopEffect) =>
 	Effect.gen(function* () {
 		const processes = yield* Processes;
+		yield* guardReach(cmd.process);
 		yield* processes.remove(cmd.process);
 		return NO_EVENTS;
 	});

@@ -153,8 +153,11 @@ subproject's opener. A subproject asks no trust question, because its parent is 
 trusted. It keeps its own config, state directory and rows, and its tiles read under its parent's
 label (`phoenix › lane-9650`). Closing the parent closes its subprojects first and stops their
 processes. Only the opener crosses the boundary: a subproject's config cannot connect up to its
-parent, and at runtime a send, ask or spawn from the parent's other programs into the subproject,
-or from the subproject up to its parent, is refused with an error naming both ends. The saved list
+parent, and at runtime a send, ask, stop, read or spawn from the parent's other programs into the
+subproject, or from the subproject up to its parent, is refused with an error naming both ends. That
+holds for a program's own effects and for the `process send`, `process read` and `process spawn`
+spells it calls. `closeSubproject(folder)` answers once the subproject has closed and its processes
+have stopped. The saved list
 leaves subprojects out, so after a restart one comes back only when its opener calls
 `openSubproject` again. `@kampus/tuval-worktree` opens each lane this way.
 

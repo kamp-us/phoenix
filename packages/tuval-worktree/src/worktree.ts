@@ -568,8 +568,8 @@ export const worktreeHandlers = (
 				),
 			),
 
-		// The subproject is asked to close first, so its programs are not left running in a directory
-		// the removal takes away.
+		// The subproject closes first, and the close answers only once its processes have stopped, so
+		// none is left running in a directory the removal takes away.
 		"worktree.teardown": (effect) =>
 			onMachine(
 				Effect.map(
