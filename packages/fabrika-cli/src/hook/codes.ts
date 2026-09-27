@@ -58,8 +58,9 @@ export const WRONG_EVENT = 14;
 
 /**
  * A readable `WorktreeCreate` envelope arrived and no worktree can be planned from it — an absent or
- * relative `cwd`, an absent `name`, a `name` that is not a plain slug, or a `cwd` that
- * `git rev-parse --show-toplevel` resolves to no repository toplevel.
+ * relative `cwd`, an absent `name`, a `name` that is not a plain slug, a `cwd` that
+ * `git rev-parse --show-toplevel` resolves to no repository toplevel, or a clone whose primary
+ * working tree `git worktree list` cannot establish.
  *
  * Apart from {@link MALFORMED_ENVELOPE} because the envelope is well-formed: every field
  * `../hook/envelope.ts` requires is present, and it is the *per-event* half this verb needs that is

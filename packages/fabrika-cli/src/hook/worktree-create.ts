@@ -11,9 +11,10 @@
  * **no** `worktree_path` or `base_ref`, and the path is therefore *constructed* rather than read.
  * `__fixtures__/worktree-create.payload.golden.json` is the capture.
  *
- * `cwd` is the session's working directory, which is not always the repository root. So it makes a
- * {@link WorktreeRequest} and never a plan: only {@link planAtToplevel}, handed what
- * `git rev-parse --show-toplevel` printed in that directory, composes a {@link WorktreePlan}.
+ * `cwd` is the session's working directory, which is not always the repository root and not always
+ * the primary checkout. So it makes a {@link WorktreeRequest} and never a plan: {@link locateToplevel}
+ * proves it stands in a working tree, and only {@link planAtPrimary}, handed that clone's worktree
+ * listing, composes a {@link WorktreePlan}.
  */
 
 /** A payload that passed every check needing no subprocess — where the session is, not the repo. */
@@ -30,7 +31,7 @@ export type RequestRead =
 
 /** Where a hook-provisioned worktree goes, and the repo the git commands run in. */
 export interface WorktreePlan {
-	/** The toplevel the request's `cwd` resolved to. Every git command runs here, not in `process.cwd()`. */
+	/** The primary working tree of the request's clone. Every git command runs here, not in `process.cwd()`. */
 	readonly repoRoot: string;
 	/** The harness's suggested slug, verbatim. */
 	readonly name: string;
@@ -263,22 +264,61 @@ export const readWorktreeRequest = (payload: Record<string, unknown>): RequestRe
 	return {_tag: "Request", request: {cwd, name}};
 };
 
-/** Run in the request's `cwd`; its stdout is the only root {@link planAtToplevel} accepts. */
+/** Run in the request's `cwd`; its stdout is the only directory {@link locateToplevel} accepts. */
 export const showToplevelArgs: ReadonlyArray<string> = ["rev-parse", "--show-toplevel"];
 
+/** Run in the located toplevel; its stdout is the only listing {@link planAtPrimary} accepts. */
+export const listWorktreesArgs: ReadonlyArray<string> = ["worktree", "list", "--porcelain", "-z"];
+
+export type ToplevelRead =
+	| {readonly _tag: "Toplevel"; readonly toplevel: string}
+	| {readonly _tag: "Unplannable"; readonly reason: string};
+
 /**
- * The plan rooted at the toplevel `cwd` resolved to, or a refusal naming the `cwd` that did not.
+ * The working tree `cwd` stands in, or a refusal naming the `cwd` that resolved to none.
  *
  * `toplevel` is `null` when the resolution itself failed; anything but one absolute path counts the
  * same. There is no fallback to `cwd`: a tree under a subdirectory lands where the root-anchored
  * ignore rules and the single worktree base do not reach.
  */
-export const planAtToplevel = (request: WorktreeRequest, toplevel: string | null): PlanRead => {
-	const repoRoot = toplevel?.trim() ?? "";
-	if (!repoRoot.startsWith("/") || repoRoot.includes("\n")) {
+export const locateToplevel = (request: WorktreeRequest, toplevel: string | null): ToplevelRead => {
+	const path = toplevel?.trim() ?? "";
+	return path.startsWith("/") && !path.includes("\n")
+		? {_tag: "Toplevel", toplevel: path}
+		: {_tag: "Unplannable", reason: `\`cwd\` resolves to no repository toplevel: ${request.cwd}`};
+};
+
+/**
+ * The clone's primary working tree, read off `git worktree list --porcelain -z`, or `null`.
+ *
+ * git lists the main worktree first, so the first record is the primary checkout whichever tree the
+ * command ran in. A toplevel is not that answer: inside a linked tree `--show-toplevel` names the
+ * linked tree, and a child planned beneath it is deleted with it. A first record marked `bare` has
+ * no working tree to hold `.claude/worktrees/`, so it yields `null` like an unreadable listing.
+ */
+export const primaryWorktree = (listing: string | null): string | null => {
+	if (listing === null) return null;
+	const end = listing.indexOf("\0\0");
+	const first = (end === -1 ? listing : listing.slice(0, end)).split("\0");
+	const [head, ...attributes] = first;
+	if (head === undefined || !head.startsWith("worktree ") || attributes.includes("bare")) {
+		return null;
+	}
+	const path = head.slice("worktree ".length);
+	return path.startsWith("/") ? path : null;
+};
+
+/**
+ * The plan rooted at the clone's primary working tree, or a refusal naming the `cwd` whose clone
+ * named none. Every `cwd` of one clone — its primary root, a subdirectory, a linked tree — plans the
+ * same base.
+ */
+export const planAtPrimary = (request: WorktreeRequest, listing: string | null): PlanRead => {
+	const repoRoot = primaryWorktree(listing);
+	if (repoRoot === null) {
 		return {
 			_tag: "Unplannable",
-			reason: `\`cwd\` resolves to no repository toplevel: ${request.cwd}`,
+			reason: `\`cwd\` belongs to a clone whose primary working tree cannot be established: ${request.cwd}`,
 		};
 	}
 	return {

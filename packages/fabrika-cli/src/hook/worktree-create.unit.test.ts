@@ -2,7 +2,9 @@ import {describe, expect, it} from "vitest";
 import {loadGoldenPayload} from "../golden-fixture.ts";
 import {
 	childEnv,
-	planAtToplevel,
+	locateToplevel,
+	planAtPrimary,
+	primaryWorktree,
 	readWorktreeRequest,
 	toolchainPath,
 	worktreePathFor,
@@ -51,14 +53,11 @@ describe("reading a worktree request from a WorktreeCreate payload", () => {
 	});
 });
 
-describe("planning a worktree at the toplevel the request's cwd resolved to", () => {
+describe("locating the working tree the request's cwd stands in", () => {
 	const request = {cwd: "/repo/packages/fabrika-cli", name: "agent-1"};
 
-	it("roots the plan at the resolved toplevel, never at the session's cwd", () => {
-		expect(planAtToplevel(request, "/repo\n")).toEqual({
-			_tag: "Plan",
-			plan: {repoRoot: "/repo", name: "agent-1", worktreePath: "/repo/.claude/worktrees/agent-1"},
-		});
+	it("reads the toplevel git printed, never the session's cwd", () => {
+		expect(locateToplevel(request, "/repo\n")).toEqual({_tag: "Toplevel", toplevel: "/repo"});
 	});
 
 	it.each([
@@ -67,9 +66,43 @@ describe("planning a worktree at the toplevel the request's cwd resolved to", ()
 		["a relative answer", "repo"],
 		["a multi-line answer", "/repo\n/other"],
 	])("refuses %s and names the cwd that did not resolve", (_label, toplevel) => {
-		expect(planAtToplevel(request, toplevel)).toEqual({
+		expect(locateToplevel(request, toplevel)).toEqual({
 			_tag: "Unplannable",
 			reason: "`cwd` resolves to no repository toplevel: /repo/packages/fabrika-cli",
+		});
+	});
+});
+
+describe("planning a worktree at the clone's primary working tree", () => {
+	const request = {cwd: "/repo/.claude/worktrees/epic-9843", name: "agent-1"};
+	const record = (...fields: ReadonlyArray<string>) => `${fields.join("\0")}\0\0`;
+	const HEAD = "HEAD 6d0cb36b763f68b22215650685cd93abd2a567c6";
+
+	it("roots the plan at the listing's first record, never at the linked tree the cwd is in", () => {
+		const listing =
+			record("worktree /repo", HEAD, "branch refs/heads/main") +
+			record("worktree /repo/.claude/worktrees/epic-9843", HEAD, "detached");
+		expect(planAtPrimary(request, listing)).toEqual({
+			_tag: "Plan",
+			plan: {repoRoot: "/repo", name: "agent-1", worktreePath: "/repo/.claude/worktrees/agent-1"},
+		});
+	});
+
+	it("keeps a primary path verbatim, since -z leaves nothing to trim", () => {
+		expect(primaryWorktree(record("worktree /my repo ", HEAD))).toBe("/my repo ");
+	});
+
+	it.each([
+		["a failed listing", null],
+		["an empty listing", ""],
+		["a first record that is not a worktree", record(HEAD, "worktree /repo")],
+		["a relative primary", record("worktree repo", HEAD)],
+		["a bare primary", record("worktree /repo.git", "bare")],
+	])("refuses %s and names the cwd whose clone named no primary tree", (_label, listing) => {
+		expect(planAtPrimary(request, listing)).toEqual({
+			_tag: "Unplannable",
+			reason:
+				"`cwd` belongs to a clone whose primary working tree cannot be established: /repo/.claude/worktrees/epic-9843",
 		});
 	});
 });

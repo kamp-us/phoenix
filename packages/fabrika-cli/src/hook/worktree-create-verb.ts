@@ -44,7 +44,9 @@ import {
 	dropBaseRefArgs,
 	fetchBaseArgs,
 	isCommitId,
-	planAtToplevel,
+	listWorktreesArgs,
+	locateToplevel,
+	planAtPrimary,
 	pruneWorktreesArgs,
 	REAP_LIMIT,
 	REAP_TIMEOUT_SECONDS,
@@ -101,6 +103,9 @@ export const describeOutcome = (outcome: ChildOutcome): string => {
 
 const succeeded = (outcome: ChildOutcome): boolean =>
 	outcome._tag === "Ran" && !outcome.timedOut && outcome.exitCode === 0;
+
+const stdoutIfSucceeded = (outcome: ChildOutcome): string | null =>
+	succeeded(outcome) && outcome._tag === "Ran" ? new TextDecoder().decode(outcome.stdout) : null;
 
 /**
  * A command's whole stderr, for classification — not {@link describeOutcome}'s one quotable line.
@@ -393,15 +398,18 @@ export const runWorktreeCreate = ({
 
 		const child = childEnv(env);
 		const resolved = yield* git(showToplevelArgs, requested.request.cwd, child);
-		const planned = planAtToplevel(
-			requested.request,
-			succeeded(resolved) && resolved._tag === "Ran"
-				? new TextDecoder().decode(resolved.stdout)
-				: null,
-		);
+		const located = locateToplevel(requested.request, stdoutIfSucceeded(resolved));
+		if (located._tag === "Unplannable") {
+			return refuse(UNPLANNABLE_WORKTREE, `${VERB}: ${located.reason}`, [
+				`${VERB}: git rev-parse --show-toplevel: ${describeOutcome(resolved)}`,
+			]);
+		}
+
+		const listed = yield* git(listWorktreesArgs, located.toplevel, child);
+		const planned = planAtPrimary(requested.request, stdoutIfSucceeded(listed));
 		if (planned._tag === "Unplannable") {
 			return refuse(UNPLANNABLE_WORKTREE, `${VERB}: ${planned.reason}`, [
-				`${VERB}: git rev-parse --show-toplevel: ${describeOutcome(resolved)}`,
+				`${VERB}: git worktree list --porcelain -z: ${describeOutcome(listed)}`,
 			]);
 		}
 
