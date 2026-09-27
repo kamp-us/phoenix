@@ -53,8 +53,9 @@ and add no new gate and no new token unless a failure has actually recurred.
   no comment since that entry stays unproven at exit `22`.
 - The proof checks no author, marker or permission, so a comment someone else posts during the
   build proves a lane that posted nothing. This record accepts that looseness under the ruling's
-  no-new-gate lens; tightening it is tracked in
-  [#9967](https://github.com/kamp-us/phoenix/issues/9967).
+  no-new-gate lens. The looseness was reported in
+  [#9967](https://github.com/kamp-us/phoenix/issues/9967), which was closed as not planned until a
+  false completion actually happens, so no work to tighten it is open.
 - Whether triage should stop routing board-data work to build lanes, and whether `build`'s rule that
   a build lane does not write issue bodies should move, are separate questions this record leaves
   open.
