@@ -128,8 +128,24 @@ const open = leafCommand(
 ).pipe(
 	Command.withShortDescription("Open, or resume, the session issue for a topic or a ticket."),
 	Command.withDescription(
-		'With --audit-context, preserve initial research and return {session,url,created,runId,digest}; --audit-recover never creates and --audit-session reads a known partial create directly. Audit exits also include 20 (malformed), 21 (oversized), 22 (changed context), 23 (closed). Open, or resume, the session issue for a topic. Prints {"session":n,"topic":"…","ticket":n|null,"created":true|false,"url":"…"}. With --ticket the session records that ticket and later runs resume on it; without one, topic matching is exact under NFC + case folding + whitespace collapse, never fuzzy. Exits 1 (neither --topic nor --ticket), 5 (machine-local path in the title), 6 (bare @ reference), 7 (the grilling:session label does not exist, or --ticket names no issue), 8 (the create or the label write failed — UNKNOWN), 9 (read-back mismatch), 11 (the search or the ticket read could not complete, so "none" is unproven), 16 (more than one open session matches), 19 (a scanned session\'s ## Came from section does not parse, so which session is bound to --ticket is undecidable). Example: fabrika grill open --ticket 5652',
+		[
+			"Opens or resumes the session issue for a topic, ticket or audit context and prints it as JSON.",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: no grilling:session label, or --ticket names no issue",
+			"  8: a write failed (UNKNOWN)",
+			"  9: the read-back differs",
+			"  11: a search or ticket read failed",
+			"  16: more than one open session matches",
+			"  19: a session's Came from section does not parse",
+			"  20: the audit context is malformed",
+			"  21: the audit context is oversized",
+			"  22: the audit context changed",
+			"  23: the audit session is closed",
+			'  Derivation: the grilling skill\'s contract.md, "grill open"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika grill open --ticket 5652"}]),
 );
 
 const round = leafCommand(
@@ -159,8 +175,23 @@ const round = leafCommand(
 ).pipe(
 	Command.withShortDescription("Validate one round of questions on stdin and post it."),
 	Command.withDescription(
-		'Validate one round read from STDIN against the grammar, post it, and print {"session":n,"round":n,"digest":"…","questions":[…],"supersedes":[…],"comment":n,"supersedeComment":n|null}. The round number is derived, never supplied. Exits 3 (empty stdin), 4 (grammar), 5 (machine-local path), 6 (bare @ reference), 7 (no such session), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (the existing rounds could not be read), 13 (--supersedes names no question), 14 (the round holding a superseded question could not be digested), 18 (already superseded). Example: fabrika grill round 9412 --supersedes R1.4 < round.md',
+		[
+			"Validates one stdin round against the grammar, posts it and prints the posted round as JSON.",
+			"  3: empty stdin",
+			"  4: the round breaks the grammar",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: no such session",
+			"  8: a write failed (UNKNOWN)",
+			"  9: the read-back differs",
+			"  11: the existing rounds could not be read",
+			"  13: --supersedes names no question",
+			"  14: the superseded question's round could not be digested",
+			"  18: already superseded",
+			'  Derivation: the grilling skill\'s contract.md, "grill round"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika grill round 9412 --supersedes R1.4 < round.md"}]),
 );
 
 const answerCmd = leafCommand(
@@ -189,8 +220,23 @@ const answerCmd = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record an agent-established answer to a fact question."),
 	Command.withDescription(
-		'Record an agent-established answer to a fact question. Prints {"session":n,"question":"R2.1","kind":"fact","comment":n,"recordedAs":"agent"}. Exits 4 (--finding is empty), 5 (machine-local path), 6 (bare @ reference), 7 (no such session), 8 (the write failed — UNKNOWN), 9 (read-back mismatch), 11 (the rounds could not be read), 13 (the id names no question), 14 (the round could not be digested), 17 (the id is a decision question), 18 (superseded). Example: fabrika grill answer 9412 R2.1 --finding finding.md',
+		[
+			"Records an agent-established answer to a fact question and prints the record as JSON.",
+			"  4: --finding is empty",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: no such session",
+			"  8: the write failed (UNKNOWN)",
+			"  9: the read-back differs",
+			"  11: the rounds could not be read",
+			"  13: the id names no question",
+			"  14: the round could not be digested",
+			"  17: the id is a decision question",
+			"  18: the question is superseded",
+			'  Derivation: the grilling skill\'s contract.md, "grill answer"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika grill answer 9412 R2.1 --finding finding.md"}]),
 );
 
 const rule = leafCommand(
@@ -221,8 +267,26 @@ const rule = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record a founder ruling, with its verbatim authorization."),
 	Command.withDescription(
-		'Record a founder ruling, refusing without a verbatim dated authorization. Writes the authorization comment FIRST and the marker second, then prints {"session":n,"question":"R2.3","digest":"…","authorization":n,"marker":n,"resolvesTo":"ruled"}. Exits 5 (machine-local path), 6 (bare @ reference), 7 (no such session), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed), 12 (the invoking token is below write), 13 (the id names no question), 14 (the round could not be digested), 15 (--authorization missing, empty or undated), 17 (the id is a fact question), 18 (superseded). Example: fabrika grill rule 9412 R2.3 --authorization authorization.md',
+		[
+			"Records a founder ruling behind its verbatim dated authorization and prints both ids as JSON.",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: no such session",
+			"  8: a write failed (UNKNOWN)",
+			"  9: the read-back differs",
+			"  11: a precondition read failed",
+			"  12: the invoking token is below write",
+			"  13: the id names no question",
+			"  14: the round could not be digested",
+			"  15: --authorization is missing, empty or undated",
+			"  17: the id is a fact question",
+			"  18: the question is superseded",
+			'  Derivation: the grilling skill\'s contract.md, "grill rule"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika grill rule 9412 R2.3 --authorization authorization.md"},
+	]),
 );
 
 const read = leafCommand(
@@ -234,8 +298,15 @@ const read = leafCommand(
 ).pipe(
 	Command.withShortDescription("The question frontier and total audit-context read."),
 	Command.withDescription(
-		'Read the whole session state, including auditContext as Found/Absent/Malformed alongside the question frontier: {"session":n,"frontier":"awaiting-founder|facts-pending|clear|empty","questions":[…],"disregarded":[…],"counts":{…},"scanned":{…}}. All four frontier tokens exit 0 — an open frontier is this skill working. Never refuses on marker content: a malformed, unauthorized or unbindable marker is a disregarded row at exit 0. Exits 7 (no such session), 11 (a comment or permission read could not complete, so every state is UNKNOWN). Example: fabrika grill read 9412',
+		[
+			"Prints the whole session state, question frontier and audit context as JSON.",
+			"  Every frontier token is an answer, and a bad marker is a disregarded row, never a refusal.",
+			"  7: no such session",
+			"  11: a comment or permission read failed, so every state is UNKNOWN",
+			'  Derivation: the grilling skill\'s contract.md, "grill read"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika grill read 9412"}]),
 );
 
 export const grillCommand = Command.make("grill").pipe(

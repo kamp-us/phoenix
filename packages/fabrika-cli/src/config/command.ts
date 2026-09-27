@@ -93,8 +93,15 @@ const schema = leafCommand(
 ).pipe(
 	Command.withShortDescription(`Reconcile ${CONFIG_SCHEMA_FILE} with the config-key registry.`),
 	Command.withDescription(
-		`Reconcile the committed ${CONFIG_SCHEMA_FILE} with the JSON Schema assembled from the config-key fragments — and, with --write, render it from the registry rather than by hand, so an editor validates .fabrika.jsonc against it. Stdout is the single line \`schema\\t<agrees|written>\\t<keys>\`. Exits 4 (the committed file is stale or not committed — regenerate with --write), 6 (the repo root could not be resolved, or the file could not be read or written — UNKNOWN, never drift), 7 (a registered key carries no schema fragment, so the schema would be incomplete). Example: fabrika config schema --write`,
+		[
+			"Prints `schema\\t<agrees|written>\\t<keys>` for the committed schema and the config-key registry.",
+			"  4: the committed file is stale or not committed; regenerate with --write",
+			"  6: the repo root, or the file, could not be read or written (UNKNOWN)",
+			"  7: a registered key carries no schema fragment",
+			"  Derivation: packages/fabrika-cli/src/config/schema-verb.ts",
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika config schema --write"}]),
 );
 
 export const configCommand = Command.make("config").pipe(

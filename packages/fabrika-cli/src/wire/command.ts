@@ -51,8 +51,12 @@ const codes = leafCommand(
 ).pipe(
 	Command.withShortDescription("Print the exit taxonomy this group allocates from."),
 	Command.withDescription(
-		"Print the exit taxonomy every verb in this group allocates from. Stdout is one `<code>\\t<meaning>` line per code. Reads nothing and always exits 0. Example: fabrika wire codes",
+		[
+			"Prints the exit taxonomy this group allocates from, one `<code>\\t<meaning>` line per code.",
+			"  Reads nothing and always succeeds.",
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika wire codes"}]),
 );
 
 const formats = leafCommand(
@@ -64,8 +68,13 @@ const formats = leafCommand(
 ).pipe(
 	Command.withShortDescription("List the registered wire formats, from the registry."),
 	Command.withDescription(
-		"List the registered wire formats, derived from the registry rather than from a hand-written list. First stdout line is `formats\\t<n>`, then one `<key>\\t<purpose>\\t<producers>\\t<consumers>` line per format. Exits 7 (no format is registered — zero scope, never a vacuous listing). Example: fabrika wire formats",
+		[
+			"Prints `formats\\t<n>`, then one `<key>\\t<purpose>\\t<producers>\\t<consumers>` line per format.",
+			"  7: no format is registered (zero scope)",
+			"  Derivation: claude-plugins/fabrika/docs/wire-formats.md",
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika wire formats"}]),
 );
 
 const emit = leafCommand(
@@ -77,8 +86,19 @@ const emit = leafCommand(
 ).pipe(
 	Command.withShortDescription("Compose a format's bytes from the fields on stdin."),
 	Command.withDescription(
-		"Compose a format's bytes from the fields on STDIN — for acceptance-criteria, one criterion per line, optionally prefixed `[x]` or `[ ]`. The composed block is the stdout answer and round-trips through `wire read`. Exits 5 (stdin was read and held nothing), 6 (stdin could not be read — UNKNOWN), 7 (--format names no registered format), 8 (the fields hold no usable criterion). Example: fabrika wire emit --format acceptance-criteria < criteria.txt",
+		[
+			"Composes a format's block from the fields on stdin and prints it; `wire read` reads it back.",
+			"  For acceptance-criteria, one criterion per line, optionally prefixed `[x]` or `[ ]`.",
+			"  5: stdin was read and held nothing",
+			"  6: stdin could not be read (UNKNOWN)",
+			"  7: --format names no registered format",
+			"  8: the fields hold no usable criterion",
+			"  Derivation: claude-plugins/fabrika/docs/wire-formats.md",
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika wire emit --format acceptance-criteria < criteria.txt"},
+	]),
 );
 
 const read = leafCommand(
@@ -90,8 +110,19 @@ const read = leafCommand(
 ).pipe(
 	Command.withShortDescription("Read a format's block out of the artifact on stdin."),
 	Command.withDescription(
-		"Read a format's block out of the artifact on STDIN and print its fields. The read is total: `found` is the only outcome on stdout, and it never carries zero fields. First stdout line is `found\\t<format>\\t<count>`, then one field line each. Exits 3 (proven absent — nothing in the artifact reaches for the block), 4 (present and malformed — the reason and the offending bytes are on stderr), 5 (stdin was read and held nothing), 6 (the artifact could not be read — UNKNOWN, never absent), 7 (--format names no registered format). Example: fabrika wire read --format acceptance-criteria < issue-body.md",
+		[
+			"Prints `found\\t<format>\\t<count>`, then one line per field of the stdin artifact's block.",
+			"  3: proven absent; nothing reaches for the block",
+			"  4: present and malformed; the reason and bytes are on stderr",
+			"  5: stdin was read and held nothing",
+			"  6: the artifact could not be read (UNKNOWN)",
+			"  7: --format names no registered format",
+			"  Derivation: claude-plugins/fabrika/docs/wire-formats.md",
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika wire read --format acceptance-criteria < issue-body.md"},
+	]),
 );
 
 const check = leafCommand(
@@ -103,8 +134,20 @@ const check = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether the artifact on stdin carries a conforming block."),
 	Command.withDescription(
-		"Say whether the artifact on STDIN carries a conforming block for this format, without printing its fields. The scope judged — lines, bytes and format — is on stderr on every path. Stdout is the single line `conforms\\t<format>\\t<count>`. Exits 3 (proven absent), 4 (present and malformed), 5 (stdin was read and held nothing), 6 (the artifact could not be read — UNKNOWN), 7 (--format names no registered format — zero scope, never a vacuous pass). Example: fabrika wire check --format acceptance-criteria < issue-body.md",
+		[
+			"Prints `conforms\\t<format>\\t<count>` when the stdin artifact carries a conforming block.",
+			"  The scope judged is on stderr on every path.",
+			"  3: proven absent",
+			"  4: present and malformed",
+			"  5: stdin was read and held nothing",
+			"  6: the artifact could not be read (UNKNOWN)",
+			"  7: --format names no registered format (zero scope)",
+			"  Derivation: claude-plugins/fabrika/docs/wire-formats.md",
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika wire check --format acceptance-criteria < issue-body.md"},
+	]),
 );
 
 /** `--file` lifted into the stdin shape, so the verb keeps one UNKNOWN-vs-empty classification. */
@@ -137,8 +180,18 @@ const docSection = leafCommand(
 ).pipe(
 	Command.withShortDescription("Print one markdown section of a document by heading."),
 	Command.withDescription(
-		'Print the one section of the markdown document on STDIN (or --file) sitting under the ATX heading whose text equals --heading — from the heading to the next heading of equal or shallower depth, headings inside code fences ignored. Stdout is the section body. Exits 3 (no heading outside a fence carries that text — proven absent), 4 (the heading occurs more than once — proven ambiguous), 5 (the document was read and held nothing), 6 (the document could not be read — UNKNOWN, never absent). Example: fabrika wire doc-section --heading "build claim" < contract.md',
+		[
+			"Prints the section of the stdin or --file markdown under the ATX heading whose text is --heading.",
+			"  The section runs to the next heading of equal or shallower depth; fenced headings are ignored.",
+			"  3: no heading outside a fence carries that text",
+			"  4: the heading occurs more than once",
+			"  5: the document was read and held nothing",
+			"  6: the document could not be read (UNKNOWN)",
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: 'fabrika wire doc-section --heading "build claim" < contract.md'},
+	]),
 );
 
 /**
@@ -190,8 +243,15 @@ const index = leafCommand(
 ).pipe(
 	Command.withShortDescription("Reconcile the wire-formats index doc with the registry."),
 	Command.withDescription(
-		"Reconcile the wire-formats index doc with the registry — and, with --write, render its generated region from the registry rather than by hand. Stdout is the single line `index\\t<agrees|written>\\t<registered>\\t<documented>`. Exits 4 (the index and the registry disagree — a registered format with no section, a section for no registered format, or a stale generated region), 6 (the doc could not be read or written — UNKNOWN, never a disagreement), 7 (zero scope: an empty registry, an empty doc, no generated region, or no format sections — never a vacuous pass). Example: fabrika wire index --write",
+		[
+			"Prints `index\\t<agrees|written>\\t<registered>\\t<documented>` for the index doc and registry.",
+			"  4: the index and the registry disagree",
+			"  6: the doc could not be read or written (UNKNOWN)",
+			"  7: zero scope",
+			'  Derivation: claude-plugins/fabrika/docs/wire-formats.md, "Adding a format"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika wire index --write"}]),
 );
 
 export const wireCommand = Command.make("wire").pipe(

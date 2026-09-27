@@ -366,7 +366,9 @@ row cannot hold, and the only half of this page written by hand.
 
 `fabrika wire index` (no flag) is the check, and it runs in CI on a change to either side. It reds
 on three things: a registered format with no narrative section here, a section here naming no
-registered format, and a generated region that is not what the registry renders today. Hand edits
+registered format, and a generated region that is not what the registry renders today. It refuses
+as zero scope, never a vacuous pass, on an empty registry, an empty doc, a doc with no generated
+region, or a doc with no format sections. Hand edits
 inside the generated markers are overwritten by the generator and red in CI in the meantime. The
 interface and totality law the module meets are typed in
 [`wire/format.ts`](../../../packages/fabrika-cli/src/wire/format.ts): every read is total over

@@ -93,8 +93,18 @@ const next = leafCommand(
 ).pipe(
 	Command.withShortDescription("The next unused ADR id: merged, open-PR and branch claims folded."),
 	Command.withDescription(
-		"The next unused ADR id — max(fetched merged set ∪ open-PR claims ∪ branch claims) + 1, where a branch claim is an id on any branch ref this clone carries that the base does not — local branches and fetched remote-tracking ones alike, which is how an epic child's unpublished mint is visible to its siblings. Prints `0240`; --json adds mergedMax/inFlight/branchClaims/baseSha. An empty-and-readable --dir is a fresh corpus and answers 0001. Exits 11 (--dir unreadable), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 21 (origin remote unresolvable), 23 (branch refs unwalkable). Two lanes in two clones still collide while neither branch is pushed; this does not claim otherwise. Example: fabrika adr next",
+		[
+			"Prints the next unused ADR id, such as `0240`, or `0001` for an empty readable --dir.",
+			"  11: --dir unreadable",
+			"  17: --base could not be fetched",
+			"  18: the in-flight set is unknown",
+			"  19: a record filename has no readable id",
+			"  21: the origin remote is unresolvable",
+			"  23: the branch refs could not be walked",
+			'  Derivation: the adr skill\'s contract.md, "adr next"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika adr next"}]),
 );
 
 const idArg = Argument.string("id").pipe(
@@ -155,8 +165,13 @@ const newCmd = leafCommand(
 ).pipe(
 	Command.withShortDescription("Scaffold a new ADR file from the canonical template."),
 	Command.withDescription(
-		"Scaffold <dir>/NNNN-slug.md from the canonical template. Prints the path written. Exits 12 (path exists — never overwritten); a bad id or slug is a usage error and exits 1. Example: fabrika adr new 0240 only-landed-adrs-may-be-cited",
+		[
+			"Scaffolds <dir>/NNNN-slug.md from the canonical template and prints the path written.",
+			"  12: the path exists and is never overwritten",
+			'  Derivation: the adr skill\'s contract.md, "adr new"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika adr new 0240 only-landed-adrs-may-be-cited"}]),
 );
 
 const mint = leafCommand(
@@ -189,8 +204,19 @@ const mint = leafCommand(
 ).pipe(
 	Command.withShortDescription("Allocate the next ADR id and scaffold its record in one call."),
 	Command.withDescription(
-		"Allocate the next unused ADR id and scaffold its record in one invocation — `adr next` then `adr new` with no gap for another lane's mint to land in. Prints the path written; --json adds id/mergedMax/inFlight/branchClaims/baseSha. Exits 11 (--dir unreadable), 12 (path exists — never overwritten), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 21 (origin remote unresolvable), 23 (branch refs unwalkable); a bad slug is a usage error and exits 1. Example: fabrika adr mint only-landed-adrs-may-be-cited",
+		[
+			"Allocates the next ADR id, scaffolds its record in the same call and prints the path written.",
+			"  11: --dir unreadable",
+			"  12: the path exists and is never overwritten",
+			"  17: --base could not be fetched",
+			"  18: the in-flight set is unknown",
+			"  19: a record filename has no readable id",
+			"  21: the origin remote is unresolvable",
+			"  23: the branch refs could not be walked",
+			'  Derivation: the adr skill\'s contract.md, "adr mint"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika adr mint only-landed-adrs-may-be-cited"}]),
 );
 
 const resolve = leafCommand(
@@ -212,8 +238,18 @@ const resolve = leafCommand(
 ).pipe(
 	Command.withShortDescription("Resolve ADR ids to their real filename and state at a base ref."),
 	Command.withDescription(
-		"Resolve ids to their real filename and state against a fetched base ref — one `<state>\\t<file>\\t<detail>` line per id, state ∈ live|landed|in-flight|absent. An empty-and-readable --dir answers absent. Exits 11 (--dir or one of its records unreadable), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 20 (two records for one id), 21 (origin remote unresolvable). Example: fabrika adr resolve 0164 0023",
+		[
+			"Prints one `<state>\\t<file>\\t<detail>` line per id, state live|landed|in-flight|absent.",
+			"  11: --dir or one of its records is unreadable",
+			"  17: --base could not be fetched",
+			"  18: the in-flight set is unknown",
+			"  19: a record filename has no readable id",
+			"  20: two records carry one id",
+			"  21: the origin remote is unresolvable",
+			'  Derivation: the adr skill\'s contract.md, "adr resolve"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika adr resolve 0164 0023"}]),
 );
 
 const byFlag = Flag.string("by").pipe(
@@ -231,8 +267,17 @@ const supersede = leafCommand(
 ).pipe(
 	Command.withShortDescription("Mark an older ADR superseded by this one."),
 	Command.withDescription(
-		"Rewrite an older ADR's status: line to `superseded by [NNNN](NNNN-slug.md)` — that line and nothing else. Prints `<path>\\t<new status>`. Exits 7 (no such id), 13 (no --by record), 14 (no single status: line), 15 (diff touched another line — nothing written), 16 (already superseded). Example: fabrika adr supersede 0126 --by 0240",
+		[
+			"Rewrites an older ADR's status line to `superseded by` and prints `<path>\\t<new status>`.",
+			"  7: no such id",
+			"  13: no --by record",
+			"  14: no single status line",
+			"  15: the diff touched another line, so nothing was written",
+			"  16: already superseded",
+			'  Derivation: the adr skill\'s contract.md, "adr supersede and adr amend-in-part"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika adr supersede 0126 --by 0240"}]),
 );
 
 const amendInPart = leafCommand(
@@ -246,8 +291,17 @@ const amendInPart = leafCommand(
 ).pipe(
 	Command.withShortDescription("Add this ADR to an older one's amended-in-part list."),
 	Command.withDescription(
-		"Append this ADR to an older one's `amended-in-part by` list, in id order, preserving the links already there. Prints `<path>\\t<new status>`. Exits 7 (no such id), 13 (no --by record), 14 (no single status: line), 15 (diff touched another line — nothing written), 16 (the record is already superseded, so it is not amendable). Example: fabrika adr amend-in-part 0023 --by 0240",
+		[
+			"Adds this ADR to an older one's `amended-in-part by` list and prints `<path>\\t<new status>`.",
+			"  7: no such id",
+			"  13: no --by record",
+			"  14: no single status line",
+			"  15: the diff touched another line, so nothing was written",
+			"  16: the record is superseded, so it is not amendable",
+			'  Derivation: the adr skill\'s contract.md, "adr supersede and adr amend-in-part"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika adr amend-in-part 0023 --by 0240"}]),
 );
 
 const sweepCmd = leafCommand(
@@ -273,8 +327,14 @@ const sweepCmd = leafCommand(
 ).pipe(
 	Command.withShortDescription("Rank the live ADRs this one may contradict."),
 	Command.withDescription(
-		"Rank the uncited live-accepted ADRs this one may contradict. First stdout line is the outcome token — shortlist | no-overlap | indeterminate — and ALL THREE exit 0; a shortlist adds one `<id>\\t<score>\\t<file>\\t<title>` line per entry. An empty-and-readable --dir answers indeterminate. Exits 7 (no readable --new), 11 (corpus unreadable). Example: fabrika adr sweep --new 0240",
+		[
+			"Prints shortlist, no-overlap or indeterminate, each an answer, then one line per shortlisted ADR.",
+			"  7: no readable --new",
+			"  11: the corpus is unreadable",
+			'  Derivation: the adr skill\'s contract.md, "adr sweep"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika adr sweep --new 0240"}]),
 );
 
 export const adrCommand = Command.make("adr").pipe(

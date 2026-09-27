@@ -39,8 +39,14 @@ const manifest = leafCommand(
 ).pipe(
 	Command.withShortDescription("This repo's design surfaces, as presence and paths."),
 	Command.withDescription(
-		'Resolve this repo\'s design surfaces by convention — manifest, prohibition registry, component inventory, golden pointer — as presence and paths, plus the `uiSurfaces` rows this repo declares, never a judgment. Prints {"manifest","registry","inventory","goldenPointer","uiSurfaces","lawSource"}, each path repo-root-relative or null and `uiSurfaces` the declared row names (`[]` for a repo declaring none), with lawSource "registry" or "manifest-prose". Exits 11 (the repo root or a convention path could not be probed, or `uiSurfaces` did not decode — presence is UNKNOWN, never "absent"), 12 (proven: no design manifest — the repo is un-bootstrapped; route to front-door). Example: fabrika ui manifest',
+		[
+			"Prints this repo's design surfaces and declared `uiSurfaces` rows as JSON presence and paths.",
+			"  11: a probe or the `uiSurfaces` decode failed, so presence is UNKNOWN",
+			"  12: no design manifest; the route is front-door",
+			'  Derivation: the build-ui skill\'s contract.md, "ui manifest"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika ui manifest"}]),
 );
 
 const law = leafCommand(
@@ -52,8 +58,16 @@ const law = leafCommand(
 ).pipe(
 	Command.withShortDescription("The typed prohibition registry, in file order."),
 	Command.withDescription(
-		'The typed prohibition registry, schema-validated whole-file, rows in file order. Prints {"lawSource":"registry","rows":[…]}; there is no empty answer — zero rows is a schema violation. Exits 4 (the registry exists but violates the schema — missing/extra field, duplicate id, off-enum value, zero rows, unparseable JSON; the whole file is refused), 11 (the registry could not be read — the law is UNKNOWN, never "untyped"), 12 (proven: no design manifest), 13 (proven: manifest present, no registry — the law is untyped and the manifest\'s prose is the source). Example: fabrika ui law',
+		[
+			"Prints the schema-validated prohibition registry as JSON, rows in file order.",
+			"  4: the registry violates the schema, so the whole file is refused",
+			"  11: the registry could not be read, so the law is UNKNOWN",
+			"  12: no design manifest",
+			"  13: a manifest but no registry; the manifest's prose is the law",
+			'  Derivation: the build-ui skill\'s contract.md, "ui law"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika ui law"}]),
 );
 
 const render = leafCommand(
@@ -93,8 +107,20 @@ const render = leafCommand(
 ).pipe(
 	Command.withShortDescription("Render the named surfaces here and capture one PNG each."),
 	Command.withDescription(
-		'Render the named surfaces in this tree and capture one VALIDATED PNG per surface, into <set>/ under the lane scratch dir, plus a <set>/manifest.json byte-identical to the stdout JSON. Prints {"set","captures":[{"surface","path","width","height","sha256","firstRender"}]} and exits 0 only when EVERY requested surface captured and validated. Emits no verdict, no score and no layout opinion. Each surface resolves to the `uiSurfaces` row whose declared mount is its longest match, and only those apps are started, each on a port allocated at start. Exits 10 (--out is not kebab-case, a --surface carries the reserved :state suffix, or a --surface falls outside every declared mount), 11 (an app never became ready, the declared `uiSurfaces` or `uiCapture` did not decode, or a capture\'s validity could not be determined — UNKNOWN), 14 (proven: a surface threw during render), 15 (proven: a surface is unreachable), 16 (proven: a capture is invalid), 18 (proven: the lane precondition failed), 19 (proven: `.fabrika.jsonc` declares no `uiSurfaces` row). Example: fabrika ui render --out after --surface /pano',
+		[
+			"Renders the named surfaces here, captures one validated PNG each and prints the set as JSON.",
+			"  Succeeds only when every requested surface captured and validated.",
+			"  10: a bad --out, or a --surface that is reserved or outside every mount",
+			"  11: an app never became ready, config did not decode, or validity is UNKNOWN",
+			"  14: a surface threw during render",
+			"  15: a surface is unreachable",
+			"  16: a capture is invalid",
+			"  18: the lane precondition failed",
+			"  19: .fabrika.jsonc declares no `uiSurfaces` row",
+			'  Derivation: the build-ui skill\'s contract.md, "ui render"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika ui render --out after --surface /pano"}]),
 );
 
 const golden = leafCommand(
@@ -124,8 +150,18 @@ const golden = leafCommand(
 ).pipe(
 	Command.withShortDescription("Diff a candidate surface against its blessed golden."),
 	Command.withDescription(
-		'Resolve a surface\'s blessed golden and diff a candidate against it — signal, never verdict. Prints {"surface","blessed","golden","diff"}; an unblessed surface is a FACT on exit 0, but only after a pointer read that succeeded. The diff is the contract\'s number: a pixel differs above a per-channel delta of 10, magnitude is differing/total rounded to 3 decimals, regions are 8-connected boxes merged under 16px, largest first, capped at 20; a dimension mismatch is {"magnitude":1,"regions":[],"dimensionMismatch":true}. Exits 4 (the pointer exists but does not parse — never read as an empty blessed set), 11 (the pointer read, the bytes fetch or their hash check failed — blessing is UNKNOWN), 16 (proven: the candidate is invalid). Example: fabrika ui golden --surface /board --candidate /…/after/board.png',
+		[
+			"Diffs a candidate against its surface's blessed golden and prints the signal as JSON.",
+			"  An unblessed surface is an answer once the pointer read succeeded.",
+			"  4: the pointer exists but does not parse",
+			"  11: the pointer read, bytes fetch or hash check failed, so blessing is UNKNOWN",
+			"  16: the candidate is invalid",
+			'  Derivation: the build-ui skill\'s contract.md, "ui golden"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika ui golden --surface /board --candidate /…/after/board.png"},
+	]),
 );
 
 const evidence = leafCommand(
@@ -160,8 +196,23 @@ const evidence = leafCommand(
 ).pipe(
 	Command.withShortDescription("Upload the before/after captures and post them on the PR."),
 	Command.withDescription(
-		'Upload the before/after captures, verify EVERY upload, post one head-SHA-bound PR comment, and read it back. Prints {"answer":"attached","pr","commentId","head","surfaces"}. Evidence is all-or-nothing: one failed upload or verification is 17 with nothing posted. Exits 4 (an after-surface has no before and no firstRender mark, or a set is missing its manifest.json), 5 (the comment carries a machine-local path), 6 (the comment is a bare @ path reference), 7 (the PR is proven absent, closed or merged), 8 (the post failed — it may or may not have landed), 9 (the comment landed but does not read back as sent), 11 (a precondition read failed, or the declared `uiSurfaces` / `uiCapture` did not decode — nothing was uploaded or posted), 16 (proven: a capture is invalid or no longer matches its manifest sha), 17 (proven: an upload or its verification failed), 18 (proven: the lane precondition failed), 19 (proven: `.fabrika.jsonc` declares no `uiSurfaces` row). Example: fabrika ui evidence --pr 4318 --before before --after after',
+		[
+			"Uploads before/after captures, posts one head-bound PR comment, reads it back and prints JSON.",
+			"  4: a capture set is incomplete",
+			"  5: the comment carries a machine-local path",
+			"  6: a bare @ path reference",
+			"  7: the PR is absent, closed or merged",
+			"  8: the post failed; it may have landed",
+			"  9: the read-back differs",
+			"  11: a read or decode failed; nothing posted",
+			"  16: a capture is invalid or off its manifest",
+			"  17: an upload failed to verify; nothing posted",
+			"  18: the lane precondition failed",
+			"  19: .fabrika.jsonc declares no `uiSurfaces` row",
+			'  Derivation: the build-ui skill\'s contract.md, "ui evidence"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika ui evidence --pr 4318 --before before --after after"}]),
 );
 
 export const uiCommand = Command.make("ui").pipe(

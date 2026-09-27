@@ -65,8 +65,18 @@ const changelog = leafCommand(
 ).pipe(
 	Command.withShortDescription("Derive one Keep-a-Changelog release section from shipped work."),
 	Command.withDescription(
-		"Derive one Keep a Changelog release section from a gathered entries JSON — the closed-issue titles and their triaged `type:*` labels for a release range, with a merged-PR backlink each. CHANGELOG.md is a projection of that pipeline metadata rather than a hand-edited doc, and an entry whose issue carries no recognized `type:*` lands under Uncategorized instead of being dropped. Prints the changelog on stdout, or writes it to --out with the progress line on stderr. Exits 4 (the entries file is not valid JSON, or not a ChangelogEntry[]), 8 (--out could not be written, so whether it landed is UNKNOWN), 11 (the entries file could not be read). Example: fabrika ci changelog --entries entries.json --version 0.3.1 --out CHANGELOG.md",
+		[
+			"Prints one Keep a Changelog release section derived from an entries JSON, or writes it to --out.",
+			"  An entry with no recognized `type:*` lands under Uncategorized, never dropped.",
+			"  4: the entries file is not a valid ChangelogEntry[] JSON",
+			"  8: --out could not be written (UNKNOWN)",
+			"  11: the entries file could not be read",
+			"  Derivation: packages/fabrika-cli/src/ci/changelog.ts",
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika ci changelog --entries entries.json --version 0.3.1 --out CHANGELOG.md"},
+	]),
 );
 
 const prBody = leafCommand(
@@ -78,8 +88,15 @@ const prBody = leafCommand(
 ).pipe(
 	Command.withShortDescription("Neutralize stray HTML tags in a Release PR body, on stdin."),
 	Command.withDescription(
-		"Read a standing Release PR body on stdin and print one release-please can parse back. release-please copies each commit subject verbatim into the body's changelog and reads that body back through an HTML parser, so a subject carrying a literal <details> makes the body unparseable, and every green run rebuilds it from the same subject. Every HTML-looking tag loses its brackets EXCEPT the two lines release-please writes as structure itself. Empty stdout means the body already parses — write back exactly when there is something to write. Exit 0 on any completed read, repaired or not: this is a repair, not a gate. Exits 3 (nothing was piped in, or the body is empty), 11 (fd 0 could not be read, so the body is UNKNOWN). Example: gh api repos/o/r/pulls/42 --jq .body | fabrika ci pr-body",
+		[
+			"Prints the stdin Release PR body with stray HTML tags defused, or nothing when it already parses.",
+			"  Any completed read succeeds, repaired or not: this is a repair, not a gate.",
+			"  3: nothing was piped in, or the body is empty",
+			"  11: fd 0 could not be read (UNKNOWN)",
+			"  Derivation: packages/fabrika-cli/src/ci/pr-body.ts",
+		].join("\n"),
 	),
+	Command.withExamples([{command: "gh api repos/o/r/pulls/42 --jq .body | fabrika ci pr-body"}]),
 );
 
 const annotate = leafCommand(
@@ -105,8 +122,13 @@ const annotate = leafCommand(
 ).pipe(
 	Command.withShortDescription("Echo a typecheck through, annotating each tsc diagnostic."),
 	Command.withDescription(
-		"A pass-through filter for the CI typecheck step: echo stdin to stdout byte-for-byte, then re-emit each tsc/tsgo diagnostic as a ::error file=,line=,col= workflow command so a failed typecheck renders inline on the PR diff. tsc ships no annotations reporter. Paths are re-rooted from package-relative to repo-relative using the workspace member map, reading BOTH of turbo's package attributions — the per-line prefix and the grouped-header form CI actually gets. Annotations are CI-only unless --force. It ALWAYS exits 0 and never swallows a line: the typecheck's redness rides on the producer's exit code through `set -o pipefail`. Example: pnpm typecheck | fabrika ci annotate",
+		[
+			"Echoes stdin to stdout unchanged, then prints a `::error` workflow command per tsc diagnostic.",
+			"  Always succeeds and drops no line; the typecheck's status rides `set -o pipefail`.",
+			"  Derivation: packages/fabrika-cli/src/ci/tsc-annotate.ts",
+		].join("\n"),
 	),
+	Command.withExamples([{command: "pnpm typecheck | fabrika ci annotate"}]),
 );
 
 export const ciCommand = Command.make("ci").pipe(
