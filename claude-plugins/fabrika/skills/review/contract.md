@@ -253,6 +253,9 @@ Filtering is opt-in for `review scope` and `review diff`: `--filter-placement=af
 omitting the flag preserves unfiltered output. `before` and every other value refuse on `10`.
 `--exclude` adds comma-separated patterns only when filtering is enabled. Patterns support `*`
 within a path segment and `**` across segments; every other character, including `?`, is literal.
+The shipped defaults are `pnpm-lock.yaml`, `**/__snapshots__/**`, `**/__generated__/**`,
+`**/schema.graphql.generated` and `**/__mutation__/**`: the lockfile, snapshot directories and the
+generated-schema and build-output shapes.
 The effective set is shipped defaults minus `reviewFilterUnexclude`, then `reviewFilterExclusions`
 and caller additions, deduplicated by pattern in declaration order. Re-adding a removed default
 restores it and removes it from the removal report.
@@ -352,7 +355,8 @@ the `governance` skill; the flag only makes the seam mechanical.
 
 **`governance` is a fourth-root answer, and it is why `harness` must not be read as one.** The line
 is `touchesGovernanceRoot` over the same file list, against the **declared** governance roots
-(`governedRoots`, whose shipped value here is the decision corpus plus the three `harness` roots) — the
+(`governedRoots`, whose shipped value is five roots: the decision corpus, the three `harness` roots and
+`.fabrika.jsonc` itself) — the
 one derivation `governance scope` prints, imported rather than recomputed. So a
 decision-corpus-only diff prints `harness\tfalse` and `governance\trequired`, which is exactly the
 pair a reviewer keying the governance obligation off `harness` gets wrong: a clean PASS,
@@ -574,7 +578,7 @@ follow [Review content filtering](#review-content-filtering). Omitted placement,
 subjects/modifiers, or `--emit-diff` with `--json` refuse on `10`.
 
 PR and range subjects read the object database and prove diff completeness against the same
-range's path list before filtering. A local diff file has no range to verify; it reads bytes as
+range's path list before filtering, so a deliberate exclusion can never masquerade as a truncation. A local diff file has no range to verify; it reads bytes as
 given through the filesystem service. An unreadable input or config refuses on `11`, a stale PR
 head on `12`, a provably incomplete diff on `13`, and a governed exclusion on `21`.
 

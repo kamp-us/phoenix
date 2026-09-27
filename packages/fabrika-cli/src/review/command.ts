@@ -124,8 +124,23 @@ const scope = leafCommand(
 ).pipe(
 	Command.withShortDescription("A PR's artifact classes, head, issue, flags and governance need."),
 	Command.withDescription(
-		"Partition a PR's changed files into the code / doc / skill artifact classes and report its head SHA, linked issue, self / harness flags and whether the diff requires the governance namespace. The file list is read out of the object database at the bound commit, so the printed head and the partitioned files are the same tree. First stdout line is `scoped\\t<head-sha>\\t<fixes:n|part-of:n|->` — the same issue-reference token `ship scope` prints, so a `Part of #N` partial split reads as linked here too. Then one `class\\t<name>\\t<files>` line per present class, the two flag lines, and `governance\\t<required|not-required>` — the same derivation `governance scope` prints, over this repo's `governedRoots` rather than a hardcoded list: five roots by default, the decision corpus and `.fabrika.jsonc` as well as the three `harness` roots; the bound commit and the scanned count are on stderr. Exits 7 (PR absent, closed, or zero changed files), 10 (--sha is not a head SHA), 11 (the PR could not be read, or the commit could not be bound — the scope is UNKNOWN), 12 (--sha is not the PR's head — re-scope, never re-bind), 13 (the commit carries fewer files than the PR declares). Example: fabrika review scope 4321 --sha 03135b91",
+		[
+			"Prints `scoped\\t<head>\\t<issue-ref>`, then class, namespace, flag and governance lines for a PR.",
+			"  7: PR absent, closed, or zero changed files",
+			"  10: --sha is not a head SHA, or --filter-placement is not `after`",
+			"  11: a read or the commit binding failed (UNKNOWN)",
+			"  12: --sha is not the PR's head; re-scope, never re-bind",
+			"  13: the commit carries fewer files than the PR declares",
+			"  21: an exclusion pattern intersects a governed root",
+			'  Derivation: the review skill\'s contract.md, "review scope"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command: "fabrika review scope 4321 --sha 03135b91",
+			description: "Scope a PR at the head under review",
+		},
+	]),
 );
 
 const diff = leafCommand(
@@ -158,8 +173,23 @@ const diff = leafCommand(
 ).pipe(
 	Command.withShortDescription("Serve a PR's unified diff at the bound commit."),
 	Command.withDescription(
-		"Serve a PR's unified diff bytes on stdout, read out of the object database at the bound commit and refusing a truncated one rather than passing it through as the whole. Nothing is checked out. No --json: the diff is the object. Exits 7 (PR absent, closed, or zero changed files), 10 (--sha is not a head SHA), 11 (the diff could not be read, or the commit could not be bound — UNKNOWN), 12 (--sha is not the PR's head — re-review, never re-bind), 13 (the diff carries fewer files than the PR declares). Example: fabrika review diff 4321 --sha 03135b91",
+		[
+			"Prints a PR's unified diff bytes, read at the bound commit with nothing checked out.",
+			"  7: PR absent, closed, or zero changed files",
+			"  10: --sha is not a head SHA, or --filter-placement is not `after`",
+			"  11: the diff read or the commit binding failed (UNKNOWN)",
+			"  12: --sha is not the PR's head; re-review, never re-bind",
+			"  13: the diff carries fewer files than the PR declares",
+			"  21: an exclusion pattern intersects a governed root",
+			'  Derivation: the review skill\'s contract.md, "review diff"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command: "fabrika review diff 4321 --sha 03135b91",
+			description: "Serve a PR's diff at the head under review",
+		},
+	]),
 );
 
 const criteria = leafCommand(
@@ -179,8 +209,17 @@ const criteria = leafCommand(
 		"Read the graded set: an issue's criteria plus its standing rulings.",
 	),
 	Command.withDescription(
-		"Read the set a review grades — the issue's acceptance-criteria block through the registered `acceptance-criteria` wire format, plus every standing ruling on that issue through the registered `decision-ruling` one. No second parser on either side. First stdout line is `criteria\\t<count>` (the body rows), then `rulings\\t<count>`, then one `<body|ruling>\\t<open|checked|superseded>\\t<text>` line per row — body rows in block order, ruling rows after them oldest first — with a fourth column carrying a body row's outside-diff evidence source or a ruling row's comment URL. A ruling row's text is the founder's own words at that comment, collapsed to one line. A ruling recorded with `decision rule --supersedes <k>` marks body row k `superseded`: it is reported and not graded, never dropped. A conforming marker from an account off the control-plane roster is not a ruling and is counted, not dropped; so is a drifted one. The marked-evidence rows are also counted and quoted on stderr. A closed issue is read anyway, with a notice on stderr. Exits 7 (issue absent, or the block is proven absent or malformed — the two are distinguished on stderr, never invented around), 11 (the issue could not be read — whether a block exists is UNKNOWN; or the roster or the comments could not be read — the graded set is UNKNOWN, never the body alone). Example: fabrika review criteria 4287",
+		[
+			"Prints `criteria\\t<n>` and `rulings\\t<n>`, then one row per criterion and standing ruling.",
+			"  Row: `<body|ruling>\\t<open|checked|superseded>\\t<text>[\\t<evidence|ruling-url>]`",
+			"  7: issue absent, or its criteria block is absent or malformed",
+			"  11: the issue, roster or comments could not be read (UNKNOWN)",
+			'  Derivation: the review skill\'s contract.md, "review criteria"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika review criteria 4287", description: "Read the set an issue's review grades"},
+	]),
 );
 
 const ci = leafCommand(
@@ -196,7 +235,7 @@ const ci = leafCommand(
 		wait: Flag.boolean("wait").pipe(
 			Flag.withDefault(false),
 			Flag.withDescription(
-				"poll a `pending` head until CI concludes or the budget expires, instead of answering with this moment's read",
+				"poll a `pending` head until CI concludes or the budget expires, and prepend `settle\\t<settled|budget-exhausted|head-moved|governance-owed|governance-stale>`",
 			),
 		),
 		budgetSeconds: Flag.integer("budget-seconds").pipe(
@@ -230,8 +269,26 @@ const ci = leafCommand(
 		"Roll up a head's check runs, fail-closed; --wait waits out a pending.",
 	),
 	Command.withDescription(
-		'Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. The rollup is over the blocking set alone: the required set the base branch declares — branch protection unioned with the rulesets matching the base — is the blocking authority, so a red outside it is named on stderr as reported-never-blocking and never makes this verb call the head red, while a base branch declaring nothing falls back to the informational-name denylist. First stdout line is `ci\\t<sha>\\t<rollup>`, then `run\\t<count>` and one `check\\t<status>\\t<count>` line per status present — the tally covers the whole enumeration and the rollup only the blocking set, with the blocking failing and still-running runs named on stderr. An empty enumeration asks whether the repo produces CI at all: with zero workflows it refuses, unless `.fabrika.jsonc` declares `ci.noProducer: "degrade"`, which rolls up `no-producer` — never green. A rollup that is not red then asks which gates inspected these bytes: a run counts only where its workflow is one this repo authors, it carries the resolved head, and its event opened that head — so a base-context `pull_request_target` run gates nothing while an exact-head `workflow_dispatch` one does. `--sha` is resolved to its full object name first, because the Actions run list filters `head_sha` as an exact string, so an abbreviated operand and its full form judge the same. With at least one such run the covered-of-declared count is on stderr (and `gates` under `--json`); with none it refuses on 16; a repo that authors no workflow of its own has no gate to have missed and says so on stderr at exit 0. `--wait` turns a `pending` read into a bounded in-verb wait — the verb owns the loop, never the caller (claude-plugins/fabrika/docs/skill-conventions.md §14) — and prepends `settle\\t<settled|budget-exhausted|head-moved|governance-owed|governance-stale>` to the answer (`settle` under `--json`, null without `--wait`). It polls ONLY a `pending`; every refusal and the `no-producer` answer return on the first read. `budget-exhausted` still prints `pending` — the wait ran out and CI did not conclude; `head-moved` says the PR left the head this answer binds; `governance-owed` says the only unfinished check is `governance floor at head` with its `governance-floor` run already completed, so the verdict the caller itself owes is what is missing — it returns at once, while a floor whose run is still in flight is waited on unchanged; `governance-stale` is the same floor on a `red` rollup, where it is the only FAILING check and its published verdict is `stale` — the caller re-posts and re-reads, and a floor that is `unresolved` or a real `fail`, or any other failing check beside it, stays a plain `red`. Exits 7 (PR or --sha proven absent, zero check runs declared, or zero workflows), 11 (the enumeration, the workflow inventory, the workflow runs at the head, the required-set read on the base branch, or `.fabrika.jsonc` could not be read — CI state is UNKNOWN, never green), 13 (received fewer runs than declared, or the ruleset walk on the base branch never reached a terminal page), 16 (the enumeration is complete, but no workflow this repo authors inspected the head — neither green nor pending; an operand resolving to no full commit is 11 instead). Example: fabrika review ci 4321 --sha 03135b91',
+		[
+			"Prints `ci\\t<sha>\\t<rollup>`, then run and check tallies for a head's blocking check runs.",
+			"  Rollup: green, red, pending or no-producer; never green on an ambiguous run",
+			"  7: PR or --sha absent, zero check runs declared, or zero workflows",
+			"  11: a CI, workflow, required-set or config read failed (UNKNOWN)",
+			"  13: fewer runs than declared, or the ruleset walk did not finish",
+			"  16: no workflow this repo authors inspected the head",
+			'  Derivation: the review skill\'s contract.md, "review ci"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command: "fabrika review ci 4321 --sha 03135b91",
+			description: "Roll up CI at the head under review",
+		},
+		{
+			command: "fabrika review ci 4321 --sha 03135b91 --wait",
+			description: "Wait out a pending head within the budget",
+		},
+	]),
 );
 
 const verdicts = leafCommand(
@@ -243,8 +300,19 @@ const verdicts = leafCommand(
 ).pipe(
 	Command.withShortDescription("Every verdict marker on a PR, bound to the live head."),
 	Command.withDescription(
-		"Sweep every verdict marker on a PR and bind each to the live head as one of three outcomes — current / stale / unbindable, never folded. First stdout line is `verdicts\\t<live-head>\\t<count>`; a count of 0 is a proven answer. Then one `<namespace>\\t<polarity>\\t<sha>\\t<binding>\\t<comment-id>\\t<standing|superseded>` line per marker, newest first; a marker that fails the format prints as a `malformed` row rather than being dropped, and a verdict retired below a comment's supersede fence prints its own `superseded` row rather than being hidden by the one that replaced it. An unresolvable head prints unbindable on every row. Exits 7 (PR proven absent), 11 (the comment list could not be read — never zero), 13 (the sweep is provably short). Example: fabrika review verdicts 4321",
+		[
+			"Prints `verdicts\\t<live-head>\\t<count>`, then one row per verdict marker on a PR, newest first.",
+			"  Row: `<namespace>\\t<polarity>\\t<sha>\\t<binding>\\t<comment-id>\\t<standing|superseded>`",
+			"  Binding: current, stale or unbindable; a marker failing the format prints `malformed`",
+			"  7: PR proven absent",
+			"  11: the comment list could not be read, never zero",
+			"  13: the sweep is provably short",
+			'  Derivation: the review skill\'s contract.md, "review verdicts"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika review verdicts 4321", description: "Sweep every verdict marker on a PR"},
+	]),
 );
 
 const deviations = leafCommand(
@@ -264,8 +332,24 @@ const deviations = leafCommand(
 ).pipe(
 	Command.withShortDescription("The PR body's Deviations state, entries and token scan."),
 	Command.withDescription(
-		"Report the PR body's `## Deviations` state — found | none-declared | absent | malformed, three distinct facts — with its entries and the Tier-M token scan over the diff at the bound commit. First stdout line is `deviations\\t<state>`, then one `entry\\t<class-label-or-->\\t<Said>` line per entry and one `tier-m\\t<kind>\\t<file>:<line>\\t<token>` line per hit. Exits 7 (PR proven absent), 10 (--sha is not a head SHA), 11 (the body or diff could not be read, or the commit could not be bound — the disclosure state is UNKNOWN, never `none`), 12 (--sha is not the PR's head — re-scope, never re-bind), 13 (the diff is provably short — no partial scan is printed beside a disclosure claim). Example: fabrika review deviations 4321 --sha 03135b91",
+		[
+			"Prints `deviations\\t<state>`, then entry and Tier-M rows for a PR body's Deviations section.",
+			"  State: found, none-declared, absent or malformed",
+			"  Rows: `entry\\t<class|->\\t<Said>`, `tier-m\\t<kind>\\t<file>:<line>\\t<token>`",
+			"  7: PR proven absent",
+			"  10: --sha is not a head SHA",
+			"  11: the body, diff or commit binding failed (UNKNOWN, never `none`)",
+			"  12: --sha is not the PR's head; re-scope, never re-bind",
+			"  13: the diff is provably short",
+			'  Derivation: the review skill\'s contract.md, "review deviations"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command: "fabrika review deviations 4321 --sha 03135b91",
+			description: "Read the disclosure at the head under review",
+		},
+	]),
 );
 
 /**
@@ -366,8 +450,35 @@ const post = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the verdict on stdin as this namespace's one comment."),
 	Command.withDescription(
-		'Post the verdict on STDIN as ONE comment for this namespace — re-resolve the live head, recompute the class set at the bound commit, compose the first line through the `verdict-marker` wire format, leak-scan the assembled comment, APPEND into this head\'s own comment, and read it back from live state. The prior verdict is never replaced: it survives verbatim under a dated `## Superseded verdict` heading below the fence, while the fresh verdict takes the first line, so every marker reader resolves the newest one. With --base and --tip the verdict is RANGE-scoped instead: the positional names the child issue, the class set is recomputed over what `<base>...<tip>` changed in this checkout, the first line goes through the `range-verdict-marker` format `lane prove` reads, and the answer\'s third field is `<base>..<tip>`; --sha and --carrier advisory are refused in this mode. That path appends the same way, keyed on the range rather than a head. Prints `posted\\t<namespace>\\t<polarity>\\t<sha|base..tip>\\t<content>\\t<created|superseded>\\t<comment-url>`, where `<content>` is the content digest the verdict binds. Exits 3 (empty stdin — an empty verdict reads as UNGATED), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed; or, ranged, the issue is absent, closed, or a pull request), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (namespace the diff or range did not derive, bad polarity, advisory with FAIL or with a range, a lone --base/--tip, or --sha beside a range), 11 (a precondition read failed, or the commit could not be bound — nothing was posted), 12 (the live head moved past --sha — re-review, never re-bind), 17 (a standing verdict of the OPPOSITE polarity at this head — ranged, over this range — would be retired and --supersede was not passed; nothing posted), 18 (this round appended an acceptance criterion tagged for this same subject and round, and a PASS has no next cycle to carry it — the round owes a FAIL; nothing posted), 19 (a PASS whose linked contract marks a criterion\'s evidence as outside the diff and whose body names no evidence for it — a marked criterion is graded on the evidence it names, so name it or post FAIL; nothing posted). A PASS also requires --round and refuses at 10 without it, and the criteria block it then reads being unreadable or malformed is 11, never "no appended criterion". Examples: fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --round 1 --clause "guide matches shipped behavior" < verdict.md; fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --round 1 --clause "every criterion met" < verdict.md',
+		[
+			"Posts the stdin verdict as its namespace's one comment and prints one `posted` line.",
+			"  3: empty stdin",
+			"  5: machine-local path",
+			"  6: bare @ reference",
+			"  7: PR, or ranged issue, absent or closed",
+			"  8: write failed (UNKNOWN)",
+			"  9: read-back mismatch",
+			"  10: off-vocabulary input, or --round missing on a PASS",
+			"  11: a precondition read failed",
+			"  12: the live head moved past --sha",
+			"  17: would retire an opposite verdict without --supersede",
+			"  18: PASS after this round appended a criterion",
+			"  19: PASS names no evidence for a marked criterion",
+			'  Derivation: the review skill\'s contract.md, "review post"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --round 1 --clause "guide matches shipped behavior" < verdict.md',
+			description: "Post a head-bound PASS",
+		},
+		{
+			command:
+				'fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --round 1 --clause "every criterion met" < verdict.md',
+			description: "Post a range-scoped PASS on an epic child",
+		},
+	]),
 );
 
 /** The criterion text arrives on **stdin**, for the same reason `post`'s body does. */
@@ -419,8 +530,33 @@ const appendCriterion = leafCommand(
 ).pipe(
 	Command.withShortDescription("Append one reviewer-authored acceptance criterion."),
 	Command.withDescription(
-		"Append one reviewer-authored acceptance criterion from STDIN under four fences — ACL-gated fail-closed, append-only, provenance-tagged, frozen at the declared cap round. The round's subject is a PR (`--pr`) or, on an epic child that has none, the commit range it was judged over (`--base`/`--tip`); the two never combine, and the provenance tag names whichever was given — `pr:#<n>` or `range:<base>..<tip>`, the same spelling `lane prove` reads. Every fence runs identically on both. Prints `appended\\t<issue>\\t<rows-after>`, or `escalated-frozen\\t<issue>\\t<round>` at the freeze; both are proven answers at exit 0. The escalation comment carries an `ac:escalated` tag naming the same subject and round, which is what `build verdicts` folds it into `escalatedFindings` by — the finding stays out of the contract and still reaches the next repair round. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (issue absent or closed, or no conforming acceptance-criteria block), 8 (the PATCH or the escalation comment failed — UNKNOWN), 9 (read-back does not show the prior rows plus this one), 10 (no subject named, both named, a lone --base/--tip, or an end that is not a revision), 11 (a precondition read failed), 14 (token below write or the ACL lookup failed), 15 (the write is not provably the prior rows plus one — the append-only fence). Examples: printf 'a regression test covers qty > 1' | fabrika review append-criterion 4287 --pr 4321 --round 1; printf 'a regression test covers qty > 1' | fabrika review append-criterion 6095 --base 9f2c1ab --tip 03135b9 --round 1",
+		[
+			"Appends one reviewer-authored criterion from stdin; prints `appended` or `escalated-frozen`.",
+			"  3: empty stdin",
+			"  5: machine-local path",
+			"  6: bare @ reference",
+			"  7: issue absent, closed, or without a criteria block",
+			"  8: the PATCH or escalation comment failed (UNKNOWN)",
+			"  9: read-back mismatch",
+			"  10: no subject, two subjects, or a bad range end",
+			"  11: a precondition read failed",
+			"  14: token below write, or the ACL lookup failed",
+			"  15: not provably the prior rows plus one",
+			'  Derivation: the review skill\'s contract.md, "review append-criterion"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"printf 'a regression test covers qty > 1' | fabrika review append-criterion 4287 --pr 4321 --round 1",
+			description: "Append a criterion found on a PR",
+		},
+		{
+			command:
+				"printf 'a regression test covers qty > 1' | fabrika review append-criterion 6095 --base 9f2c1ab --tip 03135b9 --round 1",
+			description: "Append a criterion found over an epic child's range",
+		},
+	]),
 );
 
 const scratch = leafCommand(
@@ -449,8 +585,20 @@ const scratch = leafCommand(
 ).pipe(
 	Command.withShortDescription("The per-lane scratch path a reviewer's staged files go under."),
 	Command.withDescription(
-		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>, one absolute path on stdout, the directory created if absent. The nonce is twelve hex of sha256(--lane, --sha): --lane keys the path per LANE rather than per session, --sha keys it per ROUND, and both are required. The printed path is machine-local and must never reach a posted artifact; `review post` and `review append-criterion` red on it at 5. Exits 1 (the directory could not be created, --lane is blank, the positional is not a PR number, or no session id is set (the FABRIKA_SESSION_ID → CLAUDE_CODE_SESSION_ID → PI_SUBAGENT_PARENT_SESSION chain) or the id is not one path segment), 10 (--slug carries a path separator or is not kebab-case, or --sha is not a head SHA). Example: fabrika review scratch 4321 --slug diff --lane 4287 --sha 03135b91",
+		[
+			"Prints one absolute per-lane scratch path for a review file, creating its directory.",
+			"  Path: <temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>",
+			"  Session id: $FABRIKA_SESSION_ID, else $CLAUDE_CODE_SESSION_ID, else $PI_SUBAGENT_PARENT_SESSION",
+			"  10: --slug is not a kebab-case leaf, or --sha is not a head SHA",
+			'  Derivation: the review skill\'s contract.md, "review scratch"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command: "fabrika review scratch 4321 --slug diff --lane 4287 --sha 03135b91",
+			description: "Allocate the path a staged diff goes under",
+		},
+	]),
 );
 
 const seat = leafCommand(
@@ -482,8 +630,23 @@ const seat = leafCommand(
 ).pipe(
 	Command.withShortDescription("Seat this worktree at an epic child's range tip, or refuse."),
 	Command.withDescription(
-		"Check this worktree out at the tip of an epic child's `--base`/`--tip` range, so every fence that reads the working tree — tsc, biome, vitest, the guards — reads the tree the verdict names. A child's build branch is local and unpushed, so a reviewer worktree cut fresh from the driver's checkout does not carry the range at all. The tip must be reachable here AND carried by a branch this clone's own grammar says was cut for this child; neither read falls back to grading in place. The seat is detached, because a reviewer commits nothing, and a tree already standing on the tip is answered by reading HEAD rather than by a second checkout. Stdout is `seated\\t<head>\\t<branch>\\t<checked-out|already-seated>`, with the carriers and the read-back HEAD on stderr. Exits 1 (the positional is not an issue number), 10 (a lone --base/--tip, neither given, or an end that is not a revision), 11 (a git read the answer turns on failed — the branch list, this tree's HEAD, the read-back, or every candidate that could have carried the tip; a candidate nobody could read is only reported once another branch has proven the seat), 8 (the checkout itself failed — the tree's position is UNKNOWN), 9 (the checkout reported success and HEAD reads another commit), 20 (no lane branch of this child is in this clone, the tip resolves to no object here, or no lane branch of this child reaches it — the range was built in a tree this one cannot see). Example: fabrika review seat 8820 --base 99b1453 --tip 4011b1d",
+		[
+			"Checks this worktree out, detached, at an epic child's range tip and prints one `seated` line.",
+			"  Prints `seated\\t<head>\\t<branch>\\t<checked-out|already-seated>`",
+			"  8: the checkout failed (UNKNOWN)",
+			"  9: HEAD reads another commit after the checkout",
+			"  10: a lone --base/--tip, neither, or a bad revision",
+			"  11: a git read the answer turns on failed",
+			"  20: no lane branch of this child here carries the tip",
+			'  Derivation: the review skill\'s contract.md, "review seat"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command: "fabrika review seat 8820 --base 99b1453 --tip 4011b1d",
+			description: "Seat a reviewer at an epic child's range tip",
+		},
+	]),
 );
 
 const preview = leafCommand(
@@ -558,8 +721,24 @@ const preview = leafCommand(
 ).pipe(
 	Command.withShortDescription("Filtered path extraction for review diffs — no LLM, no write."),
 	Command.withDescription(
-		"Read one subject's diff and return its filtered path extraction: the matched paths, the excluded paths, the active class partition and the namespaces it derives, at the requested --filter-placement. Subjects are mutually exclusive: --diff-file reads a local unified diff (no PR, no network); a pull-request number binds a head (optional --sha/--repo) and reads the PR's three-dot diff out of the object database exactly as review diff does; --base/--tip reads a range from its own merge base. `after` derives required text, UI and governance reviews over the full read and enumerates excluded paths beside those unchanged requirements, including all-excluded content. Filtering is optional for scope and diff; preview requires `after`. The defaults exclude pnpm-lock.yaml, **/__snapshots__/** and the generated-schema/build-output shapes; --exclude adds globs, and any pattern intersecting a governed root refuses at 21. PR and range subjects prove diff completeness first — a served-file count short of the range's own path census refuses at 13, so a deliberate exclusion can never masquerade as a truncation; `--diff-file` reads the bytes exactly as given, with no range to prove a census against (its exclusions are still enumerated). --emit-diff prints the filtered diff with its `x-fabrika-filter` / `x-fabrika-excluded-path` header instead of the rows. No LLM invocation, no network write. Exits 10 (missing or off-vocabulary --filter-placement, --emit-diff with --json, no subject named, or two subjects at once), 7 (PR absent, closed, or zero changed files), 11 (a read the answer turns on failed — the diff file, .fabrika.jsonc, the PR read, or a git read), 12 (--sha is not the PR's head), 13 (a provably short diff), 21 (an exclusion pattern intersects governedRoots). Example: fabrika review preview --diff-file pr.diff --filter-placement=after --json",
+		[
+			"Prints one diff's filtered paths, classes and namespaces, with no LLM and no network write.",
+			"  Subject: exactly one of --diff-file, a PR number, or --base with --tip",
+			"  7: PR absent, closed, or zero changed files",
+			"  10: bad --filter-placement, --emit-diff with --json, or not one subject",
+			"  11: a read the answer turns on failed",
+			"  12: --sha is not the PR's head",
+			"  13: a provably short diff",
+			"  21: an exclusion pattern intersects a governed root",
+			'  Derivation: the review skill\'s contract.md, "review preview"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command: "fabrika review preview --diff-file pr.diff --filter-placement=after --json",
+			description: "Preview filtering over a local diff",
+		},
+	]),
 );
 
 export const reviewCommand = Command.make("review").pipe(
