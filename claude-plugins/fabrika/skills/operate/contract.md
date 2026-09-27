@@ -4,8 +4,9 @@
 
 The `lane` verbs live in `packages/fabrika-cli/src/lane/`, grouped under `fabrika lane`; the
 `recipe` verbs are [their own group](#the-recipe-group), below them. Each verb's
-`--help` owns the caller facts: invocation, flags, answer bytes, a one-line meaning per exit and a
-runnable example. This file owns what help leaves out, per the
+`--help` owns the caller facts: invocation, flags, the answer shape, a one-line meaning per exit
+and a runnable example. A shape too long for help is elided there with `…`, and its section here
+carries the full bytes. This file owns what help leaves out, per the
 [leaf help size and shape](../../docs/interface-convention.md#leaf-help-size-and-shape) rule: how a
 value is derived, why a check exists, the order mutations run in, and the conditions behind each
 exit. A verb's help ends on a pointer to its section here. Read one section by heading:
@@ -14,7 +15,7 @@ exit. A verb's help ends on a pointer to its section here. Read one section by h
 fabrika wire doc-section --heading "lane transition" < <skill-base>/contract.md
 ```
 
-A `lane` verb with no section here still carries these facts in its own `--help`.
+Every `lane` verb has a section here, and its help points to it.
 
 ## Shared conventions
 
@@ -1701,9 +1702,10 @@ run through it lands in that sibling's tree.
 ## The `recipe` group
 
 The `recipe` group is the set of standing driver recipes `operate` applies: fixed sequences with a
-checkable outcome and no judgment in them. Each verb's `--help` owns calling it — invocation, flags,
-answer bytes, one line per exit. This file owns how each verb derives its answer and why each check
-exists. The known-park rows themselves live in
+checkable outcome and no judgment in them. Each verb's `--help` owns calling it: invocation, flags,
+the answer shape, one line per exit. A shape too long for help is elided there with `…`, and the
+verb's section here carries the full bytes. This file owns how each verb derives its answer and why
+each check exists. The known-park rows themselves live in
 [`packages/fabrika-cli/src/recipe/parks.ts`](../../../../packages/fabrika-cli/src/recipe/parks.ts),
 and the chore routing table in
 [`packages/fabrika-cli/src/recipe/drive.ts`](../../../../packages/fabrika-cli/src/recipe/drive.ts).

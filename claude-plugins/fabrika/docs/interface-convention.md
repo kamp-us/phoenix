@@ -86,7 +86,10 @@ drifts.
   - **machine** — stdout is parsed, split, or fed to another command. Nothing but the answer lands
     there, and the shape is fixed (a JSON object with named keys, or a line grammar).
   - **prose** — stdout is a human-readable verdict the caller greps for a state word.
-- `--help` shows the caller's answer shape with an example of the actual bytes. Contracts add the
+- `--help` shows the caller's answer shape as bytes, in full when it fits the
+  [leaf help budget](#leaf-help-size-and-shape). A shape too long for that budget is elided with
+  `…` in help, and the contract or wire format that help's pointer line names carries the full
+  bytes. Contracts add the
   implementation requirements under [command documentation ownership](#command-documentation-ownership).
   Prose describing a shape is not a shape.
 - **The positive answer is a positive token, never an absence.** A verb whose "nothing found" answer
@@ -96,8 +99,9 @@ drifts.
 
 Each document serves a distinct reader:
 
-- **Runtime help** owns calling the command: invocation, inputs, defaults, answer bytes, exit
-  meanings and a runnable example. The registry supplies discovery through group help.
+- **Runtime help** owns calling the command: invocation, inputs, defaults, the answer shape, exit
+  meanings and a runnable example. A shape past the leaf help budget is elided in help and carried
+  in full by the contract or wire format help points to. The registry supplies discovery through group help.
 - **Contracts** own implementing the command: how values are derived, mutation ordering, authority
   checks, scope, failure conditions and examples that exercise those requirements. A shipped
   command's contract may point to its help for caller facts; a new command specifies them in the
@@ -121,6 +125,10 @@ holds the caller facts and nothing else:
 
 - **One-line summary first.** Line one says what the verb does and what it prints on stdout, as one
   sentence ending in a full stop.
+- **An answer shape that does not fit is elided, not dropped.** When the full stdout bytes would push
+  a line past 98 characters or the description past its budget, help shows the answer token or the
+  leading keys and elides the rest with `…`, as in `{"answer":"ruled",…}`. The full bytes live in
+  the section the pointer line names: the verb's contract section, or the wire format it links.
 - **Flag detail on the flag.** Each flag's meaning, default and constraints go on its own
   `Flag.withDescription`, and each argument's on `Argument.withDescription`. The renderer prints
   them in the `FLAGS` and `ARGUMENTS` tables, so the description does not repeat them.
@@ -145,9 +153,9 @@ off `review-ui render`, which seats nine exit codes past `0` and `1` (7, 10 to 1
 nine exit lines, one pointer line and two to spare.
 
 The mechanical checks are [`leaf-help.ts`](../../../packages/fabrika-cli/src/leaf-help.ts), and
-`leaf-help.unit.test.ts` holds every registered leaf to them through a ratchet. A verb that broke
-the rule when the guard landed is listed with its length in `src/<group>/leaf-help-baseline.json`.
-It may not grow past its listed length, and its row must be deleted once it passes. A verb not listed must pass.
+`leaf-help.unit.test.ts` holds every registered leaf to them. Every registered leaf verb passes the
+rule, and no group carries a `leaf-help-baseline.json`. The ratchet reds any verb that breaks the
+rule and is not in its group's baseline, so a new wall fails the unit suite.
 
 The exit lines carry their own two-space indent, and that choice is also the renderer's. The pinned
 `formatHelpDocImpl` indents only the description's first line: an embedded `\n` passes through
