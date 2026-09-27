@@ -690,16 +690,13 @@ describe("the merged feature flags on the node side", () => {
 	);
 
 	// The direction that costs something: `piSubagents` defaults on, so an operator turning it off is
-	// a project layer stating `false` over a global `true` — and before this the layer read
+	// the global layer stating `false` over that default — and before #8595 the row's layer read
 	// `featuresDefault` and loaded the extension anyway.
 	it.effect(
-		"let the project layer's false beat the global layer's true",
+		"reach a row's layer as the global layer states them",
 		() =>
 			Effect.gen(function* () {
-				const booted = yield* bootDirect(
-					fixture("pi-subagents-on"),
-					projectWithConfig("pi-subagents-off"),
-				);
+				const booted = yield* bootDirect(fixture("pi-subagents-off"), freshProject());
 				const features = yield* flagsAtSpawn(booted);
 				assert.deepStrictEqual(features, {...featuresDefault, piSubagents: false});
 				assert.deepStrictEqual(subagentExtensionPaths(features), []);
@@ -707,17 +704,16 @@ describe("the merged feature flags on the node side", () => {
 		DIRECT_BOOT_MS,
 	);
 
+	// Flags are global only (#9687, ruling #9668 R4.2): a project layer stating one refuses the boot
+	// rather than overriding the global layer.
 	it.effect(
-		"let the project layer's true beat the global layer's false",
+		"refuse a boot whose project layer states one",
 		() =>
 			Effect.gen(function* () {
-				const booted = yield* bootDirect(
-					fixture("pi-subagents-off"),
-					projectWithConfig("pi-subagents-on"),
+				const error = yield* Effect.flip(
+					bootDirect(fixture("pi-subagents-on"), projectWithConfig("pi-subagents-off")),
 				);
-				const features = yield* flagsAtSpawn(booted);
-				assert.deepStrictEqual(features, {...featuresDefault, piSubagents: true});
-				assert.strictEqual(subagentExtensionPaths(features).length, 1);
+				assert.match(error.message, /states feature flags \(piSubagents\); flags are global only/);
 			}),
 		DIRECT_BOOT_MS,
 	);

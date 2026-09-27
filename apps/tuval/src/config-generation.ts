@@ -9,6 +9,7 @@ import type {BindingSource} from "@kampus/tuval-sdk/kernel/commands/bindings/ind
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {AuthoredModules} from "./authored-modules.ts";
 import type {ProjectLayer} from "./config.ts";
+import type {OwnerKeys} from "./keys/scopes.ts";
 import type {ProgramGeneration} from "./reload.ts";
 
 /** One owner's rows as the kernel runs them, with their flags applied, beside their keys. */
@@ -73,6 +74,17 @@ export class ConfigGeneration implements ProgramGeneration {
 	/** Global first, then each project's: a later source's binding wins, as a key router reads them. */
 	get keys(): ReadonlyArray<BindingSource> {
 		return this.owners.flatMap((owner) => owner.keys);
+	}
+
+	/** The same keys kept owner by owner, which is what a key table follows focus by (`./keys/scopes.ts`). */
+	get ownerKeys(): OwnerKeys {
+		return {
+			global: this.desk.keys,
+			projects: [...this.byProject.values()].map((project) => ({
+				key: project.layer.id.key,
+				sources: project.read.keys,
+			})),
+		};
 	}
 
 	get sources(): ReadonlyArray<string> {

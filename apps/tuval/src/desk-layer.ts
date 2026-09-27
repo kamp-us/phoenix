@@ -10,11 +10,14 @@ import type {DeskLayer} from "./config.ts";
 import {wiredShellEffects} from "./shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "./shell/program.ts";
 
+// The shell is spawned at its graph node's id, so that is the process the picker opens under.
+const shell = shellProgram({
+	effects: wiredShellEffects({shellProcessId: ProcessId.make(shellNode)}),
+});
+
 export const deskLayer: DeskLayer = {
 	origin: fileURLToPath(import.meta.url),
-	programs: [
-		// The shell is spawned at its graph node's id, so that is the process the picker opens under.
-		shellProgram({effects: wiredShellEffects({shellProcessId: ProcessId.make(shellNode)})}),
-	],
+	programs: [shell],
 	graph: {nodes: [shellGraphNode]},
+	table: shell.table,
 };

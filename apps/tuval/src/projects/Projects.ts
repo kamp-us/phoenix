@@ -33,7 +33,6 @@ import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import type {ProcessHandle} from "@kampus/tuval-sdk/kernel/process/process";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {Registry, RegistryRows} from "@kampus/tuval-sdk/kernel/registry/Registry";
-import type {SdkRefused} from "@kampus/tuval-sdk/kernel/registry/sdk-range";
 import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {
 	adoptInProjectState,
@@ -65,7 +64,7 @@ import {type CheckpointScoping, scopeCheckpoints} from "../durability/scope-chec
 import {type LaunchedProcess, launch} from "../launch/launch.ts";
 import {type ProjectId, projectConfig, projectDir} from "../project-id.ts";
 import type {ConfigReloader} from "../reload.ts";
-import type {SdkRemoved} from "../sdk-admission.ts";
+import type {RowRefused, SdkRemoved} from "../sdk-admission.ts";
 import {withShellFeatures} from "../shell/program.ts";
 import {type CheckpointRoutes, ownedView} from "./checkpoint-routes.ts";
 import {
@@ -110,8 +109,8 @@ export interface ProjectOpened {
 	readonly project: OpenProject;
 	readonly state: ProjectState;
 	readonly programCount: number;
-	/** The project's rows refused for their SDK range, which the rest of the project runs without. */
-	readonly refused: ReadonlyArray<SdkRefused>;
+	/** The project's rows refused for their SDK range or a flag left off; the rest of it runs. */
+	readonly refused: ReadonlyArray<RowRefused>;
 	/** The project's graph, in node order. */
 	readonly launched: ReadonlyArray<LaunchedProcess>;
 	/** The project's checkpointed processes its graph did not plan, spawned back. */
@@ -429,7 +428,7 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		}
 		const layer = {id: project.id, module: projectConfig(folder)};
 		const prepared = Effect.gen(function* () {
-			const loaded = yield* loadProjectConfig(desk, layer, options.deskRemoved);
+			const loaded = yield* loadProjectConfig(desk, layer, options.deskRemoved, options.features);
 			const state = yield* prepareProjectState(folder, home, loaded);
 			return {loaded, state};
 		}).pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.mapError(refuse));
