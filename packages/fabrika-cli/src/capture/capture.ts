@@ -16,6 +16,7 @@ import {type BrowserContext, chromium, type Page} from "@playwright/test";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {readSessionProof, type SessionProof} from "./auth.ts";
+import {readSchemeProof, type SchemeProof, type SchemeRequest} from "./color-scheme.ts";
 import {
 	type ForcedFlags,
 	flagProbeBody,
@@ -63,6 +64,12 @@ export interface CapturedSurface {
 	 * seed the app never read paints the default-locale page, a valid PNG under the requested name.
 	 */
 	readonly localeProof?: LocaleProof;
+	/**
+	 * The scheme the page published on its declared root attribute, present only when the shot asked
+	 * for one. An emulated preference the app overrode paints the other scheme, a valid PNG under the
+	 * requested name.
+	 */
+	readonly schemeProof?: SchemeProof;
 }
 
 /** A Playwright launch/navigation/screenshot/write failure — surfaced, never swallowed. */
@@ -116,6 +123,8 @@ export interface CaptureOptions {
 	readonly locale?: LocaleSeed;
 	/** How long the locale proof waits for `lang` to name the seeded value (default 10s). */
 	readonly localeSettleMs?: number;
+	/** How long the scheme proof waits for the root attribute to name the requested scheme (default 10s). */
+	readonly schemeSettleMs?: number;
 }
 
 /**
@@ -191,6 +200,37 @@ const proveLocale = async (page: Page, value: string, settleMs: number): Promise
 		);
 };
 
+const readRootAttribute = (attribute: string): string =>
+	`document.documentElement.getAttribute(${JSON.stringify(attribute)})`;
+const rootAttributeIs = (attribute: string, value: string): string =>
+	`${readRootAttribute(attribute)} === ${JSON.stringify(value)}`;
+
+/**
+ * Wait for the page's declared root attribute to name the requested scheme, then read it back. An
+ * app may publish its resolved scheme from an effect after mount, so the same settle-then-read
+ * shape as {@link proveLocale} applies, and it is total on the same terms.
+ */
+const proveScheme = async (
+	page: Page,
+	request: SchemeRequest,
+	settleMs: number,
+): Promise<SchemeProof> => {
+	await page
+		.waitForFunction(rootAttributeIs(request.rootAttribute, request.scheme), undefined, {
+			timeout: settleMs,
+		})
+		.catch(() => undefined);
+	return page
+		.evaluate<unknown>(readRootAttribute(request.rootAttribute))
+		.then((value) => readSchemeProof(request, value))
+		.catch(
+			(cause): SchemeProof => ({
+				_tag: "Unreadable",
+				reason: `${request.rootAttribute} read failed: ${String(cause)}`,
+			}),
+		);
+};
+
 /**
  * Launch one chromium instance, shoot every plan entry serially (each in its own
  * page at the entry's viewport), write each PNG under `outDir`, and close the
@@ -205,6 +245,7 @@ export const captureShots = (
 	const navigationTimeoutMs = options.navigationTimeoutMs ?? 30_000;
 	const fullPage = options.fullPage ?? true;
 	const localeSettleMs = options.localeSettleMs ?? 10_000;
+	const schemeSettleMs = options.schemeSettleMs ?? 10_000;
 	return Effect.acquireUseRelease(
 		Effect.tryPromise({
 			try: async () => {
@@ -227,6 +268,8 @@ export const captureShots = (
 								...(shot.deviceScaleFactor === undefined
 									? {}
 									: {deviceScaleFactor: shot.deviceScaleFactor}),
+								// Emulated `prefers-color-scheme`, so no app's storage key is written here.
+								...(shot.scheme === undefined ? {} : {colorScheme: shot.scheme.scheme}),
 							});
 							if (options.cookies && options.cookies.length > 0) {
 								await context.addCookies(options.cookies);
@@ -270,6 +313,10 @@ export const captureShots = (
 									locale === undefined
 										? undefined
 										: await proveLocale(page, locale.value, localeSettleMs);
+								const schemeProof =
+									shot.scheme === undefined
+										? undefined
+										: await proveScheme(page, shot.scheme, schemeSettleMs);
 								// A clip crops to the changed region; Playwright rejects clip + fullPage
 								// together, so a clipped shot is never full-page.
 								const buffer = await page.screenshot(
@@ -291,6 +338,7 @@ export const captureShots = (
 									...(sessionProof === undefined ? {} : {sessionProof}),
 									...(overrideProof === undefined ? {} : {overrideProof}),
 									...(localeProof === undefined ? {} : {localeProof}),
+									...(schemeProof === undefined ? {} : {schemeProof}),
 								};
 							} finally {
 								await context.close();

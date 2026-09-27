@@ -48,6 +48,8 @@ export type {
 export {assembleCandidateSet, parseCandidateSet, serializeCandidateSet} from "./candidate-set.ts";
 export type {CaptureCookie, CapturedSurface, CaptureOptions} from "./capture.ts";
 export {CaptureError, captureShots} from "./capture.ts";
+export type {ColorScheme, SchemeProof, SchemeRequest} from "./color-scheme.ts";
+export {COLOR_SCHEMES} from "./color-scheme.ts";
 // The golden-baseline seam: the current-golden pointer in git, the bytes in
 // the consuming repo's asset store; pointer → deterministic diff. Consumed by write-code
 // (self-check) and review-design (blocking gate) so there is ONE notion of "golden". The

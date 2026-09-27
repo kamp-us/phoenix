@@ -89,6 +89,19 @@ describe("surfaceFileName", () => {
 		);
 	});
 
+	it("names the scheme only when one was requested, so light and dark never share a file", () => {
+		const catalog: Surface = {surface: "/catalog", route: "/catalog", state: null};
+		assert.strictEqual(surfaceFileName(catalog, DESKTOP_VIEWPORT, null), "catalog@desktop.png");
+		assert.strictEqual(
+			surfaceFileName(catalog, DESKTOP_VIEWPORT, "light"),
+			"catalog@desktop-light.png",
+		);
+		assert.strictEqual(
+			surfaceFileName(catalog, MOBILE_VIEWPORT, "dark"),
+			"catalog@mobile-dark.png",
+		);
+	});
+
 	it("maps the root route to a non-empty name", () => {
 		assert.strictEqual(
 			surfaceFileName({surface: "/", route: "/", state: null}, DESKTOP_VIEWPORT),

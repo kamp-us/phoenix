@@ -13,6 +13,7 @@
  */
 import {createHash} from "node:crypto";
 import {Effect, FileSystem} from "effect";
+import {type ColorScheme, isColorScheme} from "../capture/color-scheme.ts";
 import type {PageError} from "../capture/page-errors.ts";
 import type {CapAndCount} from "../evidence.ts";
 import {isRecord, parseJson} from "../io/json.ts";
@@ -27,6 +28,11 @@ import {isRecord, parseJson} from "../io/json.ts";
  */
 export const PAGE_ERROR_CAP = 3;
 
+export interface CaptureScheme {
+	readonly requested: ColorScheme;
+	readonly proven: ColorScheme;
+}
+
 /** One captured surface, as both the stdout object and the manifest record it. */
 export interface CaptureEntry {
 	readonly surface: string;
@@ -36,6 +42,12 @@ export interface CaptureEntry {
 	 * without this a manifest cannot say what width its pixels are of.
 	 */
 	readonly viewport: string;
+	/**
+	 * The colour scheme a `--scheme` run asked for and the one the page itself published — present
+	 * only on such a run, so a set rendered without the operand reads exactly as before. The proven
+	 * half is read off the page, never echoed from the request.
+	 */
+	readonly scheme?: CaptureScheme;
 	readonly path: string;
 	readonly width: number;
 	readonly height: number;
@@ -87,10 +99,27 @@ const isCollapsedPageErrors = (value: unknown): value is CapAndCount<PageError> 
 			typeof (entry as PageError).text === "string",
 	);
 
+/** `undefined` for an absent field, `null` for a present one that is not a scheme pair. */
+const toScheme = (value: unknown): CaptureScheme | null | undefined => {
+	if (value === undefined) return undefined;
+	if (
+		!isRecord(value) ||
+		typeof value.requested !== "string" ||
+		typeof value.proven !== "string" ||
+		!isColorScheme(value.requested) ||
+		!isColorScheme(value.proven)
+	) {
+		return null;
+	}
+	return {requested: value.requested, proven: value.proven};
+};
+
 const toEntry = (value: unknown): CaptureEntry | null => {
 	if (typeof value !== "object" || value === null) return null;
 	const record = value as Record<string, unknown>;
+	const scheme = toScheme(record.scheme);
 	if (
+		scheme === null ||
 		typeof record.surface !== "string" ||
 		typeof record.viewport !== "string" ||
 		typeof record.path !== "string" ||
@@ -104,6 +133,7 @@ const toEntry = (value: unknown): CaptureEntry | null => {
 	return {
 		surface: record.surface,
 		viewport: record.viewport,
+		...(scheme === undefined ? {} : {scheme}),
 		path: record.path,
 		width: record.width,
 		height: record.height,

@@ -76,6 +76,14 @@ const render = leafCommand(
 				"render every shot in this locale — one of the values .fabrika.jsonc's uiCapture.locale declares; the declared localStorage key is seeded in each shot's browser context before it navigates, and the page's document.documentElement.lang is read back and must name the value before the shot is recorded (default: the app's own default locale, nothing seeded)",
 			),
 		),
+		// `atLeast(0)` is the repeatable form with no floor: omitting it shoots the browser's default
+		// scheme with no emulation and no proof, which is what every earlier invocation asked for.
+		scheme: Flag.string("scheme").pipe(
+			Flag.atLeast(0),
+			Flag.withDescription(
+				"a colour scheme to shoot every --surface at — light or dark, repeatable and crossed with --surface and --viewport; each shot's browser context emulates prefers-color-scheme, and the root attribute .fabrika.jsonc's uiCapture.scheme declares must read back that scheme before the shot is recorded (default: the browser's own scheme, nothing emulated or proved)",
+			),
+		),
 		app: Flag.string("app").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -90,7 +98,18 @@ const render = leafCommand(
 		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({pr, out, surface, viewport, flag, locale, app, authSecretFrom, repo}) {
+	Effect.fn(function* ({
+		pr,
+		out,
+		surface,
+		viewport,
+		flag,
+		locale,
+		scheme,
+		app,
+		authSecretFrom,
+		repo,
+	}) {
 		// The reviewer's own checked-out tree, never the PR head — the same read `route` takes, and
 		// for the same reason: the declaration is the repo's, not the branch's.
 		const surfaces = yield* uiSurfacesOr(
@@ -102,15 +121,16 @@ const render = leafCommand(
 			yield* emit(refuse(PRECONDITION_UNKNOWN, surfaces.message));
 			return;
 		}
-		// Read only when asked for, so a run seeding no locale is untouched by the capture settings.
+		// Read only when asked for, so a run seeding no locale and requesting no scheme is untouched by
+		// the capture settings.
 		const requestedLocale = Option.getOrNull(locale);
 		const capture =
-			requestedLocale === null
+			requestedLocale === null && scheme.length === 0
 				? null
 				: yield* uiCaptureOr(
 						"review-ui render",
 						process.cwd(),
-						"the storage key --locale seeds is UNKNOWN; nothing was rendered.",
+						"the storage key --locale seeds, or the root attribute --scheme is proved against, is UNKNOWN; nothing was rendered.",
 					);
 		if (capture?._tag === "Refused") {
 			yield* emit(refuse(PRECONDITION_UNKNOWN, capture.message));
@@ -125,6 +145,8 @@ const render = leafCommand(
 				flags: flag,
 				locale: requestedLocale,
 				localeDeclaration: capture?.capture.locale ?? null,
+				schemes: scheme,
+				schemeDeclaration: capture?.capture.scheme ?? null,
 				app: Option.getOrNull(app),
 				surfaceRows: surfaces.surfaces,
 				authSecretFrom: Option.getOrNull(authSecretFrom),
@@ -142,8 +164,8 @@ const render = leafCommand(
 		[
 			"Captures the named surfaces from a PR's preview deployment and prints one JSON capture record.",
 			"  7: PR absent or closed",
-			"  10: an operand off its closed set, or --flag or --locale it cannot honor",
-			"  11: a read, a session proof or a capture check failed (UNKNOWN)",
+			"  10: an operand off its closed set, or --flag, --locale or --scheme it cannot honor",
+			"  11: a read, a session, flag, locale or scheme proof, or a capture check failed (UNKNOWN)",
 			"  12: the preview deploys a stale head",
 			"  13: a surface threw during render",
 			"  14: a surface is unreachable",
@@ -158,6 +180,11 @@ const render = leafCommand(
 			command:
 				"fabrika review-ui render --pr 4321 --out judged --surface /pano --viewport desktop --viewport mobile",
 			description: "Capture one surface at both viewports",
+		},
+		{
+			command:
+				"fabrika review-ui render --pr 4321 --out schemes --surface /lab/atolye/markdown --scheme light --scheme dark",
+			description: "Capture one surface in both colour schemes, each proved off the page",
 		},
 	]),
 );

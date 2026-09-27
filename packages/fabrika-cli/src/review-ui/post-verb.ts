@@ -245,12 +245,18 @@ const mismatchOf = (
  * The evidence gallery: per shot, the **verified** hosted URL — never a local path — and the digest
  * of the bytes judged. A set is a surface × viewport cross-product, so the heading names both: two
  * shots of one surface under one heading would read as a duplicate rather than as the two widths
- * they are.
+ * they are. A `--scheme` set crosses a scheme too, so its heading names the requested and the
+ * proven scheme; a set rendered without one keeps the heading it always had.
  */
+export const galleryTitle = (entry: CaptureEntry): string =>
+	entry.scheme === undefined
+		? `${entry.surface} @ ${entry.viewport}`
+		: `${entry.surface} @ ${entry.viewport}, scheme requested ${entry.scheme.requested}, proven ${entry.scheme.proven}`;
+
 const gallery = (hosted: ReadonlyArray<readonly [CaptureEntry, string]>): string =>
 	emitGallery(
 		hosted.map(([entry, url]) => ({
-			title: `${entry.surface} @ ${entry.viewport}`,
+			title: galleryTitle(entry),
 			url,
 			sha256: entry.sha256,
 		})),
