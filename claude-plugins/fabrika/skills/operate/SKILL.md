@@ -1371,8 +1371,10 @@ node <fabrika> lane attach-integrate <lane> --root <root> --task <task> --at <fa
 ```
 
 It appends one `CORRECTED` line and rewrites nothing. It refuses at `68` with the log unchanged when
-the line is not an integrate `FAIL`, when a later `DONE` already answered it, or when it already
-carries a pair. After that, the repair builder's `build resume-child <child> --lane <lane>
+the line is not an integrate `FAIL`, when a later `DONE` already answered it, or when `lane report`
+recorded it with its own pair. It does not refuse a `FAIL` an earlier attach already paired: a second
+run appends a second `CORRECTED` and the later pair wins, which is how a wrong exit or head is fixed.
+After that, the repair builder's `build resume-child <child> --lane <lane>
 --lane-root <root>` is admitted, exactly as for a `FAIL` recorded with the pair.
 
 A `41` (no tree holds `epic/<n>`, placed

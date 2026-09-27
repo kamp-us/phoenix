@@ -113,6 +113,23 @@ describe("lane attach-integrate — a pair-less integrate FAIL wedged in build",
 		if (resolved._tag !== "Corrected") throw new Error("the correction does not resolve");
 		expect(standingIntegrateFailure(resolved.entries, TASK)).toEqual({exit: 42, head: HEAD});
 	});
+
+	it("re-attaches over an earlier attach: a second CORRECTED is appended and the later pair wins", async () => {
+		const other = "0123456789abcdef0123456789abcdef01234567";
+		const attached = `${WEDGED}${line("CORRECTED", at(4), {corrects: at(3), integrate: {exit: 42, head: HEAD}})}`;
+		const fs = ledger(attached);
+
+		const out = await run(fs, {exit: 44, head: other});
+
+		expect(out.code).toBe(0);
+		const written = fs.written.get(LOG) ?? "";
+		expect(written.startsWith(attached)).toBe(true);
+		const parsed = parseLog(written);
+		if (parsed._tag !== "Parsed") throw new Error("the re-attached log does not parse");
+		const resolved = applyCorrections(parsed.entries);
+		if (resolved._tag !== "Corrected") throw new Error("the corrections do not resolve");
+		expect(standingIntegrateFailure(resolved.entries, TASK)).toEqual({exit: 44, head: other});
+	});
 });
 
 describe("lane attach-integrate — refusals leave the log byte-identical", () => {

@@ -30,7 +30,8 @@ export type Attachment =
  * when it was recorded, and no later `DONE` on the task has answered it. A `DONE` retires an
  * integrate `FAIL` for `build claim` (`standingIntegrateFailure`), so attaching to a retired
  * one would reopen a repair nobody owes. A line that already carries its own pair was recorded by
- * `lane report` with it, so there is nothing missing to attach.
+ * `lane report` with it, so there is nothing missing to attach. A pair an earlier attach supplied is
+ * not refused: the new `CORRECTED` supersedes it, the later correction winning as for any other.
  */
 export const judgeAttachment = (
 	lane: CompiledLane,
