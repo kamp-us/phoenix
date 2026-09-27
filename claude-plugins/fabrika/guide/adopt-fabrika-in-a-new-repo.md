@@ -223,9 +223,11 @@ Then file something with `/fabrika:report`, triage it with `/fabrika:triage`, an
 ## 11. Set up the betting table
 
 The table is a GitHub project where your control-plane owners decide what fabrika bets on. It works
-with no config: `fabrika table setup` finds the open project linked to your repo titled
-`<repo name> table`, or creates it under the repo's owner and links it. It adds the fields, the
-weekly iteration, the five views (Agenda, Outside the bets, Lanes, Epic children and Inbox) and a
+with no config: `fabrika table setup` looks for an open project titled `<repo name> table`, first
+among the projects linked to your repo, then among all of the repo owner's projects. It reuses the
+one it finds and links it to your repo if it isn't already. If there is none, it creates one under
+the repo's owner and links it. It adds the fields, the
+weekly iteration, the five views (Agenda, Outside the bets, Lanes, Group members and Inbox) and a
 README that explains every column. Run it again any time: a project already in shape answers
 `unchanged` and nothing is written.
 

@@ -15,7 +15,7 @@
  *
  * REST throughout, with exactly four carves: {@link graphqlRead} for review threads
  * and their mutations, the auto-merge mutation, `pullsClosing` in `./pulls.ts`, and the Projects
- * (v2) client in `./projects.ts`, which has no REST surface to use instead. Issue
+ * (v2) client in `./projects.ts`, carved by ruling rather than by a missing REST edge. Issue
  * *search* stays REST — this org's Projects-classic integration errors GraphQL search out.
  *
  * The credential is an argument to every leg *of this module*, never something a leg resolves —

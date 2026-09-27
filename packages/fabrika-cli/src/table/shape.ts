@@ -142,7 +142,7 @@ export const VIEWS: ReadonlyArray<ViewShape> = [
 		fields: WIDE_FIELDS,
 	},
 	{
-		name: "Epic children",
+		name: "Group members",
 		layout: "TABLE_LAYOUT",
 		filter: `no:${filterKey(FIELD.section)} has:label`,
 		fields: [FIELD.title, FIELD.stage, FIELD.spent, FIELD.asks],
@@ -157,7 +157,7 @@ export const VIEWS: ReadonlyArray<ViewShape> = [
 
 /** The two steps GitHub's API cannot take, worded once for the verb's answer and the README. */
 export const manualSteps = (repo: string): ReadonlyArray<string> => [
-	`Grouping: in the Agenda view, set Group by: ${FIELD.section} and save the view; in the Lanes view, set Column by: ${FIELD.stage} and save it. GitHub's API cannot set a view's grouping.`,
+	`Grouping: in the Agenda view, set Group by: ${FIELD.section} and save the view; in the Lanes view, set Column by: ${FIELD.stage} and save it. GitHub's GraphQL API cannot set a view's grouping.`,
 	`Inbox auto-add: in the project's Workflows, turn on "Auto-add to project" for ${repo} with the filter \`${INBOX_AUTO_ADD_FILTER}\`, and save it. Every issue nobody labeled then lands in Inbox. GitHub's API cannot create a workflow.`,
 ];
 

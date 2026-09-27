@@ -41,7 +41,9 @@ const run = async (options: FakeProjectsOptions = {}) => {
 };
 
 const mutations = (github: ReturnType<typeof fakeProjects>): ReadonlyArray<string> =>
-	github.operations.filter((operation) => /^Table(Create|Update|Add|Set|Status)/.test(operation));
+	github.operations.filter((operation) =>
+		/^Table(Create|Update|Add|Set|Status|Link)/.test(operation),
+	);
 
 describe("table setup on a repo with no `table` block", () => {
 	it("creates the project with the eight fields, the weekly iteration, the five views and the README", async () => {
@@ -82,7 +84,7 @@ describe("table setup on a repo with no `table` block", () => {
 			"Agenda",
 			"Outside the bets",
 			"Lanes",
-			"Epic children",
+			"Group members",
 			"Inbox",
 		]);
 		expect(views.get("Inbox")?.filter).toBe("is:open no:label");
@@ -183,6 +185,36 @@ describe("table setup is idempotent", () => {
 		expect(stage?.[0]?.options?.map((option) => option.name)).toEqual(["proposed", "notes"]);
 		expect(answered.drift[0]).toContain('"bet"');
 	});
+
+	it("reuses an open project under the owner that carries the title but is not linked, and links it", async () => {
+		const unlinked = {...blankProject({number: 9, title: "widgets table"}), linked: false};
+		const {outcome, github} = await run({projects: [unlinked]});
+
+		expect(outcome.code).toBe(0);
+		const answered = JSON.parse(outcome.stdout);
+		expect(answered.answer).toBe("reconciled");
+		expect(answered.project.number).toBe(9);
+		expect(answered.changes[0]).toContain("linked project #9");
+		expect(github.projects).toHaveLength(1);
+		expect(github.projects[0]?.linked).toBe(true);
+		expect(mutations(github)).not.toContain("TableCreateProject");
+
+		const again = await setupOn(github);
+		expect(JSON.parse(again.stdout)).toMatchObject({answer: "unchanged", changes: []});
+	});
+
+	it("does not reuse a closed project carrying the title", async () => {
+		const closed = {
+			...blankProject({number: 9, title: "widgets table"}),
+			linked: false,
+			closed: true,
+		};
+		const {outcome, github} = await run({projects: [closed]});
+
+		expect(JSON.parse(outcome.stdout).answer).toBe("created");
+		expect(github.projects).toHaveLength(2);
+		expect(github.projects[0]?.linked).toBe(false);
+	});
 });
 
 describe("table setup's refusals", () => {
@@ -232,6 +264,19 @@ describe("table setup's refusals", () => {
 		});
 
 		expect(outcome.code).toBe(AMBIGUOUS_PROJECT);
+		expect(mutations(github)).toEqual([]);
+	});
+
+	it("refuses two unlinked projects under the owner carrying the table's title", async () => {
+		const {outcome, github} = await run({
+			projects: [
+				{...blankProject({number: 3, title: "widgets table"}), linked: false},
+				{...blankProject({number: 4, title: "widgets table"}), linked: false},
+			],
+		});
+
+		expect(outcome.code).toBe(AMBIGUOUS_PROJECT);
+		expect(outcome.stderr.join("\n")).toContain("under acme");
 		expect(mutations(github)).toEqual([]);
 	});
 

@@ -1,4 +1,5 @@
 import {describe, expect, it} from "vitest";
+import type {JsonSchema} from "../json-schema.ts";
 import {loadConfig, resolve} from "../load.ts";
 import {OUTSIDE_THE_BETS, SHIPPED_TABLE, TABLE, tableKey} from "./table.ts";
 
@@ -46,6 +47,44 @@ describe("the shipped table", () => {
 		for (const [key, schema] of Object.entries(properties)) {
 			expect(schema.description, key).toBeTruthy();
 		}
+	});
+});
+
+describe("the schema's numeric bounds", () => {
+	/** Every numeric leaf of the schema, as its path and its schema. */
+	const leaves = (schema: JsonSchema, path: ReadonlyArray<string>): Array<[string[], JsonSchema]> =>
+		Object.entries(schema.properties ?? {}).flatMap(([key, child]) =>
+			child.properties !== undefined
+				? leaves(child, [...path, key])
+				: child.minimum !== undefined || child.exclusiveMinimum !== undefined
+					? [[[...path, key], child] as [string[], JsonSchema]]
+					: [],
+		);
+	const at = (path: ReadonlyArray<string>, value: number): unknown =>
+		path.reduceRight<unknown>((inner, key) => ({[key]: inner}), value);
+	const cases = leaves(tableKey.jsonSchema ?? {}, []);
+
+	it("covers the sizes, the percentages and the stop multiple", () => {
+		expect(cases.map(([path]) => path.join("."))).toEqual(
+			expect.arrayContaining([
+				"sizes.S",
+				"sizes.M",
+				"sizes.L",
+				"stopMultiple",
+				"fabrikaShare.percent",
+				"fabrikaShare.thenPercent",
+			]),
+		);
+	});
+
+	it.each(cases)("%j: the decoder refuses exactly what the schema excludes", (path, schema) => {
+		const step = [schema.type].flat().includes("integer") ? 1 : 0.5;
+		const floor = schema.exclusiveMinimum ?? schema.minimum ?? 0;
+		const lowestAccepted = schema.exclusiveMinimum !== undefined ? floor + step : floor;
+		const highestRefused = schema.exclusiveMinimum !== undefined ? floor : floor - step;
+
+		expect(declared(at(path, lowestAccepted))._tag).toBe("Declared");
+		expect(declared(at(path, highestRefused))._tag).toBe("Malformed");
 	});
 });
 

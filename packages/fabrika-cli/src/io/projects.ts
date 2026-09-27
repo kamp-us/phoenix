@@ -2,8 +2,10 @@
  * The GitHub Projects (v2) client: find or create a project, shape its fields and views, add items,
  * set and read field values, and post a status update.
  *
- * GraphQL, because Projects v2 has no REST surface. That makes this module the fourth carve from
- * `./gh-api.ts`'s REST default, and the only one that writes project state.
+ * GraphQL, by the founder's ruling on the table's home (R4.1 on the issue below). That makes this
+ * module the fourth carve from `./gh-api.ts`'s REST default, and the only one that writes project
+ * state. It rests on the ruling, not on an absence of REST: GitHub publishes part of this domain
+ * over REST, and whether those edges move there is still an open question.
  *
  * **A token without the `project` scope is its own answer, `MissingScope`, never a generic
  * failure.** It is the one refusal an operator can fix in a single command, so it carries that
@@ -382,6 +384,22 @@ export const readSnapshot = (node: unknown): Attempt<ProjectSnapshot> => {
 	});
 };
 
+const readRefs = (nodes: ReadonlyArray<unknown>, what: string): Attempt<ProjectRef[]> => {
+	const refs: ProjectRef[] = [];
+	for (const node of nodes) {
+		if (!isRecord(node) || !str(node.id) || typeof node.number !== "number" || !str(node.title)) {
+			return fail(`GitHub answered 200 but one ${what} is not a project`);
+		}
+		refs.push({id: node.id, number: node.number, title: node.title, closed: node.closed === true});
+	}
+	return ok(refs);
+};
+
+const nextCursor = (connection: Record<string, unknown>): string | null => {
+	const info = isRecord(connection.pageInfo) ? connection.pageInfo : null;
+	return info !== null && info.hasNextPage === true && str(info.endCursor) ? info.endCursor : null;
+};
+
 const REPOSITORY_QUERY = `
 query TableRepository($owner: String!, $name: String!, $cursor: String) {
   repository(owner: $owner, name: $name) {
@@ -423,31 +441,13 @@ export const readRepository = (token: string, repo: string): Api<ProjectsAnswer<
 				) {
 					return fail("GitHub answered 200 but its output is not a repository");
 				}
-				const refs: ProjectRef[] = [];
-				for (const node of projects.nodes) {
-					if (
-						!isRecord(node) ||
-						!str(node.id) ||
-						typeof node.number !== "number" ||
-						!str(node.title)
-					) {
-						return fail("GitHub answered 200 but one linked project is not a project");
-					}
-					refs.push({
-						id: node.id,
-						number: node.number,
-						title: node.title,
-						closed: node.closed === true,
-					});
-				}
-				const info = isRecord(projects.pageInfo) ? projects.pageInfo : null;
-				const next =
-					info !== null && info.hasNextPage === true && str(info.endCursor) ? info.endCursor : null;
+				const refs = readRefs(projects.nodes, "linked project");
+				if (refs._tag === "Failure") return refs;
 				return ok({
 					id: repository.id,
 					owner: {id: ownerNode.id, login: ownerNode.login},
-					refs,
-					next,
+					refs: refs.value,
+					next: nextCursor(projects),
 				});
 			});
 			if (answer._tag !== "Ok") return answer;
@@ -461,17 +461,77 @@ export const readRepository = (token: string, repo: string): Api<ProjectsAnswer<
 		return failed(`${repo} links more projects than ${PAGE_CAP} pages hold`);
 	});
 
-const OWNER_QUERY = `
-query TableOwner($login: String!) {
-  repositoryOwner(login: $login) { id login }
+const OWNER_PROJECTS_QUERY = `
+query TableOwnerProjects($login: String!, $cursor: String) {
+  repositoryOwner(login: $login) {
+    id
+    ... on ProjectV2Owner {
+      projectsV2(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { id number title closed }
+      }
+    }
+  }
 }`;
 
-/** A user or organization's node id, which is what a new project is created under. */
-export const readOwner = (token: string, login: string): Api<ProjectsAnswer<string>> =>
-	exchange(token, OWNER_QUERY, {login}, (data) => {
-		const owner = isRecord(data.repositoryOwner) ? data.repositoryOwner : null;
-		if (owner === null) return fail(`GitHub knows no user or organization named ${login}`);
-		return str(owner.id) ? ok(owner.id) : fail("GitHub answered 200 but named no owner id");
+export interface OwnerNode {
+	/** What a new project is created under. */
+	readonly id: string;
+	/** Every project the owner holds, linked to a repository or not. */
+	readonly projects: ReadonlyArray<ProjectRef>;
+}
+
+/** A user or organization's node id and every project it owns, read to the last page. */
+export const readOwnerProjects = (token: string, login: string): Api<ProjectsAnswer<OwnerNode>> =>
+	Effect.gen(function* () {
+		const projects: ProjectRef[] = [];
+		let cursor: string | null = null;
+		for (let page = 0; page < PAGE_CAP; page++) {
+			const answer: ProjectsAnswer<{
+				readonly id: string;
+				readonly refs: ReadonlyArray<ProjectRef>;
+				readonly next: string | null;
+			}> = yield* exchange(token, OWNER_PROJECTS_QUERY, {login, cursor}, (data) => {
+				const owner = isRecord(data.repositoryOwner) ? data.repositoryOwner : null;
+				if (owner === null) return fail(`GitHub knows no user or organization named ${login}`);
+				const connection = isRecord(owner.projectsV2) ? owner.projectsV2 : null;
+				if (!str(owner.id) || connection === null || !Array.isArray(connection.nodes)) {
+					return fail("GitHub answered 200 but its output is not a project owner");
+				}
+				const refs = readRefs(connection.nodes, "owned project");
+				return refs._tag === "Failure"
+					? refs
+					: ok({id: owner.id, refs: refs.value, next: nextCursor(connection)});
+			});
+			if (answer._tag !== "Ok") return answer;
+			projects.push(...answer.value.refs);
+			if (answer.value.next === null) return done({id: answer.value.id, projects});
+			cursor = answer.value.next;
+		}
+		return failed(`${login} owns more projects than ${PAGE_CAP} pages hold`);
+	});
+
+const LINK_PROJECT = `
+mutation TableLinkProject($projectId: ID!, $repositoryId: ID!) {
+  linkProjectV2ToRepository(input: {projectId: $projectId, repositoryId: $repositoryId}) {
+    repository { id }
+  }
+}`;
+
+/** Link a project to a repository, so it shows in that repository's Projects tab. */
+export const linkProject = (
+	token: string,
+	projectId: string,
+	repositoryId: string,
+): Api<ProjectsAnswer<string>> =>
+	exchange(token, LINK_PROJECT, {projectId, repositoryId}, (data) => {
+		const payload = isRecord(data.linkProjectV2ToRepository)
+			? data.linkProjectV2ToRepository
+			: null;
+		const repository = payload !== null && isRecord(payload.repository) ? payload.repository : null;
+		return repository !== null && str(repository.id)
+			? ok(repository.id)
+			: fail("GitHub answered 200 but linked no repository");
 	});
 
 const BY_NUMBER_QUERY = `
@@ -751,6 +811,15 @@ query TableItemValues($id: ID!) {
   }
 }`;
 
+/** The value types the table reads; every other `__typename` is the issue's own and is skipped. */
+const TABLE_VALUE_TYPES: ReadonlySet<unknown> = new Set([
+	"ProjectV2ItemFieldTextValue",
+	"ProjectV2ItemFieldNumberValue",
+	"ProjectV2ItemFieldDateValue",
+	"ProjectV2ItemFieldSingleSelectValue",
+	"ProjectV2ItemFieldIterationValue",
+]);
+
 const readValue = (node: Record<string, unknown>): ItemFieldValue["value"] | null => {
 	switch (node.__typename) {
 		case "ProjectV2ItemFieldTextValue":
@@ -775,7 +844,8 @@ const readValue = (node: Record<string, unknown>): ItemFieldValue["value"] | nul
 /**
  * An item's text, number, date, single-select and iteration values, each with its `creator` and
  * `updatedAt`. Values GitHub keeps for the issue itself (labels, milestone, repository, linked pull
- * requests) are skipped: they are the issue's, not the table's.
+ * requests) are skipped: they are the issue's, not the table's. A malformed value of a table type
+ * fails the read instead of leaving the list short, so an absent value always means unset.
  */
 export const readItemValues = (token: string, itemId: string): Api<ProjectsAnswer<ItemValues>> =>
 	exchange(token, ITEM_VALUES, {id: itemId}, (data) => {
@@ -788,10 +858,12 @@ export const readItemValues = (token: string, itemId: string): Api<ProjectsAnswe
 		const content = isRecord(item.content) ? item.content : null;
 		const values: ItemFieldValue[] = [];
 		for (const node of page.nodes) {
-			if (!isRecord(node)) continue;
+			if (!isRecord(node) || !TABLE_VALUE_TYPES.has(node.__typename)) continue;
 			const value = readValue(node);
 			const field = isRecord(node.field) ? node.field : null;
-			if (value === null || field === null || !str(field.id) || !str(field.name)) continue;
+			if (value === null || field === null || !str(field.id) || !str(field.name)) {
+				return fail(`GitHub answered 200 but one ${String(node.__typename)} is malformed`);
+			}
 			if (!str(node.updatedAt))
 				return fail("GitHub answered 200 but one value carries no updatedAt");
 			const creator = isRecord(node.creator) && str(node.creator.login) ? node.creator.login : null;

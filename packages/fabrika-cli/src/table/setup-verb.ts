@@ -6,8 +6,8 @@
  * empty**: it is the read-back, and it is also what makes a second run answer `unchanged` — the same
  * function that proves this run landed decides the next run has nothing to do.
  *
- * A conflict refuses before anything is written to the project. A project this run created is still
- * named in that refusal, so a re-run after the conflict is fixed finds it rather than creating a
+ * A conflict refuses before anything is written to the project. A project this run created or linked
+ * is still named in that refusal, so a re-run after the conflict is fixed finds it rather than creating a
  * second one.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
@@ -23,10 +23,12 @@ import {
 	createField,
 	createProject,
 	createView,
+	linkProject,
+	type ProjectRef,
 	type ProjectSnapshot,
 	type ProjectsAnswer,
 	type RepositoryNode,
-	readOwner,
+	readOwnerProjects,
 	readProject,
 	readProjectByNumber,
 	readRepository,
@@ -57,8 +59,11 @@ export interface SetupOptions {
 
 const VERB = "table setup";
 
-/** Where the project came from this run. */
-type Origin = "created" | "found";
+/**
+ * Where the project came from this run: made, already linked to the repository, or found under
+ * the owner by its title and linked now.
+ */
+type Origin = "created" | "found" | "linked";
 
 type Run =
 	| {
@@ -117,40 +122,60 @@ const locate = (
 		}
 
 		const title = defaultTitle(repo);
-		const linked = node.linkedProjects.filter((ref) => ref.title === title && !ref.closed);
-		if (linked.length > 1) {
+		const titled = (refs: ReadonlyArray<ProjectRef>) =>
+			refs.filter((ref) => ref.title === title && !ref.closed);
+		const ambiguous = (refs: ReadonlyArray<ProjectRef>, where: string): Located => ({
+			_tag: "Refused",
+			run: refused(
+				AMBIGUOUS_PROJECT,
+				`${VERB}: ${refs.length} open projects ${where} are titled "${title}" (${refs.map((ref) => `#${ref.number}`).join(", ")}) — set \`table.project.number\` in .fabrika.jsonc to the one that is the table. Nothing was written.`,
+			),
+		});
+		const readExisting = (ref: ProjectRef, origin: Origin): Api<Located> =>
+			Effect.map(readProject(token, ref.id), (read) =>
+				read._tag === "Ok"
+					? {_tag: "Located", origin, project: read.value}
+					: {
+							_tag: "Refused",
+							run: stop(read, PRECONDITION_UNKNOWN, `cannot read project #${ref.number}`),
+						},
+			);
+
+		const linked = titled(node.linkedProjects);
+		if (linked.length > 1) return ambiguous(linked, `linked to ${repo}`);
+		const existing = linked[0];
+		if (existing !== undefined) return yield* readExisting(existing, "found");
+
+		const ownerNode = yield* readOwnerProjects(token, owner);
+		if (ownerNode._tag !== "Ok") {
 			return {
 				_tag: "Refused",
-				run: refused(
-					AMBIGUOUS_PROJECT,
-					`${VERB}: ${linked.length} open projects linked to ${repo} are titled "${title}" (${linked.map((ref) => `#${ref.number}`).join(", ")}) — set \`table.project.number\` in .fabrika.jsonc to the one that is the table. Nothing was written.`,
-				),
+				run: stop(ownerNode, PRECONDITION_UNKNOWN, `cannot read ${owner}'s projects`),
 			};
 		}
-		const existing = linked[0];
-		if (existing !== undefined) {
-			const read = yield* readProject(token, existing.id);
-			if (read._tag !== "Ok") {
+		const owned = titled(ownerNode.value.projects);
+		if (owned.length > 1) return ambiguous(owned, `under ${owner}`);
+		const unlinked = owned[0];
+		if (unlinked !== undefined) {
+			const link = yield* linkProject(token, unlinked.id, node.id);
+			if (link._tag !== "Ok") {
 				return {
 					_tag: "Refused",
-					run: stop(read, PRECONDITION_UNKNOWN, `cannot read project #${existing.number}`),
+					run: stop(
+						link,
+						WRITE_UNKNOWN,
+						`linking project #${unlinked.number} "${title}" to ${repo} did not answer — UNKNOWN whether it is linked; re-run setup, which finds it either way`,
+					),
 				};
 			}
-			return {_tag: "Located", origin: "found", project: read.value};
+			return yield* readExisting(unlinked, "linked");
 		}
 
-		let ownerId = node.owner.id;
-		if (owner !== node.owner.login) {
-			const read = yield* readOwner(token, owner);
-			if (read._tag !== "Ok") {
-				return {
-					_tag: "Refused",
-					run: stop(read, PRECONDITION_UNKNOWN, `cannot read owner ${owner}`),
-				};
-			}
-			ownerId = read.value;
-		}
-		const created = yield* createProject(token, {ownerId, title, repositoryId: node.id});
+		const created = yield* createProject(token, {
+			ownerId: ownerNode.value.id,
+			title,
+			repositoryId: node.id,
+		});
 		if (created._tag !== "Ok") {
 			return {
 				_tag: "Refused",
@@ -225,12 +250,23 @@ const apply = (
 		}
 	});
 
-const conflictReason = (plan: Plan, project: ProjectSnapshot, origin: Origin): string => {
+/** What locating the project wrote, if anything. */
+const locateWrote = (origin: Origin, project: ProjectSnapshot, repo: string): string | null => {
+	switch (origin) {
+		case "created":
+			return `created project #${project.number} "${project.title}" (${project.url})`;
+		case "linked":
+			return `linked project #${project.number} "${project.title}" (${project.url}) to ${repo}`;
+		case "found":
+			return null;
+	}
+};
+
+const conflictReason = (plan: Plan, project: ProjectSnapshot, wrote: string | null): string => {
 	const listed = plan.conflicts
 		.map((conflict) => `${conflict.field} is ${conflict.found}, the table needs ${conflict.wanted}`)
 		.join("; ");
-	const made =
-		origin === "created" ? `created project #${project.number} (${project.url}), then ` : "";
+	const made = wrote === null ? "" : `${wrote}, then `;
 	return `${VERB}: ${made}found fields the table needs under another type: ${listed} — rename or delete them in the project, then re-run. Nothing was changed for them.`;
 };
 
@@ -281,13 +317,13 @@ const converge = (token: string, repo: string, settings: TableSettings, now: Dat
 		const {origin} = located;
 		const shape: TableShape = tableShape(settings, repo, located.project.title, now);
 
+		const wrote = locateWrote(origin, located.project, repo);
 		const first = plan(shape, located.project);
 		if (first.conflicts.length > 0) {
-			return refused(SHAPE_CONFLICT, conflictReason(first, located.project, origin));
+			return refused(SHAPE_CONFLICT, conflictReason(first, located.project, wrote));
 		}
 
-		const landed: string[] =
-			origin === "created" ? [`created project "${located.project.title}"`] : [];
+		const landed: string[] = wrote === null ? [] : [wrote];
 		const fieldSteps = first.steps.filter((step) => step._tag === "CreateField");
 		const fieldsFailed = yield* applyAll(token, located.project, fieldSteps, landed);
 		if (fieldsFailed !== null) return fieldsFailed;

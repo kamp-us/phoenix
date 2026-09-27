@@ -376,4 +376,50 @@ describe("reading an item's values", () => {
 			},
 		});
 	});
+
+	const META = {creator: {login: "octo-owner"}, updatedAt: "2026-09-27T05:00:00Z"};
+	const FIELD = {field: {id: "F_x", name: "X"}};
+
+	it.each([
+		["a text value with no text", {__typename: "ProjectV2ItemFieldTextValue", ...META, ...FIELD}],
+		[
+			"a number value whose number is a string",
+			{__typename: "ProjectV2ItemFieldNumberValue", number: "3", ...META, ...FIELD},
+		],
+		["a date value with no date", {__typename: "ProjectV2ItemFieldDateValue", ...META, ...FIELD}],
+		[
+			"a single-select value with no option id",
+			{__typename: "ProjectV2ItemFieldSingleSelectValue", name: "bet", ...META, ...FIELD},
+		],
+		[
+			"an iteration value with no title",
+			{__typename: "ProjectV2ItemFieldIterationValue", iterationId: "c11f1bd7", ...META, ...FIELD},
+		],
+		[
+			"a well-formed value whose field names no id",
+			{__typename: "ProjectV2ItemFieldTextValue", text: "hi", ...META, field: {name: "X"}},
+		],
+		[
+			"a well-formed value with no field",
+			{__typename: "ProjectV2ItemFieldTextValue", text: "hi", ...META},
+		],
+	])("refuses %s rather than answering a shorter list", async (_, malformed) => {
+		const {result} = await runWith(
+			[
+				reply({
+					data: {
+						node: {
+							id: "PVTI_1",
+							content: {number: 12},
+							fieldValues: {pageInfo: {hasNextPage: false}, nodes: [malformed]},
+						},
+					},
+				}),
+			],
+			() => readItemValues(TOKEN, "PVTI_1"),
+		);
+
+		expect(result._tag).toBe("Failed");
+		expect(result._tag === "Failed" && result.reason).toContain(malformed.__typename);
+	});
 });

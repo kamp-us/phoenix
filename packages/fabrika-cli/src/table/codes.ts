@@ -29,5 +29,8 @@ export const SCOPE_MISSING = 20;
 /** Proven: a field the table needs exists under its name with another type. Nothing was changed for it. */
 export const SHAPE_CONFLICT = 21;
 
-/** Proven: more than one open project linked to the repository carries the table's title. */
+/**
+ * Proven: more than one open project linked to the repository, or more than one under its owner,
+ * carries the table's title.
+ */
 export const AMBIGUOUS_PROJECT = 22;

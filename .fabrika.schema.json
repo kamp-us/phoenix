@@ -591,17 +591,17 @@
 					"properties": {
 						"S": {
 							"type": "number",
-							"minimum": 0,
+							"exclusiveMinimum": 0,
 							"description": "Dollars for a size-S bet. Default 15."
 						},
 						"M": {
 							"type": "number",
-							"minimum": 0,
+							"exclusiveMinimum": 0,
 							"description": "Dollars for a size-M bet. Default 35."
 						},
 						"L": {
 							"type": "number",
-							"minimum": 0,
+							"exclusiveMinimum": 0,
 							"description": "Dollars per epic child for a size-L bet. Default 40."
 						}
 					},
@@ -609,7 +609,7 @@
 				},
 				"stopMultiple": {
 					"type": "number",
-					"minimum": 1,
+					"exclusiveMinimum": 1,
 					"description": "A lane over its size keeps going and is flagged; at this multiple of its size it stops. Default 2. Must be above 1."
 				},
 				"asksFlag": {
@@ -633,7 +633,7 @@
 					"properties": {
 						"percent": {
 							"type": "number",
-							"minimum": 0,
+							"exclusiveMinimum": 0,
 							"maximum": 100,
 							"description": "The target share, in percent, for the first tables. Default 40."
 						},
@@ -644,7 +644,7 @@
 						},
 						"thenPercent": {
 							"type": "number",
-							"minimum": 0,
+							"exclusiveMinimum": 0,
 							"maximum": 100,
 							"description": "The target share, in percent, after that. Default 30."
 						}
@@ -673,7 +673,7 @@
 								"null"
 							],
 							"minimum": 1,
-							"description": "The project number. Default: the project `fabrika table setup` finds linked to this repository by its title, or creates."
+							"description": "The project number. Default: the open project `fabrika table setup` finds by its title, linked to this repository or under its owner, or creates."
 						}
 					},
 					"additionalProperties": false

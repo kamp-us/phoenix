@@ -249,11 +249,15 @@ const integer = (description: string, minimum = 1): JsonSchema => ({
 	description,
 });
 
-const dollars = (description: string): JsonSchema => ({type: "number", minimum: 0, description});
+const dollars = (description: string): JsonSchema => ({
+	type: "number",
+	exclusiveMinimum: 0,
+	description,
+});
 
 const percentage = (description: string): JsonSchema => ({
 	type: "number",
-	minimum: 0,
+	exclusiveMinimum: 0,
 	maximum: 100,
 	description,
 });
@@ -298,7 +302,7 @@ export const tableKey: KeyGroup<TableSettings> = {
 			},
 			stopMultiple: {
 				type: "number",
-				minimum: 1,
+				exclusiveMinimum: 1,
 				description:
 					"A lane over its size keeps going and is flagged; at this multiple of its size it stops. Default 2. Must be above 1.",
 			},
@@ -331,7 +335,7 @@ export const tableKey: KeyGroup<TableSettings> = {
 						type: ["integer", "null"],
 						minimum: 1,
 						description:
-							"The project number. Default: the project `fabrika table setup` finds linked to this repository by its title, or creates.",
+							"The project number. Default: the open project `fabrika table setup` finds by its title, linked to this repository or under its owner, or creates.",
 					},
 				},
 				additionalProperties: false,

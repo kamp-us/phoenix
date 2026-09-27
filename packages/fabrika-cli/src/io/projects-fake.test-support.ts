@@ -229,8 +229,32 @@ export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects =>
 						},
 					},
 				};
-			case "TableOwner":
-				return {data: {repositoryOwner: {id: `O_${String(vars.login)}`, login: vars.login}}};
+			case "TableOwnerProjects":
+				return {
+					data: {
+						repositoryOwner: {
+							id: `O_${String(vars.login)}`,
+							projectsV2: {
+								pageInfo: {hasNextPage: false, endCursor: null},
+								nodes: projects
+									.filter((project) => project.owner === vars.login)
+									.map((project) => ({
+										id: project.id,
+										number: project.number,
+										title: project.title,
+										closed: project.closed,
+									})),
+							},
+						},
+					},
+				};
+			case "TableLinkProject": {
+				const project = byId(vars.projectId);
+				if (project === undefined)
+					return {data: null, errors: [{type: "NOT_FOUND", message: "no project"}]};
+				project.linked = true;
+				return {data: {linkProjectV2ToRepository: {repository: {id: vars.repositoryId}}}};
+			}
 			case "TableProjectByNumber": {
 				const found = projects.find(
 					(project) => project.owner === vars.login && project.number === vars.number,
