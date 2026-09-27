@@ -347,14 +347,14 @@ obligation (interface convention rule 3), and the alignment this group opts into
 later seated `21` `AUDIENCE_NOT_AGENT` on its admission test, and its `20` is a retired seat, left
 empty: a campaign's state refuses no claim. Step 1 of this gate's skill claims with
 `--purpose gate`, and the audience axis binds build-purpose claims only, so this gate can meet no
-admission refusal at all. The overlap stands, on the same rule: *import a code when two groups prove the same
-fact; allocate freely when they do not.* `15` is imported because `plan flip` and `build claim`
-assert the identical fact (this session holds this issue's claim). `build`'s `21` does not overlap in fact
-at all — lane admission is never something a `plan` verb proves, and a defective floor or a moved
+admission refusal at all. The overlap stands, on the same rule: *import a code when two groups
+prove the same fact; allocate freely when they do not.* `15` is imported because `plan flip` and
+`build claim` assert the identical fact (this session holds this issue's claim). `build`'s `21`
+does not overlap in fact at all — lane admission is never something a `plan` verb proves, and a defective floor or a moved
 digest is never something a `build` verb proves — and an exit code is read off the command that
 produced it: [SKILL.md](SKILL.md) step 1 is total (`any other non-zero ends STOPPED`) and branches
 on `20`/`21` only off `plan flip` / `plan verdict`. Re-seating at `24`+ would also buy nothing,
-since `epic` already seats `20`–`24` over the same two `build` codes.
+since `epic` already seats `20`–`24` over `build`'s `21` and its retired `20`.
 
 | Code | Meaning | `read` | `check` | `flip` | `verdict` | `approve` | `approval` | `restage` |
 |---|---|---|---|---|---|---|---|---|

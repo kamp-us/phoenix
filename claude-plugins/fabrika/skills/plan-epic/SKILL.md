@@ -479,8 +479,8 @@ whether children exist re-mints them.
 
 **Every code below is a `ledger` code unless the row says otherwise.** `build`'s numbers above `11`
 mean different things — its `21` is an admission axis and its `20` a retired seat, neither stale
-ground nor a moved epic — so read each code off the command that produced it and never off this list alone. The same
-holds for the `grill` verbs step 4 calls: they allocate from their own table
+ground nor a moved epic — so read each code off the command that produced it and never off this
+list alone. The same holds for the `grill` verbs step 4 calls: they allocate from their own table
 ([`packages/fabrika-cli/src/grill/codes.ts`](../../../../packages/fabrika-cli/src/grill/codes.ts)),
 and every row below that seats one says so.
 

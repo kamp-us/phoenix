@@ -53,6 +53,7 @@ export const UNSAFE_PUSH = 19;
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9852
  */
+
 export const AUDIENCE_NOT_AGENT = 21;
 /**
  * Proven: every changed file falls outside all three surfaces' validators — nothing is checkable.
@@ -115,10 +116,11 @@ export const LOCAL_LANE_UNWRITTEN = 29;
  * produces.
  *
  * A sibling of {@link AUDIENCE_NOT_AGENT}, seated apart from it because the remedy differs: `21`
- * says re-label the audience, and this one says the work belongs to another skill's lane — `/adr` for a decision, `plan-epic` for an epic — or, on a decision whose choice a
- * founder already recorded, that the claim must cite that ruling comment. Borrowing `21` is what the
- * code did before there was a fence at all, and it named the wrong objection: an operator sent to
- * re-label a decision `ready-for:agent` would satisfy `21` and still be building the wrong artifact.
+ * says re-label the audience, and this one says the work belongs to another skill's lane — `/adr`
+ * for a decision, `plan-epic` for an epic — or, on a decision whose choice a founder already
+ * recorded, that the claim must cite that ruling comment. Borrowing `21` is what the code did
+ * before there was a fence at all, and it named the wrong objection: an operator sent to re-label
+ * a decision `ready-for:agent` would satisfy `21` and still be building the wrong artifact.
  */
 export const TYPE_NOT_BUILDABLE = 30;
 /**
