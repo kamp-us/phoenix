@@ -23,6 +23,7 @@ import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Effect, Stream} from "effect";
 import {projectLabels} from "../../projects/open-projects.ts";
 import {Projects} from "../../projects/Projects.ts";
+import {RecommendPrompts} from "../../projects/RecommendPrompts.ts";
 import {TrustPrompts} from "../../projects/TrustPrompts.ts";
 import type {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {shellId, shellStateOf} from "../program.ts";
@@ -40,6 +41,7 @@ export interface ServeDeskOptions {
 		| SpellRegistry
 		| Projects
 		| TrustPrompts
+		| RecommendPrompts
 	>;
 	/** `0` binds an ephemeral port — what a test wants; the bin names a real one. */
 	readonly port: number;
@@ -96,6 +98,7 @@ export const serveDesk = Effect.fn("Tuval.shell.serveDesk")(function* (options: 
 		descriptions: Context.get(options.kernel, SpellRegistry).changes,
 		projects: Stream.map(Context.get(options.kernel, Projects).changes, projectLabels),
 		trust: Context.get(options.kernel, TrustPrompts),
+		recommend: Context.get(options.kernel, RecommendPrompts),
 		table: options.table,
 	}).pipe(Effect.provideContext(options.kernel), Effect.orDie);
 });

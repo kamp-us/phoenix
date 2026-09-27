@@ -16,6 +16,10 @@
  * nothing (#9693, ruling #9668 R2.1). The wait holds no lock, so a question left unanswered never
  * stops another project opening or closing.
  *
+ * A trusted project that opens with `recommends` asks about each package nobody has answered for it
+ * yet, and never installs anything (#9695, ruling #9668 R6.2). The open does not wait on those
+ * answers; each is remembered in the saved list, so the project is asked once.
+ *
  * A desk restarting reopens the projects its saved list had open (#9688, ruling #9668 R5.1). Nobody
  * is asked anything on the way: a folder that is gone, or that holds a config no longer trusted, is
  * skipped with a notice naming it, and the others still open. Subprojects are not reopened here;
@@ -98,6 +102,8 @@ import {
 	readOpenProjects,
 	saveOpenProjects,
 } from "./open-projects.ts";
+import type {RecommendPrompts} from "./RecommendPrompts.ts";
+import type {RecommendAnswer} from "./recommend-prompt.ts";
 import type {TrustPrompts} from "./TrustPrompts.ts";
 import {FolderNotTrusted} from "./trust.ts";
 
@@ -205,6 +211,8 @@ export interface ProjectsOptions {
 	readonly reloader: ConfigReloader["Service"];
 	/** Where an open that needs trust asks the person at the desk. */
 	readonly prompts: TrustPrompts["Service"];
+	/** Where a trusted project asks about the packages it recommends (#9695). */
+	readonly recommendPrompts: RecommendPrompts["Service"];
 	/** The desk's and global layers' graph, and the wiring it was opened on. */
 	readonly deskGraph: Graph;
 	/** What the global layer's SDK refusals took out of `deskGraph`, which a project loses too. */
@@ -436,6 +444,45 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		return result !== undefined && Result.isSuccess(result) ? result.success.projects : current;
 	};
 
+	/** Remember the person's answer about `pkg` for the project at `folder`, in the saved list too. */
+	const recordRecommend = (folder: string, pkg: string, answer: RecommendAnswer) =>
+		Effect.flatMap(
+			SubscriptionRef.updateAndGet(openRef, (current) =>
+				current.answerRecommend(folder, pkg, answer),
+			),
+			save,
+		).pipe(lock.withPermits(1));
+
+	/**
+	 * Ask about each package `project` recommends that nobody has answered for it (#9695, ruling
+	 * #9668 R6.2), once it is open. Only a folder the person trusted is asked about, so a project whose
+	 * config was never trusted recommends nothing. A subproject is not asked about either: its opener
+	 * is a program, and the person never chose to open it. The questions run on the project's own
+	 * scope, so a close takes them off every page, and nothing here installs anything.
+	 */
+	const askRecommends = (project: OpenProject, recommends: ReadonlyArray<string>) =>
+		Effect.gen(function* () {
+			const current = yield* SubscriptionRef.get(openRef);
+			if (project.under !== undefined || !current.trusted.trusts(project.folder)) return;
+			const unasked = current.recommends.unasked(project.folder, recommends);
+			const scope = scopes.get(project.id.key);
+			if (unasked.length === 0 || scope === undefined) return;
+			const name =
+				projectLabels(current.projects).find(({key}) => key === project.id.key)?.label ??
+				project.id.name;
+			yield* Effect.forkIn(
+				Effect.forEach(
+					unasked,
+					(pkg) =>
+						Effect.flatMap(options.recommendPrompts.ask(project.folder, name, pkg), (answer) =>
+							recordRecommend(project.folder, pkg, answer),
+						),
+					{concurrency: "unbounded", discard: true},
+				),
+				scope,
+			);
+		});
+
 	/** Join a project whose config is read and whose state is prepared, then record it open. */
 	const commitOpen = (project: OpenProject, loaded: LoadedProjectConfig, state: ProjectState) =>
 		Effect.gen(function* () {
@@ -446,6 +493,7 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 			);
 			yield* save(next);
 			yield* Deferred.succeed(ready, undefined);
+			yield* askRecommends(project, loaded.config.recommends);
 			return opened;
 		});
 

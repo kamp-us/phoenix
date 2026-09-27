@@ -153,6 +153,14 @@ can answer: the answer rides a transport frame of its own, never a spell an agen
 folder with no config has nothing to run and is never asked about, and neither are the home config
 or the desk's own layer.
 
+A project config can list `recommends: ["<package>"]`, npm packages it suggests to whoever opens it
+(#9695). Once a trusted folder opens, the desk asks "Install <package>?" for each one nobody has
+answered for that project yet, and never installs anything on its own. Either answer is remembered
+for the project in `open-projects.json`, so it is asked once, even after a close or a restart. There
+is no installer yet: a yes is saved as your intent and the dialog says plainly that nothing was
+installed. An untrusted folder's config is never imported, so its `recommends` is never read. Only a
+project config may list `recommends`; the home config is refused if it does.
+
 A desk restart reopens the projects that were open, the way VS Code restores its windows (#9688).
 The `--project` folder opens first, and the others in the saved list open beside it, each with its
 processes restored from its own state directory. A project closed before the restart stays closed.
