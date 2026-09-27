@@ -1,8 +1,9 @@
 /**
  * Which projects a desk has open, and the one saved list of them under the home `.tuval` (#9685,
- * ruling #9668 R1.1 and R6.1). The list is one record per folder: trust, labels, reopening and a
- * project's remembered "no" to its recommends are later fields on that same record, so nothing here
- * is keyed on anything but the folder.
+ * ruling #9668 R1.1 and R6.1). The list is one record per folder: labels, reopening and a project's
+ * remembered "no" to its recommends are later fields on that same record, so nothing here is keyed
+ * on anything but the folder. The folders the person has trusted ride beside it (#9693), because a
+ * folder stays trusted after it closes.
  *
  * Two spellings of one folder are one project: the identity is the ADR 0402 path key, the name the
  * project's rows and state directory are already keyed by (`../project-id.ts`).
@@ -13,6 +14,7 @@ import {homeTuvalDir} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Effect, FileSystem, Result, Schema} from "effect";
 import {ProjectId} from "../project-id.ts";
 import type {ProjectLabel} from "./labels.ts";
+import {TrustedFolders} from "./trust.ts";
 
 export interface OpenProject {
 	/** The folder as the desk opened it: absolute, with no trailing separator. */
@@ -43,17 +45,35 @@ export const OpenProjectRecord = Schema.Struct({folder: Schema.String});
 export const OpenProjectsRecord = Schema.Struct({
 	version: Schema.Literal(1),
 	projects: Schema.Array(OpenProjectRecord),
+	/** Every folder the person answered yes for, open or not. A list written before #9693 has none. */
+	trusted: Schema.Array(Schema.String).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
 });
 export type OpenProjectsRecord = typeof OpenProjectsRecord.Type;
 
-/** The desk's open projects, in the order they opened. */
+/** The desk's open projects, in the order they opened, and the folders trusted so far. */
 export class OpenProjects {
-	static readonly none = new OpenProjects([]);
+	static readonly none = new OpenProjects([], TrustedFolders.none);
 
 	readonly projects: ReadonlyArray<OpenProject>;
+	readonly trusted: TrustedFolders;
 
-	private constructor(projects: ReadonlyArray<OpenProject>) {
+	private constructor(projects: ReadonlyArray<OpenProject>, trusted: TrustedFolders) {
 		this.projects = projects;
+		this.trusted = trusted;
+	}
+
+	/**
+	 * A desk starting over a saved list: every folder it trusted is still trusted, and nothing is
+	 * open yet. Reopening what was open is a later slice's (#9668 R5.1).
+	 */
+	static restoring(record: OpenProjectsRecord | null): OpenProjects {
+		return new OpenProjects([], TrustedFolders.of(record?.trusted ?? []));
+	}
+
+	/** The same projects, with `folder` trusted from now on. */
+	trust(folder: string): OpenProjects {
+		const trusted = this.trusted.trust(folder);
+		return trusted === this.trusted ? this : new OpenProjects(this.projects, trusted);
 	}
 
 	/** The open project at `folder`, under any spelling of it. */
@@ -73,7 +93,10 @@ export class OpenProjects {
 			return Result.fail(new ProjectAlreadyOpen({folder: absolute}));
 		}
 		const project: OpenProject = {folder: absolute, id: ProjectId.of(absolute)};
-		return Result.succeed({projects: new OpenProjects([...this.projects, project]), project});
+		return Result.succeed({
+			projects: new OpenProjects([...this.projects, project], this.trusted),
+			project,
+		});
 	}
 
 	close(
@@ -85,13 +108,20 @@ export class OpenProjects {
 		const project = this.find(folder);
 		if (project === undefined) return Result.fail(new ProjectNotOpen({folder: resolve(folder)}));
 		return Result.succeed({
-			projects: new OpenProjects(this.projects.filter((open) => open !== project)),
+			projects: new OpenProjects(
+				this.projects.filter((open) => open !== project),
+				this.trusted,
+			),
 			project,
 		});
 	}
 
 	get record(): OpenProjectsRecord {
-		return {version: 1, projects: this.projects.map(({folder}) => ({folder}))};
+		return {
+			version: 1,
+			projects: this.projects.map(({folder}) => ({folder})),
+			trusted: this.trusted.folders,
+		};
 	}
 }
 

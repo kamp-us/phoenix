@@ -35,6 +35,8 @@ const link = (closed: Effect.Effect<Socket.SocketError>): PageLink => ({
 		spells: Stream.empty,
 		keys: Stream.empty,
 		projects: Stream.empty,
+		trustPrompts: Stream.empty,
+		answerTrust: () => Effect.void,
 		attachProcess: (() => Effect.never) as PageAttachment["attachProcess"],
 		call: () => Effect.never,
 		detach: () => Effect.void,

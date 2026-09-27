@@ -43,6 +43,7 @@ import {
 import {Socket} from "effect/unstable/socket";
 import {WebSocket as NodeWebSocket} from "ws";
 import {ProjectLabels} from "../../projects/labels.ts";
+import {makeTrustPrompts} from "../../projects/TrustPrompts.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {scriptedDescriptions, scriptedSpellChannel} from "../host/fixtures.ts";
 import {attach} from "./client.ts";
@@ -205,6 +206,7 @@ const served = Effect.fn("test.served")(function* (
 	registry?: Layer.Layer<Registry, DuplicateProgramId>,
 ) {
 	const built = yield* kernel(stores, registry);
+	const prompts = yield* makeTrustPrompts;
 	const token = mintLaunchToken();
 	const server = yield* serve({
 		token,
@@ -214,8 +216,9 @@ const served = Effect.fn("test.served")(function* (
 		spells: yield* scriptedSpellChannel(),
 		descriptions: scriptedDescriptions,
 		projects: scriptedProjects,
+		trust: prompts,
 	}).pipe(Effect.provideContext(built.context), Effect.orDie);
-	return {...built, token, server};
+	return {...built, token, server, prompts};
 });
 
 const page = (url: string) =>
@@ -665,6 +668,29 @@ describe("the page-to-kernel transport", () => {
 				assert.strictEqual(read.labelOf("-code-kamp_-us-phoenix/counter"), "kamp-us/phoenix");
 				assert.strictEqual(read.labelOf("-code-usirin-phoenix/counter"), "usirin/phoenix");
 				assert.isNull(read.labelOf(shellProgramId));
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"a page is asked what an open is waiting on, and only its answer ends the wait",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* served(memoryStores());
+				const attached = yield* page(app.server.launchUrl);
+				const opening = yield* Effect.forkChild(app.prompts.ask("/code/kamp-us/demlik"));
+				const asked = yield* Stream.runHead(
+					Stream.filter(attached.trustPrompts, (prompts) => prompts.length > 0),
+				);
+				const [prompt] = Option.getOrThrow(asked);
+				assert.strictEqual(prompt?.folder, "/code/kamp-us/demlik");
+				assert.strictEqual(prompt?.name, "demlik");
+				yield* attached.answerTrust(prompt?.question ?? "", "refuse");
+				assert.strictEqual(yield* Fiber.join(opening), "refuse");
+				// The answered question leaves every page on the next frame.
+				yield* Stream.runHead(
+					Stream.filter(attached.trustPrompts, (prompts) => prompts.length === 0),
+				);
 			}).pipe(Effect.scoped),
 		TIMEOUT,
 	);

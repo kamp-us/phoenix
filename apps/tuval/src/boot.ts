@@ -61,6 +61,7 @@ import {
 	prepareProjectState,
 } from "./projects/Projects.ts";
 import {projectSpells} from "./projects/spells.ts";
+import {makeTrustPrompts, TrustPrompts} from "./projects/TrustPrompts.ts";
 import {ConfigReloader, type ReloadRefused, type ReloadReport} from "./reload.ts";
 import type {SdkRemoved} from "./sdk-admission.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
@@ -106,6 +107,8 @@ export type Kernel =
 	| ConfigReloader
 	// The open projects, which the `project` spells open and close (`./projects/`, #9685).
 	| Projects
+	// The "Trust this folder?" questions an open is waiting on, which every page is sent (#9693).
+	| TrustPrompts
 	// Naming it here is what makes the provider load-bearing to the checker: `Context` is
 	// contravariant in its services, so dropping `shellDispatchKernel` below stops `start`'s
 	// answer from satisfying `Started` rather than leaving a defect for the first caller (#7774).
@@ -257,6 +260,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 		),
 	);
 	const filled = yield* Deferred.make<Context.Context<ProjectsKernel>>();
+	const prompts = projects === undefined ? TrustPrompts.none : yield* makeTrustPrompts;
 	const desk =
 		projects === undefined
 			? undefined
@@ -269,6 +273,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 					routes,
 					rows: Context.get(registry, RegistryRows),
 					reloader: Context.get(built, ConfigReloader),
+					prompts,
 					deskGraph: graph,
 					deskRemoved: projects.removed,
 					deskWiring: wiring,
@@ -282,7 +287,11 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	// layer inside the merge above would be asking for itself.
 	const listing = Context.add(built, AiAgentSessionList, aiAgentSessionListKernel(built));
 	const transcripts = Context.add(listing, AiAgentTranscripts, aiAgentTranscriptsKernel(listing));
-	const kernel = Context.add(transcripts, Projects, desk?.service ?? Projects.none);
+	const kernel = Context.add(
+		Context.add(transcripts, Projects, desk?.service ?? Projects.none),
+		TrustPrompts,
+		prompts,
+	);
 	yield* Deferred.succeed(filled, kernel);
 	// The kernel reaches a process's handlers on one route only, the `services` argument: a handler
 	// is sealed to its spawn set, so the ambient a spawner is called under can no longer stand in

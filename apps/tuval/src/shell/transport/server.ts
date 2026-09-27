@@ -37,6 +37,7 @@ import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Deferred, Effect, type Option, type Redacted, Semaphore, Stream} from "effect";
 import {Socket, type SocketServer} from "effect/unstable/socket";
 import type {ProjectLabel} from "../../projects/labels.ts";
+import type {TrustAnswer, TrustPrompt} from "../../projects/trust-prompt.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {showsInAWindow} from "../picker/entries.ts";
 import {checkHandshake, launchUrl, loopbackOrigins} from "./handshake.ts";
@@ -57,6 +58,7 @@ import {
 	TABLE_KIND,
 	tableFrame,
 	toWireRow,
+	trustPromptsFrame,
 } from "./wire.ts";
 
 /**
@@ -101,6 +103,17 @@ export interface ServeOptions {
 	 * same-named one without the page asking (#9692).
 	 */
 	readonly projects: Stream.Stream<ReadonlyArray<ProjectLabel>>;
+	/** The "Trust this folder?" questions every page is sent, and where a page's answer goes. */
+	readonly trust: TrustChannel;
+}
+
+/**
+ * The trust questions an open is waiting on (`../../projects/TrustPrompts.ts`), as far as a socket
+ * needs them: the list to send, and the one place an answer is delivered (#9693).
+ */
+export interface TrustChannel {
+	readonly pending: Stream.Stream<ReadonlyArray<TrustPrompt>>;
+	readonly answer: (question: string, answer: TrustAnswer) => Effect.Effect<boolean>;
 }
 
 export interface TransportServer {
@@ -223,6 +236,7 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 					options.spells,
 					options.descriptions,
 					options.projects,
+					options.trust,
 					options.table,
 					pages,
 					catalogLock,
@@ -254,6 +268,7 @@ export const session = Effect.fn("Tuval.transport.session")(function* (
 	spells: SpellChannel,
 	descriptions: Stream.Stream<RegistryDescription>,
 	projects: Stream.Stream<ReadonlyArray<ProjectLabel>>,
+	trust: TrustChannel,
 	keyTable: PrefixTable,
 	pages: Attached,
 	catalogLock: Semaphore.Semaphore,
@@ -382,6 +397,10 @@ export const session = Effect.fn("Tuval.transport.session")(function* (
 				return Effect.sync(() => void state.attached.delete(frame.processId));
 			case "tuval/transport/dispatch/v1":
 				return dispatch(frame.seq, frame.processId, frame.msg);
+			case "tuval/transport/trust-answer/v1":
+				// An answer to a question no open is waiting on any more — a second page answered it
+				// first, or its open was interrupted — changes nothing, so there is nothing to say back.
+				return Effect.asVoid(trust.answer(frame.question, frame.answer));
 			case "tuval/transport/spell-call/v1":
 				// Forked, because a call is the one frame that can take real time — the session list
 				// walks two stores off disk under a 10s deadline — and awaiting it here would stall the
@@ -431,6 +450,10 @@ export const session = Effect.fn("Tuval.transport.session")(function* (
 		);
 		yield* Effect.forkIn(
 			Stream.runForEach(projects, (labels) => send(projectsFrame(labels))),
+			scope,
+		);
+		yield* Effect.forkIn(
+			Stream.runForEach(trust.pending, (prompts) => send(trustPromptsFrame(prompts))),
 			scope,
 		);
 		yield* Effect.forkIn(

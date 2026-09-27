@@ -10,6 +10,11 @@
  * the order it was added, so a close is one scope close and an open that fails halfway undoes
  * exactly what it had done. The last finalizer to run on a close is the first thing an open did:
  * processes stop before their wiring, their rows and their checkpoint route go.
+ *
+ * A folder with a `.tuval` config is asked about before any of that: importing its config module
+ * runs its code, so an open that needs trust waits on the person's answer first, and a no imports
+ * nothing (#9693, ruling #9668 R2.1). The wait holds no lock, so a question left unanswered never
+ * stops another project opening or closing.
  */
 
 import {resolve} from "node:path";
@@ -68,8 +73,11 @@ import {
 	OpenProjects,
 	type ProjectAlreadyOpen,
 	type ProjectNotOpen,
+	readOpenProjects,
 	saveOpenProjects,
 } from "./open-projects.ts";
+import type {TrustPrompts} from "./TrustPrompts.ts";
+import {FolderNotTrusted} from "./trust.ts";
 
 /** A project that could not open, and why. Nothing it had started is left running. */
 export class ProjectOpenRefused extends Schema.TaggedError<ProjectOpenRefused>()(
@@ -119,7 +127,10 @@ export class Projects extends Context.Service<
 	{
 		readonly open: (
 			folder: string,
-		) => Effect.Effect<ProjectOpened, ProjectAlreadyOpen | ProjectOpenRefused | NoProjectsHere>;
+		) => Effect.Effect<
+			ProjectOpened,
+			ProjectAlreadyOpen | ProjectOpenRefused | FolderNotTrusted | NoProjectsHere
+		>;
 		readonly close: (
 			folder: string,
 		) => Effect.Effect<ProjectClosed, ProjectNotOpen | NoProjectsHere>;
@@ -164,6 +175,8 @@ export interface ProjectsOptions {
 	readonly routes: CheckpointRoutes;
 	readonly rows: RegistryRows["Service"];
 	readonly reloader: ConfigReloader["Service"];
+	/** Where an open that needs trust asks the person at the desk. */
+	readonly prompts: TrustPrompts["Service"];
 	/** The desk's and global layers' graph, and the wiring it was opened on. */
 	readonly deskGraph: Graph;
 	/** What the global layer's SDK refusals took out of `deskGraph`, which a project loses too. */
@@ -216,9 +229,20 @@ const allRenderers = (renderers: Renderers): ReadonlyArray<ModuleRendererRef> =>
  * directory and have to be moved before the desk restores anything.
  */
 export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: ProjectsOptions) {
-	const {home, desk, routes, rows, reloader, fs} = options;
+	const {home, desk, routes, rows, reloader, prompts, fs} = options;
 	const lock = yield* Semaphore.make(1);
-	const openRef = yield* SubscriptionRef.make(OpenProjects.none);
+	// Only the trust of the saved list is carried: which folders were open is a later slice's to
+	// reopen. A list that cannot be read costs the remembered trust, and the folders are asked again.
+	const saved = yield* readOpenProjects(home).pipe(
+		Effect.provideService(FileSystem.FileSystem, fs),
+		Effect.catch((error) =>
+			Effect.as(
+				Effect.logWarning(`tuval: could not read the open projects list — ${error.message}`),
+				null,
+			),
+		),
+	);
+	const openRef = yield* SubscriptionRef.make(OpenProjects.restoring(saved));
 	const scopes = new Map<string, Scope.Closeable>();
 	const renderers = yield* SubscriptionRef.make<Renderers>({
 		desk: options.deskRenderers,
@@ -357,18 +381,52 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 			return opened;
 		});
 
-	const openFolder = Effect.fn("Tuval.Projects.open")(function* (input: string) {
-		const folder = resolve(input);
-		const opening = (yield* SubscriptionRef.get(openRef)).open(folder);
+	/** Remember that the person trusted `folder`, in the saved list as well as the open one. */
+	const recordTrust = (folder: string) =>
+		Effect.flatMap(
+			SubscriptionRef.updateAndGet(openRef, (current) => current.trust(folder)),
+			save,
+		).pipe(lock.withPermits(1));
+
+	/**
+	 * Ask about `folder` when it holds a config nobody has trusted. Unlocked, because the person may
+	 * take as long as they like; trust only ever grows, so an answer cannot go stale while it waits.
+	 */
+	const admit = Effect.fn("Tuval.Projects.admit")(function* (folder: string) {
+		const current = yield* SubscriptionRef.get(openRef);
+		const opening = current.open(folder);
 		if (Result.isFailure(opening)) return yield* opening.failure;
-		const {project} = opening.success;
-		const refuse = (cause: unknown) =>
-			new ProjectOpenRefused({folder: project.folder, reason: reasonOf(cause)});
 		const isFolder = yield* fs.stat(folder).pipe(
 			Effect.map((info) => info.type === "Directory"),
 			Effect.orElseSucceed(() => false),
 		);
-		if (!isFolder) return yield* refuse("no folder is there");
+		if (!isFolder) {
+			return yield* new ProjectOpenRefused({folder, reason: "no folder is there"});
+		}
+		// A config that cannot be checked for is asked about, never assumed away.
+		const hasConfig = yield* fs
+			.exists(projectConfig(folder))
+			.pipe(Effect.orElseSucceed(() => true));
+		if (current.trusted.gate(folder, hasConfig) !== "ask") return;
+		if ((yield* prompts.ask(folder)) === "refuse") return yield* new FolderNotTrusted({folder});
+		yield* recordTrust(folder);
+	});
+
+	const openAdmitted = Effect.fn("Tuval.Projects.openAdmitted")(function* (folder: string) {
+		const current = yield* SubscriptionRef.get(openRef);
+		const opening = current.open(folder);
+		if (Result.isFailure(opening)) return yield* opening.failure;
+		const {project} = opening.success;
+		const refuse = (cause: unknown) =>
+			new ProjectOpenRefused({folder: project.folder, reason: reasonOf(cause)});
+		// Checked again under the lock and just before the import: a config written into the folder
+		// after `admit` found none must not be imported on a question nobody was asked.
+		const hasConfig = yield* fs
+			.exists(projectConfig(folder))
+			.pipe(Effect.orElseSucceed(() => true));
+		if (current.trusted.gate(folder, hasConfig) === "ask") {
+			return yield* refuse("a .tuval config appeared after the folder was checked; open it again");
+		}
 		const layer = {id: project.id, module: projectConfig(folder)};
 		const prepared = Effect.gen(function* () {
 			const loaded = yield* loadProjectConfig(desk, layer, options.deskRemoved);
@@ -378,6 +436,12 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		const {loaded, state} = yield* prepared;
 		return yield* commitOpen(project, loaded, state);
 	}, lock.withPermits(1));
+
+	const openFolder = Effect.fn("Tuval.Projects.open")(function* (input: string) {
+		const folder = resolve(input);
+		yield* admit(folder);
+		return yield* openAdmitted(folder);
+	});
 
 	const closeFolder = Effect.fn("Tuval.Projects.close")(function* (folder: string) {
 		const closing = (yield* SubscriptionRef.get(openRef)).close(folder);
@@ -399,7 +463,12 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		renderers: Stream.map(SubscriptionRef.changes(renderers), allRenderers),
 	});
 
-	/** `boot`'s first open: the project at `folder`, already read and prepared. */
+	/**
+	 * `boot`'s first open: the project at `folder`, already read and prepared. Known gap: its config
+	 * was imported before any page existed to ask from, so it skips the trust prompt, and `--project`
+	 * defaults to the working directory, so nobody has to name it. Ruling #9668 R2.1 exempts only the
+	 * home config; moving this open onto the trust gate is #9884.
+	 */
 	const openFirst = (folder: string, loaded: LoadedProjectConfig, state: ProjectState) =>
 		Effect.gen(function* () {
 			const project: OpenProject = {folder: resolve(folder), id: loaded.layer.id};

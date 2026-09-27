@@ -38,6 +38,8 @@ import {
 	SPELL_REPLY_KIND,
 	spellReplyFrame,
 	TABLE_KIND,
+	TRUST_ANSWER_KIND,
+	TRUST_PROMPTS_KIND,
 	tableFrame,
 	toWirePrefixTable,
 	toWireRow,
@@ -70,6 +72,8 @@ const clientFrames: ReadonlyArray<ClientFrame> = [
 	{kind: DETACH_KIND, processId: processId("counter")},
 	{kind: DISPATCH_KIND, seq: 0, processId: processId("counter"), msg: {type: "tick"}},
 	{kind: SPELL_CALL_KIND, call},
+	{kind: TRUST_ANSWER_KIND, question: "q-1", answer: "trust"},
+	{kind: TRUST_ANSWER_KIND, question: "q-2", answer: "refuse"},
 ];
 
 const serverFrames: ReadonlyArray<ServerFrame> = [
@@ -105,6 +109,11 @@ const serverFrames: ReadonlyArray<ServerFrame> = [
 	{kind: REGISTRY_KIND, programs: []},
 	{kind: KEYS_KIND, table: toWirePrefixTable(defaultPrefixTable)},
 	{
+		kind: TRUST_PROMPTS_KIND,
+		prompts: [{question: "q-1", folder: "/code/kamp-us/demlik", name: "demlik"}],
+	},
+	{kind: TRUST_PROMPTS_KIND, prompts: []},
+	{
 		kind: SPELL_REPLY_KIND,
 		reply: new SpellReplyOk({
 			type: "spell.reply",
@@ -127,6 +136,22 @@ const serverFrames: ReadonlyArray<ServerFrame> = [
 ];
 
 describe("the transport wire", () => {
+	it("refuses a trust answer that is neither yes nor no, and a prompt with no folder", () => {
+		expect([
+			decodeClientFrame(
+				JSON.stringify({kind: TRUST_ANSWER_KIND, question: "q-1", answer: "maybe"}),
+			),
+			decodeClientFrame(JSON.stringify({kind: TRUST_ANSWER_KIND, answer: "trust"})),
+			decodeServerFrame(
+				JSON.stringify({kind: TRUST_PROMPTS_KIND, prompts: [{question: "q-1", name: "demlik"}]}),
+			),
+		]).toEqual([
+			{_tag: "Undecodable", reason: "malformed-payload"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
+		]);
+	});
+
 	it("every client frame round trips", () => {
 		const decoded = clientFrames.map((frame) => decodeClientFrame(encodeFrame(frame)));
 		expect(decoded).toEqual(clientFrames.map((frame) => ({_tag: "Frame", frame})));

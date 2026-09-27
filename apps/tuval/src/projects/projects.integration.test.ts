@@ -3,6 +3,10 @@
  * boots one project, the `project open` spell opens another with no restart, and `project close`
  * takes it back out while the first keeps running. The second case serves the page over the same
  * desk, so a project whose row names a module renderer has that renderer served once it opens.
+ *
+ * The trust cases (#9693) answer the "Trust this folder?" question the way a page does, through the
+ * kernel's `TrustPrompts`, and read whether the folder's config module was ever imported off a file
+ * that module writes as it is evaluated.
  */
 
 import {
@@ -28,14 +32,16 @@ import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval-sdk/kernel/protocol/mes
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {homeStateDir} from "@kampus/tuval-sdk/kernel/state-dir";
-import {Context, Effect, Option, Schedule, Schema} from "effect";
+import {Context, Effect, Fiber, Option, Schedule, Schema, Stream} from "effect";
 import {boot, type Kernel, projectConfig, projectDir} from "../boot.ts";
 import {servePage} from "../page/dev-server.ts";
 import {ProjectId} from "../project-id.ts";
 import {scratchHome} from "../scratch-home.ts";
 import type {TransportServer} from "../shell/transport/server.ts";
-import {readOpenProjects} from "./open-projects.ts";
+import {OpenProjects, readOpenProjects, saveOpenProjects} from "./open-projects.ts";
 import {Projects} from "./Projects.ts";
+import {TrustPrompts} from "./TrustPrompts.ts";
+import type {TrustAnswer} from "./trust-prompt.ts";
 
 const TIMEOUT = 60_000;
 const appRoot = dirname(dirname(import.meta.dirname));
@@ -56,6 +62,48 @@ const projectWith = (name: string): string => {
 	writeFileSync(projectConfig(folder), `export {default} from ${JSON.stringify(fixture(name))};\n`);
 	return folder;
 };
+
+/**
+ * A project folder whose config module writes `marker` when it is evaluated, then re-exports the
+ * named fixture: the file existing is the proof the module was imported.
+ */
+const projectMarking = (name: string): {readonly folder: string; readonly marker: string} => {
+	const folder = projectWith(name);
+	const marker = join(folder, "imported");
+	writeFileSync(
+		projectConfig(folder),
+		[
+			'import {writeFileSync} from "node:fs";',
+			`writeFileSync(${JSON.stringify(marker)}, "imported");`,
+			`export {default} from ${JSON.stringify(fixture(name))};`,
+			"",
+		].join("\n"),
+	);
+	return {folder, marker};
+};
+
+/** The question an open of `folder` is waiting on, once it is being asked. */
+const questionFor = (kernel: Context.Context<Kernel>, folder: string) =>
+	Context.get(kernel, TrustPrompts).pending.pipe(
+		Stream.map((pending) => pending.find((prompt) => prompt.folder === folder)),
+		Stream.filter((prompt) => prompt !== undefined),
+		Stream.runHead,
+		Effect.flatMap((head) =>
+			Option.isSome(head) ? Effect.succeed(head.value) : Effect.die(`${folder} was never asked`),
+		),
+	);
+
+/** Open `folder` through the spell, answering its trust question the way a page does. */
+const openAnswering = (kernel: Context.Context<Kernel>, folder: string, answer: TrustAnswer) =>
+	Effect.gen(function* () {
+		const opening = yield* Effect.forkChild(spell(kernel, ["project", "open"], {folder}));
+		const prompt = yield* questionFor(kernel, folder);
+		assert.isTrue(yield* Context.get(kernel, TrustPrompts).answer(prompt.question, answer));
+		return yield* Fiber.join(opening);
+	});
+
+const pendingNow = (kernel: Context.Context<Kernel>) =>
+	Effect.map(Stream.runHead(Context.get(kernel, TrustPrompts).pending), Option.getOrNull);
 
 /** A package installed beside a project's config: what that project's module renderer names. */
 const installRenderer = (folder: string): string => {
@@ -168,7 +216,7 @@ describe("a project opened into a running desk", () => {
 				const {kernel, report} = yield* boot({global: fixture("log-global"), project: first, home});
 				const counter = beta.scope("counter");
 
-				const opened = yield* spell(kernel, ["project", "open"], {folder: second});
+				const opened = yield* openAnswering(kernel, second, "trust");
 				assert.isTrue(opened.ok, JSON.stringify(opened));
 				assert.includeMembers(
 					[...(yield* liveIds(kernel))],
@@ -195,6 +243,7 @@ describe("a project opened into a running desk", () => {
 				assert.deepStrictEqual(yield* readOpenProjects(home), {
 					version: 1,
 					projects: [{folder: first}, {folder: second}],
+					trusted: [second],
 				});
 
 				const closed = yield* spell(kernel, ["project", "close"], {folder: second});
@@ -209,9 +258,11 @@ describe("a project opened into a running desk", () => {
 				assert.deepStrictEqual(yield* readOpenProjects(home), {
 					version: 1,
 					projects: [{folder: first}],
+					trusted: [second],
 				});
 
-				// Reopening brings the counter back at its checkpoint, with its connection restored.
+				// Reopening brings the counter back at its checkpoint, with its connection restored. The
+				// folder is trusted now, so this open is not asked about.
 				const reopened = yield* spell(kernel, ["project", "open"], {folder: second});
 				assert.isTrue(reopened.ok, JSON.stringify(reopened));
 				if (reopened.ok) assert.include(reopened.result as object, {restored: 1});
@@ -234,6 +285,8 @@ describe("a project opened into a running desk", () => {
 				const first = projectWith("planned-counter");
 				const second = projectWith("module-renderer-counter");
 				const file = installRenderer(second);
+				// Trusted by a desk that ran before: the saved list is what this boot reads its trust from.
+				yield* saveOpenProjects(home, OpenProjects.none.trust(second));
 				const booted = yield* boot({global: fixture("does-not-exist"), project: first, home});
 				const projects = Context.get(booted.kernel, Projects);
 				const page = yield* servePage({
@@ -262,6 +315,96 @@ describe("a project opened into a running desk", () => {
 					loader,
 					(source) => !source.includes(RENDERER_REF),
 				);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		TIMEOUT,
+	);
+});
+
+describe("the first open of a folder", () => {
+	it.live(
+		"asks before importing its config, and a no leaves nothing from it running",
+		() =>
+			Effect.gen(function* () {
+				const home = scratchHome("projects-trust-no");
+				const first = projectWith("planned-counter");
+				const {folder, marker} = projectMarking("counter-into-global-log");
+				const {kernel} = yield* boot({global: fixture("log-global"), project: first, home});
+				const before = yield* liveIds(kernel);
+
+				const opening = yield* Effect.forkChild(spell(kernel, ["project", "open"], {folder}));
+				const prompt = yield* questionFor(kernel, folder);
+				assert.strictEqual(prompt.name, ProjectId.of(folder).name);
+				assert.isFalse(existsSync(marker), "the config module ran before the person answered");
+
+				assert.isTrue(yield* Context.get(kernel, TrustPrompts).answer(prompt.question, "refuse"));
+				const refused = yield* Fiber.join(opening);
+				assert.isFalse(refused.ok, JSON.stringify(refused));
+				if (!refused.ok) {
+					assert.strictEqual(refused.error.tag, "tuval/FolderNotTrusted");
+					assert.include(refused.error.message, folder);
+				}
+				assert.isFalse(existsSync(marker), "a refused folder's config module was imported");
+				assert.deepStrictEqual([...(yield* liveIds(kernel))].sort(), [...before].sort());
+				assert.deepStrictEqual(yield* pendingNow(kernel), []);
+				const open = yield* Context.get(kernel, Projects).list;
+				assert.deepStrictEqual(
+					open.map((project) => project.folder),
+					[first],
+				);
+				assert.deepStrictEqual(yield* readOpenProjects(home), {
+					version: 1,
+					projects: [{folder: first}],
+					trusted: [],
+				});
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		TIMEOUT,
+	);
+
+	it.live(
+		"opens on a yes and remembers it, so the next open does not ask",
+		() =>
+			Effect.gen(function* () {
+				const home = scratchHome("projects-trust-yes");
+				const first = projectWith("planned-counter");
+				const {folder, marker} = projectMarking("counter-into-global-log");
+				const {kernel} = yield* boot({global: fixture("log-global"), project: first, home});
+
+				const opened = yield* openAnswering(kernel, folder, "trust");
+				assert.isTrue(opened.ok, JSON.stringify(opened));
+				assert.isTrue(existsSync(marker));
+				assert.include(yield* liveIds(kernel), ProjectId.of(folder).scope("counter"));
+				const saved = yield* readOpenProjects(home);
+				assert.deepStrictEqual(saved?.trusted, [folder]);
+
+				const closed = yield* spell(kernel, ["project", "close"], {folder});
+				assert.isTrue(closed.ok, JSON.stringify(closed));
+				// Asked nothing: the open completes with no answer given, and no question ever waits.
+				const again = yield* spell(kernel, ["project", "open"], {folder: `${folder}/`}).pipe(
+					Effect.timeout("20 seconds"),
+				);
+				assert.isTrue(again.ok, JSON.stringify(again));
+				assert.deepStrictEqual(yield* pendingNow(kernel), []);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		TIMEOUT,
+	);
+
+	it.live(
+		"never asks about a folder with no config, the home config or the desk layer",
+		() =>
+			Effect.gen(function* () {
+				const home = scratchHome("projects-trust-none");
+				const first = projectWith("planned-counter");
+				const bare = realpathSync(mkdtempSync(join(tmpdir(), "tuval-bare-")));
+				// The boot read the home config and the desk layer, and asked nothing to do it.
+				const {kernel} = yield* boot({global: fixture("log-global"), project: first, home});
+				assert.deepStrictEqual(yield* pendingNow(kernel), []);
+
+				const opened = yield* spell(kernel, ["project", "open"], {folder: bare}).pipe(
+					Effect.timeout("20 seconds"),
+				);
+				assert.isTrue(opened.ok, JSON.stringify(opened));
+				assert.deepStrictEqual(yield* pendingNow(kernel), []);
+				assert.deepStrictEqual((yield* readOpenProjects(home))?.trusted, []);
 			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
 		TIMEOUT,
 	);
