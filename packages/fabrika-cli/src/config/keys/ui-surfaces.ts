@@ -16,7 +16,7 @@
  * allocated free ports at start, because a fixed port is not a per-worktree resource: two lanes
  * rendering at once would either collide or, worse, capture each other's tree.
  *
- * `uiCapture` is the list-level half — viewport, evidence store, storage state, locale. `storageState` is the
+ * `uiCapture` is the list-level half — viewport, evidence store, storage state, locale, scheme. `storageState` is the
  * one field naming a file rather than a value: a Playwright storage-state snapshot, so a repo whose
  * surfaces sit behind a login can be rendered as a logged-in user. It is a credential, so it is a
  * path the repo gitignores — never the cookies inline.
@@ -64,6 +64,8 @@ const VIOLATION = {
 	locale: `"${UI_CAPTURE}.locale" is not an object`,
 	storageKey: `"${UI_CAPTURE}.locale.storageKey" is missing or not a non-empty string`,
 	values: `"${UI_CAPTURE}.locale.values" is missing or not a non-empty list of distinct locale tags`,
+	scheme: `"${UI_CAPTURE}.scheme" is not an object`,
+	rootAttribute: `"${UI_CAPTURE}.scheme.rootAttribute" is missing or not a lowercase HTML attribute name`,
 } as const;
 
 /**
@@ -157,6 +159,19 @@ const Locale = Schema.Struct({
 		.annotateKey({messageMissingKey: VIOLATION.values}),
 }).annotate({message: VIOLATION.locale, messageUnexpectedKey: VIOLATION.unknownKey});
 
+/** The attribute-name grammar the scheme proof reads through `getAttribute`, lowercase as HTML stores it. */
+const ATTRIBUTE_NAME = /^[a-z][a-z0-9-]*$/;
+
+const ColorSchemeDeclaration = Schema.Struct({
+	rootAttribute: Schema.String.annotate({message: VIOLATION.rootAttribute})
+		.check(
+			Schema.makeFilter((value) => ATTRIBUTE_NAME.test(value), {
+				message: VIOLATION.rootAttribute,
+			}),
+		)
+		.annotateKey({messageMissingKey: VIOLATION.rootAttribute}),
+}).annotate({message: VIOLATION.scheme, messageUnexpectedKey: VIOLATION.unknownKey});
+
 const Capture = Schema.Struct({
 	viewport: Viewport,
 	evidenceStore: Schema.NullOr(Schema.String)
@@ -174,11 +189,14 @@ const Capture = Schema.Struct({
 	locale: Schema.NullOr(Locale)
 		.annotate({message: VIOLATION.locale})
 		.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	scheme: Schema.NullOr(ColorSchemeDeclaration)
+		.annotate({message: VIOLATION.scheme})
+		.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
 }).annotate({message: VIOLATION.capture, messageUnexpectedKey: VIOLATION.unknownKey});
 
 /** One runnable app: where its source lives, how to start it, and what it serves. */
 export type UiSurface = typeof Surface.Type;
-/** The list-level capture settings — viewport, evidence store, storage state, locale. */
+/** The list-level capture settings — viewport, evidence store, storage state, locale, scheme. */
 export type UiCapture = typeof Capture.Type;
 
 const decodeList = Schema.decodeUnknownResult(SurfaceList, {onExcessProperty: "error"});
@@ -321,6 +339,7 @@ const SHIPPED_CAPTURE: UiCapture = {
 	evidenceStore: null,
 	storageState: null,
 	locale: null,
+	scheme: null,
 };
 
 export const uiCaptureKey: KeyGroup<UiCapture> = {
@@ -335,7 +354,7 @@ export const uiCaptureKey: KeyGroup<UiCapture> = {
 	jsonSchema: {
 		type: "object",
 		description:
-			"How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, the storage state to browse as, and the locales a render can be seeded in.",
+			"How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, the storage state to browse as, the locales a render can be seeded in, and where a page publishes its resolved colour scheme.",
 		properties: {
 			viewport: {
 				type: "object",
@@ -379,6 +398,21 @@ export const uiCaptureKey: KeyGroup<UiCapture> = {
 					},
 				},
 				required: ["storageKey", "values"],
+				additionalProperties: false,
+			},
+			scheme: {
+				type: ["object", "null"],
+				description:
+					"Where the page publishes the colour scheme it resolved. `review-ui render --scheme light|dark` emulates `prefers-color-scheme` and proves each shot against this root attribute. Null (or absent) refuses `--scheme`.",
+				properties: {
+					rootAttribute: {
+						type: "string",
+						description:
+							"The attribute on `document.documentElement` whose value is `light` or `dark` once the page has resolved its scheme.",
+						pattern: "^[a-z][a-z0-9-]*$",
+					},
+				},
+				required: ["rootAttribute"],
 				additionalProperties: false,
 			},
 		},

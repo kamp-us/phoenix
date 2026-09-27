@@ -129,6 +129,16 @@ layout the criterion asked about was one nothing could shoot. The
 width a shot records is read back off its own PNG bytes, so a capture under a viewport label is a
 proven render at that width and a mismatch is `19`, never a desktop layout judged as a phone's.
 
+**Ask for the dark shot when the composition's styling depends on the scheme.** Every shot
+without `--scheme` is whatever the headless browser resolves to, which is light, so a component
+that breaks only in dark passes a light-only verdict clean. `--scheme light --scheme dark` crosses
+both schemes with the surfaces and viewports, and each manifest entry records the scheme it asked
+for beside the one the page proved. You never judge whether the dark shot is really dark: the verb
+emulates the browser's colour preference, reads back the scheme the page itself published on the
+root attribute `uiCapture.scheme` declares, and refuses `11` when it names anything else, so a
+scheme-crossed capture is a proven render of that scheme. A repo that declares no attribute
+refuses `--scheme` on `10`; that is a gap to disclose, never a light shot to judge as dark.
+
 **A surface behind login is named, not skipped, and the name carries the tier.** A surface id may
 carry a realized state, and there are two: `--surface /feed:auth` renders the route as the
 yazar+moderator test account, `--surface /feed:auth-caylak` as the çaylak one. **Pick the tier the

@@ -22,6 +22,7 @@ import {read as readGallery} from "./evidence-gallery.ts";
 import {type CaptureManifest, serializeManifest, sha256Hex} from "./manifest.ts";
 import {
 	type EvidenceCheck,
+	galleryTitle,
 	runPost,
 	runPostFlags,
 	type UploadLeg,
@@ -194,6 +195,28 @@ const happy = (): ReadonlyArray<Scripted> => [
 	[CREATE, {status: 201, body: JSON.stringify({id: 5154902211, html_url: URL})}],
 	[READBACK, posted(COMPOSED)],
 ];
+
+describe("galleryTitle", () => {
+	const entry = {
+		surface: "/pano",
+		viewport: "desktop",
+		path: "/tmp/pano@desktop.png",
+		width: 1280,
+		height: 2140,
+		sha256: "9c41",
+		pageErrors: {rows: [], more: 0},
+	};
+
+	it("keeps the surface @ viewport heading for a set rendered without --scheme", () => {
+		expect(galleryTitle(entry)).toBe("/pano @ desktop");
+	});
+
+	it("names the requested and the proven scheme, so a dark shot never heads as the default", () => {
+		expect(galleryTitle({...entry, scheme: {requested: "dark", proven: "dark"}})).toBe(
+			"/pano @ desktop, scheme requested dark, proven dark",
+		);
+	});
+});
 
 describe("runPost", () => {
 	it("posts one marker-first comment with the verified evidence gallery under it", async () => {

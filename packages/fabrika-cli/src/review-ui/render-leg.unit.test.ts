@@ -17,6 +17,7 @@ const request = {
 	cookies: [],
 	forcedFlags: NO_FORCED_FLAGS,
 	locale: null,
+	scheme: null,
 };
 
 const failing =
@@ -365,6 +366,74 @@ describe("captureRenderLeg — the locale proof", () => {
 			runLocale(
 				succeeding({
 					localeProof: {_tag: "Mismatch", rendered: "tr"},
+					pageErrors: [{kind: "pageerror", text: "TypeError: x is null"}],
+				}),
+			)._tag,
+		).toBe("Crashed");
+	});
+});
+
+/**
+ * One axis further: an emulated preference the app overrode paints the other scheme, a valid PNG
+ * under the requested scheme's name.
+ */
+describe("captureRenderLeg — the scheme proof", () => {
+	const DARK = {scheme: "dark", rootAttribute: "data-theme"} as const;
+	const schemeRequest = {...request, scheme: DARK};
+	const runScheme = (capture: CaptureShots): SurfaceRender =>
+		Effect.runSync(makeCaptureRenderLeg(capture)(schemeRequest));
+
+	it("plans the shot in the requested scheme, and plans no scheme when none was asked for", () => {
+		const planned: Array<{readonly scheme: unknown; readonly fileName: string}> = [];
+		const spy: CaptureShots = (plan) => {
+			planned.push(...plan.map((shot) => ({scheme: shot.scheme, fileName: shot.fileName})));
+			return succeeding({schemeProof: {_tag: "Proven", scheme: "dark"}})([], "", {});
+		};
+		runScheme(spy);
+		run(spy);
+		expect(planned).toEqual([
+			{scheme: DARK, fileName: "pano@desktop-dark.png"},
+			{scheme: undefined, fileName: "pano@desktop.png"},
+		]);
+	});
+
+	it("records the requested and the proven scheme on the entry, and neither without a request", () => {
+		const proven = runScheme(succeeding({schemeProof: {_tag: "Proven", scheme: "dark"}}));
+		expect(proven._tag === "Rendered" && proven.entry.scheme).toEqual({
+			requested: "dark",
+			proven: "dark",
+		});
+		const plain = run(succeeding({}));
+		expect(plain._tag === "Rendered" && "scheme" in plain.entry).toBe(false);
+	});
+
+	it("refuses the other scheme under the requested name, naming what the page published", () => {
+		expect(runScheme(succeeding({schemeProof: {_tag: "Mismatch", rendered: "light"}}))).toEqual({
+			_tag: "WrongScheme",
+			wanted: "dark",
+			reason: `the page's data-theme read back "light"`,
+		});
+	});
+
+	it("refuses an unreadable attribute and an absent proof — neither is a proof", () => {
+		const unreadable = "the page's root carries no data-theme attribute";
+		expect(runScheme(succeeding({schemeProof: {_tag: "Unreadable", reason: unreadable}}))).toEqual({
+			_tag: "WrongScheme",
+			wanted: "dark",
+			reason: unreadable,
+		});
+		expect(runScheme(succeeding({}))).toEqual({
+			_tag: "WrongScheme",
+			wanted: "dark",
+			reason: "the capture returned no scheme proof",
+		});
+	});
+
+	it("keeps a crash ahead of the scheme proof — a page that threw published no scheme", () => {
+		expect(
+			runScheme(
+				succeeding({
+					schemeProof: {_tag: "Mismatch", rendered: "light"},
 					pageErrors: [{kind: "pageerror", text: "TypeError: x is null"}],
 				}),
 			)._tag,

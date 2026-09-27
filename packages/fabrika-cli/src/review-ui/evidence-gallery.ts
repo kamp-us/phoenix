@@ -18,7 +18,7 @@ export const HEADING = "## Evidence";
 
 /** One judged shot as the gallery records it. */
 export interface Shot {
-	/** The heading and alt text — `<surface> @ <viewport>`. */
+	/** The heading and alt text — `<surface> @ <viewport>`, plus the scheme pair on a `--scheme` set. */
 	readonly title: string;
 	/** The verified hosted URL, never a local path. */
 	readonly url: string;

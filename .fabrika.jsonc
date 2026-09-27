@@ -198,9 +198,13 @@
 
 	// How a capture is taken. `apps/web` keeps the reader's locale only in `localStorage`
 	// (`apps/web/src/lib/localeStorage.ts`), so `review-ui render --locale en` seeds this key and
-	// proves the page's `lang` came back `en` (#9893).
+	// proves the page's `lang` came back `en` (#9893). Its theme defaults to `auto`, which follows
+	// `prefers-color-scheme` and publishes the resolved value on `data-theme`
+	// (`apps/web/src/lib/theme.tsx`), so `review-ui render --scheme dark` emulates the preference and
+	// proves that attribute came back `dark` (#8134).
 	"uiCapture": {
-		"locale": { "storageKey": "kampus.locale", "values": ["tr", "en"] }
+		"locale": { "storageKey": "kampus.locale", "values": ["tr", "en"] },
+		"scheme": { "rootAttribute": "data-theme" }
 	},
 
 	// The repo's own commands that machine-read `.github/workflows/**`. `fabrika build check

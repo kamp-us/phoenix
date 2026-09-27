@@ -14,6 +14,7 @@
  * on screen is `states.ts`'s closed list (`auth` today), and `review-ui render`
  * refuses the rest on `10`. Parsing a state is not rendering one.
  */
+import type {ColorScheme, SchemeRequest} from "./color-scheme.ts";
 
 /** A changed UI surface to shoot: a route + an optional state variant. */
 export interface Surface {
@@ -115,6 +116,11 @@ export interface Shot {
 	 * lever the local render harness computes. Absent ⇒ the default 1x.
 	 */
 	readonly deviceScaleFactor?: number;
+	/**
+	 * Optional colour scheme the shot's context emulates and proves against the page's declared root
+	 * attribute (`color-scheme.ts`). Absent ⇒ the browser's default scheme, with no proof owed.
+	 */
+	readonly scheme?: SchemeRequest;
 }
 
 /**
@@ -149,7 +155,11 @@ export const joinPreviewUrl = (previewUrl: string, route: string): string => {
  * backtracking regex.
  */
 const MAX_FILENAME_STEM = 128;
-export const surfaceFileName = (surface: Surface, viewport: Viewport): string => {
+export const surfaceFileName = (
+	surface: Surface,
+	viewport: Viewport,
+	scheme: ColorScheme | null = null,
+): string => {
 	const base = surface.state === null ? surface.route : `${surface.route}-${surface.state}`;
 	const clamped = base.length > MAX_FILENAME_STEM ? base.slice(0, MAX_FILENAME_STEM) : base;
 	// `[^…]+` over a negated class is a single greedy quantifier — linear, no
@@ -160,11 +170,15 @@ export const surfaceFileName = (surface: Surface, viewport: Viewport): string =>
 	while (start < end && collapsed[start] === "-") start++;
 	while (end > start && collapsed[end - 1] === "-") end--;
 	const safe = collapsed.slice(start, end);
-	return `${safe.length === 0 ? "root" : safe}@${viewport.label}.png`;
+	// The scheme rides the name only when one was requested, so a run that asked for none keeps the
+	// name every earlier set used, and a light and a dark shot of one surface never share a file.
+	const variant = scheme === null ? viewport.label : `${viewport.label}-${scheme}`;
+	return `${safe.length === 0 ? "root" : safe}@${variant}.png`;
 };
 
 /**
- * Build the capture plan: one {@link Shot} per surface (at the given viewport).
+ * Build the capture plan: one {@link Shot} per surface (at the given viewport, and in the given
+ * colour scheme when one is requested).
  * Fails closed on an empty surface set (nothing to shoot is a caller bug, not a
  * silent no-op) and on duplicate surface tokens (two shots would collide on the
  * same on-disk name and evidence).
@@ -173,6 +187,7 @@ export const buildCapturePlan = (
 	previewUrl: string,
 	surfaces: readonly Surface[],
 	viewport: Viewport = DEFAULT_VIEWPORT,
+	scheme: SchemeRequest | null = null,
 ): readonly Shot[] => {
 	if (surfaces.length === 0) {
 		throw new Error("fabrika capture: no surfaces to capture — refusing to build an empty plan");
@@ -188,6 +203,7 @@ export const buildCapturePlan = (
 		surface,
 		url: joinPreviewUrl(previewUrl, surface.route),
 		viewport,
-		fileName: surfaceFileName(surface, viewport),
+		fileName: surfaceFileName(surface, viewport, scheme?.scheme ?? null),
+		...(scheme === null ? {} : {scheme}),
 	}));
 };
