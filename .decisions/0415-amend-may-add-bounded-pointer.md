@@ -29,7 +29,8 @@ Governance cleared the #6919 heading on the #6807 precedent, because the written
 the question. A rule that forces a reviewer to weigh precedent lets two reviewers reach opposite
 verdicts on the same shape ([#6921](https://github.com/kamp-us/phoenix/issues/6921)).
 
-The founder ruled the second reading on 2026-09-02, under a lens of less process toil and no new
+The founder ruled on 2026-09-02 that an amend may add a bounded in-place pointer to the amending
+record, under a lens of less process toil and no new
 gate unless a failure recurs:
 https://github.com/kamp-us/phoenix/issues/6921#issuecomment-5519864260. This record transcribes
 that ruling. It supersedes and amends no ADR; the rule it changes lived only in the skill. It sits
