@@ -992,10 +992,9 @@ An author outside phoenix writes a program in their own folder and runs it on th
 5. Answer "Trust this folder?" with yes. A folder is asked once; the answer is kept per path. A
    folder that starts a new desk is not asked yet; #9884 tracks that gap.
 6. Edit the program. Saving the config, or any file it imports by path, reloads it in the running
-   desk (see "Spells"), and the process keeps the state it had. Two limits hold today. A reload
-   does not yet switch a program written with the authoring API, so its process keeps the old code
-   until the desk restarts (#9950, folded into #9690). And only the folder a desk booted with is
-   watched, so a project opened into a desk that was already running does not reload (#9869).
+   desk (see "Spells"), and the process switches to the edited code while keeping the state it had.
+   One limit holds today: only the folder a desk booted with is watched, so a project opened into a
+   desk that was already running does not reload (#9869).
 
 `pnpm proof:outside` runs these steps from packed tarballs in CI (see "The packed desk").
 

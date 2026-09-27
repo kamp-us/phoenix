@@ -54,7 +54,9 @@ const sourceOf = (value: unknown, seen: Set<object>, functions: Set<string>): st
  * The source text of everything on a row that runs, beside the version its state is written under,
  * and the source of every author file that code stands on. Every module the config imports by path
  * is evaluated again on each read, so a row's functions are new objects whether or not anyone edited
- * them; their text is what an edit to them moves. A helper they call is not in their text, so
+ * them; their text is what an edit to them moves. A row the SDK compiled runs its author's code
+ * through the SDK's own closures, whose text no edit moves, so its `authoredCode` is read beside
+ * them. A helper they call is not in their text, so
  * `modules` adds each file that defines one of the row's functions and every file that one imports
  * by path, transitively, as the load read them: an edit confined to such a helper moves the answer
  * too. A value a function closes over is config rather than code, and reaches a running process
@@ -78,6 +80,7 @@ export const codeOf = (
 			row.restorable,
 			row.migrations,
 			row.checkpointWorthy,
+			row.authoredCode,
 		],
 		new Set(),
 		functions,

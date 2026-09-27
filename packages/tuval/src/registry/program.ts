@@ -325,6 +325,12 @@ export interface Program<
 	 * flag. Absent means the program runs under any flags.
 	 */
 	readonly needsFeatures?: ReadonlyArray<keyof TuvalFeatures>;
+	/**
+	 * The author's own code behind a row the SDK compiled (`defineProgram`), whose fields run it only
+	 * through the SDK's closures. A desk's reload reads it to tell whether an edit moved the row's
+	 * code. A row written by hand leaves it out: its own fields are the author's code already.
+	 */
+	readonly authoredCode?: Readonly<Record<string, unknown>>;
 	readonly identity: DefinitionIdentity;
 	readonly placement: Placement;
 }

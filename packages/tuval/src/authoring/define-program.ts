@@ -699,6 +699,21 @@ const compileSubs = (authored: AnyAuthoredProgram): AnyProgram["subs"] =>
 				Object.entries(authored.subscribe).map(([type, open]) => [type, disposerStream(open)]),
 			);
 
+/**
+ * Every field of the authored record that holds the author's code. The compiled row reaches most of
+ * it only through this layer's closures, whose text no edit to the author's file moves.
+ */
+const compileAuthoredCode = (authored: AnyAuthoredProgram): AnyProgram["authoredCode"] => ({
+	init: authored.init,
+	update: authored.update,
+	commands: authored.commands,
+	title: authored.title,
+	status: authored.status,
+	resume: authored.resume,
+	subs: authored.subs,
+	subscribe: authored.subscribe,
+});
+
 const compileIdentity = (authored: AnyAuthoredProgram): DefinitionIdentity => ({
 	...defaultIdentity(authored.id),
 	...authored.identity,
@@ -724,6 +739,7 @@ export const FIELD_COMPILERS = {
 	renderer: (authored) => authored.renderer,
 	sdk: (authored) => authored.sdk,
 	capabilities: (authored) => authored.capabilities ?? NO_CAPABILITIES,
+	authoredCode: (authored) => compileAuthoredCode(authored),
 	identity: (authored) => compileIdentity(authored),
 	placement: (authored) => authored.placement ?? LOCAL,
 } satisfies FieldCompilers;

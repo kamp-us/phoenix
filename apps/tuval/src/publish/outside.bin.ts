@@ -210,10 +210,10 @@ const fetchText = (what: string, url: string) =>
 	});
 
 /**
- * The program the author edits: a count it keeps, stamped with the edit that last counted. It is a
- * kernel row rather than an authored `program()`, because a reload switches a running process onto
- * a row whose own functions' text moved, and an authored program's functions all sit behind the
- * SDK's compiled ones, whose text never moves (#9950).
+ * The program the author edits, written against the SDK's authoring API as the README tells an
+ * author to write one: a count it keeps, stamped with the edit that last counted, and a title that
+ * names the edit too. Its `update` and `title` run only behind the SDK's compiled closures, so the
+ * reload switching it is what proves the desk reads the author's own code (#9679 criterion 16).
  */
 interface GreeterState {
 	readonly pokes: number;
@@ -222,20 +222,21 @@ interface GreeterState {
 
 const greeterSource = (
 	edit: string,
-): string => `type Greeter = {readonly pokes: number; readonly by: string};
+): string => `import {defineProgram, program} from "@kampus/tuval-sdk/authoring";
 
-export const greeter = {
-	id: "greeter",
-	core: {
-		init: (loaded: Greeter | null | undefined) => [loaded ?? {pokes: 0, by: "${edit}"}, []],
-		update: {poke: (state: Greeter) => [{pokes: state.pokes + 1, by: "${edit}"}, []]},
-	},
-	ports: {},
-	handlers: {},
-	capabilities: [],
-	identity: {package: "outside-author", program: "greeter", version: "1.0.0", digest: "sha256:greeter"},
-	placement: {host: "local"},
-};
+type Greeter = {readonly pokes: number; readonly by: string};
+
+export const greeter = defineProgram(
+	program({
+		id: "greeter",
+		ports: {},
+		init: (): Greeter => ({pokes: 0, by: "${edit}"}),
+		update: {
+			poke: (state: Greeter) => [{pokes: state.pokes + 1, by: "${edit}"}, []] as const,
+		},
+		title: (state: Greeter) => \`greeter ${edit} \${state.pokes}\`,
+	}),
+);
 `;
 
 /** The second folder's program, written against the SDK's authoring API. */
@@ -492,6 +493,10 @@ const authorLoop = (work: string) =>
 					greeter.readProcess,
 					shows(2, "edited"),
 				);
+				yield* awaitValue("the desk to show the program's edited title", attached.rows, (rows) => {
+					const row = rowOf(dirs.author, "greeter")(rows);
+					return row !== undefined && titleOf(row) === "greeter edited 2" ? row : undefined;
+				});
 				const boots = (yield* SubscriptionRef.get(desk.lines)).filter((line) =>
 					line.startsWith("tuval: booted"),
 				);
