@@ -8,8 +8,8 @@
  * - **The admission test decides all three axes** — type, audience, criteria — imported from
  *   [`./scope-admission.ts`](./scope-admission.ts) and re-derived nowhere. An issue with no
  *   `ready-for:` label is excluded — absence is an unknown audience, never an agent audience. No
- *   campaign state excludes anything. Two of those axes used to be this file's private business, and both leaked the same way: the type set as a private
- *   constant, which is how a directly-handed `type:decision` reached `claim` with nothing to refuse
+ *   campaign state excludes anything. Two of those axes used to be this file's private business,
+ *   and both leaked the same way: the type set as a private constant, which is how a directly-handed `type:decision` reached `claim` with nothing to refuse
  *   it, and the criteria read as a private call, which is how `build issue <n>` built a no-AC issue
  *   this pool would have refused.
  * - **Any assignee excludes.** Assignment is the one attribute that keeps a human's live document out

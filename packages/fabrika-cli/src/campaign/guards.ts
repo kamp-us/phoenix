@@ -5,14 +5,14 @@
  * The trace's order is the contract's most-informative-first precedence made executable:
  * `17` (CODEOWNERS names no control-plane owner) outranks everything, then the repository binding,
  * then a control-plane miss (`16`), then the marker itself (`14`/`15`), then the live ACL (`21`).
+ * A caller with a bad selector never reaches any of it — the duplicate and no-op checks run first,
+ * so nobody is told their citation is fine on a write that was never going to land.
  *
  * Who may write the table is the control-plane set `.github/CODEOWNERS` names — the roster
  * `plan approve` and `decision rule` read — narrowed by the live `write+` ACL. A `campaignAuthors`
  * the config still declares is ignored and named in a notice.
  *
- * @ruling https://github.com/kamp-us/phoenix/issues/9852 A caller with a bad selector
- * never reaches any of it — the duplicate and no-op checks run first, so nobody is told their
- * citation is fine on a write that was never going to land.
+ * @ruling https://github.com/kamp-us/phoenix/issues/9852
  */
 
 import {Effect, type FileSystem, Path} from "effect";

@@ -20,7 +20,6 @@ import {
 	CLAIM_NOT_MINE,
 	NO_ACCEPTANCE_CRITERIA,
 	OFF_VOCABULARY,
-	OUT_OF_SCOPE,
 	PRECONDITION_UNKNOWN,
 	PRIOR_BUILD_MISMATCH,
 	READBACK_MISMATCH,
@@ -420,12 +419,13 @@ describe("runClaim — the admission test runs before any marker is written", ()
 
 	/**
 	 * The campaign gate this replaced refused this claim on 20: its milestone has no `active`
-	 * campaign row. A campaign groups work now and refuses nothing, so the claim is won and the marker posted.
+	 * campaign row. A campaign groups work now and refuses nothing, so the claim is won and the
+	 * marker posted.
 	 */
 	it("claims an issue whose milestone no active campaign pins — never 20", async () => {
 		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN);
 		expect(out.code).toBe(0);
-		expect(out.code).not.toBe(OUT_OF_SCOPE);
+		expect(out.code).not.toBe(20);
 		expect(JSON.parse(out.stdout).answer).toBe("won");
 		expect(shell.requests.some((line) => POST.test(line))).toBe(true);
 		expect(out.stderr.join("\n")).not.toContain("campaigns:");

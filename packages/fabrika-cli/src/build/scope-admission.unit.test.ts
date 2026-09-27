@@ -2,7 +2,6 @@ import {describe, expect, it} from "vitest";
 import {
 	AUDIENCE_NOT_AGENT,
 	NO_ACCEPTANCE_CRITERIA,
-	OUT_OF_SCOPE,
 	PRECONDITION_UNKNOWN,
 	TYPE_NOT_BUILDABLE,
 } from "./codes.ts";
@@ -186,9 +185,9 @@ describe("no campaign state is an axis", () => {
 			unknownAdmission("cannot read #7"),
 		];
 		for (const out of outcomes) {
-			expect(admissionRefusal("build claim", out)?.code).not.toBe(OUT_OF_SCOPE);
+			expect(admissionRefusal("build claim", out)?.code).not.toBe(20);
 		}
-		expect(ADMISSION_EXIT_CODES.map((row) => row.code)).not.toContain(OUT_OF_SCOPE);
+		expect(ADMISSION_EXIT_CODES.map((row) => row.code)).not.toContain(20);
 	});
 
 	it("still refuses on each of the three axes left, off an issue homed outside every campaign", () => {

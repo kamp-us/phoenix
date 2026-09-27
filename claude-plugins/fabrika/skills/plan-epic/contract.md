@@ -417,8 +417,8 @@ and a caller driving both in one sweep must read one meaning for each.
 carrying `build`'s meanings and are **never reached here** — this skill declares no
 `--require-clean` flag, holds no lane branch, pushes nothing, runs no validation, and derives no
 readiness verdict — but carrying them keeps those seats occupied so a later verb here cannot
-re-seat one. **`build`'s `20` and `21` are deliberately NOT re-exported**: this group allocates its
-own `20`–`25`, and re-exporting `OUT_OF_SCOPE`/`AUDIENCE_NOT_AGENT` alongside them would put two
+re-seat one. **`build`'s `21` is deliberately NOT re-exported** (its `20` is a retired seat): this
+group allocates its own `20`–`25`, and re-exporting `AUDIENCE_NOT_AGENT` alongside them would put two
 names on one code in one module, which `allocatedCodes` (`exit-code-alignment.ts:96-105`) reports
 as drift.
 
