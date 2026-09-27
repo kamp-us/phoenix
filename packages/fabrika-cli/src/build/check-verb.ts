@@ -21,7 +21,7 @@
  *
  * **The repo's declared config validators run on every surface too**, each one only when the diff
  * touches a file it `reads` — see {@link runConfigValidators}. That is what lets a diff of root config
- * files alone go green or red instead of refusing as unvalidatable.
+ * files, or of non-JS source such as Java, alone go green or red instead of refusing as unvalidatable.
  *
  * `--surface` is an **anchor, not a second classifier**: naming the surface is a judgement the skill
  * makes reading the issue, and a verb that guessed it from file extensions would be wrong exactly on
@@ -646,7 +646,7 @@ const runConfigValidators = (
 	Effect.gen(function* () {
 		if (changed.length === 0) return {_tag: "Ran", ran: [], notes: []} as const;
 		const notes = [
-			`${VERB}: ${changed.length} changed config file(s) read by \`${CONFIG_VALIDATORS}\` in ${CONFIG_PATH}: ${changed.join(", ")}.`,
+			`${VERB}: ${changed.length} changed file(s) read by \`${CONFIG_VALIDATORS}\` in ${CONFIG_PATH}: ${changed.join(", ")}.`,
 		];
 		const ran: string[] = [];
 		for (const {argv, reads} of validators) {

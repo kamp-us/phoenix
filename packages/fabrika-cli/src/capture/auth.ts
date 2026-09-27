@@ -16,18 +16,19 @@
  * that no caller out here can observe. The server reads exactly one name and ignores the other.
  *
  * **The signing key is the one the deployed worker verifies against, and this module refuses to
- * guess at it.** That value is repo-wide, not per-stage: `infra/ci-credentials/github.ts` mints one
- * `BETTER_AUTH_SECRET` into the ci-credentials stack's alchemy state and pushes it as a write-only
- * Actions secret that `deploy.yml` passes into the deploy of every stage of an app whose worker
- * binds it, so the app stack holds only a `secret_text` binding that does not read back and the one
- * readable copy is that ci-credentials state, behind `$ALCHEMY_PASSWORD` — so the caller names its
- * source ({@link AuthSecretSource}) and this module judges what came back
+ * guess at it.** A `pr-<n>` preview worker verifies against the preview key committed at
+ * `infra/preview-auth-key/key.txt` — public on purpose, so a seat needs no credential at all — and
+ * production keeps the founder-held `BETTER_AUTH_SECRET` no agent holds a copy of. So the caller
+ * names its source ({@link AuthSecretSource}) and this module judges what came back
  * ({@link classifyAuthSecret}). An empty value and a `.env.example` placeholder are both refusals
  * here rather than a cookie the worker rejects at the shot, because the two look identical from the
  * far side: better-auth answers a bad signature and an absent session row with the same bare
- * `null`.
+ * `null`. The committed preview key is neither, so it passes — `auth.unit.test.ts` reads the real
+ * file and asserts that, because a refusal here would strand every signed-in render on a value the
+ * repo hands out freely.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9288#issuecomment-5703250637
+ * @ruling https://github.com/kamp-us/phoenix/issues/9533#issuecomment-5754589033
  */
 import {createHmac} from "node:crypto";
 import type {CaptureCookie} from "./capture.ts";
@@ -75,6 +76,14 @@ export const TIER_TOKEN_ENV: Readonly<Record<CaptureTier, string>> = {
 export const AUTH_SECRET_ENV = "BETTER_AUTH_SECRET";
 
 /**
+ * The repo-relative home of the key every `pr-<n>` preview worker deploys with. It is committed and
+ * deliberately public, so this is the source that needs no flag, no environment variable and no
+ * credential a seat might not hold — the route that stopped ending every `:auth` render on a person
+ * (`infra/preview-auth-key/README.md`).
+ */
+export const PREVIEW_AUTH_KEY_PATH = "infra/preview-auth-key/key.txt";
+
+/**
  * The prefix a repo's example env file ships its throwaway dev secret under. A seat that copied that
  * file to `.env` signs with a value no deployed worker ever verified against, and the worker answers
  * every seeded cookie as a visitor — a fact about the seat's environment that reads, at the shot,
@@ -83,21 +92,30 @@ export const AUTH_SECRET_ENV = "BETTER_AUTH_SECRET";
 export const PLACEHOLDER_SECRET_PREFIX = "insecure_";
 
 /**
- * Where a run's signing secret came from. It rides every refusal because the two sources fail in
- * opposite directions: a named export that is unreadable is an operator step not taken, and an
- * ambient value that carries the placeholder prefix is a seat quietly signing with a dev key.
+ * Where a run's signing secret came from. It rides every refusal because the three sources fail in
+ * different directions: a named export that is unreadable is an operator step not taken, an ambient
+ * value that carries the placeholder prefix is a seat quietly signing with a dev key, and a
+ * committed preview key that came back unusable is a repo defect rather than anything the seat did.
  *
- * `RepoWideExport` names the file an operator exported the one repo-wide `BETTER_AUTH_SECRET` into,
- * taken from the ci-credentials stack's alchemy state, its one readable copy.
+ * `RepoWideExport` names the file an operator exported the founder-held `BETTER_AUTH_SECRET` into.
+ * `CommittedPreviewKey` names the repo's own {@link PREVIEW_AUTH_KEY_PATH}, which is the default and
+ * the one source a seat holding no credentials can still use.
  */
 export type AuthSecretSource =
 	| {readonly _tag: "RepoWideExport"; readonly path: string}
+	| {readonly _tag: "CommittedPreviewKey"; readonly path: string}
 	| {readonly _tag: "Ambient"; readonly name: string};
 
-export const describeAuthSecretSource = (source: AuthSecretSource): string =>
-	source._tag === "RepoWideExport"
-		? `the exported repo-wide session-signing secret at ${source.path}`
-		: `the ambient $${source.name}`;
+export const describeAuthSecretSource = (source: AuthSecretSource): string => {
+	switch (source._tag) {
+		case "RepoWideExport":
+			return `the exported session-signing secret at ${source.path}`;
+		case "CommittedPreviewKey":
+			return `the committed preview signing key at ${source.path}`;
+		case "Ambient":
+			return `the ambient $${source.name}`;
+	}
+};
 
 /**
  * A secret value judged against its source. `Placeholder` and `Empty` are two different facts about
