@@ -199,7 +199,9 @@ describe("a local command that ends its own conversation", () => {
 				timestamp: SENT_AT + 1,
 			})[0];
 			assert.strictEqual(queued.queued.length, 1);
-			const [settled, cmds] = apply(queued, {
+			const running = fold(queued, events.slice(0, -1));
+			assert.strictEqual(running.queued.length, 1);
+			const [settled, cmds] = apply(running, {
 				type: "event",
 				sessionId: SESSION_ID,
 				// The reset itself, which is the last of the three the command produced.
