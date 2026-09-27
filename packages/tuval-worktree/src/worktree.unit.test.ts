@@ -33,6 +33,8 @@ import {
 	TITLE_PORT,
 	testProgram,
 } from "@kampus/tuval-sdk/authoring";
+import {ProcessSelf} from "@kampus/tuval-sdk/kernel/process/self";
+import {Subprojects} from "@kampus/tuval-sdk/kernel/process/subprojects";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import config, {desk, reviews} from "../.tuval/tuval.config.ts";
@@ -1116,5 +1118,110 @@ describe("a user's `.tuval/tuval.config.ts`", () => {
 		expect(ports.open?.direction).toBe("in");
 		expect(ports.close?.direction).toBe("in");
 		expect(Object.keys(ports)).toEqual(expect.arrayContaining([TITLE_PORT, STATUS_PORT]));
+	});
+});
+
+/**
+ * Each worktree as a subproject of the project this program runs in (#9689): its handlers ask the
+ * `Subprojects` service a desk puts in the process's spawn set, recorded here by a fake.
+ */
+describe("each worktree, opened as a subproject", () => {
+	const self = ProcessId.make("phoenix/worktree");
+
+	/** Run `effect` as process `self` in a project whose subproject requests are recorded. */
+	const asOpener = <A, E>(effect: Effect.Effect<A, E>) => {
+		const calls: Array<string> = [];
+		const recorded = Subprojects.of({
+			open: (opener, folder) => Effect.sync(() => void calls.push(`open ${folder} by ${opener}`)),
+			close: (opener, folder) => Effect.sync(() => void calls.push(`close ${folder} by ${opener}`)),
+		});
+		const run = Effect.gen(function* () {
+			const scope = yield* Effect.scope;
+			return yield* effect.pipe(
+				Effect.provideService(Subprojects, recorded),
+				Effect.provideService(ProcessSelf, {id: self, scope, state: () => undefined}),
+			);
+		}).pipe(Effect.scoped);
+		return Effect.runPromise(Effect.map(run, (value) => ({value, calls})));
+	};
+
+	it("opens the worktree as a subproject once it is provisioned", async () => {
+		const runner = fakeRunner({files: {"/repo/.env.example": "PORT=3000\n"}});
+		const withRunner = {...options, runner};
+		const queued = drive(worktreeProgram(withRunner)).send("open", {name: "feature-x"});
+		const {value, calls} = await asOpener(
+			worktreeHandlers(settle(withRunner))["worktree.provision"](
+				only(queued, "worktree.provision"),
+			),
+		);
+		expect(value).toEqual([{type: "provisioned", name: "feature-x", port: 5170}]);
+		expect(calls).toEqual([`open /repo/.worktrees/feature-x by ${self}`]);
+	});
+
+	it("opens nothing for a provision that failed", async () => {
+		const runner = fakeRunner({
+			failing: {
+				"git worktree add -b can/feature-x /repo/.worktrees/feature-x origin/main": "fatal",
+			},
+		});
+		const withRunner = {...options, runner};
+		const queued = drive(worktreeProgram(withRunner)).send("open", {name: "feature-x"});
+		const {value, calls} = await asOpener(
+			worktreeHandlers(settle(withRunner))["worktree.provision"](
+				only(queued, "worktree.provision"),
+			),
+		);
+		expect(value).toEqual([expect.objectContaining({type: "provisionFailed"})]);
+		expect(calls).toEqual([]);
+	});
+
+	it("closes the subproject when the worktree is put back", async () => {
+		const runner = fakeRunner();
+		const withRunner = {...options, runner};
+		const closed = drive(worktreeProgram(withRunner))
+			.send("open", {name: "feature-x"})
+			.event({type: "provisioned", name: "feature-x", port: 5174})
+			.send("close", {name: "feature-x"});
+		const {calls} = await asOpener(
+			worktreeHandlers(settle(withRunner))["worktree.teardown"](only(closed, "worktree.teardown")),
+		);
+		expect(calls).toEqual([`close /repo/.worktrees/feature-x by ${self}`]);
+	});
+
+	it("opens again, on a restore, only the open worktrees the disk still has", async () => {
+		const restarted = drive(withJob())
+			.send("open", {name: "feature-x"})
+			.event({type: "provisioned", name: "feature-x", port: 5174})
+			.event({type: "spawned", process: ProcessId.make("agent-1"), program: "claude-session"})
+			.event({type: "stopped", process: ProcessId.make("agent-1")})
+			.send("open", {name: "bugfix"})
+			.event({type: "provisioned", name: "bugfix", port: 5175})
+			.send("open", {name: "half"});
+		const run = withJob()
+			.resume(restarted.state)
+			.reduce((step, event) => step.event(event), restarted);
+		const effect = only(run, "worktree.reconcile");
+		// `half` was mid-provision when the desk stopped, so it is failed now and not a live lane.
+		expect([...effect.subprojects].sort()).toEqual([
+			"/repo/.worktrees/bugfix",
+			"/repo/.worktrees/feature-x",
+		]);
+		const runner = fakeRunner({dirs: ["/repo/.worktrees/feature-x", "/repo/.worktrees/half"]});
+		const {calls} = await asOpener(
+			worktreeHandlers(settle({...options, runner}))["worktree.reconcile"](effect),
+		);
+		expect(calls).toEqual([`open /repo/.worktrees/feature-x by ${self}`]);
+	});
+
+	it("runs as before in no project, where there is nothing to open under", async () => {
+		const runner = fakeRunner({files: {"/repo/.env.example": "PORT=3000\n"}});
+		const withRunner = {...options, runner};
+		const queued = drive(worktreeProgram(withRunner)).send("open", {name: "feature-x"});
+		const events = await Effect.runPromise(
+			worktreeHandlers(settle(withRunner))["worktree.provision"](
+				only(queued, "worktree.provision"),
+			),
+		);
+		expect(events).toEqual([{type: "provisioned", name: "feature-x", port: 5170}]);
 	});
 });

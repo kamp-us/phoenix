@@ -20,9 +20,15 @@
  * is asked anything on the way: a folder that is gone, or that holds a config no longer trusted, is
  * skipped with a notice naming it, and the others still open. Subprojects are not reopened here;
  * the program that opened one restores it (#9673 R2).
+ *
+ * A program opens a subproject under the project it runs in through the `Subprojects` service each
+ * project puts in its processes' spawn set (#9689, ruling #9668 R4.3). A subproject asks nobody
+ * about trust, because its parent is open and so already trusted; it keeps its own config, state
+ * and rows, and its scope is forked from its parent's, so closing the parent closes it first. The
+ * `ProcessBoundary` this answers keeps everyone but the opener from reaching across.
  */
 
-import {resolve} from "node:path";
+import {isAbsolute, resolve} from "node:path";
 import type {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
 import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
 import {restore} from "@kampus/tuval-sdk/kernel/durability/restore";
@@ -35,10 +41,17 @@ import {open, type Wiring} from "@kampus/tuval-sdk/kernel/ports/wiring";
 import type {PlannedProcesses} from "@kampus/tuval-sdk/kernel/process/PlannedProcesses";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
-import type {ProcessHandle} from "@kampus/tuval-sdk/kernel/process/process";
+import type {ProcessHandle, ProcessId, ProcessRow} from "@kampus/tuval-sdk/kernel/process/process";
+import {
+	CrossingRefused,
+	ProcessBoundary,
+	SubprojectRefused,
+	Subprojects,
+} from "@kampus/tuval-sdk/kernel/process/subprojects";
 import {WorkingFolder} from "@kampus/tuval-sdk/kernel/process/working-folder";
-import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
+import type {AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {Registry, RegistryRows} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import {localId, scopedIdParts} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
 import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {
 	adoptInProjectState,
@@ -53,6 +66,7 @@ import {
 	Exit,
 	FileSystem,
 	Layer,
+	Option,
 	Result,
 	Schema,
 	Scope,
@@ -72,6 +86,7 @@ import {type ProjectId, projectConfig, projectDir} from "../project-id.ts";
 import type {ConfigReloader} from "../reload.ts";
 import type {RowRefused, SdkRemoved} from "../sdk-admission.ts";
 import {withShellFeatures} from "../shell/program.ts";
+import {SubprojectBoundary} from "./boundary.ts";
 import {type CheckpointRoutes, ownedView} from "./checkpoint-routes.ts";
 import {
 	type OpenProject,
@@ -79,6 +94,7 @@ import {
 	ProjectAlreadyOpen,
 	type ProjectNotOpen,
 	ProjectNotReopened,
+	projectLabels,
 	readOpenProjects,
 	saveOpenProjects,
 } from "./open-projects.ts";
@@ -278,13 +294,32 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 			}
 		});
 
+	/**
+	 * The scope a project's own is forked from: the desk's, or a subproject's parent's, so a parent
+	 * closing closes its subprojects before anything of its own.
+	 */
+	const scopeUnder = (project: OpenProject) => {
+		if (project.under === undefined) return Effect.succeed(options.scope);
+		const parent = scopes.get(project.under.parent.key);
+		return parent === undefined
+			? Effect.fail(
+					new ProjectOpenRefused({
+						folder: project.folder,
+						reason: `the project it is nested under, ${project.under.parent.name}, is not open`,
+					}),
+				)
+			: Effect.succeed(parent);
+	};
+
 	const attach = Effect.fn("Tuval.Projects.attach")(function* (
 		project: OpenProject,
 		loaded: LoadedProjectConfig,
 		state: ProjectState,
+		/** Done once the project is recorded open; a subproject its processes ask for waits on it. */
+		ready: Deferred.Deferred<void>,
 	) {
 		const {id} = project;
-		const scope = yield* Scope.fork(options.scope);
+		const scope = yield* Scope.fork(yield* scopeUnder(project));
 		const added = Effect.gen(function* () {
 			const store = yield* storeAt(state.stateDir);
 			yield* routes.route(id.key, store);
@@ -329,8 +364,13 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 			);
 			yield* Effect.addFinalizer(() => stopOwned(id, kernel));
 
-			// A project's processes run in its folder, and so does what they start (#9694).
-			const inFolder = Context.add(kernel, WorkingFolder, {path: project.folder});
+			// A project's processes run in its folder, and so does what they start (#9694). What they
+			// open as a subproject opens under this project (#9689).
+			const inFolder = Context.add(
+				Context.add(kernel, WorkingFolder, {path: project.folder}),
+				Subprojects,
+				subprojectsOf(project, scope, ready),
+			);
 			const launched = yield* launch(part, wiring, {services: inFolder}).pipe(
 				Effect.provideContext(kernel),
 			);
@@ -383,15 +423,29 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 			),
 		);
 
+	/** `current` with `project` recorded open, under its parent when it is a subproject. */
+	const recorded = (current: OpenProjects, project: OpenProject): OpenProjects => {
+		const {under} = project;
+		const parent = current.projects.find((open) => open.id.key === under?.parent.key);
+		const result =
+			under === undefined
+				? current.open(project.folder)
+				: parent === undefined
+					? undefined
+					: current.openUnder(project.folder, parent.folder, under.opener);
+		return result !== undefined && Result.isSuccess(result) ? result.success.projects : current;
+	};
+
 	/** Join a project whose config is read and whose state is prepared, then record it open. */
 	const commitOpen = (project: OpenProject, loaded: LoadedProjectConfig, state: ProjectState) =>
 		Effect.gen(function* () {
-			const opened = yield* attach(project, loaded, state);
-			const next = yield* SubscriptionRef.updateAndGet(openRef, (current) => {
-				const result = current.open(project.folder);
-				return Result.isSuccess(result) ? result.success.projects : current;
-			});
+			const ready = yield* Deferred.make<void>();
+			const opened = yield* attach(project, loaded, state, ready);
+			const next = yield* SubscriptionRef.updateAndGet(openRef, (current) =>
+				recorded(current, project),
+			);
 			yield* save(next);
+			yield* Deferred.succeed(ready, undefined);
 			return opened;
 		});
 
@@ -465,10 +519,14 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 	const closeFolder = Effect.fn("Tuval.Projects.close")(function* (folder: string) {
 		const closing = (yield* SubscriptionRef.get(openRef)).close(folder);
 		if (Result.isFailure(closing)) return yield* closing.failure;
-		const {project, projects} = closing.success;
-		const scope = scopes.get(project.id.key);
-		scopes.delete(project.id.key);
-		if (scope !== undefined) yield* Scope.close(scope, Exit.void);
+		const {project, projects, closed} = closing.success;
+		// Each subproject before the project it is nested under, so a parent's processes outlive
+		// nothing of their subprojects'.
+		for (const each of closed) {
+			const scope = scopes.get(each.id.key);
+			scopes.delete(each.id.key);
+			if (scope !== undefined) yield* Scope.close(scope, Exit.void);
+		}
 		yield* SubscriptionRef.set(openRef, projects);
 		yield* save(projects);
 		return {project} satisfies ProjectClosed;
@@ -515,6 +573,164 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		return {opened, skipped} satisfies ProjectsReopened;
 	});
 
+	/**
+	 * Open `folder` as a subproject of `parent`, opened by `opener`. No trust is asked: the parent is
+	 * open, so the person already trusted what runs there.
+	 */
+	const openSubAdmitted = Effect.fn("Tuval.Projects.openSubproject")(function* (
+		parent: OpenProject,
+		folder: string,
+		opener: ProcessId,
+	) {
+		const current = yield* SubscriptionRef.get(openRef);
+		const opening = current.openUnder(folder, parent.folder, opener);
+		if (Result.isFailure(opening)) return yield* opening.failure;
+		const {project} = opening.success;
+		const refuse = (cause: unknown) =>
+			new ProjectOpenRefused({folder: project.folder, reason: reasonOf(cause)});
+		const isFolder = yield* fs.stat(folder).pipe(
+			Effect.map((info) => info.type === "Directory"),
+			Effect.orElseSucceed(() => false),
+		);
+		if (!isFolder) return yield* refuse("no folder is there");
+		const layer = {id: project.id, module: projectConfig(folder), parent: parent.id};
+		const {loaded, state} = yield* Effect.gen(function* () {
+			const loaded = yield* loadProjectConfig(desk, layer, options.deskRemoved, options.features);
+			const state = yield* prepareProjectState(folder, home, loaded);
+			return {loaded, state};
+		}).pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.mapError(refuse));
+		return yield* commitOpen(project, loaded, state);
+	}, lock.withPermits(1));
+
+	/**
+	 * What a project's processes open subprojects through. A request is taken at once and carried out
+	 * on the project's own scope once the project is recorded open, because a process asking from its
+	 * restore runs inside that open; a request left when the project closes goes with it.
+	 */
+	const subprojectsOf = (
+		parent: OpenProject,
+		scope: Scope.Scope,
+		ready: Deferred.Deferred<void>,
+	): Subprojects["Service"] => {
+		const later = <A, E>(folder: string, request: Effect.Effect<A, E>) =>
+			Effect.asVoid(
+				Effect.forkIn(
+					Deferred.await(ready).pipe(
+						Effect.andThen(request),
+						Effect.catch((error) =>
+							Effect.logWarning(
+								`tuval: the subproject ${folder} under ${parent.folder} — ${reasonOf(error)}`,
+							),
+						),
+					),
+					scope,
+				),
+			);
+		const absolute = (folder: string) =>
+			isAbsolute(folder)
+				? Effect.succeed(resolve(folder))
+				: Effect.fail(
+						new SubprojectRefused({folder, reason: "name the folder by its absolute path"}),
+					);
+		return Subprojects.of({
+			open: (opener, input) =>
+				Effect.flatMap(absolute(input), (folder) =>
+					later(folder, openSubAdmitted(parent, folder, opener)),
+				),
+			close: (opener, input) =>
+				Effect.gen(function* () {
+					const folder = yield* absolute(input);
+					const open = (yield* SubscriptionRef.get(openRef)).find(folder);
+					if (open?.under?.parent.key !== parent.id.key) {
+						return yield* new SubprojectRefused({
+							folder,
+							reason: `it is not an open subproject of ${parent.folder}`,
+						});
+					}
+					if (open.under.opener !== opener) {
+						return yield* new SubprojectRefused({
+							folder,
+							reason: "only the program that opened it closes it",
+						});
+					}
+					yield* later(folder, closeFolder(folder));
+				}),
+		});
+	};
+
+	/** The open project a live process runs in: its program's, its graph node's, or its parent's. */
+	const projectOf = (
+		rows: ReadonlyMap<string, ProcessRow>,
+		projects: ReadonlyArray<OpenProject>,
+		id: ProcessId,
+	): OpenProject | undefined => {
+		const byScope = (scoped: string) => {
+			const {scope} = scopedIdParts(scoped);
+			return scope === undefined ? undefined : projects.find((open) => open.id.key === scope);
+		};
+		for (let at = rows.get(id); at !== undefined; ) {
+			const owner = byScope(at.programId) ?? byScope(at.id);
+			if (owner !== undefined) return owner;
+			at = Option.isSome(at.parentId) ? rows.get(at.parentId.value) : undefined;
+		}
+		return undefined;
+	};
+
+	/** `program "<local id>" in <label>`, with no label for the desk's and global programs. */
+	const described = (
+		projects: ReadonlyArray<OpenProject>,
+		programId: string,
+		project: OpenProject | undefined,
+	) => {
+		const label = projectLabels(projects).find(({key}) => key === project?.id.key)?.label;
+		const program = `program "${localId(programId)}"`;
+		return label === undefined ? program : `${program} in ${label}`;
+	};
+
+	interface Target {
+		readonly project: OpenProject | undefined;
+		readonly programId: string;
+	}
+
+	/** Asked before a process sends to, asks or spawns into another (`./boundary.ts`). */
+	const crossing = (
+		from: ProcessId,
+		target: (rows: ReadonlyMap<string, ProcessRow>, projects: ReadonlyArray<OpenProject>) => Target,
+	) =>
+		Effect.gen(function* () {
+			const {projects} = yield* SubscriptionRef.get(openRef);
+			if (!projects.some((project) => project.under !== undefined)) return;
+			const kernel = yield* Deferred.await(options.kernel);
+			const rows = new Map<string, ProcessRow>(
+				(yield* Context.get(kernel, ProcessTable).list).map((row) => [row.id, row]),
+			);
+			const source = projectOf(rows, projects, from);
+			const to = target(rows, projects);
+			const reason = SubprojectBoundary.of(projects).refusal(
+				{project: source, process: from},
+				{project: to.project},
+			);
+			if (reason === undefined) return;
+			return yield* new CrossingRefused({
+				from: described(projects, rows.get(from)?.programId ?? from, source),
+				to: described(projects, to.programId, to.project),
+				reason,
+			});
+		});
+
+	const boundary = ProcessBoundary.of({
+		reach: (from, to) =>
+			crossing(from, (rows, projects) => ({
+				project: projectOf(rows, projects, to),
+				programId: rows.get(to)?.programId ?? to,
+			})),
+		spawn: (from, program: ProgramId) =>
+			crossing(from, (_rows, projects) => ({
+				project: projects.find((open) => open.id.owns(program)),
+				programId: program,
+			})),
+	});
+
 	const service = Projects.of({
 		open: openFolder,
 		close: closeFolder,
@@ -535,5 +751,5 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 			return yield* commitOpen(project, loaded, state);
 		}).pipe(lock.withPermits(1));
 
-	return {service, openFirst, reopen};
+	return {service, openFirst, reopen, boundary};
 });

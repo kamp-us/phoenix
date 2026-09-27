@@ -599,6 +599,21 @@ describe("project-scoped ids (#9684)", () => {
 		}),
 	);
 
+	it.effect("refuses a subproject connection up to its parent's program, naming both ends", () =>
+		Effect.gen(function* () {
+			const beta = ProjectId.of("/work/beta");
+			const layer = {id: alpha, module: fixture("cross-project"), parent: beta};
+			const error = yield* Effect.flip(
+				loadProjectConfig(noDesk, layer, nothingRemoved, featuresDefault),
+			);
+			assert.instanceOf(error, ConfigLoadError);
+			assert.strictEqual(
+				error.reason,
+				`subproject node "${alpha.scope("main")}" connects to "${beta.scope("sink")}", its parent beta's; a subproject's config cannot connect up to its parent`,
+			);
+		}).pipe(Effect.provide(NodeFileSystem.layer)),
+	);
+
 	it.effect("refuses a global connection into a project", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(

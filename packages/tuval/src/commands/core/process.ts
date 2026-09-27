@@ -50,6 +50,7 @@ import type {HandlerFailed} from "../../process/errors.ts";
 import {asked, deliver, type ReplyTo} from "../../process/inbox.ts";
 import {Processes} from "../../process/Processes.ts";
 import {type ProcessHandle, ProcessId} from "../../process/process.ts";
+import {ProcessBoundary} from "../../process/subprojects.ts";
 import {ProcessFolders, WorkingFolder} from "../../process/working-folder.ts";
 import {type AnyProgram, type InPort, ProgramId} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
@@ -679,10 +680,16 @@ const sendSpell = defineSpell({
 	describe: "Write one payload to a named in-port of a process.",
 	params: Schema.Struct({process: ProcessId, port: Schema.String, payload: Schema.Unknown}),
 	result: Schema.Struct({delivered: Schema.Boolean, evicted: Schema.Number}),
-	execute: (args) =>
-		Effect.flatMap(SpawnedProcesses, (spawned) =>
-			spawned.send(args.process, args.port, args.payload),
-		),
+	// A call from inside a process is asked about at the subproject boundary, as its own send is (#9689).
+	execute: (args, scope) =>
+		Effect.gen(function* () {
+			const boundary = yield* Effect.serviceOption(ProcessBoundary);
+			if (scope.process !== undefined && Option.isSome(boundary)) {
+				yield* boundary.value.reach(scope.process, args.process);
+			}
+			const spawned = yield* SpawnedProcesses;
+			return yield* spawned.send(args.process, args.port, args.payload);
+		}),
 	capabilities: [{family: "process"}],
 });
 

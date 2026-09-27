@@ -11,19 +11,32 @@
  * A desk restarting over the list reopens what was open (#9688, ruling #9668 R5.1). Until it has
  * tried a folder, that folder stays in the list as pending, so a desk that dies mid-restart still
  * has it to reopen next time.
+ *
+ * A subproject is open beside the others and never saved (#9689, ruling #9668 R4.3 and #9673 R2):
+ * the program that opened it is the one that restores it, so a restart has nothing of it to reopen.
+ * Closing a project closes every subproject nested under it.
  */
 
 import {join, resolve, sep} from "node:path";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {homeTuvalDir} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Effect, FileSystem, Result, Schema} from "effect";
 import {ProjectId} from "../project-id.ts";
 import type {ProjectLabel} from "./labels.ts";
 import {TrustedFolders} from "./trust.ts";
 
+/** Where a subproject sits: the project it is nested under, and the process that opened it. */
+export interface Nesting {
+	readonly parent: ProjectId;
+	readonly opener: ProcessId;
+}
+
 export interface OpenProject {
 	/** The folder as the desk opened it: absolute, with no trailing separator. */
 	readonly folder: string;
 	readonly id: ProjectId;
+	/** Present on a subproject, and only there. */
+	readonly under?: Nesting;
 }
 
 export class ProjectAlreadyOpen extends Schema.TaggedError<ProjectAlreadyOpen>()(
@@ -133,11 +146,38 @@ export class OpenProjects {
 		{readonly projects: OpenProjects; readonly project: OpenProject},
 		ProjectAlreadyOpen
 	> {
-		const absolute = resolve(folder);
+		return this.adding(resolve(folder), undefined);
+	}
+
+	/** `folder` opened as a subproject of the open project at `parent`, by `opener`. */
+	openUnder(
+		folder: string,
+		parent: string,
+		opener: ProcessId,
+	): Result.Result<
+		{readonly projects: OpenProjects; readonly project: OpenProject},
+		ProjectAlreadyOpen | ProjectNotOpen
+	> {
+		const nest = this.find(parent);
+		if (nest === undefined) return Result.fail(new ProjectNotOpen({folder: resolve(parent)}));
+		return this.adding(resolve(folder), {parent: nest.id, opener});
+	}
+
+	private adding(
+		absolute: string,
+		under: Nesting | undefined,
+	): Result.Result<
+		{readonly projects: OpenProjects; readonly project: OpenProject},
+		ProjectAlreadyOpen
+	> {
 		if (this.find(absolute) !== undefined) {
 			return Result.fail(new ProjectAlreadyOpen({folder: absolute}));
 		}
-		const project: OpenProject = {folder: absolute, id: ProjectId.of(absolute)};
+		const project: OpenProject = {
+			folder: absolute,
+			id: ProjectId.of(absolute),
+			...(under === undefined ? {} : {under}),
+		};
 		return Result.succeed({
 			projects: new OpenProjects(
 				[...this.projects, project],
@@ -148,29 +188,47 @@ export class OpenProjects {
 		});
 	}
 
-	close(
-		folder: string,
-	): Result.Result<
-		{readonly projects: OpenProjects; readonly project: OpenProject},
+	/**
+	 * The open project at `folder` closed, with every subproject nested under it. `closed` is all of
+	 * them, each subproject before the project it is nested under, so `project` comes last.
+	 */
+	close(folder: string): Result.Result<
+		{
+			readonly projects: OpenProjects;
+			readonly project: OpenProject;
+			readonly closed: ReadonlyArray<OpenProject>;
+		},
 		ProjectNotOpen
 	> {
 		const project = this.find(folder);
 		if (project === undefined) return Result.fail(new ProjectNotOpen({folder: resolve(folder)}));
+		const closed = [...this.nestedUnder(project), project];
 		return Result.succeed({
 			projects: new OpenProjects(
-				this.projects.filter((open) => open !== project),
+				this.projects.filter((open) => !closed.includes(open)),
 				this.trusted,
 				this.pending,
 			),
 			project,
+			closed,
 		});
 	}
 
-	/** The open folders, then the pending ones: both are what a restart reopens. */
+	/** Every open subproject nested under `project` at any depth, the deepest first. */
+	private nestedUnder(project: OpenProject): ReadonlyArray<OpenProject> {
+		const children = this.projects.filter((open) => open.under?.parent.key === project.id.key);
+		return children.flatMap((child) => [...this.nestedUnder(child), child]);
+	}
+
+	/**
+	 * The open folders, then the pending ones: both are what a restart reopens. A subproject is left
+	 * out, because only its opener brings it back.
+	 */
 	get record(): OpenProjectsRecord {
+		const reopened = this.projects.filter((project) => project.under === undefined);
 		return {
 			version: 1,
-			projects: [...this.projects.map(({folder}) => folder), ...this.pending].map((folder) => ({
+			projects: [...reopened.map(({folder}) => folder), ...this.pending].map((folder) => ({
 				folder,
 			})),
 			trusted: this.trusted.folders,
@@ -186,30 +244,58 @@ const endsWith = (segments: ReadonlyArray<string>, suffix: ReadonlyArray<string>
 	suffix.every((segment, at) => segments[segments.length - suffix.length + at] === segment);
 
 /**
+ * Distinct names for one group of folders: each folder's name, and where two share a name, as many
+ * parent folders as tell them apart, the way VS Code tells two same-named tabs apart. A folder that
+ * runs out of parents first (`/phoenix` beside `/work/phoenix`) is named by its whole path.
+ */
+const distinctNames = (folders: ReadonlyArray<string>): ReadonlyArray<string> => {
+	const segments = folders.map(segmentsOf);
+	return folders.map((folder, at) => {
+		const own = segments[at] ?? [];
+		const name = own.at(-1);
+		const clashes = segments.filter((other, index) => index !== at && other.at(-1) === name);
+		if (name === undefined) return folder;
+		if (clashes.length === 0) return name;
+		for (let depth = 2; depth <= own.length; depth++) {
+			const suffix = own.slice(-depth);
+			if (clashes.every((other) => !endsWith(other, suffix))) return suffix.join(sep);
+		}
+		return folder;
+	});
+};
+
+/** What separates a subproject's name from its parent's label: `phoenix › lane-9650`. */
+export const NESTING_SEPARATOR = " › ";
+
+/**
  * Each open project's label: the folder's name, which is what tiles, windows and picker entries
  * show (#9692, ruling #9668 R1.1). Two open folders with one name would read as one project, so a
- * clashing name takes on parent folders, the way VS Code tells two same-named tabs apart, until no
- * other open folder ends the same way: `kamp-us/phoenix` beside `usirin/phoenix`. A folder that runs
- * out of parents first (`/phoenix` beside `/work/phoenix`) is shown by its whole path.
+ * clashing name takes on parent folders until no other open folder ends the same way:
+ * `kamp-us/phoenix` beside `usirin/phoenix`. A subproject reads under its parent's label,
+ * `phoenix › lane-9650`, its own name told apart only from its siblings' (#9689, ruling #9668 R4.3).
  */
 export const projectLabels = (
 	projects: ReadonlyArray<OpenProject>,
 ): ReadonlyArray<ProjectLabel> => {
-	const segments = projects.map((project) => segmentsOf(project.folder));
-	return projects.map((project, at) => {
-		const own = segments[at] ?? [];
-		const name = own.at(-1);
-		const clashes = segments.filter((other, index) => index !== at && other.at(-1) === name);
-		const label = (): string => {
-			if (name === undefined) return project.folder;
-			if (clashes.length === 0) return name;
-			for (let depth = 2; depth <= own.length; depth++) {
-				const suffix = own.slice(-depth);
-				if (clashes.every((other) => !endsWith(other, suffix))) return suffix.join(sep);
-			}
-			return project.folder;
-		};
-		return {key: project.id.key, label: label()};
+	const groups = new Map<string | undefined, Array<OpenProject>>();
+	for (const project of projects) {
+		const parent = project.under?.parent.key;
+		groups.set(parent, [...(groups.get(parent) ?? []), project]);
+	}
+	const labels = new Map<string, string>();
+	const labelGroup = (parent: string | undefined, prefix: string) => {
+		const group = groups.get(parent) ?? [];
+		const names = distinctNames(group.map((project) => project.folder));
+		group.forEach((project, at) => {
+			const label = `${prefix}${names[at] ?? project.folder}`;
+			labels.set(project.id.key, label);
+			labelGroup(project.id.key, `${label}${NESTING_SEPARATOR}`);
+		});
+	};
+	labelGroup(undefined, "");
+	return projects.flatMap((project) => {
+		const label = labels.get(project.id.key);
+		return label === undefined ? [] : [{key: project.id.key, label}];
 	});
 };
 
