@@ -1,5 +1,5 @@
 /**
- * The `table` verb group — `fabrika table <setup|sync|flags>`.
+ * The `table` verb group — `fabrika table <setup|sync|flags|prep>`.
  *
  * The adapter and nothing else: flags, the pure verb, and its emitted outcome. Every leaf is a
  * `leafCommand`, never a bare `Command.make`, so the excess-operand guard covers it.
@@ -10,6 +10,7 @@ import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {flagsBoard, runFlags} from "./flags-verb.ts";
+import {prepBoard, runPrep} from "./prep-verb.ts";
 import {runSetup} from "./setup-verb.ts";
 import {runSync, syncBoard} from "./sync-verb.ts";
 
@@ -104,8 +105,31 @@ const flags = leafCommand(
 	),
 );
 
+const prep = leafCommand(
+	"prep",
+	{repo: repoFlag},
+	Effect.fn(function* ({repo}) {
+		yield* emit(
+			yield* runPrep({
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+				now: new Date(),
+				board: prepBoard,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Fill the next table's agenda, carry running bets over, and post the week's health.",
+	),
+	Command.withDescription(
+		'Run before each table. It prepares the Week iteration the next table day (`table.day`) falls in, which must already exist: add the coming weeks under the Week field in the project\'s settings, because GitHub\'s API adds an iteration only by rewriting the whole list, which empties every row\'s Week. Agenda: it proposes up to `table.agendaCap` rows (25 by default) in `table.sections` order, each a real, open issue, never a draft — Tails (running bets with a `table flags` row flag, then open sub-issues of closed epics), Customers (issues filed by someone whose `author_association` is not OWNER, MEMBER or COLLABORATOR, and only once triaged), New bets (`type:epic` issues with a pitch). A row already `bet`, `not now`, `in lane`, `shipped` or `check` is never proposed again, except a flagged running bet, which moves to Tails with its Stage and Size untouched. Each proposed row gets Stage `proposed`, its Section, the Week, a Size (only when unset: an epic is L, otherwise the smallest size covering its issues\' pitch sizes, an unpitched issue counting as S), a Rec and an In plain words line — the issue\'s `## In plain words` summary, else its title. A candidate with open `blocked_by` issues is one chain row over them (followed transitively), and an epic one row over its open sub-issues: the row counts once toward the cap, its Size and Rec cover every issue in it, its members are added as rows with no Section so they show only in the Group members view, and a chosen row a later chain covers moves inside it. A row where any issue carries `ready-for:human` gets the Rec "needs your pick" with the options the issue lists (under an Options heading, or as "Option A: …" lines), never "yes". An untriaged Customers report (`status:needs-triage` or no label) is never proposed: it is listed under `triageFirst` for the driver to triage and proposed on the next run, and one on `status:needs-info` is listed there marked waiting on filer. Rollover: every other open `bet` row moves to the Week with its Rec cleared, so it continues without an agenda row. A `proposed` row whose issue has closed is taken off the project. Health: it then posts one project status update — land rate, stale lanes, spend and the share of lanes that needed a founder over the week before the iteration, the Outside the bets tally (running un-bet lanes, their origins and cost), the bets continuing, and the Inbox count (open issues with no labels) — `AT_RISK` while a row flag stands, else `ON_TRACK`. The update names its iteration; once it stands, a re-run adds no row, carries nothing and posts nothing, and only takes closed `proposed` rows off. The Agenda view shows rows with a Rec, so run `table setup` once to align its filter. Prints {"answer":"prepped"|"unchanged","repo":"…","project":{…},"iteration":{"id":"…","title":"…","startDate":"…"},"agenda":[{"issue":n,"section":"…","kind":"epic"|"chain"|null,"members":[n…],"size":"…","rec":"…","plainWords":"…"}],"overflow":[n…],"rollover":{"continuing":[n…],"flagged":[n…]},"removed":[n…],"triageFirst":[{"issue":n,"waitingOnFiler":bool}],"outside":{"count":n,"kinds":{…},"spentUsd":n,"unmeasured":n},"health":{"posted":bool,"alreadyPosted":bool,…},"changes":[…]}. The token needs the `project` scope. Exits 1 (usage), 7 (no table project — run `table setup`), 8 (a write or the status update did not land — UNKNOWN; re-run to finish), 9 (the rows or the update do not read back after the writes), 11 (the project, the open issues, an issue, its comments or edges could not be read — UNKNOWN), 12 (the `table` or `appetiteSizes` block in .fabrika.jsonc does not decode), 20 (the token lacks the `project` scope — run `gh auth refresh -h github.com -s project`), 22 (two open projects carry the table\'s title — set `table.project.number`), 23 (the project lacks a field or option prep writes — run `table setup`), 24 (an issue carries a lane record that does not read), 25 (no Week iteration covers the next table day — add the coming weeks in the project\'s settings). Example: fabrika table prep',
+	),
+);
+
 export const tableCommand = Command.make("table").pipe(
-	Command.withSubcommands([setup, sync, flags]),
+	Command.withSubcommands([setup, sync, flags, prep]),
 	Command.withShortDescription("Set up and fill the weekly betting table on GitHub Projects."),
 	Command.withDescription(
 		"The weekly betting table: a GitHub project per repository where control-plane owners decide what gets bet on. Only this group touches Projects, so only its verbs need the token's `project` scope.",

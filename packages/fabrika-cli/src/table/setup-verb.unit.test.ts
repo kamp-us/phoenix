@@ -90,7 +90,7 @@ describe("table setup on a repo with no `table` block", () => {
 		expect(views.get("Inbox")?.filter).toBe("is:open no:label");
 		expect(views.get("Lanes")?.layout).toBe("BOARD_LAYOUT");
 		expect(views.get("Agenda")?.filter).toBe(
-			'is:open week:@current has:section -section:"Outside the bets"',
+			'is:open week:@current has:section -section:"Outside the bets" has:rec',
 		);
 		const idOf = new Map((project?.fields ?? []).map((field) => [field.id, field.name]));
 		expect(views.get("Agenda")?.fieldIds.map((id) => idOf.get(id))).toEqual([
