@@ -23,12 +23,13 @@ describe("ownAccounts", () => {
 	});
 
 	it("decodes a declared empty array as the empty set", () => {
-		expect(declared([])).toEqual({_tag: "Declared", value: []});
+		expect(declared([])).toEqual({_tag: "Declared", layer: "tracked", value: []});
 	});
 
 	it("decodes a populated set of users and teams", () => {
 		expect(declared(["@ada-bot", "@acme/drivers"])).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: [
 				{_tag: "User", login: "ada-bot"},
 				{_tag: "Team", org: "acme", team: "drivers"},

@@ -66,8 +66,28 @@ workflow aggregator. It does not run through the Effect command tree.
 
 ## The `config` group
 
-Keep the editor's JSON Schema for `.fabrika.jsonc` aligned with the
+Keep the editor's JSON Schemas for `.fabrika.jsonc` and `.fabrika.local.jsonc` aligned with the
 [config-key registry](../src/config/registry.ts). Use `config --help`.
+
+**The config surface is two layers.** The tracked `.fabrika.jsonc` at the repository root is what
+the repository declares. Beside it, the gitignored `.fabrika.local.jsonc` is what one machine
+declares, and it wins **per key** — the winning value replaces the losing one whole, with no deep
+merge and no array concatenation. A key absent from the local file falls to the tracked one, and a
+key absent from both falls to its shipped default.
+
+Only an **allow-listed** key may be declared locally, and the allow-list lives in code as the
+`machineLocal` field a key group declares beside its own default and decoder. It is
+`laneConcurrencyCap` and nothing else: a seat count is a property of the laptop holding the seats,
+where a key naming who may act, a key naming a gate's scope or its exemptions, and a key naming a
+command fabrika spawns are permanently barred. A local file naming any other key **refuses the whole
+load**, naming the key — it is never ignored, because an operator left believing a value is in force
+that is not is the failure the refusal exists for. An unreadable local file, or one that is not a
+JSON object, resolves every key UNKNOWN rather than falling through to the tracked value. The local
+layer is read from the **working tree only**: `build clearances` and every other `readFileAtRef`
+caller sees the tracked file alone, so no gate's verdict is reachable from a file no reviewer sees.
+A driver declaring a machine cap writes `laneConcurrencyCap` into `.fabrika.local.jsonc`, never
+into the tracked file; `status settings` names which file each value came from
+(ADR [0398](../../../.decisions/0398-machine-local-config-layer.md)).
 
 ## The `decision` group
 

@@ -1,21 +1,24 @@
 /**
- * One key group: a key, its shipped default, and how it decodes a declared value.
+ * One key group: a key, its shipped default, whether one machine may declare it, and how it decodes
+ * a declared value.
  *
- * A key group knows nothing about files. It is handed the already-parsed record, which is what lets
- * a load open the bytes once and what keeps a new key to one module plus one registry line.
+ * A key group knows nothing about files. It is handed the already-parsed documents, which is what
+ * lets a load open the bytes once and what keeps a new key to one module plus one registry line.
  *
  * The four resolution arms stay distinguishable in the type on purpose. `Default` and `Unknown` are
  * the pair the whole surface turns on: an absent file is a repo that declared nothing, an unreadable
  * one is a repo whose declaration nobody has read, and collapsing them is how a settings file
  * silently disables a gate.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9020#issuecomment-5625285600
  */
 
-import {CONFIG_PATH, type DocumentState} from "./document.ts";
+import {CONFIG_PATH, type ConfigLayer, type DocumentState, type Documents} from "./document.ts";
 import type {JsonSchema} from "./json-schema.ts";
 
 export type Resolution<A> =
-	/** The repo declared this key and the value decoded. */
-	| {readonly _tag: "Declared"; readonly value: A}
+	/** A file declared this key and the value decoded, in the layer named. */
+	| {readonly _tag: "Declared"; readonly value: A; readonly layer: ConfigLayer}
 	/** No file, or no key: the shipped default, with the arm named. */
 	| {readonly _tag: "Default"; readonly value: A; readonly reason: string}
 	/** The key is present and its value is refused whole, naming what was rejected. */
@@ -36,6 +39,17 @@ export interface KeyGroup<A> {
 	 * verb must run, empty is the strict arm, because nothing to run refuses rather than greens.
 	 */
 	readonly shippedDefault: A;
+	/**
+	 * `true` when one machine may declare this key in `.fabrika.local.jsonc`, absent otherwise.
+	 *
+	 * Absent is the answer for every key but one. Eligibility is opt-in in code beside the default
+	 * and the decoder, so admitting a key is one registry-visible change with a test rather than a
+	 * convention, and `laneConcurrencyCap` is the whole allow-list — a seat count is a property of
+	 * the laptop holding the seats. A key naming who may act, a key naming a gate's scope or its
+	 * exemptions, and a key naming a command fabrika spawns are permanently barred: a local layer
+	 * over one of those is an untracked, invisible way to weaken a gate.
+	 */
+	readonly machineLocal?: true;
 	/** Decode a present value. Refuse the whole value rather than skipping a bad entry. */
 	readonly decode: (raw: unknown) => Decoded<A>;
 	/**
@@ -59,8 +73,9 @@ export interface KeyGroup<A> {
 	readonly render?: (value: A) => unknown;
 	/**
 	 * The JSON Schema fragment describing a declared value's shape, single-sourced beside this
-	 * key's {@link KeyGroup.decode}. `config schema` assembles the registry's fragments into the
-	 * one document an editor validates `.fabrika.jsonc` against.
+	 * key's {@link KeyGroup.decode}. `config schema` assembles the registry's fragments into the one
+	 * document an editor validates `.fabrika.jsonc` against, and the machine-local subset into the
+	 * one that validates `.fabrika.local.jsonc`.
 	 *
 	 * Optional on the type, required in practice: the assembler refuses a registry with any key
 	 * missing a fragment, so the emitted schema can never silently green a typo under a key it
@@ -70,12 +85,38 @@ export interface KeyGroup<A> {
 	readonly jsonSchema?: JsonSchema;
 }
 
-export const resolveKey = <A>(state: DocumentState, group: KeyGroup<A>): Resolution<A> => {
-	switch (state._tag) {
+/**
+ * This key's value in the machine-local layer, or `null` when that layer has nothing to say.
+ *
+ * `null` is the fall-through to the tracked layer, and exactly two states reach it: no local file at
+ * all, and a local file declaring some other key. **A local file that exists and could not be read,
+ * or that did not parse as a JSON object, is UNKNOWN rather than a fall-through** — falling through
+ * there is how a typo silently restores the repo default on a machine that declared something else.
+ */
+const resolveLocal = <A>(local: DocumentState, group: KeyGroup<A>): Resolution<A> | null => {
+	switch (local._tag) {
 		case "Unreadable":
-			return {_tag: "Unknown", reason: state.reason};
 		case "NotAnObject":
-			return {_tag: "Malformed", reason: state.reason};
+			return {_tag: "Unknown", reason: local.reason};
+		case "Absent":
+			return null;
+		case "Record": {
+			const raw = local.record[group.key];
+			if (raw === undefined) return null;
+			const decoded = group.decode(raw);
+			return decoded._tag === "Malformed"
+				? decoded
+				: {_tag: "Declared", value: decoded.value, layer: "local"};
+		}
+	}
+};
+
+const resolveTracked = <A>(tracked: DocumentState, group: KeyGroup<A>): Resolution<A> => {
+	switch (tracked._tag) {
+		case "Unreadable":
+			return {_tag: "Unknown", reason: tracked.reason};
+		case "NotAnObject":
+			return {_tag: "Malformed", reason: tracked.reason};
 		case "Absent":
 			return {
 				_tag: "Default",
@@ -83,7 +124,7 @@ export const resolveKey = <A>(state: DocumentState, group: KeyGroup<A>): Resolut
 				reason: `this repo has no ${CONFIG_PATH}`,
 			};
 		case "Record": {
-			const raw = state.record[group.key];
+			const raw = tracked.record[group.key];
 			if (raw === undefined) {
 				return {
 					_tag: "Default",
@@ -92,10 +133,24 @@ export const resolveKey = <A>(state: DocumentState, group: KeyGroup<A>): Resolut
 				};
 			}
 			const decoded = group.decode(raw);
-			return decoded._tag === "Malformed" ? decoded : {_tag: "Declared", value: decoded.value};
+			return decoded._tag === "Malformed"
+				? decoded
+				: {_tag: "Declared", value: decoded.value, layer: "tracked"};
 		}
 	}
 };
+
+/**
+ * One key across both layers: local, then tracked, then the shipped default.
+ *
+ * Precedence is decided key by key and the winning value **replaces** the losing one whole — there
+ * is no merge step here and there must never be one. Every key's decoder refuses a whole value
+ * rather than skipping a bad entry, so a merged value would be one no author ever wrote and no
+ * decoder ever saw as written; and an array concatenation is exactly how a local file would widen a
+ * validator list or an exemption list without replacing anything.
+ */
+export const resolveKey = <A>(documents: Documents, group: KeyGroup<A>): Resolution<A> =>
+	resolveLocal(documents.local, group) ?? resolveTracked(documents.tracked, group);
 
 /**
  * A key group with its value type erased, which is the shape the registry holds.
@@ -107,7 +162,9 @@ export const resolveKey = <A>(state: DocumentState, group: KeyGroup<A>): Resolut
  */
 export interface Registration {
 	readonly key: string;
-	readonly resolve: (state: DocumentState) => Resolution<unknown>;
+	/** Whether one machine may declare this key locally — the allow-list, carried erased. */
+	readonly machineLocal: boolean;
+	readonly resolve: (documents: Documents) => Resolution<unknown>;
 	/**
 	 * The same resolution with its value in the shape a repo writes — what a readout prints.
 	 *
@@ -115,38 +172,54 @@ export interface Registration {
 	 * with a value needs the decoded shape, and a renderer that silently replaced it would hand
 	 * logic the display form.
 	 */
-	readonly readout: (state: DocumentState) => Resolution<unknown>;
-	readonly loadRefusal: (state: DocumentState) => string | null;
+	readonly readout: (documents: Documents) => Resolution<unknown>;
+	readonly loadRefusal: (documents: Documents) => string | null;
 	/** This key's JSON Schema fragment, carried erased so `config schema` can assemble the document. */
 	readonly jsonSchema?: JsonSchema;
 }
 
+/**
+ * Whether the layer that produced this key's resolution was a parsed record.
+ *
+ * `register` needs it to tell a declared value its decoder rejected from a document-level malformity
+ * nobody declared, and the declaring layer is whichever one {@link resolveKey} read the value off.
+ */
+const declaringState = (documents: Documents, key: string): DocumentState["_tag"] =>
+	documents.local._tag === "Record" && documents.local.record[key] !== undefined
+		? "Record"
+		: documents.tracked._tag;
+
 export const register = <A>(group: KeyGroup<A>): Registration => ({
 	key: group.key,
+	machineLocal: group.machineLocal === true,
 	// Spread rather than assign: under `exactOptionalPropertyTypes` an optional field may not carry
 	// an explicit `undefined`, so a key with no fragment simply omits it.
 	...(group.jsonSchema !== undefined ? {jsonSchema: group.jsonSchema} : {}),
-	resolve: (state) => resolveKey(state, group),
-	readout: (state) => {
-		const resolved = resolveKey(state, group);
+	resolve: (documents) => resolveKey(documents, group),
+	readout: (documents) => {
+		const resolved = resolveKey(documents, group);
 		const render = group.render;
 		if (render === undefined) return resolved;
-		if (resolved._tag === "Declared") return {_tag: "Declared", value: render(resolved.value)};
+		if (resolved._tag === "Declared") {
+			return {_tag: "Declared", value: render(resolved.value), layer: resolved.layer};
+		}
 		if (resolved._tag === "Default") {
 			return {_tag: "Default", value: render(resolved.value), reason: resolved.reason};
 		}
 		return resolved;
 	},
-	loadRefusal: (state) => {
+	loadRefusal: (documents) => {
 		const refuse = group.refuseLoad;
 		if (refuse === undefined) return null;
-		const resolved = resolveKey(state, group);
+		const resolved = resolveKey(documents, group);
 		if (resolved._tag === "Declared" || resolved._tag === "Default") return refuse(resolved.value);
 		// A declared value this key's decoder rejected refuses the load in the decoder's own words: it
-		// leaves the key with no usable value, which un-governs the config exactly like a value
+		// leaves the key with nothing to check, which un-governs the config exactly like a value
 		// `refuseLoad` rejects. The two document-level arms are not this key's to raise — `Unknown`
 		// proves nothing about what the repo declared, and a document that is not a JSON object
 		// resolves *every* key `Malformed`, so no weakened value is readable off it either way.
-		return resolved._tag === "Malformed" && state._tag === "Record" ? resolved.reason : null;
+		return resolved._tag === "Malformed" && declaringState(documents, group.key) === "Record"
+			? resolved.reason
+			: null;
 	},
 });
