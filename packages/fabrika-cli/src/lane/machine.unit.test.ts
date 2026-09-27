@@ -940,7 +940,7 @@ describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing", (
 
 	// No `KNOWN_PARKS` row exists for this cause and none is owed yet: clearing it needs a verb that
 	// merges the base into the head, and `build` ships none. Novel-naming-the-cause is the answer.
-	it("reads as a novel park that names its cause, never as the causeless §CP row", () => {
+	it("reads as a novel park that names its cause, never as the approval-wait §CP row", () => {
 		const classified = classifyPark("human:cp-approval", "head-behind-base");
 
 		expect(classified._tag).toBe("Novel");

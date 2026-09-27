@@ -402,7 +402,7 @@ describe("recipe unpark — a red-CI park clears once the head reads green again
 	it("is Novel for the same leaf carrying no cause, and reads no approval", async () => {
 		const fs = lane(PARKED_AT_CP_UNCAUSED);
 
-		const out = await run(fs, [], []);
+		const out = await run(fs, DISCHARGED);
 
 		expect(out.code).toBe(PARK_NOVEL);
 		expect(fs.written.size).toBe(0);
