@@ -155,6 +155,11 @@ root the verb resolved is not the one your lane lives under, and booting on it w
 ledger over a live lane. On `39`, move to
 the repo root and re-read — never boot.
 
+Both boot verbs below take `--origin <kind>`. Pass it on whichever one boots the lane when your
+caller named where the lane came from (the kinds are listed under the terminal step in §4); say
+nothing and it records `driver-pick`. `70` from either verb means the kind is not one of them, and
+nothing was read or written.
+
 ```bash
 node <fabrika> lane emit $lane_key
 ```
@@ -171,9 +176,7 @@ node <fabrika> lane open $lane_key
 
 `lane open` places the template the key selects — the coder workflow for an issue number, the chore
 workflow for `chore:<name>` — so a chore drive needs no document written by hand. Its
-already-exists refusal is tolerated as resume, not treated as an error. Pass `--origin <kind>` when
-your caller named where the lane came from (the kinds are listed under the terminal step in §4); say
-nothing and it records `driver-pick`. `70` means the kind is not one of them, and nothing was booted.
+already-exists refusal is tolerated as resume, not treated as an error.
 
 **Exit `51` out of `lane open` is the cap, and it is the same wait step 1's read exists to catch
 earlier.** A seat freed between the read and the boot in the wrong direction, or another driver took
@@ -1718,8 +1721,8 @@ posted.
 
 A lane that is quiet on purpose says so with `node <fabrika> lane wait $lane_key --on "<what>" --until
 <date>`. Where the lane came from is set once at boot, with `--origin` on `lane open`, or on
-`lane emit` for an epic lane: `bet` when it
-drives a row the table bet on, `founder-start` when the founder started it by hand, `experiment`,
+`lane emit` for an epic lane: `bet` when it drives a row the table bet on, `founder-start` when the
+founder started it by hand, `experiment`,
 `mid-lane-fix` for a fix found while driving another lane, and `driver-pick` — the default — for
 everything else.
 
