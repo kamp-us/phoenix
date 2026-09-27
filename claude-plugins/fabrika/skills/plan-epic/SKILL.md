@@ -37,7 +37,9 @@ Source grounds *what is true of the code*; authority arrives only through an ACL
 
 **Capability set:** a repo-scoped token, a claim on the epic, and direct reads inside **the
 epic's tree**. Its write surface is: creating child issues, linking them as sub-issues, the
-labels / milestone / assignee those children are born with, one PATCH of the epic body, and — on a
+labels / milestone / assignee those children are born with, linking an already-filed issue as a child
+and appending one dated amendment to its body that carries only the `**Stories:**` /
+`**Containment:**` lines it lacks (`ledger adopt` — never a rewrite, never a label), one PATCH of the epic body, and — on a
 re-plan only — **commenting on, unlinking and closing** a child it supersedes. Through the `grill`
 verbs it also opens or resumes one grilling session issue on the epic and comments its rounds and
 fact answers onto it. Through `build note`
@@ -121,7 +123,8 @@ need they read back out of the run directory, which this verb writes — and the
 there too, so **nothing here survives only in your head**, this one included.
 
 `candidates` is the dedup read, **advisory**, and its `outcome` has three non-interchangeable arms:
-`candidates` (overlapping open issues — read them before minting a duplicate), `none` (the sweep ran
+`candidates` (overlapping open issues — read them before minting a duplicate, and adopt one that
+already is a slice of this plan at step 5), `none` (the sweep ran
 and found nothing), `indeterminate` (the sweep could not run, so you know nothing). Reading
 `indeterminate` as `none` re-mints work that already exists.
 
@@ -315,6 +318,27 @@ write and is preserved. **On a child of an asked type only a legal value will do
 `**Stories:**` carries bare integers or `none`, and `ledger child` refuses anything else — a
 parser that harvests every digit run reads `1, 3 (see #<other>)` as claiming a story nobody wrote.
 
+**When a slice is already on the board, adopt it instead of minting it.** A brief that names an
+existing issue as a child, or a `candidates` row that is plainly this slice, is adopted:
+
+```bash
+fabrika ledger adopt $epic_number --child 5 --stories 2 --token <claim-token>
+```
+
+Done when it answers `adopted` with `linked: true`. The issue keeps its title, labels, report and
+criteria. What you may add is only the plan's field lines it lacks. Pass `--stories` when it
+declares none, and `--containment` when the gate would ask for one; the verb appends them under a
+dated amendment and never rewrites a byte above it. The authority behind that, and what it leaves to
+a separate ruling, is in [`contract.md`'s `ledger adopt`](contract.md#ledger-adopt).
+
+**Adopt before you mint anything**, so a refusal leaves no half-minted set. A `4`, `7` or `10` naming the
+issue says why it cannot join as it stands: no criteria, a field it already declares differently,
+closed, untriaged, or a child of another epic. That is a fact about the issue, not the epic, and adoption
+does not fix it: the repair is a body edit by a human or triage. End `STOPPED` naming the issue and
+the refusal line, and do not mint a duplicate to get past it. `8`, `23` and `26`
+are recovered by running the same command again, because every leg re-reads live state and repeats
+only what is missing. `9` is `WRITE-UNPROVEN`.
+
 On a `re-plan`, a child the new plan drops is retired rather than left dangling:
 
 ```bash
@@ -488,7 +512,8 @@ and every row below that seats one says so.
   read the message before routing: a `7` from `ledger topology` meaning *the run manifest is empty*
   is a skipped step — mint the children, then re-run it — and a `10` naming an absent label or a
   closed milestone is a repository fact. Neither is a verdict on the epic; both land in `STOPPED`
-  only if you cannot repair them.
+  only if you cannot repair them. A `7` or `10` from `ledger adopt` naming the adopted issue is a
+  fact about that issue too, and step 5 routes it.
 - `NEEDS-INPUT` — no verb refused; the run is **fully known and one human answer short**. **A
   back-off, not UNKNOWN**, which is why it is not `STOPPED`. Mint nothing rather than part of the
   set — a half-minted epic with no topology and no plan in its body is a state a human has to
