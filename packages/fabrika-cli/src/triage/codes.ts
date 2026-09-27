@@ -200,6 +200,27 @@ export const UNWIRED_ORDERING = 20;
  * would tell a caller "no such issue" about a number that exists and is on their screen.
  */
 export const PULL_REQUEST_TARGET = 21;
+/**
+ * Refused: an audit document — the input set or a chunk — is not JSON, or a row in it breaks the
+ * pinned verdict-row shape: an unknown verdict, no issue number, a KILL naming no value-bar clause.
+ *
+ * Its own seat rather than {@link PRECONDITION_UNKNOWN}'s: the file was read, so the answer is not
+ * unknown — it is a document a reader must re-emit.
+ */
+export const MALFORMED_AUDIT = 22;
+/**
+ * Refused: a chunk's rows differ from the total it declared. The declared total is the chunk's
+ * checksum, and a merge that went past a short chunk is how a dropped row came back as a verdict
+ * nobody gave.
+ */
+export const CHUNK_MISCOUNTED = 23;
+/** Refused: one issue carries more than one verdict row across the chunks being merged. */
+export const DUPLICATE_VERDICT = 24;
+/**
+ * Refused: the merged issue set is not the audited input set — an issue has no row, or a row names
+ * an issue the audit never listed.
+ */
+export const SET_MISMATCH = 25;
 
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
@@ -284,6 +305,25 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 		code: PULL_REQUEST_TARGET,
 		meaning:
 			"refused: a --blocked-by target is a pull request — a blocking PR is named in the graph by the issue its merge closes",
+	},
+	{
+		code: MALFORMED_AUDIT,
+		meaning:
+			"refused: an audit document is not JSON, or a verdict row breaks the pinned shape — unknown verdict, no issue number, or a KILL with no value-bar clause",
+	},
+	{
+		code: CHUNK_MISCOUNTED,
+		meaning: "refused: a chunk's rows differ from the total it declared — no merged output",
+	},
+	{
+		code: DUPLICATE_VERDICT,
+		meaning:
+			"refused: an issue carries more than one verdict row across the chunks — no merged output",
+	},
+	{
+		code: SET_MISMATCH,
+		meaning:
+			"refused: the merged issue set is not the audited input set — an issue is missing or invented — no merged output",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},
