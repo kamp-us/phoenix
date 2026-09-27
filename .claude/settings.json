@@ -25,5 +25,13 @@
 				]
 			}
 		]
+	},
+	"permissions": {
+		"allow": [
+			"Bash(fabrika build *)",
+			"Bash(fabrika lane *)",
+			"Bash(node packages/fabrika-cli/src/bin.ts build *)",
+			"Bash(node packages/fabrika-cli/src/bin.ts lane *)"
+		]
 	}
 }
