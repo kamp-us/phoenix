@@ -5,7 +5,8 @@ the program authoring API, the window renderer contract, the AI-agent port vocab
 and the kernel the desk runs programs on.
 
 It carries no React, no design system and no agent vendor SDK. Its runtime dependencies are
-`effect` and `@demlik/tea`, pinned to the versions it was built against.
+`effect` and `@demlik/tea`, pinned to the versions it was built against, and `semver`, which reads a
+program's declared SDK range.
 
 ## Install
 
@@ -29,6 +30,7 @@ import {Schema} from "effect";
 
 export const counter = program({
 	id: "counter",
+	sdk: "^0",
 	ports: {add: port.in(Schema.Number), total: port.out(Schema.Number)},
 	init: () => ({total: 0}),
 	update: {
@@ -43,6 +45,11 @@ export const counter = program({
 // The compiled row a desk config lists.
 export const counterRow = defineProgram(counter);
 ```
+
+`sdk` is the semver range of SDK versions the program supports. A desk runs one copy of this SDK
+for every program, and it refuses a program whose range excludes that copy's version, naming the
+program, its range and the desk's version; the desk and its other programs keep running. A program
+that declares no range supports every SDK of the desk's own major.
 
 ## Test it
 

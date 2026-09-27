@@ -103,6 +103,8 @@ const tuval = Command.make(
 		for (const line of renderBindingErrors(report.bindingErrors)) {
 			yield* Console.log(`tuval: ${line}`);
 		}
+		// A program outside its SDK range costs that program and nothing else (#9686).
+		for (const refusal of report.refused) yield* Console.log(`tuval: ${refusal.message}`);
 		const rows = yield* ProcessTablePort.use((port) => port.rows).pipe(
 			Effect.provideContext(kernel),
 		);

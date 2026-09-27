@@ -26,6 +26,8 @@ const openSpell = defineSpell({
 		folder: Schema.String,
 		name: Schema.String,
 		programs: Schema.Int,
+		/** Why each program the project declares outside its SDK range was not loaded. */
+		refused: Schema.Array(Schema.String),
 		processes: Schema.Int,
 		restored: Schema.Int,
 	}),
@@ -36,6 +38,7 @@ const openSpell = defineSpell({
 				folder: opened.project.folder,
 				name: opened.project.id.name,
 				programs: opened.programCount,
+				refused: opened.refused.map((refusal) => refusal.message),
 				processes: opened.launched.length + opened.restored.length,
 				restored:
 					opened.launched.filter((process) => process.restored).length + opened.restored.length,

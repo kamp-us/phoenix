@@ -212,6 +212,7 @@ const scriptedProjects = Layer.effect(
 							scoped: {moved: []},
 						},
 						programCount: 0,
+						refused: [],
 						launched: [],
 						restored: [],
 					});

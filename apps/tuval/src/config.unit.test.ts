@@ -12,9 +12,11 @@ import {
 	type LoadedConfig,
 	loadConfigModule,
 	loadLayeredConfig,
+	loadProjectConfig,
 } from "./config.ts";
 import {fixtureDesk, noDesk} from "./config-fixtures/desk-layers.ts";
 import {ProjectId} from "./project-id.ts";
+import {DESK_SDK_VERSION} from "./sdk-admission.ts";
 
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));
@@ -238,6 +240,85 @@ describe("the feature flags", () => {
 	});
 });
 
+describe("loadLayeredConfig and the SDK range (#9686)", () => {
+	it.effect(
+		"refuses a row outside the desk's SDK and a malformed one, and loads the rest of the layer",
+		() =>
+			Effect.gen(function* () {
+				const config = yield* layered(fixture("sdk-ranges"), fixture("does-not-exist"));
+				assert.deepStrictEqual(
+					config.programs.map((row) => (row as {readonly id: string}).id),
+					["in-range", "undeclared"],
+				);
+				assert.deepStrictEqual(
+					config.graph.nodes.map((node) => node.id),
+					["kept", "plain"],
+				);
+				assert.deepStrictEqual(config.graph.nodes[0]?.on, []);
+				assert.deepStrictEqual(
+					config.refused.map((refusal) => refusal.message),
+					[
+						`program "too-new" supports @kampus/tuval-sdk >=1.0.0, and this desk runs ${DESK_SDK_VERSION}; it was not loaded`,
+						`program "garbled" declares @kampus/tuval-sdk range "not a range", which is not a semver range (this desk runs ${DESK_SDK_VERSION}); it was not loaded`,
+					],
+				);
+			}),
+	);
+
+	it.effect("names a refused project row by its project-scoped id", () =>
+		Effect.gen(function* () {
+			const config = yield* layered(fixture("does-not-exist"), fixture("sdk-ranges"));
+			assert.deepStrictEqual(
+				config.refused.map((refusal) => refusal.program),
+				[alpha.scope("too-new"), alpha.scope("garbled")],
+			);
+			assert.deepStrictEqual(
+				config.graph.nodes.map((node) => node.id),
+				[alpha.scope("kept"), alpha.scope("plain")],
+			);
+		}),
+	);
+
+	it.effect(
+		"drops a project's nodes that name a refused global row or its nodes by bare id, and loads the rest",
+		() =>
+			Effect.gen(function* () {
+				const config = yield* layered(
+					fixture("sdk-out-of-range-counter"),
+					fixture("names-refused-global"),
+				);
+				assert.deepStrictEqual(
+					config.refused.map((refusal) => refusal.program),
+					["future-counter"],
+				);
+				assert.deepStrictEqual(
+					config.graph.nodes.map((node) => ({id: node.id, on: node.on})),
+					[
+						{id: NodeId.make("main"), on: []},
+						{id: NodeId.make(alpha.scope("own")), on: []},
+					],
+				);
+			}),
+	);
+
+	it.effect("drops the same nodes when the project opens into a running desk", () =>
+		Effect.gen(function* () {
+			const layers = {desk: noDesk, projects: [], global: fixture("sdk-out-of-range-counter")};
+			const running = yield* loadLayeredConfig(layers);
+			const opened = yield* loadProjectConfig(
+				noDesk,
+				{id: alpha, module: fixture("names-refused-global")},
+				running.desk.removed,
+			);
+			assert.deepStrictEqual(opened.config.refused, []);
+			assert.deepStrictEqual(
+				opened.config.graph.nodes.map((node) => ({id: node.id, on: node.on})),
+				[{id: NodeId.make(alpha.scope("own")), on: []}],
+			);
+		}).pipe(Effect.provide(NodeFileSystem.layer)),
+	);
+});
+
 describe("loadLayeredConfig", () => {
 	it.effect(
 		"keeps a global row and a same-id project row side by side, as <id> and <project>/<id>",
@@ -282,6 +363,7 @@ describe("loadLayeredConfig", () => {
 						{file: `project ${layerName("project-layer")}`, bindings: {}},
 					],
 					sources: [fixture("global-layer"), fixture("project-layer")],
+					refused: [],
 					files: [fixture("global-layer"), fixture("project-layer")],
 					modules: AuthoredModules.none,
 				});
@@ -315,6 +397,7 @@ describe("loadLayeredConfig", () => {
 				},
 				keys: [{file: `project ${layerName("with-graph")}`, bindings: {}}],
 				sources: [fixture("with-graph")],
+				refused: [],
 				files: [fixture("with-graph")],
 				modules: AuthoredModules.none,
 			});
@@ -334,6 +417,7 @@ describe("loadLayeredConfig", () => {
 				graph: {nodes: []},
 				keys: [{file: `global ${layerName("two-rows")}`, bindings: {}}],
 				sources: [fixture("two-rows")],
+				refused: [],
 				files: [fixture("two-rows")],
 				modules: AuthoredModules.none,
 			});
@@ -353,6 +437,7 @@ describe("loadLayeredConfig", () => {
 				graph: {nodes: []},
 				keys: [],
 				sources: [],
+				refused: [],
 				files: [],
 				modules: AuthoredModules.none,
 			});

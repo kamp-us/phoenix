@@ -30,6 +30,7 @@ import {
 	projectDir,
 } from "./boot.ts";
 import {ProjectId} from "./project-id.ts";
+import {DESK_SDK_VERSION} from "./sdk-admission.ts";
 import {shellSpells} from "./shell/commands/spells.ts";
 
 /**
@@ -207,6 +208,7 @@ describe("boot", () => {
 					spellCount: DESK_SPELLS,
 					bindingCount: 0,
 					bindingErrors: [],
+					refused: [],
 					stateDir: homeStateDir(project, home),
 					adopted: {moved: [], kept: [], unowned: []},
 					scoped: {moved: []},
@@ -521,6 +523,44 @@ describe("boot", () => {
 				});
 				// The counter, and the shell the first boot checkpointed.
 				assert.strictEqual(again.report.restoredCount, 2);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it.effect(
+		"refuses a project row outside the desk's SDK range by name and keeps the desk and its other rows running",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				const project = projectWithConfig("sdk-out-of-range-counter");
+				const id = ProjectId.of(project);
+				const {report} = yield* bootDirect(fixture("does-not-exist"), project, home);
+				assert.deepStrictEqual(
+					report.refused.map((refusal) => refusal.message),
+					[
+						`program "${id.scope("future-counter")}" supports @kampus/tuval-sdk >=1.0.0, and this desk runs ${DESK_SDK_VERSION}; it was not loaded`,
+					],
+				);
+				// The desk's shell and the in-range `main`; nothing was started for `later`.
+				assert.strictEqual(report.processCount, 2);
+				assert.strictEqual(report.programCount, DESK_PROGRAMS + 1);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it.effect(
+		"boots when a project names a global row refused for its SDK range, dropping the nodes that name it",
+		() =>
+			Effect.gen(function* () {
+				const project = projectWithConfig("names-refused-global");
+				const {report} = yield* bootDirect(fixture("sdk-out-of-range-counter"), project);
+				assert.deepStrictEqual(
+					report.refused.map((refusal) => refusal.program),
+					["future-counter"],
+				);
+				// The desk's shell, the global `main` and the project's `own`.
+				assert.strictEqual(report.processCount, 3);
+				assert.strictEqual(report.programCount, DESK_PROGRAMS + 2);
 			}),
 		DIRECT_BOOT_MS,
 	);

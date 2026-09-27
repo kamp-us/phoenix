@@ -121,6 +121,7 @@ export const claudeSession = (options: ClaudeSessionProgramOptions): ClaudeSessi
 				...(options.byteLimit === undefined ? {} : {byteLimit: options.byteLimit}),
 			},
 			renderer: CLAUDE_CHAT_WINDOW_REF,
+			sdk: "0.x",
 			capabilities: CLAUDE_SESSION_CAPABILITIES,
 		}),
 		settings,

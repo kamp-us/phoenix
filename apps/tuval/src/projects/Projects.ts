@@ -28,6 +28,7 @@ import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import type {ProcessHandle} from "@kampus/tuval-sdk/kernel/process/process";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {Registry, RegistryRows} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import type {SdkRefused} from "@kampus/tuval-sdk/kernel/registry/sdk-range";
 import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {
 	adoptInProjectState,
@@ -59,6 +60,7 @@ import {type CheckpointScoping, scopeCheckpoints} from "../durability/scope-chec
 import {type LaunchedProcess, launch} from "../launch/launch.ts";
 import {type ProjectId, projectConfig, projectDir} from "../project-id.ts";
 import type {ConfigReloader} from "../reload.ts";
+import type {SdkRemoved} from "../sdk-admission.ts";
 import {withShellFeatures} from "../shell/program.ts";
 import {type CheckpointRoutes, ownedView} from "./checkpoint-routes.ts";
 import {
@@ -100,6 +102,8 @@ export interface ProjectOpened {
 	readonly project: OpenProject;
 	readonly state: ProjectState;
 	readonly programCount: number;
+	/** The project's rows refused for their SDK range, which the rest of the project runs without. */
+	readonly refused: ReadonlyArray<SdkRefused>;
 	/** The project's graph, in node order. */
 	readonly launched: ReadonlyArray<LaunchedProcess>;
 	/** The project's checkpointed processes its graph did not plan, spawned back. */
@@ -162,6 +166,8 @@ export interface ProjectsOptions {
 	readonly reloader: ConfigReloader["Service"];
 	/** The desk's and global layers' graph, and the wiring it was opened on. */
 	readonly deskGraph: Graph;
+	/** What the global layer's SDK refusals took out of `deskGraph`, which a project loses too. */
+	readonly deskRemoved: SdkRemoved;
 	readonly deskWiring: Wiring;
 	/** The desk's and global layers' module renderers. */
 	readonly deskRenderers: ReadonlyArray<ModuleRendererRef>;
@@ -314,6 +320,7 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 				project,
 				state,
 				programCount: programs.length,
+				refused: loaded.config.refused,
 				launched,
 				restored,
 			} satisfies ProjectOpened;
@@ -364,7 +371,7 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		if (!isFolder) return yield* refuse("no folder is there");
 		const layer = {id: project.id, module: projectConfig(folder)};
 		const prepared = Effect.gen(function* () {
-			const loaded = yield* loadProjectConfig(desk, layer);
+			const loaded = yield* loadProjectConfig(desk, layer, options.deskRemoved);
 			const state = yield* prepareProjectState(folder, home, loaded);
 			return {loaded, state};
 		}).pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.mapError(refuse));

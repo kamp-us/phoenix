@@ -93,6 +93,7 @@ export const piSessionProgram = (
 			),
 		config: {cwd: options.cwd},
 		renderer: PI_CHAT_WINDOW_REF,
+		sdk: "0.x",
 		capabilities: [
 			{
 				family: "process-control",
