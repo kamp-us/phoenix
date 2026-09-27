@@ -82,7 +82,6 @@ import {
 	epicOf,
 	foldNamespaces,
 	foldPark,
-	INVESTIGATION_LABEL,
 	issueOf,
 	judgeVerdicts,
 	type NamespaceRow,
@@ -198,7 +197,7 @@ export interface ProofOutcome extends VerbOutcome {
 	readonly landed: ReadonlyArray<number>;
 	/**
 	 * Whether this `DONE` was proven off a diagnosis comment rather than a pull request — the
-	 * `done:diagnosis` guard's whole input, and the one thing that tells an investigation's terminal
+	 * `done:diagnosis` guard's whole input, and the one thing that tells a `SUCCESS-NO-PR`
 	 * from a `SHIPPED-PR` or a `BUILT-NO-PR`, all three of which report the same `DONE` event.
 	 *
 	 * It is the prover's answer rather than the shell's word, which is the point: it is set on the
@@ -661,12 +660,12 @@ const traceOpenPull = (
 
 /**
  * The no-PR arm: `build`'s `SUCCESS-NO-PR`, which is a legal `DONE` and must not read as an unproven
- * one. It is not taken on the spawn's word either — the two artifacts are the `type:investigation`
- * label and a diagnosis comment written after the task entered build.
+ * one. It is not taken on the spawn's word either — its one artifact is a comment on the issue
+ * written after the task entered build, whatever the issue's type.
  *
  * It is the only arm that answers `diagnosis: true`, which is what the machine's `done:diagnosis`
- * guard routes an investigation's terminal on — so the routing rests on the same two artifacts the
- * proof does, and a `SHIPPED-PR` or a `BUILT-NO-PR` reporting the identical `DONE` reaches it never.
+ * guard routes a no-PR terminal on — so the routing rests on the same artifact the proof does, and a
+ * `SHIPPED-PR` or a `BUILT-NO-PR` reporting the identical `DONE` reaches it never.
  */
 const proveNoPull = (
 	repo: string,
@@ -691,10 +690,10 @@ const proveNoPull = (
 			return unreadable(`the comments on #${issue}`, commented.reason);
 		}
 		const since = entries.filter((entry) => entry.task === taskId).at(-1)?.at ?? null;
-		const diagnosis = traceDiagnosis(issue, found.value.labels, commented.value, since);
+		const diagnosis = traceDiagnosis(issue, commented.value, since);
 		const looked = [
 			...diagnostics,
-			`${VERB}: no PR traced, so looked for the no-PR outcome instead — ${INVESTIGATION_LABEL} on #${issue} and a comment written since ${since ?? "the lane opened"}.`,
+			`${VERB}: no PR traced, so looked for the no-PR outcome instead — a comment on #${issue} written since the task entered build${since === null ? "" : ` at ${since}`}.`,
 		];
 		if (diagnosis._tag === "Absent") {
 			return seat(
