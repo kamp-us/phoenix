@@ -52,12 +52,14 @@ import {LiveKeyBindings} from "./keys/live.ts";
 import {type LaunchedProcess, launch} from "./launch/launch.ts";
 import {ProjectId, projectConfig} from "./project-id.ts";
 import {checkpointRoutes, ownedView} from "./projects/checkpoint-routes.ts";
+import type {ProjectNotReopened} from "./projects/open-projects.ts";
 import {
 	makeProjects,
 	type ProjectOpened,
 	type ProjectState,
 	Projects,
 	type ProjectsKernel,
+	type ProjectsReopened,
 	prepareProjectState,
 } from "./projects/Projects.ts";
 import {projectSpells} from "./projects/spells.ts";
@@ -194,6 +196,8 @@ export interface Started {
 	readonly restored: ReadonlyArray<ProcessHandle>;
 	/** The first project, opened once the desk's own processes were up. */
 	readonly first?: ProjectOpened;
+	/** What the saved list had open, reopened after the first project, and what was skipped. */
+	readonly reopened: ProjectsReopened;
 }
 
 /** A manifest entry the desk's own restore brings back: one no project's row owns. */
@@ -341,11 +345,14 @@ export const start = Effect.fn("Tuval.start")(function* ({
 		desk === undefined || projects?.first === undefined
 			? undefined
 			: yield* desk.openFirst(projects.first.folder, projects.first.loaded, projects.first.state);
+	// The boot project counts as one of the open ones: the saved list's others open beside it.
+	const reopened = desk === undefined ? {opened: [], skipped: []} : yield* desk.reopen();
 	return {
 		kernel,
 		launched,
 		restored,
 		...(first === undefined ? {} : {first}),
+		reopened,
 	} satisfies Started;
 });
 
@@ -379,6 +386,10 @@ export interface BootReport {
 	readonly bindingErrors: ReadonlyArray<BindingError>;
 	/** One per row refused for its SDK range (#9686) or a flag left off (#9687); the rest still run. */
 	readonly refused: ReadonlyArray<RowRefused>;
+	/** The folders the saved list had open that this boot reopened beside the first (#9688). */
+	readonly reopened: ReadonlyArray<string>;
+	/** One per saved open folder this boot skipped, naming it and why; the rest still opened. */
+	readonly skipped: ReadonlyArray<ProjectNotReopened>;
 	/** The home-dir directory this desk's state lives in, keyed by the project's absolute path. */
 	readonly stateDir: string;
 	/** What ADR 0402 rule 7's one-time move lifted out of `<project>/.tuval` on this boot. */
@@ -503,15 +514,18 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 		bindingCount: spells.bindings.bindings.length,
 		bindingErrors: spells.bindings.errors,
 		refused: config.refused,
+		reopened: started.reopened.opened.map((opened) => opened.project.folder),
+		skipped: started.reopened.skipped,
 		stateDir: state.stateDir,
 		adopted: state.adopted,
 		scoped: state.scoped,
 		processCount: live.length,
 		restoredCount:
 			restoredBy(started.launched, started.restored) +
-			(started.first === undefined
-				? 0
-				: restoredBy(started.first.launched, started.first.restored)),
+			[...(started.first === undefined ? [] : [started.first]), ...started.reopened.opened].reduce(
+				(count, opened) => count + restoredBy(opened.launched, opened.restored),
+				0,
+			),
 	};
 
 	return {

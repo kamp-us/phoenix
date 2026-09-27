@@ -129,15 +129,50 @@ describe("OpenProjects", () => {
 		});
 	});
 
-	it("restores only the trust of a saved list, never which folders were open", () => {
+	it("restores a saved list's trust, and its open folders as pending, not open", () => {
 		const restored = OpenProjects.restoring({
 			version: 1,
-			projects: [{folder: "/work/a"}],
+			projects: [{folder: "/work/a"}, {folder: "/work/b"}, {folder: "/work/a/"}],
 			trusted: ["/work/a"],
 		});
 		assert.deepStrictEqual(restored.projects, []);
+		assert.deepStrictEqual(restored.pending, ["/work/a", "/work/b"]);
 		assert.isTrue(restored.trusted.trusts("/work/a"));
 		assert.isFalse(OpenProjects.restoring(null).trusted.trusts("/work/a"));
+		assert.deepStrictEqual(OpenProjects.restoring(null).pending, []);
+	});
+
+	it("keeps a pending folder in the record until it is opened or skipped", () => {
+		const restored = OpenProjects.restoring({
+			version: 1,
+			projects: [{folder: "/work/a"}, {folder: "/work/b"}, {folder: "/work/c"}],
+			trusted: [],
+		});
+		// The boot project opens first, whether or not the list had it.
+		const booted = opened(restored, "/work/z");
+		assert.deepStrictEqual(
+			booted.record.projects.map(({folder}) => folder),
+			["/work/z", "/work/a", "/work/b", "/work/c"],
+		);
+		const reopened = opened(booted, "/work/b/");
+		assert.deepStrictEqual(reopened.pending, ["/work/a", "/work/c"]);
+		const skipped = reopened.skip("/work/a").skip("/work/c");
+		assert.deepStrictEqual(skipped.pending, []);
+		assert.deepStrictEqual(
+			skipped.record.projects.map(({folder}) => folder),
+			["/work/z", "/work/b"],
+		);
+		assert.strictEqual(skipped.skip("/work/a"), skipped);
+	});
+
+	it("carries the pending folders across a trust and a close", () => {
+		const restored = opened(
+			OpenProjects.restoring({version: 1, projects: [{folder: "/work/a"}], trusted: []}),
+			"/work/z",
+		);
+		const closing = restored.trust("/work/q").close("/work/z");
+		if (Result.isFailure(closing)) throw closing.failure;
+		assert.deepStrictEqual(closing.success.projects.pending, ["/work/a"]);
 	});
 });
 
