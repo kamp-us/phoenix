@@ -2,11 +2,11 @@
  * `campaign state` — rewrite one row's `State` cell, past the approval trace.
  *
  * Selection is exact, never fuzzy, and **two rows matching is `18` rather than a first-wins pick**: a
- * lifecycle flip aimed at the wrong campaign grants dispatch on a milestone nobody named.
+ * lifecycle flip aimed at the wrong campaign marks a theme nobody named.
  *
- * **`20` is a refusal and not a quiet `0`.** A flip to `active` is the grant of dispatch permission,
- * so a caller who reads "done" over a cell nobody moved cannot tell a grant they made from a grant
- * somebody else made first.
+ * **`20` is a refusal and not a quiet `0`.** A caller who reads "done" over a cell nobody moved
+ * cannot tell a flip they made from one somebody else made first. The cell groups work and refuses
+ * no lane, whatever it reads.
  *
  * Whether the milestone should be closed alongside a flip to `done` is `roadmap-guard`'s I5 and is
  * not repeated here: a second answer to a merge-gating question is worse than no answer at all.
@@ -150,12 +150,11 @@ export const runState = (options: StateOptions): CampaignEffect<VerbOutcome> =>
 			);
 		}
 
-		const grant = to === "active" ? ` — lanes may now open against #${landed.milestone}.` : "";
-		const notice = `${VERB}: cited ${citation.url} by @${trace.login} (campaignAuthors: ${trace.declared}; ${trace.level} on ${repo}); "${landed.name}" #${landed.milestone} ${from} → ${to} in ${display}.${grant}`;
+		const notice = `${VERB}: cited ${citation.url} by @${trace.login} (control plane: ${trace.owners}; ${trace.level} on ${repo}); "${landed.name}" #${landed.milestone} ${from} → ${to} in ${display}.`;
 		return answer(
 			options.json
 				? `${JSON.stringify({row: landed, from, file: display})}\n`
 				: `${rowLine(landed)}\n`,
-			[notice],
+			[...trace.notices, notice],
 		);
 	});

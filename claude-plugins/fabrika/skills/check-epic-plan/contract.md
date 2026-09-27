@@ -29,7 +29,7 @@ reused as landed verbs** ([`build`'s contract](../build/contract.md)) — the cr
 it with `fabrika build release`, and posts a successor note with `fabrika build note`. The purpose is
 part of the reuse, not a detail of it: `build claim`'s audience axis asks whether an agent should
 pick the issue up to *build*, and an epic earns `ready-for:agent` only after it has been planned and
-gated, so a `gate` claim is admitted without it. The scope axis is unchanged by the purpose,
+gated, so a `gate` claim is admitted without it. No campaign state is an axis,
 and `--override` stays the exception it was — it now has to name its lane as well as its reason.
 **No second lock is
 derived**, and v1's `epic-lock` is why: its `acquire` short-circuits on a held label *before* any
@@ -343,19 +343,18 @@ read one meaning for it; `ship` importing `review`'s private band is the shipped
 obligation (interface convention rule 3), and the alignment this group opts into is checked
 **base-only, never pairwise** (`exit-code-alignment.ts`: `occupied = allocatedCodes(base)`).
 
-**The `20`/`21` overlap with `build` is settled.** This was written when `20`+ was free; the
-scope-admission fence has since taken `20` `OUT_OF_SCOPE` and `21` `AUDIENCE_NOT_AGENT`, both
-reachable from `fabrika build claim` — step 1 of this gate's skill. `21` is no longer among them:
-step 1 claims with `--purpose gate`, and the audience axis binds build-purpose claims only, so the
-only admission refusal this gate can meet is `20`. The overlap is therefore narrower than when it
-was settled, and it **stands**, on the same rule: *import a code when two groups prove the same
-fact; allocate freely when they do not.* `15` is imported because `plan flip` and `build claim`
-assert the identical fact (this session holds this issue's claim). `20`/`21` do not overlap in fact
-at all — lane admission is never something a `plan` verb proves, and a defective floor or a moved
+**The `20`/`21` overlap with `build` is settled.** This was written when `20`+ was free. `build`
+later seated `21` `AUDIENCE_NOT_AGENT` on its admission test, and its `20` is a retired seat, left
+empty: a campaign's state refuses no claim. Step 1 of this gate's skill claims with
+`--purpose gate`, and the audience axis binds build-purpose claims only, so this gate can meet no
+admission refusal at all. The overlap stands, on the same rule: *import a code when two groups
+prove the same fact; allocate freely when they do not.* `15` is imported because `plan flip` and
+`build claim` assert the identical fact (this session holds this issue's claim). `build`'s `21`
+does not overlap in fact at all — lane admission is never something a `plan` verb proves, and a defective floor or a moved
 digest is never something a `build` verb proves — and an exit code is read off the command that
 produced it: [SKILL.md](SKILL.md) step 1 is total (`any other non-zero ends STOPPED`) and branches
 on `20`/`21` only off `plan flip` / `plan verdict`. Re-seating at `24`+ would also buy nothing,
-since `epic` already seats `20`–`24` over the same two `build` codes.
+since `epic` already seats `20`–`24` over `build`'s `21` and its retired `20`.
 
 | Code | Meaning | `read` | `check` | `flip` | `verdict` | `approve` | `approval` | `restage` |
 |---|---|---|---|---|---|---|---|---|

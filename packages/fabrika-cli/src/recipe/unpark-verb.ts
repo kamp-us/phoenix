@@ -1017,8 +1017,8 @@ const clearTreeReleased = (
  * reads `active` again.
  *
  * Two reads that both already exist, composed rather than re-derived — the lane issue's `milestone`
- * off `../io/issues.ts`, and the `## Campaigns` row off `../campaign/table.ts`, which is the fence's
- * own parse and so cannot disagree with the permission `build claim` enforces. The row is
+ * off `../io/issues.ts`, and the `## Campaigns` row off `../campaign/table.ts`, the one parse every
+ * campaign reader shares. The row is
  * read at {@link BASE_REF} rather than in the working tree because a resume lands on the trunk and a
  * lane clone can be arbitrarily stale; the fetch is what makes that read current.
  *

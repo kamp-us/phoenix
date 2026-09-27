@@ -624,7 +624,7 @@ $ fabrika status settings --surfaces
 settings	resolved	15	5	0	2026-08-19T20:43:22Z
 setting	surfaceDispositions	default	{"gh-rest":"fail-loud","git-worktree":"fail-loud",…}	.fabrika.jsonc declares no `surfaceDispositions`	2026-08-19T20:43:22Z
 surface	gh-rest	fail-loud	a GitHub repo reachable over `gh` REST with `issues: write`; every issue-writing verb exits 11 without it, and a run with no board is no answer rather than a narrower one
-surface	roadmap-focus	degrade	the `## Campaigns` table at `roadmapFile`, which declares the campaign in exclusive focus; an absent file and an absent table are the same well-formed default — nothing is active, so `build pick`'s and `build claim`'s fence is inert and admits every issue …
+surface	roadmap-focus	degrade	the `## Campaigns` table at `roadmapFile`, which groups work under themes; an absent file and an absent table are the same well-formed default — no theme is being worked, and `triage homes` answers over the milestones alone …
 ```
 
 The same run under `--json` — the notice line stays on stderr, so stdout is the object alone:
@@ -1162,11 +1162,10 @@ session must not need a second file open:
 - **The join key is that number, never the title.** An arc named `Storefront` can pin a milestone
   titled `Checkout — search and discovery`; the two share no substring, so a title cell joins
   nothing.
-- The `State` column **is read on a campaign row**: `active` there is the dispatch permission,
-  so `build`'s scope fence admits a lane only under an `active` campaign. A drafted
-  campaign row is therefore written `paused` — flipping it to `active` is the human's separate,
-  explicit start act, so a bootstrap never grants dispatch permission. On an arc row the column
-  is still for humans; nothing filters on it.
+- The `State` column **is read on a campaign row**: `active` there says the theme is being worked,
+  and it refuses no lane. A drafted campaign row is written `paused` — flipping it to `active` is
+  the human's separate, explicit start act, so a bootstrap never declares a theme worked on its own.
+  On an arc row the column is still for humans; nothing filters on it.
 
 ```markdown
 ## Arcs

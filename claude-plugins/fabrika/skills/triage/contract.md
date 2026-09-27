@@ -865,15 +865,15 @@ carry them. This verb states the subtraction and stops; where excluded work goes
 caller's by-fit judgement, and no output here names a destination.
 
 **Which milestone is running is data, never a literal in this spec or in the verb.** It is the
-`State` column of `ROADMAP.md`'s `## Campaigns` table — the same permission `build pick` fences on,
-read through the same parser, off the roadmap text this verb has already read for the arc
-join. Moving to the next campaign is a `ROADMAP.md` edit and never a code or skill edit; `--roadmap`
-moves both reads together. The table's three states are the ones the fence already reads:
+`State` column of `ROADMAP.md`'s `## Campaigns` table, read through the strict campaigns parser, off
+the roadmap text this verb has already read for the arc join. It narrows what triage homes on a
+milestone and refuses no lane. Moving to the next campaign is a `ROADMAP.md` edit and never a code or
+skill edit; `--roadmap` moves both reads together. The table's three states:
 
 | `## Campaigns` | Rows marked | stderr |
 |---|---|---|
 | one or more rows are `active` | every `active` campaign's milestone row, if it is open | `triage homes: campaigns: 1 active — <name> (#<n>).` — or, for N > 1, `triage homes: campaigns: <n> active — <name> (#<a>), <name> (#<b>).` |
-| absent, empty, or every row `paused`/`done` | none — the answer is exactly the pre-marker one | `triage homes: campaigns: none active — scope fence inert.` |
+| absent, empty, or every row `paused`/`done` | none — the answer is exactly the pre-marker one | `triage homes: campaigns: none active.` |
 | reads but does not parse | none | `triage homes: campaigns: unreadable — <reason>.` |
 
 A malformed table is **never** rendered as "no milestone is running", and it does not refuse: a home
@@ -974,9 +974,9 @@ passes.
 **An ABSENT roadmap is an answer, not either refusal.** A file that is proven not to exist is
 a proven negative — the join is simply empty — so every open milestone lists with `roadmapRow: null`,
 any standing lane the board carries lists beside them, and stderr carries
-`triage homes: no roadmap at <path> — every milestone lists with no arc name.` The campaigns fence
-reads the absent file as the empty document, so its scope line says `campaigns: none active — scope
-fence inert.` The zero-arc-rows refusal above is reached only by a roadmap that *exists*, so the
+`triage homes: no roadmap at <path> — every milestone lists with no arc name.` The campaigns read
+takes the absent file as the empty document, so its line says `campaigns: none active.` The
+zero-arc-rows refusal above is reached only by a roadmap that *exists*, so the
 grammar-drift guard keeps its teeth. This is the degrade disposition the rest of the corpus already
 declares for `ROADMAP.md`; `homes` was the one reader treating it fail-loud.
 

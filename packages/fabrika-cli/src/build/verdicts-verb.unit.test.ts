@@ -1,9 +1,11 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
+	CODEOWNERS_READ,
+	CP_ROSTER,
 	comments,
 	GATEWAY,
 	GH_TOKEN_ENV,
@@ -14,6 +16,7 @@ import {
 	PRIOR_HEADS,
 	pull,
 	served,
+	TRUNK_READ,
 } from "./fixtures.test-support.ts";
 import {runChildVerdicts, runVerdicts} from "./verdicts-verb.ts";
 
@@ -339,11 +342,6 @@ describe("runVerdicts", () => {
 		expect(seams.requests.filter((line) => line.includes("per_page=100")).length).toBe(3);
 	});
 	describe("the founder's cleared rounds", () => {
-		const CONFIG = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
-		const CONFIGURED: HttpReply = {
-			status: 200,
-			body: JSON.stringify({capClearAuthors: ["@usirin"]}),
-		};
 		const PERMISSION = /^GET \S+\/repos\/o\/r\/collaborators\/usirin\/permission/;
 		const WRITES = served({permission: "admin"});
 		const AUTHORIZATION = 'Founder ruling 2026-08-18: "one more round."';
@@ -398,7 +396,7 @@ describe("runVerdicts", () => {
 			const out = await run([
 				[PULL, PR_ON_MAIN],
 				[COMMENTS, comments(...CAPPED, ...GRANT)],
-				[CONFIG, CONFIGURED],
+				...CP_ROSTER,
 				[PERMISSION, WRITES],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE_COMMENTS, served([])],
@@ -421,7 +419,7 @@ describe("runVerdicts", () => {
 						createdAt: "2026-08-18T04:00:00Z",
 					}),
 				],
-				[CONFIG, CONFIGURED],
+				...CP_ROSTER,
 				[PERMISSION, WRITES],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE_COMMENTS, served([])],
@@ -458,7 +456,7 @@ describe("runVerdicts", () => {
 						},
 					),
 				],
-				[CONFIG, CONFIGURED],
+				...CP_ROSTER,
 				[PERMISSION, WRITES],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE_COMMENTS, served([])],
@@ -471,12 +469,12 @@ describe("runVerdicts", () => {
 			expect(parsed.capReached).toBe(true);
 		});
 
-		/** A committed set narrows the ACL; it never stands in for one. */
-		it("refuses a configured author who resolves below write at the ACL", async () => {
+		/** The control-plane set narrows the ACL; it never stands in for one. */
+		it("refuses a control-plane author who resolves below write at the ACL", async () => {
 			const out = await run([
 				[PULL, PR_ON_MAIN],
 				[COMMENTS, comments(...CAPPED, ...GRANT)],
-				[CONFIG, CONFIGURED],
+				...CP_ROSTER,
 				[PERMISSION, served({permission: "read"})],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE_COMMENTS, served([])],
@@ -488,11 +486,11 @@ describe("runVerdicts", () => {
 			expect(parsed.clearances[0].reason).toContain("below write");
 		});
 
-		it("holds the fold UNKNOWN when a configured author's permission cannot be read", async () => {
+		it("holds the fold UNKNOWN when a control-plane author's permission cannot be read", async () => {
 			const out = await run([
 				[PULL, PR_ON_MAIN],
 				[COMMENTS, comments(...CAPPED, ...GRANT)],
-				[CONFIG, CONFIGURED],
+				...CP_ROSTER,
 				[PERMISSION, GATEWAY],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE_COMMENTS, served([])],
@@ -514,7 +512,7 @@ describe("runVerdicts", () => {
 						createdAt: "2026-08-18T03:11:00Z",
 					}),
 				],
-				[CONFIG, CONFIGURED],
+				...CP_ROSTER,
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE_COMMENTS, served([])],
 				[ISSUE, issue()],
@@ -522,14 +520,15 @@ describe("runVerdicts", () => {
 			const parsed = JSON.parse(out.stdout);
 			expect(parsed.capReached).toBe(true);
 			expect(parsed.clearances[0]).toMatchObject({honoured: false});
-			expect(parsed.clearances[0].reason).toContain("grant-author set");
+			expect(parsed.clearances[0].reason).toContain("is not in o/r's control-plane set at main");
 		});
 
-		it("holds the whole fold UNKNOWN when the grant-author set cannot be read", async () => {
+		it("holds the whole fold UNKNOWN when the control-plane roster cannot be read", async () => {
 			const out = await run([
 				[PULL, PR_ON_MAIN],
 				[COMMENTS, comments(...CAPPED, ...GRANT)],
-				[CONFIG, GATEWAY],
+				[TRUNK_READ, served({default_branch: "main"})],
+				[CODEOWNERS_READ, GATEWAY],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE_COMMENTS, served([])],
 				[ISSUE, issue()],

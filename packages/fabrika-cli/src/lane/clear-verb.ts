@@ -148,6 +148,7 @@ export const runClear = (
 					? `${VERB}: round ${round} was already cleared on "${task.taskId}" — a grant is keyed by its round, so this buys nothing and doubles nothing.`
 					: `${VERB}: granted round ${round} to "${task.taskId}" at ${recorded.path} — one round, on this driver's own recommendation. The park's door is walkable now: record the UNBLOCKED next.`,
 				prGrantNote(VERB, prGrant),
+				...(prGrant._tag === "Granted" ? prGrant.notices : []),
 			],
 		);
 	});

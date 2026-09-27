@@ -3,25 +3,32 @@
  * and, for the two writers, run the approval trace end to end.
  *
  * The trace's order is the contract's most-informative-first precedence made executable:
- * `17` (nobody declared) outranks everything, then the repository binding, then a named-set miss
- * (`16`), then the marker itself (`14`/`15`), then the live ACL (`21`). A caller with a bad selector
- * never reaches any of it — the duplicate and no-op checks run first, so nobody is told their
- * citation is fine on a write that was never going to land.
+ * `17` (CODEOWNERS names no control-plane owner) outranks everything, then the repository binding,
+ * then a control-plane miss (`16`), then the marker itself (`14`/`15`), then the live ACL (`21`).
+ * A caller with a bad selector never reaches any of it — the duplicate and no-op checks run first,
+ * so nobody is told their citation is fine on a write that was never going to land.
+ *
+ * Who may write the table is the control-plane set `.github/CODEOWNERS` names — the roster
+ * `plan approve` and `decision rule` read — narrowed by the live `write+` ACL. A `campaignAuthors`
+ * the config still declares is ignored and named in a notice.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9852
  */
 
 import {Effect, type FileSystem, Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type CampaignRow, type CampaignState, parseCampaigns} from "../build/scope-admission.ts";
+import {authorKeyNotices} from "../config/deprecated-authors.ts";
 import {CONFIG_PATH} from "../config/document.ts";
 import {campaignAuthorsKey} from "../config/keys/campaign-authors.ts";
-import {grantAuthorText} from "../config/keys/cap-clear-authors.ts";
 import {readRoadmapFile} from "../config/paths.ts";
-import {readKey} from "../config/read-key.ts";
+import {loadRepoConfig} from "../config/working-root.ts";
 import {discoverRepoRoot} from "../delegate/root.ts";
 import {readFile} from "../io/fs.ts";
 import {getCommentRecord} from "../io/issues.ts";
+import {controlPlaneRoster} from "../ship/roster.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
-import {aclOf, declaredBy} from "./authority.ts";
+import {aclOf} from "./authority.ts";
 import {
 	AUTHOR_UNDECLARED,
 	AUTHORITY_UNKNOWN,
@@ -162,7 +169,7 @@ export interface TraceRequest {
 	readonly milestone: number;
 	/** The state the write produces — `paused` for `open`, `--to` for `state`. */
 	readonly state: CampaignState;
-	/** What an empty `campaignAuthors` says nobody may do: `declare` for `open`, `flip` for `state`. */
+	/** What an empty control-plane set says nobody may do: `declare` for `open`, `flip` for `state`. */
 	readonly act: "declare" | "flip";
 }
 
@@ -171,17 +178,25 @@ export type Trace =
 			readonly _tag: "Approved";
 			readonly login: string;
 			readonly level: string;
-			/** `campaignAuthors` as the file spells it, for the notice line. */
-			readonly declared: string;
+			/** The CODEOWNERS owners the control-plane set was expanded from, for the notice line. */
+			readonly owners: string;
+			/** Deprecation notices about a `campaignAuthors` the config still declares. */
+			readonly notices: ReadonlyArray<string>;
 	  }
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
 
 export const runTrace = (request: TraceRequest): CampaignEffect<Trace> =>
 	Effect.gen(function* () {
 		const {verb, url} = request;
+		const notices = authorKeyNotices(
+			verb,
+			yield* loadRepoConfig(request.cwd),
+			campaignAuthorsKey,
+			CONFIG_PATH,
+		);
 		const no = (code: number, reason: string): Trace => ({
 			_tag: "Refused",
-			outcome: refuse(code, `${verb}: ${reason} — ${NOTHING}`),
+			outcome: refuse(code, `${verb}: ${reason} — ${NOTHING}`, notices),
 		});
 		// The UNKNOWN family reads "— authority is UNKNOWN, NOTHING was written." on one dash: a
 		// second em dash before the disclosure would split one sentence into two claims. A reason
@@ -192,25 +207,26 @@ export const runTrace = (request: TraceRequest): CampaignEffect<Trace> =>
 			outcome: refuse(
 				AUTHORITY_UNKNOWN,
 				`${verb}: ${reason}${reason.endsWith(";") ? "" : " —"} authority is UNKNOWN, ${NOTHING}`,
+				notices,
 			),
 		});
 
-		const key = yield* readKey(request.cwd, campaignAuthorsKey);
-		if (key._tag === "Refused") {
-			return unreadable(
-				`cannot read campaignAuthors from ${CONFIG_PATH}: ${key.reason.replace(/\.$/, "")}`,
-			);
+		const roster = yield* controlPlaneRoster(request.repo);
+		if (roster._tag === "Unknown") {
+			return unreadable(`cannot read the control-plane set: ${roster.reason}`);
 		}
-		if (key.value.length === 0) {
+		if (roster.logins.size === 0) {
 			return {
 				_tag: "Refused",
 				outcome: refuse(
 					NOBODY_DECLARED,
-					`${verb}: campaignAuthors is empty in ${CONFIG_PATH} — nobody may ${request.act} a campaign in this repo. ${NOTHING}`,
+					`${verb}: ${request.repo}'s CODEOWNERS names no control-plane owner at ${roster.ref} — nobody may ${request.act} a campaign in this repo. ${NOTHING}`,
+					notices,
 				),
 			};
 		}
-		const declared = key.value.map(grantAuthorText).join(", ");
+		const owners = roster.owners.join(", ");
+		const members = new Set([...roster.logins].map((member) => member.toLowerCase()));
 
 		if (request.urlRepo !== request.repo) {
 			return no(MARKER_UNBOUND, `${url} is a comment in ${request.urlRepo}, not ${request.repo}`);
@@ -222,14 +238,10 @@ export const runTrace = (request: TraceRequest): CampaignEffect<Trace> =>
 		}
 		const login = comment.value.author;
 
-		const inSet = yield* declaredBy(key.value, login);
-		if (inSet._tag === "Unknown") {
-			return unreadable(inSet.reason);
-		}
-		if (inSet._tag === "No") {
+		if (!members.has(login.toLowerCase())) {
 			return no(
 				AUTHOR_UNDECLARED,
-				`${url} was authored by @${login}, who is not in campaignAuthors (${declared})`,
+				`${url} was authored by @${login}, who is not in the control-plane set (${owners} at ${roster.ref})`,
 			);
 		}
 
@@ -254,9 +266,10 @@ export const runTrace = (request: TraceRequest): CampaignEffect<Trace> =>
 				_tag: "Refused",
 				outcome: refuse(
 					BELOW_WRITE_FLOOR,
-					`${verb}: ${url} was authored by @${login}, who resolves to ${acl.level ?? "no collaboration"} on ${request.repo}, below write — authority is the ACL's, never ${CONFIG_PATH}'s alone. ${NOTHING}`,
+					`${verb}: ${url} was authored by @${login}, who resolves to ${acl.level ?? "no collaboration"} on ${request.repo}, below write — authority is the ACL's, never CODEOWNERS' alone. ${NOTHING}`,
+					notices,
 				),
 			};
 		}
-		return {_tag: "Approved", login, level: acl.level, declared};
+		return {_tag: "Approved", login, level: acl.level, owners, notices};
 	});

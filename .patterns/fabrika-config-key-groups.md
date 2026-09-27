@@ -31,8 +31,8 @@ rather than a branch in fabrika's source (ADR 0273, epic
 A key read at a PR's **base ref** rather than the working tree opens the bytes through that
 group's own platform reader and hands `loadConfig` a `Text` or an `Absent`. Read the policy at the
 same ref as the artifact it governs, through the same reader, so the two cannot disagree.
-`capClearAuthors` is the live instance: `build/clearances.ts` opens the bytes with `readFileAtRef`
-at the base ref and hands them through `repo-config.ts` into `loadConfig`.
+`build/clearances.ts` is the live instance: it opens the bytes with `readFileAtRef` at the PR's
+base ref and hands them to `loadConfig`, to name a retired `capClearAuthors` the base still declares.
 
 Whoever opens the file says which of three things it found — `Absent`, `Text`, `Unreadable` — and
 hands that to `loadConfig`. A key module never sees a file, only the parsed record.
@@ -70,7 +70,7 @@ on one growing reader.
 labels reads as "nothing is governed" / "nothing is required" and turns the gate off. Pick the
 value that reproduces today's behaviour, and make an explicitly-declared empty list `Malformed`
 where empty would disable something. The widen-only keys are the exception and say so in their own
-docblocks: for `capClearAuthors`, `docLeakExempt`, `workflowValidators` and `codeValidators`, empty
+docblocks: for `docLeakExempt`, `workflowValidators` and `codeValidators`, empty
 **is** the strict answer — the last because a list of commands a verb must run is not a gate's
 scope: nothing to run refuses UNKNOWN, so an empty default withholds a verdict where a populated one
 would have run another repo's script names and called the failure that repo's code (#6015).

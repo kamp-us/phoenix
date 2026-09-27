@@ -25,12 +25,11 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 export const TABLE_UNREADABLE = 12;
 /**
- * The cited comment, a team membership or the author's permission could not be read, so authority is
- * UNKNOWN and nothing was written.
+ * The cited comment, the control-plane roster or the author's permission could not be read, so
+ * authority is UNKNOWN and nothing was written.
  *
- * Also the seat for a `campaignAuthors` that will not decode: the contract's `22` is the
- * *roadmapFile* seat, and a set nobody could read is authority nobody could resolve — not an empty
- * set, which is `17` and a different, proven fact.
+ * A roster nobody could read is authority nobody could resolve — not an empty set, which is `17` and
+ * a different, proven fact.
  */
 export const AUTHORITY_UNKNOWN = 13;
 export const NO_MARKER = 14;

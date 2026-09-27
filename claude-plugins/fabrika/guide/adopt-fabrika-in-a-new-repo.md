@@ -110,20 +110,17 @@ spelling reads as `exists`. Commit the change before running a lane.
 ## 6. Write a `ROADMAP.md`
 
 **Write one even though the config calls it optional.** `roadmapFile` resolves to `ROADMAP.md`
-unless you say otherwise, and an absent file means no focus is declared and the scope fence is
-inert.
+unless you say otherwise, and an absent file means no arc and no campaign is declared.
 
-An absent roadmap no longer stops you — `triage homes` degrades on it — but without the file
-nothing homes to an arc and the scope fence never fires, so writing it is a first-triage quality
-step, not a blocker.
+An absent roadmap does not stop you — `triage homes` degrades on it — but without the file nothing
+homes to an arc, so writing it is a first-triage quality step, not a blocker.
 
 The grammar is a parse contract, not a convention
 ([`packages/fabrika-cli/src/triage/roadmap.ts`](../../../packages/fabrika-cli/src/triage/roadmap.ts)),
 and two facts carry this recipe: headings exactly `## Arcs` and `## Campaigns`, and each row's second
 cell naming the pinned milestone as `#<number>` — the arc's name is never matched on. Zero campaign
-rows is legal and zero arc rows refuses; the campaigns table is parsed a second time by the build
-fence, stricter because a row's `State` cell is its dispatch permission: a campaign dispatches work
-only while that cell reads `active`.
+rows is legal and zero arc rows refuses. A campaign row groups work under a theme and a milestone;
+its `State` cell says whether the theme is being worked, and it never refuses a lane.
 
 Draft it and hand it to the verb, which reports what its own parser joined out of the bytes it wrote:
 

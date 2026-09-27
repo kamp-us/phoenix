@@ -9,9 +9,9 @@
  * therefore be neither placed (`24`, dangling) nor retired (`10`, not a sub-issue) — created,
  * unusable, and unreachable by every other verb in the group.
  *
- * **A home is required too**: a child born with neither an open milestone nor a standing lane is
- * refused by the claim fence at exit `20`, so it can never be built. Homeless is a category the
- * pipeline does not admit, so the refusal is here at birth rather than a lane's later surprise.
+ * **A home is required too**: a child born with neither an open milestone nor a standing lane groups
+ * under no campaign and no lane, so nothing on the board shows where it belongs. The refusal is here
+ * at birth, where the remedy is one flag.
  *
  * `--ready-for` is required and has no default; `--ready-for human` requires `--assignee` — the label
  * is the routing signal, born-assignment is the enforced hold, and neither substitutes for the other. That pair is not merely a convention: the gate's floor reds
@@ -78,8 +78,8 @@ export const PRIORITIES: ReadonlyArray<string> = ["p0", "p1", "p2"];
 export const AUDIENCES: ReadonlyArray<string> = ["human", "agent"];
 
 /**
- * A home is a milestone **or** a standing lane, read off the one set the claim fence reads — never a
- * second copy of it here, which is how the two seams drift into disagreeing.
+ * A home is a milestone **or** a standing lane, read off the one set `build` reads homes from — never
+ * a second copy of it here, which is how two readers drift into disagreeing.
  */
 const isStandingLane = (label: string): label is StandingLaneLabel =>
 	(STANDING_LANE_LABELS as ReadonlyArray<string>).includes(label);
@@ -154,7 +154,7 @@ export const runChild = (
 		if (options.milestone === null && !options.labels.some(isStandingLane)) {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (${STANDING_LANE_LABELS.join(", ")}). A homeless child is refused at the claim fence, so it can never be built.`,
+				`${VERB}: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (${STANDING_LANE_LABELS.join(", ")}). A homeless child groups under no campaign and no lane, so nothing on the board shows where it belongs.`,
 			);
 		}
 

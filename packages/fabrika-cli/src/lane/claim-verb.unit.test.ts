@@ -418,7 +418,6 @@ describe("a driver's claim and the builder it spawns", () => {
 					number: 5492,
 					issue: null,
 					repo: null,
-					cwd: "/repo",
 					env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-b1"},
 					uuid: OTHER_UUID,
 					token: null,
