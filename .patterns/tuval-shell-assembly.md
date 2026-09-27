@@ -296,10 +296,9 @@ program-blind: a process's state still crosses as `unknown`.
 - **The kernel pushes the catalog; the page never asks.** A spell call is the only page-to-kernel
   message (#7617 R1.3), so the catalog goes out as the socket opens and again on
   `TransportServer.publishRegistry`, which re-reads the registry and writes to every attached page.
-  Nothing calls it in production, and a call would change nothing: `Registry.layer` builds one frozen
-  map, so the catalog is fixed for the life of the kernel process and every publish would re-send
-  what the socket already got on open (#7841). `Booted.reload` writes only the spell registry
-  (#7743).
+  The desk's registry grows and shrinks as projects open and close (`Registry.growable`, #9685), so
+  `src/bin.ts` publishes on every open and close. `Booted.reload` writes only the spell registry
+  (#7743), so a reload publishes nothing.
 
 `AttachedDesk` opens **one subscription per process**, so two windows over one process are one state
 with two view slots — the Vim buffer model (#7484 R1.3), not two copies.

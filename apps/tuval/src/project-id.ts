@@ -5,7 +5,7 @@
  * is shown.
  */
 
-import {basename} from "node:path";
+import {basename, join} from "node:path";
 import {scopedId, scopedIdParts} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
 import {projectKey} from "@kampus/tuval-sdk/kernel/state-dir";
 
@@ -35,4 +35,22 @@ export class ProjectId {
 		const parts = scopedIdParts(id);
 		return parts.scope === this.key ? parts.local : undefined;
 	}
+
+	owns(id: string): boolean {
+		return this.localOf(id) !== undefined;
+	}
+
+	/** The local ids among `ids` that this project owns. */
+	ownedLocals(ids: Iterable<string>): ReadonlySet<string> {
+		return new Set([...ids].flatMap((id) => this.localOf(id) ?? []));
+	}
 }
+
+/**
+ * A project's Tuval dir: its optional config module and nothing else. No state is written here and
+ * none is read back from here — the desk's manifest, checkpoints and session files live under the
+ * home dir, keyed by this project's absolute path (`@kampus/tuval-sdk/kernel/state-dir`, ADR 0402).
+ */
+export const projectDir = (project: string): string => join(project, ".tuval");
+export const projectConfig = (project: string): string =>
+	join(projectDir(project), "tuval.config.ts");

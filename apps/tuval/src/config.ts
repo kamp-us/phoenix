@@ -1,7 +1,7 @@
 /**
- * The user-owned config's fail-closed module loader and the three-layer merge — the desk's own
- * layer, then a global module under the home dir's `.tuval`, then an optional project module under
- * the cwd's `.tuval`. The desk layer is code, not a file: it carries the rows and graph nodes the
+ * The user-owned config's fail-closed module loader and the layered merge — the desk's own layer,
+ * then a global module under the home dir's `.tuval`, then an optional module under each open
+ * project's `.tuval` (#9685). The desk layer is code, not a file: it carries the rows and graph nodes the
  * desk supplies itself (its shell, #9683), and a file layer that declares one of their ids is
  * refused rather than merged. The project layer's rows and nodes run under its project's scope
  * (`./config-scope.ts`, #9684), so no layer replaces another's row. The shape a module decodes against is the SDK's
@@ -122,7 +122,8 @@ export interface ConfigLayers {
 	readonly desk: DeskLayer;
 	/** The global module: `<home>/.tuval/tuval.config.ts` unless the bin's `--config` names one. */
 	readonly global: string;
-	readonly project: ProjectLayer;
+	/** One layer per open project, in the order they opened (#9685). */
+	readonly projects: ReadonlyArray<ProjectLayer>;
 }
 
 export interface ProjectLayer {
@@ -132,8 +133,40 @@ export interface ProjectLayer {
 	readonly module: string;
 }
 
+/**
+ * What one owner contributes to the desk: the desk and global layers together, or one project's
+ * layer. A project opens and closes as a whole (#9685), so its rows, nodes, renderers and keys stay
+ * together here rather than only inside the merge.
+ */
+export interface LayerConfig {
+	readonly programs: ReadonlyArray<unknown>;
+	/** The flags this owner's layers stated, global then project within it; unstated ones absent. */
+	readonly features: TuvalConfig["features"];
+	readonly moduleRenderers: ReadonlyArray<ModuleRendererRef>;
+	readonly graph: Graph;
+	readonly keys: ReadonlyArray<BindingSource>;
+	/** The layer modules that existed. */
+	readonly sources: ReadonlyArray<string>;
+}
+
+/** One project's layer as it was read. */
+export interface LoadedProject {
+	readonly layer: ProjectLayer;
+	readonly config: LayerConfig;
+}
+
+/** One project's layer read on its own, as a project opening into a running desk reads it. */
+export interface LoadedProjectConfig extends LoadedProject {
+	/** Every file this read loaded the layer from (`LoadedConfig.files`). */
+	readonly files: ReadonlyArray<string>;
+}
+
 export interface LoadedConfig {
-	/** The desk's rows, then the global layer's, then the project layer's under its project's scope. */
+	/** The desk's and global layers' part of the merge below. */
+	readonly desk: LayerConfig;
+	/** Each project's part of the merge below, in the order the layers named them. */
+	readonly projects: ReadonlyArray<LoadedProject>;
+	/** The desk's rows, then the global layer's, then each project layer's under its project's scope. */
 	readonly programs: ReadonlyArray<unknown>;
 	/** The merged flags, project over global — one flag at a time, not one block replacing another. */
 	readonly features: TuvalFeatures;
@@ -223,78 +256,166 @@ const loadOptional = Effect.fn("Tuval.loadOptional")(function* (
 });
 
 /**
- * The desk layer, then both file layers, absent ones empty. The desk's rows and nodes come first and
- * no file may redeclare them; the global layer's follow, then the project layer's under its
- * project's scope, and none replaces another.
+ * A layer's part of the desk: its rows as declared rows — the last place a row and its layer module
+ * are still together, and a module renderer resolves from the module that declared it — its nodes
+ * and its keys. An absent module is an empty part.
  */
-export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* (
-	layers: ConfigLayers,
-) {
-	const load = nextGeneration();
-	const [global, project] = yield* Effect.all(
-		[
-			loadOptional(layers.global, load, layers.desk, globalLayer),
-			loadOptional(layers.project.module, load, layers.desk, (config) =>
-				projectLayer(layers.project.id, config),
-			),
-		],
-		{concurrency: 1},
-	).pipe(
+const partOf = (
+	loaded: Option.Option<TuvalConfig>,
+	module: string,
+	layer: ConfigLayer,
+): {readonly declared: ReadonlyArray<DeclaredProgram>; readonly config: LayerConfig} => {
+	if (Option.isNone(loaded)) {
+		return {
+			declared: [],
+			config: {
+				programs: [],
+				features: {},
+				moduleRenderers: [],
+				graph: {nodes: []},
+				keys: [],
+				sources: [],
+			},
+		};
+	}
+	const declared = declaredIn(loaded.value, module);
+	return {
+		declared,
+		config: {
+			// Widened back: the loader checked each row's id and nothing else, and that is all a caller
+			// may assume of one.
+			programs: declared.map((program): unknown => program.row),
+			features: loaded.value.features,
+			moduleRenderers: moduleRendererRefs(declared),
+			graph: loaded.value.graph,
+			keys: [bindingSource(layer, module, loaded.value.keys)],
+			sources: [module],
+		},
+	};
+};
+
+/**
+ * Several owners' renderer references as one list the page can key: each specifier once, the first
+ * owner to name it keeping its origin, the way `moduleRendererRefs` dedupes within one list.
+ */
+export const firstPerRef = (
+	refs: ReadonlyArray<ModuleRendererRef>,
+): ReadonlyArray<ModuleRendererRef> => {
+	const seen = new Map<string, ModuleRendererRef>();
+	for (const ref of refs) if (!seen.has(ref.ref)) seen.set(ref.ref, ref);
+	return [...seen.values()];
+};
+
+/** The desk's own rows and nodes, then the global layer's. */
+const deskPart = (desk: DeskLayer, global: string, loaded: Option.Option<TuvalConfig>) => {
+	const file = partOf(loaded, global, "global");
+	const declared = [
+		...desk.programs.map((row): DeclaredProgram => ({row, origin: desk.origin})),
+		...file.declared,
+	];
+	return {
+		...file.config,
+		programs: declared.map((program): unknown => program.row),
+		moduleRenderers: moduleRendererRefs(declared),
+		graph: {nodes: [...desk.graph.nodes, ...file.config.graph.nodes]},
+	} satisfies LayerConfig;
+};
+
+const loadProjectLayer = (desk: DeskLayer, project: ProjectLayer, load: number) =>
+	Effect.map(
+		loadOptional(project.module, load, desk, (config) => projectLayer(project.id, config)),
+		(loaded): LoadedProject => ({
+			layer: project,
+			config: partOf(loaded, project.module, "project").config,
+		}),
+	);
+
+/**
+ * `load` run under one module generation, beside every file that generation imported. A refusal
+ * carries those files too, and so does whatever `readBefore` names: a watcher needs every file the
+ * refused read touched.
+ */
+const recorded = <A>(
+	load: number,
+	read: Effect.Effect<A, ConfigLoadError, FileSystem.FileSystem>,
+	readBefore: (
+		error: ConfigLoadError,
+	) => Effect.Effect<ReadonlyArray<string>, never, FileSystem.FileSystem>,
+) =>
+	read.pipe(
 		Effect.catch((error) =>
 			Effect.gen(function* () {
 				const imported = takeGenerationFiles(load);
-				// The project layer loads second, so a refusal there read the global one first.
-				const global =
-					error.module === layers.project.module && (yield* present(layers.global))
-						? [layers.global]
-						: [];
+				const before = yield* readBefore(error);
 				return yield* new ConfigLoadError({
 					module: error.module,
 					reason: error.reason,
-					files: [...new Set([...global, ...error.files, ...imported])],
+					files: [...new Set([...before, ...error.files, ...imported])],
 				});
 			}),
 		),
 		// A defect or an interrupt still drops the record; the refusal above already took it.
 		Effect.onError(() => Effect.sync(() => takeGenerationFiles(load))),
+		Effect.map((value) => ({value, imported: takeGenerationFiles(load)})),
 	);
-	const imported = takeGenerationFiles(load);
-	const empty: TuvalConfig = {
-		version: 1,
-		programs: [],
-		features: {},
-		graph: {nodes: []},
-		keys: {},
-	};
-	const sources = [
-		...(Option.isSome(global) ? [layers.global] : []),
-		...(Option.isSome(project) ? [layers.project.module] : []),
-	];
-	const base = Option.getOrElse(global, () => empty);
-	const over = Option.getOrElse(project, () => empty);
-	// Merged as declared rows rather than as bare rows: the merge is the last place a row and its
-	// layer module are still together, and a module renderer resolves from the module that declared it.
-	const declared = [
-		...layers.desk.programs.map((row) => ({row, origin: layers.desk.origin})),
-		...declaredIn(base, layers.global),
-		...declaredIn(over, layers.project.module),
-	];
+
+/**
+ * The desk layer, then the global layer, then each project's, absent ones empty. The desk's rows and
+ * nodes come first and no file may redeclare them; the global layer's follow, then each project
+ * layer's under its project's scope, and none replaces another.
+ */
+export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* (
+	layers: ConfigLayers,
+) {
+	const load = nextGeneration();
+	const {value: read, imported} = yield* recorded(
+		load,
+		Effect.gen(function* () {
+			const global = yield* loadOptional(layers.global, load, layers.desk, globalLayer);
+			const projects = yield* Effect.forEach(
+				layers.projects,
+				(project) => loadProjectLayer(layers.desk, project, load),
+				{concurrency: 1},
+			);
+			return {global, projects};
+		}),
+		// A project layer loads after the global one, so a refusal there read the global one first.
+		(error) =>
+			error.module !== layers.global
+				? Effect.map(present(layers.global), (there) => (there ? [layers.global] : []))
+				: Effect.succeed([]),
+	);
+	const desk = deskPart(layers.desk, layers.global, read.global);
+	const parts = [desk, ...read.projects.map((project) => project.config)];
+	const sources = parts.flatMap((part) => part.sources);
 	return {
-		// Widened back: the loader checked each row's id and nothing else, and that is all a caller
-		// may assume of one.
-		programs: declared.map((program): unknown => program.row),
-		features: {...featuresDefault, ...base.features, ...over.features},
-		moduleRenderers: moduleRendererRefs(declared),
-		graph: {
-			nodes: [...layers.desk.graph.nodes, ...base.graph.nodes, ...over.graph.nodes],
-		},
-		keys: [
-			...(Option.isSome(global) ? [bindingSource("global", layers.global, base.keys)] : []),
-			...(Option.isSome(project)
-				? [bindingSource("project", layers.project.module, over.keys)]
-				: []),
-		],
+		desk,
+		projects: read.projects,
+		programs: parts.flatMap((part) => part.programs),
+		features: Object.assign({...featuresDefault}, ...parts.map((part) => part.features)),
+		moduleRenderers: firstPerRef(parts.flatMap((part) => part.moduleRenderers)),
+		graph: {nodes: parts.flatMap((part) => part.graph.nodes)},
+		keys: parts.flatMap((part) => part.keys),
 		sources,
 		files: [...new Set([...sources, ...imported])],
 	} satisfies LoadedConfig;
+});
+
+/**
+ * One project's layer on its own, as a project opening into a running desk reads it (#9685). The
+ * desk layer is what it may not redeclare; the global layer is not read again, because a project's
+ * connections to a global row name its bare id and resolve against the running registry.
+ */
+export const loadProjectConfig = Effect.fn("Tuval.loadProjectConfig")(function* (
+	desk: DeskLayer,
+	project: ProjectLayer,
+) {
+	const load = nextGeneration();
+	const {value, imported} = yield* recorded(load, loadProjectLayer(desk, project, load), () =>
+		Effect.succeed([]),
+	);
+	return {
+		...value,
+		files: [...new Set([...value.config.sources, ...imported])],
+	} satisfies LoadedProjectConfig;
 });

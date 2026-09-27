@@ -39,8 +39,24 @@ interface Target {
 	readonly accepts: (payload: unknown) => boolean;
 }
 
-/** Scoped: every queue is shut down when the scope closes, so a wiring never outlives its owner. */
-export const open = Effect.fn("Tuval.ports.open")(function* (compiled: CompiledGraph) {
+/** An in-port another wiring opened: its queue, and the check a payload arriving there must pass. */
+export interface JoinedInPort {
+	readonly queue: Queue.Queue<unknown>;
+	readonly accepts: (payload: unknown) => boolean;
+}
+
+/**
+ * Where a route whose target is not among the compiled nodes delivers: an in-port a wiring opened
+ * earlier, which that wiring's scope owns. A project's graph joins the desk's this way, so its routes
+ * to a global program's node reach the one queue that node's process drains (#9685).
+ */
+export type Join = (at: PortRef) => Effect.Effect<JoinedInPort, PortNotWired>;
+
+/**
+ * Scoped: every queue this opened is shut down when the scope closes, so a wiring never outlives its
+ * owner. A joined queue is not this wiring's, and closing it leaves that queue open.
+ */
+export const open = Effect.fn("Tuval.ports.open")(function* (compiled: CompiledGraph, join?: Join) {
 	const inboxes = new Map<string, Queue.Queue<unknown>>();
 	const accepts = new Map<string, (payload: unknown) => boolean>();
 	const programs = new Map<NodeId, ProgramId>();
@@ -64,10 +80,16 @@ export const open = Effect.fn("Tuval.ports.open")(function* (compiled: CompiledG
 		const to = key(route.target);
 		const queue = inboxes.get(to);
 		const accept = accepts.get(to);
-		if (queue === undefined || accept === undefined) {
+		const target =
+			queue !== undefined && accept !== undefined
+				? {queue, accepts: accept}
+				: join === undefined
+					? undefined
+					: yield* join(route.target).pipe(Effect.orElseSucceed(() => undefined));
+		if (target === undefined) {
 			return yield* Effect.die(`compiled route targets an in-port that was never opened: ${to}`);
 		}
-		targets.set(from, [...(targets.get(from) ?? []), {route, queue, accepts: accept}]);
+		targets.set(from, [...(targets.get(from) ?? []), {route, ...target}]);
 	}
 
 	const emit: Wiring["emit"] = Effect.fn("Tuval.ports.emit")(function* (from, payload) {

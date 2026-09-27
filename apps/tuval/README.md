@@ -119,7 +119,16 @@ tuval [flags]
 ```
 
 `node src/bin.ts --config <module>` swaps the global layer, which is how the tests exercise the
-refusals; `--project <dir>` opens another project. A path named by either flag must exist.
+refusals; `--project <dir>` opens another project first. A path named by either flag must exist.
+
+One running desk holds several projects (#9685). The `--project` folder is the first one it opens,
+and the `project open` spell opens another into the running desk with no restart: its config
+layer is read, its rows join the registry, its graph starts, its checkpointed processes come back
+from its own state directory, and a `kind: "module"` renderer it declares is served to the page (an
+attached page loads it on its next load). `project close` stops that project's processes, leaving
+their checkpoints, drops the connections its config declared and removes its rows, and every other
+project keeps running. Both name the folder by its absolute path. `project list` answers which are
+open, and `~/.tuval/open-projects.json` keeps that list, one record per folder.
 
 Nothing Tuval saves goes into the project. The process manifest, the checkpoints and the Pi session
 files live under `~/.tuval/projects/<key>`, where the key is that checkout's absolute path written
@@ -365,7 +374,8 @@ It carries a sentence describing itself, an Effect `Schema` for its arguments, a
 result, and the Effect that runs it — so the same definition is what the command line completes
 against, what a key binding compiles to, and what a program calls over the wire. The kernel
 registers its own list at boot (`help`, `spell list`, `spell describe`, `process spawn`,
-`process send`, `process read`), and boot reports the total beside the program count.
+`process send`, `process read`, `project open`, `project close`, `project list`), and boot reports
+the total beside the program count.
 
 Open the palette with Cmd+K or Ctrl+K to discover registered program and core commands alongside
 shell shortcuts such as `window close`. Tab completes a selection; Enter runs it through the

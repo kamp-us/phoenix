@@ -70,7 +70,7 @@ describe("the feature-flag module", () => {
 			loadLayeredConfig({
 				desk: noDesk,
 				global: fixture(global),
-				project: {id: ProjectId.of("/work/project"), module: fixture(project)},
+				projects: [{id: ProjectId.of("/work/project"), module: fixture(project)}],
 			}).pipe(
 				Effect.map((config) => featuresSource(config.features)),
 				Effect.provide(NodeFileSystem.layer),

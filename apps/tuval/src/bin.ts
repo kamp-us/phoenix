@@ -3,7 +3,7 @@
  *
  *   node src/bin.ts                         # boot from ~/.tuval and ./.tuval, run until Ctrl-C
  *   node src/bin.ts --config <module>       # another global config module
- *   node src/bin.ts --project <dir>         # another project dir (its .tuval/ config layer)
+ *   node src/bin.ts --project <dir>         # another first project (its .tuval/ config layer)
  *   node src/bin.ts --help
  *
  * The desk's saved state is not in the project: it lives under `~/.tuval/projects/<key>`, keyed by
@@ -20,12 +20,13 @@ import {dirname} from "node:path";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {renderBindingErrors} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
 import {renderAdoption} from "@kampus/tuval-sdk/kernel/state-dir";
-import {Cause, Console, Effect, Exit, Option, Runtime} from "effect";
+import {Cause, Console, Context, Effect, Exit, Option, Runtime, Stream} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {boot, defaultGlobalConfig} from "./boot.ts";
 import {watchConfig} from "./config-watch.ts";
 import {servePage} from "./page/dev-server.ts";
 import {displayHost} from "./page/loopback.ts";
+import {Projects} from "./projects/Projects.ts";
 import {serveDesk} from "./shell/host/index.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 import type {TableRow} from "./table/row.ts";
@@ -112,6 +113,13 @@ const tuval = Command.make(
 		// dev server that will answer with it.
 		const transport = yield* serveDesk({kernel, port: 0, table: keyTable});
 		yield* Console.log(`tuval: transport on 127.0.0.1:${transport.port}`);
+		const projects = Context.get(kernel, Projects);
+		// Opening or closing a project adds or removes registry rows, and a page's picker lists them.
+		yield* projects.changes.pipe(
+			Stream.drop(1),
+			Stream.runForEach(() => transport.publishRegistry),
+			Effect.forkScoped,
+		);
 		if (noPage) {
 			yield* Console.log("tuval: no page served (--no-page)");
 		} else {
@@ -125,7 +133,15 @@ const tuval = Command.make(
 			// The merged flags ride along for the same reason the rows do: the page generates them into
 			// a module its renderer table imports, and that is the only way a flag an operator turned
 			// on in their config reaches the browser (#8439).
-			yield* servePage({root: appRoot, transport, port: pagePort, moduleRenderers, features}).pipe(
+			// A project opened into the running desk brings its renderers with it (#9685).
+			yield* servePage({
+				root: appRoot,
+				transport,
+				port: pagePort,
+				moduleRenderers,
+				moduleRendererChanges: projects.renderers,
+				features,
+			}).pipe(
 				Effect.flatMap((page) =>
 					// The localhost URL, and the addresses behind it: whichever family the browser resolves
 					// reaches this desk, and the founder can see that it does (ADR 0370, #8593).
