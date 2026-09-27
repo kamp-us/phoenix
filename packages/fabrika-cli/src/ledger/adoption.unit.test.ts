@@ -70,7 +70,7 @@ describe("judgeAdoption", () => {
 		expect(judgeAdoption(input({labels: ["type:bug", "status:triaged"]}))).toMatchObject({
 			_tag: "Refused",
 			reason:
-				"it is missing a priority label — adoption never adds a type, status or priority label, so triage it first.",
+				"it is missing a priority label — adoption never supplies a missing type, status or priority label, so triage it first.",
 		});
 	});
 

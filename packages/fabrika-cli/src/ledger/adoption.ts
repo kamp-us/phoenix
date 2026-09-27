@@ -104,7 +104,7 @@ export const judgeAdoption = (input: AdoptionInput): Adoption => {
 	if (missing.length > 0) {
 		return refused(
 			OFF_VOCABULARY,
-			`it is missing a ${missing.join(", ")} label — adoption never adds a type, status or priority label, so triage it first.`,
+			`it is missing a ${missing.join(", ")} label — adoption never supplies a missing type, status or priority label, so triage it first.`,
 		);
 	}
 	const statuses = input.labels.filter((label) => label.startsWith("status:"));
