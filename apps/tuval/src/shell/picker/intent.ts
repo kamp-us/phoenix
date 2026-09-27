@@ -9,10 +9,10 @@
  * its table and owns the command line itself, which is why no line reader lives here.
  */
 
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
-import {CommandName} from "../keys/table.ts";
-import type {WindowId} from "../window/host.ts";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import {CommandName} from "@kampus/tuval-ui/keys";
 import type {PickerEntry} from "./entries.ts";
 
 /**

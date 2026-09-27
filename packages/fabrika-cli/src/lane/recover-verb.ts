@@ -117,9 +117,8 @@ export interface SpawnReads<R = never> {
 	 * The open pull requests linking an issue — the arm's own read, not `prove`'s.
 	 *
 	 * Separate because the two answer different questions. `prove`'s `DONE` arm says what a *recorded
-	 * event* asserts and keys on the plain `build` leaf, so a `build:ui` lane came back `not-required`
-	 * at exit 0 and a child came back off a range read — and the arm reported both as a PR read that
-	 * did not settle, over lanes that could then never be parked. `./recover.ts`'s `publicationOf`
+	 * event* asserts, so a child came back off a range read — and the arm reported it as a PR read
+	 * that did not settle, over lanes that could then never be parked. `./recover.ts`'s `publicationOf`
 	 * picks which surface to read per role, and this is the one it names for a lane that publishes to
 	 * the board.
 	 */

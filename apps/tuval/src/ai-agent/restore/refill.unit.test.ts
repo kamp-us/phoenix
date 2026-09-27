@@ -10,7 +10,17 @@
  */
 
 import {applyCellChecked} from "@demlik/tea";
-import {describe, expect, it} from "vitest";
+import type {TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
+import {aiAgentSessionMachine} from "@kampus/tuval-sdk/kernel/ai-agent/core/machine";
+import type {
+	AiAgentSessionCmd,
+	AiAgentSessionMsg,
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/messages";
+import {
+	type AiAgentSessionState,
+	initialState,
+	restore,
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
 import {
 	assistantItem,
 	nestedUnder,
@@ -18,12 +28,9 @@ import {
 	systemItem,
 	toolItem,
 	userItem,
-} from "../../ai-agent-fixtures/transcripts.ts";
-import {type ChatRow, chatRows, olderPageRequest} from "../../shell/chat/rows.ts";
-import {aiAgentSessionMachine} from "../core/machine.ts";
-import type {AiAgentSessionCmd, AiAgentSessionMsg} from "../core/messages.ts";
-import {type AiAgentSessionState, initialState, restore} from "../core/state.ts";
-import type {TranscriptItem} from "../ports/index.ts";
+} from "@kampus/tuval-sdk/kernel/ai-agent-fixtures/transcripts";
+import {type ChatRow, chatRows, olderPageRequest} from "@kampus/tuval-ui/chat";
+import {describe, expect, it} from "vitest";
 
 const CWD = "/work";
 const SESSION = "session-3c82b30d";

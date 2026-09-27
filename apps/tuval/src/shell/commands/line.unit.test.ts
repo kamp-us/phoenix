@@ -4,10 +4,10 @@
  * handler" is only true if the Msg the line produces is the Msg whose cell emits the picker's Cmd.
  */
 
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {describe, expect, it} from "vitest";
 import {applyMsg, initialState, type ShellCmd} from "../core/machine.ts";
 import {activeWorkspace} from "../core/state.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
 import type {CommandRefusal} from "./errors.ts";
 import {refusalMessage} from "./errors.ts";
 import {readCommandLine} from "./line.ts";

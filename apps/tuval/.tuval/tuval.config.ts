@@ -1,13 +1,13 @@
 // This project's Tuval config. This file is yours: boot loads it over your global
 // ~/.tuval/tuval.config.ts, registers every program row in `programs`, and launches `graph`. A row
-// is a `Program` (src/registry/program.ts); the nine in the box today are the shell (#7558), the
+// is a `Program` (the SDK's src/registry/program.ts); the nine in the box today are the shell (#7558), the
 // demo counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the
 // agy chat session (#8184), the codex chat session (#8600), the AI-agent session list (#8102) and
 // the module-window demo (#8946). One more row sits behind a flag in the `features` block below,
 // default-off, so a desk booted today carries the nine: the worked `pr-review` example (#8734)
 // behind `prReviewExample`. Flip that line and restart the desk to get the row, its graph node and
 // its spells.
-// The shape is `TuvalConfigInput` (src/config.ts), version 1.
+// The shape is `TuvalConfigInput` (`@kampus/tuval-sdk/config`), version 1.
 //
 // The shell is registered here and nowhere else — it is a program row like any other, so dropping
 // its row and its graph node is how you boot without a desk.
@@ -27,18 +27,23 @@
 // — and it does not have to: opening the row into a window hands the process that window as
 // `CallingWindow` (`src/shell/picker/open.ts`), and the kernel resolves the parent of a tool
 // `spawn` from it, so a spawned process is a child of the Claude one (#8758).
+
+import {agySessionProgram} from "@kampus/tuval-agy";
+import {claudeSession} from "@kampus/tuval-claude";
+import {codexSession} from "@kampus/tuval-codex";
+import {piSessionProgram, projectRootOf} from "@kampus/tuval-pi";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
+import {sessionListProgram} from "@kampus/tuval-sdk/kernel/ai-agent/session-list";
+import {
+	ClientId,
+	type Scope as SpellScope,
+	WorkspaceId,
+} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Console} from "effect";
-import {agySessionProgram} from "../src/agy/program.ts";
-import {sessionListProgram} from "../src/ai-agent/session-list.ts";
-import {prReview} from "../src/authoring/example/pr-review.ts";
-import {claudeSession} from "../src/claude/program.ts";
-import {codexSession} from "../src/codex/program.ts";
-import {ClientId, type Scope as SpellScope, WorkspaceId} from "../src/commands/spell.ts";
-import type {TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
 import {moduleCounter} from "../src/demo/module-counter.ts";
-import {piSessionProgram, projectRootOf} from "../src/pi/program.ts";
-import {ProcessId} from "../src/process/process.ts";
+import {prReview} from "../src/example/pr-review.ts";
 import {wiredShellEffects} from "../src/shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../src/shell/program.ts";
 
@@ -46,7 +51,7 @@ const projectRoot = projectRootOf(import.meta.url);
 
 /**
  * The scope the Claude row's three kernel tools call under. Named rather than written inline so
- * `src/claude/tracked-config.integration.test.ts` can drive the bridge with the value this row is
+ * `src/claude-desk/tracked-config.integration.test.ts` can drive the bridge with the value this row is
  * actually built with, instead of a copy that could drift from it.
  */
 export const claudeSessionScope = {

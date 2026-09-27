@@ -4,9 +4,9 @@
  * tells a Pi process from a Claude one by `programId` and by nothing else (#7498's stated risk).
  */
 
+import type {Lifecycle, ProcessId, ProcessRow} from "@kampus/tuval-sdk/kernel/process/process";
+import type {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Option, Predicate} from "effect";
-import type {Lifecycle, ProcessId, ProcessRow} from "../process/process.ts";
-import type {ProgramId} from "../registry/program.ts";
 
 /** A declared port as data: its kind and direction, never its predicate or queue. */
 export interface PortDeclaration {

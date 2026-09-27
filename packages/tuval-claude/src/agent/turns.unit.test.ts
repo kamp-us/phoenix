@@ -1,0 +1,347 @@
+/**
+ * The two calls that carry a turn — `prompt` and `interrupt` — and the history read behind `page`.
+ *
+ * `prompt` is asserted through the input iterable the SDK actually reads, not through a call
+ * counter: what the session receives is the only thing that matters, and the scripted `Query`
+ * consumes the iterable exactly as the real one does.
+ */
+
+import type {SessionMessage} from "@anthropic-ai/claude-agent-sdk";
+import {assert, describe, it} from "@effect/vitest";
+import {ItemId, type TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
+import {pageCursor} from "@kampus/tuval-sdk/kernel/ai-agent/history/cursor";
+import {Cause, Effect, Exit, Logger, Option, Stream} from "effect";
+import {toHistoryItems} from "../history/items.ts";
+import {
+	CWD,
+	message,
+	messages,
+	OPENED_EVENTS,
+	on,
+	rows,
+	SESSION_ID,
+	START_EVENTS,
+	TOOL_SESSION_ID,
+} from "./fixtures/harness.ts";
+
+const sent = (prompts: ReadonlyArray<{message: {content: unknown}}>): ReadonlyArray<unknown> =>
+	prompts.map((one) => one.message.content);
+
+const failure = (
+	exit: Exit.Exit<unknown, unknown>,
+): {_tag?: string; reason?: string; detail?: string} =>
+	Exit.isFailure(exit)
+		? ((Option.getOrUndefined(Cause.findErrorOption(exit.cause)) ?? {}) as {
+				_tag?: string;
+				reason?: string;
+				detail?: string;
+			})
+		: {};
+
+describe("prompt", () => {
+	it.effect("puts the operator's text on the session's input stream", () =>
+		on({}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.prompt("hello");
+				yield* Effect.yieldNow;
+				const record = scripted.opened[0]?.record;
+				assert.deepStrictEqual(sent(record?.prompts ?? []), ["hello"]);
+				assert.strictEqual(record?.prompts[0]?.session_id, SESSION_ID);
+			}),
+		),
+	);
+
+	it.effect("drops a key this session already saw rather than re-sending it", () =>
+		on({}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.prompt("hello", "turn-1");
+				yield* agent.prompt("hello", "turn-1");
+				yield* agent.prompt("hello again", "turn-2");
+				yield* Effect.yieldNow;
+				assert.deepStrictEqual(sent(scripted.opened[0]?.record.prompts ?? []), [
+					"hello",
+					"hello again",
+				]);
+			}),
+		),
+	);
+
+	it.effect("admits a key the previous session spent, because keys belong to a session", () =>
+		on({}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.prompt("hello", "turn-1");
+				yield* agent.start({cwd: CWD});
+				yield* agent.prompt("hello", "turn-1");
+				yield* Effect.yieldNow;
+				assert.deepStrictEqual(sent(scripted.opened[1]?.record.prompts ?? []), ["hello"]);
+			}),
+		),
+	);
+
+	it.effect("sends an unkeyed repeat, because a deliberate resend mints no key", () =>
+		on({}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.prompt("hello");
+				yield* agent.prompt("hello");
+				yield* Effect.yieldNow;
+				assert.lengthOf(scripted.opened[0]?.record.prompts ?? [], 2);
+			}),
+		),
+	);
+
+	it.effect("refuses before a session is open", () =>
+		Effect.gen(function* () {
+			const exit = yield* Effect.exit(on({}, (agent) => agent.prompt("hello")));
+			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/PromptError");
+			assert.strictEqual(failure(exit).reason, "no-session");
+		}),
+	);
+});
+
+describe("interrupt", () => {
+	it.effect("reaches Query.interrupt", () =>
+		on({}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.interrupt;
+				assert.strictEqual(scripted.opened[0]?.record.interrupts, 1);
+			}),
+		),
+	);
+
+	it.effect("is a no-op with no session, and never fails", () =>
+		on({}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.interrupt;
+				assert.lengthOf(scripted.opened, 0);
+			}),
+		),
+	);
+});
+
+describe("page", () => {
+	it.effect("reads the session's own store and returns the page oldest-first", () =>
+		on({rows: rows()}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+				});
+				const page = yield* agent.page(null, 10);
+				assert.deepStrictEqual(
+					page.items.map((one) => one.kind),
+					["user", "tool", "assistant"],
+				);
+				assert.isFalse(page.hasMore);
+			}),
+		),
+	);
+
+	it.effect("accepts a stored reply cursor when its prompt is held as a local echo", () =>
+		on({rows: rows()}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+				});
+				const newest = yield* agent.page(null, 10);
+				const reply = newest.items.find((item) => item.kind === "assistant");
+				assert.isDefined(reply);
+				if (reply === undefined) return;
+				const older = yield* agent.page(reply.id, 10);
+				assert.deepStrictEqual(older.items, []);
+				assert.isFalse(older.hasMore);
+			}),
+		),
+	);
+
+	it.effect("waits for a completed live reply before paging past a local oldest row", () => {
+		const opening = messages("streaming-turn");
+		const firstDelta = opening.findIndex(
+			(frame) =>
+				frame.type === "stream_event" &&
+				frame.event.type === "content_block_delta" &&
+				frame.event.delta.type === "text_delta",
+		);
+		assert.isAtLeast(firstDelta, 0);
+		const stored: SessionMessage[] = [
+			...rows(),
+			{
+				type: "user",
+				uuid: "stored-stream-prompt",
+				session_id: SESSION_ID,
+				message: {role: "user", content: "stream a reply"},
+				parent_tool_use_id: null,
+				parent_agent_id: null,
+			},
+		];
+		return on(
+			{opening: opening.slice(0, firstDelta + 1), rows: stored, deferOpening: true},
+			(agent, scripted) =>
+				Effect.gen(function* () {
+					yield* agent.start({cwd: CWD});
+					yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+					yield* agent.prompt("stream a reply");
+					const started = yield* Stream.runCollect(
+						Stream.takeUntil(
+							agent.events,
+							(event) =>
+								event.kind === "item" &&
+								event.item.kind === "assistant" &&
+								event.item.partial === true,
+						),
+					);
+					const partial = started
+						.flatMap((event) =>
+							event.kind === "item" && event.item.kind === "assistant" ? [event.item] : [],
+						)
+						.at(-1);
+					assert.isDefined(partial);
+					if (partial === undefined) return;
+					assert.isTrue(partial.partial);
+					const local: TranscriptItem = {
+						kind: "user",
+						id: ItemId.make("local:stream-send"),
+						text: "stream a reply",
+						timestamp: 0,
+						local: true,
+					};
+					const readsBefore = scripted.reads.length;
+					for (const before of [local.id, partial.id]) {
+						const cursor = pageCursor([local, partial], before);
+						if (cursor.kind === "page") yield* agent.page(cursor.before, 10);
+						assert.deepStrictEqual(cursor, {kind: "unavailable"});
+					}
+					assert.lengthOf(scripted.reads, readsBefore);
+					assert.isFalse(toHistoryItems(stored, {at: 0}).cursorAliases.has(partial.id));
+					for (const frame of opening.slice(firstDelta + 1)) {
+						if (frame.type === "assistant") stored.push({...frame, parent_agent_id: null});
+						scripted.opened[0]?.say(frame);
+					}
+					const events = yield* Stream.runCollect(
+						Stream.takeUntil(
+							agent.events,
+							(event) => event.kind === "phase" && event.phase === "ready",
+						),
+					);
+					const replies = events.flatMap((event) =>
+						event.kind === "item" && event.item.kind === "assistant" ? [event.item] : [],
+					);
+					assert.isTrue(replies.some((item) => item.partial === true));
+					const reply = replies.at(-1);
+					assert.isDefined(reply);
+					if (reply === undefined) return;
+					assert.isUndefined(reply.partial);
+					assert.strictEqual(reply.id, "msg_00000000000000000006");
+					assert.isFalse(stored.some((row) => row.uuid === reply.id));
+					assert.isTrue(toHistoryItems(stored, {at: 0}).cursorAliases.has(reply.id));
+					const cursor = pageCursor([local, reply], local.id);
+					assert.strictEqual(cursor.kind, "page");
+					if (cursor.kind !== "page") return;
+					const older = yield* agent.page(cursor.before, 10);
+					assert.deepStrictEqual(
+						older.items.map((item) => item.kind),
+						["user", "tool", "assistant"],
+					);
+					assert.strictEqual(older.items[0]?.id, rows()[0]?.uuid);
+					assert.strictEqual(local.id, "local:stream-send");
+				}),
+		);
+	});
+
+	it.effect("reads through the id it resumed, which is the id the CLI hands back", () =>
+		on({rows: rows(), opening: [message("resumed-init")]}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD, resume: {sessionId: SESSION_ID, holdsTranscript: false}});
+				yield* agent.page(null, 10);
+				// A plain `resume` keeps the session's id — `resumed-init.json` is a real second
+				// `query()` over the same id (`../history/fixtures/PROVENANCE.md`) — so the existence
+				// check, the query's `resume` and every later store read are one session.
+				assert.strictEqual(scripted.opened[0]?.record.options.resume, SESSION_ID);
+				assert.deepStrictEqual(scripted.reads, [
+					{sessionId: SESSION_ID, dir: CWD},
+					{sessionId: SESSION_ID, dir: CWD},
+				]);
+			}),
+		),
+	);
+
+	it.effect("warns when the CLI's init frame names a session other than the one opened", () =>
+		Effect.gen(function* () {
+			const warnings: Array<string> = [];
+			yield* on({rows: rows(), opening: [message("resumed-init")]}, (agent) =>
+				Effect.gen(function* () {
+					// `resumed-init` names SESSION_ID, so resuming TOOL_SESSION_ID is a CLI that opened
+					// a session other than the one the layer is keyed on — silent, and it would break
+					// every later read.
+					yield* agent.start({
+						cwd: CWD,
+						resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+					});
+					yield* Stream.runCollect(Stream.take(agent.events, OPENED_EVENTS));
+				}),
+			).pipe(
+				Effect.provide(
+					Logger.layer([
+						Logger.make(({logLevel, message: line}) => {
+							if (logLevel !== "Warn") return;
+							warnings.push(String(Array.isArray(line) ? line[0] : line));
+						}),
+					]),
+				),
+			);
+			const warned = warnings.find((each) => each.includes(SESSION_ID));
+			assert.isDefined(warned);
+			assert.include(warned ?? "", TOOL_SESSION_ID);
+		}),
+	);
+
+	it.effect("refuses a cursor no item in the store carries", () =>
+		Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				on({rows: rows()}, (agent) =>
+					Effect.gen(function* () {
+						yield* agent.start({
+							cwd: CWD,
+							resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+						});
+						return yield* agent.page("no-such-item", 10);
+					}),
+				),
+			);
+			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/PageError");
+			assert.strictEqual(failure(exit).reason, "unknown-cursor");
+		}),
+	);
+
+	it.effect("refuses before a session is open", () =>
+		Effect.gen(function* () {
+			const exit = yield* Effect.exit(on({}, (agent) => agent.page(null, 10)));
+			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/PageError");
+			assert.strictEqual(failure(exit).reason, "store-unreadable");
+		}),
+	);
+
+	it.effect("turns a throwing read into a PageError naming the read", () =>
+		Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				on({readFails: new Error("the transcript is unreadable")}, (agent) =>
+					Effect.gen(function* () {
+						yield* agent.start({cwd: CWD});
+						return yield* agent.page(null, 10);
+					}),
+				),
+			);
+			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/PageError");
+			assert.strictEqual(failure(exit).reason, "store-unreadable");
+			assert.include(failure(exit).detail ?? "", "session store did not answer");
+			// The thrown value is retained rather than repeated (#8010); `refusals.unit.test.ts`
+			// is where that split is judged.
+			assert.notInclude(failure(exit).detail ?? "", "the transcript is unreadable");
+		}),
+	);
+});

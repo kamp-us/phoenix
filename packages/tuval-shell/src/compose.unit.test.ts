@@ -11,9 +11,9 @@
  * Nothing here boots a desk, ticks a timer or runs a command: a row is a record.
  */
 
-import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
-import {type AuthoredProgram, Program, testProgram} from "@kampus/tuval/authoring";
 import {cron, jobShape} from "@kampus/tuval-cron";
+import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval-sdk/ai-agent/ports";
+import {type AuthoredProgram, Program, testProgram} from "@kampus/tuval-sdk/authoring";
 import {describe, expect, it} from "vitest";
 import config, {nightlyFetch} from "../.tuval/tuval.config.ts";
 import {

@@ -29,10 +29,10 @@
  * character more about where a message went. The suite's "no secret is ever written down" cases
  * guard the record this file draws from; there is nothing for this file to leak.
  *
- * **What this module may import.** `@kampus/tuval/window` (the browser-safe door, whose own closure
+ * **What this module may import.** `@kampus/tuval-sdk/window` (the browser-safe door, whose own closure
  * reaches no `node:` builtin), `effect`, `react`, this package's kernel-free `./state.ts` and the
  * `./target.ts` types under it. It must not reach `./notify.ts` or `./deliver.ts`: the first
- * imports `@kampus/tuval/authoring`, which reaches `node:crypto` through the kernel, and the page
+ * imports `@kampus/tuval-sdk/authoring`, which reaches `node:crypto` through the kernel, and the page
  * loads this module in a browser tab. `state.unit.test.ts` walks the imports and says so.
  *
  * **What the two exports are.** `default` is a renderer minted with `windowRenderer("module", …)`
@@ -47,8 +47,8 @@
  * without the palette.
  */
 
-import type {WindowHost} from "@kampus/tuval/window";
-import {windowRenderer} from "@kampus/tuval/window";
+import type {WindowHost} from "@kampus/tuval-sdk/window";
+import {windowRenderer} from "@kampus/tuval-sdk/window";
 import {Effect, Fiber, Stream} from "effect";
 import type {CSSProperties, ReactElement} from "react";
 import {useCallback, useEffect, useRef, useState} from "react";

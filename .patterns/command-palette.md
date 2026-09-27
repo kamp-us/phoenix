@@ -35,7 +35,7 @@ open dialog down on every keystroke.
 - `presentation` picks where the palette lives. `dialog` (default) is the modal `⌘K` surface.
   `inline` renders the same header, live region, listbox and footer inside a `<section>` labelled
   with `title`, for a caller whose whole surface *is* the search — Tuval's session-list window
-  ([`apps/tuval/src/ai-agent/window/SessionListWindow.tsx`](../apps/tuval/src/ai-agent/window/SessionListWindow.tsx))
+  ([`packages/tuval-ui/src/ai-agent/window/SessionListWindow.tsx`](../packages/tuval-ui/src/ai-agent/window/SessionListWindow.tsx))
   is the worked example. An inline palette is always open, so `open` / `defaultOpen` /
   `onOpenChange`, `trigger`, `disabled`, `closeOnSelect`, `closeOnEscape` and the `⌘K` shortcut are
   dialog-only: every one of them is about opening, closing or offering the modal, and an inline

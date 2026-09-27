@@ -4,8 +4,13 @@
  * as long as nobody pressed it. This is the check that makes that a red test instead.
  */
 
+import {
+	applyKeysConfig,
+	CommandName,
+	defaultPrefixTable,
+	prefixTableFor,
+} from "@kampus/tuval-ui/keys";
 import {describe, expect, it} from "vitest";
-import {applyKeysConfig, CommandName, defaultPrefixTable, prefixTableFor} from "../keys/index.ts";
 import {commandFor, commandIndexFor} from "./table.ts";
 
 /** Every command name a table binds, in table order. */

@@ -1,7 +1,7 @@
 /** What a leaf owes its ledger — the offline half of `lane recover`. */
 import {describe, expect, it} from "vitest";
 import type {LaneStatus} from "./fold.ts";
-import {BUILD_STATE, REVIEW_STATE, REVIEW_UI_STATE} from "./prove.ts";
+import {BUILD_STATES, REVIEW_STATE, REVIEW_UI_STATE} from "./prove.ts";
 import {activeTaskLeaves, owedBy, owedEvent} from "./recover.ts";
 
 const status = (
@@ -34,7 +34,7 @@ describe("owedEvent", () => {
 	// so proving it says the PR exists, never that the builder is finished with it. Owing a `DONE`
 	// here would fold a lane to `review` under a builder still pushing to that same PR.
 	it("never owes a DONE, because a live builder's open PR proves one too", () => {
-		expect(owedEvent(BUILD_STATE)).toBeNull();
+		for (const leaf of BUILD_STATES) expect(owedEvent(leaf)).toBeNull();
 	});
 });
 

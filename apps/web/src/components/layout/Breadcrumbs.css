@@ -1,0 +1,11 @@
+/* Breadcrumbs — resets the list so a crumb row flows as the inline text it was before it
+   became a list. A caller that lays its row out as flex restyles these two classes. */
+
+.kp-breadcrumbs {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.kp-breadcrumbs__item {
+	display: inline;
+}

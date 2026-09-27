@@ -9,6 +9,7 @@ import {
 	once,
 	type Scripted,
 } from "../fakes.test-support.ts";
+import {emitMachine} from "../lane/emit.ts";
 import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {FAILED} from "../verb.ts";
 import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
@@ -130,6 +131,8 @@ const options = {
 	overrideLane: null as string | null,
 	cites: null as string | null,
 	resume: false,
+	lane: null as string | null,
+	laneRoot: null as string | null,
 };
 
 const run = (
@@ -1222,6 +1225,25 @@ describe("runRelease", () => {
 		expect(shell.calls.some((line) => DETACH.test(line))).toBe(false);
 	});
 
+	// A sibling lane's `build branch` run in this tree once left it on that lane's branch, and
+	// release is scoped to the cwd's own lane — it never reaches past the tree it runs in.
+	it("detaches nothing when this tree stands on a different issue's lane branch, and reads no other tree", async () => {
+		const shell = unblocked([
+			[ISSUE, CLAIMABLE],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
+			[SHOW_CURRENT, okOut(`build/337-guard-the-tree-${NONCE}\n`)],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).freed).toBeNull();
+		expect(shell.calls.some((line) => DETACH.test(line))).toBe(false);
+		expect(shell.calls.some((line) => /^git (-C|worktree)\b/.test(line))).toBe(false);
+	});
+
 	it("reports a failed detach and stays exit 0 — the claim is already retracted by then", async () => {
 		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
@@ -2145,5 +2167,137 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 			{purpose: "plan"},
 		);
 		expect(out.code).toBe(0);
+	});
+
+	/**
+	 * An integrate `FAIL` writes no verdict, so a child that passed review and then failed to
+	 * integrate reads as finished off its comments alone. The epic lane's ledger is its one record.
+	 */
+	describe("an integrate FAIL on the epic lane's ledger", () => {
+		const LANES = "/lanes";
+		const EPIC = "900";
+		const TASK = "issue_4312";
+		const HEAD = "03135b917283a4b5c6d7e8f90a1b2c3d4e5f6071";
+		const LEDGER = {lane: EPIC, laneRoot: LANES};
+		const line = (event: string, extra: Record<string, unknown> = {}) =>
+			`${JSON.stringify({task: TASK, event: `${TASK.toUpperCase()}.${event}`, at: "2026-09-26T00:00:00.000Z", ...extra})}\n`;
+		const INTEGRATE_FAILED = [
+			line("WIP"),
+			line("DONE"),
+			line("PASS"),
+			line("FAIL", {integrate: {exit: 44, head: HEAD}}),
+		];
+		const ledgerFs = (lines: ReadonlyArray<string>, child = 4312) => {
+			const emitted = emitMachine(Number(EPIC), `## Dependencies\n\n- phase 1: #${child}\n`, [
+				{number: child, state: "open", stateReason: null, classes: []},
+			]);
+			if (emitted._tag !== "Emitted") throw new Error(`the epic fixture did not emit`);
+			return fakeFs({
+				files: {
+					[`${LANES}/${EPIC}/workflow.json`]: emitted.text,
+					[`${LANES}/${EPIC}/events.jsonl`]: lines.join(""),
+				},
+			});
+		};
+		const PASS_ONLY = [COMMENTS, comments({id: 8801, body: rangeVerdict("PASS")})] as const;
+		const WINS: ReadonlyArray<Scripted> = [
+			[ISSUE, CLAIMABLE],
+			unclaimed(),
+			[once(COMMENTS), comments({id: 8801, body: rangeVerdict("PASS")})],
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), WRITES],
+		];
+
+		it("admits --resume on a PASS-graded child, naming the integrate exit and assembly head", async () => {
+			const out = await run(runClaim, WINS, {...LEDGER, resume: true}, ledgerFs(INTEGRATE_FAILED));
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({
+				answer: "won",
+				integrate: {exit: 44, head: HEAD},
+			});
+			const stderr = out.stderr.join("\n");
+			expect(stderr).toContain(`lane integrate exit 44 against assembly head ${HEAD}`);
+			expect(stderr).toContain("--resume-lane");
+		});
+
+		it("refuses a fresh claim on that child, pointing at resume-child with the ledger flags", async () => {
+			const out = await run(
+				runClaim,
+				[[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY],
+				LEDGER,
+				ledgerFs(INTEGRATE_FAILED),
+			);
+			expect(out.code).toBe(PRIOR_BUILD_MISMATCH);
+			const stderr = out.stderr.join("\n");
+			expect(stderr).toContain("failed to integrate");
+			expect(stderr).toContain(
+				`"fabrika build resume-child 4312 --lane ${EPIC} --lane-root ${LANES}"`,
+			);
+			expect(stderr).not.toContain("The next step is the epic driver's");
+		});
+
+		it("still refuses a PASS-graded child whose ledger records no integrate FAIL, message unchanged", async () => {
+			const ledger = ledgerFs([line("WIP"), line("DONE"), line("PASS")]);
+			const withLedger = await run(
+				runClaim,
+				[[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY],
+				LEDGER,
+				ledger,
+			);
+			const without = await run(runClaim, [[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY]);
+			expect(withLedger.code).toBe(PRIOR_BUILD_MISMATCH);
+			expect(without.code).toBe(PRIOR_BUILD_MISMATCH);
+			expect(withLedger.stderr.at(-1)).toBe(without.stderr.at(-1));
+			expect(without.stderr.at(-1)).toContain("The next step is the epic driver's");
+
+			const resumed = await run(
+				runClaim,
+				[[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY],
+				{...LEDGER, resume: true},
+				ledgerFs([line("WIP"), line("DONE"), line("PASS")]),
+			);
+			expect(resumed.code).toBe(PRIOR_BUILD_MISMATCH);
+			expect(resumed.stderr.at(-1)).toContain("drop --resume");
+		});
+
+		it("refuses --resume on a stale integrate FAIL a later DONE answered", async () => {
+			const out = await run(
+				runClaim,
+				[[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY],
+				{...LEDGER, resume: true},
+				ledgerFs([...INTEGRATE_FAILED, line("DONE")]),
+			);
+			expect(out.code).toBe(PRIOR_BUILD_MISMATCH);
+			expect(out.stderr.at(-1)).toContain("drop --resume");
+			expect(out.stderr.join("\n")).toContain("records no standing integrate FAIL");
+		});
+
+		it("refuses a ledger that holds no task for this child on 14 — the wrong lane", async () => {
+			const out = await run(
+				runClaim,
+				[[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY],
+				{...LEDGER, resume: true},
+				ledgerFs(INTEGRATE_FAILED, 5000),
+			);
+			expect(out.code).toBe(WRONG_LANE);
+			expect(out.stderr.at(-1)).toContain("holds no task issue_4312");
+		});
+
+		it("refuses an absent ledger on 11 — never 'no integrate FAIL'", async () => {
+			const out = await run(runClaim, [[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY], {
+				...LEDGER,
+				resume: true,
+			});
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stderr.at(-1)).toContain("UNKNOWN");
+		});
+
+		it("refuses half the ledger address before any read", async () => {
+			const out = await run(runClaim, [], {lane: EPIC});
+			expect(out.code).toBe(FAILED);
+			expect(out.stderr.at(-1)).toContain("--lane and --lane-root");
+		});
 	});
 });

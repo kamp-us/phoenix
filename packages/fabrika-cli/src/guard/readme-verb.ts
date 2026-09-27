@@ -8,6 +8,10 @@
  * The verb is scope plus a rule and nothing else — the scan lives in `./members.ts`, the taxonomy
  * and the output shape in `./verdict.ts`. What is left here is the two facts this guard adds: the
  * `packages/*` glob must still be declared, and each member under it must hold a README.
+ *
+ * Under a `Change` scope only the members the change touches are judged, and the declared-glob and
+ * zero-member floors still read the whole tree. A consumer repo whose older packages predate the rule
+ * is then red only on a lane that adds or edits a README-less member, never on every lane.
  */
 
 import {Effect, type FileSystem, Path} from "effect";
@@ -15,7 +19,8 @@ import {discoverRepoRoot} from "../delegate/root.ts";
 import {exists, type ReadFailed} from "../io/fs.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {type Annotation, atFile} from "./annotate.ts";
-import {scanWorkspaceMembers, undeclaredGlobs} from "./members.ts";
+import type {TreeScope} from "./local-tree.ts";
+import {scanWorkspaceMembers, undeclaredGlobs, type WorkspaceMember} from "./members.ts";
 import {
 	annotationsOrNone,
 	clean,
@@ -37,7 +42,20 @@ export interface ReadmeGuardOptions {
 	readonly root: string | null;
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** `WholeTree` for the CLI leaf and CI; `Change` when `build check` sweeps a diff. */
+	readonly scope: TreeScope;
 }
+
+/** The members a scope puts in front of the rule: all of them, or the ones a changed path sits in. */
+const judged = (
+	members: ReadonlyArray<WorkspaceMember>,
+	scope: TreeScope,
+): ReadonlyArray<WorkspaceMember> => {
+	if (scope._tag === "WholeTree") return members;
+	return members.filter((member) =>
+		scope.paths.some((changed) => changed.startsWith(`${member.dir}/`)),
+	);
+};
 
 /**
  * The report for members missing a README, and the annotations that put each on the diff.
@@ -69,6 +87,7 @@ const missingReport = (
 
 const judge = (
 	root: string,
+	scope: TreeScope,
 ): Effect.Effect<GuardVerdict, ReadFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
@@ -83,13 +102,16 @@ const judge = (
 				`${VERB}: scanned ZERO ${GLOB} workspace members (no directory with a package.json) — fail-closed. Is the repo root correct, or did the workspace shape change?`,
 			);
 		}
+		const inScope = judged(scan.members, scope);
 		const missing: Array<string> = [];
-		for (const member of scan.members) {
+		for (const member of inScope) {
 			if (!(yield* exists(path.join(root, member.dir, README)))) missing.push(member.dir);
 		}
 		if (missing.length === 0) {
 			return clean(
-				`${VERB}: all ${scan.members.length} ${GLOB} workspace members carry a ${README}`,
+				scope._tag === "WholeTree"
+					? `${VERB}: all ${scan.members.length} ${GLOB} workspace members carry a ${README}`
+					: `${VERB}: the change touches ${inScope.length} of ${scan.members.length} ${GLOB} workspace members, and each carries a ${README}`,
 				scan.members.length,
 			);
 		}
@@ -111,7 +133,7 @@ export const runReadmeGuard = (
 				options.env,
 			);
 		}
-		return emitVerdict(yield* judge(root), options.env);
+		return emitVerdict(yield* judge(root, options.scope), options.env);
 	}).pipe(
 		Effect.catchTag("fabrika-cli/ReadFailed", (failure) =>
 			Effect.succeed(

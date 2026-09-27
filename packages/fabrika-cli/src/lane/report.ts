@@ -335,6 +335,27 @@ export const PARK_CAUSES = {
 		remedy: "fabrika lane refresh",
 	},
 	/**
+	 * `ship cp-approval` stopped because the control-plane approval the head owes is absent: its
+	 * owners were read and none approved at this head. This is the ordinary wait on a §CP PR, and the
+	 * one cause a shipper's `AWAITING-CP-APPROVAL` carries without being typed
+	 * ({@link TERMINAL_PARK_CAUSES}). A recorder passes `head-behind-base` instead only when the head
+	 * is still behind, because moving the head comes before soliciting the approval.
+	 *
+	 * Named rather than left `null` so the §CP recipe row can key on it: `ship`'s `BLOCKED` folds to
+	 * `human:cp-approval` whatever the block was, so a row keyed on no cause would read an approval
+	 * for a park recorded for some other reason. No remedy: a verb that removed this cause would be
+	 * granting the approval.
+	 *
+	 * Route `founder`: approving a control-plane change is a code owner's act, not machinery.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/9180#issuecomment-5752464229
+	 */
+	"awaiting-cp-approval": {
+		meaning: "the PR's control-plane owners were read and none has approved its current head",
+		route: "founder",
+		remedy: null,
+	},
+	/**
 	 * `lane refresh` found a real conflict between the trunk and an epic run's assembly branch. The
 	 * merge was aborted and the branch put back where the refresh found it, so the tail cannot bind
 	 * to a refreshed head until the two sides are reconciled.
@@ -411,6 +432,46 @@ export const PARK_CAUSES = {
 		remedy: "fabrika build retire",
 	},
 	/**
+	 * A builder's tree proof found the checkout it was spawned in holding another lane's branch or
+	 * work it did not author — `build tree` exit `13` or `14`, or `build branch` refusing the same
+	 * way — so it stopped before writing anything into a lane that is not its own.
+	 *
+	 * Distinct from `worktree-holds-branch`, which is *another* tree holding *this* lane's branch: here
+	 * this lane's own seat was taken. What the next dispatch needs is what `spawn-dead` needs — no
+	 * claim of the stopped shell's standing and no tree holding this lane's branch — so its row asks
+	 * that question and names the same retirement, through a read that never ends a claim: the
+	 * age-proved retraction is `spawn-dead`'s alone (`../build/dead-claim.ts`).
+	 *
+	 * Route `driver`: isolating a spawn is the driver's own act, and no product call is in it.
+	 */
+	"tree-hijacked": {
+		meaning:
+			"the builder's checkout held another lane's branch or unauthored work, so it stopped before writing into a lane not its own",
+		route: "driver",
+		remedy: "fabrika build retire",
+	},
+	/**
+	 * `build claim` lost (exit `15`) to a claim a stopped shell of the same session left standing, so
+	 * `build adopt`, which refuses its own session, cannot reach it and the new shell cannot proceed.
+	 *
+	 * The driver records it, never the losing builder: "stopped" is proved only by the spawn that took
+	 * the claim having returned, and that return is the driver's read alone. A builder cannot tell a
+	 * live sibling from a stranded one, so its loss stays a back-off.
+	 *
+	 * Its row clears only on the board reading the issue and every open PR linking it `unclaimed` — a
+	 * repair claim sits on the PR — and it retracts nothing. Releasing it is the driver's act, under
+	 * the stranded lane's token, so no remedy verb is named.
+	 *
+	 * Route `driver`: the claim belongs to the driver's own session, so releasing it is residue
+	 * clean-up and not a product call.
+	 */
+	"claim-stranded": {
+		meaning:
+			"a stopped shell of this session left its build claim standing, so a new shell lost the claim and adopt cannot reach it",
+		route: "driver",
+		remedy: null,
+	},
+	/**
 	 * The rendered gate's `CANT-SEE`: no preview deployment stands at the PR's head, or the
 	 * one that does is stale beyond repair, so there is no rendered surface to judge. It is the
 	 * routine outcome of the three, not the exceptional one — a PR whose preview has not finished
@@ -463,6 +524,26 @@ export const PARK_CAUSES = {
 	"no-rendered-delta": {
 		meaning:
 			"the diff raises no rendered delta, so the verdict is `review`'s to give and not the rendered gate's",
+		route: "driver",
+		remedy: null,
+	},
+	/**
+	 * An `ESCALATED` whose work is done but whose write provably did not land: `review-ui`'s verdict
+	 * or its evidence upload, or `build-ui`'s capture attach on an open PR, refused again on its one
+	 * re-run. Nothing about the artifact was judged wrong — the channel that carries the judgment
+	 * failed.
+	 *
+	 * Distinct from `repair-budget-spent`, the builder's other `ESCALATED`: that one is a graded
+	 * artifact found wrong too often, and this one is an ungraded channel.
+	 *
+	 * No remedy: the fault sits in the upload or write path, and no verb reruns a proof that the path
+	 * works short of re-dispatching the shell that owed the write.
+	 *
+	 * Route `driver`: an upload or write failure is machinery, and no product call is in it.
+	 */
+	"write-unlanded": {
+		meaning:
+			"a verdict or evidence write provably could not land after its one re-run, so the judgment it carries never reached the PR",
 		route: "driver",
 		remedy: null,
 	},
@@ -526,8 +607,9 @@ export const PARK_CAUSES = {
 	 * to `human:budget-spent`. Nothing about the machinery went wrong — a reviewer graded the work
 	 * and found it wrong `RETRY_BUDGET` times.
 	 *
-	 * It is the one cause no recorder ever types, because no `FAIL` may carry a `--cause`: it is
-	 * bound to its park leaf in {@link STRUCTURAL_PARK_CAUSES} and read off the fold.
+	 * The budget park never has it typed, because no `FAIL` may carry a `--cause`: it is bound to its
+	 * park leaf in {@link STRUCTURAL_PARK_CAUSES} and read off the fold. A builder that stops at the
+	 * cap reports `ESCALATED`, a `BLOCKED`, and names it by hand.
 	 *
 	 * No remedy, because a remedy is a read a recipe reruns to prove the cause gone, and nothing a
 	 * verb runs makes a repeatedly-failed artifact right. The door out is a grant rather than a
@@ -551,8 +633,8 @@ export const PARK_CAUSES = {
 	 * every replay succeeding and the cycle never closing — two children's ranges chasing each other
 	 * — so what it owes is a person's read of the pair, not a judgment about one hunk.
 	 *
-	 * Typed by no recorder, exactly as `repair-budget-spent` is: the fallthrough arrives as a `WIP`,
-	 * which carries no `--cause`, so it is bound to its leaf in {@link STRUCTURAL_PARK_CAUSES}.
+	 * Typed by no recorder: the fallthrough arrives as a `WIP`, which carries no `--cause`, so it is
+	 * bound to its leaf in {@link STRUCTURAL_PARK_CAUSES}, as `repair-budget-spent`'s budget park is.
 	 *
 	 * No remedy: nothing a verb reruns proves two colliding ranges reconciled.
 	 *
@@ -610,6 +692,27 @@ export const machineryCause = (token: string): ParkCause | null =>
 	MACHINERY_CAUSES[token.trim().toUpperCase()] ?? null;
 
 /**
+ * The park terminals whose token already names why the lane parked, so a recorder that passes no
+ * `--cause` still lands a caused `BLOCKED` — the park-side twin of {@link MACHINERY_CAUSES}.
+ *
+ * Only a token with exactly one reason belongs here. `AWAITING-CP-APPROVAL` is `ship cp-approval`'s
+ * `stop`, which says the owners' approval is absent; a `--cause` still overrides it, which is how a
+ * shipper standing on a head behind its base says `head-behind-base` instead. `REFUSED`, `UNKNOWN`
+ * and the routing arms fold to the same leaf for other reasons, so they carry nothing here.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9180#issuecomment-5752464229
+ */
+export const TERMINAL_PARK_CAUSES: Readonly<Record<string, ParkCause>> = {
+	"AWAITING-CP-APPROVAL": "awaiting-cp-approval",
+};
+
+/** The cause a terminal token carries on its own — a lap's or a park's — or `null`. */
+export const tokenCause = (token: string): ParkCause | null => {
+	const key = token.trim().toUpperCase();
+	return MACHINERY_CAUSES[key] ?? TERMINAL_PARK_CAUSES[key] ?? null;
+};
+
+/**
  * The causes a park leaf carries on its own — the second binding that makes a cause structural.
  *
  * {@link MACHINERY_CAUSES} reads a lap's cause off its terminal token; this reads a park's cause off
@@ -640,8 +743,8 @@ export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES)
  *
  * A park carrying **no** cause routes `founder`, and that is fail-closed rather than a default: a
  * park nothing named cannot be attributed to machinery, so nothing here may claim a driver can work
- * it. The two `KNOWN_PARKS` rows keyed by their leaf alone (`human:cp-approval`, `human:queue-stall`)
- * take that arm, and both are already waits on somebody else's act.
+ * it. The one `KNOWN_PARKS` row keyed by its leaf alone (`human:queue-stall`) takes that arm, and it
+ * is already a wait on somebody else's act.
  */
 export const routeForCause = (cause: string | null): ParkRoute =>
 	cause !== null && Object.hasOwn(PARK_CAUSES, cause)
@@ -652,9 +755,9 @@ export const routeForCause = (cause: string | null): ParkRoute =>
  * The verb that removes a cause, read off the one table — the only place a remedy is written down.
  *
  * A park carrying **no** cause has no remedy, on the same fail-closed reasoning the route takes:
- * nothing named what went wrong, so nothing here may name the verb that undoes it. The two
- * `KNOWN_PARKS` rows keyed by their leaf alone take that arm, and both are waits on somebody else's
- * act rather than something a verb removes.
+ * nothing named what went wrong, so nothing here may name the verb that undoes it. The one
+ * `KNOWN_PARKS` row keyed by its leaf alone takes that arm, and it is a wait on somebody else's act
+ * rather than something a verb removes.
  */
 export const remedyForCause = (cause: string | null): string | null =>
 	cause !== null && Object.hasOwn(PARK_CAUSES, cause)
@@ -713,7 +816,7 @@ const isParkCause = (token: string): token is ParkCause => Object.hasOwn(PARK_CA
  * **A machinery lap requires one under every rule.** The whole difference between a lap and a repair
  * round is which machinery spent it, and a lap recorded with none says only that the pipeline failed
  * — which is the reading this axis exists to replace. The recorder never has to type it:
- * {@link machineryCause} reads it off the token.
+ * {@link tokenCause} reads it off the token, as it does for a park terminal that names one.
  */
 export const causeForEvent = (
 	raw: string | null,

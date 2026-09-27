@@ -5,7 +5,8 @@
  * compose project named for the worktree — brought up in setup, and `down -v` in teardown.
  */
 
-import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {worktree} from "@kampus/tuval-worktree";
 
 const REPO = "/code/my-stack";

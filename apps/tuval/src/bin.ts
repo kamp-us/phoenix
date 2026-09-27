@@ -18,10 +18,12 @@
 import {homedir} from "node:os";
 import {dirname} from "node:path";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
+import {renderBindingErrors} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
+import {renderAdoption} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Cause, Console, Effect, Exit, Option, Runtime} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {boot, defaultGlobalConfig} from "./boot.ts";
-import {renderBindingErrors} from "./commands/bindings/index.ts";
+import {watchConfig} from "./config-watch.ts";
 import {servePage} from "./page/dev-server.ts";
 import {displayHost} from "./page/loopback.ts";
 import {serveDesk} from "./shell/host/index.ts";
@@ -67,7 +69,7 @@ const tuval = Command.make(
 		),
 	},
 	Effect.fn(function* ({config, project, noPage, pagePort}) {
-		const {report, kernel, keyTable, moduleRenderers, features} = yield* boot({
+		const {report, kernel, keyTable, moduleRenderers, features, files, reload} = yield* boot({
 			global: Option.getOrElse(config, defaultGlobalConfig),
 			project: Option.getOrElse(project, () => process.cwd()),
 			// The one boot that means the operator's own home dir. Every other call site names a
@@ -84,24 +86,10 @@ const tuval = Command.make(
 		yield* Console.log(
 			`tuval: booted — ${report.programCount} program(s), ${report.spellCount} spell(s) registered from ${from}; ${report.processCount} process(es) live, ${report.restoredCount} restored from ${report.stateDir}`,
 		);
-		// The one-time move of state an older build left in the project (ADR 0402 rule 7). Printed
-		// because it is the only time a boot rewrites a directory the operator did not name, and a
-		// `kept` entry is the one thing they may still want to delete by hand. The two reasons for
-		// leaving an entry behind print apart, because only one of them asks anything of the operator.
-		if (report.adopted.moved.length > 0) {
-			yield* Console.log(
-				`tuval: moved ${report.adopted.moved.join(", ")} out of the project into ${report.stateDir}`,
-			);
-		}
-		if (report.adopted.kept.length > 0) {
-			yield* Console.log(
-				`tuval: left ${report.adopted.kept.join(", ")} in the project — ${report.stateDir} already holds one of each`,
-			);
-		}
-		if (report.adopted.unowned.length > 0) {
-			yield* Console.log(
-				`tuval: left ${report.adopted.unowned.join(", ")} in the project — Tuval moves only the state it wrote itself`,
-			);
+		// The one-time move of state an older build left in the project (ADR 0402 rule 7).
+		// `renderAdoption` owns which lines a given adoption earns.
+		for (const line of renderAdoption(report.adopted, report.stateDir)) {
+			yield* Console.log(`tuval: ${line}`);
 		}
 		// A binding that did not compile costs its own key and nothing else, so this is a report and
 		// not a refusal: boot goes on with the bindings that did compile.
@@ -140,6 +128,14 @@ const tuval = Command.make(
 				Effect.catch((error) => Console.error(`tuval: ${error.message}`)),
 			);
 		}
+		// Saving the config, or a program file it imports, reloads the desk. A watch that fails costs
+		// the hot reload and nothing else: `config:reload` still reads the config on demand.
+		yield* watchConfig({files, reload}).pipe(
+			Effect.catch((error) =>
+				Console.error(`tuval: stopped watching the config — ${error.message}`),
+			),
+			Effect.forkScoped,
+		);
 		yield* Console.log("tuval: running — Ctrl-C stops and checkpoints");
 		return yield* Effect.never.pipe(Effect.onInterrupt(() => Console.log("tuval: stopping")));
 	}, Effect.scoped),

@@ -6,12 +6,13 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {Effect} from "effect";
-import {ProcessId} from "../../process/process.ts";
 import {applyMsg, initialState, type ShellMsg} from "../core/machine.ts";
 import {activeWorkspace, keyTargetOf, type ShellState} from "../core/state.ts";
 import {wiredShellEffects} from "../host/effects.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
 import {findWindow, windows} from "../layout/index.ts";
 import {type PickerEntries, readEntries} from "../picker/entries.ts";
 import {pickerHarness, programRow, shellProcessId} from "../picker/fixtures.ts";
@@ -26,7 +27,6 @@ import {
 	type PickerView,
 	pickerKey,
 } from "../picker/view.ts";
-import {WindowId} from "../window/index.ts";
 import {commandFor} from "./table.ts";
 
 const counter = programRow("counter", {label: "Counter"});

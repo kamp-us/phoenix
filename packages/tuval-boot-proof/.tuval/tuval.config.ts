@@ -22,9 +22,9 @@
 
 import {join, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
-import type {TuvalConfigInput} from "@kampus/tuval/sessions";
 import {cron} from "@kampus/tuval-cron";
 import {notify} from "@kampus/tuval-notify";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {shell} from "@kampus/tuval-shell";
 import {worktree} from "@kampus/tuval-worktree";
 

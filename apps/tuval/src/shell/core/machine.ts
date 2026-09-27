@@ -20,17 +20,18 @@
  */
 
 import {defineMachine} from "@demlik/tea";
-import {Duration} from "effect";
-import {type CommandIndex, shellCommandIndex} from "../commands/table.ts";
+import type {ViewState} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {
 	closeBoard,
 	type DeskMsg,
 	initialDesk,
 	toggleBoard,
 	toggleInspector,
-} from "../desk/state.ts";
-import type {CommandName, Key, PrefixState, PrefixTable, RouteAnswer} from "../keys/index.ts";
-import {idle, route} from "../keys/index.ts";
+} from "@kampus/tuval-ui/desk";
+import type {CommandName, Key, PrefixState, PrefixTable, RouteAnswer} from "@kampus/tuval-ui/keys";
+import {idle, route} from "@kampus/tuval-ui/keys";
+import {Duration} from "effect";
+import {type CommandIndex, shellCommandIndex} from "../commands/table.ts";
 import {
 	createStack,
 	createTree,
@@ -50,7 +51,6 @@ import {
 } from "../layout/index.ts";
 import type {ProgramOpening} from "../picker/intent.ts";
 import {mountPicker} from "../picker/view.ts";
-import type {ViewState} from "../window/host.ts";
 import {
 	activeWorkspace,
 	disarmed,
@@ -77,9 +77,9 @@ import {
  * leaves that handler as a `window.setView` written back over it, and the slot is state only the
  * core can read — a refusal handed no slot is the one that throws away the picker's `previous`
  * (#8265). `forwardKey` is here too — a key belongs to the focused window's
- * *process*, and delivering it is a dispatch into that process. `runCommand` and `reloadConfig`
- * have no runner yet and are still the kernel's: resolving a name the command table does not hold
- * needs the spell registry, and `Booted.reload` sits above the kernel (#7743).
+ * *process*, and delivering it is a dispatch into that process. `runCommand` has no runner yet and
+ * is still the kernel's: resolving a name the command table does not hold needs the spell registry.
+ * `reloadConfig` runs the kernel's `ConfigReloader` (`../../reload.ts`).
  */
 export type KernelCmd =
 	| {
@@ -756,17 +756,4 @@ export const shellCore = ({table, commands}: ShellCoreOptions) =>
 	defineMachine<ShellState, ShellMsg, ShellCmd, never, unknown>({
 		init: (loaded) => [loaded ?? initialState(), []],
 		update: cellsFor(table, commands),
-		// Demlik's `Machine` demands a Promise `interpret` beside the row's own handlers; the host
-		// never reads it (#7576). The shell's Effect handlers land with its registry row (#7558).
-		interpret: {
-			forwardKey: () => Promise.resolve(),
-			startRepeatTimer: () => Promise.resolve(),
-			cancelRepeatTimer: () => Promise.resolve(),
-			runCommand: () => Promise.resolve(),
-			openProgram: () => Promise.resolve(),
-			attachProcess: () => Promise.resolve(),
-			removeProcess: () => Promise.resolve(),
-			openCommandLine: () => Promise.resolve(),
-			reloadConfig: () => Promise.resolve(),
-		},
 	});

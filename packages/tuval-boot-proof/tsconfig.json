@@ -2,7 +2,7 @@
 	"compilerOptions": {
 		"target": "ES2022",
 		// ES2023 + DOM, and `exactOptionalPropertyTypes` off, restated from `apps/tuval/tsconfig.json`
-		// for the reason every one of the four packages restates them: `@kampus/tuval` is consumed as
+		// for the reason every one of the four packages restates them: `@kampus/tuval-sdk` is consumed as
 		// raw TypeScript, so its whole reachable source tree enters this program and is checked under
 		// these options. See `packages/tuval-cron/tsconfig.json` for the long form.
 		"lib": ["ES2023", "DOM", "DOM.Iterable"],

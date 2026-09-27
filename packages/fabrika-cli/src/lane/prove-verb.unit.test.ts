@@ -13,6 +13,12 @@ import type {ExecResult} from "../io/exec.ts";
 import {contentDigest, parseRaw} from "../review/content-binding.ts";
 import {compose as supersedeWith} from "../review/supersede.ts";
 import {
+	evidenceDoesNotOpen,
+	evidenced,
+	evidenceOpens,
+	evidenceUnreadable,
+} from "../review-ui/evidence.test-support.ts";
+import {
 	LANE_UNREADABLE,
 	PROOF_ABSENT,
 	PROOF_AMBIGUOUS,
@@ -105,7 +111,7 @@ const UI_CONFIG = {
  * (one WIP), `review` (WIP then DONE), `review:ui` — the same path with `ui` standing from the
  * `WIP`, so the `PASS` out of `review` took the class-guarded arm — or the `blocked` park.
  */
-const laneAt = (state: "queued" | "build" | "review" | "review:ui" | "blocked") =>
+const laneAt = (state: "queued" | "build" | "build:ui" | "review" | "review:ui" | "blocked") =>
 	fakeFs({
 		files: {
 			...UI_CONFIG,
@@ -117,9 +123,12 @@ const laneAt = (state: "queued" | "build" | "review" | "review:ui" | "blocked") 
 const WIP_LINE = logLine("WIP", "2026-08-16T01:00:00Z");
 const DONE_LINE = logLine("DONE", "2026-08-16T02:00:00Z");
 
-const LOGS: Readonly<Record<"queued" | "build" | "review" | "review:ui" | "blocked", string>> = {
+const LOGS: Readonly<
+	Record<"queued" | "build" | "build:ui" | "review" | "review:ui" | "blocked", string>
+> = {
 	queued: "",
 	build: WIP_LINE,
+	"build:ui": logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]),
 	review: WIP_LINE + DONE_LINE,
 	"review:ui":
 		logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]) +
@@ -601,9 +610,10 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 				PR_COMMENTS,
 				comments(
 					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
-					{id: 2, body: `review-ui: PASS @ ${HEAD} — the four pillars hold`},
+					{id: 2, body: evidenced(`review-ui: PASS @ ${HEAD} — the four pillars hold`)},
 				),
 			],
+			...evidenceOpens(REPO, 2),
 		]);
 
 		const out = await run(laneAt("review:ui"), seams, "PASS");
@@ -613,6 +623,60 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			{namespace: "review-code", state: "pass", commentId: 1},
 			{namespace: "review-ui", state: "pass", commentId: 2},
 		]);
+	});
+
+	// a review-ui verdict whose evidence does not open does not count — the same re-check
+	// `ship gate` runs, so the lane cannot record a PASS the merge gate would refuse.
+	describe("a review-ui verdict counts only while its evidence opens", () => {
+		const uiBoard = (body: string, http: ReadonlyArray<Scripted>) =>
+			seamsWith([
+				[CLOSERS, closingPulls()],
+				[SEARCH, nominated(4318)],
+				[PULL, pull()],
+				[FILES, UI_FILE],
+				[
+					PR_COMMENTS,
+					comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`}, {id: 2, body}),
+				],
+				...http,
+			]);
+
+		it("holds a PASS in flight when the review-ui PASS's evidence does not open", async () => {
+			const seams = uiBoard(
+				evidenced(`review-ui: PASS @ ${HEAD} — the four pillars hold`),
+				evidenceDoesNotOpen(REPO, 2),
+			);
+
+			const out = await run(laneAt("review:ui"), seams, "PASS");
+
+			expect(out.code).toBe(PROOF_IN_FLIGHT);
+			const said = out.stderr.join("\n");
+			expect(said).toContain("review-ui (unopened)");
+			expect(said).toMatch(/comment 2 does not count — its evidence does not open/);
+		});
+
+		it("lets a park through when the review-ui FAIL's evidence does not open — it does not count", async () => {
+			const seams = uiBoard(
+				evidenced(`review-ui: FAIL @ ${HEAD} — the header contrast broke`),
+				evidenceDoesNotOpen(REPO, 2),
+			);
+
+			const out = await run(laneAt("review:ui"), seams, "BLOCKED");
+
+			expect(out.code).toBe(0);
+		});
+
+		it("holds the row UNKNOWN when the verdict comment cannot be rendered", async () => {
+			const seams = uiBoard(
+				evidenced(`review-ui: PASS @ ${HEAD} — the four pillars hold`),
+				evidenceUnreadable(REPO, 2),
+			);
+
+			const out = await run(laneAt("review:ui"), seams, "PASS");
+
+			expect(out.code).toBe(PROOF_IN_FLIGHT);
+			expect(out.stderr.join("\n")).toContain("review-ui (unknown)");
+		});
 	});
 
 	it("requires no review-ui row of a head that raises no ui class", async () => {
@@ -732,9 +796,10 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 				PR_COMMENTS,
 				comments(
 					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
-					{id: 2, body: `review-ui: PASS @ ${HEAD} — the render is right`},
+					{id: 2, body: evidenced(`review-ui: PASS @ ${HEAD} — the render is right`)},
 				),
 			],
+			...evidenceOpens(REPO, 2),
 		]);
 
 		const out = await run(laneAt("review:ui"), seams, "PASS");
@@ -784,11 +849,12 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 					},
 					{
 						id: 3,
-						body: `review-ui: FAIL @ ${HEAD} — the header contrast broke`,
+						body: evidenced(`review-ui: FAIL @ ${HEAD} — the header contrast broke`),
 						createdAt: "2026-01-02T00:00:00Z",
 					},
 				),
 			],
+			...evidenceOpens(REPO, 3),
 		]);
 
 		const out = await run(laneAt("review:ui"), seams, "PASS");
@@ -813,6 +879,35 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("whose body links #5747");
 		expect(out.stderr.join("\n")).toContain("type:investigation");
+	});
+
+	it("refuses a build:ui DONE with no open PR and no diagnosis, rather than answering not-required", async () => {
+		const seams = seamsWith([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated()],
+			[ISSUE, issue(["type:feature"])],
+			[ISSUE_COMMENTS, comments()],
+		]);
+
+		const out = await run(laneAt("build:ui"), seams, "DONE");
+
+		expect(out.code).toBe(PROOF_ABSENT);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("whose body links #5747");
+		expect(out.stderr.join("\n")).not.toContain("nothing to prove");
+	});
+
+	it("proves a build:ui DONE against the one open PR whose body links the issue", async () => {
+		const seams = seamsWith([
+			[CLOSERS, closingPulls(4318)],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+		]);
+
+		const out = await run(laneAt("build:ui"), seams, "DONE");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "proven", event: "DONE", issue: 5747});
 	});
 
 	it("refuses a build DONE when several open PRs link the issue", async () => {

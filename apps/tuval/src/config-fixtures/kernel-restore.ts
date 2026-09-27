@@ -6,9 +6,9 @@
  */
 
 import {defineMachine} from "@demlik/tea";
+import {SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
-import {SpellBridge} from "../commands/bridge/index.ts";
-import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 
 export const bridgeProbeId = ProgramId.make("bridge-probe");
 
@@ -34,7 +34,6 @@ const bridgeProbe = {
 			resumed: (state) => [state, [{type: "count-spells"}]],
 			saw: (state, msg) => [{...state, spells: msg.spells}, []],
 		},
-		interpret: {"count-spells": () => Promise.resolve()},
 	}),
 	ports: {},
 	handlers: {

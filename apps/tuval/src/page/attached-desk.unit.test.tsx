@@ -7,20 +7,20 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import type {ProcessView} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {defaultPrefixTable, type PrefixTable} from "@kampus/tuval-ui/keys";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, fireEvent, render, screen} from "@testing-library/react";
 import {Effect, Option, Schema, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {counterId} from "../demo/counter.ts";
-import {ProcessId} from "../process/process.ts";
-import {ProgramId} from "../registry/program.ts";
 import {readCommandLine} from "../shell/commands/index.ts";
 import {applyMsg, type ShellCmd, type ShellMsg, type ShellState} from "../shell/core/index.ts";
 import {openProcessMsg} from "../shell/core/machine.ts";
-import {defaultPrefixTable, type PrefixTable} from "../shell/keys/index.ts";
 import {createStack, createTree, createWindow} from "../shell/layout/index.ts";
 import type {AttachedProcess, PageAttachment, WireProgram} from "../shell/transport/browser.ts";
-import {installDomShims} from "../shell/ui/dom.testing.ts";
-import type {ProcessView} from "../shell/window/index.ts";
 import type {TableRow} from "../table/row.ts";
 import {AttachedDesk} from "./AttachedDesk.tsx";
 import {pageRenderers} from "./renderers.tsx";

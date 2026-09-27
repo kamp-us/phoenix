@@ -24,13 +24,13 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Effect, Option} from "effect";
 import {afterEach} from "vitest";
 import {boot, coreSpells, projectDir} from "../boot.ts";
-import {SpawnedProcesses} from "../commands/core/process.ts";
 import {bridgeProbeId} from "../config-fixtures/kernel-restore.ts";
-import {Processes} from "../process/Processes.ts";
-import type {ProcessId} from "../process/process.ts";
 import {scratchHome} from "../scratch-home.ts";
 
 /** The scratch home every boot in this file runs under. */

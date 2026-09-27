@@ -4,10 +4,11 @@
  * column three other places already derive — and wrong twice over for Turkish: ASCII lowercasing
  * maps `İ` to `i̇` and `I` to `i`, when `İ` is `i`'s capital and `I` is the dotless `ı`'s.
  */
-import {render, screen} from "@testing-library/react";
+import {render, screen, waitFor, within} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
-import {describe, expect, it, vi} from "vitest";
+import {afterEach, describe, expect, it, vi} from "vitest";
 import {LocaleProvider} from "../../i18n";
+import {LOCALE_STORAGE_KEY} from "../../lib/localeStorage";
 import {sozlukLetterHref} from "../../lib/sozlukLetterHref";
 import {SozlukTermHeader} from "./SozlukTermHeader";
 
@@ -94,5 +95,79 @@ describe("SozlukTermHeader — where the letter crumb goes", () => {
 	it("leaves the root crumb pointing at the sözlük home", () => {
 		renderHeader(TERM);
 		expect(screen.getByRole("link", {name: "sözlük"}).getAttribute("href")).toBe("/sozluk");
+	});
+});
+
+/** Each crumb's text with its `aria-hidden` parts removed: what assistive tech reads per item. */
+function spokenCrumbs(nav: HTMLElement): string[] {
+	return within(nav)
+		.getAllByRole("listitem")
+		.map((item) => {
+			const copy = item.cloneNode(true) as HTMLElement;
+			for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+			return copy.textContent ?? "";
+		});
+}
+
+// The WAI-ARIA breadcrumb pattern (#9629): a named landmark around an ordered list, the page's
+// own crumb marked current, and the `/` separators kept out of what a screen reader reads.
+describe("SozlukTermHeader — the breadcrumb's semantics", () => {
+	it("is a navigation landmark named from the catalog, holding one list item per crumb", () => {
+		renderHeader(TERM);
+		const nav = screen.getByRole("navigation", {name: "sayfa yolu"});
+		expect(within(nav).getByRole("list").tagName).toBe("OL");
+		expect(within(nav).getAllByRole("listitem")).toHaveLength(3);
+	});
+
+	it("marks the term title, and only it, as the current page", () => {
+		renderHeader(TERM);
+		const nav = screen.getByRole("navigation", {name: "sayfa yolu"});
+		const current = nav.querySelectorAll("[aria-current]");
+		expect(current).toHaveLength(1);
+		expect(current[0]?.getAttribute("aria-current")).toBe("page");
+		expect(spokenCrumbs(nav).at(-1)).toBe("ışık");
+		expect(within(nav).getAllByRole("listitem").at(-1)).toBe(current[0]);
+	});
+
+	it("hides the separators, so the row reads as the crumb labels only", () => {
+		renderHeader(TERM);
+		const nav = screen.getByRole("navigation", {name: "sayfa yolu"});
+		expect(nav.textContent).toBe("sözlük / ı / ışık");
+		expect(spokenCrumbs(nav)).toEqual(["sözlük", "ı", "ışık"]);
+	});
+
+	it("keeps the same shape when the headword has no letter crumb", () => {
+		renderHeader({...TERM, title: "webhook", slug: "webhook", firstLetter: ""});
+		const nav = screen.getByRole("navigation", {name: "sayfa yolu"});
+		expect(spokenCrumbs(nav)).toEqual(["sözlük", "webhook"]);
+		expect(nav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+	});
+});
+
+// The dates used to come out of `tr-TR`-pinned formatters, so an English reader got
+// `last edited: 3 gün önce` inside English copy (#7659).
+describe("SozlukTermHeader — the dates follow the locale", () => {
+	const DAY = 24 * 3600 * 1000;
+	const dated = () => ({
+		...TERM,
+		firstAt: "2026-09-12T12:00:00.000Z",
+		lastEdit: new Date(Date.now() - 3 * DAY).toISOString(),
+	});
+
+	afterEach(() => {
+		window.localStorage.clear();
+	});
+
+	it("renders Turkish dates at tr", () => {
+		renderHeader(dated());
+		expect(screen.getByText("ilk: 12 Eyl 2026")).toBeTruthy();
+		expect(screen.getByText("son düzenleme: 3 gün önce")).toBeTruthy();
+	});
+
+	it("renders English dates at en", async () => {
+		window.localStorage.setItem(LOCALE_STORAGE_KEY, "en");
+		renderHeader(dated());
+		await waitFor(() => expect(screen.getByText("last edited: 3 days ago")).toBeTruthy());
+		expect(screen.getByText("first: Sep 12, 2026")).toBeTruthy();
 	});
 });

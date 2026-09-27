@@ -3,12 +3,12 @@
  * palette is right or wrong, and it is decidable without rendering anything.
  */
 
+import {jsonSchema} from "@kampus/tuval-sdk/kernel/commands/parse/fixtures";
+import {buildSpellIndex} from "@kampus/tuval-sdk/kernel/commands/parse/spell-index";
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import {registry, snapshot} from "@kampus/tuval-ui/testing/palette";
 import {describe, expect, it} from "vitest";
-import {jsonSchema} from "../commands/parse/fixtures.ts";
-import {buildSpellIndex} from "../commands/parse/spell-index.ts";
-import type {RegistryDescription} from "../protocol/registry-description.ts";
 import {acceptCandidate, paletteCandidates} from "./candidates.ts";
-import {registry, snapshot} from "./fixtures.ts";
 
 const labels = (input: string): ReadonlyArray<string> =>
 	paletteCandidates(input, registry, snapshot).map((candidate) => candidate.label);

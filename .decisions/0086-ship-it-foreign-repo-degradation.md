@@ -1,7 +1,7 @@
 ---
 id: 0086
 title: ship-it degrades its run-evidence guard in a foreign repo (producer-presence, not per-PR escape)
-status: accepted
+status: superseded by [0410](0410-ship-checks-is-ship-ci-trust.md)
 date: 2026-06-18
 tags: [pipeline, plugin-portability, ship-it, run-evidence]
 ---
@@ -41,4 +41,6 @@ The disposition was the open fork in #425: (a) **degrade like review-code**, (b)
 - **Rejected (c) document phoenix-only:** leaves ship-it non-functional in a foreign repo, defeating the plugin's headline portability claim.
 - **Relates to:** ADR [0062](0062-repo-as-config-plugin.md) (repo-as-config — the targeting axis this complements), [0054](0054-run-evidence-bundle.md)/[0056](0056-bundle-storage-transport.md) (the bundle this degrades), [0061](0061-ship-it-gating-check-set.md) (the check-set the degrade path falls back to), [0053](0053-control-plane-boundary.md) (`.github` not shipped — the root cause). Same foreign-repo-hardening front as #592 (manifest drift), #484 (packaging), #460 (preflight doctor).
 
-> Amendment 2026-08-19: `ship-it` is gone with the v1 plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)); this decision still binds, now enforced by `fabrika ship evidence` in [`packages/fabrika-cli/src/ship/evidence-verb.ts`](../packages/fabrika-cli/src/ship/evidence-verb.ts) — it looks up the `run-evidence` producer workflow, refuses `unknown` on an unreadable inventory (fail-safe, §3), and degrades only on a proven-absent producer.
+> Amendment 2026-08-19: `ship-it` is gone with the v1 plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)); this decision still binds, now enforced by `fabrika ship evidence` in [`packages/fabrika-cli/src/ship/evidence-verb.ts`](https://github.com/kamp-us/phoenix/blob/2779b40f71855bd6b62ed9dbe94260aeb4efc040/packages/fabrika-cli/src/ship/evidence-verb.ts) — it looks up the `run-evidence` producer workflow, refuses `unknown` on an unreadable inventory (fail-safe, §3), and degrades only on a proven-absent producer.
+
+> Amendment 2026-09-26: superseded by ADR [0410](0410-ship-checks-is-ship-ci-trust.md). Run-evidence is retired, so there is no bundle guard left to degrade in a foreign repo; `fabrika ship evidence` is deleted, and the link above reads it at its last pinned commit.

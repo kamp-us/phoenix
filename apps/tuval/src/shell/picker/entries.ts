@@ -8,15 +8,15 @@
  * window, so offering it in a picker would offer a choice that resolves to a blank pane.
  */
 
-import {Effect} from "effect";
-import type {ProcessId} from "../../process/process.ts";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {
 	type AnyProgram,
 	type ProgramId,
 	programLabel,
 	type RendererRef,
-} from "../../registry/program.ts";
-import {Registry} from "../../registry/Registry.ts";
+} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import {Effect} from "effect";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import type {TableRow} from "../../table/row.ts";
 

@@ -14,8 +14,8 @@
  */
 
 import {Dialog} from "@kampus/design";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {ReactElement} from "react";
-import type {ProcessId} from "../../process/process.ts";
 import type {TableRow} from "../../table/row.ts";
 import {ProcessBoard} from "./ProcessBoard.tsx";
 

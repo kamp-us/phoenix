@@ -1,11 +1,12 @@
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
+import {featuresDefault} from "@kampus/tuval-sdk/kernel/features";
+import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
+import {AuthoredModules} from "./authored-modules.ts";
 import {ConfigLoadError, DeclaredFeatures, loadConfigModule, loadLayeredConfig} from "./config.ts";
-import {featuresDefault} from "./features.ts";
-import {NodeId} from "./ports/graph.ts";
-import {ProgramId} from "./registry/program.ts";
 
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));
@@ -252,6 +253,8 @@ describe("loadLayeredConfig", () => {
 						{file: `project ${layerName("project-layer")}`, bindings: {}},
 					],
 					sources: [fixture("global-layer"), fixture("project-layer")],
+					files: [fixture("global-layer"), fixture("project-layer")],
+					modules: AuthoredModules.none,
 				});
 			}),
 	);
@@ -275,6 +278,8 @@ describe("loadLayeredConfig", () => {
 				graph: {nodes: [{id: NodeId.make("n"), program: ProgramId.make("a"), on: []}]},
 				keys: [{file: `project ${layerName("with-graph")}`, bindings: {}}],
 				sources: [fixture("with-graph")],
+				files: [fixture("with-graph")],
+				modules: AuthoredModules.none,
 			});
 			assert.deepStrictEqual(yield* layered(fixture("two-rows"), missing), {
 				programs: [{id: "a"}, {id: "b"}],
@@ -292,6 +297,8 @@ describe("loadLayeredConfig", () => {
 				graph: {nodes: []},
 				keys: [{file: `global ${layerName("two-rows")}`, bindings: {}}],
 				sources: [fixture("two-rows")],
+				files: [fixture("two-rows")],
+				modules: AuthoredModules.none,
 			});
 			assert.deepStrictEqual(yield* layered(missing, missing), {
 				programs: [],
@@ -309,6 +316,8 @@ describe("loadLayeredConfig", () => {
 				graph: {nodes: []},
 				keys: [],
 				sources: [],
+				files: [],
+				modules: AuthoredModules.none,
 			});
 		}),
 	);
@@ -351,6 +360,14 @@ describe("loadLayeredConfig", () => {
 			);
 			assert.instanceOf(error, ConfigLoadError);
 			assert.strictEqual(error.module, fixture("throws"));
+		}),
+	);
+
+	it.effect("names the layers a refused load read, the refusing one among them", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(layered(fixture("two-rows"), fixture("throws")));
+			assert.strictEqual(error.module, fixture("throws"));
+			assert.includeMembers([...error.files], [fixture("two-rows"), fixture("throws")]);
 		}),
 	);
 });

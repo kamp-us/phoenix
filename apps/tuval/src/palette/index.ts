@@ -8,7 +8,12 @@
  * this directory, and `tsconfig.browser.json` is what says so.
  */
 
-export {failureLine, type MintCallId, randomCallId, spellCallFor} from "./call.ts";
+export {
+	failureLine,
+	type MintCallId,
+	randomCallId,
+	spellCallFor,
+} from "@kampus/tuval-ui/palette-call";
 export {
 	acceptCandidate,
 	type PaletteCandidate,

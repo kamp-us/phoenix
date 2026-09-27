@@ -13,12 +13,12 @@
  * and otherwise acts, which is the shape `workspace.remove` has (`../core/machine.ts`).
  */
 
+import type {RemoveError} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {ViewState, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {Effect, Predicate} from "effect";
-import type {RemoveError} from "../../process/Processes.ts";
-import {Processes} from "../../process/Processes.ts";
-import type {ProcessId} from "../../process/process.ts";
 import type {ShellMsg} from "../core/machine.ts";
-import type {ViewState, WindowId} from "../window/host.ts";
 import {refuse} from "./open.ts";
 import {type PickerRefusal, processGone, processPlanned, removeFailed} from "./refusal.ts";
 

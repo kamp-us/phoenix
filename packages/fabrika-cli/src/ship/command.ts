@@ -18,7 +18,6 @@ import {runChecks} from "./checks-verb.ts";
 import {runCpApproval} from "./cp-approval-verb.ts";
 import {runDisarm} from "./disarm-verb.ts";
 import {runEnqueue} from "./enqueue-verb.ts";
-import {runEvidence} from "./evidence-verb.ts";
 import {runFloorBatch} from "./floor-batch.ts";
 import {floorRunner} from "./floor-check.ts";
 import {runGate} from "./gate-verb.ts";
@@ -142,7 +141,7 @@ const gate = leafCommand(
 ).pipe(
 	Command.withShortDescription("The verdict conjunction over every required namespace."),
 	Command.withDescription(
-		"Resolve the verdict conjunction over every required namespace at one head. First stdout line is `gate\\t<satisfied|blocked>\\t<sha>`, then one `ns\\t<namespace>\\t<pass|fail|absent|stale|routed>\\t<marker|advisory|review-fold|routed-elsewhere|->` line per required namespace, in the order required; `satisfied` iff every one reads pass or routed, and the coverage of the required set is asserted before that word is printed. In-force resolution is head-bound-first then by write stamp, ACL-gated fail-closed. Both `absent` and `stale` block. `routed` is the fifth state: a head-bound `routed-elsewhere` record, readable only for `review-ui`, saying the gate owes this PR no verdict; it satisfies beside pass and carries no polarity. The required set is a floor the verb raises from the diff itself: a PR touching one of the repo's declared governed roots gates on `governance` whether or not --require named it. The file set the floor is raised from is the enumerated changed-file list; a list disagreeing with the pull-request record's own `changed_files` is reported on stderr and never refused on, because GitHub computes that count against a base it cached at the last push. Exits 7 (PR proven absent or closed, or the enumerated file list is empty), 10 (a --require value is not a gateable namespace), 11 (the changed-file list, comments, reviews or the ACL could not be read — the conjunction is UNKNOWN, never blocked and never satisfied), 13 (the changed-file list came back at GitHub's 3000-file ceiling, where the Link header ends as a complete read ends, so the floor would be raised over a provably partial list; or the comment enumeration is provably short of the declared count; or the review read — which the platform gives no count for — never reached a terminal page with no `next` link). Example: fabrika ship gate 4321 --sha 03135b91 --require review-code --require review-doc",
+		"Resolve the verdict conjunction over every required namespace at one head. First stdout line is `gate\\t<satisfied|blocked>\\t<sha>`, then one `ns\\t<namespace>\\t<pass|fail|absent|stale|routed|unopened>\\t<marker|advisory|review-fold|routed-elsewhere|->` line per required namespace, in the order required; `satisfied` iff every one reads pass or routed, and the coverage of the required set is asserted before that word is printed. In-force resolution is head-bound-first then by write stamp, ACL-gated fail-closed. Both `absent` and `stale` block. `routed` is the fifth state: a head-bound `routed-elsewhere` record, readable only for `review-ui`, saying the gate owes this PR no verdict; it satisfies beside pass and carries no polarity. `unopened` is the sixth: a `review-ui` verdict counts only while its evidence opens, so the in-force one is re-read — each hosted capture in its gallery fetched through GitHub's renderer and held to the sha256 the gallery records — and one that does not open, or records no digest, does not count and blocks; stderr names why. The required set is a floor the verb raises from the diff itself: a PR touching one of the repo's declared governed roots gates on `governance` whether or not --require named it. The file set the floor is raised from is the enumerated changed-file list; a list disagreeing with the pull-request record's own `changed_files` is reported on stderr and never refused on, because GitHub computes that count against a base it cached at the last push. Exits 7 (PR proven absent or closed, or the enumerated file list is empty), 10 (a --require value is not a gateable namespace), 11 (the changed-file list, comments, reviews, the ACL or a review-ui verdict's rendered comment could not be read — the conjunction is UNKNOWN, never blocked and never satisfied), 13 (the changed-file list came back at GitHub's 3000-file ceiling, where the Link header ends as a complete read ends, so the floor would be raised over a provably partial list; or the comment enumeration is provably short of the declared count; or the review read — which the platform gives no count for — never reached a terminal page with no `next` link). Example: fabrika ship gate 4321 --sha 03135b91 --require review-code --require review-doc",
 	),
 );
 
@@ -250,21 +249,6 @@ const checks = leafCommand(
 	Command.withShortDescription("Roll up the head CI, latest run per context."),
 	Command.withDescription(
 		"Roll up the head CI from REST check-runs, latest-per-context. First stdout line is `checks\\t<sha>\\t<green|red|pending|wedged|no-runs|no-producer>`, then `run\\t<count>` — the latest-per-context runs read, gating and informational both — then the collapsed tally of those runs, one `check\\t<status>/<gating|informational>\\t<count>` line per class, count-descending with ties broken on the class, and `facts\\tworkflows:<n>\\truns:<n>` — the zero-checkset discriminators. The runs a terminal reads by name are named on stderr instead: the wedged run, and the failing gating runs to route to heal-ci (informational failures are excluded — they gate nothing). A repo with zero workflows is `no-producer`, never `pending`. That case refuses unless `.fabrika.jsonc` declares `ci.noProducer: \"degrade\"`. A `green` is served only over bytes a gate of this repo's own inspected: where the rollup would be green the head's workflow runs are read against the active inventory through the same `review ci` coverage module, repo-authored `.github/workflows/…` paths told from the platform's `dynamic/<provider>/<name>` ones, and each run judged by its own provenance besides — it counts only where it carries the resolved head and its event opened that head, so a base-context `pull_request_target` run gates nothing while an exact-head `workflow_dispatch` one does. `--sha` is resolved to its full object name first, because the Actions run list filters `head_sha` as an exact string, so an abbreviated operand and its full form judge the same. A head where the repo declares workflows and none of them inspected it refuses on 20; otherwise the coverage rides the notes channel. With --wait a `settle\\t<settled|budget-exhausted|head-moved>` line leads the emission. The rollup is fail-closed on the ambiguous rows, and the gating axis is the base branch's declared required set — branch protection unioned with the rulesets matching the base — so a failing check outside it tallies as informational, is named on stderr as reported-never-blocking, and does not red this head; a base branch declaring nothing falls back to the informational-name denylist, so every non-informational check gates there; a wedge is diagnosed and named, and the cancel-and-rerun lever stays an operator's. Exits 7 (PR or --sha proven absent, or zero workflows under the default, since a rollup with no producer to read fails closed), 11 (the check-run read, the workflow read, the base branch's required-set read or `.fabrika.jsonc` failed — CI state is UNKNOWN, never green), 13 (entries received < declared, or the base branch's ruleset walk never reached a terminal page), 20 (every check passed and no workflow the repo authors inspected this head — no gate inspected these bytes; an operand resolving to no full commit is 11 instead). Example: fabrika ship checks 4321 --sha 03135b91 --wait",
-	),
-);
-
-const evidence = leafCommand(
-	"evidence",
-	{pr: prArg, sha: shaFlag, repo: repoFlag, json: jsonFlag},
-	Effect.fn(function* ({pr, sha, repo, json}) {
-		yield* emit(
-			yield* runEvidence({pr, sha, repo: Option.getOrNull(repo), json, env: process.env}),
-		);
-	}),
-).pipe(
-	Command.withShortDescription("Read the SHA-bound run-evidence bundle."),
-	Command.withDescription(
-		"Read the SHA-bound run-evidence bundle as five states. First stdout line is `evidence\\t<present|pending|failed|absent|unknown>\\t<sha>`, then `lookup\\trun:<id|->\\tartifact:<id|->\\tstatus:<status|->` — the evidence that makes the claim falsifiable — then the manifest's checks as a status tally, one `check\\t<status>\\t<count>` line per status, count-descending with ties broken on the status; a state that read no manifest carries no such line, and on `failed` the non-passing checks are named on stderr. `failed` is a bundle that binds this head and attests a failing run; `unknown` means the opposite — the answer cannot bind this head. Pending is not absent: a completed run with zero artifacts reads `pending` within 120s of its `completed_at` against the local clock and `absent` outside it. A failed read is not absent either, and the fetched artifact's zip magic number is checked before anything parses it. Exits 7 (PR or --sha proven absent), 11 (the run list, artifact list or artifact content could not be read after retries), 13 (a run or artifact enumeration is provably short). Example: fabrika ship evidence 4321 --sha 03135b91",
 	),
 );
 
@@ -478,7 +462,6 @@ export const shipCommand = Command.make("ship").pipe(
 		floor,
 		floorBatch,
 		checks,
-		evidence,
 		threads,
 		resolve,
 		enqueue,
@@ -491,6 +474,6 @@ export const shipCommand = Command.make("ship").pipe(
 	]),
 	Command.withShortDescription("Drive one pull request down the merge path."),
 	Command.withDescription(
-		"Everything the merge path needs off one pull request — scope, §CP discharge, the verdict conjunction, head CI, run evidence and review threads — plus the writes that arm, land, watch, disarm and record it",
+		"Everything the merge path needs off one pull request — scope, §CP discharge, the verdict conjunction, head CI and review threads — plus the writes that arm, land, watch, disarm and record it",
 	),
 );

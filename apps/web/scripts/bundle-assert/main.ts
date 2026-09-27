@@ -3,20 +3,17 @@
  * Node-only modules (ADR 0118, #1502 AC2, #1836).
  *
  * Bundles the worker headlessly (`bundle.ts`), scans the module graph
- * (`detect.ts`), prints a human summary, writes the ADR 0054 §2 `Check` result to
- * `--output` (folded into the run-evidence manifest by `crabbox-manifest
- * --extra-checks`), and exits non-zero on a violation so the CI job goes red.
+ * (`detect.ts`), prints a human summary, and exits non-zero on a violation so the
+ * `bundle-assert` job in `ci.yml` goes red.
  *
  * Kept a thin bin over a pure core: all detection logic + its unit tests live in
  * `detect.ts`; this file only does IO, arg parsing, and process exit.
  *
  * Flags:
- *   --output <path>       where to write the Check JSON (default: stdout)
  *   --forbidden a,b,c     REPLACE the default forbidden set (extensible — AC4)
  *   --also a,b            ADD to the default forbidden set
  *   --allow mod           add a module to the tolerated allowlist (no reason recorded)
  */
-import {writeFileSync} from "node:fs";
 import path from "node:path";
 import {bundleWorkerGraph} from "./bundle.ts";
 import {
@@ -24,7 +21,6 @@ import {
 	DEFAULT_ALLOWLIST,
 	DEFAULT_FORBIDDEN,
 	detectNodeCore,
-	toCheck,
 } from "./detect.ts";
 
 const argOf = (name: string): string | undefined => {
@@ -69,18 +65,6 @@ const main = async (): Promise<number> => {
 		for (const o of result.offenders) {
 			console.error(`  ✗ ${o.module}  (${o.via})  ${o.evidence}`);
 		}
-	}
-
-	// The run-evidence manifest folds a single Check; keep it an array so
-	// `crabbox-manifest --extra-checks` can accept object-or-array uniformly.
-	const check = toCheck(result);
-	const json = `${JSON.stringify([check], null, "\t")}\n`;
-	const out = argOf("output");
-	if (out) {
-		writeFileSync(out, json);
-		console.error(`[bundle-assert] wrote check → ${out}`);
-	} else {
-		process.stdout.write(json);
 	}
 
 	return result.status === "pass" ? 0 : 1;

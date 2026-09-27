@@ -5,12 +5,12 @@ dependency, that dependency's next redesign is a rewrite of every call site. The
 two: the vocabulary is declared in the app, and one module — the codec seam — is the only file that
 names the package. Then a redesign is a swap of that module's body.
 
-Where this lives today: [`apps/tuval/src/pi/wire/`](../apps/tuval/src/pi/wire/), holding Tuval's Pi
+Where this lives today: [`packages/tuval-pi/src/wire/`](../packages/tuval-pi/src/wire/), holding Tuval's Pi
 session, transcript, model and command types plus
-[`codec.ts`](../apps/tuval/src/pi/wire/codec.ts), whose body delegates to
+[`codec.ts`](../packages/tuval-pi/src/wire/codec.ts), whose body delegates to
 `@earendil-works/pi-protocol@0.85.1`. Both ends of that loopback socket are Tuval's — the server in
-[`pi/server/`](../apps/tuval/src/pi/server/), the client in
-[`pi/client/`](../apps/tuval/src/pi/client/) — which is what makes the contract Tuval's to own.
+[`pi/server/`](../packages/tuval-pi/src/server/), the client in
+[`pi/client/`](../packages/tuval-pi/src/client/) — which is what makes the contract Tuval's to own.
 
 The seam has now taken the redesign it was built for: the vocabulary did not move, and `codec.ts`
 went from delegating whole messages to 0.84.3's schemas to packing the same Tuval values as opaque
@@ -91,22 +91,22 @@ entry; `buildContextEntries` places the latest boundary before the retained cont
 The protocol package's `dist/protocol.js` carries `service_update.update` as
 `Type.Unsafe(Type.Unknown())`; it defines no transcript variants or payload validator.
 
-[The owned transcript union](../apps/tuval/src/pi/wire/transcript.ts) declares an explicit
+[The owned transcript union](../packages/tuval-pi/src/wire/transcript.ts) declares an explicit
 `compaction` role with summary text content and timestamp.
-[The server projection](../apps/tuval/src/pi/server/transcript.ts) assigns it the shared
-[boundary identity](../apps/tuval/src/pi/wire/compaction.ts) `item-<position>:compaction`.
+[The server projection](../packages/tuval-pi/src/server/transcript.ts) assigns it the shared
+[boundary identity](../packages/tuval-pi/src/wire/compaction.ts) `item-<position>:compaction`.
 The role determines its kind, never the id or text. Ordinary messages receive `item-<position>`,
 so boundary identities remain disjoint while the summary consumes its original context slot.
 This is Tuval's owned payload vocabulary, not an upstream Pi transcript type. It uses the same
 opaque-payload trust contract as the other owned variants; the codec validates the outer envelope.
 
-[The adapter](../apps/tuval/src/pi/ai-agent/items.ts) maps the wire role directly to the existing
+[The adapter](../packages/tuval-pi/src/ai-agent/items.ts) maps the wire role directly to the existing
 `compaction` domain kind before the transcript reaches the window.
-[Stored history](../apps/tuval/src/pi/ai-agent/entries.ts) maps the live boundary id to the compaction
+[Stored history](../packages/tuval-pi/src/ai-agent/entries.ts) maps the live boundary id to the compaction
 entry's stable id and stamps the page row's alias, letting the existing page/tail stitch deduplicate
 it without a text comparison or a paging-rule change.
 
-[The boundary regression](../apps/tuval/src/pi/window/compaction.unit.test.ts) constructs typed
+[The boundary regression](../packages/tuval-pi/src/window/compaction.unit.test.ts) constructs typed
 entries, calls the pinned context builders, round-trips the protocol-8 service-update codec, drives
 the production event adapter and stitches stored pages into the live tail. It covers both retained
 message and compaction cursors, repeated loads, and ordinary user content — even an id resembling a

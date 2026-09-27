@@ -341,7 +341,7 @@ describe("the config root a park-recording verb reads its rule from", () => {
 	it.each([
 		"fabrika lane transition",
 		"fabrika lane report",
-		"fabrika lane view",
+		"fabrika recipe unpark",
 	])("%s reads the owning checkout's strictness from a worktree cwd, not the worktree's own", async (verb) => {
 		expect(await ruleFrom(verb, bothConfigs(), WORKTREE)).toMatchObject({
 			_tag: "Value",
@@ -366,7 +366,7 @@ describe("the config root a park-recording verb reads its rule from", () => {
 	it("refuses a cwd whose repository cannot be read rather than falling back to it", async () => {
 		const fs = fakeFs({files: {}, unprobeable: [`${PRIMARY}/.git`]});
 
-		expect(await ruleFrom("fabrika lane view", fs, PRIMARY)).toMatchObject({
+		expect(await ruleFrom("fabrika recipe unpark", fs, PRIMARY)).toMatchObject({
 			code: LANE_UNREADABLE,
 		});
 	});

@@ -23,16 +23,20 @@
 
 import type {IncomingMessage} from "node:http";
 import {NodeSocketServer} from "@effect/platform-node";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import type {
+	ProcessChange,
+	ProcessHandle,
+	ProcessId,
+} from "@kampus/tuval-sdk/kernel/process/process";
+import type {SpellCall, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import {type AnyProgram, programLabel} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Deferred, Effect, type Option, type Redacted, Semaphore, Stream} from "effect";
 import {Socket, type SocketServer} from "effect/unstable/socket";
-import {ProcessTable} from "../../process/ProcessTable.ts";
-import type {ProcessChange, ProcessHandle, ProcessId} from "../../process/process.ts";
-import type {SpellCall, SpellReply} from "../../protocol/messages.ts";
-import type {RegistryDescription} from "../../protocol/registry-description.ts";
-import {type AnyProgram, programLabel} from "../../registry/program.ts";
-import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
-import type {PrefixTable} from "../keys/table.ts";
 import {showsInAWindow} from "../picker/entries.ts";
 import {checkHandshake, launchUrl, loopbackOrigins} from "./handshake.ts";
 import {
@@ -307,19 +311,18 @@ export const session = Effect.fn("Tuval.transport.session")(function* (
 		// process's *latest* state, and with two presses in flight that is the other press's answer —
 		// which `replyIn` then reads as `Refused` and drops the key with no trace (#8274).
 		const folded = yield* handle.value.dispatchFolded(msg);
-		// `dispatch` fails four ways and they do not mean the same thing, so each arm is named. A
-		// blanket catch answered Delivered for all of them, which acknowledged a Msg the actor threw
-		// away and hid a broken checkpoint write entirely (#7499).
+		// `dispatch` fails in ways that do not mean the same thing, so each arm is named. A blanket
+		// catch answered Delivered for all of them, which acknowledged a Msg the run threw away and
+		// hid a broken checkpoint write entirely (#7499).
 		const gone = yield* folded.settled.pipe(
 			Effect.as(false),
 			Effect.catchTags({
-				// Stopped, or draining and refusing new Msgs: the Msg was not applied and never will
+				// Stopped, or stopping and refusing new Msgs: the Msg was not applied and never will
 				// be, so `ProcessGone` is the only honest ack the wire has (`../window/host.ts`).
-				"tuval/host/ActorStoppedError": () => Effect.succeed(true),
-				DispatchDiscardedError: () => Effect.succeed(true),
+				Stopped: () => Effect.succeed(true),
 				// The Msg was applied; the checkpoint behind it was not. Durability is broken and
 				// nothing else surfaces it, so it is logged here and the ack stays Delivered.
-				"tuval/host/StoreError": (error) =>
+				StoreFailed: (error) =>
 					Effect.logError("tuval transport: the checkpoint write for a dispatched Msg failed", {
 						processId,
 						operation: error.operation,
@@ -336,9 +339,10 @@ export const session = Effect.fn("Tuval.transport.session")(function* (
 					error,
 				}).pipe(Effect.as(false)),
 			),
-			// A defect from the actor fiber is nobody's declared failure; it is still not silence.
+			// A defect is nobody's declared failure; it is still not silence. A Msg the process has no
+			// cell for arrives here: tea refuses it and the run keeps going (demlik #310).
 			Effect.catchCause((cause) =>
-				Effect.logError("tuval transport: a dispatched Msg died in the actor", {
+				Effect.logError("tuval transport: a dispatched Msg died in the run", {
 					processId,
 					cause,
 				}).pipe(Effect.as(false)),

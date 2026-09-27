@@ -1362,6 +1362,24 @@ describe("runCheck — the local-tree guard sweep", () => {
 		expect(JSON.parse(out.stdout).skipped).toEqual([]);
 	});
 
+	// readme-guard narrows to these, so the sweep must hand over the diff it judged.
+	it("hands each member the diff's changed paths", async () => {
+		const handed: Array<ReadonlyArray<string>> = [];
+		const out = await sweepRun([
+			{
+				name: "readme-guard",
+				leaf: "check",
+				run: ({changed}) =>
+					Effect.sync(() => {
+						handed.push(changed);
+						return clean;
+					}),
+			},
+		]);
+		expect(out.code).toBe(0);
+		expect(handed).toEqual([["src/app/App.tsx"]]);
+	});
+
 	// The reproduction that forced this: patch-guard red at the tip while `--surface code` greened.
 	it("reds on 18 naming the member that failed, with nothing on stdout", async () => {
 		const out = await sweepRun([

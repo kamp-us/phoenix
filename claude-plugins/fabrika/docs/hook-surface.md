@@ -4,7 +4,7 @@ The reference for fabrika's Claude Code hook layer: **the surface** — where a 
 
 ## The surface
 
-fabrika declares its hooks in one file, [`../hooks.json`](../hooks.json), in the plugin directory. There is no dispatch script, no installed-copy path to resolve and no version marker to compare, and that is not an omission — it falls out of two rules stated elsewhere, so this section cites them instead of restating them:
+fabrika declares its hooks in one file, [`../hooks.json`](../hooks.json), in the plugin directory. There is no dispatch script, no installed-copy path to resolve and no version marker gating the dispatch, and that is not an omission — it falls out of two rules stated elsewhere, so this section cites them instead of restating them:
 
 - **A hook command is a plain literal `fabrika <group> <verb>` string** — no `$VAR`, no `${VAR:-default}`, no command substitution, no `source` ([`cli-interface-convention.md`](cli-interface-convention.md) rule 5). An agent executes a command; it never sources one, because a sourced script can rewrite the caller's own shell out from under it.
 - **A hook calls only verbs implemented in [`../../../packages/fabrika-cli/`](../../../packages/fabrika-cli/)** — never another tool the plugin does not own ([`cli-interface-convention.md`](cli-interface-convention.md) rule 6).
@@ -15,7 +15,7 @@ Both rules are checked as **data**, not by eye: [`../../../packages/fabrika-cli/
 
 ### The declared hooks, and how they are proven
 
-The plugin declares the envelope check, the Bash worktree guard and the [Claude usage collector](claude-usage.md). An adopting repo may declare a worktree provider on its own, in
+The plugin declares the envelope check, the CLI minimum check, the Bash worktree guard and the [Claude usage collector](claude-usage.md). An adopting repo may declare a worktree provider on its own, in
 its `.claude/settings.json` — `fabrika hook worktree-create` on `WorktreeCreate` — for the reason
 [below](#worktreecreate--a-provider-hook-left-undeclared): that event is safe where the toolchain is
 guaranteed and unsafe where it is not, so it lives where the guarantee holds and never here. It may
@@ -27,6 +27,8 @@ documents are read by the same
 two rules; what differs is which events each may carry.
 
 `fabrika hook check` on `SessionStart` is this surface's proof — it reads the envelope the harness writes to a hook's stdin and answers whether it is one fabrika can act on ([`../../../packages/fabrika-cli/src/hook/check-verb.ts`](../../../packages/fabrika-cli/src/hook/check-verb.ts)).
+
+`fabrika hook cli-floor` on `SessionStart` warns when the running CLI is older than the minimum the plugin declares in [`../cli-floor.json`](../cli-floor.json). The skills ship with every commit and the CLI ships by release, so an adopter's pinned CLI can lack a verb or flag a skill calls. The warning goes out as `systemMessage` and names both versions and the upgrade command; a CLI at or above the minimum shows nothing. release-please writes the minimum in each fabrika-cli Release PR, and [`cli-floor.repo.test.ts`](../../../packages/fabrika-cli/src/hook/cli-floor.repo.test.ts) reds when it drifts from the package version. It does not dispatch anything, so it is not a version marker in the sense above. A CLI released before this verb existed refuses it as an unknown subcommand, which the session shows and then starts anyway.
 
 `fabrika hook pre-bash` on `PreToolUse`/`Bash` is the only fabrika hook that **decides** anything: it denies a Bash command whose leading `cd`/`pushd` resolves outside the linked worktree the command runs in, whatever follows that jump, and read through the wrappers that jump can be written inside — a subshell, a command substitution, a brace group, `VAR=value` prefixes — since each of those is the same act one keystroke away. It exists because the harness's own escape refusals read the *command text*, so a program that reaches git in a child process passes them and moves the shared checkout's HEAD — observed twice in the field. It arms only inside a linked worktree, since which tree an agent works in is the operator's call and only *leaving* an isolated one is judged.
 

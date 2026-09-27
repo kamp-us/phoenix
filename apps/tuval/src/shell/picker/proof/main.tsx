@@ -26,13 +26,13 @@
  * states, and an on/off pair at one viewport is what makes that falsifiable by eye.
  */
 
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {empty, type ViewState, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {StrictMode, useState} from "react";
 import {createRoot} from "react-dom/client";
-import {ProcessId} from "../../../process/process.ts";
-import {ProgramId} from "../../../registry/program.ts";
 import type {ShellMsg} from "../../core/index.ts";
 import {WindowView} from "../../ui/WindowView.tsx";
-import {empty, type ViewState, WindowId} from "../../window/index.ts";
 import {
 	mountPicker,
 	type PickerEntries,

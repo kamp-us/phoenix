@@ -11,20 +11,20 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {restore} from "@kampus/tuval-sdk/kernel/durability/restore";
+import {type CheckpointStores, memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {PortNotWired} from "@kampus/tuval-sdk/kernel/ports/errors";
+import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {HandlerFailed} from "@kampus/tuval-sdk/kernel/process/errors";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer, Option} from "effect";
-import {SpawnedProcesses} from "../commands/core/process.ts";
 import {counterId, counterProgram} from "../demo/counter.ts";
-import {PortNotWired} from "../ports/errors.ts";
-import {NodeId} from "../ports/graph.ts";
-import {HandlerFailed} from "../process/errors.ts";
-import {Processes} from "../process/Processes.ts";
-import {ProcessTable} from "../process/ProcessTable.ts";
-import type {ProcessId} from "../process/process.ts";
-import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
-import {Checkpoints} from "./Checkpoints.ts";
-import {restore} from "./restore.ts";
-import {type CheckpointStores, memoryStores} from "./stores.ts";
 
 const counterRows = [counterProgram({everyMs: null})];
 
@@ -119,8 +119,8 @@ type ProbeCmd = {readonly type: "count"};
 /**
  * A row whose one handler needs a kernel service and no ports — the shape a picker-opened Claude row
  * has once its layer's own requirement rides out onto the row (#7951). It reports through a sink the
- * test owns rather than a follow-up Msg: the host dispatches follow-ups unawaited
- * (`src/host/actor.ts`), so a state read after `dispatch` would race one.
+ * test owns rather than a follow-up Msg: tea's run dispatches follow-ups unawaited
+ * (the SDK's `process/Processes.ts`), so a state read after `dispatch` would race one.
  */
 const probeProgram = (sink: Array<string>): AnyProgram =>
 	({
@@ -129,7 +129,6 @@ const probeProgram = (sink: Array<string>): AnyProgram =>
 			init: (loaded) => [loaded ?? {looks: 0}, []],
 			update: {look: (state) => [{looks: state.looks + 1}, [{type: "count"}]]},
 			subs: [],
-			interpret: {count: () => Promise.resolve()},
 		}),
 		ports: {},
 		handlers: {

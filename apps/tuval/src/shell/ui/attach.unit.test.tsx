@@ -6,15 +6,15 @@
  * worse than one that never reconnected.
  */
 
+import {applyKeysConfig, defaultPrefixTable} from "@kampus/tuval-ui/keys";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, render, screen} from "@testing-library/react";
 import {Result} from "effect";
 import type {ReactElement} from "react";
 import {useCallback} from "react";
 import {describe, expect, it} from "vitest";
 import {initialState} from "../core/index.ts";
-import {applyKeysConfig, defaultPrefixTable} from "../keys/index.ts";
 import {type AttachEvent, attachInitial, onAttachEvent, useDeskAttachment} from "./attach.ts";
-import {installDomShims} from "./dom.testing.ts";
 import {threeWindowDesk} from "./fixtures.ts";
 
 installDomShims();

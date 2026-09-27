@@ -14,14 +14,17 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
+import {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
+import {
+	type AiAgentSessionState,
+	isAiAgentSessionState,
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Effect, type FileSystem, type Scope} from "effect";
 import {afterEach} from "vitest";
-import {type AiAgentSessionState, isAiAgentSessionState} from "./ai-agent/core/index.ts";
-import {Mode} from "./ai-agent/ports/index.ts";
 import {type Booted, boot, projectDir} from "./boot.ts";
 import type {DeclaredClaudeConfig} from "./config-fixtures/reloadable-claude.ts";
-import {ProcessTable} from "./process/ProcessTable.ts";
-import {ProcessId} from "./process/process.ts";
 import {scratchHome} from "./scratch-home.ts";
 
 /** The scratch home every boot in this file runs under. */
@@ -113,6 +116,8 @@ describe("a config reload over live processes", () => {
 				const report = yield* booted.reload;
 
 				assert.strictEqual(report.notified, 1, "the reload told the wrong number of processes");
+				// A settings change is config, not code: neither row's process is closed and swapped.
+				assert.deepStrictEqual(report.switched, [], "a config-only change swapped a process");
 				const after = yield* until(
 					booted,
 					"the reload's setMode to reach the session",

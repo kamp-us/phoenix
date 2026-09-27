@@ -3,6 +3,14 @@
 Tuval is a local app. Its interface copy is English. It shares no worker or fate
 data layer with `apps/web`.
 
+This app is `@kampus-apps/tuval`, and nothing imports it
+([ADR 0407](../../.decisions/0407-apps-are-never-imported.md)). The kernel and the
+program-author API live in the Tuval SDK, [`packages/tuval`](../../packages/tuval)
+(`@kampus/tuval-sdk`). The chat UI lives in [`packages/tuval-ui`](../../packages/tuval-ui),
+and each AI harness has its own `packages/tuval-<harness>`. Use them only through their
+published exports, never by relative path. Code another package needs moves into a package; it
+never gets an export here.
+
 Keep backend sessions and subscriptions owned by their process/session scope.
 Browser code must remain free of Node imports; the browser TypeScript project
 checks that separation. Rendered UI follows the root design manifest.

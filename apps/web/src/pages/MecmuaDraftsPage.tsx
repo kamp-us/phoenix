@@ -15,8 +15,7 @@ import {Screen} from "../fate/Screen";
 import {toIso} from "../fate/wire";
 import {MECMUA_WRITE} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
-import {useT} from "../i18n";
-import {formatDateTR} from "../lib/datetime";
+import {useDateFormatter, useT} from "../i18n";
 import {NotFoundPage} from "./NotFoundPage";
 import "./MecmuaDraftsPage.css";
 
@@ -97,6 +96,7 @@ function MecmuaDraftsList() {
 
 function MecmuaDraftRow({node}: {node: ViewRef<"MecmuaPost">}) {
 	const t = useT();
+	const formatDate = useDateFormatter();
 	const post = useView(MecmuaMyPostView, node);
 	const published = post.publishedAt != null;
 	const heading = post.title.trim().length > 0 ? post.title : t("mecmua.drafts.untitled");
@@ -116,7 +116,7 @@ function MecmuaDraftRow({node}: {node: ViewRef<"MecmuaPost">}) {
 							</Badge>
 							{post.publishedAt ? (
 								<time dateTime={toIso(post.publishedAt)}>
-									{formatDateTR(toIso(post.publishedAt))}
+									{formatDate.date(toIso(post.publishedAt))}
 								</time>
 							) : null}
 						</>

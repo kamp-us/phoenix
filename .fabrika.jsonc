@@ -124,8 +124,12 @@
 	// The runnable apps this repo renders, one row per app (ADR 0345) — the list `review scope` /
 	// `ship scope` raise the `ui` class from and `ui render` boots. `prefix` is the source root whose
 	// changed files raise that class: `web` and `web-lab` share `apps/web/src/` because they are two
-	// mounts over one app. Ported from the retired `design-harness.json` (#7369); no row declares a
-	// port, because a fixed port is not a per-worktree resource (#7992).
+	// mounts over one app. `web-atolye` gives `packages/design/src/` the web lab's atolye pages,
+	// which render every design component, so a design-system change raises `ui` too (#9703). A row's
+	// name starts with the app that serves it, because `review-ui render` reads the preview app off
+	// that first segment (#8796).
+	// Ported from the retired `design-harness.json` (#7369); no row declares a port, because a fixed
+	// port is not a per-worktree resource (#7992).
 	"uiSurfaces": [
 		{
 			"name": "web",
@@ -142,11 +146,18 @@
 			"readyPath": "/"
 		},
 		{
+			"name": "web-atolye",
+			"prefix": "packages/design/src/",
+			"mount": "/lab/atolye",
+			"command": "PHOENIX_SPA_PORT={{port}} pnpm --filter @kampus/web dev 1>&2",
+			"readyPath": "/"
+		},
+		{
 			"name": "tuval-chat",
 			"prefix": "apps/tuval/src/",
 			"mount": "/tuval/chat",
 			"basePath": "/",
-			"command": "pnpm --filter @kampus/tuval proof:chat --port {{port}} --strictPort 1>&2",
+			"command": "pnpm --filter @kampus-apps/tuval proof:chat --port {{port}} --strictPort 1>&2",
 			"readyPath": "/"
 		},
 		{
@@ -154,7 +165,7 @@
 			"prefix": "apps/tuval/src/",
 			"mount": "/tuval/pi-window",
 			"basePath": "/",
-			"command": "pnpm --filter @kampus/tuval proof:pi-window --port {{port}} --strictPort 1>&2",
+			"command": "pnpm --filter @kampus-apps/tuval proof:pi-window --port {{port}} --strictPort 1>&2",
 			"readyPath": "/"
 		},
 		{
@@ -162,7 +173,7 @@
 			"prefix": "apps/tuval/src/",
 			"mount": "/tuval/board",
 			"basePath": "/",
-			"command": "pnpm --filter @kampus/tuval proof:board --port {{port}} --strictPort 1>&2",
+			"command": "pnpm --filter @kampus-apps/tuval proof:board --port {{port}} --strictPort 1>&2",
 			"readyPath": "/"
 		},
 		{
@@ -170,7 +181,7 @@
 			"prefix": "apps/tuval/src/",
 			"mount": "/tuval/pi-vertical",
 			"basePath": "/",
-			"command": "pnpm --filter @kampus/tuval proof:pi-vertical --page-port {{port}} 1>&2",
+			"command": "pnpm --filter @kampus-apps/tuval proof:pi-vertical --page-port {{port}} 1>&2",
 			"readyPath": "/"
 		},
 		{
@@ -178,10 +189,17 @@
 			"prefix": "apps/tuval/src/",
 			"mount": "/tuval/picker",
 			"basePath": "/",
-			"command": "pnpm --filter @kampus/tuval proof:picker --port {{port}} --strictPort 1>&2",
+			"command": "pnpm --filter @kampus-apps/tuval proof:picker --port {{port}} --strictPort 1>&2",
 			"readyPath": "/"
 		}
 	],
+
+	// How a capture is taken. `apps/web` keeps the reader's locale only in `localStorage`
+	// (`apps/web/src/lib/localeStorage.ts`), so `review-ui render --locale en` seeds this key and
+	// proves the page's `lang` came back `en` (#9893).
+	"uiCapture": {
+		"locale": { "storageKey": "kampus.locale", "values": ["tr", "en"] }
+	},
 
 	// The repo's own commands that machine-read `.github/workflows/**`. `fabrika build check
 	// --surface workflows` runs each one over a workflows-touching diff, on top of `actionlint` when

@@ -28,14 +28,14 @@
  * transport's own.
  */
 
+import {readParams} from "@kampus/tuval-sdk/kernel/commands/parse/spell-index";
+import type {Lifecycle, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {SpellCall, SpellReply} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import type {ProgramId, RendererKind, RendererRef} from "@kampus/tuval-sdk/kernel/registry/program";
+import {type Binding, CommandName, type PrefixTable} from "@kampus/tuval-ui/keys";
 import {Duration, Option, Predicate, Result, Schema} from "effect";
-import {readParams} from "../../commands/parse/spell-index.ts";
-import type {Lifecycle, ProcessId} from "../../process/process.ts";
-import {SpellCall, SpellReply} from "../../protocol/messages.ts";
-import {RegistryDescription} from "../../protocol/registry-description.ts";
-import type {ProgramId, RendererKind, RendererRef} from "../../registry/program.ts";
 import type {PortDeclaration, TableEvent, TableEventKind, TableRow} from "../../table/row.ts";
-import {type Binding, CommandName, type PrefixTable} from "../keys/table.ts";
 import type {UndecodableReason} from "./errors.ts";
 
 export const ATTACH_KIND = "tuval/transport/attach/v1";

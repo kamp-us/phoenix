@@ -1,0 +1,101 @@
+/**
+ * A process is one running instance of a program (#7484 R1.1; the operating-system kind is always
+ * "OS process"). Its program's private types are erased at the registry row, so a handle speaks
+ * `{type: string}` messages and `unknown` state; the program's own module knows the real shapes.
+ */
+
+import type {Stopped, StoreFailed} from "@demlik/tea/effect";
+import {type Effect, type Exit, type Option, Schema, type Scope} from "effect";
+import type {PortSchema, ProgramId} from "../registry/program.ts";
+import type {HandlerFailed, ReceiverMissing} from "./errors.ts";
+import type {SelfReport} from "./self-report.ts";
+
+export const ProcessId = Schema.String.pipe(Schema.brand("tuval/ProcessId"));
+export type ProcessId = typeof ProcessId.Type;
+
+/** A program's Msg with its shape erased: the tag, plus whatever payload the program's own type carries. */
+export interface Message {
+	readonly type: string;
+	readonly [field: string]: unknown;
+}
+
+/** `stopping` is the drain between a stop request and the row leaving the table. */
+export type Lifecycle = "running" | "stopping";
+
+export interface StateSummary {
+	readonly lifecycle: Lifecycle;
+	/** Committed transitions since spawn. Moves on every commit and says nothing about the state's shape. */
+	readonly revision: number;
+	/** The machine's current state — plain data by Demlik's invariant 1, never an Effect value. */
+	readonly state: unknown;
+}
+
+/**
+ * Every way a dispatch into a process fails, off tea's Effect engine: `Stopped` when the process is
+ * stopping or has stopped and the Msg was never folded, `StoreFailed` when the Msg was folded and its
+ * checkpoint write was not, and `HandlerFailed` when one of its Cmd handlers failed.
+ */
+export type DispatchError = HandlerFailed | Stopped | StoreFailed;
+
+/**
+ * One dispatch and what it left behind: how the Msg itself settled, and the summary read inside the
+ * same critical section the fold ran in. The two travel together because a summary read *after* the
+ * fold is a later Msg's state under concurrency, and an acknowledgement built from it answers about
+ * somebody else's Msg (#8274).
+ */
+export interface Folded {
+	readonly settled: Exit.Exit<void, DispatchError>;
+	readonly summary: StateSummary;
+}
+
+/** One change to the table: a row arrived, left, or its state summary moved. `row` reads live. */
+export interface ProcessChange {
+	readonly kind: "spawned" | "stopped" | "state-changed";
+	readonly row: ProcessRow;
+}
+
+/**
+ * One live row of the `ProcessTable`. `stateSummary` and `selfReport` read live; everything else is
+ * fixed at spawn.
+ */
+export interface ProcessRow {
+	readonly id: ProcessId;
+	readonly programId: ProgramId;
+	readonly parentId: Option.Option<ProcessId>;
+	readonly ports: Readonly<Record<string, PortSchema>>;
+	readonly stateSummary: () => StateSummary;
+	/** The newest line this process emitted on `title@1` and on `status@1` (`./self-report.ts`). */
+	readonly selfReport: () => SelfReport;
+}
+
+export interface ProcessHandle {
+	readonly id: ProcessId;
+	readonly programId: ProgramId;
+	readonly parentId: Option.Option<ProcessId>;
+	/**
+	 * The process's own Scope, a child of its parent's. A slice that must run work for exactly as
+	 * long as the process lives (durability's store, a port's subscription) adds a finalizer here.
+	 */
+	readonly scope: Scope.Scope;
+	/** Apply `msg`, then wait for every transitive follow-up. Refused loudly once the process stopped. */
+	readonly dispatch: (msg: Message) => Effect.Effect<void, DispatchError>;
+	/**
+	 * The same fold, answering with the state it left behind rather than with the error channel. A
+	 * caller that must tell what *its own* Msg did — an acknowledgement carrying a press's answer —
+	 * takes this one, because the summary here cannot be a later fold's (#8274).
+	 */
+	readonly dispatchFolded: (msg: Message) => Effect.Effect<Folded>;
+	/**
+	 * Turn a payload that arrived on in-port `port` into a Msg and dispatch it, as one fold. The
+	 * receiver is the one on the row the process runs *now*, read inside the fold's permit, so after
+	 * a swap every payload — queued before it or sent after — goes through the reloaded row's
+	 * receiver (#9823). A row with no receiver for the port refuses with `ReceiverMissing`.
+	 */
+	readonly receive: (
+		port: string,
+		payload: unknown,
+	) => Effect.Effect<void, DispatchError | ReceiverMissing>;
+	readonly getState: () => unknown;
+	/** Close the scope: descendants first, then the run's drain, its Subs and finalizers. Idempotent. */
+	readonly stop: Effect.Effect<void>;
+}

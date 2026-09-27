@@ -12,6 +12,12 @@ import {
 import type {ExecResult} from "../io/exec.ts";
 import {PULL_FILES_CAP} from "../io/pulls.ts";
 import {SHIPPED_GOVERNED_ROOTS} from "../review/classes.ts";
+import {
+	evidenceDoesNotOpen,
+	evidenced,
+	evidenceOpens,
+	evidenceUnreadable,
+} from "../review-ui/evidence.test-support.ts";
 import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
 import {inForce, requiredWithFloor, runGate} from "./gate-verb.ts";
@@ -364,18 +370,95 @@ describe("runGate", () => {
 						{id: 1, body: route("review-ui", HEAD), updatedAt: "2026-08-19T01:00:00Z"},
 						{
 							id: 2,
-							body: marker("review-ui", "FAIL", HEAD),
+							body: evidenced(marker("review-ui", "FAIL", HEAD)),
 							updatedAt: "2026-08-19T02:00:00Z",
 						},
 					),
 				],
 				[ACL, permission("write")],
+				...evidenceOpens("o/r", 2),
 			],
 			{require: ["review-ui"]},
 		);
 		expect(out.stdout).toBe(
 			[`gate\tblocked\t${HEAD}`, "ns\treview-ui\tfail\tmarker", ""].join("\n"),
 		);
+	});
+
+	// `review-ui post` never withdraws a verdict whose evidence stopped opening after it
+	// posted, so the gate re-checks that evidence before it counts the verdict.
+	describe("a review-ui verdict counts only while its evidence opens", () => {
+		const uiPass = (body: string, http: ReadonlyArray<Scripted>) =>
+			run(
+				[
+					[PULL, served(pull({comments: 1}))],
+					[COMMENTS, commentsServed({id: 7, body})],
+					[ACL, permission("write")],
+					...http,
+				],
+				{require: ["review-ui"]},
+			);
+
+		it("counts a PASS whose evidence opens as the judged bytes", async () => {
+			const out = await uiPass(
+				evidenced(marker("review-ui", "PASS", HEAD)),
+				evidenceOpens("o/r", 7),
+			);
+			expect(out.stdout).toBe(
+				[`gate\tsatisfied\t${HEAD}`, "ns\treview-ui\tpass\tmarker", ""].join("\n"),
+			);
+		});
+
+		it("does not count a PASS whose evidence does not open — unopened, blocked", async () => {
+			const out = await uiPass(
+				evidenced(marker("review-ui", "PASS", HEAD)),
+				evidenceDoesNotOpen("o/r", 7),
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toBe(
+				[`gate\tblocked\t${HEAD}`, "ns\treview-ui\tunopened\tmarker", ""].join("\n"),
+			);
+			expect(out.stderr.join("\n")).toMatch(
+				/review-ui: the verdict in comment 7 does not count — its evidence does not open \(.*HTTP 404\)/,
+			);
+		});
+
+		it("does not count a PASS whose capture serves other bytes", async () => {
+			const out = await uiPass(
+				evidenced(marker("review-ui", "PASS", HEAD)),
+				evidenceDoesNotOpen("o/r", 7, {status: 200, body: "other bytes"}),
+			);
+			expect(out.stdout).toContain("ns\treview-ui\tunopened\tmarker");
+		});
+
+		it("does not count a PASS whose gallery records no digest to hold the capture to", async () => {
+			const out = await uiPass(
+				`${marker("review-ui", "PASS", HEAD)}\n\n## Evidence\n\n![/pano](https://github.com/user-attachments/assets/x)\n`,
+				[],
+			);
+			expect(out.stdout).toContain("ns\treview-ui\tunopened\tmarker");
+			expect(out.stderr.join("\n")).toMatch(/carries no sha256 line/);
+		});
+
+		it("is UNKNOWN (11), never blocked or satisfied, when the verdict comment cannot be rendered", async () => {
+			const out = await uiPass(
+				evidenced(marker("review-ui", "PASS", HEAD)),
+				evidenceUnreadable("o/r", 7),
+			);
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stdout).toBe("");
+		});
+
+		it("reads only the review-ui namespace's evidence — review-code is counted as before", async () => {
+			const out = await run([
+				[PULL, served(pull({comments: 1}))],
+				[COMMENTS, commentsServed({id: 7, body: marker("review-code", "PASS", HEAD)})],
+				[ACL, permission("write")],
+			]);
+			expect(out.stdout).toBe(
+				[`gate\tsatisfied\t${HEAD}`, "ns\treview-code\tpass\tmarker", ""].join("\n"),
+			);
+		});
 	});
 
 	it("refuses a truncated comment sweep on 13", async () => {

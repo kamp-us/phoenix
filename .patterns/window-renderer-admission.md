@@ -32,7 +32,7 @@ With the desk-level boundary as the only one, that unmount took every window wit
 
 The refusal half is the shape the checkpoint path already had: `loadCheckpoint` refuses an
 unreadable checkpoint into `gone` carrying `checkpointUnreadable` rather than opening silently over
-it (`apps/tuval/src/ai-agent/core/snapshot.ts`, #8095, #7514). An unreadable state is shown and
+it (`packages/tuval/src/ai-agent/core/snapshot.ts`, #8095, #7514). An unreadable state is shown and
 named, never guessed at and never silently empty. This applies that same predicate to the live wire.
 
 ## Shape
@@ -53,7 +53,7 @@ export const pageRenderers: Readonly<Record<string, ReadableRenderer>> = {
 - **`unreadable`** — a `Live` view whose state the predicate refused. Renders a `role="alert"`
   naming the process and the action that clears it (restart the kernel).
 - **`readable`** — mounts the renderer. A `ProcessGone` view counts as readable: the gone arm is the
-  window contract's own (`apps/tuval/src/shell/window/host.ts`), read back by the renderer.
+  window contract's own (`packages/tuval/src/shell/window/host.ts`), read back by the renderer.
 
 The predicate belongs to the program whose state it is — `isCounterState` in `demo/counter.ts`,
 `isAiAgentSessionState` in `ai-agent/core/snapshot.ts` — never to the page. The page only pairs it

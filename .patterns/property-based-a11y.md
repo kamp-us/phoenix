@@ -69,7 +69,7 @@ pass.
 ([`check.ts`](../packages/design/src/a11y/check.ts) is the subpath's entry, and re-exports the spec
 types beside it). The consumer supplies the rendered root and a spec; `fast-check` generates the
 **state** rather than the props, since a composition's inputs are its app's own domain data.
-`apps/tuval/src/shell/chat/chat-a11y.unit.test.tsx` is the worked instance (issue
+`packages/tuval-ui/src/shell/chat/chat-a11y.unit.test.tsx` is the worked instance (issue
 [#7610](https://github.com/kamp-us/phoenix/issues/7610)).
 
 Three things that pass are worth copying:

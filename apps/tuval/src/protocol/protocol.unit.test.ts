@@ -2,18 +2,15 @@ import {readdirSync, readFileSync} from "node:fs";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Option, Schema} from "effect";
-import {TITLE_KIND, TITLE_PORT} from "../process/self-report.ts";
-import type {CapabilityRequest as KernelCapabilityRequest} from "../registry/program.ts";
-import type {TableRow} from "../table/row.ts";
+import {TITLE_KIND, TITLE_PORT} from "@kampus/tuval-sdk/kernel/process/self-report";
 import {
 	decodeKernelMessage,
 	decodePageMessage,
 	encodeKernelMessage,
 	encodePageMessage,
-} from "./codec.ts";
-import type {ProtocolRefused} from "./errors.ts";
-import * as fixtures from "./fixtures.ts";
+} from "@kampus/tuval-sdk/kernel/protocol/codec";
+import type {ProtocolRefused} from "@kampus/tuval-sdk/kernel/protocol/errors";
+import * as fixtures from "@kampus/tuval-sdk/kernel/protocol/fixtures";
 import {
 	type KernelToPage,
 	type PageToKernel,
@@ -23,9 +20,15 @@ import {
 	SpellCall,
 	SpellReplyError,
 	SpellReplyOk,
-} from "./messages.ts";
-import {ProcessRow} from "./process-row.ts";
-import {CapabilityRequest, RegistryDescription} from "./registry-description.ts";
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {ProcessRow} from "@kampus/tuval-sdk/kernel/protocol/process-row";
+import {
+	CapabilityRequest,
+	RegistryDescription,
+} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import type {CapabilityRequest as KernelCapabilityRequest} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Effect, Option, Schema} from "effect";
+import type {TableRow} from "../table/row.ts";
 
 const roundTripsPage = (message: PageToKernel) =>
 	Effect.gen(function* () {

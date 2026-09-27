@@ -8,8 +8,8 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Effect} from "effect";
-import {ProcessId} from "../../process/process.ts";
 import {removeHarness, windowId} from "./fixtures.ts";
 import {runProcessRemoval} from "./remove.ts";
 import {mountPicker, type PickerView, withRefusal} from "./view.ts";

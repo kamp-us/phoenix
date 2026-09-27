@@ -38,8 +38,8 @@
  *
  * **The agent-inside half is honest about what it cannot do, and that is the whole of v1's caveat.**
  * A Tuval `spawn` carries a program id and an out-port routing table and nothing else
- * (`apps/tuval/src/authoring/effect.ts:111-118`); an AI-agent row's `cwd` is baked onto the
- * registry row at config time (`src/claude/program.ts:115` → `src/claude/agent/options.ts:135`) and
+ * (`SpawnEffect` in `@kampus/tuval-sdk`'s `authoring/effect.ts`); an AI-agent row's `cwd` is baked onto the
+ * registry row at config time (`packages/tuval-claude/src/program.ts` → `queryOptionsOf` in `packages/tuval-claude/src/agent/options.ts`) and
  * `claude-session`'s id is a constant, so one kernel holds one such row and one cwd. The one
  * per-spawn cwd mechanism the kernel has, `SessionOpening`, is produced by the shell picker and by
  * nothing an authored program can reach. Filed as kamp-us/phoenix#9287.
@@ -54,7 +54,11 @@
  */
 
 import {basename, join} from "node:path";
-import {PromptPayloadSchema, type TurnResult, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import {
+	PromptPayloadSchema,
+	type TurnResult,
+	TurnResultSchema,
+} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type Answer,
 	type AnyProgram,
@@ -73,7 +77,7 @@ import {
 	send,
 	spawn,
 	stop,
-} from "@kampus/tuval/authoring";
+} from "@kampus/tuval-sdk/authoring";
 import {Effect, Schema} from "effect";
 import {
 	type Machine,
@@ -422,8 +426,8 @@ export type WorktreeEvent = Provisioned | ProvisionFailed | Closed | CloseFailed
 /**
  * **Three effects of this program's own, and why they are three.**
  *
- * A Tuval effect is plain tagged data discriminated on `type` — the actor looks a handler up by
- * `cmd.type` and nothing else (`apps/tuval/src/host/actor.ts`, `src/process/Processes.ts`) — so
+ * A Tuval effect is plain tagged data discriminated on `type` — tea's run looks a handler up by
+ * `cmd.type` and nothing else (`packages/tuval/src/process/Processes.ts`) — so
  * these are records, not classes, and their tags are namespaced for the reason `aiAgent.start` is:
  * the handler record is one flat map keyed by string, shared with the six the kernel wrote.
  *
@@ -629,8 +633,8 @@ export const authoredWorktree = (settled: Settled) => {
 			// **One effect, never two — and this is the bug that shape would be.** A removal under a live
 			// session is a session writing into a directory being deleted, so the stop has to come first;
 			// but `[stop(agent), teardownEffect(…)]` is not "first", it is "and only if the first one
-			// worked". The actor runs a cell's effects serially and a failing handler short-circuits the
-			// rest (`apps/tuval/src/host/actor.ts`), and `Processes.stop` fails `ProcessNotFound` on a
+			// worked". tea's run takes a cell's effects serially and a failing handler short-circuits the
+			// rest (`runCmds` in `@demlik/tea`), and `Processes.stop` fails `ProcessNotFound` on a
 			// process already gone — so an agent that crashed a moment before its `stopped` landed would
 			// cancel the removal, leave `pending` set, and refuse every later spell "busy" until restart.
 			//
@@ -805,7 +809,7 @@ export const authoredWorktree = (settled: Settled) => {
 			 * point, and what ends it is `:<id> close <name>`.
 			 *
 			 * **Whose turn, though.** Tuval's `Reply` is `{type, payload}` and carries no process id
-			 * (`apps/tuval/src/authoring/effect.ts:179-182`), so with two agents up there is nothing in
+			 * (`Reply` in `@kampus/tuval-sdk`'s `authoring/effect.ts`), so with two agents up there is nothing in
 			 * this event that says which one answered. This cell therefore attributes a result **only
 			 * when exactly one agent is running**, where "the one running agent" is a fact rather than a
 			 * guess. With two up — or with none — the result goes to `unattributed`, off every worktree,

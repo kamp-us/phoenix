@@ -4,7 +4,7 @@
  * **That emptiness is the whole point, and it is the law an author follows (#8946).** A window is a
  * browser module and a program is compiled by Node, so a window that imports its program's file to
  * borrow the state type pulls the program's whole runtime graph into the page behind it — and an
- * authored program's graph reaches `node:crypto` through `../authoring/define-program.ts`, which
+ * authored program's graph reaches `node:crypto` through the SDK's `authoring/define-program.ts`, which
  * Vite externalises and which throws on the first property read. A leaf like this one is the way
  * across: both halves import it, and neither imports the other.
  *

@@ -30,6 +30,11 @@ import {
 	overrideCookies,
 	parseFlagOperands,
 } from "../capture/flag-override.ts";
+import {
+	type LocaleDeclaration,
+	type LocaleSeed,
+	parseLocaleOperand,
+} from "../capture/locale-seed.ts";
 import {DEFAULT_VIEWPORT, VIEWPORT_NAMES, type Viewport, viewportOf} from "../capture/plan.ts";
 import {
 	type CaptureTier,
@@ -84,6 +89,8 @@ export interface SurfaceRenderRequest {
 	 * evaluated to. Empty ⇒ nothing was forced and no proof is owed.
 	 */
 	readonly forcedFlags: ForcedFlags;
+	/** The locale seeded into the capture context and proved against the page's `lang`; `null` ⇒ the app's default. */
+	readonly locale: LocaleSeed | null;
 }
 
 /**
@@ -100,6 +107,7 @@ export type SurfaceRender =
 	| {readonly _tag: "WrongTier"; readonly wanted: CaptureTier; readonly rendered: string}
 	| {readonly _tag: "WrongViewport"; readonly wanted: number; readonly rendered: number}
 	| {readonly _tag: "OverrideInert"; readonly reason: string}
+	| {readonly _tag: "WrongLocale"; readonly wanted: string; readonly reason: string}
 	| {readonly _tag: "Failed"; readonly reason: string};
 
 export type RenderLeg = (request: SurfaceRenderRequest) => Effect.Effect<SurfaceRender>;
@@ -112,6 +120,13 @@ export interface RenderOptions {
 	readonly viewports: readonly string[];
 	/** Raw `--flag` operands, each a `<key>=<on|off>` pair. Empty ⇒ every flag at its default. */
 	readonly flags: readonly string[];
+	/** The raw `--locale` operand. `null` ⇒ every shot at the app's default locale. */
+	readonly locale: string | null;
+	/**
+	 * The repo's declared `uiCapture.locale`, the only source of a storage key to seed. `null` refuses
+	 * any `--locale`, because fabrika compiles no app's key in.
+	 */
+	readonly localeDeclaration: LocaleDeclaration | null;
 	readonly app: string | null;
 	/**
 	 * The repo's declared `uiSurfaces` rows, read off the checkout this verb runs in — what says
@@ -163,11 +178,13 @@ const routeCode = (renders: readonly SurfaceRender[]): number | null => {
 interface PlannedShot {
 	readonly surface: string;
 	readonly viewport: Viewport;
+	/** The seeded locale, named so a line about an English shot never reads as the default one. */
+	readonly locale: string | null;
 }
 
 /** Every enumeration and every refusal names the shot, and a shot is a surface at a viewport. */
 const shotName = (shot: PlannedShot): string =>
-	`surface "${shot.surface}" at ${shot.viewport.label}`;
+	`surface "${shot.surface}" at ${shot.viewport.label}${shot.locale === null ? "" : ` in locale ${shot.locale}`}`;
 
 const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
 	const subject = shotName(shot);
@@ -192,6 +209,8 @@ const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
 			return `${VERB}: ${subject} was asked for at ${render.wanted}px and its bytes read back ${render.rendered}px wide — the requested viewport's render is UNKNOWN, never another width's.`;
 		case "OverrideInert":
 			return `${VERB}: ${subject} did not render with its forced flags (${render.reason}) — the forced render is UNKNOWN, never the default one.`;
+		case "WrongLocale":
+			return `${VERB}: ${subject} did not render in its seeded locale (${render.reason}) — the seeded locale's render is UNKNOWN, never the default one.`;
 		case "Failed":
 			return `${VERB}: ${subject} could not be rendered: ${render.reason} — the outcome is UNKNOWN.`;
 	}
@@ -343,6 +362,14 @@ export const runRender = (
 			);
 		}
 		const forcedFlags = operands.flags;
+		const localeRead = parseLocaleOperand(options.locale, options.localeDeclaration);
+		if (localeRead._tag === "Malformed") {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --locale "${localeRead.value}" cannot be seeded (${localeRead.reason}) — an operand nothing seeds would shoot the default locale under the requested name.`,
+			);
+		}
+		const locale = localeRead._tag === "Seeded" ? localeRead.seed : null;
 		// The override rides the `phoenix_flag_overrides` cookie, which a deployed stage honors only
 		// for a request whose actor holds platform Admin (`flagship/override-authz.ts`, untouched).
 		// So an anonymous surface cannot carry a forced flag at all — it would render the default
@@ -486,7 +513,7 @@ export const runRender = (
 		const setDir = setDirectory(options.tmpRoot, pr, head, options.out);
 		// Surface-major so a mixed-viewport enumeration reads one surface's widths together.
 		const shots: readonly PlannedShot[] = options.surfaces.flatMap((surface) =>
-			viewports.map((viewport) => ({surface, viewport})),
+			viewports.map((viewport) => ({surface, viewport, locale: locale?.value ?? null})),
 		);
 		const renders: SurfaceRender[] = [];
 		for (const shot of shots) {
@@ -502,6 +529,7 @@ export const runRender = (
 					outDir: setDir,
 					cookies: tier === null ? [] : [...cookiesFor(tier), ...forcedCookies],
 					forcedFlags: tier === null ? NO_FORCED_FLAGS : forcedFlags,
+					locale,
 				}),
 			);
 		}
@@ -520,12 +548,14 @@ export const runRender = (
 		}
 		// Ahead of the proven-red codes below, and deliberately: the shot is a fine PNG of the wrong
 		// page, so routing it as a red surface would accuse the PR of a defect the render never saw.
-		// The three arms are one class — wrong session, wrong tier, wrong flag state — and route alike.
+		// The four arms are one class — wrong session, wrong tier, wrong flag state, wrong locale — and
+		// route alike.
 		const wrongPage = renders.findIndex(
 			(render) =>
 				render._tag === "Unauthenticated" ||
 				render._tag === "WrongTier" ||
-				render._tag === "OverrideInert",
+				render._tag === "OverrideInert" ||
+				render._tag === "WrongLocale",
 		);
 		if (wrongPage !== -1) {
 			return refuse(

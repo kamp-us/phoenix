@@ -2,7 +2,7 @@
  * Worktree's state, and everything that is a pure function of it — the leaf both halves of this
  * package share and neither half owns.
  *
- * **Why it is a leaf.** `./worktree.ts` reaches `@kampus/tuval/authoring`, which reaches the
+ * **Why it is a leaf.** `./worktree.ts` reaches `@kampus/tuval-sdk/authoring`, which reaches the
  * kernel; `./window.tsx` runs in a browser tab, where the kernel's `node:crypto` chain is not a
  * thing that can load. The window needs the state's shape, the predicate over it and the lines
  * drawn from it — and needs none of the program. So those live here and the browser never has a
@@ -11,7 +11,7 @@
  *
  * **The one import is a type and stays one.** `ProcessId` is Tuval's type-only brand — a plain
  * string at runtime — and `import type` under `verbatimModuleSyntax` emits nothing, so the built
- * `state.js` a browser loads has no import of `@kampus/tuval` at all.
+ * `state.js` a browser loads has no import of `@kampus/tuval-sdk` at all.
  *
  * **Four fields the reducer never writes.** `repo`, `repoName`, `root` and `base` are env, not
  * state: the config chose them at `worktree(...)` and nothing that happens to a worktree moves
@@ -20,7 +20,7 @@
  * `init` seeds them, `restored` re-seeds them from the config, and no other cell touches them.
  */
 
-import type {ProcessId} from "@kampus/tuval/authoring";
+import type {ProcessId} from "@kampus/tuval-sdk/authoring";
 
 /**
  * Where a worktree is in its life. Five words and no sixth, because every one of them is a
@@ -89,8 +89,8 @@ export type PendingJob =
 			 * on — `null` when none was up, in which case the removal was asked for on the spot.
 			 *
 			 * **It is here because a close is two steps and has to be.** `stop` and the teardown cannot
-			 * be answered as one list: the actor runs a cell's effects serially and a failing handler
-			 * short-circuits the rest (`apps/tuval/src/host/actor.ts`), and `Processes.stop` fails
+			 * be answered as one list: tea's run takes a cell's effects serially and a failing handler
+			 * short-circuits the rest (`runCmds` in `@demlik/tea`), and `Processes.stop` fails
 			 * `ProcessNotFound` on a process that is already gone — so an agent that crashed a moment
 			 * before its `stopped` landed would take the removal down with it and leave this job set for
 			 * ever, refusing every later spell "busy". Naming the process is what lets the `stopped` cell
@@ -126,7 +126,7 @@ export const REFUSAL_TEXT: Readonly<Record<RefusalReason, string>> = {
 
 /**
  * A finished turn nobody could be told apart. Tuval's `Reply` is `{type, payload}` and carries no
- * process id (`apps/tuval/src/authoring/effect.ts:179-182`), so with two agents up there is no way
+ * process id (`Reply` in `@kampus/tuval-sdk`'s `authoring/effect.ts`), so with two agents up there is no way
  * to say whose reply this is — and guessing puts B's answer on A's row. It is kept here instead,
  * off every worktree, which is the honest place for a fact that belongs to no row.
  *

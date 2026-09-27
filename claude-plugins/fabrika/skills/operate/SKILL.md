@@ -125,6 +125,21 @@ that left the lane reading unclaimed.
 Re-claiming with the token you already hold is the idempotent path — it answers `won` with the same
 marker and writes nothing, rather than stacking a second marker a single release cannot clear.
 
+**Never write a script, wrapper or helper file to a path another lane can reach.** The session
+scratchpad is shared by every lane of the session. A `fab` wrapper that `cd`'d into one worktree sat
+there, a sibling operator rewrote it to point at its own tree, and the builders calling it cut their
+branches in that sibling's worktree. So anything lane-local you write goes under the directory this
+prints, keyed on your lane-claim token's nonce:
+
+```bash
+node <fabrika> lane scratch $lane_key --slug helpers --token <lane-claim-token>
+```
+
+A helper there still never holds a `cd` into a tree it did not prove this run. The cwd resets
+between shell calls, so each verb call names its own tree. `lane scratch --help` gives the exits. A
+`chore:<name>` lane holds no claim, so it has no scratch directory and writes no helper. The printed
+path is machine-local and never goes into a brief, a comment or a PR body.
+
 The claim is the driver's own namespace, `lane-claim:`, not the builder's `build-claim:`. That is
 what lets the builder you spawn on this very number claim it and win: two markers on one thread,
 two races that never see each other. You never read the other namespace and never retract a marker
@@ -574,7 +589,9 @@ its head back before answering, and a conflict is aborted the same way — so th
 names a branch that never carried the bad merge, and an exit `8` means that restore did not take and
 nothing may be recorded against the tree at all. The repair builder is
 then the machine's own route out of `build`, and `lane brief` hands it both ranges: the child's
-issue, and the assembly branch, which by now carries every sibling that landed before it. Nothing
+issue, and the assembly branch, which by now carries every sibling that landed before it. Its claim
+takes that round through `build resume-child <child> --lane <lane> --lane-root <root>`, reading
+the `FAIL` line §3 records, so record it with its exit and head or no builder can take it. Nothing
 reaches `landed` except back through `review`, because the resolution changes the content the
 child's range verdict bound — that ordering is in the machine's graph, not in this paragraph.
 
@@ -924,10 +941,8 @@ unmerged one refuses at `23`, one this repository does not hold at `22`, and an 
 a body already proves is judged first and stays body-proven, so the flag can only fill a gap. The
 line it appends carries `assertedBy: "caller"` beside its `landed` and `sha`, which is a person's
 word standing where a body normally stands: the verb's own stdout and `lane history` show it, and a
-body-proven line carries no such field at all. **`lane view` does not show it** — the viewer page
-rebuilds every log line as `{task, event, at}` and drops the rest, `landed` and `sha` included, so
-an asserted landing and a body-proven one read identically on that screen. Read `lane history` when
-you need to tell them apart. **Use it only when you have read the merge and know it
+body-proven line carries no such field at all, so read `lane history` when you need to tell an
+asserted landing from a body-proven one. **Use it only when you have read the merge and know it
 discharged this lane** — this is the one place in the verb where the record rests on you rather than
 on the board, so a guess here is a lie nothing downstream can catch.
 
@@ -1320,10 +1335,10 @@ different next moves, and the verdict line is what tells them apart:
 | --- | --- | --- |
 | `0` | the merged tree holds — the last stdout line is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head | `DONE` |
 | `0` | the child collided and was replayed onto the tip — `INTEGRATE-VERDICT: REPLAYED`, the merged head above it, the machinery event above that | `WIP` — the child re-enters `review` over the event's `range`, and the arm spends a wait rather than a retry |
-| `42` | the child conflicts and no replay was attempted — the repo declares `assemblyReplay.onCollision: "off"` | `FAIL` |
+| `42` | the child conflicts and no replay was attempted — the repo declares `assemblyReplay.onCollision: "off"` | `FAIL --integrate-exit 42 --assembly-head <sha>` |
 | `42` | a replay ran and hit a hunk that is not a plain keep-both — the branch was reset and proved back | `REPLAY-COLLIDED` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause replay-conflict` |
-| `43` | the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file | `FAIL` |
-| `44` | the merged tree failed a code validator | `FAIL` |
+| `43` | the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file | `FAIL --integrate-exit 43 --assembly-head <sha>` |
+| `44` | the merged tree failed a code validator | `FAIL --integrate-exit 44 --assembly-head <sha>` |
 | `54` | the replay landed and the child's branch would not follow it — nothing was merged, and a working tree standing on that branch is the usual reason | `SEAT-DIRTY` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause worktree-holds-branch` |
 | `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` · `45` | the lane record, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
 
@@ -1333,6 +1348,18 @@ line to read twice: a replay that hit a hunk it may not resolve is the machinery
 child, and a `FAIL` there charges the child's repair budget for it — the exact thing the corpus
 forbids, in the one table a driver routes off. That is what `REPLAY-COLLIDED` and `SEAT-DIRTY`
 record instead, and neither is ever recorded beside the `FAIL` it replaces.
+
+**Each of those three `FAIL`s names its exit and the assembly head on the line.** `<sha>` is the head
+the refusal says it put the seat back to (`is back at <sha>` on a `42`, `reset <path> back to <sha>`
+on a `43` or `44`). An integrate `FAIL` writes no verdict on the child, and the child's range
+verdicts are all `PASS`, so this line is the only record a repair builder's claim can read. `lane
+report` refuses a `FAIL` out of `integrate` without the pair, and the pair on any other line, at exit
+`68` with the log unappended.
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token FAIL --integrate-exit 44 --assembly-head <sha>
+```
+
 A `41` (no tree holds `epic/<n>`, placed
 with `lane assembly`), a `33` (the main checkout is standing on that branch), a `22` (a `--child`
 branch that is not this repo's, so not the one `lane prove` printed) or a `45` (the assembly seat
@@ -1381,20 +1408,23 @@ One more refusal guards a reviewer `FAIL`, and it is the one half `lane prove` c
 hands — the read enforces it mechanically for a `PASS` (exit `23`) on both paths, the shell's
 through `lane report` and yours through `lane transition`, while a `FAIL` claims no
 artifact and so is proven by nothing: **a reviewer `FAIL` is recorded only when every derived
-namespace holds a verdict that still binds** — governance included, on a `governance: required` diff. `FAIL`
+namespace the head does not route elsewhere holds a verdict that still binds** — governance included,
+on a `governance: required` diff, and a routed `review-ui` excluded, which `review`'s own floor
+subtracts for the reasons it states there. `FAIL`
 routes the machine into a repair build, and a repair pushes a new head; recorded while any
 namespace is still in flight, it orphans that namespace's verdict mid-write and spends one of the
 machine's retries on a verdict set nobody finished. A reviewer report carrying a `FAIL` beside a
 namespace with no verdict that still binds is an incomplete read, not an event: re-read the
-artifact's verdicts — the PR's, or the child range's — until every derived namespace is terminal
-against what that artifact carries now, then record. **The re-read is bounded, not a hold**: it runs
+artifact's verdicts — the PR's, or the child range's — until every derived namespace that floor
+still asks for is terminal against what that artifact carries now, then record. **The re-read is bounded, not a hold**: it runs
 only while the reviewer's run is still in flight, and once that run has ended with the namespace
 still empty the outcome is the `BLOCKED` the next paragraph names — never an indefinite wait on a
 state that reads as active. No repair builder is
-ever spawned while any namespace at the head is non-terminal.
+ever spawned while a namespace that floor asks for is non-terminal at the head.
 
-**Re-reading terminates, because no reviewer may decline a derived namespace on a `FAIL` round, and
-none may route one away either.** Governance is
+**Re-reading terminates on `governance`, because no reviewer may decline that namespace on a `FAIL`
+round, and none may route it away either — the claim is `governance`'s alone, and a routed
+`review-ui` is the case it does not cover.** Governance is
 derived-required at every round and every head on a `governance: required` diff, FAIL rounds included —
 `review` §6 states it on both arms, and that skill's `routed elsewhere` terminal covers `review-ui`
 and `check-epic-plan` only, so no reviewer terminal ends a run with governance un-fired. So a
@@ -1402,8 +1432,8 @@ governance verdict missing at a `governance: required` head is
 always a read still in flight or a reviewer that died mid-emit, never a licensed refusal, and the
 remedy above reaches a verdict instead of waiting on one nobody will write. The floor stays, and no
 `governance: required` FAIL round holds the old deadlock — the state where the verdict is refused by rule,
-so it can never be written and the repair can never be dispatched. A namespace still empty after the
-reviewer's run has ended is a dead spawn like any other: record `BLOCKED` per the spawn-report step
+so it can never be written and the repair can never be dispatched. A `governance` verdict still empty
+after the reviewer's run has ended is a dead spawn like any other: record `BLOCKED` per the spawn-report step
 above and let a human unblock it. Do not re-spawn the reviewer on your own read.
 
 `lane transition` exits are verdicts: `12` means the event was refused and the log left
@@ -1484,6 +1514,11 @@ future recipe row can key on. Omitting one is right only where the set holds not
 what is never right is reaching for a token because it is nearby rather than because it is what
 happened.
 
+A shipper's `AWAITING-CP-APPROVAL` lands `awaiting-cp-approval` with nothing typed, because that
+token has one reason. When you park an owner-approval wait yourself, name it:
+`lane transition <lane> BLOCKED --task <task> --cause awaiting-cp-approval`. A `ship` park with no
+cause matches no `human:cp-approval` row, so it never clears by reading an approval nobody asked for.
+
 **So try `recipe unpark` before you post a park comment**, whenever the fold reads `blocked` or
 `human:*` — a park comment is the founder-routed answer, and you do not know the route until this
 verb reads the cause for you:
@@ -1492,12 +1527,35 @@ verb reads the cause for you:
 node <fabrika> recipe unpark <lane-key> --task <task>
 ```
 
-The table it keys on holds six rows today: `human:cp-approval` twice — once keyed on no cause at all,
-once on `head-ci-red`, which is the shipper's route to `heal-ci` folding to the same leaf —
-`human:queue-stall`, and `blocked` carrying one of `worktree-holds-branch`, `campaign-paused` or
-`spawn-dead`. Reading which one
+The table it keys on holds nine rows today: `human:cp-approval` twice — once keyed on
+`awaiting-cp-approval`, the owner-approval wait, and once on `head-ci-red`, which is the shipper's
+route to `heal-ci` folding to the same leaf —
+`human:queue-stall`, and `blocked` carrying one of `worktree-holds-branch`, `campaign-paused`,
+`spawn-dead`, `no-rendered-delta`, `tree-hijacked` or `claim-stranded`. Reading which one
 matched is the verb's answer, not a list you maintain here — the rows live in
 [`packages/fabrika-cli/src/recipe/parks.ts`](../../../../packages/fabrika-cli/src/recipe/parks.ts).
+
+Two of those are mechanical stops, and the clear is yours to set up. **`tree-hijacked`** is a
+builder whose checkout held another lane's branch or unauthored work, and the builder records it:
+give the next spawn a tree of its own. The row asks what `spawn-dead`'s asks — no build claim standing
+on the issue or on an open PR linking it, and no tree holding this lane's branch — and it never ends a
+claim, so one still standing holds it at exit `13`.
+
+**`claim-stranded`** is yours to record, never a builder's. A builder that loses `build claim` on
+`15` to a sibling lane of your own session ends `BACKED-OFF` naming the winning token, because it
+cannot tell a live sibling from a stranded one. You can, and only one way: the token is one a spawn
+of yours printed or reported, and that spawn has **returned** to you — its return is the proof its
+shell ended. On that proof, record the park, release the stranded claim under its token on the number
+`build claimants` shows it on (the PR on a repair lane), then run `recipe unpark`:
+
+```bash
+node <fabrika> lane transition <lane> BLOCKED --task <task> --cause claim-stranded
+node <fabrika> build release <n> --token <its token>
+```
+
+The row clears only once the issue and every open PR linking it read `unclaimed`, and retracts
+nothing. A winner whose spawn has not returned, or one you cannot tie to a spawn of yours, is possibly
+live: record nothing and release nothing, and let that spawn's own return route the lane.
 
 Exit `0` cleared it — the verb recorded the `UNBLOCKED` itself and re-read the fold to prove the task
 left the park, so your next move is the state that re-fold reads, not a park comment. Exit `12` is

@@ -24,11 +24,29 @@ import type {VerbOutcome} from "../verb.ts";
 export type LocalTreeRun = (options: {
 	readonly root: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/**
+	 * The root-relative paths the change under check adds, edits or deletes. A guard whose rule is
+	 * about what a change touches narrows to these; a guard whose rule is about the whole tree ignores
+	 * them. It is a scope the guard chooses to read, never a list of guards.
+	 */
+	readonly changed: ReadonlyArray<string>;
 }) => Effect.Effect<
 	VerbOutcome,
 	never,
 	FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 >;
+
+/**
+ * What a guard judges when it can narrow: the whole tree, or only the paths one change touched.
+ *
+ * The guard's own CLI leaf runs `WholeTree`, which is what CI's gate and a `push: main` run need.
+ * `build check` hands `Change`, so a consumer repo whose tree predates a rule is not red on every
+ * lane for units that lane never touched: the remedy for a guard wrong in some repo is its own
+ * scoping, never a per-repo list of guards.
+ */
+export type TreeScope =
+	| {readonly _tag: "WholeTree"}
+	| {readonly _tag: "Change"; readonly paths: ReadonlyArray<string>};
 
 /** A member of the local-tree set, as `build check` invokes and names it. */
 export interface LocalTreeGuard {

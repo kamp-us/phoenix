@@ -1,7 +1,7 @@
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {CommandName} from "@kampus/tuval-ui/keys";
 import {describe, expect, it} from "vitest";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
-import {CommandName} from "../keys/table.ts";
 import {windowId} from "./fixtures.ts";
 import {
 	ATTACH_COMMAND,

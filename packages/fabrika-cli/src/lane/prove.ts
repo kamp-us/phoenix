@@ -32,13 +32,22 @@ import {issueRefsIn} from "../build/commit-message.ts";
 import type {ParentedCommit} from "../io/git.ts";
 import type {PullScope} from "../io/pulls.ts";
 import {type IssueRefs, ROUTED_NAMESPACES} from "../review/classes.ts";
+import {isBuildState, SHELL_STATES} from "../wire/lane-brief.ts";
 import {rawKeyIssue} from "./key.ts";
 
 /** The branch grammar's own reader, re-exported so this module's callers take one derivation. */
 export {childLaneBranches} from "../build/lane.ts";
 
-/** The leaf state a builder runs in — a `DONE` out of it claims the built work exists. */
+/** The plain builder's leaf state — the text-construction member of {@link BUILD_STATES}. */
 export const BUILD_STATE = "build";
+
+/**
+ * Every leaf state a builder runs in — a `DONE` out of any of them claims the built work exists.
+ *
+ * Read off the shell-state table's own `isBuildState` rather than listed again, so every cell the
+ * brief routes to a builder is one this claim table proves.
+ */
+export const BUILD_STATES: ReadonlyArray<string> = SHELL_STATES.filter(isBuildState);
 
 /** The leaf state a reviewer runs in — a `PASS` out of it claims a verdict that still binds. */
 export const REVIEW_STATE = "review";
@@ -166,7 +175,7 @@ export const claimOf = (
 	next: string | null = null,
 ): Claim => {
 	const child = role._tag === "Child";
-	if (event === "DONE" && leaf === BUILD_STATE) {
+	if (event === "DONE" && BUILD_STATES.includes(leaf)) {
 		return child ? {_tag: "RangeCommits", epic: role.epic} : {_tag: "OpenPull"};
 	}
 	if (event === "PASS" && leaf === REVIEW_STATE) {
@@ -185,7 +194,7 @@ export const claimOf = (
 	}
 	return {
 		_tag: "None",
-		why: `${event} out of "${leaf}" asserts no artifact — only DONE out of "${BUILD_STATE}", PASS out of "${REVIEW_STATE}" / "${REVIEW_UI_STATE}" and BLOCKED out of those two review cells do`,
+		why: `${event} out of "${leaf}" asserts no artifact — only DONE out of ${BUILD_STATES.map((state) => `"${state}"`).join(" / ")}, PASS out of "${REVIEW_STATE}" / "${REVIEW_UI_STATE}" and BLOCKED out of those two review cells do`,
 	};
 };
 
@@ -468,7 +477,7 @@ export const traceDiagnosis = (
 	return latest === undefined
 		? {
 				_tag: "Absent",
-				why: `#${issue} carries no comment written since the task entered ${BUILD_STATE}${since === null ? "" : ` at ${since}`}, so no diagnosis was posted`,
+				why: `#${issue} carries no comment written since the task entered its build cell${since === null ? "" : ` at ${since}`}, so no diagnosis was posted`,
 			}
 		: {_tag: "Posted", commentId: latest.id};
 };
@@ -482,12 +491,23 @@ export interface VerdictFact {
 	 * passed".
 	 */
 	readonly polarity: "PASS" | "FAIL" | "ROUTED";
-	/** Whether the claim still binds this head — head equality, or the content it bound. */
-	readonly binding: "current" | "stale" | "unknown";
+	/**
+	 * Whether the claim still binds this head — head equality, or the content it bound. `unopened`
+	 * is a `review-ui` verdict that binds the head over evidence a reader cannot open, so it does not
+	 * count (`../review-ui/standing-evidence.ts`).
+	 */
+	readonly binding: "current" | "stale" | "unknown" | "unopened";
 	readonly commentId: number;
 }
 
-export type NamespaceState = "pass" | "fail" | "absent" | "stale" | "unknown" | "routed";
+export type NamespaceState =
+	| "pass"
+	| "fail"
+	| "absent"
+	| "stale"
+	| "unknown"
+	| "routed"
+	| "unopened";
 
 export interface NamespaceRow {
 	readonly namespace: string;
@@ -499,6 +519,7 @@ const stateOf = (verdict: VerdictFact | undefined): NamespaceState => {
 	if (verdict === undefined) return "absent";
 	if (verdict.binding === "stale") return "stale";
 	if (verdict.binding === "unknown") return "unknown";
+	if (verdict.binding === "unopened") return "unopened";
 	// The binding question is asked first, so a route at a head this claim no longer binds rows
 	// `stale` exactly as a verdict does — a route that survived a push would attest a tree nobody read.
 	if (verdict.polarity === "ROUTED") return "routed";

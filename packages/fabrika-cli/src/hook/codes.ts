@@ -136,6 +136,13 @@ export const REMOTE_UNREADABLE = 21;
  */
 export const FAST_FORWARD_FAILED = 22;
 
+/**
+ * The CLI's version could not be compared with the plugin's declared minimum — no plugin root was
+ * given, or the floor file or a version in it could not be read. **UNKNOWN**, never a pass: the
+ * comparison was not made, so nothing shows the CLI is new enough.
+ */
+export const FLOOR_UNKNOWN = 23;
+
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
 
@@ -172,6 +179,10 @@ export const HOOK_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{
 		code: FAST_FORWARD_FAILED,
 		meaning: "the planned fast-forward failed — the tree changed under it",
+	},
+	{
+		code: FLOOR_UNKNOWN,
+		meaning: "the CLI could not be compared with the plugin's minimum version — UNKNOWN",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

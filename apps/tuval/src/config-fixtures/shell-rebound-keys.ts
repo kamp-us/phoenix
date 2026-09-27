@@ -4,8 +4,8 @@
  * a default of its own.
  */
 
+import {applyKeysConfig, defaultPrefixTable, type PrefixTable} from "@kampus/tuval-ui/keys";
 import {Result} from "effect";
-import {applyKeysConfig, defaultPrefixTable, type PrefixTable} from "../shell/keys/index.ts";
 import {shellGraphNode, shellProgram, unwiredShellEffects} from "../shell/program.ts";
 
 /** tmux's other common prefix, so the table differs from the default in a value a test can read. */

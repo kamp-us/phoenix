@@ -1,7 +1,8 @@
 /**
- * The user-owned config: one versioned Schema for its shape, a fail-closed module loader, and the
- * two-layer merge — a global module under the home dir's `.tuval` and an optional project module
- * under the cwd's `.tuval`, project over global.
+ * The user-owned config's fail-closed module loader and the two-layer merge — a global module
+ * under the home dir's `.tuval` and an optional project module under the cwd's `.tuval`, project
+ * over global. The shape a module decodes against is the SDK's (`@kampus/tuval-sdk/config`),
+ * because a config is written against it outside this app.
  *
  * Configuration is code the user owns (the Neovim model, #7484 R1.1): a TypeScript module whose
  * default export is a `{version: 1, programs, features?, graph?, keys?}` config. Loading refuses on any defect the
@@ -9,93 +10,43 @@
  * every refusal names the module and the reason, so boot never runs on a half-read config. A
  * module that is not there is an empty layer, never a refusal: the layer is optional and the bin
  * refuses an explicitly named path before boot.
- *
- * Program rows stay opaque beyond the `id` the merge keys on — the row type is the registry
- * slice's, and Schema would strip a row's machine and handlers as excess keys. The graph is
- * decoded structurally; the ports slice refuses a malformed one when it compiles.
  */
 
 import {dirname} from "node:path";
-import {pathToFileURL} from "node:url";
-import {Effect, FileSystem, Option, Predicate, Schema, SchemaIssue} from "effect";
+import {TuvalConfig} from "@kampus/tuval-sdk/config";
 import {
 	type BindingSource,
 	type ConfigLayer,
 	describeFile,
-	KeyBindings,
-} from "./commands/bindings/index.ts";
+	type KeyBindings,
+} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
 // Re-exported below rather than declared here: both ends of the node/browser wire need the resolved
 // flag record, and this module reaches `node:*` (#8439).
-import {featuresDefault, type TuvalFeatures} from "./features.ts";
-import {type Graph, NodeId} from "./ports/graph.ts";
-import {type AnyProgram, ProgramId} from "./registry/program.ts";
+import {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
+import type {Graph} from "@kampus/tuval-sdk/kernel/ports/graph";
+import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {
 	type DeclaredProgram,
 	type ModuleRendererRef,
 	moduleRendererRefs,
-} from "./shell/window/renderer.ts";
+} from "@kampus/tuval-sdk/kernel/shell/window/renderer";
+import {Effect, FileSystem, Option, Schema, SchemaIssue} from "effect";
+import type {AuthoredModules} from "./authored-modules.ts";
+import {generationUrl, nextGeneration, takeGeneration} from "./module-generations.ts";
 
-const hasStringId = (row: unknown): row is {readonly id: string} =>
-	Predicate.isObject(row) && Predicate.isString((row as {readonly id?: unknown}).id);
-
-const ProgramRow = Schema.Unknown.check(
-	Schema.makeFilter(hasStringId, {message: "Expected a program row with a string id"}),
-);
-
-const PortRef = Schema.Struct({node: NodeId, port: Schema.String});
-
-const GraphNode = Schema.Struct({
-	id: NodeId,
-	program: ProgramId,
-	parent: Schema.optionalKey(NodeId),
-	on: Schema.Array(Schema.Struct({port: Schema.String, to: PortRef})),
-});
-
-const GraphSchema = Schema.Struct({nodes: Schema.Array(GraphNode)});
-
-/**
- * The feature flags a layer *states*, one optional boolean key per key of `TuvalFeatures`. Every
- * key is optional, and that is the whole point: absent means "this layer says nothing", not "off",
- * so a project layer naming one flag cannot put back to its default a flag the global layer turned
- * on. `featuresDefault` is where a flag nobody stated lands.
- *
- * Derived rather than hand-listed, because hand-listing drifted twice: a key on `TuvalFeatures`
- * that nobody re-typed here was dropped by the decode, so a layer stating it moved the browser and
- * nothing on the node side (#8595, #8783). The mapped type takes the key set from `TuvalFeatures`
- * and the runtime fields from `featuresDefault`'s own keys, and `featuresDefault` is annotated
- * `TuvalFeatures`, so the two cannot name different keys.
- */
-type DeclaredFeatureFields = {
-	readonly [K in keyof TuvalFeatures]: Schema.optionalKey<typeof Schema.Boolean>;
-};
-
-const declaredFeatureFields = Object.fromEntries(
-	Object.keys(featuresDefault).map((key) => [key, Schema.optionalKey(Schema.Boolean)]),
-) as DeclaredFeatureFields;
-
-export const DeclaredFeatures = Schema.Struct(declaredFeatureFields);
-
-export {featuresDefault, type TuvalFeatures} from "./features.ts";
-
-/** Version 1 of the config shape. A config module default-exports its `Encoded` form. */
-export const TuvalConfig = Schema.Struct({
-	version: Schema.Literal(1),
-	programs: Schema.Array(ProgramRow),
-	features: DeclaredFeatures.pipe(Schema.withDecodingDefaultKey(Effect.succeed({}))),
-	graph: GraphSchema.pipe(Schema.withDecodingDefaultKey(Effect.succeed({nodes: []}))),
-	/** Key to command string, read by the parser and compiled against the registry at boot. */
-	keys: KeyBindings.pipe(Schema.withDecodingDefaultKey(Effect.succeed({}))),
-});
-
-export type TuvalConfig = typeof TuvalConfig.Type;
-/** What a config module writes: plain strings for the ids, `graph` optional. */
-export type TuvalConfigInput = typeof TuvalConfig.Encoded;
+export {DeclaredFeatures, TuvalConfig} from "@kampus/tuval-sdk/config";
+export {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
 
 export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()(
 	"tuval/ConfigLoadError",
 	{
 		module: Schema.String,
 		reason: Schema.String,
+		/**
+		 * Every file the refused load read before it refused, the refusing module among them. A desk
+		 * watches these after a refusal, so fixing a file only the refused config imports reloads it.
+		 */
+		files: Schema.Array(Schema.String),
 	},
 ) {
 	override get message(): string {
@@ -129,26 +80,15 @@ const describeIssue = (error: Schema.SchemaError): string => {
 
 const decodeConfig = Schema.decodeUnknownEffect(TuvalConfig);
 
-/**
- * Node caches an ES module by URL for the life of the process, so a second load of the same path
- * would answer with the config the first one read and a reload could never see an edit. Each load
- * stamps its own number on the URL to read the file as it stands now; the copy it replaces stays in
- * Node's cache, which is what reading a config twice costs. The number is per load and not per
- * module, so one load importing both layers imports a module they share exactly once.
- */
-let loads = 0;
-const nextLoad = (): number => (loads += 1);
-
-const moduleUrl = (modulePath: string, load: number): string =>
-	`${pathToFileURL(modulePath).href}?tuval-load=${load}`;
-
 export const loadConfigModule = Effect.fn("Tuval.loadConfigModule")(function* (
 	modulePath: string,
-	load: number = nextLoad(),
+	load: number = nextGeneration(),
 ) {
-	const refuse = (reason: string) => new ConfigLoadError({module: modulePath, reason});
+	// Only the module itself: what it imports is recorded per load, which `loadLayeredConfig` owns.
+	const refuse = (reason: string) =>
+		new ConfigLoadError({module: modulePath, reason, files: [modulePath]});
 	const loaded = yield* Effect.tryPromise({
-		try: (): Promise<Record<string, unknown>> => import(moduleUrl(modulePath, load)),
+		try: (): Promise<Record<string, unknown>> => import(generationUrl(modulePath, load)),
 		catch: (cause) => refuse(`module threw while loading: ${thrownMessage(cause)}`),
 	});
 	if (!("default" in loaded)) {
@@ -187,6 +127,13 @@ export interface LoadedConfig {
 	readonly keys: ReadonlyArray<BindingSource>;
 	/** The layer modules that existed and were merged, global first. */
 	readonly sources: ReadonlyArray<string>;
+	/**
+	 * Every file this load read the config from: the layer modules in `sources`, and each file they
+	 * import by path, transitively (`./module-generations.ts`). Packages are not in it.
+	 */
+	readonly files: ReadonlyArray<string>;
+	/** The source this load compiled each of `files` from, and what each imports by path. */
+	readonly modules: AuthoredModules;
 }
 
 /**
@@ -217,10 +164,13 @@ const mergeById = <T>(base: ReadonlyArray<T>, over: ReadonlyArray<T>, key: (item
 	return [...merged, ...over.filter((item) => !baseKeys.has(key(item)))];
 };
 
-const loadOptional = Effect.fn("Tuval.loadOptional")(function* (modulePath: string, load: number) {
+const present = Effect.fn("Tuval.present")(function* (modulePath: string) {
 	const fs = yield* FileSystem.FileSystem;
-	const present = yield* fs.exists(modulePath).pipe(Effect.orElseSucceed(() => false));
-	return present
+	return yield* fs.exists(modulePath).pipe(Effect.orElseSucceed(() => false));
+});
+
+const loadOptional = Effect.fn("Tuval.loadOptional")(function* (modulePath: string, load: number) {
+	return (yield* present(modulePath))
 		? Option.some(yield* loadConfigModule(modulePath, load))
 		: Option.none<TuvalConfig>();
 });
@@ -229,9 +179,28 @@ const loadOptional = Effect.fn("Tuval.loadOptional")(function* (modulePath: stri
 export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* (
 	layers: ConfigLayers,
 ) {
-	const load = nextLoad();
-	const global = yield* loadOptional(layers.global, load);
-	const project = yield* loadOptional(layers.project, load);
+	const load = nextGeneration();
+	const [global, project] = yield* Effect.all(
+		[loadOptional(layers.global, load), loadOptional(layers.project, load)],
+		{concurrency: 1},
+	).pipe(
+		Effect.catch((error) =>
+			Effect.gen(function* () {
+				const imported = takeGeneration(load).files;
+				// The project layer loads second, so a refusal there read the global one first.
+				const global =
+					error.module === layers.project && (yield* present(layers.global)) ? [layers.global] : [];
+				return yield* new ConfigLoadError({
+					module: error.module,
+					reason: error.reason,
+					files: [...new Set([...global, ...error.files, ...imported])],
+				});
+			}),
+		),
+		// A defect or an interrupt still drops the record; the refusal above already took it.
+		Effect.onError(() => Effect.sync(() => takeGeneration(load))),
+	);
+	const {files: imported, modules} = takeGeneration(load);
 	const empty: TuvalConfig = {
 		version: 1,
 		programs: [],
@@ -239,6 +208,10 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 		graph: {nodes: []},
 		keys: {},
 	};
+	const sources = [
+		...(Option.isSome(global) ? [layers.global] : []),
+		...(Option.isSome(project) ? [layers.project] : []),
+	];
 	const base = Option.getOrElse(global, () => empty);
 	const over = Option.getOrElse(project, () => empty);
 	// Merged as declared rows rather than as bare rows: the merge is the last place a row and its
@@ -260,9 +233,8 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 			...(Option.isSome(global) ? [bindingSource("global", layers.global, base.keys)] : []),
 			...(Option.isSome(project) ? [bindingSource("project", layers.project, over.keys)] : []),
 		],
-		sources: [
-			...(Option.isSome(global) ? [layers.global] : []),
-			...(Option.isSome(project) ? [layers.project] : []),
-		],
+		sources,
+		files: [...new Set([...sources, ...imported])],
+		modules,
 	} satisfies LoadedConfig;
 });

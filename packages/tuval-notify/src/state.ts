@@ -16,20 +16,20 @@
  * **It is also the browser half's only source, and it stays kernel-free.** `./window.tsx` runs in a
  * page, where the kernel's `node:crypto` chain cannot load, so the shape of the state, the
  * predicate over it and every line drawn from it live here and the browser has no path to
- * `./notify.ts`. The one import from `@kampus/tuval` is a type — erased under
+ * `./notify.ts`. The one import from `@kampus/tuval-sdk` is a type — erased under
  * `verbatimModuleSyntax`, so the built `state.js` a browser loads imports nothing of Tuval at all.
  * This is the split `@kampus/tuval-cron` drew between its `state.ts` and its `window.tsx`, for
  * the same reason.
  */
 
-import type {TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import type {TurnResultSchema} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {Attempt, Outgoing, TargetKind} from "./target.ts";
 
 /**
  * A turn as it arrives on `message`, on the encoded side — the shape `./notify.ts` declares that
  * port over. Named here, from a **type-only** import, because the window's composer has to build
  * one and must not reach the module that declares the port: `./notify.ts` imports
- * `@kampus/tuval/authoring`, and that reaches the kernel.
+ * `@kampus/tuval-sdk/authoring`, and that reaches the kernel.
  */
 export type Turn = typeof TurnResultSchema.Encoded;
 

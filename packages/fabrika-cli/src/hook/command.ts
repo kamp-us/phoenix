@@ -8,13 +8,15 @@
  * This group is what `claude-plugins/fabrika/hooks.json` declares against, so its verb names are part
  * of a committed hook declaration: renaming one is a change to the hook surface, not a refactor.
  */
-import {Effect} from "effect";
+import {Effect, FileSystem} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {emit as emitOutcome} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {runClaudeSpend} from "../spend/claude/collector.ts";
+import {VERSION} from "../version.ts";
 import {runCheck} from "./check-verb.ts";
+import {readFloorFile, runCliFloor} from "./cli-floor-verb.ts";
 import {runCodes} from "./codes-verb.ts";
 import {runPluginSync} from "./plugin-sync-verb.ts";
 import {runPreBash} from "./pre-bash-verb.ts";
@@ -48,6 +50,26 @@ const check = leafCommand(
 	Command.withShortDescription("Whether the hook envelope on stdin is one fabrika can read."),
 	Command.withDescription(
 		"Say whether the harness hook envelope on STDIN is one fabrika can read. Stdout is the single line `conforms\\t<hook_event_name>\\t<field-count>`. The bytes judged are on stderr on every path. Exits 3 (stdin was read and held nothing), 12 (bytes arrived and are provably not a hook envelope), 13 (fd 0 could not be read — UNKNOWN, never malformed). Example: fabrika hook check",
+	),
+);
+
+const cliFloor = leafCommand(
+	"cli-floor",
+	{},
+	Effect.fn(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		yield* emitOutcome(
+			yield* runCliFloor({
+				installed: VERSION,
+				env: globalThis.process.env,
+				read: (path) => readFloorFile(path).pipe(Effect.provideService(FileSystem.FileSystem, fs)),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Warn when this CLI is older than the plugin's minimum version."),
+	Command.withDescription(
+		"Compare the running CLI's version with the `minimum` in `cli-floor.json` under $CLAUDE_PLUGIN_ROOT, the fabrika plugin's declared minimum @kampus/fabrika-cli version, which the harness sets for the plugin's own hooks. Reads no stdin. Stdout is one hook-output JSON object at exit 0: below the minimum it carries `systemMessage`, the warning the harness shows the user, naming both versions and the upgrade command; at or above it carries `suppressOutput` and a `fabrika` token (`outcome: met`), so the user sees nothing new. Both carry `fabrika.installed` and `fabrika.minimum`. Exits 23 (no plugin root, or the floor file or a version in it unreadable — UNKNOWN, never a pass). A non-zero exit on SessionStart shows stderr and lets the session start. Example: fabrika hook cli-floor",
 	),
 );
 
@@ -143,6 +165,7 @@ export const hookCommand = Command.make("hook").pipe(
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
 		check,
 		claudeSpend,
+		cliFloor,
 		codes,
 		pluginSync,
 		preBash,

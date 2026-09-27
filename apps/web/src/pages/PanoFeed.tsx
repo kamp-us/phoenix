@@ -396,11 +396,8 @@ function FeedChrome({host, filterId, setFilterId, signedIn, meta, children}: Chr
 			...(host
 				? {
 						crumb: {
-							label: (
-								<>
-									{t("pano.crumb.site")} / {host}
-								</>
-							),
+							trail: [{key: "site", label: t("pano.crumb.site")}],
+							current: {key: "host", label: host},
 							onClear: () => navigate("/pano"),
 						},
 					}

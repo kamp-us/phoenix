@@ -43,7 +43,6 @@ Named because a spec that leaves the substrate open makes the implementer guess.
 | `ship floor` | whether the governance floor binds on this diff and is discharged at this head — `n/a` / `satisfied` / a refusal CI reds on | asking `ship gate` for the one `governance` namespace and seating the answer on an exit code is mechanical; nothing about the verdict itself is decided here |
 | `ship floor-batch` | the same required context on a merge queue's batched `merge_group` head, concluded success — the batch ref has no pull request to resolve a floor over | publishing a named row is mechanical; the verb decides nothing, and what the floor means was settled at each PR's own head |
 | `ship checks` | the head CI rollup — green/red/pending with the running/wedged split and the zero-checkset facts; `--wait` adds the bounded settle poll | latest-per-context dedupe, status vocabulary, and a budgeted poll are mechanical; the wedge remedy is a human's |
-| `ship evidence` | the SHA-bound run-evidence bundle read as five states: present / pending / failed / absent / unknown | the lookup chain and the positive-evidence rules for each state are mechanical; none of it is judgment |
 | `ship threads` | every unresolved review thread, fully paginated, with per-thread class facts | pagination, count proof, and author-type classification are mechanical; nit-vs-substantive is THE retained judgment and never enters this verb |
 | `ship resolve` | the sanctioned thread-resolution write: rationale reply, resolve mutation, read-back — refusing any thread not positively bot-classed | the protocol and the bot-only structural anchor are mechanical; deciding a bot thread is a nit is the skill's |
 | `ship enqueue` | arm the queue's auto-merge at a pinned head, method-flag-free by construction, and prove the arm landed | the arm, its error discrimination, and the entry read are mechanical; whether the PR should ship was settled by the gates |
@@ -107,7 +106,7 @@ inline, the same tracked debt the sibling contracts carry.)
 ### Nothing here recomputes an enforced answer
 
 Every question this group answers is ungated today: verdict-conjunction state, §CP approval
-discharge, head-CI rollup shape, run-evidence presence, thread resolution state, queue terminal
+discharge, head-CI rollup shape, thread resolution state, queue terminal
 classification, intent lifecycle, dark-ship detection. The enforced ones are listed above with
 the workflow or ruleset surface that owns each, and this spec computes no second verdict on any
 of them.
@@ -152,7 +151,7 @@ Stated once rather than repeated per block.
 - **Every list read paginates, reports its scanned count on stderr, and carries a completeness
   proof** — changed files, check runs, reviews, comments, threads, timeline events. **Which proof
   depends on what the platform declares, and a verb never prints a denominator it cannot derive**:
-  - **A declared count, where one exists.** Changed files, check runs, workflow runs, artifacts,
+  - **A declared count, where one exists.** Changed files, check runs, workflow runs,
     issue comments and review threads all arrive with a total the platform states, so received
     short of declared is the `13` refusal, never a narrower answer — a timeline read that answered
     over 30 of N, and v1's silent 100-thread cap, are one defect wearing two symptoms.
@@ -214,7 +213,7 @@ authority.
 | `10` | a supplied classification value is off the closed vocabulary — an unknown `--require` namespace, a bad `--site` | `gate`, `disarm` |
 | `11` | a **precondition read failed** — nothing was proven and (for a write) nothing was written | all |
 | `12` | refused: the live head moved past the inspected `--sha` — a mutation formed over a tree that is no longer the PR | `enqueue`, `merge`, `nudge` |
-| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page. A changed-file list short of the pull-request record's own `changed_files` is **not** that proof: no verb in this group refuses on it any more — `scope`, `cp-approval`, `gate`, `floor` and `release` report it and derive from the list they read. A list at GitHub's own 3000-file ceiling **is** that proof, because the Link header ends there as a complete read ends | `scope`, `cp-approval`, `gate`, `floor`, `checks`, `evidence`, `threads`, `nudge`, `release`, `reconcile` |
+| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page. A changed-file list short of the pull-request record's own `changed_files` is **not** that proof: no verb in this group refuses on it any more — `scope`, `cp-approval`, `gate`, `floor` and `release` report it and derive from the list they read. A list at GitHub's own 3000-file ceiling **is** that proof, because the Link header ends there as a complete read ends | `scope`, `cp-approval`, `gate`, `floor`, `checks`, `threads`, `nudge`, `release`, `reconcile` |
 | `14`, `15` | *(deliberate gaps — `review`'s ACL and append-only seats; no verb here performs either)* | — |
 | `16` | refused: the target is **proven not in the state this write acts on** — nothing was mutated | `resolve`, `enqueue`, `merge`, `nudge` |
 | `17` | refused: the nudge's close landed and the reopen is **unconfirmed — the PR may be left closed**; a human re-opens before anything else happens | `nudge` |
@@ -236,7 +235,7 @@ about the repository, an unreachable GitHub is not a fact about anything) and no
 would fuse an unreachable GitHub with a bad flag). This group leans on the distinction harder
 than its siblings because v1's worst incidents are exactly its collapse: a failed §CP read
 reported as "awaiting approval", a failed file read reported as "no §CP, no classes", a 503 body
-reported as "no run-evidence bundle".
+reported as "no artifact published".
 
 **`16` and `17` are this group's own proven refusals.** `16` is the write-side state guard: a
 nudge dispatched at a head that has runs, a resolve aimed at a thread that is not
@@ -619,7 +618,7 @@ fabrika ship gate 4321 --sha 03135b91 --require review-code [--require review-do
 
 **Output** — machine channel. First line: `gate\t<satisfied|blocked>\t<sha>`. Then one line
 per required namespace, in the order required:
-`ns\t<namespace>\t<pass|fail|absent|stale|routed>\t<marker|advisory|review-fold|routed-elsewhere|->`
+`ns\t<namespace>\t<pass|fail|absent|stale|routed|unopened>\t<marker|advisory|review-fold|routed-elsewhere|->`
 — the fourth field names which carrier produced the in-force verdict (`-` on `absent`).
 `satisfied` iff every required namespace reads `pass` or `routed`.
 
@@ -681,6 +680,17 @@ moved — named a namespace nothing legal could fill, and a prose-only PR under 
 was permanently unshippable. A record aimed at any other namespace is read and ignored; that
 namespace stays `absent`. `ship floor` is unaffected — it asks for `governance` and requires `pass`.
 
+**`unopened` is the sixth state: a `review-ui` verdict counts only while its evidence opens.**
+`review-ui post` never withdraws a verdict it has posted, so a verdict whose captures stopped
+opening after the post stays on the PR. The gate therefore re-reads the in-force `review-ui`
+verdict (marker or advisory carrier, `pass` or `fail`) before it counts it: the comment's rendered
+HTML, each capture in the gallery above the supersede fence fetched anonymously through its signed
+link, and held to the sha256 the gallery records beside it. A capture that does not answer `200`
+with those bytes, or a gallery with no digest line, makes the namespace `unopened` — it does not
+count, it blocks as `absent` does, and a stderr notice names each reason. A rendered read that
+never reached GitHub is `11`, never `unopened`. The contract of the re-check lives with
+[`review-ui post`](../review-ui/contract.md#review-ui-post).
+
 **`--cp` is caller-asserted, deliberately** — the one input in this verb the caller vouches
 for, an exception to the group's re-derive habit and stated as such. Gate is a read: a wrongly
 passed `--cp` changes which *carrier* can satisfy the code namespace, never whether the §CP
@@ -694,7 +704,7 @@ answer this contract bans.
 |---|---|
 | `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — a conjunction over an empty diff proves nothing |
 | `10` | a `--require` value is not a known gateable namespace |
-| `11` | the changed-file list, comments, reviews, or ACL could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
+| `11` | the changed-file list, comments, reviews, ACL, or the in-force `review-ui` verdict's rendered comment could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
 | `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
@@ -712,11 +722,14 @@ answer this contract bans.
 | `ship gate: the review read never reached a terminal page — pagination is unexhausted, so the native-review fold would rest on a truncated set; refusing the partial resolution.` | 13 | refusal |
 | `ship gate: #<n>'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.` | 0 | notice |
 | `ship gate: #<n> carries a §CP advisory with a [FAIL] row — an invalid emission; treated as fail, report it.` | 0 | notice |
+| `ship gate: review-ui: the verdict in comment <id> does not count — its evidence does not open (<reason>; …).` | 0 | notice |
 
 **Scope** — one PR's changed-file list (paginated to exhaustion, and the floor is derived from that
 list rather than from the pull-request record's `changed_files`; a list at GitHub's 3000-file
 ceiling refuses at `13`, because exhaustion cannot tell that case from a complete read), its verdict comments (paginated,
-count-checked) and native reviews (paginated to exhaustion), each candidate ACL-resolved. The verdict-marker and advisory grammars are the registered wire
+count-checked) and native reviews (paginated to exhaustion), each candidate ACL-resolved, plus, for
+an in-force `review-ui` verdict, that comment's rendered HTML (`GET issues/comments/<id>`) and one
+anonymous fetch of each capture its gallery links. The verdict-marker and advisory grammars are the registered wire
 formats (`packages/fabrika-cli/src/wire/verdict-marker.ts`, `src/review/advisory.ts`) —
 imported, never re-parsed; a hand-rolled marker regex is the drift the registry ended.
 
@@ -1328,149 +1341,6 @@ unchanged.)
 - v1's settle-wait sourced its sibling script and could exit from its preamble with half its
   contract unprinted; a single verb with `--wait` has no preamble seam.
 - **Deployed-service smokes stay out of the gating set**; merge gates are hermetic (ruled).
-
----
-
-## `ship evidence`
-
-**Invocation**
-
-```
-fabrika ship evidence 4321 --sha 03135b91 [--repo <owner/name>] [--json]
-```
-
-**Inputs**
-
-| Flag | Type | Required | Default | Description |
-|---|---|---|---|---|
-| *(positional)* | integer | yes | — | the pull-request number |
-| `--sha` | string | yes | — | the head the bundle must be bound to |
-| `--repo` | string | no | resolved | the repository |
-| `--json` | boolean | no | `false` | emit the result object |
-
-**Output** — machine channel. First line:
-`evidence\t<present|pending|failed|absent|unknown>\t<sha>`. Then the evidence tuple, always:
-`lookup\trun:<id|->\tartifact:<id|->\tstatus:<status|->` — every claim carries the lookup
-evidence that makes it falsifiable from the report. On `present`, the manifest's checks as a
-**status tally**, one line per status, count-descending with ties broken on the status:
-`check\t<status-string>\t<count>` — and the same lines on `failed`, which is a bundle that was read,
-so its check counts are what make the answer falsifiable. `checks` is an evidence-array: step 5
-routes off the five states alone and no reader reads a check by name, so the rows collapse to
-counts. On `failed` the
-non-passing checks are still **named**, on the notes channel.
-
-With `--json`: `{"outcome":…,"sha":…,"run":…,"artifact":…,"checks":{"<status-string>":<count>…}}` —
-the same tally the `check` lines carry, so the two channels cannot desync.
-
-**The five states carry positive-evidence rules, verbatim from the ruled law** (the fifth,
-`failed`, ruled alongside them)**:**
-
-- `present` — the artifact fetched, unzipped (magic-number-checked: a 503 body saved as
-  `.zip` is not a bundle), schema-version understood, `manifest.commit` exactly
-  `--sha`, and every `checks[]` entry passing. The producer is the `run-evidence` workflow
-  (`.github/workflows/run-evidence.yml`) publishing an actions artifact named
-  `run-evidence`; the manifest's required keys are `schemaVersion` (numeric, `1`), `commit`,
-  and `checks[]` of `{name, status}`. `checks[]` entries carry a string `status`
-  field, **not** a boolean `pass` — the wire shape is the producer's, and prose that says
-  "boolean" ships a parser that reads everything falsy. Passing is the producer's own
-  word, `pass`, and nothing else: `crabbox-manifest`'s `deriveChecks` writes `pass`/`fail` and the
-  producer workflow appends its `bundle-node-core-free` entry in the same words. GitHub's
-  check-conclusion vocabulary (`success`/`neutral`/`skipped`) belongs to `ship checks`, which
-  reads check runs; against a bundle it matches nothing, so every passing check counted as
-  failing and no bundle could attest a passing run. An unrecognized `status` reads as
-  failing, never as passing — the same fail-closed posture the check-run rollup takes —
-  and accepting both vocabularies at once is not the fix, because it re-opens the same silent
-  disagreement.
-- `pending` — a producer run for this head exists and has not completed, **or** it completed
-  **within the freshness window** and lists no `run-evidence` artifact. **Pending is not absent** —
-  reporting it absent invents a CI gap.
-- `absent` — positive evidence only: no producer workflow exists in the repo (the
-  foreign-repo degradation, confirmed by a successful workflow-inventory read, never by a
-  failed one), or no producer run exists at this head at all, or a run completed **outside the
-  freshness window** and lists no `run-evidence` artifact, or the artifact is expired.
-- `failed` — the artifact fetched and parsed, `manifest.commit` is exactly `--sha`, and at
-  least one `checks[]` entry did not pass. The bundle is about **this** tree and it attests a
-  failing run; the failing check names go to stderr. This is deliberately **not** `unknown`:
-  widening `unknown` to cover it would make one word mean both "cannot bind this head" and
-  "binds this head definitively", which is the opposite of the case it would be admitting.
-- `unknown` — the lookup chain completed but the answer cannot bind this head: schema
-  version unrecognized, or `manifest.commit` ≠ `--sha` (a bundle about some other tree is
-  not evidence about this one). A *failed* read is not `unknown` — it is `11`.
-
-**The freshness window is 120 seconds, and the clock it reads is named.** "A completed
-producer run listing zero artifacts" is two different facts wearing one shape — a producer that
-published nothing, and a producer whose upload has not surfaced in the artifact listing yet — and
-without a window they collapse onto the wrong side of the pending-is-not-absent law. So: compare
-the run's own `completed_at` against **the local clock at read time**; within 120s the missing
-artifact is listing lag and the answer is `pending`, outside it the run published nothing and the
-answer is `absent`. A run reporting no `completed_at` at all has nothing to compare, so it cannot
-be shown fresh and reads `absent`. Which side a run fell on, with both operands, goes to stderr.
-
-Transient-vs-absent is decided during the fetch (retry with backoff on 5xx, stderr captured,
-never discarded — a swallowed 503 stderr is how a present bundle once read as absent), and a transient that
-survives the retries is `11`, never `absent`.
-
-**Exit status**
-
-| Code | Trigger |
-|---|---|
-| `7` | the PR or the `--sha` commit is proven absent |
-| `11` | the run list, artifact list, or artifact content could not be read after retries — whether a bundle exists is UNKNOWN, never `absent` |
-| `13` | a run or artifact enumeration is provably short of its declared count — a short list must not read as "no run for this head" |
-
-**Errors**
-
-| Message (stderr) | Code | Kind |
-|---|---|---|
-| `ship evidence: PR #<n> not found in <repo>.` | 7 | refusal |
-| `ship evidence: no commit <sha> on PR #<n>.` | 7 | refusal |
-| `ship evidence: cannot read <what> for <sha>: <reason> — whether a bundle exists is UNKNOWN, never "absent".` | 11 | refusal |
-| `ship evidence: received <k> of <m> declared <runs|artifacts> — refusing the partial enumeration.` | 13 | refusal |
-
-**Scope** — the producer workflow inventory, the head-SHA-bound run list (exact `head_sha`
-match only), one artifact, one manifest. All fetch intermediates live under a per-run
-`mktemp -d` — a fixed or PID-derived path lets two racing shippers read each other's bundle.
-
-**Examples**
-
-```
-$ fabrika ship evidence 4321 --sha 03135b91
-evidence	present	03135b91
-lookup	run:9182736450	artifact:2211334455	status:completed
-check	pass	2
-```
-
-```
-$ fabrika ship evidence 4322 --sha 9fe12ab0
-evidence	pending	9fe12ab0
-lookup	run:9182736999	artifact:-	status:in_progress
-```
-
-```
-$ fabrika ship evidence 4323 --sha 7c31a0de
-evidence	failed	7c31a0de
-lookup	run:9182737111	artifact:2211334999	status:completed
-check	fail	1
-check	pass	1
-```
-
-The names the collapse drops from stdout ride the notes channel, which is what keeps the tally
-honest: `ship evidence: the bundle binds 7c31a0de and 1 of its checks did not pass (unit) — it
-attests a run, not a passing one.`
-
-**Grounding**
-
-- **The state split and the pending-is-not-absent law.** The freshness window is what keeps the
-  second honest, by giving the listing lag a window instead of a coin flip.
-- **Retries, captured stderr, the zip magic check.** A 503 body was once reported as "no
-  bundle" for a bundle present the whole time.
-- **`checks[]` `status` is a string on the wire**; the contract says so, so the parser
-  cannot be written against invented prose.
-- **Which vocabulary that string is written in**: the producer's `pass`/`fail`, not GitHub's
-  conclusions, and unrecognized reads as failing.
-- **The thin-skill rule**: the skill never hand-rolls this fetch; this verb is the only
-  reader.
-- **The bundle contract and the foreign-repo degradation** this transcribes are ruled elsewhere.
 
 ---
 
@@ -2396,6 +2266,9 @@ which is which lives in the repository's own history, not in the plugin's text.
 | 6 — the 120s freshness window and its clock | delegated |
 | 7 — the roster when CODEOWNERS names more than one team | **maintainer-direct** |
 | 8 — the pre-arm mergeability precondition | delegated |
+
+Clauses 5 and 6 ruled the SHA-bound bundle reader this group once carried. That verb retired when
+`ship checks` became the whole of ship's CI trust, and both clauses retired with it.
 
 A clause this spec leaves genuinely open is marked **Open** at its own site instead; two are, both
 under `ship disarm` and `ship note`.

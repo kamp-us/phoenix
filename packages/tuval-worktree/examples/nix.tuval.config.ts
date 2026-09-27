@@ -5,7 +5,8 @@
  * download — plus a brief telling the session to run everything through `nix develop -c`.
  */
 
-import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {worktree} from "@kampus/tuval-worktree";
 
 const REPO = "/code/my-flake";

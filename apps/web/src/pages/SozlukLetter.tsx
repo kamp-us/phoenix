@@ -8,6 +8,7 @@ import {EmptyState} from "@kampus/design";
 import type * as React from "react";
 import {useListView, useRequest} from "react-fate";
 import {Link, Navigate, useParams} from "react-router";
+import {Breadcrumbs} from "../components/layout/Breadcrumbs";
 import {TermRow, TermRowView} from "../components/sozluk/TermRow";
 import {LoadMoreButton} from "../fate/LoadMoreButton";
 import {Screen} from "../fate/Screen";
@@ -81,9 +82,10 @@ function LetterChrome({letter, children}: {letter: string; children: React.React
 	return (
 		<>
 			<header className="kp-sozluk-letter__masthead">
-				<nav className="kp-sozluk-letter__crumb" aria-label={t("sozluk.letter.crumbRoot")}>
-					<Link to="/sozluk">{t("sozluk.letter.crumbRoot")}</Link>
-				</nav>
+				<Breadcrumbs
+					className="kp-sozluk-letter__crumb"
+					trail={[{key: "root", label: <Link to="/sozluk">{t("sozluk.letter.crumbRoot")}</Link>}]}
+				/>
 				<h1 className="kp-sozluk-letter__title">
 					{t("sozluk.letter.title", {letter: display(letter)})}
 				</h1>

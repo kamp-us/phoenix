@@ -6,6 +6,7 @@
 import {
 	BAD_SECTIONS as SHARED_BAD_SECTIONS,
 	BARE_AT_PATH as SHARED_BARE_AT_PATH,
+	CLASSIFIED as SHARED_CLASSIFIED,
 	EMPTY_STDIN as SHARED_EMPTY_STDIN,
 	LEAKED_PATH as SHARED_LEAKED_PATH,
 	NO_TARGET as SHARED_NO_TARGET,
@@ -60,6 +61,13 @@ export const MARKER_READBACK = SHARED_READBACK_MISMATCH;
  * failed read can be neither.
  */
 export const LANE_UNREADABLE = SHARED_PRECONDITION_UNKNOWN;
+
+/**
+ * `lane scratch`'s `--slug` is not a kebab-case leaf — it carries a path separator, or leaves the
+ * vocabulary a directory leaf may spell. The base's closed-vocabulary seat, the code `build scratch`
+ * spends on the same refusal, so one slug rule answers one way in both namespaces.
+ */
+export const SLUG_OFF_VOCABULARY = SHARED_CLASSIFIED;
 
 /**
  * The event is refused and the log is left unappended: the machine holds no cell for it in the
@@ -653,3 +661,16 @@ export const GRANT_UNAUTHORIZED = 66;
  * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
  */
 export const ROUTE_UNDERIVED = 67;
+
+/**
+ * `lane report`'s integrate evidence is missing, malformed, or on the wrong line — refused with the
+ * log unappended.
+ *
+ * A `FAIL` out of an epic child's `integrate` cell writes no verdict on the child, so the exit and
+ * assembly head on its ledger line are the only record a repair builder's `build claim` can key on.
+ * A line without them sends the child to a repair round no builder can take, and the same fields on
+ * any other line would name a repair that was never owed.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9761
+ */
+export const INTEGRATE_EVIDENCE = 68;

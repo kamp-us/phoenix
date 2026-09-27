@@ -56,10 +56,11 @@ ride through. Two things follow, and both used to be false:
 - **A removal is a removal.** The picker's `Context.omit(ProcessPorts)` really does keep the shell's
   ports out of the child, including when the shell forwards a key into it from its own handler fiber
   — the path that made the guard a no-op.
-- **The two dispatch paths agree.** `handle.dispatch` runs on the caller's fiber and a follow-up Msg
-  runs on a forked one with no ambient (`src/host/actor.ts`), so before the seal a handler could
-  resolve a service on one and not the other, and a proof written over the wrong fiber passed for
-  the wrong reason.
+- **The two dispatch paths agree.** `handle.dispatch` starts on the caller's fiber and a follow-up
+  Msg is dispatched unawaited from inside the run, so before the seal a handler could resolve a
+  service on one and not the other, and a proof written over the wrong fiber passed for the wrong
+  reason. The seal wraps the whole `run` call (`sealed` in `src/process/Processes.ts`), so both
+  paths now resolve the spawn set alone.
 
 Effect's own runtime rides through the seal — the clock, the scheduler, the loggers and log level,
 the tracer and its parent span, and the `Scope` a sub handler is given, every one of them keyed
@@ -163,10 +164,10 @@ cell — every agent session — is therefore never sent a key at all (#7973). B
 stays underneath that: a process that stopped between the Cmd and the dispatch drops the key at
 debug, because a keystroke is not worth ending a desk over and the shell's error channel is `never`.
 
-The declaration is the shell's half. The host's half is that a wire `Msg` with no update cell fails
-that one dispatch as `MsgNotAcceptedError` (`src/host/errors.ts`) instead of reaching supervision as
-`UserCodeThrew` — Demlik throws `NoCellError` before any of the machine's own code runs, so it says
-the program does not take the Msg, never that the program is faulty. Without that split one stray
+The declaration is the shell's half. The engine's half is that tea's run refuses a wire `Msg` with no
+update cell on that one dispatch, as Demlik's `NoCellError`, and never hands it to supervision —
+Demlik throws `NoCellError` before any of the machine's own code runs, so it says the program does
+not take the Msg, never that the program is faulty. Without that split one stray
 key closed the process gate under the `stop` default and every later prompt was refused.
 
 **One keystroke has two deliveries, and only one of them is the Cmd.** Beside the kernel's dispatch
@@ -271,7 +272,7 @@ program-blind: a process's state still crosses as `unknown`.
   of the feature flags and resolves its flag-gated keys through one function, so a flag off leaves an
   empty set and the key falls through to `Ignored` exactly as it did before the key existed. It is
   the shape `boardCommands` (`src/shell/commands/table.ts`) and `boardBindings`
-  (`src/shell/keys/table.ts`) already have, and it is why "the key does nothing" and "the key does
+  (`packages/tuval-ui/src/shell/keys/table.ts`) already have, and it is why "the key does nothing" and "the key does
   not exist" are one thing to an operator: `pickerFrame`'s `keyHelp` reads the same flag, so a desk
   never names a key it does not answer (#9447).
 - **The `/` filter narrows before anything reads the list.** `visibleEntries`
@@ -307,7 +308,7 @@ Three files, and the split between them is forced rather than stylistic.
 
 - **The row names the window and reaches none of it.** A row is kernel-side data and must stay free
   of React, so the `RendererRef` it declares lives on a leaf that imports one type and nothing else
-  — `src/pi/renderer-ref.ts` for `pi-session`, `src/claude/renderer-ref.ts` for `claude-session`.
+  — `packages/tuval-pi/src/renderer-ref.ts` for `pi-session`, `packages/tuval-claude/src/renderer-ref.ts` for `claude-session`.
   Retyping the name at both ends instead would drift
   silently: an unresolved reference is a returned value, never a throw
   (`src/shell/window/renderer.ts`), so the window comes up blank and nothing fails.
@@ -318,10 +319,10 @@ Three files, and the split between them is forced rather than stylistic.
   every build.
 - **The leaf carries the program id too, and both names are imported rather than retyped.** The
   page's table keys on the `RendererRef.ref` the row declares (`src/page/renderers.tsx`), and it
-  reads that reference off the leaf through `src/pi/window/index.ts`. The program id sits on the
+  reads that reference off the leaf through `packages/tuval-pi/src/window/index.ts`. The program id sits on the
   same leaf for the same reason: importing it from the row would pull `node:path` and Pi's model
   runtime into the page bundle, which is the black page of #7836 — so `PI_SESSION_PROGRAM` is
-  declared on the leaf and `src/pi/program.ts` re-exports it.
+  declared on the leaf and `packages/tuval-pi/src/program.ts` re-exports it.
 - **The page's three React modules moved to the relaxed lens with it.** `main.tsx`,
   `AttachedDesk.tsx` and `renderers.tsx` reach `@kampus/design` through the table, so they are named
   in `tsconfig.json`'s `exclude` and in `tsconfig.design.json`'s `include`. `src/page/dev-server.ts`
@@ -349,7 +350,7 @@ Three files, and the split between them is forced rather than stylistic.
   `AgentChatInput` takes no `onSubmit`: it reads its whole world off an `AgentChatInputBridge` and
   re-runs all four of its loads whenever that object's identity changes, so a bridge rebuilt per
   state change drops the composer back to `loading` on every turn.
-  `src/shell/chat/composer-bridge.ts` is therefore built once in a `useMemo` whose dependencies are
+  `packages/tuval-ui/src/shell/chat/composer-bridge.ts` is therefore built once in a `useMemo` whose dependencies are
   only the dispatch closures — `phase`, `models` and `commands` *seed* it and are deliberately not
   dependencies — and each later change reaches the mounted composer through a setter that pushes one
   event at the bridge's own subscription: `setPhase` pushes `agent_start` / `agent_settled`, and
@@ -378,15 +379,15 @@ The row carries three optional references (`src/registry/program.ts`): `renderer
   a bar. That is the ruling as a type: the shell owns the left (the workspace) and the right (kernel
   facts) because `statusFor` derives them itself and a program's segments can only ever arrive in
   `middle` (#7500 ruling 5).
-- `inspectorFor` and `statusFor` (`src/shell/desk/compose.ts`) walk one chain — focused window → its
+- `inspectorFor` and `statusFor` (`packages/tuval-ui/src/shell/desk/compose.ts`) walk one chain — focused window → its
   process → its program row → the reference it declares → the renderer that reference names — and
   answer with a value on every step that does not resolve (`DeskEmptyReason`). A region is never a
   hole and never a throw; the surface renders its placeholder and reads nothing else.
 - **The inspector's open/collapsed flag is desk state, not workspace state**: it lives on
-  `ShellState.desk` (`src/shell/desk/state.ts`), so a workspace switch leaves it exactly as it was.
+  `ShellState.desk` (`packages/tuval-ui/src/shell/desk/state.ts`), so a workspace switch leaves it exactly as it was.
   `desk.inspector.toggle` is the one Msg that writes it, reachable from the `desk:inspector-toggle`
   command row like any other.
-- `src/shell/desk/` imports no socket, no React and nothing from `src/shell/ui/` — its own boundary
+- `packages/tuval-ui/src/shell/desk/` imports no socket, no React and nothing from the app's `src/shell/ui/` — its own boundary
   test is the gate, as `src/shell/window/`'s is.
 - **The snapshot is assembled on the surface**, in `src/shell/ui/desk-snapshot.ts`, because half of
   it only exists there: the live `WindowHost` a renderer mounts into, and the two renderer tables a
@@ -574,7 +575,7 @@ frame is a *separate* write on the same socket, so assert by waiting for the nex
 satisfies a predicate (`deskWhere`) and not on the ack. And give that wait its own timeout that dies
 naming the last desk it saw — a bare vitest timeout tells you nothing about which key was lost.
 
-A third mechanic the Pi vertical added (`src/pi/proof/pi-vertical.integration.test.ts`): the desk
+A third mechanic the Pi vertical added (`src/pi-desk/proof/pi-vertical.integration.test.ts`): the desk
 stops emitting once the keys stop, so a predicate wait asked for a state that has *already gone past*
 blocks until its timeout. Reading "what does it look like now" is a separate move — drain whatever is
 queued with a short per-take timeout and keep the last frame (`settled`).
@@ -584,7 +585,7 @@ browser harness beside it.** jsdom has no layout, so height, scroll and contrast
 the unit tier; the harness is what lets a reviewer reproduce a load instead of taking a report for it
 (#7610). Two shapes exist and they answer different questions: a Vite page over a test double for one
 component (`pnpm proof:chat`, `pnpm proof:pi-window`), and a bin that boots the whole app on a faux
-provider and serves the real desk (`pnpm proof:pi-vertical`, `src/pi/proof/serve.ts`) for a claim
+provider and serves the real desk (`pnpm proof:pi-vertical`, `src/pi-desk/proof/serve.ts`) for a claim
 about the assembled surface. The second one found `.tuval-window` sizing to its content rather than
 to its panel — a 302px window in a 775px panel, transcript 2px — which no headless proof could see.
 
@@ -603,7 +604,7 @@ stream leaves the request in flight and network-idle never arrives). The wider f
 set be produced by an interaction script so no gated state owes its own surface, is [#7306](https://github.com/kamp-us/phoenix/issues/7306).
 
 Two more mechanics the Claude vertical added
-(`apps/tuval/src/claude/proof/claude-vertical.integration.test.ts`).
+(`apps/tuval/src/claude-desk/proof/claude-vertical.integration.test.ts`).
 
 **Keep a log beside the queue when the claim is about the whole sequence.** A predicate wait consumes
 frames, so "the card opened and closed exactly once" cannot be asked of the queue afterwards — the

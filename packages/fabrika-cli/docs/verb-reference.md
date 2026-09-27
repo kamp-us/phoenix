@@ -57,8 +57,8 @@ Read and change the roadmap's campaign table. Use `campaign --help` and the
 
 ## The `ci` group
 
-Release and build workflow plumbing, including changelog derivation, release-PR bodies, typecheck
-annotations and run evidence. Use `ci --help`.
+Release and build workflow plumbing: changelog derivation, release-PR bodies and typecheck
+annotations. Use `ci --help`.
 
 `ci annotate` is a streaming filter, so its implementation writes its own streams. The
 [ci-required entrypoint](../src/ci/required-bin.ts) is a separate dependency-free binary used by the

@@ -8,7 +8,7 @@
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  *
- * Seven leaves author a plan run. `retopology`, `digest` and `defer` are the three that read no run
+ * Eight leaves author a plan run. `retopology`, `digest` and `defer` are the three that read no run
  * directory at all — each belongs to the descope route, which is found on epics whose run was long
  * since cleared: `retopology` repairs the block, `digest` prints the input that repair takes, and
  * `defer` unlinks the child. Sourcing any of them from `ledger open` would put the staged run back
@@ -26,6 +26,7 @@ import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
+import {runAdopt} from "./adopt-verb.ts";
 import {runChild} from "./child-verb.ts";
 import {runDefer} from "./defer-verb.ts";
 import {runDigest} from "./digest-verb.ts";
@@ -184,6 +185,52 @@ const child = leafCommand(
 	Command.withShortDescription("Mint one child issue with every birth attribute at once."),
 	Command.withDescription(
 		'Mint one child with EVERY birth attribute in the one POST — title, body, every label, milestone and assignee — record it in the run manifest, link it as a native sub-issue, then re-read and report the OBSERVED result. Prints {"answer":"minted","epic":n,"child":n,"linked":true,"observed":{…},"stories":[…],"containment":"…"}. Exits 3 (stdin held nothing), 4 (the composed body\'s fields or sections do not parse: a malformed **Stories:** value, absent or malformed acceptance criteria, or a child of an asked type whose **Containment:** is off the vocabulary `.fabrika.jsonc`\'s containmentVocabulary resolves to, while the cycle doc is present), 5 (machine-local path), 6 (bare @ reference), 7 (the epic is proven absent or closed), 8 (the create was attempted and no re-read could prove it — UNKNOWN), 9 (created and it does not read back as sent), 10 (a label, --type, --priority, --milestone or --ready-for off its closed vocabulary; --ready-for absent; --ready-for human without --assignee; --type type:decision with --ready-for agent, which advertises a child the first builder refuses on its type axis — mint it --ready-for human with --assignee, record the ruling on the child, then flip it with `fabrika decision rule <n> --cites <child-comment-url>`; neither --milestone nor a standing-lane --label, so the child would be born homeless; or not a type:epic), 11 (a precondition read failed, or the config exists and its containmentVocabulary does not decode — NOTHING was created), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 23 (created and the sub-issue link could not be proven), 26 (created and the run manifest could not be written). Example: fabrika ledger child 9420 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent --token build:s-9f2e:c1a4d6f8-… < child.md',
+	),
+);
+
+const adopt = leafCommand(
+	"adopt",
+	{
+		number: epicArg,
+		child: Flag.integer("child").pipe(
+			Flag.withDescription("the already-filed issue joining this epic's plan as a child"),
+		),
+		stories: Flag.string("stories").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				'the plan\'s story ids for the child — bare integers or "none"; required when the issue declares no **Stories:** line, and REFUSED on 4 when it declares a different one',
+			),
+		),
+		containment: Flag.string("containment").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the child's containment keyword off containmentVocabulary; required for an asked type with no **Containment:** line while the cycle doc is present, and REFUSED on 4 when the issue declares a different one",
+			),
+		),
+		token: tokenFlag,
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({number, child: childNumber, stories, containment, token, repo}) {
+		yield* emit(
+			yield* runAdopt({
+				number,
+				child: childNumber,
+				stories: Option.getOrNull(stories),
+				containment: Option.getOrNull(containment),
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+				now: () => new Date(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Adopt an already-filed issue as a child, without minting a duplicate.",
+	),
+	Command.withDescription(
+		'Adopt an already-filed issue as one of this epic\'s children instead of minting a near-duplicate: validate it against the gate\'s own child readers, append a dated amendment carrying ONLY the **Stories:** / **Containment:** lines it does not already declare (never rewriting a byte above it), park it on status:planned (add status:planned, then remove status:triaged, proven on a re-read) so it is unpickable until plan flip restores it on a clean floor, record it in the run manifest, link it as a native sub-issue, and prove the link by re-listing. The park is its only label write; it writes no milestone, assignee or title. Idempotent: a re-run appends nothing already declared, skips a park already made, replaces rather than duplicates the manifest line, and skips a link the parent endpoint already shows — so every refusal after a write is recovered by running the same command again. Prints {"answer":"adopted","epic":n,"child":n,"linked":true,"link":"written|already","amended":bool,"park":"written|already","fields":[…],"stories":[…],"containment":"…"}. Exits 4 (the issue\'s acceptance criteria read absent or malformed; a field line declared twice or non-conforming; a declared **Stories:** or **Containment:** that differs from the flag, or is off the vocabulary — adoption never rewrites; or a required field is undeclared and its flag was not passed), 5 (the amendment carries a machine-local path), 7 (the epic or the issue is proven absent or closed), 8 (the amendment PATCH or the park could not be proven — UNKNOWN; re-run), 9 (amended and the body does not read back as the prior body plus the amendment), 10 (not a type:epic; status:planned is absent from the repository label taxonomy; --child is the epic, a pull request, a type:epic, still status:needs-triage, on a status other than status:triaged or status:planned, missing a type/status/priority label, held with nobody assigned, or already a sub-issue of another epic; --stories or --containment off its vocabulary), 11 (a read failed — nothing was written), 15 (this LANE does not hold the epic\'s claim), 23 (recorded and the sub-issue link could not be proven — re-run), 26 (the run manifest could not be written — re-run). Example: fabrika ledger adopt 9420 --child 8195 --stories 2 --token build:s-9f2e:c1a4d6f8-…',
 	),
 );
 
@@ -365,6 +412,7 @@ export const ledgerCommand = Command.make("ledger").pipe(
 		open,
 		draft,
 		child,
+		adopt,
 		topology,
 		write,
 		edges,
@@ -375,6 +423,6 @@ export const ledgerCommand = Command.make("ledger").pipe(
 	]),
 	Command.withShortDescription("Author an epic's plan and its children."),
 	Command.withDescription(
-		"Author an epic's plan: open the run on proven-fresh ground, stage the plan block, mint each child born complete and linked, declare the dependency topology, and splice both into the epic body — plus the two verbs that need no run: `retopology`, which rewrites a descoped epic's Dependencies block from its live child links, and `digest`, which prints the body digest that repair requires",
+		"Author an epic's plan: open the run on proven-fresh ground, stage the plan block, mint each child born complete and linked or adopt an already-filed one, declare the dependency topology, and splice both into the epic body — plus the two verbs that need no run: `retopology`, which rewrites a descoped epic's Dependencies block from its live child links, and `digest`, which prints the body digest that repair requires",
 	),
 );

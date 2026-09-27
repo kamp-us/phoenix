@@ -1,8 +1,13 @@
 {
 	"name": "@kampus/design",
 	"version": "0.0.0",
-	"private": true,
 	"description": "Shared Kampüs UI primitives, design tokens, fonts, and accessibility contract",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/design"
+	},
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
@@ -12,14 +17,50 @@
 		"./fonts.css": "./src/fonts.css",
 		"./visually-hidden.css": "./src/visually-hidden.css"
 	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"publishConfig": {
+		"access": "public",
+		"exports": {
+			".": {
+				"types": "./dist/index.d.ts",
+				"default": "./dist/index.js"
+			},
+			"./a11y": {
+				"types": "./dist/a11y/check.d.ts",
+				"default": "./dist/a11y/check.js"
+			},
+			"./Diff": {
+				"types": "./dist/Diff.d.ts",
+				"default": "./dist/Diff.js"
+			},
+			"./tokens.css": "./dist/tokens.css",
+			"./fonts.css": "./dist/fonts.css",
+			"./visually-hidden.css": "./dist/visually-hidden.css"
+		}
+	},
 	"scripts": {
+		"build": "rm -rf dist && tsc -p tsconfig.build.json && node ./scripts/copy-src-assets.mjs",
+		"prepack": "pnpm run build",
 		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
 		"test": "vitest run --config vitest.config.ts",
 		"test:a11y": "vitest run --config vitest.a11y.config.ts"
 	},
 	"peerDependencies": {
+		"axe-core": "catalog:",
+		"fast-check": "catalog:",
 		"react": "catalog:",
 		"react-dom": "catalog:"
+	},
+	"peerDependenciesMeta": {
+		"axe-core": {
+			"optional": true
+		},
+		"fast-check": {
+			"optional": true
+		}
 	},
 	"dependencies": {
 		"@manti-ui/react": "catalog:",

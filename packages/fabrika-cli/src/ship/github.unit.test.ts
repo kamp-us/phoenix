@@ -1,15 +1,11 @@
-import {mkdtempSync} from "node:fs";
-import {tmpdir} from "node:os";
-import {join} from "node:path";
 import {Effect, Layer} from "effect";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
-import {fakeHttp, fakeShell, type HttpReply, linkNext, okOut} from "../fakes.test-support.ts";
+import {fakeHttp, fakeShell, type HttpReply, linkNext} from "../fakes.test-support.ts";
 import {forgetAmbientToken, NO_TOKEN, PAGE_CAP} from "../io/gh-api.ts";
 import type {Attempt, Shell} from "../io/git.ts";
 import {
 	armAutoMerge,
 	disableAutoMerge,
-	fetchManifest,
 	listReviews,
 	listReviewThreads,
 	listRunsAtHead,
@@ -327,34 +323,6 @@ describe("setPullState", () => {
 	it("is a failure on a non-2xx — the caller re-reads, and must not read a refusal as done", async () => {
 		const http = fakeHttp([[/PATCH/, {status: 422, body: "{}"}]]);
 		expect(reason(await run(setPullState("o/r", 4321, "open"), http))).toContain("422");
-	});
-});
-
-describe("fetchManifest", () => {
-	const scratch = () => mkdtempSync(join(tmpdir(), "fabrika-manifest-"));
-
-	const withUnzip = (payload: string) =>
-		fakeShell([[/^sh -c unzip -p /, okOut(payload)]], undefined, [/^gh /]);
-
-	const fetchWith = (http: ReturnType<typeof fakeHttp>, shell: ReturnType<typeof fakeShell>) =>
-		Effect.runPromise(
-			Effect.provide(fetchManifest("o/r", 77, scratch()), Layer.merge(shell.layer, http.layer)),
-		);
-
-	it("serves the manifest once the bytes carry the PK magic number", async () => {
-		const http = fakeHttp([[/artifacts\/77\/zip/, {status: 200, body: "PKrest"}]]);
-		const read = await fetchWith(http, withUnzip('{"captures":[]}'));
-		expect(read).toEqual({_tag: "Ok", value: '{"captures":[]}'});
-	});
-
-	it("refuses bytes that are not a zip — a 503 body saved as .zip is not a bundle (#3716)", async () => {
-		const http = fakeHttp([[/zip/, {status: 200, body: "<html>502 Bad Gateway</html>"}]]);
-		expect(reason(await fetchWith(http, withUnzip("never read")))).toContain("not a zip");
-	});
-
-	it("refuses a non-2xx download before it ever looks at the bytes", async () => {
-		const http = fakeHttp([[/zip/, {status: 410, body: "PK gone"}]]);
-		expect(reason(await fetchWith(http, withUnzip("never read")))).toContain("410");
 	});
 });
 

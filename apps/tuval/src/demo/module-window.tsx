@@ -9,7 +9,7 @@
  *
  * **Its import list is the point of the file, and it is the law from #8946.** The page loads this
  * module in a browser tab, and `./module-counter.ts` calls `defineProgram`, whose graph reaches
- * `node:crypto` through `../authoring/define-program.ts` — Vite externalises the builtin and the
+ * `node:crypto` through the SDK's `authoring/define-program.ts` — Vite externalises the builtin and the
  * first property read throws, so the window renders a load failure where the program should be. So:
  *
  * - the predicate and the state type come from `./counter-state.ts`, a leaf that imports nothing;
@@ -20,12 +20,12 @@
  * `../page/boundary.unit.test.ts` walks this module at every run to keep it that way.
  */
 
+import type {WindowHost} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {windowRenderer} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import type {ProgramEvent} from "@kampus/tuval-sdk/window";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement} from "react";
 import {useEffect, useState} from "react";
-import type {ProgramEvent} from "../authoring/window.ts";
-import type {WindowHost} from "../shell/window/index.ts";
-import {windowRenderer} from "../shell/window/index.ts";
 import {type CounterState, isCounterState} from "./counter-state.ts";
 import type {moduleCounterProgram} from "./module-counter.ts";
 

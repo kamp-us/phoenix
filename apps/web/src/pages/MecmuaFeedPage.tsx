@@ -15,8 +15,7 @@ import {Screen} from "../fate/Screen";
 import {toIso} from "../fate/wire";
 import {MECMUA_FEED} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
-import {useT} from "../i18n";
-import {formatAgoTR} from "../lib/datetime";
+import {useDateFormatter, useT} from "../i18n";
 import {NotFoundPage} from "./NotFoundPage";
 import "./MecmuaFeedPage.css";
 
@@ -101,6 +100,7 @@ function MecmuaFeedList() {
 
 function MecmuaFeedRow({node}: {node: ViewRef<"MecmuaPost">}) {
 	const post = useView(MecmuaFeedPostView, node);
+	const formatDate = useDateFormatter();
 	// A feed row is always published, so `slug ?? id` always resolves to a readable page.
 	const href = `/mecmua/${encodeURIComponent(post.slug ?? String(post.id))}`;
 	const excerpt = post.body.length > 240 ? `${post.body.slice(0, 240).trimEnd()}…` : post.body;
@@ -111,7 +111,9 @@ function MecmuaFeedRow({node}: {node: ViewRef<"MecmuaPost">}) {
 				<h2 className="kp-mecmua-feed__row-title">{post.title}</h2>
 				{post.publishedAt ? (
 					<MetaRow as="div" className="kp-mecmua-feed__meta">
-						<time dateTime={toIso(post.publishedAt)}>{formatAgoTR(toIso(post.publishedAt))}</time>
+						<time dateTime={toIso(post.publishedAt)}>
+							{formatDate.ago(toIso(post.publishedAt))}
+						</time>
 					</MetaRow>
 				) : null}
 				<p className="kp-mecmua-feed__excerpt">{excerpt}</p>

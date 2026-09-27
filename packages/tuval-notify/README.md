@@ -13,7 +13,7 @@ brief sits there until you look. This package is the part that makes the desk re
 ```ts
 // ~/.tuval/tuval.config.ts
 import {notify} from "@kampus/tuval-notify";
-import type {TuvalConfigInput} from "@kampus/tuval/sessions";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 
 export const phone = notify({target: {kind: "ntfy", topic: "can-tuval-9f3a"}});
 
@@ -106,7 +106,7 @@ Reaches no network at all. With a target title, a message is written as `Morning
 ## What arrives, and what it announces
 
 The `message` in-port takes an AI-agent **`TurnResult`** — `{text, items, ok}` — and it is declared
-over `TurnResultSchema` out of `@kampus/tuval/ai-agent/ports`, the *same object* cron declares its
+over `TurnResultSchema` out of `@kampus/tuval-sdk/ai-agent/ports`, the *same object* cron declares its
 `brief` out-port over. Not a lookalike: a route fits only on exact schema equality, so that identity
 is what lets `cron.brief → notify.message` ever be a line in a config (see below). A test asserts
 the two ports publish the same schema, so the day either side invents its own, the suite says so.
@@ -159,14 +159,13 @@ including on the failure path: a `fetch` that throws carries the URL in its own 
 cause is swallowed and the answer is `ok: false` with no status. `notify.unit.test.ts` checks this
 by stringifying the whole state *and* the whole effect list and grepping for the token.
 
-## The morning brief leaving the desk — and the one blocker left
+## The morning brief leaving the desk
 
-This package exists so that `@kampus/tuval-cron`'s 07:00 brief reaches a phone. **That wiring
-cannot be written in a config today** — but only one thing stands in the way now, and it is
-upstream, and it is pinned by a test in this package so that the day it is lifted, the suite says so.
+This package exists so that `@kampus/tuval-cron`'s 07:00 brief reaches a phone. Both ends of that
+route are in place, and a route between them compiles.
 
 **Cron has somewhere to leave from.** Its `brief` out-port carries the whole finished `TurnResult`,
-declared over `TurnResultSchema` out of `@kampus/tuval/ai-agent/ports`. (Its `result` is still a
+declared over `TurnResultSchema` out of `@kampus/tuval-sdk/ai-agent/ports`. (Its `result` is still a
 cell over the reply its spawned job sends back — an internal arrival, not a port — so the line a
 graph node writes is `{port: "brief", to: …}`.)
 
@@ -177,20 +176,19 @@ because the fit rule is **exact schema equality**, not structural compatibility:
 is the worst of both. So `message` takes a `TurnResult` and nothing else, and no adapter sits on
 either side of the route.
 
-**What is left is the kind.** An authored port's `kind` carries its own program's id, and a route
-requires the two ends' kinds to be **identical** — `apps/tuval/src/authoring/port.ts`'s
-`portKind = (program, name) => \`${program}/${name}\`` against `apps/tuval/src/ports/compile.ts`'s
-`if (source.kind !== target.kind) …IncompatibleRoute`. So `morning-brief/brief` cannot reach
-`notify/message` whatever the payloads say — this is kamp-us/phoenix
-[#8923](https://github.com/kamp-us/phoenix/issues/8923), `p1`, answered by PR
-[#9292](https://github.com/kamp-us/phoenix/pull/9292), **in review**. It is refused at `compile`,
-before boot, so a config carrying the route does not start.
+**The kind does not decide it.** An authored port's `kind` still carries its own program's id —
+the SDK's `packages/tuval/src/authoring/port.ts`'s `portKind = (program, name) => \`${program}/${name}\``
+— so `morning-brief/brief` and `notify/message` never share one. A route no longer needs them to.
+When both ends publish a schema, `packages/tuval/src/ports/compile.ts`'s `whyNotRouted` compiles the
+route on payload fit, and it compares kinds only when an end publishes no schema
+([ADR 0395](https://github.com/kamp-us/phoenix/blob/main/.decisions/0395-a-graph-route-compiles-on-payload-fit-not-on-kind.md),
+[#8923](https://github.com/kamp-us/phoenix/issues/8923)). Both ends here publish `TurnResultSchema`,
+so the route fits.
 
-This is what it will look like the day #9292 lands — and it is the shape the fixture beside this
-package already holds, as `BLOCKED_ROUTE`, out of the default export:
+Written into a config, the route looks like this. The fixture beside this package holds the same
+route as `BLOCKED_ROUTE` and still keeps it out of its default export:
 
 ```ts
-// NOT YET: `IncompatibleRoute` at compile, before boot — phoenix #8923 / PR #9292.
 export default {
   version: 1,
   programs: [morningBrief, phone],
@@ -204,7 +202,7 @@ export default {
 } satisfies TuvalConfigInput;
 ```
 
-### What works today: the spell
+### The manual path: the spell
 
 ```
 :notify send 3 PRs merged on phoenix, 1 red on main
@@ -213,8 +211,7 @@ export default {
 A `commands` entry ([ADR 0372](https://github.com/kamp-us/phoenix/blob/main/.decisions/0372-a-tuval-command-may-only-send.md)
 as #8898 amended it) that does a bare `send("message", {text, items: [], ok: true})` into this
 program's own live process — so the manual path and the routed one are the same payload in the same
-cell, and the day the route compiles nothing about the program changes. Named notifiers get their own spell: `:phone send …`,
-`:desk send …`. The text is a rest parameter, so it needs no quotes.
+cell. Named notifiers get their own spell: `:phone send …`, `:desk send …`. The text is a rest parameter, so it needs no quotes.
 
 ## How it delivers
 
@@ -361,8 +358,8 @@ The kernel is unaffected either way — the notifier still delivers and `:phone 
 but the desk has no page until it resolves.
 
 **The browser half sees no kernel, and that is checked twice.** `src/window.tsx` may reach
-`@kampus/tuval/window` (the browser-safe door), `effect`, `react` and this package's kernel-free
-`src/state.ts`; it may not reach `src/notify.ts`, which imports `@kampus/tuval/authoring` and
+`@kampus/tuval-sdk/window` (the browser-safe door), `effect`, `react` and this package's kernel-free
+`src/state.ts`; it may not reach `src/notify.ts`, which imports `@kampus/tuval-sdk/authoring` and
 through it `node:crypto`. `tsconfig.window.json` keeps that true at compile time by including
 nothing but the window and its leaves, and `state.unit.test.ts` walks the imports from
 `window.tsx` and names the whole reachable set — so a new edge across that line fails the suite by
@@ -384,7 +381,7 @@ before the restart. That is the truthful line about a history this version canno
 
 ## How it relates to Tuval
 
-This is a Tuval **program**, built on `defineProgram` out of `@kampus/tuval/authoring`. Everything
+This is a Tuval **program**, built on `defineProgram` out of `@kampus/tuval-sdk/authoring`. Everything
 around the program is the kernel's: the board tile is what the kernel renders from the `title` and
 `status` lines this program publishes; checkpoint and restore are the kernel's, and this program's
 only part in them is the `resume` that re-reads `id` and `kind` off your config; the
@@ -399,29 +396,29 @@ desk's page imports it, so this package writes a React component and nothing abo
 pnpm add @kampus/tuval-notify
 ```
 
-**No runtime dependencies.** Everything is a peer: `@kampus/tuval`, `effect`, `@demlik/tea`.
+**No runtime dependencies.** Everything is a peer: `@kampus/tuval-sdk`, `effect`, `@demlik/tea`.
 
-`@kampus/tuval` is **private and not published to npm**. This package now lives in the same
+`@kampus/tuval-sdk` is **publishable but not yet on npm**. This package now lives in the same
 workspace as Tuval does, so the dependency is a plain workspace one —
-`"@kampus/tuval": "workspace:*"` — and pnpm resolves it to `apps/tuval` in this repo with no path
+`"@kampus/tuval-sdk": "workspace:*"` — and pnpm resolves it to `packages/tuval` in this repo with no path
 link and no second checkout anywhere. It becomes a real version range the day Tuval ships to a
 registry; nothing in the source changes with it, because the source already imports only through
 the published doors (#8943, #9250):
 
-- `@kampus/tuval/authoring` — `defineProgram`, `port`, the effect constructors (`send`/`emit`),
+- `@kampus/tuval-sdk/authoring` — `defineProgram`, `port`, the effect constructors (`send`/`emit`),
   `testProgram`, `TITLE_PORT`/`STATUS_PORT`, and the types around them
-- `@kampus/tuval/sessions` — `TuvalConfigInput`, which only a config needs
-- `@kampus/tuval/ai-agent/ports` — `TurnResultSchema`, which `message` is declared over; `state.ts`
+- `@kampus/tuval-sdk/config` — `TuvalConfigInput`, which only a config needs
+- `@kampus/tuval-sdk/ai-agent/ports` — `TurnResultSchema`, which `message` is declared over; `state.ts`
   names its encoded type **type-only**, so the built `state.js` a browser loads imports nothing of it
-- `@kampus/tuval/window` — `windowRenderer` and `WindowHost`, the browser-safe half, whose own import
+- `@kampus/tuval-sdk/window` — `windowRenderer` and `WindowHost`, the browser-safe half, whose own import
   closure reaches no `node:` builtin. `src/window.tsx` is the only file that touches it
 
-Nothing reaches `@kampus/tuval/src/...`; the exports map would refuse it anyway.
+Nothing reaches `@kampus/tuval-sdk/src/...`; the exports map would refuse it anyway.
 
 ## Settings this package borrows from Tuval
 
 Two settings here are not this package's taste. They are restatements of `apps/tuval`'s, and they
-exist because `@kampus/tuval` is consumed as **raw TypeScript source**: its `exports` map points at
+exist because `@kampus/tuval-sdk` is consumed as **raw TypeScript source**: its `exports` map points at
 `src/*.ts` and it ships no `.d.ts`. Both go away the day Tuval publishes built declarations.
 
 **`tsconfig.json`: `lib: ["ES2023", "DOM", "DOM.Iterable"]` and `exactOptionalPropertyTypes: false`.**
