@@ -122,8 +122,16 @@ const menu = leafCommand(
 ).pipe(
 	Command.withShortDescription("The landed skill roster, derived from the installed plugin."),
 	Command.withDescription(
-		"List the landed skill roster, derived from the installed plugin's skills tree rather than from a committed file. First stdout line is `menu\\t<ready|empty>\\t<count>\\t<as-of>`, then one `skill\\t<name>\\t<invocation>\\t<model|user>\\t<description>` line each. An implicitly-resolved roster holding zero skills is `empty` at exit 0. Exits 7 (an explicitly passed --skills-dir is proven absent), 11 (the resolved roster could not be read — UNKNOWN, never empty). Example: fabrika status menu",
+		[
+			"Lists the landed skill roster, derived from the installed plugin's skills tree.",
+			"  stdout: `menu\\t<ready|empty>\\t<count>\\t<as-of>`, then one line per skill:",
+			"  `skill\\t<name>\\t<invocation>\\t<model|user>\\t<description>`",
+			"  7: an explicitly passed --skills-dir is absent",
+			"  11: the roster could not be read (UNKNOWN, never empty)",
+			'  Derivation: the front-door skill\'s contract.md, "status menu"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika status menu"}]),
 );
 
 const settings = leafCommand(
@@ -138,7 +146,7 @@ const settings = leafCommand(
 		surfaces: Flag.boolean("surfaces").pipe(
 			Flag.withDefault(false),
 			Flag.withDescription(
-				"expand `surfaceDispositions` into one `surface` row per repo surface, each with the disposition this repo resolves to and what that surface is",
+				"expand `surfaceDispositions` into one `surface\\t<id>\\t<fail-loud|degrade|bootstrap>\\t<what the surface is>` row per repo surface, appended to the same readout, each with the disposition this repo resolves to",
 			),
 		),
 		json: jsonFlag,
@@ -158,8 +166,19 @@ const settings = leafCommand(
 ).pipe(
 	Command.withShortDescription("The resolved config surface, every key with its provenance."),
 	Command.withDescription(
-		"Print every key on the config surface with its resolved value and where that value came from — the one place a skill asks what `.fabrika.jsonc` resolves to. First stdout line is `settings\\t<resolved|unknown>\\t<keys>\\t<declared>\\t<unknown>\\t<as-of>`, then one `setting\\t<key>\\t<declared|default|unknown>\\t<value-as-json>\\t<detail>\\t<as-of>` line each. A repo with no `.fabrika.jsonc` prints the full shipped-default set at exit 0; a key whose value could not be established makes the whole readout a refusal that names each UNKNOWN key on stderr, never the default it did not resolve to. Pass --surfaces to expand `surfaceDispositions` into one `surface\\t<id>\\t<fail-loud|degrade|bootstrap>\\t<what the surface is>` line per repo surface, appended to the same readout. This verb writes nothing. Exits 7 (the config surface registers zero keys, or --surfaces was passed and no `surfaceDispositions` key is registered), 11 (the repository root could not be resolved, or `.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green). Example: fabrika status settings",
+		[
+			"Prints every `.fabrika.jsonc` key with its resolved value and where that value came from.",
+			"  stdout: `settings\\t<resolved|unknown>\\t<keys>\\t<declared>\\t<unknown>\\t<as-of>`, then",
+			"  `setting\\t<key>\\t<declared|default|unknown>\\t<value-as-json>\\t<detail>\\t<as-of>` per key",
+			"  7: no keys registered, or --surfaces finds no `surfaceDispositions` key",
+			"  11: the root or `.fabrika.jsonc` could not be read or resolved (UNKNOWN)",
+			'  Derivation: the front-door skill\'s contract.md, "status settings"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika status settings"},
+		{command: "fabrika status settings --surfaces"},
+	]),
 );
 
 const wiring = leafCommand(
@@ -184,8 +203,14 @@ const wiring = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether this repo's sessions load fabrika's skills at all."),
 	Command.withDescription(
-		"Answer whether the fabrika plugin is wired into this repo — the meta-precondition no other status verb covers. Reads `.claude/settings.json` at the repository root and reports the `enabledPlugins` entry naming fabrika together with the marketplace source that key's `plugin@marketplace` form carries. Stdout is the single line `wiring\t<wired|unwired>\t<entry>\t<marketplace>\t<detail>\t<as-of>`. An absent settings.json, a file declaring no enabledPlugins block, an entry switched off, and a bare `fabrika` key naming no marketplace are all the proven negative `unwired` at exit 0 — a fact the caller acts on, never a green. This verb writes nothing; creating the file is `status bootstrap`'s. Exits 11 (the repository root could not be resolved, or settings.json exists and could not be read, is not JSON, is not an object, declares a non-object enabledPlugins, or carries a fabrika entry that is neither true nor false — UNKNOWN, never unwired). Example: fabrika status wiring",
+		[
+			"Prints whether this repo's `.claude/settings.json` enables the fabrika plugin.",
+			"  stdout: `wiring\\t<wired|unwired>\\t<entry>\\t<marketplace>\\t<detail>\\t<as-of>`",
+			"  11: the root or settings.json could not be read or parsed (UNKNOWN, never unwired)",
+			'  Derivation: the front-door skill\'s contract.md, "status wiring"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika status wiring"}]),
 );
 
 const board = leafCommand(
@@ -207,8 +232,14 @@ const board = leafCommand(
 ).pipe(
 	Command.withShortDescription("The board's decided buckets, each with its own freshness."),
 	Command.withDescription(
-		"Count the board's decided buckets over named REST endpoints — needs-triage, triaged, in-flight and one per priority — each with its own freshness. An absent label renders `unknown` with detail `label absent`, never 0. First stdout line is `board\\t<counted|unknown>\\t<bucket-count>`, then one `bucket\\t…` line each. Exits 11 (the repository could not be read at all — every bucket is UNKNOWN). Example: fabrika status board",
+		[
+			"Counts the board's decided buckets, each with its own freshness.",
+			"  stdout: `board\\t<counted|unknown>\\t<bucket-count>`, then one `bucket\\t…` line each",
+			"  11: the repository could not be read (every bucket UNKNOWN)",
+			'  Derivation: the front-door skill\'s contract.md, "status board"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika status board"}]),
 );
 
 const readout = leafCommand(
@@ -241,8 +272,15 @@ const readout = leafCommand(
 ).pipe(
 	Command.withShortDescription("The landed-decision digest from the durable artifact."),
 	Command.withDescription(
-		"Display the landed-decision digest published in the durable artifact, decoded through the registered governance-digest wire format. This verb ranks nothing. First stdout line is `readout\\t<found|absent|malformed>\\t<row-count>\\t<source>\\t<as-of>`, then the digest's own rows. A closed or absent artifact is `absent` at exit 0. Exits 10 (the positional is not a positive issue number), 11 (the artifact could not be fetched, its updated_at was unreadable, or the format is not registered — UNKNOWN, never absent). Example: fabrika status readout",
+		[
+			"Prints the landed-decision digest published in the durable governance readout artifact.",
+			"  stdout: `readout\\t<found|absent|malformed>\\t<row-count>\\t<source>\\t<as-of>`, then its rows",
+			"  10: the positional is not a positive issue number",
+			"  11: the artifact or its format could not be read (UNKNOWN, never absent)",
+			'  Derivation: the front-door skill\'s contract.md, "status readout"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika status readout"}]),
 );
 
 const bootstrap = leafCommand(
@@ -276,8 +314,22 @@ const bootstrap = leafCommand(
 ).pipe(
 	Command.withShortDescription("Create one missing repo surface and read it back."),
 	Command.withDescription(
-		"Create one missing repo surface from this group's own buildable-surface registry and read it back. The content of a file surface arrives on STDIN — the write, the collision guard and the read-back are this verb's; what the file says is the skill's. A line surface (`gitignore-row`, `claude-md-section`) instead appends its own registry row to a file the repo already owns, reads no STDIN, and rewrites nothing that is already there. A json surface (`settings-patch`) carries its own keys in the registry: a present file has them merged into the parsed object — every undeclared key preserved, bytes that do not parse refused unwritten — and an absent file is written whole; it reads no STDIN either way. A dep-pin surface (`dep-pin`) resolves the package's current published version from the npm registry at run time, merges the dependency row into the manifest at exactly that version, and prints the install command — no package manager ever runs and no lockfile is read or written; an unreachable registry refuses unwritten. A target already present in its adopted form is `exists` at exit 0 and nothing is written. Stdout is the single line `bootstrap\\t<created|exists>\\t<surface-id>\\t<target>\\t<readback>`. Exits 3 (stdin held nothing), 5 (the content carries a machine-local path), 6 (the content is a bare @ path reference), 8 (the write failed — UNKNOWN), 9 (the read-back differs), 10 (--path resolves outside the repository root), 11 (the existence probe failed, a present json target does not parse as a JSON object, or the npm registry could not be reached — nothing was written), 12 (the surface is not in the registry). Example: fabrika status bootstrap readout-artifact",
+		[
+			"Creates one missing repo surface from the buildable-surface registry and reads it back.",
+			"  stdout: `bootstrap\\t<created|exists>\\t<surface-id>\\t<target>\\t<readback>`",
+			"  Only a file surface reads its content on stdin.",
+			"  3: stdin held nothing",
+			"  5: the content carries a machine-local path",
+			"  6: the content is a bare @ path reference",
+			"  8: the write failed (UNKNOWN)",
+			"  9: the read-back differs",
+			"  10: --path resolves outside the repository root",
+			"  11: a precondition read failed; nothing written",
+			"  12: the surface is not in the registry",
+			'  Derivation: the front-door skill\'s contract.md, "status bootstrap"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika status bootstrap readout-artifact"}]),
 );
 
 const open = leafCommand(
@@ -365,8 +417,14 @@ const open = leafCommand(
 		"The composite readout: menu, settings, wiring, board, readout, lanes.",
 	),
 	Command.withDescription(
-		"The composite front-door readout: six fields — menu, settings, wiring, board, readout, lanes — each with its own state, source and freshness. The wiring field says whether this repo's `.claude/settings.json` enables the fabrika plugin at all. The lanes field renders `fabrika lane stale`'s sweep over both default roots at its documented threshold: `stale` names the silent lanes, zero stale lanes is the proven negative `empty` (no lanes on disk is `empty` too), and an unreadable root or lane record is `unknown` with its reason — it reports, it never resumes. Every unreadable source becomes a field state; this verb has no zero-scope seat and no failed-read seat. First stdout line is `open\\t<field-count>`, then one `field\\t<name>\\t<state>\\t<detail>\\t<source>\\t<as-of>` line each. Exits 10 (--field is off the closed vocabulary). Example: fabrika status open",
+		[
+			"Prints the composite front-door readout: menu, settings, wiring, board, readout and lanes.",
+			"  stdout: `open\\t<field-count>`, then `field\\t<name>\\t<state>\\t<detail>\\t<source>\\t<as-of>` each",
+			"  10: --field is off the closed vocabulary",
+			'  Derivation: the front-door skill\'s contract.md, "status open"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika status open"}]),
 );
 
 export const statusCommand = Command.make("status").pipe(

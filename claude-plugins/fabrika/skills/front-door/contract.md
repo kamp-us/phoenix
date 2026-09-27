@@ -411,6 +411,12 @@ field	<name>	<state>	<detail>	<source>	<as-of>
 | `wiring` | `wired` · `unwired` · `unknown` |
 | `board` | `counted` · `unknown` |
 | `readout` | `found` · `absent` · `malformed` · `unknown` |
+| `lanes` | `stale` · `empty` · `unknown` |
+
+The `lanes` field renders `fabrika lane stale`'s sweep over both default roots at its documented
+threshold: `stale` names the silent lanes, zero stale lanes is the proven negative `empty` (no lanes
+on disk is `empty` too), and an unreadable root or lane record is `unknown` with its reason. It
+reports; it never resumes.
 
 `<source>` names where the answer came from so the session can re-run one read instead of adopting
 the render: the resolved roster path for `menu`, `.fabrika.jsonc` for `settings`,
@@ -584,7 +590,7 @@ With `--json`, stdout is one object carrying `outcome` (the header's state), `pa
 | Code | Trigger |
 |---|---|
 | `7` | the config surface registers zero keys, or `--surfaces` was passed and no `surfaceDispositions` key is registered — nothing to resolve, and a readout over an empty surface is not an answer |
-| `11` | `.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green |
+| `11` | the repository root could not be resolved, or `.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green |
 
 **Errors**
 
