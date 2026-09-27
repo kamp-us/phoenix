@@ -266,8 +266,9 @@ lives under another account). `fabrika config schema` documents each key.
 
 **The columns fill themselves.** When a lane ends, `fabrika lane record` posts its record to the
 issue and then runs `fabrika table sync` for it. Sync adds the issue as a row if it has none, sets
-Stage to `in lane` (or `shipped` once its pull request merged), and fills Spent $, Asks and Origin
-from the records. It never changes a Stage of `bet` or `not now`, and a lane nobody bet on lands
-under Outside the bets. An epic, or a row with open blockers, shows as one group row that sums its
-members; the members show only in the Group members view. Run `fabrika table sync` with no issue
-to refresh every row.
+Stage to `in lane` (or `shipped` once its pull request merged), and fills Asks and Origin from the
+records. Spent $ stays empty while any lane it counts has no measured spend, which is every lane until
+a rate card exists. It never changes a Stage of `bet`, `not now` or `check`. A lane nobody bet on,
+with no Section yet, lands under Outside the bets; a row already under another Section keeps it. An
+epic, or a row with open blockers, shows as one group row that sums its members; the members show
+only in the Group members view. Run `fabrika table sync` with no issue to refresh every row.
