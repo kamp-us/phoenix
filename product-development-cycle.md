@@ -18,10 +18,12 @@ Every bet (an epic, or a feature with no parent) enters a lane carrying a `## Pi
 triage drafts and the founder approves. Its **Appetite** is a size, not a duration: `S`, `M` or
 `L`, each worth a dollar amount per epic child (`.fabrika.jsonc` `appetiteSizes`; shipped
 S = $15, M = $35, L = $40). The size is the spending limit. An optional **Success** line is
-the one sentence the two-week check judges the shipped bet against. The founder approves with
-`pitch-approved: appetite <S|M|L> · <ISO-8601-UTC>`, naming the size the body declares, and
-changing the size in the body needs a new approval. Older pitches written as `<N> cycles`
-still read, approved as `appetite <N> cycles`. `fabrika guard pitch-guard check --help` owns
+the one sentence the two-week check judges the shipped bet against. A `bet` on the table is
+the approval: setting the issue's row to `bet`, with a Size equal to the body's size, approves
+the pitch, and a `bet` on an epic or chain row approves the head and every member. The founder
+can also approve with a `pitch-approved: appetite <S|M|L> · <ISO-8601-UTC>` comment naming the
+size the body declares. Changing the size in the body needs a new approval. Older pitches
+written as `<N> cycles` still read, approved only by an `appetite <N> cycles` comment. `fabrika guard pitch-guard check --help` owns
 the full rule. fabrika's own work is pitched the same way ([ROADMAP](ROADMAP.md#fabrika)).
 
 ```markdown

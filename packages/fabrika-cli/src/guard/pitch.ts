@@ -275,6 +275,134 @@ export const resolveApproval = (comments: ReadonlyArray<Comment>, declared: Appe
 	return {_tag: "none"};
 };
 
+/**
+ * One `bet` row on the table, the second approval carrier. The row approves the pitch of every issue
+ * in `covers`: its head, and for an epic or chain row every member.
+ *
+ * Authority is the Stage value's setter at `write+`, the bar a `pitch-approved:` author meets. A
+ * field value carries no provenance stamp to read, and the founder ruled that a `bet` an agent sets
+ * under a `write+` token counts as his approval, since agents set `bet` only on his instruction.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9913#issuecomment-5852689315
+ */
+export interface BetRow {
+	readonly head: number;
+	/** The head first, then every member of a group row. */
+	readonly covers: ReadonlyArray<number>;
+	/** The row's Size cell as set, or `null` when it is empty. */
+	readonly size: string | null;
+	/** Who set the Stage to `bet`, or `null` when GitHub names no actor. */
+	readonly setter: string | null;
+	/** Resolved at the GitHub ACL by the IO shell — `write+` only, fail-closed. */
+	readonly authorized: boolean;
+}
+
+/** The table as the bet arm read it. An unread table approves nothing; comments alone decide. */
+export type BetTable =
+	| {readonly _tag: "read"; readonly source: string; readonly rows: ReadonlyArray<BetRow>}
+	| {readonly _tag: "unread"; readonly reason: string};
+
+export const TABLE_NOT_CONSULTED: BetTable = {_tag: "unread", reason: "no table was consulted"};
+
+export type BetApproval =
+	| {readonly _tag: "approved"; readonly row: BetRow}
+	| {readonly _tag: "unread"}
+	| {readonly _tag: "none"}
+	| {readonly _tag: "cycles-pitch"; readonly head: number}
+	| {readonly _tag: "unauthorized"; readonly head: number; readonly setter: string | null}
+	| {readonly _tag: "no-size"; readonly head: number}
+	| {
+			readonly _tag: "size-mismatch";
+			readonly head: number;
+			readonly size: Size;
+			readonly declared: Size;
+	  };
+
+const sizeOf = (cell: string | null): Size | null =>
+	cell !== null && (SIZES as ReadonlyArray<string>).includes(cell) ? (cell as Size) : null;
+
+/**
+ * Resolve the bet arm for one issue. A row binds its size on its head: the row's Size must equal the
+ * size the head's pitch declares. A member of a group row is approved by the group's Size whatever
+ * its own appetite, since that Size covers the whole group. Ordered like {@link resolveApproval}, so
+ * the report names the nearest miss.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9856#issuecomment-5852710907
+ */
+export const resolveBetApproval = (
+	issue: number,
+	table: BetTable,
+	declared: Appetite,
+): BetApproval => {
+	if (table._tag === "unread") return {_tag: "unread"};
+	const rows = table.rows.filter((row) => row.covers.includes(issue));
+	if (rows.length === 0) return {_tag: "none"};
+
+	let unauthorized: BetRow | null = null;
+	let unsized: BetRow | null = null;
+	let legacy: BetRow | null = null;
+	let mismatch: {readonly row: BetRow; readonly size: Size; readonly declared: Size} | null = null;
+	for (const row of rows) {
+		if (!row.authorized) {
+			unauthorized ??= row;
+			continue;
+		}
+		const size = sizeOf(row.size);
+		if (size === null) {
+			unsized ??= row;
+			continue;
+		}
+		if (row.head !== issue) return {_tag: "approved", row};
+		if (declared._tag === "cycles") {
+			legacy ??= row;
+			continue;
+		}
+		if (size !== declared.size) {
+			mismatch ??= {row, size, declared: declared.size};
+			continue;
+		}
+		return {_tag: "approved", row};
+	}
+	if (mismatch !== null) {
+		return {
+			_tag: "size-mismatch",
+			head: mismatch.row.head,
+			size: mismatch.size,
+			declared: mismatch.declared,
+		};
+	}
+	if (legacy !== null) return {_tag: "cycles-pitch", head: legacy.head};
+	if (unsized !== null) return {_tag: "no-size", head: unsized.head};
+	if (unauthorized !== null) {
+		return {_tag: "unauthorized", head: unauthorized.head, setter: unauthorized.setter};
+	}
+	return {_tag: "none"};
+};
+
+/** Why the bet arm did not approve, or `null` when the table was unread (the run names that once). */
+const betDetail = (approval: Exclude<BetApproval, {_tag: "approved"}>): string | null => {
+	switch (approval._tag) {
+		case "unread":
+			return null;
+		case "none":
+			return "no `bet` row on the table covers it";
+		case "cycles-pitch":
+			return `its \`bet\` row #${approval.head} cannot approve a legacy \`<N> cycles\` pitch — that still needs its \`pitch-approved:\` comment`;
+		case "unauthorized":
+			return `its \`bet\` row #${approval.head} was set by ${approval.setter ?? "an account GitHub no longer names"}, not a write+ collaborator`;
+		case "no-size":
+			return `its \`bet\` row #${approval.head} names no Size ${SIZES.join(" / ")}`;
+		case "size-mismatch":
+			return `its \`bet\` row #${approval.head} is sized ${approval.size} but the body declares ${approval.declared} — re-approval needed: set the row's Size to ${approval.declared}, or re-pitch`;
+	}
+};
+
+/** The bet arm's one line for the report: what was read, or why nothing was. */
+export const describeBetTable = (table: BetTable): string =>
+	table._tag === "read"
+		? `pitch-guard: bet arm read the table ${table.source} — ${table.rows.length} \`bet\` row(s).`
+		: `pitch-guard: bet arm unread — ${table.reason}; approval was decided from \`pitch-approved:\` comments alone.`;
+
 /** Lane-entering: an epic, or a parentless feature; triaged in both cases. */
 export const isLaneEntering = (candidate: Candidate): boolean => {
 	if (!candidate.labels.includes(TRIAGED_LABEL)) return false;
@@ -298,7 +426,16 @@ const APPROVAL_DETAIL: {
 		"its `pitch-approved:` comment names no `appetite <S|M|L>` (or legacy `appetite <N> cycles`) — approval must bind the appetite it approved",
 };
 
-export const disposition = (candidate: Candidate): Disposition => {
+const commentDetail = (approval: Exclude<Approval, {_tag: "approved"}>): string =>
+	approval._tag === "appetite-mismatch"
+		? `its approval names appetite ${describeAppetite(approval.approved)} but the body declares ${describeAppetite(approval.declared)} — re-approval needed`
+		: APPROVAL_DETAIL[approval._tag];
+
+/** Either carrier approves: a `pitch-approved:` comment, or a `bet` row on the table. */
+export const disposition = (
+	candidate: Candidate,
+	table: BetTable = TABLE_NOT_CONSULTED,
+): Disposition => {
 	if (!isLaneEntering(candidate)) return {_tag: "out-of-scope"};
 
 	const read = readPitch(candidate.body);
@@ -312,13 +449,11 @@ export const disposition = (candidate: Candidate): Disposition => {
 
 	const approval = resolveApproval(candidate.comments, read.appetite);
 	if (approval._tag === "approved") return {_tag: "pitched", appetite: approval.appetite};
-	if (approval._tag === "appetite-mismatch") {
-		return {
-			_tag: "unpitched",
-			detail: `its approval names appetite ${describeAppetite(approval.approved)} but the body declares ${describeAppetite(approval.declared)} — re-approval needed`,
-		};
-	}
-	return {_tag: "unpitched", detail: APPROVAL_DETAIL[approval._tag]};
+	const bet = resolveBetApproval(candidate.number, table, read.appetite);
+	if (bet._tag === "approved") return {_tag: "pitched", appetite: read.appetite};
+	const onTable = betDetail(bet);
+	const detail = commentDetail(approval);
+	return {_tag: "unpitched", detail: onTable === null ? detail : `${detail}; and ${onTable}`};
 };
 
 export interface Unpitched {
@@ -365,6 +500,7 @@ export type PitchVerdict =
 export const judge = (
 	candidates: ReadonlyArray<Candidate>,
 	scope: Scope = {_tag: "backlog"},
+	table: BetTable = TABLE_NOT_CONSULTED,
 ): PitchVerdict => {
 	const inScope = candidates.filter(isLaneEntering);
 	if (inScope.length === 0) {
@@ -377,7 +513,7 @@ export const judge = (
 	const unpitched: Array<Unpitched> = [];
 	let pitched = 0;
 	for (const candidate of inScope) {
-		const resolved = disposition(candidate);
+		const resolved = disposition(candidate, table);
 		if (resolved._tag === "pitched") pitched++;
 		else if (resolved._tag === "unpitched") {
 			unpitched.push({number: candidate.number, title: candidate.title, detail: resolved.detail});
@@ -403,9 +539,13 @@ const remedy = (sizes: AppetiteSizes): string =>
 	"     where Arc restates the home the triage rubric already assigned, Appetite is a size\n" +
 	`     ${SIZES.join(" / ")} (${describeSizes(sizes)} per epic child), and an optional\n` +
 	"     Success line names what the two-week check judges;\n" +
-	"  2. the FOUNDER approves it with a `pitch-approved: appetite <S|M|L> · <ISO-8601-UTC>` comment\n" +
-	"     naming the same size the body declares (a legacy `<N> cycles` pitch keeps approving as\n" +
-	"     `appetite <N> cycles`). Approval is a founder seat — an agent never posts it.";
+	"  2. the FOUNDER approves it, either way:\n" +
+	"     - a `bet` on the table: its row's Stage set to `bet` with a Size equal to the body's size.\n" +
+	"       A `bet` on an epic or chain row approves the head and every member. The Stage must be\n" +
+	"       set by a write+ collaborator, or by an agent under their token on their say-so;\n" +
+	"     - or a `pitch-approved: appetite <S|M|L> · <ISO-8601-UTC>` comment naming the same size the\n" +
+	"       body declares (a legacy `<N> cycles` pitch approves only this way, as\n" +
+	"       `appetite <N> cycles`). An agent never posts this comment.";
 
 /** Render the report for a verdict — always emit what you scanned, never a bare all-clear. */
 export const renderReport = (verdict: PitchVerdict, sizes: AppetiteSizes): string => {

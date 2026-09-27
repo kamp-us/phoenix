@@ -24,11 +24,18 @@ import {
 	resolveRepo,
 } from "../io/issues.ts";
 import {permissionFor} from "../io/pulls.ts";
+import type {BetRow as TableBetRow} from "../table/bet-rows.ts";
+import {readBetRows} from "../table/bet-rows-read.ts";
+import type {TableRead} from "../table/bets-read.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {PRESENT, universeOf} from "./label-universe.ts";
 import {
+	type BetRow,
+	type BetTable,
 	type Candidate,
 	type Comment,
+	describeBetTable,
+	isLaneEntering,
 	judge,
 	LANE_ENTERING_TYPES,
 	SCOPE_LABELS,
@@ -39,6 +46,14 @@ import {
 } from "./pitch.ts";
 import {emitVerdict, type GuardVerdict, unknown} from "./verdict.ts";
 
+type Requirements = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path;
+
+/** The table read behind the bet arm. */
+export type BetRowsReader = (
+	cwd: string,
+	repo: string,
+) => Effect.Effect<TableRead<ReadonlyArray<TableBetRow>>, never, Requirements>;
+
 export interface PitchGuardOptions {
 	/** One issue to scope the scan to, or `null` for the whole open lane-entering backlog. */
 	readonly issue: number | null;
@@ -46,6 +61,8 @@ export interface PitchGuardOptions {
 	/** Where `.fabrika.jsonc` is looked up, for the dollar amount each size names. */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** Where the table's `bet` rows come from; the shipped read unless a test hands in another. */
+	readonly betRows?: BetRowsReader;
 }
 
 type Scan =
@@ -192,13 +209,46 @@ const issueScan = (
 				};
 	});
 
+/**
+ * The bet arm's table, each Stage setter resolved at the ACL. Any table that does not read is
+ * `unread` with its reason: it approves nothing, and the comments decide exactly as before.
+ */
+const readBetTable = (
+	read: BetRowsReader,
+	cwd: string,
+	repo: string,
+): Effect.Effect<BetTable, never, Requirements> =>
+	Effect.gen(function* () {
+		const table = yield* read(cwd, repo);
+		if (table._tag === "NoTable") return {_tag: "unread", reason: table.note};
+		if (table._tag === "Unknown") return {_tag: "unread", reason: table.reason};
+		const authorized = new Map<string, boolean>();
+		const rows: BetRow[] = [];
+		for (const row of table.value) {
+			const setter = row.setter;
+			if (setter !== null && !authorized.has(setter)) {
+				authorized.set(setter, yield* isWritePlus(repo, setter));
+			}
+			rows.push({
+				head: row.head,
+				covers: row.covers,
+				size: row.size,
+				setter,
+				authorized: setter !== null && authorized.get(setter) === true,
+			});
+		}
+		return {_tag: "read", source: `${table.source.owner}#${table.source.number}`, rows};
+	});
+
+/** The bet arm's line leads the diagnostics, whatever the verdict. */
+const withBetNote = (outcome: VerbOutcome, table: BetTable): VerbOutcome => ({
+	...outcome,
+	stderr: [describeBetTable(table), ...outcome.stderr],
+});
+
 export const runPitchGuard = (
 	options: PitchGuardOptions,
-): Effect.Effect<
-	VerbOutcome,
-	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
-> =>
+): Effect.Effect<VerbOutcome, never, Requirements> =>
 	Effect.gen(function* () {
 		if (options.issue !== null && !(Number.isInteger(options.issue) && options.issue > 0)) {
 			return refuse(FAILED, `${VERB}: ${options.issue} is not an issue number.`);
@@ -224,10 +274,19 @@ export const runPitchGuard = (
 		const scan = yield* options.issue === null
 			? backlogScan(target.value)
 			: issueScan(target.value, options.issue);
-		return emitVerdict(
-			scan._tag === "Refused"
-				? scan.verdict
-				: toGuardVerdict(judge(scan.candidates, scan.scope), sizes.value),
-			options.env,
+		if (scan._tag === "Refused") return emitVerdict(scan.verdict, options.env);
+		if (!scan.candidates.some(isLaneEntering)) {
+			return emitVerdict(
+				toGuardVerdict(judge(scan.candidates, scan.scope), sizes.value),
+				options.env,
+			);
+		}
+		const table = yield* readBetTable(options.betRows ?? readBetRows, options.cwd, target.value);
+		return withBetNote(
+			emitVerdict(
+				toGuardVerdict(judge(scan.candidates, scan.scope, table), sizes.value),
+				options.env,
+			),
+			table,
 		);
 	});
