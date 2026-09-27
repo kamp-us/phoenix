@@ -76,13 +76,9 @@ export function LandingPage() {
 					</h1>
 					<p className="kp-landing__tagline">{t("auth.landing.tagline")}</p>
 					<p className="kp-landing__manifesto">
-						<strong>
-							{t("auth.landing.manifesto.panoLead", {panoNoun: t("auth.brand.pano")})}
-						</strong>{" "}
+						<strong>{t("auth.landing.manifesto.panoLead")}</strong>{" "}
 						{t("auth.landing.manifesto.panoBody")}{" "}
-						<strong>
-							{t("auth.landing.manifesto.sozlukLead", {sozlukNoun: t("auth.brand.sozluk")})}
-						</strong>{" "}
+						<strong>{t("auth.landing.manifesto.sozlukLead")}</strong>{" "}
 						{t("auth.landing.manifesto.sozlukBody")} {t("auth.landing.manifesto.tail")}
 					</p>
 					{joinVisible ? (
@@ -170,7 +166,7 @@ function LandingBody() {
 			<div className="kp-landing__cols">
 				<section className="kp-landing__col">
 					<header className="kp-landing__col-head">
-						<h3>{t("auth.landing.col.pano", {panoNoun: t("auth.brand.pano")})}</h3>
+						<h3>{t("auth.landing.col.pano")}</h3>
 						<Link to="/pano">
 							{t("auth.landing.seeAll")}{" "}
 							<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
@@ -194,7 +190,7 @@ function LandingBody() {
 
 				<section className="kp-landing__col">
 					<header className="kp-landing__col-head">
-						<h3>{t("auth.landing.col.sozluk", {sozlukNoun: t("auth.brand.sozluk")})}</h3>
+						<h3>{t("auth.landing.col.sozluk")}</h3>
 						<Link to="/sozluk">
 							{t("auth.landing.seeAll")}{" "}
 							<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
@@ -311,7 +307,7 @@ function LandingColsSkeleton({status}: {status: "loading" | "error"}) {
 		<div className="kp-landing__cols">
 			<section className="kp-landing__col">
 				<header className="kp-landing__col-head">
-					<h3>{t("auth.landing.col.pano", {panoNoun: t("auth.brand.pano")})}</h3>
+					<h3>{t("auth.landing.col.pano")}</h3>
 					<Link to="/pano">
 						{t("auth.landing.seeAll")}{" "}
 						<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
@@ -328,7 +324,7 @@ function LandingColsSkeleton({status}: {status: "loading" | "error"}) {
 			</section>
 			<section className="kp-landing__col">
 				<header className="kp-landing__col-head">
-					<h3>{t("auth.landing.col.sozluk", {sozlukNoun: t("auth.brand.sozluk")})}</h3>
+					<h3>{t("auth.landing.col.sozluk")}</h3>
 					<Link to="/sozluk">
 						{t("auth.landing.seeAll")}{" "}
 						<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />

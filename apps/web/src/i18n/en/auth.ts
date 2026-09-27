@@ -2,11 +2,6 @@ import type {AuthKey} from "../tr/auth";
 
 // Lowercase like the Turkish side: kamp.us speaks in lowercase, and a locale swap changes the
 // language, never the typographic voice.
-//
-// Where Turkish suffixes a product name into a longer word (`panoda`, `sözlükte`) that word is no
-// longer a whole-word hit, so English must not spell the bare name either or the per-key counts
-// diverge (ADR 0414). English carries a placeholder instead — named `{panoNoun}`, never `{pano}`,
-// because the invariant's `\p{L}+` scan reads a placeholder's own name as a word.
 export const auth = {
 	"auth.brand.pano": "pano",
 	"auth.brand.sozluk": "sözlük",
@@ -64,7 +59,7 @@ export const auth = {
 	"auth.welcome.title": "welcome",
 	"auth.welcome.titleCaylak": "welcome, newcomer",
 	"auth.welcome.lede":
-		"kamp.us is a slow corner where developers teach themselves. links and writing are shared on {panoNoun}; in {sozlukNoun} we write terms in our own words. no ads, no follower race — a voice is earned.",
+		"kamp.us is a slow corner where developers teach themselves. links and writing are shared on pano; in sözlük we write terms in our own words. no ads, no follower race — a voice is earned.",
 	"auth.welcome.standingHeading": "where you stand",
 	"auth.welcome.caylakLine": "your account is new; you are still a {caylakNoun}.",
 	"auth.welcome.karmaLabel": "karma",
@@ -79,15 +74,15 @@ export const auth = {
 	"auth.firstContribution.heading": "write your first contribution",
 	"auth.firstContribution.addEntry": 'you can start by adding an entry to the "{term}" başlık.',
 	"auth.firstContribution.browse":
-		"find a başlık that interests you in {sozlukNoun} and write your first entry.",
+		"find a başlık that interests you in sözlük and write your first entry.",
 	"auth.firstContribution.goAddEntry": "add an entry",
-	"auth.firstContribution.goBrowse": "browse {sozlukNoun}",
+	"auth.firstContribution.goBrowse": "browse sözlük",
 	"auth.firstContribution.dismiss": "not now",
 
 	"auth.landing.tagline": "a slow corner where developers teach themselves.",
-	"auth.landing.manifesto.panoLead": "on {panoNoun}",
+	"auth.landing.manifesto.panoLead": "on pano",
 	"auth.landing.manifesto.panoBody": "we share and discuss links and writing.",
-	"auth.landing.manifesto.sozlukLead": "in {sozlukNoun}",
+	"auth.landing.manifesto.sozlukLead": "in sözlük",
 	"auth.landing.manifesto.sozlukBody": "we write terms in our own words.",
 	"auth.landing.manifesto.tail":
 		"turkish first; no ads, no follower counts, no sensation — just things worth reading and the few hundred people who write them.",
@@ -100,8 +95,8 @@ export const auth = {
 	"auth.landing.join.sub": "the door is open · a voice is earned",
 	"auth.landing.browse.panoSub": "posts · discussions",
 	"auth.landing.browse.sozlukSub": "terms · definitions",
-	"auth.landing.col.pano": "latest posts on {panoNoun}",
-	"auth.landing.col.sozluk": "latest in {sozlukNoun}",
+	"auth.landing.col.pano": "latest posts on pano",
+	"auth.landing.col.sozluk": "latest in sözlük",
 	"auth.landing.seeAll": "see all",
 	"auth.landing.empty.posts": "no posts yet.",
 	"auth.landing.empty.terms": "no terms yet.",

@@ -166,13 +166,13 @@ export const divan = {
 
 	"divan.funnel.title": "conversion",
 	"divan.funnel.lead":
-		"the funnel from signup to promotion. the tier split of the human accounts on the platform right now.",
+		"the funnel from newcomer to author. the tier split of the human accounts on the platform right now.",
 	"divan.funnel.tierLabel": "tier split",
 	"divan.funnel.errorLoad": "the conversion data could not load, try again.",
 	"divan.funnel.promotionRate": "author conversion rate",
 	"divan.funnel.firstContributionRate": "first contribution rate",
 	"divan.funnel.vouchRate": "vouch rate",
-	"divan.funnel.timeToPromotion": "time to promotion (median)",
+	"divan.funnel.timeToPromotion": "time to becoming an author (median)",
 	"divan.funnel.notMeasurable": "not measurable yet",
 	"divan.funnel.notMeasurableCount": "{count} authors not measurable yet",
 	"divan.funnel.caylak": "newcomer",
@@ -193,7 +193,7 @@ export const divan = {
 	"divan.funnel.cohorts.colYazar": "author",
 	"divan.funnel.cohorts.colD1": "day 1 return",
 	"divan.funnel.cohorts.colD7": "day 7 return",
-	"divan.funnel.cohorts.foundingHole": "unmeasurable promotions",
+	"divan.funnel.cohorts.foundingHole": "unmeasurable promotions to author",
 	"divan.funnel.cohorts.vouchHole": "authors with no vouch record",
 	"divan.funnel.cohorts.holesNote":
 		"promotions in the founding generation were never stamped, and a withdrawn backing erases its record — those accounts are not counted and cannot be rebuilt after the fact.",
