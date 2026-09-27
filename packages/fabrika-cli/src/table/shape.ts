@@ -216,7 +216,7 @@ export const renderReadme = (
 		"## Before the table (fabrika does this)",
 		`- Adds up to ${settings.agendaCap} **proposed** rows, each with a size, a rec and a line in plain words.`,
 		"- Carries every running bet into the new week. Only a flagged one comes back on the agenda; the rest keep going quietly, with no rec.",
-		`- Brings back every row **shipped** ${settings.checkDelayDays} days ago or more as a **check**, with its evidence posted on the issue.`,
+		`- Brings back every bet **shipped** ${settings.checkDelayDays} days ago or more as a **check**, with its evidence posted on the issue. A bet is a row whose **${FIELD.origin}** reads \`bet\`; a row that ran without a bet stays where it is.`,
 		"- Posts the health numbers as the project's **status update**.",
 		`- Needs the week to exist: keep the coming weeks added under **${FIELD.week}** in the project's settings.`,
 		"",

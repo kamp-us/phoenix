@@ -690,7 +690,7 @@ const SHIPPED_ISSUES: Readonly<Record<number, IssueSpec>> = {
 
 const shippedRows = (setAt: string): Readonly<Record<number, Cells>> => ({
 	...ROWS,
-	50: {Stage: "shipped", setAt, Section: "New bets", Size: "M", Week: PREVIOUS.id},
+	50: {Stage: "shipped", setAt, Section: "New bets", Origin: "bet", Size: "M", Week: PREVIOUS.id},
 });
 
 const configured = (table: unknown) =>
@@ -835,6 +835,41 @@ describe("table prep's outcome check", () => {
 		expect(cell(50, "Week")).toBe(PREVIOUS.id);
 		expect(comments.get(50)).toBeUndefined();
 		expect(JSON.parse(out.stdout).checks).toEqual([]);
+	});
+
+	it("brings back only bets: a shipped row that ran without a bet stays where it is", async () => {
+		const {board, cell, comments} = world(
+			{
+				...SHIPPED_ISSUES,
+				60: {
+					open: false,
+					title: "Tidy the logs",
+					labels: ["type:chore"],
+					body: `${PITCH("S")}\n**Success:** fewer log lines`,
+					records: [{...withPr(60, 600), origin: "driver-pick"}],
+				},
+			},
+			{
+				...shippedRows(SHIPPED_AT),
+				60: {
+					Stage: "shipped",
+					setAt: SHIPPED_AT,
+					Section: "Outside the bets",
+					Origin: "driver pick",
+				},
+			},
+		);
+		const out = await prep(board);
+
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		expect(cell(60, "Stage")).toBe("shipped");
+		expect(cell(60, "Section")).toBe("Outside the bets");
+		expect(cell(60, "Rec")).toBeNull();
+		expect(comments.get(60)).toBeUndefined();
+		expect(cell(50, "Stage")).toBe("check");
+		expect(JSON.parse(out.stdout).checks.map((check: {issue: number}) => check.issue)).toEqual([
+			50,
+		]);
 	});
 
 	it("posts no second check comment when one already stands", async () => {

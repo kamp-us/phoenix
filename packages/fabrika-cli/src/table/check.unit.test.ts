@@ -19,12 +19,18 @@ const NOW = new Date("2026-10-01T00:00:00.000Z");
 const DAY = 86_400_000;
 const ago = (days: number): string => new Date(NOW.getTime() - days * DAY).toISOString();
 
-const head = (issue: number, stage: string | null, setAt = ago(20)): HeadRow => ({
+const head = (
+	issue: number,
+	stage: string | null,
+	setAt = ago(20),
+	origin: string | null = "bet",
+): HeadRow => ({
 	group: {_tag: "Single", head: issue},
 	stage: stage === null ? null : {name: stage, setter: "someone", setAt},
 	size: "S",
 	children: 0,
 	memberStages: [],
+	origin,
 });
 
 describe("dueChecks", () => {
@@ -44,6 +50,21 @@ describe("dueChecks", () => {
 
 		expect(due.map((check) => check.group.head)).toEqual([1, 3]);
 		expect(due[0]?.shippedAt).toBe(ago(30));
+	});
+
+	it("takes only bets: a shipped row that ran without a bet never comes back", () => {
+		const due = dueChecks(
+			[
+				head(1, "shipped", ago(30), "bet"),
+				head(2, "shipped", ago(30), "driver pick"),
+				head(3, "shipped", ago(30), "hand-start"),
+				head(4, "shipped", ago(30), null),
+			],
+			14,
+			NOW,
+		);
+
+		expect(due.map((check) => check.group.head)).toEqual([1]);
 	});
 });
 

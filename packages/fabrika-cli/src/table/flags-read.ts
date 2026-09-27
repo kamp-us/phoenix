@@ -96,6 +96,7 @@ export const readHeads = <R>(
 						const stage = optionName(rows.get(member), FIELD.stage);
 						return stage === null ? [] : [stage];
 					}),
+					origin: optionName(row, FIELD.origin),
 				},
 			];
 		});

@@ -297,9 +297,13 @@ the project's status update, Inbox count included. Once that update stands, a se
 nothing. The Agenda view shows only rows with a Rec, so re-run `fabrika table setup` once after
 upgrading to align its filter.
 
-**Shipped bets come back as checks.** When prep runs, a row that has been `shipped` for
-`table.checkDelayDays` days (14 by default) moves to Stage `check` on the agenda. Prep posts its
-evidence as a comment on the issue: the pitch's `**Success:**` line, what happened on GitHub since
+**Shipped bets come back as checks.** When prep runs, a bet that has been `shipped` for
+`table.checkDelayDays` days (14 by default) moves to Stage `check` on the agenda. Prep counts a row
+as a bet only when its Origin reads `bet`. Sync rewrites Origin from the latest lane record, so
+boot a bet's lane with `--origin bet` (`fabrika lane open` and `fabrika lane emit` both take it).
+Sync never moves a `bet` row forward, so set its Stage to `shipped` yourself once its work has
+merged. A row that ran without a bet, such as one under Outside the bets that sync moved to
+`shipped`, stays as it is and gets no check. Prep posts its evidence as a comment on the issue: the pitch's `**Success:**` line, what happened on GitHub since
 (new issues mentioning its pull requests, reverts, reopens, open follow-ups), and fabrika's land rate
 and spend before and after it shipped when the issue carries a `table.fabrikaShare.labels` label.
 Answer on the row's Outcome field: `worked`, `didn't` or `can't tell`. Prep never changes that answer

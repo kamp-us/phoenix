@@ -84,6 +84,7 @@ const row = (group: Group, over: Partial<Omit<HeadRow, "group">> = {}): HeadRow 
 	size: "S",
 	children: 0,
 	memberStages: [],
+	origin: "bet",
 	...over,
 });
 

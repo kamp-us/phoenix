@@ -1,10 +1,13 @@
 /**
- * The outcome check, as data: which shipped rows are due back at the table, the evidence each one
+ * The outcome check, as data: which shipped bets are due back at the table, the evidence each one
  * carries, and the comment and row cells prep writes for it. Pure — `table prep` does the reads, runs
  * the sources and hands the answers in.
  *
  * The rules it holds:
- * - **Due is read off the row.** A row whose Stage has read `shipped` for `table.checkDelayDays`
+ * - **Only a bet comes back.** A row is a bet when its Origin reads `bet`, the one cell that says the
+ *   work was picked at a table. A row that ran without a bet, such as one sync filed under Outside the
+ *   bets and moved to `shipped`, never becomes a check.
+ * - **Due is read off the row.** A bet whose Stage has read `shipped` for `table.checkDelayDays`
  *   days is due; the Stage value's own `updatedAt` is when it shipped.
  * - **The evidence needs no config.** Every check carries the pitch's Success line (or says there is
  *   none) and the GitHub signals; fabrika's own numbers join them when the issue is fabrika's work.
@@ -26,18 +29,22 @@ import {type CheckRow, plainWordsOf} from "./agenda.ts";
 import {type HeadRow, weekLanes} from "./flags.ts";
 import {type Group, issuesOf} from "./group.ts";
 import {isLanded} from "./health.ts";
+import {ORIGIN_OPTION} from "./sync.ts";
 
 export const SHIPPED_STAGE = "shipped";
 
 const DAY_MS = 86_400_000;
 
-/** A shipped row due back at the table. */
+/** A shipped bet due back at the table. */
 export interface DueCheck {
 	readonly group: Group;
 	readonly shippedAt: string;
 }
 
-/** Every row that has read `shipped` for at least `delayDays`, by head. */
+/** Whether the row is a bet: its Origin says the work was picked at a table. */
+export const isBet = (row: Pick<HeadRow, "origin">): boolean => row.origin === ORIGIN_OPTION.bet;
+
+/** Every bet that has read `shipped` for at least `delayDays`, by head. */
 export const dueChecks = (
 	rows: ReadonlyArray<HeadRow>,
 	delayDays: number,
@@ -46,7 +53,7 @@ export const dueChecks = (
 	rows
 		.flatMap((row): DueCheck[] => {
 			const stage = row.stage;
-			if (stage?.name !== SHIPPED_STAGE) return [];
+			if (stage?.name !== SHIPPED_STAGE || !isBet(row)) return [];
 			const shipped = Date.parse(stage.setAt);
 			return shipped + delayDays * DAY_MS <= now.getTime()
 				? [{group: row.group, shippedAt: stage.setAt}]
