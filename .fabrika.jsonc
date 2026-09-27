@@ -41,8 +41,8 @@
 	// already on disk keep the old arithmetic until they finish and two rule sets run side by side
 	// until then — accepted in that ruling.
 	//
-	// `parkCause.driverRouted` is `refuse`, which is also its shipped default: the ruling declares
-	// the value rather than flipping it, so this repo cannot drift if the default ever moves.
+	// `parkCause.driverRouted` is `clear`, founder-ruled 2026-09-27 (#9802): a park whose cause routes
+	// to the driver is cleared on the driver's recorded rationale via `recipe unpark`.
 	"assemblyRefresh": {
 		"onReview": "on",
 		"onDispatch": "on"
@@ -55,7 +55,7 @@
 	},
 	"parkCause": {
 		"uncaused": "refuse",
-		"driverRouted": "refuse"
+		"driverRouted": "clear"
 	},
 
 	// Who may declare a campaign or flip its lifecycle state (`fabrika campaign open` / `campaign
