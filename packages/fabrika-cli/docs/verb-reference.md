@@ -139,6 +139,8 @@ Model-selection history is recorded in the
 Drive a workflow from its local event log. Each command replays the log; lane state stays local and
 uncommitted. Use `lane --help` for command details and the
 [operator skill](../../../claude-plugins/fabrika/skills/operate/SKILL.md) for the driving loop.
+[The lane contract](../../../claude-plugins/fabrika/skills/operate/contract.md) holds the
+derivation behind each verb whose help points to it.
 [Codex dispatch](./codex-dispatch.md) documents running a task in its dedicated worktree.
 The close/reopen deployment failure behind `lane retrigger` is recorded in
 [the incident report](https://github.com/kamp-us/phoenix/issues/8881).
