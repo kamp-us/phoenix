@@ -7,7 +7,7 @@
 import type {Stopped, StoreFailed} from "@demlik/tea/effect";
 import {type Effect, type Exit, type Option, Schema, type Scope} from "effect";
 import type {PortSchema, ProgramId} from "../registry/program.ts";
-import type {HandlerFailed} from "./errors.ts";
+import type {HandlerFailed, ReceiverMissing} from "./errors.ts";
 import type {SelfReport} from "./self-report.ts";
 
 export const ProcessId = Schema.String.pipe(Schema.brand("tuval/ProcessId"));
@@ -85,6 +85,16 @@ export interface ProcessHandle {
 	 * takes this one, because the summary here cannot be a later fold's (#8274).
 	 */
 	readonly dispatchFolded: (msg: Message) => Effect.Effect<Folded>;
+	/**
+	 * Turn a payload that arrived on in-port `port` into a Msg and dispatch it, as one fold. The
+	 * receiver is the one on the row the process runs *now*, read inside the fold's permit, so after
+	 * a swap every payload — queued before it or sent after — goes through the reloaded row's
+	 * receiver (#9823). A row with no receiver for the port refuses with `ReceiverMissing`.
+	 */
+	readonly receive: (
+		port: string,
+		payload: unknown,
+	) => Effect.Effect<void, DispatchError | ReceiverMissing>;
 	readonly getState: () => unknown;
 	/** Close the scope: descendants first, then the run's drain, its Subs and finalizers. Idempotent. */
 	readonly stop: Effect.Effect<void>;

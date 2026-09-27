@@ -69,3 +69,17 @@ export class SwapProgramMismatch extends Schema.TaggedError<SwapProgramMismatch>
 		return `process "${this.id}" runs program "${this.running}", so it cannot be moved onto "${this.offered}"`;
 	}
 }
+
+/**
+ * A payload reached an in-port the row the process runs now has no receiver for, so no Msg was made
+ * from it. A reload can drop a receiver the boot row had; the payload is refused rather than handed
+ * to the old one (#9823).
+ */
+export class ReceiverMissing extends Schema.TaggedError<ReceiverMissing>()(
+	"tuval/ReceiverMissing",
+	{id: ProcessId, programId: ProgramId, port: Schema.String},
+) {
+	override get message(): string {
+		return `process "${this.id}" (program "${this.programId}") has no receiver for in-port "${this.port}", so the payload was not delivered`;
+	}
+}
