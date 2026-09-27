@@ -59,13 +59,13 @@ const repoFlag = Flag.string("repo").pipe(
 	),
 );
 
+/** Where this run's session id is read from, for the flags whose token must carry it. */
+const sessionSource = `${SESSION_ID_VARS.join(" → ")}, unset a usage error`;
+
 /**
  * Required, and deliberately not defaulted: it is how a verb learns WHICH lane is asking, and the
  * session id it could otherwise fall back to names every lane of the session at once.
  */
-/** Where this run's session id is read from, for the flags whose token must carry it. */
-const sessionSource = `${SESSION_ID_VARS.join(" → ")}, unset a usage error`;
-
 const tokenFlag = Flag.string("token").pipe(
 	Flag.withDescription(
 		`the claim token \`build claim\` handed this lane — its identity; its session must be this run's (${sessionSource})`,
