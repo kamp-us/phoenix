@@ -1,5 +1,5 @@
 /**
- * The one exit table the ten `ledger` verbs allocate from.
+ * The one exit table the eleven `ledger` verbs allocate from.
  *
  * Three tiers, and the tier decides how a constant gets here rather than what it means:
  *
@@ -50,7 +50,7 @@ export const EPIC_MOVED = 21;
 /** Proven: the plan region is unresolvable — a duplicated anchor, or a mode the body contradicts. */
 export const REGION_UNRESOLVABLE = 22;
 /**
- * Proven: the child was created and its sub-issue link could not be proven.
+ * Proven: the child exists — created, or adopted — and its sub-issue link could not be proven.
  *
  * Narrower and more useful than {@link WRITE_UNKNOWN} or {@link READBACK_MISMATCH}: the create is
  * proven and the *link* is unknown, so a named child exists unlinked. Fusing it into `8` would leave a
@@ -61,5 +61,5 @@ export const LINK_UNPROVEN = 23;
 export const TOPOLOGY_INVALID = 24;
 /** Proven: a document this verb must splice was never staged in this run. */
 export const NOT_STAGED = 25;
-/** Proven: a child was created and the run manifest could not record it. */
+/** Proven: a child exists — created, or adopted — and the run manifest could not record it. */
 export const MANIFEST_UNWRITTEN = 26;

@@ -37,7 +37,10 @@ Source grounds *what is true of the code*; authority arrives only through an ACL
 
 **Capability set:** a repo-scoped token, a claim on the epic, and direct reads inside **the
 epic's tree**. Its write surface is: creating child issues, linking them as sub-issues, the
-labels / milestone / assignee those children are born with, one PATCH of the epic body, and — on a
+labels / milestone / assignee those children are born with, linking an already-filed issue as a child,
+appending one dated amendment to its body that carries only the `**Stories:**` /
+`**Containment:**` lines it lacks, and moving it from `status:triaged` to `status:planned`
+(`ledger adopt` — never a rewrite), one PATCH of the epic body, and — on a
 re-plan only — **commenting on, unlinking and closing** a child it supersedes. Through the `grill`
 verbs it also opens or resumes one grilling session issue on the epic and comments its rounds and
 fact answers onto it. Through `build note`
@@ -121,7 +124,8 @@ need they read back out of the run directory, which this verb writes — and the
 there too, so **nothing here survives only in your head**, this one included.
 
 `candidates` is the dedup read, **advisory**, and its `outcome` has three non-interchangeable arms:
-`candidates` (overlapping open issues — read them before minting a duplicate), `none` (the sweep ran
+`candidates` (overlapping open issues — read them before minting a duplicate, and adopt one that
+already is a slice of this plan at step 5), `none` (the sweep ran
 and found nothing), `indeterminate` (the sweep could not run, so you know nothing). Reading
 `indeterminate` as `none` re-mints work that already exists.
 
@@ -315,6 +319,40 @@ write and is preserved. **On a child of an asked type only a legal value will do
 `**Stories:**` carries bare integers or `none`, and `ledger child` refuses anything else — a
 parser that harvests every digit run reads `1, 3 (see #<other>)` as claiming a story nobody wrote.
 
+**When a slice is already on the board, adopt it instead of minting it.** A brief that names an
+existing issue as a child, or a `candidates` row that is plainly this slice, is adopted:
+
+```bash
+fabrika ledger adopt $epic_number --child 5 --stories 2 --token <claim-token>
+```
+
+Done when it answers `adopted` with `linked: true`. The issue keeps its title, report and criteria.
+What you may add is only the plan's field lines it lacks. Pass `--stories` when it declares none,
+and `--containment` when the gate would ask for one; the verb appends them under a dated amendment
+and never rewrites a byte above it. It also moves the issue from `status:triaged` to
+`status:planned` before it links it, so an adopted child is unpickable until the gate flips it,
+exactly like a minted one. The authority behind that, and what it leaves to a separate ruling, is in
+[`contract.md`'s `ledger adopt`](contract.md#ledger-adopt).
+
+**Adopt before you mint anything**, so a refusal leaves no half-minted set. Read the refusal line
+before routing it, because the same codes carry two kinds of fact:
+
+- **Your own input.** A `4` that asks you to pass `--stories` or `--containment`, or a `10` on a
+  `--stories` or `--containment` value, `--child` naming the epic, or `--child` naming a pull request.
+  Fix the flag and run it again.
+- **A fact about the issue.** Each has an owner that is not you, so end `STOPPED` naming the issue,
+  the refusal line and that owner, and do not mint a duplicate to get past it. A `4` on the body (no
+  criteria, a field line declared twice, non-conforming, or with a different value) is a body edit by
+  a human or triage. A `10` on its labels (untriaged, a missing label, a status other than
+  `status:triaged` or `status:planned`, or held with nobody assigned) is triage's. A `10` saying it is
+  a sub-issue of another epic is that epic's plan's call. A `7` saying it is closed is the brief
+  author's: whether closed work belongs in this plan is not yours to decide. A `10` naming
+  `status:planned` as absent from the taxonomy is a repository fact, as it is for `ledger child`.
+
+`8`, `23` and `26` are recovered by running the same command again, because every leg re-reads
+live state and repeats only what is missing. If the re-run refuses with one of them again, stop
+there: that is `WRITE-UNPROVEN`, naming the issue. `9` is `WRITE-UNPROVEN` at once.
+
 On a `re-plan`, a child the new plan drops is retired rather than left dangling:
 
 ```bash
@@ -473,7 +511,9 @@ and every row below that seats one says so.
 - `WRITE-UNPROVEN` — `8` or `9` from any writing `ledger` verb, and from `grill open`, `grill round`
   or `grill answer`, which allocate those two seats for the same fact: a write landed, or may have,
   and could not be proven. **Neither a success nor a clean back-off — it is UNKNOWN and needs a
-  human.** Report the code, the verb, and any number known. Do not repeat the write. From `ledger
+  human.** Report the code, the verb, and any number known. Do not repeat the write. `ledger adopt`
+  is the one exception: its `8`, `23` and `26` get one re-run at step 5, and land here only when
+  that re-run refuses again. From `ledger
   edges` this says the graph is UNKNOWN while the epic body is written: say so, or a successor
   re-plans an epic that only needs its edges reconciled.
 - `EPIC-UNPLANNABLE` — a proven verdict **about the epic itself**: `7` or `10` from a `ledger`
@@ -488,7 +528,8 @@ and every row below that seats one says so.
   read the message before routing: a `7` from `ledger topology` meaning *the run manifest is empty*
   is a skipped step — mint the children, then re-run it — and a `10` naming an absent label or a
   closed milestone is a repository fact. Neither is a verdict on the epic; both land in `STOPPED`
-  only if you cannot repair them.
+  only if you cannot repair them. A `7` or `10` from `ledger adopt` naming the adopted issue is a
+  fact about that issue too, and step 5 routes it.
 - `NEEDS-INPUT` — no verb refused; the run is **fully known and one human answer short**. **A
   back-off, not UNKNOWN**, which is why it is not `STOPPED`. Mint nothing rather than part of the
   set — a half-minted epic with no topology and no plan in its body is a state a human has to
@@ -531,5 +572,7 @@ position** — a whole-line `<!-- fabrika:enriched … -->` match, so the plan m
 envelope.
 
 <!-- anchor: PLANNER-NEVER-FLIPS --> **This skill writes no `status:triaged`.** Children are born
-`status:planned` and stay there until the gate flips them. A planner that flipped its own children
-would make them pickable over a ledger nothing had checked.
+`status:planned` and stay there until the gate flips them. An adopted child was not born here, so
+`ledger adopt` moves it off `status:triaged` onto `status:planned` before it links it, and it waits
+for the same flip. A planner that flipped its own children would make them pickable over a ledger
+nothing had checked.
