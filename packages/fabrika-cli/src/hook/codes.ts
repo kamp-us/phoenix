@@ -1,7 +1,7 @@
 /**
  * The one exit table every `hook` verb allocates from.
  *
- * `hook codes` exposes {@link HOOK_EXIT_TABLE}; each verb's `--help` states what triggers its codes.
+ * `hook codes` exposes {@link HOOK_EXIT_TABLE}; each verb's `--help` names the codes it exits on.
  *
  * **`2` is allocated by nothing, here or in any other group, and this is the group that makes it a
  * hard rule.** On `PreToolUse` exit `2` is the harness's one blocking code (`./harness-exit.ts`), so
