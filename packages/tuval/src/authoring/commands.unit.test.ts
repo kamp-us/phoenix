@@ -19,6 +19,9 @@ const scope: Scope = {workspace: WorkspaceId.make("w"), client: ClientId.make("c
 /** The same scope with a calling process, which is the tie-breaker the ruling names. */
 const calledFrom = (process: ProcessId): Scope => ({...scope, process});
 
+/** The same scope naming the registered row the call reached, as the executor sets it (#9684). */
+const calledAs = (program: string): Scope => ({...scope, program: ProgramId.make(program)});
+
 /** One live row, with only the three fields the resolution reads filled honestly. */
 const row = (id: string, program: string): ProcessRow => ({
 	id: ProcessId.make(id),
@@ -245,19 +248,39 @@ describe("authoring.commands", () => {
 		});
 
 		it.effect(
-			"lands on the program's process when a project runs it under a scoped id (#9684)",
+			"lands on the scoped row's process when the executor names the row as a project's copy (#9684)",
 			() => {
 				const sent: Array<readonly [ProcessId, string, unknown]> = [];
 				return Effect.map(
-					Effect.provide(call(review, 8898), [
+					Effect.provide(call(review, 8898, calledAs("-work-alpha/pr-review")), [
 						capturingTargets(sent),
-						liveProcesses([row("-work-alpha/main", "-work-alpha/pr-review")]),
+						liveProcesses([
+							row("proc-global", "pr-review"),
+							row("-work-alpha/main", "-work-alpha/pr-review"),
+						]),
 					]),
 					() => {
 						expect(sent).toEqual([[ProcessId.make("-work-alpha/main"), "pr", 8898]]);
 					},
 				);
 			},
+		);
+
+		it.effect("never lands a global row's send on a project copy's process (#9684)", () =>
+			Effect.map(
+				Effect.exit(
+					Effect.provide(call(review, 8898, calledAs("pr-review")), [
+						capturingSends([]),
+						liveProcesses([row("-work-alpha/main", "-work-alpha/pr-review")]),
+					]),
+				),
+				(exit) => {
+					assert.isTrue(exit._tag === "Failure");
+					expect(exit._tag === "Failure" ? exit.cause.toString() : "").toContain(
+						'no live process of program "pr-review"',
+					);
+				},
+			),
 		);
 
 		it.effect("lands on the caller's own process when several are live", () => {

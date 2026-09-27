@@ -199,6 +199,60 @@ describe("SpellRegistry", () => {
 		}),
 	);
 
+	it.effect(
+		"reaches a project-scoped row at its bare id when no row holds that address exactly (#9684)",
+		() =>
+			Effect.gen(function* () {
+				const table = yield* build({
+					core: [],
+					programs: [program("-work-alpha/sessions", [spell(["session", "list"])])],
+				});
+				const found = yield* withRegistry(table, (registry) =>
+					registry.lookup(["sessions", "session", "list"]),
+				);
+				assert.strictEqual(renderPath(found.path), "-work-alpha/sessions.session.list");
+			}),
+	);
+
+	it.effect("reads an exact address first, so a global row keeps its bare address (#9684)", () =>
+		Effect.gen(function* () {
+			const table = yield* build({
+				core: [],
+				programs: [
+					program("sessions", [spell(["session", "list"])]),
+					program("-work-alpha/sessions", [spell(["session", "list"])]),
+				],
+			});
+			const [bare, scoped] = yield* withRegistry(table, (registry) =>
+				Effect.all(
+					[
+						registry.lookup(["sessions", "session", "list"]),
+						registry.lookup(["-work-alpha/sessions", "session", "list"]),
+					],
+					{concurrency: "unbounded"},
+				),
+			);
+			assert.strictEqual(renderPath(bare.path), "sessions.session.list");
+			assert.strictEqual(renderPath(scoped.path), "-work-alpha/sessions.session.list");
+		}),
+	);
+
+	it.effect("answers no row for a bare id two projects both declare (#9684)", () =>
+		Effect.gen(function* () {
+			const table = yield* build({
+				core: [],
+				programs: [
+					program("-work-alpha/sessions", [spell(["session", "list"])]),
+					program("-work-beta/sessions", [spell(["session", "list"])]),
+				],
+			});
+			const missing = yield* withRegistry(table, (registry) =>
+				Effect.flip(registry.lookup(["sessions", "session", "list"])),
+			);
+			assert.instanceOf(missing, SpellNotFound);
+		}),
+	);
+
 	it.effect("replaces the whole table in one write — a concurrent reader never sees a mix", () =>
 		Effect.gen(function* () {
 			const before = yield* build({core: [spell(["a"]), spell(["b"])], programs: []});

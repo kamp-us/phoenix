@@ -182,7 +182,10 @@ project's own row or node when there is one and the global one otherwise. A proj
 another project's id is refused at load with both ends named, and so is a global graph naming any
 project's: the global layer reaches a project only through a connection the project declares. `/` is
 reserved for that scope, so a declared id carrying one is refused. On the command line a project
-row goes by its scoped id. A file layer that declares the shell's row or node id is refused at load,
+row goes by its scoped id. A project row's spells sit under its scoped id too, and a call that
+addresses one by the bare id it was declared under still reaches it, as long as no row holds that
+bare address and only one project declares the id; that is how a window's `session.list` call
+reaches a project's session list. A file layer that declares the shell's row or node id is refused at load,
 naming the file and saying the desk supplies it.
 
 The first boot on a build with project scoping moves the checkpoints an older build saved onto the

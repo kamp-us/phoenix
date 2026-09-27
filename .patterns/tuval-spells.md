@@ -130,7 +130,11 @@ Every read is a single `SubscriptionRef.get` and `swap` is a single `Subscriptio
 program's spells at once and no reader ever walks a half-replaced table.
 
 `lookupRow(table, path)` is the trie walk itself, exported so the registry, the binding compiler
-and `SpellSet` take one walk rather than three.
+and `SpellSet` take one walk rather than three. It reads the exact address first, so every row stays
+reachable at its own. On a miss whose first segment is a bare program id, it reads that id against
+the project-scoped rows (`<project>/<id>`, #9684): exactly one scoped row answering is that row, and
+two projects answering is no row. That is how a page's bare `session.list` call reaches a session
+list a project layer declares.
 
 Three layers build the service. `SpellRegistry.layer(table)` holds a table of its own and
 `SpellRegistry.scripted(spells)` builds one from a bare core list, which is the test seam; the
@@ -150,11 +154,15 @@ interface Scope {
 	readonly process?: ProcessId;
 	readonly workspace: WorkspaceId;
 	readonly client: ClientId;
+	readonly program?: ProgramId;
 }
 ```
 
 A workspace and a client are always known. A window and a process are known only when the caller was
-inside one.
+inside one. `program` is not about the caller: the executor sets it to the registered id of the row
+whose spell runs, and leaves it absent for a core spell. A project's copy of a row runs as
+`<project>/<id>` while its compiled closures know only `<id>`, so an authored command's bare `send`
+resolves its own process against this id (`authoring/own-process.ts`, #9684).
 
 `resolveScope` ([`scope.ts`](../packages/tuval/src/commands/scope.ts)) builds it. The wire lets a page
 name the window it called from and nothing else: the process and the workspace are looked up through
