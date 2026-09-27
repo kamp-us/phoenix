@@ -31,6 +31,14 @@ const PROJECT: ProjectSnapshot = {
 	views: [],
 };
 
+const ON_CALL: ProjectSnapshot = {
+	...PROJECT,
+	id: "PVT_2",
+	number: 4,
+	url: "https://github.com/orgs/acme/projects/4",
+	title: "widgets on-call",
+};
+
 interface IssueSpec {
 	readonly subIssues?: ReadonlyArray<number>;
 	readonly blockedBy?: ReadonlyArray<number>;
@@ -63,7 +71,18 @@ const optionValue = (
 const table = (
 	issues: Readonly<Record<number, IssueSpec>>,
 	rows: ReadonlyArray<RowSpec>,
-	over: {located?: Located; campaigns?: Campaigns; scopeMissing?: boolean} = {},
+	over: {
+		located?: Located;
+		campaigns?: Campaigns;
+		scopeMissing?: boolean;
+		/** The on-call board's items: each issue with its target and when it was set. */
+		onCall?: ReadonlyArray<{
+			readonly number: number;
+			readonly target: string;
+			readonly since: string;
+		}>;
+		closed?: ReadonlyArray<number>;
+	} = {},
 ) => {
 	const ok = <A>(value: A): ProjectsAnswer<A> => ({_tag: "Ok", value});
 	const nodeOf = (number: number): SyncNode | null => {
@@ -80,41 +99,61 @@ const table = (
 				.map(([n]) => Number(n)),
 		};
 	};
+	const productItems = (): ReadonlyArray<ProjectItem> =>
+		rows.map((row) => ({
+			itemId: `PVTI_${row.number}`,
+			contentNumber: row.number,
+			contentType: "Issue",
+			repository: REPO,
+			values: [
+				...(row.stage === undefined
+					? []
+					: [
+							optionValue(
+								"Stage",
+								row.stage,
+								row.setter ?? OWNER,
+								row.setAt ?? "2026-09-26T12:00:00.000Z",
+							),
+						]),
+				...(row.size === undefined
+					? []
+					: [optionValue("Size", row.size, OWNER, "2026-09-20T00:00:00.000Z")]),
+			],
+		}));
+	const onCallItems = (): ReadonlyArray<ProjectItem> =>
+		(over.onCall ?? []).map((item) => ({
+			itemId: `PVTI_oncall_${item.number}`,
+			contentNumber: item.number,
+			contentType: "Issue",
+			repository: REPO,
+			values: [optionValue("Response target", item.target, OWNER, item.since)],
+		}));
 	const board: FlagsBoard<never> = {
-		locate: () =>
+		locate: (_repo, target) =>
 			Effect.succeed(
 				over.scopeMissing === true
 					? {_tag: "MissingScope" as const, reason: "the token lacks the `project` scope"}
-					: ok(over.located ?? {_tag: "Located", project: PROJECT}),
+					: target.key.startsWith("boards.")
+						? ok({_tag: "Located" as const, project: ON_CALL})
+						: ok(over.located ?? {_tag: "Located", project: PROJECT}),
 			),
-		items: () =>
-			Effect.succeed(
-				ok(
-					rows.map(
-						(row): ProjectItem => ({
-							itemId: `PVTI_${row.number}`,
-							contentNumber: row.number,
-							contentType: "Issue",
-							repository: REPO,
-							values: [
-								...(row.stage === undefined
-									? []
-									: [
-											optionValue(
-												"Stage",
-												row.stage,
-												row.setter ?? OWNER,
-												row.setAt ?? "2026-09-26T12:00:00.000Z",
-											),
-										]),
-								...(row.size === undefined
-									? []
-									: [optionValue("Size", row.size, OWNER, "2026-09-20T00:00:00.000Z")]),
-							],
-						}),
-					),
-				),
-			),
+		items: (projectId) =>
+			Effect.succeed(ok(projectId === ON_CALL.id ? onCallItems() : productItems())),
+		openIssues: () =>
+			Effect.succeed({
+				_tag: "Ok" as const,
+				value: [...Object.keys(issues).map(Number), ...(over.onCall ?? []).map((one) => one.number)]
+					.filter((number) => !(over.closed ?? []).includes(number))
+					.map((number) => ({
+						number,
+						title: `Issue ${number}`,
+						body: "",
+						labels: issues[number]?.labels ?? [],
+						author: OWNER,
+						association: "MEMBER",
+					})),
+			}),
 		node: (_repo, number) => {
 			const found = nodeOf(number);
 			return Effect.succeed(found === null ? absent<SyncNode>() : present(found));
@@ -231,6 +270,50 @@ describe("table flags on the whole table", () => {
 		});
 
 		expect((await flags(board)).code).toBe(NO_TARGET);
+	});
+});
+
+describe("table flags with a boards block", () => {
+	const SPLIT = fakeFs({
+		files: {"/repo/.fabrika.jsonc": JSON.stringify({boards: {onCall: {spendShare: 30}}})},
+	}).layer;
+	const world = () =>
+		table(
+			{
+				10: {records: [record(10, 60)]},
+				20: {records: [record(20, 40)]},
+			},
+			[
+				{number: 10, stage: "in lane"},
+				{number: 20, stage: "in lane"},
+			],
+			{
+				onCall: [
+					{number: 10, target: "same day", since: "2026-09-26T00:00:00.000Z"},
+					{number: 11, target: "this week", since: "2026-09-26T00:00:00.000Z"},
+					{number: 12, target: "same day", since: "2026-09-20T00:00:00.000Z"},
+				],
+				closed: [12],
+			},
+		);
+
+	it("flags an open on-call item past its target and on-call spend over its share", async () => {
+		const answer = JSON.parse((await flags(world().board, [], SPLIT)).stdout);
+
+		expect(
+			answer.flags.map((flag: {flag: string; issue?: number}) => [flag.flag, flag.issue ?? null]),
+		).toEqual([
+			["past-target", 10],
+			["on-call-share", null],
+		]);
+		expect(answer.flags[1]).toMatchObject({percent: 60, target: 30, onCallUsd: 60, totalUsd: 100});
+	});
+
+	it("asks no on-call check with one board", async () => {
+		const answer = JSON.parse((await flags(world().board, [], unconfigured)).stdout);
+
+		expect(answer.flags).toEqual([]);
+		expect(answer.unread.map((one: {check: string}) => one.check)).toEqual(["fabrika-share"]);
 	});
 });
 

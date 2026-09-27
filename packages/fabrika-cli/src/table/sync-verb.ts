@@ -62,7 +62,7 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {kindOf, membersOf} from "./group.ts";
-import {defaultTitle} from "./shape.ts";
+import {type BoardTarget, productBoard} from "./shape.ts";
 import {
 	describeWrite,
 	planSync,
@@ -91,7 +91,7 @@ type Target = {readonly projectId: string; readonly itemId: string; readonly fie
 export interface SyncBoard<R> {
 	readonly locate: (
 		repo: string,
-		settings: TableSettings,
+		target: BoardTarget,
 	) => Effect.Effect<ProjectsAnswer<Located>, never, R>;
 	readonly items: (
 		projectId: string,
@@ -368,7 +368,7 @@ const converge = <R>(
 	issues: ReadonlyArray<number>,
 ): Effect.Effect<Synced | Refusal, never, R> =>
 	Effect.gen(function* () {
-		const located = yield* board.locate(repo, settings);
+		const located = yield* board.locate(repo, productBoard(repo, settings));
 		if (located._tag !== "Ok") return stop(located, PRECONDITION_UNKNOWN, "cannot find the table");
 		if (located.value._tag === "Refused") return located.value;
 		const {project} = located.value;
@@ -501,27 +501,27 @@ export const runSync = <R>(
 export const locateTable = (
 	token: string,
 	repo: string,
-	settings: TableSettings,
+	target: BoardTarget,
 	verb: string,
 ): Api<ProjectsAnswer<Located>> =>
 	Effect.gen(function* () {
 		const found = (value: Located): ProjectsAnswer<Located> => ({_tag: "Ok", value});
 		const node = yield* readRepository(token, repo);
 		if (node._tag !== "Ok") return node;
-		const owner = settings.project.owner ?? node.value.owner.login;
-		if (settings.project.number !== null) {
-			const read = yield* readProjectByNumber(token, owner, settings.project.number);
+		const owner = target.project.owner ?? node.value.owner.login;
+		if (target.project.number !== null) {
+			const read = yield* readProjectByNumber(token, owner, target.project.number);
 			if (read._tag !== "Ok") return read;
 			return found(
 				read.value === null
 					? refused(
 							NO_TARGET,
-							`${verb}: \`table.project\` names project ${settings.project.number} under ${owner}, and ${owner} has no such project. Nothing was written.`,
+							`${verb}: \`${target.key}\` names project ${target.project.number} under ${owner}, and ${owner} has no such project. Nothing was written.`,
 						)
 					: {_tag: "Located", project: read.value},
 			);
 		}
-		const title = defaultTitle(repo);
+		const {title} = target;
 		let refs = node.value.linkedProjects.filter((ref) => ref.title === title && !ref.closed);
 		if (refs.length === 0) {
 			const owned = yield* readOwnerProjects(token, owner);
@@ -541,7 +541,7 @@ export const locateTable = (
 			return found(
 				refused(
 					AMBIGUOUS_PROJECT,
-					`${verb}: ${refs.length} open projects are titled "${title}" (${refs.map((ref) => `#${ref.number}`).join(", ")}) — set \`table.project.number\` in .fabrika.jsonc. Nothing was written.`,
+					`${verb}: ${refs.length} open projects are titled "${title}" (${refs.map((ref) => `#${ref.number}`).join(", ")}) — set \`${target.key}.number\` in .fabrika.jsonc. Nothing was written.`,
 				),
 			);
 		}
@@ -551,7 +551,7 @@ export const locateTable = (
 
 /** The shipped board: GitHub, under the ambient token. */
 export const syncBoard: SyncBoard<ChildProcessSpawner.ChildProcessSpawner> = {
-	locate: (repo, settings) => withProjects((token) => locateTable(token, repo, settings, VERB)),
+	locate: (repo, target) => withProjects((token) => locateTable(token, repo, target, VERB)),
 	items: (projectId) => withProjects((token) => readItems(token, projectId)),
 	node: (repo, issue) =>
 		Effect.gen(function* () {

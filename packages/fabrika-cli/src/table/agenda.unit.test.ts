@@ -75,6 +75,7 @@ describe("candidatesOf", () => {
 		followUps: [],
 		flagged: new Map(),
 		target: "it_next",
+		onCall: new Set<number>(),
 	});
 
 	it("sorts a section p0 first, and never re-proposes an answered row", () => {
@@ -106,6 +107,18 @@ describe("candidatesOf", () => {
 			"New bets #2",
 			"Customers #1",
 		]);
+	});
+
+	it("never proposes an issue the on-call board holds, nor lists it for triage", () => {
+		const customer = (number: number, labels: ReadonlyArray<string>) =>
+			issue(number, {association: "NONE", author: "user", labels});
+		const {candidates, triageFirst} = candidatesOf({
+			...input([customer(3, ["status:triaged"]), customer(4, ["status:triaged"]), customer(5, [])]),
+			onCall: new Set([3, 5]),
+		});
+
+		expect(candidates.map((one) => one.issue)).toEqual([4]);
+		expect(triageFirst).toEqual([]);
 	});
 });
 

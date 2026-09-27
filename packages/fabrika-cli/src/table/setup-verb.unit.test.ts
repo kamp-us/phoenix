@@ -305,6 +305,81 @@ describe("table setup's refusals", () => {
 	});
 });
 
+describe("table setup with a boards block", () => {
+	const split = fakeFs({
+		files: {"/repo/.fabrika.jsonc": JSON.stringify({boards: {onCall: {}}})},
+	}).layer;
+
+	it("creates the table and an on-call board whose Response target stands where Size would", async () => {
+		const github = fakeProjects({repo: REPO});
+		const outcome = await setupOn(github, split);
+
+		expect(outcome.code).toBe(0);
+		const answered = JSON.parse(outcome.stdout);
+		expect(answered.answer).toBe("created");
+		expect(answered.onCall).toMatchObject({answer: "created", project: {title: "widgets on-call"}});
+		expect(github.projects.map((project) => [project.title, project.linked])).toEqual([
+			["widgets table", true],
+			["widgets on-call", true],
+		]);
+
+		const table = github.projects[0]?.fields.map((field) => field.name) ?? [];
+		expect(table).toContain("Size");
+		expect(table).not.toContain("Response target");
+		const onCall = github.projects[1];
+		const custom = (onCall?.fields ?? []).filter(
+			(field) => !["Title", "Assignees", "Status", "Labels"].includes(field.name),
+		);
+		expect(custom.map((field) => [field.name, field.dataType])).toEqual([
+			["Response target", "SINGLE_SELECT"],
+			["In plain words", "TEXT"],
+		]);
+		expect(custom[0]?.options?.map((option) => option.name)).toEqual(["same day", "this week"]);
+		expect(onCall?.views.map((view) => view.name).filter((name) => name !== "View 1")).toEqual([
+			"Queue",
+		]);
+		expect(onCall?.readme).toContain("# How to use the on-call board");
+	});
+
+	it("writes nothing to either board on the second run", async () => {
+		const github = fakeProjects({repo: REPO});
+		await setupOn(github, split);
+		const before = structuredClone(github.projects);
+
+		const second = await setupOn(github, split);
+
+		expect(JSON.parse(second.stdout)).toMatchObject({
+			answer: "unchanged",
+			onCall: {answer: "unchanged", changes: []},
+		});
+		expect(github.projects).toEqual(before);
+	});
+
+	it("answers exactly as before with no boards block: one board and no onCall key", async () => {
+		const {outcome, github} = await run();
+
+		expect(github.projects).toHaveLength(1);
+		expect(Object.keys(JSON.parse(outcome.stdout))).toEqual([
+			"answer",
+			"repo",
+			"project",
+			"changes",
+			"drift",
+			"manualSteps",
+		]);
+	});
+
+	it("refuses a malformed boards block before reading GitHub", async () => {
+		const github = fakeProjects({repo: REPO});
+		const bad = fakeFs({
+			files: {"/repo/.fabrika.jsonc": JSON.stringify({boards: {onCall: {spendShare: 0}}})},
+		}).layer;
+
+		expect((await setupOn(github, bad)).code).toBe(CONFIG_MALFORMED);
+		expect(github.operations).toEqual([]);
+	});
+});
+
 describe("table setup honours the table block", () => {
 	it("starts the iteration on the configured day and runs it for the cadence", async () => {
 		const github = fakeProjects({repo: REPO});

@@ -14,6 +14,7 @@ import type {AppetiteSizes} from "../config/keys/appetite-sizes.ts";
 import {
 	type Cadence,
 	OUTSIDE_THE_BETS,
+	type ProjectTarget,
 	type TableSettings,
 	WEEKDAYS,
 } from "../config/keys/table.ts";
@@ -278,6 +279,21 @@ export const renderReadme = (
 };
 
 export const defaultTitle = (repo: string): string => `${repo.split("/")[1] ?? repo} table`;
+
+/** Where one board lives: the title setup gives it and finds it by, and the config that pins it. */
+export interface BoardTarget {
+	readonly title: string;
+	readonly project: ProjectTarget;
+	/** The `.fabrika.jsonc` path `project` is read from, as a refusal names it. */
+	readonly key: string;
+}
+
+/** The weekly table — the product board when `boards` splits the work. */
+export const productBoard = (repo: string, settings: TableSettings): BoardTarget => ({
+	title: defaultTitle(repo),
+	project: settings.project,
+	key: "table.project",
+});
 
 export const tableShape = (
 	settings: TableSettings,

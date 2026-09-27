@@ -21,6 +21,7 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {appetiteSizesKey} from "../config/keys/appetite-sizes.ts";
+import {boardsKey} from "../config/keys/boards.ts";
 import {OUTSIDE_THE_BETS, type TableSettings, tableKey} from "../config/keys/table.ts";
 import {readKey} from "../config/read-key.ts";
 import {subIssues} from "../io/edges.ts";
@@ -80,18 +81,35 @@ import {
 	SCOPE_MISSING,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
-import {type Deciders, type Flag, flagsOf, NOT_ASKED} from "./flags.ts";
+import {
+	type Deciders,
+	type Flag,
+	flagName,
+	flagsOf,
+	NOT_ASKED,
+	onCallSpendOf,
+	recOf,
+} from "./flags.ts";
 import {readHeads, stopOn} from "./flags-read.ts";
 import {type FlagsBoard, flagsBoard} from "./flags-verb.ts";
 import {type Group, groupOf, kindOf, membersOf} from "./group.ts";
 import {
 	healthOf,
 	healthWindow,
+	type OnCallHealth,
 	outsideOf,
 	postedFor,
 	renderHealth,
 	targetIteration,
 } from "./health.ts";
+import {
+	type OnCallFields,
+	onCallFields,
+	onCallIssuesOf,
+	onCallItemsOf,
+	planOnCall,
+	readOnCall,
+} from "./on-call-prep.ts";
 import {FIELD} from "./shape.ts";
 import type {Row, SyncNode} from "./sync.ts";
 import {
@@ -253,6 +271,7 @@ const applyAll = <R>(
 	repo: string,
 	writes: ReadonlyArray<PrepWrite>,
 	landed: string[],
+	describe: (write: PrepWrite) => string,
 ): Effect.Effect<Refusal | null, never, R> =>
 	Effect.gen(function* () {
 		for (const write of writes) {
@@ -283,25 +302,30 @@ const applyAll = <R>(
 				return stop(
 					done,
 					WRITE_UNKNOWN,
-					`${describePrepWrite(write)} did not land — UNKNOWN${so}; re-run prep to finish`,
+					`${describe(write)} did not land — UNKNOWN${so}; re-run prep to finish`,
 				);
 			}
-			landed.push(describePrepWrite(write));
+			landed.push(describe(write));
 		}
 		return null;
 	});
 
 type Converged = {readonly _tag: "Converged"; readonly changes: ReadonlyArray<string>};
 
-/** Apply `plan` until the rows read in step: adds, a re-read, the cells, and an empty last plan. */
+/**
+ * Apply `plan` until the rows read in step: adds, a re-read, the cells, and an empty last plan.
+ * `where` names the board in what the run reports.
+ */
 const converge = <R>(
 	board: PrepBoard<R>,
 	project: ProjectSnapshot,
 	repo: string,
 	first: ReadonlyMap<number, Row>,
 	plan: (rows: ReadonlyMap<number, Row>) => ReadonlyArray<PrepWrite>,
+	where = "the table",
 ): Effect.Effect<Converged | Refusal, never, R> =>
 	Effect.gen(function* () {
+		const describe = (write: PrepWrite): string => describePrepWrite(write, where);
 		const landed: string[] = [];
 		const readRows = Effect.map(
 			board.items(project.id),
@@ -310,7 +334,7 @@ const converge = <R>(
 		);
 
 		const adds = plan(first).filter((write) => write._tag === "Add");
-		const addFailed = yield* applyAll(board, project, repo, adds, landed);
+		const addFailed = yield* applyAll(board, project, repo, adds, landed, describe);
 		if (addFailed !== null) return addFailed;
 
 		let rows: ReadonlyMap<number, Row> = first;
@@ -333,7 +357,7 @@ const converge = <R>(
 				`${VERB}: wrote ${landed.join("; ")} and ${stray.map((write) => `#${write.issue}`).join(", ")} still does not read as a row — re-read the project before retrying.`,
 			);
 		}
-		const valuesFailed = yield* applyAll(board, project, repo, values, landed);
+		const valuesFailed = yield* applyAll(board, project, repo, values, landed, describe);
 		if (valuesFailed !== null) return valuesFailed;
 
 		if (landed.length > 0) {
@@ -349,7 +373,7 @@ const converge = <R>(
 			if (settled.length > 0) {
 				return refused(
 					READBACK_MISMATCH,
-					`${VERB}: wrote ${landed.join("; ")} and the rows still do not read in step: ${settled.map(describePrepWrite).join("; ")} — re-read the project before retrying.`,
+					`${VERB}: wrote ${landed.join("; ")} and the rows still do not read in step: ${settled.map(describe).join("; ")} — re-read the project before retrying.`,
 				);
 			}
 		}
@@ -374,6 +398,10 @@ export const runPrep = <R>(
 		const sizes = yield* readKey(options.cwd, appetiteSizesKey);
 		if (sizes._tag === "Refused") {
 			return refuse(CONFIG_MALFORMED, `${VERB}: ${sizes.reason}. Nothing was read from GitHub.`);
+		}
+		const boards = yield* readKey(options.cwd, boardsKey);
+		if (boards._tag === "Refused") {
+			return refuse(CONFIG_MALFORMED, `${VERB}: ${boards.reason}. Nothing was read from GitHub.`);
 		}
 		const resolved = yield* resolveRepo(options.repo, options.env);
 		if (resolved._tag === "Failure") {
@@ -428,6 +456,31 @@ export const runPrep = <R>(
 		const open = new Map(listing.value.map((issue) => [issue.number, issue] as const));
 		const openSet: ReadonlySet<number> = new Set(open.keys());
 
+		const onCallRead = yield* readOnCall(board, VERB, repo, boards.value);
+		if (onCallRead._tag === "Refused") return refuse(onCallRead.code, onCallRead.reason);
+		const split = onCallRead._tag === "Split" ? onCallRead : null;
+		let onCallWrite: OnCallFields | null = null;
+		let routed: ReadonlyArray<ListedIssue> = [];
+		if (split !== null) {
+			const resolvedOnCall = onCallFields(split.project, split.settings);
+			if (resolvedOnCall._tag === "Missing") {
+				return refuse(
+					NOT_SET_UP,
+					`${VERB}: the on-call board #${split.project.number} lacks ${resolvedOnCall.what.join(", ")} — run \`fabrika table setup\` first. Nothing was written.`,
+				);
+			}
+			onCallWrite = resolvedOnCall.fields;
+			routed = onCallIssuesOf(open, heads.table, split.settings);
+		}
+		const routedSet: ReadonlySet<number> = new Set(routed.map((issue) => issue.number));
+		const onCallIssues: ReadonlySet<number> = new Set([
+			...(split?.rows.keys() ?? []),
+			...routedSet,
+		]);
+		const window = healthWindow(target);
+		const onCallOpen =
+			split === null ? [] : onCallItemsOf(split.rows, open, routed, split.settings, now);
+
 		const deciders: Deciders = heads.rows.some((row) => row.stage?.name === BET_STAGE)
 			? yield* board.deciders(repo)
 			: NOT_ASKED;
@@ -440,7 +493,20 @@ export const runPrep = <R>(
 			deciders,
 			campaigns: NOT_ASKED,
 			share: NOT_ASKED,
+			onCall:
+				split === null
+					? NOT_ASKED
+					: {
+							_tag: "OnCall",
+							settings: split.settings,
+							issues: onCallIssues,
+							open: onCallOpen,
+							week: {_tag: "Week", ...window},
+						},
 		});
+		const onCallFlagged = report.flags.filter(
+			(flag) => flag._tag === "PastTarget" || flag._tag === "OnCallShare",
+		);
 		const rowFlags = report.flags.filter(
 			(flag): flag is Extract<Flag, {head: number}> => "head" in flag,
 		);
@@ -468,6 +534,7 @@ export const runPrep = <R>(
 				followUps: followUps.value,
 				flagged,
 				target: target.id,
+				onCall: routedSet,
 			});
 			triageFirst = sorted.triageFirst;
 			const graph = new Map(heads.graph);
@@ -511,7 +578,7 @@ export const runPrep = <R>(
 					? null
 					: cellsOf(chosen, open, table, sizes.value),
 		}));
-		const outside = outsideOf(heads.table, openSet);
+		const outside = outsideOf(heads.table, openSet, onCallIssues);
 
 		const commented: number[] = [];
 		for (const check of checks) {
@@ -542,9 +609,30 @@ export const runPrep = <R>(
 		if (converged._tag === "Refused") return refuse(converged.code, converged.reason);
 		const {changes} = converged;
 
+		let onCallChanges: ReadonlyArray<string> = [];
+		let onCallHealth: OnCallHealth | null = null;
+		if (split !== null && onCallWrite !== null) {
+			const placed = yield* converge(
+				board,
+				split.project,
+				repo,
+				split.rows,
+				(rows) => planOnCall({fields: onCallWrite, settings: split.settings, rows, issues: routed}),
+				"the on-call board",
+			);
+			if (placed._tag === "Refused") return refuse(placed.code, placed.reason);
+			onCallChanges = placed.changes;
+			onCallHealth = {
+				open: onCallOpen.length,
+				pastTarget: onCallFlagged.filter((flag) => flag._tag === "PastTarget").length,
+				spend: onCallSpendOf(heads.records, window, onCallIssues),
+				share: split.settings.spendShare,
+			};
+		}
+
 		const flaggedBets = agenda.filter((row) => row.flaggedBet).length;
 		const health = healthOf({
-			window: healthWindow(target),
+			window,
 			records: heads.records,
 			flags: report.flags,
 			outside,
@@ -554,7 +642,12 @@ export const runPrep = <R>(
 		});
 		let posted = false;
 		if (!prepped) {
-			const update = renderHealth(health, target, rowFlags.length > 0);
+			const update = renderHealth(
+				health,
+				target,
+				rowFlags.length > 0 || onCallFlagged.length > 0,
+				onCallHealth,
+			);
 			const sent = yield* board.post(project.id, update);
 			if (sent._tag !== "Ok") {
 				const failed = stop(
@@ -596,8 +689,9 @@ export const runPrep = <R>(
 					rec: row.cells?.rec ?? textOf(heads.table.get(row.issue), FIELD.rec),
 					plainWords: row.cells?.plainWords ?? textOf(heads.table.get(row.issue), FIELD.plainWords),
 				}));
+		const wrote = changes.length > 0 || onCallChanges.length > 0 || commented.length > 0 || posted;
 		const notes = [
-			`${VERB}: read ${settings.note}; ${sizes.note}.`,
+			`${VERB}: read ${settings.note}; ${sizes.note}${split === null ? "" : `; ${boards.note}`}.`,
 			`${VERB}: project #${project.number} "${project.title}" (${project.url}); preparing ${FIELD.week} ${target.title} (from ${target.startDate}).`,
 			...(prepped
 				? [
@@ -644,15 +738,23 @@ export const runPrep = <R>(
 				(one) =>
 					`${VERB}: ${one.check}${one.issue === null ? "" : ` on #${one.issue}`} unread: ${one.reason}.`,
 			),
+			...(split === null || onCallHealth === null
+				? []
+				: [
+						`${VERB}: on-call board #${split.project.number} "${split.project.title}" (${split.project.url}): ${onCallHealth.open} open item(s), ${onCallHealth.pastTarget} past its response target; the table reviews it as one section of the status update.`,
+						...onCallFlagged.map(
+							(flag) =>
+								`${VERB}: ${flagName(flag)}${flag._tag === "PastTarget" ? ` on #${flag.issue}` : ""}: ${recOf(flag, table)}`,
+						),
+					]),
 			...changes.map((change) => `${VERB}: ${change}.`),
+			...onCallChanges.map((change) => `${VERB}: ${change}.`),
 			...(posted ? [`${VERB}: posted the status update for ${target.title}.`] : []),
-			...(changes.length === 0 && commented.length === 0 && !posted
-				? [`${VERB}: nothing was written.`]
-				: []),
+			...(wrote ? [] : [`${VERB}: nothing was written.`]),
 		];
 		return answer(
 			`${JSON.stringify({
-				answer: changes.length > 0 || commented.length > 0 || posted ? "prepped" : "unchanged",
+				answer: wrote ? "prepped" : "unchanged",
 				repo,
 				project: {number: project.number, title: project.title, url: project.url},
 				iteration: {id: target.id, title: target.title, startDate: target.startDate},
@@ -672,6 +774,27 @@ export const runPrep = <R>(
 				outside,
 				health: {posted, alreadyPosted: prepped, ...health},
 				changes,
+				...(split === null || onCallHealth === null
+					? {}
+					: {
+							onCall: {
+								project: {
+									number: split.project.number,
+									title: split.project.title,
+									url: split.project.url,
+								},
+								items: onCallOpen.map((item) => ({
+									issue: item.issue,
+									target: item.target?.name ?? null,
+								})),
+								pastTarget: onCallFlagged.flatMap((flag) =>
+									flag._tag === "PastTarget" ? [flag.issue] : [],
+								),
+								spend: onCallHealth.spend,
+								share: onCallHealth.share,
+								changes: onCallChanges,
+							},
+						}),
 			})}\n`,
 			notes,
 		);
@@ -698,7 +821,7 @@ const readFollowUps = (repo: string) =>
 export const prepBoard: PrepBoard<
 	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > = {
-	locate: (repo, settings) => withProjects((token) => locateTable(token, repo, settings, VERB)),
+	locate: (repo, target) => withProjects((token) => locateTable(token, repo, target, VERB)),
 	items: syncBoard.items,
 	node: syncBoard.node,
 	comments: syncBoard.comments,

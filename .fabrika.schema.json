@@ -185,6 +185,148 @@
 			},
 			"additionalProperties": false
 		},
+		"boards": {
+			"type": "object",
+			"description": "Split the table's work into a product board (the weekly table) and an on-call board: continuous work pulled in order as it arrives, each item with a response target instead of a size, and its own planned share of weekly spend. Leave it out for one board with a Customers section.",
+			"properties": {
+				"onCall": {
+					"type": "object",
+					"description": "The on-call board. `\"onCall\": {}` splits on the shipped values; declare only the sub-keys you want to change.",
+					"properties": {
+						"route": {
+							"type": "object",
+							"description": "Which issues land on the on-call board: an issue whose origin, type or any label matches goes there; everything else stays on the product board. Default: origin customer, type bug, no label.",
+							"properties": {
+								"origins": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"minLength": 1
+									},
+									"uniqueItems": true,
+									"description": "Origins that route an issue to on-call, as the Origin field names them (customer, hand-start, driver pick, found mid-lane, experiment, bet). An issue with no row reads as customer when its filer only uses the product. Default customer."
+								},
+								"types": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"minLength": 1
+									},
+									"uniqueItems": true,
+									"description": "Type names, without the `type:` prefix, that route an issue to on-call. Default bug."
+								},
+								"labels": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"minLength": 1
+									},
+									"uniqueItems": true,
+									"description": "Labels that route an issue to on-call. Default none."
+								}
+							},
+							"additionalProperties": false
+						},
+						"responseTargets": {
+							"type": "object",
+							"description": "How long an on-call item may wait: the first `byLabel` target whose labels the item carries, else `otherwise`. Default: same day (24 hours) for the first priority label, this week (168 hours) otherwise.",
+							"properties": {
+								"byLabel": {
+									"type": "array",
+									"description": "Targets for items carrying any of their labels, matched in order.",
+									"items": {
+										"type": "object",
+										"properties": {
+											"name": {
+												"type": "string",
+												"minLength": 1,
+												"description": "The option the on-call board's Response target field shows."
+											},
+											"hours": {
+												"type": "number",
+												"exclusiveMinimum": 0,
+												"description": "How many hours an item may wait before it is flagged as past its target."
+											},
+											"labels": {
+												"type": "array",
+												"items": {
+													"type": "string",
+													"minLength": 1
+												},
+												"uniqueItems": true,
+												"description": "The labels this target applies to.",
+												"minItems": 1
+											}
+										},
+										"required": [
+											"name",
+											"hours",
+											"labels"
+										],
+										"additionalProperties": false
+									}
+								},
+								"otherwise": {
+									"type": "object",
+									"description": "The target for every item no `byLabel` target matches.",
+									"properties": {
+										"name": {
+											"type": "string",
+											"minLength": 1,
+											"description": "The option the on-call board's Response target field shows."
+										},
+										"hours": {
+											"type": "number",
+											"exclusiveMinimum": 0,
+											"description": "How many hours an item may wait before it is flagged as past its target."
+										}
+									},
+									"required": [
+										"name",
+										"hours"
+									],
+									"additionalProperties": false
+								}
+							},
+							"additionalProperties": false
+						},
+						"spendShare": {
+							"type": "number",
+							"exclusiveMinimum": 0,
+							"maximum": 100,
+							"description": "The planned share of the week's spend on on-call work, in percent. More is flagged, never stopped. Default 20."
+						},
+						"project": {
+							"type": "object",
+							"description": "Which GitHub project holds the on-call board. Leave both out to have `fabrika table setup` find or create \"<repo name> on-call\" on the repository's own owner.",
+							"properties": {
+								"owner": {
+									"type": [
+										"string",
+										"null"
+									],
+									"description": "The user or organization that owns the project. Default: the repository's owner."
+								},
+								"number": {
+									"type": [
+										"integer",
+										"null"
+									],
+									"minimum": 1,
+									"description": "The project number. Default: the open project `fabrika table setup` finds by its title, or creates."
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					"additionalProperties": false
+				}
+			},
+			"required": [
+				"onCall"
+			],
+			"additionalProperties": false
+		},
 		"campaignAuthors": {
 			"type": "array",
 			"description": "Deprecated and ignored. Who may declare or flip a campaign is the control-plane set `.github/CODEOWNERS` names, holding `write` or above; `fabrika campaign open` / `campaign state` print a notice while this key is declared. Remove it.",
