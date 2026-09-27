@@ -107,6 +107,8 @@ node packages/fabrika-cli/src/bin.ts guard readme-guard --help
 node packages/fabrika-cli/src/bin.ts guard readme-guard check --help
 ```
 
+What each guard judges, how it scopes itself and why it exists is the
+[guard contract](../../../claude-plugins/fabrika/docs/guard-contract.md).
 Shared implementations resolve [workspace members](../src/guard/members.ts),
 [changed files](../src/guard/changed-files.ts) and [verdicts](../src/guard/verdict.ts).
 
