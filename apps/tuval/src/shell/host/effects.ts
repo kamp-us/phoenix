@@ -22,7 +22,7 @@ import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect, Option} from "effect";
-import {ConfigReloader} from "../../reload.ts";
+import {ConfigReloader, describeSwaps} from "../../reload.ts";
 import {attachProcess, openProgram, runPickerIntent, runProcessRemoval} from "../picker/index.ts";
 import type {ShellEffects} from "../program.ts";
 
@@ -78,7 +78,7 @@ export const wiredShellEffects = ({
 		ConfigReloader.use((reloader) => reloader.reload).pipe(
 			Effect.flatMap((report) =>
 				Effect.logInfo(
-					`shell: config reloaded — ${report.spellCount} spell(s), ${report.notified} process(es) told`,
+					`shell: config reloaded — ${report.spellCount} spell(s), ${report.notified} process(es) told${describeSwaps(report)}`,
 				),
 			),
 			Effect.catch((error) => Effect.logWarning(`shell: config reload refused — ${error.message}`)),

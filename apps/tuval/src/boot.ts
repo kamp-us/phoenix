@@ -35,6 +35,7 @@ import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/inde
 import {homeTuvalDir, type StateAdoption, StateDir} from "@kampus/tuval-sdk/kernel/state-dir";
 import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Deferred, Effect, FileSystem, Layer} from "effect";
+import {AuthoredModules} from "./authored-modules.ts";
 import {
 	type ConfigLoadError,
 	type DeskLayer,
@@ -165,6 +166,11 @@ export interface StartOptions {
 	 * refuses every open (`Projects.none`).
 	 */
 	readonly projects?: DeskProjects;
+	/**
+	 * The author's modules `programs` were built from, so the first reload can tell an edited helper.
+	 * Absent for a caller handed rows and no config.
+	 */
+	readonly modules?: AuthoredModules;
 }
 
 export interface Started {
@@ -200,6 +206,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	features,
 	reread,
 	projects,
+	modules = AuthoredModules.none,
 }: StartOptions) {
 	const registry = yield* Layer.build(Registry.growable(programs));
 	const compiled = yield* compile(graph).pipe(Effect.provideContext(registry));
@@ -229,7 +236,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	);
 	const reloader = ConfigReloader.fromConfig({
 		core: coreSpells,
-		initial: ConfigGeneration.of({programs, keys: keys ?? [], sources: []}),
+		initial: ConfigGeneration.of({programs, keys: keys ?? [], sources: []}, {files: [], modules}),
 		...(reread === undefined ? {} : {read: reread}),
 	}).pipe(Layer.provide(Layer.succeedContext(spells)));
 	const built = yield* Layer.build(
@@ -397,11 +404,11 @@ const generationOf = (config: LoadedConfig): ConfigGeneration => {
 					keys: project.config.keys,
 					sources: project.config.sources,
 				},
-				[],
+				{files: [], modules: AuthoredModules.none},
 			),
 		ConfigGeneration.of(
 			{programs: rows(config.desk.programs), keys: config.desk.keys, sources: config.desk.sources},
-			config.files,
+			{files: config.files, modules: config.modules},
 		),
 	);
 };
@@ -420,7 +427,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 		);
 	const [read] = config.projects;
 	if (read === undefined) return yield* Effect.die("the boot project's layer was not read");
-	const loaded: LoadedProjectConfig = {...read, files: config.files};
+	const loaded: LoadedProjectConfig = {...read, files: config.files, modules: config.modules};
 	// The desk's own checkpoints share the first project's state directory, so its state is prepared
 	// — adopted and moved onto scoped ids — before the desk restores anything from it.
 	const state = yield* prepareProjectState(folder, options.home, loaded);
@@ -442,6 +449,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 			first: {folder, loaded, state},
 			fs,
 		},
+		modules: config.modules,
 	});
 	const live = yield* ProcessTable.use((table) => table.list).pipe(
 		Effect.provideContext(started.kernel),

@@ -127,10 +127,12 @@ export const prReviewRow: Row = {
 };
 ```
 
-A re-read config reaches a live process through this and nothing else
-([`reload.ts`](../apps/tuval/src/reload.ts), #7509 ruling 3): nothing restarts, nothing respawns,
-and a row that answers `[]` leaves its process untouched. Whatever the process was already holding
-it keeps — the change is an ordinary event, not a reset.
+A re-read config value reaches a live process through this and nothing else
+([`reload.ts`](../apps/tuval/src/reload.ts), #7509 ruling 3), and a row that answers `[]` leaves
+its process's state untouched. Whatever the process was already holding it keeps — the change is an
+ordinary event, not a reset. An edit to the program's code is the other half: the process is
+switched onto the reloaded row and keeps its state, and a state the new row's `migrations` or
+`restorable` refuses lands in its `init`'s refused-restore branch (#9820).
 
 ## Which ports a restored process still has
 

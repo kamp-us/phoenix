@@ -20,7 +20,7 @@
 
 import {basename, dirname, join} from "node:path";
 import {Console, Duration, Effect, FileSystem, Option, Stream} from "effect";
-import type {ReloadRefused, ReloadReport} from "./reload.ts";
+import {describeSwaps, type ReloadRefused, type ReloadReport} from "./reload.ts";
 
 export interface WatchConfigOptions {
 	/** The files the running generation was read from. */
@@ -108,7 +108,7 @@ export const watchConfig = Effect.fn("Tuval.watchConfig")(function* ({
 			Effect.matchEffect({
 				onSuccess: (report) =>
 					Console.log(
-						`tuval: config reloaded — ${report.spellCount} spell(s), ${report.notified} process(es) told, ${report.files.length} file(s) watched`,
+						`tuval: config reloaded — ${report.spellCount} spell(s), ${report.notified} process(es) told, ${report.files.length} file(s) watched${describeSwaps(report)}`,
 					).pipe(Effect.as(report.files)),
 				onFailure: (refused) =>
 					Console.error(`tuval: config reload refused — ${refused.message}`).pipe(

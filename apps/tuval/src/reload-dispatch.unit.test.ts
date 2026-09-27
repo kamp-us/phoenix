@@ -116,6 +116,8 @@ describe("a config reload over live processes", () => {
 				const report = yield* booted.reload;
 
 				assert.strictEqual(report.notified, 1, "the reload told the wrong number of processes");
+				// A settings change is config, not code: neither row's process is closed and swapped.
+				assert.deepStrictEqual(report.switched, [], "a config-only change swapped a process");
 				const after = yield* until(
 					booted,
 					"the reload's setMode to reach the session",

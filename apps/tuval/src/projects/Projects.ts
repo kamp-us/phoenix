@@ -257,7 +257,7 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 
 			const read = {programs, keys: loaded.config.keys, sources: loaded.config.sources};
 			yield* reloader.swap((current) =>
-				Effect.succeed(current.withProject(loaded.layer, read, loaded.files)),
+				Effect.succeed(current.withProject(loaded.layer, read, loaded)),
 			);
 			yield* Effect.addFinalizer(() =>
 				reloader

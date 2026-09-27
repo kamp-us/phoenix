@@ -68,6 +68,19 @@ export interface CheckpointTarget {
 	 * for a program with no parse.
 	 */
 	readonly restorable?: (raw: unknown) => boolean;
+	/**
+	 * The state a running process carries into this open in place of the snapshot on disk: a hot
+	 * swap onto a reloaded row (`../process/Processes.ts`, #9820). It is admitted exactly as a loaded
+	 * snapshot is — walked from its version by `migrations`, refused where the walk cannot reach
+	 * `version`, and offered to `restorable` through the store's `migrate`.
+	 */
+	readonly carried?: Carried;
+}
+
+/** A running process's state, beside the version of the program that produced it. */
+export interface Carried {
+	readonly version: string;
+	readonly state: unknown;
 }
 
 export interface OpenedCheckpoint {
@@ -188,6 +201,11 @@ const makeService = (stores: CheckpointStores): Checkpoints["Service"] => {
 		if (raw === null) return null;
 		const snapshot = parseSnapshot(raw);
 		if (snapshot === null) return yield* new SnapshotMalformed({processId: target.id});
+		return yield* admit(target, snapshot);
+	});
+
+	/** A snapshot brought to the target's version, or refused. */
+	const admit = Effect.fnUntraced(function* (target: CheckpointTarget, snapshot: Snapshot) {
 		const refuse = new SnapshotRefused({
 			processId: target.id,
 			expected: {programId: target.programId, version: target.version},
@@ -240,7 +258,10 @@ const makeService = (stores: CheckpointStores): Checkpoints["Service"] => {
 		if (held.has(target.id)) return yield* new CheckpointHeld({processId: target.id});
 		forgotten.delete(target.id);
 		const backing = stores.snapshot(target.id);
-		const snapshot = yield* loadSnapshot(target, backing);
+		const snapshot =
+			target.carried === undefined
+				? yield* loadSnapshot(target, backing)
+				: yield* admit(target, {programId: target.programId, ...target.carried});
 		yield* record(target);
 		held.add(target.id);
 		const loaded = snapshot === null ? null : snapshot.state;
