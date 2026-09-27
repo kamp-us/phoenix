@@ -4,6 +4,7 @@
 	"bootstrap-sha": "97f3022228eeeb850b02ef4cb10b64c772fbd77f",
 	"release-type": "node",
 	"bump-minor-pre-major": true,
+	"initial-version": "0.1.0",
 	"include-component-in-tag": true,
 	"separate-pull-requests": true,
 	"packages": {

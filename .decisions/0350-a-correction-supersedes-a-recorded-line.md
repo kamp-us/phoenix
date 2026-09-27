@@ -1,7 +1,7 @@
 ---
 id: 0350
 title: A correction supersedes a recorded line
-status: amended-in-part by [0351](0351-a-confirmed-closure-is-recorded-not-re-read.md)
+status: amended-in-part by [0351](0351-a-confirmed-closure-is-recorded-not-re-read.md), [0416](0416-integrate-pair-is-corrigible.md)
 date: 2026-09-01
 ---
 

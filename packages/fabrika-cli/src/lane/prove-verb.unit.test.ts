@@ -1159,6 +1159,110 @@ describe("lane prove — the §CP advisory carrier", () => {
 	});
 });
 
+/**
+ * The rewind out of a review cell: a `WIP` that sends the lane back to `queued` once the PR its
+ * review was for has been re-pointed at another issue. The proof is the nominator's own answer, so
+ * `lane brief` and this read cannot disagree about whether the review has a subject.
+ */
+describe("lane prove — a review rewind, earned only when no open PR links the open issue", () => {
+	const REPOINTED = pull({body: "Fixes #9909\n\nRelates to #5747, but does not fix it.\n"});
+	const OPEN: Scripted = [ISSUE, issue([])];
+
+	it("proves the rewind out of review when the only candidate now links another issue", async () => {
+		const seams = seamsWith([
+			OPEN,
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, REPOINTED],
+		]);
+
+		const out = await run(laneAt("review"), seams, "WIP");
+
+		expect(out.code).toBe(0);
+		expect(out.proof).toBe("proven");
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			proof: "proven",
+			event: "WIP",
+			issue: 5747,
+			evidence: {kind: "no-linking-pull", scanned: 1},
+		});
+	});
+
+	it("proves the same rewind out of review:ui", async () => {
+		const seams = seamsWith([OPEN, [CLOSERS, closingPulls()], [SEARCH, nominated()]]);
+
+		const out = await run(laneAt("review:ui"), seams, "WIP");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			proof: "proven",
+			evidence: {kind: "no-linking-pull", scanned: 0},
+		});
+	});
+
+	it("refuses the rewind while an open PR still links the issue", async () => {
+		const seams = seamsWith([
+			OPEN,
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+		]);
+
+		const out = await run(laneAt("review"), seams, "WIP");
+
+		expect(out.code).toBe(PROOF_CONTRADICTED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("#4318 still links #5747");
+	});
+
+	it("refuses the rewind out of review:ui while an open PR still links the issue", async () => {
+		const seams = seamsWith([
+			OPEN,
+			[CLOSERS, closingPulls(4318)],
+			[SEARCH, nominated()],
+			[PULL, pull()],
+		]);
+
+		const out = await run(laneAt("review:ui"), seams, "WIP");
+
+		expect(out.code).toBe(PROOF_CONTRADICTED);
+	});
+
+	it("leaves the rewind UNKNOWN when the board does not read — never proven", async () => {
+		const seams = seamsWith([OPEN, [CLOSERS, GATEWAY]]);
+
+		const out = await run(laneAt("review"), seams, "WIP");
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+	});
+
+	it("refuses the rewind over a closed issue, pointing at lane settle — a hand merge leaves no open PR too", async () => {
+		const seams = seamsWith([
+			[ISSUE, served({...JSON.parse(issue([]).body), state: "closed"})],
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated()],
+		]);
+
+		const out = await run(laneAt("review"), seams, "WIP");
+
+		expect(out.code).toBe(PROOF_CONTRADICTED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("lane settle");
+	});
+
+	it("leaves the rewind UNKNOWN when the issue does not read — never proven", async () => {
+		const seams = seamsWith([
+			[ISSUE, GATEWAY],
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated()],
+		]);
+
+		const out = await run(laneAt("review"), seams, "WIP");
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+	});
+});
+
 describe("lane prove — the walk question, asked before the claim", () => {
 	it("answers not-walkable for a PASS out of the blocked park, reading nothing", async () => {
 		const seams = seamsWith([]);

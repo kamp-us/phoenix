@@ -310,6 +310,7 @@ describe("the compiler — structural recognition", () => {
 			"BLOCKED",
 			MACHINERY_EVENT,
 			"FAIL",
+			"WIP",
 			CLEARED_EVENT,
 			CANCELLED_EVENT,
 			LANDED_EVENT,
