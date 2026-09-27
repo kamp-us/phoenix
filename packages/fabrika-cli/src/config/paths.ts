@@ -143,7 +143,7 @@ export const decisionsDirOr = (
 				};
 	});
 
-/** The roadmap declaration the scope fence and `triage homes` read. */
+/** The roadmap declaration `campaign` and `triage homes` read. */
 export const readRoadmapFile = (
 	cwd: string,
 ): Effect.Effect<Read<string>, never, FileSystem.FileSystem | Path.Path> =>

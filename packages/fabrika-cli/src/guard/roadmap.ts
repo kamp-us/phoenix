@@ -15,8 +15,8 @@
  *        is exempt (I1's lazy pin); a row whose pin dangles is already an I1 and is not re-reported.
  *
  * I6 — the focus-row-honesty check — retired with the `## Focus` table it kept honest: a campaign's
- * `active` cell IS the dispatch permission, so there is no second declaration surface left to
- * reconcile.
+ * `State` cell is the one place a theme's lifecycle is declared, so there is no second declaration
+ * surface left to reconcile.
  *
  * Total and IO-free: `./roadmap-verb.ts` reads the file and the projection.
  */
@@ -25,8 +25,7 @@
 export type ArcState = "active" | "queued" | "done";
 /**
  * A campaign has no queued state — a newly added row is `paused`, and it ends `done`. `paused` is
- * alive but not being executed: its milestone is open and no lane opens against it, which is what
- * makes this one cell the dispatch permission.
+ * alive but not being worked: its milestone is open. No state refuses a lane.
  */
 export type CampaignState = "active" | "paused" | "done";
 
@@ -54,7 +53,7 @@ export interface Milestone {
 const ARC_STATES: ReadonlyArray<string> = ["active", "queued", "done"];
 /**
  * A newly added campaign row defaults to `paused` — flipping it to `active` is the separate act
- * that grants dispatch permission, so naming a campaign never grants it.
+ * that says the theme is being worked, so naming a campaign never says so on its own.
  */
 const CAMPAIGN_STATES: ReadonlyArray<string> = ["active", "paused", "done"];
 

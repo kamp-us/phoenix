@@ -91,9 +91,24 @@ triaged issue at all.
 
 Every lane-entering issue — a `status:triaged` `type:epic`, or a `status:triaged` `type:feature` with
 no parent — must carry a five-field `## Pitch` section (Problem, Arc, Appetite, Rabbit-holes,
-No-gos) and a founder `pitch-approved: appetite <N> cycles` comment naming the same `<N>` the body
-declares. Approval is resolved at the GitHub ACL, write or above only and fail-closed, and a marker
-stamped with agent provenance never counts.
+No-gos) and a founder approval. Either carrier gives it:
+
+- a `bet` on the table: the issue's row on the table project with Stage `bet` and a Size equal to
+  the body's size. A `bet` on an epic or chain row approves the head and every member, bound by the
+  row's Size. A `bet` counts when a write+ collaborator set the Stage, an agent under their token
+  included;
+- a `pitch-approved: appetite <S|M|L>` comment naming the same size the body declares.
+
+A table that does not read (none configured, a token without the `project` scope, or a failed read)
+approves nothing and is named on stderr, and the comments decide as before.
+
+`**Appetite:**` is a size, `S`, `M` or `L`, whose dollar amount per epic child `.fabrika.jsonc`
+`appetiteSizes` sets (shipped S = $15, M = $35, L = $40). A legacy `<N> cycles` appetite still
+reads, approved only by a `pitch-approved: appetite <N> cycles` comment. An optional `**Success:**`
+line names the one sentence the two-week check judges; a pitch without it is still well-formed. A
+body appetite that differs from the approved one needs re-approval. Approval is resolved at the
+GitHub ACL, write or above only and fail-closed, and a marker stamped with agent provenance never
+counts. A `.fabrika.jsonc` that refuses to read leaves the verdict UNKNOWN.
 
 `--issue N` scopes the scan to the issue triage just stamped, which is the intake point the
 requirement binds at; a bare run sweeps the whole open lane-entering backlog. This guard binds at

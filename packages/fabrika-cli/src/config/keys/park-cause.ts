@@ -29,8 +29,8 @@
  * **`repairBudgetSpent` ships as `driver`.** That is the route the `repair-budget-spent` cause
  * carried before any repo could declare one, so a repo declaring nothing keeps it. A repo that wants
  * every spent budget in front of a person declares `founder`. Either way the pull-request half of the
- * grant is still gated by `capClearAuthors`: this key says whose call the round is, not which
- * account may record it.
+ * grant is still gated by the control-plane set `.github/CODEOWNERS` names: this key says whose call
+ * the round is, not which account may record it.
  */
 
 import type {Decoded, KeyGroup} from "../key-group.ts";
@@ -165,7 +165,7 @@ export const parkCauseKey: KeyGroup<ParkCauseSurface> = {
 			repairBudgetSpent: {
 				type: "string",
 				description:
-					"Whose park a spent repair budget (`repair-budget-spent`) is: `driver` (the driver grants the next round itself with `lane clear`; the pull-request half still needs its account in `capClearAuthors`) or `founder` (the task parks on a human like any founder-routed park).",
+					"Whose park a spent repair budget (`repair-budget-spent`) is: `driver` (the driver grants the next round itself with `lane clear`; the pull-request half still needs its account in the control-plane set `.github/CODEOWNERS` names) or `founder` (the task parks on a human like any founder-routed park).",
 				enum: ["driver", "founder"],
 			},
 		},

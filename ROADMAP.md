@@ -90,7 +90,7 @@ flowchart TD
 
 ## Campaigns
 
-Campaigns are bounded, milestone-backed pushes that run *concurrently* with the active product arc, drained through the platform lane (ADR 0072 semantics; ADR 0078 engineering-led). **A row's `State` cell is the dispatch permission**: an agent may open lanes against exactly the milestones whose row says `active` (ADR 0304). There is no second declaration surface — this cell is the whole answer.
+Campaigns are bounded, milestone-backed pushes that run *concurrently* with the active product arc, drained through the platform lane (ADR 0072 semantics; ADR 0078 engineering-led). **A campaign is a theme**: its row groups work under a milestone, and its `State` cell says whether that theme is being worked (`active`), set aside (`paused`) or finished (`done`). No state refuses or skips a lane ([ADR 0417](.decisions/0417-campaigns-are-themes-not-dispatch-permission.md), superseding ADR 0304). What gets picked first is the weekly betting table's call.
 
 | Campaign | Milestone | State |
 |----------|-----------|-------|
@@ -134,9 +134,9 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 **The table is a parsed contract.** It is the single source whatever writes a campaign row (appending it `paused` and later flipping its state) and the lifecycle guard that reads it both bind to, so the grammar is pinned here rather than re-derived at either end:
 
 - **Columns** are `Campaign | Milestone | State`, in that order. `Campaign` is the founder-voice name; `Milestone` pins the campaign to its GitHub milestone **by number** (`#N`) — the same row→milestone-by-number binding the roadmap-guard already enforces on `## Arcs`, and that number is the one link to the operational projection. `State` is the lifecycle cell.
-- **`State ∈ {active, paused, done}`** — the lifecycle cell, and the dispatch permission with it. `active` means the milestone is draining *and* lanes may open against it. `paused` means the campaign is alive and nobody is executing it: the milestone stays open, and no lane opens. `done` means the milestone is fully drained (its GitHub milestone closed). There is no `queued` state: unlike an arc, a campaign is not sequenced ahead. **A newly added row is `paused`** — writing the row records the campaign, and flipping the cell to `active` is the separate, explicit act that makes it dispatchable, so no edit grants dispatch permission in the same stroke that names the campaign (ADR [0304](.decisions/0304-campaign-active-is-the-dispatch-permission.md); founder ruling on #6289, 2026-08-19). Resuming a paused campaign is that same flip.
+- **`State ∈ {active, paused, done}`** — the lifecycle cell. `active` means the theme is being worked and its milestone is draining. `paused` means the campaign is alive and nobody is working it right now: the milestone stays open. `done` means the milestone is fully drained (its GitHub milestone closed). There is no `queued` state: unlike an arc, a campaign is not sequenced ahead. **A newly added row is `paused`** — writing the row records the campaign, and flipping the cell to `active` is the separate, explicit act that says it is being worked (founder ruling on #6289, 2026-08-19). Resuming a paused campaign is that same flip. **No state refuses, skips or parks a lane** ([ADR 0417](.decisions/0417-campaigns-are-themes-not-dispatch-permission.md)): an agent may build an issue whatever its milestone's campaign reads.
 
-**Nothing active means the fence is off, not closed.** A missing table, an empty one, and one whose every row is `paused` or `done` are the same well-formed default: no campaign is declared, so nothing is out of scope and everything stays admissible (founder ruling on #5011, carried onto this surface by ADR 0304). Pausing every campaign is therefore not a board freeze — freezing is not what this table does. **One unreadable row makes the whole table unreadable**, though: a fence never falls back to the rows it could parse.
+**Nothing active is a real state, not a failure.** A missing table, an empty one, and one whose every row is `paused` or `done` are the same well-formed default: no theme is being worked. **One unreadable row makes the whole table unreadable**, though: no reader falls back to the rows it could parse.
 
 **Guarded.** `roadmap-guard` invariants **I1–I5** keep the table honest against the milestone projection — every row pins an existing milestone by number, every open milestone is claimed, and I5's symmetry binds the state cell to the milestone's open/closed reality (`active` and `paused` need an open milestone, `done` a closed one).
 
@@ -156,7 +156,11 @@ Campaign→arc concurrency (a campaign draining alongside the active arc via the
 
 Update the diagram by hand after editing any table — its generator retired with the v1 verb package (#6100), and no guard reds on drift between the block and the tables (#3870 was never built).
 
+## fabrika
+
+fabrika is the software factory that builds kamp.us, and it is a product of its own. Its named customer is **binclusive**, which runs fabrika on its own repositories. fabrika work is pitched like any other bet: a `## Pitch` with a size (`S`, `M` or `L`) and a Success line, approved the same way (founder ruling R23.1 on [#9821](https://github.com/kamp-us/phoenix/issues/9821)). fabrika also has a target share of weekly spend, 40% for the first four tables and 30% after. The table shows that share and flags it when it runs over; nothing refuses a lane because of it.
+
 ## Standing lanes
 
-Not everything is an arc. **Pipeline & reliability hardening** is continuous, milestone-less work carried on the `axis:pipeline-hardening` label — the factory maintaining itself. It runs always, in the platform lane, and is never a product arc.
+Not everything is an arc. **Pipeline & reliability hardening** is continuous, milestone-less work carried on the `axis:pipeline-hardening` label — the factory maintaining itself. The label is how that work is homed, not a way around pitching: hardening is fabrika work, and a hardening bet is pitched like any other (see [fabrika](#fabrika)).
 

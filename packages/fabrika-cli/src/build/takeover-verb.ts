@@ -8,12 +8,12 @@
  * authorization, and from then on every reader counts the PR as the pipeline's.
  *
  * The clauses are conjunctive, and they are the reader's own clauses run before the write, so a
- * grant this verb posts is one the reader honours: the invoking account is in the repo's grant-author
- * set at the PR's base ref, holds `write+`, and is not the PR's author, and the authorization is
+ * grant this verb posts is one the reader honours: the invoking account is in the repo's control-plane
+ * set (the owners `.github/CODEOWNERS` names on the default branch), holds `write+`, and is not the PR's author, and the authorization is
  * present and dated. A PR that is already the pipeline's is not re-granted — one of ours needs no
  * grant, and a PR already handed over answers with the grant that stands.
  *
- * **What `granted` proves, exactly.** That a configured account posted a marker naming this PR over a
+ * **What `granted` proves, exactly.** That a control-plane account posted a marker naming this PR over a
  * dated authorization. It does not prove the quote is a truthful record of what was said; in a repo
  * where agents run on a granting account's own token, the agent's restraint is what holds — the same
  * residue `build clear` carries.
@@ -27,15 +27,18 @@ import {createComment, getComment, listComments} from "../io/issues.ts";
 import {viewerLogin} from "../io/pulls.ts";
 import {sameLogin} from "../ownership/pr-ownership.ts";
 import {readPrOwnership} from "../ownership/read.ts";
-import {CONFIG_PATH} from "../repo-config.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
-import {readFileAtRef} from "../ship/github.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {stampOf} from "../wire/grill-marker.ts";
 import * as takeoverGrant from "../wire/takeover-grant.ts";
 import type {DocumentRead} from "./clear-verb.ts";
-import {clearsWriteFloor, membershipIn, permissionsFor} from "./clearances.ts";
+import {
+	capClearAuthorsNotices,
+	clearsWriteFloor,
+	controlPlaneMembership,
+	permissionsFor,
+} from "./clearances.ts";
 import {
 	AUTHORIZATION_VOID,
 	BARE_AT_PATH,
@@ -131,23 +134,29 @@ export const runTakeover = <R = never>(
 				`${VERB}: ${viewer.value} opened PR #${pr} — an author cannot hand their own PR over. Nothing was posted.`,
 			);
 		}
-		// The config is read once at the base and judged through the reader's own door, so the set
-		// that may post a grant and the set whose grant counts can never drift into two.
-		const file = yield* readFileAtRef(repo, CONFIG_PATH, baseRef);
-		const authority = yield* membershipIn(repo, baseRef, file);
+		const notices = yield* capClearAuthorsNotices(VERB, repo, baseRef);
+		// Judged through the reader's own door, so the set that may post a grant and the set whose
+		// grant counts can never drift into two.
+		const authority = yield* controlPlaneMembership(repo);
 		if (authority._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot resolve ${viewer.value}'s authority on ${repo}: ${authority.reason} — nothing was posted.`,
+				notices,
 			);
 		}
 		if (authority._tag === "Unusable") {
-			return refuse(GRANT_UNAUTHORIZED, `${VERB}: ${authority.reason}. Nothing was posted.`);
+			return refuse(
+				GRANT_UNAUTHORIZED,
+				`${VERB}: ${authority.reason}. Nothing was posted.`,
+				notices,
+			);
 		}
 		if (!authority.holds(viewer.value)) {
 			return refuse(
 				GRANT_UNAUTHORIZED,
-				`${VERB}: ${viewer.value} is not in ${CONFIG_PATH}'s grant-author set at ${baseRef} — refusing to record a takeover.`,
+				`${VERB}: ${viewer.value} is not in ${repo}'s control-plane set at ${authority.ref} — refusing to record a takeover.`,
+				notices,
 			);
 		}
 		const permissions = yield* permissionsFor(repo, [viewer.value]);
@@ -161,7 +170,7 @@ export const runTakeover = <R = never>(
 		if (!clearsWriteFloor(level)) {
 			return refuse(
 				GRANT_UNAUTHORIZED,
-				`${VERB}: ${viewer.value} resolves to ${level ?? "no collaboration"} on ${repo}, below write — authority is the ACL's, never ${CONFIG_PATH}'s alone.`,
+				`${VERB}: ${viewer.value} resolves to ${level ?? "no collaboration"} on ${repo}, below write — authority is the ACL's, never CODEOWNERS' alone.`,
 			);
 		}
 
@@ -192,7 +201,7 @@ export const runTakeover = <R = never>(
 					comment: ownership.grant.commentId,
 					resolvesTo: "already-granted",
 				}),
-				[`${VERB}: PR #${pr} was already handed over — nothing was posted.`],
+				[...notices, `${VERB}: PR #${pr} was already handed over — nothing was posted.`],
 			);
 		}
 
@@ -232,6 +241,7 @@ export const runTakeover = <R = never>(
 				resolvesTo: "granted",
 			}),
 			[
+				...notices,
 				`${VERB}: PR #${pr}, opened by ${author}, is handed to the pipeline on ${viewer.value}'s grant.`,
 			],
 		);

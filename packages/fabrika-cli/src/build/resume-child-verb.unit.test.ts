@@ -108,7 +108,7 @@ const HOLDS_THE_DECISION_CLAIM: ReadonlyArray<Scripted> = [
 	NO_BLOCKERS,
 ];
 
-/** No `ROADMAP.md`: the scope fence is inert, so this suite asks only about the sequence. */
+/** No `ROADMAP.md`: nothing the admission test reads, so this suite asks only about the sequence. */
 const NO_CAMPAIGNS = fakeFs({files: {}});
 
 /** The race, won: the pre-post verdict read, the marker write, and the checkpoint that resolves it. */

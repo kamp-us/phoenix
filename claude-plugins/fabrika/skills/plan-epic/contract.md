@@ -41,8 +41,8 @@ its ground with `fabrika build tree`, releases with `fabrika build release`, and
 note with `fabrika build note`. The purpose is part of the reuse, not a detail of it: `build claim`'s
 audience axis asks whether an agent should pick the issue up to *build*, and an epic earns
 `ready-for:agent` only after this skill has planned it and the gate has passed it, so a `plan` claim
-is admitted without it. The scope axis is unchanged by the purpose, so `20` stays reachable and
-`21` does not, and `--override` stays the exception it was.
+is admitted without it, so `21` is not
+reachable under `plan`, and `--override` stays the exception it was.
 
 **The grilling session is the `grill` group's, reused the same way**
 ([`grilling`'s contract](../grilling/contract.md)). Every epic is grilled, with no size threshold
@@ -418,14 +418,14 @@ and a caller driving both in one sweep must read one meaning for each.
 carrying `build`'s meanings and are **never reached here** — this skill declares no
 `--require-clean` flag, holds no lane branch, pushes nothing, runs no validation, and derives no
 readiness verdict — but carrying them keeps those seats occupied so a later verb here cannot
-re-seat one. **`build`'s `20` and `21` are deliberately NOT re-exported**: this group allocates its
-own `20`–`25`, and re-exporting `OUT_OF_SCOPE`/`AUDIENCE_NOT_AGENT` alongside them would put two
+re-seat one. **`build`'s `21` is deliberately NOT re-exported**: this
+group allocates its own `20`–`26`, and re-exporting `AUDIENCE_NOT_AGENT` alongside them would put two
 names on one code in one module, which `allocatedCodes` (`exit-code-alignment.ts:96-105`) reports
 as drift.
 
 The rule this group follows, taken from `plan/codes.ts:30-31` rather than re-derived: **import a
-code when two groups prove the same fact; allocate freely when they do not.** `20`–`25` below
-overlap `build`'s, `epic`'s and `plan`'s private bands and that is correct — none of those groups
+code when two groups prove the same fact; allocate freely when they do not.** `20`–`26` below
+overlap `build`'s and `plan`'s private bands and that is correct — none of those groups
 can prove a fact about a *plan being authored*, an exit code is read off the command that produced
 it, and the alignment checker is base-only by design (`occupied = allocatedCodes(base)`).
 
@@ -755,10 +755,11 @@ reads as a permissive default rather than an unknown. v1's own sibling script kn
 name and warns that patching a fresh child "reopens the label-less-orphan window".
 
 **A home is required and is never defaulted**: the call names an open milestone, or a
-`--label` from the claim fence's standing-lane set (`STANDING_LANE_LABELS`) — a child
-carrying neither is what the fence refuses at exit `20`, so the refusal moves to the mint, where
-nothing has been written yet. The lane set is *imported* from `build/scope-admission.ts`, never
-re-listed here in code: two copies is how the two seams drift into disagreeing about what a home is.
+`--label` from the standing-lane set (`STANDING_LANE_LABELS`) — a child carrying neither groups under
+no campaign and no lane, so nothing on the board shows where it belongs, and the refusal sits at the
+mint, where nothing has been written yet. The lane set is *imported* from `build/scope-admission.ts`,
+never re-listed here in code: two copies is how two readers drift into disagreeing about what a home
+is.
 
 **`--ready-for` is required and has no default**: a child must never inherit its audience
 by omission. **`--ready-for human` requires `--assignee`**: the label is the routing

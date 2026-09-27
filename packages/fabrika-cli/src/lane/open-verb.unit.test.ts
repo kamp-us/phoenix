@@ -7,6 +7,7 @@ import type {BoardRecord, BoardRecorder, BoardSeat, BoardSeatReader} from "./boa
 import {
 	APPEND_UNKNOWN,
 	CLASS_UNRECOGNISED,
+	FACT_REFUSED,
 	LANE_EXISTS,
 	LANE_IS_CHILD,
 	LANE_UNREADABLE,
@@ -85,6 +86,31 @@ describe("lane open", () => {
 		expect(out.code).toBe(0);
 		expect(fs.written.get(WORKFLOW)).toBe(coderTemplateText());
 		expect(JSON.parse(out.stdout)).toMatchObject({answer: "opened", lane: "42"});
+	});
+
+	it("records the lane's origin as its first fact, a driver pick unless told otherwise", async () => {
+		const plain = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const bet = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+
+		const defaulted = await run(plain, runOpen(OPTIONS));
+		const named = await run(bet, runOpen({...OPTIONS, origin: "bet"}));
+
+		expect(JSON.parse(defaulted.stdout)).toMatchObject({origin: "driver-pick"});
+		expect(JSON.parse(plain.written.get(`${DIR}/facts.jsonl`) ?? "")).toMatchObject({
+			kind: "origin",
+			origin: "driver-pick",
+		});
+		expect(JSON.parse(named.stdout)).toMatchObject({origin: "bet"});
+		expect(JSON.parse(bet.written.get(`${DIR}/facts.jsonl`) ?? "")).toMatchObject({origin: "bet"});
+	});
+
+	it("refuses an origin outside the closed set before anything is written", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+
+		const out = await run(fs, runOpen({...OPTIONS, origin: "whim"}));
+
+		expect(out.code).toBe(FACT_REFUSED);
+		expect(fs.written.size).toBe(0);
 	});
 
 	it("seeds the placed document's context from the issue's class label", async () => {

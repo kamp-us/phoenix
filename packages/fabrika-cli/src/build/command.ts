@@ -26,7 +26,7 @@ import {runCheck} from "./check-verb.ts";
 import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
 import {runClaimants} from "./claimants-verb.ts";
 import {type DocumentRead, runClear} from "./clear-verb.ts";
-import {OFF_VOCABULARY} from "./codes.ts";
+import {NO_SERVED_ISSUE, OFF_VOCABULARY} from "./codes.ts";
 import {runCommit} from "./commit-verb.ts";
 import {runDeviations} from "./deviations-verb.ts";
 import {runEligible} from "./eligible-verb.ts";
@@ -148,7 +148,13 @@ const pick = leafCommand(
 	},
 	Effect.fn(function* ({repo, limit}) {
 		yield* emit(
-			yield* runPick({repo: Option.getOrNull(repo), limit, cwd: process.cwd(), env: process.env}),
+			yield* runPick({
+				repo: Option.getOrNull(repo),
+				limit,
+				cwd: process.cwd(),
+				env: process.env,
+				now: () => new Date(),
+			}),
 		);
 	}),
 ).pipe(
@@ -156,9 +162,9 @@ const pick = leafCommand(
 	Command.withDescription(
 		[
 			"Prints the ranked pool of issues a lane may claim, with every exclusion counted by reason.",
-			'  {"pool":[…],"excluded":{"<reason>":n},"scanned":{"p0","p1","p2"},"campaigns":{…}}',
-			"  4: the ## Campaigns table does not parse",
-			"  11: a bucket or the campaigns table could not be read (UNKNOWN)",
+			'  {"pool":[{…,"bet"}],"excluded":{"<reason>":n},"scanned":{"p0","p1","p2"},"bets":{"state",…}}',
+			"  Stage-bet issues on the table project lead the pool; no campaign state excludes anything.",
+			"  11: a bucket, or the table when .fabrika.jsonc declares one, was unreadable (UNKNOWN)",
 			`  Derivation: the build skill's contract.md, "build pick"`,
 		].join("\n"),
 	),
@@ -244,7 +250,7 @@ const claim = leafCommand(
 		override: Flag.string("override").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"claim an issue the admission test refused on the scope or audience axis, naming why; requires --override-lane, and both are written into the claim marker. A type-axis refusal is not overridable — a decision cites its ruling, an epic changes its --purpose",
+				"claim an issue the admission test refused on the audience axis, or a PR that names no issue to judge (38), naming why; requires --override-lane, and both are written into the claim marker. A type-axis or criteria-axis refusal is not overridable — a decision cites its ruling, an epic changes its --purpose, a body without criteria is repaired on the issue",
 			),
 		),
 		overrideLane: Flag.string("override-lane").pipe(
@@ -287,7 +293,6 @@ const claim = leafCommand(
 				number,
 				issue: Option.getOrNull(issue),
 				repo: Option.getOrNull(repo),
-				cwd: process.cwd(),
 				env: process.env,
 				uuid: randomUUID(),
 				at: new Date().toISOString(),
@@ -608,7 +613,7 @@ const resumeChildExitLines = [
 	{code: 14, condition: "wrong lane, or no ledger task"},
 	{code: 15, condition: "the claim is another lane's"},
 	{code: 31, condition: "nothing to repair"},
-	...ADMISSION_EXIT_CODES.filter(({code}) => code >= 20),
+	...ADMISSION_EXIT_CODES.filter(({code}) => code >= 20 && code !== NO_SERVED_ISSUE),
 ]
 	.sort((a, b) => a.code - b.code)
 	.map(({code, condition}) => `  ${code}: ${condition}`);

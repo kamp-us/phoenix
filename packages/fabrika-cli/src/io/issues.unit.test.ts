@@ -13,17 +13,20 @@ import {
 	addLabels,
 	clearMilestone,
 	closeCompleted,
+	closedIssuesWithLabel,
 	closeNotPlanned,
 	createComment,
 	createIssue,
 	deleteComment,
 	getCommentRecord,
 	getIssue,
+	issueNodeId,
 	issueTimeline,
 	listComments,
 	listCommentsReconciled,
 	listLabels,
 	listMilestones,
+	listOpenIssueFacts,
 	listOpenIssues,
 	listOpenMilestones,
 	openIssuesTitled,
@@ -35,6 +38,7 @@ import {
 	repoDefaultBranch,
 	searchOpenIssues,
 	setMilestone,
+	timelineFacts,
 } from "./issues.ts";
 
 const TOKEN = "ghp_scripted";
@@ -110,6 +114,30 @@ describe("the credential is an argument to every request, never something a requ
 		delete process.env.GITHUB_TOKEN;
 		const result = await against(getIssue("o/r", 7), scripted([]));
 		expect(result._tag).toBe("Unknown");
+	});
+});
+
+describe("issueNodeId reads the content id a Projects add takes, over REST", () => {
+	it("answers an issue's node id", async () => {
+		const http = scripted([[/issues\/7$/, {status: 200, body: issue({node_id: "I_kwDO7"})}]]);
+		expect(await against(issueNodeId("o/r", 7), http)).toEqual({
+			_tag: "Present",
+			value: "I_kwDO7",
+		});
+	});
+
+	it("answers Absent for a pull request, which is never a table row", async () => {
+		const http = scripted([
+			[/issues\/7$/, {status: 200, body: issue({node_id: "PR_kwDO7", pull_request: {url: "u"}})}],
+		]);
+		expect(await against(issueNodeId("o/r", 7), http)).toEqual({_tag: "Absent"});
+	});
+
+	it("answers Absent on a 404 and Unknown on a body with no node id", async () => {
+		const missing = scripted([[/issues\/7$/, {status: 404, body: {message: "Not Found"}}]]);
+		const bare = scripted([[/issues\/7$/, {status: 200, body: issue({})}]]);
+		expect(await against(issueNodeId("o/r", 7), missing)).toEqual({_tag: "Absent"});
+		expect((await against(issueNodeId("o/r", 7), bare))._tag).toBe("Unknown");
 	});
 });
 
@@ -403,6 +431,59 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 		);
 		expect(refused._tag).toBe("Failure");
 	});
+
+	it("listOpenIssueFacts carries who filed each issue and how they relate to the repository", async () => {
+		const read = await against(
+			listOpenIssueFacts("o/r"),
+			scripted([
+				[
+					/issues/,
+					{
+						status: 200,
+						body: [
+							issue({number: 1, author_association: "NONE"}),
+							issue({number: 2, pull_request: {}}),
+							issue({number: 3}),
+						],
+					},
+				],
+			]),
+		);
+		expect(read).toMatchObject({
+			_tag: "Ok",
+			value: [
+				{number: 1, association: "NONE"},
+				{number: 3, association: ""},
+			],
+		});
+	});
+
+	it("closedIssuesWithLabel reads a settled sub-issue summary as no open child, and a missing one as maybe", async () => {
+		const read = await against(
+			closedIssuesWithLabel("o/r", "type:epic"),
+			scripted([
+				[
+					/state=closed&labels=type%3Aepic/,
+					{
+						status: 200,
+						body: [
+							issue({number: 1, sub_issues_summary: {total: 3, completed: 3}}),
+							issue({number: 2, sub_issues_summary: {total: 3, completed: 2}}),
+							issue({number: 4}),
+						],
+					},
+				],
+			]),
+		);
+		expect(read).toEqual({
+			_tag: "Ok",
+			value: [
+				{number: 1, mayHaveOpenChildren: false},
+				{number: 2, mayHaveOpenChildren: true},
+				{number: 4, mayHaveOpenChildren: true},
+			],
+		});
+	});
 });
 
 describe("a list whose completeness is load-bearing refuses a walk it could not finish", () => {
@@ -493,6 +574,7 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 	const cappedReads: ReadonlyArray<readonly [string, () => Shell<Attempt<unknown>>]> = [
 		["openIssuesTitled", () => openIssuesTitled("o/r", "map: portability")],
 		["issueTimeline", () => issueTimeline("o/r", 1)],
+		["timelineFacts", () => timelineFacts("o/r", 1)],
 		["openIssuesWithLabel", () => openIssuesWithLabel("o/r", "status:needs-triage")],
 		["listLabels", () => listLabels("o/r")],
 		["listOpenMilestones", () => listOpenMilestones("o/r")],
@@ -811,6 +893,99 @@ describe("issueTimeline", () => {
 			scripted([[/timeline/, {status: 502, body: {message: "Bad gateway"}}]]),
 		);
 		expect(result._tag).toBe("Failure");
+	});
+});
+
+describe("timelineFacts", () => {
+	it("keeps same-repository references with their state, and every reopen", async () => {
+		const http = scripted([
+			[
+				/timeline/,
+				{
+					status: 200,
+					body: [
+						{event: "labeled"},
+						{event: "reopened", created_at: "2026-10-02T00:00:00Z"},
+						{
+							event: "cross-referenced",
+							source: {
+								issue: {
+									number: 12,
+									title: 'Revert "Faster exports"',
+									state: "closed",
+									created_at: "2026-10-01T00:00:00Z",
+									labels: [],
+									repository_url: "https://api.github.com/repos/o/r",
+									pull_request: {url: "u", merged_at: "2026-10-01T01:00:00Z"},
+								},
+							},
+						},
+						{
+							event: "cross-referenced",
+							source: {
+								issue: {
+									number: 13,
+									title: "Exports crash",
+									state: "open",
+									created_at: "2026-10-03T00:00:00Z",
+									labels: [{name: "type:bug"}],
+									repository_url: "https://api.github.com/repos/o/r",
+								},
+							},
+						},
+						{
+							event: "cross-referenced",
+							source: {
+								issue: {
+									number: 9,
+									title: "Elsewhere",
+									state: "open",
+									created_at: "2026-10-03T00:00:00Z",
+									labels: [],
+									repository_url: "https://api.github.com/repos/other/repo",
+								},
+							},
+						},
+					],
+				},
+			],
+		]);
+		expect(await against(timelineFacts("o/r", 7), http)).toEqual({
+			_tag: "Ok",
+			value: {
+				reopenedAt: ["2026-10-02T00:00:00Z"],
+				references: [
+					{
+						number: 12,
+						title: 'Revert "Faster exports"',
+						isPullRequest: true,
+						open: false,
+						merged: true,
+						labels: [],
+						createdAt: "2026-10-01T00:00:00Z",
+					},
+					{
+						number: 13,
+						title: "Exports crash",
+						isPullRequest: false,
+						open: true,
+						merged: false,
+						labels: ["type:bug"],
+						createdAt: "2026-10-03T00:00:00Z",
+					},
+				],
+			},
+		});
+	});
+
+	it("refuses a cross-reference it cannot read rather than dropping it", async () => {
+		const http = scripted([
+			[
+				/timeline/,
+				{status: 200, body: [{event: "cross-referenced", source: {issue: {number: 1}}}]},
+			],
+		]);
+		expect((await against(timelineFacts("o/r", 7), http))._tag).toBe("Failure");
 	});
 });
 

@@ -37,6 +37,8 @@ export interface JsonSchema {
 	readonly pattern?: string;
 	readonly minLength?: number;
 	readonly minimum?: number;
+	readonly exclusiveMinimum?: number;
+	readonly maximum?: number;
 	readonly properties?: Readonly<Record<string, JsonSchema>>;
 	readonly required?: ReadonlyArray<string>;
 	readonly additionalProperties?: boolean | JsonSchema;

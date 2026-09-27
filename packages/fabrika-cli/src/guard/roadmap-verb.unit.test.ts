@@ -187,8 +187,8 @@ describe("runRoadmapGuard", () => {
 		expect(out.stderr.join("\n")).toContain("cannot resolve a target repo");
 	});
 
-	// The guard and the scope fence must validate one file. A guard pinned to `ROADMAP.md`
-	// while `build pick` reads the declared one is a key with two answers.
+	// The guard and the campaign readers must validate one file. A guard pinned to `ROADMAP.md`
+	// while `triage homes` reads the declared one is a key with two answers.
 	it("validates the file `roadmapFile` names, not its own literal", async () => {
 		const out = await run(
 			{

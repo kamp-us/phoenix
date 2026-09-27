@@ -121,12 +121,11 @@ describe("the closed park-cause set --cause advertises", () => {
 		expect(flagHelp(leafNamed("transition"))).toContain(token);
 	});
 
-	it("offers the two spent-budget parks, the two base machinery causes, the queue ejection, the red head, the rendered gate's three, the unlanded write, the builder's two mechanical stops and the owner-approval wait beside the six that predate them", () => {
+	it("offers the two spent-budget parks, the two base machinery causes, the queue ejection, the red head, the rendered gate's three, the unlanded write, the builder's two mechanical stops, the owner-approval wait and the size stop beside the six that predate them", () => {
 		expect([...PARK_CAUSE_TOKENS]).toEqual([
 			"assembly-conflict",
 			"awaiting-cp-approval",
 			"base-conflicted",
-			"campaign-paused",
 			"claim-stranded",
 			"head-behind-base",
 			"head-ci-red",
@@ -137,6 +136,7 @@ describe("the closed park-cause set --cause advertises", () => {
 			"repair-budget-spent",
 			"replay-budget-spent",
 			"replay-conflict",
+			"size-stop",
 			"spawn-dead",
 			"tree-hijacked",
 			"worktree-holds-branch",

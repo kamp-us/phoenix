@@ -1,7 +1,7 @@
 ---
 id: 0393
 title: A driver's lane clear grants both of a lane's repair budgets
-status: accepted
+status: amended-in-part by [0417](0417-campaigns-are-themes-not-dispatch-permission.md)
 date: 2026-09-15
 tags: [fabrika, lane, pipeline, governance]
 ---

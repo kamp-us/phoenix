@@ -118,8 +118,8 @@ const open = leafCommand(
 			"  13: authority is UNKNOWN",
 			"  14: no marker on the comment",
 			"  15: a malformed or misbound marker",
-			"  16: author not in campaignAuthors",
-			"  17: campaignAuthors is empty",
+			"  16: author outside the control plane",
+			"  17: no control-plane owner",
 			"  19: a row already holds this name or milestone",
 			"  21: author holds below write",
 			"  22: .fabrika.jsonc is unreadable",
@@ -177,8 +177,8 @@ const state = leafCommand(
 			"  13: authority is UNKNOWN",
 			"  14: no marker",
 			"  15: a malformed or misbound marker",
-			"  16: author not in campaignAuthors",
-			"  17: campaignAuthors is empty",
+			"  16: author outside the control plane",
+			"  17: no control-plane owner",
 			"  18: several rows match",
 			"  20: the row already holds --to",
 			"  21: author holds below write",
@@ -196,8 +196,10 @@ const state = leafCommand(
 
 export const campaignCommand = Command.make("campaign").pipe(
 	Command.withSubcommands([list, open, state]),
-	Command.withShortDescription("Read and write the ## Campaigns table that gates dispatch."),
+	Command.withShortDescription(
+		"Read and write the ## Campaigns table that groups work under themes.",
+	),
 	Command.withDescription(
-		"Read the ## Campaigns table, declare a new campaign paused, and flip one campaign's lifecycle state — each write past a cited founder approval, because that State cell is the permission to open lanes against a milestone",
+		"Read the ## Campaigns table, declare a new campaign paused, and flip one campaign's lifecycle state — each write past a cited founder approval. A campaign groups work under a theme and pins a milestone; no State value refuses, skips or parks a lane",
 	),
 );

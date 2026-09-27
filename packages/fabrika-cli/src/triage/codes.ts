@@ -221,6 +221,15 @@ export const DUPLICATE_VERDICT = 24;
  * an issue the audit never listed.
  */
 export const SET_MISMATCH = 25;
+/**
+ * Refused: the text `triage enrich` was sent carries no plain-language summary section, an empty
+ * one, or more than one.
+ *
+ * Its own seat rather than {@link EMPTY_STDIN}'s: that code says stdin held nothing, and here stdin
+ * held a body that lacks the one section the envelope places first. The fix is to add that section,
+ * not to re-pipe.
+ */
+export const PLAIN_SUMMARY_REQUIRED = 26;
 
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
@@ -324,6 +333,11 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 		code: SET_MISMATCH,
 		meaning:
 			"refused: the merged issue set is not the audited input set — an issue is missing or invented — no merged output",
+	},
+	{
+		code: PLAIN_SUMMARY_REQUIRED,
+		meaning:
+			"refused: the enrich text carries no plain-language summary section, an empty one, or more than one",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

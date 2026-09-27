@@ -416,7 +416,7 @@ With `--json`:
 It is the pipeline's when its author is in the repo's `ownAccounts` (the running, authenticated
 account alone when that set is empty or absent) — `ours` — or when a
 [`takeover-grant`](../../docs/wire-formats.md#takeover-grant) marker from an account in the
-grant-author set stands on it — `granted`. Otherwise it is `foreign`, and the arrow a class would
+control-plane set stands on it — `granted`. Otherwise it is `foreign`, and the arrow a class would
 point at `build` points at `author` instead. The standing is read only for a class whose work can
 reach `build`: the arrow's two (`conflicted`, and `linkage-refused` with a holder) and `red`, whose
 arrow is `nobody` but whose `logic` route (`SKILL.md` §3) names `build` only on `ours` or `granted`.

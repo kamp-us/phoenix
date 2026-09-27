@@ -19,30 +19,29 @@ verb below checks that a milestone exists, that it is open, or that the table is
 answer to a merge-gating question is the failure mode, and the skill states the expectation instead
 — ask whether the skill needs the answer, or only needs to expect it.
 
-**Dispatch permission is likewise read, never computed.**
-[`build/scope-admission.ts`](../../../../packages/fabrika-cli/src/build/scope-admission.ts) decides
-whether an issue is admitted on the scope axis, off the same `State` cell these verbs write. No verb
-here answers "may a lane open against this milestone".
+**No campaign state gates a lane.** A campaign is a theme: its row groups work under a milestone and
+its `State` cell says whether the theme is being worked. `build pick` and `build claim` read no
+campaign state, so no verb here — and no verb anywhere — answers "may a lane open against this
+milestone" off this table.
 
-**Bind to the fence's reader, not a fourth.** Three readers of this table are already in tree, and
+**Bind to the shared reader, not a fourth.** Three readers of this table are already in tree, and
 they are not interchangeable. `guard/roadmap.ts` parses both roadmap tables for the I1–I5 invariants;
 its `parseMilestoneCell` matches an **unanchored** `/#(\d+)/`, it drops the header **by position**
 (`parseSectionRows`'s `rows.slice(1)`), and its `RoadmapRow.milestone` is already resolved to
 `number | null`, so the raw pin cell is gone by the time any caller sees a row. `triage/roadmap.ts`
 parses the name→milestone join for `triage homes`. And
 [`build/scope-admission.ts`](../../../../packages/fabrika-cli/src/build/scope-admission.ts)'s
-`readCampaigns` reads the same table **as the fence** — strict `MILESTONE_CELL = /^#(\d+)$/`, header
+`readCampaigns` reads the same table for `triage homes` — strict `MILESTONE_CELL = /^#(\d+)$/`, header
 recognised by its column names rather than its position, and one unreadable row making the whole
 table `Malformed` rather than degrading to the rows that parsed.
 
-All three verbs bind to **`readCampaigns`'s parse**, in `build/scope-admission.ts`. It is the parse
-whose answer decides whether a lane may open, so it is the one a writer must not disagree with: a row
-this skill reports or writes and the fence calls `Malformed` is a campaign that reads as declared and
-dispatches nothing. Binding to `guard/roadmap.ts` instead would buy exactly that divergence — a
-second number in the cell is a pin to the guard's loose parser and `Malformed` to the fence, and a
-bad *milestone* cell would be invisible to a report the fence refuses to read. The guard's looser
-parser is not a bug to fix here; it serves invariants that judge a pin's referent rather than admit a
-row, and re-pointing it is outside this skill's lane.
+All three verbs bind to **`readCampaigns`'s parse**, in `build/scope-admission.ts`. It is the strict
+parse, so it is the one a writer must not disagree with: a row this skill reports or writes and the
+strict parse calls `Malformed` is a campaign that reads as declared to one reader and unreadable to
+another. Binding to `guard/roadmap.ts` instead would buy exactly that divergence — a second number in
+the cell is a pin to the guard's loose parser and `Malformed` to the strict one. The guard's looser
+parser is not a bug to fix here; it serves invariants that judge a pin's referent, and re-pointing it
+is outside this skill's lane.
 
 **But `readCampaigns` itself is a narrowing, and these verbs need the rows it narrows away.** Its
 `Dispatch` result carries `ActiveCampaign[]` — only the rows whose state cell is `active`; `paused`
@@ -63,8 +62,8 @@ these verbs means splitting `build/scope-admission.ts` in one place, before any 
   question, below.
 - Re-express `readCampaigns` as the narrowing over it, keeping its `Dispatch` signature and its
   `Active`-is-non-empty invariant exactly: `Malformed` passes through, otherwise filter `rows` to
-  `state === "active"` and return `None` for an empty filter. No call site of the fence changes, and
-  the fence's own type still makes "permitting nothing while reporting a permission" unconstructible.
+  `state === "active"` and return `None` for an empty filter. Its type still makes "active while naming
+  no campaign" unconstructible.
 - The three verbs here call `parseCampaigns`. The write half is new — nothing in the tree writes this
   table today — so the writers are added beside that parse, never as a fourth one carrying copies of
   its regexes.
@@ -83,9 +82,9 @@ implementation scaffolds the heading and another refuses.
 | `campaign open` | append a new `paused` row pinning a milestone, past the approval trace | the row's bytes, its insertion point and the trace check are fixed; *which* campaign to name is the founder's, and it arrives as an argument |
 | `campaign state` | rewrite one row's `State` cell, past the approval trace | a one-cell rewrite with a closed value set, a duplicate-write refusal and a read-back; deciding to flip is the ruling this verb demands a citation for |
 
-`open` and `state` are deliberately **not** fused into one upsert. The whole ruling behind this
-group is that naming a campaign and granting it dispatch are separate acts; a verb that did both on
-one call would re-open in code exactly what the ruling closed in the grammar.
+`open` and `state` are deliberately **not** fused into one upsert. Naming a campaign and saying it is
+being worked are separate acts, each with its own cited ruling; a verb that did both on one call
+would re-open in code exactly what the grammar keeps apart.
 
 ## Shared conventions
 
@@ -120,11 +119,11 @@ one call would re-open in code exactly what the ruling closed in the grammar.
   | `9` | the write landed and the read-back does not match it | | ✓ | ✓ |
   | `11` | the roadmap file could not be read, so nothing was attempted — UNKNOWN | ✓ | ✓ | ✓ |
   | `12` | the `## Campaigns` table holds a row that will not parse — the whole table is unreadable | ✓ | ✓ | ✓ |
-  | `13` | the cited comment, a team membership or the author's permission could not be read, so authority is UNKNOWN | | ✓ | ✓ |
+  | `13` | the cited comment, the control-plane roster or the author's permission could not be read, so authority is UNKNOWN | | ✓ | ✓ |
   | `14` | the cited comment carries no `campaign-approve:` marker | | ✓ | ✓ |
   | `15` | the marker is malformed, or names another milestone or another state | | ✓ | ✓ |
-  | `16` | the cited comment's author is not in `campaignAuthors` | | ✓ | ✓ |
-  | `17` | `campaignAuthors` is empty or absent — nobody may declare in this repo | | ✓ | ✓ |
+  | `16` | the cited comment's author is not in the control-plane set | | ✓ | ✓ |
+  | `17` | `.github/CODEOWNERS` names no control-plane owner — nobody may declare in this repo | | ✓ | ✓ |
   | `18` | the selector names more than one row | | | ✓ |
   | `19` | the table already holds a row for this campaign or this milestone | | ✓ | |
   | `20` | the row already holds the state `--to` names — nothing written | | | ✓ |
@@ -156,13 +155,10 @@ one call would re-open in code exactly what the ruling closed in the grammar.
 - **A non-zero exit is UNKNOWN.** No verb prints a partial or permissive answer on a non-zero exit.
 - **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md)**,
   paginated. The collaborator-permission read is `permissionFor`'s
-  (`repos/<repo>/collaborators/<login>/permission`) and is not re-implemented here. What is local to
-  this group: team membership for a `@org/team` entry in
-  `campaignAuthors` is `gh api orgs/<org>/teams/<team>/memberships/<login>`. A `404` on the
-  *membership* is a proven "not a member"; every other non-`200`, **and a `404` on the team itself**,
-  is `13`. A team the org does not have is a typo in `campaignAuthors`, and reading it as "not a
-  member" would exit `16` and send the caller to find a different approver instead of to the key —
-  so the two are separated, and `13`'s message names the key.
+  (`repos/<repo>/collaborators/<login>/permission`) and the control-plane roster is
+  [`ship/roster.ts`](../../../../packages/fabrika-cli/src/ship/roster.ts)'s `controlPlaneRoster` —
+  `.github/CODEOWNERS` on the default branch, each `@org/team` owner expanded through its member
+  list. Neither is re-implemented here, and nothing GitHub-facing is local to this group.
 - **Nothing here writes to GitHub.** Every verb's only write is to the roadmap file; the board is
   read at most.
 
@@ -180,30 +176,30 @@ whatever it contains.** The header is recognised by its three column names (`cam
 `state`, case-insensitively) and the separator by its dashes; the scan stops at the next `##`
 heading. Recognising rows this way rather than by a shape test is what makes a mistyped cell
 *malformed* rather than *invisible* — a parser that skipped rows it could not read would answer
-"nothing is active" for a broken table, which is the well-formed-and-always-wrong shape the fence
-exists to avoid. That is `parseCampaigns`'s rule and the writers keep it.
+"nothing is active" for a broken table, a well-formed answer that is always wrong. That is
+`parseCampaigns`'s rule and the writers keep it.
 
 **A data row is readable only when it has exactly three cells, a non-empty first cell, a second cell
 matching `^#(\d+)$`, and a third cell that lowercases to one of the three states.** Any row failing
 any of those four makes the **whole** table unreadable (`12`) — not just the row, and not just a bad
-state cell. A fence never falls back to the rows it could parse, so a partial answer is
+state cell. No reader falls back to the rows it could parse, so a partial answer is
 the one thing no verb here may return. The refusal carries `parseCampaigns`'s own reason string, so
-`campaign list` and the `build` fence name the same defect in the same words.
+`campaign list` and `triage homes` name the same defect in the same words.
 
 **An absent table and a table with no rows are one well-formed default, and they are a fact rather
 than a failed read.** `campaign list` answers `none` at exit `0` for both. This is the deliberate
-exception to the fail-closed-on-zero-scope rule, and it is ruled: nothing declared means the fence
-is off, not closed. A judging verb would red here; `list` supplies an input and its empty answer is
+exception to the fail-closed-on-zero-scope rule: nothing declared is a real state of a repo, and it
+refuses nothing. A judging verb would red here; `list` supplies an input and its empty answer is
 a fact, which is the distinction the interface convention's rule 4 asks every verb to settle in its
 header.
 
 **A table whose every row is `paused` or `done` is a different input, and `list` does not call it
 `none`.** It prints those rows, because they are declared: someone opened each one and the file says
-so. What is empty there is the *dispatch* answer, and that answer is the fence's — `readCampaigns`
-returns `None` and no lane opens. The two are only one state when read through the fence's narrowing,
-which is exactly the read a report verb must not borrow: `none` from `list` means **no row survived**,
-never "nothing is active". `--state active` is how a caller asks the dispatch question of `list`, and
-on such a table it does answer `none`.
+so. What is empty there is the *active* answer — `readCampaigns` returns `None`, and no theme is being
+worked. The two are only one state when read through that narrowing, which is exactly the read a
+report verb must not borrow: `none` from `list` means **no row survived**, never "nothing is active".
+`--state active` is how a caller asks which themes are being worked, and on such a table it does
+answer `none`.
 
 ## The approval trace
 
@@ -248,12 +244,14 @@ An approval of one campaign never authorizes another, and an approval to pause n
 start. That state binding is this contract's own derivation, not v1's: v1's marker named a wave label
 and a direction was implicit, which would let one grant re-start a campaign any number of times.
 
-**Authority — two clauses, both required**, because config narrows the repo's ACL and never
-replaces it.
+**Authority — two clauses, both required**, because the control-plane set narrows the repo's ACL
+and never replaces it.
 
-1. **The configured set.** The comment's author login is resolved against `.fabrika.jsonc`'s
-   `campaignAuthors` (below), case-insensitively for a `@user` entry, by REST membership for a
-   `@org/team` entry. Not in the set is `16`; an empty set is `17`.
+1. **The control-plane set.** The comment's author login is resolved against the accounts
+   `.github/CODEOWNERS` names on the default branch — `@user` owners as named, `@org/team` owners
+   expanded to their members — case-insensitively. It is the same roster `plan approve` and
+   `decision rule` read. Not in the set is `16`; a CODEOWNERS naming no owner is `17`. A roster that
+   could not be read is `13`.
 2. **The live ACL.** The same login's repository permission is then read live at the moment of the
    act — `permissionFor(repo, login)`
    ([`io/pulls.ts`](../../../../packages/fabrika-cli/src/io/pulls.ts)) — and must be one of `admin`,
@@ -264,27 +262,25 @@ replaces it.
 
 `build clear`'s pair is the shape being copied, constant for constant:
 [`build/clearances.ts`](../../../../packages/fabrika-cli/src/build/clearances.ts) holds
-`WRITE_FLOOR = {admin, maintain, write}` over the same `permissionFor`, and its refusal reads
-*"authority is the ACL's, never `.fabrika.jsonc`'s alone"*. The two clauses are
-conjunctive and neither substitutes: widening the file grants nothing to an account with no
-collaboration, and holding `write+` grants nothing to an account the repo did not name.
+`WRITE_FLOOR = {admin, maintain, write}` over the same `permissionFor` and the same roster, and its
+refusal reads *"authority is the ACL's, never CODEOWNERS' alone"*. The two clauses are conjunctive and
+neither substitutes: being in the roster grants nothing to an account with no collaboration, and
+holding `write+` grants nothing to an account CODEOWNERS does not name.
 
-**Clause 2 is load-bearing here specifically, and not a formality.** These verbs run against a
-working tree before any pull request exists, so there is no base ref to resolve `campaignAuthors` at
-and the file is the one the same actor is editing — which is exactly the *"a checked-in identity list
-is instructions, not enforcement"* hole the live-ACL rule exists to close. The privilege behind this
-key is the dispatch permission itself, so a login appended to `campaignAuthors` on a branch, by
-somebody with no collaboration on the repo, must not satisfy the check. The live read is what makes
-that true; the marker's presence is evidence, never permission.
+**Clause 2 is load-bearing here specifically, and not a formality.** Team membership is edited in
+org settings with no pull request, so the roster alone is a list somebody can change outside review.
+The live read is what an account actually holds at the moment of the act; the marker's presence is
+evidence, never permission.
 
 **Repository binding.** The cited URL must resolve under `--repo`. A comment in another repository is
 `15`.
 
 **Precedence when more than one thing is wrong** is most-informative-first, so the caller is told the
-furthest thing they got: `21` (a well-formed, correctly-bound marker by a named author who is below
-the write floor) > `16` (a named-set miss) > `15` (malformed or misbound) > `14` (no marker at all).
-`17` outranks all four — with nobody declared, no comment could have carried authority, so reporting
-`absent` would send the caller hunting for a marker that could not have helped. `21` sits at the top
+furthest thing they got: `21` (a well-formed, correctly-bound marker by a control-plane author who is
+below the write floor) > `16` (a control-plane miss) > `15` (malformed or misbound) > `14` (no marker
+at all). `17` outranks all four — with no control-plane owner named, no comment could have carried
+authority, so reporting `absent` would send the caller hunting for a marker that could not have
+helped. `21` sits at the top
 because it is the furthest a citation gets: everything about the comment was right and the account
 behind it is not a collaborator here, which is a different person's problem than any of the others.
 
@@ -293,26 +289,16 @@ write. A comment re-cited from months ago, or one whose marker was written witho
 authorized, passes every check above. The skill carries that as judgment; the verb carries the
 checks.
 
-### `campaignAuthors`
+### `campaignAuthors` — retired
 
-A new `.fabrika.jsonc` key, modelled on
-[`capClearAuthors`](../../../../packages/fabrika-cli/src/config/keys/cap-clear-authors.ts) and
-sharing its decoder shape: an array of `@user` or `@org/team` strings, **shipped default `[]`**.
+`.fabrika.jsonc`'s `campaignAuthors` used to be clause 1's set. It is retired: the set is the
+control-plane roster above, and the key is read only to name it. A repository that still declares it
+keeps a valid config and gets one stderr line from each write verb, before its other output:
 
-**It is a narrowing predicate over the live ACL, never authority on its own** — the *Authority*
-clauses above are what this key means, and every future `.fabrika.jsonc` key naming who may act
-inherits that rule without a record of its own. Copying `capClearAuthors`'s decoder
-means copying its authority clause too, not only its shape.
+``campaign <verb>: `campaignAuthors` in .fabrika.jsonc is deprecated and ignored — the control-plane set in .github/CODEOWNERS decides this now; remove the key.``
 
-The empty default is the only one this key can have. A set that filled itself in on an absent file
-would hand founder authority over the dispatch permission to whoever the fallback named, in every
-repo that never declared it. Empty means nobody may declare, every write refuses on `17`, and the
-remedy is a founder writing the key.
-
-JSON-schema description: *"Who may declare a campaign or flip its lifecycle state
-(`fabrika campaign open` / `fabrika campaign state`), narrowing the repository's collaborator ACL —
-an entry here still needs `write` or above on the repo. Each entry is a GitHub `@user` or
-`@org/team`, `@`-prefixed. Empty (or absent) means nobody may declare."*
+The key changes nothing: an author it names who is outside the roster still refuses on `16`, and an
+author it leaves out who is inside the roster is admitted.
 
 ---
 
@@ -398,11 +384,11 @@ $ fabrika campaign list --json
 **Grounding**
 
 - **The three states, and the whole-table rule**: one unreadable row makes the whole table
-  unreadable, and nothing active means the fence is off rather than closed.
-- **An empty declaration admits everything**, which is why zero rows here is `0` and not the
+  unreadable, and nothing active means no theme is being worked — it refuses nothing.
+- **An empty declaration is a real state of a repo**, which is why zero rows here is `0` and not the
   fail-closed red a judging gate would return.
 - `build/scope-admission.ts`'s `parseCampaigns` — the all-rows parse this verb binds to, the one
-  `readCampaigns` narrows for the fence, so the report and the dispatch fence cannot disagree about
+  `readCampaigns` narrows for `triage homes`, so the report and that reader cannot disagree about
   what a row says.
 
 ---
@@ -448,13 +434,14 @@ Two states have no last row, and each has specified bytes:
 
   Nothing else is scaffolded: the prose `ROADMAP.md` carries under its table is founder-voice, and a
   verb that generated it would be writing in a voice that is not its own. The state is always `paused` and there
-is no flag to change it: a row that could be written `active` is a write that grants dispatch in the
-same stroke that names the campaign, which is the shape the two-write rule forbids. Nothing outside
+is no flag to change it: a row that could be written `active` would say the theme is being worked in
+the same stroke that names it, which is the shape the two-write rule forbids. Nothing outside
 the table is touched — the `## Dependency graph` block is the caller's edit, for the reason in
 *Considered and deliberately not derived*.
 
 Order of operations: resolve config → read and parse the file → refuse a duplicate → check the trace
-(marker, binding, `campaignAuthors`, then the live ACL read) → write → read back. The trace check
+(the control-plane roster, binding, the author's membership, the marker, then the live ACL read) →
+write → read back. The trace check
 runs before the write and the duplicate check before the trace, so a caller with a bad selector is
 never told their citation is fine.
 
@@ -474,13 +461,13 @@ answer: a run that wrote nothing exits non-zero. Under `--json`:
 | `9` | the file was written and the read-back holds no row for `--milestone` |
 | `11` | the roadmap file could not be read, so nothing was attempted |
 | `12` | the `## Campaigns` table holds a row that will not parse |
-| `13` | the cited comment could not be fetched, a team membership or the author's repository permission could not be resolved, `campaignAuthors` names a team the org does not have, or no repository could be resolved from `--repo`, the env or `origin` |
+| `13` | the cited comment could not be fetched, the control-plane roster or the author's repository permission could not be resolved, or no repository could be resolved from `--repo`, the env or `origin` |
 | `14` | the cited comment's first line carries no `campaign-approve:` marker |
 | `15` | the marker is malformed, names a milestone other than `--milestone`, names a state other than `paused`, or the cited URL is outside `--repo` |
-| `16` | the cited comment's author is not in `campaignAuthors` |
-| `17` | `campaignAuthors` is empty or absent |
+| `16` | the cited comment's author is not in the control-plane set |
+| `17` | `.github/CODEOWNERS` names no control-plane owner |
 | `19` | a row already holds this `<name>`, or already pins `--milestone` |
-| `21` | the cited comment's author is in `campaignAuthors` but holds less than `write` on `--repo` |
+| `21` | the cited comment's author is in the control-plane set but holds less than `write` on `--repo` |
 | `22` | `.fabrika.jsonc` could not be read, or its `roadmapFile` will not decode |
 
 **Errors**
@@ -495,20 +482,19 @@ answer: a run that wrote nothing exits non-zero. Under `--json`:
 | `campaign open: cannot write <file>: <reason> — UNKNOWN, the table may be half-written; re-read it.` | 8 | refusal |
 | `campaign open: <file>: <reason> — the whole ## Campaigns table is unreadable. NOTHING was written.` | 12 | refusal |
 | `campaign open: cannot fetch <url>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
-| `campaign open: cannot resolve membership of <login> in @<org>/<team>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
+| `campaign open: cannot read the control-plane set: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
 | `campaign open: cannot resolve @<login>'s permission on <repo>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
-| `campaign open: campaignAuthors names @<org>/<team>, which <org> does not have — fix the key; authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
 | `campaign open: no --repo, no CLAUDE_PIPELINE_REPO, no GITHUB_REPOSITORY and no readable origin remote — the citation cannot be bound to a repository. NOTHING was written.` | 13 | refusal |
 | `campaign open: <url> has no campaign-approve: marker on its first line — NOTHING was written.` | 14 | refusal |
 | `campaign open: <url> marker is malformed: <reason> — NOTHING was written.` | 15 | refusal |
 | `campaign open: <url> approves #<marker-milestone> <marker-state>, not #<n> paused — NOTHING was written.` | 15 | refusal |
 | `campaign open: <url> is a comment in <other-repo>, not <repo> — NOTHING was written.` | 15 | refusal |
-| `campaign open: <url> was authored by @<login>, who is not in campaignAuthors (<declared>) — NOTHING was written.` | 16 | refusal |
-| `campaign open: campaignAuthors is empty in .fabrika.jsonc — nobody may declare a campaign in this repo. NOTHING was written.` | 17 | refusal |
+| `campaign open: <url> was authored by @<login>, who is not in the control-plane set (<owners> at <ref>) — NOTHING was written.` | 16 | refusal |
+| `campaign open: <repo>'s CODEOWNERS names no control-plane owner at <ref> — nobody may declare a campaign in this repo. NOTHING was written.` | 17 | refusal |
 | `campaign open: <file> already holds "<name>" at #<m> — NOTHING was written.` | 19 | refusal |
 | `campaign open: <file> already pins #<n> to "<other>" — NOTHING was written.` | 19 | refusal |
 | `campaign open: wrote <file> but the read-back holds no row for #<n> — the write landed and the file does not say so; re-read it before retrying.` | 9 | refusal |
-| `campaign open: <url> was authored by @<login>, who resolves to <level-or-no-collaboration> on <repo>, below write — authority is the ACL's, never .fabrika.jsonc's alone. NOTHING was written.` | 21 | refusal |
+| `campaign open: <url> was authored by @<login>, who resolves to <level-or-no-collaboration> on <repo>, below write — authority is the ACL's, never CODEOWNERS' alone. NOTHING was written.` | 21 | refusal |
 | `campaign open: cannot resolve roadmapFile from .fabrika.jsonc: <reason> — UNKNOWN, no roadmap file was opened.` | 22 | refusal |
 
 Every refusal past the read states what did **not** happen. That is v1's discipline and it is kept:
@@ -516,12 +502,12 @@ a refusal line that leaves the caller guessing whether a row landed is the one t
 a second.
 
 **Scope** — this verb judges nothing; it writes. Its stderr notice names the two things a reader
-needs: `campaign open: cited <url> by @<login> (campaignAuthors: <declared>; <level> on <repo>);
-appended "<name>" #<n> paused to <file> — dispatches nothing until it is flipped to active.`
+needs: `campaign open: cited <url> by @<login> (control plane: <owners>; <level> on <repo>);
+appended "<name>" #<n> paused to <file>.`
 
 **Examples**
 
-Against the same two-row fixture, with `.fabrika.jsonc` declaring `"campaignAuthors": ["@maintainer"]`,
+Against the same two-row fixture, with `.github/CODEOWNERS` naming `@maintainer`, who holds `write`,
 and `https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>` a comment by `maintainer`
 whose first line is a `campaign-approve:` marker approving milestone 9052 `paused`:
 
@@ -545,7 +531,7 @@ $ fabrika campaign open "Reading layout" --milestone 9052 --cites https://github
 **Grounding**
 
 - **A new row is `paused`**, and there is no flag to write it `active`.
-- **The configured set narrows a live `write+` ACL read**; both clauses run and the verb fails
+- **The control-plane set narrows a live `write+` ACL read**; both clauses run and the verb fails
   closed on either.
 - **A cited ruling comment is what makes a human decision actionable by an agent**, and this verb
   applies that same citation idiom to a roadmap write.
@@ -583,10 +569,11 @@ fabrika campaign state <selector> --to <active|paused|done> --cites <url> [--fil
 **Behaviour.** Selection is exact, never fuzzy: a `#<n>` selector matches the row whose second cell
 pins `<n>`; anything else is matched character-for-character against the first cell after trimming.
 Two rows matching is `18` rather than a first-wins pick — a lifecycle flip aimed at the wrong campaign
-grants dispatch on a milestone nobody named.
+marks a theme nobody named.
 
 Order of operations: resolve config → read and parse → select → refuse a no-op → check the trace
-(marker, binding, `campaignAuthors`, then the live ACL read) → rewrite the third cell → read back. Only the third cell's **state token** changes: the cell's leading
+(the control-plane roster, binding, the author's membership, the marker, then the live ACL read) →
+rewrite the third cell → read back. Only the third cell's **state token** changes: the cell's leading
 and trailing whitespace is preserved exactly as found and the token is swapped in place, so
 `| active |` becomes `| paused |` and `|  active  |` becomes `|  paused  |`. **The cell is never
 re-padded to a column width** — `paused` → `done` therefore shortens the line, and every other line
@@ -607,14 +594,14 @@ not ask for, and on a table whose columns are already ragged it would rewrite ro
 | `9` | the file was written and the read-back does not hold `--to` |
 | `11` | the roadmap file could not be read, so nothing was attempted |
 | `12` | the `## Campaigns` table holds a row that will not parse |
-| `13` | the cited comment could not be fetched, a team membership or the author's repository permission could not be resolved, `campaignAuthors` names a team the org does not have, or no repository could be resolved from `--repo`, the env or `origin` |
+| `13` | the cited comment could not be fetched, the control-plane roster or the author's repository permission could not be resolved, or no repository could be resolved from `--repo`, the env or `origin` |
 | `14` | the cited comment's first line carries no `campaign-approve:` marker |
 | `15` | the marker is malformed, names a milestone other than the selected row's, names a state other than `--to`, or the cited URL is outside `--repo` |
-| `16` | the cited comment's author is not in `campaignAuthors` |
-| `17` | `campaignAuthors` is empty or absent |
+| `16` | the cited comment's author is not in the control-plane set |
+| `17` | `.github/CODEOWNERS` names no control-plane owner |
 | `18` | the selector matches more than one row |
 | `20` | the selected row already holds `--to` — nothing written |
-| `21` | the cited comment's author is in `campaignAuthors` but holds less than `write` on `--repo` |
+| `21` | the cited comment's author is in the control-plane set but holds less than `write` on `--repo` |
 | `22` | `.fabrika.jsonc` could not be read, or its `roadmapFile` will not decode |
 
 **Errors**
@@ -629,34 +616,31 @@ not ask for, and on a table whose columns are already ragged it would rewrite ro
 | `campaign state: cannot write <file>: <reason> — UNKNOWN, the row may be half-written; re-read it.` | 8 | refusal |
 | `campaign state: <file>: <reason> — the whole ## Campaigns table is unreadable. NOTHING was written.` | 12 | refusal |
 | `campaign state: cannot fetch <url>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
-| `campaign state: cannot resolve membership of <login> in @<org>/<team>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
+| `campaign state: cannot read the control-plane set: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
 | `campaign state: cannot resolve @<login>'s permission on <repo>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
-| `campaign state: campaignAuthors names @<org>/<team>, which <org> does not have — fix the key; authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
 | `campaign state: no --repo, no CLAUDE_PIPELINE_REPO, no GITHUB_REPOSITORY and no readable origin remote — the citation cannot be bound to a repository. NOTHING was written.` | 13 | refusal |
 | `campaign state: <url> has no campaign-approve: marker on its first line — NOTHING was written.` | 14 | refusal |
 | `campaign state: <url> marker is malformed: <reason> — NOTHING was written.` | 15 | refusal |
 | `campaign state: <url> approves #<marker-milestone> <marker-state>, not #<n> <to> — NOTHING was written.` | 15 | refusal |
 | `campaign state: <url> is a comment in <other-repo>, not <repo> — NOTHING was written.` | 15 | refusal |
-| `campaign state: <url> was authored by @<login>, who is not in campaignAuthors (<declared>) — NOTHING was written.` | 16 | refusal |
-| `campaign state: campaignAuthors is empty in .fabrika.jsonc — nobody may flip a campaign in this repo. NOTHING was written.` | 17 | refusal |
+| `campaign state: <url> was authored by @<login>, who is not in the control-plane set (<owners> at <ref>) — NOTHING was written.` | 16 | refusal |
+| `campaign state: <repo>'s CODEOWNERS names no control-plane owner at <ref> — nobody may flip a campaign in this repo. NOTHING was written.` | 17 | refusal |
 | `campaign state: "<selector>" matches <k> rows (<names>) — NOTHING was written.` | 18 | refusal |
 | `campaign state: "<name>" #<n> already holds <to> — NOTHING was written.` | 20 | refusal |
 | `campaign state: wrote <file> but the read-back holds <cell> for #<n>, not <to> — the write landed and the file does not say so; re-read it before retrying.` | 9 | refusal |
-| `campaign state: <url> was authored by @<login>, who resolves to <level-or-no-collaboration> on <repo>, below write — authority is the ACL's, never .fabrika.jsonc's alone. NOTHING was written.` | 21 | refusal |
+| `campaign state: <url> was authored by @<login>, who resolves to <level-or-no-collaboration> on <repo>, below write — authority is the ACL's, never CODEOWNERS' alone. NOTHING was written.` | 21 | refusal |
 | `campaign state: cannot resolve roadmapFile from .fabrika.jsonc: <reason> — UNKNOWN, no roadmap file was opened.` | 22 | refusal |
 
-`20` is a refusal and not a quiet `0`. A flip to `active` is the grant of dispatch permission, so a
-caller who reads "done" over a cell nobody moved cannot tell a grant they made from a grant somebody
-else made first.
+`20` is a refusal and not a quiet `0`. A caller who reads "done" over a cell nobody moved cannot tell
+a flip they made from one somebody else made first.
 
 **Scope** — this verb judges nothing; it writes one cell. Its stderr notice:
-`campaign state: cited <url> by @<login> (campaignAuthors: <declared>; <level> on <repo>); "<name>"
-#<n> <from> → <to> in <file>.` When `<to>` is `active` the notice appends ` — lanes may now open
-against #<n>.`
+`campaign state: cited <url> by @<login> (control plane: <owners>; <level> on <repo>); "<name>"
+#<n> <from> → <to> in <file>.`
 
 **Examples**
 
-Against the same two-row fixture, with `"campaignAuthors": ["@maintainer"]` and
+Against the same two-row fixture, with `.github/CODEOWNERS` naming `@maintainer`, who holds `write`, and
 `https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>` a comment by `maintainer` whose
 first line is a `campaign-approve:` marker approving milestone 9042 `active`:
 
@@ -679,10 +663,10 @@ $ fabrika campaign state '#9042' --to active --cites https://github.com/<owner>/
 
 **Grounding**
 
-- **The flip to `active` is the dispatch permission**, and resuming a paused campaign is that same
-  flip.
-- **The ACL check is the verb's**; `campaignAuthors` only narrows it, and it fails closed on either
-  clause.
+- **The flip to `active` says a theme is being worked**, and resuming a paused campaign is that same
+  flip. It opens nothing and closes nothing for a lane.
+- **The ACL check is the verb's**; the control-plane set only narrows it, and it fails closed on
+  either clause.
 - **v1 hard-validated its state argument and refused anything else**; the closed value set survives,
   widened to the three states above.
 - v1 paired closing the milestone with the flip to `done` and refused to flip over an open milestone.
@@ -710,10 +694,9 @@ same table and the live milestone projection, and it runs at CI. A second answer
 question can contradict the gate, which is worse than no answer at all — the reasoning that dropped
 `adr classify` from the `/adr` contract, applied here.
 
-**A "may a lane open against this milestone" verb.** `build/scope-admission.ts` is the fence, and one
-predicate answers both `build` seams — the pool and the claim — so the two can never state different
-facts about one milestone. A second reader is exactly what breaks that. This skill writes the cell;
-the fence reads it.
+**A "may a lane open against this milestone" verb.** No campaign state gates a lane, so there is no
+question for such a verb to answer. Whether an issue may be built is `build`'s admission test, and a
+campaign's state is not one of its axes.
 
 **A milestone creator, and a wave-homing verb.** v1's campaign ritual created the milestone and then
 PATCHed it onto every issue carrying the wave label. Creating a milestone is board work, and homing

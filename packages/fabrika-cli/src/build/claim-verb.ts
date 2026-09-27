@@ -34,14 +34,14 @@
  * agent following its skill to the letter stopped at a stranded lane it could have taken.
  *
  * **`claim` runs the admission test before it writes anything; `confirm` and `release` never run it.**
- * The fence decides what may *start*, so a campaign paused mid-lane must not strand a
+ * The fence decides what may *start*, so a label changed mid-lane must not strand a
  * running lane or block its release. Claiming is the one moment every path goes through — a number
  * handed straight to `claim` passes through no pool — which is why the refusal has teeth here and is
  * advice at the pool.
  *
  * Blockedness rides the same moment but not the same module: the native `blocked_by`
  * graph is the one carrier of "do not start this yet", and the gate reading it is composed AFTER the
- * pure axes, since those answer without IO and an out-of-scope number should refuse on the cheaper
+ * pure axes, since those answer without IO and a number they refuse should refuse on the cheaper
  * fact. That gate carries the assembly-branch discharge of [`./discharge.ts`](./discharge.ts), the
  * same derivation `build eligible` answers from: without it the two seams disagreed on one edge, and
  * every sequential epic tracer after the first parked at a human.
@@ -118,14 +118,12 @@ import {
 	type Citation,
 	CLAIM_PURPOSES,
 	DEFAULT_CLAIM_PURPOSE,
-	dispatchScopeLine,
 	NO_CITATION,
 	NOT_REPAIR,
 	parseCitation,
 	parseClaimPurpose,
 	purposeBlockednessLine,
 	purposeScopeLine,
-	readDeclaredDispatch,
 	scopeSubjectOf,
 	typeAxisOf,
 	typeScopeLine,
@@ -137,8 +135,6 @@ export interface ClaimOptions {
 	/** Repair only: the served issue retained independently from the PR's linkage order. */
 	readonly issue: number | null;
 	readonly repo: string | null;
-	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
-	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** A fresh UUID, supplied by the adapter so the token this run mints is deterministic under test. */
 	readonly uuid: string;
@@ -187,8 +183,8 @@ export interface ClaimOptions {
 	readonly laneRoot: string | null;
 }
 
-// `cwd` is dropped with the claim-only fields: the scope fence is `build claim`'s, and confirm /
-// release / adopt ask about a marker rather than about what this repo admits.
+// Confirm / release / adopt ask about a marker rather than about what this repo admits, so the
+// claim-only fields are dropped.
 export type ProtocolOptions = Omit<
 	ClaimOptions,
 	| "uuid"
@@ -198,7 +194,6 @@ export type ProtocolOptions = Omit<
 	| "overrideLane"
 	| "cites"
 	| "token"
-	| "cwd"
 	| "resume"
 	| "issue"
 	| "lane"
@@ -275,8 +270,8 @@ const integrateClause = (failure: IntegrateFailure): string =>
  *
  * Both directions refuse, because both are a lane about to do the wrong work — one would rebuild
  * over a graded artifact, the other would try to resume a branch no reviewer has ruled on. Neither
- * refusal is overridable by `--override`, which admits an issue the *scope* fence barred; this is
- * not a question about whether the issue is in scope.
+ * refusal is overridable by `--override`, which admits an issue the *audience* axis barred; this is
+ * not a question about who the work is for.
  *
  * A fresh claim refuses on **any** standing verdict, not only a `FAIL`: a `PASS` says the child was
  * built and graded just as loudly, and it is the more finished of the two, so admitting it was the
@@ -532,21 +527,7 @@ export const runClaim = (
 			}
 		}
 
-		const read = yield* readDeclaredDispatch(options.cwd);
-		if (read._tag === "Unreadable") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${CLAIM}: cannot read the "## Campaigns" table: ${read.reason} — scope is UNKNOWN, never admitted; nothing was written.`,
-			);
-		}
-		const scopeLine = dispatchScopeLine(CLAIM, read.dispatch);
-		const subject = yield* resolveAdmissionSubject(
-			CLAIM,
-			repo,
-			read.dispatch,
-			ready.issue,
-			options.issue,
-		);
+		const subject = yield* resolveAdmissionSubject(CLAIM, repo, ready.issue, options.issue);
 		const judged = subject._tag === "Judged" ? subject.facts : ready.issue;
 		const repair = subject._tag === "Judged" ? subject.repair : NOT_REPAIR;
 		const purposeLine = purposeScopeLine(CLAIM, purpose, audienceAxisOf(judged), repair);
@@ -563,11 +544,10 @@ export const runClaim = (
 		}
 		const admission =
 			subject._tag === "Judged"
-				? admissionOf(read.dispatch, subject.facts, purpose, repair, citation)
+				? admissionOf(subject.facts, purpose, repair, citation)
 				: subject.admission;
 		const typeLine = typeScopeLine(CLAIM, typeAxisOf(judged), citation);
 		const lines = [
-			scopeLine,
 			...(subject._tag === "Judged" && subject.note !== null ? [subject.note] : []),
 			...(typeLine === null ? [] : [typeLine]),
 			purposeLine,
@@ -575,10 +555,7 @@ export const runClaim = (
 		const refusal = admissionRefusal(CLAIM, admission);
 		// An override answers a PROVEN refusal. UNKNOWN has proven nothing, so there is nothing to
 		// override — a fence that could not read its input must not be talked past by a flag.
-		const overridable =
-			admission._tag === "OutOfScope" ||
-			admission._tag === "AudienceNotAgent" ||
-			admission._tag === "NoServedIssue";
+		const overridable = admission._tag === "AudienceNotAgent" || admission._tag === "NoServedIssue";
 		if (refusal !== null && !(overridable && override !== null)) {
 			return {
 				...refusal,
@@ -605,7 +582,7 @@ export const runClaim = (
 		}
 
 		// The blockedness gate, ordered AFTER the pure axes because they answer without IO: a number
-		// out of scope should be refused on the fact that cost no call. It runs over the
+		// they refuse should be refused on the fact that cost no call. It runs over the
 		// named target only when that target is an issue — a repair claim names a pull request, which
 		// carries no edges of its own, and a lane repairing an open PR has already started — and only
 		// on a build-purpose claim: planning and plan-gating an epic write no code, and are exactly

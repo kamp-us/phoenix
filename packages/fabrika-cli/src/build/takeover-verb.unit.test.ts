@@ -9,7 +9,14 @@ import {
 	READBACK_MISMATCH,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {comments, pull, served} from "./fixtures.test-support.ts";
+import {
+	CODEOWNERS_READ,
+	codeownersNaming,
+	comments,
+	pull,
+	served,
+	TRUNK_READ,
+} from "./fixtures.test-support.ts";
 import {runTakeover} from "./takeover-verb.ts";
 
 const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4310$/;
@@ -30,7 +37,14 @@ const config = (value: Record<string, unknown>): HttpReply => ({
 	status: 200,
 	body: JSON.stringify(value),
 });
-const GRANTORS = config({capClearAuthors: ["@founder"]});
+/** No `.fabrika.jsonc` at the base: `ownAccounts` falls back to the running account. */
+const NO_CONFIG: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
+
+/** The control-plane set — who may grant — read off CODEOWNERS on the default branch. */
+const roster = (...owners: ReadonlyArray<string>): ReadonlyArray<Scripted> => [
+	[TRUNK_READ, served({default_branch: "main"})],
+	[CODEOWNERS_READ, codeownersNaming(...owners)],
+];
 
 const document = (text: string): Effect.Effect<DocumentRead> =>
 	Effect.succeed({_tag: "Text", text});
@@ -56,10 +70,15 @@ const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options>
 
 const ADA_PR: Scripted = [PULL, pull({number: 4310, base: {ref: "main"}, user: {login: "ada"}})];
 
-const grantable = (running = "founder", base: HttpReply = GRANTORS): ReadonlyArray<Scripted> => [
+const grantable = (
+	running = "founder",
+	base: HttpReply = NO_CONFIG,
+	owners: ReadonlyArray<string> = ["@founder"],
+): ReadonlyArray<Scripted> => [
 	ADA_PR,
 	[VIEWER, served({login: running})],
 	[CONFIG, base],
+	...roster(...owners),
 	[permissionOf(running), served({permission: "write"})],
 ];
 
@@ -101,7 +120,8 @@ describe("runTakeover", () => {
 		const {outcome, requests} = await run([
 			[PULL, pull({number: 4310, base: {ref: "main"}, user: {login: "agent-bot"}})],
 			[VIEWER, served({login: "founder"})],
-			[CONFIG, config({capClearAuthors: ["@founder"], ownAccounts: ["@agent-bot"]})],
+			[CONFIG, config({ownAccounts: ["@agent-bot"]})],
+			...roster("@founder"),
 			[permissionOf("founder"), served({permission: "write"})],
 		]);
 		expect(outcome.code).toBe(ZERO_SCOPE);
@@ -109,28 +129,43 @@ describe("runTakeover", () => {
 	});
 
 	it("refuses at 25 when the invoking account opened the PR itself", async () => {
-		const {outcome, requests} = await run(grantable("ada", config({capClearAuthors: ["@ada"]})));
+		const {outcome, requests} = await run(grantable("ada", NO_CONFIG, ["@ada"]));
 		expect(outcome.code).toBe(GRANT_UNAUTHORIZED);
 		expect(outcome.stderr.at(-1)).toContain("an author cannot hand their own PR over");
 		expect(posted(requests)).toBe(false);
 	});
 
-	it("refuses at 25 when the invoking account is outside the grant-author set", async () => {
+	it("refuses at 25 when the invoking account is outside the control-plane set", async () => {
 		const {outcome, requests} = await run(grantable("mallory"));
 		expect(outcome.code).toBe(GRANT_UNAUTHORIZED);
 		expect(posted(requests)).toBe(false);
 	});
 
-	it("refuses at 25 when nobody may grant — the shipped default", async () => {
-		const {outcome} = await run(grantable("founder", config({})));
+	it("refuses at 25 when CODEOWNERS names nobody — an empty control plane grants nobody", async () => {
+		const {outcome} = await run(grantable("founder", NO_CONFIG, []));
 		expect(outcome.code).toBe(GRANT_UNAUTHORIZED);
+		expect(outcome.stderr.at(-1)).toContain("CODEOWNERS names no control-plane owner");
+	});
+
+	it("names a still-declared capClearAuthors in a deprecation notice and grants on CODEOWNERS alone", async () => {
+		const {outcome} = await run([
+			...grantable("founder", config({capClearAuthors: ["@someone-else"]})),
+			[COMMENTS, comments()],
+			[POST, served({id: 900, html_url: "https://x/y#c"}, 201)],
+			[GET_COMMENT, served({body: BODY})],
+		]);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stderr).toContain(
+			"build takeover: `capClearAuthors` in .fabrika.jsonc at main is deprecated and ignored — the control-plane set in .github/CODEOWNERS decides this now; remove the key.",
+		);
 	});
 
 	it("refuses at 25 when a configured account holds less than write", async () => {
 		const {outcome} = await run([
 			ADA_PR,
 			[VIEWER, served({login: "founder"})],
-			[CONFIG, GRANTORS],
+			[CONFIG, NO_CONFIG],
+			...roster("@founder"),
 			[permissionOf("founder"), served({permission: "read"})],
 		]);
 		expect(outcome.code).toBe(GRANT_UNAUTHORIZED);

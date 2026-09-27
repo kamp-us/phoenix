@@ -2,13 +2,12 @@
  * `campaign list` — the `## Campaigns` rows, parsed, optionally narrowed to one state.
  *
  * **Zero rows is a fact at exit `0`, not the zero-scope red a judging verb owes.** An absent table
- * and an empty one are one well-formed default: nothing declared means the dispatch fence is off,
- * not closed. A judging verb would refuse here; this one supplies an input, and its empty answer is
- * true.
+ * and an empty one are one well-formed default: nothing declared is a true answer, not a failed
+ * read. A judging verb would refuse here; this one supplies an input, and its empty answer is true.
  *
  * **`none` means no row survived, never "nothing is active".** A table whose every row is `paused`
- * prints those rows — someone opened each one and the file says so. The dispatch question is
- * `--state active`, and only there does such a table answer `none`.
+ * prints those rows — someone opened each one and the file says so. Asking which themes are being
+ * worked is `--state active`, and only there does such a table answer `none`.
  */
 
 import {Effect} from "effect";

@@ -249,6 +249,18 @@ the workspace. Use `spike --help` and the
 Read the board, settings and installed skill roster for a new session. Use `status --help` and the
 [front-door contract](../../../claude-plugins/fabrika/skills/front-door/contract.md).
 
+## The `table` group
+
+Set up the repository's weekly betting table on GitHub Projects (v2), fill its columns from lane
+records, read the flags that bring work back to it, and prepare each table's agenda, including the
+checks that bring shipped bets back with their evidence. A `boards` block adds an on-call board,
+which setup creates, prep fills and flags reads. Use
+`table --help`, `table setup --help`, `table sync --help`, `table flags --help` and
+`table prep --help`. The token needs the
+`project` scope; the
+[adopter guide](../../../claude-plugins/fabrika/guide/adopt-fabrika-in-a-new-repo.md#11-set-up-the-betting-table)
+covers the scope and the three manual steps setup prints.
+
 ## The `triage` group
 
 Turn an intake issue into work with a clear scope, home and audience. Use `triage --help` and the

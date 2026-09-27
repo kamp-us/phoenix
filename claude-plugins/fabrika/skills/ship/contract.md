@@ -1640,8 +1640,8 @@ that leads to the write, the verb reads whose PR this is — the same gate, on t
 The PR may be landed when its author is in `.fabrika.jsonc`'s `ownAccounts` at the base ref (the
 running, authenticated account alone when that key is absent, empty or unusable), or when a valid
 [`takeover-grant`](../../docs/wire-formats.md#takeover-grant) marker stands on it — posted by an
-account in the grant-author set (`capClearAuthors`), holding `write+`, who is not the PR's own
-author. Anything else refuses on `22` and writes nothing; a read the answer depends on that cannot
+account in the control-plane set `.github/CODEOWNERS` names, holding `write+`, who is not the
+PR's own author. Anything else refuses on `22` and writes nothing; a read the answer depends on that cannot
 complete is `11`. A PR whose author is ours costs the config read and, with no set declared, the
 running account; the comments and a granter's permission are read only for a PR that is not.
 
@@ -1788,8 +1788,8 @@ that leads to the write, the verb reads whose PR this is — the same gate, on t
 The PR may be landed when its author is in `.fabrika.jsonc`'s `ownAccounts` at the base ref (the
 running, authenticated account alone when that key is absent, empty or unusable), or when a valid
 [`takeover-grant`](../../docs/wire-formats.md#takeover-grant) marker stands on it — posted by an
-account in the grant-author set (`capClearAuthors`), holding `write+`, who is not the PR's own
-author. Anything else refuses on `22` and writes nothing; a read the answer depends on that cannot
+account in the control-plane set `.github/CODEOWNERS` names, holding `write+`, who is not the
+PR's own author. Anything else refuses on `22` and writes nothing; a read the answer depends on that cannot
 complete is `11`. A PR whose author is ours costs the config read and, with no set declared, the
 running account; the comments and a granter's permission are read only for a PR that is not.
 

@@ -16,12 +16,11 @@ import {FAILED} from "../verb.ts";
 import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
 import {
 	AUDIENCE_NOT_AGENT,
-	BAD_SECTIONS,
 	BLOCKED,
 	CLAIM_NOT_MINE,
 	NO_ACCEPTANCE_CRITERIA,
+	NO_SERVED_ISSUE,
 	OFF_VOCABULARY,
-	OUT_OF_SCOPE,
 	PR_NOT_OURS,
 	PRECONDITION_UNKNOWN,
 	PRIOR_BUILD_MISMATCH,
@@ -34,9 +33,11 @@ import {
 import {
 	adoptMarker,
 	blockedBy,
+	CODEOWNERS_READ,
 	CRITERIA_BODY,
 	campaignsTable,
 	candidatePage,
+	codeownersNaming,
 	comments,
 	GATEWAY,
 	GH_TOKEN_ENV,
@@ -45,12 +46,14 @@ import {
 	LANE_UUID,
 	marker,
 	NO_BLOCKERS,
+	NO_TABLE,
 	NONCE,
 	NOT_FOUND,
 	SIBLING_NONCE,
 	SIBLING_TOKEN,
 	SIBLING_UUID,
 	served,
+	TRUNK_READ,
 	truncatedComments,
 } from "./fixtures.test-support.ts";
 import {runPick} from "./pick-verb.ts";
@@ -83,7 +86,7 @@ const labelled = (...names: ReadonlyArray<string>) => names.map((name) => ({name
 
 /** The PR record `build claim` reads for its author and base ref. */
 const PULL_RECORD = /^GET \S+\/repos\/o\/r\/pulls\/4312$/;
-/** The config at the PR's base ref, where `ownAccounts` and the grant-author set are read. */
+/** The config at the PR's base ref, where `ownAccounts` is read. */
 const CONFIG_AT_BASE = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
 /** The running account — who counts as ours when no `ownAccounts` is declared. */
 const VIEWER = /^GET \S+\/user$/;
@@ -129,7 +132,7 @@ const thread = (...states: ReadonlyArray<HttpReply>) =>
 		i === states.length - 1 ? ([COMMENTS, state] as const) : ([once(COMMENTS), state] as const),
 	);
 
-/** No `ROADMAP.md`: nothing active, so the scope axis admits and the fence reports itself inert. */
+/** No `ROADMAP.md` and no `.fabrika.jsonc`: the zero-config repository. */
 const NO_CAMPAIGNS = fakeFs({files: {}});
 
 /**
@@ -145,7 +148,6 @@ const options = {
 	number: 4312,
 	issue: null as number | null,
 	repo: null,
-	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e", ...GH_TOKEN_ENV} as Record<
 		string,
 		string | undefined
@@ -419,6 +421,7 @@ describe("runClaim", () => {
  * that posted and then refused would leave a marker on the issue with nothing to retract it.
  */
 describe("runClaim — the admission test runs before any marker is written", () => {
+	/** A roadmap with one active campaign — a theme, which no claim reads. */
 	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
 
 	const claimWith = (target: HttpReply, fs = IN_SCOPE, overrides: Partial<typeof options> = {}) => {
@@ -440,39 +443,25 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		labels: labelled("type:bug", "p1", "status:triaged", "ready-for:agent"),
 	});
 	const HUMAN_AUDIENCE = issue({
-		milestone: {number: 44},
+		milestone: {number: 39},
 		labels: labelled("type:bug", "p1", "status:triaged", "ready-for:human"),
 	});
 
-	it("refuses an out-of-scope issue on 20, and posts NOTHING", async () => {
+	/**
+	 * The campaign gate this replaced refused this claim on 20: its milestone has no `active`
+	 * campaign row. A campaign groups work now and refuses nothing, so the claim is won and the
+	 * marker posted.
+	 */
+	it("claims an issue whose milestone no active campaign pins — never 20", async () => {
 		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN);
-		expect(out.code).toBe(OUT_OF_SCOPE);
-		expect(out.stdout).toBe("");
-		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
-		expect(out.stderr.some((line) => line.includes("out of scope"))).toBe(true);
-		expect(out.stderr.at(-1)).toContain("nothing was written");
-	});
-
-	it("claims an issue homed in the SECOND declared milestone, off the same predicate (#6005)", async () => {
-		const {out} = await claimWith(
-			OUT_OF_CAMPAIGN,
-			fakeFs({files: {[ROADMAP_FILE]: campaignsTable([44, 39])}}),
-		);
 		expect(out.code).toBe(0);
+		expect(out.code).not.toBe(20);
 		expect(JSON.parse(out.stdout).answer).toBe("won");
-		expect(out.stderr.some((line) => line.includes("2 active"))).toBe(true);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(true);
+		expect(out.stderr.join("\n")).not.toContain("campaigns:");
 	});
 
-	it("refuses an out-of-scope issue naming the whole active set in the remedy", async () => {
-		const {out} = await claimWith(
-			OUT_OF_CAMPAIGN,
-			fakeFs({files: {[ROADMAP_FILE]: campaignsTable([44, 46])}}),
-		);
-		expect(out.code).toBe(OUT_OF_SCOPE);
-		expect(out.stderr.some((line) => line.includes("milestones #44, #46"))).toBe(true);
-	});
-
-	it("refuses a non-agent audience on 21 — a sibling axis, never folded into 20", async () => {
+	it("refuses a non-agent audience on 21, off an issue homed outside every campaign too", async () => {
 		const {out, shell} = await claimWith(HUMAN_AUDIENCE);
 		expect(out.code).toBe(AUDIENCE_NOT_AGENT);
 		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
@@ -528,27 +517,25 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		expect(JSON.parse(out.stdout).answer).toBe("won");
 	});
 
-	it("refuses an unreadable declaration on 11 — scope is UNKNOWN, never admitted", async () => {
-		const {out, shell} = await claimWith(
+	it("never reads the campaigns table — an unreadable roadmap refuses nothing", async () => {
+		const {out} = await claimWith(
 			CLAIMABLE,
 			fakeFs({files: {[ROADMAP_FILE]: null}, unprobeable: [ROADMAP_FILE]}),
 		);
-		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
-		expect(out.stderr.at(-1)).toContain("scope is UNKNOWN, never admitted; nothing was written");
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).answer).toBe("won");
 	});
 
-	it("refuses a malformed campaigns table on 4 — never read as 'nothing active'", async () => {
-		const {out, shell} = await claimWith(
+	it("never reads the campaigns table — a malformed one refuses nothing", async () => {
+		const {out} = await claimWith(
 			CLAIMABLE,
 			fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44).replace("| active |", "| activ |")}}),
 		);
-		expect(out.code).toBe(BAD_SECTIONS);
-		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+		expect(out.code).toBe(0);
 	});
 
 	it("claims a refused issue under --override, recording the lane and reason on the marker and in the answer", async () => {
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, IN_SCOPE, {
+		const {out, shell} = await claimWith(HUMAN_AUDIENCE, IN_SCOPE, {
 			override: "hotfix for the release blocker",
 			overrideLane: "build-ui",
 		});
@@ -570,18 +557,8 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		).toBe(true);
 	});
 
-	it("never lets --override past an UNKNOWN admission — a failed read has proven nothing", async () => {
-		const {out, shell} = await claimWith(
-			CLAIMABLE,
-			fakeFs({files: {[ROADMAP_FILE]: null}, unprobeable: [ROADMAP_FILE]}),
-			{override: "I know what I am doing", overrideLane: "build-ui"},
-		);
-		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
-	});
-
 	it("refuses an empty --override reason on 1 — an override is recorded or it is not one", async () => {
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, IN_SCOPE, {
+		const {out, shell} = await claimWith(HUMAN_AUDIENCE, IN_SCOPE, {
 			override: "  ",
 			overrideLane: "build-ui",
 		});
@@ -590,7 +567,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	});
 
 	it("refuses an --override that names no lane on 1 — the escape hatch says who took it (#5175)", async () => {
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, IN_SCOPE, {
+		const {out, shell} = await claimWith(HUMAN_AUDIENCE, IN_SCOPE, {
 			override: "hotfix for the release blocker",
 		});
 		expect(out.code).toBe(FAILED);
@@ -599,7 +576,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	});
 
 	it("refuses a blank --override-lane on 1 — whitespace names no lane", async () => {
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, IN_SCOPE, {
+		const {out, shell} = await claimWith(HUMAN_AUDIENCE, IN_SCOPE, {
 			override: "hotfix for the release blocker",
 			overrideLane: "   ",
 		});
@@ -613,44 +590,37 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
-	it("names the declaration it judged against on a win, so an inert-fence claim reads as one", async () => {
-		const {out} = await claimWith(
-			issue({milestone: {number: 44}, labels: labelled("status:triaged", "ready-for:agent")}),
-		);
-		expect(out.code).toBe(0);
-		expect(out.stderr).toContain("build claim: campaigns: 1 active — Campaign 44 (#44).");
-	});
-
 	it("refuses by NUMBER the very issue the pool excluded — the direct handoff is fenced too", async () => {
 		const row = {
 			number: 4312,
-			labels: ["status:triaged", "ready-for:agent", "type:bug"],
+			labels: ["status:triaged", "ready-for:human", "type:bug"],
 			milestone: 39,
 		};
 		const picked = await Effect.runPromise(
 			Effect.provide(
-				runPick({repo: null, limit: 20, cwd: "/repo", env: options.env}),
+				runPick({repo: null, limit: 20, cwd: "/repo", env: options.env, now: () => new Date()}),
 				Layer.merge(
 					unblocked([
 						[/labels=status%3Atriaged%2Cp0/, candidatePage(row)],
 						[/labels=status%3Atriaged%2Cp[12]/, served([])],
+						NO_TABLE,
 					]).layer,
 					IN_SCOPE.layer,
 				),
 			),
 		);
 		expect(JSON.parse(picked.stdout).pool).toEqual([]);
-		expect(JSON.parse(picked.stdout).excluded).toEqual({"out-of-scope": 1});
+		expect(JSON.parse(picked.stdout).excluded).toEqual({"audience-not-agent": 1});
 
 		// The same issue, handed straight to `claim` by number: the pool was bypassed, the fence is not.
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN);
-		expect(out.code).toBe(OUT_OF_SCOPE);
+		const {out, shell} = await claimWith(HUMAN_AUDIENCE);
+		expect(out.code).toBe(AUDIENCE_NOT_AGENT);
 		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
-	it("leaves confirm and release outside the fence — a mid-lane pause strands no lane", async () => {
+	it("leaves confirm and release outside the fence — a label changed mid-lane strands no lane", async () => {
 		const script: ReadonlyArray<Scripted> = [
-			[ISSUE, OUT_OF_CAMPAIGN],
+			[ISSUE, HUMAN_AUDIENCE],
 			[COMMENTS, comments({id: 9001, body: MINE})],
 			[perm("agent"), WRITES],
 			[DELETE, NO_CONTENT],
@@ -663,11 +633,11 @@ describe("runClaim — the admission test runs before any marker is written", ()
 });
 
 /**
- * Repair claims a PR number, and a PR carries no milestone and no `ready-for:` label of its own — so
- * while any campaign was active the fence refused every one of them. The subject the two axes
- * read is the issue the PR's lane serves.
+ * Repair claims a PR number, and a PR carries no `ready-for:` label and no criteria of its own. The
+ * subject the axes read is the issue the PR's lane serves.
  */
 describe("runClaim — a PR number is judged by the issue it serves", () => {
+	/** A roadmap with one active campaign — a theme, which no claim reads. */
 	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
 	const SERVED = /^GET \S+\/repos\/o\/r\/issues\/5553$/;
 	const owned = OWNED_BY_THE_RUNNING_ACCOUNT;
@@ -719,7 +689,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		).then((out) => ({out, shell}));
 	};
 
-	it("admits a PR whose served issue is in scope, with no override", async () => {
+	it("admits a PR by the issue it serves, with no override", async () => {
 		const {out} = await claimPull("Fixes #5553\n", servedTicket(44));
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).answer).toBe("won");
@@ -750,40 +720,46 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		expect(out.stderr.some((line) => line.includes("serves #5553 (part-of)"))).toBe(true);
 	});
 
-	it("still refuses at 20 when the served issue is genuinely out of scope, and posts NOTHING", async () => {
+	it("admits a PR whose served issue no active campaign pins — never 20", async () => {
 		const {out, shell} = await claimPull("Fixes #5553\n", servedTicket(39));
-		expect(out.code).toBe(OUT_OF_SCOPE);
-		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
-		expect(out.stderr.some((line) => line.includes("out of scope"))).toBe(true);
-		expect(out.stderr.some((line) => line.includes("this issue's home is 39"))).toBe(true);
-	});
-
-	it("keeps that refusal overridable", async () => {
-		const {out} = await claimPull("Fixes #5553\n", servedTicket(39), {
-			override: "repairing a landed FAIL",
-			overrideLane: "build",
-		});
 		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout).answer).toBe("won");
+		expect(shell.requests.some((line) => POST.test(line))).toBe(true);
 	});
 
-	it("refuses a PR naming no issue at 20, saying which case fired — and stays overridable", async () => {
+	/**
+	 * A PR naming no issue refused on 20 only while some campaign was active. That refusal is not a
+	 * campaign question, so it binds on its own seat whatever the campaigns say, and stays overridable.
+	 */
+	it("refuses a PR naming no issue on 38 whatever the campaigns say — and stays overridable", async () => {
 		const body = "A conversation-authored ADR.\n\n## Deviations\nNone.\n";
 		const {out, shell} = await claimPull(body, servedTicket(44));
-		expect(out.code).toBe(OUT_OF_SCOPE);
+		expect(out.code).toBe(NO_SERVED_ISSUE);
+		expect(out.stderr.join("\n")).toContain(
+			'no served issue — PR #4312 carries neither a closing keyword nor "Part of #<n>" in its body',
+		);
+		expect(out.stderr.at(-1)).toContain('pass --override "<reason>"');
 		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
-		expect(out.stderr.some((line) => line.includes("no served issue"))).toBe(true);
 		const overridden = await claimPull(body, servedTicket(44), {
 			override: "no ticket — the ADR was authored in conversation",
 			overrideLane: "build",
 		});
-		expect(overridden.out.code).toBe(0);
+		expect(overridden.out.code).not.toBe(NO_SERVED_ISSUE);
 	});
 
-	it("refuses at 20 when the named issue is proven absent — never on the PR's own empty home", async () => {
-		const {out} = await claimPull("Fixes #5553\n", NOT_FOUND);
-		expect(out.code).toBe(OUT_OF_SCOPE);
-		expect(out.stderr.some((line) => line.includes("proven absent"))).toBe(true);
+	it("refuses on 38 when the issue the PR names is proven absent", async () => {
+		const {out, shell} = await claimPull("Fixes #5553\n", NOT_FOUND);
+		expect(out.code).toBe(NO_SERVED_ISSUE);
+		expect(out.stderr.join("\n")).toContain("names #5553, which is proven absent");
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+	});
+
+	it("never lets --override past an UNKNOWN admission — a failed read has proven nothing", async () => {
+		const {out, shell} = await claimPull("Fixes #5553\n", GATEWAY, {
+			override: "I know what I am doing",
+			overrideLane: "build-ui",
+		});
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("refuses at 11 when the served issue cannot be read — UNKNOWN, never admitted", async () => {
@@ -846,7 +822,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		expect(out.stderr.some((line) => line.includes("serves #"))).toBe(false);
 	});
 
-	it("admits an unresolvable PR while no campaign is active — an inert fence refuses nothing", async () => {
+	it("refuses an unresolvable PR on 38 under a gate purpose too, where the audience axis does not bind", async () => {
 		const shell = unblocked([
 			[ISSUE, pull("No reference at all.\n")],
 			...owned,
@@ -862,14 +838,15 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
 			),
 		);
-		expect(out.code).toBe(0);
+		expect(out.code).toBe(NO_SERVED_ISSUE);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	/**
-	 * The nothing-active half, under the DEFAULT `build` purpose — the one that binds the audience axis, and
-	 * so the one that reads whichever record the resolution returned.
+	 * With no roadmap at all, under the DEFAULT `build` purpose — the one that binds the audience axis,
+	 * and so the one that reads whichever record the resolution returned.
 	 */
-	describe("with no campaign active", () => {
+	describe("with no campaigns table", () => {
 		const claimInert = (body: string, servedRecord: HttpReply | null) => {
 			const shell = unblocked([
 				[ISSUE, pull(body)],
@@ -890,17 +867,16 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			const {out} = await claimInert("Fixes #5553\n", servedTicket(null));
 			expect(out.code).toBe(0);
 			expect(out.stderr.some((line) => line.includes("PR #4312 serves #5553 (fixes)"))).toBe(true);
-			expect(out.stderr.some((line) => line.includes("scope fence inert"))).toBe(true);
 		});
 
-		it("leaves an unserved PR on its own record, audience and all — the pre-#5562 answer", async () => {
+		it("refuses an unserved PR on 38 with no campaigns table at all", async () => {
 			const {out, shell} = await claimInert("No reference at all.\n", null);
-			expect(out.code).toBe(AUDIENCE_NOT_AGENT);
+			expect(out.code).toBe(NO_SERVED_ISSUE);
 			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 			expect(out.stderr.some((line) => line.includes("serves #"))).toBe(false);
 		});
 
-		it("still refuses at 11 when the served issue cannot be read — an inert fence does not soften UNKNOWN", async () => {
+		it("still refuses at 11 when the served issue cannot be read — UNKNOWN is never softened", async () => {
 			const {out, shell} = await claimInert("Fixes #5553\n", GATEWAY);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
 			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
@@ -1039,10 +1015,9 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		});
 
-		it("keeps the scope fence armed — an out-of-scope decision PR is still 20", async () => {
-			const {out, shell} = await claimPull("Fixes #5553\n", servedTicket(39, DECISION));
-			expect(out.code).toBe(OUT_OF_SCOPE);
-			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+		it("admits a decision PR whose served issue no active campaign pins — never 20", async () => {
+			const {out} = await claimPull("Fixes #5553\n", servedTicket(39, DECISION));
+			expect(out.code).toBe(0);
 		});
 	});
 });
@@ -1123,13 +1098,18 @@ describe("runClaim — the purpose axis", () => {
 		});
 	}
 
-	for (const purpose of ["plan", "gate", "build"] as const) {
-		it(`still refuses an out-of-scope epic on 20 under --purpose ${purpose} — scope is untouched`, async () => {
-			const {out, shell} = await claimWith(OUT_OF_CAMPAIGN_EPIC, {purpose});
-			expect(out.code).toBe(OUT_OF_SCOPE);
-			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+	for (const purpose of ["plan", "gate"] as const) {
+		it(`admits an epic homed outside every campaign under --purpose ${purpose} — never 20`, async () => {
+			const {out} = await claimWith(OUT_OF_CAMPAIGN_EPIC, {purpose});
+			expect(out.code).toBe(0);
 		});
 	}
+
+	it("refuses that epic under build on the type axis, never on 20", async () => {
+		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN_EPIC, {purpose: "build"});
+		expect(out.code).toBe(TYPE_NOT_BUILDABLE);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+	});
 
 	it("refuses an off-enum purpose on 10 — never a silent fallback to build", async () => {
 		const {out, shell} = await claimWith(UNLABELLED_EPIC, {purpose: "planning"});
@@ -1949,17 +1929,14 @@ describe("runClaim — the blockedness gate", () => {
 				ISSUE,
 				issue({
 					milestone: {number: 39},
-					labels: labelled("type:bug", "p1", "status:triaged", "ready-for:agent"),
+					labels: labelled("type:bug", "p1", "status:triaged", "ready-for:human"),
 				}),
 			],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(
-				runClaim(options),
-				Layer.merge(shell.layer, fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}}).layer),
-			),
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
-		expect(out.code).toBe(OUT_OF_SCOPE);
+		expect(out.code).toBe(AUDIENCE_NOT_AGENT);
 		expect(shell.requests.some((line) => EDGES.test(line))).toBe(false);
 	});
 });
@@ -2494,46 +2471,53 @@ describe("runClaim — a PR is its author's until the pipeline owns it", () => {
 	});
 
 	describe("a takeover grant", () => {
-		const GRANTORS = config({capClearAuthors: ["@founder", "@ada"]});
+		/** The control-plane set — who may grant — read off CODEOWNERS on the default branch. */
+		const roster = (...owners: ReadonlyArray<string>): ReadonlyArray<Scripted> => [
+			[TRUNK_READ, served({default_branch: "main"})],
+			[CODEOWNERS_READ, codeownersNaming(...owners)],
+		];
+		const GRANTORS = roster("@founder", "@ada");
 
 		it("hands a foreign PR over when a trusted, writing account posted it", async () => {
 			const {out, shell} = await claimBy(
 				"ada",
-				GRANTORS,
+				NOT_FOUND,
 				[grant(77, "founder")],
-				[[perm("founder"), WRITES]],
+				[...GRANTORS, [perm("founder"), WRITES]],
 			);
 			expect(out.code).toBe(0);
 			expect(posted(shell)).toBe(true);
 			expect(out.stderr.join("\n")).toContain("founder handed it over in comment 77");
 		});
 
-		it("ignores a grant the PR's own author wrote, even one in the grant-author set", async () => {
+		it("ignores a grant the PR's own author wrote, even one in the control-plane set", async () => {
 			const {out, shell} = await claimBy(
 				"ada",
-				GRANTORS,
+				NOT_FOUND,
 				[grant(77, "ada")],
-				[[perm("ada"), WRITES]],
+				[...GRANTORS, [perm("ada"), WRITES]],
 			);
 			expect(out.code).toBe(PR_NOT_OURS);
 			expect(posted(shell)).toBe(false);
 			expect(out.stderr.join("\n")).toContain("an author cannot hand their own PR over");
 		});
 
-		it("ignores a grant from an account outside the grant-author set", async () => {
+		it("ignores a grant from an account outside the control-plane set", async () => {
 			const {out, shell} = await claimBy(
 				"ada",
-				GRANTORS,
+				NOT_FOUND,
 				[grant(77, "mallory")],
-				[[perm("mallory"), WRITES]],
+				[...GRANTORS, [perm("mallory"), WRITES]],
 			);
 			expect(out.code).toBe(PR_NOT_OURS);
 			expect(posted(shell)).toBe(false);
-			expect(out.stderr.join("\n")).toContain("mallory is not in the repo's grant-author set");
+			expect(out.stderr.join("\n")).toContain(
+				"mallory is not in the control-plane set the repo's CODEOWNERS names",
+			);
 		});
 
-		it("ignores every grant while the grant-author set is empty", async () => {
-			const {out} = await claimBy("ada", config({}), [grant(77, "founder")]);
+		it("ignores every grant while CODEOWNERS names no control-plane owner", async () => {
+			const {out} = await claimBy("ada", NOT_FOUND, [grant(77, "founder")], roster());
 			expect(out.code).toBe(PR_NOT_OURS);
 		});
 	});

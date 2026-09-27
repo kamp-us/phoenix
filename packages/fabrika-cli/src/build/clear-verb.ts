@@ -2,11 +2,12 @@
  * `build clear` — record the founder's clearance of one extra repair round on a PR.
  *
  * The clauses are conjunctive and any miss resolves to *not cleared*, never to a warning: the
- * invoking account is in the repo's `.fabrika.jsonc` grant-author set at the PR's base ref AND holds
- * `write+` at GitHub's ACL, the PR is open, its budget is actually spent, and the quoted
+ * invoking account is in the repo's control-plane set — the owners `.github/CODEOWNERS` names — AND
+ * holds `write+` at GitHub's ACL, the PR is open, its budget is actually spent, and the quoted
  * authorization is present and dated. A bare stamp is void, which is why `--authorization`
- * is required rather than inferred; authority is the ACL's, which is why the configured set
- * narrows the ACL rather than replacing it.
+ * is required rather than inferred; authority is the ACL's, which is why the control-plane set
+ * narrows the ACL rather than replacing it. A `capClearAuthors` the config still declares is ignored
+ * and named in a notice.
  *
  * **Write ordering is an invariant, not an implementation detail** — the same one `grill rule`
  * holds. The authorization comment lands first and the marker second: an interrupted run that wrote
@@ -15,7 +16,7 @@
  * local bump is last, because a lane that has not heard about the grant only freezes early, and a
  * lane bumped with no marker behind it would run a round nobody granted.
  *
- * **What `cleared` proves, exactly.** That an account the repo configured posted a marker naming a
+ * **What `cleared` proves, exactly.** That a control-plane account posted a marker naming a
  * round whose budget was spent, with a dated authorization comment beside it. It does not prove the
  * quoted authorization is a truthful record of what the founder said; nothing mechanical can, and
  * the residue is the same unclosable one `grill rule` carries. In a repo where an agent runs on
@@ -38,17 +39,17 @@ import {createComment, getComment, listComments} from "../io/issues.ts";
 import {viewerLogin} from "../io/pulls.ts";
 import {recordClearedRound} from "../lane/clearance.ts";
 import {laneRef, parseKey} from "../lane/key.ts";
-import {CONFIG_PATH} from "../repo-config.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import * as capClearance from "../wire/cap-clearance.ts";
 import {stampOf} from "../wire/grill-marker.ts";
 import {
+	capClearAuthorsNotices,
 	clearancesOn,
 	clearsWriteFloor,
+	controlPlaneMembership,
 	grantedFrom,
-	membershipAt,
 	permissionsFor,
 } from "./clearances.ts";
 import {
@@ -156,7 +157,7 @@ export const runClear = <R = never>(
 			);
 		}
 		const rounds = roundsOn(listed.value);
-		const recorded = yield* clearancesOn(repo, baseRef, listed.value);
+		const recorded = yield* clearancesOn(repo, listed.value);
 		if (recorded._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -166,12 +167,14 @@ export const runClear = <R = never>(
 		const granted = grantedFrom(recorded.rows);
 		const cap = effectiveCap(granted);
 		const scopeLine = `${VERB}: ${repo}#${pr} at ${rounds} round(s); ${capNote(granted)}.`;
+		const notices = yield* capClearAuthorsNotices(VERB, repo, baseRef);
+		const lines = [scopeLine, ...notices];
 		const held = recorded.rows.find((row) => row.honoured && row.round === rounds);
 		if (held === undefined && rounds < cap) {
 			return refuse(
 				ZERO_SCOPE,
 				`${VERB}: #${pr} has ${rounds} round(s) against a cap of ${cap} — the budget is not spent, so there is no round to clear.`,
-				[scopeLine],
+				lines,
 			);
 		}
 
@@ -180,32 +183,30 @@ export const runClear = <R = never>(
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot resolve the invoking account: ${viewer.reason} — authority is UNKNOWN, never granted. Nothing was posted.`,
-				[scopeLine],
+				lines,
 			);
 		}
 		// The ACL is read through the same door that judges a landed marker, so the set that may post
 		// a grant and the set whose grant counts can never drift into two.
-		const authority = yield* membershipAt(repo, baseRef);
+		const authority = yield* controlPlaneMembership(repo);
 		if (authority._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot resolve ${viewer.value}'s authority on ${repo}: ${authority.reason} — nothing was posted.`,
-				[scopeLine],
+				lines,
 			);
 		}
 		if (authority._tag === "Unusable") {
-			return refuse(GRANT_UNAUTHORIZED, `${VERB}: ${authority.reason}. Nothing was posted.`, [
-				scopeLine,
-			]);
+			return refuse(GRANT_UNAUTHORIZED, `${VERB}: ${authority.reason}. Nothing was posted.`, lines);
 		}
 		if (!authority.holds(viewer.value)) {
 			return refuse(
 				GRANT_UNAUTHORIZED,
-				`${VERB}: ${viewer.value} is not in ${CONFIG_PATH}'s grant-author set at ${baseRef} — refusing to record a clearance.`,
-				[scopeLine],
+				`${VERB}: ${viewer.value} is not in ${repo}'s control-plane set at ${authority.ref} — refusing to record a clearance.`,
+				lines,
 			);
 		}
-		// The committed set narrows the ACL, it never stands in for one. Read through the
+		// The control-plane set narrows the ACL, it never stands in for one. Read through the
 		// same door that judges a landed marker, so the set that may post a grant and the set whose
 		// grant counts can never drift into two.
 		const permissions = yield* permissionsFor(repo, [viewer.value]);
@@ -213,15 +214,15 @@ export const runClear = <R = never>(
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot resolve ${viewer.value}'s repository permission: ${permissions.reason} — authority is UNKNOWN, never granted. Nothing was posted.`,
-				[scopeLine],
+				lines,
 			);
 		}
 		const level = permissions.levelOf(viewer.value);
 		if (!clearsWriteFloor(level)) {
 			return refuse(
 				GRANT_UNAUTHORIZED,
-				`${VERB}: ${viewer.value} resolves to ${level ?? "no collaboration"} on ${repo}, below write — authority is the ACL's, never ${CONFIG_PATH}'s alone.`,
-				[scopeLine],
+				`${VERB}: ${viewer.value} resolves to ${level ?? "no collaboration"} on ${repo}, below write — authority is the ACL's, never CODEOWNERS' alone.`,
+				lines,
 			);
 		}
 
@@ -231,7 +232,7 @@ export const runClear = <R = never>(
 				return refuse(
 					LOCAL_LANE_UNWRITTEN,
 					`${VERB}: the clearance is recorded on #${pr} as comment ${held.commentId}, and the lane at ${reconciled.path} still did not take it: ${reconciled.reason} — the lane still freezes.`,
-					[scopeLine],
+					lines,
 				);
 			}
 			return answer(
@@ -246,7 +247,7 @@ export const runClear = <R = never>(
 					lane: reconciled.note,
 					resolvesTo: "reconciled",
 				}),
-				[scopeLine],
+				lines,
 			);
 		}
 
@@ -255,7 +256,7 @@ export const runClear = <R = never>(
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: the clock did not render an ISO-8601 UTC instant — the marker cannot be stamped. Nothing was posted.`,
-				[scopeLine],
+				lines,
 			);
 		}
 		const round = capClearance.clearedRound(rounds);
@@ -263,7 +264,7 @@ export const runClear = <R = never>(
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: #${pr} counts ${rounds} rounds, which is not a round a clearance can name.`,
-				[scopeLine],
+				lines,
 			);
 		}
 		const authorizationBody = quoted.trim().endsWith("\n") ? quoted.trim() : `${quoted.trim()}\n`;
@@ -272,7 +273,7 @@ export const runClear = <R = never>(
 			return refuse(
 				WRITE_UNKNOWN,
 				`${VERB}: the authorization write failed, so whether it posted is UNKNOWN and no marker was written — read #${pr} before re-running.`,
-				[scopeLine],
+				lines,
 			);
 		}
 		const markerBody = capClearance.emit({round, at: stamped});
@@ -281,7 +282,7 @@ export const runClear = <R = never>(
 			return refuse(
 				WRITE_UNKNOWN,
 				`${VERB}: the authorization comment landed as #${authorization.value.id} and the marker write failed — the clearance is INCOMPLETE and grants nothing. Read #${pr} before re-running.`,
-				[scopeLine],
+				lines,
 			);
 		}
 		const landed = yield* getComment(repo, marker.value.id);
@@ -292,7 +293,7 @@ export const runClear = <R = never>(
 			return refuse(
 				READBACK_MISMATCH,
 				`${VERB}: the marker posted but the read-back does not match what was sent.`,
-				[scopeLine],
+				lines,
 			);
 		}
 
@@ -301,7 +302,7 @@ export const runClear = <R = never>(
 			return refuse(
 				LOCAL_LANE_UNWRITTEN,
 				`${VERB}: the clearance is recorded on #${pr}, and the lane at ${lane.path} did not take it: ${lane.reason} — the lane still freezes. Re-run to reconcile; the grant is not doubled.`,
-				[scopeLine],
+				lines,
 			);
 		}
 
@@ -317,7 +318,7 @@ export const runClear = <R = never>(
 				lane: lane.note,
 				resolvesTo: "cleared",
 			}),
-			[scopeLine],
+			lines,
 		);
 	});
 

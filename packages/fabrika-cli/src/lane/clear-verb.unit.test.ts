@@ -1,5 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
+import {CP_ROSTER} from "../build/fixtures.test-support.ts";
 import {capReached, effectiveCap} from "../cap-clearance.ts";
 import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
@@ -317,7 +318,8 @@ describe("lane clear — the PR-side grant", () => {
 	const wrote = (request: string): boolean =>
 		request.startsWith("POST") && request.includes(`/issues/${PR}/comments`);
 
-	const CONFIGURED: HttpReply = {status: 200, body: '{"capClearAuthors": ["@usirin"]}'};
+	/** A config at the base still declaring the retired key — named in a notice, deciding nothing. */
+	const RETIRED_KEY: HttpReply = {status: 200, body: '{"capClearAuthors": ["@someone-else"]}'};
 	const POSTED: HttpReply = served({id: 900, html_url: "https://forge.example/c"}, 201);
 
 	const board = (
@@ -330,7 +332,7 @@ describe("lane clear — the PR-side grant", () => {
 		[PULL, openPull],
 		[COMMENTS, served(failRounds(rounds))],
 		[VIEWER, served({login: "usirin"})],
-		[CONFIG, CONFIGURED],
+		...CP_ROSTER,
 		[PERMISSION, served({permission: "admin"})],
 		[POST, POSTED],
 		[
@@ -379,9 +381,20 @@ describe("lane clear — the PR-side grant", () => {
 		const out = await run(fs, WHY, board(CAP_ROUND, [[VIEWER, served({login: "someone-else"})]]));
 
 		expect(out.code).toBe(GRANT_UNAUTHORIZED);
-		expect(out.stderr.join(" ")).toContain("grant-author set");
+		expect(out.stderr.join(" ")).toContain("is not in o/r's control-plane set at main");
 		expect(fs.written.get(LOG)).toBeUndefined();
 		expect(out.requests.some(wrote)).toBe(false);
+	});
+
+	it("names a still-declared capClearAuthors in a deprecation notice, and grants on CODEOWNERS", async () => {
+		const fs = laneWith(spent());
+
+		const out = await run(fs, WHY, board(CAP_ROUND, [[CONFIG, RETIRED_KEY]]));
+
+		expect(out.code).toBe(0);
+		expect(out.stderr).toContain(
+			"fabrika lane clear: `capClearAuthors` in .fabrika.jsonc at main is deprecated and ignored — the control-plane set in .github/CODEOWNERS decides this now; remove the key.",
+		);
 	});
 
 	it("reads an honoured grant already at that round as held, posting nothing", async () => {
@@ -407,7 +420,7 @@ describe("lane clear — the PR-side grant", () => {
 			[SEARCH, NO_NOMINATIONS],
 			[PULL, openPull],
 			[COMMENTS, served(standing)],
-			[CONFIG, CONFIGURED],
+			...CP_ROSTER,
 			[PERMISSION, served({permission: "admin"})],
 		]);
 

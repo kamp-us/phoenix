@@ -7,7 +7,16 @@ import {compileText} from "../lane/machine.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {type DocumentRead, runClear} from "./clear-verb.ts";
 import {AUTHORIZATION_VOID, GRANT_UNAUTHORIZED, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {comments, HEAD, PRIOR_HEADS, pull, served} from "./fixtures.test-support.ts";
+import {
+	CODEOWNERS_READ,
+	CP_ROSTER,
+	codeownersNaming,
+	comments,
+	HEAD,
+	PRIOR_HEADS,
+	pull,
+	served,
+} from "./fixtures.test-support.ts";
 
 const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4310$/;
 const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4310\/comments/;
@@ -46,9 +55,10 @@ const CAPPED_COMMENTS = PRIOR_HEADS.slice(0, CAP_ROUND).map((head, index) => ({
 }));
 const CAPPED = comments(...CAPPED_COMMENTS);
 
-const CONFIGURED: HttpReply = {
+/** A config at the base still declaring the retired key — it names an account CODEOWNERS does not. */
+const RETIRED_KEY: HttpReply = {
 	status: 200,
-	body: '{\n\t// the founder accounts\n\t"capClearAuthors": ["@usirin"]\n}\n',
+	body: '{\n\t// the founder accounts\n\t"capClearAuthors": ["@someone-else"]\n}\n',
 };
 const POSTED = (id: number): HttpReply => served({id, html_url: "https://x/y#c"}, 201);
 
@@ -70,7 +80,7 @@ const run = (
 	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	files: Record<string, string | null> = {},
-	config: ReadonlyArray<Scripted> = [[CONFIG, CONFIGURED]],
+	config: ReadonlyArray<Scripted> = CP_ROSTER,
 ) => {
 	const seams = fakeSeams([...script, ...config]);
 	const fs = fakeFs({files});
@@ -132,7 +142,7 @@ describe("runClear", () => {
 		expect(laneBudget(written.get(LANE_LOG))).toBe(RETRY_BUDGET + 1);
 	});
 
-	it("refuses an account outside the configured set, writing nothing", async () => {
+	it("refuses an account outside the control-plane set, writing nothing", async () => {
 		const {outcome, requests} = await run([
 			[PULL, pull({number: 4310, base: {ref: "main"}})],
 			[COMMENTS, CAPPED],
@@ -142,18 +152,49 @@ describe("runClear", () => {
 		expect(requests.some((request) => request.startsWith("POST"))).toBe(false);
 	});
 
-	it("refuses when the repo configures nobody — an absent config grants nobody (#5959)", async () => {
+	it("refuses when CODEOWNERS names nobody — an empty control plane grants nobody (#5959)", async () => {
+		const {outcome} = await run([
+			[PULL, pull({number: 4310, base: {ref: "main"}})],
+			[COMMENTS, CAPPED],
+			[VIEWER, viewer("usirin")],
+			[CODEOWNERS_READ, codeownersNaming()],
+		]);
+		expect(outcome.code).toBe(GRANT_UNAUTHORIZED);
+		expect(outcome.stderr.at(-1)).toContain("CODEOWNERS names no control-plane owner");
+	});
+
+	/**
+	 * The author-key fold: `capClearAuthors` at the base ref is named in a notice and decides
+	 * nothing — the account it names is outside CODEOWNERS and refuses, and the one CODEOWNERS names
+	 * clears though the key leaves it out.
+	 */
+	it("names a still-declared capClearAuthors in a deprecation notice and clears on CODEOWNERS alone", async () => {
 		const {outcome} = await run(
 			[
-				[PULL, pull({number: 4310, base: {ref: "main"}})],
-				[COMMENTS, CAPPED],
-				[VIEWER, viewer("usirin")],
+				...GRANTABLE,
+				[CONFIG, RETIRED_KEY],
+				[POST, POSTED(900)],
+				[GET_COMMENT, served({body: `cap-cleared: round ${CAP_ROUND} · 2026-08-18T07:16:03Z\n`})],
 			],
 			{},
-			{},
-			[[CONFIG, {status: 404, body: '{"message":"Not Found"}'}]],
+			{[WORKFLOW]: coderTemplateText()},
 		);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stderr).toContain(
+			"build clear: `capClearAuthors` in .fabrika.jsonc at main is deprecated and ignored — the control-plane set in .github/CODEOWNERS decides this now; remove the key.",
+		);
+	});
+
+	it("refuses an account only the retired capClearAuthors names", async () => {
+		const {outcome, requests} = await run([
+			[PULL, pull({number: 4310, base: {ref: "main"}})],
+			[COMMENTS, CAPPED],
+			[VIEWER, viewer("someone-else")],
+			[CONFIG, RETIRED_KEY],
+		]);
 		expect(outcome.code).toBe(GRANT_UNAUTHORIZED);
+		expect(outcome.stderr.at(-1)).toContain("is not in o/r's control-plane set at main");
+		expect(requests.some((request) => request.startsWith("POST"))).toBe(false);
 	});
 
 	it("holds an unreadable team membership UNKNOWN rather than granting or refusing", async () => {
@@ -166,7 +207,8 @@ describe("runClear", () => {
 			{},
 			{},
 			[
-				[CONFIG, {status: 200, body: '{"capClearAuthors": ["@o/control-plane"]}'}],
+				...CP_ROSTER.filter(([pattern]) => pattern !== CODEOWNERS_READ),
+				[CODEOWNERS_READ, codeownersNaming("@o/control-plane")],
 				[TEAM, {status: 502, body: '{"message":"Bad Gateway"}'}],
 			],
 		);
@@ -240,8 +282,8 @@ describe("runClear", () => {
 		expect(parsed.cap).toBe(CAP_ROUND + 2);
 	});
 
-	/** A committed set narrows the ACL; it never stands in for one. */
-	it("refuses a configured account that resolves below write at the ACL", async () => {
+	/** The control-plane set narrows the ACL; it never stands in for one. */
+	it("refuses a control-plane account that resolves below write at the ACL", async () => {
 		const {outcome, requests} = await run([
 			[PULL, pull({number: 4310, base: {ref: "main"}})],
 			[COMMENTS, CAPPED],
@@ -253,7 +295,7 @@ describe("runClear", () => {
 		expect(requests.some((request) => request.startsWith("POST"))).toBe(false);
 	});
 
-	it("holds an unreadable permission UNKNOWN rather than granting on the config alone", async () => {
+	it("holds an unreadable permission UNKNOWN rather than granting on the roster alone", async () => {
 		const {outcome} = await run([
 			[PULL, pull({number: 4310, base: {ref: "main"}})],
 			[COMMENTS, CAPPED],

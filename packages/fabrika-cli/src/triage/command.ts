@@ -405,7 +405,7 @@ const queue = leafCommand(
 		label: Flag.string("label").pipe(
 			Flag.withDefault(DEFAULT_QUEUE_LABEL),
 			Flag.withDescription(
-				`the intake-queue label whose open issues form the queue (default: ${DEFAULT_QUEUE_LABEL})`,
+				`the intake-queue label; the queue is its open issues plus every open issue with no labels (default: ${DEFAULT_QUEUE_LABEL})`,
 			),
 		),
 		limit: Flag.integer("limit").pipe(
@@ -432,9 +432,10 @@ const queue = leafCommand(
 	Command.withDescription(
 		[
 			"Prints the claimable intake queue, oldest first, under a first line of `queued` or `empty`.",
-			"  Each queued issue is one `<number>\\t<age-days>\\t<title>` line; the scanned count is on stderr.",
+			"  The queue is every open issue carrying --label plus every open issue with no label at all.",
+			"  Each queued issue is one `<number>\\t<age-days>\\t<title>` line; both scanned counts are on stderr.",
 			"  7: --label does not exist",
-			"  11: the queue read failed (UNKNOWN, never empty)",
+			"  11: the labelled or the unlabelled read failed (UNKNOWN, never empty)",
 			'  Derivation: the triage skill\'s contract.md, "triage queue"',
 		].join("\n"),
 	),
@@ -561,17 +562,18 @@ const enrich = leafCommand(
 	Command.withDescription(
 		[
 			"Rewrites an issue body from stdin over its kept original; prints `enriched\\t<n>\\t<redactions>`.",
-			"  3: stdin was empty",
-			"  5: the text carries a machine-local path",
-			"  6: the text is a bare @ reference",
+			"  3: empty stdin, or only the summary",
+			"  5: a machine-local path in the text",
+			"  6: a bare @ reference",
 			"  7: the issue is absent, closed or empty",
 			"  8: the write failed (UNKNOWN)",
-			"  9: the read-back does not match",
+			"  9: the read-back differs",
 			"  11: a precondition read failed",
 			"  15: the criteria block is malformed",
-			"  16: a ready-for:agent body with no criteria block",
-			"  17: another session or lane holds the claim",
-			"  20: the text states an ordering with no blocked_by edge",
+			"  16: ready-for:agent with no criteria block",
+			"  17: another lane holds the claim",
+			"  20: an ordering with no blocked_by edge",
+			"  26: not one `## In plain words` section",
 			'  Derivation: the triage skill\'s contract.md, "triage enrich"',
 		].join("\n"),
 	),

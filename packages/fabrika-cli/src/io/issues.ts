@@ -455,6 +455,26 @@ export const getIssue = (repo: string, issue: number): Shell<Existence<IssueReco
 		});
 	});
 
+/**
+ * An issue's GraphQL node id, read over REST — the content id a Projects item add takes. A pull
+ * request answers `Absent`: it is served on the same path and is never a table row.
+ */
+export const issueNodeId = (repo: string, issue: number): Shell<Existence<string>> =>
+	Effect.gen(function* () {
+		const token = yield* ambientToken;
+		if (token._tag === "Failure") return unknown<string>(token.reason);
+		const outcome = yield* onTransport(
+			restRead(token.value, "GET", `repos/${repo}/issues/${issue}`),
+		);
+		const read = existenceOf(outcome, (body) =>
+			isRecord(body) && typeof body.node_id === "string"
+				? ok({nodeId: body.node_id, pullRequest: isRecord(body.pull_request)})
+				: fail("GitHub answered 200 but named no node id"),
+		);
+		if (read._tag !== "Present") return read;
+		return read.value.pullRequest ? absent<string>() : present(read.value.nodeId);
+	});
+
 export interface CreatedIssue {
 	readonly number: number;
 	readonly url: string;
@@ -895,6 +915,32 @@ export interface QueueIssue {
 	readonly title: string;
 }
 
+/**
+ * The queue rows among `entries` that `keep` admits, pull requests filtered out.
+ *
+ * `keep` sees the raw entry only after it proved to be an issue row, so a malformed entry fails the
+ * whole read whether or not it would have been kept.
+ */
+const queueRows = (
+	entries: ReadonlyArray<unknown>,
+	keep: (entry: Record<string, unknown>) => Attempt<boolean>,
+): Attempt<ReadonlyArray<QueueIssue>> => {
+	const rows: QueueIssue[] = [];
+	for (const entry of withoutPullRequests(entries)) {
+		if (!isRecord(entry) || typeof entry.number !== "number" || typeof entry.title !== "string") {
+			return fail(NOT_ISSUES);
+		}
+		const createdAt = entry.created_at;
+		if (typeof createdAt !== "string" || Number.isNaN(Date.parse(createdAt))) {
+			return fail("GitHub answered 200 but a queue row carries no filing time");
+		}
+		const kept = keep(entry);
+		if (kept._tag === "Failure") return kept;
+		if (kept.value) rows.push({number: entry.number, createdAt, title: entry.title});
+	}
+	return ok(rows);
+};
+
 /** Open issues carrying `label` with their filing time, paged, pull requests filtered out. */
 export const openQueueIssues = (
 	repo: string,
@@ -902,24 +948,28 @@ export const openQueueIssues = (
 ): Shell<Attempt<ReadonlyArray<QueueIssue>>> =>
 	withToken((token) =>
 		Effect.map(provenList(token, openWithLabel(repo, label)), (read) =>
-			then(read, (entries) => {
-				const rows: QueueIssue[] = [];
-				for (const entry of withoutPullRequests(entries)) {
-					if (
-						!isRecord(entry) ||
-						typeof entry.number !== "number" ||
-						typeof entry.title !== "string"
-					) {
-						return fail(NOT_ISSUES);
-					}
-					const createdAt = entry.created_at;
-					if (typeof createdAt !== "string" || Number.isNaN(Date.parse(createdAt))) {
-						return fail("GitHub answered 200 but a queue row carries no filing time");
-					}
-					rows.push({number: entry.number, createdAt, title: entry.title});
-				}
-				return ok(rows);
-			}),
+			then(read, (entries) => queueRows(entries, () => ok(true))),
+		),
+	);
+
+/**
+ * Open issues carrying **no label at all**, with their filing time, paged, pull requests filtered out.
+ *
+ * The REST list has no "unlabeled" filter, so this pages every open issue and keeps the bare ones.
+ * The search index's `no:label` would answer in one page, but it lags a fresh filing, and this read
+ * decides whether an intake sweep is finished. A row whose `labels` field is not a list fails the
+ * read: reading it as bare would put a labelled issue in the queue.
+ */
+export const openUnlabeledIssues = (repo: string): Shell<Attempt<ReadonlyArray<QueueIssue>>> =>
+	withToken((token) =>
+		Effect.map(provenList(token, `repos/${repo}/issues?state=open`), (read) =>
+			then(read, (entries) =>
+				queueRows(entries, (entry) =>
+					Array.isArray(entry.labels)
+						? ok(entry.labels.length === 0)
+						: fail("GitHub answered 200 but an open issue carries no label list"),
+				),
+			),
 		),
 	);
 
@@ -931,6 +981,85 @@ export const openQueueIssues = (
  */
 export const listOpenIssues = (repo: string): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
 	openIssueRecords(`repos/${repo}/issues?state=open`);
+
+/** An open issue as the table's agenda reads it: its words, its labels, and who filed it. */
+export interface ListedIssue {
+	readonly number: number;
+	readonly title: string;
+	readonly body: string;
+	readonly labels: ReadonlyArray<string>;
+	readonly author: string;
+	/**
+	 * GitHub's `author_association`: `OWNER`, `MEMBER` or `COLLABORATOR` for someone who works on the
+	 * repository, anything else for someone who only uses it. `""` when the payload carried none.
+	 */
+	readonly association: string;
+}
+
+/**
+ * Every open issue with its filer's association, paged, pull requests filtered out. One list read,
+ * so the agenda sorts the whole open board without reading any issue twice.
+ */
+export const listOpenIssueFacts = (repo: string): Shell<Attempt<ReadonlyArray<ListedIssue>>> =>
+	withToken((token) =>
+		Effect.map(provenList(token, `repos/${repo}/issues?state=open`), (read) =>
+			then(read, (entries) => {
+				const out: ListedIssue[] = [];
+				for (const value of withoutPullRequests(entries)) {
+					const record = toIssueRecord(value);
+					if (record === null || !isRecord(value)) {
+						return fail("GitHub answered 200 but one entry is not an issue");
+					}
+					out.push({
+						number: record.number,
+						title: record.title,
+						body: record.body,
+						labels: record.labels,
+						author: record.author,
+						association:
+							typeof value.author_association === "string" ? value.author_association : "",
+					});
+				}
+				return ok(out);
+			}),
+		),
+	);
+
+/** A closed issue and whether it still has sub-issues open, as far as its list entry says. */
+export interface ClosedParent {
+	readonly number: number;
+	/**
+	 * `false` when the entry's `sub_issues_summary` proves every sub-issue closed (or none exist);
+	 * `true` otherwise, including when the entry carried no summary, so the caller reads the children.
+	 */
+	readonly mayHaveOpenChildren: boolean;
+}
+
+/** Every closed issue carrying `label`, paged, pull requests filtered out. */
+export const closedIssuesWithLabel = (
+	repo: string,
+	label: string,
+): Shell<Attempt<ReadonlyArray<ClosedParent>>> =>
+	withToken((token) =>
+		Effect.map(
+			provenList(token, `repos/${repo}/issues?state=closed&labels=${encodeURIComponent(label)}`),
+			(read) =>
+				then(read, (entries) => {
+					const out: ClosedParent[] = [];
+					for (const value of withoutPullRequests(entries)) {
+						if (!isRecord(value) || typeof value.number !== "number") return fail(NOT_ISSUES);
+						const summary = isRecord(value.sub_issues_summary) ? value.sub_issues_summary : null;
+						const settled =
+							summary !== null &&
+							typeof summary.total === "number" &&
+							typeof summary.completed === "number" &&
+							summary.completed >= summary.total;
+						out.push({number: value.number, mayHaveOpenChildren: !settled});
+					}
+					return ok(out);
+				}),
+		),
+	);
 
 /** All issues, including closed and unlabelled partial creates; no search index is involved. */
 export const listAllIssueRecords = (repo: string): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
@@ -1023,6 +1152,86 @@ export const issueTimeline = (
 					});
 				}
 				return ok(out);
+			}),
+		),
+	);
+
+/** An issue or pull request of the same repository that referenced this one, as filed. */
+export interface TimelineReference {
+	readonly number: number;
+	readonly title: string;
+	readonly isPullRequest: boolean;
+	readonly open: boolean;
+	/** A pull request that merged; always `false` for an issue. */
+	readonly merged: boolean;
+	readonly labels: ReadonlyArray<string>;
+	/** When the referencing issue or pull request was opened. */
+	readonly createdAt: string;
+}
+
+/** What an issue's or pull request's timeline says happened to it: who referenced it, when it reopened. */
+export interface TimelineFacts {
+	readonly references: ReadonlyArray<TimelineReference>;
+	readonly reopenedAt: ReadonlyArray<string>;
+}
+
+const TIMELINE_REFERENCE = "GitHub answered 200 but a cross-reference is not an issue";
+
+const labelNames = (raw: unknown): ReadonlyArray<string> | null => {
+	if (!Array.isArray(raw)) return null;
+	const names = raw.map((label) =>
+		isRecord(label) && typeof label.name === "string" ? label.name : null,
+	);
+	return names.includes(null) ? null : (names as ReadonlyArray<string>);
+};
+
+/**
+ * The same-repository cross-references and the reopen events on an issue's or pull request's
+ * timeline, paged. A reference from another repository is left out: its number names an issue
+ * there, not here.
+ */
+export const timelineFacts = (repo: string, issue: number): Shell<Attempt<TimelineFacts>> =>
+	withToken((token) =>
+		Effect.map(provenList(token, `repos/${repo}/issues/${issue}/timeline`), (read) =>
+			then(read, (entries) => {
+				const references: TimelineReference[] = [];
+				const reopenedAt: string[] = [];
+				for (const entry of entries) {
+					if (!isRecord(entry)) return fail("GitHub answered 200 but its body is not a timeline");
+					if (entry.event === "reopened") {
+						if (typeof entry.created_at !== "string") {
+							return fail("GitHub answered 200 but a reopen names no time");
+						}
+						reopenedAt.push(entry.created_at);
+						continue;
+					}
+					if (entry.event !== "cross-referenced") continue;
+					const source = isRecord(entry.source) ? entry.source.issue : undefined;
+					if (!isRecord(source)) return fail(TIMELINE_REFERENCE);
+					const {number, title, state, created_at: createdAt} = source;
+					const labels = labelNames(source.labels ?? []);
+					if (
+						typeof number !== "number" ||
+						typeof title !== "string" ||
+						typeof createdAt !== "string" ||
+						labels === null
+					) {
+						return fail(TIMELINE_REFERENCE);
+					}
+					const from = source.repository_url;
+					if (typeof from === "string" && !from.endsWith(`/repos/${repo}`)) continue;
+					const pull = isRecord(source.pull_request) ? source.pull_request : null;
+					references.push({
+						number,
+						title,
+						isPullRequest: pull !== null,
+						open: state === "open",
+						merged: pull !== null && typeof pull.merged_at === "string",
+						labels,
+						createdAt,
+					});
+				}
+				return ok({references, reopenedAt});
 			}),
 		),
 	);

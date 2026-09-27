@@ -42,7 +42,9 @@ import {leakRefusal, readAuthored} from "./authored.ts";
 import {pullRequestReferences} from "./blocked-by.ts";
 import {
 	CRITERIA_REQUIRED,
+	EMPTY_STDIN,
 	MALFORMED_CRITERIA,
+	PLAIN_SUMMARY_REQUIRED,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	UNWIRED_ORDERING,
@@ -52,6 +54,7 @@ import {
 import {authoredRegion, composeBody, detect, type EnrichMode, wrapOriginal} from "./enrich.ts";
 import {legacyPreserved} from "./enrich-legacy.ts";
 import {statedOrderings, unwiredReferences} from "./ordering.ts";
+import {PLAIN_SUMMARY_HEADING, type PlainSummaryRead, readPlainSummary} from "./plain-summary.ts";
 import {guardTarget} from "./target-guard.ts";
 
 export interface EnrichOptions {
@@ -65,6 +68,37 @@ export interface EnrichOptions {
 	readonly token: string | null;
 	readonly stdin: Effect.Effect<StdinRead>;
 }
+
+const SUMMARY_ASK =
+	"one paragraph of 2-3 everyday sentences (what is wrong, who it hurts, what we would do) that matches the body";
+
+const summaryRefusal = (
+	noun: string,
+	read: Exclude<PlainSummaryRead, {readonly _tag: "Found"}>,
+): VerbOutcome => {
+	switch (read._tag) {
+		case "Missing":
+			return refuse(
+				PLAIN_SUMMARY_REQUIRED,
+				`triage enrich: ${noun} carries no "${PLAIN_SUMMARY_HEADING}" section — every enriched issue opens with one. Add the section with ${SUMMARY_ASK}, and re-send. Nothing was written.`,
+			);
+		case "Empty":
+			return refuse(
+				PLAIN_SUMMARY_REQUIRED,
+				`triage enrich: the "${PLAIN_SUMMARY_HEADING}" section in ${noun} is empty — write ${SUMMARY_ASK} under the heading, and re-send. Nothing was written.`,
+			);
+		case "Repeated":
+			return refuse(
+				PLAIN_SUMMARY_REQUIRED,
+				`triage enrich: ${noun} carries ${read.count} "${PLAIN_SUMMARY_HEADING}" sections — send exactly one, and re-send. Nothing was written.`,
+			);
+		case "Alone":
+			return refuse(
+				EMPTY_STDIN,
+				`triage enrich: ${noun} carries only the "${PLAIN_SUMMARY_HEADING}" section — send the rest of it below the summary. Nothing was written.`,
+			);
+	}
+};
 
 export const runEnrich = (
 	options: EnrichOptions,
@@ -97,6 +131,9 @@ export const runEnrich = (
 		if (authored._tag === "Refused") return authored.outcome;
 		const leak = leakRefusal(surface, authored.text);
 		if (leak !== null) return leak;
+		const summaryRead = readPlainSummary(authored.text);
+		if (summaryRead._tag !== "Found") return summaryRefusal(surface.noun, summaryRead);
+		const text = summaryRead.value;
 
 		const target = yield* getIssue(repo, issue);
 		if (target._tag === "Absent") {
@@ -162,14 +199,14 @@ export const runEnrich = (
 			}
 		}
 
-		const composed = composeBody({mode, issue, authored: authored.text, preserved});
+		const composed = composeBody({mode, issue, authored: text, preserved});
 
 		// The read runs over the bytes about to be posted, not over stdin — an enclosing
 		// template can demote a heading that arrived conforming. It is scoped to the region above the
 		// marker, which `composeBody` guarantees is `composed`'s own prefix, because the preserved
 		// original below it is redacted rather than refused; a legacy `##` heading buried there would
 		// otherwise refuse every re-enrichment forever. `Absent` stays allowed.
-		const criteria = readCriteria(authoredRegion(mode, authored.text));
+		const criteria = readCriteria(authoredRegion(mode, text));
 		if (criteria._tag === "Malformed") {
 			return refuse(
 				MALFORMED_CRITERIA,
@@ -209,7 +246,7 @@ export const runEnrich = (
 		// The graph is the one carrier of "do not start this yet", so an ordering stated only in prose
 		// produces an issue `build pick` admits and no lane can build. The read is
 		// deferred to here because it is only owed by a body that states one.
-		const orderings = statedOrderings(authoredRegion(mode, authored.text));
+		const orderings = statedOrderings(authoredRegion(mode, text));
 		if (orderings.length > 0) {
 			const live = yield* blockedBy(repo, issue);
 			if (live._tag !== "Present") {

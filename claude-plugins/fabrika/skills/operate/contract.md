@@ -174,9 +174,10 @@ call buys exactly one round, and the next needs its own call and its own recomme
 
 The `--rationale` is posted on the PR as the grant's dated authorization, and the `cap-cleared`
 marker lands beside it, so `build verdicts` honours it through the same four clauses it honours a
-founder's grant under. The account still has to be in `.fabrika.jsonc`'s grant-author set at the
-PR's base ref, and still has to hold write+ at GitHub's ACL: the ruling moved the founder DOCUMENT
-off a driver's grant and never the ACL. `build clear` is unchanged, and stays the founder's verb for
+founder's grant under. The account still has to be in the control-plane set `.github/CODEOWNERS`
+names, and still has to hold write+ at GitHub's ACL: the ruling moved the founder DOCUMENT off a
+driver's grant and never the ACL. A `capClearAuthors` the config at the PR's base still declares is
+ignored and named in a notice. `build clear` is unchanged, and stays the founder's verb for
 a bare PR-side grant with no lane clear behind it.
 
 The PR half runs FIRST, so every refusal leaves the log byte-identical and a re-run derives the same
@@ -207,7 +208,8 @@ the `UNBLOCKED`, and the two land in either order.
   guess.
 - `47` — the task still has budget to spend, so there is no round to grant.
 - `53` — `--rationale` says nothing.
-- `66` — the invoking account is outside the grant-author set at the PR's base ref, or below write.
+- `66` — the invoking account is outside the control-plane set `.github/CODEOWNERS` names, or below
+  write.
   A marker it posted would be void, so the whole grant is refused; `build clear` from an account
   that may is the route.
 - `39`, `65` — [the lanes root](#the-lanes-root).
@@ -540,9 +542,15 @@ claims is idle and holds nothing, and an archived one is already out of the coun
 override flag: a machine raises the number in that checkout's gitignored `.fabrika.local.jsonc`,
 which wins over the tracked `.fabrika.jsonc`, and never by editing the tracked file.
 
+**The origin fact.** Once placed, the lane's origin is appended to `<root>/<key>/facts.jsonl` as its
+first fact: `--origin`, one of `bet`, `founder-start`, `driver-pick`, `experiment`, `mid-lane-fix`,
+defaulting to `driver-pick`. The answer carries it as `origin`, and a lane with no origin fact reads
+as `driver-pick`.
+
 ### Exit status
 
-- `8` — the write did not land, so the lane is NOT booted.
+- `8` — the write did not land, so the lane is NOT booted; or the machine was placed and the origin
+  fact did not land, which the line says, and the lane then reads as `driver-pick`.
 - `11` — the template, the lane dir's existence, or the issue's child list could not be read.
   UNKNOWN, never a boot.
 - `14` — the lane already exists.
@@ -558,6 +566,7 @@ which wins over the tracked `.fabrika.jsonc`, and never by editing the tracked f
 - `63` — the board says this issue already had a lane. Every pull request that proves it is named,
   and a re-boot would launder its spent repair budget, so nothing was written. Under `--from-board`
   the same code carries the board's own reason for not seating it.
+- `70` — `--origin` is outside the closed set; nothing was written.
 - `39`, `65` — [the lanes root](#the-lanes-root).
 
 ## `lane emit`
@@ -575,8 +584,12 @@ per child in the coder template's exact shape, phase-sequenced, parallel within 
   `frozen`), so a partly-built epic's machine can still terminate.
 - Deterministic: the same epic body bytes and the same child links (number, state, close reason and
   class labels per child) emit the same machine bytes.
+- Once placed, the lane's origin is appended to `<root>/<epic>/facts.jsonl` as its first fact,
+  `--origin` with `lane open`'s closed set and default, exactly as `lane open` records a
+  single-issue lane's.
 
-stdout is `{answer: "emitted", epic, workflow, phases, children, dropped: {count, rows}, bytes}`.
+stdout is `{answer: "emitted", epic, origin, workflow, phases, children, dropped: {count, rows},
+bytes}`.
 
 **An existing lane** is refused at `14` with no exception: a lane on disk is never re-emitted over.
 The refusal names the whole remedy: retire the lane directory, then re-run this verb. That remedy is
@@ -607,7 +620,8 @@ it.
   unplaced requires subject is named. A defective line's refusal also teaches the placement:
   editorial or history prose belongs below a `---` thematic break, which ends the section.
 - `7` — the epic is proven absent or closed.
-- `8` — the write did not land.
+- `8` — the write did not land; or the machine was placed and the origin fact did not land, which
+  the line says, and the lane then reads as `driver-pick`.
 - `11` — the epic, its child list or the lane dir could not be read. UNKNOWN.
 - `14` — the lane already exists; retire its directory and re-run to rebuild it.
 - `15` — no `## Dependencies` topology: plan the epic first. Under `--children`, every ref the
@@ -619,6 +633,7 @@ it.
 - `38` — an unsupported class label on a live child.
 - `51` — the lanes root already holds as many CLAIMED lanes as `laneConcurrencyCap` allows. The idle
   unclaimed count is named separately.
+- `70` — `--origin` is outside the closed set; nothing was read or written.
 - `39`, `65` — [the lanes root](#the-lanes-root).
 
 ## `lane amend`
@@ -732,6 +747,16 @@ the branch's own tree is read for every lane verb the brief tells the shell to r
 today), and a missing one refuses at `59` naming it and the remedy, `lane refresh`. An absolute
 entrypoint is an installed copy the branch does not carry and is not judged.
 
+**The size stop.** Before any shell is briefed the table is read for the size stop: a table row
+standing for the issue (its own, its epic's, or a chain it blocks) that has spent
+`table.stopMultiple` times its size stops the brief at `71`. A repository that declares no
+`table.project.number` and has no table project is never stopped. A declared `table.project.number`
+that names no project is a failed read with a `table` block declared, so it refuses at `11`, as does
+any table that could not be read once `.fabrika.jsonc` declares a `table` block. With no `table` block, any failed read (a token without the `project` scope, a rate limit, an
+outage, a forbidden token, a malformed `lane-record` comment) briefs anyway and prints
+`size stop NOT checked` with the reason on stderr, since nothing says a table exists. Declare a
+`table` block to make that `11`.
+
 ### Exit status
 
 - `4`, `7`, `13`, `21` — the [shared exits](#the-shared-read-and-record-exits).
@@ -747,6 +772,9 @@ entrypoint is an installed copy the branch does not carry and is not judged.
   two facts: no local branch in this tree carries the child's commits (`22`), or several do (`25`).
 - `59` — the assembly branch does not carry a lane verb this brief tells the shell to run. Refresh
   the branch, then brief again.
+- `71` — the size stop: a table row standing for the issue has spent `table.stopMultiple` times its
+  size, so no shell is briefed. Record `lane transition <lane> BLOCKED --task <task> --cause
+  size-stop`, and the table decides whether to extend, re-shape or drop it.
 - `39`, `65` — [the lanes root](#the-lanes-root).
 
 ## `lane dispatch`
@@ -1700,6 +1728,71 @@ run through it lands in that sibling's tree.
 - `31` — proven: no live lane claim of this token stands on the issue. Another driver holds it, or
   none does.
 
+## `lane wait`
+
+### Output
+
+Appends a waiting fact to the lane's `<root>/<key>/facts.jsonl`: the lane is waiting on `--on` until
+`--until`. The latest declaration stands. A stuck flag leaves the lane unflagged until that date,
+and `lane record` shows the wait on the lane's record. It is a fact, never an event, so
+`events.jsonl` and the fold are untouched. The append takes the lane's ledger lock.
+
+stdout is `{answer: "waiting", lane, on, until}`.
+
+### Exit status
+
+- `4` — `workflow.json` or `facts.jsonl` was read in full and is not the shape.
+- `7` — no lane there.
+- `8` — the append did not land, so the wait is NOT recorded.
+- `11` — the lane or its facts could not be read.
+- `21` — the key is not a lane key.
+- `40` — another writer holds the ledger lock. Retry.
+- `70` — `--on` is not one non-blank line, or `--until` is not an ISO date still to come. Nothing
+  was appended.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane record`
+
+### Output
+
+Composes the record of a lane whose fold has reached a terminal state and posts it to the lane's
+issue as one `lane-record` marker comment, the wire format owned by
+`packages/fabrika-cli/src/wire/lane-record.ts`.
+
+The record carries the outcome; the wall-clock from the lane's opening to its terminal event;
+builds (DONE out of a build leaf); reviews (PASS or FAIL out of a review leaf); every park with its
+cause and route; Spent $; Asks (the parks routed to the founder, where a park with no cause routes
+there); the origin and standing wait from `facts.jsonl`; the pull requests the log names; and the
+whole log collapsed in a `<details>` block. Every count is derived from `events.jsonl` by replaying
+it, never stored. Spent $ reads `unmeasured` with its reason while the spend ledger holds tokens and
+no rate card.
+
+The body is scrubbed of machine-local paths and must then pass the leak guard, or nothing is posted.
+The issue's comments are read whole first: a record already standing for the same terminal (same
+issue, outcome and terminal instant) answers `unchanged` and writes nothing, so re-running this
+after a terminal is safe. The posted comment is read back through the format's reader.
+
+Once the record stands, posted now or already there, it runs `fabrika table sync <issue>`. A sync
+that refuses leaves the record standing, repeats the sync's reason and exit on stderr, and changes
+no exit code here, so re-running this retries the sync.
+
+stdout is `{answer: "posted"|"unchanged", lane, issue, commentId, outcome, origin, asks, builds,
+reviews, parks, spent, prs, table: {code, answer}}`, plus `url` on a post.
+
+### Exit status
+
+- `4` — the lane record, its facts or a `lane-record` comment already on the issue does not read, so
+  whether this terminal is recorded is undecidable.
+- `5` — a machine-local path survived scrubbing; nothing was posted.
+- `7` — no lane there.
+- `8` — the post failed. It may or may not have landed; re-run.
+- `9` — the posted comment does not read back as this terminal's record.
+- `11` — the lane, its facts or the issue's comments could not be read.
+- `19` — the key names no issue: a chore lane has nowhere to post a record.
+- `21` — the key is not a lane key.
+- `69` — the lane has not reached a terminal state; nothing was posted.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
 ## The `recipe` group
 
 The `recipe` group is the set of standing driver recipes `operate` applies: fixed sequences with a
@@ -1726,9 +1819,9 @@ nothing and is novel.
   the PR's live head.
 - The `worktree-holds-branch` park: the same working-tree read `build branch --resume-lane` refuses
   on.
-- The `campaign-paused` park: the lane milestone's `## Campaigns` State cell at `origin/main`, which
-  is the whole dispatch permission. It clears only on `active`, and the campaign is never resumed
-  here.
+- The `campaign-paused` park, which nothing records any more, since no campaign state gates a lane:
+  the lane milestone's `## Campaigns` State cell at `origin/main`. It clears only on `active`, and
+  the campaign is never resumed here.
 - The `spawn-dead` park is the one whose read is the lane rather than the cause. No verb can spawn an
   agent to ask whether the provider is back, so it proves only that the dead shell left nothing that
   would refuse the same brief being dispatched again: no build claim standing on the issue, and no

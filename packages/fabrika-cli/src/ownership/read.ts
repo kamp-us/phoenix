@@ -3,11 +3,12 @@
  * PR's comments and the live ACL of whoever posted a grant.
  *
  * The config is read at the **base** ref, never the head, so a pull request cannot add its own author
- * to `ownAccounts` or its own granter to the grant-author set. One read serves both keys.
+ * to `ownAccounts`. Who may post a grant is the control-plane set `.github/CODEOWNERS` names on the
+ * default branch — the set `build clear` reads — so a pull request cannot name its own granter either.
  *
  * Each read happens only when the answer still depends on it: a PR one of ours opened costs the
  * config read (and the running account, when no set is declared) and nothing else, and the ACL is
- * read only for grant authors the config already names. A read that could not complete is
+ * read only for grant authors the control-plane set already names. A read that could not complete is
  * `Unknown`, never "foreign" and never "ours" — a gate that could not read whose PR this is has
  * proven nothing about it.
  */
@@ -16,8 +17,8 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {
 	clearsWriteFloor,
+	controlPlaneMembership,
 	expandAuthors,
-	membershipIn,
 	permissionsFor,
 } from "../build/clearances.ts";
 import {grantAuthorText} from "../config/keys/cap-clear-authors.ts";
@@ -129,11 +130,11 @@ export const readPrOwnership = <R>(
 			return {_tag: "Read" as const, ownership: prOwnershipOf(pull.author, own.own, [])};
 		}
 
-		const membership = yield* membershipIn(repo, pull.baseRef, file);
+		const membership = yield* controlPlaneMembership(repo);
 		if (membership._tag === "Unknown") return membership;
 		const grantors: Grantors =
 			membership._tag === "Set" ? {_tag: "Set", holds: membership.holds} : membership;
-		// Only a grant author the config already names, and who is not the PR's author, is worth an
+		// Only a grant author the control-plane set already names, and who is not the PR's author, is worth an
 		// ACL read: any other marker is void on a clause that cost nothing, and a hiccup reading an
 		// irrelevant login must not turn a plainly void grant into an UNKNOWN gate.
 		const permissions = yield* permissionsFor(

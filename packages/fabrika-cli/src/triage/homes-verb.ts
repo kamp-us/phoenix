@@ -18,8 +18,8 @@
  *
  * A row can carry a **running** marker: an `active` campaign is closed to new intake unless the work
  * is p0 or p1, or blocks one of that milestone's own in-flight lanes. Which milestones those are,
- * is data — `ROADMAP.md`'s `## Campaigns` table, the same permission `build pick` fences on, read
- * through the same parser off the roadmap text this verb already has open. A marked row is still
+ * is data — `ROADMAP.md`'s `## Campaigns` table, read through the campaign parser off the roadmap
+ * text this verb already has open. A marked row is still
  * offered: the two exceptions are real, and a removed row cannot carry them.
  */
 import {Effect, Result} from "effect";

@@ -47,19 +47,18 @@ export const REF_NOT_MOVED = 17;
 export const VALIDATION_RED = 18;
 export const UNSAFE_PUSH = 19;
 /**
- * Proven: not admitted on the **scope axis** — out of scope.
+ * `20` is a **retired seat, deliberately left empty.** It was the scope axis, which refused a claim
+ * whose milestone no `active` campaign row pinned. A campaign now groups work and gates no dispatch,
+ * so that refusal is gone. Nothing is renumbered into it, for the same reason as `12`.
  *
- * Campaign membership and nothing else. It is a sibling of {@link AUDIENCE_NOT_AGENT}, not the same
- * question: the two have different remedies, so they never collapse onto one code. Nor does either
- * borrow {@link BLOCKED} — a scope refusal is not blockedness — or {@link PRECONDITION_UNKNOWN}: `20`
- * and `21` are *proven* refusals, while a read that failed has proven nothing.
+ * @ruling https://github.com/kamp-us/phoenix/issues/9852
  */
-export const OUT_OF_SCOPE = 20;
+
 export const AUDIENCE_NOT_AGENT = 21;
 /**
  * Proven: every changed file falls outside all three surfaces' validators — nothing is checkable.
  *
- * A *proven* refusal like `20`/`21`, not a borrowed {@link PRECONDITION_UNKNOWN}: the diff read
+ * A *proven* refusal like `21`, not a borrowed {@link PRECONDITION_UNKNOWN}: the diff read
  * succeeded and the classification is complete, so the fact established is about the tree, not about
  * a read that failed. Its own seat because the caller's remedy is unique — widen no surface, split
  * the diff or extend a validator.
@@ -68,12 +67,12 @@ export const UNCLASSIFIED_DIFF = 22;
 /**
  * Proven: the local head does not contain the published remote head — this push would drop commits.
  *
- * A *proven* refusal about the two commits, so it sits with `17`/`19`/`20`/`21` and never on
+ * A *proven* refusal about the two commits, so it sits with `17`/`19`/`21` and never on
  * {@link PRECONDITION_UNKNOWN}, which is reserved for a read that failed. Its own seat rather than
  * `19`'s because the remedy differs: `19` says "pass the lease", this one says "rebase, or say you
  * mean it" — collapsing them would make the fix instruction ambiguous.
  *
- * Overlapping `epic`'s own `23` is the same safe overlap `20`/`21` already rely on — the rule is
+ * Overlapping `epic`'s own `23` is the same safe overlap `21` already relies on — the rule is
  * `plan/codes.ts`'s: import a code when two groups prove the *same* fact, and an exit code is
  * otherwise read off the command that produced it. No `epic` verb can prove a push's containment.
  */
@@ -90,14 +89,14 @@ export const HEAD_DROPS_REMOTE = 23;
  */
 export const COMMIT_NOT_CREATED = 24;
 /**
- * Proven: the invoking account may not clear a cap — outside the configured grant-author set, or
- * below `write` at the repository ACL.
+ * Proven: the invoking account may not clear a cap — outside the control-plane set CODEOWNERS
+ * names, or below `write` at the repository ACL.
  *
  * One seat for both clauses because they answer one question, "may this account grant?", and a
  * caller's next move is the same either way: get authority, then re-run. Its own seat rather than a
  * borrowed `21`: that code is about the *issue's* audience label, and this one is about who may hold
  * founder authority — the remedies share nothing. It is never {@link PRECONDITION_UNKNOWN}: the
- * config, the memberships and the ACL were read in full, so the refusal is a fact about the account.
+ * roster, the memberships and the ACL were read in full, so the refusal is a fact about the account.
  */
 export const GRANT_UNAUTHORIZED = 25;
 export const AUTHORIZATION_VOID = 26;
@@ -116,13 +115,12 @@ export const LOCAL_LANE_UNWRITTEN = 29;
  * Proven: not admitted on the **type axis** — the deliverable is not a pull request a build lane
  * produces.
  *
- * The third sibling of {@link OUT_OF_SCOPE} and {@link AUDIENCE_NOT_AGENT}, and seated apart from
- * both for the reason they are seated apart from each other: the remedy is unlike either. `20` says
- * flip the campaign state cell, `21` says re-label the audience, and this one says the work belongs to another
- * skill's lane — `/adr` for a decision, `plan-epic` for an epic — or, on a decision whose choice a
- * founder already recorded, that the claim must cite that ruling comment. Borrowing `21` is what the
- * code did before there was a fence at all, and it named the wrong objection: an operator sent to
- * re-label a decision `ready-for:agent` would satisfy `21` and still be building the wrong artifact.
+ * A sibling of {@link AUDIENCE_NOT_AGENT}, seated apart from it because the remedy differs: `21`
+ * says re-label the audience, and this one says the work belongs to another skill's lane — `/adr`
+ * for a decision, `plan-epic` for an epic — or, on a decision whose choice a founder already
+ * recorded, that the claim must cite that ruling comment. Borrowing `21` is what the code did
+ * before there was a fence at all, and it named the wrong objection: an operator sent to re-label
+ * a decision `ready-for:agent` would satisfy `21` and still be building the wrong artifact.
  */
 export const TYPE_NOT_BUILDABLE = 30;
 /**
@@ -131,7 +129,7 @@ export const TYPE_NOT_BUILDABLE = 30;
  * Two directions, one seat, because one fact is established either way — *this number's build state
  * is not what the claim says it is*. A fresh claim refuses on any standing verdict, `PASS` as well as
  * `FAIL`; `--resume` refuses on a child holding no `FAIL`. That is unlike every neighbouring
- * seat: `20`/`21`/`30` are about whether an issue may be built at all, and this one is about whether
+ * seat: `21`/`30`/`32` are about whether an issue may be built at all, and this one is about whether
  * it has been built already. The route out is not uniform — a `FAIL` has a repair lane, a `PASS` has
  * only the epic driver's fold — so each refusal line names its own.
  *
@@ -144,10 +142,9 @@ export const PRIOR_BUILD_MISMATCH = 31;
  * Proven: not admitted on the **criteria axis** — the issue's body carries no readable
  * `### Acceptance criteria` block, so there is no contract to build against.
  *
- * The fourth sibling of {@link OUT_OF_SCOPE}, {@link AUDIENCE_NOT_AGENT} and
- * {@link TYPE_NOT_BUILDABLE}, seated apart from all three because the remedy is unlike any of them:
- * `20` says flip a campaign's state cell, `21` says re-label the audience, `30` says take the work
- * to another skill, and this one says the issue body itself has to be repaired — `triage enrich` to
+ * A sibling of {@link AUDIENCE_NOT_AGENT} and {@link TYPE_NOT_BUILDABLE}, seated apart from both
+ * because the remedy is unlike either: `21` says re-label the audience, `30` says take the work to
+ * another skill, and this one says the issue body itself has to be repaired — `triage enrich` to
  * author a block that is absent, `triage repair-criteria` to straighten one whose heading drifted.
  * Nothing a build lane may do from its own branch, which is exactly why it refuses before one is cut.
  *
@@ -214,3 +211,16 @@ export const BASE_MISMATCH = 36;
  * `build takeover`, or the PR is left to its author.
  */
 export const PR_NOT_OURS = 37;
+/**
+ * Proven: a claim on a pull request names no issue the admission test could judge — its body carries
+ * neither a closing keyword nor "Part of #<n>", or the issue it names is proven absent.
+ *
+ * It sat on `20` while that seat was the campaign scope axis, and bound only while some campaign was
+ * `active`. It is not a campaign question: without a served issue the audience, type and criteria
+ * axes would judge the PR's own record, which carries no label or criteria to refuse on, so one
+ * missing line in a body would walk any lane past them. Its own seat, bound whatever the campaigns
+ * say, because `20` stays retired. Overridable like `21`: the remedy is naming the issue in the body,
+ * or an override that records why there is none. Never {@link PRECONDITION_UNKNOWN}: an issue that
+ * could not be read stays `11`.
+ */
+export const NO_SERVED_ISSUE = 38;

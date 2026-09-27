@@ -1,11 +1,13 @@
 /**
- * The admission test both `build` seams run — **four named axes composed, never one widened term**
+ * The admission test both `build` seams run — **three named axes composed, never one widened term**
  * (`claude-plugins/fabrika/skills/build/contract.md`, the admission test).
  *
- * - **Scope admission** is campaign membership and nothing else: is the issue's home pinned by a
- *   `## Campaigns` row whose state is `active`? It refuses on {@link OUT_OF_SCOPE}.
- * - **The audience axis** is who the work is for (`ready-for:agent`), a question older than the
- *   fence. This module *hosts* it; it does not redefine it. It refuses on {@link AUDIENCE_NOT_AGENT}.
+ * No campaign state is an axis. A `## Campaigns` row groups work under a theme and a milestone, and
+ * nothing here reads its `State` cell to refuse a lane. The table's parse still lives in this module
+ * because `campaign`, `triage homes` and the writers bind to it.
+ *
+ * - **The audience axis** is who the work is for (`ready-for:agent`). This module *hosts* it; it
+ *   does not redefine it. It refuses on {@link AUDIENCE_NOT_AGENT}.
  * - **The type axis** is whether the deliverable is a pull request at all. It refuses on
  *   {@link TYPE_NOT_BUILDABLE}, and it lives here rather than in the pool because the pool is the
  *   browse path: a number handed straight to `claim` passes through no pool, so a type rule fenced
@@ -15,23 +17,21 @@
  *   held it privately, so `build issue <n>` built a no-AC issue the pool would have refused and the
  *   review gate was the first thing to catch it.
  *
- * They are siblings with different remedies — flip the campaign's state cell, re-label the audience,
- * take the work to the skill whose lane it is, or repair the issue body — so they stay separately
- * named, separately seated and separately reported everywhere. A single predicate answering all four
- * questions at once is the shape the contract's repair round removed; every outcome below therefore
- * carries **every** axis verdict, so a caller can never lose one behind another.
+ * They are siblings with different remedies — re-label the audience, take the work to the skill whose
+ * lane it is, or repair the issue body — so they stay separately named, separately seated and
+ * separately reported everywhere. A single predicate answering all three questions at once is the
+ * shape the contract's repair round removed; every outcome below therefore carries **every** axis
+ * verdict, so a caller can never lose one behind another.
  *
  * A claim's {@link ClaimPurpose} rides **beside** those axes: it decides which of them *bind* this
  * claim, and it never enters any axis's own reading.
  *
  * The core is pure and total, and this module is **imported** by the pool and claim seams rather than
  * invoked through a relaying verb — the wrapper shape is banned; this module derives the verdict, it
- * does not relay one. Only {@link readDispatch} touches IO.
+ * does not relay one. Nothing here touches IO.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9852
  */
-import {Effect, type FileSystem, type Path, Result} from "effect";
-import {CONFIG_PATH} from "../config/document.ts";
-import {readRoadmapFile} from "../config/paths.ts";
-import {exists, type ReadFailed, readFile} from "../io/fs.ts";
 import {issueRefsOf} from "../review/classes.ts";
 import {READY_FOR_AGENT, READY_FOR_PREFIX} from "../triage/audience.ts";
 import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
@@ -39,22 +39,19 @@ import {refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {
 	AUDIENCE_NOT_AGENT,
-	BAD_SECTIONS,
 	NO_ACCEPTANCE_CRITERIA,
-	OUT_OF_SCOPE,
+	NO_SERVED_ISSUE,
 	PRECONDITION_UNKNOWN,
 	TYPE_NOT_BUILDABLE,
 } from "./codes.ts";
 
 /**
- * The labels that are a home in their own right, admitted on the scope axis whatever the
- * declaration says.
+ * The labels that are a home in their own right, for an issue that carries no milestone.
  *
- * A standing lane is milestone-less **by design**, so a fence keyed on milestone-presence alone would
- * starve every milestone-less issue for a campaign's duration — 199 of them, when it was last
- * counted. The exemption is the
- * label match and nothing else: bare milestone-absence never confers it, and the set is closed — a
- * third lane is a founder ruling and a deliberate edit here, never a pattern match.
+ * A standing lane is milestone-less **by design**, so a home keyed on milestone-presence alone would
+ * call every such issue homeless. The home is the label match and nothing else: bare
+ * milestone-absence never confers it, and the set is closed — a third lane is a founder ruling and a
+ * deliberate edit here, never a pattern match.
  */
 export const STANDING_LANE_LABELS = ["wayfinder:backlog", "axis:pipeline-hardening"] as const;
 export type StandingLaneLabel = (typeof STANDING_LANE_LABELS)[number];
@@ -244,12 +241,11 @@ export interface SubjectFacts {
 }
 
 /**
- * Whose home the admission test judges.
+ * Which record the admission test judges.
  *
- * An issue is its own subject. A pull request is not: it carries no milestone and no `ready-for:`
- * label, so a fence reading the PR's own record refused **every** repair claim while any focus was
- * declared. A PR's lane serves a ticket, and that ticket's home is the campaign membership
- * the fence is actually asking about — so the PR resolves to it, through the same body reference
+ * An issue is its own subject. A pull request is not: it carries no `ready-for:` label and no
+ * acceptance criteria of its own. A PR's lane serves a ticket, and that ticket is what the axes are
+ * actually asking about — so the PR resolves to it, through the same body reference
  * `review scope` reads (`issueRefsOf`), never a second parser. A repair caller may retain the served
  * issue explicitly; selecting that member here keeps admission independent of body order while an
  * ordinary PR claim retains the scalar first-reference behavior.
@@ -281,48 +277,39 @@ export const homeOf = (issue: IssueFacts): string | null =>
 /**
  * The lifecycle cell of a `## Campaigns` row.
  *
- * `paused` is the campaign that is alive and not being executed: its milestone is open and no lane
- * opens against it. It is what makes one cell able to answer "may a lane open here"
- * without a second declaration surface stacked on top.
+ * `paused` is the campaign that is alive and not being worked. It tells a reader that, and it stops
+ * nothing: no state of this cell refuses, skips or parks a lane.
  */
 export const CAMPAIGN_STATES = ["active", "paused", "done"] as const;
 export type CampaignState = (typeof CAMPAIGN_STATES)[number];
 
-/** One `## Campaigns` row whose state is `active` — a milestone the fence admits, and its name. */
+/** One `## Campaigns` row whose state is `active` — the theme being worked, and its milestone. */
 export interface ActiveCampaign {
 	readonly milestone: number;
 	readonly name: string;
 }
 
 /**
- * What `## Campaigns` permits — the **set** of milestones its `active` rows pin.
+ * The **set** of milestones the `## Campaigns` table's `active` rows pin — what `triage homes` reads
+ * to say which milestones are being worked.
  *
- * `None` is a **well-formed default**, not a refusal: an absent table, a table with no rows and a
- * table whose every row is `paused` or `done` are one answer — the fence is off, not closed — and a
- * fence that refused on absence would wedge the board the moment nobody was running a campaign.
- * `Malformed` is the opposite: a table that reads but does not parse proves nothing, and is never
- * read as "nothing is active".
+ * `None` is a **well-formed default**: an absent table, a table with no rows and a table whose every
+ * row is `paused` or `done` are one answer. `Malformed` is the opposite: a table that reads but does
+ * not parse proves nothing, and is never read as "nothing is active".
  *
- * `Active` carries a non-empty tuple, so "permitting nothing while reporting a permission" cannot be
- * constructed.
+ * `Active` carries a non-empty tuple, so "active while naming no campaign" cannot be constructed.
  */
 export type Dispatch =
 	| {readonly _tag: "Active"; readonly campaigns: readonly [ActiveCampaign, ...ActiveCampaign[]]}
 	| {readonly _tag: "None"}
 	| {readonly _tag: "Malformed"; readonly reason: string};
 
-/** A table that parsed — the only input the scope axis accepts, so `Malformed` cannot reach it. */
+/** A table that parsed, so `Malformed` cannot reach a reader of its milestones. */
 export type ParsedDispatch = Exclude<Dispatch, {readonly _tag: "Malformed"}>;
 
-/** The milestones a parsed table admits — empty when the fence is inert. */
+/** The milestones a parsed table's `active` rows pin — empty when none is active. */
 export const dispatchMilestones = (dispatch: ParsedDispatch): ReadonlyArray<number> =>
 	dispatch._tag === "Active" ? dispatch.campaigns.map((row) => row.milestone) : [];
-
-/** `milestone #4`, or `milestones #4, #7` — the phrase every focus-naming message shares. */
-export const milestonePhrase = (milestones: ReadonlyArray<number>): string =>
-	`${milestones.length === 1 ? "milestone" : "milestones"} ${milestones
-		.map((milestone) => `#${milestone}`)
-		.join(", ")}`;
 
 const HEADING = /^##\s+Campaigns\s*$/;
 const ANY_HEADING = /^##\s+/;
@@ -369,7 +356,7 @@ export interface CampaignScan {
  * The header row is recognised by its column names and the separator by its dashes, so what is left
  * is a data row **whatever it contains** — which is what makes a mistyped state cell malformed
  * rather than invisible. Skipping unrecognised rows instead would answer "nothing is active" for a
- * broken table, the well-formed-and-always-wrong shape this fence exists to avoid.
+ * broken table, a well-formed answer that is always wrong.
  *
  * Split out from {@link parseCampaigns} so `campaign open` and `campaign state` can edit the table
  * without a second copy of these regexes (`claude-plugins/fabrika/skills/campaign/contract.md`).
@@ -411,8 +398,8 @@ export interface CampaignRow {
  * Every declared campaign, or the reason the table cannot be read at all.
  *
  * One unreadable row makes the **whole** table malformed rather than degrading to the rows that did
- * parse: a partial read reported as the permission is a fence quietly wider or narrower than what
- * was written.
+ * parse: a partial read reported as the table is a set quietly wider or narrower than what was
+ * written.
  *
  * An absent heading and a table with no rows are both `Rows` with an empty array — a fact about the
  * file, never a failed read. Which of those a caller calls `none` is the caller's question.
@@ -458,8 +445,7 @@ export const parseCampaigns = (text: string): CampaignTable => {
 };
 
 /**
- * What the fence reads: `ROADMAP.md`'s `## Campaigns` table narrowed to the milestones its `active`
- * rows permit.
+ * `ROADMAP.md`'s `## Campaigns` table narrowed to the milestones its `active` rows pin.
  *
  * A narrowing over {@link parseCampaigns} and nothing more — the two cannot disagree about what a
  * row says, which is the whole reason `campaign list` and the writers bind to the parse below rather
@@ -474,34 +460,11 @@ export const readCampaigns = (text: string): Dispatch => {
 	return first === undefined ? {_tag: "None"} : {_tag: "Active", campaigns: [first, ...rest]};
 };
 
-/** Axis one — campaign membership, and nothing else. */
-export type ScopeAxis =
-	/** An `active` campaign pins this issue's home — the member matched. */
-	| {readonly _tag: "InScope"; readonly milestone: number}
-	/** A standing lane, admitted whatever the table says. */
-	| {readonly _tag: "LaneExempt"; readonly lane: StandingLaneLabel}
-	/** No campaign is `active` — the fence is off, and says so. */
-	| {readonly _tag: "Inert"}
-	| {
-			readonly _tag: "OutOfScope";
-			readonly active: ReadonlyArray<number>;
-			readonly home: string | null;
-	  };
-
-/** Axis two — who the work is for. Older than the fence; hosted here, never redefined. */
+/** Axis one — who the work is for. Hosted here, never redefined. */
 export type AudienceAxis =
 	| {readonly _tag: "Agent"}
 	/** `label` is the `ready-for:` label carried, or `null` when the issue carries none. */
 	| {readonly _tag: "NotAgent"; readonly label: string | null};
-
-export const scopeAxisOf = (dispatch: ParsedDispatch, issue: IssueFacts): ScopeAxis => {
-	if (dispatch._tag === "None") return {_tag: "Inert"};
-	const matched = dispatch.campaigns.find((row) => row.milestone === issue.milestone);
-	if (matched !== undefined) return {_tag: "InScope", milestone: matched.milestone};
-	const lane = STANDING_LANE_LABELS.find((label) => issue.labels.includes(label));
-	if (lane !== undefined) return {_tag: "LaneExempt", lane};
-	return {_tag: "OutOfScope", active: dispatchMilestones(dispatch), home: homeOf(issue)};
-};
 
 /**
  * Why a lane claims — `plan`, `gate`, or `build`. A closed enum, never a policy map.
@@ -509,14 +472,14 @@ export const scopeAxisOf = (dispatch: ParsedDispatch, issue: IssueFacts): ScopeA
  * The audience axis answers "should an agent pick this up to **build**", and an epic only earns
  * `ready-for:agent` *after* it has been planned and gated — so fencing the planner and the gate on it
  * is circular: when this was ruled, 19 of 20 open epics carried no such label. Purpose is how a
- * claim says which question it is asking, and it is deliberately a third input rather than a widening
- * of either axis: {@link scopeAxisOf} and {@link audienceAxisOf} read an issue exactly as before, and
- * only {@link admissionOf}'s composition consults the purpose.
+ * claim says which question it is asking, and it is deliberately a separate input rather than a
+ * widening of any axis: {@link audienceAxisOf} reads an issue exactly as before, and only
+ * {@link admissionOf}'s composition consults the purpose.
  */
 export const CLAIM_PURPOSES = ["plan", "gate", "build"] as const;
 export type ClaimPurpose = (typeof CLAIM_PURPOSES)[number];
 
-/** The purpose a claim carries when none is named — behaviour-preserving, so the fence stays on. */
+/** The purpose a claim carries when none is named — behaviour-preserving, so every axis binds. */
 export const DEFAULT_CLAIM_PURPOSE: ClaimPurpose = "build";
 
 /** The named purpose, or `null` for a value off the enum — a caller refuses, never falls back. */
@@ -552,7 +515,7 @@ export const repairClaimOf = (pr: number, served: IssueFacts): RepairClaim =>
 
 /**
  * Only a build-purpose claim is bound by the audience axis, and not even that one when it
- * repairs an open PR whose served issue is a decision. Scope binds every purpose and every repair.
+ * repairs an open PR whose served issue is a decision.
  *
  * The exemption is narrow on purpose, and it is read off the target being a PR rather than off the
  * pairing being impossible: triage routes a decision to `ready-for:human` by default, so an ADR PR's
@@ -610,15 +573,14 @@ export const audienceAxisOf = (issue: IssueFacts): AudienceAxis =>
 			};
 
 /**
- * The composed answer: exactly one of four state words, never a boolean.
+ * The composed answer: exactly one of five state words, never a boolean.
  *
- * Both axis verdicts ride on every outcome, including the refusals, so the two questions stay legible
- * apart no matter which one refused.
+ * Every axis verdict rides on every judged outcome, including the refusals, so the questions stay
+ * legible apart no matter which one refused.
  */
 export type Admission =
 	| {
 			readonly _tag: "Admitted";
-			readonly scope: ScopeAxis;
 			readonly audience: AudienceAxis;
 			readonly type: TypeAxis;
 			readonly criteria: CriteriaAxis;
@@ -626,126 +588,89 @@ export type Admission =
 			readonly citation: Citation;
 	  }
 	| {
-			readonly _tag: "OutOfScope";
-			readonly scope: Extract<ScopeAxis, {readonly _tag: "OutOfScope"}>;
-			readonly audience: AudienceAxis;
-			readonly type: TypeAxis;
-			readonly criteria: CriteriaAxis;
-	  }
-	| {
 			readonly _tag: "TypeNotBuildable";
-			readonly scope: ScopeAxis;
 			readonly audience: AudienceAxis;
 			readonly type: Extract<TypeAxis, {readonly _tag: "NotBuildable"}>;
 			readonly criteria: CriteriaAxis;
 	  }
 	| {
 			readonly _tag: "AudienceNotAgent";
-			readonly scope: ScopeAxis;
 			readonly audience: Extract<AudienceAxis, {readonly _tag: "NotAgent"}>;
 			readonly type: TypeAxis;
 			readonly criteria: CriteriaAxis;
 	  }
 	| {
 			readonly _tag: "NoCriteria";
-			readonly scope: ScopeAxis;
 			readonly audience: AudienceAxis;
 			readonly type: TypeAxis;
 			readonly criteria: Extract<CriteriaAxis, {readonly _tag: "NoContract"}>;
 	  }
 	/**
-	 * A pull request with no readable served issue, while some campaign is `active`.
-	 *
-	 * It carries no axis verdict because neither axis ever ran: the fence could not identify the
-	 * record to judge. Refusing is the fail-closed answer — admitting a PR whose ticket nobody can
-	 * name would let any lane past the fence by omitting one line from a body — and the remedy is a
-	 * cheap one the message states: name the issue in the PR body, or override.
+	 * A pull request that names no issue to judge: no closing keyword nor "Part of #<n>", or one
+	 * proven absent. It carries no axis verdict because no axis ran — there was no record to run it on.
 	 */
-	| {
-			readonly _tag: "NoServedIssue";
-			readonly pr: number;
-			readonly active: ReadonlyArray<number>;
-			readonly reason: string;
-	  }
+	| {readonly _tag: "NoServedIssue"; readonly pr: number; readonly reason: string}
 	| {readonly _tag: "Unknown"; readonly code: number; readonly reason: string};
 
-export const noServedIssue = (
-	pr: number,
-	active: ReadonlyArray<number>,
-	reason: string,
-): Admission => ({
+export const noServedIssue = (pr: number, reason: string): Admission => ({
 	_tag: "NoServedIssue",
 	pr,
-	active,
 	reason,
 });
 
 /**
- * Run both axes over one issue.
+ * Run every axis over one issue.
  *
- * The refusals are ordered scope, then type, then audience, and the order is the operator's remedy
- * path rather than a preference. While an issue sits outside every active campaign, neither its type
- * nor its audience label is the thing to fix. Inside one, type outranks audience because a decision
- * or an epic reported as `audience-not-agent` sends an operator to re-label work that is not a build
- * lane's under any label — the misnaming this order exists to prevent. Every unreported axis is
- * still on the outcome.
+ * The refusals are ordered type, then audience, then criteria, and the order is the operator's
+ * remedy path rather than a preference. Type outranks audience because a decision or an epic
+ * reported as `audience-not-agent` sends an operator to re-label work that is not a build lane's
+ * under any label — the misnaming this order exists to prevent. Every unreported axis is still on
+ * the outcome.
  *
  * `purpose`, `repair` and `citation` decide only whether a refusal is *seated*; each axis's verdict
  * is read and reported either way, so a claim admitted over a non-agent audience still says so.
  */
 export const admissionOf = (
-	dispatch: Dispatch,
 	issue: IssueFacts,
 	purpose: ClaimPurpose = DEFAULT_CLAIM_PURPOSE,
 	repair: RepairClaim = NOT_REPAIR,
 	citation: Citation = NO_CITATION,
 ): Admission => {
-	if (dispatch._tag === "Malformed") {
-		return {
-			_tag: "Unknown",
-			code: BAD_SECTIONS,
-			reason: `${dispatch.reason} — malformed is never read as "nothing is active"`,
-		};
-	}
-	const scope = scopeAxisOf(dispatch, issue);
 	const audience = audienceAxisOf(issue);
 	const type = typeAxisOf(issue);
 	const criteria = criteriaAxisOf(issue);
-	if (scope._tag === "OutOfScope") return {_tag: "OutOfScope", scope, audience, type, criteria};
 	if (
 		type._tag === "NotBuildable" &&
 		typeAxisBinds(purpose, repair) &&
 		!citationOpens(type.label, citation)
 	) {
-		return {_tag: "TypeNotBuildable", scope, audience, type, criteria};
+		return {_tag: "TypeNotBuildable", audience, type, criteria};
 	}
 	if (audience._tag === "NotAgent" && audienceAxisBinds(purpose, repair)) {
-		return {_tag: "AudienceNotAgent", scope, audience, type, criteria};
+		return {_tag: "AudienceNotAgent", audience, type, criteria};
 	}
 	if (criteria._tag === "NoContract" && criteriaAxisBinds(purpose, repair)) {
-		return {_tag: "NoCriteria", scope, audience, type, criteria};
+		return {_tag: "NoCriteria", audience, type, criteria};
 	}
-	return {_tag: "Admitted", scope, audience, type, criteria, citation};
+	return {_tag: "Admitted", audience, type, criteria, citation};
 };
 
 /** The word `build pick` reports per excluded issue; `null` for an admitted one. */
 export const exclusionReasonOf = (
 	admission: Admission,
 ):
-	| "out-of-scope"
 	| "audience-not-agent"
 	| "type-not-buildable"
 	| typeof NO_CRITERIA_REASON
+	| "no-served-issue"
 	| "unreadable"
 	| null => {
 	switch (admission._tag) {
 		case "Admitted":
 			return null;
-		case "OutOfScope":
-		// The pool reads issues only, so this arrives from the claim path alone; it is a scope-axis
-		// refusal there, and it is reported as one here rather than as an unreadable issue.
+		// The pool reads issues only, so this arrives from the claim path alone.
 		case "NoServedIssue":
-			return "out-of-scope";
+			return "no-served-issue";
 		case "AudienceNotAgent":
 			return "audience-not-agent";
 		case "TypeNotBuildable":
@@ -766,12 +691,11 @@ export const ADMISSION_EXIT_CODES: ReadonlyArray<{
 	readonly code: number;
 	readonly condition: string;
 }> = [
-	{code: BAD_SECTIONS, condition: "## Campaigns table malformed"},
-	{code: PRECONDITION_UNKNOWN, condition: "campaigns or home unreadable"},
-	{code: OUT_OF_SCOPE, condition: "out of scope"},
+	{code: PRECONDITION_UNKNOWN, condition: "served issue unreadable"},
 	{code: TYPE_NOT_BUILDABLE, condition: `${DECISION_TYPE_LABEL} or ${EPIC_TYPE_LABEL}`},
 	{code: AUDIENCE_NOT_AGENT, condition: `not ${READY_FOR_AGENT}`},
 	{code: NO_ACCEPTANCE_CRITERIA, condition: "no acceptance criteria"},
+	{code: NO_SERVED_ISSUE, condition: "pull request names no served issue"},
 ];
 
 /** The purpose line the claim seam prints, so an exempted audience is read rather than inferred. */
@@ -818,7 +742,7 @@ export const typeScopeLine = (
 		: `${verb}: type: ${type.label} — the type axis binds a build claim against an issue.`;
 };
 
-/** The scope line both seams print, so an operator sees the fence's state rather than inferring it. */
+/** The campaigns line `triage homes` prints: which themes are being worked, or that none is. */
 export const dispatchScopeLine = (verb: string, dispatch: Dispatch): string => {
 	switch (dispatch._tag) {
 		case "Active": {
@@ -830,44 +754,22 @@ export const dispatchScopeLine = (verb: string, dispatch: Dispatch): string => {
 						.join(", ")}.`;
 		}
 		case "None":
-			return `${verb}: campaigns: none active — scope fence inert.`;
+			return `${verb}: campaigns: none active.`;
 		default:
 			return `${verb}: campaigns: unreadable — ${dispatch.reason}.`;
 	}
 };
 
-/** The `campaigns` field both seams report on the machine channel, beside the stderr scope line. */
-export const dispatchReport = (
-	dispatch: Dispatch,
-):
-	| {readonly state: "active"; readonly milestones: ReadonlyArray<string>}
-	| {readonly state: "none"} =>
-	dispatch._tag === "Active"
-		? {state: "active", milestones: dispatch.campaigns.map((row) => String(row.milestone))}
-		: {state: "none"};
-
 /**
  * The seated refusal for a non-admitted outcome, or `null` when the issue is admitted.
  *
- * The seating lives here rather than at each seam so `20`, `21`, `4` and `11` cannot drift apart
+ * The seating lives here rather than at each seam so `21`, `30`, `32`, `38` and `11` cannot drift apart
  * between the pool and the claim path — a disagreement between two seams is worse than no fence at all.
  */
 export const admissionRefusal = (verb: string, admission: Admission): VerbOutcome | null => {
 	switch (admission._tag) {
 		case "Admitted":
 			return null;
-		case "OutOfScope": {
-			const home = admission.scope.home ?? "no milestone and no standing lane";
-			return refuse(
-				OUT_OF_SCOPE,
-				`${verb}: out of scope — the active campaigns pin ${milestonePhrase(admission.scope.active)} and this issue's home is ${home}; flip that campaign's ## Campaigns state cell to active, or claim it with an explicit override.`,
-			);
-		}
-		case "NoServedIssue":
-			return refuse(
-				OUT_OF_SCOPE,
-				`${verb}: no served issue — the active campaigns pin ${milestonePhrase(admission.active)} and PR #${admission.pr} ${admission.reason}, so there is no ticket whose home the fence can judge; name the issue in the PR body (a closing keyword or "Part of #<n>"), or claim it with an explicit override.`,
-			);
 		case "TypeNotBuildable":
 			return refuse(
 				TYPE_NOT_BUILDABLE,
@@ -894,6 +796,11 @@ export const admissionRefusal = (verb: string, admission: Admission): VerbOutcom
 						: "straighten the heading with `fabrika triage repair-criteria <n>`, which repairs exactly this drift"
 				}. The repair belongs on the issue, not on a branch, so no lane opens here.`,
 			);
+		case "NoServedIssue":
+			return refuse(
+				NO_SERVED_ISSUE,
+				`${verb}: no served issue — PR #${admission.pr} ${admission.reason}, so there is no issue whose audience, type and criteria the admission test can judge; name the issue in the PR body (a closing keyword or "Part of #<n>"), or claim it with an explicit override.`,
+			);
 		default:
 			return refuse(admission.code, `${verb}: ${admission.reason} — admission is UNKNOWN.`);
 	}
@@ -902,62 +809,11 @@ export const admissionRefusal = (verb: string, admission: Admission): VerbOutcom
 /**
  * An input that could not be read, lifted into the composed outcome.
  *
- * Both the campaigns table and an issue's home come through here, so no seam ever seats `11` for
- * itself and no read failure can be talked into an `admitted`.
+ * A served issue that could not be read comes through here, so no seam ever seats `11` for itself
+ * and no read failure can be talked into an `admitted`.
  */
 export const unknownAdmission = (reason: string): Admission => ({
 	_tag: "Unknown",
 	code: PRECONDITION_UNKNOWN,
 	reason,
 });
-
-/** A campaigns table read off disk, or the reason it could not be. */
-export type DispatchRead =
-	| {readonly _tag: "Read"; readonly dispatch: Dispatch}
-	| {readonly _tag: "Unreadable"; readonly reason: string};
-
-const unreadable = (path: string, failure: ReadFailed): DispatchRead => ({
-	_tag: "Unreadable",
-	reason: `cannot read the campaigns table at ${path}: ${failure.reason}`,
-});
-
-/**
- * Read the campaigns table.
- *
- * An **absent file** and an absent section are the same well-formed default — nothing active — while
- * a file that is there and cannot be read is UNKNOWN. The probe is separate from the read for exactly
- * that split: a probe that cannot be performed is itself UNKNOWN, never "absent".
- */
-export const readDispatch = (
-	path: string,
-): Effect.Effect<DispatchRead, never, FileSystem.FileSystem> =>
-	Effect.gen(function* () {
-		const probe = yield* Effect.result(exists(path));
-		if (Result.isFailure(probe)) return unreadable(path, probe.failure);
-		if (!probe.success) return {_tag: "Read" as const, dispatch: {_tag: "None" as const}};
-		const read = yield* Effect.result(readFile(path));
-		return Result.isFailure(read)
-			? unreadable(path, read.failure)
-			: {_tag: "Read" as const, dispatch: readCampaigns(read.success)};
-	});
-
-/**
- * The campaigns table at the roadmap file **this repo declares**, for a verb standing in a checkout.
- *
- * The two fence verbs read the roadmap through here rather than through {@link readDispatch}, whose
- * path argument they would otherwise fill from a literal. A config nobody can decode is `Unreadable`
- * exactly like a roadmap nobody can read: in both the fence is UNKNOWN, and the one thing it must
- * never become is "nothing is active", which admits every issue.
- */
-export const readDeclaredDispatch = (
-	cwd: string,
-): Effect.Effect<DispatchRead, never, FileSystem.FileSystem | Path.Path> =>
-	Effect.gen(function* () {
-		const declared = yield* readRoadmapFile(cwd);
-		return declared._tag === "Refused"
-			? {
-					_tag: "Unreadable" as const,
-					reason: `${CONFIG_PATH} is refused — ${declared.reason.replace(/\.$/, "")}, so where the campaigns table lives is unread`,
-				}
-			: yield* readDispatch(declared.value);
-	});

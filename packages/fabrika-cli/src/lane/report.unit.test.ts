@@ -16,6 +16,7 @@ import {
 	PARK_CAUSES,
 	type ParkCause,
 	PROOF_CONDITIONAL_TERMINALS,
+	RETIRED_PARK_CAUSES,
 	rationaleForEvent,
 	remedyForCause,
 	routeForCause,
@@ -271,7 +272,9 @@ describe("every park cause carries a route", () => {
 		);
 
 		expect(routeless).toEqual([]);
-		expect(PARK_CAUSE_TOKENS).toHaveLength(Object.keys(PARK_CAUSES).length);
+		expect(PARK_CAUSE_TOKENS).toHaveLength(
+			Object.keys(PARK_CAUSES).length - RETIRED_PARK_CAUSES.size,
+		);
 	});
 
 	it("routes campaign-paused to the founder — a campaign's lifecycle is a product call", () => {
@@ -360,10 +363,19 @@ describe("a BLOCKED that names no cause", () => {
 	});
 
 	it.each([false, true])("leaves a named cause alone at requireCause %p", (requireCause) => {
-		expect(causeForEvent("campaign-paused", "BLOCKED", requireCause)).toEqual({
+		expect(causeForEvent("worktree-holds-branch", "BLOCKED", requireCause)).toEqual({
 			_tag: "Caused",
-			cause: "campaign-paused",
+			cause: "worktree-holds-branch",
 		});
+	});
+
+	it("refuses a retired cause as a new park, while it still routes on an earlier line", () => {
+		expect(causeForEvent("campaign-paused", "BLOCKED", false)).toMatchObject({
+			_tag: "Rejected",
+			reason: expect.stringContaining('"campaign-paused" is a retired park cause'),
+		});
+		expect(PARK_CAUSE_TOKENS).not.toContain("campaign-paused");
+		expect(routeForCause("campaign-paused")).toBe("founder");
 	});
 });
 

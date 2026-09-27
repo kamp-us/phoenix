@@ -105,11 +105,10 @@ export const QUEUE_MOVED_GRANT = 1;
  * the tree carries nothing. Without the remedy the row read the pin and could never remove it, so
  * every lane parked on this cause sat at exit 13 until a human ran `git worktree remove` by hand.
  *
- * `blocked` + `campaign-paused`'s clearance is the dispatch permission read back: the lane
- * milestone's `## Campaigns` `State` cell is the whole answer to whether lanes may open against that
- * milestone, so the park is clear exactly when that cell reads `active` at the trunk. It names no
- * remedy because resuming a campaign is a human's judgment recorded through `campaign state` — a
- * recipe that "removed" this cause would be granting the dispatch it is only allowed to observe.
+ * `blocked` + `campaign-paused` is a park nothing records any more — no campaign state gates a lane —
+ * kept so a lane parked on it earlier still clears. Its clearance reads the lane milestone's
+ * `## Campaigns` `State` cell at the trunk and clears on `active`. It names no remedy because
+ * resuming a campaign is a human's judgment recorded through `campaign state`.
  *
  * `blocked` + `spawn-dead` is the one row whose clearance reads the lane rather than the cause
  * itself: no verb can spawn an agent to find out whether the provider is back, so the operator's next

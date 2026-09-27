@@ -131,8 +131,8 @@ export interface CampaignFixtureRow {
  * A `ROADMAP.md` whose `## Campaigns` table holds exactly `rows`.
  *
  * Written in the shipped column spelling rather than a minimal one, because the clearance reads it
- * through the dispatch fence's own parse and a fixture the fence would call `Malformed` would prove
- * nothing about the row it is meant to be testing.
+ * through the shipped `## Campaigns` parse, and a fixture that parse would call `Malformed` would
+ * prove nothing about the row it is meant to be testing.
  */
 export const campaignsTable = (...rows: ReadonlyArray<CampaignFixtureRow>): string =>
 	[

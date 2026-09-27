@@ -53,6 +53,9 @@
  * adoption is recorded on the issue before anything lands on disk. Everything the board does not
  * prove refuses at {@link PRIOR_LANE} exactly as it did.
  *
+ * The lane's origin — where it came from — is written as its first fact ([`facts.ts`](facts.ts))
+ * right after the machine is placed, a driver pick unless `--origin` says otherwise.
+ *
  * The repo's declared `laneConcurrencyCap` is the last gate before the write, and an issue lane's
  * alone — see [`concurrency.ts`](concurrency.ts) for what counts as a held seat: a lane under this
  * root whose log folds to `active` AND whose issue carries a live `lane claim`, plus every lane no
@@ -62,6 +65,7 @@ import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {Read} from "../config/read-key.ts";
 import {readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {DEFAULT_ORIGIN, ORIGINS, origin} from "../wire/lane-record.ts";
 import {
 	adoptionRecord,
 	type BoardRecorder,
@@ -73,7 +77,9 @@ import {type ChildMembership, childMembership} from "./child-membership.ts";
 import type {ClaimHoldReader} from "./claim-hold.ts";
 import {renderClasses, seedClasses} from "./class-seed.ts";
 import {
+	APPEND_UNKNOWN,
 	CLASS_UNRECOGNISED,
+	FACT_REFUSED,
 	LANE_EXISTS,
 	LANE_IS_CHILD,
 	LANE_UNREADABLE,
@@ -82,6 +88,7 @@ import {
 } from "./codes.ts";
 import {capRefusal} from "./concurrency.ts";
 import type {ExpectationReader} from "./expectation.ts";
+import {recordOrigin} from "./facts.ts";
 import type {PriorLaneReader} from "./prior-lane.ts";
 import {placementRefusal, say} from "./refusals.ts";
 import {type LaneRef, placeMachine, probeLane} from "./store.ts";
@@ -171,12 +178,26 @@ export interface OpenOptions<R = never> extends LaneRef {
 	 * A reader the adapter passes, the way `expectation` is, so the count stays provable offline.
 	 */
 	readonly claimed: ClaimHoldReader<R>;
+	/**
+	 * Where the lane came from, as the operator spelled it — validated here against the closed set,
+	 * and a driver pick when absent. It is written beside the machine as the lane's first fact.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/9855
+	 */
+	readonly origin?: string;
 }
 
 export const runOpen = <R = never>(
 	options: OpenOptions<R>,
 ): Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
+		const laneOrigin = origin(options.origin ?? DEFAULT_ORIGIN);
+		if (laneOrigin === null) {
+			return refuse(
+				FACT_REFUSED,
+				`${VERB}: --origin "${options.origin}" is not one of ${ORIGINS.join(", ")}. Nothing was written.`,
+			);
+		}
 		// The template read comes first because it is the cheap local one, and because the guard on
 		// the packed tarball's assets is the answer it produces — a boot that never reaches it cannot
 		// tell a missing asset from an unreachable board.
@@ -311,11 +332,22 @@ export const runOpen = <R = never>(
 			);
 		}
 		if (placed._tag !== "Placed") return placementRefusal(VERB, placed, stranded);
+		const recorded = yield* recordOrigin(placed.dir, laneOrigin);
+		if (recorded._tag === "Unrecorded") {
+			return refuse(
+				APPEND_UNKNOWN,
+				say(
+					`${VERB}: booted ${placed.dir}, but its origin did not land in ${recorded.path}: ${recorded.reason} — the lane IS booted and reads as a ${DEFAULT_ORIGIN} until that file says otherwise.`,
+					...stranded,
+				),
+			);
+		}
 		const text = seated === null ? seed.text : seated.text;
 		return answer(
 			JSON.stringify({
 				answer: "opened",
 				lane: options.lane,
+				origin: laneOrigin,
 				workflow: placed.workflow,
 				classes: seed._tag === "Seeded" ? seed.classes : [],
 				bytes: new TextEncoder().encode(text).length,

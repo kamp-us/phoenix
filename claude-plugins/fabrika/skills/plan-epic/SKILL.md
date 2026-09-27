@@ -73,8 +73,7 @@ lane's claim from yours.
 should pick the issue up to **build**, and an epic earns that label only *after* this skill has
 planned it and the gate has passed it — so fencing the planner on it is circular, and the fence
 binds build-purpose claims only. A `plan` claim is admitted without the
-label; the scope axis still binds, so an out-of-scope epic is still exit `20`. Never reach for
-`--override` to get past the audience axis — that is the fail-open convention the purpose exists to
+label. Never reach for `--override` to get past the audience axis — that is the fail-open convention the purpose exists to
 remove.
 
 **The blockedness gate does not bind a `plan` claim either**, on the same reasoning: an epic that
@@ -99,9 +98,7 @@ silence**: `fabrika build claims stale` lists every claim standing past a horizo
 dead, so the adopt is your judgment, attested on the board with your reason on it — post one you
 would defend, and `BACKED-OFF` otherwise. The route is withheld when the winner is a sibling lane of
 your own session, because `build adopt` refuses your own session. `7` is a proven-absent or closed epic
-(`EPIC-UNPLANNABLE`); `20` is a proven admission refusal on the scope axis (`EPIC-NOT-ADMITTED`) —
-report the axis, and do not route around it with an override. Exits `21` and `16` are not reachable
-at this step: a `plan` claim is bound by neither the audience axis nor the blockedness gate. Any
+(`EPIC-UNPLANNABLE`). Exits `21` and `16` are not reachable at this step: a `plan` claim is bound by neither the audience axis nor the blockedness gate. Any
 other non-zero ends `STOPPED` with no note — including `10`, an off-enum `--purpose`, which refuses rather than falling
 back to `build`: you hold no claim, and `build note` requires one.
 
@@ -176,6 +173,13 @@ point.
 
 Write the product layer first and let the slices fall out of it. A `### Task-split rationale` that
 cannot say which story each slice serves is telling you the split is wrong.
+
+**The pitch bounds the plan.** Its `**Appetite:**` is a size, `S`, `M` or `L`, worth a dollar amount
+per epic child (`appetiteSizes` in `.fabrika.jsonc`), so a child too big to land inside that amount
+is two children. When the pitch carries a `**Success:**` line, the epic's acceptance criteria make
+it checkable; the two-week check judges the shipped epic against that sentence. An older pitch
+still reads `<N> cycles`; plan against it as written and never rewrite the pitch, because a changed
+appetite needs a fresh founder approval.
 
 ## 4 — Grill the plan while it is still cheap
 
@@ -302,8 +306,8 @@ EOF
 **Every classification attribute lands in the one create call** — labels, milestone, and, for a
 held child, the assignee. `--ready-for` is required and has no default: a child must never inherit
 its audience by omission. **A home is required the same way**: pass `--milestone`, or `--label` the
-child with the parent's standing lane. A child born with neither is one the claim fence refuses at
-exit `20`, so `ledger child` refuses it at mint instead of publishing an issue nobody can pick up. A **held** child is born `ready-for:human` *and* assigned, in the
+child with the parent's standing lane. A child born with neither groups under no campaign and no
+lane, so `ledger child` refuses it at mint, where the remedy is one flag. A **held** child is born `ready-for:human` *and* assigned, in the
 same write: the label is the routing signal, the assignment is the enforced hold, and
 neither substitutes for the other.
 
@@ -531,9 +535,8 @@ nothing. Where children were minted, every terminal below says so — a successo
 whether children exist re-mints them.
 
 **Every code below is a `ledger` code unless the row says otherwise.** `build`'s numbers above `11`
-mean different things — its `20` and `21` are admission axes, not stale ground and not a moved
-epic — so read each code off the command that produced it and never off this list alone. The same
-holds for the `grill` verbs step 4 calls: they allocate from their own table
+mean different things — its `21` is an admission axis, not stale ground or a moved epic — so read
+each code off the command that produced it and never off this list alone. The same holds for the `grill` verbs step 4 calls: they allocate from their own table
 ([`packages/fabrika-cli/src/grill/codes.ts`](../../../../packages/fabrika-cli/src/grill/codes.ts)),
 and every row below that seats one says so.
 
@@ -555,11 +558,6 @@ and every row below that seats one says so.
 - `GROUND-STALE` — `20` from `ledger open`: the tree is proven behind `origin/main`. **A
   back-off, terminal here** — nothing read into a plan, nothing written, no children. Refreshing
   the tree is outside this skill's capabilities and is a fresh run.
-- `EPIC-NOT-ADMITTED` — `20` from **`build claim`**: proven not admitted on the scope axis. **A
-  back-off**; nothing read, nothing written, no claim held. Name the axis. `21` and `16` are not
-  among this skill's codes: step 1 claims with `--purpose plan`, and the audience axis and the
-  blockedness gate each bind build-purpose claims only. Bypassing the scope axis with the override
-  is not your answer to give.
 - `CHILD-ORPHANED` — `23` or `26` from `ledger child`: a child was created and something after the
   create could not be proven. **A back-off holding a real artifact.** On `23` the link is unproven
   and the child is in the run manifest, so name it from there. On `26` the manifest write itself

@@ -628,9 +628,9 @@ export const DEFERRAL_REFUSED = 64;
 export const ROOT_NOT_OWNED = 65;
 
 /**
- * `lane clear`'s PR-side grant would be posted by an account that cannot make one: outside
- * `.fabrika.jsonc`'s grant-author set at the pull request's base ref, or below `write+` at GitHub's
- * live ACL. Nothing is posted and the log is unappended.
+ * `lane clear`'s PR-side grant would be posted by an account that cannot make one: outside the
+ * control-plane set `.github/CODEOWNERS` names, or below `write+` at GitHub's live ACL. Nothing is
+ * posted and the log is unappended.
  *
  * The ruling that gave a driver the PR-side seat moved the founder *document* off that grant and
  * never the ACL: the marker `lane clear` posts is honoured through `../build/clearances.ts`'s same
@@ -676,3 +676,29 @@ export const ROUTE_UNDERIVED = 67;
  * @ruling https://github.com/kamp-us/phoenix/issues/9761
  */
 export const INTEGRATE_EVIDENCE = 68;
+
+/**
+ * `lane record` was asked for the record of a lane whose fold has not reached a terminal state.
+ * Nothing was read off the board and nothing was posted: a lane still moving has not finished.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9855
+ */
+export const LANE_NOT_TERMINAL = 69;
+
+/**
+ * A lane fact was refused before it was written: an origin outside the closed set on `lane open`
+ * or `lane emit`, or a `lane wait` whose `--on` is not one non-blank line or whose `--until` is not a date still to
+ * come. Nothing was booted or appended.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9855
+ */
+export const FACT_REFUSED = 70;
+
+/**
+ * `lane brief` stopped the lane: a table row standing for its issue has spent the stop multiple of
+ * its size (`table.stopMultiple`, 2 shipped). No shell is briefed; record the park the refusal names
+ * (`--cause size-stop`) and the table decides whether to extend, re-shape or drop the work.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ */
+export const SIZE_STOPPED = 71;

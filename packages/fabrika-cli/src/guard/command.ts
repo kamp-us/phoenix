@@ -253,6 +253,7 @@ const pitchCheck = leafCommand(
 			yield* runPitchGuard({
 				issue: Option.getOrNull(issue),
 				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
 				env: process.env,
 			}),
 		);
@@ -265,7 +266,7 @@ const pitchCheck = leafCommand(
 			"  Binds at intake only; it is never wired to red a pull request.",
 			"  A red puts the per-issue remedy on stderr, with ::error annotations under Actions.",
 			"  7: zero scope: the backlog sweep found no lane-entering issue",
-			"  11: the board, the label set, an issue or its comments was unreadable (UNKNOWN)",
+			"  11: the board, the label set, an issue, its comments or .fabrika.jsonc was unreadable (UNKNOWN)",
 			"  12: a pickable bet carries no founder-approved pitch",
 		]),
 	),
@@ -311,7 +312,7 @@ const roadmapGuard = Command.make("roadmap-guard").pipe(
 	Command.withSubcommands([roadmapCheck]),
 	Command.withShortDescription("ROADMAP.md and the milestone projection stay in sync."),
 	Command.withDescription(
-		"ROADMAP.md's founder-voice arc/campaign tables and the GitHub milestone projection they pin to must stay in sync. Sync-drift diligence is load-bearing — the focus fence every claim is judged against reads the same rows — so it is guarded fail-closed rather than left to vigilance.",
+		"ROADMAP.md's founder-voice arc/campaign tables and the GitHub milestone projection they pin to must stay in sync. Sync-drift diligence is load-bearing — `campaign` and `triage homes` read the same rows to say which milestones are being worked — so it is guarded fail-closed rather than left to vigilance.",
 	),
 );
 

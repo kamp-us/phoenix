@@ -1,7 +1,7 @@
 ---
 id: 0210
 title: Direction binds at intake — pitch, platform quota, appetite circuit-breaker; never a merge gate
-status: accepted
+status: amended-in-part by [0425](0425-a-bet-set-on-founder-say-so-approves.md), [0429](0429-size-stop-parks-at-multiple.md)
 date: 2026-07-24
 tags: [governance, roadmap, pipeline]
 ---

@@ -6,13 +6,23 @@
  * HTTP 200 with `[]` — so the label's existence is checked against the repository's label set and a
  * typo reds on {@link ZERO_SCOPE} rather than reporting the queue drained.
  *
+ * **An open issue carrying no label at all is intake too**, listed beside the labelled ones, because
+ * an issue filed without the queue label is otherwise one triage never sees. That read has no label
+ * to prove, so its guard is the read itself: a failure is UNKNOWN, never an empty half of the queue.
+ *
  * The filer login the read this replaces printed on every row is deliberately absent: a bare login
  * is not a provenance verdict — reaching one takes the agent footer *and* the configured operator
  * set, which is `./provenance.ts`'s job. `triage provenance` answers the question that field
  * pretends to.
  */
 import {Effect} from "effect";
-import {listLabels, openQueueIssues, type QueueIssue, resolveRepo} from "../io/issues.ts";
+import {
+	listLabels,
+	openQueueIssues,
+	openUnlabeledIssues,
+	type QueueIssue,
+	resolveRepo,
+} from "../io/issues.ts";
 import {answer, FAILED, refuse} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {scannedLine} from "./scope.ts";
@@ -115,16 +125,32 @@ export const runQueue = Effect.fn("runQueue")(function* (options: QueueOptions) 
 		);
 	}
 
-	const scanned = queue.value.length;
-	const rows = toRows(queue.value, options.now(), limit);
+	const unlabeled = yield* openUnlabeledIssues(repo);
+	if (unlabeled._tag === "Failure") {
+		return refuse(
+			PRECONDITION_UNKNOWN,
+			`triage queue: cannot read the open issues in ${repo} that carry no label: ${unlabeled.reason} — the outcome is UNKNOWN, never "empty".`,
+		);
+	}
+
+	const labelled = new Set(queue.value.map((issue) => issue.number));
+	const issues = [
+		...queue.value,
+		...unlabeled.value.filter((issue) => !labelled.has(issue.number)),
+	];
+	const scanned = issues.length;
+	const rows = toRows(issues, options.now(), limit);
 	const truncated = scanned > limit;
-	const scope = scannedLine(
-		"triage queue",
-		repo,
-		scanned,
-		`open ${label} issue`,
-		truncated ? `list TRUNCATED to --limit ${limit}` : undefined,
-	);
+	const scope = [
+		scannedLine("triage queue", repo, queue.value.length, `open ${label} issue`),
+		scannedLine(
+			"triage queue",
+			repo,
+			unlabeled.value.length,
+			"unlabeled open issue",
+			truncated ? `list TRUNCATED to --limit ${limit}` : undefined,
+		),
+	];
 
 	if (json) {
 		return answer(
@@ -134,13 +160,13 @@ export const runQueue = Effect.fn("runQueue")(function* (options: QueueOptions) 
 				scanned,
 				truncated,
 			}),
-			[scope],
+			scope,
 		);
 	}
 	return scanned === 0
-		? answer("empty", [scope])
+		? answer("empty", scope)
 		: answer(
 				["queued", ...rows.map((row) => `${row.number}\t${row.ageDays}\t${row.title}`)].join("\n"),
-				[scope],
+				scope,
 			);
 });

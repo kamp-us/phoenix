@@ -394,8 +394,11 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
-	 * The lane is homed on a milestone whose `## Campaigns` row reads `paused`, and
-	 * that cell is the whole dispatch permission — so no stage may open against it.
+	 * The lane is homed on a milestone whose `## Campaigns` row reads `paused`.
+	 *
+	 * No verb refuses a lane on that cell any more — a campaign groups work and never gates it — so
+	 * nothing produces this park now. It stays in the vocabulary so a lane parked on it earlier can
+	 * still be read and cleared.
 	 *
 	 * A pause is open-ended, which is why this is a park and not a bounded wait (the merge-queue
 	 * dwell is the other side of that line). Its `KNOWN_PARKS` row clears by re-reading the same cell:
@@ -405,7 +408,7 @@ export const PARK_CAUSES = {
 	 */
 	"campaign-paused": {
 		meaning:
-			"the campaign homing this lane's milestone reads paused, so no stage may dispatch against it",
+			"the campaign homing this lane's milestone read paused when the lane parked; no verb parks on this now, and the cause stays so an earlier park still clears",
 		route: "founder",
 		remedy: null,
 	},
@@ -650,6 +653,24 @@ export const PARK_CAUSES = {
 		route: "driver",
 		remedy: null,
 	},
+	/**
+	 * `lane brief` refused at `71`: a table row standing for this lane's issue has spent the stop
+	 * multiple of its size, so no next shell is briefed. It is the one stop the table's rulings allow;
+	 * everything short of it is a flag and the lane keeps going.
+	 *
+	 * No remedy: the spend does not go down, so no verb can prove the cause gone. What moves the lane
+	 * is the table's answer — a new bet restarts the count, a larger size or stop multiple lifts it,
+	 * or the work is dropped.
+	 *
+	 * Route `founder`: extend, re-shape or drop is a call about what the work is worth, which is the
+	 * table's and no driver's.
+	 */
+	"size-stop": {
+		meaning:
+			"a table row standing for this lane's issue spent the stop multiple of its size, so the lane stopped for the table to extend, re-shape or drop it",
+		route: "founder",
+		remedy: null,
+	},
 } as const satisfies Record<string, ParkCauseEntry>;
 
 export type ParkCause = keyof typeof PARK_CAUSES;
@@ -738,8 +759,18 @@ export const STRUCTURAL_PARK_CAUSES: Readonly<Record<string, ParkCause>> = {
 export const structuralParkCause = (leaf: string): ParkCause | null =>
 	STRUCTURAL_PARK_CAUSES[leaf] ?? null;
 
-/** The recognised causes, for a refusal's listing — sorted so the listing is deterministic. */
-export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES).sort();
+/**
+ * Causes kept only so a line recorded earlier still reads, routes and clears. Nothing parks on one
+ * now, so `--cause` refuses it and no listing offers it.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9852
+ */
+export const RETIRED_PARK_CAUSES: ReadonlySet<ParkCause> = new Set<ParkCause>(["campaign-paused"]);
+
+/** The causes a recorder may pass, for a refusal's listing — sorted so the listing is deterministic. */
+export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES)
+	.filter((token) => !RETIRED_PARK_CAUSES.has(token as ParkCause))
+	.sort();
 
 /**
  * The route a park takes, read off the one table — the only place a route is written down.
@@ -860,6 +891,12 @@ export const causeForEvent = (
 		};
 	}
 	const token = raw.trim().toLowerCase();
+	if (isParkCause(token) && RETIRED_PARK_CAUSES.has(token)) {
+		return {
+			_tag: "Rejected",
+			reason: `"${raw}" is a retired park cause: it still reads on an earlier line, and nothing parks on it now (known: ${PARK_CAUSE_TOKENS.join(", ")})`,
+		};
+	}
 	return isParkCause(token)
 		? {_tag: "Caused", cause: token}
 		: {

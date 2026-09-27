@@ -25,7 +25,10 @@ import {leafCommand} from "../excess-operand.ts";
 import {localBranches} from "../io/git.ts";
 import {readStdin} from "../io/stdin.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
+import {sizeStopOnGitHub} from "../table/size-stop.ts";
+import {runSync, syncBoard} from "../table/sync-verb.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {DEFAULT_ORIGIN, ORIGINS} from "../wire/lane-record.ts";
 import {admitBoardKey, admitKey} from "./admission.ts";
 import {claimOwnership, runAmend} from "./amend-verb.ts";
 import {closedReader} from "./archive-move.ts";
@@ -73,6 +76,8 @@ import {proveDispatched, runProve} from "./prove-verb.ts";
 import {pullsReader} from "./pulls-reader.ts";
 import {runPush} from "./push-verb.ts";
 import {type ReconcileRoot, runReconcile} from "./reconcile-verb.ts";
+import {LEDGER_SPEND} from "./record.ts";
+import {recordBoard, runRecord} from "./record-verb.ts";
 import {runRecover} from "./recover-verb.ts";
 import {DEFAULT_TRUNK_REF, runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
@@ -92,6 +97,7 @@ import {
 	type LaneRef,
 } from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
+import {runWait} from "./wait-verb.ts";
 
 const laneArgument = Argument.string("lane").pipe(
 	Argument.withDescription(
@@ -157,6 +163,7 @@ const dispatch = leafCommand(
 						env: process.env,
 						repo: null,
 						entrypoint,
+						sizeStop: sizeStopOnGitHub("fabrika lane brief", process.cwd()),
 					},
 					runBrief,
 					proveDispatched,
@@ -751,8 +758,14 @@ const open = leafCommand(
 				"seat the lane from what the board proves when its prior ledger is unreachable: one open PR with every derived namespace answered at head, booted with its repair budget declared spent and the adoption recorded on the issue",
 			),
 		),
+		origin: Flag.string("origin").pipe(
+			Flag.withDefault(DEFAULT_ORIGIN),
+			Flag.withDescription(
+				`where the lane came from, one of ${ORIGINS.join(", ")} (default: ${DEFAULT_ORIGIN}); recorded as the lane's first fact and shown on its record`,
+			),
+		),
 	},
-	Effect.fn(function* ({lane, root, repo, fromBoard}) {
+	Effect.fn(function* ({lane, root, repo, fromBoard, origin}) {
 		const configRoot = yield* configRootOrRefuse("fabrika lane open", process.cwd());
 		if (typeof configRoot !== "string") {
 			yield* emit(configRoot);
@@ -772,6 +785,7 @@ const open = leafCommand(
 					record: boardRecorder(Option.getOrNull(repo), process.env),
 					cap,
 					claimed: claimHoldReader(Option.getOrNull(repo), process.env),
+					origin,
 				}),
 			),
 		);
@@ -783,7 +797,7 @@ const open = leafCommand(
 			"open",
 			"Boots one lane by placing the template its key selects as <root>/<key>/workflow.json.",
 			{
-				8: "write did not land",
+				8: "a write did not land; a missing origin fact reads as driver-pick",
 				11: "read failed, UNKNOWN",
 				14: "the lane already exists",
 				21: "bad key",
@@ -792,6 +806,7 @@ const open = leafCommand(
 				48: "a child; drive its parent lane",
 				51: "the concurrency cap is full",
 				63: "the board says it already had a lane",
+				70: "--origin is outside the closed set",
 				...ROOT_EXITS,
 			},
 		),
@@ -821,8 +836,14 @@ const emitLane = leafCommand(
 				"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
 			),
 		),
+		origin: Flag.string("origin").pipe(
+			Flag.withDefault(DEFAULT_ORIGIN),
+			Flag.withDescription(
+				`where the epic lane came from, one of ${ORIGINS.join(", ")} (default: ${DEFAULT_ORIGIN}); recorded as the lane's first fact and shown on its record`,
+			),
+		),
 	},
-	Effect.fn(function* ({epic, root, children, repo}) {
+	Effect.fn(function* ({epic, root, children, repo, origin}) {
 		const configRoot = yield* configRootOrRefuse("fabrika lane emit", process.cwd());
 		if (typeof configRoot !== "string") {
 			yield* emit(configRoot);
@@ -851,6 +872,7 @@ const emitLane = leafCommand(
 					machinery,
 					children,
 					claimed: claimHoldReader(Option.getOrNull(repo), process.env),
+					origin,
 				}),
 			),
 		);
@@ -860,7 +882,7 @@ const emitLane = leafCommand(
 	Command.withDescription(
 		laneHelp(
 			"emit",
-			"Emits an epic's lane machine; prints {answer, epic, workflow, phases, children, dropped, bytes}.",
+			"Emits an epic's lane machine; prints {answer, epic, origin, workflow, phases, children, …}.",
 			{
 				4: "the topology does not parse",
 				7: "the epic is absent or closed",
@@ -872,6 +894,7 @@ const emitLane = leafCommand(
 				17: "the topology holds a cycle",
 				38: "an unsupported class label",
 				51: "the concurrency cap is full",
+				70: "--origin is outside the closed set",
 				...ROOT_EXITS,
 			},
 		),
@@ -1338,6 +1361,7 @@ const brief = leafCommand(
 					repo: Option.getOrNull(repo),
 					env: process.env,
 					entrypoint,
+					sizeStop: sizeStopOnGitHub("fabrika lane brief", process.cwd()),
 				}),
 			),
 		);
@@ -1347,7 +1371,7 @@ const brief = leafCommand(
 	Command.withDescription(
 		laneHelp(
 			"brief",
-			"Prints the lane-brief spawn prompt for one task's current state, to hand to the spawn verbatim.",
+			"Prints the lane-brief spawn prompt for one task's current state, to hand over verbatim.",
 			{
 				4: "bad lane record",
 				7: "no lane",
@@ -1355,13 +1379,14 @@ const brief = leafCommand(
 				13: "task not in the machine, or --task missing",
 				18: "state routes to no shell",
 				19: "no issue, or the issue is absent",
-				20: "zero or several open PRs where one is needed",
+				20: "not exactly one open PR where one is needed",
 				21: "bad key",
-				22: "no local branch carries the child's commits",
-				25: "several branches carry the child's commits",
+				22: "no branch carries the child's commits",
+				25: "several branches carry them",
 				39: ROOT_EXITS[39],
-				59: "assembly branch lacks a verb the brief names",
+				59: "the assembly branch lacks a briefed verb",
 				65: ROOT_EXITS[65],
+				71: "size stop; nothing briefed",
 			},
 		),
 	),
@@ -2164,6 +2189,104 @@ const recover = leafCommand(
 	]),
 );
 
+const wait = leafCommand(
+	"wait",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		on: Flag.string("on").pipe(
+			Flag.withDescription(
+				"what the lane is waiting on, in one line — a person, a release, another issue",
+			),
+		),
+		until: Flag.string("until").pipe(
+			Flag.withDescription(
+				"the ISO date or instant the wait holds until; it must still be to come",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, on, until}) {
+		yield* emit(yield* onKey("wait", lane, root, (_key, ref) => runWait({...ref, on, until})));
+	}),
+).pipe(
+	Command.withShortDescription("Record what a lane is waiting on, and until when."),
+	Command.withDescription(
+		laneHelp(
+			"wait",
+			'Records a waiting fact on the lane; prints {"answer":"waiting",lane,on,until}.',
+			{
+				4: "bad lane record or facts",
+				7: "no lane",
+				8: "the append did not land",
+				11: "read failed, UNKNOWN",
+				21: "bad key",
+				40: "the ledger lock is held; retry",
+				70: "a bad --on or an --until not still to come",
+				...ROOT_EXITS,
+			},
+		),
+	),
+	Command.withExamples([
+		{command: 'fabrika lane wait 5673 --on "the design review" --until 2026-10-05'},
+	]),
+);
+
+const record = leafCommand(
+	"record",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the owner/name the record is posted to (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, repo}) {
+		const board = recordBoard(Option.getOrNull(repo), process.env);
+		yield* emit(
+			yield* onKey("record", lane, root, (key, ref) =>
+				runRecord({
+					...ref,
+					issue: resolveKeyIssue(key),
+					spent: LEDGER_SPEND,
+					board,
+					syncTable: (issue) =>
+						runSync({
+							repo: Option.getOrNull(repo),
+							cwd: process.cwd(),
+							env: process.env,
+							issues: [issue],
+							board: syncBoard,
+						}),
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Post a terminal lane's record to its issue, once per terminal."),
+	Command.withDescription(
+		laneHelp(
+			"record",
+			"Posts a terminal lane's record to its issue; prints {answer, lane, issue, commentId, …}.",
+			{
+				4: "a record, fact or comment does not read",
+				5: "a machine-local path survived scrubbing",
+				7: "no lane",
+				8: "the post failed; re-run",
+				9: "the comment does not read back",
+				11: "read failed, UNKNOWN",
+				19: "the key names no issue",
+				21: "bad key",
+				69: "the lane is not terminal",
+				...ROOT_EXITS,
+			},
+		),
+	),
+	Command.withExamples([{command: "fabrika lane record 5673"}]),
+);
+
 export const laneCommand = Command.make("lane").pipe(
 	Command.withSubcommands([
 		status,
@@ -2197,6 +2320,8 @@ export const laneCommand = Command.make("lane").pipe(
 		release,
 		adopt,
 		scratch,
+		wait,
+		record,
 	]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
 	Command.withDescription(

@@ -12,8 +12,9 @@
  * **What moves and what does not.** The document requirement moves: a driver's rationale IS the
  * dated authorization, because a driver acts on its own recommendation and logs it, exactly as it
  * already does on the lane line. The ACL does not: the marker is honoured through
- * `../build/clearances.ts`'s same four clauses, so the account posting it still has to be in
- * `.fabrika.jsonc`'s grant-author set at the PR's base ref and still has to hold `write+` live.
+ * `../build/clearances.ts`'s same four clauses, so the account posting it still has to be in the
+ * repo's control-plane set — the owners `.github/CODEOWNERS` names — and still has to hold `write+`
+ * live.
  * Authority was never the founder document's; it was always the ACL's.
  *
  * **The grant is whole or it is refused.** Every read and both writes happen before `lane clear`
@@ -27,10 +28,11 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {
+	capClearAuthorsNotices,
 	clearancesOn,
 	clearsWriteFloor,
+	controlPlaneMembership,
 	grantedFrom,
-	membershipAt,
 	permissionsFor,
 } from "../build/clearances.ts";
 import {roundsOn} from "../build/rounds.ts";
@@ -38,7 +40,6 @@ import {openPull, resolveTargetRepo} from "../build/target.ts";
 import {effectiveCap} from "../cap-clearance.ts";
 import {createComment, getComment, listComments} from "../io/issues.ts";
 import {viewerLogin} from "../io/pulls.ts";
-import {CONFIG_PATH} from "../repo-config.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
 import * as capClearance from "../wire/cap-clearance.ts";
@@ -64,6 +65,8 @@ export type PrGrant =
 			readonly authorization: number;
 			readonly marker: number;
 			readonly cap: number;
+			/** Deprecation notices about a retired author key the config at the PR's base still declares. */
+			readonly notices: ReadonlyArray<string>;
 	  }
 	/** The round was already granted on this PR — a re-run reconciles and doubles nothing. */
 	| {readonly _tag: "Held"; readonly pr: number; readonly round: number; readonly cap: number}
@@ -204,7 +207,7 @@ export const grantPrRound = (
 			);
 		}
 		const rounds = roundsOn(listed.value);
-		const recorded = yield* clearancesOn(repo, baseRef, listed.value);
+		const recorded = yield* clearancesOn(repo, listed.value);
 		if (recorded._tag === "Unknown") {
 			return refused(
 				LANE_UNREADABLE,
@@ -228,11 +231,13 @@ export const grantPrRound = (
 				`${verb}: cannot resolve the invoking account: ${viewer.reason} — authority is UNKNOWN, never granted. Nothing was posted and the log is unappended.`,
 			);
 		}
-		const authority = yield* membershipAt(repo, baseRef);
+		const notices = yield* capClearAuthorsNotices(verb, repo, baseRef);
+		const authority = yield* controlPlaneMembership(repo);
 		if (authority._tag === "Unknown") {
 			return refused(
 				LANE_UNREADABLE,
 				`${verb}: cannot resolve ${viewer.value}'s authority on ${repo}: ${authority.reason} — nothing was posted and the log is unappended.`,
+				notices,
 			);
 		}
 		if (authority._tag === "Unusable" || !authority.holds(viewer.value)) {
@@ -241,8 +246,9 @@ export const grantPrRound = (
 				`${verb}: ${
 					authority._tag === "Unusable"
 						? authority.reason
-						: `${viewer.value} is not in ${CONFIG_PATH}'s grant-author set at ${baseRef}`
+						: `${viewer.value} is not in ${repo}'s control-plane set at ${authority.ref}`
 				} — a marker this account posts on #${pr} would be void, so the grant is refused whole. Nothing was posted and the log is unappended.`,
+				notices,
 			);
 		}
 		const permissions = yield* permissionsFor(repo, [viewer.value]);
@@ -256,7 +262,8 @@ export const grantPrRound = (
 		if (!clearsWriteFloor(level)) {
 			return refused(
 				GRANT_UNAUTHORIZED,
-				`${verb}: ${viewer.value} resolves to ${level ?? "no collaboration"} on ${repo}, below write — authority is the ACL's, never ${CONFIG_PATH}'s alone. Nothing was posted and the log is unappended.`,
+				`${verb}: ${viewer.value} resolves to ${level ?? "no collaboration"} on ${repo}, below write — authority is the ACL's, never CODEOWNERS' alone. Nothing was posted and the log is unappended.`,
+				notices,
 			);
 		}
 
@@ -308,6 +315,7 @@ export const grantPrRound = (
 			authorization: authorization.value.id,
 			marker: marker.value.id,
 			cap: effectiveCap([...granted, round]),
+			notices,
 		};
 	});
 

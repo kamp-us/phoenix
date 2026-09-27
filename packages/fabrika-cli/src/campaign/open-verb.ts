@@ -1,10 +1,9 @@
 /**
  * `campaign open` — append a new `paused` row pinning a milestone, past the approval trace.
  *
- * **The state is always `paused` and there is no flag to change it.** A row that could be written
- * `active` would grant dispatch in the same stroke that names the campaign, and naming a campaign
- * and granting it dispatch are two separate acts. Flipping it is `campaign state`'s, and it demands
- * its own citation.
+ * **The state is always `paused` and there is no flag to change it.** Naming a campaign and saying it
+ * is being worked are two separate acts. Flipping it is `campaign state`'s, and it demands its own
+ * citation.
  *
  * Nothing here checks that the milestone exists, is open, or is in sync with the board:
  * `guard roadmap-guard check` owns I1-I5, and a second answer to a merge-gating question is worse
@@ -130,8 +129,8 @@ export const runOpen = (options: OpenOptions): CampaignEffect<VerbOutcome> =>
 			);
 		}
 
-		const notice = `${VERB}: cited ${citation.url} by @${trace.login} (campaignAuthors: ${trace.declared}; ${trace.level} on ${repo}); appended "${name}" #${milestone} paused to ${display} — dispatches nothing until it is flipped to active.`;
-		return answer(rendered(landed, display, options.json), [notice]);
+		const notice = `${VERB}: cited ${citation.url} by @${trace.login} (control plane: ${trace.owners}; ${trace.level} on ${repo}); appended "${name}" #${milestone} paused to ${display}.`;
+		return answer(rendered(landed, display, options.json), [...trace.notices, notice]);
 	});
 
 const rendered = (row: CampaignRow, file: string, json: boolean): string =>

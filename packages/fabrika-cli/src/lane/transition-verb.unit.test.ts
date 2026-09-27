@@ -171,14 +171,14 @@ describe("lane transition — the park cause a driver-originated BLOCKED carries
 		expect(appended).toMatchObject({event: "ISSUE.BLOCKED", cause: "worktree-holds-branch"});
 	});
 
-	it("records campaign-paused, the cause a recipe clears by re-reading the row", async () => {
+	it("refuses campaign-paused as a new cause, log byte-identical — no campaign state parks a lane", async () => {
 		const fs = freshLane(logLine("WIP"));
 
 		const out = await run(fs, "BLOCKED", null, "campaign-paused");
 
-		expect(out.code).toBe(0);
-		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
-		expect(appended).toMatchObject({event: "ISSUE.BLOCKED", cause: "campaign-paused"});
+		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(out.stderr.join(" ")).toContain('"campaign-paused" is a retired park cause');
+		expect(fs.written.has(LOG)).toBe(false);
 	});
 
 	it("refuses a cause outside the closed set, log byte-identical", async () => {
@@ -230,11 +230,11 @@ describe("lane transition — a cause-less park under `parkCause.uncaused: refus
 	it("records the same BLOCKED once it names a cause", async () => {
 		const fs = freshLane(logLine("WIP"));
 
-		const out = await run(fs, "BLOCKED", null, "campaign-paused", [], null, strict);
+		const out = await run(fs, "BLOCKED", null, "worktree-holds-branch", [], null, strict);
 
 		expect(out.code).toBe(0);
 		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
-		expect(appended).toMatchObject({event: "ISSUE.BLOCKED", cause: "campaign-paused"});
+		expect(appended).toMatchObject({event: "ISSUE.BLOCKED", cause: "worktree-holds-branch"});
 	});
 
 	it("leaves every non-park event alone — the key binds BLOCKED and nothing else", async () => {

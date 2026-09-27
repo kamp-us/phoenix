@@ -7,10 +7,12 @@
  */
 
 import {type Registration, register} from "./key-group.ts";
+import {appetiteSizesKey} from "./keys/appetite-sizes.ts";
 import {assemblyRefreshKey} from "./keys/assembly-refresh.ts";
 import {assemblyReplayKey} from "./keys/assembly-replay.ts";
 import {auditCatalogsKey} from "./keys/audit-catalogs.ts";
 import {boardVocabularyKey} from "./keys/board-vocabulary.ts";
+import {boardsKey} from "./keys/boards.ts";
 import {campaignAuthorsKey} from "./keys/campaign-authors.ts";
 import {capClearAuthorsKey} from "./keys/cap-clear-authors.ts";
 import {ciKey} from "./keys/ci.ts";
@@ -31,15 +33,18 @@ import {cycleDocKey, decisionsDirKey, roadmapFileKey} from "./keys/paths.ts";
 import {portabilityKey} from "./keys/portability.ts";
 import {reviewSubsystemsKey} from "./keys/review-subsystems.ts";
 import {surfaceDispositionsKey} from "./keys/surface-dispositions.ts";
+import {tableKey} from "./keys/table.ts";
 import {triageFacetsKey} from "./keys/triage-facets.ts";
 import {uiCaptureKey, uiSurfacesKey} from "./keys/ui-surfaces.ts";
 import {workflowValidatorsKey} from "./keys/workflow-validators.ts";
 
 export const KEY_GROUPS: ReadonlyArray<Registration> = [
+	register(appetiteSizesKey),
 	register(assemblyRefreshKey),
 	register(assemblyReplayKey),
 	register(auditCatalogsKey),
 	register(boardVocabularyKey),
+	register(boardsKey),
 	register(campaignAuthorsKey),
 	register(capClearAuthorsKey),
 	register(ciKey),
@@ -62,6 +67,7 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(reviewSubsystemsKey),
 	register(roadmapFileKey),
 	register(surfaceDispositionsKey),
+	register(tableKey),
 	register(triageFacetsKey),
 	register(uiCaptureKey),
 	register(uiSurfacesKey),

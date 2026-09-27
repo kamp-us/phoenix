@@ -365,7 +365,7 @@ export const ENV = {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} a
 	string | undefined
 >;
 
-/** The config at the fixture PR's base ref, where `ownAccounts` and the grant-author set are read. */
+/** The config at the fixture PR's base ref, where `ownAccounts` is read. */
 export const CONFIG_AT_BASE = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
 /** The running account — who counts as ours when no `ownAccounts` is declared. */
 export const RUNNING_ACCOUNT = /^GET \S+\/user$/;
@@ -412,7 +412,26 @@ const writes = (login: string): Scripted => [
 	new RegExp(`^GET \\S+/repos/o/r/collaborators/${login}/permission`),
 	{status: 200, body: JSON.stringify({permission: "write"})},
 ];
-const GRANTORS = configAtBase({capClearAuthors: ["@founder", "@ada"]});
+/**
+ * The control-plane set — who may post a takeover grant — read off CODEOWNERS on the default branch.
+ * Scripted ahead of the landing verb's own repository read, so the one repository reply serves both.
+ */
+const GRANTORS: ReadonlyArray<Scripted> = [
+	[
+		/^GET \S+\/repos\/o\/r$/,
+		{
+			status: 200,
+			body: JSON.stringify({
+				full_name: "o/r",
+				default_branch: "main",
+				allow_squash_merge: true,
+				allow_merge_commit: true,
+				allow_rebase_merge: true,
+			}),
+		},
+	],
+	[/contents\/\.github\/CODEOWNERS\?ref=main$/, {status: 200, body: "/.github/ @founder @ada\n"}],
+];
 
 export const OWNERSHIP_CASES: ReadonlyArray<OwnershipCase> = [
 	{
@@ -454,19 +473,19 @@ export const OWNERSHIP_CASES: ReadonlyArray<OwnershipCase> = [
 	{
 		name: "another author's PR a trusted account handed over",
 		author: "ada",
-		reads: [GRANTORS, grantComments("founder"), writes("founder")],
+		reads: [...GRANTORS, grantComments("founder"), writes("founder")],
 		drivable: true,
 	},
 	{
 		name: "another author's PR carrying a grant its own author wrote",
 		author: "ada",
-		reads: [GRANTORS, grantComments("ada"), writes("ada")],
+		reads: [...GRANTORS, grantComments("ada"), writes("ada")],
 		drivable: false,
 	},
 	{
 		name: "another author's PR carrying a grant from an outsider",
 		author: "ada",
-		reads: [GRANTORS, grantComments("mallory"), writes("mallory")],
+		reads: [...GRANTORS, grantComments("mallory"), writes("mallory")],
 		drivable: false,
 	},
 ];

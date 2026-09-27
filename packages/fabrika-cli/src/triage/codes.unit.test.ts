@@ -16,6 +16,7 @@ import {
 	MALFORMED_AUDIT,
 	MALFORMED_CRITERIA,
 	OFF_VOCABULARY,
+	PLAIN_SUMMARY_REQUIRED,
 	PRECONDITION_UNKNOWN,
 	PULL_REQUEST_TARGET,
 	READBACK_MISMATCH,
@@ -122,6 +123,11 @@ describe("the codes this group adds", () => {
 		expect(PULL_REQUEST_TARGET).not.toBe(UNWIRED_ORDERING);
 	});
 
+	it("seats the plain-summary refusal clear of the empty-stdin one", () => {
+		expect(PLAIN_SUMMARY_REQUIRED).toBe(26);
+		expect(PLAIN_SUMMARY_REQUIRED).not.toBe(EMPTY_STDIN);
+	});
+
 	it("clears every seat `report` occupies, read from its exports and not a list", () => {
 		expect(checkAlignment(report, codes, SHARED_SEATS).collisions).toEqual([]);
 	});
@@ -137,8 +143,8 @@ describe("TRIAGE_EXIT_TABLE", () => {
 
 	it("carries every allocated code exactly once", () => {
 		expect(codes).toEqual([
-			0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 126,
-			127,
+			0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+			126, 127,
 		]);
 	});
 
@@ -163,6 +169,7 @@ describe("TRIAGE_EXIT_TABLE", () => {
 		expect(meaningOf(CHUNK_MISCOUNTED)).toContain("declared");
 		expect(meaningOf(DUPLICATE_VERDICT)).toContain("more than one verdict row");
 		expect(meaningOf(SET_MISMATCH)).toContain("audited input set");
+		expect(meaningOf(PLAIN_SUMMARY_REQUIRED)).toContain("plain-language summary");
 	});
 
 	it("seats the four audit refusals on distinct codes, clear of every earlier seat", () => {
