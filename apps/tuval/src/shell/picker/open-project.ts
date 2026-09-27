@@ -364,6 +364,8 @@ export interface Opening {
 	readonly name: string;
 }
 
+const NOTHING_MATCHES = "Nothing matches this filter.";
+
 export interface OpenProjectFrameOptions extends PickerFrameOptions {
 	readonly opening?: Opening | null;
 }
@@ -414,12 +416,11 @@ export const openProjectFrame = (
 			id: `picker-${windowId}-open-project-${key}`,
 			label,
 			options,
-			emptyMessage:
-				options.length > 0 ? null : filtering ? "Nothing here matches this filter." : empty,
+			emptyMessage: options.length > 0 ? null : empty,
 		};
 	};
 
-	const groups: ReadonlyArray<PickerGroup<OpenProjectRow>> =
+	const listed: ReadonlyArray<PickerGroup<OpenProjectRow>> =
 		step._tag === "Recent"
 			? [
 					group(
@@ -452,6 +453,9 @@ export const openProjectFrame = (
 							step.folder === null ? "section" : "path",
 						),
 					];
+	// Under a filter a group the filter emptied is dropped, not labelled: "nothing matches" speaks for the
+	// whole list, and the visible status line already says it once.
+	const groups = filtering ? listed.filter((group) => group.options.length > 0) : listed;
 
 	const opening = options?.opening ?? null;
 	const settled =
@@ -476,7 +480,7 @@ export const openProjectFrame = (
 								? `Opening ${opening.name}… If the desk asks whether you trust this folder, answer there.`
 								: filtering
 									? rows.length === 0
-										? "Nothing matches this filter."
+										? NOTHING_MATCHES
 										: `${rows.length} of ${all.length} rows`
 									: settled,
 						alternates:
