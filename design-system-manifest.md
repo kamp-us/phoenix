@@ -124,6 +124,15 @@ tokens components should reference") and is promoted to a pillar non-negotiable 
 | `--link` | `--accent-11` | Link text (the AA-safe accent step). |
 | `--accent-fg` | `--accent-contrast` | Foreground text/icon on a solid `--accent` fill. |
 
+### Status roles
+
+One value per scheme, the same under every accent.
+
+| Role token | Resolves to | Contrast floor | Reach for it when |
+|---|---|---|---|
+| `--danger` | per-scheme `oklch` value | AA (≥4.5:1) as text on the scheme's surfaces | Destructive or error text, and the solid fill of a destructive action. |
+| `--danger-fg` | per-scheme `oklch` value, paired with `--danger` | **AA (≥4.5:1) on `--danger`, under every accent** | Foreground text/icon on a solid `--danger` fill. Never `--accent-fg`: it is chosen for the accent fill, not for danger ([#9992](https://github.com/kamp-us/phoenix/issues/9992)). |
+
 ### Focus role (lives in `global.css`, not `tokens.css`)
 
 | Role token | Definition | Where |
