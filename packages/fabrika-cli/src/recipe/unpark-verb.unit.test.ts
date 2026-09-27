@@ -57,6 +57,7 @@ import {
 	nominatedPulls,
 	PARKED_AT_CP,
 	PARKED_AT_CP_ON,
+	PARKED_AT_CP_UNCAUSED,
 	PARKED_AT_QUEUE_STALL,
 	PARKED_BLOCKED,
 	PARKED_ON_CAMPAIGN,
@@ -387,13 +388,24 @@ describe("recipe unpark — a red-CI park clears once the head reads green again
 		expect(fs.written.size).toBe(0);
 	});
 
-	// The two rows share the `human:cp-approval` leaf and are told apart by the cause alone, so a park
-	// carrying neither cause must still reach the §CP discharge it always did.
-	it("leaves the null-cause §CP row unshadowed — a causeless park still reads the approval", async () => {
+	// The two rows share the `human:cp-approval` leaf and are told apart by the cause alone, so the
+	// approval wait must still reach the §CP discharge it always did.
+	it("leaves the approval-wait §CP row unshadowed — it still reads the approval", async () => {
 		const out = await run(lane(PARKED_AT_CP), DISCHARGED);
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).clearance).toBe("cp-approval");
+	});
+
+	// A `ship` park that named no cause is not an approval wait, so it reads no approval and clears
+	// nothing, even where one would discharge.
+	it("is Novel for the same leaf carrying no cause, and reads no approval", async () => {
+		const fs = lane(PARKED_AT_CP_UNCAUSED);
+
+		const out = await run(fs, DISCHARGED);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		expect(fs.written.size).toBe(0);
 	});
 
 	it("is Novel for the same leaf carrying a cause no row on it names", async () => {

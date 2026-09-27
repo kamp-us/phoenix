@@ -41,10 +41,17 @@ describe("the park table", () => {
 
 describe("classifyPark", () => {
 	it("is Known for the §CP park, and carries the clearance the verb relays", () => {
-		const parked = classifyPark("human:cp-approval", null);
+		const parked = classifyPark("human:cp-approval", "awaiting-cp-approval");
 
 		expect(parked._tag).toBe("Known");
 		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("cp-approval");
+		expect(parked._tag === "Known" && parked.recipe.route).toBe("founder");
+	});
+
+	// `ship`'s BLOCKED folds here whatever the block was, so a park naming no cause is not an approval
+	// wait and must not clear by reading an approval nobody asked for.
+	it("is Novel for the §CP leaf carrying no cause", () => {
+		expect(classifyPark("human:cp-approval", null)._tag).toBe("Novel");
 	});
 
 	it("is Known for a BLOCKED whose cause is the worktree-holds-branch shape", () => {
@@ -118,9 +125,9 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Novel" && parked.reason).toMatch(/some-cause-nobody-wrote-a-row-for/);
 	});
 
-	it("is Known for the §CP leaf carrying the red-CI cause, without shadowing the null-cause row", () => {
+	it("is Known for the §CP leaf carrying the red-CI cause, without shadowing the approval row", () => {
 		const red = classifyPark("human:cp-approval", "head-ci-red");
-		const approval = classifyPark("human:cp-approval", null);
+		const approval = classifyPark("human:cp-approval", "awaiting-cp-approval");
 
 		expect(red._tag === "Known" && red.recipe.clearance).toBe("ci-green");
 		expect(approval._tag === "Known" && approval.recipe.clearance).toBe("cp-approval");

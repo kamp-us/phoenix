@@ -93,11 +93,11 @@ export interface ParkRecipe {
 export const QUEUE_MOVED_GRANT = 1;
 
 /**
- * The parks with a fixed fix today: two keyed by their leaf, seven by their cause.
+ * The parks with a fixed fix today: one keyed by its leaf, eight by their cause.
  *
- * `human:cp-approval`'s clearance is `ship cp-approval`'s own discharge table, relayed rather than
- * re-derived — the §CP cardinality question has exactly one answer in this package, and a second
- * reading of it here would drift from that one. `blocked` + `worktree-holds-branch`'s clearance is
+ * `human:cp-approval` + `awaiting-cp-approval`'s clearance is `ship cp-approval`'s own discharge
+ * table, relayed rather than re-derived — the §CP cardinality question has exactly one answer in this
+ * package, and a second reading of it here would drift from that one. `blocked` + `worktree-holds-branch`'s clearance is
  * the inverse of the very read that refuses the build: `build branch --resume-lane` refuses while a
  * working tree holds the child's lane branch, so the park is clear exactly when no working tree holds
  * it — and the clearance first runs `build retire`, which takes that checkout back where a license
@@ -129,9 +129,8 @@ export const QUEUE_MOVED_GRANT = 1;
  * the PR — and it retracts nothing on any arm, age included. The claimant is a shell of the driver's
  * own session, which `build adopt` refuses, so releasing it under its token is the driver's act.
  *
- * `human:queue-stall` is the second row keyed by its leaf alone: a `WIP` carries no park cause and
- * `lane report` refuses one on any non-`BLOCKED` event, so the leaf is all there is to key on. It
- * does not collide with the §CP row keyed on the same `null` because the leaves differ. Its clearance
+ * `human:queue-stall` is the one row keyed by its leaf alone: a `WIP` carries no park cause and
+ * `lane report` refuses one on any non-`BLOCKED` event, so the leaf is all there is to key on. Its clearance
  * is `ship reconcile`'s answer relayed — no verb in this tree can read the queue's own position, so
  * the row turns on the two outcomes that already exist, `landed` and `ejected`. It names no remedy
  * for the same reason `campaign-active` does not: a recipe that "removed" this cause would be merging
@@ -153,11 +152,13 @@ export const QUEUE_MOVED_GRANT = 1;
  * `human:cp-approval` + `head-ci-red` is the second row on that leaf, and the cause key is what makes
  * two rows there legal: `ship`'s `BLOCKED` folds to `human:cp-approval` whatever the block was, so a
  * shipper that routed to `heal-ci` and one that stopped on a §CP approval land on the same state. The
- * §CP row keys on `null` and this one on the cause, so neither can match the other's park. Its
- * clearance is the shipper's own step-4 read taken again — `ship checks`'s rollup at the live head —
- * conjoined with the reads that step ran before it, so the clear proves the whole floor the shipper
- * was standing on rather than the one condition that failed. It names no remedy because turning a red
- * head green is `heal-ci`'s repair work, and a recipe that "removed" this cause would be doing it.
+ * §CP row keys on `awaiting-cp-approval` and this one on `head-ci-red`, so neither can match the
+ * other's park, and a `ship` park naming neither — a `REFUSED`, an `UNKNOWN`, a bare `BLOCKED` —
+ * matches no row on this leaf at all. Its clearance is the shipper's own step-4 read taken again —
+ * `ship checks`'s rollup at the live head — conjoined with the reads that step ran before it, so the
+ * clear proves the whole floor the shipper was standing on rather than the one condition that
+ * failed. It names no remedy because turning a red head green is `heal-ci`'s repair work, and a
+ * recipe that "removed" this cause would be doing it.
  */
 /**
  * One row, with its route and its remedy read off the cause table rather than written down a second
@@ -176,7 +177,7 @@ const row = (spec: Omit<ParkRecipe, "route" | "remedy">): ParkRecipe => ({
 export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 	row({
 		park: "human:cp-approval",
-		cause: null,
+		cause: "awaiting-cp-approval",
 		clearance: "cp-approval",
 		waitingOn: "a control-plane approval at the PR's current head",
 	}),

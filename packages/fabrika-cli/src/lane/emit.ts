@@ -277,9 +277,8 @@ const region = (
  * queue at all. The `WIP` out of it is a guarded array like the FAIL above, but it spends `waits`
  * rather than `retries`, so a queue dwell cannot eat the epic review's repair rounds. Its spent-
  * budget fallthrough is `human:queue-stall` and not `human:cp-approval` because a `WIP` carries no
- * park cause, and `recipe/parks.ts`'s §CP row keys on `cause: null` — a stall landing there would be
- * cleared by reading an approval nobody was waiting on. Its own leaf carries no row, so the table
- * reads it as novel and routes it to a human, which is what a spent wait actually needs.
+ * park cause, and `recipe/parks.ts`'s §CP row keys on the approval wait's cause — a stall landing
+ * there would seat on no row at all. Its own leaf is what seats it on the `queue-moved` recipe.
  *
  * `review` FAIL is a two-arm guarded array so the fallthrough final is an *error* final by the
  * compiler's own structural read; a plain target would leave a failed epic review folding to

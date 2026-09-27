@@ -96,8 +96,9 @@ cause when you record it, so the park is one a sweep can read:
 node <fabrika> lane report <lane> --root <root> --task <task> --token AWAITING-CP-APPROVAL --cause head-behind-base --pr <pr-url>
 ```
 
-Pass it when the head is still behind at the moment you record. A `stop` with no drift carries no
-cause, which is the park `recipe unpark` already clears by re-reading the approval. <!-- anchor: NO-REBASE-AFTER-APPROVAL -->
+Pass it when the head is still behind at the moment you record. A `stop` with no drift needs no
+`--cause`: the token itself records `awaiting-cp-approval`, which is the park `recipe unpark` clears
+by re-reading the approval. <!-- anchor: NO-REBASE-AFTER-APPROVAL -->
 Once a control-plane approval exists, **never rebase or force-push the head**: a moved head means
 re-approval, patch-identical or not. **That is the human approval only.** A fabrika `review-*` or
 `governance` marker binds the content it judged as well as the head, so a branch update leaving the

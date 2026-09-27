@@ -1290,7 +1290,7 @@ const soleParkedPull = (
  * The gate is asked with no `--cp`: a control-plane approval is discharged by `ship cp-approval` on
  * the shipper's own run, and asserting one from here would be granting it. A §CP PR whose advisory
  * carrier is what would satisfy the gate therefore holds, which is the park standing correctly — the
- * null-cause §CP row is where that question belongs.
+ * §CP row keyed `awaiting-cp-approval` is where that question belongs.
  */
 const clearCiGreen = (
 	options: UnparkOptions,

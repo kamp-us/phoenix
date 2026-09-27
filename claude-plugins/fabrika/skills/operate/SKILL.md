@@ -1514,6 +1514,11 @@ future recipe row can key on. Omitting one is right only where the set holds not
 what is never right is reaching for a token because it is nearby rather than because it is what
 happened.
 
+A shipper's `AWAITING-CP-APPROVAL` lands `awaiting-cp-approval` with nothing typed, because that
+token has one reason. When you park an owner-approval wait yourself, name it:
+`lane transition <lane> BLOCKED --task <task> --cause awaiting-cp-approval`. A `ship` park with no
+cause matches no `human:cp-approval` row, so it never clears by reading an approval nobody asked for.
+
 **So try `recipe unpark` before you post a park comment**, whenever the fold reads `blocked` or
 `human:*` — a park comment is the founder-routed answer, and you do not know the route until this
 verb reads the cause for you:
@@ -1522,8 +1527,9 @@ verb reads the cause for you:
 node <fabrika> recipe unpark <lane-key> --task <task>
 ```
 
-The table it keys on holds nine rows today: `human:cp-approval` twice — once keyed on no cause at all,
-once on `head-ci-red`, which is the shipper's route to `heal-ci` folding to the same leaf —
+The table it keys on holds nine rows today: `human:cp-approval` twice — once keyed on
+`awaiting-cp-approval`, the owner-approval wait, and once on `head-ci-red`, which is the shipper's
+route to `heal-ci` folding to the same leaf —
 `human:queue-stall`, and `blocked` carrying one of `worktree-holds-branch`, `campaign-paused`,
 `spawn-dead`, `no-rendered-delta`, `tree-hijacked` or `claim-stranded`. Reading which one
 matched is the verb's answer, not a list you maintain here — the rows live in
