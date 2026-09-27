@@ -489,7 +489,7 @@ export const traceClosure = (issue: number, facts: ReadonlyArray<PullFact>): Clo
 		: {_tag: "Partial", prs: landed.map((fact) => fact.number)};
 };
 
-/** One comment on the driven issue, as much of it as the diagnosis question needs. */
+/** One comment on the driven issue, as much of it as the no-PR proof needs. */
 export interface CommentFact {
 	readonly id: number;
 	readonly createdAt: string;
@@ -519,7 +519,7 @@ export const traceDiagnosis = (
 	return latest === undefined
 		? {
 				_tag: "Absent",
-				why: `#${issue} carries no comment written since the task entered its build cell${since === null ? "" : ` at ${since}`}, so no diagnosis was posted`,
+				why: `#${issue} carries no comment written since the task entered its build cell${since === null ? "" : ` at ${since}`}, so no note was posted`,
 			}
 		: {_tag: "Posted", commentId: latest.id};
 };

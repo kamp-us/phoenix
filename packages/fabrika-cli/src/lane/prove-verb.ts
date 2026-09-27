@@ -664,7 +664,8 @@ const traceOpenPull = (
  * written after the task entered build, whatever the issue's type.
  *
  * It is the only arm that answers `diagnosis: true`, which is what the machine's `done:diagnosis`
- * guard routes a no-PR terminal on — so the routing rests on the same artifact the proof does, and a `SHIPPED-PR` or a `BUILT-NO-PR` reporting the identical `DONE` reaches it never.
+ * guard routes a no-PR terminal on — so the routing rests on the same artifact the proof does, and a
+ * `SHIPPED-PR` or a `BUILT-NO-PR` reporting the identical `DONE` reaches it never.
  */
 const proveNoPull = (
 	repo: string,

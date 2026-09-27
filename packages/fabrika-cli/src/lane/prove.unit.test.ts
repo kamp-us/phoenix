@@ -591,13 +591,13 @@ describe("traceDiagnosis", () => {
 	it("refuses with no comment at all", () => {
 		const traced = traceDiagnosis(4312, [], "2026-08-16T01:00:00Z");
 		expect(traced._tag).toBe("Absent");
-		expect(traced._tag === "Absent" && traced.why).toContain("no diagnosis");
+		expect(traced._tag === "Absent" && traced.why).toContain("no note");
 	});
 
-	it("refuses on a comment that predates the build — a triage note is not a diagnosis", () => {
+	it("refuses on a comment that predates the build — a triage note is not the build's note", () => {
 		const traced = traceDiagnosis(4312, [comment], "2026-08-16T03:00:00Z");
 		expect(traced._tag).toBe("Absent");
-		expect(traced._tag === "Absent" && traced.why).toContain("no diagnosis");
+		expect(traced._tag === "Absent" && traced.why).toContain("no note");
 	});
 });
 

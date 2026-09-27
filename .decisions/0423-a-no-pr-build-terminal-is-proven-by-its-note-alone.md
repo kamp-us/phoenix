@@ -1,12 +1,12 @@
 ---
-id: 0417
+id: 0423
 title: A no-PR build terminal is proven by its note alone, whatever the issue's type
 status: accepted
 date: 2026-09-26
 tags: [lane, build]
 ---
 
-# 0417 — A no-PR build terminal is proven by its note alone, whatever the issue's type
+# 0423 — A no-PR build terminal is proven by its note alone, whatever the issue's type
 
 **What this decides:** `lane prove` proves a builder's `SUCCESS-NO-PR` from one artifact, a comment
 on the issue written since the task entered `build`. It no longer requires the issue to carry
@@ -48,9 +48,13 @@ and add no new gate and no new token unless a failure has actually recurred.
 
 - A board-data repair, or any build that honestly ends with no diff, records a proven `DONE` and
   folds to the machine's `diagnosed` final instead of parking on a human.
-- A no-PR `DONE` on a feature or bug is now provable where it was refused before. The artifact still
-  has to exist: a lane that posts no note since entering `build` stays unproven at exit `22`. What
-  the lane claimed to do is on the issue in its own words for anyone who reads it.
+- A no-PR `DONE` on a feature or bug is now provable where it was refused before. The proof is the
+  newest comment on the issue written since the task entered `build`, by any author. An issue with
+  no comment since that entry stays unproven at exit `22`.
+- The proof checks no author, marker or permission, so a comment someone else posts during the
+  build proves a lane that posted nothing. This record accepts that looseness under the ruling's
+  no-new-gate lens; tightening it is tracked in
+  [#9967](https://github.com/kamp-us/phoenix/issues/9967).
 - Whether triage should stop routing board-data work to build lanes, and whether `build`'s rule that
   a build lane does not write issue bodies should move, are separate questions this record leaves
   open.
