@@ -316,6 +316,30 @@ describe("prompt", () => {
 		expect(sent.queued.map((item) => item.key)).toEqual(["k2"]);
 		expect(sent.sends).toEqual([{key: "k1", state: "pending", turn: "unstarted"}]);
 		expect(cmds).toEqual([{type: "aiAgent.prompt", text: "first", key: "k1"}]);
+
+		const ready: AiAgentSessionMsg = {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "ready"},
+		};
+		const [stale, premature] = apply(sent, ready);
+		expect(premature).toEqual([]);
+		expect(stale.queued.map((item) => item.key)).toEqual(["k2"]);
+		const [third, overtaking] = apply(stale, prompt("third", "k3"));
+		expect(overtaking).toEqual([]);
+		expect(third.queued.map((item) => item.key)).toEqual(["k2", "k3"]);
+		const [running] = apply(third, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "prompting"},
+		});
+		const [next, admitted] = apply(running, ready);
+		expect(admitted).toEqual([{type: "aiAgent.prompt", text: "second", key: "k2"}]);
+		expect(next.queued.map((item) => item.key)).toEqual(["k3"]);
+		expect(next.sends).toEqual([
+			{key: "k1", state: "accepted"},
+			{key: "k2", state: "pending", turn: "unstarted"},
+		]);
 	});
 
 	it("clears the interrupted marker, because a resend is a new send", () => {
@@ -390,7 +414,7 @@ describe("a prompt written while the turn runs", () => {
 		const [sent, cmds] = apply(both, turnEnded);
 		expect(cmds).toEqual([{type: "aiAgent.prompt", text: "second", key: "k2"}]);
 		expect(sent.queued).toEqual([{key: "k3", text: "third", timestamp: SENT_AT}]);
-		const [after, more] = apply(sent, turnEnded);
+		const [after, more] = apply(apply(sent, turnBegan)[0], turnEnded);
 		expect(more).toEqual([{type: "aiAgent.prompt", text: "third", key: "k3"}]);
 		expect(after.queued).toEqual([]);
 	});

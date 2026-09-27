@@ -43,7 +43,7 @@ import {
 } from "./fold.ts";
 import type {AiAgentSessionCmd, AiAgentSessionMsg, AiAgentSessionSub} from "./messages.ts";
 import {enqueue, isQueueFull, type QueuedPrompt, queueLimit, releaseQueued} from "./queue.ts";
-import {noteSend, settledBy, settleFailedTurn} from "./sends.ts";
+import {noteSend, pendingSend, settledBy, settleFailedTurn} from "./sends.ts";
 import {loadCheckpoint} from "./snapshot.ts";
 import {
 	type AgentFailure,
@@ -124,7 +124,8 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 		const [state, cmds] = step;
 		const [head, ...rest] = state.queued;
 		if (head === undefined) return step;
-		if (state.phase === "ready") {
+		// An opening `ready` can arrive after admission but before the layer starts that turn.
+		if (state.phase === "ready" && pendingSend(state.sends) === null) {
 			const [next, admitted] = admit({...state, queued: rest}, head);
 			return [next, [...cmds, ...admitted]];
 		}
@@ -258,7 +259,11 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			// "wait", which is exactly right. The refusing arms do record one, because a refusal is
 			// final and the window that minted the key is waiting on it (#8005).
 			prompt: (state, msg) => {
-				if (state.phase === "starting" || state.phase === "prompting") {
+				if (
+					state.phase === "starting" ||
+					state.phase === "prompting" ||
+					(state.phase === "ready" && state.queued.length > 0)
+				) {
 					if (!isQueueFull(state.queued)) {
 						return [
 							{
