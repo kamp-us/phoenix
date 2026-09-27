@@ -36,6 +36,7 @@ import {shellSpells, shellSpellsFor} from "./commands/spells.ts";
 import {commandIndexFor, type ShellCommandFeatures} from "./commands/table.ts";
 import {
 	isShellState,
+	type KeyBindingsSource,
 	type ShellCmd,
 	type ShellMsg,
 	type ShellState,
@@ -114,6 +115,10 @@ export const unwiredShellEffects: ShellEffects = {
 		Effect.logDebug(`shell: runCommand "${cmd.name}" names no command row — dropped`).pipe(
 			Effect.as([]),
 		),
+	runBinding: (cmd) =>
+		Effect.logDebug(
+			`shell: runBinding "${cmd.binding.key}" dropped — no spell executor attached`,
+		).pipe(Effect.as([])),
 	openProgram: (cmd) =>
 		Effect.logDebug(
 			`shell: openProgram "${cmd.programId}" dropped — no surface attached to spawn it`,
@@ -219,10 +224,14 @@ const isShellRow = (program: AnyProgram): program is ShellRow =>
  * Gating is additive and lives in two lists, `boardBindings` in `packages/tuval-ui/src/shell/keys/table.ts` and
  * `boardCommands` in `./commands/table.ts`. Both are keyed on the one flag, so a key can never name
  * a row this build does not hold.
+ *
+ * `keys` is the same seam for the config's key bindings (#9687): the row is built before any of them
+ * compile, so the core is handed where to read them rather than the bindings themselves.
  */
 export const withShellFeatures = (
 	programs: ReadonlyArray<AnyProgram>,
 	features: ShellCommandFeatures,
+	keys?: KeyBindingsSource,
 ): ReadonlyArray<AnyProgram> =>
 	programs.map((program) => {
 		if (!isShellRow(program)) return program;
@@ -231,7 +240,7 @@ export const withShellFeatures = (
 		return {
 			...program,
 			table,
-			core: shellCore({table, commands}),
+			core: shellCore({table, commands, ...(keys === undefined ? {} : {keys})}),
 			spells: shellSpellsFor(features),
 		} satisfies ShellRow;
 	});

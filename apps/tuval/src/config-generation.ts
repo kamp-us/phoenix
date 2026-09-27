@@ -9,7 +9,7 @@ import type {BindingSource} from "@kampus/tuval-sdk/kernel/commands/bindings/ind
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {AuthoredModules} from "./authored-modules.ts";
 import type {ProjectLayer} from "./config.ts";
-import type {OwnerKeys} from "./keys/scopes.ts";
+import type {OwnerKeys} from "./keys/compile.ts";
 import type {ProgramGeneration} from "./reload.ts";
 
 /** One owner's rows as the kernel runs them, with their flags applied, beside their keys. */

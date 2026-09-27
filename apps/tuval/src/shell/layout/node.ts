@@ -45,6 +45,13 @@ export interface WindowNode {
 	 * bound before #7973, which is the safe reading — a key nobody declared for is not sent.
 	 */
 	readonly takesKeys?: true;
+	/**
+	 * The bound program's id, so the shell can route a key by the key table the window's owner
+	 * holds (#9687): a project program's window runs that project's bindings. Written and dropped
+	 * with `processId` like `takesKeys`, and absent on every window bound before #9687, which reads
+	 * as the global config's table until the window is bound again.
+	 */
+	readonly program?: string;
 }
 
 /**
@@ -68,19 +75,30 @@ export interface LayoutTree {
 	readonly zoomed: WindowId | null;
 }
 
+/** What a window knows about the program bound to it, beside the process id. */
+export interface WindowBinding {
+	readonly takesKeys?: boolean;
+	readonly program?: string;
+}
+
 /**
  * A window node, bound or not. `setProcess` rebuilds through here rather than spreading the old
- * node, so the pair can never drift: unbinding drops the declaration with the process, and a
- * `takesKeys` handed in beside a `null` process is dropped too.
+ * node, so the binding can never drift: unbinding drops the declarations with the process, and a
+ * `takesKeys` or `program` handed in beside a `null` process is dropped too.
  */
 export function createWindow(
 	id: WindowId,
 	processId: string | null = null,
-	takesKeys = false,
+	binding: WindowBinding = {},
 ): WindowNode {
-	return processId !== null && takesKeys
-		? {tag: "window", id, processId, takesKeys: true}
-		: {tag: "window", id, processId};
+	if (processId === null) return {tag: "window", id, processId};
+	return {
+		tag: "window",
+		id,
+		processId,
+		...(binding.takesKeys === true ? {takesKeys: true} : {}),
+		...(binding.program === undefined ? {} : {program: binding.program}),
+	};
 }
 
 /**
@@ -106,7 +124,8 @@ export function isWindowNode(value: unknown): value is WindowNode {
 		value.tag === "window" &&
 		typeof value.id === "string" &&
 		(value.processId === null || typeof value.processId === "string") &&
-		(value.takesKeys === undefined || (value.takesKeys === true && value.processId !== null))
+		(value.takesKeys === undefined || (value.takesKeys === true && value.processId !== null)) &&
+		(value.program === undefined || (typeof value.program === "string" && value.processId !== null))
 	);
 }
 

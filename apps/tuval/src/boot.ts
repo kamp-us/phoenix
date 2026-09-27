@@ -48,6 +48,7 @@ import {
 import {ConfigGeneration} from "./config-generation.ts";
 import {deskLayer} from "./desk-layer.ts";
 import type {CheckpointScoping} from "./durability/scope-checkpoints.ts";
+import {LiveKeyBindings} from "./keys/live.ts";
 import {type LaunchedProcess, launch} from "./launch/launch.ts";
 import {ProjectId, projectConfig} from "./project-id.ts";
 import {checkpointRoutes, ownedView} from "./projects/checkpoint-routes.ts";
@@ -177,6 +178,12 @@ export interface StartOptions {
 	 * Absent for a caller handed rows and no config.
 	 */
 	readonly modules?: AuthoredModules;
+	/**
+	 * Where the shell rows among `programs` read each focus owner's key bindings (#9687). `start`
+	 * compiles the generation into it and every reload and project open or close replaces it. Absent
+	 * for a caller whose shell routes no config bindings — every caller but `boot`.
+	 */
+	readonly keyBindings?: LiveKeyBindings;
 }
 
 export interface Started {
@@ -213,6 +220,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	reread,
 	projects,
 	modules = AuthoredModules.none,
+	keyBindings,
 }: StartOptions) {
 	const registry = yield* Layer.build(Registry.growable(programs));
 	const compiled = yield* compile(graph).pipe(Effect.provideContext(registry));
@@ -240,10 +248,19 @@ export const start = Effect.fn("Tuval.start")(function* ({
 			Layer.mergeAll(Layer.succeedContext(spells), shellWindowIndexKernel(shellId)),
 		),
 	);
+	const initial = ConfigGeneration.of(
+		{programs, keys: keys ?? [], sources: []},
+		{files: [], modules},
+	);
+	if (keyBindings !== undefined) {
+		const registered = yield* SpellSet.use((set) => set.read).pipe(Effect.provideContext(spells));
+		yield* keyBindings.install(initial.ownerKeys, registered.table);
+	}
 	const reloader = ConfigReloader.fromConfig({
 		core: coreSpells,
-		initial: ConfigGeneration.of({programs, keys: keys ?? [], sources: []}, {files: [], modules}),
+		initial,
 		...(reread === undefined ? {} : {read: reread}),
+		...(keyBindings === undefined ? {} : {keyBindings}),
 	}).pipe(Layer.provide(Layer.succeedContext(spells)));
 	const built = yield* Layer.build(
 		Layer.mergeAll(
@@ -407,9 +424,9 @@ export interface Booted {
  * module is evaluated before the merge exists (#8595), so this is the only place that holds both the
  * rows and what the layers said about them (#8867).
  */
-const generationOf = (config: LoadedConfig): ConfigGeneration => {
+const generationOf = (config: LoadedConfig, keyBindings: LiveKeyBindings): ConfigGeneration => {
 	const rows = (programs: ReadonlyArray<unknown>) =>
-		withShellFeatures(programs as ReadonlyArray<AnyProgram>, config.features);
+		withShellFeatures(programs as ReadonlyArray<AnyProgram>, config.features, keyBindings);
 	return config.projects.reduce(
 		(generation, project) =>
 			generation.withProject(
@@ -435,9 +452,10 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 	const firstLayer: ProjectLayer = {id: ProjectId.of(folder), module: projectConfig(folder)};
 	const config = yield* loadLayeredConfig({desk, global: options.global, projects: [firstLayer]});
 	const fs = yield* FileSystem.FileSystem;
+	const keyBindings = new LiveKeyBindings();
 	const reread = (projects: ReadonlyArray<ProjectLayer>) =>
 		loadLayeredConfig({desk, global: options.global, projects}).pipe(
-			Effect.map(generationOf),
+			Effect.map((reread) => generationOf(reread, keyBindings)),
 			Effect.provideService(FileSystem.FileSystem, fs),
 		);
 	const [read] = config.projects;
@@ -449,6 +467,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 	const deskRows = withShellFeatures(
 		config.desk.programs as ReadonlyArray<AnyProgram>,
 		config.features,
+		keyBindings,
 	);
 	const started = yield* start({
 		programs: deskRows,
@@ -466,6 +485,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 			fs,
 		},
 		modules: config.modules,
+		keyBindings,
 	});
 	const live = yield* ProcessTable.use((table) => table.list).pipe(
 		Effect.provideContext(started.kernel),

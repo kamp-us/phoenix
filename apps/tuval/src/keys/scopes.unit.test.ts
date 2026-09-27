@@ -1,13 +1,19 @@
 import {assert, describe, it} from "@effect/vitest";
 import {registry} from "@kampus/tuval-sdk/kernel/commands/bindings/fixtures";
 import type {Binding} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
-import {applyKeysConfig, CommandName, defaultPrefixTable} from "@kampus/tuval-ui/keys";
+import {
+	applyKeysConfig,
+	CommandName,
+	defaultPrefixTable,
+	prefixTableFor,
+} from "@kampus/tuval-ui/keys";
 import {Effect, Result} from "effect";
 import {AuthoredModules} from "../authored-modules.ts";
 import {ConfigGeneration} from "../config-generation.ts";
 import {ProjectId} from "../project-id.ts";
+import {compileOwnerBindings} from "./compile.ts";
 import {RESERVED_COMMANDS, ReservedDeskKeys} from "./reserved.ts";
-import {boardFocus, compileKeyScopes, type Focus, KeyScopes, windowFocus} from "./scopes.ts";
+import {boardFocus, type Focus, KeyScopes, windowFocus} from "./scopes.ts";
 
 const alpha = ProjectId.of("/work/alpha");
 const beta = ProjectId.of("/work/beta");
@@ -18,8 +24,11 @@ const bound = (key: string, ...path: [string, ...Array<string>]): Binding => ({
 	args: {},
 });
 
+/** With the board on, so its reserved chord is one the desk routes as well as refuses. */
+const boardOn = prefixTableFor(defaultPrefixTable, {processBoard: true});
+
 const scopes = KeyScopes.of({
-	desk: defaultPrefixTable,
+	desk: boardOn,
 	global: [bound("<c-y>", "workspace", "next")],
 	projects: new Map([
 		[alpha.key, [bound("<c-g>", "window", "close"), bound("<c-b>z", "window", "close")]],
@@ -141,6 +150,22 @@ describe("KeyScopes: the key table follows focus", () => {
 		assert.strictEqual(shadowing.route(alphaWindow, "<c-b>x")?._tag, "Reserved");
 	});
 
+	it("gives an empty window the global config's bindings", () => {
+		assert.deepStrictEqual(scopes.ownerOf(windowFocus(null)), {_tag: "Global"});
+		assert.strictEqual(scopes.route(windowFocus(null), "<c-y>")?._tag, "Bound");
+		assert.strictEqual(scopes.route(windowFocus(null), "<c-g>"), undefined);
+	});
+
+	it("leaves out a binding no press can complete: several keys with no prefix in front", () => {
+		const unroutable = KeyScopes.of({
+			desk: defaultPrefixTable,
+			global: [bound("gg", "window", "close")],
+			projects: new Map(),
+		});
+		assert.strictEqual(unroutable.route(boardFocus, "gg"), undefined);
+		assert.strictEqual(unroutable.route(boardFocus, "g"), undefined);
+	});
+
 	it("owns no bindings for a project that has closed", () => {
 		const gone = windowFocus(ProjectId.of("/work/gone").scope("counter"));
 		assert.strictEqual(scopes.route(gone, "<c-g>"), undefined);
@@ -148,7 +173,7 @@ describe("KeyScopes: the key table follows focus", () => {
 	});
 });
 
-describe("compileKeyScopes", () => {
+describe("compileOwnerBindings", () => {
 	it.effect("compiles each owner's key sources from the config generation, apart", () =>
 		Effect.gen(function* () {
 			const generation = ConfigGeneration.of({
@@ -169,11 +194,11 @@ describe("compileKeyScopes", () => {
 				},
 				{files: [], modules: AuthoredModules.none},
 			);
-			const {scopes: compiled, errors} = yield* compileKeyScopes(
-				defaultPrefixTable,
+			const {bindings, errors} = yield* compileOwnerBindings(
 				generation.ownerKeys,
 				yield* registry(),
 			);
+			const compiled = KeyScopes.of({desk: defaultPrefixTable, ...bindings});
 			assert.deepStrictEqual(
 				errors.map((error) => [error.file, error.key]),
 				[["project .tuval/tuval.config.ts", "<c-q>"]],
