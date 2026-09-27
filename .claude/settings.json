@@ -1,7 +1,6 @@
 {
 	"enabledPlugins": {
-		"fabrika@kampus": true,
-		"kampus-pipeline@kampus": false
+		"fabrika@kampus": true
 	},
 	"hooks": {
 		"SessionStart": [
