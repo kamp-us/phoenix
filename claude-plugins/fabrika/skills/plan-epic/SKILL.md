@@ -337,7 +337,8 @@ closed, untriaged, or a child of another epic. That is a fact about the issue, n
 does not fix it: the repair is a body edit by a human or triage. End `STOPPED` naming the issue and
 the refusal line, and do not mint a duplicate to get past it. `8`, `23` and `26`
 are recovered by running the same command again, because every leg re-reads live state and repeats
-only what is missing. `9` is `WRITE-UNPROVEN`.
+only what is missing. If the re-run refuses with one of them again, stop there: that is
+`WRITE-UNPROVEN`, naming the issue. `9` is `WRITE-UNPROVEN` at once.
 
 On a `re-plan`, a child the new plan drops is retired rather than left dangling:
 
@@ -467,7 +468,8 @@ and every row below that seats one says so.
 
 - `PLANNED` — **success.** Plan and topology written and byte-verified, children minted and linked,
   and every edge the topology requires proven on the `blocked_by` graph. A ledger exists; it is not
-  gated and no child is pickable.
+  gated and no minted child is pickable. An adopted child keeps its triage labels, so it may already
+  be pickable.
 - `RE-PLANNED` — **success.** As above, naming the children superseded this run.
 - `TOPOLOGY-REFUSED` — `24`, and **its disposition turns on which verb seated it.** From `ledger
   topology` nothing reached the epic body and the repair is re-declaring, not re-minting: a back-off,
@@ -497,7 +499,9 @@ and every row below that seats one says so.
 - `WRITE-UNPROVEN` — `8` or `9` from any writing `ledger` verb, and from `grill open`, `grill round`
   or `grill answer`, which allocate those two seats for the same fact: a write landed, or may have,
   and could not be proven. **Neither a success nor a clean back-off — it is UNKNOWN and needs a
-  human.** Report the code, the verb, and any number known. Do not repeat the write. From `ledger
+  human.** Report the code, the verb, and any number known. Do not repeat the write. `ledger adopt`
+  is the one exception: its `8`, `23` and `26` get one re-run at step 5, and land here only when
+  that re-run refuses again. From `ledger
   edges` this says the graph is UNKNOWN while the epic body is written: say so, or a successor
   re-plans an epic that only needs its edges reconciled.
 - `EPIC-UNPLANNABLE` — a proven verdict **about the epic itself**: `7` or `10` from a `ledger`
@@ -555,6 +559,7 @@ outside fabrika.
 position** — a whole-line `<!-- fabrika:enriched … -->` match, so the plan may sit below the brief
 envelope.
 
-<!-- anchor: PLANNER-NEVER-FLIPS --> **This skill writes no `status:triaged`.** Children are born
+<!-- anchor: PLANNER-NEVER-FLIPS --> **This skill writes no `status:triaged`.** Minted children are born
 `status:planned` and stay there until the gate flips them. A planner that flipped its own children
-would make them pickable over a ledger nothing had checked.
+would make them pickable over a ledger nothing had checked. An adopted child was not born here: it
+keeps the triage labels it already had, so it may be pickable before the gate runs.

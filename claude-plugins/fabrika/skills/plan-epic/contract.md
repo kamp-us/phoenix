@@ -377,14 +377,16 @@ Every `ledger` verb obeys these; stated once.
   answer is not to write such a verb.
 - **Preconditions.** Every verb runs `resolveTargetRepo`, refuses a non-`type:epic` target on
   `10`, reads the tree root through `assertGround` (`11` when it cannot be read), and runs
-  the imported `requireClaim` on the **epic** number (`15`). **The run directory is seven verbs'
-  precondition, not nine's**: `ledger retopology` and `ledger digest` read no run directory at all —
-  they answer from the live epic body — which is why either one runs on a lane with no staged plan.
-  Every verb's `7` means **zero scope**;
-  for six of the nine that is the epic proven absent (404) or closed, and three widen it with
-  documented arms — an empty run manifest for `ledger topology`, an epic declaring no topology for
-  `ledger edges`, and two for `ledger retopology`: an epic with no readable `## Dependencies` block,
-  and one with no live child links — stated in their own tables with their reasons.
+  the imported `requireClaim` on the **epic** number (`15`). **The run directory is eight verbs'
+  precondition, not eleven's**: `ledger retopology`, `ledger digest` and `ledger defer` read no run
+  directory at all — they belong to the descope route and answer from live board state — which is why
+  each one runs on a lane with no staged plan.
+  Every verb's `7` means **zero scope**. For every verb it covers the epic proven absent (404) or
+  closed, and six widen it with documented arms — an empty run manifest for `ledger topology`, an
+  epic declaring no topology for `ledger edges`, two for `ledger retopology` (an epic with no
+  readable `## Dependencies` block, and one with no live child links), the named child proven absent
+  or closed for `ledger supersede` and `ledger defer`, and the issue named by `--child` proven absent
+  or closed for `ledger adopt` — stated in their own tables with their reasons.
   **`13` is not this group's.** `--require-clean` belongs to `fabrika build tree`, called once at
   the skill's step 1; no `ledger` verb declares that flag, so none can seat the code. It is carried
   in the matrix below only as a reserved seat with `build`'s meaning.
@@ -435,7 +437,7 @@ it, and the alignment checker is base-only by design (`occupied = allocatedCodes
 | `4` | an authored document's required section or field is missing, duplicated, or mis-numbered | — | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
 | `5` | the **authored** text carries a machine-local path | — | ✓ | ✓ | ✓ | — | — | ✓ | — | — |
 | `6` | the authored text is a bare `@` path reference — not redactable | — | ✓ | ✓ | — | — | — | ✓ | — | — |
-| `7` | zero scope: the epic is proven absent (404) or closed — and, for `topology` alone, an empty run manifest; for `retopology` alone, an epic with no block to rewrite or no live children | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `7` | zero scope: the epic is proven absent (404) or closed — and, for `topology` alone, an empty run manifest; for `retopology` alone, an epic with no block to rewrite or no live children; for `supersede` alone, the child proven absent or closed; for `adopt` alone, the issue named by `--child` proven absent or closed | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `8` | a write was attempted and its outcome could not be proven — UNKNOWN | — | — | ✓ | ✓ | — | ✓ | ✓ | ✓ | — |
 | `9` | the write landed but the read-back does not match | — | — | ✓ | ✓ | — | ✓ | ✓ | ✓ | — |
 | `10` | a value off its closed vocabulary — a semantic refusal, never a malformed-flag usage error | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -1037,8 +1039,9 @@ composed, and it needs a human eye.
 | `ledger adopt: could not write the run manifest: <reason> — #<c> is not linked; re-run the same \`ledger adopt\` — it re-reads the issue and repeats only what is missing.` | 26 | refusal |
 
 **Scope** — one issue, its parent, and the epic's sub-issue list read; at most one PATCH and one
-link written. The stderr `scannedLine` names how many field lines were owed. Zero scope is
-unreachable: the verb adopts exactly one issue or refuses.
+link written. The stderr `scannedLine` names how many field lines were owed. Zero scope is `7`:
+the epic, or the one issue named by `--child`, proven absent or closed. There is no partial scope,
+because the verb adopts exactly that one issue or refuses.
 
 **Examples**
 
@@ -1827,8 +1830,9 @@ The three hand-checks the presence tests cannot perform:
    minting and splicing loses nothing, which is the v1 failure this shape exists to remove.
 4. **Sibling verbs guard shared preconditions identically.** Every `ledger` verb runs `resolveTargetRepo`, the
    `type:epic` check (`10`), `assertGround` (`11`), the imported `requireClaim` (`15`) and the
-   same `7` trigger, with three documented widenings of `7` — `topology`'s empty run manifest,
-   `edges`' epic that declares no topology, and `retopology`'s epic with no block or no live
-   children — stated in their own tables. `open` states the other divergence — it alone proves freshness (`20`) —
+   same `7` trigger, with documented widenings of `7` — `topology`'s empty run manifest,
+   `edges`' epic that declares no topology, `retopology`'s epic with no block or no live
+   children, `supersede`'s absent or closed child, and `adopt`'s absent or closed adoptee — stated
+   in their own tables. `open` states the other divergence — it alone proves freshness (`20`) —
    with its reason: the ground is established once and inherited. `13` is seated by no verb here;
    `--require-clean` is `build tree`'s flag at the skill's step 1.
