@@ -20,7 +20,7 @@ describe("the shipped table", () => {
 			asksFlag: 3,
 			stuckDays: 3,
 			activeCampaignFlag: 3,
-			fabrikaShare: {percent: 40, forTables: 4, thenPercent: 30},
+			fabrikaShare: {percent: 40, forTables: 4, thenPercent: 30, labels: []},
 			checkDelayDays: 14,
 			project: {owner: null, number: null},
 		});
@@ -87,8 +87,22 @@ describe("a declared table block", () => {
 		expect(resolved._tag).toBe("Declared");
 		if (resolved._tag !== "Declared") return;
 		expect(resolved.value.agendaCap).toBe(10);
-		expect(resolved.value.fabrikaShare).toEqual({percent: 50, forTables: 4, thenPercent: 30});
+		expect(resolved.value.fabrikaShare).toEqual({
+			percent: 50,
+			forTables: 4,
+			thenPercent: 30,
+			labels: [],
+		});
 		expect(resolved.value.stuckDays).toBe(SHIPPED_TABLE.stuckDays);
+	});
+
+	it("takes the labels that mark fabrika's own work", () => {
+		const resolved = declared({fabrikaShare: {labels: [" pipeline ", "fabrika"]}});
+
+		expect(resolved).toMatchObject({
+			_tag: "Declared",
+			value: {fabrikaShare: {percent: 40, labels: ["pipeline", "fabrika"]}},
+		});
 	});
 
 	it("takes a project target", () => {
@@ -108,6 +122,8 @@ describe("a declared table block", () => {
 		[{sizes: {S: 50}}, "`table.sizes`"],
 		[{fabrikaShare: {share: 90}}, "`table.fabrikaShare.share`"],
 		[{fabrikaShare: {percent: 140}}, "`table.fabrikaShare.percent`"],
+		[{fabrikaShare: {labels: "fabrika"}}, "`table.fabrikaShare.labels`"],
+		[{fabrikaShare: {labels: ["fabrika", "fabrika"]}}, "twice"],
 		[{project: {number: -1}}, "`table.project.number`"],
 		[{project: {owner: "not a login"}}, "`table.project.owner`"],
 		[{sections: []}, "`table.sections`"],

@@ -12,6 +12,8 @@ import {
 	type Scripted,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import type {OverSize} from "../table/flags.ts";
+import type {SizeStop} from "../table/size-stop.ts";
 import {
 	EPIC_RULES,
 	EPIC_TAIL_REPAIR_RULES,
@@ -31,6 +33,7 @@ import {
 	PR_AMBIGUOUS,
 	PROOF_ABSENT,
 	PROOF_AMBIGUOUS,
+	SIZE_STOPPED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {emitMachine} from "./emit.ts";
@@ -594,6 +597,73 @@ describe("lane brief", () => {
 		expect(out.code).toBe(PR_AMBIGUOUS);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("the closing-issue edge and the open PRs whose body");
+	});
+});
+
+describe("lane brief at the size stop", () => {
+	const OVER: OverSize = {
+		_tag: "OverSize",
+		head: 5751,
+		group: null,
+		covers: [5751],
+		size: "S",
+		limitUsd: 15,
+		spentUsd: 31,
+		stopped: true,
+	};
+	const briefWith = (stop: SizeStop) => {
+		const asked: Array<readonly [string, number]> = [];
+		const outcome = Effect.runPromise(
+			Effect.provide(
+				runBrief({
+					...options,
+					sizeStop: (repo, issue) =>
+						Effect.sync(() => {
+							asked.push([repo, issue]);
+							return stop;
+						}),
+				}),
+				Layer.merge(
+					lane("5751", ["WIP"]).layer,
+					fakeSeams([
+						[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+						[PR_CLOSERS, closingPulls()],
+						NO_NOMINATIONS,
+					]).layer,
+				),
+			),
+		);
+		return {outcome, asked};
+	};
+
+	it("briefs no shell once the issue's row spent its stop, and names the park to record", async () => {
+		const {outcome, asked} = briefWith({_tag: "Stopped", flag: OVER, rec: "Extend?"});
+		const out = await outcome;
+
+		expect(asked).toEqual([["o/r", 5751]]);
+		expect(out.code).toBe(SIZE_STOPPED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain(
+			"`fabrika lane transition 5751 BLOCKED --task issue --cause size-stop`",
+		);
+	});
+
+	it("briefs as ever when the row is short of its stop — over its size, the lane keeps going", async () => {
+		const out = await briefWith({
+			_tag: "Clear",
+			note: "#5751 stands on no row that has spent 2x its size",
+		}).outcome;
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({_tag: "Found", value: {shell: "builder"}});
+		expect(out.stderr.join("\n")).toContain("size stop: #5751 stands on no row");
+	});
+
+	it("refuses when the table could not be read — UNKNOWN, never a brief", async () => {
+		const out = await briefWith({_tag: "Unknown", reason: "the project read failed"}).outcome;
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stdout).toBe("");
 	});
 });
 

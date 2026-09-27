@@ -74,6 +74,6 @@ describe("the lane tally", () => {
 			}),
 		];
 
-		expect(tally(records, null).spend).toEqual({_tag: "Unmeasured", lanes: 1});
+		expect(tally(records, null).spend).toEqual({_tag: "Unmeasured", lanes: 1, measuredUsd: 4});
 	});
 });

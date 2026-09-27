@@ -126,7 +126,7 @@ export interface SyncOptions<R> {
 	readonly board: SyncBoard<R>;
 }
 
-type Refusal = {readonly _tag: "Refused"; readonly code: number; readonly reason: string};
+export type Refusal = {readonly _tag: "Refused"; readonly code: number; readonly reason: string};
 
 const refused = (code: number, reason: string): Refusal => ({_tag: "Refused", code, reason});
 
@@ -139,7 +139,7 @@ const stop = (
 		? refused(SCOPE_MISSING, `${VERB}: ${failed.reason}.`)
 		: refused(onFailure, `${VERB}: ${what}: ${failed.reason}.`);
 
-const rowsOf = (items: ReadonlyArray<ProjectItem>, repo: string): Map<number, Row> =>
+export const rowsOf = (items: ReadonlyArray<ProjectItem>, repo: string): Map<number, Row> =>
 	new Map(
 		items.flatMap((item) =>
 			item.contentType === "Issue" && item.repository === repo && item.contentNumber !== null
@@ -176,13 +176,27 @@ const touched = (world: Pick<World, "scope">): ReadonlyArray<number> =>
 		(a, b) => a - b,
 	);
 
-/** Read the graph out from the seeds until every group the run touches is decidable. */
-const readWorld = <R>(
-	board: SyncBoard<R>,
+/** The board reads every table reader shares: the project, its rows, the graph and the records. */
+export type TableBoard<R> = Pick<SyncBoard<R>, "locate" | "items" | "node" | "comments">;
+
+/** The rows a run touches and the graph that decides their groups. */
+export interface Scoped {
+	readonly _tag: "Graph";
+	readonly scope: Extract<Scope, {_tag: "Scoped"}>;
+	readonly graph: ReadonlyMap<number, SyncNode>;
+}
+
+/**
+ * Read the graph out from the seeds until every group the run touches is decidable. `verb` names the
+ * reader in its refusals, and every refusal says nothing was written, since none of them writes.
+ */
+export const readScope = <R>(
+	board: TableBoard<R>,
+	verb: string,
 	repo: string,
 	seeds: ReadonlyArray<number>,
 	rows: ReadonlySet<number>,
-): Effect.Effect<World | Refusal, never, R> =>
+): Effect.Effect<Scoped | Refusal, never, R> =>
 	Effect.gen(function* () {
 		const graph = new Map<number, SyncNode>();
 		let wanted: ReadonlyArray<number> = seeds;
@@ -192,21 +206,21 @@ const readWorld = <R>(
 				if (graph.size >= GRAPH_CAP) {
 					return refused(
 						PRECONDITION_UNKNOWN,
-						`${VERB}: the groups this run touches reach past ${GRAPH_CAP} issues — sync fewer issues at a time. Nothing was written.`,
+						`${verb}: the groups this run touches reach past ${GRAPH_CAP} issues — name fewer issues at a time. Nothing was written.`,
 					);
 				}
 				const read = yield* board.node(repo, issue);
 				if (read._tag === "Unknown") {
 					return refused(
 						PRECONDITION_UNKNOWN,
-						`${VERB}: cannot read #${issue}: ${read.reason}. Nothing was written.`,
+						`${verb}: cannot read #${issue}: ${read.reason}. Nothing was written.`,
 					);
 				}
 				if (read._tag === "Absent") {
 					if (seeds.includes(issue)) {
 						return refused(
 							NO_TARGET,
-							`${VERB}: ${repo} has no issue #${issue} (a pull request is not a table row). Nothing was written.`,
+							`${verb}: ${repo} has no issue #${issue} (a pull request is not a table row). Nothing was written.`,
 						);
 					}
 					graph.set(issue, vanished(issue));
@@ -220,18 +234,34 @@ const readWorld = <R>(
 		if (scoped._tag !== "Scoped") {
 			return refused(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: the issue graph did not settle after reading ${graph.size} issues. Nothing was written.`,
+				`${verb}: the issue graph did not settle after reading ${graph.size} issues. Nothing was written.`,
 			);
 		}
+		return {_tag: "Graph", scope: scoped, graph};
+	});
 
+export interface Records {
+	readonly _tag: "Records";
+	readonly records: ReadonlyMap<number, ReadonlyArray<LaneRecord>>;
+}
+
+/** Every lane record standing on each touched issue that is open or already a row. */
+export const readRecords = <R>(
+	board: TableBoard<R>,
+	verb: string,
+	repo: string,
+	scoped: Scoped,
+	rows: ReadonlySet<number>,
+): Effect.Effect<Records | Refusal, never, R> =>
+	Effect.gen(function* () {
 		const records = new Map<number, ReadonlyArray<LaneRecord>>();
-		for (const issue of touched({scope: scoped})) {
-			if (graph.get(issue)?.open !== true && !rows.has(issue)) continue;
+		for (const issue of touched(scoped)) {
+			if (scoped.graph.get(issue)?.open !== true && !rows.has(issue)) continue;
 			const comments = yield* board.comments(repo, issue);
 			if (comments._tag === "Failure") {
 				return refused(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read #${issue}'s comments: ${comments.reason} — its lane records are UNKNOWN. Nothing was written.`,
+					`${verb}: cannot read #${issue}'s comments: ${comments.reason} — its lane records are UNKNOWN. Nothing was written.`,
 				);
 			}
 			const found: LaneRecord[] = [];
@@ -240,13 +270,29 @@ const readWorld = <R>(
 				if (record._tag === "Malformed") {
 					return refused(
 						MALFORMED_RECORD,
-						`${VERB}: #${issue} carries a lane record that does not read: ${record.reason} — its spend and asks are undecidable. Nothing was written.`,
+						`${verb}: #${issue} carries a lane record that does not read: ${record.reason} — its spend and asks are undecidable. Nothing was written.`,
 					);
 				}
 				if (record._tag === "Found") found.push(record.value);
 			}
 			records.set(issue, found);
 		}
+		return {_tag: "Records", records};
+	});
+
+/** Read the graph, the records, and whether the pull requests the records name have merged. */
+const readWorld = <R>(
+	board: SyncBoard<R>,
+	repo: string,
+	seeds: ReadonlyArray<number>,
+	rows: ReadonlySet<number>,
+): Effect.Effect<World | Refusal, never, R> =>
+	Effect.gen(function* () {
+		const scoped = yield* readScope(board, VERB, repo, seeds, rows);
+		if (scoped._tag === "Refused") return scoped;
+		const read = yield* readRecords(board, VERB, repo, scoped, rows);
+		if (read._tag === "Refused") return read;
+		const {records} = read;
 
 		const merged = new Set<number>();
 		const prs = new Set([...records.values()].flat().flatMap((record) => record.prs));
@@ -260,7 +306,7 @@ const readWorld = <R>(
 			}
 			if (state.value) merged.add(pr);
 		}
-		return {_tag: "World", scope: scoped, graph, records, merged};
+		return {_tag: "World", scope: scoped.scope, graph: scoped.graph, records, merged};
 	});
 
 const planOver = (world: World, rows: ReadonlyMap<number, Row>, fields: TableFields): SyncPlan =>
@@ -452,10 +498,11 @@ export const runSync = <R>(
 	});
 
 /** Find the table without creating or linking anything: configured, else by its title. */
-const locateTable = (
+export const locateTable = (
 	token: string,
 	repo: string,
 	settings: TableSettings,
+	verb: string,
 ): Api<ProjectsAnswer<Located>> =>
 	Effect.gen(function* () {
 		const found = (value: Located): ProjectsAnswer<Located> => ({_tag: "Ok", value});
@@ -469,7 +516,7 @@ const locateTable = (
 				read.value === null
 					? refused(
 							NO_TARGET,
-							`${VERB}: \`table.project\` names project ${settings.project.number} under ${owner}, and ${owner} has no such project. Nothing was written.`,
+							`${verb}: \`table.project\` names project ${settings.project.number} under ${owner}, and ${owner} has no such project. Nothing was written.`,
 						)
 					: {_tag: "Located", project: read.value},
 			);
@@ -486,7 +533,7 @@ const locateTable = (
 			return found(
 				refused(
 					NO_TARGET,
-					`${VERB}: no open project titled "${title}" is linked to ${repo} or owned by ${owner} — run \`fabrika table setup\` first. Nothing was written.`,
+					`${verb}: no open project titled "${title}" is linked to ${repo} or owned by ${owner} — run \`fabrika table setup\` first. Nothing was written.`,
 				),
 			);
 		}
@@ -494,7 +541,7 @@ const locateTable = (
 			return found(
 				refused(
 					AMBIGUOUS_PROJECT,
-					`${VERB}: ${refs.length} open projects are titled "${title}" (${refs.map((ref) => `#${ref.number}`).join(", ")}) — set \`table.project.number\` in .fabrika.jsonc. Nothing was written.`,
+					`${verb}: ${refs.length} open projects are titled "${title}" (${refs.map((ref) => `#${ref.number}`).join(", ")}) — set \`table.project.number\` in .fabrika.jsonc. Nothing was written.`,
 				),
 			);
 		}
@@ -504,7 +551,7 @@ const locateTable = (
 
 /** The shipped board: GitHub, under the ambient token. */
 export const syncBoard: SyncBoard<ChildProcessSpawner.ChildProcessSpawner> = {
-	locate: (repo, settings) => withProjects((token) => locateTable(token, repo, settings)),
+	locate: (repo, settings) => withProjects((token) => locateTable(token, repo, settings, VERB)),
 	items: (projectId) => withProjects((token) => readItems(token, projectId)),
 	node: (repo, issue) =>
 		Effect.gen(function* () {

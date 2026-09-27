@@ -24,7 +24,7 @@ import type {FieldValue, ItemFieldValue, ProjectField, ProjectSnapshot} from "..
 import type {LaneRecord, Origin} from "../wire/lane-record.ts";
 import {type Group, groupOf, type IssueNode, issuesOf, membersOf} from "./group.ts";
 import {FIELD} from "./shape.ts";
-import {addTallies, latestRecord, type Tally, tally} from "./tally.ts";
+import {addTallies, EMPTY_TALLY, latestRecord, type Tally, tally} from "./tally.ts";
 
 /** A graph node with the edges pointing up from it, which sync walks to find the rows above. */
 export interface SyncNode extends IssueNode {
@@ -237,15 +237,16 @@ const sinceOf = (row: Row): string | null => {
 	return stage?.value._tag === "Option" && stage.value.name === STAGE.bet ? stage.updatedAt : null;
 };
 
-/** Every lane counted for `issues`, each within `since`. */
-const tallyOver = (
+/**
+ * Every lane counted for `issues`, each within `since`. The one sum a group row is judged by: sync
+ * writes it and the flags read it, so the two never disagree about what a row spent.
+ */
+export const tallyOver = (
 	issues: ReadonlyArray<number>,
 	records: SyncInput["records"],
 	since: string | null,
 ): Tally =>
-	issues
-		.map((issue) => tally(records.get(issue) ?? [], since))
-		.reduce(addTallies, {lanes: 0, asks: 0, spend: {_tag: "Measured", usd: 0}});
+	issues.map((issue) => tally(records.get(issue) ?? [], since)).reduce(addTallies, EMPTY_TALLY);
 
 /** The Stage the issue's own lanes put it at: shipped once a PR they name merged, else in lane. */
 const laneStage = (

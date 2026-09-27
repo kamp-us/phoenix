@@ -509,6 +509,18 @@ and `11` is a ref this tree cannot read — the same three facts, and the same r
 seats on those codes. Each is a park naming what the verb named — never a prompt you write by hand
 instead. Parallel active tasks brief and spawn in parallel.
 
+**`71` is the size stop, and its park has a cause.** Before any shell is briefed, `lane brief` reads
+the betting table: a row standing for the task's issue that has spent `table.stopMultiple` times its
+size stops the lane. Record the park the refusal names instead of spawning:
+
+```bash
+node <fabrika> lane transition $lane_key BLOCKED --task <name> --cause size-stop
+```
+
+That cause routes to the founder: whether to extend, re-shape or drop the work is the table's call,
+so never clear it yourself. Anything short of the stop is a flag (`table flags`), and the lane keeps
+going. A repo with no table project is never stopped; a table that will not read is `11`.
+
 **On a single-issue lane, one `20` is not a park: a `review` or `review:ui` brief with zero PRs,
 because the PR was re-pointed.** When a PR under review is edited to serve another issue, no
 candidate links the lane's issue any more and the review has nothing to judge. Record the rewind
