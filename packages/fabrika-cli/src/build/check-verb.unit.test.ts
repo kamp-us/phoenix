@@ -167,6 +167,7 @@ describe("classifyDiff — matched-neither is a bucket, not an absence", () => {
 			code: ["a.ts"],
 			markdown: ["R.md"],
 			workflows: [".github/workflows/ci.yml"],
+			config: [],
 			unvalidatable: ["scripts/x.sh"],
 		});
 	});
@@ -183,8 +184,8 @@ describe("classifyDiff — matched-neither is a bucket, not an absence", () => {
 			"LICENSE",
 			".github/workflows/ci.yaml",
 		];
-		const {code, markdown, workflows, unvalidatable} = classifyDiff(files);
-		expect([...code, ...markdown, ...workflows, ...unvalidatable].sort()).toEqual(
+		const {code, markdown, workflows, config, unvalidatable} = classifyDiff(files, ["LICENSE"]);
+		expect([...code, ...markdown, ...workflows, ...config, ...unvalidatable].sort()).toEqual(
 			[...files].sort(),
 		);
 	});
@@ -1451,5 +1452,150 @@ describe("runCheck — the local-tree guard sweep", () => {
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).skipped).toEqual([]);
 		expect(JSON.parse(out.stdout).ran).toEqual(["pnpm typecheck --force", "pnpm lint:worktree"]);
+	});
+});
+
+/**
+ * A root config file no surface owns, validated by the repo's declared `configValidators` entries on
+ * every surface.
+ */
+describe("configValidators — a config-only diff greens or reds under every surface", () => {
+	const LEFTHOOK_ARGV = ["pnpm", "exec", "lefthook", "validate"];
+	const LEFTHOOK = /^pnpm exec lefthook validate$/;
+	const DECLARED: Record<string, string> = {
+		[CONFIG_FILE]: JSON.stringify({
+			codeValidators: [
+				{command: ["pnpm", "typecheck", "--force"]},
+				{command: ["pnpm", "lint:worktree"]},
+			],
+			configValidators: [{command: LEFTHOOK_ARGV, reads: ["lefthook.yml"]}],
+		}),
+	};
+	const configRun = (
+		diff: string,
+		surface: string,
+		script: ReadonlyArray<Scripted> = [],
+		files: Record<string, string> = DECLARED,
+		unreadable: ReadonlyArray<string> = [],
+	) => {
+		const shell = fakeSeams([...LANE_OK, [DIFF, okOut(diff)], ...script]);
+		return Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, surface}),
+				Layer.merge(shell.layer, fakeFs({files, unreadable}).layer),
+			),
+		).then((out) => ({out, calls: shell.calls}));
+	};
+
+	it("keeps the surface vocabulary at four members", () => {
+		expect(SURFACES).toEqual(["code", "prose", "plan", "workflows"]);
+	});
+
+	it("classifies a declared file as config, and nothing a surface already owns", () => {
+		const configured = ["lefthook.yml", "biome.json", ".github/workflows/ci.yml", "docs/a.md"];
+		expect(
+			classifyDiff(
+				["lefthook.yml", "biome.json", ".github/workflows/ci.yml", "docs/a.md", "x.sh"],
+				configured,
+			),
+		).toEqual({
+			code: ["biome.json"],
+			markdown: ["docs/a.md"],
+			workflows: [".github/workflows/ci.yml"],
+			config: ["lefthook.yml"],
+			unvalidatable: ["x.sh"],
+		});
+	});
+
+	it("lets a config-only diff through the anchor under every surface", () => {
+		for (const surface of SURFACES) {
+			expect(surfaceMismatch(surface, ["lefthook.yml"], ["lefthook.yml"])).toBeNull();
+		}
+	});
+
+	it("counts a config file covered under every surface, since its entries run on each", () => {
+		for (const surface of SURFACES) {
+			expect(notCoveredBy(surface, ["lefthook.yml", "x.sh"], ["lefthook.yml"])).toEqual(["x.sh"]);
+		}
+	});
+
+	it.each(SURFACES)("greens a lefthook.yml-only diff under --surface %s", async (surface) => {
+		const {out, calls} = await configRun("lefthook.yml\n", surface, [
+			[LEFTHOOK, okOut("All good")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			verdict: "green",
+			surface,
+			tree: ROOT,
+			ran: [LEFTHOOK_ARGV.join(" ")],
+			skipped: [],
+			unvalidated: [],
+		});
+		expect(calls).toContain("pnpm exec lefthook validate");
+		expect(calls).not.toContain("pnpm typecheck --force");
+	});
+
+	it.each(
+		SURFACES,
+	)("reds on 18 under --surface %s when the entry exits non-zero", async (surface) => {
+		const {out} = await configRun("lefthook.yml\n", surface, [
+			[LEFTHOOK, errOut("lefthook.yml: unknown hook")],
+		]);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-2)).toBe("lefthook.yml: unknown hook");
+		expect(out.stderr.at(-1)).toBe(
+			"build check: red — pnpm exec lefthook validate failed; diagnostics above.",
+		);
+	});
+
+	it.each(
+		SURFACES,
+	)("still refuses on 22 under --surface %s when no entry reads it", async (surface) => {
+		const {out, calls} = await configRun("lefthook.yml\n", surface, [], CODE_CONFIG);
+		expect(out.code).toBe(UNCLASSIFIED_DIFF);
+		expect(out.stderr.at(-1)).toContain("no surface validates any of the 1 changed file(s)");
+		expect(calls).not.toContain("pnpm exec lefthook validate");
+	});
+
+	it("still refuses on 22 over a config file the declared entries do not read", async () => {
+		const {out, calls} = await configRun("biome.jsonc\n.prettierrc\n", "code");
+		expect(out.code).toBe(UNCLASSIFIED_DIFF);
+		expect(calls).not.toContain("pnpm exec lefthook validate");
+	});
+
+	it("discloses an undeclared file beside a declared one rather than refusing the pair", async () => {
+		const {out} = await configRun("lefthook.yml\nscripts/x.sh\n", "prose", [[LEFTHOOK, okOut("")]]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual(["scripts/x.sh"]);
+	});
+
+	it("runs the entry beside the code validators on a mixed diff", async () => {
+		const {out} = await configRun("src/a.ts\nlefthook.yml\n", "code", [
+			[LEFTHOOK, okOut("")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			ran: ["pnpm typecheck --force", "pnpm lint:worktree", LEFTHOOK_ARGV.join(" ")],
+			unvalidated: [],
+		});
+	});
+
+	it("refuses UNKNOWN when the declaration cannot be read over a diff that needs it", async () => {
+		const {out, calls} = await configRun("lefthook.yml\n", "code", [], DECLARED, [CONFIG_FILE]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("cannot read `configValidators`");
+		expect(calls).not.toContain("pnpm exec lefthook validate");
+	});
+
+	it("refuses UNKNOWN on a malformed declaration rather than guessing which files it reads", async () => {
+		const {out} = await configRun("lefthook.yml\n", "code", [], {
+			[CONFIG_FILE]: JSON.stringify({configValidators: [{command: ["x"], reads: ["*.yml"]}]}),
+		});
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("a pattern");
 	});
 });
