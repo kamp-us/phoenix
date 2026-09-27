@@ -254,6 +254,151 @@ describe("runGate", () => {
 		expect(out.stderr.some((line) => line.includes("an invalid emission"))).toBe(true);
 	});
 
+	describe("names a head-bound §CP advisory it withholds without --cp (#6796)", () => {
+		const advisory = (sha: string): string =>
+			`review-code: advisory — a clause\n\nReviewed-head: @ ${sha}\n\n- [PASS] a criterion`;
+		const withheldLines = (stderr: ReadonlyArray<string>) =>
+			stderr.filter((line) => line.includes("§CP advisory verdict in comment"));
+
+		it("explains a `stale` row the earlier-head marker left behind", async () => {
+			const out = await run([
+				[PULL, served(pull({comments: 2}))],
+				[
+					COMMENTS,
+					commentsServed(
+						{id: 1, body: marker("review-code", "PASS", OTHER_HEAD)},
+						{id: 2, body: advisory(HEAD), updatedAt: "2026-08-09T00:00:00Z"},
+					),
+				],
+				[ACL, permission("write")],
+			]);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toBe(
+				[`gate\tblocked\t${HEAD}`, "ns\treview-code\tstale\tmarker", ""].join("\n"),
+			);
+			const lines = withheldLines(out.stderr);
+			expect(lines).toHaveLength(1);
+			expect(lines[0]).toContain("review-code:");
+			expect(lines[0]).toContain("comment 2");
+			expect(lines[0]).toContain("reads stale");
+			expect(lines[0]).toContain("passing --cp");
+		});
+
+		it("explains a `fail` row from a same-head FAIL a later advisory PASS replaced (#9772)", async () => {
+			const out = await run([
+				[PULL, served(pull({comments: 2}))],
+				[
+					COMMENTS,
+					commentsServed(
+						{
+							id: 1,
+							body: marker("review-code", "FAIL", HEAD),
+							updatedAt: "2026-09-24T10:31:28Z",
+						},
+						{id: 2, body: advisory(HEAD), updatedAt: "2026-09-24T10:32:54Z"},
+					),
+				],
+				[ACL, permission("write")],
+			]);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toContain("ns\treview-code\tfail\tmarker");
+			const lines = withheldLines(out.stderr);
+			expect(lines).toHaveLength(1);
+			expect(lines[0]).toContain("comment 2");
+			expect(lines[0]).toContain("reads fail");
+		});
+
+		it("explains an `absent` row, and the advisory still never satisfies", async () => {
+			const out = await run([
+				[PULL, served(pull({comments: 1}))],
+				[COMMENTS, commentsServed({id: 7, body: advisory(HEAD)})],
+				[ACL, permission("write")],
+			]);
+			expect(out.stdout).toBe(
+				[`gate\tblocked\t${HEAD}`, "ns\treview-code\tabsent\t-", ""].join("\n"),
+			);
+			expect(withheldLines(out.stderr)).toHaveLength(1);
+			expect(withheldLines(out.stderr)[0]).toContain("comment 7");
+		});
+
+		it("keeps --json state tokens unchanged beside the notice", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull({comments: 2}))],
+					[
+						COMMENTS,
+						commentsServed(
+							{id: 1, body: marker("review-code", "PASS", HEAD)},
+							{id: 2, body: advisory(HEAD), updatedAt: "2026-08-09T00:00:00Z"},
+						),
+					],
+					[ACL, permission("write")],
+				],
+				{json: true},
+			);
+			expect(JSON.parse(out.stdout)).toMatchObject({
+				outcome: "satisfied",
+				namespaces: [{name: "review-code", state: "pass", carrier: "marker", commentId: 1}],
+			});
+			expect(withheldLines(out.stderr)[0]).toContain("reads pass");
+		});
+
+		it("emits nothing under --cp, where the advisory resolves the namespace itself", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull({comments: 2}))],
+					[
+						COMMENTS,
+						commentsServed(
+							{id: 1, body: marker("review-code", "PASS", OTHER_HEAD)},
+							{id: 2, body: advisory(HEAD), updatedAt: "2026-08-09T00:00:00Z"},
+						),
+					],
+					[ACL, permission("write")],
+				],
+				{cp: true},
+			);
+			expect(out.stdout).toContain("ns\treview-code\tpass\tadvisory");
+			expect(withheldLines(out.stderr)).toEqual([]);
+		});
+
+		it("emits nothing when the advisory binds another head", async () => {
+			const out = await run([
+				[PULL, served(pull({comments: 2}))],
+				[
+					COMMENTS,
+					commentsServed(
+						{id: 1, body: marker("review-code", "PASS", OTHER_HEAD)},
+						{id: 2, body: advisory(OTHER_HEAD)},
+					),
+				],
+				[ACL, permission("write")],
+			]);
+			expect(out.stdout).toContain("ns\treview-code\tstale\tmarker");
+			expect(withheldLines(out.stderr)).toEqual([]);
+		});
+
+		it("emits nothing for an advisory whose author is below write+", async () => {
+			const out = await run([
+				[PULL, served(pull({comments: 1}))],
+				[COMMENTS, commentsServed({id: 2, body: advisory(HEAD)})],
+				[ACL, permission("read")],
+			]);
+			expect(withheldLines(out.stderr)).toEqual([]);
+		});
+
+		it("reports an unreadable ACL on a withheld advisory as a notice, never 11", async () => {
+			const out = await run([
+				[PULL, served(pull({comments: 1}))],
+				[COMMENTS, commentsServed({id: 2, body: advisory(HEAD)})],
+				[ACL, {status: 502, body: '{"message":"Bad gateway"}'}],
+			]);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toContain("ns\treview-code\tabsent\t-");
+			expect(out.stderr.join("\n")).toContain("the §CP advisory in comment 2 is not reported");
+		});
+	});
+
 	it("refuses an off-vocabulary --require on 10", async () => {
 		const out = await run([[PULL, served(pull())]], {require: ["review-vibes"]});
 		expect(out.code).toBe(OFF_VOCABULARY);
