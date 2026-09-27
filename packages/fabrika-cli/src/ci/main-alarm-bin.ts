@@ -22,7 +22,7 @@
  */
 
 import {readFileSync} from "node:fs";
-import {CONFIG_PATH, type ConfigSource, readDocument} from "../config/document.ts";
+import {CONFIG_PATH, type ConfigSource, readDocument, trackedOnly} from "../config/document.ts";
 import {resolveKey} from "../config/key-group.ts";
 import {ciKey} from "../config/keys/ci.ts";
 import {
@@ -111,7 +111,7 @@ const alarmSettings = (): {mention: ReadonlyArray<string>; label: string} => {
 				? {_tag: "Absent"}
 				: {_tag: "Unreadable", reason: `${CONFIG_PATH} could not be read — ${String(error)}`};
 	}
-	const resolved = resolveKey(readDocument(source), ciKey);
+	const resolved = resolveKey(trackedOnly(readDocument(source)), ciKey);
 	if (resolved._tag === "Malformed" || resolved._tag === "Unknown") {
 		return fail(`the alarm settings are unusable — ${resolved.reason}`);
 	}

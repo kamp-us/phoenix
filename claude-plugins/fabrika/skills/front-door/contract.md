@@ -508,7 +508,9 @@ fabrika status settings [--root <dir>] [--surfaces] [--json]
 
 The resolved config surface: every key `.fabrika.jsonc` may carry, what it resolves to here, and
 where that value came from. It is the one place a skill asks what a key resolves to, so no skill
-document has to restate a value (R9.1). It reads; it writes nothing.
+document has to restate a value (R9.1). It reads; it writes nothing. Both config layers are read:
+the tracked `.fabrika.jsonc` and, winning per key, the gitignored `.fabrika.local.jsonc` a machine
+may declare an allow-listed key in.
 
 **Inputs**
 
@@ -538,7 +540,7 @@ are different facts, and an agent reading a bare value cannot tell whether the r
 
 | Provenance | Meaning |
 |---|---|
-| `declared` | the file carries this key and its value decoded |
+| `declared` | a config file carries this key and its value decoded; `<detail>` names the file it was declared in |
 | `default` | no file, or no such key — the shipped default, with which of the two in `<detail>` |
 | `unknown` | the value could not be established, with the reason in `<detail>` and no value printed |
 
@@ -555,7 +557,7 @@ that invites a caller to read the bytes without reading the status. This is the 
 `build check` and `build clearances` already hold on this file: an unreadable config is UNKNOWN,
 never the shipped default (`packages/fabrika-cli/src/config/document.ts`).
 
-**A repo with no `.fabrika.jsonc` is `resolved` at exit `0`**, every row `default`. That is the
+**A repo with neither config file is `resolved` at exit `0`**, every row `default`. That is the
 whole point of a shipped default, and it is the three-state law's proven-empty class, not its third.
 
 <a id="surfaces-expands-one-key"></a>**`--surfaces` expands one key; it does not add a readout.**
@@ -590,7 +592,7 @@ With `--json`, stdout is one object carrying `outcome` (the header's state), `pa
 | Code | Trigger |
 |---|---|
 | `7` | the config surface registers zero keys, or `--surfaces` was passed and no `surfaceDispositions` key is registered — nothing to resolve, and a readout over an empty surface is not an answer |
-| `11` | the repository root could not be resolved, or `.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green |
+| `11` | the repository root could not be resolved, or either config file exists and could not be read or is not a JSON object, a value the surface refuses is declared, or the load was refused — including a local file naming a key no machine may set locally — UNKNOWN, never green |
 
 **Errors**
 

@@ -16,12 +16,17 @@ describe("the declared vocabulary", () => {
 	it("reads both halves", () => {
 		expect(
 			declared('{"containmentVocabulary": {"types": ["type:chore"], "values": ["unpublished"]}}'),
-		).toEqual({_tag: "Declared", value: {types: ["type:chore"], values: ["unpublished"]}});
+		).toEqual({
+			_tag: "Declared",
+			layer: "tracked",
+			value: {types: ["type:chore"], values: ["unpublished"]},
+		});
 	});
 
 	it("lowercases the values, so a marker matches however the repo cased it", () => {
 		expect(declared('{"containmentVocabulary": {"values": ["Unpublished"]}}')).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: {types: ["type:feature"], values: ["unpublished"]},
 		});
 	});
@@ -29,6 +34,7 @@ describe("the declared vocabulary", () => {
 	it("falls each absent half to its shipped value", () => {
 		expect(declared('{"containmentVocabulary": {"values": ["unpublished", "exempt"]}}')).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: {types: ["type:feature"], values: ["unpublished", "exempt"]},
 		});
 	});
@@ -36,6 +42,7 @@ describe("the declared vocabulary", () => {
 	it("admits an empty half — that is how a repo with no deployment story turns it off", () => {
 		expect(declared('{"containmentVocabulary": {"types": []}}')).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: {types: [], values: ["flag", "exempt"]},
 		});
 	});

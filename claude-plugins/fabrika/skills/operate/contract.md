@@ -534,11 +534,11 @@ prior-lane read, and the cap gate adds one claim-marker read per candidate lane 
 
 **The cap gate.** Last before the write, an issue key is counted against `laneConcurrencyCap` as the
 repository that OWNS the cwd declares it. That is the same checkout the lanes root derives from, so a
-linked worktree is capped by the primary checkout's `.fabrika.jsonc` and not by its own tracked
-copy. A seat is held by an issue lane under this root that has not folded to done AND whose issue
+linked worktree is capped by the primary checkout's config and not by its own tracked copy. A seat is held by an issue lane under this root that has not folded to done AND whose issue
 carries a live `lane claim` marker, plus every lane no read can account for. An active lane nobody
 claims is idle and holds nothing, and an archived one is already out of the count. There is no
-override flag; raising the number in the config is how it changes.
+override flag: a machine raises the number in that checkout's gitignored `.fabrika.local.jsonc`,
+which wins over the tracked `.fabrika.jsonc`, and never by editing the tracked file.
 
 ### Exit status
 
@@ -552,7 +552,7 @@ override flag; raising the number in the config is how it changes.
   wrong machine for it.
 - `48` — the issue hangs under a parent, so it gets no lane of its own. The line names whether the
   parent lane holds its task, provably does not, or did not read, and routes accordingly.
-- `51` — the lanes root already holds as many CLAIMED lanes as `.fabrika.jsonc`'s
+- `51` — the lanes root already holds as many CLAIMED lanes as the config's
   `laneConcurrencyCap` allows. The cap, the claimed count, every lane holding a seat and, separately,
   the number of idle unclaimed lanes are named, and nothing was written.
 - `63` — the board says this issue already had a lane. Every pull request that proves it is named,
@@ -1163,10 +1163,10 @@ one of:
 - `free` — a seat is available.
 - `uncapped` — the config declares no cap, so nothing bounds this root and `free` is `null`.
 
-`laneConcurrencyCap` is read from the `.fabrika.jsonc` of the repository that OWNS the cwd, the same
+`laneConcurrencyCap` is read from the config of the repository that OWNS the cwd, the same
 checkout the lanes root derives from. So a linked worktree is counted against the primary checkout's
-declaration and not its own tracked copy. There is no override flag: raising the number in the
-config is how it changes.
+declaration and not its own tracked copy. There is no override flag: a machine raises the number in
+that checkout's gitignored `.fabrika.local.jsonc`, never by editing the tracked `.fabrika.jsonc`.
 
 ### Exit status
 

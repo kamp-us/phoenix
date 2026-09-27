@@ -14,7 +14,7 @@ import {discoverRepoRoot} from "../delegate/root.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {exists, readFile, writeFile} from "../io/fs.ts";
-import {CONFIG_SCHEMA_FILE} from "./json-schema.ts";
+import {CONFIG_SCHEMA_FILE, LOCAL_CONFIG_SCHEMA_FILE} from "./json-schema.ts";
 import {KEY_GROUPS} from "./registry.ts";
 import {runSchema, type SchemaRead, type SchemaRoot, type SchemaSave} from "./schema-verb.ts";
 
@@ -44,10 +44,13 @@ const schemaRoot: Effect.Effect<SchemaRoot, never, FileSystem.FileSystem | Path.
 	},
 );
 
-/** The committed schema as its caller found it — absent, read, or unreadable, kept apart. */
-const readSchemaFile = (root: string): Effect.Effect<SchemaRead, never, FileSystem.FileSystem> =>
+/** One committed schema as its caller found it — absent, read, or unreadable, kept apart. */
+const readSchemaFile = (
+	root: string,
+	file: string,
+): Effect.Effect<SchemaRead, never, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
-		const path = `${root}/${CONFIG_SCHEMA_FILE}`;
+		const path = `${root}/${file}`;
 		const probe = yield* Effect.result(exists(path));
 		if (Result.isFailure(probe)) return {_tag: "Failed", reason: probe.failure.reason};
 		if (!probe.success) return {_tag: "Absent"};
@@ -59,9 +62,10 @@ const readSchemaFile = (root: string): Effect.Effect<SchemaRead, never, FileSyst
 
 const saveSchemaFile = (
 	root: string,
+	file: string,
 	content: string,
 ): Effect.Effect<SchemaSave, never, FileSystem.FileSystem | Path.Path> =>
-	Effect.map(Effect.result(writeFile(`${root}/${CONFIG_SCHEMA_FILE}`, content)), (written) =>
+	Effect.map(Effect.result(writeFile(`${root}/${file}`, content)), (written) =>
 		Result.isFailure(written)
 			? ({_tag: "Failed", reason: written.failure.reason} satisfies SchemaSave)
 			: ({_tag: "Saved"} satisfies SchemaSave),
@@ -73,7 +77,7 @@ const schema = leafCommand(
 		write: Flag.boolean("write").pipe(
 			Flag.withDefault(false),
 			Flag.withDescription(
-				`render ${CONFIG_SCHEMA_FILE} from the registry again, instead of only reconciling it`,
+				`render ${CONFIG_SCHEMA_FILE} and ${LOCAL_CONFIG_SCHEMA_FILE} from the registry again, instead of only reconciling them`,
 			),
 		),
 		json: jsonFlag,
@@ -91,12 +95,16 @@ const schema = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription(`Reconcile ${CONFIG_SCHEMA_FILE} with the config-key registry.`),
+	Command.withShortDescription(
+		"Reconcile both committed schema files with the config-key registry.",
+	),
 	Command.withDescription(
 		[
-			"Prints `schema\\t<agrees|written>\\t<keys>` for the committed schema and the config-key registry.",
-			"  4: the committed file is stale or not committed; regenerate with --write",
-			"  6: the repo root, or the file, could not be read or written (UNKNOWN)",
+			"Prints the schema files' agreement with the config-key registry.",
+			"  stdout: `schema\\t<agrees|written>\\t<keys>`, then one line per schema file:",
+			"  `file\\t<path>\\t<agrees|written>\\t<keys>`",
+			"  4: a committed schema file is stale or not committed; regenerate with --write",
+			"  6: the repo root, or a schema file, could not be read or written (UNKNOWN)",
 			"  7: a registered key carries no schema fragment",
 			"  Derivation: packages/fabrika-cli/src/config/schema-verb.ts",
 		].join("\n"),
@@ -110,9 +118,9 @@ export const configCommand = Command.make("config").pipe(
 		schema,
 	]),
 	Command.withShortDescription(
-		"Reconcile the shape of .fabrika.jsonc with the config-key registry.",
+		"Reconcile the shape of the config files with the config-key registry.",
 	),
 	Command.withDescription(
-		"Own the derived shape of .fabrika.jsonc — assemble the per-key JSON Schema fragments into the one document an editor validates the config file against, and keep the committed schema rendered from the registry",
+		"Own the derived shape of the config files — assemble the per-key JSON Schema fragments into the documents an editor validates .fabrika.jsonc and the machine-local .fabrika.local.jsonc against, and keep the committed schemas rendered from the registry",
 	),
 );

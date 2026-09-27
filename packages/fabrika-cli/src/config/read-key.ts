@@ -1,5 +1,9 @@
 /**
- * One key of `.fabrika.jsonc`, read off the checkout a verb is standing in.
+ * One key of the config surface, read off the checkout a verb is standing in.
+ *
+ * The note names the layer a value came from, so a reader debugging a number sees which of the two
+ * files to open. A value whose source is invisible is one an operator debugs blind, which is the
+ * cost the old hand-edit of the tracked file at least made visible in `git status`.
  *
  * Every reader wants the same three things — the value, a sentence naming where it came from, and a
  * refusal it can print verbatim — so the four resolution arms collapse here once instead of at each
@@ -14,7 +18,7 @@
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
-import {CONFIG_PATH} from "./document.ts";
+import {layerPath} from "./document.ts";
 import type {KeyGroup} from "./key-group.ts";
 import {resolve} from "./load.ts";
 import {loadRepoConfig} from "./working-root.ts";
@@ -39,7 +43,7 @@ export const readKey = <A>(
 				return {
 					_tag: "Value" as const,
 					value: resolved.value,
-					note: `\`${group.key}\` as declared in ${CONFIG_PATH}`,
+					note: `\`${group.key}\` as declared in ${layerPath(resolved.layer)}`,
 				};
 			case "Default":
 				return {

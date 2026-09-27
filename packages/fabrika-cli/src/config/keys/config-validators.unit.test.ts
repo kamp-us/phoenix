@@ -25,6 +25,7 @@ describe("configValidators", () => {
 	it("decodes an entry into the argv to spawn and the exact files it reads", () => {
 		expect(declared([LEFTHOOK])).toEqual({
 			_tag: "Declared",
+			layer: "tracked",
 			value: [{argv: ["pnpm", "exec", "lefthook", "validate"], reads: ["lefthook.yml"]}],
 		});
 	});

@@ -1,9 +1,11 @@
 /**
  * `status settings` end to end: the **exit status and the exact stdout bytes** a shell caller reads.
  *
- * Three spawns, one per case the verb's whole design turns on — no file, a declared value, and a
- * file that exists and cannot be read. Only a subprocess proves that the last one writes zero bytes
- * to a real stdout; everything else is covered in-process by `./settings-verb.unit.test.ts`
+ * One spawn per case the verb's whole design turns on — no file, a declared value, a file that
+ * exists and cannot be read, a value one machine declared beside the tracked file, and a local file
+ * naming a key no machine may set. Only a subprocess proves that the unreadable case writes zero
+ * bytes to a real stdout, and only a subprocess opens the second file off a real directory;
+ * everything else is covered in-process by `./settings-verb.unit.test.ts`
  * (`.patterns/subprocess-test-budget.md`).
  *
  * The unreadable case is a **directory** named `.fabrika.jsonc` rather than a chmod'd file: `EISDIR`
@@ -57,6 +59,24 @@ describe("fabrika status settings, end to end", {timeout: SUBPROCESS_TEST_TIMEOU
 		);
 		mkdirSync(at("unreadable"));
 		mkdirSync(join(at("unreadable"), ".fabrika.jsonc"));
+		mkdirSync(at("machine-local"));
+		writeFileSync(
+			join(at("machine-local"), ".fabrika.jsonc"),
+			'{\n\t"governedRoots": ["docs/adr/", ".fabrika.jsonc"],\n\t"laneConcurrencyCap": 2\n}\n',
+		);
+		writeFileSync(
+			join(at("machine-local"), ".fabrika.local.jsonc"),
+			'{\n\t// this laptop drives ten lanes\n\t"laneConcurrencyCap": 10\n}\n',
+		);
+		mkdirSync(at("ineligible-local"));
+		writeFileSync(
+			join(at("ineligible-local"), ".fabrika.jsonc"),
+			'{\n\t"laneConcurrencyCap": 2\n}\n',
+		);
+		writeFileSync(
+			join(at("ineligible-local"), ".fabrika.local.jsonc"),
+			'{\n\t"governedRoots": ["docs/adr/"]\n}\n',
+		);
 	});
 
 	afterAll(() => {
@@ -78,8 +98,26 @@ describe("fabrika status settings, end to end", {timeout: SUBPROCESS_TEST_TIMEOU
 		expect(run.code).toBe(0);
 		expect(run.stdout.split("\n")[0]).toMatch(/^settings\tresolved\t\d+\t1\t0\t/);
 		expect(run.stdout).toContain(
-			'setting\tgovernedRoots\tdeclared\t["docs/adr/",".fabrika.jsonc"]\t-\t',
+			'setting\tgovernedRoots\tdeclared\t["docs/adr/",".fabrika.jsonc"]\tdeclared in .fabrika.jsonc\t',
 		);
+	});
+
+	it("names the machine-local file on a key that machine declared", () => {
+		const run = settings(at("machine-local"));
+		expect(run.code).toBe(0);
+		expect(run.stdout).toContain(
+			"setting\tlaneConcurrencyCap\tdeclared\t10\tdeclared in .fabrika.local.jsonc\t",
+		);
+		expect(run.stdout).toContain(
+			'setting\tgovernedRoots\tdeclared\t["docs/adr/",".fabrika.jsonc"]\tdeclared in .fabrika.jsonc\t',
+		);
+	});
+
+	it("refuses on 11 when the local file names a key no machine may set", () => {
+		const run = settings(at("ineligible-local"));
+		expect(run.code).toBe(PRECONDITION_UNKNOWN);
+		expect(run.stdout).toBe("");
+		expect(run.stderr).toContain("governedRoots");
 	});
 
 	it("refuses on 11 with NOTHING on stdout when the config exists and cannot be read", () => {

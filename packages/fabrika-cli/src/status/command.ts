@@ -13,9 +13,10 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
-import {CONFIG_PATH, type ConfigSource} from "../config/document.ts";
-import {readConfigSource} from "../config/source.ts";
-import {repoConfigSource} from "../config/working-root.ts";
+import {CONFIG_PATH} from "../config/document.ts";
+import type {ConfigLayers} from "../config/load.ts";
+import {readConfigLayers} from "../config/source.ts";
+import {repoConfigLayers, repoConfigSource} from "../config/working-root.ts";
 import {discoverRepoRoot} from "../delegate/root.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
@@ -107,8 +108,8 @@ const repositoryRoot: Effect.Effect<string, never, FileSystem.FileSystem | Path.
 /** The config surface under `root` when one was declared, else the one above the cwd. */
 const configSurface = (
 	root: string | null,
-): Effect.Effect<ConfigSource, never, FileSystem.FileSystem | Path.Path> =>
-	root === null ? repoConfigSource(process.cwd()) : readConfigSource(root);
+): Effect.Effect<ConfigLayers, never, FileSystem.FileSystem | Path.Path> =>
+	root === null ? repoConfigLayers(process.cwd()) : readConfigLayers(root);
 
 const resolveTarget = (explicit: string | null) => resolveRepo(explicit, process.env);
 
@@ -140,7 +141,7 @@ const settings = leafCommand(
 		root: Flag.string("root").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"the directory holding .fabrika.jsonc (default: the repository root, else the cwd)",
+				"the directory holding .fabrika.jsonc and .fabrika.local.jsonc (default: the repository root, else the cwd)",
 			),
 		),
 		surfaces: Flag.boolean("surfaces").pipe(
@@ -152,11 +153,11 @@ const settings = leafCommand(
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({root, surfaces, json}) {
-		const source = yield* configSurface(Option.getOrNull(root));
+		const layers = yield* configSurface(Option.getOrNull(root));
 		yield* emit(
 			runSettings({
-				source,
-				rows: settingRows(source),
+				layers,
+				rows: settingRows(layers),
 				asOf: readNow(instant(new Date())),
 				json,
 				surfaces,
@@ -167,11 +168,11 @@ const settings = leafCommand(
 	Command.withShortDescription("The resolved config surface, every key with its provenance."),
 	Command.withDescription(
 		[
-			"Prints every `.fabrika.jsonc` key with its resolved value and where that value came from.",
+			"Prints every config key with its resolved value and the file or default it came from.",
 			"  stdout: `settings\\t<resolved|unknown>\\t<keys>\\t<declared>\\t<unknown>\\t<as-of>`, then",
 			"  `setting\\t<key>\\t<declared|default|unknown>\\t<value-as-json>\\t<detail>\\t<as-of>` per key",
 			"  7: no keys registered, or --surfaces finds no `surfaceDispositions` key",
-			"  11: the root or `.fabrika.jsonc` could not be read or resolved (UNKNOWN)",
+			"  11: the root or a config file could not be read or resolved (UNKNOWN)",
 			'  Derivation: the front-door skill\'s contract.md, "status settings"',
 		].join("\n"),
 	),
@@ -362,8 +363,8 @@ const open = leafCommand(
 		for (const name of wanted) {
 			if (name === "menu" && roster !== null) fields.push(menuField(roster, asOf));
 			if (name === "settings") {
-				const source = yield* configSurface(null);
-				fields.push(settingsField(settingRows(source), CONFIG_PATH, asOf));
+				const layers = yield* configSurface(null);
+				fields.push(settingsField(settingRows(layers), CONFIG_PATH, asOf));
 			}
 			if (name === "wiring") {
 				const source = yield* repoWiringSource(process.cwd());
