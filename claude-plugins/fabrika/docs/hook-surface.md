@@ -215,6 +215,79 @@ Failing *closed* still has no admissible form, and for the reason the ruling giv
 
 **The notice is owed and only half-implementable today, so it is recorded rather than assumed.** On exit `126` the process did start and fabrika speaks for itself (`resolve.ts`'s foreign-checkout refusal). On exit `127` fabrika cannot speak, because `fabrika` is what failed to resolve — so that half has **no owner**, and its structural cure is installing the package: available to any machine that takes it, absent on any that does not. An adversarial review precedes any implementation of this horn in either direction.
 
+## The hook verbs' derivations
+
+Each `fabrika hook <verb> --help` owns calling the verb: its answer bytes and one line per exit. The
+derivation facts behind four of them live here; `hook claude-spend`'s live in the
+[Claude usage collector](claude-usage.md).
+
+### `hook cli-floor`
+
+The minimum is the `minimum` in `cli-floor.json` under `$CLAUDE_PLUGIN_ROOT`: the fabrika plugin's
+declared minimum `@kampus/fabrika-cli` version, a variable the harness sets for the plugin's own
+hooks. The verb reads no stdin. Its stdout is one hook-output JSON object at exit `0`. Below the
+minimum it carries `systemMessage`, the warning the harness shows the user, naming both versions and
+the upgrade command. At or above it carries `suppressOutput` and a `fabrika` token
+(`outcome: met`), so the user sees nothing new. Both carry `fabrika.installed` and
+`fabrika.minimum`. Exit `23` is no plugin root, or the floor file or a version in it unreadable — the
+comparison was not made, so it is UNKNOWN and never a pass. A non-zero exit on `SessionStart` shows
+stderr and lets the session start.
+
+### `hook pre-bash`
+
+The jump is read through the wrappers named [above](#the-declared-hooks-and-how-they-are-proven). A
+jump behind a word whose meaning is run-time — `eval`, a wrapper script — is out of key and allowed.
+A jump whose target expands at run time is refused, because where it lands cannot be decided before
+it runs. The verb arms only inside a linked worktree: the primary checkout and a cwd under no
+repository are allowed untouched, since isolation is the operator's call. Exit `19` is the one arm
+where the cwd's working tree could not be established: the jump was NOT judged, and the command
+proceeds. Why a deny is JSON at exit `0` and an allow carries no decision field is
+[the harness exit-code contract](#the-harness-exit-code-contract).
+
+### `hook worktree-create`
+
+**It reaps before it provisions.** It runs `fabrika build reap --execute --limit 4` as a child in the
+repository the envelope named, before the fetch and the add, because whatever creates a worktree is
+what bounds how many accumulate. The failure it prevents is a full volume refusing the add, and
+freeing the disk after that refusal is a spawn too late. It is a child rather than a call so the
+sweep runs in that repository rather than in the hook's own cwd. It is bounded by `--limit` and by a
+120s timeout, so the fetch and the add still fit in the hook's 600s budget. **Nothing it answers can
+refuse the spawn**: a reclaimer that could block one would turn a housekeeping miss into the total
+stop it exists to end, so a failed or cut-off sweep is a stderr line and the provisioning proceeds.
+
+It fetches the base into a per-spawn ref and resolves it to a commit id — never the shared
+`FETCH_HEAD`, which a sibling spawn's fetch truncates mid-read. It then runs
+`git worktree add --detach` at that id under a PATH that resolves the toolchain, so lefthook's
+post-checkout install runs, and refuses unless the tree exists and its virtual store landed.
+
+The fetch and the add each recover from the two sibling-worktree faults a parallel spawn causes: a
+fetch reading a half-built `worktrees/<name>/HEAD`, and an add reading a half-built
+`worktrees/<name>/commondir`. Each prunes dead worktree entries and re-attempts, bounded to five
+attempts and up to 3s of delay per command, taking no lock. Any other diagnostic refuses on the first
+attempt. Every non-zero exit blocks the spawn.
+
+### `hook plugin-sync`
+
+It reads the `SessionStart` envelope on stdin and resolves the clone's primary worktree from its
+`cwd` through the shared git common dir — never the session's own linked worktree. It fetches
+`origin/<default>` and takes a fast-forward and nothing else.
+
+**What it refuses.** A parked branch, a detached HEAD, a diverged branch, or uncommitted work the
+incoming commits would write over is refused with its reason, because where a human's checkout sits
+is a human's call. **Uncommitted work outside the incoming commits' paths is not one of those
+states**: the refusal compares the uncommitted paths — untracked files included, each named
+individually — against the paths the incoming range changes, and fires only on an overlap. That is
+the same overlap `git merge --ff-only` itself refuses on.
+
+**Every refusal leads stderr with its reason**, and carries the scope line and any install lines
+after it. A failed `SessionStart` hook surfaces one line in the session, so a refusal whose first
+line named the directory it judged named no cause at all.
+
+**It reads the harness's own install records and reports.** Re-copying the advanced directory into
+the plugin cache is the harness's `autoUpdate` pass, so every install still bound to an earlier
+commit is named on stderr. The verb names no repository, marketplace or plugin: the marketplace is
+selected by the directory it declares.
+
 ## The record format
 
 A grading pass — auditing a hook layer being replaced, piece by piece — writes one `###` section per graded piece. Each section carries these fields, in this order, and nothing else:

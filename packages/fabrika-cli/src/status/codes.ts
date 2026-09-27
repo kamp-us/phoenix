@@ -7,7 +7,8 @@
  * the discipline `../triage/codes.ts` and `../ui/codes.ts` state in full: an import makes a drift
  * unrepresentable where a copied number makes it merely detectable.
  *
- * Each verb's `--help` describes its refusal conditions; the constants below name shared meanings.
+ * Each verb's `--help` names its exits and that contract states their triggers; the constants below
+ * name shared meanings.
  */
 
 import {
