@@ -16,6 +16,7 @@
 import {Dialog} from "@kampus/design";
 import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {ReactElement} from "react";
+import type {ProjectLabels} from "../../projects/labels.ts";
 import type {TableRow} from "../../table/row.ts";
 import {ProcessBoard} from "./ProcessBoard.tsx";
 
@@ -26,6 +27,7 @@ export interface ProcessBoardOverlayProps {
 	readonly rows: Iterable<TableRow>;
 	readonly onOpen: (processId: ProcessId) => void;
 	readonly reducedMotion: boolean;
+	readonly projects?: ProjectLabels;
 }
 
 export function ProcessBoardOverlay({
@@ -34,6 +36,7 @@ export function ProcessBoardOverlay({
 	rows,
 	onOpen,
 	reducedMotion,
+	projects,
 }: ProcessBoardOverlayProps): ReactElement {
 	return (
 		<Dialog
@@ -54,6 +57,7 @@ export function ProcessBoardOverlay({
 					onClose();
 				}}
 				reducedMotion={reducedMotion}
+				{...(projects === undefined ? {} : {projects})}
 			/>
 		</Dialog>
 	);

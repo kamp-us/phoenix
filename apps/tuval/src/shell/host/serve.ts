@@ -20,7 +20,9 @@ import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import type {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import type {PrefixTable} from "@kampus/tuval-ui/keys";
-import {Context, Effect} from "effect";
+import {Context, Effect, Stream} from "effect";
+import {projectLabels} from "../../projects/open-projects.ts";
+import {Projects} from "../../projects/Projects.ts";
 import type {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {shellId, shellStateOf} from "../program.ts";
 import {mintLaunchToken} from "../transport/handshake.ts";
@@ -29,7 +31,13 @@ import {type SpellChannel, serve, type TransportServer} from "../transport/serve
 export interface ServeDeskOptions {
 	/** The kernel `start`/`boot` built. Every service the socket reads comes from here. */
 	readonly kernel: Context.Context<
-		Registry | Processes | ProcessTable | ProcessTablePort | SpellExecutor | SpellRegistry
+		| Registry
+		| Processes
+		| ProcessTable
+		| ProcessTablePort
+		| SpellExecutor
+		| SpellRegistry
+		| Projects
 	>;
 	/** `0` binds an ephemeral port — what a test wants; the bin names a real one. */
 	readonly port: number;
@@ -84,6 +92,7 @@ export const serveDesk = Effect.fn("Tuval.shell.serveDesk")(function* (options: 
 		handles: processes.handle,
 		spells: spellChannel(options.kernel),
 		descriptions: Context.get(options.kernel, SpellRegistry).changes,
+		projects: Stream.map(Context.get(options.kernel, Projects).changes, projectLabels),
 		table: options.table,
 	}).pipe(Effect.provideContext(options.kernel), Effect.orDie);
 });

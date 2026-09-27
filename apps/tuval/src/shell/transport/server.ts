@@ -36,6 +36,7 @@ import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Deferred, Effect, type Option, type Redacted, Semaphore, Stream} from "effect";
 import {Socket, type SocketServer} from "effect/unstable/socket";
+import type {ProjectLabel} from "../../projects/labels.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {showsInAWindow} from "../picker/entries.ts";
 import {checkHandshake, launchUrl, loopbackOrigins} from "./handshake.ts";
@@ -48,6 +49,7 @@ import {
 	keysFrame,
 	PROCESS_STATE_KIND,
 	type ProcessStateFrame,
+	projectsFrame,
 	REGISTRY_KIND,
 	type RegistryFrame,
 	type ServerFrame,
@@ -93,6 +95,12 @@ export interface ServeOptions {
 	 */
 	readonly spells: SpellChannel;
 	readonly descriptions: Stream.Stream<RegistryDescription>;
+	/**
+	 * Every open project's label: the current list first, then the list after each open and close.
+	 * Each page is sent every list, so a tile's label follows a project that opens beside a
+	 * same-named one without the page asking (#9692).
+	 */
+	readonly projects: Stream.Stream<ReadonlyArray<ProjectLabel>>;
 }
 
 export interface TransportServer {
@@ -214,6 +222,7 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 					options.handles,
 					options.spells,
 					options.descriptions,
+					options.projects,
 					options.table,
 					pages,
 					catalogLock,
@@ -244,6 +253,7 @@ export const session = Effect.fn("Tuval.transport.session")(function* (
 	handles: Handles,
 	spells: SpellChannel,
 	descriptions: Stream.Stream<RegistryDescription>,
+	projects: Stream.Stream<ReadonlyArray<ProjectLabel>>,
 	keyTable: PrefixTable,
 	pages: Attached,
 	catalogLock: Semaphore.Semaphore,
@@ -418,6 +428,10 @@ export const session = Effect.fn("Tuval.transport.session")(function* (
 				// and reaches this page too.
 				yield* Effect.sync(() => void pages.add(send));
 			}),
+		);
+		yield* Effect.forkIn(
+			Stream.runForEach(projects, (labels) => send(projectsFrame(labels))),
+			scope,
 		);
 		yield* Effect.forkIn(
 			Stream.runForEach(descriptions, (registry) =>

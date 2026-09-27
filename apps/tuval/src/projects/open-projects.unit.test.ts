@@ -7,6 +7,7 @@ import {
 	OpenProjects,
 	ProjectAlreadyOpen,
 	ProjectNotOpen,
+	projectLabels,
 	readOpenProjects,
 	saveOpenProjects,
 } from "./open-projects.ts";
@@ -18,6 +19,48 @@ const opened = (projects: OpenProjects, folder: string): OpenProjects => {
 };
 
 const folders = (projects: OpenProjects) => projects.projects.map((project) => project.folder);
+
+const labelsOf = (...paths: ReadonlyArray<string>): ReadonlyArray<string> =>
+	projectLabels(paths.reduce(opened, OpenProjects.none).projects).map(({label}) => label);
+
+describe("projectLabels", () => {
+	it("labels each project by its folder's name, keyed as its program ids are scoped", () => {
+		const projects = opened(opened(OpenProjects.none, "/work/phoenix"), "/work/demlik").projects;
+		assert.deepStrictEqual(projectLabels(projects), [
+			{key: ProjectId.of("/work/phoenix").key, label: "phoenix"},
+			{key: ProjectId.of("/work/demlik").key, label: "demlik"},
+		]);
+	});
+
+	it("adds the parent folder when two open folders share a name", () => {
+		assert.deepStrictEqual(labelsOf("/code/kamp-us/phoenix", "/code/usirin/phoenix", "/code/tea"), [
+			"kamp-us/phoenix",
+			"usirin/phoenix",
+			"tea",
+		]);
+	});
+
+	it("climbs past a shared parent to the first folder that differs", () => {
+		assert.deepStrictEqual(labelsOf("/a/lanes/phoenix", "/b/lanes/phoenix"), [
+			"a/lanes/phoenix",
+			"b/lanes/phoenix",
+		]);
+	});
+
+	it("shows the whole path of a folder that runs out of parents first", () => {
+		assert.deepStrictEqual(labelsOf("/phoenix", "/work/phoenix"), ["/phoenix", "work/phoenix"]);
+	});
+
+	it("drops the parent again once the clashing project closes", () => {
+		const both = opened(opened(OpenProjects.none, "/a/phoenix"), "/b/phoenix");
+		const closed = both.close("/b/phoenix");
+		if (Result.isFailure(closed)) throw closed.failure;
+		assert.deepStrictEqual(
+			projectLabels(closed.success.projects.projects).map(({label}) => label),
+			["phoenix"],
+		);
+	});
+});
 
 describe("OpenProjects", () => {
 	it("opens projects in order, each keyed as its state directory is", () => {

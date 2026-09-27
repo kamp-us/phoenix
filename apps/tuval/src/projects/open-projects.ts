@@ -8,10 +8,11 @@
  * project's rows and state directory are already keyed by (`../project-id.ts`).
  */
 
-import {join, resolve} from "node:path";
+import {join, resolve, sep} from "node:path";
 import {homeTuvalDir} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Effect, FileSystem, Result, Schema} from "effect";
 import {ProjectId} from "../project-id.ts";
+import type {ProjectLabel} from "./labels.ts";
 
 export interface OpenProject {
 	/** The folder as the desk opened it: absolute, with no trailing separator. */
@@ -93,6 +94,41 @@ export class OpenProjects {
 		return {version: 1, projects: this.projects.map(({folder}) => ({folder}))};
 	}
 }
+
+const segmentsOf = (folder: string): ReadonlyArray<string> =>
+	folder.split(sep).filter((segment) => segment !== "");
+
+const endsWith = (segments: ReadonlyArray<string>, suffix: ReadonlyArray<string>): boolean =>
+	suffix.length <= segments.length &&
+	suffix.every((segment, at) => segments[segments.length - suffix.length + at] === segment);
+
+/**
+ * Each open project's label: the folder's name, which is what tiles, windows and picker entries
+ * show (#9692, ruling #9668 R1.1). Two open folders with one name would read as one project, so a
+ * clashing name takes on parent folders, the way VS Code tells two same-named tabs apart, until no
+ * other open folder ends the same way: `kamp-us/phoenix` beside `usirin/phoenix`. A folder that runs
+ * out of parents first (`/phoenix` beside `/work/phoenix`) is shown by its whole path.
+ */
+export const projectLabels = (
+	projects: ReadonlyArray<OpenProject>,
+): ReadonlyArray<ProjectLabel> => {
+	const segments = projects.map((project) => segmentsOf(project.folder));
+	return projects.map((project, at) => {
+		const own = segments[at] ?? [];
+		const name = own.at(-1);
+		const clashes = segments.filter((other, index) => index !== at && other.at(-1) === name);
+		const label = (): string => {
+			if (name === undefined) return project.folder;
+			if (clashes.length === 0) return name;
+			for (let depth = 2; depth <= own.length; depth++) {
+				const suffix = own.slice(-depth);
+				if (clashes.every((other) => !endsWith(other, suffix))) return suffix.join(sep);
+			}
+			return project.folder;
+		};
+		return {key: project.id.key, label: label()};
+	});
+};
 
 /** The saved list: `<home>/.tuval/open-projects.json`. */
 export const openProjectsFile = (home: string): string =>

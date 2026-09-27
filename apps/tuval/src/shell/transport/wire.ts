@@ -20,6 +20,9 @@
  * page routes over, and the page may route over no other
  * ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)).
  *
+ * The `projects` frame is catalog too: each open project's label beside the key its program ids are
+ * scoped by, so a page labels a process from the id it already has (#9692).
+ *
  * The two `spell` frames are the only round trip a page starts. Everything else the kernel holds is
  * pushed; a spell call is the one thing a page may ask for, and it is asked for as the protocol's
  * own `SpellCall`/`SpellReply` pair admitted through that module's schemas rather than a second
@@ -35,6 +38,7 @@ import {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-de
 import type {ProgramId, RendererKind, RendererRef} from "@kampus/tuval-sdk/kernel/registry/program";
 import {type Binding, CommandName, type PrefixTable} from "@kampus/tuval-ui/keys";
 import {Duration, Option, Predicate, Result, Schema} from "effect";
+import type {ProjectLabel} from "../../projects/labels.ts";
 import type {PortDeclaration, TableEvent, TableEventKind, TableRow} from "../../table/row.ts";
 import type {UndecodableReason} from "./errors.ts";
 
@@ -51,6 +55,7 @@ export const REGISTRY_KIND = "tuval/transport/registry/v1";
 export const KEYS_KIND = "tuval/transport/keys/v1";
 export const SPELL_REPLY_KIND = "tuval/transport/spell-reply/v1";
 export const SPELL_REGISTRY_KIND = "tuval/transport/spell-registry/v1";
+export const PROJECTS_KIND = "tuval/transport/projects/v1";
 
 /** Attach to one process: from here its state arrives as `process-state` frames for as long as it lives. */
 export interface AttachFrame {
@@ -215,6 +220,16 @@ export interface SpellRegistryFrame {
 	readonly registry: RegistryDescription;
 }
 
+/**
+ * Every open project's label, whole. Sent as the socket opens and after each open and close; a later
+ * frame replaces the list, because closing one project can change another's label (`kamp-us/phoenix`
+ * goes back to `phoenix` once `usirin/phoenix` closes).
+ */
+export interface ProjectsFrame {
+	readonly kind: typeof PROJECTS_KIND;
+	readonly projects: ReadonlyArray<ProjectLabel>;
+}
+
 export type ServerFrame =
 	| TableFrame
 	| ProcessStateFrame
@@ -223,7 +238,8 @@ export type ServerFrame =
 	| RegistryFrame
 	| KeysFrame
 	| SpellRegistryFrame
-	| SpellReplyFrame;
+	| SpellReplyFrame
+	| ProjectsFrame;
 
 const isProcessIdString = (value: unknown): value is ProcessId => typeof value === "string";
 
@@ -358,6 +374,15 @@ export const isWirePrefixTable = (value: unknown): value is WirePrefixTable =>
 export const isKeysFrame = (value: unknown): value is KeysFrame =>
 	Predicate.isObject(value) && value.kind === KEYS_KIND && isWirePrefixTable(value.table);
 
+const isProjectLabel = (value: unknown): value is ProjectLabel =>
+	Predicate.isObject(value) && typeof value.key === "string" && typeof value.label === "string";
+
+export const isProjectsFrame = (value: unknown): value is ProjectsFrame =>
+	Predicate.isObject(value) &&
+	value.kind === PROJECTS_KIND &&
+	Array.isArray(value.projects) &&
+	value.projects.every(isProjectLabel);
+
 /**
  * One kind's admission: the value as that frame, or `undefined` when the body is not one. A
  * function rather than a type guard, because the two spell frames decode their payload as they
@@ -472,6 +497,7 @@ export const decodeServerFrame: (text: string) => Decoded<ServerFrame> = decodeW
 		KEYS_KIND,
 		SPELL_REPLY_KIND,
 		SPELL_REGISTRY_KIND,
+		PROJECTS_KIND,
 	]),
 	[
 		admitting(isTableFrame),
@@ -482,6 +508,7 @@ export const decodeServerFrame: (text: string) => Decoded<ServerFrame> = decodeW
 		admitting(isKeysFrame),
 		admitSpellReplyFrame,
 		admitSpellRegistryFrame,
+		admitting(isProjectsFrame),
 	],
 );
 
@@ -541,6 +568,11 @@ export const fromWirePrefixTable = (table: WirePrefixTable): PrefixTable => ({
 			repeatable: binding.repeatable,
 		}),
 	),
+});
+
+export const projectsFrame = (projects: ReadonlyArray<ProjectLabel>): ProjectsFrame => ({
+	kind: PROJECTS_KIND,
+	projects: projects.map(({key, label}) => ({key, label})),
 });
 
 export const keysFrame = (table: PrefixTable): KeysFrame => ({
