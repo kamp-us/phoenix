@@ -213,6 +213,23 @@ choice no evidence settles, and it is **the founder's alone**; the `**Recommende
 every question is your recommendation, never his answer. The test is "could evidence settle this?",
 not "is it hard".
 
+**Plan shape is yours, and it never enters a round.** Inside an epic whose pitch the founder has
+approved, the order of the children, their `requires:` edges and the phase split are the planner's
+call. No evidence settles them, yet they are not a `decision`: choose them, declare them through
+step 6's `ledger topology`, and post none of them as a question. **Scope is the line.** A shape
+choice that changes what the epic delivers, its appetite or a product outcome — pushing a story out
+of the epic, or cutting one — is a `decision` like any other, and it goes to the founder.
+
+Keep every shape choice visible, and give each one the same home whenever you make it: the plan's
+`### Task-split rationale`, one line per choice with its reason, naming slices by their titles —
+child numbers do not exist until step 5. Most shape is chosen while you author the plan at step 3,
+so it is staged there already. A choice you first make later — step 6's sequencing of two slices
+that write the same file is the usual one — goes into that section too: add its line and re-stage
+with `ledger draft` before step 7, which writes the section into the epic body with the rest of the
+plan. Then tell the founder in one line at your terminal what shape you chose and that the epic
+records it. Nothing leaves his hands by this: [`check-epic-plan`](../check-epic-plan/SKILL.md) makes
+no child pickable until his `plan approve` covers the whole ledger, shape included.
+
 Read the frontier before you leave this step:
 
 ```bash
@@ -411,6 +428,8 @@ Fix the number and re-run; nothing was staged either way.
 **Two slices are only parallel if they do not write the same file.** A phase that puts two
 children on one central list reads parallel and serializes in practice. The verb cannot see your
 file plan; you can. Sequence them, or say in `### Task-split rationale` why they do not collide.
+Either answer is a shape choice made here, so its line goes into that section and the plan is
+re-staged with `ledger draft` before step 7 writes it (step 4 says why shape is recorded).
 
 ## 7 — Write it into the epic
 
