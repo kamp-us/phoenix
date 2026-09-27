@@ -64,6 +64,7 @@ import {
 	type ProjectsReopened,
 	prepareProjectState,
 } from "./projects/Projects.ts";
+import {makeRecommendPrompts, RecommendPrompts} from "./projects/RecommendPrompts.ts";
 import {projectSpells} from "./projects/spells.ts";
 import {makeTrustPrompts, TrustPrompts} from "./projects/TrustPrompts.ts";
 import {ConfigReloader, type ReloadRefused, type ReloadReport} from "./reload.ts";
@@ -113,6 +114,8 @@ export type Kernel =
 	| Projects
 	// The "Trust this folder?" questions an open is waiting on, which every page is sent (#9693).
 	| TrustPrompts
+	// The recommended-package questions a trusted project asks, which every page is sent (#9695).
+	| RecommendPrompts
 	// Naming it here is what makes the provider load-bearing to the checker: `Context` is
 	// contravariant in its services, so dropping `shellDispatchKernel` below stops `start`'s
 	// answer from satisfying `Started` rather than leaving a defect for the first caller (#7774).
@@ -283,6 +286,8 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	);
 	const filled = yield* Deferred.make<Context.Context<ProjectsKernel>>();
 	const prompts = projects === undefined ? TrustPrompts.none : yield* makeTrustPrompts;
+	const recommendPrompts =
+		projects === undefined ? RecommendPrompts.none : yield* makeRecommendPrompts;
 	const desk =
 		projects === undefined
 			? undefined
@@ -296,6 +301,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 					rows: Context.get(registry, RegistryRows),
 					reloader: Context.get(built, ConfigReloader),
 					prompts,
+					recommendPrompts,
 					deskGraph: graph,
 					deskRemoved: projects.removed,
 					deskWiring: wiring,
@@ -310,9 +316,13 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	const listing = Context.add(built, AiAgentSessionList, aiAgentSessionListKernel(built));
 	const transcripts = Context.add(listing, AiAgentTranscripts, aiAgentTranscriptsKernel(listing));
 	const withProjects = Context.add(
-		Context.add(transcripts, Projects, desk?.service ?? Projects.none),
-		TrustPrompts,
-		prompts,
+		Context.add(
+			Context.add(transcripts, Projects, desk?.service ?? Projects.none),
+			TrustPrompts,
+			prompts,
+		),
+		RecommendPrompts,
+		recommendPrompts,
 	);
 	// Every process's spawn set carries the kernel, so the subproject boundary is asked from all of
 	// them (#9689); a kernel with no desk has no subprojects and no boundary.

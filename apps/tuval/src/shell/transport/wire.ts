@@ -29,6 +29,9 @@
  * the question is that only the person at a desk page can answer it. Like `dispatch`, it is sent and
  * not awaited; the prompt leaving the next `trust-prompts` frame is its acknowledgement.
  *
+ * `recommend-prompts` and `recommend-answer` are the same pair for "<project> recommends <package>.
+ * Install?" (#9695), a frame of their own for the same reason.
+ *
  * The two `spell` frames are the only round trip a page starts. Everything else the kernel holds is
  * pushed; a spell call is the one thing a page may ask for, and it is asked for as the protocol's
  * own `SpellCall`/`SpellReply` pair admitted through that module's schemas rather than a second
@@ -45,6 +48,7 @@ import type {ProgramId, RendererKind, RendererRef} from "@kampus/tuval-sdk/kerne
 import {type Binding, CommandName, type PrefixTable} from "@kampus/tuval-ui/keys";
 import {Duration, Option, Predicate, Result, Schema} from "effect";
 import type {ProjectLabel} from "../../projects/labels.ts";
+import type {RecommendAnswer, RecommendPrompt} from "../../projects/recommend-prompt.ts";
 import type {TrustAnswer, TrustPrompt} from "../../projects/trust-prompt.ts";
 import type {PortDeclaration, TableEvent, TableEventKind, TableRow} from "../../table/row.ts";
 import type {UndecodableReason} from "./errors.ts";
@@ -54,6 +58,7 @@ export const DETACH_KIND = "tuval/transport/detach/v1";
 export const DISPATCH_KIND = "tuval/transport/dispatch/v1";
 export const SPELL_CALL_KIND = "tuval/transport/spell-call/v1";
 export const TRUST_ANSWER_KIND = "tuval/transport/trust-answer/v1";
+export const RECOMMEND_ANSWER_KIND = "tuval/transport/recommend-answer/v1";
 
 export const TABLE_KIND = "tuval/transport/table/v1";
 export const PROCESS_STATE_KIND = "tuval/transport/process-state/v1";
@@ -65,6 +70,7 @@ export const SPELL_REPLY_KIND = "tuval/transport/spell-reply/v1";
 export const SPELL_REGISTRY_KIND = "tuval/transport/spell-registry/v1";
 export const PROJECTS_KIND = "tuval/transport/projects/v1";
 export const TRUST_PROMPTS_KIND = "tuval/transport/trust-prompts/v1";
+export const RECOMMEND_PROMPTS_KIND = "tuval/transport/recommend-prompts/v1";
 
 /** Attach to one process: from here its state arrives as `process-state` frames for as long as it lives. */
 export interface AttachFrame {
@@ -106,12 +112,20 @@ export interface TrustAnswerFrame {
 	readonly answer: TrustAnswer;
 }
 
+/** The person's answer to one waiting recommended package. */
+export interface RecommendAnswerFrame {
+	readonly kind: typeof RECOMMEND_ANSWER_KIND;
+	readonly question: string;
+	readonly answer: RecommendAnswer;
+}
+
 export type ClientFrame =
 	| AttachFrame
 	| DetachFrame
 	| DispatchFrame
 	| SpellCallFrame
-	| TrustAnswerFrame;
+	| TrustAnswerFrame
+	| RecommendAnswerFrame;
 
 /** A table row as JSON: every `Option` on it is a nullable field, and nothing else changes. */
 export interface WireRow {
@@ -262,6 +276,12 @@ export interface TrustPromptsFrame {
 	readonly prompts: ReadonlyArray<TrustPrompt>;
 }
 
+/** Every recommended package a trusted project is waiting on, oldest first, whole. */
+export interface RecommendPromptsFrame {
+	readonly kind: typeof RECOMMEND_PROMPTS_KIND;
+	readonly prompts: ReadonlyArray<RecommendPrompt>;
+}
+
 export type ServerFrame =
 	| TableFrame
 	| ProcessStateFrame
@@ -272,7 +292,8 @@ export type ServerFrame =
 	| SpellRegistryFrame
 	| SpellReplyFrame
 	| ProjectsFrame
-	| TrustPromptsFrame;
+	| TrustPromptsFrame
+	| RecommendPromptsFrame;
 
 const isProcessIdString = (value: unknown): value is ProcessId => typeof value === "string";
 
@@ -354,6 +375,28 @@ export const isTrustPromptsFrame = (value: unknown): value is TrustPromptsFrame 
 	value.kind === TRUST_PROMPTS_KIND &&
 	Array.isArray(value.prompts) &&
 	value.prompts.every(isTrustPrompt);
+
+const isRecommendAnswer = (value: unknown): value is RecommendAnswer =>
+	value === "install" || value === "decline";
+
+export const isRecommendAnswerFrame = (value: unknown): value is RecommendAnswerFrame =>
+	Predicate.isObject(value) &&
+	value.kind === RECOMMEND_ANSWER_KIND &&
+	typeof value.question === "string" &&
+	isRecommendAnswer(value.answer);
+
+const isRecommendPrompt = (value: unknown): value is RecommendPrompt =>
+	Predicate.isObject(value) &&
+	typeof value.question === "string" &&
+	typeof value.folder === "string" &&
+	typeof value.name === "string" &&
+	typeof value.package === "string";
+
+export const isRecommendPromptsFrame = (value: unknown): value is RecommendPromptsFrame =>
+	Predicate.isObject(value) &&
+	value.kind === RECOMMEND_PROMPTS_KIND &&
+	Array.isArray(value.prompts) &&
+	value.prompts.every(isRecommendPrompt);
 
 export const isTableFrame = (value: unknown): value is TableFrame =>
 	Predicate.isObject(value) &&
@@ -533,13 +576,21 @@ export const frameKind = (text: string): string => {
 };
 
 export const decodeClientFrame: (text: string) => Decoded<ClientFrame> = decodeWith<ClientFrame>(
-	new Set([ATTACH_KIND, DETACH_KIND, DISPATCH_KIND, SPELL_CALL_KIND, TRUST_ANSWER_KIND]),
+	new Set([
+		ATTACH_KIND,
+		DETACH_KIND,
+		DISPATCH_KIND,
+		SPELL_CALL_KIND,
+		TRUST_ANSWER_KIND,
+		RECOMMEND_ANSWER_KIND,
+	]),
 	[
 		admitting(isAttachFrame),
 		admitting(isDetachFrame),
 		admitting(isDispatchFrame),
 		admitSpellCallFrame,
 		admitting(isTrustAnswerFrame),
+		admitting(isRecommendAnswerFrame),
 	],
 );
 
@@ -555,6 +606,7 @@ export const decodeServerFrame: (text: string) => Decoded<ServerFrame> = decodeW
 		SPELL_REGISTRY_KIND,
 		PROJECTS_KIND,
 		TRUST_PROMPTS_KIND,
+		RECOMMEND_PROMPTS_KIND,
 	]),
 	[
 		admitting(isTableFrame),
@@ -567,6 +619,7 @@ export const decodeServerFrame: (text: string) => Decoded<ServerFrame> = decodeW
 		admitSpellRegistryFrame,
 		admitting(isProjectsFrame),
 		admitting(isTrustPromptsFrame),
+		admitting(isRecommendPromptsFrame),
 	],
 );
 
@@ -643,6 +696,23 @@ export const trustAnswerFrame = (question: string, answer: TrustAnswer): TrustAn
 	question,
 	answer,
 });
+
+export const recommendPromptsFrame = (
+	prompts: ReadonlyArray<RecommendPrompt>,
+): RecommendPromptsFrame => ({
+	kind: RECOMMEND_PROMPTS_KIND,
+	prompts: prompts.map(({question, folder, name, package: pkg}) => ({
+		question,
+		folder,
+		name,
+		package: pkg,
+	})),
+});
+
+export const recommendAnswerFrame = (
+	question: string,
+	answer: RecommendAnswer,
+): RecommendAnswerFrame => ({kind: RECOMMEND_ANSWER_KIND, question, answer});
 
 export const keysFrame = (table: PrefixTable): KeysFrame => ({
 	kind: KEYS_KIND,

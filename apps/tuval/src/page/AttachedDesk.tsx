@@ -35,6 +35,7 @@ import {Effect, Fiber, Option, Stream} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {ProjectLabels} from "../projects/labels.ts";
+import type {RecommendAnswer, RecommendPrompt} from "../projects/recommend-prompt.ts";
 import type {TrustAnswer, TrustPrompt} from "../projects/trust-prompt.ts";
 import {ProcessBoardOverlay} from "../shell/board/index.ts";
 import type {ShellMsg, ShellState} from "../shell/core/index.ts";
@@ -52,6 +53,7 @@ import type {
 } from "../shell/ui/index.ts";
 import {boundMount, Desk, noRenderer, replyOf, useDeskAttachment} from "../shell/ui/index.ts";
 import type {TableRow} from "../table/row.ts";
+import {RecommendDialog} from "./RecommendDialog.tsx";
 import {useSpellRegistry} from "./spell-registry.ts";
 import {TrustFolderDialog} from "./TrustFolderDialog.tsx";
 
@@ -187,6 +189,7 @@ export function AttachedDesk({
 	const [catalog, setCatalog] = useState<ReadonlyMap<ProgramId, WireProgram>>(new Map());
 	const [projects, setProjects] = useState<ProjectLabels>(ProjectLabels.none);
 	const [trustPrompts, setTrustPrompts] = useState<ReadonlyArray<TrustPrompt>>([]);
+	const [recommendPrompts, setRecommendPrompts] = useState<ReadonlyArray<RecommendPrompt>>([]);
 	const [attached, setAttached] = useState<ReadonlyMap<string, AttachedProcess>>(new Map());
 	/** The shell process's own revision — what the newest-wins compare below and the snapshot read. */
 	const [revision, setRevision] = useState(0);
@@ -303,6 +306,22 @@ export function AttachedDesk({
 			// The question leaves this page at once; the kernel's next `trust-prompts` frame confirms it.
 			setTrustPrompts((current) => current.filter((prompt) => prompt.question !== question));
 			Effect.runFork(page.answerTrust(question, answer));
+		},
+		[page],
+	);
+
+	useEffect(() => {
+		const fiber = Effect.runFork(
+			Stream.runForEach(page.recommendPrompts, (next) =>
+				Effect.sync(() => setRecommendPrompts(next)),
+			),
+		);
+		return () => void Effect.runFork(Fiber.interrupt(fiber));
+	}, [page]);
+	const answerRecommend = useCallback(
+		(question: string, answer: RecommendAnswer) => {
+			setRecommendPrompts((current) => current.filter((prompt) => prompt.question !== question));
+			Effect.runFork(page.answerRecommend(question, answer));
 		},
 		[page],
 	);
@@ -495,6 +514,10 @@ export function AttachedDesk({
 			) : null}
 			{/* After the board, so a question asked while the board is open is the dialog on top. */}
 			<TrustFolderDialog prompts={trustPrompts} onAnswer={answerTrust} />
+			{/* One desk question at a time: a folder waiting on trust is asked before any package. */}
+			{trustPrompts.length === 0 ? (
+				<RecommendDialog prompts={recommendPrompts} onAnswer={answerRecommend} />
+			) : null}
 		</>
 	);
 }

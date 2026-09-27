@@ -53,6 +53,7 @@ describe("loadConfigModule", () => {
 					programs: [{id: "a"}, {id: "b"}],
 					graph: {nodes: []},
 					keys: {},
+					recommends: [],
 				});
 			}),
 	);
@@ -66,6 +67,7 @@ describe("loadConfigModule", () => {
 				programs: [{id: "a"}],
 				graph: {nodes: [{id: NodeId.make("n"), program: ProgramId.make("a"), on: []}]},
 				keys: {},
+				recommends: [],
 			});
 		}),
 	);
@@ -736,5 +738,42 @@ describe("loadLayeredConfig and what is global only (#9687)", () => {
 			});
 			assert.deepStrictEqual(on.config.refused, []);
 		}).pipe(Effect.provide(NodeFileSystem.layer)),
+	);
+});
+
+describe("a project's recommended packages (#9695)", () => {
+	it.effect("carries a project layer's recommends, each package once, in its order", () =>
+		Effect.gen(function* () {
+			const layer = {id: alpha, module: fixture("recommends")};
+			const loaded = yield* loadProjectConfig(noDesk, layer, nothingRemoved, featuresDefault);
+			assert.deepStrictEqual(loaded.config.recommends, ["@kampus/tuval-worktree", "tuval-cron"]);
+		}).pipe(Effect.provide(NodeFileSystem.layer)),
+	);
+
+	it.effect("reads a config that lists none as recommending nothing", () =>
+		Effect.gen(function* () {
+			const layer = {id: alpha, module: fixture("two-rows")};
+			const loaded = yield* loadProjectConfig(noDesk, layer, nothingRemoved, featuresDefault);
+			assert.deepStrictEqual(loaded.config.recommends, []);
+		}).pipe(Effect.provide(NodeFileSystem.layer)),
+	);
+
+	it.effect("refuses an entry that is not an npm package name", () =>
+		Effect.gen(function* () {
+			const error = yield* refusal("recommends-bad-name");
+			assert.strictEqual(
+				error.reason,
+				"not a v1 config at recommends[0]: Expected an npm package name, such as @kampus/tuval-worktree",
+			);
+		}),
+	);
+
+	it.effect("refuses recommends in the global layer, which nobody opens", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(layered(fixture("recommends"), fixture("does-not-exist")));
+			assert.instanceOf(error, ConfigLoadError);
+			assert.strictEqual(error.module, fixture("recommends"));
+			assert.include(error.reason, "only a project's config recommends packages");
+		}),
 	);
 });

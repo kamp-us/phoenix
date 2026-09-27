@@ -17,6 +17,7 @@ import {Effect, Option, Schema, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {counterId} from "../demo/counter.ts";
 import {ProjectLabels} from "../projects/labels.ts";
+import type {RecommendAnswer, RecommendPrompt} from "../projects/recommend-prompt.ts";
 import type {TrustAnswer, TrustPrompt} from "../projects/trust-prompt.ts";
 import {readCommandLine} from "../shell/commands/index.ts";
 import {applyMsg, type ShellCmd, type ShellMsg, type ShellState} from "../shell/core/index.ts";
@@ -126,6 +127,11 @@ interface Scripted {
 	readonly sent: ReadonlyArray<ShellMsg>;
 	/** Every trust answer the page sent, in order. */
 	readonly trustAnswers: ReadonlyArray<{readonly question: string; readonly answer: TrustAnswer}>;
+	/** Every recommended-package answer the page sent, in order. */
+	readonly recommendAnswers: ReadonlyArray<{
+		readonly question: string;
+		readonly answer: RecommendAnswer;
+	}>;
 }
 
 const scripted = Effect.fn("test.scripted")(function* (options?: {
@@ -135,6 +141,8 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 	readonly projects?: ProjectLabels;
 	/** The "Trust this folder?" questions the kernel says are waiting. */
 	readonly trustPrompts?: ReadonlyArray<TrustPrompt>;
+	/** The recommended packages the kernel says are waiting. */
+	readonly recommendPrompts?: ReadonlyArray<RecommendPrompt>;
 	/** `null` scripts a kernel that has not sent its grammar yet — the desk must not render. */
 	readonly keys?: PrefixTable | null;
 	/** When this socket ends. The default never does, which is what every claim but the drop wants. */
@@ -152,6 +160,7 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 	const attaches: Array<ProcessId> = [];
 	const sent: Array<ShellMsg> = [];
 	const trustAnswers: Array<{readonly question: string; readonly answer: TrustAnswer}> = [];
+	const recommendAnswers: Array<{readonly question: string; readonly answer: RecommendAnswer}> = [];
 
 	const process = (stream: Stream.Stream<ProcessView<unknown>>): AttachedProcess => ({
 		processId: counterProcess,
@@ -167,6 +176,9 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 		trustPrompts: Stream.succeed(options?.trustPrompts ?? []),
 		answerTrust: (question, answer) =>
 			Effect.sync(() => void trustAnswers.push({question, answer})),
+		recommendPrompts: Stream.succeed(options?.recommendPrompts ?? []),
+		answerRecommend: (question, answer) =>
+			Effect.sync(() => void recommendAnswers.push({question, answer})),
 		call: () => Effect.never,
 		keys:
 			options?.keys === null ? Stream.never : Stream.succeed(options?.keys ?? defaultPrefixTable),
@@ -195,7 +207,7 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 				return {_tag: "Delivered" as const, view: {revision, state: held}};
 			}),
 	};
-	return {page, shell, attaches, sent, trustAnswers} satisfies Scripted;
+	return {page, shell, attaches, sent, trustAnswers, recommendAnswers} satisfies Scripted;
 });
 
 /**
@@ -884,6 +896,58 @@ describe("the trust question", () => {
 			);
 			yield* settle;
 			assert.isNull(screen.queryByRole("alertdialog"));
+		}),
+	);
+});
+
+describe("the recommended-package question (#9695)", () => {
+	const worktree: RecommendPrompt = {
+		question: "r-1",
+		folder: "/code/demlik",
+		name: "demlik",
+		package: "@kampus/tuval-worktree",
+	};
+
+	const mounted = (app: Scripted) =>
+		render(
+			<AttachedDesk
+				page={app.page}
+				shell={app.shell}
+				renderers={renderers}
+				reducedMotion={true}
+				refusal={null}
+			/>,
+		);
+
+	it.effect("sends a no back to the kernel, and the question leaves the page", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted({recommendPrompts: [worktree]});
+			mounted(app);
+			yield* settle;
+
+			screen.getByRole("alertdialog", {name: "Install @kampus/tuval-worktree?"});
+			fireEvent.click(screen.getByRole("button", {name: "Don't install"}));
+			yield* settle;
+
+			assert.deepStrictEqual(app.recommendAnswers, [{question: "r-1", answer: "decline"}]);
+			assert.isNull(screen.queryByRole("alertdialog"));
+		}),
+	);
+
+	it.effect("waits behind a folder still being asked about for trust", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted({
+				trustPrompts: [{question: "q-1", folder: "/code/tea", name: "tea"}],
+				recommendPrompts: [worktree],
+			});
+			mounted(app);
+			yield* settle;
+
+			assert.lengthOf(screen.getAllByRole("alertdialog"), 1);
+			screen.getByRole("alertdialog", {name: "Trust this folder?"});
+			fireEvent.click(screen.getByRole("button", {name: "Don't trust"}));
+			yield* settle;
+			screen.getByRole("alertdialog", {name: "Install @kampus/tuval-worktree?"});
 		}),
 	);
 });

@@ -44,6 +44,7 @@ import {scratchHome} from "../scratch-home.ts";
 import type {TransportServer} from "../shell/transport/server.ts";
 import {OpenProjects, readOpenProjects, saveOpenProjects} from "./open-projects.ts";
 import {Projects} from "./Projects.ts";
+import {RecommendPrompts} from "./RecommendPrompts.ts";
 import {TrustPrompts} from "./TrustPrompts.ts";
 import type {TrustAnswer} from "./trust-prompt.ts";
 
@@ -248,6 +249,7 @@ describe("a project opened into a running desk", () => {
 					version: 1,
 					projects: [{folder: first}, {folder: second}],
 					trusted: [second],
+					recommends: [],
 				});
 
 				const closed = yield* spell(kernel, ["project", "close"], {folder: second});
@@ -263,6 +265,7 @@ describe("a project opened into a running desk", () => {
 					version: 1,
 					projects: [{folder: first}],
 					trusted: [second],
+					recommends: [],
 				});
 
 				// Reopening brings the counter back at its checkpoint, with its connection restored. The
@@ -359,6 +362,7 @@ describe("the first open of a folder", () => {
 					version: 1,
 					projects: [{folder: first}],
 					trusted: [],
+					recommends: [],
 				});
 			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
 		TIMEOUT,
@@ -409,6 +413,92 @@ describe("the first open of a folder", () => {
 				assert.isTrue(opened.ok, JSON.stringify(opened));
 				assert.deepStrictEqual(yield* pendingNow(kernel), []);
 				assert.deepStrictEqual((yield* readOpenProjects(home))?.trusted, []);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		TIMEOUT,
+	);
+});
+
+describe("a project's recommended packages (#9695)", () => {
+	const recommendsNow = (kernel: Context.Context<Kernel>) =>
+		Effect.map(
+			Stream.runHead(Context.get(kernel, RecommendPrompts).pending),
+			(head) => Option.getOrNull(head) ?? [],
+		);
+
+	/** The packages `folder` is being asked about, once `count` of them are waiting. */
+	const askedFor = (kernel: Context.Context<Kernel>, folder: string, count: number) =>
+		Context.get(kernel, RecommendPrompts).pending.pipe(
+			Stream.map((pending) => pending.filter((prompt) => prompt.folder === folder)),
+			Stream.filter((prompts) => prompts.length === count),
+			Stream.runHead,
+			Effect.map(Option.getOrThrow),
+			Effect.timeout("20 seconds"),
+		);
+
+	it.live(
+		"asks once the folder is trusted, remembers each answer, and asks nothing on the next open",
+		() =>
+			Effect.gen(function* () {
+				const home = scratchHome("projects-recommends");
+				const first = projectWith("planned-counter");
+				const folder = projectWith("counter-recommending");
+				const {kernel} = yield* boot({global: fixture("log-global"), project: first, home});
+
+				const opening = yield* Effect.forkChild(spell(kernel, ["project", "open"], {folder}));
+				const trust = yield* questionFor(kernel, folder);
+				// Waiting on trust, the folder's config is unread, so nothing it recommends is asked.
+				assert.deepStrictEqual(yield* recommendsNow(kernel), []);
+				assert.isTrue(yield* Context.get(kernel, TrustPrompts).answer(trust.question, "trust"));
+				const opened = yield* Fiber.join(opening);
+				assert.isTrue(opened.ok, JSON.stringify(opened));
+
+				const asked = yield* askedFor(kernel, folder, 2);
+				assert.deepStrictEqual(
+					asked.map((prompt) => prompt.package),
+					["@kampus/tuval-worktree", "tuval-cron"],
+				);
+				assert.strictEqual(asked[0]?.name, ProjectId.of(folder).name);
+				const prompts = Context.get(kernel, RecommendPrompts);
+				assert.isTrue(yield* prompts.answer(asked[0]?.question ?? "", "decline"));
+				assert.isTrue(yield* prompts.answer(asked[1]?.question ?? "", "install"));
+				yield* askedFor(kernel, folder, 0);
+
+				const saved = yield* eventually(
+					"both answers saved",
+					readOpenProjects(home).pipe(Effect.provide(NodeFileSystem.layer)),
+					(record) => Object.keys(record?.recommends[0]?.answers ?? {}).length === 2,
+				);
+				assert.deepStrictEqual(saved?.recommends, [
+					{folder, answers: {"@kampus/tuval-worktree": "decline", "tuval-cron": "install"}},
+				]);
+				// Nothing is installed on either answer: no package appears beside the project's config.
+				assert.isFalse(existsSync(join(projectDir(folder), "node_modules")));
+
+				const closed = yield* spell(kernel, ["project", "close"], {folder});
+				assert.isTrue(closed.ok, JSON.stringify(closed));
+				const again = yield* spell(kernel, ["project", "open"], {folder}).pipe(
+					Effect.timeout("20 seconds"),
+				);
+				assert.isTrue(again.ok, JSON.stringify(again));
+				assert.deepStrictEqual(yield* recommendsNow(kernel), []);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		TIMEOUT,
+	);
+
+	it.live(
+		"never reads what an untrusted folder recommends",
+		() =>
+			Effect.gen(function* () {
+				const home = scratchHome("projects-recommends-untrusted");
+				const first = projectWith("planned-counter");
+				const {folder, marker} = projectMarking("counter-recommending");
+				const {kernel} = yield* boot({global: fixture("log-global"), project: first, home});
+
+				const opened = yield* openAnswering(kernel, folder, "refuse");
+				assert.isFalse(opened.ok, JSON.stringify(opened));
+				assert.isFalse(existsSync(marker), "the untrusted folder's config module was imported");
+				assert.deepStrictEqual(yield* recommendsNow(kernel), []);
+				assert.deepStrictEqual((yield* readOpenProjects(home))?.recommends, []);
 			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
 		TIMEOUT,
 	);
@@ -521,6 +611,7 @@ describe("a desk restart", () => {
 					version: 1,
 					projects: [gone, revoked, kept].map((folder) => ({folder})),
 					trusted: [gone, kept],
+					recommends: [],
 				});
 				yield* saveOpenProjects(home, stopped);
 				rmSync(gone, {recursive: true, force: true});

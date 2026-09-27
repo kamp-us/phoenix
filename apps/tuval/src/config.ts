@@ -13,7 +13,7 @@
  * (`@kampus/tuval-sdk/config`), because a config is written against it outside this app.
  *
  * Configuration is code the user owns (the Neovim model, #7484 R1.1): a TypeScript module whose
- * default export is a `{version: 1, programs, features?, graph?, keys?}` config. Loading refuses on any defect the
+ * default export is a `{version: 1, programs, features?, graph?, keys?, recommends?}` config. Loading refuses on any defect the
  * loader can see — the module throwing, no default export, an export the schema rejects — and
  * every refusal names the module and the reason, so boot never runs on a half-read config. A
  * module that is not there is an empty layer, never a refusal: the layer is optional and the bin
@@ -169,6 +169,8 @@ export interface LayerConfig {
 	readonly refused: ReadonlyArray<RowRefused>;
 	/** What those refusals took out, which a project layer naming it by bare id loses too. */
 	readonly removed: SdkRemoved;
+	/** The packages a project layer recommends, each once, in the order it lists them (#9695). */
+	readonly recommends: ReadonlyArray<string>;
 }
 
 /** One project's layer as it was read. */
@@ -308,6 +310,7 @@ const partOf = (
 				sources: [],
 				refused: [],
 				removed: nothingRemoved,
+				recommends: [],
 			},
 		};
 	}
@@ -325,6 +328,7 @@ const partOf = (
 			sources: [module],
 			refused,
 			removed,
+			recommends: [...new Set(loaded.recommends)],
 		},
 	};
 };
