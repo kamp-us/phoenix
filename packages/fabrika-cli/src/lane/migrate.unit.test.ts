@@ -5,7 +5,7 @@ import {fakeFs} from "../fakes.test-support.ts";
 import {LANE_ABSENT, MIGRATION_UNSAFE, SHAPE_MISMATCH} from "./codes.ts";
 import type {ExpectationReader} from "./expectation.ts";
 import {choreTemplateText, coderTemplateText} from "./fixtures.test-support.ts";
-import type {LogEntry} from "./fold.ts";
+import {foldLog, type LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
 import {graftContext, judgeMigration} from "./migrate.ts";
 import {runMigrate} from "./migrate-verb.ts";
@@ -168,6 +168,31 @@ describe("lane migrate", () => {
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout).summary).toMatchObject({migrated: 1, current: 1, unsafe: 0});
 		expect(written.get(`${ROOT}/42/workflow.json`)).toBe(migratedText());
+	});
+
+	it("brings a lane parked in review onto the rewind arm its old machine lacked", async () => {
+		// The coder machine before the review rewind: neither review cell walks a `WIP`.
+		const document = JSON.parse(coderTemplateText());
+		const states = document.machine.states.pipeline.states.issue.states;
+		delete states.review.on["ISSUE.WIP"];
+		delete states["review:ui"].on["ISSUE.WIP"];
+		const preRewind = JSON.stringify(document, null, "\t");
+		const rewound = log("WIP", "DONE", "WIP");
+		expect(foldLog(compiled(preRewind), rewound)._tag).toBe("Unreplayable");
+
+		const {outcome, written} = await sweep(
+			{
+				[`${ROOT}/42/workflow.json`]: preRewind,
+				[`${ROOT}/42/events.jsonl`]: logText("WIP", "DONE"),
+			},
+			{dirs: {[ROOT]: ["42"]}},
+		);
+
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout).summary).toMatchObject({migrated: 1, unsafe: 0});
+		const migrated = written.get(`${ROOT}/42/workflow.json`) ?? "";
+		const fold = foldLog(compiled(migrated), rewound);
+		expect(fold._tag === "Folded" && fold.states.issue?.type).toBe("queued");
 	});
 
 	it("reads a booted lane as current past the formatting `lane open` copied in", async () => {

@@ -502,6 +502,31 @@ and `11` is a ref this tree cannot read — the same three facts, and the same r
 seats on those codes. Each is a park naming what the verb named — never a prompt you write by hand
 instead. Parallel active tasks brief and spawn in parallel.
 
+**On a single-issue lane, one `20` is not a park: a `review` or `review:ui` brief with zero PRs,
+because the PR was re-pointed.** When a PR under review is edited to serve another issue, no
+candidate links the lane's issue any more and the review has nothing to judge. Record the rewind
+instead of a park or a forged `FAIL`:
+
+```bash
+node <fabrika> lane transition $lane_key WIP --task <name>
+```
+
+A `WIP` out of either review cell folds the task back to `queued` and spends no retry and no lap, so
+the next pass records the ordinary `WIP` and `queued` routes a `class:ui` lane to `build:ui` and any
+other to `build`. The rewind is proven, not taken on your word: `lane transition` reads the issue and
+runs the same nominator `lane brief` did, and refuses at `24`, log unappended, while any open PR still
+links the issue **or the issue is closed**. A hand merge past the ledger also leaves zero open PRs, so
+the closed issue is what tells finished work from a re-pointed PR: on that `24`, run `lane settle`
+(below), never another build round. A lane opened before this arm existed refuses the `WIP` at `12`,
+because its own `workflow.json` has no such cell — run `lane migrate $lane_key` first, then record
+it.
+
+**The rewind is the single-issue machine's alone.** An epic tail's `review` and `review:ui` walk no
+`WIP`, and `lane migrate` cannot add one, because an epic lane's machine is emitted rather than
+copied from the single-issue template. So a tail's zero-PR `20` — the tail body not linking the epic,
+the draft-PR case in step 2 — stays a park, like every other `20`: never record `WIP` over it and
+never reach for `lane migrate`.
+
 **Then do nothing until a spawn returns — and never `sleep`.** A Codex dispatch waits for its child process; a shell spawned with the Claude Agent tool
 returns its result to you, so that return *is* the wait. The rule and both incidents behind it are
 [the skill conventions' "a skill never sleeps and never polls on a timer"](../../docs/skill-conventions.md);
@@ -1220,13 +1245,16 @@ The refusal moved upstream instead: `lane assembly-body` will not relay a tail b
 close its epic, so the merge such an arm would route is one this run cannot produce. The tail's
 `DONE` folds to `shipped` at both polarities.
 
-`lane prove` reads the three events a report can lie about — a `DONE` out of `build`, a `PASS` out
-of `review`, and a reviewer's park out of either review cell — and answers at exit `0` for every
-other one, so it is run on every event and never skipped as an optimisation. The park
-is the one negative claim of the three: it says the run reached no verdict, so a still-binding
-`FAIL` refuses it on `24` and every unreadable half lets it through, because a park nobody can
-record strands the lane in the state only a human could have left. Its refusals each name a
-different next move:
+`lane prove` reads the four events a report can lie about — a `DONE` out of `build`, a `PASS` out
+of `review`, a reviewer's park out of either review cell, and the review rewind (a `WIP` out of
+either review cell) — and answers at exit `0` for every other one, so it is run on every event and
+never skipped as an optimisation. The park and the rewind are the two negative claims. The park says
+the run reached no verdict, so a still-binding `FAIL` refuses it on `24` and every unreadable half
+lets it through, because a park nobody can record strands the lane in the state only a human could
+have left. The rewind says the issue is open and no open PR links it, so a closed issue or one linking PR
+refuses it on `24` and an unread board is `11`, because a rewind recorded on a guess drops a live
+review or rebuilds finished work. Its refusals each
+name a different next move:
 
 **Exit `0` carries three different answers, and the `proof` field says which — read it, never the
 exit alone.** `proven` is the artifact read and found. `not-required` is the machine walking this
@@ -1246,7 +1274,7 @@ and the `PASS` after it is the read that binds.
 | `0` `not-walkable` | the machine walks no such event out of this leaf | record **nothing** — record the event the leaf does walk |
 | `22` | the artifact is provably absent — no open PR links the task's issue and no legal no-PR outcome is proven either (the issue is not a `type:investigation`, or it is one but no diagnosis was posted since the task entered `build`); on an epic child, no branch in this tree carries commits naming it | the report is unproven — record `BLOCKED`, never the `DONE` |
 | `23` | a derived namespace has no verdict that still binds — no current-head one on a PR, or, on an epic child, none whose content digest matches what the range carries now | record **nothing**; re-read this pass |
-| `24` | a still-binding `FAIL` under a claimed `PASS`, or under a reviewer's claimed park | record the event the artifact supports (`FAIL`) |
+| `24` | a still-binding `FAIL` under a claimed `PASS`, or under a reviewer's claimed park; or, under a claimed review rewind, an open PR still linking the issue or the issue closed | record the event the artifact supports (`FAIL`); on a rewind, record nothing — brief the reviewer on the PR that links, or run `lane settle` over the closed issue |
 | `25` | several candidates — open PRs linking the issue, or lane branches carrying an epic child's commits that no one of them contains, so a repair round's superseding branch is not one of these | park — step 4, naming the ambiguity |
 | `11` | a lane, board or tree read failed | the proof is UNKNOWN — end `STOPPED` naming the code |
 

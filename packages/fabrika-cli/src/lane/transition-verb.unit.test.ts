@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {fakeFs} from "../fakes.test-support.ts";
-import {refuse} from "../verb.ts";
+import {answer, refuse} from "../verb.ts";
 import {
 	APPEND_UNKNOWN,
 	CAUSE_UNRECOGNISED,
@@ -17,6 +17,8 @@ import {
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {coderTemplateText, fakeProver, parkCauseRead} from "./fixtures.test-support.ts";
+import {foldLog, parseLog} from "./fold.ts";
+import {compileText} from "./machine.ts";
 import {PARK_CAUSE_TOKENS} from "./report.ts";
 import {runTransition} from "./transition-verb.ts";
 
@@ -478,5 +480,87 @@ describe("lane transition — the proof gate", () => {
 		expect(Object.hasOwn(line, "diagnosis")).toBe(false);
 		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
 		expect(Object.hasOwn(appended, "diagnosis")).toBe(false);
+	});
+});
+
+/**
+ * The rewind out of a review cell: a `WIP` whose PR was re-pointed at another issue sends the task
+ * back to `queued`, proven off the nominator and spending no budget.
+ */
+describe("lane transition — the review rewind when no open PR links the issue", () => {
+	const strict = parkCauseRead("refuse");
+	const unlinked = () =>
+		fakeProver(answer(JSON.stringify({proof: "proven", evidence: {kind: "no-linking-pull"}})));
+
+	const line = (event: string, extra: Record<string, unknown> = {}): string =>
+		`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at: "2026-08-16T00:00:00.000Z", ...extra})}\n`;
+	/** A lane standing in `review` that has already spent one repair round and one lap. */
+	const SPENT_REVIEW =
+		line("WIP") +
+		line("DONE") +
+		line("FAIL") +
+		line("DONE") +
+		line("LAP", {cause: "worktree-holds-branch"});
+
+	const budgetsOf = (text: string | undefined) => {
+		const parsed = parseLog(text ?? "");
+		const compiled = compileText(coderTemplateText());
+		if (parsed._tag !== "Parsed" || compiled._tag !== "Compiled") throw new Error("unreadable");
+		const fold = foldLog(compiled.lane, parsed.entries);
+		if (fold._tag !== "Folded") throw new Error("unreplayable");
+		const {type, retries, laps} = fold.states.issue ?? {};
+		return {type, retries, laps};
+	};
+
+	it("folds a review task to queued with retries and laps unchanged, under uncaused: refuse", async () => {
+		const fs = freshLane(SPENT_REVIEW);
+		expect(budgetsOf(SPENT_REVIEW)).toEqual({type: "review", retries: 1, laps: 1});
+
+		const out = await run(fs, "WIP", null, null, [], null, strict, null, unlinked());
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			previous: {pipeline: {issue: "review"}},
+			event: "ISSUE.WIP",
+			current: {pipeline: {issue: "queued"}},
+		});
+		expect(budgetsOf(fs.written.get(LOG))).toEqual({type: "queued", retries: 1, laps: 1});
+	});
+
+	it("refuses the rewind on the prover's code, log byte-identical, while a PR still links", async () => {
+		const fs = freshLane(SPENT_REVIEW);
+		const prover = fakeProver(
+			refuse(PROOF_CONTRADICTED, "fabrika lane prove: unproven — #4318 still links #42"),
+		);
+
+		const out = await run(fs, "WIP", null, null, [], null, strict, null, prover);
+
+		expect(out.code).toBe(PROOF_CONTRADICTED);
+		expect(out.stderr.join(" ")).toContain("log unappended");
+		expect(fs.written.get(LOG)).toBeUndefined();
+	});
+
+	it("sends a plain lane on to build after the rewind", async () => {
+		const fs = freshLane(SPENT_REVIEW);
+
+		await run(fs, "WIP", null, null, [], null, strict, null, unlinked());
+		const out = await run(fs, "WIP", null, null, [], null, strict);
+
+		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "build"}}});
+		expect(budgetsOf(fs.written.get(LOG))).toEqual({type: "build", retries: 1, laps: 1});
+	});
+
+	it("rewinds out of review:ui too, and routes the class:ui lane to build:ui after it", async () => {
+		const fs = freshLane(line("WIP", {classes: ["ui"]}) + line("DONE") + line("PASS"));
+
+		const rewound = await run(fs, "WIP", null, null, [], null, strict, null, unlinked());
+		expect(JSON.parse(rewound.stdout)).toMatchObject({
+			previous: {pipeline: {issue: "review:ui"}},
+			current: {pipeline: {issue: "queued"}},
+		});
+
+		const out = await run(fs, "WIP", null, null, [], null, strict);
+		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "build:ui"}}});
+		expect(budgetsOf(fs.written.get(LOG))).toEqual({type: "build:ui", retries: 0, laps: 0});
 	});
 });
