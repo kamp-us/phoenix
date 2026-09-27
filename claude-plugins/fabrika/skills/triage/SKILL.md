@@ -203,8 +203,10 @@ EOF
 ```
 
 For an epic, `fabrika triage enrich $issue_number --epic` takes the pitch's five fields on that same
-stdin — Problem / Arc / Appetite / Rabbit-holes / No-gos — and heads them `## Pitch` above the
-brief, which it preserves verbatim for the planner; no *rewrite* goes above an epic's brief. The
+stdin — Problem / Arc / Appetite / Rabbit-holes / No-gos, plus an optional Success line — and heads
+them `## Pitch` above the brief, which it preserves verbatim for the planner; no *rewrite* goes above
+an epic's brief. Write Appetite as a size, `S`, `M` or `L`, never as cycles; Success is the one
+sentence the two-week check judges the shipped bet against. The
 rewrite adds real paths and function names over vague framing, and acceptance criteria that make
 "done" legible — not a closed set, a `review-*` gate may append. The criteria block's grammar is
 the wire format's, not this skill's

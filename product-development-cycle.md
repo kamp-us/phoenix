@@ -12,6 +12,29 @@ This is the **current-state** surface for builders: what the cycle *is* today, n
 history. The *why* and the superseded approaches live in the ADRs; the flag *mechanics* live
 in `.patterns/feature-flags-*.md` — this doc **points at** them, it does not copy them.
 
+## Before the cycle: the pitch
+
+Every bet (an epic, or a feature with no parent) enters a lane carrying a `## Pitch` that
+triage drafts and the founder approves. Its **Appetite** is a size, not a duration: `S`, `M` or
+`L`, each worth a dollar amount per epic child (`.fabrika.jsonc` `appetiteSizes`; shipped
+S = $15, M = $35, L = $40). The size is the spending limit. An optional **Success** line is
+the one sentence the two-week check judges the shipped bet against. The founder approves with
+`pitch-approved: appetite <S|M|L> · <ISO-8601-UTC>`, naming the size the body declares, and
+changing the size in the body needs a new approval. Older pitches written as `<N> cycles`
+still read, approved as `appetite <N> cycles`. `fabrika guard pitch-guard check --help` owns
+the full rule. fabrika's own work is pitched the same way ([ROADMAP](ROADMAP.md#fabrika)).
+
+```markdown
+## Pitch
+
+**Problem:** who has it, and what breaks for them today
+**Arc:** the home triage assigned
+**Appetite:** M
+**Rabbit-holes:** the named ways this overspends
+**No-gos:** what this deliberately does not do
+**Success:** the one sentence the two-week check judges
+```
+
 ## The principle: agents deploy, humans release
 
 **Agents own deployment; humans own release** (ADR

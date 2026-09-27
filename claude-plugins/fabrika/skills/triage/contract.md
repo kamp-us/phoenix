@@ -1252,7 +1252,7 @@ The rewrite — or, with `--epic`, the pitch — arrives on **stdin only**, for 
 | `--token` | string | no | none | the claim token `triage claim` handed this lane; without it the guard reads the session alone and refuses once two lanes of it hold live markers |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
-| stdin | markdown | yes | — | the rewritten body that goes above the preserved original — with `--epic`, the pitch's five field lines instead: `**Problem:**`, `**Arc:**`, `**Appetite:** <N> cycles`, `**Rabbit-holes:**`, `**No-gos:**`, one per line |
+| stdin | markdown | yes | — | the rewritten body that goes above the preserved original — with `--epic`, the pitch's five field lines instead: `**Problem:**`, `**Arc:**`, `**Appetite:** <S\|M\|L>`, `**Rabbit-holes:**`, `**No-gos:**`, one per line, plus the optional `**Success:**` line |
 
 **Output** — machine channel. One tab-separated line: `enriched`, `<number>`, `<redactions>`, where
 `<redactions>` is the count of machine-local paths masked in the preserved original. With `--json`,
@@ -1326,22 +1326,26 @@ the default mode replaces a rewrite.
 **Stdin carries the five field lines, not the section heading.** The verb writes `## Pitch` itself,
 so the heading always matches the guard's anchor rather than a caller's typing; a caller who sends
 the heading too gets two of them, and the guard reads the empty section between them as a pitch
-missing all five fields — loud at the seam, never a silent pass. The five lines, stated here rather
-than deferred to another skill's prose:
+missing all five fields — loud at the seam, never a silent pass. The five lines and the optional
+sixth, stated here rather than deferred to another skill's prose:
 
 ```
 **Problem:** <who has it, and what breaks or stalls for them today>
 **Arc:** <the home just assigned — the milestone title, or the standing lane>
-**Appetite:** <N> cycles
+**Appetite:** <S|M|L>
 **Rabbit-holes:** <the named traps — the specific ways this overspends if left unbounded>
 **No-gos:** <what this deliberately does not do>
+**Success:** <the one sentence the two-week check judges the shipped bet against>
 ```
 
 **The label opens the line.** The guard reads a field as `<optional emphasis><name><optional
 emphasis>:` anchored at line start over optional spaces and tabs, tolerating case and `Rabbit holes`
-for `Rabbit-holes` (`pitch-guard.ts:89-93`) — so a bulleted `- Problem: …` does **not** read as a
-field. Field order is not load-bearing; `Appetite` must parse as a whole positive number of cycles
-(`:104-109`).
+for `Rabbit-holes` (`packages/fabrika-cli/src/guard/pitch.ts` `readField`) — so a bulleted
+`- Problem: …` does **not** read as a field. Field order is not load-bearing. `Appetite` is a size,
+upper-case `S`, `M` or `L`, whose dollar amount per epic child is the repo's `appetiteSizes` key in
+`.fabrika.jsonc` (shipped S = $15, M = $35, L = $40); a legacy whole positive number of cycles still
+parses, so an older pitch stays well-formed (`parseAppetite`). `Success` is optional: a pitch without
+it is still well-formed, and a drafter writes it whenever the bet has a result anyone could check.
 
 **`## Epic — awaiting plan` is a heading, and that is load-bearing rather than cosmetic.** The guard
 reads the pitch section from `## Pitch` to *the next heading of any level, or end of body*

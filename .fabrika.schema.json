@@ -8,6 +8,33 @@
 			"type": "string",
 			"description": "Path to the JSON Schema for this file — e.g. \"./.fabrika.schema.json\". Gives an editor autocomplete and validation for the keys below."
 		},
+		"appetiteSizes": {
+			"type": "object",
+			"description": "What each pitch size (`**Appetite:** S`, `M` or `L`) is worth in dollars per epic child. The size is the spending limit a pitch approval binds. Name all three, each positive and rising from S to L. Shipped default: S = 15, M = 35, L = 40.",
+			"properties": {
+				"S": {
+					"type": "number",
+					"exclusiveMinimum": 0,
+					"description": "Dollars a size-S pitch may spend per epic child."
+				},
+				"M": {
+					"type": "number",
+					"exclusiveMinimum": 0,
+					"description": "Dollars a size-M pitch may spend per epic child."
+				},
+				"L": {
+					"type": "number",
+					"exclusiveMinimum": 0,
+					"description": "Dollars a size-L pitch may spend per epic child."
+				}
+			},
+			"required": [
+				"S",
+				"M",
+				"L"
+			],
+			"additionalProperties": false
+		},
 		"assemblyRefresh": {
 			"type": "object",
 			"description": "Whether the driver merges the trunk into an epic's assembly branch before the tail enters review and before a child shell is dispatched off it.",

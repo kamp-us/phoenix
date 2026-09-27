@@ -6,9 +6,9 @@
  * each shortlisted issue is re-read singly for the parent link the list omits, and the ACL is
  * resolved per comment author, fail-closed.
  */
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
 import {runPitchGuard} from "./pitch-verb.ts";
@@ -94,19 +94,30 @@ const APPROVED = {
 	body: "pitch-approved: appetite 2 cycles · 2026-08-18T00:00:00Z",
 };
 
+const ROOT = "/repo";
+
 const run = (
 	script: ReadonlyArray<Scripted>,
-	options: {issue?: number; repo?: string | null; env?: Record<string, string | undefined>} = {},
+	options: {
+		issue?: number;
+		repo?: string | null;
+		env?: Record<string, string | undefined>;
+		config?: string;
+	} = {},
 ) => {
 	const seams = fakeSeams(script);
+	const fs = fakeFs(
+		options.config === undefined ? {} : {files: {[`${ROOT}/.fabrika.jsonc`]: options.config}},
+	);
 	return Effect.runPromise(
 		Effect.provide(
 			runPitchGuard({
 				issue: options.issue ?? null,
 				repo: options.repo ?? null,
+				cwd: ROOT,
 				env: options.env ?? ENV,
 			}),
-			seams.layer,
+			Layer.merge(fs.layer, seams.layer),
 		),
 	).then((outcome) => ({outcome, requests: seams.requests}));
 };
@@ -290,5 +301,54 @@ describe("runPitchGuard — repo resolution", () => {
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.join("\n")).toContain("cannot resolve a target repo");
+	});
+});
+
+describe("runPitchGuard — pitch sizes and the config they are priced in", () => {
+	const SIZED = PITCH.replace("2 cycles", "M");
+
+	it("passes a size pitch approved as `appetite M`", async () => {
+		const {outcome} = await run(
+			[
+				[ONE(9), one({number: 9, body: SIZED})],
+				[COMMENTS(9), comments({author: "founder", body: "pitch-approved: appetite M"})],
+				[PERM("founder"), permission("admin")],
+			],
+			{issue: 9},
+		);
+		expect(outcome.code).toBe(0);
+	});
+
+	it("prices the sizes in its remedy from the repo's declared appetiteSizes", async () => {
+		const {outcome} = await run(
+			[
+				[ONE(9), one({number: 9, body: SIZED})],
+				[COMMENTS(9), EMPTY],
+			],
+			{issue: 9, config: JSON.stringify({appetiteSizes: {S: 5, M: 9, L: 12}})},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stderr.join("\n")).toContain("S = $5, M = $9, L = $12 per epic child");
+	});
+
+	it("prices them at the shipped 15 / 35 / 40 when the repo declares nothing", async () => {
+		const {outcome} = await run(
+			[
+				[ONE(9), one({number: 9, body: SIZED})],
+				[COMMENTS(9), EMPTY],
+			],
+			{issue: 9},
+		);
+		expect(outcome.stderr.join("\n")).toContain("S = $15, M = $35, L = $40 per epic child");
+	});
+
+	it("reds 11 over a malformed appetiteSizes before it reads the board", async () => {
+		const {outcome, requests} = await run([], {
+			issue: 9,
+			config: JSON.stringify({appetiteSizes: {S: 40, M: 35, L: 15}}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("appetiteSizes");
+		expect(requests).toEqual([]);
 	});
 });

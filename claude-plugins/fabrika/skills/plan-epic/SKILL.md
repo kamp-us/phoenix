@@ -177,6 +177,13 @@ point.
 Write the product layer first and let the slices fall out of it. A `### Task-split rationale` that
 cannot say which story each slice serves is telling you the split is wrong.
 
+**The pitch bounds the plan.** Its `**Appetite:**` is a size, `S`, `M` or `L`, worth a dollar amount
+per epic child (`appetiteSizes` in `.fabrika.jsonc`), so a child too big to land inside that amount
+is two children. When the pitch carries a `**Success:**` line, the epic's acceptance criteria make
+it checkable; the two-week check judges the shipped epic against that sentence. An older pitch
+still reads `<N> cycles`; plan against it as written and never rewrite the pitch, because a changed
+appetite needs a fresh founder approval.
+
 ## 4 — Grill the plan while it is still cheap
 
 **Every epic is grilled, and it happens here** — the plan is staged, no child exists, and the epic

@@ -28,7 +28,7 @@
 
 import {classificationIn, closingTargets, proseOf} from "../build/pr-body.ts";
 import {conventionalTitleOf} from "../build/pr-title.ts";
-import {PITCH_FIELDS, pitchSection} from "../guard/pitch.ts";
+import {PITCH_FIELDS, pitchSection, SUCCESS_FIELD} from "../guard/pitch.ts";
 
 /** The heading the epic reviewer and the founder both read the section under. */
 export const ABOUT_HEADING = "## About this epic";
@@ -66,7 +66,7 @@ const labelPattern = (field: string): RegExp =>
 
 const PROBLEM_LABEL = labelPattern("Problem");
 /** Where the Problem paragraph ends when no blank line does it — a sibling field's own label. */
-const FIELD_LABELS = PITCH_FIELDS.map(labelPattern);
+const FIELD_LABELS = [...PITCH_FIELDS, SUCCESS_FIELD].map(labelPattern);
 const BLANK = /^\s*$/;
 
 /**

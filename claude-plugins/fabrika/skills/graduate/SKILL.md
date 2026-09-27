@@ -172,7 +172,9 @@ including the remainder from step 2.
 
 **A pitch is not part of this body, and stamping one is not yours.** The spec carries four
 sections and no pitch fields; if the work needs a pitch to enter a lane, that stamp is a founder
-seat and a separate act.
+seat and a separate act. Triage drafts that pitch from your spec, with a size (`S`, `M` or `L`) and a
+`**Success:**` line, so when the trail settled how anyone would know the work worked, state it in
+`## Solution` in one sentence triage can lift.
 
 **Done when** exit `0` hands you a composed body.
 
