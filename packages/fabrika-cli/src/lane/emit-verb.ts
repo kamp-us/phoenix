@@ -24,6 +24,9 @@
  * That remedy is for the wrong MACHINE, and it is not the one a changed PLAN takes: re-emitting
  * discards `events.jsonl` and every landed child's record with it. A running lane whose topology
  * moved is [`amend-verb.ts`](amend-verb.ts)'s, which re-derives the machine over the log it keeps.
+ *
+ * The epic lane's origin is written as its first fact ([`facts.ts`](facts.ts)) right after the
+ * machine is placed, exactly as `lane open` writes a single-issue lane's.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -34,10 +37,13 @@ import {MACHINERY_LAPS, type MachineryLapsSurface} from "../config/keys/machiner
 import type {Read} from "../config/read-key.ts";
 import {listSubIssues, type SubIssueLink} from "../plan/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {DEFAULT_ORIGIN, ORIGINS, origin} from "../wire/lane-record.ts";
 import type {ClaimHoldReader} from "./claim-hold.ts";
 import {offSetClasses, renderClasses} from "./class-seed.ts";
 import {
+	APPEND_UNKNOWN,
 	CLASS_UNRECOGNISED,
+	FACT_REFUSED,
 	LANE_EXISTS,
 	LANE_UNREADABLE,
 	MALFORMED_RECORD,
@@ -47,6 +53,7 @@ import {
 } from "./codes.ts";
 import {capRefusal} from "./concurrency.ts";
 import {type EmitResult, emitMachine} from "./emit.ts";
+import {recordOrigin} from "./facts.ts";
 import {placementRefusal} from "./refusals.ts";
 import {type LaneRef, placeMachine} from "./store.ts";
 
@@ -77,6 +84,13 @@ export interface EmitOptions<R = never> {
 	 * name, instead of refusing on `16`.
 	 */
 	readonly children: boolean;
+	/**
+	 * Where the epic lane came from, as the operator spelled it — validated against the closed set
+	 * `lane open` uses, and a driver pick when absent.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/9855
+	 */
+	readonly origin?: string;
 }
 
 /**
@@ -155,6 +169,13 @@ export const runEmit = <R = never>(
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "an issue number", options.epic);
 		if (bad !== null) return bad;
+		const laneOrigin = origin(options.origin ?? DEFAULT_ORIGIN);
+		if (laneOrigin === null) {
+			return refuse(
+				FACT_REFUSED,
+				`${VERB}: --origin "${options.origin}" is not one of ${ORIGINS.join(", ")}. Nothing was written.`,
+			);
+		}
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const target = yield* openIssue(
@@ -200,10 +221,18 @@ export const runEmit = <R = never>(
 			);
 		}
 		if (placed._tag !== "Placed") return placementRefusal(VERB, placed);
+		const recorded = yield* recordOrigin(placed.dir, laneOrigin);
+		if (recorded._tag === "Unrecorded") {
+			return refuse(
+				APPEND_UNKNOWN,
+				`${VERB}: emitted ${placed.dir}, but its origin did not land in ${recorded.path}: ${recorded.reason} — the lane IS booted and reads as a ${DEFAULT_ORIGIN} until that file says otherwise.`,
+			);
+		}
 		return answer(
 			JSON.stringify({
 				answer: "emitted",
 				epic: options.epic,
+				origin: laneOrigin,
 				workflow: placed.workflow,
 				phases: emitted.phases,
 				children: emitted.children,

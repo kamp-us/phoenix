@@ -62,6 +62,7 @@ arrives owing a migration nobody planned.
 | `plan-approval` | [`packages/fabrika-cli/src/wire/plan-approval.ts`](../../../packages/fabrika-cli/src/wire/plan-approval.ts) | `check-epic-plan` | `check-epic-plan` |
 | `decision-ruling` | [`packages/fabrika-cli/src/wire/decision-ruling.ts`](../../../packages/fabrika-cli/src/wire/decision-ruling.ts) | `adr` | `build`, `triage`, `review` |
 | `routed-elsewhere` | [`packages/fabrika-cli/src/wire/routed-elsewhere.ts`](../../../packages/fabrika-cli/src/wire/routed-elsewhere.ts) | `review-ui` | `ship`, `operate` |
+| `lane-record` | [`packages/fabrika-cli/src/wire/lane-record.ts`](../../../packages/fabrika-cli/src/wire/lane-record.ts) | `operate` | `operate` |
 <!-- fabrika:wire-index:end -->
 
 ### `acceptance-criteria`
@@ -354,6 +355,19 @@ nothing" ships as "I judged it and it passed" — so these are separate bytes un
 own, `verdict-marker` reads them as `Absent`, and this reader is `Absent` on every verdict marker.
 The head binding does the rest: a route is voided by any push, so the next tree is attested afresh
 rather than inheriting a judgement formed over a diff nobody has read since.
+
+### `lane-record`
+
+This is a lane's history made public. A lane's ledger lives in the driving machine's gitignored
+`.fabrika/lanes/`, so a lane driven on another machine is invisible to everyone else; when a lane
+reaches a terminal state, the driver's `lane record` posts one of these to the lane's issue, and the
+table sync reads it back to fill the project's Spent $, Asks and Origin fields. The two sides never
+meet, and one of them is on another machine, so the bytes are the whole agreement. The first line
+keys the record by the terminal it records, which is how a re-run of the driver's terminal step
+answers "already posted" instead of stacking a second record. Two rows restate derived facts — the
+asks are the parks routed to the founder, and the wall-clock is the span between its own two
+instants — and the reader holds each to its source, so a record whose rows disagree is `Malformed`
+rather than a record carrying two numbers for one fact.
 
 ## Adding a format
 

@@ -26,6 +26,7 @@ import {localBranches} from "../io/git.ts";
 import {readStdin} from "../io/stdin.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {DEFAULT_ORIGIN, ORIGINS} from "../wire/lane-record.ts";
 import {admitBoardKey, admitKey} from "./admission.ts";
 import {claimOwnership, runAmend} from "./amend-verb.ts";
 import {closedReader} from "./archive-move.ts";
@@ -71,6 +72,8 @@ import {proveDispatched, runProve} from "./prove-verb.ts";
 import {pullsReader} from "./pulls-reader.ts";
 import {runPush} from "./push-verb.ts";
 import {type ReconcileRoot, runReconcile} from "./reconcile-verb.ts";
+import {LEDGER_SPEND} from "./record.ts";
+import {recordBoard, runRecord} from "./record-verb.ts";
 import {runRecover} from "./recover-verb.ts";
 import {DEFAULT_TRUNK_REF, runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
@@ -90,6 +93,7 @@ import {
 	type LaneRef,
 } from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
+import {runWait} from "./wait-verb.ts";
 
 const laneArgument = Argument.string("lane").pipe(
 	Argument.withDescription(
@@ -530,8 +534,14 @@ const open = leafCommand(
 				"seat the lane from what the board proves when its prior ledger is unreachable: one open PR with every derived namespace answered at head, booted with its repair budget declared spent and the adoption recorded on the issue",
 			),
 		),
+		origin: Flag.string("origin").pipe(
+			Flag.withDefault(DEFAULT_ORIGIN),
+			Flag.withDescription(
+				`where the lane came from, one of ${ORIGINS.join(", ")} (default: ${DEFAULT_ORIGIN}); recorded as the lane's first fact and shown on its record`,
+			),
+		),
 	},
-	Effect.fn(function* ({lane, root, repo, fromBoard}) {
+	Effect.fn(function* ({lane, root, repo, fromBoard, origin}) {
 		const configRoot = yield* configRootOrRefuse("fabrika lane open", process.cwd());
 		if (typeof configRoot !== "string") {
 			yield* emit(configRoot);
@@ -551,6 +561,7 @@ const open = leafCommand(
 					record: boardRecorder(Option.getOrNull(repo), process.env),
 					cap,
 					claimed: claimHoldReader(Option.getOrNull(repo), process.env),
+					origin,
 				}),
 			),
 		);
@@ -558,7 +569,7 @@ const open = leafCommand(
 ).pipe(
 	Command.withShortDescription("Boot a lane from the committed template its key selects."),
 	Command.withDescription(
-		"Boot one lane: create `<root>/<key>/` and place the committed template the key selects as its workflow.json — the coder template for an issue number, the chore template for a `chore:<name>` key. For an issue, its `class:<name>` labels seed `machine.context.issue.classes`; without class labels, the template stays byte-identical. Unsupported class names refuse at exit 38 before placement, with nothing written; correct the labels before retrying. A chore key reads no issue labels. An existing lane dir is refused loudly with nothing written — resuming needs no boot, and overwriting a machine mid-drive would corrupt a live fold. An ISSUE key first reads that issue's type, its native sub-issue links and its parent edge: the coder template has one task, so an epic has no machine here and is refused at 46 before anything is written. Both halves of \"epic\" are asked for, because they answer for different moments — a planned epic carries children, and an epic nobody has planned yet carries none and is known only by its `type:epic` label, which is the window the wrong-template lane was booted in. The refusal names which case it is: an unplanned epic goes to `plan-epic` first, and a planned one is booted with `fabrika lane emit <n>`. An epic's CHILD carries neither fact, and is refused at 48 instead — a child gets no lane of its own. That refusal reads the parent lane's emitted task set before it speaks, so it names one of three routes: drive the parent lane when its machine holds the child's task, place the child in the parent epic's `## Dependencies` block and run `fabrika lane amend <parent>` first when the machine provably holds no such task, or — when the parent lane is absent, unreadable or malformed, or the parent number itself did not read — say the task set is UNKNOWN rather than asserting membership either way. Epic wins the precedence, so a sub-epic still routes to `lane emit`. The parent edge rides the issue read already made, so the type and the two link facts cost one read between them; a `chore:<name>` key drives no issue and is never asked. An issue key whose lane directory is absent is then asked whether the board already hangs a pull request off that issue — one only a driven lane opens — and a hit is refused at 63 with nothing written: a ledger is a lane's whole state and `.fabrika/` is gitignored, so removing the directory and booting again restores a spent repair budget and records no granted round anywhere. The refusal names the pull request to drive, the one door out of a spent budget — a recorded round grant (`build clear` on the lane's PR, `lane clear` on a lane that has none) — and, for the prior ledger no clearance can produce because it was written on another operator's machine, `--from-board`. That flag reaches this refusal and nothing else, and it reads the board rather than trusting itself: exactly one pull request hangs off the issue, it is open, and every namespace its head derives has answered on the same fold `lane prove` takes for a PASS. Anything short of that is 63 again with its own reason — a standing FAIL (a repair is owed, and how many rounds the prior lane spent is what nothing here can prove), a verdict that no longer binds the head, several pull requests, a merged or closed one — and an unread board is 11, never a seat. On admission the boot does two things no ordinary boot does: it places the document with `maxRetries: 0`, so this lane mints no repair budget the board did not prove and a FAIL parks at `human:budget-spent` until `lane clear` grants a round, and it records the adoption as a comment on the issue BEFORE anything lands on disk, so a seat nobody can review is never taken. The lane is placed at its initial state, not at a stage: walk it with `lane transition`, which proves each event against the board before it records one. It is asked only over an absent directory, so an existing lane still answers 14 and a re-run reads as the resume it is; an unreadable answer is 11, never \"no prior lane\". So an issue key costs two board reads about the issue itself — its type and links, then this one — and the cap gate below adds one claim-marker read per candidate lane it counts. Last before the write, an issue key is counted against `laneConcurrencyCap` as the repository that OWNS the cwd declares it — the same checkout the lanes root derives from, so a linked worktree is capped by the primary checkout's `.fabrika.jsonc` and not by its own tracked copy: a seat is held by an issue lane under this root that has not folded to done AND whose issue carries a live `lane claim` marker, plus every lane no read can account for — an active lane nobody claims is idle and holds nothing, an archived one is already out of the count, and there is no override flag — raising the number in the config is how it changes. Exits 8 (the write did not land — the lane is NOT booted), 11 (the template, the lane dir's existence, or the issue's child list could not be read — UNKNOWN, never a boot), 14 (the lane already exists), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root), 46 (the issue is an epic — typed `type:epic`, or carrying sub-issue links — so this template is the wrong machine for it), 48 (the issue hangs under a parent, so it gets no lane of its own — the line names whether the parent lane holds its task, provably does not, or did not read, and routes accordingly), 51 (the lanes root already holds as many CLAIMED lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — the cap, the claimed count, every lane holding a seat and, separately, the number of idle unclaimed lanes are named, and nothing was written), 63 (the board says this issue already had a lane — every pull request that proves it is named, and a re-boot would launder its spent repair budget, so nothing was written; under `--from-board` the same code carries the board's own reason for not seating it). Examples: fabrika lane open 5673 · fabrika lane open chore:park-sweep",
+		"Boot one lane: create `<root>/<key>/` and place the committed template the key selects as its workflow.json — the coder template for an issue number, the chore template for a `chore:<name>` key. For an issue, its `class:<name>` labels seed `machine.context.issue.classes`; without class labels, the template stays byte-identical. Unsupported class names refuse at exit 38 before placement, with nothing written; correct the labels before retrying. A chore key reads no issue labels. An existing lane dir is refused loudly with nothing written — resuming needs no boot, and overwriting a machine mid-drive would corrupt a live fold. An ISSUE key first reads that issue's type, its native sub-issue links and its parent edge: the coder template has one task, so an epic has no machine here and is refused at 46 before anything is written. Both halves of \"epic\" are asked for, because they answer for different moments — a planned epic carries children, and an epic nobody has planned yet carries none and is known only by its `type:epic` label, which is the window the wrong-template lane was booted in. The refusal names which case it is: an unplanned epic goes to `plan-epic` first, and a planned one is booted with `fabrika lane emit <n>`. An epic's CHILD carries neither fact, and is refused at 48 instead — a child gets no lane of its own. That refusal reads the parent lane's emitted task set before it speaks, so it names one of three routes: drive the parent lane when its machine holds the child's task, place the child in the parent epic's `## Dependencies` block and run `fabrika lane amend <parent>` first when the machine provably holds no such task, or — when the parent lane is absent, unreadable or malformed, or the parent number itself did not read — say the task set is UNKNOWN rather than asserting membership either way. Epic wins the precedence, so a sub-epic still routes to `lane emit`. The parent edge rides the issue read already made, so the type and the two link facts cost one read between them; a `chore:<name>` key drives no issue and is never asked. An issue key whose lane directory is absent is then asked whether the board already hangs a pull request off that issue — one only a driven lane opens — and a hit is refused at 63 with nothing written: a ledger is a lane's whole state and `.fabrika/` is gitignored, so removing the directory and booting again restores a spent repair budget and records no granted round anywhere. The refusal names the pull request to drive, the one door out of a spent budget — a recorded round grant (`build clear` on the lane's PR, `lane clear` on a lane that has none) — and, for the prior ledger no clearance can produce because it was written on another operator's machine, `--from-board`. That flag reaches this refusal and nothing else, and it reads the board rather than trusting itself: exactly one pull request hangs off the issue, it is open, and every namespace its head derives has answered on the same fold `lane prove` takes for a PASS. Anything short of that is 63 again with its own reason — a standing FAIL (a repair is owed, and how many rounds the prior lane spent is what nothing here can prove), a verdict that no longer binds the head, several pull requests, a merged or closed one — and an unread board is 11, never a seat. On admission the boot does two things no ordinary boot does: it places the document with `maxRetries: 0`, so this lane mints no repair budget the board did not prove and a FAIL parks at `human:budget-spent` until `lane clear` grants a round, and it records the adoption as a comment on the issue BEFORE anything lands on disk, so a seat nobody can review is never taken. The lane is placed at its initial state, not at a stage: walk it with `lane transition`, which proves each event against the board before it records one. It is asked only over an absent directory, so an existing lane still answers 14 and a re-run reads as the resume it is; an unreadable answer is 11, never \"no prior lane\". So an issue key costs two board reads about the issue itself — its type and links, then this one — and the cap gate below adds one claim-marker read per candidate lane it counts. Last before the write, an issue key is counted against `laneConcurrencyCap` as the repository that OWNS the cwd declares it — the same checkout the lanes root derives from, so a linked worktree is capped by the primary checkout's `.fabrika.jsonc` and not by its own tracked copy: a seat is held by an issue lane under this root that has not folded to done AND whose issue carries a live `lane claim` marker, plus every lane no read can account for — an active lane nobody claims is idle and holds nothing, an archived one is already out of the count, and there is no override flag — raising the number in the config is how it changes. Once placed, the lane's origin is appended to `<root>/<key>/facts.jsonl` as its first fact — `--origin`, one of bet, founder-start, driver-pick, experiment, mid-lane-fix, defaulting to driver-pick — and the answer carries it as `origin`; a lane with no origin fact reads as driver-pick. Exits 8 (the write did not land — the lane is NOT booted; or the machine was placed and the origin fact did not land, which the line says, and the lane then reads as driver-pick), 70 (--origin is outside the closed set — nothing was written), 11 (the template, the lane dir's existence, or the issue's child list could not be read — UNKNOWN, never a boot), 14 (the lane already exists), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root), 46 (the issue is an epic — typed `type:epic`, or carrying sub-issue links — so this template is the wrong machine for it), 48 (the issue hangs under a parent, so it gets no lane of its own — the line names whether the parent lane holds its task, provably does not, or did not read, and routes accordingly), 51 (the lanes root already holds as many CLAIMED lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — the cap, the claimed count, every lane holding a seat and, separately, the number of idle unclaimed lanes are named, and nothing was written), 63 (the board says this issue already had a lane — every pull request that proves it is named, and a re-boot would launder its spent repair budget, so nothing was written; under `--from-board` the same code carries the board's own reason for not seating it). Examples: fabrika lane open 5673 · fabrika lane open chore:park-sweep",
 	),
 );
 
@@ -581,8 +592,14 @@ const emitLane = leafCommand(
 				"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
 			),
 		),
+		origin: Flag.string("origin").pipe(
+			Flag.withDefault(DEFAULT_ORIGIN),
+			Flag.withDescription(
+				`where the epic lane came from, one of ${ORIGINS.join(", ")} (default: ${DEFAULT_ORIGIN}); recorded as the lane's first fact and shown on its record`,
+			),
+		),
 	},
-	Effect.fn(function* ({epic, root, children, repo}) {
+	Effect.fn(function* ({epic, root, children, repo, origin}) {
 		const configRoot = yield* configRootOrRefuse("fabrika lane emit", process.cwd());
 		if (typeof configRoot !== "string") {
 			yield* emit(configRoot);
@@ -611,6 +628,7 @@ const emitLane = leafCommand(
 					machinery,
 					children,
 					claimed: claimHoldReader(Option.getOrNull(repo), process.env),
+					origin,
 				}),
 			),
 		);
@@ -618,7 +636,7 @@ const emitLane = leafCommand(
 ).pipe(
 	Command.withShortDescription("Generate an epic's lane machine from its board topology."),
 	Command.withDescription(
-		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. Each child's `class:<name>` labels seed its `machine.context.<task>.classes`. Unsupported class names on any live child refuse at exit 38 before placement, even when the topology omits that child; correct the labels before retrying. A closed child boots its region in a final state (`completed` → `shipped`, any other close → `frozen`), so a partly-built epic's machine can still terminate. Deterministic: the same epic body bytes and the same child links (number, state, close reason and class labels per child) emit the same machine bytes. stdout is {answer:\"emitted\", epic, workflow, phases, children, dropped:{count,rows}, bytes}. An existing lane is refused at 14 with no exception — a lane on disk is never re-emitted over — and the refusal names the whole remedy: retire the lane directory, then re-run this verb. That remedy is for a lane running the wrong MACHINE, which `fabrika lane migrate --check` is what says; a running lane whose PLAN changed goes to `fabrika lane amend <n>` instead, which re-derives the machine over the log it keeps rather than discarding every landed child's record with the directory. Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named; a defective line's refusal also teaches the placement, since editorial or history prose belongs below a `---` thematic break, which ends the section), 7 (the epic is proven absent or closed), 8 (the write did not land), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists — retire its directory and re-run to rebuild it), 15 (no `## Dependencies` topology — plan the epic first, or under --children every ref the topology placed was dropped so it declares no child), 16 (the topology references a non-child, named — the refusal names both escapes: re-run with --children, or repair the body with `fabrika ledger retopology <epic>`; unreachable under --children), 17 (the topology holds a cycle, path named — checked over what survives --children), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root), 51 (the lanes root already holds as many CLAIMED lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — an epic's lane holds a seat like any other while a driver claims it, and the idle unclaimed count is named separately). `machineryLaps.onEmit` — read, like the cap, from the `.fabrika.jsonc` of the repository that owns the cwd, so a linked worktree reads the primary checkout's copy — picks which machine is written: `off`, the shipped default, emits today's bytes exactly, and `on` adds the machinery LAP arms and seeds each task's lap counter, so a machinery failure spends laps rather than the repair budget and a spent lap parks on `human:machinery-stall` rather than on the repair budget's own `human:budget-spent`. The machine is fixed at emission, so flipping it moves no lane already on disk; an unreadable key is UNKNOWN at 11 with nothing written. `--children` starts from the board's live sub-issue list: every ref the topology names and that list does not leaves its phase and every requires list naming it, a phase left with no members is elided, and every ref that went is reported whole on stdout and stderr — the descope escape, opt-in because the same stale ref is a typo on the other reading. Every other topology defect refuses exactly as it does without the flag. Examples: fabrika lane emit 5680 · fabrika lane emit 5817 --children",
+		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. Each child's `class:<name>` labels seed its `machine.context.<task>.classes`. Unsupported class names on any live child refuse at exit 38 before placement, even when the topology omits that child; correct the labels before retrying. A closed child boots its region in a final state (`completed` → `shipped`, any other close → `frozen`), so a partly-built epic's machine can still terminate. Deterministic: the same epic body bytes and the same child links (number, state, close reason and class labels per child) emit the same machine bytes. Once placed, the lane's origin is appended to `<root>/<epic>/facts.jsonl` as its first fact — `--origin`, one of bet, founder-start, driver-pick, experiment, mid-lane-fix, defaulting to driver-pick — exactly as `lane open` records a single-issue lane's. stdout is {answer:\"emitted\", epic, origin, workflow, phases, children, dropped:{count,rows}, bytes}. An existing lane is refused at 14 with no exception — a lane on disk is never re-emitted over — and the refusal names the whole remedy: retire the lane directory, then re-run this verb. That remedy is for a lane running the wrong MACHINE, which `fabrika lane migrate --check` is what says; a running lane whose PLAN changed goes to `fabrika lane amend <n>` instead, which re-derives the machine over the log it keeps rather than discarding every landed child's record with the directory. Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named; a defective line's refusal also teaches the placement, since editorial or history prose belongs below a `---` thematic break, which ends the section), 7 (the epic is proven absent or closed), 8 (the write did not land; or the machine was placed and the origin fact did not land, which the line says, and the lane then reads as driver-pick), 70 (--origin is outside the closed set — nothing was read or written), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists — retire its directory and re-run to rebuild it), 15 (no `## Dependencies` topology — plan the epic first, or under --children every ref the topology placed was dropped so it declares no child), 16 (the topology references a non-child, named — the refusal names both escapes: re-run with --children, or repair the body with `fabrika ledger retopology <epic>`; unreachable under --children), 17 (the topology holds a cycle, path named — checked over what survives --children), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root), 51 (the lanes root already holds as many CLAIMED lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — an epic's lane holds a seat like any other while a driver claims it, and the idle unclaimed count is named separately). `machineryLaps.onEmit` — read, like the cap, from the `.fabrika.jsonc` of the repository that owns the cwd, so a linked worktree reads the primary checkout's copy — picks which machine is written: `off`, the shipped default, emits today's bytes exactly, and `on` adds the machinery LAP arms and seeds each task's lap counter, so a machinery failure spends laps rather than the repair budget and a spent lap parks on `human:machinery-stall` rather than on the repair budget's own `human:budget-spent`. The machine is fixed at emission, so flipping it moves no lane already on disk; an unreadable key is UNKNOWN at 11 with nothing written. `--children` starts from the board's live sub-issue list: every ref the topology names and that list does not leaves its phase and every requires list naming it, a phase left with no members is elided, and every ref that went is reported whole on stdout and stderr — the descope escape, opt-in because the same stale ref is a typo on the other reading. Every other topology defect refuses exactly as it does without the flag. Examples: fabrika lane emit 5680 · fabrika lane emit 5817 --children",
 	),
 );
 
@@ -1589,6 +1607,59 @@ const recover = leafCommand(
 	),
 );
 
+const wait = leafCommand(
+	"wait",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		on: Flag.string("on").pipe(
+			Flag.withDescription(
+				"what the lane is waiting on, in one line — a person, a release, another issue",
+			),
+		),
+		until: Flag.string("until").pipe(
+			Flag.withDescription(
+				"the ISO date or instant the wait holds until; it must still be to come",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, on, until}) {
+		yield* emit(yield* onKey("wait", lane, root, (_key, ref) => runWait({...ref, on, until})));
+	}),
+).pipe(
+	Command.withShortDescription("Record what a lane is waiting on, and until when."),
+	Command.withDescription(
+		'Append a waiting fact to the lane\'s `<root>/<key>/facts.jsonl`: the lane is waiting on --on until --until. The latest declaration stands, a stuck flag leaves the lane unflagged until that date, and `lane record` shows it on the lane\'s record. It is a fact, never an event: `events.jsonl` and the fold are untouched. The append takes the lane\'s ledger lock. stdout is {answer:"waiting", lane, on, until}. Exits 4 (workflow.json or facts.jsonl was read in full and is not the shape), 7 (no lane there), 8 (the append did not land — the wait is NOT recorded), 11 (the lane or its facts could not be read), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11), 40 (another writer holds the ledger lock — retry), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it — pass a root under the owning repository, or drop --root), 70 (--on is not one non-blank line, or --until is not an ISO date still to come — nothing was appended). Example: fabrika lane wait 5673 --on "the design review" --until 2026-10-05',
+	),
+);
+
+const record = leafCommand(
+	"record",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the owner/name the record is posted to (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, repo}) {
+		const board = recordBoard(Option.getOrNull(repo), process.env);
+		yield* emit(
+			yield* onKey("record", lane, root, (key, ref) =>
+				runRecord({...ref, issue: resolveKeyIssue(key), spent: LEDGER_SPEND, board}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Post a terminal lane's record to its issue, once per terminal."),
+	Command.withDescription(
+		"Compose the record of a lane whose fold has reached a terminal state and post it to the lane's issue as one `lane-record` marker comment — the wire format owned by packages/fabrika-cli/src/wire/lane-record.ts. The record carries the outcome, the wall-clock from the lane's opening to its terminal event, builds (DONE out of a build leaf), reviews (PASS or FAIL out of a review leaf), every park with its cause and route, Spent $, Asks (the parks routed to the founder — a park with no cause routes there), the origin and standing wait from facts.jsonl, the pull requests the log names, and the whole log collapsed in a <details> block. Every count is derived from events.jsonl by replaying it, never stored. Spent $ reads `unmeasured` with its reason while the spend ledger holds tokens and no rate card. The body is scrubbed of machine-local paths and must then pass the leak guard, or nothing is posted. The issue's comments are read whole first: a record already standing for the same terminal — same issue, outcome and terminal instant — answers `unchanged` and writes nothing, so re-running this after a terminal is safe. The posted comment is read back through the format's reader. stdout is {answer:\"posted\"|\"unchanged\", lane, issue, commentId, outcome, origin, asks, builds, reviews, parks, spent, prs} plus `url` on a post. Exits 4 (the lane record, its facts or a lane-record comment already on the issue does not read — whether this terminal is recorded is undecidable), 5 (a machine-local path survived scrubbing — nothing was posted), 7 (no lane there), 8 (the post failed — it may or may not have landed; re-run), 9 (the posted comment does not read back as this terminal's record), 11 (the lane, its facts or the issue's comments could not be read), 19 (the key names no issue — a chore lane has nowhere to post a record), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it — pass a root under the owning repository, or drop --root), 69 (the lane has not reached a terminal state — nothing was posted). Example: fabrika lane record 5673",
+	),
+);
+
 export const laneCommand = Command.make("lane").pipe(
 	Command.withSubcommands([
 		status,
@@ -1621,6 +1692,8 @@ export const laneCommand = Command.make("lane").pipe(
 		release,
 		adopt,
 		scratch,
+		wait,
+		record,
 	]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
 	Command.withDescription(

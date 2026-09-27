@@ -34,6 +34,7 @@ import * as grillRuling from "./grill-ruling.ts";
 import * as grillSupersede from "./grill-supersede.ts";
 import * as handoffPack from "./handoff-pack.ts";
 import * as laneBrief from "./lane-brief.ts";
+import * as laneRecord from "./lane-record.ts";
 import * as mapTicket from "./map-ticket.ts";
 import * as planApproval from "./plan-approval.ts";
 import * as rangeVerdictMarker from "./range-verdict-marker.ts";
@@ -47,6 +48,38 @@ import * as verdictMarker from "./verdict-marker.ts";
  * portability guard counts each spelling of it as its own reference into one repository's issues.
  */
 const RULING_COMMENT_URL = "https://github.com/o/r/issues/8#issuecomment-3512345";
+
+/** The round-trip record for `lane-record`, as the JSON `wire emit` reads on stdin. */
+const LANE_RECORD_FIELDS = JSON.stringify({
+	issue: 9855,
+	outcome: "shipped",
+	startedAt: "2026-09-26T06:48:00.000Z",
+	terminalAt: "2026-09-26T10:00:00.000Z",
+	builds: 2,
+	reviews: 3,
+	parks: [
+		{
+			task: "issue",
+			leaf: "human:cp-approval",
+			cause: "awaiting-cp-approval",
+			route: "founder",
+			at: "2026-09-26T09:00:00.000Z",
+		},
+	],
+	spent: {_tag: "Unmeasured", reason: "no rate card converts tokens to dollars"},
+	origin: "bet",
+	waiting: {_tag: "Until", on: "the design review", until: "2026-10-05"},
+	prs: [4242],
+	log: ['{"task":"issue","event":"ISSUE.WIP","at":"2026-09-26T06:48:00.000Z"}'],
+});
+
+/** The registered key for `--format`, resolved against the array above. `undefined` is zero scope. */
+export const findFormat = (key: string): WireFormat | undefined =>
+	registeredFormats.find((format) => format.key === key);
+
+/** Every registered key, for a refusal that names what *is* available. */
+export const registeredKeys = (): ReadonlyArray<string> =>
+	registeredFormats.map((format) => format.key);
 
 export const registeredFormats: ReadonlyArray<WireFormat> = [
 	{
@@ -1136,12 +1169,81 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 		},
 		brands: brandWitnesses<routedElsewhere.RoutedElsewhere>({sha: true, clause: true}),
 	},
+	{
+		key: "lane-record",
+		purpose:
+			"a terminal lane's record on its issue — outcome, wall-clock, builds, reviews, parks, Spent $, Asks, origin, PRs and the collapsed log, keyed by the terminal it records",
+		module: "packages/fabrika-cli/src/wire/lane-record.ts",
+		producers: ["operate"],
+		consumers: ["operate"],
+		emit: laneRecord.emitFromFields,
+		read: laneRecord.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: LANE_RECORD_FIELDS,
+				values: [
+					"9855",
+					"shipped",
+					"2026-09-26T10:00:00.000Z",
+					"human:cp-approval",
+					"awaiting-cp-approval",
+					"founder",
+					"bet",
+					"the design review",
+					"4242",
+				],
+			},
+			found: [
+				{
+					shape: "the record as `lane record` posts it, with a machine-local path scrubbed",
+					artifact: laneRecord.emit({
+						issue: 7,
+						outcome: "board:cancelled",
+						startedAt: "2026-09-01" as laneRecord.Instant,
+						terminalAt: "2026-09-02T00:00:00.000Z" as laneRecord.Instant,
+						builds: 0,
+						reviews: 0,
+						parks: [],
+						spent: {_tag: "Unmeasured", reason: "no rate card"},
+						origin: "driver-pick",
+						waiting: {_tag: "None"},
+						prs: [],
+						log: ['{"task":"issue","event":"ISSUE.CANCELLED","at":"2026-09-02T00:00:00.000Z"}'],
+					}),
+					values: ["board:cancelled", "driver-pick", "no rate card", "ISSUE.CANCELLED"],
+				},
+			],
+			absent: "lane-claim: #7 · a lane claim is not a lane record\n",
+			malformed: [
+				{
+					drift: "the marker names no terminal instant",
+					artifact: "lane-record: #7 shipped\n",
+				},
+				{
+					drift: "the Asks row disagrees with the founder-routed parks",
+					artifact: laneRecord
+						.emit({
+							issue: 7,
+							outcome: "shipped",
+							startedAt: "2026-09-01T00:00:00.000Z" as laneRecord.Instant,
+							terminalAt: "2026-09-02T00:00:00.000Z" as laneRecord.Instant,
+							builds: 1,
+							reviews: 1,
+							parks: [],
+							spent: {_tag: "Measured", usd: 3.5},
+							origin: "bet",
+							waiting: {_tag: "None"},
+							prs: [8],
+							log: [],
+						})
+						.replace("| Asks | 0 |", "| Asks | 2 |"),
+				},
+			],
+		},
+		brands: brandWitnesses<laneRecord.LaneRecord>({
+			startedAt: true,
+			terminalAt: true,
+			origin: true,
+		}),
+	},
 ];
-
-/** The registered key for `--format`, resolved against the array above. `undefined` is zero scope. */
-export const findFormat = (key: string): WireFormat | undefined =>
-	registeredFormats.find((format) => format.key === key);
-
-/** Every registered key, for a refusal that names what *is* available. */
-export const registeredKeys = (): ReadonlyArray<string> =>
-	registeredFormats.map((format) => format.key);
