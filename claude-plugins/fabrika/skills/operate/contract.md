@@ -10,7 +10,7 @@ value is derived, why a check exists, the order mutations run in, and the condit
 exit. A verb's help ends on a pointer to its section here. Read one section by heading:
 
 ```bash
-fabrika wire doc-section --heading "lane transition" < claude-plugins/fabrika/skills/operate/contract.md
+fabrika wire doc-section --heading "lane transition" < <skill-base>/contract.md
 ```
 
 A `lane` verb with no section here still carries these facts in its own `--help`.
@@ -61,8 +61,9 @@ append it, and refuse on the prover's own code with the log byte-identical. The 
 
 ### Park causes and lane classes
 
-`lane transition` and `lane report` are the two verbs that can append a `BLOCKED`, and both take
-`--cause` and `--class` with the meanings on those flags.
+`lane transition` and `lane report` are the two verbs here that take `--cause` and `--class` on a
+`BLOCKED`, with the meanings on those flags. They are not the only writers of one: `lane recover
+--spawns` records a `BLOCKED` with the fixed cause `spawn-dead` when it parks a dead builder.
 
 - An optional `--cause` lands on a BLOCKED's event line and is what `recipe unpark` keys its recipe
   table on. Every cause also carries a route, `driver` or `founder`, saying whose failure the park
