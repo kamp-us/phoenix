@@ -498,17 +498,20 @@ fabrika build issue $epic_number    # the body's ### User stories and ### Task-s
 fabrika grill read <session>        # step 4's session: its ruled questions
 ```
 
-Each line fills from those reads alone: `<title>` is the child's `title`, the story is the
-`### User stories` item its `stories` number names, and each `topology.edges` pair `[a, b]` reads
-"`a` requires `b`". `Shape:` is the epic body's `### Task-split rationale` and `Grill:` is the
-questions `grill read` returns as ruled, one line each.
+Each line fills from those reads alone: `<title>` is the child's `title`, its stories are the
+`### User stories` items its `stories` numbers name, one or more, and a child whose `stories` array
+is empty (declared `none`) reads `no story`. Each `topology.edges` pair `[a, b]` reads
+"`a` requires `b`". `Shape:` is the epic body's `### Task-split rationale`. `Grill:` lists the
+questions `grill read` returns as `ruled`, each by its `id`, `text`, `author` and `ruledAt`.
+`grill read` carries no ruling prose, so the walk names who ruled and when, and the ruling itself
+stays in step 4's mirror on the epic, one click from the session number.
 
 ```text
 Epic #<epic> — <n> children:
-- #<child> <title> — story <k>: <that story's text>; requires #<other> (or: no prerequisites)
+- #<child> <title> — stories <k>, <m>: <each story's text> (or: no story); requires #<other> (or: no prerequisites)
 - …
 Shape: <each Task-split rationale choice, one line with its reason>
-Grill: #<session> — <each founder ruling, one line>
+Grill: #<session> — <each ruled question: <id> <text>, ruled by <author> on <ruledAt>>
 If this reads right: fabrika plan approve <epic>
 ```
 
