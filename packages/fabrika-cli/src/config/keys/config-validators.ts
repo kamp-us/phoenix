@@ -1,6 +1,7 @@
 /**
- * `configValidators` — the repo's own commands that machine-read a root config file no `build check`
- * surface opens, such as `lefthook.yml`.
+ * `configValidators` — the repo's own commands that machine-read a file no `build check` surface
+ * opens: a root config file such as `lefthook.yml`, or non-JS source such as a `.java` file under a
+ * Gradle tree. One key serves both, so native source gets no second mechanism.
  *
  * The `workflowValidators` grammar, decoded by the same {@link readingValidators}: the command that
  * validates a config file is the repo's own tool, and a second key costs one registry line where
@@ -48,7 +49,7 @@ export const configValidatorsKey: KeyGroup<ReadonlyArray<ConfigValidator>> = {
 	jsonSchema: {
 		type: "array",
 		description:
-			"The repo's own commands that machine-read a config file no `build check` surface opens — every `build check` run whose diff touches a file an entry reads spawns that entry, whatever `--surface` names. Empty (or absent) leaves such files unvalidatable.",
+			"The repo's own commands that machine-read a file no `build check` surface opens — a root config file such as lefthook.yml, or non-JS source such as a .java file — every `build check` run whose diff touches a file an entry reads spawns that entry, whatever `--surface` names. Empty (or absent) leaves such files unvalidatable.",
 		items: {
 			type: "object",
 			properties: {
