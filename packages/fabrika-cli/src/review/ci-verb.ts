@@ -33,7 +33,7 @@ import {type CheckRun, commitExists, listCheckRuns} from "../io/pulls.ts";
 // The workflow inventory is read through the `ship` group's reader for the same reason `ship checks`
 // rolls up through this group's `rollup.ts`: one read, so the two verbs cannot drift on the fact.
 import {CHECK_RUN_NAME} from "../ship/floor-check.ts";
-import {listRunsAtHead, listWorkflowPaths, listWorkflows} from "../ship/github.ts";
+import {listRunsAtHead, listWorkflowPaths} from "../ship/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	authorityNote,
@@ -248,10 +248,12 @@ export const runCi = (
 				scannedLine(VERB, runs.length, "check run", `${declared} declared`),
 			];
 			if (declared === 0) {
-				// The producer question is asked HERE and nowhere else on this path: an enumeration that
-				// returned runs already proves a producer. Empty is the one reading where "no CI at all"
-				// and "nothing has reported yet" are two different repos wearing one answer.
-				const inventory = yield* listWorkflows(repo);
+				// The producer question is asked HERE and nowhere else on this path. A run proves no
+				// producer, since a platform `dynamic/*` workflow reports runs too; a non-empty
+				// enumeration skips the question, and gate coverage names the repo that authors nothing
+				// (`NoGates`). Empty is the one reading where "no CI at all" and "nothing has reported
+				// yet" are two different repos wearing one answer.
+				const inventory = yield* listWorkflowPaths(repo);
 				if (inventory._tag === "Failure") {
 					return done(
 						refuse(

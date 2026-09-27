@@ -19,7 +19,7 @@
  */
 import {Clock, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {producerFor, resolveCi} from "../config/ci-producer.ts";
+import {producerFor, producesCi, resolveCi} from "../config/ci-producer.ts";
 import {reasonHistogram} from "../evidence.ts";
 import {commitExists} from "../io/pulls.ts";
 import {
@@ -100,8 +100,9 @@ export interface Sample {
 	/**
 	 * The repo's active workflow inventory, path-addressed.
 	 *
-	 * Paths rather than the count it used to be: the count is `no-producer`'s discriminator and the
-	 * paths are the gate-coverage read's left operand, and holding both would be one fact stored twice.
+	 * Paths rather than the count it used to be: whether any is repo-authored is `no-producer`'s
+	 * discriminator (`producesCi`) and the paths are the gate-coverage read's left operand, and
+	 * holding both would be one fact stored twice.
 	 */
 	readonly workflows: ReadonlyArray<string>;
 	readonly runCount: number;
@@ -134,7 +135,7 @@ export const rollupFor = (
 ): ChecksRollup => {
 	if (wedged.length > 0) return "wedged";
 	if (sample.runs.length === 0) {
-		if (sample.workflows.length === 0) return "no-producer";
+		if (!producesCi(sample.workflows)) return "no-producer";
 		return sample.runCount === 0 ? "no-runs" : "pending";
 	}
 	const gating = sample.runs.filter((run) => blocking.blocks(run.name));
@@ -382,7 +383,7 @@ export const runChecks = (
 		 * `render`, behind the two doors every exit of this verb passes: gate coverage, and the repo's
 		 * own declaration on the no-producer case.
 		 *
-		 * The rollup already knows a repo has no workflows; what a *caller* gets for that is the
+		 * The rollup already knows a repo has no workflow of its own; what a *caller* gets for that is the
 		 * repo's call, and only here is it read — so every exit of this verb, waiting or not, passes
 		 * the same door.
 		 */
@@ -395,7 +396,7 @@ export const runChecks = (
 			const coverage = covered(read, rollup);
 			if (coverage._tag === "Ungated") return coverage.outcome;
 			if (rollup !== "no-producer") return render(read, rollup, wedged, settle, coverage.notes);
-			const producer = producerFor(VERB, repo, read.workflows.length, ci);
+			const producer = producerFor(VERB, repo, read.workflows, ci);
 			if (producer._tag === "Unknown") return refuse(PRECONDITION_UNKNOWN, producer.reason);
 			if (producer._tag === "Refused") return refuse(ZERO_SCOPE, producer.reason, diagnostics);
 			const rendered = render(read, rollup, wedged, settle);

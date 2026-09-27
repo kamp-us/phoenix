@@ -91,7 +91,7 @@ const script = (overrides: ReadonlyArray<Scripted> = []): ReadonlyArray<Scripted
 	[PULL, reply(pull({updatedAt: PUSHED}))],
 	[FILES, reply(files("apps/site/worker/a.ts", "apps/site/worker/b.ts"))],
 	[CHECK_RUNS, reply(checkRuns(1, [green()]))],
-	[WORKFLOWS, reply(workflows("active"))],
+	[WORKFLOWS, reply(workflows({path: ".github/workflows/ci.yml"}))],
 	[RUN_COUNT, reply(runsTotal(3))],
 	[COMMENTS, reply(comments())],
 	[TIMELINE, emptyPage],
@@ -493,7 +493,19 @@ describe("runDiagnose answers", () => {
 		);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).toContain("zero workflows");
+		expect(out.stderr.join("\n")).toContain("zero repo-authored workflows");
+	});
+
+	it("refuses an inventory of platform-provided `dynamic/*` entries alone — they are no producer", async () => {
+		const out = await run(
+			script([
+				[CHECK_RUNS, reply(checkRuns(0, []))],
+				[WORKFLOWS, reply(workflows({path: "dynamic/github-code-scanning/codeql"}))],
+				[RUN_COUNT, reply(runsTotal(2))],
+			]),
+		);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stderr.join("\n")).toContain("zero repo-authored workflows");
 	});
 
 	it("refuses zero workflows as UNKNOWN when the config itself could not be decoded", async () => {
