@@ -2,7 +2,7 @@
 
 **Skill:** [`build`](SKILL.md) · **Date:** 2026-08-08
 
-**Amended 2026-09-27** — campaigns become themes: the campaign-scope axis is out of the [admission test](#admission-test--scope-admission-and-the-audience-axis), so no campaign state refuses a claim and `20` is retired; `build pick` offers the betting table's current bets first.
+**Amended 2026-09-27** — campaigns become themes: the [admission test](#admission-test--scope-admission-and-the-audience-axis) is three axes (type, audience, criteria), and `build pick` offers the betting table's current bets first.
 
 **Amended 2026-08-09** — the campaign-scope admission term: a new [admission test](#admission-test--scope-admission-and-the-audience-axis) section under shared conventions — scope admission composed with the pre-existing `ready-for:` audience axis, two named axes rather than one widened term — two codes (`20`, `21`) in the shared exit matrix, and the consuming clauses in `build pick` and `build claim`.
 
@@ -114,8 +114,10 @@ Every verb obeys these; stated once.
   beside a failure invites reading the bytes without the status.
 - **Common inputs.** `--repo <owner/name>` (default: resolved from the `origin` remote). `--json`
   is the default and only output mode where a shape is JSON; line-grammar verbs say so. GitHub
-  access per the REST-never-GraphQL rule in [skill conventions](../../docs/skill-conventions.md)
-  — the paginate half is what this group most depends on: a truncated page is the un-paginated scar
+  access per §11 of [skill conventions](../../docs/skill-conventions.md):
+  REST by default, GraphQL only on that section's listed exceptions, which is how `build pick`
+  reads the Projects v2 betting table, and a completeness proof on every list read
+  — that completeness half is what this group most depends on: a truncated page is the un-paginated scar
   it exists to close. The predecessor pipeline's verdict step capped itself at one page of a hundred
   and said so in a comment, so a busy PR's later verdicts were simply invisible to it.
 - **The content gate.** Every externally-authorable byte a verb returns — issue bodies, comments,
@@ -151,10 +153,6 @@ Every verb obeys these; stated once.
 
 <a id="admission-test--scope-admission-and-the-audience-axis"></a>
 ### The admission test — three axes, one module, two seams
-
-**Amended 2026-09-27.** The test used to carry a fourth axis, *scope admission*, that refused an issue on `20` when no
-`active` `## Campaigns` row pinned its milestone. It is gone: a campaign groups work under a theme
-and never refuses a lane, and no campaign state is read here. `20` is retired in the matrix below.
 
 **Three axes, composed — not one widened term.** What both seams run is an **admission test** built
 from three separate questions, computed together and answered together:
@@ -238,15 +236,16 @@ until one of them has run.
   is not**: it carries no `ready-for:` label and no criteria of its own. A PR resolves to the issue
   its lane serves — the first closing keyword in its body, else `Part of #<n>`, the same reference
   `review scope` reads, or the member a repair's `--issue` names — and every axis then reads that
-  issue. A PR whose body names no readable issue, or names one proven absent, **falls back to its
-  own record**. It used to refuse on `20` while any campaign was active; that refusal went with the
-  campaign axis and went quiet rather than moving. A served issue that
-  **cannot be read** is `unknown` (`11`, and not overridable), which is the `unknown` row below.
+  issue. A PR whose body names no readable issue, or names one proven absent, is `refused:
+  no-served-issue` (`38`) whatever the campaigns say: its own record carries no label or criteria
+  to refuse on, so judging it would let one missing body line walk any lane past every axis. A
+  served issue that **cannot be read** is `unknown` (`11`, and not overridable), which is the
+  `unknown` row below.
 - **The issue's audience** — its `ready-for:` label.
 - **The issue's type** — its `type:` labels.
 - **The issue's body** — for the criteria block.
 
-No campaign table, milestone or home is an input. `homeOf` still derives a home — the open
+Those four are the whole input set. `homeOf` derives a home separately — the open
 milestone's number, or a standing-lane label (`wayfinder:backlog`, `axis:pipeline-hardening`) — but
 only `build pick`'s ranking and its histogram rows read it.
 
@@ -259,6 +258,7 @@ three axes, and every refusal carries its reason and names which axis refused:
 | `refused: type-not-buildable` | the issue carries `type:decision` or `type:epic`, on a claim the type axis binds, with no citation opening a decision | `30` |
 | `refused: audience-not-agent` | the issue carries a `ready-for:` label other than `ready-for:agent`, or carries none at all — absence is an unknown audience, never an agent audience | `21` |
 | `refused: no-acceptance-criteria` | the body carries no readable `### Acceptance criteria` block — the wire read answers `absent` (no heading reaches for it) or `malformed` (one drifted), and the outcome carries which — on a claim the criteria axis binds, a fresh build and nothing else | `32` |
+| `refused: no-served-issue` | the target is a pull request whose body carries neither a closing keyword nor `Part of #<n>`, or names an issue proven absent — no axis runs, under any purpose | `38` |
 | `unknown` | the issue a pull request serves could not be read | `11` |
 
 **Each refusal is separately named and separately seated**, never one collapsed "refused": they come
@@ -271,7 +271,8 @@ resolves `admitted` and never borrows `21`/`30`/`32` — an axis that could not 
 proven nothing, while those are proven refusals.
 
 **The override — explicit at the call, recorded on the issue.** `build claim --override "<reason>"
---override-lane "<lane>"` admits an issue the **audience** axis refused, and writes **both** fields —
+--override-lane "<lane>"` admits an issue the **audience** axis refused, or a PR refused as
+`no-served-issue`, and writes **both** fields —
 the lane and the reason — into the claim marker it posts, so the escape hatch costs one deliberate
 act and names who took it; a silent or unattributed override is not one. The two flags are required
 together (the `claim` block below): either one alone is a usage error, not a claim. A type or
@@ -318,7 +319,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `17` | proven: the push completed but the remote ref did not move |
 | `18` | proven: this tree's validation is red |
 | `19` | refused: the requested push is unsafe (detached HEAD, or a non-fast-forward without `--force-with-lease`) |
-| `20` | **retired, left empty** — it meant "not admitted on the scope axis, out of scope" until campaigns became themes and the campaign axis came out of the admission test; nothing is renumbered into it, because renumbering would make an old transcript's code read as a live one |
+| `20` | **an empty seat** — no build verb exits on it, and nothing is numbered into it, so an old transcript's `20` never reads as a live code |
 | `21` | proven: not admitted on the audience axis, audience not agent — the issue's `ready-for:` label is not `ready-for:agent`, or is absent |
 | `22` | proven: every changed file falls outside every surface's validators — there is nothing to run, so the verdict is a refusal, never a green |
 | `23` | proven: the local head does not contain the published remote head — the push would drop its commits |
@@ -330,6 +331,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `34` | proven: no authorized claim marker attests a single survivor among a child's lane branches, so none is superseded |
 | `35` | proven: a replacement disclosure drops an entry the standing marker discloses — a well-formed section that discloses less of the range than the round before it, which is why it is not `4` |
 | `37` | proven: the pull request a claim names was opened by an author outside the repo's own accounts, and no valid takeover grant stands on it — it is its author's to finish |
+| `38` | proven: a claim names a pull request that serves no issue — its body carries neither a closing keyword nor `Part of #<n>`, or names an issue proven absent — so no issue is there to judge |
 | `127` | the verb never ran at all (unresolved binary — the shell's code, not this process's) |
 
 **`7` versus `11` is the split the whole group rests on** (the `wire` group's `ABSENT` vs
@@ -508,8 +510,7 @@ The filter, fail-closed on every axis:
   `packages/fabrika-cli/src/build/scope-admission.ts` — this verb re-derives nothing. On this seam
   the test's **audience axis** is the one that excludes with a reason (`ready-for:agent` present; an
   issue with no `ready-for:` label is excluded, since absence is an unknown audience, never an agent
-  audience, and a negative test pins exactly that). **No campaign state excludes anything**: the
-  `## Campaigns` table is not read here. This
+  audience, and a negative test pins exactly that). This
   verb takes **no override**: overriding happens at `build claim`, where the lane actually opens.
 - **unassigned.** Any assignee excludes — assignment is the one attribute that keeps a human's
   document out of this pool — a set of authoring briefs was once protected by advice alone, and a
@@ -658,8 +659,7 @@ $ echo $?
   passes through no pool.
 - The per-issue exclusion reason: scanned counts cannot separate a working filter from a broken one.
 - Bets first is the betting table's ruling: a driver that picks without being told picks the
-  table's bets first, and nothing refuses a lane for being un-bet. The campaign gate came out only
-  together with this order.
+  table's bets first, and nothing refuses a lane for being un-bet.
 
 ---
 
@@ -881,7 +881,7 @@ rows are `claim`'s alone:
 | `--issue` | positive integer | repair `claim` only | — | the served issue retained independently from the repair PR; it must be a member of the PR body's complete winning linkage set, and selects the admission subject without reference-order dependence |
 | `--token` | string | required on `confirm` / `release`, optional on `claim` | — | the token `claim` handed this lane — which lane is asking. On `claim` it is the token this lane ALREADY holds, and makes the re-claim idempotent (below); omitted, the run is a fresh lane. Not a claim token, or one carrying another session id, is `1` |
 | `--purpose` | `plan` \| `gate` \| `build` | no | `build` | why this lane claims; the audience axis binds `build` only. An off-enum value is `10`, never a fallback |
-| `--override` | string | no | — | claim an issue the admission test refused on the audience axis, naming why; requires `--override-lane` |
+| `--override` | string | no | — | claim an issue the admission test refused on the audience axis, or a PR refused as serving no issue (`38`), naming why; requires `--override-lane` |
 | `--override-lane` | string | no | — | the lane the override is taken for; refused without `--override`. Lane and reason are both written into the claim marker |
 | `--lane` | string | epic child only, with `--lane-root` | — | the epic lane key the brief's `## Task` names; its ledger is read for a standing integrate `FAIL` on this child. Half the pair is `1`; the pair on a plan, gate or PR claim is `10` |
 | `--lane-root` | string | with `--lane` | — | the lanes root the brief's `## Task` names as `root:` |
@@ -895,9 +895,9 @@ passes that retained subject as `--issue`; the verb requires membership in the P
 winning linkage set before admission, so an epic-first and epic-last body select the same issue. An
 empty linkage set fails that explicit membership check at `14`, before admission. A
 `refused: type-not-buildable` is `30`, a `refused: audience-not-agent` is `21` and a
-`refused: no-acceptance-criteria` is `32`, each named on stderr; a served issue that could not be read
-is `11` and never proceeds. **No campaign state is read**: an issue whose milestone no `active`
-`## Campaigns` row pins is claimed like any other, and `20` is retired. Nothing is written on any refusal: the issue carries no marker, so a refused claim
+`refused: no-acceptance-criteria` is `32`, each named on stderr. A PR whose body names no issue, or
+names one proven absent, is `refused: no-served-issue` on `38` under every purpose; a served issue
+that could not be read is `11` and never proceeds. Nothing is written on any refusal: the issue carries no marker, so a refused claim
 leaves no trace to retract.
 
 **Then the blockedness gate, and only then the marker.** GitHub's native
@@ -1328,7 +1328,7 @@ $ echo $?
 - Who releases a *delegated* claim — the run or the lane — is an **open decision**. This contract
   encodes the conservative floor: `release` releases only this session's own token at its terminus,
   and pre-rules nothing about delegation.
-- The claim seam is where the scope refusal acquires teeth: a directly-handed
+- The claim seam is where the admission test acquires teeth: a directly-handed
   number passes through no pool, and the override is a flag that leaves a record rather than prose in
   a charter.
 - Direction binds early, never at the end; the fence fires before a build starts, and
@@ -3216,8 +3216,8 @@ names and a re-posted grant buys one round and not two — the old `CAP_ROUND + 
 that only when the grant landed at exactly `CAP_ROUND`, and a grant past it was inert.
 Because a clearance binds the *round* rather than a head SHA, it survives the push it exists to
 permit and is spent the moment the next FAIL round lands. A read that cannot complete —
-the config file, a configured team's membership, a named author's permission — is `11`, never an
-empty set.
+`.github/CODEOWNERS` on the default branch, an owner team's membership, a named author's
+permission — is `11`, never an empty set.
 
 The fold: resolve the PR's current head; fetch **every** comment and **every** review, paginated
 in full; parse each comment through the imported `verdict-marker` read; keep the latest marker
@@ -3449,7 +3449,8 @@ $ fabrika build clear --pr 5953 --authorization authorization.md
 - A bare stamp is void; the quoted, dated authorization is what a ruling means, and it must
   be the comment immediately before the marker.
 - Repo configuration is read at the base ref, never from the PR that would change it.
-- Authority is the live ACL's; the configured set narrows it, never replaces it.
+- Authority is the live ACL's; the control-plane set `.github/CODEOWNERS` names on the default
+  branch narrows it, never replaces it.
 
 ---
 
@@ -3506,7 +3507,7 @@ on the default branch, holds `write+` at the ACL, and did not open the PR. A COD
 no control-plane owner hands nothing over. A `capClearAuthors` the config at the PR's base still
 declares is ignored and named in a deprecation notice, as under `build clear`. A PR one of ours opened needs no grant and refuses on `7`.
 
-**What `granted` proves, exactly.** That a configured account posted a marker naming this PR over a
+**What `granted` proves, exactly.** That a control-plane account posted a marker naming this PR over a
 dated quote. It does not prove the quote is a truthful record of what was said; in a repo where
 agents run on a granting account's own token, the agent's restraint is what holds — the same
 residue `build clear` carries.

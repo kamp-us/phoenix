@@ -127,10 +127,18 @@ export type FieldSpec =
 	| {
 			readonly _tag: "Iteration";
 			readonly name: string;
-			readonly startDate: string;
+			/** In days; every planned iteration runs this long. */
 			readonly duration: number;
-			readonly firstTitle: string;
+			/** The iterations the field starts with, earliest first. */
+			readonly iterations: readonly [PlannedIteration, ...PlannedIteration[]];
 	  };
+
+/** One iteration an iteration field is created with. */
+export interface PlannedIteration {
+	/** `YYYY-MM-DD`. */
+	readonly startDate: string;
+	readonly title: string;
+}
 
 export interface ViewUpdate {
 	readonly layout?: ViewLayout;
@@ -395,9 +403,13 @@ const readRefs = (nodes: ReadonlyArray<unknown>, what: string): Attempt<ProjectR
 	return ok(refs);
 };
 
-const nextCursor = (connection: Record<string, unknown>): string | null => {
+/** The cursor of the next page, `null` on the last; a next page with no cursor to reach it is a cut read. */
+const nextCursor = (connection: Record<string, unknown>): Attempt<string | null> => {
 	const info = isRecord(connection.pageInfo) ? connection.pageInfo : null;
-	return info !== null && info.hasNextPage === true && str(info.endCursor) ? info.endCursor : null;
+	if (info === null || info.hasNextPage !== true) return ok(null);
+	return str(info.endCursor)
+		? ok(info.endCursor)
+		: fail("GitHub answered 200 with a next page but no cursor to read it by");
 };
 
 const REPOSITORY_QUERY = `
@@ -443,11 +455,13 @@ export const readRepository = (token: string, repo: string): Api<ProjectsAnswer<
 				}
 				const refs = readRefs(projects.nodes, "linked project");
 				if (refs._tag === "Failure") return refs;
+				const next = nextCursor(projects);
+				if (next._tag === "Failure") return next;
 				return ok({
 					id: repository.id,
 					owner: {id: ownerNode.id, login: ownerNode.login},
 					refs: refs.value,
-					next: nextCursor(projects),
+					next: next.value,
 				});
 			});
 			if (answer._tag !== "Ok") return answer;
@@ -499,9 +513,11 @@ export const readOwnerProjects = (token: string, login: string): Api<ProjectsAns
 					return fail("GitHub answered 200 but its output is not a project owner");
 				}
 				const refs = readRefs(connection.nodes, "owned project");
-				return refs._tag === "Failure"
-					? refs
-					: ok({id: owner.id, refs: refs.value, next: nextCursor(connection)});
+				if (refs._tag === "Failure") return refs;
+				const next = nextCursor(connection);
+				return next._tag === "Failure"
+					? next
+					: ok({id: owner.id, refs: refs.value, next: next.value});
 			});
 			if (answer._tag !== "Ok") return answer;
 			projects.push(...answer.value.refs);
@@ -645,11 +661,13 @@ const fieldInput = (projectId: string, spec: FieldSpec): Record<string, unknown>
 				name: spec.name,
 				dataType: "ITERATION",
 				iterationConfiguration: {
-					startDate: spec.startDate,
+					startDate: spec.iterations[0].startDate,
 					duration: spec.duration,
-					iterations: [
-						{startDate: spec.startDate, duration: spec.duration, title: spec.firstTitle},
-					],
+					iterations: spec.iterations.map((iteration) => ({
+						startDate: iteration.startDate,
+						duration: spec.duration,
+						title: iteration.title,
+					})),
 				},
 			};
 	}
@@ -853,10 +871,7 @@ export const readItemValues = (token: string, itemId: string): Api<ProjectsAnswe
 		if (item === null || !str(item.id) || !isRecord(item.fieldValues)) {
 			return fail(`GitHub knows no project item ${itemId}`);
 		}
-		const read = readItemNode(item);
-		if (read._tag === "Failure") return read;
-		const {itemId: id, contentNumber, values} = read.value;
-		return ok({itemId: id, contentNumber, values});
+		return readItemValuesNode(item);
 	});
 
 const CLEAR_VALUE = `
@@ -879,11 +894,21 @@ export const clearFieldValue = (
 			: fail("GitHub answered 200 but cleared no value");
 	});
 
+/**
+ * What a project item stands for. `Redacted` is an item GitHub answers with no content: its issue or
+ * pull request lives where the token cannot see, so what it is stays unknown.
+ */
+export type ItemContentType = "Issue" | "PullRequest" | "DraftIssue" | "Redacted";
+
+const CONTENT_TYPES: ReadonlySet<unknown> = new Set(["Issue", "PullRequest", "DraftIssue"]);
+
+const isContentType = (typename: unknown): typename is Exclude<ItemContentType, "Redacted"> =>
+	CONTENT_TYPES.has(typename);
+
 /** One project item as the table reads it: what it stands for, and its table values. */
 export interface ProjectItem extends ItemValues {
-	/** `Issue`, `PullRequest` or `DraftIssue`. */
-	readonly contentType: string;
-	/** The `owner/name` the issue or pull request lives in; `null` for a draft. */
+	readonly contentType: ItemContentType;
+	/** The `owner/name` the issue or pull request lives in; `null` for a draft or a redacted item. */
 	readonly repository: string | null;
 }
 
@@ -918,7 +943,7 @@ query TableItems($id: ID!, $cursor: String) {
 }`;
 
 /** The table values on one item node, or why the node is not an item. */
-const readItemNode = (item: Record<string, unknown>): Attempt<ProjectItem> => {
+const readItemValuesNode = (item: Record<string, unknown>): Attempt<ItemValues> => {
 	const page = isRecord(item.fieldValues) ? item.fieldValues : null;
 	if (!str(item.id) || page === null || !Array.isArray(page.nodes)) {
 		return fail("GitHub answered 200 but one item is not a project item");
@@ -943,17 +968,29 @@ const readItemNode = (item: Record<string, unknown>): Attempt<ProjectItem> => {
 			updatedAt: node.updatedAt,
 		});
 	}
-	const repository =
-		content !== null && isRecord(content.repository) && str(content.repository.nameWithOwner)
-			? content.repository.nameWithOwner
-			: null;
 	return ok({
 		itemId: item.id,
 		contentNumber: content !== null && typeof content.number === "number" ? content.number : null,
-		contentType: content !== null && str(content.__typename) ? content.__typename : "DraftIssue",
-		repository,
 		values,
 	});
+};
+
+/** One item node with what it stands for, or why the node is not an item. */
+const readItemNode = (item: Record<string, unknown>): Attempt<ProjectItem> => {
+	const read = readItemValuesNode(item);
+	if (read._tag === "Failure") return read;
+	const content = isRecord(item.content) ? item.content : null;
+	if (content === null) return ok({...read.value, contentType: "Redacted", repository: null});
+	if (!isContentType(content.__typename)) {
+		return fail(
+			`GitHub answered 200 but item ${read.value.itemId} stands for no issue, pull request or draft`,
+		);
+	}
+	const repository =
+		isRecord(content.repository) && str(content.repository.nameWithOwner)
+			? content.repository.nameWithOwner
+			: null;
+	return ok({...read.value, contentType: content.__typename, repository});
 };
 
 /** One page of a project's items, parsed; exported so a recorded page can prove the parse. */
@@ -972,7 +1009,8 @@ export const readItemsPage = (
 		if (item._tag === "Failure") return item;
 		items.push(item.value);
 	}
-	return ok({items, next: nextCursor(connection)});
+	const next = nextCursor(connection);
+	return next._tag === "Failure" ? next : ok({items, next: next.value});
 };
 
 /** Every item on the project with its table values, read to the last page. */
@@ -1139,7 +1177,9 @@ export const readBoard = (
 					if (item._tag === "Failure") return item;
 					pageItems.push(item.value);
 				}
-				return ok({items: pageItems, iterations: read.value, next: nextCursor(connection)});
+				const next = nextCursor(connection);
+				if (next._tag === "Failure") return next;
+				return ok({items: pageItems, iterations: read.value, next: next.value});
 			});
 			if (answer._tag !== "Ok") return answer;
 			iterations = answer.value.iterations;
@@ -1285,7 +1325,8 @@ export const readStatusUpdatesPage = (
 			startDate: str(node.startDate) ? node.startDate : null,
 		});
 	}
-	return ok({updates, next: nextCursor(connection)});
+	const next = nextCursor(connection);
+	return next._tag === "Failure" ? next : ok({updates, next: next.value});
 };
 
 /** Every status update posted on the project, read to the last page. */

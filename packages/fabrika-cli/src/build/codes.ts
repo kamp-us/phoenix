@@ -211,3 +211,16 @@ export const BASE_MISMATCH = 36;
  * `build takeover`, or the PR is left to its author.
  */
 export const PR_NOT_OURS = 37;
+/**
+ * Proven: a claim on a pull request names no issue the admission test could judge — its body carries
+ * neither a closing keyword nor "Part of #<n>", or the issue it names is proven absent.
+ *
+ * It sat on `20` while that seat was the campaign scope axis, and bound only while some campaign was
+ * `active`. It is not a campaign question: without a served issue the audience, type and criteria
+ * axes would judge the PR's own record, which carries no label or criteria to refuse on, so one
+ * missing line in a body would walk any lane past them. Its own seat, bound whatever the campaigns
+ * say, because `20` stays retired. Overridable like `21`: the remedy is naming the issue in the body,
+ * or an override that records why there is none. Never {@link PRECONDITION_UNKNOWN}: an issue that
+ * could not be read stays `11`.
+ */
+export const NO_SERVED_ISSUE = 38;

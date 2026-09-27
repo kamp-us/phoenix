@@ -55,6 +55,22 @@ export const WEEKDAYS: ReadonlyArray<Weekday> = [
  */
 export const OUTSIDE_THE_BETS = "Outside the bets";
 
+export const TAILS = "Tails";
+export const CUSTOMERS = "Customers";
+export const NEW_BETS = "New bets";
+
+/**
+ * The sections every `sections` list carries. Prep files each proposal under one of the first three
+ * by what it is, and sync files un-bet lanes under the last, so a list without one of them would
+ * drop that work from the agenda without a word. A list may reorder these and add its own.
+ */
+export const REQUIRED_SECTIONS: ReadonlyArray<string> = [
+	TAILS,
+	CUSTOMERS,
+	NEW_BETS,
+	OUTSIDE_THE_BETS,
+];
+
 /** The flagged target share of weekly spend on fabrika's own work: one share at first, then another. */
 export interface FabrikaShare {
 	readonly percent: number;
@@ -90,9 +106,11 @@ export interface ProjectTarget {
 export interface TableSettings {
 	readonly cadence: Cadence;
 	readonly day: Weekday;
-	/** Agenda sections in agenda order. Non-empty, unique, and always holding {@link OUTSIDE_THE_BETS}. */
+	/** Agenda sections in agenda order. Unique, and always holding every {@link REQUIRED_SECTIONS} name. */
 	readonly sections: ReadonlyArray<string>;
 	readonly agendaCap: number;
+	/** At more than this multiple of its size a lane is flagged over size. At least 1, below {@link stopMultiple}. */
+	readonly flagMultiple: number;
 	/** A lane over its size keeps going; at this multiple of its size it stops. */
 	readonly stopMultiple: number;
 	/** The ask count at which a bet is flagged onto the next table. */
@@ -112,8 +130,9 @@ export interface TableSettings {
 export const SHIPPED_TABLE: TableSettings = {
 	cadence: "weekly",
 	day: "monday",
-	sections: ["Tails", "Customers", "New bets", OUTSIDE_THE_BETS],
+	sections: [TAILS, CUSTOMERS, NEW_BETS, OUTSIDE_THE_BETS],
 	agendaCap: 25,
+	flagMultiple: 1,
 	stopMultiple: 2,
 	asksFlag: 3,
 	stuckDays: 3,
@@ -164,6 +183,13 @@ const multiple: Field<number> = (raw, path) =>
 				`${named(path)} is not a number above 1 — a lane stopping at its size or below it never runs over`,
 			);
 
+const flagPoint: Field<number> = (raw, path) =>
+	typeof raw === "number" && Number.isFinite(raw) && raw >= 1
+		? {_tag: "Value", value: raw}
+		: malformed(
+				`${named(path)} is not a number of at least 1 — a lane is flagged only once it spends past its size`,
+			);
+
 const sectionList: Field<ReadonlyArray<string>> = (raw, path) => {
 	if (!Array.isArray(raw) || raw.length === 0) {
 		return malformed(`${named(path)} is not a non-empty list of section names`);
@@ -181,6 +207,17 @@ const sectionList: Field<ReadonlyArray<string>> = (raw, path) => {
 	if (!names.includes(OUTSIDE_THE_BETS)) {
 		return malformed(
 			`${named(path)} leaves out "${OUTSIDE_THE_BETS}" — un-bet lanes land in that section, so every list carries it`,
+		);
+	}
+	const missing = REQUIRED_SECTIONS.filter((section) => !names.includes(section));
+	if (missing.length > 0) {
+		return malformed(
+			`${named(path)} leaves out ${missing.map((section) => `"${section}"`).join(", ")} — prep files every proposal under ${REQUIRED_SECTIONS.slice(
+				0,
+				-1,
+			)
+				.map((section) => `"${section}"`)
+				.join(", ")}, so every list carries them; reorder them or add your own, but keep them`,
 		);
 	}
 	return {_tag: "Value", value: names};
@@ -298,6 +335,7 @@ const SUB_KEYS: {readonly [K in keyof TableSettings]: Field<TableSettings[K]>} =
 	day: oneOf(WEEKDAYS),
 	sections: sectionList,
 	agendaCap: positiveInteger,
+	flagMultiple: flagPoint,
 	stopMultiple: multiple,
 	asksFlag: positiveInteger,
 	stuckDays: positiveInteger,
@@ -316,7 +354,15 @@ const SUB_KEYS: {readonly [K in keyof TableSettings]: Field<TableSettings[K]>} =
 
 const decode = (raw: unknown): Decoded<TableSettings> => {
 	if (asRecord(raw) === null) return malformed(`\`${TABLE}\` is not an object`);
-	return objectOf<TableSettings>(SUB_KEYS, SHIPPED_TABLE)(raw, "");
+	const decoded = objectOf<TableSettings>(SUB_KEYS, SHIPPED_TABLE)(raw, "");
+	if (decoded._tag === "Malformed") return decoded;
+	const {flagMultiple, stopMultiple} = decoded.value;
+	if (flagMultiple >= stopMultiple) {
+		return malformed(
+			`${named("flagMultiple")} (${flagMultiple}) is not below ${named("stopMultiple")} (${stopMultiple}) — the stop is read off the over-size flag, so a lane must be flagged before it stops`,
+		);
+	}
+	return decoded;
 };
 
 const integer = (description: string, minimum = 1): JsonSchema => ({
@@ -355,11 +401,17 @@ export const tableKey: KeyGroup<TableSettings> = {
 			sections: {
 				type: "array",
 				items: {type: "string", minLength: 1},
-				minItems: 1,
+				minItems: REQUIRED_SECTIONS.length,
 				uniqueItems: true,
-				description: `Agenda sections in agenda order. Default Tails, Customers, New bets, ${OUTSIDE_THE_BETS}. Must include "${OUTSIDE_THE_BETS}", where un-bet lanes land.`,
+				description: `Agenda sections in agenda order. Default ${REQUIRED_SECTIONS.join(", ")}. Must include all four: prep files each proposal under ${TAILS}, ${CUSTOMERS} or ${NEW_BETS}, and un-bet lanes land in "${OUTSIDE_THE_BETS}". Reorder them or add your own.`,
 			},
 			agendaCap: integer("The most proposed rows agenda prep adds for one table. Default 25."),
+			flagMultiple: {
+				type: "number",
+				minimum: 1,
+				description:
+					"A lane spending past this multiple of its size is flagged onto the next table and keeps going. Default 1, flagged as soon as it passes its size. At least 1 and below `stopMultiple`.",
+			},
 			stopMultiple: {
 				type: "number",
 				exclusiveMinimum: 1,

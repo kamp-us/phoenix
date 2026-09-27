@@ -243,7 +243,7 @@ export const sizeReadOf = (
 	if (row.size === null || limit === null) return {_tag: "Within"};
 	const spend = tallyOver(issuesOf(row.group), input.records, sinceOf(row)).spend;
 	const spent = measuredUsd(spend);
-	if (spent > limit) {
+	if (spent > limit * input.settings.flagMultiple) {
 		return {
 			_tag: "Over",
 			flag: {
@@ -262,7 +262,7 @@ export const sizeReadOf = (
 				unread: {
 					check: "over-size",
 					issue: row.group.head,
-					reason: `${spend.lanes} lane(s) went unmeasured and the measured $${spent} is within its $${limit} size`,
+					reason: `${spend.lanes} lane(s) went unmeasured and the measured $${spent} is within its flag point, ${input.settings.flagMultiple}x its $${limit} size`,
 				},
 			}
 		: {_tag: "Within"};
@@ -587,19 +587,45 @@ export const recOf = (flag: Flag, settings: TableSettings): string => {
 	}
 };
 
+/** Whether the rows standing for one issue stop its lane. */
+export type StopRead =
+	| {readonly _tag: "Stopped"; readonly flag: OverSize}
+	| {readonly _tag: "Short"}
+	/** Short of the stop on the measured floor, with a lane unmeasured: whether it reached it is unknown. */
+	| {
+			readonly _tag: "Unmeasured";
+			readonly head: number;
+			readonly lanes: number;
+			readonly measuredUsd: number;
+			readonly stopUsd: number;
+	  };
+
 /**
- * The live row standing for `issue` whose spend reached its stop, or `null` when none has. It is the
- * over-size flag itself, read for one issue, so a lane stops exactly when its row reads `stopped`.
+ * Whether a live row standing for `issue` spent its stop. It is the over-size flag itself, read for
+ * one issue, so a lane stops exactly when its row reads `stopped`. A row short of the stop only on
+ * its measured floor is `Unmeasured`, never `Short`, so no caller reads it as proven short.
  */
 export const stopOf = (
 	rows: ReadonlyArray<HeadRow>,
 	input: Pick<FlagInput, "settings" | "sizes" | "records">,
 	issue: number,
-): OverSize | null => {
+): StopRead => {
+	let unmeasured: StopRead | null = null;
 	for (const row of rows) {
 		if (!isLive(row) || !issuesOf(row.group).includes(issue)) continue;
 		const size = sizeReadOf(row, input);
-		if (size._tag === "Over" && size.flag.stopped) return size.flag;
+		if (size._tag === "Over" && size.flag.stopped) return {_tag: "Stopped", flag: size.flag};
+		const limit = limitOf(row, input.sizes);
+		const spend = tallyOver(issuesOf(row.group), input.records, sinceOf(row)).spend;
+		if (unmeasured === null && limit !== null && spend._tag === "Unmeasured") {
+			unmeasured = {
+				_tag: "Unmeasured",
+				head: row.group.head,
+				lanes: spend.lanes,
+				measuredUsd: spend.measuredUsd,
+				stopUsd: cents(limit * input.settings.stopMultiple),
+			};
+		}
 	}
-	return null;
+	return unmeasured ?? {_tag: "Short"};
 };

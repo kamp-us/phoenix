@@ -65,7 +65,7 @@ const list = leafCommand(
 ).pipe(
 	Command.withShortDescription("Print the ## Campaigns rows, optionally narrowed to one state."),
 	Command.withDescription(
-		'Print the ## Campaigns rows as #<milestone>\\t<state>\\t<name>, in table order. An absent table, an empty one and a --state that matches nothing all print the single line "none" at exit 0 — nothing declared means the dispatch fence is off, not closed. Under --json: {"rows":[{"milestone":47,"state":"active","name":"…"}],"file":"ROADMAP.md"}. Exits 1 (a --state outside the three values), 11 (the roadmap file could not be read), 12 (a data row will not parse — the whole table is unreadable), 22 (.fabrika.jsonc could not be read, or its roadmapFile will not decode). Example: fabrika campaign list --state active',
+		'Print the ## Campaigns rows as #<milestone>\\t<state>\\t<name>, in table order. An absent table, an empty one and a --state that matches nothing all print the single line "none" at exit 0 — nothing declared is a true answer, not a failed read. Under --json: {"rows":[{"milestone":47,"state":"active","name":"…"}],"file":"ROADMAP.md"}. Exits 1 (a --state outside the three values), 11 (the roadmap file could not be read), 12 (a data row will not parse — the whole table is unreadable), 22 (.fabrika.jsonc could not be read, or its roadmapFile will not decode). Example: fabrika campaign list --state active',
 	),
 );
 
@@ -145,8 +145,10 @@ const state = leafCommand(
 
 export const campaignCommand = Command.make("campaign").pipe(
 	Command.withSubcommands([list, open, state]),
-	Command.withShortDescription("Read and write the ## Campaigns table that gates dispatch."),
+	Command.withShortDescription(
+		"Read and write the ## Campaigns table that groups work under themes.",
+	),
 	Command.withDescription(
-		"Read the ## Campaigns table, declare a new campaign paused, and flip one campaign's lifecycle state — each write past a cited founder approval, because that State cell is the permission to open lanes against a milestone",
+		"Read the ## Campaigns table, declare a new campaign paused, and flip one campaign's lifecycle state — each write past a cited founder approval. A campaign groups work under a theme and pins a milestone; no State value refuses, skips or parks a lane",
 	),
 );

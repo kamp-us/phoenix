@@ -5,7 +5,9 @@ import {describe, expect, it} from "vitest";
 import {SHIPPED_ON_CALL} from "../config/keys/boards.ts";
 import type {ListedIssue} from "../io/issues.ts";
 import type {ItemFieldValue} from "../io/projects.ts";
-import {onCallIssuesOf, onCallItemsOf, originFor, planOnCall} from "./on-call-prep.ts";
+import {dueChecks} from "./check.ts";
+import type {HeadRow} from "./flags.ts";
+import {onCallIssuesOf, onCallItemsOf, originsFor, planOnCall} from "./on-call-prep.ts";
 import type {Row} from "./sync.ts";
 
 const NOW = new Date("2026-09-27T12:00:00.000Z");
@@ -38,12 +40,16 @@ const row = (number: number, values: ReadonlyArray<ItemFieldValue>): Row => ({
 const byNumber = (issues: ReadonlyArray<ListedIssue>) =>
 	new Map(issues.map((one) => [one.number, one] as const));
 
-describe("originFor", () => {
-	it("reads the table row's Origin, else customer for someone who only uses the product", () => {
+describe("originsFor", () => {
+	it("reads the table row's Origin and adds customer for someone who only uses the product", () => {
 		const outside = issue(1, {association: "NONE", author: "a-user"});
-		expect(originFor(outside, row(1, [option("Origin", "driver pick")]))).toBe("driver pick");
-		expect(originFor(outside, undefined)).toBe("customer");
-		expect(originFor(issue(2), undefined)).toBeNull();
+		expect(originsFor(outside, row(1, [option("Origin", "driver pick")]))).toEqual([
+			"driver pick",
+			"customer",
+		]);
+		expect(originsFor(outside, undefined)).toEqual(["customer"]);
+		expect(originsFor(issue(2), row(2, [option("Origin", "bet")]))).toEqual(["bet"]);
+		expect(originsFor(issue(2), undefined)).toEqual([]);
 	});
 });
 
@@ -55,8 +61,17 @@ describe("onCallIssuesOf", () => {
 			issue(5, {labels: ["type:feature"]}),
 		]);
 
-		expect(onCallIssuesOf(open, new Map(), SHIPPED_ON_CALL).map((one) => one.number)).toEqual([
-			4, 9,
+		expect(
+			onCallIssuesOf(open, new Map(), [], SHIPPED_ON_CALL, []).map((one) => one.number),
+		).toEqual([4, 9]);
+	});
+
+	it("routes a customer's report by the default route even after a lane wrote its Origin", () => {
+		const open = byNumber([issue(4, {association: "NONE", author: "a-user"})]);
+		const table = new Map([[4, row(4, [option("Origin", "driver pick")])]]);
+
+		expect(onCallIssuesOf(open, table, [], SHIPPED_ON_CALL, []).map((one) => one.number)).toEqual([
+			4,
 		]);
 	});
 
@@ -67,7 +82,46 @@ describe("onCallIssuesOf", () => {
 			[2, row(2, [option("Stage", "in lane")])],
 		]);
 
-		expect(onCallIssuesOf(open, table, SHIPPED_ON_CALL).map((one) => one.number)).toEqual([2]);
+		expect(onCallIssuesOf(open, table, [], SHIPPED_ON_CALL, []).map((one) => one.number)).toEqual([
+			2,
+		]);
+	});
+
+	it("leaves the members of a bet group on the table with their head", () => {
+		const open = byNumber([
+			issue(1),
+			issue(2, {labels: ["type:bug"]}),
+			issue(3, {labels: ["type:bug"]}),
+		]);
+		const heads = [
+			{
+				group: {_tag: "Chain", head: 1, members: [2]} as const,
+				stage: {name: "bet", setter: "owner", setAt: "2026-09-20T00:00:00.000Z"},
+			},
+		];
+
+		expect(
+			onCallIssuesOf(open, new Map(), heads, SHIPPED_ON_CALL, []).map((one) => one.number),
+		).toEqual([3]);
+	});
+
+	it("leaves a shipped bet due its check on the table, so it lands on one board", () => {
+		const open = byNumber([issue(1, {labels: ["type:bug"]}), issue(2, {labels: ["type:bug"]})]);
+		const shipped = (head: number, setAt: string): HeadRow => ({
+			group: {_tag: "Single", head},
+			stage: {name: "shipped", setter: "owner", setAt},
+			size: "S",
+			children: 0,
+			memberStages: [],
+			origin: "bet",
+		});
+		const heads = [shipped(1, "2026-09-01T00:00:00.000Z"), shipped(2, "2026-09-25T00:00:00.000Z")];
+		const due = dueChecks(heads, 14, NOW);
+
+		expect(due.map((check) => check.group.head)).toEqual([1]);
+		expect(
+			onCallIssuesOf(open, new Map(), heads, SHIPPED_ON_CALL, due).map((one) => one.number),
+		).toEqual([2]);
 	});
 });
 

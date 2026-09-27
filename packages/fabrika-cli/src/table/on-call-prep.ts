@@ -3,9 +3,10 @@
  * the open issues onto it, and plan the writes that put each routed issue there with its target.
  *
  * **A person's answer at the table keeps an issue on the table.** An issue whose table row reads
- * `bet`, `not now` or `check` stays on the product board whatever the routing rule says, so a split
- * never pulls decided work out from under the table. Every other open issue the rule routes to
- * on-call goes there, and the table's agenda does not propose it.
+ * `bet`, `not now` or `check` stays on the product board whatever the routing rule says, and so do
+ * the members of a group whose head reads one, so a split never pulls decided work out from under
+ * the table. Every other open issue the rule routes to on-call goes there and leaves the table:
+ * the agenda does not propose it and prep takes its table row off (see `planPrep`).
  *
  * **The target is set once, on arrival.** Prep sets an item's Response target only while it is
  * unset, so the value's own `updatedAt` is when the item arrived and the wait is timed from there.
@@ -19,8 +20,10 @@ import type {ListedIssue} from "../io/issues.ts";
 import type {FieldValue, ProjectField, ProjectSnapshot} from "../io/projects.ts";
 import {isCustomer, optionOf, type PrepWrite, plainWordsOf, textOf} from "./agenda.ts";
 import {BET_STAGE} from "./bets.ts";
-import type {OnCallItem} from "./flags.ts";
+import type {DueCheck} from "./check.ts";
+import type {HeadRow, OnCallItem} from "./flags.ts";
 import {stopOn} from "./flags-read.ts";
+import {issuesOf} from "./group.ts";
 import {boardOf, ON_CALL_FIELD, onCallBoard, responseTargetOf} from "./on-call.ts";
 import {FIELD} from "./shape.ts";
 import type {Row} from "./sync.ts";
@@ -29,29 +32,66 @@ import {type Refusal, rowsOf, type TableBoard} from "./sync-verb.ts";
 /** Table Stages that are a person's answer, or a check: an issue holding one stays on the table. */
 const HELD: ReadonlySet<string> = new Set([BET_STAGE, "not now", "check"]);
 
-/** The Origin an issue is known by: its table row's, else `customer` when its filer uses the product. */
-export const originFor = (issue: ListedIssue, row: Row | undefined): string | null =>
-	optionOf(row, FIELD.origin) ?? (isCustomer(issue) ? "customer" : null);
+/**
+ * Every Origin an issue is known by: its table row's, and `customer` when its filer only uses the
+ * product. The row's Origin names the latest lane, so it adds to the filer's and never replaces it.
+ */
+export const originsFor = (issue: ListedIssue, row: Row | undefined): ReadonlyArray<string> => {
+	const origins: string[] = [];
+	const onRow = optionOf(row, FIELD.origin);
+	if (onRow !== null) origins.push(onRow);
+	if (isCustomer(issue) && !origins.includes("customer")) origins.push("customer");
+	return origins;
+};
+
+/**
+ * Every issue a person's answer holds on the table: a row reading a held Stage, and every issue its
+ * group stands for, since a bet on a chain or an epic bets on its members too. A shipped bet due its
+ * outcome check holds the same way, since the same prep run turns it into a check row.
+ */
+export const heldOf = (
+	table: ReadonlyMap<number, Row>,
+	heads: ReadonlyArray<Pick<HeadRow, "group" | "stage">>,
+	due: ReadonlyArray<Pick<DueCheck, "group">>,
+): ReadonlySet<number> => {
+	const held = new Set<number>();
+	for (const check of due) for (const issue of issuesOf(check.group)) held.add(issue);
+	for (const row of table.values()) {
+		const stage = optionOf(row, FIELD.stage);
+		if (stage !== null && HELD.has(stage)) held.add(row.issue);
+	}
+	for (const head of heads) {
+		if (head.stage !== null && HELD.has(head.stage.name)) {
+			for (const issue of issuesOf(head.group)) held.add(issue);
+		}
+	}
+	return held;
+};
 
 /**
  * The open issues the on-call board holds, in the order they arrived: every one `settings.route`
- * sends there, except those the table already answered.
+ * sends there, except those the table already answered, directly or through the group they are in,
+ * and those `due` brings back as checks.
  */
 export const onCallIssuesOf = (
 	open: ReadonlyMap<number, ListedIssue>,
 	table: ReadonlyMap<number, Row>,
+	heads: ReadonlyArray<Pick<HeadRow, "group" | "stage">>,
 	settings: OnCallBoard,
-): ReadonlyArray<ListedIssue> =>
-	[...open.values()]
-		.filter((issue) => {
-			const row = table.get(issue.number);
-			const stage = optionOf(row, FIELD.stage);
-			if (stage !== null && HELD.has(stage)) return false;
-			return (
-				boardOf({origin: originFor(issue, row), labels: issue.labels}, settings.route) === "on-call"
-			);
-		})
+	due: ReadonlyArray<Pick<DueCheck, "group">>,
+): ReadonlyArray<ListedIssue> => {
+	const held = heldOf(table, heads, due);
+	return [...open.values()]
+		.filter(
+			(issue) =>
+				!held.has(issue.number) &&
+				boardOf(
+					{origins: originsFor(issue, table.get(issue.number)), labels: issue.labels},
+					settings.route,
+				) === "on-call",
+		)
 		.sort((a, b) => a.number - b.number);
+};
 
 interface Select {
 	readonly id: string;

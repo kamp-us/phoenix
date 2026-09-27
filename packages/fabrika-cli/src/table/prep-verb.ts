@@ -94,6 +94,7 @@ import {readHeads, stopOn} from "./flags-read.ts";
 import {type FlagsBoard, flagsBoard} from "./flags-verb.ts";
 import {type Group, groupOf, kindOf, membersOf} from "./group.ts";
 import {
+	flagCount,
 	healthOf,
 	healthWindow,
 	type OnCallHealth,
@@ -456,6 +457,7 @@ export const runPrep = <R>(
 		const open = new Map(listing.value.map((issue) => [issue.number, issue] as const));
 		const openSet: ReadonlySet<number> = new Set(open.keys());
 
+		const due = dueChecks(heads.rows, table.checkDelayDays, now);
 		const onCallRead = yield* readOnCall(board, VERB, repo, boards.value);
 		if (onCallRead._tag === "Refused") return refuse(onCallRead.code, onCallRead.reason);
 		const split = onCallRead._tag === "Split" ? onCallRead : null;
@@ -470,7 +472,7 @@ export const runPrep = <R>(
 				);
 			}
 			onCallWrite = resolvedOnCall.fields;
-			routed = onCallIssuesOf(open, heads.table, split.settings);
+			routed = onCallIssuesOf(open, heads.table, heads.rows, split.settings, due);
 		}
 		const routedSet: ReadonlySet<number> = new Set(routed.map((issue) => issue.number));
 		const onCallIssues: ReadonlySet<number> = new Set([
@@ -561,7 +563,7 @@ export const runPrep = <R>(
 				env: options.env,
 				settings: table,
 				now,
-				due: dueChecks(heads.rows, table.checkDelayDays, now),
+				due,
 				records: heads.records,
 			});
 			if (gathered._tag === "Refused") return refuse(gathered.code, gathered.reason);
@@ -604,6 +606,7 @@ export const runPrep = <R>(
 				rollover,
 				removals,
 				checks: checks.map((check) => check.row),
+				onCall: routedSet,
 			}),
 		);
 		if (converged._tag === "Refused") return refuse(converged.code, converged.reason);
@@ -624,7 +627,7 @@ export const runPrep = <R>(
 			onCallChanges = placed.changes;
 			onCallHealth = {
 				open: onCallOpen.length,
-				pastTarget: onCallFlagged.filter((flag) => flag._tag === "PastTarget").length,
+				pastTarget: flagCount(report, "PastTarget", "past-target"),
 				spend: onCallSpendOf(heads.records, window, onCallIssues),
 				share: split.settings.spendShare,
 			};
@@ -634,7 +637,7 @@ export const runPrep = <R>(
 		const health = healthOf({
 			window,
 			records: heads.records,
-			flags: report.flags,
+			report,
 			outside,
 			continuing: rollover.length,
 			flaggedBets,
@@ -741,7 +744,7 @@ export const runPrep = <R>(
 			...(split === null || onCallHealth === null
 				? []
 				: [
-						`${VERB}: on-call board #${split.project.number} "${split.project.title}" (${split.project.url}): ${onCallHealth.open} open item(s), ${onCallHealth.pastTarget} past its response target; the table reviews it as one section of the status update.`,
+						`${VERB}: on-call board #${split.project.number} "${split.project.title}" (${split.project.url}): ${onCallHealth.open} open item(s), ${onCallHealth.pastTarget._tag === "Counted" ? onCallHealth.pastTarget.count : `at least ${onCallHealth.pastTarget.atLeast}`} past its response target; the table reviews it as one section of the status update.`,
 						...onCallFlagged.map(
 							(flag) =>
 								`${VERB}: ${flagName(flag)}${flag._tag === "PastTarget" ? ` on #${flag.issue}` : ""}: ${recOf(flag, table)}`,

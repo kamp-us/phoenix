@@ -16,6 +16,7 @@ describe("the shipped table", () => {
 			day: "monday",
 			sections: ["Tails", "Customers", "New bets", "Outside the bets"],
 			agendaCap: 25,
+			flagMultiple: 1,
 			stopMultiple: 2,
 			asksFlag: 3,
 			stuckDays: 3,
@@ -127,6 +128,23 @@ describe("a declared table block", () => {
 		});
 	});
 
+	it("takes a flag point below the stop, and sections reordered or added to", () => {
+		const resolved = declared({
+			flagMultiple: 1.5,
+			stopMultiple: 3,
+			sections: ["Customers", "Tails", "Chores", "New bets", OUTSIDE_THE_BETS],
+		});
+
+		expect(resolved).toMatchObject({
+			_tag: "Declared",
+			value: {
+				flagMultiple: 1.5,
+				stopMultiple: 3,
+				sections: ["Customers", "Tails", "Chores", "New bets", OUTSIDE_THE_BETS],
+			},
+		});
+	});
+
 	it("takes a project target", () => {
 		const resolved = declared({project: {owner: "acme", number: 4}});
 
@@ -151,6 +169,11 @@ describe("a declared table block", () => {
 		[{sections: []}, "`table.sections`"],
 		[{sections: ["Tails", "Tails", OUTSIDE_THE_BETS]}, "twice"],
 		[{sections: ["Tails", "New bets"]}, OUTSIDE_THE_BETS],
+		[{sections: ["Tails", "Customers", OUTSIDE_THE_BETS]}, '"New bets"'],
+		[{sections: ["Bugs", "Features", OUTSIDE_THE_BETS]}, '"Tails", "Customers", "New bets"'],
+		[{flagMultiple: 0.5}, "`table.flagMultiple`"],
+		[{flagMultiple: 2}, "`table.flagMultiple` (2) is not below `table.stopMultiple` (2)"],
+		[{flagMultiple: 2.5, stopMultiple: 2.5}, "is not below"],
 		[{checkDelayDays: 0}, "`table.checkDelayDays`"],
 		[{evidenceSources: {name: "x"}}, "`table.evidenceSources`"],
 		[{evidenceSources: [{name: "x", command: []}]}, "`table.evidenceSources[0].command`"],

@@ -35,6 +35,8 @@ import {
 	type Candidate,
 	type Comment,
 	describeBetTable,
+	type HeadAppetite,
+	headAppetiteOf,
 	isLaneEntering,
 	judge,
 	LANE_ENTERING_TYPES,
@@ -209,9 +211,22 @@ const issueScan = (
 				};
 	});
 
+/** The appetite a row's head states in its own body; a read that fails holds the row to nothing. */
+const readHeadAppetite = (
+	repo: string,
+	head: number,
+): Effect.Effect<HeadAppetite, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const found = yield* getIssue(repo, head);
+		if (found._tag === "Unknown") return {_tag: "unread", reason: found.reason};
+		if (found._tag === "Absent") return {_tag: "unread", reason: `#${head} does not exist`};
+		return headAppetiteOf(found.value.body);
+	});
+
 /**
- * The bet arm's table, each Stage setter resolved at the ACL. Any table that does not read is
- * `unread` with its reason: it approves nothing, and the comments decide exactly as before.
+ * The bet arm's table, each Stage setter resolved at the ACL and each head's stated appetite read
+ * off its body. Any table that does not read is `unread` with its reason: it approves nothing, and
+ * the comments decide exactly as before.
  */
 const readBetTable = (
 	read: BetRowsReader,
@@ -233,6 +248,7 @@ const readBetTable = (
 				head: row.head,
 				covers: row.covers,
 				size: row.size,
+				headAppetite: yield* readHeadAppetite(repo, row.head),
 				setter,
 				authorized: setter !== null && authorized.get(setter) === true,
 			});

@@ -757,14 +757,19 @@
 						"type": "string",
 						"minLength": 1
 					},
-					"minItems": 1,
+					"minItems": 4,
 					"uniqueItems": true,
-					"description": "Agenda sections in agenda order. Default Tails, Customers, New bets, Outside the bets. Must include \"Outside the bets\", where un-bet lanes land."
+					"description": "Agenda sections in agenda order. Default Tails, Customers, New bets, Outside the bets. Must include all four: prep files each proposal under Tails, Customers or New bets, and un-bet lanes land in \"Outside the bets\". Reorder them or add your own."
 				},
 				"agendaCap": {
 					"type": "integer",
 					"minimum": 1,
 					"description": "The most proposed rows agenda prep adds for one table. Default 25."
+				},
+				"flagMultiple": {
+					"type": "number",
+					"minimum": 1,
+					"description": "A lane spending past this multiple of its size is flagged onto the next table and keeps going. Default 1, flagged as soon as it passes its size. At least 1 and below `stopMultiple`."
 				},
 				"stopMultiple": {
 					"type": "number",

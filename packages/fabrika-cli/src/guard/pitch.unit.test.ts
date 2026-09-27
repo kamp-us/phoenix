@@ -444,6 +444,7 @@ describe("the bet arm — a `bet` on the table approves the pitch", () => {
 		head: 4312,
 		covers: [4312],
 		size: "M",
+		headAppetite: {_tag: "stated", appetite: size("M")},
 		setter: "founder",
 		authorized: true,
 		...over,
@@ -473,7 +474,14 @@ describe("the bet arm — a `bet` on the table approves the pitch", () => {
 	});
 
 	it("approves the head and every member of a group row, whatever a member's own size", () => {
-		const group = table(row({head: 50, covers: [50, 51, 52], size: "L"}));
+		const group = table(
+			row({
+				head: 50,
+				covers: [50, 51, 52],
+				size: "L",
+				headAppetite: {_tag: "stated", appetite: size("L")},
+			}),
+		);
 		expect(resolveBetApproval(50, group, size("L"))).toMatchObject({_tag: "approved"});
 		expect(resolveBetApproval(51, group, size("S"))).toMatchObject({_tag: "approved"});
 		expect(resolveBetApproval(52, group, cycles(2))).toMatchObject({_tag: "approved"});
@@ -485,6 +493,42 @@ describe("the bet arm — a `bet` on the table approves the pitch", () => {
 			pass: true,
 			pitched: 2,
 		});
+	});
+
+	it("binds a member's approval to the appetite its own pitch states, never to the row's Size", () => {
+		const group = table(
+			row({
+				head: 50,
+				covers: [50, 51],
+				size: "L",
+				headAppetite: {_tag: "stated", appetite: size("L")},
+			}),
+		);
+		expect(disposition(sized({number: 51}), group)).toEqual({
+			_tag: "pitched",
+			appetite: size("M"),
+		});
+	});
+
+	it("approves no member when the group row's Size is not the size its head's pitch declares", () => {
+		const cases: ReadonlyArray<readonly [BetRow["headAppetite"], string]> = [
+			[{_tag: "stated", appetite: size("S")}, "it is sized L but its head #50 declares S"],
+			[{_tag: "stated", appetite: cycles(2)}, "its head #50 states a legacy `2 cycles` appetite"],
+			[{_tag: "unstated"}, "its head #50 carries no well-formed pitch"],
+			[{_tag: "unread", reason: "HTTP 502"}, "its head's pitch could not be read (HTTP 502)"],
+		];
+		for (const [headAppetite, why] of cases) {
+			const group = table(row({head: 50, covers: [50, 51], size: "L", headAppetite}));
+			expect(resolveBetApproval(51, group, size("M"))).toEqual({
+				_tag: "group-unbacked",
+				head: 50,
+				why,
+			});
+			expect(disposition(sized({number: 51}), group)).toMatchObject({
+				_tag: "unpitched",
+				detail: expect.stringContaining(`approves no member: ${why}`),
+			});
+		}
 	});
 
 	it("refuses a `bet` whose Size disagrees with the body, asking for re-approval", () => {

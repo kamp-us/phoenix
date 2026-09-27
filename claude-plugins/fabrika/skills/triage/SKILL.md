@@ -182,13 +182,18 @@ reach here: a split leaves no survivor to fold the original into, so nothing lic
 
 **Every issue leaves with a home** — an open milestone, or one of the two standing lanes.
 Lane-entering work (an epic, or a parentless feature) additionally carries a `## Pitch` whose `Arc`
-*is* that home — inside your rewrite for a feature, on stdin for an epic — and **only the founder
-approves a pitch**. Take an existing home: **triage never creates a milestone**, and
-`wayfinder:backlog` is bounded to genuine fog rather than work you would rather not decide about.
-**An `active` campaign's milestone is closed to new intake** unless the work is `p0` or `p1`, or
-blocks one of that milestone's own in-flight lanes — `triage homes` marks those rows
-`running: p0/p1 or blocker`, and is where you read which milestones they are. Only `p2` is subtracted,
-so a park reason names that band and nothing wider. That is a subtraction and nothing more: home the work by fit exactly as above.
+*is* that home — inside your rewrite for a feature, on stdin for an epic. **The founder approves a
+pitch, never triage**: by a `pitch-approved:` comment, or by setting the issue's betting-table row to
+Stage `bet` — his own write or an agent's on his instruction, with the row's Size matching the
+pitch's Appetite. Take an existing
+home: **triage never creates a milestone**, and `wayfinder:backlog` is bounded to genuine fog rather
+than work you would rather not decide about.
+**An `active` campaign's milestone admits new intake only at `p0` or `p1`**, or when the work blocks
+one of that milestone's own in-flight lanes — `triage homes` marks those rows
+`running: p0/p1 or blocker`, and is where you read which milestones they are. This narrows
+where you home, and it is yours to apply: the verb marks the row and refuses nothing, and no lane is
+ever refused for its campaign. Only `p2` is subtracted, so a park reason names that band and nothing
+wider; otherwise home the work by fit exactly as above.
 Every row the verb prints, and what `running` is derived from, is its own section
 (`fabrika wire doc-section --heading "triage homes" < <skill-base>/contract.md`).
 
@@ -211,13 +216,15 @@ it first and may read nothing else. Send it on stdin as one `## In plain words` 
 paragraph of 2-3 everyday sentences saying what is wrong, who it hurts and what we would do. Keep it
 honest, not salesy, and make it say what the body below it says; a summary that promises more than
 the body is a wrong summary. The verb places it at the very top — above the rewrite, and above an
-epic's `## Pitch` — and refuses a stdin with no summary, or an empty one, on `26`.
+epic's `## Pitch` — and writes nothing when the section is wrong: exit `26` for no summary, an empty
+one, or more than one, and exit `3` when the summary is all you sent and nothing follows it.
 
-For an epic, `fabrika triage enrich $issue_number --epic` takes the pitch's five fields on that same
-stdin — Problem / Arc / Appetite / Rabbit-holes / No-gos, plus an optional Success line — and heads
-them `## Pitch` above the brief, which it preserves verbatim for the planner; no *rewrite* goes above
-an epic's brief. Write Appetite as a size, `S`, `M` or `L`, never as cycles; Success is the one
-sentence the two-week check judges the shipped bet against. The
+A pitch carries five fields — Problem / Arc / Appetite / Rabbit-holes / No-gos, plus an optional
+Success line — whether it sits in a feature's rewrite or on an epic's stdin. Write Appetite as a
+size, `S`, `M` or `L`, never as cycles; Success is the one sentence the two-week check judges the
+shipped bet against. For an epic, `fabrika triage enrich $issue_number --epic` takes those fields
+on the same stdin as the summary and heads them `## Pitch` above the brief, which it preserves
+verbatim for the planner; no *rewrite* goes above an epic's brief. The
 rewrite adds real paths and function names over vague framing, and acceptance criteria that make
 "done" legible — not a closed set, a `review-*` gate may append. The criteria block's grammar is
 the wire format's, not this skill's

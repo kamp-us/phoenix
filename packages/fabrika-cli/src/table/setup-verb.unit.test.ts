@@ -15,7 +15,7 @@ import {
 	SHAPE_CONFLICT,
 } from "./codes.ts";
 import {runSetup} from "./setup-verb.ts";
-import {INBOX_AUTO_ADD_FILTER} from "./shape.ts";
+import {INBOX_AUTO_ADD_FILTER, PLANNED_WEEKS} from "./shape.ts";
 
 const REPO = "acme/widgets";
 const NOW = new Date("2026-09-30T12:00:00Z");
@@ -125,22 +125,23 @@ describe("table setup on a repo with no `table` block", () => {
 		}
 	});
 
-	it("prints the grouping step and the Inbox auto-add step, and the README's one-time setup lists both", async () => {
+	it("prints the grouping, Inbox auto-add and coming-weeks steps, and the README's by-hand section lists them", async () => {
 		const {outcome, github} = await run();
 
 		const {manualSteps} = JSON.parse(outcome.stdout) as {manualSteps: string[]};
-		expect(manualSteps).toHaveLength(2);
+		expect(manualSteps).toHaveLength(3);
 		expect(manualSteps[0]).toContain("Group by: Section");
 		expect(manualSteps[1]).toContain(`\`${INBOX_AUTO_ADD_FILTER}\``);
+		expect(manualSteps[2]).toContain(`first ${PLANNED_WEEKS} weeks`);
 		expect(INBOX_AUTO_ADD_FILTER).toBe("is:issue is:open no:label");
-		expect(outcome.stderr.filter((line) => line.includes("manual step"))).toHaveLength(2);
+		expect(outcome.stderr.filter((line) => line.includes("manual step"))).toHaveLength(3);
 
 		const readme = github.projects[0]?.readme ?? "";
-		const oneTime = readme.slice(
-			readme.indexOf("## One-time setup"),
+		const byHand = readme.slice(
+			readme.indexOf("## By hand"),
 			readme.indexOf("# What the columns mean"),
 		);
-		for (const step of manualSteps) expect(oneTime).toContain(step);
+		for (const step of manualSteps) expect(byHand).toContain(step);
 	});
 
 	it("names no path, repository, issue number or login beyond the repository it set up", async () => {
@@ -388,6 +389,14 @@ describe("table setup honours the table block", () => {
 		expect(outcome.code).toBe(0);
 		const week = github.projects[0]?.fields.find((field) => field.name === "Week");
 		expect(week?.iteration).toEqual({duration: 14, startDay: 6});
+		expect(week?.iterations?.map((one) => [one.title, one.startDate, one.duration])).toEqual([
+			["Sep 26", "2026-09-26", 14],
+			["Oct 10", "2026-10-10", 14],
+			["Oct 24", "2026-10-24", 14],
+			["Nov 7", "2026-11-07", 14],
+			["Nov 21", "2026-11-21", 14],
+			["Dec 5", "2026-12-05", 14],
+		]);
 	});
 });
 

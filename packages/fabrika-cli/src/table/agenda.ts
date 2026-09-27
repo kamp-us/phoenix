@@ -24,7 +24,13 @@
  */
 
 import type {AppetiteSizes, Size} from "../config/keys/appetite-sizes.ts";
-import {OUTSIDE_THE_BETS, type TableSettings} from "../config/keys/table.ts";
+import {
+	CUSTOMERS,
+	NEW_BETS,
+	OUTSIDE_THE_BETS,
+	TAILS,
+	type TableSettings,
+} from "../config/keys/table.ts";
 import {readPitch} from "../guard/pitch.ts";
 import type {ListedIssue} from "../io/issues.ts";
 import type {FieldValue, ItemFieldValue} from "../io/projects.ts";
@@ -41,9 +47,7 @@ export const PROPOSED = "proposed";
 export const CHECK_STAGE = "check";
 export const READY_FOR_HUMAN = "ready-for:human";
 
-export const TAILS = "Tails";
-export const CUSTOMERS = "Customers";
-export const NEW_BETS = "New bets";
+export {CUSTOMERS, NEW_BETS, TAILS};
 
 /** Stages that are an answer already given: none of these rows is proposed again. */
 const ANSWERED: ReadonlySet<string> = new Set([
@@ -99,7 +103,7 @@ export interface CandidateInput {
 	readonly flagged: ReadonlyMap<number, ReadonlyArray<Flag>>;
 	/** The iteration the agenda is prepared for. */
 	readonly target: string;
-	/** Issues the on-call board holds: never proposed at the table. Empty with one board. */
+	/** Issues the on-call board holds: never proposed at the table, not even standing. Empty with one board. */
 	readonly onCall: ReadonlySet<number>;
 }
 
@@ -176,7 +180,7 @@ export const candidatesOf = (
 		open.has(issue) && !answered(rows.get(issue)) && !input.onCall.has(issue);
 
 	const standing: Candidate[] = [...rows.values()]
-		.filter((row) => open.has(row.issue) && onAgenda(row, target))
+		.filter((row) => open.has(row.issue) && !input.onCall.has(row.issue) && onAgenda(row, target))
 		.map((row) => ({
 			issue: row.issue,
 			section: optionOf(row, FIELD.section) as string,
@@ -477,6 +481,11 @@ export interface PrepInput {
 	readonly removals: ReadonlyArray<number>;
 	/** Shipped rows coming back as checks, each already a row whatever its issue's state. */
 	readonly checks: ReadonlyArray<CheckRow>;
+	/**
+	 * Issues the on-call board holds. Each leaves the table: its row is taken off, it is never added,
+	 * not even as a group member, and no agenda row is written for it. Empty with one board.
+	 */
+	readonly onCall: ReadonlySet<number>;
 }
 
 /** The cells a check row carries. Its Size, Outcome and every other cell stay as they read. */
@@ -490,13 +499,19 @@ export interface CheckRow {
 /**
  * Every write that puts the agenda, the rollover and the removals in step with the rows. An issue
  * that is not a row yet plans an `Add` and nothing else; its cells follow once it has an item id.
+ *
+ * **An issue is on one board.** An issue in `onCall` is never added and its row is taken off, so
+ * the table and the on-call board never both hold it. A bet carried over or a row coming back as a
+ * check is a person's answer and stays.
  */
 export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 	const {fields, rows, target} = input;
+	const answered = new Set([...input.rollover, ...input.checks.map((check) => check.issue)]);
+	const leaving = (issue: number): boolean => input.onCall.has(issue) && !answered.has(issue);
 	const writes: PrepWrite[] = [];
 	const added = new Set<number>();
 	const add = (issue: number): void => {
-		if (added.has(issue) || !input.open.has(issue)) return;
+		if (added.has(issue) || !input.open.has(issue) || leaving(issue)) return;
 		added.add(issue);
 		writes.push({_tag: "Add", issue});
 	};
@@ -510,6 +525,7 @@ export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 		writes.push({_tag: "Clear", issue: row.issue, itemId: row.itemId, field, fieldId});
 
 	for (const entry of input.agenda) {
+		if (leaving(entry.issue)) continue;
 		const row = rows.get(entry.issue);
 		if (row === undefined) {
 			add(entry.issue);
@@ -553,6 +569,7 @@ export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 			}
 		}
 		for (const member of membersOf(entry.group)) {
+			if (leaving(member)) continue;
 			const memberRow = rows.get(member);
 			if (memberRow === undefined) add(member);
 			else if (optionOf(memberRow, FIELD.section) !== null) {
@@ -614,7 +631,8 @@ export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 		}
 	}
 
-	for (const issue of input.removals) {
+	const offTable = new Set([...input.removals, ...[...input.onCall].filter(leaving)]);
+	for (const issue of [...offTable].sort((a, b) => a - b)) {
 		const row = rows.get(issue);
 		if (row !== undefined) writes.push({_tag: "Delete", issue, itemId: row.itemId});
 	}

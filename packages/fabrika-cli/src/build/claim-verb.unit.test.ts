@@ -19,6 +19,7 @@ import {
 	BLOCKED,
 	CLAIM_NOT_MINE,
 	NO_ACCEPTANCE_CRITERIA,
+	NO_SERVED_ISSUE,
 	OFF_VOCABULARY,
 	PR_NOT_OURS,
 	PRECONDITION_UNKNOWN,
@@ -726,26 +727,30 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 	});
 
 	/**
-	 * A PR naming no issue used to refuse on 20 while any campaign was active, and fall back to its
-	 * own record while none was. The refusal went with the campaign axis, so it always falls back —
-	 * and its own record carries no `ready-for:agent`, so a build claim meets the audience axis.
+	 * A PR naming no issue refused on 20 only while some campaign was active. That refusal is not a
+	 * campaign question, so it binds on its own seat whatever the campaigns say, and stays overridable.
 	 */
-	it("judges a PR naming no issue on its own record, on the audience axis — and stays overridable", async () => {
+	it("refuses a PR naming no issue on 38 whatever the campaigns say — and stays overridable", async () => {
 		const body = "A conversation-authored ADR.\n\n## Deviations\nNone.\n";
 		const {out, shell} = await claimPull(body, servedTicket(44));
-		expect(out.code).toBe(AUDIENCE_NOT_AGENT);
+		expect(out.code).toBe(NO_SERVED_ISSUE);
+		expect(out.stderr.join("\n")).toContain(
+			'no served issue — PR #4312 carries neither a closing keyword nor "Part of #<n>" in its body',
+		);
+		expect(out.stderr.at(-1)).toContain('pass --override "<reason>"');
 		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		const overridden = await claimPull(body, servedTicket(44), {
 			override: "no ticket — the ADR was authored in conversation",
 			overrideLane: "build",
 		});
-		expect(overridden.out.code).toBe(0);
+		expect(overridden.out.code).not.toBe(NO_SERVED_ISSUE);
 	});
 
-	it("falls back to the PR's own record when the named issue is proven absent", async () => {
-		const {out} = await claimPull("Fixes #5553\n", NOT_FOUND);
-		expect(out.code).toBe(AUDIENCE_NOT_AGENT);
-		expect(out.stderr.some((line) => line.includes("serves #"))).toBe(false);
+	it("refuses on 38 when the issue the PR names is proven absent", async () => {
+		const {out, shell} = await claimPull("Fixes #5553\n", NOT_FOUND);
+		expect(out.code).toBe(NO_SERVED_ISSUE);
+		expect(out.stderr.join("\n")).toContain("names #5553, which is proven absent");
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("never lets --override past an UNKNOWN admission — a failed read has proven nothing", async () => {
@@ -817,7 +822,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		expect(out.stderr.some((line) => line.includes("serves #"))).toBe(false);
 	});
 
-	it("admits an unresolvable PR under a gate purpose, where the audience axis does not bind", async () => {
+	it("refuses an unresolvable PR on 38 under a gate purpose too, where the audience axis does not bind", async () => {
 		const shell = unblocked([
 			[ISSUE, pull("No reference at all.\n")],
 			...owned,
@@ -833,7 +838,8 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
 			),
 		);
-		expect(out.code).toBe(0);
+		expect(out.code).toBe(NO_SERVED_ISSUE);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	/**
@@ -863,9 +869,9 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			expect(out.stderr.some((line) => line.includes("PR #4312 serves #5553 (fixes)"))).toBe(true);
 		});
 
-		it("leaves an unserved PR on its own record, audience and all — the pre-#5562 answer", async () => {
+		it("refuses an unserved PR on 38 with no campaigns table at all", async () => {
 			const {out, shell} = await claimInert("No reference at all.\n", null);
-			expect(out.code).toBe(AUDIENCE_NOT_AGENT);
+			expect(out.code).toBe(NO_SERVED_ISSUE);
 			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 			expect(out.stderr.some((line) => line.includes("serves #"))).toBe(false);
 		});
@@ -2505,7 +2511,9 @@ describe("runClaim — a PR is its author's until the pipeline owns it", () => {
 			);
 			expect(out.code).toBe(PR_NOT_OURS);
 			expect(posted(shell)).toBe(false);
-			expect(out.stderr.join("\n")).toContain("mallory is not in the repo's grant-author set");
+			expect(out.stderr.join("\n")).toContain(
+				"mallory is not in the control-plane set the repo's CODEOWNERS names",
+			);
 		});
 
 		it("ignores every grant while CODEOWNERS names no control-plane owner", async () => {

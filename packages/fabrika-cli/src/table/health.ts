@@ -5,7 +5,8 @@
  * **One update per iteration.** The body carries a marker naming the iteration it was posted for,
  * so prep can read the project's updates and tell that this week's already stands. A number it
  * could not measure — a lane with no dollar figure, a week with no lane — is said in words, never
- * shown as a zero.
+ * shown as a zero. A flag check that could not be read is named in the update, never counted as no
+ * flag, and the update is never `ON_TRACK` over it.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  */
@@ -15,7 +16,7 @@ import type {BoardIteration, StatusUpdate, StatusUpdateInput} from "../io/projec
 import {asksOf, type LaneRecord} from "../wire/lane-record.ts";
 import {optionOf} from "./agenda.ts";
 import {currentIteration} from "./bets.ts";
-import {type Flag, type OnCallSpend, weekLanes} from "./flags.ts";
+import {type Flag, type FlagReport, type OnCallSpend, type Unread, weekLanes} from "./flags.ts";
 import {FIELD} from "./shape.ts";
 import type {Row} from "./sync.ts";
 
@@ -100,7 +101,7 @@ export const outsideOf = (
 export interface HealthInput {
 	readonly window: {readonly start: string; readonly end: string};
 	readonly records: ReadonlyMap<number, ReadonlyArray<LaneRecord>>;
-	readonly flags: ReadonlyArray<Flag>;
+	readonly report: FlagReport;
 	readonly outside: OutsideTally;
 	/** Running bets carried into the new iteration without an agenda row. */
 	readonly continuing: number;
@@ -123,7 +124,24 @@ export interface Health {
 	readonly continuing: number;
 	readonly flaggedBets: number;
 	readonly inbox: number;
+	/** The flag checks that could not be read. */
+	readonly unread: ReadonlyArray<Unread>;
 }
+
+/** How many items a flag names, or how many it proved while some item's check went unread. */
+export type FlagCount =
+	| {readonly _tag: "Counted"; readonly count: number}
+	| {readonly _tag: "Unread"; readonly atLeast: number; readonly unread: number};
+
+export const flagCount = (
+	report: FlagReport,
+	flag: Flag["_tag"],
+	check: Unread["check"],
+): FlagCount => {
+	const count = report.flags.filter((one) => one._tag === flag).length;
+	const unread = report.unread.filter((one) => one.check === check).length;
+	return unread > 0 ? {_tag: "Unread", atLeast: count, unread} : {_tag: "Counted", count};
+};
 
 export const healthOf = (input: HealthInput): Health => {
 	const lanes = [...weekLanes(input.records, input.window).values()].flat();
@@ -136,7 +154,7 @@ export const healthOf = (input: HealthInput): Health => {
 	return {
 		lanes: lanes.length,
 		landed: lanes.filter(isLanded).length,
-		staleLanes: input.flags.filter((flag) => flag._tag === "Stuck").length,
+		staleLanes: input.report.flags.filter((flag) => flag._tag === "Stuck").length,
 		spentUsd: cents(spentUsd),
 		unmeasuredLanes,
 		founderLanes: lanes.filter((lane) => asksOf(lane) > 0).length,
@@ -144,6 +162,7 @@ export const healthOf = (input: HealthInput): Health => {
 		continuing: input.continuing,
 		flaggedBets: input.flaggedBets,
 		inbox: input.inbox,
+		unread: input.report.unread,
 	};
 };
 
@@ -165,7 +184,7 @@ const isoDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 /** The on-call board as the table reviews it: one summary, never its rows. */
 export interface OnCallHealth {
 	readonly open: number;
-	readonly pastTarget: number;
+	readonly pastTarget: FlagCount;
 	/** On-call's spend over the same week as the table's numbers. */
 	readonly spend: OnCallSpend;
 	/** The planned share, in percent. */
@@ -180,18 +199,29 @@ const onCallLines = (onCall: OnCallHealth): ReadonlyArray<string> => {
 			: spend._tag === "Unmeasured"
 				? `not known, ${plural(spend.lanes, "lane")} not measured (share ${onCall.share}%)`
 				: `no lane spent anything last week (share ${onCall.share}%)`;
+	const {pastTarget} = onCall;
+	const past =
+		pastTarget._tag === "Unread"
+			? ` (past their response target: not known, ${plural(pastTarget.unread, "item")} could not be checked${pastTarget.atLeast > 0 ? `, at least ${pastTarget.atLeast}` : ""})`
+			: pastTarget.count > 0
+				? ` (${pastTarget.count} past their response target)`
+				: "";
 	return [
 		"",
 		"**On-call** (one section; the table does not review it row by row)",
 		"",
-		`- Open items: ${onCall.open}${onCall.pastTarget > 0 ? ` (${onCall.pastTarget} past their response target)` : ""}`,
+		`- Open items: ${onCall.open}${past}`,
 		`- Spend: ${spent}`,
 	];
 };
 
+const checkName = (one: Unread): string =>
+	`${one.check}${one.issue === null ? "" : ` on #${one.issue}`}`;
+
 /**
- * The status update for `target`: `AT_RISK` while any flag stands, else `ON_TRACK`, dated over the
- * iteration. With an on-call board it covers that board too, as one closing section.
+ * The status update for `target`: `AT_RISK` while any flag stands or any flag check could not be
+ * read, else `ON_TRACK`, dated over the iteration. With an on-call board it covers that board too,
+ * as one closing section.
  */
 export const renderHealth = (
 	health: Health,
@@ -226,6 +256,11 @@ export const renderHealth = (
 			: `- ${OUTSIDE_THE_BETS}: ${plural(outside.count, "lane")} (${kinds}), ${outsideCost}`,
 		`- Bets continuing: ${health.continuing}${health.flaggedBets > 0 ? ` (and ${health.flaggedBets} flagged onto the agenda)` : ""}`,
 		`- Inbox: ${plural(health.inbox, "open issue")} with no labels`,
+		...(health.unread.length === 0
+			? []
+			: [
+					`- Could not check: ${health.unread.map(checkName).join(", ")} — so the week is not called on track`,
+				]),
 		...(onCall === null ? [] : onCallLines(onCall)),
 		"",
 		healthMarker(target.id),
@@ -233,7 +268,7 @@ export const renderHealth = (
 	const start = Date.parse(`${target.startDate}T00:00:00.000Z`);
 	return {
 		body: lines.join("\n"),
-		status: flagged ? "AT_RISK" : "ON_TRACK",
+		status: flagged || health.unread.length > 0 ? "AT_RISK" : "ON_TRACK",
 		startDate: target.startDate,
 		targetDate: isoDay(start + target.duration * DAY_MS),
 	};

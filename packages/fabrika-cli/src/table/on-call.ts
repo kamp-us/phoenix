@@ -22,14 +22,17 @@ export const ON_CALL_FIELD = {responseTarget: "Response target"} as const;
 
 /** What routing reads off one issue. */
 export interface RouteFacts {
-	/** The Origin the issue is known by, or `null` when nothing names one. */
-	readonly origin: string | null;
+	/**
+	 * Every Origin the issue is known by, empty when nothing names one. Any one matching routes the
+	 * issue, so a lane Origin written onto its row later never hides that a customer filed it.
+	 */
+	readonly origins: ReadonlyArray<string>;
 	readonly labels: ReadonlyArray<string>;
 }
 
-/** The board `facts` land on under `route`: on-call when its origin, type or any label matches. */
+/** The board `facts` land on under `route`: on-call when any origin, its type or any label matches. */
 export const boardOf = (facts: RouteFacts, route: Route): BoardName => {
-	const byOrigin = facts.origin !== null && route.origins.includes(facts.origin);
+	const byOrigin = facts.origins.some((origin) => route.origins.includes(origin));
 	const byType = route.types.some((type) => facts.labels.includes(typeLabel(type)));
 	const byLabel = route.labels.some((label) => facts.labels.includes(label));
 	return byOrigin || byType || byLabel ? "on-call" : "product";

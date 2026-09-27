@@ -5,6 +5,7 @@
 import {describe, expect, it} from "vitest";
 import {SHIPPED_TABLE} from "../config/keys/table.ts";
 import {
+	flagCount,
 	type Health,
 	healthMarker,
 	nextTableDay,
@@ -43,6 +44,7 @@ describe("renderHealth", () => {
 		continuing: 0,
 		flaggedBets: 0,
 		inbox: 1,
+		unread: [],
 	};
 
 	it("says a week with no lane in words, never as a zero rate", () => {
@@ -63,5 +65,34 @@ describe("renderHealth", () => {
 		expect(postedFor([{id: "SU", body: healthMarker("it_21"), startDate: null}], WEEK.id)).toBe(
 			false,
 		);
+	});
+
+	it("never posts ON_TRACK over a flag check it could not read, and names the check", () => {
+		const update = renderHealth(
+			{...quiet, unread: [{check: "over-size", issue: 10, reason: "1 lane(s) went unmeasured"}]},
+			WEEK,
+			false,
+		);
+
+		expect(update.status).toBe("AT_RISK");
+		expect(update.body).toContain("- Could not check: over-size on #10");
+	});
+
+	it("says a past-target count it could not read in words, never as a number", () => {
+		const report = {
+			flags: [],
+			unread: [{check: "past-target" as const, issue: 40, reason: "no Response target yet"}],
+		};
+		const update = renderHealth({...quiet, unread: report.unread}, WEEK, false, {
+			open: 2,
+			pastTarget: flagCount(report, "PastTarget", "past-target"),
+			spend: {_tag: "Nothing"},
+			share: 20,
+		});
+
+		expect(update.body).toContain(
+			"- Open items: 2 (past their response target: not known, 1 item could not be checked)",
+		);
+		expect(update.status).toBe("AT_RISK");
 	});
 });

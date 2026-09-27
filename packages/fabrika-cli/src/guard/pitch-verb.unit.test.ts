@@ -418,6 +418,23 @@ describe("runPitchGuard — a `bet` on the table is the approval", () => {
 		expect(outcome.stdout).toContain("2 carrying a founder-approved pitch");
 	});
 
+	it("approves no chain member while the row's Size is not the size its head's pitch declares", async () => {
+		const {outcome, requests} = await run(
+			[
+				[ONE(21), one({number: 21, body: SIZED})],
+				[COMMENTS(21), EMPTY],
+				[PERM("founder"), permission("admin")],
+				[ONE(20), one({number: 20, body: SIZED.replace("**Appetite:** M", "**Appetite:** L")})],
+			],
+			{issue: 21, betRows: betsOn({head: 20, covers: [20, 21]})},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stderr.join("\n")).toContain(
+			"its group `bet` row #20 approves no member: it is sized M but its head #20 declares L",
+		);
+		expect(requests.some((request) => ONE(20).test(request))).toBe(true);
+	});
+
 	it("refuses a `bet` whose Size disagrees with the pitch's appetite, asking for re-approval", async () => {
 		const {outcome} = await run(
 			[

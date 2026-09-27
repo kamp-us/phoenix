@@ -201,6 +201,62 @@ const requestBody = (body: HttpBody.HttpBody): string => {
 
 const WEEKDAY_OF = (date: string): number => new Date(`${date}T00:00:00Z`).getUTCDay();
 
+const ISSUE_NODE = /^I_(\d+)$/;
+
+/** The node id the fake reads as issue `number` of the served repository when it is added as an item. */
+export const fakeIssueNodeId = (number: number): string => `I_${number}`;
+
+/** When the fake says every value it holds was set: it keeps no clock. */
+const SET_AT = "2026-01-01T00:00:00Z";
+
+/** One stored value input, answered the way `TableItems` reads a field value back. */
+const valueJson = (
+	project: FakeProject,
+	fieldId: string,
+	raw: unknown,
+	setter: string,
+): Record<string, unknown> | null => {
+	const field = project.fields.find((one) => one.id === fieldId);
+	if (field === undefined || !isRecord(raw)) return null;
+	const meta = {
+		creator: {login: setter},
+		updatedAt: SET_AT,
+		field: {id: field.id, name: field.name},
+	};
+	if (typeof raw.singleSelectOptionId === "string") {
+		const option = field.options?.find((one) => one.id === raw.singleSelectOptionId);
+		return option === undefined
+			? null
+			: {
+					__typename: "ProjectV2ItemFieldSingleSelectValue",
+					name: option.name,
+					optionId: option.id,
+					...meta,
+				};
+	}
+	if (typeof raw.iterationId === "string") {
+		const iteration = field.iterations?.find((one) => one.id === raw.iterationId);
+		return iteration === undefined
+			? null
+			: {
+					__typename: "ProjectV2ItemFieldIterationValue",
+					title: iteration.title,
+					iterationId: iteration.id,
+					...meta,
+				};
+	}
+	if (typeof raw.text === "string") {
+		return {__typename: "ProjectV2ItemFieldTextValue", text: raw.text, ...meta};
+	}
+	if (typeof raw.number === "number") {
+		return {__typename: "ProjectV2ItemFieldNumberValue", number: raw.number, ...meta};
+	}
+	if (typeof raw.date === "string") {
+		return {__typename: "ProjectV2ItemFieldDateValue", date: raw.date, ...meta};
+	}
+	return null;
+};
+
 export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects => {
 	const repo = options.repo ?? "acme/widgets";
 	const [repoOwner = "acme"] = repo.split("/");
@@ -329,10 +385,22 @@ export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects =>
 					}));
 				}
 				if (isRecord(input.iterationConfiguration)) {
+					const configuration = input.iterationConfiguration;
 					field.iteration = {
-						duration: Number(input.iterationConfiguration.duration),
-						startDay: WEEKDAY_OF(String(input.iterationConfiguration.startDate)),
+						duration: Number(configuration.duration),
+						startDay: WEEKDAY_OF(String(configuration.startDate)),
 					};
+					field.iterations = (
+						Array.isArray(configuration.iterations) ? configuration.iterations : []
+					).map((raw) => {
+						const iteration = isRecord(raw) ? raw : {};
+						return {
+							id: mint("iter"),
+							title: String(iteration.title),
+							startDate: String(iteration.startDate),
+							duration: Number(iteration.duration),
+						};
+					});
 				}
 				project.fields.push(field);
 				return {data: {createProjectV2Field: {projectV2Field: {id: field.id}}}};
@@ -373,7 +441,13 @@ export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects =>
 				if (project === undefined)
 					return {data: null, errors: [{type: "NOT_FOUND", message: "no project"}]};
 				const standing = project.items.find((item) => item.contentId === vars.contentId);
-				const item = standing ?? {id: mint("PVTI"), contentId: String(vars.contentId), values: {}};
+				const issue = ISSUE_NODE.exec(String(vars.contentId))?.[1];
+				const item = standing ?? {
+					id: mint("PVTI"),
+					contentId: String(vars.contentId),
+					...(issue === undefined ? {} : {number: Number(issue)}),
+					values: {},
+				};
 				if (standing === undefined) project.items.push(item);
 				return {data: {addProjectV2ItemById: {item: {id: item.id}}}};
 			}
@@ -417,10 +491,100 @@ export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects =>
 								nodes: project.items.map((item) => ({
 									isArchived: item.archived === true,
 									content:
-										item.number === undefined ? null : {__typename: "Issue", number: item.number},
+										item.number === undefined
+											? {__typename: "DraftIssue"}
+											: {__typename: "Issue", number: item.number},
 									stage: cell(item.values, vars.stage),
 									section: cell(item.values, vars.section),
 									week: cell(item.values, vars.week),
+								})),
+							},
+						},
+					},
+				};
+			}
+			case "TableClearValue": {
+				const project = byId(input.projectId);
+				const item = project?.items.find((one) => one.id === input.itemId);
+				if (item === undefined)
+					return {data: null, errors: [{type: "NOT_FOUND", message: "no item"}]};
+				delete item.values[String(input.fieldId)];
+				return {data: {clearProjectV2ItemFieldValue: {projectV2Item: {id: item.id}}}};
+			}
+			case "TableDeleteItem": {
+				const project = byId(vars.projectId);
+				const at = project?.items.findIndex((one) => one.id === vars.itemId) ?? -1;
+				if (project === undefined || at === -1)
+					return {data: null, errors: [{type: "NOT_FOUND", message: "no item"}]};
+				project.items.splice(at, 1);
+				return {data: {deleteProjectV2Item: {deletedItemId: vars.itemId}}};
+			}
+			case "TableItems": {
+				const project = byId(vars.id);
+				if (project === undefined) return {data: {node: null}};
+				return {
+					data: {
+						node: {
+							items: {
+								pageInfo: {hasNextPage: false, endCursor: null},
+								nodes: project.items.map((item) => ({
+									id: item.id,
+									content:
+										item.number === undefined
+											? {__typename: "DraftIssue"}
+											: {
+													__typename: "Issue",
+													number: item.number,
+													repository: {nameWithOwner: repo},
+												},
+									fieldValues: {
+										pageInfo: {hasNextPage: false},
+										nodes: Object.entries(item.values).flatMap(([fieldId, raw]) => {
+											const value = valueJson(project, fieldId, raw, repoOwner);
+											return value === null ? [] : [value];
+										}),
+									},
+								})),
+							},
+						},
+					},
+				};
+			}
+			case "TableWeek": {
+				const project = byId(vars.id);
+				if (project === undefined) return {data: {node: null}};
+				const week = project.fields.find((field) => field.name === vars.week);
+				return {
+					data: {
+						node: {
+							field:
+								week === undefined
+									? null
+									: week.dataType === "ITERATION"
+										? {
+												__typename: "ProjectV2IterationField",
+												configuration: {
+													iterations: week.iterations ?? [],
+													completedIterations: [],
+												},
+											}
+										: {__typename: "ProjectV2Field"},
+						},
+					},
+				};
+			}
+			case "TableStatusUpdates": {
+				const project = byId(vars.id);
+				if (project === undefined) return {data: {node: null}};
+				return {
+					data: {
+						node: {
+							statusUpdates: {
+								pageInfo: {hasNextPage: false, endCursor: null},
+								nodes: project.statusUpdates.map((update) => ({
+									id: update.id,
+									body: update.body,
+									startDate: update.startDate ?? null,
 								})),
 							},
 						},
@@ -431,8 +595,9 @@ export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects =>
 				const project = byId(input.projectId);
 				if (project === undefined)
 					return {data: null, errors: [{type: "NOT_FOUND", message: "no project"}]};
-				project.statusUpdates.push(input);
-				return {data: {createProjectV2StatusUpdate: {statusUpdate: {id: mint("PVTSU")}}}};
+				const id = mint("PVTSU");
+				project.statusUpdates.push({...input, id});
+				return {data: {createProjectV2StatusUpdate: {statusUpdate: {id}}}};
 			}
 			default:
 				return {data: null, errors: [{message: `the fake does not answer ${operation}`}]};

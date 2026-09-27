@@ -1,11 +1,11 @@
 /**
- * The `## Campaigns` writers, added **beside** the fence's parse rather than as a fourth parser.
+ * The `## Campaigns` writers, added **beside** the shared parse rather than as a fourth parser.
  *
  * Every cell this module reads comes from `../build/scope-admission.ts` — `scanCampaigns` for where
- * a row sits, `parseCampaigns` for what it says — so a row a verb here writes and the dispatch fence
- * calls `Malformed` is unconstructible. Binding to `../guard/roadmap.ts` instead would buy exactly
+ * a row sits, `parseCampaigns` for what it says — so a row a verb here writes and that parse calls
+ * `Malformed` is unconstructible. Binding to `../guard/roadmap.ts` instead would buy exactly
  * that divergence: its pin regex is unanchored and its milestone cell is resolved away, so it admits
- * rows the fence refuses.
+ * rows that parse refuses.
  */
 
 import {

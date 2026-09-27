@@ -15,7 +15,9 @@ import {
 	EMPTY_SELECTION,
 	isCustomer,
 	optionsOf,
+	type PrepInput,
 	pickRec,
+	planPrep,
 	sizeOfGroup,
 } from "./agenda.ts";
 import type {Group} from "./group.ts";
@@ -92,7 +94,10 @@ describe("candidatesOf", () => {
 	});
 
 	it("follows the configured section order", () => {
-		const settings = {...SHIPPED_TABLE, sections: ["New bets", "Customers", "Outside the bets"]};
+		const settings = {
+			...SHIPPED_TABLE,
+			sections: ["New bets", "Customers", "Tails", "Outside the bets"],
+		};
 		const pitch =
 			"## Pitch\n**Problem:** p\n**Arc:** a\n**Appetite:** S\n**Rabbit-holes:** r\n**No-gos:** n";
 		const {candidates} = candidatesOf({
@@ -119,6 +124,31 @@ describe("candidatesOf", () => {
 
 		expect(candidates.map((one) => one.issue)).toEqual([4]);
 		expect(triageFirst).toEqual([]);
+	});
+
+	it("drops a standing agenda row once the on-call board holds its issue", () => {
+		const cell = (fieldName: string, value: ItemFieldValue["value"]): ItemFieldValue => ({
+			fieldId: `F_${fieldName}`,
+			fieldName,
+			value,
+			creator: "owner",
+			updatedAt: "2026-09-20T00:00:00.000Z",
+		});
+		const standing = (number: number): Row => ({
+			itemId: `PVTI_${number}`,
+			issue: number,
+			values: [
+				cell("Section", {_tag: "Option", optionId: "s:Customers", name: "Customers"}),
+				cell("Week", {_tag: "Iteration", iterationId: "it_next", title: "Week 2"}),
+				cell("Rec", {_tag: "Text", text: "yes."}),
+			],
+		});
+		const {candidates} = candidatesOf({
+			...input([issue(3), issue(4)], [standing(3), standing(4)]),
+			onCall: new Set([3]),
+		});
+
+		expect(candidates.map((one) => `${one.reason._tag} #${one.issue}`)).toEqual(["Standing #4"]);
 	});
 });
 
@@ -189,5 +219,69 @@ describe("closedProposals", () => {
 		]);
 
 		expect(closedProposals(rows, new Set([2]))).toEqual([1]);
+	});
+});
+
+describe("planPrep with an on-call board", () => {
+	const select = (name: string, options: ReadonlyArray<string>) => ({
+		id: `F_${name}`,
+		options: new Map(options.map((option) => [option, `${name}:${option}`] as const)),
+	});
+	const FIELDS = {
+		stage: select("Stage", ["proposed", "check"]),
+		section: select("Section", SHIPPED_TABLE.sections),
+		size: select("Size", ["S", "M", "L"]),
+		rec: "F_rec",
+		plainWords: "F_plain",
+		week: "F_week",
+	};
+	const plan = (over: Partial<PrepInput>) =>
+		planPrep({
+			fields: FIELDS,
+			target: {id: "it_next", title: "Week 2"},
+			rows: new Map(),
+			open: new Set(),
+			agenda: [],
+			rollover: [],
+			removals: [],
+			checks: [],
+			onCall: new Set(),
+			...over,
+		});
+	const cells = {size: "S" as const, rec: "yes.", plainWords: "Issue 1"};
+
+	it("takes a routed issue's table row off, so it is on the on-call board only", () => {
+		const writes = plan({
+			rows: new Map([[4, stageRow(4, "proposed")]]),
+			open: new Set([4]),
+			onCall: new Set([4]),
+		});
+
+		expect(writes).toEqual([{_tag: "Delete", issue: 4, itemId: "PVTI_4"}]);
+	});
+
+	it("never adds a routed chain member to the table", () => {
+		const writes = plan({
+			open: new Set([1, 2, 3]),
+			agenda: [{issue: 1, section: "Tails", group: chain(1, 2, 3), flaggedBet: false, cells}],
+			onCall: new Set([2]),
+		});
+
+		expect(writes.flatMap((write) => (write._tag === "Add" ? [write.issue] : []))).toEqual([1, 3]);
+	});
+
+	it("keeps a carried bet or a check on the table even when the rule routes its issue", () => {
+		const writes = plan({
+			rows: new Map([
+				[5, stageRow(5, "bet")],
+				[6, stageRow(6, "shipped")],
+			]),
+			open: new Set([5, 6]),
+			rollover: [5],
+			checks: [{issue: 6, section: "Tails", rec: "check it.", plainWords: "Issue 6"}],
+			onCall: new Set([5, 6]),
+		});
+
+		expect(writes.some((write) => write._tag === "Delete")).toBe(false);
 	});
 });

@@ -522,7 +522,7 @@ setting	<key>	<declared|default|unknown>	<value-as-json>	<detail>	<as-of>
 
 `<value-as-json>` is the value as JSON, which is what keeps the cell tab-free — a declared string
 holding a tab escapes rather than splitting the row. It is printed **in the spelling the file
-carries**, not in the shape the package decodes to: `capClearAuthors` prints `["@octocat"]`, never
+carries**, not in the shape the package decodes to: `ownAccounts` prints `["@octocat"]`, never
 `[{"_tag":"User","login":"octocat"}]`. `<as-of>` is this invocation's own read of the file,
 `asOfKind: "read-now"`, the same instant on every row because every row comes off it.
 
@@ -609,9 +609,9 @@ are not.
 ```
 $ fabrika status settings
 settings	resolved	15	5	0	2026-08-19T20:43:22Z
-setting	capClearAuthors	declared	["@octocat","@hubot","@monalisa"]	-	2026-08-19T20:43:22Z
 setting	codeValidators	declared	[{"command":["pnpm","typecheck","--force"]},{"command":["pnpm","lint:worktree"]}]	-	2026-08-19T20:43:22Z
 setting	docLeakExempt	declared	["/CLAUDE.md",…]	-	2026-08-19T20:43:22Z
+setting	ownAccounts	declared	["@octocat","@hubot","@monalisa"]	-	2026-08-19T20:43:22Z
 setting	surfaceDispositions	default	{"gh-rest":"fail-loud","git-worktree":"fail-loud",…}	.fabrika.jsonc declares no `surfaceDispositions`	2026-08-19T20:43:22Z
 setting	unreadableCodeowners	declared	"refuse"	-	2026-08-19T20:43:22Z
 setting	workflowValidators	declared	[]	-	2026-08-19T20:43:22Z
@@ -631,17 +631,17 @@ The same run under `--json` — the notice line stays on stderr, so stdout is th
 
 ```
 $ fabrika status settings --json
-{"outcome":"resolved","path":".fabrika.jsonc","keys":15,"declared":5,"unknown":0,"settings":[{"key":"capClearAuthors","provenance":"declared","value":["@octocat","@hubot","@monalisa"],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"surfaceDispositions","provenance":"default","value":{"gh-rest":"fail-loud","git-worktree":"fail-loud"},"detail":".fabrika.jsonc declares no `surfaceDispositions`","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"workflowValidators","provenance":"declared","value":[],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"}]}
+{"outcome":"resolved","path":".fabrika.jsonc","keys":15,"declared":5,"unknown":0,"settings":[…,{"key":"ownAccounts","provenance":"declared","value":["@octocat","@hubot","@monalisa"],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"surfaceDispositions","provenance":"default","value":{"gh-rest":"fail-loud","git-worktree":"fail-loud"},"detail":".fabrika.jsonc declares no `surfaceDispositions`","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"workflowValidators","provenance":"declared","value":[],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"}]}
 ```
 
 ```
 $ fabrika status settings --root /srv/storefront
 status settings: could not read .fabrika.jsonc: /srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory; 15 key(s), 0 declared, 15 unknown.
-setting	capClearAuthors	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-19T20:51:02Z
 setting	docLeakExempt	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-19T20:51:02Z
 setting	governedRoots	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-19T20:51:02Z
+setting	ownAccounts	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-19T20:51:02Z
 setting	workflowValidators	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-19T20:51:02Z
-status settings: 15 key(s) resolve UNKNOWN (boardVocabulary, capClearAuthors, ci, …, workflowValidators) — what this repo runs on is unread, never the shipped default.
+status settings: 15 key(s) resolve UNKNOWN (appetiteSizes, assemblyRefresh, assemblyReplay, …, workflowValidators) — what this repo runs on is unread, never the shipped default.
 $ echo $?
 11
 ```
@@ -1162,8 +1162,8 @@ session must not need a second file open:
 - **The join key is that number, never the title.** An arc named `Storefront` can pin a milestone
   titled `Checkout — search and discovery`; the two share no substring, so a title cell joins
   nothing.
-- The `State` column **is read on a campaign row**: `active` there says the theme is being worked,
-  and it refuses no lane. A drafted campaign row is written `paused` — flipping it to `active` is
+- The `State` column **is read on a campaign row**: `active` there says the theme is being worked.
+  A drafted campaign row is written `paused` — flipping it to `active` is
   the human's separate, explicit start act, so a bootstrap never declares a theme worked on its own.
   On an arc row the column is still for humans; nothing filters on it.
 

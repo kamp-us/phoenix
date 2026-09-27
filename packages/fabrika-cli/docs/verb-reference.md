@@ -235,7 +235,7 @@ which setup creates, prep fills and flags reads. Use
 `table prep --help`. The token needs the
 `project` scope; the
 [adopter guide](../../../claude-plugins/fabrika/guide/adopt-fabrika-in-a-new-repo.md#11-set-up-the-betting-table)
-covers the scope and the two manual steps setup prints.
+covers the scope and the three manual steps setup prints.
 
 ## The `triage` group
 

@@ -385,6 +385,31 @@ describe("the size stop", () => {
 		});
 	});
 
+	it("is Unchecked, never a refusal, on any other failed read with no table block", async () => {
+		const {board} = table({10: {records: [record(10, 5)]}}, [
+			{number: 10, stage: "bet", size: "S"},
+		]);
+		const rateLimited: FlagsBoard<never> = {
+			...board,
+			locate: () => Effect.succeed({_tag: "Failed", reason: "API rate limit exceeded"}),
+		};
+		const malformed: FlagsBoard<never> = {
+			...board,
+			comments: () => Effect.succeed({_tag: "Ok", value: ["lane-record: #10 complete @ never"]}),
+		};
+
+		expect(await stop(rateLimited, 10, unconfigured)).toMatchObject({
+			_tag: "Unchecked",
+			reason: expect.stringContaining("API rate limit exceeded"),
+		});
+		expect(await stop(malformed, 10, unconfigured)).toMatchObject({
+			_tag: "Unchecked",
+			reason: expect.stringContaining("does not read"),
+		});
+		expect(await stop(rateLimited, 10)).toMatchObject({_tag: "Unknown"});
+		expect(await stop(malformed, 10)).toMatchObject({_tag: "Unknown"});
+	});
+
 	it("is UNKNOWN on a token without the project scope once a table block is declared", async () => {
 		const {board} = table({}, [], {scopeMissing: true});
 

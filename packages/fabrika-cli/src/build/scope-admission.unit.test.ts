@@ -2,6 +2,7 @@ import {describe, expect, it} from "vitest";
 import {
 	AUDIENCE_NOT_AGENT,
 	NO_ACCEPTANCE_CRITERIA,
+	NO_SERVED_ISSUE,
 	PRECONDITION_UNKNOWN,
 	TYPE_NOT_BUILDABLE,
 } from "./codes.ts";
@@ -502,8 +503,9 @@ describe("admissionOf", () => {
 			TYPE_NOT_BUILDABLE,
 			AUDIENCE_NOT_AGENT,
 			NO_ACCEPTANCE_CRITERIA,
+			NO_SERVED_ISSUE,
 		]);
-		expect(new Set(ADMISSION_EXIT_CODES.map((row) => row.code)).size).toBe(4);
+		expect(new Set(ADMISSION_EXIT_CODES.map((row) => row.code)).size).toBe(5);
 		expect(ADMISSION_EXIT_CODES.every((row) => row.condition.trim() !== "")).toBe(true);
 	});
 });

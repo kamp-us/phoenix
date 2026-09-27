@@ -4,13 +4,14 @@
  *
  * It reads the rows the lane's issue reaches — its own, its epic's, the chains it blocks — through
  * the flags' own reader and asks {@link stopOf}, so a lane stops exactly when its row reads
- * `stopped` in `table flags`.
+ * `stopped` in `table flags`. A row short of its stop only on what was measured cannot be proven at
+ * it, so the lane goes on and the brief names the unmeasured lanes.
  *
  * **No table is no stop.** A repository that never set a table up has no sizes to spend past, so it
- * is `Clear`. A table that could not be read is `Unknown`, never clear — with one named exception,
- * `Unchecked`: a token without the `project` scope in a repository whose `.fabrika.jsonc` declares no
- * `table` block. Nothing then says a table exists, and refusing would stop every lane of every repo
- * that never adopted one, so the lane goes on and the brief says the stop was never checked.
+ * is `Clear`. A table that could not be read is `Unknown`, never clear, once the repository adopted
+ * one (`./adoption.ts`). In a repository whose `.fabrika.jsonc` declares no `table` block, any read
+ * failure is `Unchecked` instead: nothing says a table exists, and refusing would stop every lane of
+ * every repo that never adopted one, so the lane goes on and the brief says the stop was never checked.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  */
@@ -18,12 +19,10 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {appetiteSizesKey} from "../config/keys/appetite-sizes.ts";
-import {tableKey} from "../config/keys/table.ts";
-import {resolve} from "../config/load.ts";
 import {readKey} from "../config/read-key.ts";
-import {loadRepoConfig} from "../config/working-root.ts";
 import {withProjects} from "../io/projects.ts";
-import {NO_TARGET, SCOPE_MISSING} from "./codes.ts";
+import {failedRead, readAdoption} from "./adoption.ts";
+import {NO_TARGET} from "./codes.ts";
 import {type OverSize, recOf, stopOf} from "./flags.ts";
 import {readHeads} from "./flags-read.ts";
 import {locateTable, syncBoard, type TableBoard} from "./sync-verb.ts";
@@ -42,30 +41,34 @@ export const readSizeStop = <R>(
 	issue: number,
 ): Effect.Effect<SizeStop, never, R | FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
-		const config = resolve(yield* loadRepoConfig(cwd), tableKey);
-		if (config._tag === "Malformed" || config._tag === "Unknown") {
-			return {_tag: "Unknown", reason: `the \`table\` config: ${config.reason}`};
-		}
+		const adoption = yield* readAdoption(cwd);
+		if (adoption._tag === "Unknown") return adoption;
 		const sizes = yield* readKey(cwd, appetiteSizesKey);
 		if (sizes._tag === "Refused") return {_tag: "Unknown", reason: sizes.reason};
-		const settings = config.value;
+		const {settings} = adoption;
 		const heads = yield* readHeads(board, verb, repo, settings, [issue]);
 		if (heads._tag === "Refused") {
 			if (heads.code === NO_TARGET && settings.project.number === null) {
 				return {_tag: "Clear", note: `no table project, so #${issue} has no size to stop at`};
 			}
-			if (heads.code === SCOPE_MISSING && config._tag === "Default") {
-				return {_tag: "Unchecked", reason: heads.reason.replace(/\.$/, "")};
-			}
-			return {_tag: "Unknown", reason: heads.reason};
+			const failed = failedRead(adoption, heads.reason.replace(/\.$/, ""));
+			return failed._tag === "Unread" ? {_tag: "Unchecked", reason: failed.reason} : failed;
 		}
-		const flag = stopOf(heads.rows, {settings, sizes: sizes.value, records: heads.records}, issue);
-		return flag === null
-			? {
+		const read = stopOf(heads.rows, {settings, sizes: sizes.value, records: heads.records}, issue);
+		switch (read._tag) {
+			case "Stopped":
+				return {_tag: "Stopped", flag: read.flag, rec: recOf(read.flag, settings)};
+			case "Short":
+				return {
 					_tag: "Clear",
 					note: `#${issue} stands on no row that has spent ${settings.stopMultiple}x its size`,
-				}
-			: {_tag: "Stopped", flag, rec: recOf(flag, settings)};
+				};
+			case "Unmeasured":
+				return {
+					_tag: "Clear",
+					note: `#${read.head}'s row measured $${read.measuredUsd} of its $${read.stopUsd} stop, and ${read.lanes} lane(s) went unmeasured, so what it really spent is unknown; the lane goes on, since no stop is proven`,
+				};
+		}
 	});
 
 /** The size stop read off GitHub under the ambient token, with `verb` naming the reader. */

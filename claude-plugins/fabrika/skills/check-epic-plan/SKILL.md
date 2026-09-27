@@ -52,8 +52,7 @@ lane's claim from yours.
 `--purpose gate` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
 should pick the issue up to **build**, and an epic earns that label only *after* it has been planned
 and gated — at step 3, from this very run — so fencing this gate on it is circular, and the fence
-binds build-purpose claims only. A `gate` claim is admitted without the label, and no campaign state
-refuses it. Never reach for `--override` to get past the
+binds build-purpose claims only. A `gate` claim is admitted without the label. Never reach for `--override` to get past the
 audience axis — that is the fail-open convention the purpose exists to remove.
 
 The blockedness gate does not bind a `gate` claim either: gating writes no code, so an epic waiting

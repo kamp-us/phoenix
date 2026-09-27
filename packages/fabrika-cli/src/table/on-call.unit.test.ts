@@ -10,27 +10,31 @@ const ROUTE: Route = {origins: ["customer"], types: ["bug"], labels: ["ci-broken
 
 describe("boardOf", () => {
 	it("sends an issue to on-call by its origin", () => {
-		expect(boardOf({origin: "customer", labels: []}, ROUTE)).toBe("on-call");
-		expect(boardOf({origin: "driver pick", labels: []}, ROUTE)).toBe("product");
-		expect(boardOf({origin: null, labels: []}, ROUTE)).toBe("product");
+		expect(boardOf({origins: ["customer"], labels: []}, ROUTE)).toBe("on-call");
+		expect(boardOf({origins: ["driver pick"], labels: []}, ROUTE)).toBe("product");
+		expect(boardOf({origins: [], labels: []}, ROUTE)).toBe("product");
+	});
+
+	it("routes on any one origin, so a lane's Origin does not hide the customer who filed it", () => {
+		expect(boardOf({origins: ["driver pick", "customer"], labels: []}, ROUTE)).toBe("on-call");
 	});
 
 	it("sends an issue to on-call by its type label", () => {
-		expect(boardOf({origin: null, labels: ["type:bug"]}, ROUTE)).toBe("on-call");
-		expect(boardOf({origin: null, labels: ["type:feature"]}, ROUTE)).toBe("product");
-		expect(boardOf({origin: null, labels: ["bug"]}, ROUTE)).toBe("product");
+		expect(boardOf({origins: [], labels: ["type:bug"]}, ROUTE)).toBe("on-call");
+		expect(boardOf({origins: [], labels: ["type:feature"]}, ROUTE)).toBe("product");
+		expect(boardOf({origins: [], labels: ["bug"]}, ROUTE)).toBe("product");
 	});
 
 	it("sends an issue to on-call by any label it carries", () => {
-		expect(boardOf({origin: null, labels: ["p1", "ci-broken"]}, ROUTE)).toBe("on-call");
-		expect(boardOf({origin: null, labels: ["p1"]}, ROUTE)).toBe("product");
+		expect(boardOf({origins: [], labels: ["p1", "ci-broken"]}, ROUTE)).toBe("on-call");
+		expect(boardOf({origins: [], labels: ["p1"]}, ROUTE)).toBe("product");
 	});
 
 	it("sends every issue to exactly one board", () => {
 		const facts = [
-			{origin: "customer", labels: ["type:bug", "ci-broken"]},
-			{origin: null, labels: []},
-			{origin: "bet", labels: ["type:feature"]},
+			{origins: ["customer"], labels: ["type:bug", "ci-broken"]},
+			{origins: [], labels: []},
+			{origins: ["bet"], labels: ["type:feature"]},
 		];
 		for (const one of facts) expect(["product", "on-call"]).toContain(boardOf(one, ROUTE));
 		expect(boardOf(facts[0] as (typeof facts)[0], {origins: [], types: [], labels: []})).toBe(

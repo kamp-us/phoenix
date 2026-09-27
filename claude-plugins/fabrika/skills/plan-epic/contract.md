@@ -41,7 +41,7 @@ its ground with `fabrika build tree`, releases with `fabrika build release`, and
 note with `fabrika build note`. The purpose is part of the reuse, not a detail of it: `build claim`'s
 audience axis asks whether an agent should pick the issue up to *build*, and an epic earns
 `ready-for:agent` only after this skill has planned it and the gate has passed it, so a `plan` claim
-is admitted without it. No campaign state is an axis, so no campaign refuses the claim, `21` is not
+is admitted without it, so `21` is not
 reachable under `plan`, and `--override` stays the exception it was.
 
 **The grilling session is the `grill` group's, reused the same way**
@@ -417,14 +417,14 @@ and a caller driving both in one sweep must read one meaning for each.
 carrying `build`'s meanings and are **never reached here** — this skill declares no
 `--require-clean` flag, holds no lane branch, pushes nothing, runs no validation, and derives no
 readiness verdict — but carrying them keeps those seats occupied so a later verb here cannot
-re-seat one. **`build`'s `21` is deliberately NOT re-exported** (its `20` is a retired seat): this
-group allocates its own `20`–`25`, and re-exporting `AUDIENCE_NOT_AGENT` alongside them would put two
+re-seat one. **`build`'s `21` is deliberately NOT re-exported**: this
+group allocates its own `20`–`26`, and re-exporting `AUDIENCE_NOT_AGENT` alongside them would put two
 names on one code in one module, which `allocatedCodes` (`exit-code-alignment.ts:96-105`) reports
 as drift.
 
 The rule this group follows, taken from `plan/codes.ts:30-31` rather than re-derived: **import a
-code when two groups prove the same fact; allocate freely when they do not.** `20`–`25` below
-overlap `build`'s, `epic`'s and `plan`'s private bands and that is correct — none of those groups
+code when two groups prove the same fact; allocate freely when they do not.** `20`–`26` below
+overlap `build`'s and `plan`'s private bands and that is correct — none of those groups
 can prove a fact about a *plan being authored*, an exit code is read off the command that produced
 it, and the alignment checker is base-only by design (`occupied = allocatedCodes(base)`).
 

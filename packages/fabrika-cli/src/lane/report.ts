@@ -759,8 +759,18 @@ export const STRUCTURAL_PARK_CAUSES: Readonly<Record<string, ParkCause>> = {
 export const structuralParkCause = (leaf: string): ParkCause | null =>
 	STRUCTURAL_PARK_CAUSES[leaf] ?? null;
 
-/** The recognised causes, for a refusal's listing — sorted so the listing is deterministic. */
-export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES).sort();
+/**
+ * Causes kept only so a line recorded earlier still reads, routes and clears. Nothing parks on one
+ * now, so `--cause` refuses it and no listing offers it.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9852
+ */
+export const RETIRED_PARK_CAUSES: ReadonlySet<ParkCause> = new Set<ParkCause>(["campaign-paused"]);
+
+/** The causes a recorder may pass, for a refusal's listing — sorted so the listing is deterministic. */
+export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES)
+	.filter((token) => !RETIRED_PARK_CAUSES.has(token as ParkCause))
+	.sort();
 
 /**
  * The route a park takes, read off the one table — the only place a route is written down.
@@ -881,6 +891,12 @@ export const causeForEvent = (
 		};
 	}
 	const token = raw.trim().toLowerCase();
+	if (isParkCause(token) && RETIRED_PARK_CAUSES.has(token)) {
+		return {
+			_tag: "Rejected",
+			reason: `"${raw}" is a retired park cause: it still reads on an earlier line, and nothing parks on it now (known: ${PARK_CAUSE_TOKENS.join(", ")})`,
+		};
+	}
 	return isParkCause(token)
 		? {_tag: "Caused", cause: token}
 		: {

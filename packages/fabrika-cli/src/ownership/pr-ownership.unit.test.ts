@@ -63,16 +63,16 @@ describe("judgeGrants", () => {
 		]);
 	});
 
-	it("voids a grant written by the PR's own author, even one in the grant-author set", () => {
+	it("voids a grant written by the PR's own author, even one in the control-plane set", () => {
 		const [row] = judgeGrants([{id: 7, author: "ada", body: GRANT}], facts());
 		expect(row?.honoured).toBe(false);
 		expect(row?.reason).toContain("this PR's author");
 	});
 
-	it("voids a grant from an account outside the grant-author set", () => {
+	it("voids a grant from an account outside the control-plane set", () => {
 		const [row] = judgeGrants([{id: 7, author: "mallory", body: GRANT}], facts());
 		expect(row?.honoured).toBe(false);
-		expect(row?.reason).toContain("not in the repo's grant-author set");
+		expect(row?.reason).toContain("not in the control-plane set the repo's CODEOWNERS names");
 	});
 
 	it("voids every grant when nobody may grant", () => {

@@ -230,16 +230,18 @@ describe("the project scope", () => {
 });
 
 describe("writing to a project", () => {
-	it("creates an iteration field with its first iteration", async () => {
+	it("creates an iteration field with every planned iteration, starting at the first", async () => {
 		const {result, http} = await runWith(
 			[reply({data: {createProjectV2Field: {projectV2Field: {id: "F_new"}}}})],
 			() =>
 				createField(TOKEN, "PVT_1", {
 					_tag: "Iteration",
 					name: "Week",
-					startDate: "2026-09-28",
 					duration: 7,
-					firstTitle: "Sep 28",
+					iterations: [
+						{startDate: "2026-09-28", title: "Sep 28"},
+						{startDate: "2026-10-05", title: "Oct 5"},
+					],
 				}),
 		);
 
@@ -252,7 +254,10 @@ describe("writing to a project", () => {
 			iterationConfiguration: {
 				startDate: "2026-09-28",
 				duration: 7,
-				iterations: [{startDate: "2026-09-28", duration: 7, title: "Sep 28"}],
+				iterations: [
+					{startDate: "2026-09-28", duration: 7, title: "Sep 28"},
+					{startDate: "2026-10-05", duration: 7, title: "Oct 5"},
+				],
 			},
 		});
 	});
@@ -504,6 +509,89 @@ describe("the table's sync reads", () => {
 				},
 			],
 		});
+	});
+
+	const itemsPage = (nodes: ReadonlyArray<unknown>, pageInfo: Record<string, unknown>) =>
+		reply({data: {node: {items: {pageInfo, nodes}}}});
+
+	it("reads an item GitHub answers with no content as redacted, never as a draft", async () => {
+		const {result} = await runWith(
+			[
+				itemsPage(
+					[
+						{
+							id: "PVTI_hidden",
+							content: null,
+							fieldValues: {pageInfo: {hasNextPage: false}, nodes: []},
+						},
+					],
+					{hasNextPage: false, endCursor: null},
+				),
+			],
+			() => readItems(TOKEN, "PVT_example"),
+		);
+
+		expect(result).toEqual({
+			_tag: "Ok",
+			value: [
+				{
+					itemId: "PVTI_hidden",
+					contentNumber: null,
+					contentType: "Redacted",
+					repository: null,
+					values: [],
+				},
+			],
+		});
+	});
+
+	it("fails an item whose content is no issue, pull request or draft", async () => {
+		const {result} = await runWith(
+			[
+				itemsPage(
+					[
+						{
+							id: "PVTI_odd",
+							content: {__typename: "Discussion"},
+							fieldValues: {pageInfo: {hasNextPage: false}, nodes: []},
+						},
+					],
+					{hasNextPage: false, endCursor: null},
+				),
+			],
+			() => readItems(TOKEN, "PVT_example"),
+		);
+
+		expect(result._tag).toBe("Failed");
+	});
+
+	it("fails a page that says more follow but names no cursor, never answering it as the last", async () => {
+		const {result} = await runWith([itemsPage([], {hasNextPage: true, endCursor: null})], () =>
+			readItems(TOKEN, "PVT_example"),
+		);
+
+		expect(result._tag).toBe("Failed");
+		if (result._tag !== "Failed") return;
+		expect(result.reason).toContain("next page but no cursor");
+	});
+
+	it("fails a repository's project list cut the same way", async () => {
+		const {result} = await runWith(
+			[
+				reply({
+					data: {
+						repository: {
+							id: "R_1",
+							owner: {id: "O_1", login: "acme"},
+							projectsV2: {pageInfo: {hasNextPage: true}, nodes: []},
+						},
+					},
+				}),
+			],
+			() => readRepository(TOKEN, "acme/widgets"),
+		);
+
+		expect(result._tag).toBe("Failed");
 	});
 
 	it("clears one value", async () => {

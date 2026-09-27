@@ -86,7 +86,6 @@ describe("the closed park-cause set --cause advertises", () => {
 			"assembly-conflict",
 			"awaiting-cp-approval",
 			"base-conflicted",
-			"campaign-paused",
 			"claim-stranded",
 			"head-behind-base",
 			"head-ci-red",

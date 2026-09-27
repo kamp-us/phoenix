@@ -45,7 +45,7 @@ export interface GrantRow {
 	readonly reason?: string;
 }
 
-/** The grant-author set, or why nobody may grant. */
+/** The control-plane set `.github/CODEOWNERS` names, or why nobody may grant. */
 export type Grantors =
 	| {readonly _tag: "Set"; readonly holds: (login: string) => boolean}
 	| {readonly _tag: "Unusable"; readonly reason: string};
@@ -76,8 +76,8 @@ export const grantMarkers = <C extends GrantComment>(
  * Why one grant comment hands over nothing, or `null` when every clause holds.
  *
  * The clauses are conjunctive: the marker parses and names this PR, its author is in the
- * grant-author set, is not the PR's own author, and holds `write+`. The committed set narrows the
- * ACL, it never stands in for one.
+ * control-plane set CODEOWNERS names, is not the PR's own author, and holds `write+`. The set
+ * narrows the ACL, it never stands in for one.
  */
 export const grantRefusal = (comment: GrantComment, facts: GrantFacts): string | null => {
 	const parsed = readGrant(comment.body);
@@ -91,7 +91,7 @@ export const grantRefusal = (comment: GrantComment, facts: GrantFacts): string |
 	}
 	if (facts.grantors._tag === "Unusable") return facts.grantors.reason;
 	if (!facts.grantors.holds(comment.author)) {
-		return `${comment.author} is not in the repo's grant-author set`;
+		return `${comment.author} is not in the control-plane set the repo's CODEOWNERS names`;
 	}
 	return facts.writes(comment.author)
 		? null

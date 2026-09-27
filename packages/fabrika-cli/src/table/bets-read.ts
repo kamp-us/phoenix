@@ -7,19 +7,17 @@
  * answer, not a failure**: a repository that never set a table up gets `NoTable`, and its caller
  * behaves exactly as it did before tables existed.
  *
- * A token without the `project` scope splits on whether the repository declared a `table` block.
- * Declared, it is the table's own refusal and names the fix, the same one `table setup` names.
- * Undeclared, the repository never asked for a table, so a missing scope is `NoTable` with the fix
- * named in the note, rather than a new refusal on every verb that ranks work.
+ * A table that could not be read splits on whether the repository adopted one (`./adoption.ts`).
+ * Adopted, it is `Unknown` and a missing scope names the fix, the same one `table setup` names. Not
+ * adopted, any failed read — a missing scope, a rate limit, an outage, a forbidden token — is
+ * `NoTable` with the reason in its note, rather than a new refusal on every verb that ranks work.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {type TableSettings, tableKey} from "../config/keys/table.ts";
-import {resolve} from "../config/load.ts";
-import {loadRepoConfig} from "../config/working-root.ts";
+import type {TableSettings} from "../config/keys/table.ts";
 import type {Api} from "../io/gh-api.ts";
 import type {Shell} from "../io/git.ts";
 import {
@@ -29,6 +27,7 @@ import {
 	readRepository,
 	withProjects,
 } from "../io/projects.ts";
+import {failedRead, type Known, readAdoption} from "./adoption.ts";
 import {type BetOrder, betOrder} from "./bets.ts";
 import {defaultTitle, FIELD} from "./shape.ts";
 
@@ -94,7 +93,7 @@ export type TableReader<A> = (
 	settings: TableSettings,
 ) => Api<ProjectsAnswer<A>>;
 
-type Found<A> =
+export type Found<A> =
 	| {readonly _tag: "None"}
 	| {readonly _tag: "Table"; readonly source: BetSource; readonly value: A};
 
@@ -122,6 +121,32 @@ export type TableRead<A> =
 	/** The table could not be read. UNKNOWN — never read as an empty table. */
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
+/** What one table read means for its reader, given whether the repository adopted a table. */
+export const tableReadOf = <A>(
+	adoption: Known,
+	repo: string,
+	found: ProjectsAnswer<Found<A>>,
+): TableRead<A> => {
+	if (found._tag !== "Ok") {
+		const failed = failedRead(
+			adoption,
+			found._tag === "MissingScope" ? found.reason : `the table project: ${found.reason}`,
+		);
+		return failed._tag === "Unknown"
+			? failed
+			: {
+					_tag: "NoTable",
+					note: `no table read — ${failed.reason}; .fabrika.jsonc declares no \`table\` block, so none is required`,
+				};
+	}
+	return found.value._tag === "None"
+		? {
+				_tag: "NoTable",
+				note: `no table project — none is configured, and none titled "${defaultTitle(repo)}" is linked to ${repo}`,
+			}
+		: {_tag: "Read", source: found.value.source, value: found.value.value};
+};
+
 /**
  * Find the table and run `read` against it. Every reader of the table comes through here, so they
  * all agree on when a repository has no table.
@@ -136,29 +161,9 @@ export const readTableWith = <A>(
 	FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > =>
 	Effect.gen(function* () {
-		const config = resolve(yield* loadRepoConfig(cwd), tableKey);
-		if (config._tag === "Malformed" || config._tag === "Unknown") {
-			return {_tag: "Unknown" as const, reason: `the \`table\` config: ${config.reason}`};
-		}
-		const found = yield* readTable(repo, config.value, read);
-		switch (found._tag) {
-			case "MissingScope":
-				return config._tag === "Declared"
-					? {_tag: "Unknown" as const, reason: found.reason}
-					: {
-							_tag: "NoTable" as const,
-							note: `no table read — ${found.reason}, if this repository keeps one`,
-						};
-			case "Failed":
-				return {_tag: "Unknown" as const, reason: `the table project: ${found.reason}`};
-			default:
-				return found.value._tag === "None"
-					? {
-							_tag: "NoTable" as const,
-							note: `no table project — none is configured, and none titled "${defaultTitle(repo)}" is linked to ${repo}`,
-						}
-					: {_tag: "Read" as const, source: found.value.source, value: found.value.value};
-		}
+		const adoption = yield* readAdoption(cwd);
+		if (adoption._tag === "Unknown") return adoption;
+		return tableReadOf(adoption, repo, yield* readTable(repo, adoption.settings, read));
 	});
 
 export const readBets = (

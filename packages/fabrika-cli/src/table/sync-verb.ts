@@ -199,8 +199,8 @@ export const readScope = <R>(
 ): Effect.Effect<Scoped | Refusal, never, R> =>
 	Effect.gen(function* () {
 		const graph = new Map<number, SyncNode>();
-		let wanted: ReadonlyArray<number> = seeds;
-		let scoped: Scope = {_tag: "Incomplete", missing: seeds};
+		let scoped: Scope = scope(seeds, rows, graph);
+		let wanted: ReadonlyArray<number> = scoped._tag === "Incomplete" ? scoped.missing : [];
 		while (wanted.length > 0) {
 			for (const issue of wanted) {
 				if (graph.size >= GRAPH_CAP) {

@@ -29,7 +29,7 @@ reused as landed verbs** ([`build`'s contract](../build/contract.md)) — the cr
 it with `fabrika build release`, and posts a successor note with `fabrika build note`. The purpose is
 part of the reuse, not a detail of it: `build claim`'s audience axis asks whether an agent should
 pick the issue up to *build*, and an epic earns `ready-for:agent` only after it has been planned and
-gated, so a `gate` claim is admitted without it. No campaign state is an axis,
+gated, so a `gate` claim is admitted without it,
 and `--override` stays the exception it was — it now has to name its lane as well as its reason.
 **No second lock is
 derived**, and v1's `epic-lock` is why: its `acquire` short-circuits on a held label *before* any
@@ -343,9 +343,8 @@ read one meaning for it; `ship` importing `review`'s private band is the shipped
 obligation (interface convention rule 3), and the alignment this group opts into is checked
 **base-only, never pairwise** (`exit-code-alignment.ts`: `occupied = allocatedCodes(base)`).
 
-**The `20`/`21` overlap with `build` is settled.** This was written when `20`+ was free. `build`
-later seated `21` `AUDIENCE_NOT_AGENT` on its admission test, and its `20` is a retired seat, left
-empty: a campaign's state refuses no claim. Step 1 of this gate's skill claims with
+**The `21` overlap with `build` is settled.** This was written when `20`+ was free. `build`
+later seated `21` `AUDIENCE_NOT_AGENT` on its admission test. Step 1 of this gate's skill claims with
 `--purpose gate`, and the audience axis binds build-purpose claims only, so this gate can meet no
 admission refusal at all. The overlap stands, on the same rule: *import a code when two groups
 prove the same fact; allocate freely when they do not.* `15` is imported because `plan flip` and
@@ -354,7 +353,8 @@ does not overlap in fact at all — lane admission is never something a `plan` v
 digest is never something a `build` verb proves — and an exit code is read off the command that
 produced it: [SKILL.md](SKILL.md) step 1 is total (`any other non-zero ends STOPPED`) and branches
 on `20`/`21` only off `plan flip` / `plan verdict`. Re-seating at `24`+ would also buy nothing,
-since `epic` already seats `20`–`24` over `build`'s `21` and its retired `20`.
+since `ledger`, `plan-epic`'s group, already seats `20`–`26` over `build`'s `21` on the same rule
+(`packages/fabrika-cli/src/ledger/codes.ts`).
 
 | Code | Meaning | `read` | `check` | `flip` | `verdict` | `approve` | `approval` | `restage` |
 |---|---|---|---|---|---|---|---|---|

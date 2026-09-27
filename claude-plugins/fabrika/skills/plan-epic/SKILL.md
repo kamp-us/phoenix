@@ -73,8 +73,7 @@ lane's claim from yours.
 should pick the issue up to **build**, and an epic earns that label only *after* this skill has
 planned it and the gate has passed it — so fencing the planner on it is circular, and the fence
 binds build-purpose claims only. A `plan` claim is admitted without the
-label, and no campaign state refuses it. Never reach for
-`--override` to get past the audience axis — that is the fail-open convention the purpose exists to
+label. Never reach for `--override` to get past the audience axis — that is the fail-open convention the purpose exists to
 remove.
 
 **The blockedness gate does not bind a `plan` claim either**, on the same reasoning: an epic that

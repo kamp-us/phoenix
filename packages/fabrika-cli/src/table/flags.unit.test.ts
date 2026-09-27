@@ -147,6 +147,18 @@ describe("over size", () => {
 		).toMatchObject({stopped: false});
 	});
 
+	it("flags at the configured flag point, not at the size itself", () => {
+		const at = (usd: number) =>
+			flagsOf(input([row(single(10))], {10: [record(10, {usd})]}, {settings: {flagMultiple: 1.5}}))
+				.flags;
+
+		expect(at(20)).toEqual([]);
+		expect(at(22.5)).toEqual([]);
+		expect(at(23)).toEqual([
+			expect.objectContaining({_tag: "OverSize", limitUsd: 15, spentUsd: 23, stopped: false}),
+		]);
+	});
+
 	it("counts only lanes that ended after the row became a bet", () => {
 		const report = flagsOf(
 			input([row(single(10))], {10: [record(10, {usd: 40, endedDaysAgo: 2})]}),
@@ -214,12 +226,12 @@ describe("the size stop", () => {
 		]);
 
 		expect(stopOf(rows, {settings, sizes: SHIPPED_APPETITE_SIZES, records}, 3)).toMatchObject({
-			head: 1,
-			spentUsd: 60,
-			limitUsd: 30,
-			stopped: true,
+			_tag: "Stopped",
+			flag: {head: 1, spentUsd: 60, limitUsd: 30, stopped: true},
 		});
-		expect(stopOf(rows, {settings, sizes: SHIPPED_APPETITE_SIZES, records}, 9)).toBeNull();
+		expect(stopOf(rows, {settings, sizes: SHIPPED_APPETITE_SIZES, records}, 9)).toEqual({
+			_tag: "Short",
+		});
 	});
 
 	it("lets a lane over its size but short of the stop keep going", () => {
@@ -228,7 +240,16 @@ describe("the size stop", () => {
 
 		expect(
 			stopOf(rows, {settings: SHIPPED_TABLE, sizes: SHIPPED_APPETITE_SIZES, records}, 10),
-		).toBeNull();
+		).toEqual({_tag: "Short"});
+	});
+
+	it("reads a row short of the stop only on its measured floor as unmeasured, never short", () => {
+		const rows = [row(single(10))];
+		const records = new Map([[10, [record(10, {usd: 5}), record(10, {usd: null})]]]);
+
+		expect(
+			stopOf(rows, {settings: SHIPPED_TABLE, sizes: SHIPPED_APPETITE_SIZES, records}, 10),
+		).toMatchObject({_tag: "Unmeasured", head: 10, lanes: 1, measuredUsd: 5});
 	});
 });
 

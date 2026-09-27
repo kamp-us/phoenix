@@ -120,7 +120,8 @@ The grammar is a parse contract, not a convention
 and two facts carry this recipe: headings exactly `## Arcs` and `## Campaigns`, and each row's second
 cell naming the pinned milestone as `#<number>` — the arc's name is never matched on. Zero campaign
 rows is legal and zero arc rows refuses. A campaign row groups work under a theme and a milestone;
-its `State` cell says whether the theme is being worked, and it never refuses a lane.
+its `State` cell says whether the theme is being worked. An `active` row marks its milestone
+`running` in `triage homes`, and triage then homes only `p0`, `p1` and blocker work there.
 
 Draft it and hand it to the verb, which reports what its own parser joined out of the bytes it wrote:
 
@@ -219,95 +220,119 @@ Then file something with `/fabrika:report`, triage it with `/fabrika:triage`, an
 
 ## 11. Set up the betting table
 
-The table is a GitHub project where your control-plane owners decide what fabrika bets on. It works
-with no config: `fabrika table setup` looks for an open project titled `<repo name> table`, first
-among the projects linked to your repo, then among all of the repo owner's projects. It reuses the
-one it finds and links it to your repo if it isn't already. If there is none, it creates one under
-the repo's owner and links it. It adds the fields, the
-weekly iteration, the five views (Agenda, Outside the bets, Lanes, Group members and Inbox) and a
-README that explains every column. Run it again any time: a project already in shape answers
-`unchanged` and nothing is written.
+The table is a GitHub project where your control-plane owners decide what fabrika bets on each week.
+It is optional. The steps below set it up and keep it running; what each verb reads, writes, prints
+and exits on is its `--help` (`fabrika table setup --help`, and the same for `sync`, `flags` and
+`prep`), written in
+[`packages/fabrika-cli/src/table/command.ts`](../../../packages/fabrika-cli/src/table/command.ts).
 
-```bash
-fabrika table setup
-```
-
-**The token needs the `project` scope.** GitHub Projects (v2) refuses a token without it, and
-`table setup` stops with this fix:
+### 11.1 Give the token the `project` scope
 
 ```bash
 gh auth refresh -h github.com -s project
 ```
 
-Use that exact line. A plain `gh auth refresh` fails in a non-interactive shell. With `GITHUB_TOKEN`
-or `GH_TOKEN` set, give that token the scope instead. Only the `table` verbs need it.
+Use that exact line: a plain `gh auth refresh` fails in a non-interactive shell. With
+`GITHUB_TOKEN` or `GH_TOKEN` set, give that token the scope instead. The `table` verbs stop at exit
+20 without it.
 
-**Two steps are yours, once.** GitHub's API cannot take them, so setup prints both and the project
-README's "One-time setup" section lists them:
+The `table` verbs are not the only readers. `lane brief` reads the table for the size stop,
+`lane record` runs `fabrika table sync` after it posts, `build pick` reads it to put bets first, and
+`pitch-guard` reads it because a `bet` row approves a pitch. So give the scope to every token that
+drives lanes, not only yours.
 
-1. Grouping: in the Agenda view, set *Group by: Section* and save the view; in the Lanes view, set
+**Declaring a `table` block turns a failed read into a refusal.** Any `table` block in
+`.fabrika.jsonc` counts, even one that only sets the cadence. With one, a table that `lane brief` or
+`build pick` cannot read, a missing scope included, stops them at exit 11. With none, any failed
+read lets them go on and say what they could not read: `lane brief` briefs and prints
+`size stop NOT checked`, and `build pick` keeps its own order. `lane record` and `pitch-guard`
+never refuse for the table: a sync that fails leaves the record standing, and an unread table
+approves no pitch. Sources:
+[`src/table/adoption.ts`](../../../packages/fabrika-cli/src/table/adoption.ts) and
+[`src/table/size-stop.ts`](../../../packages/fabrika-cli/src/table/size-stop.ts).
+
+### 11.2 Create the project
+
+```bash
+fabrika table setup
+```
+
+It reuses an open project titled `<repo name> table`, first among your repo's linked projects, then
+among the owner's, and links it. Failing that, it creates one under the owner. It then adds the
+fields, the Week field with its first 12 weeks (six two-week iterations for a biweekly table), the
+five views and a README that explains every column. Run it again any time, and once after each
+fabrika upgrade: a project already in shape answers `unchanged`.
+
+### 11.3 Take the three steps the API cannot
+
+Setup prints all three, and the project README's "By hand" section lists them.
+
+1. Grouping: in the Agenda view, set *Group by: Section* and save the view. In the Lanes view, set
    *Column by: Stage* and save it.
 2. Inbox auto-add: in the project's **Workflows**, turn on *Auto-add to project* for your repo with
-   the filter `is:issue is:open no:label`, and save it. Every issue nobody labeled then lands in the
-   Inbox view (filtered `is:open no:label`), so nothing sits where triage can't see it.
+   the filter `is:issue is:open no:label`, and save it. Issues nobody labeled then land in the Inbox
+   view, where triage sees them.
+3. Weeks: before the last of the 12 planned weeks starts, add the coming weeks in the project's
+   settings under the Week field. Setup never adds them to a Week field that already exists, because
+   GitHub's API adds an iteration only by rewriting the whole list, which empties every row's Week.
 
-To tune the table, add a `table` block to `.fabrika.jsonc`: cadence and day, the agenda sections and
-their order, the agenda cap and every flag threshold. Leave out what you don't change. The size
-dollars are not in that block: set them in `appetiteSizes`, the key pitch-guard reads. A new Size
-field and the project README then show the same amounts your pitches are approved against. If you
-change `appetiteSizes` after the Size field exists, re-run setup: it rewrites the README but never
-an existing field's options, so it prints a `drift:` line naming each Size option whose description
-still shows the old amount. Edit those descriptions by hand in the field's settings. To point
-setup at a project you already have, set `table.project.number` (and `table.project.owner` if it
-lives under another account). `fabrika config schema` documents each key.
+### 11.4 Tune it, if the defaults do not fit
 
-**The columns fill themselves.** When a lane ends, `fabrika lane record` posts its record to the
-issue and then runs `fabrika table sync` for it. Sync adds the issue as a row if it has none, sets
-Stage to `in lane` (or `shipped` once its pull request merged), and fills Asks and Origin from the
-records. Spent $ stays empty while any lane it counts has no measured spend, which is every lane until
-a rate card exists. It never changes a Stage of `bet`, `not now` or `check`. A lane nobody bet on,
-with no Section yet, lands under Outside the bets; a row already under another Section keeps it. An
-epic, or a row with open blockers, shows as one group row that sums its members; the members show
-only in the Group members view. Run `fabrika table sync` with no issue to refresh every row.
+Add a `table` block to `.fabrika.jsonc` with only the keys you change: cadence and day, sections,
+the agenda cap, and the flag and stop points. A `sections` list may reorder and add sections, but it
+must keep Tails, Customers, New bets and Outside the bets, or the config is refused. Remember 11.1:
+the block also makes table reads fail closed. Every key and its default is in
+[`src/config/keys/table.ts`](../../../packages/fabrika-cli/src/config/keys/table.ts).
 
-**Flags bring work back to the table; nothing refuses it.** `fabrika table flags` reads the table and
-names what needs a person, each with a one-line rec. A live row is flagged when it spends past its
-size, reaches the asks threshold, or goes quiet for the stuck days (a lane that ran `lane wait` is
-left alone until its date). A `bet` set by someone outside the CODEOWNERS control-plane set is
-flagged and left as set. The whole-table run also flags more active campaigns than the cap, and
-fabrika's own work taking more than its share of the week's spend. That share counts only issues
-carrying a label you name in `table.fabrikaShare.labels`, so it stays unread until you name one.
-The one stop: a lane whose row has spent `table.stopMultiple` times its size (2 by default) gets no
-next shell. `lane brief` refuses at exit 71 and the driver parks the lane with cause `size-stop`.
-The stop needs the `project` scope on the driver's token. Without it, a repo whose `.fabrika.jsonc`
-has no `table` block is not stopped: `lane brief` goes on and prints `size stop NOT checked`. Once
-you declare `table.project.number`, a missing scope refuses the brief at 11 instead.
+- To point setup at a project you already have, set `table.project.number`, and
+  `table.project.owner` if it lives under another account.
+- Set the size dollars in `appetiteSizes`, the key pitch-guard reads, not in the `table` block. If you
+  change them after the Size field exists, re-run setup: it rewrites the README and prints a
+  `drift:` line for each Size option whose description still shows the old amount. Edit those
+  descriptions by hand in the field's settings.
 
-**Prep fills the agenda before each table.** Run `fabrika table prep` before the table meets. It
-readies the Week iteration your next table day falls in. That iteration must already exist, so keep
-the coming weeks added under the Week field in the project's settings: GitHub's API can only add one
-by rewriting the whole list, which empties every row's Week, so prep stops at exit 25 instead. Prep
-proposes up to `table.agendaCap` rows (25 by default), section by section: Tails, Customers, then
-New bets. Every row is a real, open issue with a Size, a Rec and an In plain words line taken from
-the summary triage writes. A row with open blockers comes as one chain row with them. A row that
-waits on a ruling reads "needs your pick" with its options. A customer report nobody triaged is
-listed for triage first instead of proposed. Running bets move into the new week: a flagged one
-comes back under Tails, the rest keep going with no agenda row. Prep then posts the week's health as
-the project's status update, Inbox count included. Once that update stands, a second run adds
-nothing. The Agenda view shows only rows with a Rec, so re-run `fabrika table setup` once after
-upgrading to align its filter.
+### 11.5 Boot bets with `--origin bet`
 
-**Shipped bets come back as checks.** When prep runs, a bet that has been `shipped` for
-`table.checkDelayDays` days (14 by default) moves to Stage `check` on the agenda. Prep counts a row
-as a bet only when its Origin reads `bet`. Sync rewrites Origin from the latest lane record, so
-boot a bet's lane with `--origin bet` (`fabrika lane open` and `fabrika lane emit` both take it).
-Sync never moves a `bet` row forward, so set its Stage to `shipped` yourself once its work has
-merged. A row that ran without a bet, such as one under Outside the bets that sync moved to
-`shipped`, stays as it is and gets no check. Prep posts its evidence as a comment on the issue: the pitch's `**Success:**` line, what happened on GitHub since
-(new issues mentioning its pull requests, reverts, reopens, open follow-ups), and fabrika's land rate
-and spend before and after it shipped when the issue carries a `table.fabrikaShare.labels` label.
-Answer on the row's Outcome field: `worked`, `didn't` or `can't tell`. Prep never changes that answer
-and never asks again. To attach your own numbers, declare commands under `table.evidenceSources`:
+When you start a lane for a row the table bet on, pass `--origin bet` to `fabrika lane open` or
+`fabrika lane emit`. Sync writes a row's Origin from its latest lane record, and prep brings a shipped
+row back as a check only when that Origin reads `bet`.
+
+Everything else about a row fills itself: `lane record` syncs the issue when the lane ends. Spent $
+stays empty while any lane counted on the row went unmeasured, and sync clears a figure already
+standing there. Sync never moves a `bet` row, though, so set its Stage to `shipped` yourself once
+its work has merged.
+
+### 11.6 Run prep before each table
+
+```bash
+fabrika table prep
+```
+
+It fills the agenda for the Week your next table day falls in, carries running bets into it, brings
+shipped bets back as checks, and posts the week's health as the project's status update. Each row's
+In plain words line is the issue's `## In plain words` summary, or its title when it has none
+([`src/table/agenda.ts`](../../../packages/fabrika-cli/src/table/agenda.ts)), so triage an issue
+before you want it read well at the table.
+
+Then act on what it printed:
+
+- **Exit 25:** the planned weeks ran out, so no Week iteration covers your next table day. Add the
+  coming weeks by hand (11.3, step 3), then prep again.
+- **An `AT_RISK` status update:** a row flag stands, or a flag check could not be read. Its "Could
+  not check" line names each check it could not read; it never reads `ON_TRACK` over one.
+- **`triageFirst`:** customer reports nobody triaged yet. Triage them; the next prep proposes them.
+- **A second run in the same Week** adds no row, carries no bet and posts nothing. It still takes a
+  `proposed` row whose issue closed off the table, and with an on-call board it still routes new
+  issues there ([`src/table/prep-verb.ts`](../../../packages/fabrika-cli/src/table/prep-verb.ts)).
+
+### 11.7 Answer the checks
+
+A bet that has read `shipped` for `table.checkDelayDays` days comes back at Stage `check`, with its
+evidence posted as a comment on the issue. Answer on the row's Outcome field: `worked`, `didn't` or
+`can't tell`. Prep never changes that answer and never asks again.
+
+To attach your own numbers to that evidence, declare commands under `table.evidenceSources`.
+`fabrika table prep --help` lists what each command gets and how its output is cut.
 
 ```jsonc
 {
@@ -319,20 +344,26 @@ and never asks again. To attach your own numbers, declare commands under `table.
 }
 ```
 
-Each command runs in the repo root as an argv, not through a shell. It gets only PATH, HOME, LANG,
-LC_ALL, TZ and TMPDIR, plus `FABRIKA_CHECK_REPO`, `FABRIKA_CHECK_ISSUE`, `FABRIKA_CHECK_PRS` and
-`FABRIKA_CHECK_SHIPPED_AT`. Its output is attached to the check as text, cut at 4000 bytes. A
-command that fails, times out or cannot start is reported on the check, and prep goes on. The
-Outcome field is new, so re-run `fabrika table setup` once after upgrading to add it.
+### 11.8 Read the flags between tables
 
-**Split off an on-call board if you want one.** With no `boards` block there is one board: the
-table, with its Customers section. Declare `"boards": {"onCall": {}}` and the work splits in two.
-The table stays the product board. A second project, `<repo name> on-call`, holds continuous work
-such as customer reports, crashes and CI breakage. Nothing there is bet on; it is pulled in the
-order it arrives. `boards.onCall.route` decides which board an issue lands on: an issue whose
-origin, `type:` label or any label matches goes to on-call, and everything else stays on the table.
-By default that is origin `customer` or type `bug`. An issue whose table row reads `bet`, `not now`
-or `check` stays on the table whatever the rule says.
+```bash
+fabrika table flags
+```
+
+It names the rows that need a person, each with a one-line rec, and changes nothing. Bring those
+rows to the next table. A row is flagged over size once it spends past `table.flagMultiple` times
+its size (1 by default; at least 1 and below `table.stopMultiple`), and its lane keeps going. The
+one flag that acts on its own is the size stop: when a row has spent `table.stopMultiple` times its
+size, `lane brief` stops that lane at exit 71 and the driver parks it with cause `size-stop`.
+
+The fabrika-share flag counts only issues carrying a label you name in `table.fabrikaShare.labels`,
+so name one if you want it read.
+
+### 11.9 Split off an on-call board, if you want one
+
+Continuous work, such as customer reports, crashes and CI breakage, is not bet on. To give it its
+own board, declare `boards.onCall`, then re-run `fabrika table setup` to create the
+`<repo name> on-call` project:
 
 ```jsonc
 {
@@ -349,9 +380,7 @@ or `check` stays on the table whatever the rule says.
 }
 ```
 
-Re-run `fabrika table setup` to create the on-call project. It has a Response target field where
-the table has Size, and a Queue view. Prep then adds each routed issue there with its target, and
-never proposes it at the table. An open item past its target is flagged, and so is on-call spend
-over `boards.onCall.spendShare` percent of the week (20 by default). The status update covers both
-boards; the table reads on-call as one section of it, not row by row. Set
+`route` decides what leaves the table for on-call. Each issue lands on exactly one board: a match on
+any one origin, type or label sends it to on-call. A row the table already reads as `bet`,
+`not now` or `check` stays put. From then on prep fills the on-call board and flags reads it. Set
 `boards.onCall.project.number` to point setup at a project you already have.

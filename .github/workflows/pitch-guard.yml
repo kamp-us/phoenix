@@ -76,8 +76,9 @@ jobs:
       # An `issues` event (or a dispatch naming one) scopes the scan to that issue; a bare dispatch
       # scans the whole open lane-entering backlog. A non-zero exit reds the run — which is the entire
       # consequence: an issue event has no merge path, so nothing is blocked. Remediation (triage
-      # drafts the five fields, the founder approves with a `bet` on the table or a `pitch-approved:`
-      # comment) is printed by the guard itself. `github.token` carries no `project` scope, so here
+      # drafts the five fields, the founder approves with a `pitch-approved:` comment or a `bet` on
+      # the table, set by him or by an agent on his say-so at the size the pitch states, ADR 0425)
+      # is printed by the guard itself. `github.token` carries no `project` scope, so here
       # the table's bet arm reads as unread and only the comments approve. 7 is an empty backlog
       # sweep, 11 an unreadable board, 12 an unpitched bet.
       - name: pitch-guard check

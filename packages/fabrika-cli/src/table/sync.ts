@@ -13,6 +13,8 @@
  *   to the outcome check. Sync overwrites none of them.
  * - **Spent $ and Asks start at the bet.** On a row whose Stage is `bet`, only lanes ending at or
  *   after that value's `updatedAt` count, so a new bet starts at 0.
+ * - **Spent $ is a number only when every counted lane measured it.** One unmeasured lane leaves the
+ *   cell empty, and clears a number standing there, so no row reads a spend nobody measured.
  * - **A group row sums its members, and its members carry no Section**, so they show only in the
  *   members view. A head with no Section, no `bet` and at least one lane lands under Outside the bets.
  *
@@ -309,13 +311,23 @@ const planRow = (
 	}
 
 	if (isBet || counted.lanes > 0) {
-		if (counted.spend._tag === "Measured" && numberOf(row, FIELD.spent) !== counted.spend.usd) {
+		const spent = numberOf(row, FIELD.spent);
+		if (counted.spend._tag === "Measured" && spent !== counted.spend.usd) {
 			set(
 				FIELD.spent,
 				fields.spent,
 				{_tag: "Number", number: counted.spend.usd},
 				`$${counted.spend.usd}`,
 			);
+		}
+		if (counted.spend._tag === "Unmeasured" && spent !== null) {
+			writes.push({
+				_tag: "Clear",
+				issue: row.issue,
+				itemId: row.itemId,
+				field: FIELD.spent,
+				fieldId: fields.spent,
+			});
 		}
 		if (numberOf(row, FIELD.asks) !== counted.asks) {
 			set(FIELD.asks, fields.asks, {_tag: "Number", number: counted.asks}, String(counted.asks));

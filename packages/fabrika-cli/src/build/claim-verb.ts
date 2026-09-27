@@ -555,7 +555,7 @@ export const runClaim = (
 		const refusal = admissionRefusal(CLAIM, admission);
 		// An override answers a PROVEN refusal. UNKNOWN has proven nothing, so there is nothing to
 		// override — a fence that could not read its input must not be talked past by a flag.
-		const overridable = admission._tag === "AudienceNotAgent";
+		const overridable = admission._tag === "AudienceNotAgent" || admission._tag === "NoServedIssue";
 		if (refusal !== null && !(overridable && override !== null)) {
 			return {
 				...refusal,

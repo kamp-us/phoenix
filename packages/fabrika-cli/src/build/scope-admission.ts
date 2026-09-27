@@ -40,6 +40,7 @@ import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {
 	AUDIENCE_NOT_AGENT,
 	NO_ACCEPTANCE_CRITERIA,
+	NO_SERVED_ISSUE,
 	PRECONDITION_UNKNOWN,
 	TYPE_NOT_BUILDABLE,
 } from "./codes.ts";
@@ -604,7 +605,18 @@ export type Admission =
 			readonly type: TypeAxis;
 			readonly criteria: Extract<CriteriaAxis, {readonly _tag: "NoContract"}>;
 	  }
+	/**
+	 * A pull request that names no issue to judge: no closing keyword nor "Part of #<n>", or one
+	 * proven absent. It carries no axis verdict because no axis ran — there was no record to run it on.
+	 */
+	| {readonly _tag: "NoServedIssue"; readonly pr: number; readonly reason: string}
 	| {readonly _tag: "Unknown"; readonly code: number; readonly reason: string};
+
+export const noServedIssue = (pr: number, reason: string): Admission => ({
+	_tag: "NoServedIssue",
+	pr,
+	reason,
+});
 
 /**
  * Run every axis over one issue.
@@ -650,11 +662,15 @@ export const exclusionReasonOf = (
 	| "audience-not-agent"
 	| "type-not-buildable"
 	| typeof NO_CRITERIA_REASON
+	| "no-served-issue"
 	| "unreadable"
 	| null => {
 	switch (admission._tag) {
 		case "Admitted":
 			return null;
+		// The pool reads issues only, so this arrives from the claim path alone.
+		case "NoServedIssue":
+			return "no-served-issue";
 		case "AudienceNotAgent":
 			return "audience-not-agent";
 		case "TypeNotBuildable":
@@ -690,6 +706,11 @@ export const ADMISSION_EXIT_CODES: ReadonlyArray<{
 		code: NO_ACCEPTANCE_CRITERIA,
 		condition:
 			"proven: not admitted on the criteria axis — the body carries no readable ### Acceptance criteria block, absent or malformed; reachable only under purpose build against an issue",
+	},
+	{
+		code: NO_SERVED_ISSUE,
+		condition:
+			'proven: the target is a pull request naming no issue to judge — its body carries neither a closing keyword nor "Part of #<n>", or the issue it names is proven absent; bound whatever the campaigns say, and overridable',
 	},
 ];
 
@@ -758,7 +779,7 @@ export const dispatchScopeLine = (verb: string, dispatch: Dispatch): string => {
 /**
  * The seated refusal for a non-admitted outcome, or `null` when the issue is admitted.
  *
- * The seating lives here rather than at each seam so `21`, `30`, `32` and `11` cannot drift apart
+ * The seating lives here rather than at each seam so `21`, `30`, `32`, `38` and `11` cannot drift apart
  * between the pool and the claim path — a disagreement between two seams is worse than no fence at all.
  */
 export const admissionRefusal = (verb: string, admission: Admission): VerbOutcome | null => {
@@ -790,6 +811,11 @@ export const admissionRefusal = (verb: string, admission: Admission): VerbOutcom
 						? "author the block with `fabrika triage enrich <n>` — an absent block has nothing to repair mechanically"
 						: "straighten the heading with `fabrika triage repair-criteria <n>`, which repairs exactly this drift"
 				}. The repair belongs on the issue, not on a branch, so no lane opens here.`,
+			);
+		case "NoServedIssue":
+			return refuse(
+				NO_SERVED_ISSUE,
+				`${verb}: no served issue — PR #${admission.pr} ${admission.reason}, so there is no issue whose audience, type and criteria the admission test can judge; name the issue in the PR body (a closing keyword or "Part of #<n>"), or claim it with an explicit override.`,
 			);
 		default:
 			return refuse(admission.code, `${verb}: ${admission.reason} — admission is UNKNOWN.`);

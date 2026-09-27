@@ -276,14 +276,32 @@ export const resolveApproval = (comments: ReadonlyArray<Comment>, declared: Appe
 };
 
 /**
+ * The appetite a `bet` row's head states in its own `## Pitch`. A group row's Size approves its
+ * members only through this: the Size must equal an appetite a pitch body wrote.
+ */
+export type HeadAppetite =
+	| {readonly _tag: "stated"; readonly appetite: Appetite}
+	/** The head carries no well-formed pitch, so no written appetite backs the row's Size. */
+	| {readonly _tag: "unstated"}
+	| {readonly _tag: "unread"; readonly reason: string};
+
+/** What a head body's pitch states. */
+export const headAppetiteOf = (body: string): HeadAppetite => {
+	const read = readPitch(body);
+	return read._tag === "present" ? {_tag: "stated", appetite: read.appetite} : {_tag: "unstated"};
+};
+
+/**
  * One `bet` row on the table, the second approval carrier. The row approves the pitch of every issue
  * in `covers`: its head, and for an epic or chain row every member.
  *
  * Authority is the Stage value's setter at `write+`, the bar a `pitch-approved:` author meets. A
- * field value carries no provenance stamp to read, and the founder ruled that a `bet` an agent sets
- * under a `write+` token counts as his approval, since agents set `bet` only on his instruction.
+ * field value carries no provenance stamp, so a `bet` an agent sets under the founder's `write+`
+ * token counts as the founder's approval: agents set `bet` only on his instruction. The approval
+ * binds the appetite a pitch body states. The Size cell must match it and never stands in for it,
+ * since nothing checks who set the Size.
  *
- * @ruling https://github.com/kamp-us/phoenix/issues/9913#issuecomment-5852689315
+ * @ruling https://github.com/kamp-us/phoenix/issues/9913
  */
 export interface BetRow {
 	readonly head: number;
@@ -291,6 +309,8 @@ export interface BetRow {
 	readonly covers: ReadonlyArray<number>;
 	/** The row's Size cell as set, or `null` when it is empty. */
 	readonly size: string | null;
+	/** What the head's own pitch states, read off the head's body by the IO shell. */
+	readonly headAppetite: HeadAppetite;
 	/** Who set the Stage to `bet`, or `null` when GitHub names no actor. */
 	readonly setter: string | null;
 	/** Resolved at the GitHub ACL by the IO shell — `write+` only, fail-closed. */
@@ -311,6 +331,8 @@ export type BetApproval =
 	| {readonly _tag: "cycles-pitch"; readonly head: number}
 	| {readonly _tag: "unauthorized"; readonly head: number; readonly setter: string | null}
 	| {readonly _tag: "no-size"; readonly head: number}
+	/** The member's group row has a Size that no appetite written on its head backs. */
+	| {readonly _tag: "group-unbacked"; readonly head: number; readonly why: string}
 	| {
 			readonly _tag: "size-mismatch";
 			readonly head: number;
@@ -321,13 +343,33 @@ export type BetApproval =
 const sizeOf = (cell: string | null): Size | null =>
 	cell !== null && (SIZES as ReadonlyArray<string>).includes(cell) ? (cell as Size) : null;
 
+/** Why a group row's Size is not an appetite its head's pitch wrote, or `null` when it is. */
+const unbackedBy = (row: BetRow, size: Size): string | null => {
+	const stated = row.headAppetite;
+	switch (stated._tag) {
+		case "unread":
+			return `its head's pitch could not be read (${stated.reason})`;
+		case "unstated":
+			return `its head #${row.head} carries no well-formed pitch`;
+		case "stated":
+			if (stated.appetite._tag === "cycles") {
+				return `its head #${row.head} states a legacy \`${describeAppetite(stated.appetite)}\` appetite`;
+			}
+			return stated.appetite.size === size
+				? null
+				: `it is sized ${size} but its head #${row.head} declares ${stated.appetite.size}`;
+	}
+};
+
 /**
  * Resolve the bet arm for one issue. A row binds its size on its head: the row's Size must equal the
- * size the head's pitch declares. A member of a group row is approved by the group's Size whatever
- * its own appetite, since that Size covers the whole group. Ordered like {@link resolveApproval}, so
- * the report names the nearest miss.
+ * size the head's pitch declares. A member of a group row is approved whatever its own appetite, but
+ * only while the row's Size equals the size its head's pitch declares, so the Size cell never stands
+ * in for an appetite no pitch wrote. Ordered like {@link resolveApproval}, so the report names the
+ * nearest miss.
  *
- * @ruling https://github.com/kamp-us/phoenix/issues/9856#issuecomment-5852710907
+ * @ruling https://github.com/kamp-us/phoenix/issues/9856
+ * @ruling https://github.com/kamp-us/phoenix/issues/9913
  */
 export const resolveBetApproval = (
 	issue: number,
@@ -341,6 +383,7 @@ export const resolveBetApproval = (
 	let unauthorized: BetRow | null = null;
 	let unsized: BetRow | null = null;
 	let legacy: BetRow | null = null;
+	let unbacked: {readonly row: BetRow; readonly why: string} | null = null;
 	let mismatch: {readonly row: BetRow; readonly size: Size; readonly declared: Size} | null = null;
 	for (const row of rows) {
 		if (!row.authorized) {
@@ -352,7 +395,12 @@ export const resolveBetApproval = (
 			unsized ??= row;
 			continue;
 		}
-		if (row.head !== issue) return {_tag: "approved", row};
+		if (row.head !== issue) {
+			const why = unbackedBy(row, size);
+			if (why === null) return {_tag: "approved", row};
+			unbacked ??= {row, why};
+			continue;
+		}
 		if (declared._tag === "cycles") {
 			legacy ??= row;
 			continue;
@@ -370,6 +418,9 @@ export const resolveBetApproval = (
 			size: mismatch.size,
 			declared: mismatch.declared,
 		};
+	}
+	if (unbacked !== null) {
+		return {_tag: "group-unbacked", head: unbacked.row.head, why: unbacked.why};
 	}
 	if (legacy !== null) return {_tag: "cycles-pitch", head: legacy.head};
 	if (unsized !== null) return {_tag: "no-size", head: unsized.head};
@@ -392,6 +443,8 @@ const betDetail = (approval: Exclude<BetApproval, {_tag: "approved"}>): string |
 			return `its \`bet\` row #${approval.head} was set by ${approval.setter ?? "an account GitHub no longer names"}, not a write+ collaborator`;
 		case "no-size":
 			return `its \`bet\` row #${approval.head} names no Size ${SIZES.join(" / ")}`;
+		case "group-unbacked":
+			return `its group \`bet\` row #${approval.head} approves no member: ${approval.why} — the row's Size must equal the size its head's pitch declares`;
 		case "size-mismatch":
 			return `its \`bet\` row #${approval.head} is sized ${approval.size} but the body declares ${approval.declared} — re-approval needed: set the row's Size to ${approval.declared}, or re-pitch`;
 	}
@@ -541,8 +594,9 @@ const remedy = (sizes: AppetiteSizes): string =>
 	"     Success line names what the two-week check judges;\n" +
 	"  2. the FOUNDER approves it, either way:\n" +
 	"     - a `bet` on the table: its row's Stage set to `bet` with a Size equal to the body's size.\n" +
-	"       A `bet` on an epic or chain row approves the head and every member. The Stage must be\n" +
-	"       set by a write+ collaborator, or by an agent under their token on their say-so;\n" +
+	"       A `bet` on an epic or chain row approves the head and every member, while the row's Size\n" +
+	"       equals the head's. The Stage must be set by a write+ collaborator, or by an agent under\n" +
+	"       the founder's token on his say-so;\n" +
 	"     - or a `pitch-approved: appetite <S|M|L> · <ISO-8601-UTC>` comment naming the same size the\n" +
 	"       body declares (a legacy `<N> cycles` pitch approves only this way, as\n" +
 	"       `appetite <N> cycles`). An agent never posts this comment.";

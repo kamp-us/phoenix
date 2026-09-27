@@ -1,5 +1,6 @@
 import {Effect, Layer} from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import {describe, expect, it} from "vitest";
 import {
 	errOut,
@@ -645,23 +646,42 @@ describe("runPick — bets first", () => {
 		);
 	};
 
-	const runWithTable = (
+	const runWithGraph = (
 		script: ReadonlyArray<readonly [RegExp, HttpReply]>,
-		github: FakeProjectsOptions,
+		graph: Layer.Layer<HttpClient.HttpClient>,
 		fs = NO_CONFIG,
-	) => {
-		const projects = fakeProjects({repo: "o/r", ...github});
-		return Effect.runPromise(
+	) =>
+		Effect.runPromise(
 			Effect.provide(
 				runPick(options),
 				Layer.mergeAll(
 					fakeShell([]).layer,
-					routed(fakeHttp([...script, NO_BLOCKERS]).layer, projects.layer),
+					routed(fakeHttp([...script, NO_BLOCKERS]).layer, graph),
 					fs.layer,
 				),
 			),
 		);
-	};
+
+	const runWithTable = (
+		script: ReadonlyArray<readonly [RegExp, HttpReply]>,
+		github: FakeProjectsOptions,
+		fs = NO_CONFIG,
+	) => runWithGraph(script, fakeProjects({repo: "o/r", ...github}).layer, fs);
+
+	/** A Projects API that answers every read with GitHub's secondary rate limit. */
+	const RATE_LIMITED = Layer.succeed(HttpClient.HttpClient)(
+		HttpClient.make((request) =>
+			Effect.succeed(
+				HttpClientResponse.fromWeb(
+					request,
+					new Response(JSON.stringify({message: "You have exceeded a secondary rate limit."}), {
+						status: 403,
+						headers: {"content-type": "application/json"},
+					}),
+				),
+			),
+		),
+	);
 
 	const buckets = (p0: ReadonlyArray<number>, p2: ReadonlyArray<number>) =>
 		[
@@ -747,6 +767,26 @@ describe("runPick — bets first", () => {
 		expect(out.code).toBe(0);
 		expect(pool(out).map((row) => row.number)).toEqual([500, 300]);
 		expect(out.stderr.at(-1)).toContain(PROJECT_SCOPE_FIX);
+	});
+
+	it("keeps its own order on a rate-limited table read when no table is declared", async () => {
+		const out = await runWithGraph(buckets([500], [300]), RATE_LIMITED);
+
+		expect(out.code).toBe(0);
+		expect(pool(out).map((row) => row.number)).toEqual([500, 300]);
+		expect(JSON.parse(out.stdout).bets).toEqual({state: "none"});
+		expect(out.stderr.join("\n")).toContain("build pick: bets: no table read — the table project:");
+	});
+
+	it("refuses on 11 on a rate-limited table read once a table block is declared", async () => {
+		const out = await runWithGraph(
+			buckets([500], [300]),
+			RATE_LIMITED,
+			fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify({table: {stuckDays: 4}})}}),
+		);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
 	});
 
 	it("refuses on 11 naming the scope fix when the repository declares a table block", async () => {

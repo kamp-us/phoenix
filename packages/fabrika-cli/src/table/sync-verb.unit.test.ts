@@ -78,7 +78,7 @@ type Value = {name: string; value: ItemFieldValue["value"]; creator: string; upd
 interface FakeItem {
 	id: string;
 	number: number | null;
-	type: string;
+	type: ProjectItem["contentType"];
 	values: Value[];
 }
 
@@ -108,7 +108,7 @@ const world = (
 	issues: Readonly<Record<number, IssueSpec>>,
 	rows: ReadonlyArray<{
 		number: number | null;
-		type?: string;
+		type?: ProjectItem["contentType"];
 		values?: Record<string, string | number>;
 	}> = [],
 	options: {merged?: ReadonlyArray<number>; project?: ProjectSnapshot | null} = {},
@@ -357,6 +357,18 @@ describe("a person's Stage", () => {
 		await sync(table.board, [42]);
 
 		expect(table.valuesOf(42)).toEqual({Stage: "bet", Section: "New bets", "Spent $": 0, Asks: 0});
+	});
+
+	it("clears a bet's standing $0 once an unmeasured lane lands on it, never leaving it to read $0", async () => {
+		const table = world({42: {records: [laneRecord(42, {usd: null, founderParks: 1})]}}, [
+			{number: 42, values: {Stage: "bet", Section: "New bets", "Spent $": 0, Asks: 0}},
+		]);
+
+		await sync(table.board, [42]);
+
+		expect(table.valuesOf(42)["Spent $"]).toBeUndefined();
+		expect(table.valuesOf(42).Asks).toBe(1);
+		expect(table.writes).toContain("clear 42 Spent $");
 	});
 });
 
