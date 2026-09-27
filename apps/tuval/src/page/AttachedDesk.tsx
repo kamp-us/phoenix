@@ -35,6 +35,7 @@ import {Effect, Fiber, Option, Stream} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {ProjectLabels} from "../projects/labels.ts";
+import type {TrustAnswer, TrustPrompt} from "../projects/trust-prompt.ts";
 import {ProcessBoardOverlay} from "../shell/board/index.ts";
 import type {ShellMsg, ShellState} from "../shell/core/index.ts";
 import {openProcessMsg} from "../shell/core/machine.ts";
@@ -52,6 +53,7 @@ import type {
 import {boundMount, Desk, noRenderer, replyOf, useDeskAttachment} from "../shell/ui/index.ts";
 import type {TableRow} from "../table/row.ts";
 import {useSpellRegistry} from "./spell-registry.ts";
+import {TrustFolderDialog} from "./TrustFolderDialog.tsx";
 
 export interface AttachedDeskProps {
 	readonly page: PageAttachment;
@@ -179,6 +181,7 @@ export function AttachedDesk({
 	const [rows, setRows] = useState<ReadonlyMap<ProcessId, TableRow>>(new Map());
 	const [catalog, setCatalog] = useState<ReadonlyMap<ProgramId, WireProgram>>(new Map());
 	const [projects, setProjects] = useState<ProjectLabels>(ProjectLabels.none);
+	const [trustPrompts, setTrustPrompts] = useState<ReadonlyArray<TrustPrompt>>([]);
 	const [attached, setAttached] = useState<ReadonlyMap<string, AttachedProcess>>(new Map());
 	/** The shell process's own revision — what the newest-wins compare below and the snapshot read. */
 	const [revision, setRevision] = useState(0);
@@ -283,6 +286,21 @@ export function AttachedDesk({
 		);
 		return () => void Effect.runFork(Fiber.interrupt(fiber));
 	}, [page]);
+
+	useEffect(() => {
+		const fiber = Effect.runFork(
+			Stream.runForEach(page.trustPrompts, (next) => Effect.sync(() => setTrustPrompts(next))),
+		);
+		return () => void Effect.runFork(Fiber.interrupt(fiber));
+	}, [page]);
+	const answerTrust = useCallback(
+		(question: string, answer: TrustAnswer) => {
+			// The question leaves this page at once; the kernel's next `trust-prompts` frame confirms it.
+			setTrustPrompts((current) => current.filter((prompt) => prompt.question !== question));
+			Effect.runFork(page.answerTrust(question, answer));
+		},
+		[page],
+	);
 
 	useEffect(() => {
 		if (desk === null) return;
@@ -470,6 +488,8 @@ export function AttachedDesk({
 					projects={projects}
 				/>
 			) : null}
+			{/* After the board, so a question asked while the board is open is the dialog on top. */}
+			<TrustFolderDialog prompts={trustPrompts} onAnswer={answerTrust} />
 		</>
 	);
 }

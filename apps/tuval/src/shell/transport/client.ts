@@ -29,6 +29,7 @@ import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Deferred, Effect, Option, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {ProjectLabels} from "../../projects/labels.ts";
+import type {TrustAnswer, TrustPrompt} from "../../projects/trust-prompt.ts";
 import type {TableRow} from "../../table/row.ts";
 import {
 	type AttachRefused,
@@ -47,6 +48,7 @@ import {
 	fromWireRow,
 	type ServerFrame,
 	spellCallFrame,
+	trustAnswerFrame,
 	type WireProgram,
 } from "./wire.ts";
 
@@ -111,6 +113,13 @@ export interface PageAttachment {
 	 * carries (#9692). Starts as `ProjectLabels.none` and is replaced whole on every `projects` frame.
 	 */
 	readonly projects: Stream.Stream<ProjectLabels>;
+	/**
+	 * The "Trust this folder?" questions an open is waiting on, oldest first (#9693). Starts empty and
+	 * is replaced whole on every `trust-prompts` frame, so an answered question leaves on its own.
+	 */
+	readonly trustPrompts: Stream.Stream<ReadonlyArray<TrustPrompt>>;
+	/** The person's answer to one waiting question. Sent, not awaited, like a `dispatch`. */
+	readonly answerTrust: (question: string, answer: TrustAnswer) => Effect.Effect<void>;
 	readonly attachProcess: <S = unknown, M extends Message = Message>(
 		processId: ProcessId,
 	) => Effect.Effect<AttachedProcess<S, M>, AttachRefused | Socket.SocketError>;
@@ -155,6 +164,7 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 	const keysRef = yield* SubscriptionRef.make<PrefixTable | null>(null);
 	const spellsRef = yield* SubscriptionRef.make<RegistryDescription | null>(null);
 	const projectsRef = yield* SubscriptionRef.make(ProjectLabels.none);
+	const trustRef = yield* SubscriptionRef.make<ReadonlyArray<TrustPrompt>>([]);
 	const views = new Map<ProcessId, SubscriptionRef.SubscriptionRef<ProcessView<unknown>>>();
 	const pendingAttach = new Map<ProcessId, Deferred.Deferred<void, AttachRefused>>();
 	const pendingDispatch = new Map<number, Deferred.Deferred<DispatchResult>>();
@@ -191,6 +201,8 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 				return SubscriptionRef.set(keysRef, fromWirePrefixTable(frame.table));
 			case "tuval/transport/projects/v1":
 				return SubscriptionRef.set(projectsRef, ProjectLabels.of(frame.projects));
+			case "tuval/transport/trust-prompts/v1":
+				return SubscriptionRef.set(trustRef, frame.prompts);
 			case "tuval/transport/process-state/v1":
 				return Effect.gen(function* () {
 					const ref = yield* viewRef(frame.processId);
@@ -314,6 +326,9 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 	const detach = (processId: ProcessId) =>
 		Effect.ignore(write(encodeFrame({kind: DETACH_KIND, processId})));
 
+	const answerTrust = (question: string, answer: TrustAnswer) =>
+		Effect.ignore(write(encodeFrame(trustAnswerFrame(question, answer))));
+
 	const readShell = <S = unknown>() =>
 		Stream.unwrap(
 			Effect.gen(function* () {
@@ -348,6 +363,8 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 			(table): table is PrefixTable => table !== null,
 		),
 		projects: SubscriptionRef.changes(projectsRef),
+		trustPrompts: SubscriptionRef.changes(trustRef),
+		answerTrust,
 		attachProcess,
 		call,
 		detach,
