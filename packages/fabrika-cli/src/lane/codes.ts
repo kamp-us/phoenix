@@ -684,8 +684,8 @@ export const INTEGRATE_EVIDENCE = 68;
 export const LANE_NOT_TERMINAL = 69;
 
 /**
- * A lane fact was refused before it was written: an origin outside the closed set on `lane open`,
- * or a `lane wait` whose `--on` is not one non-blank line or whose `--until` is not a date still to
+ * A lane fact was refused before it was written: an origin outside the closed set on `lane open`
+ * or `lane emit`, or a `lane wait` whose `--on` is not one non-blank line or whose `--until` is not a date still to
  * come. Nothing was booted or appended.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9855

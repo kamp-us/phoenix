@@ -61,11 +61,11 @@
  * root whose log folds to `active` AND whose issue carries a live `lane claim`, plus every lane no
  * read can account for. An active lane nobody claims is idle and takes no seat.
  */
-import {Effect, type FileSystem, Path, Result} from "effect";
+import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {Read} from "../config/read-key.ts";
-import {appendText, readFile} from "../io/fs.ts";
+import {readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {DEFAULT_ORIGIN, instant, ORIGINS, origin} from "../wire/lane-record.ts";
+import {DEFAULT_ORIGIN, ORIGINS, origin} from "../wire/lane-record.ts";
 import {
 	adoptionRecord,
 	type BoardRecorder,
@@ -88,7 +88,7 @@ import {
 } from "./codes.ts";
 import {capRefusal} from "./concurrency.ts";
 import type {ExpectationReader} from "./expectation.ts";
-import {encodeFact, FACTS_FILE} from "./facts.ts";
+import {recordOrigin} from "./facts.ts";
 import type {PriorLaneReader} from "./prior-lane.ts";
 import {placementRefusal, say} from "./refusals.ts";
 import {type LaneRef, placeMachine, probeLane} from "./store.ts";
@@ -332,19 +332,12 @@ export const runOpen = <R = never>(
 			);
 		}
 		if (placed._tag !== "Placed") return placementRefusal(VERB, placed, stranded);
-		const openedAt = instant(yield* Effect.sync(() => new Date().toISOString()));
-		const factsPath = (yield* Path.Path).join(placed.dir, FACTS_FILE);
-		const recorded =
-			openedAt === null
-				? null
-				: yield* Effect.result(
-						appendText(factsPath, encodeFact({kind: "origin", origin: laneOrigin, at: openedAt})),
-					);
-		if (recorded === null || Result.isFailure(recorded)) {
+		const recorded = yield* recordOrigin(placed.dir, laneOrigin);
+		if (recorded._tag === "Unrecorded") {
 			return refuse(
 				APPEND_UNKNOWN,
 				say(
-					`${VERB}: booted ${placed.dir}, but its origin did not land in ${factsPath}${recorded === null ? "" : `: ${recorded.failure.reason}`} — the lane IS booted and reads as a ${DEFAULT_ORIGIN} until that file says otherwise.`,
+					`${VERB}: booted ${placed.dir}, but its origin did not land in ${recorded.path}: ${recorded.reason} — the lane IS booted and reads as a ${DEFAULT_ORIGIN} until that file says otherwise.`,
 					...stranded,
 				),
 			);

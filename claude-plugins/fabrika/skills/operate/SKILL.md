@@ -1717,7 +1717,8 @@ the code. End `LANE-TERMINAL`. On a chore lane there is no issue to post to (`19
 posted.
 
 A lane that is quiet on purpose says so with `node <fabrika> lane wait $lane_key --on "<what>" --until
-<date>`. Where the lane came from is set once at boot, with `lane open --origin`: `bet` when it
+<date>`. Where the lane came from is set once at boot, with `--origin` on `lane open`, or on
+`lane emit` for an epic lane: `bet` when it
 drives a row the table bet on, `founder-start` when the founder started it by hand, `experiment`,
 `mid-lane-fix` for a fix found while driving another lane, and `driver-pick` — the default — for
 everything else.

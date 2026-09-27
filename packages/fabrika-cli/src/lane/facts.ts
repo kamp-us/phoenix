@@ -6,12 +6,13 @@
  * move no task, so they live in their own append-only `facts.jsonl` beside the log and no fold
  * ever reads them. The lane directory moves as a whole on archive, so the two files never part.
  *
- * Two kinds, both closed. An `origin` line is written once, by `lane open`; a lane carrying none —
- * booted before this file existed, or by `lane emit` — reads as a driver pick, the default the
- * ruling names. A `waiting` line is written by `lane wait`, and the latest one stands.
+ * Two kinds, both closed. An `origin` line is written once, at boot, by `lane open` or `lane emit`
+ * through {@link recordOrigin}; a lane carrying none — booted before this file existed — reads as a
+ * driver pick, the default the ruling names. A `waiting` line is written by `lane wait`, and the
+ * latest one stands.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
-import {readFile} from "../io/fs.ts";
+import {appendText, readFile} from "../io/fs.ts";
 import {
 	DEFAULT_ORIGIN,
 	type Instant,
@@ -115,4 +116,27 @@ export const loadFacts = (
 		return parsed._tag === "Malformed"
 			? ({_tag: "Malformed", path, defects: parsed.defects} as const)
 			: ({_tag: "Loaded", facts: parsed.facts, path} as const);
+	});
+
+export type OriginWrite =
+	| {readonly _tag: "Recorded"; readonly path: string}
+	| {readonly _tag: "Unrecorded"; readonly path: string; readonly reason: string};
+
+/** Append a freshly placed lane's origin as its first fact — the boot step both boot verbs share. */
+export const recordOrigin = (
+	dir: string,
+	laneOrigin: Origin,
+): Effect.Effect<OriginWrite, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const path = (yield* Path.Path).join(dir, FACTS_FILE);
+		const at = instant(yield* Effect.sync(() => new Date().toISOString()));
+		if (at === null) {
+			return {_tag: "Unrecorded", path, reason: "the clock gave no instant"} as const;
+		}
+		const wrote = yield* Effect.result(
+			appendText(path, encodeFact({kind: "origin", origin: laneOrigin, at})),
+		);
+		return Result.isFailure(wrote)
+			? ({_tag: "Unrecorded", path, reason: wrote.failure.reason} as const)
+			: ({_tag: "Recorded", path} as const);
 	});
