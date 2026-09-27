@@ -51,11 +51,11 @@ merit read 0219 asks for, not a new input from the roadmap.
 - **Owed work: the triage rubric text.** Step 7 of `claude-plugins/fabrika/skills/triage/SKILL.md`
   must gain this rule. This record does not make that edit. The skill text is control-plane, so that
   edit carries a CODEOWNERS approval.
-- **The active-campaign intake gate is not addressed by the ruling.** The same skill closes an
-  `active` campaign's milestone to new work unless it is `p0` or `p1`, or blocks one of that
-  milestone's lanes. The ruling adds no exception to that gate. Because the gate reads the band, a
-  visible defect priced `p1` under this rule clears it like any other `p1`. The ruling does not say
-  whether that effect is intended; that question stays open on #9553 for the founder.
+- **The active-campaign intake gate gets no exception.** The same skill closes an `active`
+  campaign's milestone to new work unless it is `p0` or `p1`, or blocks one of that milestone's
+  lanes. Because the gate reads the band, a visible defect priced `p1` under this rule clears it like
+  any other `p1`, and that is allowed. There is no interaction to design for: the campaign gate is
+  being removed once bets-first picking lands. See the 2026-09-27 entry under `## Amendments`.
 - **#9541 matches the rule.** It carries `p1`, the band this rule requires for a false statement on
   a public page.
 
@@ -63,3 +63,13 @@ merit read 0219 asks for, not a new input from the roadmap.
 
 - No vocabulary impact.
 - Ruling: <https://github.com/kamp-us/phoenix/issues/9553#issuecomment-5755829364>. Incident: #9541.
+
+## Amendments
+
+- **#9553 — the intake-gate question is ruled (2026-09-27).** Founder ruling on criterion 3 of #9553,
+  given in the driver session and recorded at
+  <https://github.com/kamp-us/phoenix/issues/9553#issuecomment-5858945330>. The founder answered
+  "yes" to: "No interaction to design for: the campaign gate is being removed once bets-first picking
+  lands (ruling on #9852, <https://github.com/kamp-us/phoenix/issues/9852#issuecomment-5852643522>),
+  and bets-first picking is built in epic #9850 (#9857)." So the `p1` floor may change which issues
+  clear the active-campaign intake gate, and no exception to that gate is owed.
