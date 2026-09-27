@@ -1599,3 +1599,99 @@ describe("configValidators — a config-only diff greens or reds under every sur
 		expect(out.stderr.at(-1)).toContain("a pattern");
 	});
 });
+
+/**
+ * Non-JS source, such as a Java file under an Android Gradle tree, takes the same declared-validator
+ * route as a root config file, and never a widened code class.
+ */
+describe("configValidators — a Java-only diff greens or reds on the repo's declared build", () => {
+	const SERVICE = "android/app/src/main/java/com/example/AuditService.java";
+	const HELPER = "android/app/src/main/java/com/example/Helper.java";
+	const GRADLE_ARGV = ["./gradlew", "testDebugUnitTest"];
+	const GRADLE = /^\.\/gradlew testDebugUnitTest$/;
+	const DECLARED: Record<string, string> = {
+		[CONFIG_FILE]: JSON.stringify({
+			codeValidators: [
+				{command: ["pnpm", "typecheck", "--force"]},
+				{command: ["pnpm", "lint:worktree"]},
+			],
+			configValidators: [{command: GRADLE_ARGV, reads: [SERVICE]}],
+		}),
+	};
+	const javaRun = (
+		diff: string,
+		surface: string,
+		script: ReadonlyArray<Scripted> = [],
+		files: Record<string, string> = DECLARED,
+	) => {
+		const shell = fakeSeams([...LANE_OK, [DIFF, okOut(diff)], ...script]);
+		return Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, surface}),
+				Layer.merge(shell.layer, fakeFs({files}).layer),
+			),
+		).then((out) => ({out, calls: shell.calls}));
+	};
+
+	it("leaves non-JS source out of the code class, declared or not", () => {
+		expect(classifyDiff([SERVICE, "App.kt", "View.swift"]).unvalidatable).toEqual([
+			SERVICE,
+			"App.kt",
+			"View.swift",
+		]);
+		expect(classifyDiff([SERVICE], [SERVICE])).toMatchObject({code: [], config: [SERVICE]});
+	});
+
+	it.each(
+		SURFACES,
+	)("greens a Java-only diff under --surface %s when the build passes", async (surface) => {
+		const {out, calls} = await javaRun(`${SERVICE}\n`, surface, [
+			[GRADLE, okOut("BUILD SUCCESSFUL")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			verdict: "green",
+			surface,
+			tree: ROOT,
+			ran: [GRADLE_ARGV.join(" ")],
+			skipped: [],
+			unvalidated: [],
+		});
+		expect(calls).toContain("./gradlew testDebugUnitTest");
+		expect(calls).not.toContain("pnpm typecheck --force");
+	});
+
+	it.each(SURFACES)("reds on 18 under --surface %s when the build fails", async (surface) => {
+		const {out} = await javaRun(`${SERVICE}\n`, surface, [
+			[GRADLE, errOut("AuditService.java:12: error: ';' expected")],
+		]);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"build check: red — ./gradlew testDebugUnitTest failed; diagnostics above.",
+		);
+	});
+
+	it.each(SURFACES)("refuses on 22 under --surface %s when no entry claims it", async (surface) => {
+		const {out, calls} = await javaRun(`${SERVICE}\n`, surface, [], CODE_CONFIG);
+		expect(out.code).toBe(UNCLASSIFIED_DIFF);
+		expect(out.stderr.at(-1)).toContain(
+			`no surface validates any of the 1 changed file(s) (${SERVICE})`,
+		);
+		expect(calls).not.toContain("./gradlew testDebugUnitTest");
+	});
+
+	it("discloses an unclaimed Java file beside a claimed one on a mixed green", async () => {
+		const {out} = await javaRun(`src/a.ts\n${SERVICE}\n${HELPER}\n`, "code", [
+			[GRADLE, okOut("")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			ran: ["pnpm typecheck --force", "pnpm lint:worktree", GRADLE_ARGV.join(" ")],
+			unvalidated: [HELPER],
+		});
+		expect(out.stderr.join("\n")).toContain(`NOT covered by this verdict: ${HELPER}`);
+	});
+});

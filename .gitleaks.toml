@@ -36,4 +36,8 @@ regexes = [
 	# packages/migrations-guard/migration-hashes.json — `generic-api-key` fires only because the
 	# migration's own name contains `api_key`; the value is a content digest, not a credential.
 	'''5d7566a730ac6264f9d91c456c7365c2b1adc1ef7a40ab60a15543bcab6b1e35''',
+	# The `pr-<n>` preview session-signing key, committed on purpose at
+	# infra/preview-auth-key/key.txt — public by founder ruling (ADR 0406), refused by the
+	# production worker at boot. It is not a credential to anything a scan protects.
+	'''preview_915b87ba049748302fd283f38655f52a504fbab6f19a6fa77ffb91bbdb8d1f29''',
 ]
