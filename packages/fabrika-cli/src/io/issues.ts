@@ -455,6 +455,26 @@ export const getIssue = (repo: string, issue: number): Shell<Existence<IssueReco
 		});
 	});
 
+/**
+ * An issue's GraphQL node id, read over REST — the content id a Projects item add takes. A pull
+ * request answers `Absent`: it is served on the same path and is never a table row.
+ */
+export const issueNodeId = (repo: string, issue: number): Shell<Existence<string>> =>
+	Effect.gen(function* () {
+		const token = yield* ambientToken;
+		if (token._tag === "Failure") return unknown<string>(token.reason);
+		const outcome = yield* onTransport(
+			restRead(token.value, "GET", `repos/${repo}/issues/${issue}`),
+		);
+		const read = existenceOf(outcome, (body) =>
+			isRecord(body) && typeof body.node_id === "string"
+				? ok({nodeId: body.node_id, pullRequest: isRecord(body.pull_request)})
+				: fail("GitHub answered 200 but named no node id"),
+		);
+		if (read._tag !== "Present") return read;
+		return read.value.pullRequest ? absent<string>() : present(read.value.nodeId);
+	});
+
 export interface CreatedIssue {
 	readonly number: number;
 	readonly url: string;

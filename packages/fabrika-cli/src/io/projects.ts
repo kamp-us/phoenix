@@ -850,36 +850,150 @@ const readValue = (node: Record<string, unknown>): ItemFieldValue["value"] | nul
 export const readItemValues = (token: string, itemId: string): Api<ProjectsAnswer<ItemValues>> =>
 	exchange(token, ITEM_VALUES, {id: itemId}, (data) => {
 		const item = isRecord(data.node) ? data.node : null;
-		const page = item !== null && isRecord(item.fieldValues) ? item.fieldValues : null;
-		if (item === null || !str(item.id) || page === null || !Array.isArray(page.nodes)) {
+		if (item === null || !str(item.id) || !isRecord(item.fieldValues)) {
 			return fail(`GitHub knows no project item ${itemId}`);
 		}
-		if (truncated(page)) return fail("the item carries more values than one page holds");
-		const content = isRecord(item.content) ? item.content : null;
-		const values: ItemFieldValue[] = [];
-		for (const node of page.nodes) {
-			if (!isRecord(node) || !TABLE_VALUE_TYPES.has(node.__typename)) continue;
-			const value = readValue(node);
-			const field = isRecord(node.field) ? node.field : null;
-			if (value === null || field === null || !str(field.id) || !str(field.name)) {
-				return fail(`GitHub answered 200 but one ${String(node.__typename)} is malformed`);
-			}
-			if (!str(node.updatedAt))
-				return fail("GitHub answered 200 but one value carries no updatedAt");
-			const creator = isRecord(node.creator) && str(node.creator.login) ? node.creator.login : null;
-			values.push({
-				fieldId: field.id,
-				fieldName: field.name,
-				value,
-				creator,
-				updatedAt: node.updatedAt,
-			});
+		const read = readItemNode(item);
+		if (read._tag === "Failure") return read;
+		const {itemId: id, contentNumber, values} = read.value;
+		return ok({itemId: id, contentNumber, values});
+	});
+
+const CLEAR_VALUE = `
+mutation TableClearValue($input: ClearProjectV2ItemFieldValueInput!) {
+  clearProjectV2ItemFieldValue(input: $input) { projectV2Item { id } }
+}`;
+
+/** Unset one field on one item. */
+export const clearFieldValue = (
+	token: string,
+	target: {readonly projectId: string; readonly itemId: string; readonly fieldId: string},
+): Api<ProjectsAnswer<string>> =>
+	exchange(token, CLEAR_VALUE, {input: target}, (data) => {
+		const payload = isRecord(data.clearProjectV2ItemFieldValue)
+			? data.clearProjectV2ItemFieldValue
+			: null;
+		const item = payload !== null && isRecord(payload.projectV2Item) ? payload.projectV2Item : null;
+		return item !== null && str(item.id)
+			? ok(item.id)
+			: fail("GitHub answered 200 but cleared no value");
+	});
+
+/** One project item as the table reads it: what it stands for, and its table values. */
+export interface ProjectItem extends ItemValues {
+	/** `Issue`, `PullRequest` or `DraftIssue`. */
+	readonly contentType: string;
+	/** The `owner/name` the issue or pull request lives in; `null` for a draft. */
+	readonly repository: string | null;
+}
+
+const ITEMS_QUERY = `
+query TableItems($id: ID!, $cursor: String) {
+  node(id: $id) {
+    ... on ProjectV2 {
+      items(first: 50, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          content {
+            __typename
+            ... on Issue { number repository { nameWithOwner } }
+            ... on PullRequest { number repository { nameWithOwner } }
+          }
+          fieldValues(first: 100) {
+            pageInfo { hasNextPage }
+            nodes {
+              __typename
+              ... on ProjectV2ItemFieldTextValue { text ${VALUE_META} }
+              ... on ProjectV2ItemFieldNumberValue { number ${VALUE_META} }
+              ... on ProjectV2ItemFieldDateValue { date ${VALUE_META} }
+              ... on ProjectV2ItemFieldSingleSelectValue { name optionId ${VALUE_META} }
+              ... on ProjectV2ItemFieldIterationValue { title iterationId ${VALUE_META} }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+/** The table values on one item node, or why the node is not an item. */
+const readItemNode = (item: Record<string, unknown>): Attempt<ProjectItem> => {
+	const page = isRecord(item.fieldValues) ? item.fieldValues : null;
+	if (!str(item.id) || page === null || !Array.isArray(page.nodes)) {
+		return fail("GitHub answered 200 but one item is not a project item");
+	}
+	if (truncated(page)) return fail(`item ${item.id} carries more values than one page holds`);
+	const content = isRecord(item.content) ? item.content : null;
+	const values: ItemFieldValue[] = [];
+	for (const node of page.nodes) {
+		if (!isRecord(node) || !TABLE_VALUE_TYPES.has(node.__typename)) continue;
+		const value = readValue(node);
+		const field = isRecord(node.field) ? node.field : null;
+		if (value === null || field === null || !str(field.id) || !str(field.name)) {
+			return fail(`GitHub answered 200 but one ${String(node.__typename)} is malformed`);
 		}
-		return ok({
-			itemId: item.id,
-			contentNumber: content !== null && typeof content.number === "number" ? content.number : null,
-			values,
+		if (!str(node.updatedAt)) return fail("GitHub answered 200 but one value carries no updatedAt");
+		const creator = isRecord(node.creator) && str(node.creator.login) ? node.creator.login : null;
+		values.push({
+			fieldId: field.id,
+			fieldName: field.name,
+			value,
+			creator,
+			updatedAt: node.updatedAt,
 		});
+	}
+	const repository =
+		content !== null && isRecord(content.repository) && str(content.repository.nameWithOwner)
+			? content.repository.nameWithOwner
+			: null;
+	return ok({
+		itemId: item.id,
+		contentNumber: content !== null && typeof content.number === "number" ? content.number : null,
+		contentType: content !== null && str(content.__typename) ? content.__typename : "DraftIssue",
+		repository,
+		values,
+	});
+};
+
+/** One page of a project's items, parsed; exported so a recorded page can prove the parse. */
+export const readItemsPage = (
+	data: Record<string, unknown>,
+): Attempt<{readonly items: ReadonlyArray<ProjectItem>; readonly next: string | null}> => {
+	const project = isRecord(data.node) ? data.node : null;
+	const connection = project !== null && isRecord(project.items) ? project.items : null;
+	if (connection === null || !Array.isArray(connection.nodes)) {
+		return fail("GitHub answered 200 but the project lists no items");
+	}
+	const items: ProjectItem[] = [];
+	for (const node of connection.nodes) {
+		if (!isRecord(node)) return fail("GitHub answered 200 but one item is not a project item");
+		const item = readItemNode(node);
+		if (item._tag === "Failure") return item;
+		items.push(item.value);
+	}
+	return ok({items, next: nextCursor(connection)});
+};
+
+/** Every item on the project with its table values, read to the last page. */
+export const readItems = (
+	token: string,
+	projectId: string,
+): Api<ProjectsAnswer<ReadonlyArray<ProjectItem>>> =>
+	Effect.gen(function* () {
+		const items: ProjectItem[] = [];
+		let cursor: string | null = null;
+		for (let page = 0; page < PAGE_CAP; page++) {
+			const answer: ProjectsAnswer<{
+				readonly items: ReadonlyArray<ProjectItem>;
+				readonly next: string | null;
+			}> = yield* exchange(token, ITEMS_QUERY, {id: projectId, cursor}, readItemsPage);
+			if (answer._tag !== "Ok") return answer;
+			items.push(...answer.value.items);
+			if (answer.value.next === null) return done(items);
+			cursor = answer.value.next;
+		}
+		return failed(`the project holds more items than ${PAGE_CAP} pages hold`);
 	});
 
 const STATUS_UPDATE = `

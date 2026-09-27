@@ -34,3 +34,15 @@ export const SHAPE_CONFLICT = 21;
  * carries the table's title.
  */
 export const AMBIGUOUS_PROJECT = 22;
+
+/**
+ * Proven: the table project lacks a field or option `table sync` writes. `table setup` adds it, so
+ * the refusal names that verb and nothing was written.
+ */
+export const NOT_SET_UP = 23;
+
+/**
+ * Proven: an issue the run touches carries a `lane-record` comment that does not read. Its spend and
+ * asks are undecidable, so nothing was written.
+ */
+export const MALFORMED_RECORD = 24;

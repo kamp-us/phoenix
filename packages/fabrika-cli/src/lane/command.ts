@@ -25,6 +25,7 @@ import {leafCommand} from "../excess-operand.ts";
 import {localBranches} from "../io/git.ts";
 import {readStdin} from "../io/stdin.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
+import {runSync, syncBoard} from "../table/sync-verb.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {DEFAULT_ORIGIN, ORIGINS} from "../wire/lane-record.ts";
 import {admitBoardKey, admitKey} from "./admission.ts";
@@ -1694,14 +1695,27 @@ const record = leafCommand(
 		const board = recordBoard(Option.getOrNull(repo), process.env);
 		yield* emit(
 			yield* onKey("record", lane, root, (key, ref) =>
-				runRecord({...ref, issue: resolveKeyIssue(key), spent: LEDGER_SPEND, board}),
+				runRecord({
+					...ref,
+					issue: resolveKeyIssue(key),
+					spent: LEDGER_SPEND,
+					board,
+					syncTable: (issue) =>
+						runSync({
+							repo: Option.getOrNull(repo),
+							cwd: process.cwd(),
+							env: process.env,
+							issues: [issue],
+							board: syncBoard,
+						}),
+				}),
 			),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Post a terminal lane's record to its issue, once per terminal."),
 	Command.withDescription(
-		"Compose the record of a lane whose fold has reached a terminal state and post it to the lane's issue as one `lane-record` marker comment — the wire format owned by packages/fabrika-cli/src/wire/lane-record.ts. The record carries the outcome, the wall-clock from the lane's opening to its terminal event, builds (DONE out of a build leaf), reviews (PASS or FAIL out of a review leaf), every park with its cause and route, Spent $, Asks (the parks routed to the founder — a park with no cause routes there), the origin and standing wait from facts.jsonl, the pull requests the log names, and the whole log collapsed in a <details> block. Every count is derived from events.jsonl by replaying it, never stored. Spent $ reads `unmeasured` with its reason while the spend ledger holds tokens and no rate card. The body is scrubbed of machine-local paths and must then pass the leak guard, or nothing is posted. The issue's comments are read whole first: a record already standing for the same terminal — same issue, outcome and terminal instant — answers `unchanged` and writes nothing, so re-running this after a terminal is safe. The posted comment is read back through the format's reader. stdout is {answer:\"posted\"|\"unchanged\", lane, issue, commentId, outcome, origin, asks, builds, reviews, parks, spent, prs} plus `url` on a post. Exits 4 (the lane record, its facts or a lane-record comment already on the issue does not read — whether this terminal is recorded is undecidable), 5 (a machine-local path survived scrubbing — nothing was posted), 7 (no lane there), 8 (the post failed — it may or may not have landed; re-run), 9 (the posted comment does not read back as this terminal's record), 11 (the lane, its facts or the issue's comments could not be read), 19 (the key names no issue — a chore lane has nowhere to post a record), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it — pass a root under the owning repository, or drop --root), 69 (the lane has not reached a terminal state — nothing was posted). Example: fabrika lane record 5673",
+		"Compose the record of a lane whose fold has reached a terminal state and post it to the lane's issue as one `lane-record` marker comment — the wire format owned by packages/fabrika-cli/src/wire/lane-record.ts. The record carries the outcome, the wall-clock from the lane's opening to its terminal event, builds (DONE out of a build leaf), reviews (PASS or FAIL out of a review leaf), every park with its cause and route, Spent $, Asks (the parks routed to the founder — a park with no cause routes there), the origin and standing wait from facts.jsonl, the pull requests the log names, and the whole log collapsed in a <details> block. Every count is derived from events.jsonl by replaying it, never stored. Spent $ reads `unmeasured` with its reason while the spend ledger holds tokens and no rate card. The body is scrubbed of machine-local paths and must then pass the leak guard, or nothing is posted. The issue's comments are read whole first: a record already standing for the same terminal — same issue, outcome and terminal instant — answers `unchanged` and writes nothing, so re-running this after a terminal is safe. The posted comment is read back through the format's reader. Once the record stands — posted now or already there — it runs `fabrika table sync <issue>`; a sync that refuses leaves the record standing, repeats the sync's reason and exit on stderr, and changes no exit code here, so re-running this retries the sync. stdout is {answer:\"posted\"|\"unchanged\", lane, issue, commentId, outcome, origin, asks, builds, reviews, parks, spent, prs, table:{code, answer}} plus `url` on a post. Exits 4 (the lane record, its facts or a lane-record comment already on the issue does not read — whether this terminal is recorded is undecidable), 5 (a machine-local path survived scrubbing — nothing was posted), 7 (no lane there), 8 (the post failed — it may or may not have landed; re-run), 9 (the posted comment does not read back as this terminal's record), 11 (the lane, its facts or the issue's comments could not be read), 19 (the key names no issue — a chore lane has nowhere to post a record), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it — pass a root under the owning repository, or drop --root), 69 (the lane has not reached a terminal state — nothing was posted). Example: fabrika lane record 5673",
 	),
 );
 
