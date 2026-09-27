@@ -23,6 +23,7 @@
 import {Effect, type Layer, Option, Result, Stream} from "effect";
 import type {PayloadRejected, ProcessPorts} from "../../ports/index.ts";
 import type {ProcessSelf} from "../../process/self.ts";
+import {WorkingFolder} from "../../process/working-folder.ts";
 import type {HostHandlers, HostSubs} from "../../registry/program.ts";
 import {
 	type AgentFailure,
@@ -50,6 +51,7 @@ import {
 	type TuvalAiAgent,
 	type TuvalAiAgentApi,
 } from "../service/index.ts";
+import {startFolder} from "../start-folder.ts";
 import {type AgentServiceError, deadlineFailure, failureOf, isTimeout} from "./failures.ts";
 import {type AiAgentRetryPolicy, defaultRetryPolicy, underPolicy} from "./policy.ts";
 import {transcriptProjection} from "./projection.ts";
@@ -79,8 +81,11 @@ export interface AiAgentHandlerOptions<RIn = never> extends WindowLimits {
 	readonly layer: Layer.Layer<TuvalAiAgent, never, RIn>;
 	/** What `title@1` calls this program — the row's `identity.program` (`../program.ts`). */
 	readonly program: string;
-	/** The working directory the Sub's projection falls back to when nothing is checkpointed. */
-	readonly cwd: string;
+	/**
+	 * The folder the row fixes, which the Sub's projection falls back to when nothing is
+	 * checkpointed. Absent for a row whose sessions take their folder at start (#9694).
+	 */
+	readonly cwd?: string;
 	/** Declared data, read by `start` and the reconnect that repeats it (#7371). */
 	readonly policy?: AiAgentRetryPolicy;
 }
@@ -111,6 +116,13 @@ const noSession: AgentFailure = {
 	tag: START_ERROR,
 	reason: "session-not-found",
 	detail: "no agent has been started in this process",
+};
+
+/** A row that takes its folder at start, spawned by something that runs in no folder (#9694). */
+const noFolder: AgentFailure = {
+	tag: START_ERROR,
+	reason: "no-folder",
+	detail: "nothing named a folder for this session to start in",
 };
 
 export const aiAgentHandlers = <RIn = never>(
@@ -216,12 +228,22 @@ export const aiAgentHandlers = <RIn = never>(
 		// one beside it (epic #8070, ruling 2); every other spawner adds nothing and the boot is the
 		// fresh one it has always been. Read here rather than at the spawn seam because this is the
 		// only place that knows the process is new (`../core/machine.ts`'s `init`).
+		//
+		// It also decides the folder, once, by `startFolder`'s order (#9694). From here on the folder
+		// is the state's `cwd`, which the checkpoint keeps and a reconnect reads back.
 		"aiAgent.boot": (cmd) =>
-			Effect.map(Effect.serviceOption(SessionOpening), (opening) =>
-				Option.isNone(opening)
-					? [{type: "start", cwd: cmd.cwd, resume: null} as const]
-					: [{type: "start", cwd: opening.value.cwd, resume: opening.value.resume} as const],
-			),
+			Effect.gen(function* () {
+				const opening = yield* Effect.serviceOption(SessionOpening);
+				const inherited = yield* Effect.serviceOption(WorkingFolder);
+				const folder = startFolder({
+					opening: Option.map(opening, (named) => named.cwd),
+					row: cmd.cwd,
+					inherited: Option.map(inherited, (spawner) => spawner.path),
+				});
+				if (Option.isNone(folder)) return [{type: "openFailed", failure: noFolder} as const];
+				const resume = Option.match(opening, {onNone: () => null, onSome: (named) => named.resume});
+				return [{type: "start", cwd: folder.value, resume} as const];
+			}),
 
 		"aiAgent.start": (cmd) =>
 			open(
@@ -397,7 +419,7 @@ export const aiAgentHandlers = <RIn = never>(
 				if (agent === null) return Stream.empty;
 				const seed = yield* readSession;
 				// The Sub opens on `started`, so this is the started session saying what it is (R3.1).
-				yield* selfReport(yield* projection.seed(seed ?? initialState(options.cwd)));
+				yield* selfReport(yield* projection.seed(seed ?? initialState(options.cwd ?? "")));
 				// Each event's Msg is emitted before its publication runs, so the host has the Msg
 				// before the ports move — the order the core and the projection fold it in.
 				return agent.events.pipe(

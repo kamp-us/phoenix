@@ -11,10 +11,12 @@ The parts below it are their own docs: the command framework is
 [tuval-spells.md](./tuval-spells.md), the layout binding is
 [layout-tree-with-resizable-panels.md](./layout-tree-with-resizable-panels.md).
 
-## The four pieces, and who owns what
+## The five pieces, and who owns what
 
 ```
-.tuval/tuval.config.ts     the shell row + the demo rows + the graph        (user-owned)
+src/desk-layer.ts          the shell row + its graph node, below every file (desk-owned)
+~/.tuval/tuval.config.ts   global rows: the harness sessions, the flags     (user-owned)
+<project>/.tuval/…         each open project's rows + graph, as <project>/<id> (user-owned)
   └─ boot / start          registry → wiring → kernel → launch → restore    (src/boot.ts)
        ├─ shell process    the desk's state; its Cmds run in src/shell/host/effects.ts
        ├─ serveDesk        one WebSocket per page                           (src/shell/host/serve.ts)
@@ -97,18 +99,20 @@ visible is the row's own type: `aiAgentProgram` is generic over the leftover req
 it is handed (`src/ai-agent/program.ts`), so an agent row over a layer that still needs `SpellBridge`
 says `SpellBridge` on its services rather than closing it.
 
-The `claude-session` row in `apps/tuval/.tuval/tuval.config.ts` is the live instance, and it is why
+The `claude-session` row in `apps/tuval/global/tuval.config.ts` is the live instance, and it is why
 the seam has to work this way: a config module is imported inside `boot`, before the bridge exists,
 so the only thing it can name is the `scope` its kernel tools call under — the bridge itself has to
 arrive at spawn (#7958).
 
-`pi-session` is the second instance, over `Features` — the merged feature flags as a kernel service
-(`src/feature-flags.ts`). Same forcing constraint: `loadLayeredConfig` merges the layers *after*
-every config module has been evaluated, so a row built inside one is a closure that cannot read the
-merge. Before the flags rode this seam, `PiAiAgent`'s host read `featuresDefault` directly and a
-config layer stating a flag moved the browser and nothing on the node side (#8595). Any node-side
-flag reads it through `Features`; `featuresDefault` is what a caller with no config layers to merge
-gets, which is every `start` caller but `boot`.
+`pi-session` is the second instance, over `Features` — the global config's feature flags as a kernel
+service (`src/feature-flags.ts`; a project config may not state flags, ADR
+[0419](../.decisions/0419-one-desk-opens-many-projects.md)). Same forcing constraint:
+`loadLayeredConfig` reads the global config's flags *after* every config module has been evaluated,
+so a row built inside one is a closure that cannot read them. Before the flags rode this seam,
+`PiAiAgent`'s host read `featuresDefault` directly and a config layer stating a flag moved the
+browser and nothing on the node side (#8595). Any node-side flag reads it through `Features`;
+`featuresDefault` is what a caller with no global config to read gets, which is every `start`
+caller but `boot`.
 
 ## Which Cmds the kernel runs, and which the surface does
 
@@ -241,11 +245,12 @@ program-blind: a process's state still crosses as `unknown`.
 
 - **The grammar has one namer, and it is the shell row.** `shellProgram` resolves its `table` option
   against `defaultPrefixTable` and publishes the answer on the row it returns; `shellPrefixTable`
-  reads it back off a config's rows, `boot` reports that as `Booted.keyTable`, and `src/bin.ts`
+  reads it back off the booted rows, `boot` reports that as `Booted.keyTable`, and `src/bin.ts`
   hands that value to `serveDesk`. Before this the bin named the default itself, so a config that
   passed `shellProgram` a table put the kernel on its grammar and every page on the default, with
-  nothing failing (#7890). A new caller that needs the grammar reads it off the row the same way —
-  it never reaches for `defaultPrefixTable`, which is why the single namer holds.
+  nothing failing (#7890). The row now comes from the desk layer, not a config file (#9683). A
+  new caller that needs the grammar reads it off the row the same way — it never reaches for
+  `defaultPrefixTable`, which is why the single namer holds.
 
 - The kernel decides what is in the catalog, and it decides with `showsInAWindow`
   (`src/shell/picker/entries.ts`) — the one place the headless test lives. A row with no `renderer`
@@ -291,13 +296,14 @@ program-blind: a process's state still crosses as `unknown`.
   `PickerView.tsx` writes into them by turns: a live region rewritten with the string it already
   holds is not a change and is read out by nothing, so two queries that leave the same count would
   otherwise announce once. `role="alert"` stays the refusal's alone.
-- **The kernel pushes the catalog; the page never asks.** A spell call is the only page-to-kernel
-  message (#7617 R1.3), so the catalog goes out as the socket opens and again on
+- **The kernel pushes the catalog; the page never asks.** A spell call is the only round trip a
+  page starts (#7617 R1.3); the `trust-answer` and `recommend-answer` frames are sent and never
+  awaited, and are never spells, so no agent can answer for the person
+  (`src/shell/transport/wire.ts`). So the catalog goes out as the socket opens and again on
   `TransportServer.publishRegistry`, which re-reads the registry and writes to every attached page.
-  Nothing calls it in production, and a call would change nothing: `Registry.layer` builds one frozen
-  map, so the catalog is fixed for the life of the kernel process and every publish would re-send
-  what the socket already got on open (#7841). `Booted.reload` writes only the spell registry
-  (#7743).
+  The desk's registry grows and shrinks as projects open and close (`Registry.growable`, #9685), so
+  `src/bin.ts` publishes on every open and close. `Booted.reload` writes only the spell registry
+  (#7743), so a reload publishes nothing.
 
 `AttachedDesk` opens **one subscription per process**, so two windows over one process are one state
 with two view slots — the Vim buffer model (#7484 R1.3), not two copies.

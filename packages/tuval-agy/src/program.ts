@@ -28,8 +28,8 @@ import {AGY_CHAT_WINDOW_REF, AGY_SESSION_PROGRAM} from "./renderer-ref.ts";
 export {AGY_SESSION_PROGRAM} from "./renderer-ref.ts";
 
 export interface AgySessionProgramOptions {
-	/** The project root that booted the kernel: the cwd a fresh session opens in. */
-	readonly cwd: string;
+	/** A folder every fresh session opens in. Absent, a session takes its folder at start (#9694). */
+	readonly cwd?: string;
 	/** agy options for the layer this row builds. Ignored when `layer` is supplied. */
 	readonly agy?: AgyAiAgentOptions;
 	/**
@@ -46,6 +46,7 @@ export const agySessionProgram = (options: AgySessionProgramOptions): AiAgentPro
 	aiAgentProgram({
 		id: AGY_SESSION_PROGRAM,
 		layer: options.layer ?? preflightedAgyLayer(options.agy ?? {}),
-		config: {cwd: options.cwd},
+		config: options.cwd === undefined ? {} : {cwd: options.cwd},
 		renderer: AGY_CHAT_WINDOW_REF,
+		sdk: "0.x",
 	});

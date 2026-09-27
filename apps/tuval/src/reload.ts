@@ -17,7 +17,7 @@
  * and one process refusing it must not turn it into a refusal of the whole re-read.
  */
 
-import type {BindingError, BindingSource} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
+import type {BindingError} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
 import {DuplicateSpellPath, SpellNotDescribable} from "@kampus/tuval-sdk/kernel/commands/errors";
 import type {AnySpell} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
@@ -28,7 +28,9 @@ import {ProcessSelf} from "@kampus/tuval-sdk/kernel/process/self";
 import type {AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Context, Effect, Layer, Option, Ref, Schema, Semaphore} from "effect";
 import {AuthoredModules} from "./authored-modules.ts";
-import {ConfigLoadError} from "./config.ts";
+import {ConfigLoadError, type ProjectLayer} from "./config.ts";
+import type {ConfigGeneration} from "./config-generation.ts";
+import type {LiveKeyBindings} from "./keys/live.ts";
 
 const byId = (rows: ReadonlyArray<AnyProgram>): ReadonlyMap<ProgramId, AnyProgram> =>
 	new Map(rows.map((row) => [row.id, row]));
@@ -52,7 +54,9 @@ const sourceOf = (value: unknown, seen: Set<object>, functions: Set<string>): st
  * The source text of everything on a row that runs, beside the version its state is written under,
  * and the source of every author file that code stands on. Every module the config imports by path
  * is evaluated again on each read, so a row's functions are new objects whether or not anyone edited
- * them; their text is what an edit to them moves. A helper they call is not in their text, so
+ * them; their text is what an edit to them moves. A row the SDK compiled runs its author's code
+ * through the SDK's own closures, whose text no edit moves, so its `authoredCode` is read beside
+ * them. A helper they call is not in their text, so
  * `modules` adds each file that defines one of the row's functions and every file that one imports
  * by path, transitively, as the load read them: an edit confined to such a helper moves the answer
  * too. A value a function closes over is config rather than code, and reaches a running process
@@ -76,6 +80,7 @@ export const codeOf = (
 			row.restorable,
 			row.migrations,
 			row.checkpointWorthy,
+			row.authoredCode,
 		],
 		new Set(),
 		functions,
@@ -171,18 +176,6 @@ export const applyReload = (
 		return {notified, switched, restoreRefused, pending} satisfies Applied;
 	}).pipe(Effect.withSpan("Tuval.reload.applyReload"));
 
-/**
- * One read of the config, as `boot` runs it: the rows with their flags applied, the author's modules
- * they were built from, and their keys.
- */
-export interface ConfigRead extends ProgramGeneration {
-	readonly keys: ReadonlyArray<BindingSource>;
-	/** The layer modules that existed, global first. */
-	readonly sources: ReadonlyArray<string>;
-	/** Every file the read imported the config from (`LoadedConfig.files`). */
-	readonly files: ReadonlyArray<string>;
-}
-
 /** Refused by a kernel `start` was handed rows rather than a config to read them from. */
 export class NoConfigToReload extends Schema.TaggedError<NoConfigToReload>()(
 	"tuval/NoConfigToReload",
@@ -262,8 +255,19 @@ export interface FromConfigOptions {
 	/** The kernel's own spells, registered beside every reloaded row's. */
 	readonly core: ReadonlyArray<AnySpell>;
 	/** The generation the kernel was started with, so the first reload diffs against it. */
-	readonly initial: ProgramGeneration;
-	readonly read: Effect.Effect<ConfigRead, ConfigLoadError>;
+	readonly initial: ConfigGeneration;
+	/**
+	 * How to read the config again, given the projects open when the reload runs. Absent for a kernel
+	 * handed rows and no config, and that kernel's reload refuses with `NoConfigToReload`.
+	 */
+	readonly read?: (
+		projects: ReadonlyArray<ProjectLayer>,
+	) => Effect.Effect<ConfigGeneration, ConfigLoadError>;
+	/**
+	 * Where the shell reads each focus owner's key bindings (#9687), recompiled from every generation
+	 * this installs. Absent for a kernel whose shell routes no config bindings.
+	 */
+	readonly keyBindings?: LiveKeyBindings;
 }
 
 /**
@@ -273,30 +277,54 @@ export interface FromConfigOptions {
  * running and handed only what its row's `configChanged` answers. A refused reload switches nothing,
  * because the read and the registry swap both come first. Reloads run one at a time, because each
  * swaps the generation the live processes are diffed against.
+ *
+ * `swap` is the other writer of that generation: a project opening or closing (#9685) moves whole
+ * rows in or out, and no live process runs under a row either one changes, so it tells none. It
+ * holds the same lock, so a reload never reads the open projects halfway through one.
  */
 export class ConfigReloader extends Context.Service<
 	ConfigReloader,
-	{readonly reload: Effect.Effect<ReloadReport, ReloadRefused>}
+	{
+		readonly reload: Effect.Effect<ReloadReport, ReloadRefused>;
+		readonly swap: <E>(
+			next: (current: ConfigGeneration) => Effect.Effect<ConfigGeneration, E>,
+		) => Effect.Effect<void, E | ReloadRefused>;
+	}
 >()("tuval/ConfigReloader") {
 	static readonly fromConfig = ({
 		core,
 		initial,
 		read,
+		keyBindings,
 	}: FromConfigOptions): Layer.Layer<ConfigReloader, never, SpellSet | ProcessTable | Processes> =>
 		Layer.effect(
 			ConfigReloader,
 			Effect.gen(function* () {
 				const services = yield* Effect.context<ProcessTable | Processes>();
 				const set = yield* SpellSet;
-				const generation = yield* Ref.make<ProgramGeneration>(initial);
+				const generation = yield* Ref.make(initial);
 				const lock = yield* Semaphore.make(1);
+				const install = (next: ConfigGeneration) =>
+					set.reload({core, programs: next.programs, keys: next.keys}).pipe(
+						Effect.mapError((reason) => new ReloadRefused({reason, files: next.files})),
+						// Compiled against the table just installed, so the shell never routes a binding
+						// to a spell the registry no longer holds.
+						Effect.tap(() =>
+							keyBindings === undefined
+								? Effect.void
+								: Effect.flatMap(set.read, (current) =>
+										keyBindings.install(next.ownerKeys, current.table),
+									),
+						),
+					);
 				const reload = Effect.gen(function* () {
-					const next = yield* read.pipe(
+					if (read === undefined) {
+						return yield* new ReloadRefused({reason: new NoConfigToReload(), files: []});
+					}
+					const next = yield* read((yield* Ref.get(generation)).projects).pipe(
 						Effect.mapError((reason) => new ReloadRefused({reason, files: reason.files})),
 					);
-					yield* set
-						.reload({core, programs: next.programs, keys: next.keys})
-						.pipe(Effect.mapError((reason) => new ReloadRefused({reason, files: next.files})));
+					yield* install(next);
 					const applied = yield* applyReload(yield* Ref.getAndSet(generation, next), next).pipe(
 						Effect.provideContext(services),
 					);
@@ -310,7 +338,15 @@ export class ConfigReloader extends Context.Service<
 						...applied,
 					} satisfies ReloadReport;
 				}).pipe(lock.withPermits(1), Effect.withSpan("Tuval.reload"));
-				return ConfigReloader.of({reload});
+				const swap = <E>(
+					next: (current: ConfigGeneration) => Effect.Effect<ConfigGeneration, E>,
+				): Effect.Effect<void, E | ReloadRefused> =>
+					Effect.gen(function* () {
+						const swapped = yield* next(yield* Ref.get(generation));
+						yield* install(swapped);
+						yield* Ref.set(generation, swapped);
+					}).pipe(lock.withPermits(1), Effect.withSpan("Tuval.reload.swap"));
+				return ConfigReloader.of({reload, swap});
 			}),
 		);
 
@@ -319,6 +355,7 @@ export class ConfigReloader extends Context.Service<
 		ConfigReloader,
 		ConfigReloader.of({
 			reload: Effect.fail(new ReloadRefused({reason: new NoConfigToReload(), files: []})),
+			swap: () => Effect.fail(new ReloadRefused({reason: new NoConfigToReload(), files: []})),
 		}),
 	);
 }

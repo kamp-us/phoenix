@@ -188,6 +188,17 @@ export const keyTargetOf = (workspace: Workspace, windowId: WindowId): string | 
 	return null;
 };
 
+/**
+ * The program bound to a window, or `null` for an empty window, a window the tree does not hold,
+ * and one bound before windows recorded their program (#9687).
+ */
+export const programOf = (workspace: Workspace, windowId: WindowId): string | null => {
+	for (const window of windows(workspace.layout.root)) {
+		if (window.id === windowId) return window.program ?? null;
+	}
+	return null;
+};
+
 export const hasWindow = (workspace: Workspace, windowId: WindowId): boolean =>
 	windowIds(workspace).includes(windowId);
 

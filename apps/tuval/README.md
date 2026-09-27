@@ -29,6 +29,8 @@ pnpm proof:chat       # the chat window in a real browser, on fixtures — see "
 pnpm proof:picker     # the window picker, open and filtering, in a real browser — see "Paint proofs"
 pnpm proof:pi-vertical   # the Pi vertical in a real browser, on Pi's faux provider — free
 pnpm proof:claude-real   # the Claude vertical on the REAL CLI — the founder's run, spends tokens
+pnpm build            # the packed desk into dist/ — see "The packed desk"
+pnpm proof:outside    # the author loop on the packed desk, from a folder outside the checkout
 ```
 
 ### Paint proofs
@@ -102,30 +104,100 @@ render. `/effort-offered.html` also opens the actual effort menu without selecti
 This proves the layer-to-component state and paint, **not** the real CLI, login, kernel transport
 or model execution; the in-memory host records UI dispatches without executing them.
 
-`pnpm dev` runs `node src/bin.ts`, an Effect CLI (`effect/unstable/cli`) over the pure `boot`.
-Node strips the TypeScript itself, so the kernel has no build step. Boot loads your config layers
-(see "Your config"), registers their programs, launches the processes the graph plans, restores any
-other checkpointed process from this project's state dir, prints the process table, binds the page
-socket, serves the desk, and stays up until Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints
-every process and exits 0; a config that plans no process exits right after the report.
+`pnpm dev` runs `node src/bin.ts --config global/tuval.config.ts`, an Effect CLI
+(`effect/unstable/cli`) over the pure `boot`. Node strips the TypeScript itself, so the kernel has
+no build step. Boot loads your config layers (see "Your config"), registers their programs,
+launches the processes the graph plans, restores any other checkpointed process from this project's
+state dir, prints the process table, binds the page socket, serves the desk, and stays up until
+Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints every process and exits 0; a config that
+plans no process exits right after the report.
 
 ```
-tuval [flags]
-  --config file          Global config module (default: ~/.tuval/tuval.config.ts)
+tuval [flags]            Start a desk, or bring the running one forward
+tuval open <folder>      Add a folder as a project to the running desk, or start a desk with it
   --project directory    Project dir whose .tuval/ holds the project config (default: cwd)
+  --config file          Global config module for a new desk (default: ~/.tuval/tuval.config.ts)
   --no-page              Boot the kernel and the socket, but serve no page
   --page-port integer    Port for the page (default: a free one)
   --help, --version
 ```
 
 `node src/bin.ts --config <module>` swaps the global layer, which is how the tests exercise the
-refusals; `--project <dir>` opens another project. A path named by either flag must exist.
+refusals; `--project <dir>` opens another project first. A path named by either flag must exist.
+
+`tuval` starts one desk per home, like `code` (#9696). A desk that serves a page writes
+`~/.tuval/desk.json`, naming its process and its page's address, and removes it when it stops. A
+second `tuval` reads that record and asks the page for its launch URL, the same request the page
+itself makes, so the token never reaches the disk. If the desk answers, `tuval` opens its page in
+your browser and starts nothing. The flags above only shape a new desk, and it says so when they go
+unused. `tuval open <folder>` asks the running desk to open the folder through the `project open`
+spell, trust prompt and all. It brings the page forward first, because the open waits on that
+question, then prints the desk's answer; a refusal exits 1. With no desk running, `tuval open
+<folder>` starts one with that folder as its first project. A record whose process is gone, or
+whose page does not answer, is from a desk that crashed. `tuval` says so, removes it, and starts a
+new desk. A `--no-page` desk writes no record, since a caller reaches a desk through its page.
+
+One running desk holds several projects (#9685).
+[ADR 0419](../../.decisions/0419-one-desk-opens-many-projects.md) records the whole project model.
+The `--project` folder is the first one it opens, and the `project open` spell opens another into
+the running desk with no restart: its config layer is read, its rows join the registry, its graph
+starts, its checkpointed processes come back from its own state directory, and a `kind: "module"`
+renderer it declares is served to the page (an attached page loads it on its next load).
+`project close` stops every process running in that project, leaving their checkpoints, drops the
+connections its config declared and removes its rows, and every other project keeps running. A
+subproject closes only for the program that opened it, so `project close` refuses one for any other
+caller. Both name the folder by its absolute path. `project list` answers which are open, and
+`~/.tuval/open-projects.json` keeps that list, one record per folder.
+
+The first time `project open` meets a folder with a `.tuval/tuval.config.ts`, the desk asks
+"Trust this folder?" before it imports that config, because importing it runs its code (#9693, the
+VS Code workspace trust model). The open waits on the answer, and every attached page shows the
+question as a dialog. No, or Escape, means nothing from that folder runs; yes opens it and is
+remembered per folder path in `open-projects.json`, so the next open does not ask. Only a desk page
+can answer: the answer rides a transport frame of its own, never a spell an agent could call. A
+folder with no config has nothing to run and is never asked about, and neither are the home config
+or the desk's own layer.
+
+A project config can list `recommends: ["<package>"]`, npm packages it suggests to whoever opens it
+(#9695). Once a trusted folder opens, the desk asks "Install <package>?" for each one nobody has
+answered for that project yet, and never installs anything on its own. Either answer is remembered
+for the project in `open-projects.json`, so it is asked once, even after a close or a restart. There
+is no installer yet: a yes is saved as your intent and the dialog says plainly that nothing was
+installed. An untrusted folder's config is never imported, so its `recommends` is never read. Only a
+project config may list `recommends`; the home config is refused if it does.
+
+A desk restart reopens the projects that were open, the way VS Code restores its windows (#9688).
+The `--project` folder opens first, and the others in the saved list open beside it, each with its
+processes restored from its own state directory. A project closed before the restart stays closed.
+Nothing is asked on the way: a folder that was deleted, or whose config is no longer trusted, is
+skipped with a `tuval: did not reopen the project <folder>: …` line, nothing from it runs, and the
+rest still open. Subprojects are not reopened here; the program that opened one restores it.
+
+A program can open a subproject: a folder nested under the project it runs in (#9689). Its handler
+calls `openSubproject(folder)` from `@kampus/tuval-sdk/authoring`, and that program becomes the
+subproject's opener. A subproject asks no trust question, because its parent is open and so already
+trusted. It keeps its own config, state directory and rows, and its tiles read under its parent's
+label (`phoenix › lane-9650`). Closing the parent closes its subprojects first and stops their
+processes. Only the opener crosses the boundary: a subproject's config cannot connect up to its
+parent, and at runtime a send, ask, stop, read or spawn from the parent's other programs into the
+subproject, or from the subproject up to its parent, is refused with an error naming both ends. That
+holds for a program's own effects and for the `process send`, `process read` and `process spawn`
+spells it calls. `closeSubproject(folder)` answers once the subproject has closed and its processes
+have stopped. The saved list
+leaves subprojects out, so after a restart one comes back only when its opener calls
+`openSubproject` again. `@kampus/tuval-worktree` opens each lane this way.
+
+Known gap: the `--project` folder, which defaults to the working directory, is imported at boot
+without the question, so running `tuval` inside a freshly cloned repo runs that repo's config
+unasked. So is the folder `tuval open <folder>` starts a new desk with. Ruling #9668 R2.1 exempts
+only the home config; #9977 tracks moving the boot folder onto the trust prompt.
 
 Nothing Tuval saves goes into the project. The process manifest, the checkpoints and the Pi session
 files live under `~/.tuval/projects/<key>`, where the key is that checkout's absolute path written
 as one folder name — the same shape Claude Code keys its projects by, and the reason two worktrees
-of one repository are two desks with no shared state
-([ADR 0402](../../.decisions/0402-tuval-state-lives-under-home.md)). Each directory holds a
+of one repository are two projects with no shared state, which one desk can hold side by side
+([ADR 0402](../../.decisions/0402-tuval-state-lives-under-home.md),
+[ADR 0419](../../.decisions/0419-one-desk-opens-many-projects.md)). Each directory holds a
 `project.json` naming the path it was derived from, so a key reads back. A project needs zero files
 to be a project; `<project>/.tuval/` is a config directory and may hold `tuval.config.ts` and
 nothing else. State an older build left under `<project>/.tuval` is moved into the home-dir key on
@@ -154,8 +226,9 @@ names that address (ADR [0370](../../.decisions/0370-desk-serves-localhost-on-bo
 Open that URL and the desk is yours by keyboard: `<c-b> |` and `<c-b> -` split, `<c-b> h/j/k/l`
 walk focus, `<c-b> N` makes a workspace and `<c-b> <c-h>` / `<c-b> <c-l>` walk them, `<c-b> z`
 zooms, `<c-b> w` puts the focused window back on the picker with its process still running, and
-`<c-b> :` opens the command line — `window:open log` fills the focused window with a demo
-program. With the prefix unarmed every key belongs to the focused window's process.
+`<c-b> :` opens the command line — `window:open <program>` fills the focused window with a
+program, and an empty window's picker lists them all. With the prefix unarmed every key belongs to
+the focused window's process.
 
 Beside the shell (below), the box holds the demo counter and log (`src/demo/`, #7517): the counter
 ticks once a second and announces each count on its `ticks` out-port, the log records what arrives on
@@ -166,14 +239,43 @@ state, the counter picks up where it left off, and `restored` counts them.
 
 ## Your config
 
-Configuration is code you own, the Neovim model, in two layers: a global module at
-`~/.tuval/tuval.config.ts` and an optional project module at `.tuval/tuval.config.ts` in the
-project dir (the cwd, or `--project`). Either may be absent — an absent layer is empty, and a
-boot with neither registers nothing. The two merge project-over-global: a program row or a graph
-node in the project layer replaces the global one with the same id, in place; the rest append.
-This repo's `apps/tuval/.tuval/tuval.config.ts` is the project layer `pnpm dev` runs against. The
-checkpoints do not land beside it — they land under the home dir, which is why no repository needs
-an ignore rule for Tuval state.
+Configuration is code you own, the Neovim model, in two file layers over the desk's own: a global
+module at `~/.tuval/tuval.config.ts` and an optional project module at `.tuval/tuval.config.ts` in
+the project dir (the cwd, or `--project`). The loader reads the desk layer first, then global, then
+project. The desk layer is not a file: it is the shell row and its graph node, which the desk
+supplies itself (`src/desk-layer.ts`, #9683), so your config declares only your own programs. Either
+file may be absent — an absent layer is empty, and a boot with neither, or a folder with no `.tuval`
+at all, runs the desk's shell and nothing else. No layer replaces another's row (ruling #9668 R4.1,
+#9684). A global row keeps its bare id; a project row and a project graph node run as
+`<project>/<id>`, where `<project>` is the folder's state key (ADR 0402), so a project row with a
+global row's id loads beside it and a node's process id never collides with another project's. A
+bare id in the project's `graph` — a node's `program`, its `parent`, a route's target — names the
+project's own row or node when there is one and the global one otherwise. A project graph naming
+another project's id is refused at load with both ends named, and so is a global graph naming any
+project's: the global layer reaches a project only through a connection the project declares. `/` is
+reserved for that scope, so a declared id carrying one is refused. On the command line a project row
+goes by its scoped id. A project row's spells sit under its scoped id too, and a call that addresses
+one by the bare id it was declared under still reaches it, as long as no row holds that bare address
+and only one project declares the id; that is how a window's `session.list` call reaches a project's
+session list. A file layer that declares the shell's row or node id is refused at load, naming the
+file and saying the desk supplies it.
+
+The first boot on a build with project scoping moves the checkpoints an older build saved onto the
+scoped ids: a process of a project row runs that row's scoped id, a planned node's process takes the
+node's scoped id, and a parent link follows its parent. A `scoped-ids.json` in the state directory
+records that it ran, so it runs once.
+This repo's `apps/tuval/.tuval/tuval.config.ts` is the project layer `pnpm dev` runs against, and
+`apps/tuval/global/tuval.config.ts` is the global layer it passes as `--config` in place of your
+`~/.tuval/tuval.config.ts`. The checkpoints do not land beside either layer. They land under the
+home dir, which is why no repository needs an ignore rule for Tuval state.
+
+The four harness rows (Pi, Claude, agy, codex) live in the global layer and name no folder. The
+picker offers each one once per open project ("Claude · phoenix"), or once for home with nothing
+open. A session runs in the folder of the entry you picked and keeps it (#9694).
+
+A project's own programs run in its folder. A process a program starts runs in that program's
+folder unless the program names another, whether the program spawns it itself or an agent session
+spawns it through its kernel tools.
 
 A config module default-exports one versioned object, `TuvalConfigInput` from `@kampus/tuval-sdk/config`:
 `version: 1`, `programs`, an optional `graph`, and an optional `keys` (see "Spells"). A row is a
@@ -183,23 +285,17 @@ arrives on each in-port into the program's own Msg, host handlers, a capability 
 optional renderer reference, and the identity / capability / placement records as inert data — the
 kernel enforces nothing on them, local code is fully trusted. The graph names the processes to run
 and the routes between them (see "Ports" and "Launch" below); a config without one registers its
-programs and runs nothing.
+programs and runs only the desk's shell.
 
 ```ts
 import {Console} from "effect";
 import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
-import {ProcessId} from "@kampus/tuval-sdk/authoring";
-import {wiredShellEffects} from "../src/shell/host/index.ts";
-import {shellGraphNode, shellNode, shellProgram} from "../src/shell/program.ts";
 
 export default {
 	version: 1,
-	programs: [
-		shellProgram({effects: wiredShellEffects({shellProcessId: ProcessId.make(shellNode)})}),
-		...demoPrograms({everyMs: 1000, write: (line) => Console.log(line)}),
-	],
-	graph: {nodes: [shellGraphNode, ...demoGraph.nodes]},
+	programs: demoPrograms({everyMs: 1000, write: (line) => Console.log(line)}),
+	graph: demoGraph,
 } satisfies TuvalConfigInput;
 ```
 
@@ -211,7 +307,34 @@ place and the reason:
 ```
 tuval: refusing to boot — config module /path/to/tuval.config.ts: module threw while loading: boom
 tuval: refusing to boot — config module /path/to/tuval.config.ts: not a v1 config at graph: Expected object
+tuval: refusing to boot — config module /path/to/tuval.config.ts: declares program row "shell", which the desk supplies itself; remove the row and its graph node
 ```
+
+An SDK range refusal costs one row, not the config. A row's `sdk` field is the semver range of
+`@kampus/tuval-sdk` versions it supports, and the desk runs one copy of the SDK for every program
+(ruling #9668 R2.2). A row whose range excludes that copy's version, or whose range is not a semver
+range, is not loaded; its graph nodes, their children and the routes into them do not start, and the
+rest of the config runs. The boot line and `project open` name the row, its range and the desk's
+version. A row with no `sdk` supports every SDK of the desk's own major, so rows written before the
+field existed keep loading.
+
+```
+tuval: program "<project>/notify" supports @kampus/tuval-sdk ^2, and this desk runs 0.0.0; it was not loaded
+```
+
+### Running it on your own project
+
+`pnpm dev --project <dir>` opens any directory as a project, and that directory needs no files.
+When `<dir>/.tuval/tuval.config.ts` is absent, the project layer is empty and the desk layer still
+supplies the shell, so the desk attaches (#9375). The boot line names only the file layers it read:
+
+```
+tuval: booted — 1 program(s), … spell(s) registered from no config module; 1 process(es) live, 0 restored from ~/.tuval/projects/-Users-you-code-your-repo
+```
+
+Writing a project module adds that project's rows beside the shell and never removes it. If a
+kernel runs no shell process anyway, the page does not wait at "Attaching to the Tuval kernel…". It
+says the kernel is running no shell process and how to start one.
 
 ## The public API
 
@@ -349,7 +472,8 @@ It carries a sentence describing itself, an Effect `Schema` for its arguments, a
 result, and the Effect that runs it — so the same definition is what the command line completes
 against, what a key binding compiles to, and what a program calls over the wire. The kernel
 registers its own list at boot (`help`, `spell list`, `spell describe`, `process spawn`,
-`process send`, `process read`), and boot reports the total beside the program count.
+`process send`, `process read`, `project open`, `project close`, `project list`), and boot reports
+the total beside the program count.
 
 Open the palette with Cmd+K or Ctrl+K to discover registered program and core commands alongside
 shell shortcuts such as `window close`. Tab completes a selection; Enter runs it through the
@@ -640,6 +764,16 @@ that no longer resolves, a spawn that failed, an unreadable command line — eac
 written to the view slot through `window.setView`, so the picker stays mounted and announces it.
 Nothing here throws and nothing here fails an Effect.
 
+**Open project… ends the list** on a page that can ask the kernel (#9697). Choosing it moves the
+same listbox onto two steps: the recent projects, newest first, from the `recent` list the saved
+open-projects record keeps, then "Browse for a folder…", a folder browser that starts at the home
+folder. Enter or → goes into a folder, ← goes up, Enter on "Open <folder>" opens it, and Escape goes
+back one step. An open is the `project open` spell, the request `tuval open` sends, so a first open
+asks "Trust this folder?". A recent project that is already open says so, and choosing it lands the
+program list on that project's sessions instead of opening it twice. The steps live in the view slot
+(`src/shell/picker/open-project.ts`); what they list is read through the `project recent` and
+`project browse` spells as each step is shown (`src/shell/ui/use-open-project.ts`).
+
 `pickerFrame` is the render, as data: an ARIA listbox of two named groups, an accessible name on
 every option, the active option named for `aria-activedescendant`, and the refusal on an assertive
 live region. Movement answers the arrow keys and their vim and readline spellings (`j`/`k`,
@@ -686,9 +820,9 @@ Its proof binds a real loopback socket, so it runs as this app's `integration` t
 ## Shell: the shell as a program
 
 `src/shell/program.ts` is the whole of the shell's claim on the kernel: one registry row, one graph
-node. There is no built-in shell and no special path — the desk is a `Program` exactly as the demo
-counter is, registered through your own config module, and dropping its row and node is how you boot
-without one.
+node. The desk is a `Program` exactly as the demo counter is, with no special path through the
+kernel. The one thing that differs is who registers it: the desk layer (`src/desk-layer.ts`)
+supplies the row and node below every config file (#9683), and no config may declare them.
 
 ```ts
 shellProgram({effects}); // id "shell", core from src/shell/core/, no ports
@@ -714,7 +848,8 @@ conversion, through the brand's own constructor.
 
 The core's Cmds are handed in as `effects`. This slice ships only `unwiredShellEffects`, which does
 none of them and logs each drop at debug; the set that runs them against the kernel is
-`wiredShellEffects` in `src/shell/host/`, and that is what the config registers.
+`wiredShellEffects` in `src/shell/host/`, and the desk layer (`src/desk-layer.ts`) is what registers
+it.
 
 ## Shell: the browser surface
 
@@ -832,6 +967,50 @@ page may reach, and `index.ts` re-exports it — `src/shell/transport/browser.ts
 handshake and the server, `src/shell/picker/browser.ts` leaves out `open.ts` and the kernel behind
 it. A new Node-only module goes in `index.ts`, never `browser.ts`. The shape and the reasons are
 [`.patterns/tuval-shell-assembly.md`](../../.patterns/tuval-shell-assembly.md).
+
+## The packed desk
+
+The app is `@kampus-apps/tuval` in the workspace and packs as `@kampus/tuval`, with a `tuval` bin
+(#9690). `publishConfig.directory` points `pnpm pack` at `dist/`, and `prepack` runs `pnpm build`
+(`src/publish/build.bin.ts`), which writes three things there: the page built from `index.html`, the
+bin bundled from `src/bin.ts` under `server/`, and a `package.json` composed by
+`src/publish/manifest.ts`. The workspace packages the desk runs on are bundled in, since none of
+them is published. `@kampus/tuval-sdk` is not: it is a regular dependency, so the desk and every
+program load one copy, and the build fails if either bundle read a file of the SDK.
+
+The page is still served by Vite at run time, because a program's window is a module only a running
+page server can resolve. So the built page leaves React, Effect and the SDK as imports for that
+server to resolve once, for the page and the windows alike.
+
+Publishing stays a manual step: the app keeps `private: true`, so `pnpm -r publish` skips it, and a
+`pnpm publish` run in this directory publishes `dist/`. `pnpm proof:outside`
+(`src/publish/outside.bin.ts`, run in CI) packs both packages, installs them with npm in a temp
+folder outside the checkout, runs `tuval open .` over a program written there against a scratch
+home, trusts a second folder through the desk's own question, edits the program and sees the running
+process switch, and fails if the desk resolved a file inside the checkout or loaded a second SDK.
+
+## The author loop
+
+An author outside phoenix writes a program in their own folder and runs it on the packed desk
+(ruling #9668 R6.1, [ADR 0419](../../.decisions/0419-one-desk-opens-many-projects.md)):
+
+1. `npm i @kampus/tuval-sdk`, plus `@kampus/tuval` for the `tuval` command (`npm i -g`, or beside
+   the SDK). A program that imports Effect itself takes the `effect` version the SDK pins, so the
+   desk still loads one copy.
+2. Write the program against `@kampus/tuval-sdk/authoring` (see "The public API"). Give its row an
+   `sdk` range if it needs one; a row with none supports the desk's SDK major.
+3. Add the row, and a graph node if it should start on open, to `.tuval/tuval.config.ts` in that
+   folder.
+4. `tuval open .` opens the folder as a project: in the running desk, or in a new desk when none is
+   running.
+5. Answer "Trust this folder?" with yes. A folder is asked once; the answer is kept per path. A
+   folder that starts a new desk is not asked yet; #9977 tracks that gap.
+6. Edit the program. Saving the config, or any file it imports by path, reloads it in the running
+   desk (see "Spells"), and the process switches to the edited code while keeping the state it had.
+   One limit holds today: only the folder a desk booted with is watched, so a project opened into a
+   desk that was already running does not reload (#9869).
+
+`pnpm proof:outside` runs these steps from packed tarballs in CI (see "The packed desk").
 
 ## The static root
 

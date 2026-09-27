@@ -28,7 +28,7 @@ import {applyKeysConfig, defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Effect, Layer, Option, Result, Schema} from "effect";
 import {afterAll} from "vitest";
 import {boot, projectDir} from "../boot.ts";
-import {reboundTable} from "../config-fixtures/shell-rebound-keys.ts";
+import {reboundDesk, reboundTable} from "../config-fixtures/shell-rebound-keys.ts";
 import {scratchHome} from "../scratch-home.ts";
 import {applyMsg, initialState, type ShellMsg} from "./core/index.ts";
 import type {ServeDeskOptions} from "./host/index.ts";
@@ -49,13 +49,8 @@ import {
 /** The scratch home every boot in this file runs under. */
 const home = scratchHome("shell-program");
 
-/** The box's own config module — the user-owned surface the shell is registered through. */
+/** The box's own config module, which declares no shell: the desk layer supplies it (#9683). */
 const boxConfig = fileURLToPath(new URL("../../.tuval/tuval.config.ts", import.meta.url));
-
-/** A config layer whose shell row is built on a rebound prefix, for the #7890 walk below. */
-const reboundConfig = fileURLToPath(
-	new URL("../config-fixtures/shell-rebound-keys.ts", import.meta.url),
-);
 
 const tempDirs: string[] = [];
 /** A project dir whose `.tuval/` is empty: no project config, nothing checkpointed. */
@@ -121,7 +116,7 @@ const dispatched = (...msgs: ReadonlyArray<ShellMsg>) =>
 
 describe("the shell as a program row", () => {
 	it.effect(
-		"is registered through the user-owned config module and spawns as a lone root",
+		"is supplied by the desk layer beside the box config and spawns as a lone root",
 		() =>
 			Effect.gen(function* () {
 				const {kernel: context} = yield* boot({global: boxConfig, project: freshProject(), home});
@@ -455,10 +450,16 @@ describe("the boot path's one prefix table", () => {
 	);
 
 	it.effect(
-		"carries a config-set table through to the value the bin hands `serveDesk`",
+		"carries the desk layer's table through to the value the bin hands `serveDesk`",
 		() =>
 			Effect.gen(function* () {
-				const booted = yield* boot({global: reboundConfig, project: freshProject(), home});
+				const project = freshProject();
+				const booted = yield* boot({
+					global: join(project, "no-global-config.ts"),
+					project,
+					home,
+					desk: reboundDesk,
+				});
 				// The one expression `src/bin.ts` builds around the reported table.
 				const options = {
 					kernel: booted.kernel,

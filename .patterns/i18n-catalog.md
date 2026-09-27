@@ -21,7 +21,7 @@ apps/web/src/i18n/
 ├── interpolate.ts       `{name}` substitution — the whole message format
 ├── plural.ts            `plural(locale, n, {one, other})` on `Intl.PluralRules`
 ├── locale.ts            the `Locale` type, the default, the endonym labels
-├── brandNouns.ts        the nouns that never translate
+├── brandNouns.ts        the five product names that never translate, and the words en must not carry
 └── LocaleProvider.tsx   the React face: `LocaleProvider`, `useLocale`, `useT`, `useTPlural`,
                          `useDateFormatter`
 ```
@@ -159,12 +159,16 @@ unchanged.
 
 ## Brand nouns
 
-`brandNouns.ts` is the list, and `brandNouns.unit.test.ts` grades every key: a noun appears the same
-number of times in `en` as in `tr`, matched **whole-word**. Turkish is agglutinative, so
-`bildirimler` contains `bildir` and a substring match would call every suffixed word a brand noun.
+`brandNouns.ts` holds two lists (ADR [0414](../.decisions/0414-five-product-names-stay-turkish.md)).
+`BRAND_NOUNS` is the five product names English keeps — sözlük, pano, kampus, mecmua, depo — and
+`brandNouns.unit.test.ts` grades every key: a name appears the same number of times in `en` as in
+`tr`, matched **whole-word**. Turkish is agglutinative, so `panoda` contains `pano` and a substring
+match would call every suffixed word a product name. `TRANSLATED_IN_ENGLISH` is the other list:
+divan ("Council"), künye ("Standing"), yazar, çaylak, kefil, bildir, sustur and engelle, which no
+`en` message may carry, matched as a **stem** so `çaylaklar` and `künyesi` count too.
 
-That whole-word rule is what you trip over when Turkish suffixes the noun. `divanda` is not a
-whole-word `divan`, so the key's `tr` count is 0 — and an English message that spells `in the divan`
+That whole-word rule is what you trip over when Turkish suffixes the name. `panoda` is not a
+whole-word `pano`, so the key's `tr` count is 0 — and an English message that spells `on pano`
 counts 1 and reds the invariant. Two ways out. **Give the English side a placeholder and pass the
 noun in**, out of an `auth.brand.*`-style key so it is still catalog copy rather than a literal:
 
@@ -182,9 +186,9 @@ t("auth.landing.col.pano", {panoNoun: t("auth.brand.pano")})
 Name the placeholder `{panoNoun}`, **never `{pano}`**: the invariant scans with `\p{L}+`, braces are
 not letters, so `{pano}` reads as the word `pano` and counts. A noun whose Turkish spelling mutates
 under the suffix (`sözlük` → `sözlüğe`) can only be written out on the `tr` side; the placeholder
-still belongs on the `en` one. Or, where the phrase reads fine without the noun, **write the English
-around it** (`up for review`, `one of the yazars`) rather than reintroduce a noun the Turkish only
-carries suffixed (`divandaki`, `yazarsın`, `çaylakların`).
+still belongs on the `en` one. Or, where the phrase reads fine without the name, **write the English
+around it** rather than reintroduce a name the Turkish only carries suffixed (`panoda`,
+`sözlüğe`).
 
 ## Plurals
 

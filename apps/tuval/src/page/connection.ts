@@ -23,7 +23,8 @@
  *
  * The one cause the page *can* read is a policy close: the server closes with 1008 when the two ends
  * disagree about the wire, and so does this page (`../shell/transport/client.ts`). Attaching again
- * repeats it byte for byte, so that arm refuses at once.
+ * repeats it byte for byte, so that arm refuses at once. So does a kernel running no shell process:
+ * the page attaches to what the kernel booted, and attaching again finds the same table (#9375).
  */
 
 import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
@@ -46,9 +47,12 @@ class NoLaunchUrl extends Schema.TaggedError<NoLaunchUrl>()("tuval/page/NoLaunch
 }
 
 /** The kernel answered, but runs no shell — there is no desk to mount. */
-class NoShellProcess extends Schema.TaggedError<NoShellProcess>()("tuval/page/NoShellProcess", {}) {
+export class NoShellProcess extends Schema.TaggedError<NoShellProcess>()(
+	"tuval/page/NoShellProcess",
+	{},
+) {
 	override get message(): string {
-		return "this kernel is running no shell process";
+		return "the kernel is running no shell process, so there is no desk to attach to. The desk supplies its own shell below every config, with or without a .tuval/tuval.config.ts, so this kernel booted without the desk layer. Start Tuval again with `tuval`.";
 	}
 }
 
@@ -61,10 +65,13 @@ export type DropKind =
 	| "never-opened"
 	/** The two ends disagree about the wire. Attaching again repeats it. */
 	| "protocol"
+	/** The kernel runs no shell process. Attaching again finds the same table. */
+	| "no-shell"
 	/** The socket was working and went away, or the kernel had nothing to attach to yet. */
 	| "dropped";
 
 export const dropKind = (error: unknown): DropKind => {
+	if (error instanceof NoShellProcess) return "no-shell";
 	if (!Socket.SocketError.is(error)) return "dropped";
 	if (error.reason._tag === "SocketOpenError") return "never-opened";
 	return error.reason._tag === "SocketCloseError" && error.reason.code === POLICY_CLOSE
@@ -110,6 +117,7 @@ export const nextAttempt = (
 			reason: `this page and the kernel disagree about the wire (${reason}). Reload the page to pick up the kernel's own version.`,
 		};
 	}
+	if (kind === "no-shell") return {_tag: "Refuse", reason};
 	if (failures >= recovery.attempts) {
 		return {
 			_tag: "Refuse",
@@ -135,16 +143,21 @@ const launchUrl = Effect.tryPromise({
 	catch: (cause) => new NoLaunchUrl({cause}),
 }).pipe(Effect.map((answer) => answer.url));
 
-/** The shell's process id, read off the table — the page assumes none (#7556). */
-const shellProcessOf = (
-	rows: Stream.Stream<ReadonlyArray<{readonly id: string; readonly programId: string}>>,
-) =>
-	Stream.runHead(
-		Stream.flatMap(rows, (list) => {
-			const shell = list.find((row) => row.programId === SHELL_PROGRAM_ID);
-			return shell === undefined ? Stream.empty : Stream.succeed(shell.id);
-		}),
-	);
+/**
+ * The shell's process id, read off the table — the page assumes none (#7556) — or none when the
+ * kernel runs no shell. The kernel greets a socket with its whole table and only then with its first
+ * spell catalog (`greet` in `../shell/transport/server.ts`), so the table as it stands when that
+ * catalog lands is every process the kernel had. A shell missing from it is not one still starting:
+ * waiting for a later row is the page that sat at "Attaching…" forever (#9375).
+ */
+export const shellProcessOf = (page: Pick<PageAttachment, "rows" | "spells">) =>
+	Effect.gen(function* () {
+		yield* Stream.runHead(page.spells);
+		const rows = yield* Stream.runHead(page.rows);
+		return Option.flatMap(rows, (list) =>
+			Option.fromNullishOr(list.find((row) => row.programId === SHELL_PROGRAM_ID)?.id),
+		);
+	});
 
 /**
  * Open one link. The shell lookup races the socket ending because `rows` never completes: a socket
@@ -154,7 +167,7 @@ const openLink = Effect.fn("tuval.page.openLink")(function* () {
 	const url = yield* launchUrl;
 	const page = yield* attach(url);
 	const lost = Effect.flatMap(page.closed, (error) => Effect.fail(error));
-	const shellProcess = yield* Effect.raceFirst(shellProcessOf(page.rows), lost);
+	const shellProcess = yield* Effect.raceFirst(shellProcessOf(page), lost);
 	if (Option.isNone(shellProcess)) return yield* Effect.fail(new NoShellProcess());
 	const shell = yield* page.attachProcess<unknown, ShellMsg>(shellProcess.value as ProcessId);
 	return {page, shell} satisfies PageLink;

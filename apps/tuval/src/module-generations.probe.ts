@@ -11,8 +11,11 @@
 import {writeFileSync} from "node:fs";
 import {join} from "node:path";
 import {NodeFileSystem} from "@effect/platform-node";
+import {localId} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
 import {Effect} from "effect";
 import {loadLayeredConfig} from "./config.ts";
+import {noDesk} from "./config-fixtures/desk-layers.ts";
+import {ProjectId} from "./project-id.ts";
 
 const [project, edited, contents] = process.argv.slice(2);
 if (project === undefined || edited === undefined || contents === undefined) {
@@ -20,12 +23,15 @@ if (project === undefined || edited === undefined || contents === undefined) {
 }
 
 const read = loadLayeredConfig({
+	desk: noDesk,
 	global: join(project, "no-global-layer.ts"),
-	project: join(project, ".tuval", "tuval.config.ts"),
+	projects: [{id: ProjectId.of(project), module: join(project, ".tuval", "tuval.config.ts")}],
 }).pipe(
 	Effect.match({
 		onSuccess: (config) => ({
-			ids: config.programs.map((row) => (row as {readonly id: string}).id),
+			// Local ids: the probe's project layer scopes its rows (#9684), and the question here is
+			// which generation of the module was read, not which scope it runs under.
+			ids: config.programs.map((row) => localId((row as {readonly id: string}).id)),
 			files: config.files,
 		}),
 		onFailure: (refused) => ({refused: refused.reason, files: refused.files}),

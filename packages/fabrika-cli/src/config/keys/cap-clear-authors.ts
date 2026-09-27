@@ -1,5 +1,6 @@
 /**
- * `capClearAuthors` — who may clear one extra repair round on a PR.
+ * `capClearAuthors` — who may grant lane authority over a PR: clear one extra repair round on it, or
+ * hand a PR another author opened to the pipeline (a takeover grant, `../../ownership/`).
  *
  * The grant-author set is repo configuration, not a compiled-in "founder" concept. Its shipped
  * default is the empty set — **nobody may grant** — which is the one default this key can have: a
@@ -76,7 +77,7 @@ export const capClearAuthorsKey: KeyGroup<ReadonlyArray<GrantAuthor>> = {
 	jsonSchema: {
 		type: "array",
 		description:
-			"Who may clear one extra repair round on a PR (`fabrika build clear`). Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means nobody may grant.",
+			"Who may grant lane authority over a PR: clear one extra repair round on it (`fabrika build clear`), or hand a PR another author opened to the pipeline (`fabrika build takeover`). Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means nobody may grant.",
 		// Composed from the two regexes `decode` runs, never restated: a hand-copied alternation is
 		// free to drift from the decoder it claims to describe.
 		items: {type: "string", pattern: `${AUTHOR_USER.source}|${AUTHOR_TEAM.source}`},

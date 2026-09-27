@@ -18,6 +18,8 @@ import {randomUUID} from "node:crypto";
 import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {leakNamesKey} from "../config/keys/leak-names.ts";
+import {readKey} from "../config/read-key.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
@@ -46,7 +48,7 @@ const jsonFlag = Flag.boolean("json").pipe(
 const redactFlag = Flag.boolean("redact").pipe(
 	Flag.withDefault(false),
 	Flag.withDescription(
-		"mask each machine-local path down to its class root and post the masked body, instead of refusing",
+		"mask each leak — a path down to its class root, an email or a configured private name whole — and post the masked body, instead of refusing",
 	),
 );
 
@@ -132,6 +134,7 @@ const fileCmd = leafCommand(
 	Effect.fn(function* ({title, label, redact, repo, json}) {
 		yield* emit(
 			yield* runFile({
+				leakNames: yield* readKey(process.cwd(), leakNamesKey),
 				title,
 				label,
 				redact,
@@ -146,7 +149,7 @@ const fileCmd = leafCommand(
 ).pipe(
 	Command.withShortDescription("Compose and file the intake issue from the sections on stdin."),
 	Command.withDescription(
-		'Compose the intake issue from the six sections on STDIN, guard it, create it, and read back what landed. Prints `<number>\\t<url>`. Exits 3 (empty stdin), 4 (bad sections), 5 (machine-local path), 6 (bare @ reference), 7 (no such label), 8 (create failed — UNKNOWN), 9 (read-back mismatch), 10 (title or label classifies), 11 (label set unreadable). Example: fabrika report file --title "Retry helper swallows the abort reason" < body.md',
+		'Compose the intake issue from the six sections on STDIN, guard it, create it, and read back what landed. Prints `<number>\\t<url>`. Exits 3 (empty stdin), 4 (bad sections), 5 (a leak: machine-local path, email address, or a name `leakNames` declares), 6 (bare @ reference), 7 (no such label), 8 (create failed — UNKNOWN), 9 (read-back mismatch), 10 (title or label classifies), 11 (label set or `leakNames` unreadable). Example: fabrika report file --title "Retry helper swallows the abort reason" < body.md',
 	),
 );
 
@@ -161,6 +164,7 @@ const note = leafCommand(
 	Effect.fn(function* ({issue, redact, repo, json}) {
 		yield* emit(
 			yield* runNote({
+				leakNames: yield* readKey(process.cwd(), leakNamesKey),
 				issue,
 				redact,
 				repo: Option.getOrNull(repo),
@@ -173,7 +177,7 @@ const note = leafCommand(
 ).pipe(
 	Command.withShortDescription("Add a note from stdin to an existing issue."),
 	Command.withDescription(
-		"Add a note from STDIN to an existing issue over the same guarded path, then read the comment back. Prints `<comment-id>\\t<url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue), 8 (post failed — UNKNOWN), 9 (read-back mismatch), 11 (issue unreadable). Example: fabrika report note --issue 4312 < note.md",
+		"Add a note from STDIN to an existing issue over the same guarded path, then read the comment back. Prints `<comment-id>\\t<url>`. Exits 3 (empty stdin), 5 (a leak: machine-local path, email address, or a name `leakNames` declares), 6 (bare @ reference), 7 (no such issue), 8 (post failed — UNKNOWN), 9 (read-back mismatch), 11 (issue or `leakNames` unreadable). Example: fabrika report note --issue 4312 < note.md",
 	),
 );
 
@@ -207,6 +211,7 @@ const amend = leafCommand(
 	Effect.fn(function* ({issue, redact, repo, json}) {
 		yield* emit(
 			yield* runAmend({
+				leakNames: yield* readKey(process.cwd(), leakNamesKey),
 				issue,
 				redact,
 				repo: Option.getOrNull(repo),
@@ -220,7 +225,7 @@ const amend = leafCommand(
 ).pipe(
 	Command.withShortDescription("Append a dated amendment from stdin to an existing issue's body."),
 	Command.withDescription(
-		"Append the section on STDIN to an existing issue's body under a separator and a dated `## Amendment` heading this verb composes, leaving the prior body verbatim above it, then read the body back. Never replaces a body; the why is in claude-plugins/fabrika/skills/report/contract.md. Prints `<issue>\\t<url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue), 8 (write failed — UNKNOWN), 9 (read-back mismatch), 11 (issue unreadable). Example: fabrika report amend --issue 4312 < correction.md",
+		"Append the section on STDIN to an existing issue's body under a separator and a dated `## Amendment` heading this verb composes, leaving the prior body verbatim above it, then read the body back. Never replaces a body; the why is in claude-plugins/fabrika/skills/report/contract.md. Prints `<issue>\\t<url>`. Exits 3 (empty stdin), 5 (a leak: machine-local path, email address, or a name `leakNames` declares), 6 (bare @ reference), 7 (no such issue), 8 (write failed — UNKNOWN), 9 (read-back mismatch), 11 (issue or `leakNames` unreadable). Example: fabrika report amend --issue 4312 < correction.md",
 	),
 );
 

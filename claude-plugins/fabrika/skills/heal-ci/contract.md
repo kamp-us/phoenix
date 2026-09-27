@@ -73,7 +73,8 @@ the same tracked debt the sibling contracts carry.)
   repository-settings mutation with a human's name on it, and arming a required check wrong has cost
   a whole wedged merge queue. `surface` diagnoses and stops.
 - **A conflict-clearing verb** (rebase, merge the base in, force-push). `diagnose` classifies a
-  conflicted PR as `conflicted` and arrows it at `build`, and that is the whole move: clearing the
+  conflicted PR as `conflicted` and arrows it at `build` — or at `author`, on a PR the pipeline
+  does not own — and that is the whole move: clearing the
   conflict is a branch mutation, and this group owns no branch and checks out nothing.
 - **A dispatch or adoption verb.** A detector converts a strand into claimable work; an engine
   never free-scan-adopts, so no verb here assigns, claims, or spawns a lane and `sweep` writes
@@ -399,6 +400,7 @@ line per evidence fact, in this fixed order, each present always:
 
 ```
 owner	<login|->	<claimed-at|->	<last-activity|->
+author	<login|->	<ours|granted|foreign|unknown|unread>
 gates	<satisfied|blocked|none-required>	<pass-count>/<required-count>
 ci	<green|red|pending|wedged|no-runs|none>	<failing-or-stranded-context-count>
 
@@ -408,7 +410,20 @@ facts	scanned-comments:<n>	scanned-checks:<n>	behind-base:<k>
 ```
 
 With `--json`:
-`{"outcome":"stall","token":…,"head":<40-hex>,"ageMinutes":<n>,"owner":{"login":…,"claimedAt":…,"lastActivityAt":…},"gates":{"state":…,"pass":<n>,"required":<n>},"ci":{"rollup":…,"contexts":<n>},"queue":…,"link":{"kind":…,"number":<n|null>},"scanned":{"comments":<n>,"checks":<n>},"behindBase":<k>}`.
+`{"outcome":"stall","token":…,"head":<40-hex>,"ageMinutes":<n>,"owner":{"login":…,"claimedAt":…,"lastActivityAt":…},"author":{"login":…,"standing":…},"gates":{"state":…,"pass":<n>,"required":<n>},"ci":{"rollup":…,"contexts":<n>},"queue":…,"link":{"kind":…,"number":<n|null>},"scanned":{"comments":<n>,"checks":<n>},"behindBase":<k>}`.
+
+**The `author` line says whether the pipeline owns the PR.** A pull request belongs to its author.
+It is the pipeline's when its author is in the repo's `ownAccounts` (the running, authenticated
+account alone when that set is empty or absent) — `ours` — or when a
+[`takeover-grant`](../../docs/wire-formats.md#takeover-grant) marker from an account in the
+grant-author set stands on it — `granted`. Otherwise it is `foreign`, and the arrow a class would
+point at `build` points at `author` instead. The standing is read only for a class whose work can
+reach `build`: the arrow's two (`conflicted`, and `linkage-refused` with a holder) and `red`, whose
+arrow is `nobody` but whose `logic` route (`SKILL.md` §3) names `build` only on `ours` or `granted`.
+Every other class prints `unread`. A standing that cannot be
+read — a GitHub App token cannot name its own account, for one — prints `unknown` with a stderr
+notice: the class is still proven, so it is not a refusal, and an unknown standing never reaches
+`build`.
 
 **The `ci` line's two zero-signal tokens are distinct facts, not synonyms.** `none` means the
 repository has **zero active workflows** — there is no CI here at all, the foreign-repo case the
@@ -554,6 +569,7 @@ chain is total over what was read; a read that could not complete is `11`, never
 $ fabrika heal-ci diagnose 9412
 stall	gated-unshipped	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	35
 owner	-	-	-
+author	octocat	unread
 gates	satisfied	2/2
 ci	green	0
 queue	none
@@ -563,7 +579,7 @@ facts	scanned-comments:14	scanned-checks:12	behind-base:0
 
 ```
 $ fabrika heal-ci diagnose 9413 --json
-{"outcome":"stall","token":"ungated","head":"9fe12ab0c7714d9e2b3a6f05812cc4d7e6a09b18","ageMinutes":564,"owner":{"login":null,"claimedAt":null,"lastActivityAt":null},"gates":{"state":"blocked","pass":0,"required":1},"ci":{"rollup":"green","contexts":0},"queue":"none","link":{"kind":"fixes","number":9415},"scanned":{"comments":3,"checks":11},"behindBase":0}
+{"outcome":"stall","token":"ungated","head":"9fe12ab0c7714d9e2b3a6f05812cc4d7e6a09b18","ageMinutes":564,"owner":{"login":null,"claimedAt":null,"lastActivityAt":null},"author":{"login":"octocat","standing":"unread"},"gates":{"state":"blocked","pass":0,"required":1},"ci":{"rollup":"green","contexts":0},"queue":"none","link":{"kind":"fixes","number":9415},"scanned":{"comments":3,"checks":11},"behindBase":0}
 ```
 
 ```
@@ -626,7 +642,9 @@ With `--json`: `{"outcome":"swept","scanned":<n>,"stalled":<n>,"prs":[{"number":
 
 **The lane is the note's arrow, looked up here rather than by the caller.** It is one of
 `build`/`review`/`ship`/`author`/`human`/`nobody`, and it is a total function of the row's stall
-class plus the owner and author this verb already read — `SKILL.md` §2 carries the table. A caller
+class plus the owner and author this verb already read, and — for a class that would name `build` — the
+PR's ownership standing, which turns `build` into `author` unless the PR is ours or granted.
+`SKILL.md` §2 carries the table. A caller
 composing a note's first line relays this column; deriving one in a workflow's `run:` block is the
 shape a relaying script must never take, and hardcoding one tells every reader the detector found
 nothing for anyone to do.

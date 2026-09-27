@@ -20,6 +20,18 @@
  * page routes over, and the page may route over no other
  * ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)).
  *
+ * The `projects` frame is catalog too: each open project's label beside the key its program ids are
+ * scoped by, so a page labels a process from the id it already has (#9692).
+ *
+ * The `trust-prompts` frame is the "Trust this folder?" questions an open is waiting on, and
+ * `trust-answer` is the person's reply to one (#9693). The answer is a frame of its own and never a
+ * spell: a spell is reachable by any agent whose bridge allows every spell, and the whole point of
+ * the question is that only the person at a desk page can answer it. Like `dispatch`, it is sent and
+ * not awaited; the prompt leaving the next `trust-prompts` frame is its acknowledgement.
+ *
+ * `recommend-prompts` and `recommend-answer` are the same pair for "<project> recommends <package>.
+ * Install?" (#9695), a frame of their own for the same reason.
+ *
  * The two `spell` frames are the only round trip a page starts. Everything else the kernel holds is
  * pushed; a spell call is the one thing a page may ask for, and it is asked for as the protocol's
  * own `SpellCall`/`SpellReply` pair admitted through that module's schemas rather than a second
@@ -35,6 +47,9 @@ import {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-de
 import type {ProgramId, RendererKind, RendererRef} from "@kampus/tuval-sdk/kernel/registry/program";
 import {type Binding, CommandName, type PrefixTable} from "@kampus/tuval-ui/keys";
 import {Duration, Option, Predicate, Result, Schema} from "effect";
+import type {ProjectLabel} from "../../projects/labels.ts";
+import type {RecommendAnswer, RecommendPrompt} from "../../projects/recommend-prompt.ts";
+import type {TrustAnswer, TrustPrompt} from "../../projects/trust-prompt.ts";
 import type {PortDeclaration, TableEvent, TableEventKind, TableRow} from "../../table/row.ts";
 import type {UndecodableReason} from "./errors.ts";
 
@@ -42,6 +57,8 @@ export const ATTACH_KIND = "tuval/transport/attach/v1";
 export const DETACH_KIND = "tuval/transport/detach/v1";
 export const DISPATCH_KIND = "tuval/transport/dispatch/v1";
 export const SPELL_CALL_KIND = "tuval/transport/spell-call/v1";
+export const TRUST_ANSWER_KIND = "tuval/transport/trust-answer/v1";
+export const RECOMMEND_ANSWER_KIND = "tuval/transport/recommend-answer/v1";
 
 export const TABLE_KIND = "tuval/transport/table/v1";
 export const PROCESS_STATE_KIND = "tuval/transport/process-state/v1";
@@ -51,6 +68,9 @@ export const REGISTRY_KIND = "tuval/transport/registry/v1";
 export const KEYS_KIND = "tuval/transport/keys/v1";
 export const SPELL_REPLY_KIND = "tuval/transport/spell-reply/v1";
 export const SPELL_REGISTRY_KIND = "tuval/transport/spell-registry/v1";
+export const PROJECTS_KIND = "tuval/transport/projects/v1";
+export const TRUST_PROMPTS_KIND = "tuval/transport/trust-prompts/v1";
+export const RECOMMEND_PROMPTS_KIND = "tuval/transport/recommend-prompts/v1";
 
 /** Attach to one process: from here its state arrives as `process-state` frames for as long as it lives. */
 export interface AttachFrame {
@@ -85,7 +105,27 @@ export interface SpellCallFrame {
 	readonly call: SpellCall;
 }
 
-export type ClientFrame = AttachFrame | DetachFrame | DispatchFrame | SpellCallFrame;
+/** The person's answer to one waiting "Trust this folder?" question. */
+export interface TrustAnswerFrame {
+	readonly kind: typeof TRUST_ANSWER_KIND;
+	readonly question: string;
+	readonly answer: TrustAnswer;
+}
+
+/** The person's answer to one waiting recommended package. */
+export interface RecommendAnswerFrame {
+	readonly kind: typeof RECOMMEND_ANSWER_KIND;
+	readonly question: string;
+	readonly answer: RecommendAnswer;
+}
+
+export type ClientFrame =
+	| AttachFrame
+	| DetachFrame
+	| DispatchFrame
+	| SpellCallFrame
+	| TrustAnswerFrame
+	| RecommendAnswerFrame;
 
 /** A table row as JSON: every `Option` on it is a nullable field, and nothing else changes. */
 export interface WireRow {
@@ -169,6 +209,8 @@ export interface WireProgram {
 	 */
 	readonly inspector?: RendererRef;
 	readonly status?: RendererRef;
+	/** The row's `folderAtStart`: the page offers it once per open project (#9694). */
+	readonly folderAtStart?: true;
 }
 
 /**
@@ -215,6 +257,31 @@ export interface SpellRegistryFrame {
 	readonly registry: RegistryDescription;
 }
 
+/**
+ * Every open project's label, whole. Sent as the socket opens and after each open and close; a later
+ * frame replaces the list, because closing one project can change another's label (`kamp-us/phoenix`
+ * goes back to `phoenix` once `usirin/phoenix` closes).
+ */
+export interface ProjectsFrame {
+	readonly kind: typeof PROJECTS_KIND;
+	readonly projects: ReadonlyArray<ProjectLabel>;
+}
+
+/**
+ * Every question an open is waiting on, oldest first, whole. Sent as the socket opens and after each
+ * question asked or answered, so a page that attaches while an open waits is asked too.
+ */
+export interface TrustPromptsFrame {
+	readonly kind: typeof TRUST_PROMPTS_KIND;
+	readonly prompts: ReadonlyArray<TrustPrompt>;
+}
+
+/** Every recommended package a trusted project is waiting on, oldest first, whole. */
+export interface RecommendPromptsFrame {
+	readonly kind: typeof RECOMMEND_PROMPTS_KIND;
+	readonly prompts: ReadonlyArray<RecommendPrompt>;
+}
+
 export type ServerFrame =
 	| TableFrame
 	| ProcessStateFrame
@@ -223,7 +290,10 @@ export type ServerFrame =
 	| RegistryFrame
 	| KeysFrame
 	| SpellRegistryFrame
-	| SpellReplyFrame;
+	| SpellReplyFrame
+	| ProjectsFrame
+	| TrustPromptsFrame
+	| RecommendPromptsFrame;
 
 const isProcessIdString = (value: unknown): value is ProcessId => typeof value === "string";
 
@@ -285,6 +355,49 @@ export const isDispatchFrame = (value: unknown): value is DispatchFrame =>
 	isProcessIdString(value.processId) &&
 	isMessage(value.msg);
 
+const isTrustAnswer = (value: unknown): value is TrustAnswer =>
+	value === "trust" || value === "refuse";
+
+export const isTrustAnswerFrame = (value: unknown): value is TrustAnswerFrame =>
+	Predicate.isObject(value) &&
+	value.kind === TRUST_ANSWER_KIND &&
+	typeof value.question === "string" &&
+	isTrustAnswer(value.answer);
+
+const isTrustPrompt = (value: unknown): value is TrustPrompt =>
+	Predicate.isObject(value) &&
+	typeof value.question === "string" &&
+	typeof value.folder === "string" &&
+	typeof value.name === "string";
+
+export const isTrustPromptsFrame = (value: unknown): value is TrustPromptsFrame =>
+	Predicate.isObject(value) &&
+	value.kind === TRUST_PROMPTS_KIND &&
+	Array.isArray(value.prompts) &&
+	value.prompts.every(isTrustPrompt);
+
+const isRecommendAnswer = (value: unknown): value is RecommendAnswer =>
+	value === "install" || value === "decline";
+
+export const isRecommendAnswerFrame = (value: unknown): value is RecommendAnswerFrame =>
+	Predicate.isObject(value) &&
+	value.kind === RECOMMEND_ANSWER_KIND &&
+	typeof value.question === "string" &&
+	isRecommendAnswer(value.answer);
+
+const isRecommendPrompt = (value: unknown): value is RecommendPrompt =>
+	Predicate.isObject(value) &&
+	typeof value.question === "string" &&
+	typeof value.folder === "string" &&
+	typeof value.name === "string" &&
+	typeof value.package === "string";
+
+export const isRecommendPromptsFrame = (value: unknown): value is RecommendPromptsFrame =>
+	Predicate.isObject(value) &&
+	value.kind === RECOMMEND_PROMPTS_KIND &&
+	Array.isArray(value.prompts) &&
+	value.prompts.every(isRecommendPrompt);
+
 export const isTableFrame = (value: unknown): value is TableFrame =>
 	Predicate.isObject(value) &&
 	value.kind === TABLE_KIND &&
@@ -333,7 +446,8 @@ export const isWireProgram = (value: unknown): value is WireProgram =>
 	// Absent is legal, present must be a reference: an `inspector` key carrying junk is a malformed
 	// frame, not a program that declares no inspector.
 	(value.inspector === undefined || isRendererRef(value.inspector)) &&
-	(value.status === undefined || isRendererRef(value.status));
+	(value.status === undefined || isRendererRef(value.status)) &&
+	(value.folderAtStart === undefined || value.folderAtStart === true);
 
 export const isRegistryFrame = (value: unknown): value is RegistryFrame =>
 	Predicate.isObject(value) &&
@@ -357,6 +471,15 @@ export const isWirePrefixTable = (value: unknown): value is WirePrefixTable =>
 
 export const isKeysFrame = (value: unknown): value is KeysFrame =>
 	Predicate.isObject(value) && value.kind === KEYS_KIND && isWirePrefixTable(value.table);
+
+const isProjectLabel = (value: unknown): value is ProjectLabel =>
+	Predicate.isObject(value) && typeof value.key === "string" && typeof value.label === "string";
+
+export const isProjectsFrame = (value: unknown): value is ProjectsFrame =>
+	Predicate.isObject(value) &&
+	value.kind === PROJECTS_KIND &&
+	Array.isArray(value.projects) &&
+	value.projects.every(isProjectLabel);
 
 /**
  * One kind's admission: the value as that frame, or `undefined` when the body is not one. A
@@ -453,12 +576,21 @@ export const frameKind = (text: string): string => {
 };
 
 export const decodeClientFrame: (text: string) => Decoded<ClientFrame> = decodeWith<ClientFrame>(
-	new Set([ATTACH_KIND, DETACH_KIND, DISPATCH_KIND, SPELL_CALL_KIND]),
+	new Set([
+		ATTACH_KIND,
+		DETACH_KIND,
+		DISPATCH_KIND,
+		SPELL_CALL_KIND,
+		TRUST_ANSWER_KIND,
+		RECOMMEND_ANSWER_KIND,
+	]),
 	[
 		admitting(isAttachFrame),
 		admitting(isDetachFrame),
 		admitting(isDispatchFrame),
 		admitSpellCallFrame,
+		admitting(isTrustAnswerFrame),
+		admitting(isRecommendAnswerFrame),
 	],
 );
 
@@ -472,6 +604,9 @@ export const decodeServerFrame: (text: string) => Decoded<ServerFrame> = decodeW
 		KEYS_KIND,
 		SPELL_REPLY_KIND,
 		SPELL_REGISTRY_KIND,
+		PROJECTS_KIND,
+		TRUST_PROMPTS_KIND,
+		RECOMMEND_PROMPTS_KIND,
 	]),
 	[
 		admitting(isTableFrame),
@@ -482,6 +617,9 @@ export const decodeServerFrame: (text: string) => Decoded<ServerFrame> = decodeW
 		admitting(isKeysFrame),
 		admitSpellReplyFrame,
 		admitSpellRegistryFrame,
+		admitting(isProjectsFrame),
+		admitting(isTrustPromptsFrame),
+		admitting(isRecommendPromptsFrame),
 	],
 );
 
@@ -542,6 +680,39 @@ export const fromWirePrefixTable = (table: WirePrefixTable): PrefixTable => ({
 		}),
 	),
 });
+
+export const projectsFrame = (projects: ReadonlyArray<ProjectLabel>): ProjectsFrame => ({
+	kind: PROJECTS_KIND,
+	projects: projects.map(({key, label}) => ({key, label})),
+});
+
+export const trustPromptsFrame = (prompts: ReadonlyArray<TrustPrompt>): TrustPromptsFrame => ({
+	kind: TRUST_PROMPTS_KIND,
+	prompts: prompts.map(({question, folder, name}) => ({question, folder, name})),
+});
+
+export const trustAnswerFrame = (question: string, answer: TrustAnswer): TrustAnswerFrame => ({
+	kind: TRUST_ANSWER_KIND,
+	question,
+	answer,
+});
+
+export const recommendPromptsFrame = (
+	prompts: ReadonlyArray<RecommendPrompt>,
+): RecommendPromptsFrame => ({
+	kind: RECOMMEND_PROMPTS_KIND,
+	prompts: prompts.map(({question, folder, name, package: pkg}) => ({
+		question,
+		folder,
+		name,
+		package: pkg,
+	})),
+});
+
+export const recommendAnswerFrame = (
+	question: string,
+	answer: RecommendAnswer,
+): RecommendAnswerFrame => ({kind: RECOMMEND_ANSWER_KIND, question, answer});
 
 export const keysFrame = (table: PrefixTable): KeysFrame => ({
 	kind: KEYS_KIND,

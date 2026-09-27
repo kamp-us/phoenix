@@ -1,10 +1,10 @@
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Fiber, Queue} from "effect";
+import {Effect, Exit, Fiber, Queue, Scope} from "effect";
 import {type AnyProgram, type PortBound, ProgramId} from "../registry/index.ts";
 import {Registry} from "../registry/Registry.ts";
 import {compile} from "./compile.ts";
 import {PayloadRejected, PortNotWired} from "./errors.ts";
-import {consumer, producer} from "./fixtures.ts";
+import {consumer, isNumber, producer} from "./fixtures.ts";
 import type {Graph} from "./graph.ts";
 import {NodeId} from "./graph.ts";
 import {open, type Wiring} from "./wiring.ts";
@@ -179,5 +179,34 @@ describe("ports.open", () => {
 			const offered = yield* Queue.offer(inbox as Queue.Queue<unknown>, 1);
 			assert.strictEqual(offered, false);
 		}),
+	);
+
+	it.effect(
+		"a joined wiring delivers into another wiring's in-port, and closing it leaves that queue open",
+		() =>
+			Effect.gen(function* () {
+				const consumerOnly: Graph = {
+					nodes: [{id: c.node, program: ProgramId.make("consumer"), on: []}],
+				};
+				const desk = yield* open(yield* compile(consumerOnly));
+				const whole = yield* compile(oneRoute);
+				// Only the producer is this wiring's; the consumer's in-port is the desk wiring's.
+				const own = {
+					nodes: whole.nodes.filter((node) => node.id === p.node),
+					routes: whole.routes,
+				};
+				const joined = yield* Scope.make();
+				const wiring = yield* open(own, (at) =>
+					Effect.map(desk.inbox(at), (queue) => ({queue, accepts: isNumber})),
+				).pipe(Effect.provideService(Scope.Scope, joined));
+				yield* wiring.emit(p, 7);
+				const rejected = yield* Effect.flip(wiring.emit(p, "not a tick"));
+				yield* Scope.close(joined, Exit.void);
+				const received = yield* drain(desk, c);
+				const stillOpen = yield* Queue.offer((yield* desk.inbox(c)) as Queue.Queue<unknown>, 8);
+				assert.deepStrictEqual(received, [7]);
+				assert.instanceOf(rejected, PayloadRejected);
+				assert.isTrue(stillOpen);
+			}).pipe(Effect.scoped, Effect.provide(Registry.layer([producer, consumer()]))),
 	);
 });

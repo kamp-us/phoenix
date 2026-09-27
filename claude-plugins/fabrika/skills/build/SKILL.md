@@ -637,6 +637,13 @@ the PR being in flight is already the proof a ruling was transcribed. Everything
 the same decision issue claimed by its own number reads its own audience label and is `21` on a
 `ready-for:human`, and the scope fence binds this claim exactly as it binds a build.
 
+<!-- anchor: PR-BELONGS-TO-ITS-AUTHOR --> **A PR belongs to its author, and the claim checks that
+before it writes anything.** Exit `37` means the PR was opened by an account outside the repo's own
+accounts (`ownAccounts`, or the running account alone when that set is empty) and no valid takeover
+grant stands on it. Repairing it would push onto someone else's branch. End `BACKED-OFF`, name the
+code, and write nothing. Handing the PR to the pipeline is `fabrika build takeover`, run by an
+account the repo trusts to grant — never by this lane, and never to get past its own refusal.
+
 The fold is the only entry: paginated, current-head, per-gate — polarity visible, round count
 included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer **about the
 gates**, but an UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**.

@@ -84,7 +84,7 @@ apps/tuval/                # @kampus-apps/tuval — the desk; imported by nothin
 ├── src/
 │   ├── bin.ts             # entry: the local process the app's `dev` script runs
 │   ├── boot.ts            # boots a configured graph of programs
-│   ├── config.ts          # loads and merges the global and project config layers
+│   ├── config.ts          # loads the desk, global and per-project config layers
 │   ├── launch/            # launching a compiled graph into processes
 │   ├── table/             # the process-table port
 │   ├── shell/             # the shell program: layout, core machine, picker, transport, host
@@ -125,7 +125,7 @@ authoring API live in the SDK package `packages/tuval` (`@kampus/tuval-sdk`):
 
 | Command | What it does |
 |---|---|
-| `pnpm --filter @kampus-apps/tuval dev` | `node src/bin.ts`, which boots the desk locally. |
+| `pnpm --filter @kampus-apps/tuval dev` | `node src/bin.ts --config global/tuval.config.ts`, which boots the desk locally with this repo's global layer. |
 | `pnpm --filter @kampus-apps/tuval typecheck` | `tsc -p tsconfig.json`. |
 | `pnpm --filter @kampus-apps/tuval test` | Every vitest project in the app. |
 | `pnpm --filter @kampus-apps/tuval test:unit` | Just the `unit` project. This is the script CI's `pnpm --filter './apps/**' test:unit` gate calls. |

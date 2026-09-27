@@ -28,7 +28,9 @@
  * program emits its derived lines on, which is a string an author would otherwise have to guess.
  * The first outside consumer (`@kampus/tuval-cron`, which lives in this repo at
  * `packages/tuval-cron` and reaches this package only through its published doors) found each of
- * these by failing to compile without it.
+ * these by failing to compile without it. `openSubproject` and `closeSubproject` are how a
+ * program's handler opens a subproject under its own project (#9689); `@kampus/tuval-worktree`
+ * opens each lane with them.
  *
  * **The whole `ArgRefs` chain is public for the same reason, and it is not optional.** The type
  * `programArgs(…)` infers is `ArgRefs<Id, D>`, which reaches `ArgRef`, `ProgramArgRef`,
@@ -61,6 +63,12 @@
 
 export {ProcessId} from "../process/process.ts";
 export {STATUS_PORT, TITLE_PORT} from "../process/self-report.ts";
+export {
+	CrossingRefused,
+	closeSubproject,
+	openSubproject,
+	SubprojectRefused,
+} from "../process/subprojects.ts";
 export type {AnyProgram, HostHandlers, InPort, OutPort, PortSchema} from "../registry/program.ts";
 export type {DepKeyedSub, Sub} from "../registry/sub.ts";
 export {

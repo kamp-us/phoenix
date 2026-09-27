@@ -20,8 +20,10 @@ It runs no tests, so `pnpm -r --filter './packages/tuval-*' test` is unchanged b
 ## The proof
 
 Two layers. The **global** layer is this file; the **project** layer is
-`apps/tuval/.tuval/tuval.config.ts`, which is where the desk shell is registered and which this
-proof does not touch. Boot merges the second over the first by row id.
+`apps/tuval/.tuval/tuval.config.ts`, which this proof does not touch. The desk supplies its own
+shell, so neither file declares it. Neither layer replaces the other's rows: the four rows here keep
+their bare ids, and the project's rows run beside them as `<project>/<id>`
+([ADR 0419](../../.decisions/0419-one-desk-opens-many-projects.md)).
 
 ```sh
 pnpm -r --filter './packages/tuval-*' build
@@ -29,10 +31,10 @@ cd apps/tuval
 node src/bin.ts --config ../../packages/tuval-boot-proof/.tuval/tuval.config.ts
 ```
 
-The boot line names both layers and counts the rows — eight from the app, four from here:
+The boot line names both layers and counts the rows from both, the desk's shell included. Then the
+process table lists these four by their bare ids:
 
 ```
-tuval: booted — 12 program(s), 34 spell(s) registered from …/packages/tuval-boot-proof/.tuval/tuval.config.ts + …/apps/tuval/.tuval/tuval.config.ts; 7 process(es) live, 0 restored from …/apps/tuval/.tuval
 tuval: process commands      program=commands      ports=prompt:in(commands/prompt),result:out(commands/result),…
 tuval: process nightly-fetch program=nightly-fetch ports=run:in(nightly-fetch/run),brief:out(nightly-fetch/brief),…
 tuval: process desk          program=desk          ports=message:in(desk/message),delivered:out(desk/delivered),…

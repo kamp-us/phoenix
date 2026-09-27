@@ -1,117 +1,37 @@
-// This project's Tuval config. This file is yours: boot loads it over your global
-// ~/.tuval/tuval.config.ts, registers every program row in `programs`, and launches `graph`. A row
-// is a `Program` (the SDK's src/registry/program.ts); the nine in the box today are the shell (#7558), the
-// demo counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the
-// agy chat session (#8184), the codex chat session (#8600), the AI-agent session list (#8102) and
-// the module-window demo (#8946). One more row sits behind a flag in the `features` block below,
-// default-off, so a desk booted today carries the nine: the worked `pr-review` example (#8734)
-// behind `prReviewExample`. Flip that line and restart the desk to get the row, its graph node and
-// its spells.
+// This project's Tuval config. This file is yours: boot loads it beside your global
+// ~/.tuval/tuval.config.ts, registers every program row in `programs`, and launches `graph`. Each
+// row and graph node here runs as `<project>/<id>`, so it never replaces a global row of the same
+// id, and a bare id in `graph` names this file's row or node first and a global one second. A row
+// is a `Program` (the SDK's src/registry/program.ts); the four in the box today are the demo counter
+// and log (#7517), the AI-agent session list (#8102) and the module-window demo (#8946). The desk
+// supplies its own shell row below every config (#9683), so this file never declares one.
 // The shape is `TuvalConfigInput` (`@kampus/tuval-sdk/config`), version 1.
 //
-// The shell is registered here and nowhere else — it is a program row like any other, so dropping
-// its row and its graph node is how you boot without a desk.
-//
-// No session is planned in `graph`, and that is the point: each row's layer stands a real agent up
-// when a process spawns — Pi's model runtime, Claude's `claude` CLI, agy's `agy` CLI, codex's
-// `codex` CLI — so a planned node would reach for your credentials on every boot. Open one when
-// you want one: focus an empty window and pick it, or `prefix :` then `window:open pi-session` /
-// `window:open claude-session` / `window:open agy-session` / `window:open codex-session`.
-// Either route spawns the process under the shell, and it opens in this project root, which is
-// what `projectRootOf` reads off this module's own location.
-//
-// The Claude row names only the `scope` its three kernel tools call under — four plain ids. The
-// `SpellBridge` those tools speak through is left open on the row and arrives at spawn from the
-// shell's own kernel context (#7951/#7958), because this module is evaluated inside `boot`, before
-// there is a bridge to name. The scope names no window for the same reason — no window exists yet
-// — and it does not have to: opening the row into a window hands the process that window as
-// `CallingWindow` (`src/shell/picker/open.ts`), and the kernel resolves the parent of a tool
-// `spawn` from it, so a spawned process is a child of the Claude one (#8758).
+// The harness rows — Pi, Claude, agy and codex — are not here. They live in the repo's committed
+// global layer, `../global/tuval.config.ts`, which `pnpm dev` passes as `--config` (#9694). A
+// harness session is not this project's: the picker offers each one once per open project, and the
+// session runs in the folder of the project you picked it for.
 
-import {agySessionProgram} from "@kampus/tuval-agy";
-import {claudeSession} from "@kampus/tuval-claude";
-import {codexSession} from "@kampus/tuval-codex";
-import {piSessionProgram, projectRootOf} from "@kampus/tuval-pi";
 import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {sessionListProgram} from "@kampus/tuval-sdk/kernel/ai-agent/session-list";
-import {
-	ClientId,
-	type Scope as SpellScope,
-	WorkspaceId,
-} from "@kampus/tuval-sdk/kernel/commands/spell";
-import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Console} from "effect";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
 import {moduleCounter} from "../src/demo/module-counter.ts";
-import {prReview} from "../src/example/pr-review.ts";
-import {wiredShellEffects} from "../src/shell/host/index.ts";
-import {shellGraphNode, shellNode, shellProgram} from "../src/shell/program.ts";
-
-const projectRoot = projectRootOf(import.meta.url);
-
-/**
- * The scope the Claude row's three kernel tools call under. Named rather than written inline so
- * `src/claude-desk/tracked-config.integration.test.ts` can drive the bridge with the value this row is
- * actually built with, instead of a copy that could drift from it.
- */
-export const claudeSessionScope = {
-	workspace: WorkspaceId.make("default"),
-	client: ClientId.make("tuval-desk"),
-} satisfies SpellScope;
-
-/**
- * Built once because two rows read it: its own, and the `pr-review` example, which is handed this
- * row as its `reviewer` arg. That fill is the whole of what connects them — `pr-review` names its
- * reviewer by ports alone, so it imports no session package (#8716 R15.1).
- */
-const codexReviewer = codexSession({cwd: projectRoot, scope: claudeSessionScope});
-
-/**
- * This layer's stated flags — the `features` block ADR 0363 names, so turning a flag on is editing
- * the line below and restarting the desk. It is read twice: boot merges it over the global layer for
- * everything that takes the record off the `Features` service, and the `programs` list below reads
- * it directly, because a row is built while this module is being evaluated and the merge does not
- * exist yet (#8595). One consequence, and it is the whole difference between a row's flag and every
- * other one: a flag stated in the global `~/.tuval/tuval.config.ts` cannot add or remove a row here
- * — a row is this file's to state. ADR 0375 records that.
- */
-const features = {prReviewExample: false};
 
 export default {
 	version: 1,
 	programs: [
-		// The shell is spawned at its graph node's id, so that is the process the picker opens under.
-		shellProgram({effects: wiredShellEffects({shellProcessId: ProcessId.make(shellNode)})}),
 		...demoPrograms({everyMs: 1000, write: (line) => Console.log(line)}),
-		// The model is named rather than left to Pi's default so a fresh clone opens the session the
-		// founder actually runs; swap it for any id your `~/.pi` catalog carries.
-		piSessionProgram({
-			cwd: projectRoot,
-			pi: {model: {provider: "openai-codex", id: "gpt-5.6-luna"}},
-			scope: claudeSessionScope,
-		}),
-		claudeSession({cwd: projectRoot, scope: claudeSessionScope}),
-		// The stated default for the third row: a Gemini 3.x id out of `agy models`, because the point
-		// of this backend is a second opinion and the two rows above are already an OpenAI-family and
-		// an Anthropic-family model. Claude Sonnet/Opus 4.6 are reachable through the same row — this
-		// one line is where you change it. The row refuses to open a session until
-		// `{"toolPermission": "proceed-in-sandbox"}` is in `~/.gemini/antigravity-cli/settings.json`.
-		agySessionProgram({cwd: projectRoot, agy: {model: "gemini-3.1-pro-high"}}),
-		// Unplanned, like Pi and Claude: opening a window starts the CLI, never booting the desk.
-		codexReviewer,
-		// The worked authoring example (#8734): thirty lines that spawn a reviewer and announce its
-		// verdict. Default-off, so a desk booted today is the one it was before this row existed.
-		...(features.prReviewExample ? [prReview({reviewer: codexReviewer})] : []),
-		// Windowed and, like the four sessions above, unplanned — nothing needs it running until you
-		// want to read it. Open it from the picker, or `window:open ai-agent-sessions`.
+		// Windowed and unplanned — nothing needs it running until you want to read it. Open it from
+		// the picker, or `window:open <project>/ai-agent-sessions`.
 		sessionListProgram(),
 		// The in-tree demo of a program that ships its own window (ADR 0359, #8946): its row names a
 		// module specifier, the page imports that module itself at boot, and pressing a key in the
-		// window counts. Unplanned — `window:open module-counter`, or pick it from an empty window.
+		// window counts. Unplanned — `window:open <project>/module-counter`, or pick it from an empty
+		// window.
 		moduleCounter(),
 	],
-	features,
 	graph: {
-		nodes: [shellGraphNode, ...demoGraph.nodes],
+		nodes: demoGraph.nodes,
 	},
 } satisfies TuvalConfigInput;

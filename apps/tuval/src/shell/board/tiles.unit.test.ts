@@ -7,6 +7,7 @@ import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Option} from "effect";
 import {describe, expect, it} from "vitest";
+import {ProjectLabels} from "../../projects/labels.ts";
 import type {PortDeclaration, TableRow} from "../../table/row.ts";
 import {enteredSince, tileIds, tilesOf} from "./tiles.ts";
 
@@ -34,11 +35,38 @@ const row = (
 });
 
 describe("tilesOf", () => {
+	it("labels a project's tile by its project and names its program by the declared id", () => {
+		const projects = ProjectLabels.of([
+			{key: "-code-kamp_-us-phoenix", label: "kamp-us/phoenix"},
+			{key: "-code-usirin-phoenix", label: "usirin/phoenix"},
+		]);
+		const tiles = tilesOf(
+			[
+				row("p1", {programId: "-code-kamp_-us-phoenix/counter"}),
+				row("p2", {programId: "-code-usirin-phoenix/counter"}),
+				row("p3", {programId: "demo/log"}),
+			],
+			projects,
+		);
+		expect(tiles.map(({project, program}) => [project, program])).toEqual([
+			["kamp-us/phoenix", "counter"],
+			["usirin/phoenix", "counter"],
+			[null, "demo/log"],
+		]);
+	});
+
+	it("keeps the whole scoped id on a tile whose project has already closed", () => {
+		const [tile] = tilesOf([row("p1", {programId: "-code-gone/counter"})], ProjectLabels.none);
+		expect([tile?.project, tile?.program]).toEqual([null, "-code-gone/counter"]);
+	});
+
 	it("gives a process that declares neither generic port a whole tile", () => {
 		const [tile] = tilesOf([row("p1", {programId: "demo/counter"})]);
 		expect(tile).toEqual({
 			processId: "p1",
 			programId: "demo/counter",
+			program: "demo/counter",
+			project: null,
 			lifecycle: "running",
 			title: null,
 			status: null,

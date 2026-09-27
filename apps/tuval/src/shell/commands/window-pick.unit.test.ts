@@ -13,6 +13,7 @@ import {Effect} from "effect";
 import {applyMsg, initialState, type ShellMsg} from "../core/machine.ts";
 import {activeWorkspace, keyTargetOf, type ShellState} from "../core/state.ts";
 import {wiredShellEffects} from "../host/effects.ts";
+import {scriptedSpellServices} from "../host/fixtures.ts";
 import {findWindow, windows} from "../layout/index.ts";
 import {type PickerEntries, readEntries} from "../picker/entries.ts";
 import {pickerHarness, programRow, shellProcessId} from "../picker/fixtures.ts";
@@ -53,7 +54,7 @@ const dispatch = (state: ShellState, msg: ShellMsg) =>
 				out = (yield* effects.attachProcess(cmd)).reduce(apply, out);
 		}
 		return out;
-	});
+	}).pipe(Effect.provide(scriptedSpellServices()));
 
 const workspaceOf = (state: ShellState) => {
 	const workspace = activeWorkspace(state);
@@ -84,6 +85,7 @@ const press = (state: ShellState, entries: PickerEntries, windowId: WindowId, ke
 			case "Moved":
 			case "Cleared":
 			case "Filtering":
+			case "Stepped":
 				return apply(state, {type: "window.setView", windowId, view: answer.view});
 			case "Chose":
 				return yield* dispatch(
@@ -281,6 +283,8 @@ describe("window:pick returns a filled window to the picker", () => {
 			refusal: null,
 			previous: null,
 			filter: null,
+			step: null,
+			landing: null,
 		});
 	});
 });

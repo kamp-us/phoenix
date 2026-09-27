@@ -9,6 +9,7 @@
 
 import {Context, Effect, type JsonSchema, Layer, Schema, Stream, SubscriptionRef} from "effect";
 import type {AnyProgram, CapabilityRequest, ProgramId} from "../registry/program.ts";
+import {scopedIdParts} from "../registry/scoped-id.ts";
 import {DuplicateSpellPath, SpellNotDescribable, SpellNotFound} from "./errors.ts";
 import {readParams} from "./parse/spell-index.ts";
 import {REST_PARAMETER_ANNOTATION} from "./rest-parameter.ts";
@@ -47,17 +48,38 @@ export interface RegistryTable {
 	readonly rows: ReadonlyArray<SpellRow>;
 }
 
-/**
- * The row registered at exactly this path, or none. Every reader of a table walks it this way, so
- * the walk lives here rather than once per caller.
- */
-export const lookupRow = (table: RegistryTable, path: SpellPath): SpellRow | undefined => {
-	let node: SpellNode | undefined = table.root;
+const walk = (from: SpellNode, path: ReadonlyArray<string>): SpellRow | undefined => {
+	let node: SpellNode | undefined = from;
 	for (const segment of path) {
 		node = node.children.get(segment);
 		if (node === undefined) return undefined;
 	}
 	return node.row;
+};
+
+/**
+ * The row a path addresses, or none. Every reader of a table walks it this way, so the walk lives
+ * here rather than once per caller.
+ *
+ * A path is read exactly first, so every row stays reachable at its own address. A miss whose first
+ * segment is a bare program id then reads it against the project-scoped rows (#9684): a project's
+ * row runs under `<project>/<id>`, while a caller such as a page addresses it by the `<id>` it was
+ * declared under. Exactly one scoped row answering is that row; two scopes answering is no one row,
+ * so the path stays unregistered rather than picking a project.
+ */
+export const lookupRow = (table: RegistryTable, path: SpellPath): SpellRow | undefined => {
+	const exact = walk(table.root, path);
+	if (exact !== undefined) return exact;
+	const [head, ...rest] = path;
+	if (scopedIdParts(head).scope !== undefined) return undefined;
+	const scoped: Array<SpellRow> = [];
+	for (const [segment, node] of table.root.children) {
+		const parts = scopedIdParts(segment);
+		if (parts.scope === undefined || parts.local !== head) continue;
+		const row = walk(node, rest);
+		if (row !== undefined) scoped.push(row);
+	}
+	return scoped.length === 1 ? scoped[0] : undefined;
 };
 
 /** The serializable face of one spell: what a client is told without being handed the closure. */

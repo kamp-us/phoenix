@@ -1,7 +1,7 @@
 ---
 id: 0402
 title: Tuval's saved state lives under the home dir keyed by the checkout's absolute path, never in the project
-status: accepted
+status: amended-in-part by [0419](0419-one-desk-opens-many-projects.md)
 date: 2026-09-20
 tags: [tuval, config, state, portability]
 ---

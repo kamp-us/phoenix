@@ -1,7 +1,7 @@
 ---
 id: 0376
 title: A park's route is read off its cause, and only a product call reaches the founder
-status: accepted
+status: amended-in-part by [0421](0421-spent-budget-route-is-repo-declared.md)
 date: 2026-09-10
 tags: [fabrika, lane, pipeline, recipes, agents]
 ---

@@ -1,6 +1,7 @@
 /**
- * The user config the Claude vertical proof boots: the real shell row, the real `claude-session`
- * row, the real `pi-session` row beside it, and the scripted child the delegation step spawns.
+ * The user config the Claude vertical proof boots: the real `claude-session` row, the real
+ * `pi-session` row beside it, and the scripted child the delegation step spawns. The shell is the
+ * desk's own (`../../desk-layer.ts`), so this module declares none.
  *
  * It is the founder's `.tuval/tuval.config.ts` with one substitution per agent row — the layer —
  * and that substitution is the whole reason this module exists. `ClaudeAiAgent.layer` spawns the
@@ -26,9 +27,6 @@ import {fauxAssistantMessage, fauxPiLayer} from "@kampus/tuval-pi/testing/faux";
 import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {aiAgentProgram} from "@kampus/tuval-sdk/kernel/ai-agent/program";
 import {ScriptedAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
-import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import {wiredShellEffects} from "../../shell/host/index.ts";
-import {shellGraphNode, shellNode, shellProgram} from "../../shell/program.ts";
 import {CHILD_PROGRAM, PROJECT_ROOT_VAR} from "./names.ts";
 import {childScript, claudeScript} from "./script.ts";
 
@@ -65,10 +63,8 @@ const childRow = aiAgentProgram({
 export default {
 	version: 1,
 	programs: [
-		shellProgram({effects: wiredShellEffects({shellProcessId: ProcessId.make(shellNode)})}),
 		claudeSession({cwd: root, layer: ScriptedAiAgent.layer(claudeScript)}),
 		piSessionProgram({cwd: root, layer: fauxPiLayer({root, replies: piReplies})}),
 		childRow,
 	],
-	graph: {nodes: [shellGraphNode]},
 } satisfies TuvalConfigInput;
