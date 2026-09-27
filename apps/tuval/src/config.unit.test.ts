@@ -6,7 +6,13 @@ import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
 import {AuthoredModules} from "./authored-modules.ts";
-import {ConfigLoadError, DeclaredFeatures, loadConfigModule, loadLayeredConfig} from "./config.ts";
+import {
+	ConfigLoadError,
+	DeclaredFeatures,
+	loadConfigModule,
+	loadLayeredConfig,
+	type TuvalConfig,
+} from "./config.ts";
 
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));
@@ -253,6 +259,7 @@ describe("loadLayeredConfig", () => {
 						{file: `project ${layerName("project-layer")}`, bindings: {}},
 					],
 					sources: [fixture("global-layer"), fixture("project-layer")],
+					projectDefaulted: false,
 					files: [fixture("global-layer"), fixture("project-layer")],
 					modules: AuthoredModules.none,
 				});
@@ -278,6 +285,7 @@ describe("loadLayeredConfig", () => {
 				graph: {nodes: [{id: NodeId.make("n"), program: ProgramId.make("a"), on: []}]},
 				keys: [{file: `project ${layerName("with-graph")}`, bindings: {}}],
 				sources: [fixture("with-graph")],
+				projectDefaulted: false,
 				files: [fixture("with-graph")],
 				modules: AuthoredModules.none,
 			});
@@ -297,6 +305,7 @@ describe("loadLayeredConfig", () => {
 				graph: {nodes: []},
 				keys: [{file: `global ${layerName("two-rows")}`, bindings: {}}],
 				sources: [fixture("two-rows")],
+				projectDefaulted: false,
 				files: [fixture("two-rows")],
 				modules: AuthoredModules.none,
 			});
@@ -316,11 +325,71 @@ describe("loadLayeredConfig", () => {
 				graph: {nodes: []},
 				keys: [],
 				sources: [],
+				projectDefaulted: false,
 				files: [],
 				modules: AuthoredModules.none,
 			});
 		}),
 	);
+
+	describe("with a project default", () => {
+		const projectDefault: TuvalConfig = {
+			version: 1,
+			programs: [{id: "b", core: "default"}, {id: "desk"}],
+			features: {windowTitles: true},
+			graph: {
+				nodes: [
+					{id: NodeId.make("n"), program: ProgramId.make("desk"), on: []},
+					{id: NodeId.make("desk"), program: ProgramId.make("desk"), on: []},
+				],
+			},
+			keys: {},
+		};
+		const withDefault = (global: string, project: string) =>
+			loadLayeredConfig({global, project, projectDefault}).pipe(
+				Effect.provide(NodeFileSystem.layer),
+			);
+
+		it.effect("reads it in an absent project module's place, under the global layer", () =>
+			Effect.gen(function* () {
+				const config = yield* withDefault(fixture("global-layer"), fixture("does-not-exist"));
+				assert.deepStrictEqual(config.programs, [
+					{id: "b", core: "global"},
+					{id: "desk"},
+					{id: "a"},
+				]);
+				assert.deepStrictEqual(config.graph.nodes, [
+					{id: NodeId.make("n"), program: ProgramId.make("a"), on: []},
+					{id: NodeId.make("desk"), program: ProgramId.make("desk"), on: []},
+				]);
+				assert.isTrue(config.features.windowTitles);
+				assert.isTrue(config.projectDefaulted);
+				assert.deepStrictEqual(config.sources, [fixture("global-layer")]);
+			}),
+		);
+
+		it.effect("reads it with no layer module at all", () =>
+			Effect.gen(function* () {
+				const missing = fixture("does-not-exist");
+				const config = yield* withDefault(missing, missing);
+				assert.deepStrictEqual(config.programs, projectDefault.programs);
+				assert.deepStrictEqual(config.graph, projectDefault.graph);
+				assert.deepStrictEqual(config.sources, []);
+				assert.deepStrictEqual(config.keys, []);
+				assert.isTrue(config.projectDefaulted);
+			}),
+		);
+
+		it.effect("reads none of it once the project module exists", () =>
+			Effect.gen(function* () {
+				const config = yield* withDefault(fixture("does-not-exist"), fixture("two-rows"));
+				assert.deepStrictEqual(config.programs, [{id: "a"}, {id: "b"}]);
+				assert.deepStrictEqual(config.graph, {nodes: []});
+				assert.isFalse(config.features.windowTitles);
+				assert.isFalse(config.projectDefaulted);
+			}),
+		);
+	});
 
 	it.effect("carries each layer's key bindings as its own source, named for the layer", () =>
 		Effect.gen(function* () {

@@ -168,9 +168,10 @@ state, the counter picks up where it left off, and `restored` counts them.
 
 Configuration is code you own, the Neovim model, in two layers: a global module at
 `~/.tuval/tuval.config.ts` and an optional project module at `.tuval/tuval.config.ts` in the
-project dir (the cwd, or `--project`). Either may be absent — an absent layer is empty, and a
-boot with neither registers nothing. The two merge project-over-global: a program row or a graph
-node in the project layer replaces the global one with the same id, in place; the rest append.
+project dir (the cwd, or `--project`). Either may be absent. An absent global layer is empty; an
+absent project layer boots the built-in desk (see "Running it on your own project"). The two merge
+project-over-global: a program row or a graph node in the project layer replaces the global one
+with the same id, in place; the rest append.
 This repo's `apps/tuval/.tuval/tuval.config.ts` is the project layer `pnpm dev` runs against. The
 checkpoints do not land beside it — they land under the home dir, which is why no repository needs
 an ignore rule for Tuval state.
@@ -212,6 +213,26 @@ place and the reason:
 tuval: refusing to boot — config module /path/to/tuval.config.ts: module threw while loading: boom
 tuval: refusing to boot — config module /path/to/tuval.config.ts: not a v1 config at graph: Expected object
 ```
+
+### Running it on your own project
+
+`pnpm dev --project <dir>` opens any directory as a project, and that directory needs no files.
+When `<dir>/.tuval/tuval.config.ts` is absent, boot reads a built-in default in its place: the
+shell's row and its graph node (`src/default-project-config.ts`), so the desk attaches. The boot
+line names it:
+
+```
+tuval: booted — 1 program(s), … spell(s) registered from the built-in project default; 1 process(es) live, 0 restored from ~/.tuval/projects/-Users-you-code-your-repo
+```
+
+The default sits under your global layer. The programs in `~/.tuval/tuval.config.ts` boot beside
+the shell, and a shell row or node the global layer states replaces the default's.
+
+Writing a project module replaces the default whole. That project then runs only what its layers
+register, and one that registers no shell runs no desk. The shell is published by no package, so a
+project module outside this repository has no import to register it with. If a kernel runs no shell
+process, the page does not wait at "Attaching to the Tuval kernel…". It says the kernel is running
+no shell process and names the config to fix.
 
 ## The public API
 

@@ -29,6 +29,7 @@ import {
 	projectConfig,
 	projectDir,
 } from "./boot.ts";
+import {defaultProjectConfig} from "./default-project-config.ts";
 import {shellSpells} from "./shell/commands/spells.ts";
 
 /** Every boot registers these, whatever the config declares; no fixture program declares a spell. */
@@ -154,6 +155,12 @@ const projectWithConfig = (name: string) => {
 };
 
 /**
+ * A project whose config module registers nothing, so the built-in shell stays out and the boot runs
+ * exactly what the case's global layer plans.
+ */
+const desklessProject = () => projectWithConfig("no-desk");
+
+/**
  * One checkpointed `counter` process at `version`, written where an older build wrote it: under
  * `<project>/.tuval`. Every case that boots on this is reading the one-time move (ADR 0402 rule 7),
  * because nothing writes there any more.
@@ -172,7 +179,7 @@ const seedInProjectState = (project: string, version: string, id = "p-1") => {
 	return project;
 };
 
-const seededProject = (version: string) => seedInProjectState(freshProject(), version);
+const seededProject = (version: string) => seedInProjectState(desklessProject(), version);
 
 class TestIo extends Schema.TaggedError<TestIo>()("TestIo", {cause: Schema.Defect()}) {}
 
@@ -196,6 +203,7 @@ describe("boot", () => {
 				const {report} = yield* bootDirect(fixture("two-rows"), project, home);
 				assert.deepStrictEqual(report, {
 					sources: [fixture("two-rows")],
+					projectDefaulted: false,
 					programCount: 2,
 					spellCount: CORE_SPELLS,
 					bindingCount: 0,
@@ -213,14 +221,14 @@ describe("boot", () => {
 		"exits on its own when the config plans no process",
 		() => {
 			const home = freshHome();
-			const project = freshProject();
+			const project = desklessProject();
 			const result = run(["--config", fixture("two-rows"), "--project", project], {
 				...process.env,
 				HOME: home,
 			});
 			expect(result.status).toBe(0);
 			expect(result.stdout).toBe(
-				`tuval: booted — 2 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("two-rows")}; 0 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
+				`tuval: booted — 2 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("two-rows")} + ${projectConfig(project)}; 0 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
 			);
 		},
 		spawnBudget(1),
@@ -252,16 +260,46 @@ describe("boot", () => {
 		spawnBudget(1),
 	);
 
+	it.effect(
+		"boots the built-in shell on a project with no config module, under the global layer's rows",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				const project = freshProject();
+				const {report} = yield* boot({
+					global: fixture("two-rows"),
+					project,
+					home,
+					projectDefault: defaultProjectConfig,
+				}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer));
+				assert.deepStrictEqual(report.sources, [fixture("two-rows")]);
+				assert.isTrue(report.projectDefaulted);
+				// The global layer's two rows and the shell's, whose command rows ride on it.
+				assert.strictEqual(report.programCount, 3);
+				assert.strictEqual(report.spellCount, CORE_SPELLS + shellSpells.length);
+				// The shell is the one process: its graph node came with the default.
+				assert.strictEqual(report.processCount, 1);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
 	it(
-		"boots with no config module at all: nothing registered, nothing to run",
-		() => {
+		"serves a desk that attaches with no config module at all, and names the built-in default",
+		async () => {
 			const home = freshHome();
 			const project = freshProject();
-			const result = run(["--project", project], {...process.env, HOME: home});
+			const result = await runUntilRunning(["--project", project], {...process.env, HOME: home});
+			expect(result.stderr).toBe("");
 			expect(result.status).toBe(0);
-			expect(result.stdout).toBe(
-				`tuval: booted — 0 program(s), ${CORE_SPELLS} spell(s) registered from no config module; 0 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
+			expect(result.stdout).toContain(
+				`tuval: booted — 1 program(s), ${CORE_SPELLS + shellSpells.length} spell(s) registered from the built-in project default; 1 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
 			);
+			expect(result.stdout).toContain(
+				"tuval: process shell program=shell parent=- ports=- state=running@0\n",
+			);
+			expect(result.stdout).toContain("tuval: desk at http://");
+			// The default is read in the module's place and never written there.
+			expect(readdirSync(projectDir(project))).toEqual([]);
 		},
 		spawnBudget(1),
 	);
@@ -277,7 +315,7 @@ describe("boot", () => {
 			expect(first.stderr).toBe("");
 			expect(first.status).toBe(0);
 			expect(first.stdout).toContain(
-				`tuval: booted — 9 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
+				`tuval: booted — 9 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig} + the built-in project default; 3 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
 			);
 			expect(first.stdout).toContain(
 				"tuval: process shell program=shell parent=- ports=- state=running@0\n",
@@ -303,7 +341,7 @@ describe("boot", () => {
 			const second = await runUntilRunning(args, env);
 			expect(second.status).toBe(0);
 			expect(second.stdout).toContain(
-				`tuval: booted — 9 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${homeStateDir(project, home)}\n`,
+				`tuval: booted — 9 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig} + the built-in project default; 3 process(es) live, 3 restored from ${homeStateDir(project, home)}\n`,
 			);
 			expect(second.stdout).toContain("tuval: process log program=log parent=counter");
 		},
@@ -328,7 +366,7 @@ describe("boot", () => {
 				assert.strictEqual(result.status, 0);
 				assert.include(
 					result.stdout,
-					`tuval: booted — 1 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("one-counter")}; 1 process(es) live, 1 restored from ${homeStateDir(project, home)}\n`,
+					`tuval: booted — 1 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("one-counter")} + ${projectConfig(project)}; 1 process(es) live, 1 restored from ${homeStateDir(project, home)}\n`,
 				);
 				assert.include(
 					result.stdout,
