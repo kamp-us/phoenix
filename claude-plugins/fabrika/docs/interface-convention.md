@@ -144,6 +144,11 @@ characters with their newlines: 98 + 12 × 41 = 590, rounded up to 600. Twelve l
 off `review-ui render`, which seats nine exit codes past `0` and `1` (7, 10 to 16, and 19):
 nine exit lines, one pointer line and two to spare.
 
+The mechanical checks are [`leaf-help.ts`](../../../packages/fabrika-cli/src/leaf-help.ts), and
+`leaf-help.unit.test.ts` holds every registered leaf to them through a ratchet. A verb that broke
+the rule when the guard landed is listed with its length in `src/<group>/leaf-help-baseline.json`.
+It may shrink but not grow, and its row must be deleted once it passes. A verb not listed must pass.
+
 The exit lines carry their own two-space indent, and that choice is also the renderer's. The pinned
 `formatHelpDocImpl` indents only the description's first line: an embedded `\n` passes through
 untouched, so a bare newline starts the next line at column zero, flush with the `DESCRIPTION`
