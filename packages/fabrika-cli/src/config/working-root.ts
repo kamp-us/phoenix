@@ -4,8 +4,10 @@
  *
  * Kept apart from `./load.ts`, which knows nothing about files: a verb reading at a ref
  * (`build clearances`) opens the bytes with `git show` and hands the same loader a `Text`. This is
- * the other opener, and the only platform-touching module on the surface. It is also the only one
- * that reads the machine-local layer, because that file exists nowhere but a working tree.
+ * the other opener, and the only platform-touching module on the surface. The machine-local layer is
+ * read only by working-tree openers and never at a ref, because that file exists nowhere but a
+ * working tree: {@link loadRepoConfig} here, and `status settings`, which opens both layers through
+ * {@link repoConfigLayers} or, under `--root`, `./source.ts`'s `readConfigLayers`.
  *
  * **An absent file and an unreadable one stay apart all the way down.** Absent is a repo that
  * declared nothing, so every key resolves to its shipped default; a read that failed proves nothing

@@ -22,7 +22,7 @@ rather than a branch in fabrika's source (ADR 0273, epic
 | `load.ts` | The two doors: `loadConfig(source)` over the tracked file alone, `loadLayeredConfig(layers)` over both. Either answers documents every key resolves against, or a refusal; `resolveAll` for a reader over the whole registry |
 | `source.ts` | `readConfigSource(dir)` / `readLocalConfigSource(dir)` — opens a file off a directory and reports which of the three arms it found — and `readConfigLayers(dir)` for both |
 | `entries.ts` | The shared decoders every list key builds on — one place a list's element shape is read |
-| `working-root.ts` | `loadRepoConfig(cwd)` — the working-tree opener, for a verb running against the checkout it stands in, and the only reader of the local layer |
+| `working-root.ts` | `loadRepoConfig(cwd)` — the working-tree opener, for a verb running against the checkout it stands in — and `repoConfigLayers(cwd)`, the both-layers read under the same root discovery |
 | `unusable.ts` | `unusableReason(load)` — the one reason no value of this config may be used, which is what a gate keys on instead of the refusal arm |
 | `containment.ts` | The triage-facet containment invariant, checked over declared data |
 | `board.ts` | The board vocabulary's shape (`BoardVocabulary`, `StatusNames`) and how a facet's delete authority is composed from it — pure, so `triage/facets.ts` can build the shipped default off it |
@@ -144,8 +144,11 @@ defaults for every run from a subdirectory, which is a silent widening nothing r
 `cwd` as an option off `command.ts` (`cwd: process.cwd()`) rather than reading it in the verb, so a
 unit test can point the load at a scripted filesystem.
 
-`loadRepoConfig` is also the only reader of the machine-local layer, because that file exists nowhere
-but a working tree.
+Only working-tree openers read the machine-local layer, and no ref-based read does, because that file
+exists nowhere but a working tree. Two readers open it today: `loadRepoConfig`, and `status settings`,
+which reads both layers through `repoConfigLayers` (or `readConfigLayers` under `--root`) into
+`loadLayeredConfig` and never calls `loadRepoConfig`. A rule about the local layer is enforced in the
+load (`loadLayeredConfig`), which both readers share, not in either opener.
 
 ## The machine-local layer
 
