@@ -1556,6 +1556,37 @@ describe("recipe unpark — a driver-routed park clears on the driver's own rati
 		expect(JSON.parse(out.stdout)).toMatchObject({clearance: "branch-free", current: "build"});
 	});
 
+	// The spent-budget route is the repo's to declare. Under the shipped `driver` it stays the
+	// driver's park; a repo that declared `founder` gets a founder-routed park however the driver
+	// clears the others.
+	it("routes a spent repair budget to the driver under the shipped repairBudgetSpent", async () => {
+		const fs = lane(parkedBlockedOn("repair-budget-spent"));
+
+		const out = await run(fs, [], DISCHARGED_HTTP, null, CLEARS);
+
+		expect(out.code).toBe(RATIONALE_ABSENT);
+		expect(out.stderr.join("\n")).toMatch(/"repair-budget-spent" routes to the driver/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses a spent repair budget at PARK_NOVEL where the repo declared it the founder's", async () => {
+		const fs = lane(parkedBlockedOn("repair-budget-spent"));
+
+		const out = await run(
+			fs,
+			[],
+			DISCHARGED_HTTP,
+			null,
+			parkCauseRead("record", "clear", "founder"),
+			WHY,
+		);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		expect(out.stderr.join("\n")).toMatch(/`parkCause\.repairBudgetSpent` is "founder"/);
+		expect(out.stderr.join("\n")).toMatch(/route this to a human/);
+		expect(fs.written.size).toBe(0);
+	});
+
 	it("is PRECONDITION_UNKNOWN on a parkCause nobody could read — never the shipped arm", async () => {
 		const fs = lane(PARKED_ON_HEAD_BEHIND);
 

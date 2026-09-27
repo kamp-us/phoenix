@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {LANE_UNREADABLE} from "../../lane/codes.ts";
 import {parkCauseRefusal} from "../../lane/park-cause-rule.ts";
+import {PARK_CAUSES, routeUnder} from "../../lane/report.ts";
 import {loadConfig, resolve} from "../load.ts";
 import type {Read} from "../read-key.ts";
 import {PARK_CAUSE, type ParkCauseSurface, parkCauseKey, SHIPPED_PARK_CAUSE} from "./park-cause.ts";
@@ -22,7 +23,11 @@ describe("the shipped park-cause surface", () => {
 
 		expect(resolved._tag).toBe("Default");
 		if (resolved._tag !== "Default") return;
-		expect(resolved.value).toEqual({uncaused: "record", driverRouted: "refuse"});
+		expect(resolved.value).toEqual({
+			uncaused: "record",
+			driverRouted: "refuse",
+			repairBudgetSpent: "driver",
+		});
 		expect(SHIPPED_PARK_CAUSE.uncaused).toBe("record");
 	});
 
@@ -54,7 +59,37 @@ describe("the shipped park-cause surface", () => {
 
 		expect(resolved._tag).toBe("Declared");
 		if (resolved._tag !== "Declared") return;
-		expect(resolved.value).toEqual({uncaused: "record", driverRouted: "clear"});
+		expect(resolved.value).toEqual({
+			uncaused: "record",
+			driverRouted: "clear",
+			repairBudgetSpent: "driver",
+		});
+	});
+
+	// The spent-budget route keeps the one it always had until a repo declares a person should read it.
+	it("routes a spent repair budget to the driver when the repo declares nothing", () => {
+		expect(SHIPPED_PARK_CAUSE.repairBudgetSpent).toBe("driver");
+		expect(declared({})).toMatchObject({_tag: "Declared", value: {repairBudgetSpent: "driver"}});
+	});
+
+	it.each([
+		"driver",
+		"founder",
+	] as const)("takes the spent-budget route a repo declares (%s)", (value) => {
+		const resolved = declared({repairBudgetSpent: value});
+
+		expect(resolved._tag).toBe("Declared");
+		if (resolved._tag !== "Declared") return;
+		expect(resolved.value).toEqual({
+			uncaused: "record",
+			driverRouted: "refuse",
+			repairBudgetSpent: value,
+		});
+	});
+
+	// The shipped value is the cause table's own route, so a repo declaring nothing sees no change.
+	it("ships the route the repair-budget-spent cause always carried", () => {
+		expect(SHIPPED_PARK_CAUSE.repairBudgetSpent).toBe(PARK_CAUSES["repair-budget-spent"].route);
 	});
 });
 
@@ -79,6 +114,18 @@ describe("an off-vocabulary or malformed value is refused at load", () => {
 		expect(resolved.reason).toContain("is not one of refuse, clear");
 	});
 
+	it("refuses a repairBudgetSpent outside driver | founder", () => {
+		const resolved = declared({repairBudgetSpent: "human"});
+
+		expect(resolved._tag).toBe("Malformed");
+		if (resolved._tag !== "Malformed") return;
+		expect(resolved.reason).toContain("`repairBudgetSpent` is not one of driver, founder");
+	});
+
+	it.each([null, 3, ["driver"]])("refuses a non-string repairBudgetSpent (%p)", (value) => {
+		expect(declared({repairBudgetSpent: value})._tag).toBe("Malformed");
+	});
+
 	it("refuses a sub-key this module does not own, rather than dropping it", () => {
 		const resolved = declared({uncausedd: "refuse"});
 
@@ -94,14 +141,14 @@ describe("an off-vocabulary or malformed value is refused at load", () => {
 
 describe("parkCauseRefusal", () => {
 	it("resolves the permissive arm to requireCause false", () => {
-		expect(parkCauseRefusal("verb", read({uncaused: "record", driverRouted: "refuse"}))).toEqual({
+		expect(parkCauseRefusal("verb", read({...SHIPPED_PARK_CAUSE, uncaused: "record"}))).toEqual({
 			_tag: "Resolved",
 			requireCause: false,
 		});
 	});
 
 	it("resolves the strict arm to requireCause true", () => {
-		expect(parkCauseRefusal("verb", read({uncaused: "refuse", driverRouted: "refuse"}))).toEqual({
+		expect(parkCauseRefusal("verb", read({...SHIPPED_PARK_CAUSE, uncaused: "refuse"}))).toEqual({
 			_tag: "Resolved",
 			requireCause: true,
 		});
@@ -117,5 +164,19 @@ describe("parkCauseRefusal", () => {
 		expect(rule.outcome.code).toBe(LANE_UNREADABLE);
 		expect(rule.outcome.stderr.join(" ")).toContain("UNKNOWN");
 		expect(rule.outcome.stderr.join(" ")).toContain("unappended");
+	});
+});
+
+describe("routeUnder", () => {
+	it("reads the spent-budget route off the repo's declared value", () => {
+		expect(routeUnder("repair-budget-spent", {repairBudgetSpent: "driver"})).toBe("driver");
+		expect(routeUnder("repair-budget-spent", {repairBudgetSpent: "founder"})).toBe("founder");
+	});
+
+	// No other cause's route is a repo's to re-declare.
+	it("leaves every other cause, and a cause-less park, on the cause table's route", () => {
+		expect(routeUnder("head-behind-base", {repairBudgetSpent: "founder"})).toBe("driver");
+		expect(routeUnder("campaign-paused", {repairBudgetSpent: "driver"})).toBe("founder");
+		expect(routeUnder(null, {repairBudgetSpent: "driver"})).toBe("founder");
 	});
 });
