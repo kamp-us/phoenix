@@ -17,14 +17,23 @@ import {
 } from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Effect} from "effect";
+import type {ProjectLabel} from "../../projects/labels.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import type {TableRow} from "../../table/row.ts";
+import {HOME_PLACE, placeName, type SessionPlace} from "./place.ts";
 
-/** A program the picker can spawn. `label` is the row's own, defaulted from its identity. */
+/**
+ * A program the picker can spawn. `label` is the row's own, defaulted from its identity.
+ *
+ * `place` is present on a row that takes its folder at start, and names the folder this entry opens
+ * it in: such a row is offered once per open project, or once for home (#9694). Its label then
+ * reads `<row> · <place>`. Absent, the row keeps its own folder rule and is offered once.
+ */
 export interface ProgramEntry {
 	readonly _tag: "Program";
 	readonly programId: ProgramId;
 	readonly label: string;
+	readonly place?: SessionPlace;
 }
 
 /** A live process the picker can attach the window to. `parentId` is `null` for a root process. */
@@ -56,12 +65,68 @@ export const showsInAWindow = (row: AnyProgram): row is WindowedProgram =>
 /** A registry row that declares a renderer: what `showsInAWindow` admits. */
 export type WindowedProgram = AnyProgram & {readonly renderer: RendererRef};
 
-export const programEntries = (rows: ReadonlyArray<AnyProgram>): ReadonlyArray<ProgramEntry> =>
-	rows.filter(showsInAWindow).map((row) => ({
-		_tag: "Program",
-		programId: row.id,
-		label: programLabel(row),
-	}));
+/**
+ * A windowed program as the picker needs it, whichever side read it: the kernel off a registry row,
+ * the page off the catalog frame (`../../page/AttachedDesk.tsx`).
+ */
+export interface OfferedProgram {
+	readonly programId: ProgramId;
+	readonly label: string;
+	/** `Program.folderAtStart`: the row takes its folder when a process of it starts. */
+	readonly folderAtStart: boolean;
+}
+
+export const offeredOf = (row: WindowedProgram): OfferedProgram => ({
+	programId: row.id,
+	label: programLabel(row),
+	folderAtStart: row.folderAtStart === true,
+});
+
+/** The places a session row is offered in: each open project in the order it opened, else home. */
+const placesOf = (projects: ReadonlyArray<ProjectLabel>): ReadonlyArray<SessionPlace> =>
+	projects.length === 0
+		? [HOME_PLACE]
+		: projects.map(({key, label}) => ({_tag: "Project", key, label}));
+
+/**
+ * The program entries for these programs and these open projects (#9694, ruling #9668 R6.3). A row
+ * that takes its folder at start is offered once per place, grouped by place so one project's
+ * sessions sit together, and those groups come first, because a session is what a person opens a
+ * window for most. Every other row follows, once each, in registration order.
+ */
+export const offerEntries = (
+	programs: ReadonlyArray<OfferedProgram>,
+	projects: ReadonlyArray<ProjectLabel>,
+): ReadonlyArray<ProgramEntry> => {
+	const sessions = programs.filter((program) => program.folderAtStart);
+	const placed = placesOf(projects).flatMap((place) =>
+		sessions.map(
+			(program): ProgramEntry => ({
+				_tag: "Program",
+				programId: program.programId,
+				label: `${program.label} · ${placeName(place)}`,
+				place,
+			}),
+		),
+	);
+	const plain = programs
+		.filter((program) => !program.folderAtStart)
+		.map(
+			(program): ProgramEntry => ({
+				_tag: "Program",
+				programId: program.programId,
+				label: program.label,
+			}),
+		);
+	return [...placed, ...plain];
+};
+
+/** The program entries a registry offers, with `projects` open. */
+export const programEntries = (
+	rows: ReadonlyArray<AnyProgram>,
+	projects: ReadonlyArray<ProjectLabel> = [],
+): ReadonlyArray<ProgramEntry> =>
+	offerEntries(rows.filter(showsInAWindow).map(offeredOf), projects);
 
 export const processEntries = (
 	rows: ReadonlyArray<AnyProgram>,
@@ -83,7 +148,11 @@ export const processEntries = (
 	return entries;
 };
 
-/** The two lists as one mount reads them. Never fails: an empty picker is a picker with nothing to offer. */
+/**
+ * The two lists as one mount reads them. Never fails: an empty picker is a picker with nothing to
+ * offer. It reads no open projects, so a session row reads as home here; the page's picker gets
+ * the per-project list from the projects frame instead (`../../page/AttachedDesk.tsx`).
+ */
 export const readEntries: Effect.Effect<PickerEntries, never, Registry | ProcessTablePort> =
 	Effect.gen(function* () {
 		const registry = yield* Registry;
@@ -92,6 +161,17 @@ export const readEntries: Effect.Effect<PickerEntries, never, Registry | Process
 		const table = yield* port.rows;
 		return {programs: programEntries(rows), processes: processEntries(rows, table)};
 	});
+
+/**
+ * The group an entry is listed under, as a key: one per place a session is offered in, one for the
+ * other programs, one for the running processes. Entries of one group are always adjacent in
+ * `flatten`'s order, which the filter keeps (`./filter.ts`) and the frame and the page keys read.
+ */
+export const groupKeyOf = (entry: PickerEntry): string => {
+	if (entry._tag === "Process") return "processes";
+	if (entry.place === undefined) return "programs";
+	return entry.place._tag === "Home" ? "place:home" : `place:${entry.place.key}`;
+};
 
 /**
  * The entries as one indexable list — programs first, then processes. Every index the view holds

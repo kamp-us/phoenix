@@ -12,7 +12,8 @@
 
 import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
-import {flatten, type PickerEntries, type PickerEntry} from "./entries.ts";
+import {flatten, groupKeyOf, type PickerEntries, type PickerEntry} from "./entries.ts";
+import {placeName} from "./place.ts";
 import {refusalMessage} from "./refusal.ts";
 import {cursorOf, type PickerView, visibleFor} from "./view.ts";
 
@@ -162,8 +163,26 @@ const detailOf = (entry: PickerEntry): string =>
 		? entry.programId
 		: `${entry.processId}${entry.parentId === null ? "" : ` ← ${entry.parentId}`}`;
 
+/**
+ * `section` cut where its group changes (`groupKeyOf`), each run beside the index its first entry
+ * has in `flatten`. The filter keeps a group's entries adjacent, so a group is exactly one run.
+ */
+const runsOf = (
+	section: ReadonlyArray<PickerEntry>,
+): ReadonlyArray<{readonly entries: ReadonlyArray<PickerEntry>; readonly offset: number}> => {
+	const runs: Array<{entries: Array<PickerEntry>; offset: number; key: string}> = [];
+	section.forEach((entry, index) => {
+		const key = groupKeyOf(entry);
+		const last = runs.at(-1);
+		if (last !== undefined && last.key === key) last.entries.push(entry);
+		else runs.push({entries: [entry], offset: index, key});
+	});
+	return runs;
+};
+
 const KEY_HELP = [
 	{keys: "↑ ↓ or k j", action: "Move between rows"},
+	{keys: "Page Up / Page Down", action: "Jump to the previous or next group"},
 	{keys: "Home / End", action: "Jump to the first or last row"},
 	{keys: "/", action: "Filter the rows by typing"},
 	{keys: "Enter", action: "Open or attach the highlighted row"},
@@ -215,19 +234,35 @@ export const pickerFrame = (
 		});
 
 	const filtering = view.filter !== null;
+	const programGroups: ReadonlyArray<PickerGroup> =
+		visible.programs.length === 0
+			? [
+					{
+						role: "group",
+						id: `picker-${windowId}-programs`,
+						label: "Programs",
+						options: [],
+						emptyMessage: filtering
+							? "No program matches this filter."
+							: "No registered program can fill a window.",
+					},
+				]
+			: runsOf(visible.programs).map(({entries: run, offset}, index) => {
+					const first = run[0];
+					const place = first?._tag === "Program" ? first.place : undefined;
+					return {
+						role: "group",
+						id:
+							place === undefined
+								? `picker-${windowId}-programs`
+								: `picker-${windowId}-sessions-${index}`,
+						label: place === undefined ? "Programs" : `Sessions in ${placeName(place)}`,
+						options: optionsFrom(run, offset),
+						emptyMessage: null,
+					};
+				});
 	const groups: ReadonlyArray<PickerGroup> = [
-		{
-			role: "group",
-			id: `picker-${windowId}-programs`,
-			label: "Programs",
-			options: optionsFrom(visible.programs, 0),
-			emptyMessage:
-				visible.programs.length > 0
-					? null
-					: filtering
-						? "No program matches this filter."
-						: "No registered program can fill a window.",
-		},
+		...programGroups,
 		{
 			role: "group",
 			id: `picker-${windowId}-processes`,

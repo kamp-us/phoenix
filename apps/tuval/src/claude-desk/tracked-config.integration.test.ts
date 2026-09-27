@@ -1,6 +1,7 @@
 /**
- * The tracked config's Claude row, booted: `../../.tuval/tuval.config.ts` is the module under test,
- * not a fixture written for it (#7958). What it proves is that the row a user's own config can
+ * The tracked config's Claude row, booted: the repo's global layer, `../../global/tuval.config.ts`,
+ * is the module under test, not a fixture written for it (#7958, moved there by #9694). It boots
+ * over a project whose config is Tuval's own, so the demo counter is there to spawn. What it proves is that the row a user's own config can
  * write registers, shows in the picker, and that the kernel it is spawned into holds the
  * `SpellBridge` the row leaves open — and that a `spawn` through `KernelBridge` on that bridge
  * starts a process the process table shows.
@@ -12,7 +13,7 @@
  * the config's own `claudeSessionScope`, so a scope this test invented could not pass.
  */
 
-import {mkdirSync, mkdtempSync, realpathSync, rmSync} from "node:fs";
+import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -27,16 +28,18 @@ import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer} from "effect";
 import {afterAll} from "vitest";
-import {claudeSessionScope} from "../../.tuval/tuval.config.ts";
-import {boot, projectDir} from "../boot.ts";
+import {claudeSessionScope} from "../../global/tuval.config.ts";
+import {boot, projectConfig, projectDir} from "../boot.ts";
 import {counterId} from "../demo/counter.ts";
+import {ProjectId} from "../project-id.ts";
 import {scratchHome} from "../scratch-home.ts";
 import {programEntries} from "../shell/picker/entries.ts";
 
 /** The scratch home every boot in this file runs under. */
 const home = scratchHome("tracked-config");
 
-const configModule = fileURLToPath(new URL("../../.tuval/tuval.config.ts", import.meta.url));
+const configModule = fileURLToPath(new URL("../../global/tuval.config.ts", import.meta.url));
+const tuvalProjectConfig = fileURLToPath(new URL("../../.tuval/tuval.config.ts", import.meta.url));
 
 const tempDirs: string[] = [];
 
@@ -44,19 +47,26 @@ afterAll(() => {
 	for (const dir of tempDirs.splice(0)) rmSync(dir, {recursive: true, force: true});
 });
 
+/** A throwaway project whose config is Tuval's own, re-exported. */
 const freshProject = (): string => {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "tuval-tracked-config-")));
 	tempDirs.push(dir);
 	mkdirSync(projectDir(dir));
+	writeFileSync(
+		projectConfig(dir),
+		`export {default} from ${JSON.stringify(tuvalProjectConfig)};\n`,
+	);
 	return dir;
 };
 
 /**
- * The tracked config booted as the global layer over an empty project, so the state dir is a key
- * under this file's scratch home and this repo's own `.tuval/` is read but never written.
+ * The global layer booted over that project, so the state dir is a key under this file's scratch
+ * home and this repo's own `.tuval/` is read but never written.
  */
 const bootTracked = Effect.fn("trackedConfig.boot")(function* () {
-	return yield* boot({global: configModule, project: freshProject(), home});
+	const project = freshProject();
+	const booted = yield* boot({global: configModule, project, home});
+	return {...booted, project};
 });
 
 describe("the Claude row the tracked config registers", () => {
@@ -103,12 +113,14 @@ describe("the Claude row the tracked config registers", () => {
 					Effect.provideContext(booted.kernel),
 				);
 
-				const spawned = yield* bridge.spawn(counterId).pipe(Effect.provideContext(booted.kernel));
+				// The counter is the project's row, so it runs under the project's scope (#9684).
+				const counter = ProgramId.make(ProjectId.of(booted.project).scope(counterId));
+				const spawned = yield* bridge.spawn(counter).pipe(Effect.provideContext(booted.kernel));
 				const row = yield* ProcessTable.pipe(
 					Effect.flatMap((table) => table.get(spawned)),
 					Effect.provideContext(booted.kernel),
 				);
-				assert.strictEqual(row.programId, counterId);
+				assert.strictEqual(row.programId, counter);
 			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
 		{timeout: 60_000},
 	);

@@ -56,8 +56,11 @@ export const CLAUDE_SESSION_CAPABILITIES: ReadonlyArray<CapabilityRequest> = [
 ];
 
 interface ClaudeSessionBase {
-	/** The project root that booted the kernel: the cwd a fresh session opens in (#7509). */
-	readonly cwd: string;
+	/**
+	 * A folder every fresh session opens in (#7509). Absent, a session takes its folder when it
+	 * starts: the picker entry's project, or the folder its spawner runs in (#9694).
+	 */
+	readonly cwd?: string;
 	readonly claude?: ClaudeSessionConfigInput;
 	readonly itemLimit?: number;
 	readonly byteLimit?: number;
@@ -116,7 +119,7 @@ export const claudeSession = (options: ClaudeSessionProgramOptions): ClaudeSessi
 			layer:
 				options.layer === undefined ? claudeSessionLayer(settings, options.scope) : options.layer,
 			config: {
-				cwd: options.cwd,
+				...(options.cwd === undefined ? {} : {cwd: options.cwd}),
 				...(options.itemLimit === undefined ? {} : {itemLimit: options.itemLimit}),
 				...(options.byteLimit === undefined ? {} : {byteLimit: options.byteLimit}),
 			},

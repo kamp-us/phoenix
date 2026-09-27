@@ -24,7 +24,9 @@ export type PickerRefusal =
 	/** The kernel's `ProcessIsPlanned` (`../../process/errors.ts`) as the window announces it. */
 	| {readonly _tag: "ProcessPlanned"; readonly processId: string}
 	/** The kernel's `ForgetRefused`: the durable write failed, so the process is still in the picker. */
-	| {readonly _tag: "RemoveFailed"; readonly processId: string; readonly reason: string};
+	| {readonly _tag: "RemoveFailed"; readonly processId: string; readonly reason: string}
+	/** A session entry named a project that closed before the choice reached the kernel (#9694). */
+	| {readonly _tag: "ProjectClosed"; readonly programId: string; readonly project: string};
 
 export const unknownProgram = (programId: string): PickerRefusal => ({
 	_tag: "UnknownProgram",
@@ -61,6 +63,12 @@ export const removeFailed = (processId: string, reason: string): PickerRefusal =
 	reason,
 });
 
+export const projectClosed = (programId: string, project: string): PickerRefusal => ({
+	_tag: "ProjectClosed",
+	programId,
+	project,
+});
+
 const strings = (value: Record<string, unknown>, fields: ReadonlyArray<string>): boolean =>
 	fields.every((field) => typeof value[field] === "string");
 
@@ -86,6 +94,8 @@ export const isPickerRefusal = (value: unknown): value is PickerRefusal => {
 			return strings(value, ["processId"]);
 		case "RemoveFailed":
 			return strings(value, ["processId", "reason"]);
+		case "ProjectClosed":
+			return strings(value, ["programId", "project"]);
 		default:
 			return false;
 	}
@@ -112,5 +122,7 @@ export const refusalMessage = (refusal: PickerRefusal): string => {
 			return `Process "${refusal.processId}" is declared by the config graph, so boot would start it again. Edit the config to remove it.`;
 		case "RemoveFailed":
 			return `Process "${refusal.processId}" was not removed and is still running: ${refusal.reason}`;
+		case "ProjectClosed":
+			return `Program "${refusal.programId}" was not started: the project ${refusal.project} is no longer open.`;
 	}
 };

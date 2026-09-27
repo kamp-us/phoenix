@@ -19,7 +19,8 @@ import {CODEX_CHAT_WINDOW_REF, CODEX_SESSION_PROGRAM} from "./renderer-ref.ts";
 export {CODEX_SESSION_PROGRAM} from "./renderer-ref.ts";
 
 interface CodexSessionBase {
-	readonly cwd: string;
+	/** A folder every fresh session opens in. Absent, a session takes its folder at start (#9694). */
+	readonly cwd?: string;
 	readonly codex?: CodexSessionConfigInput;
 	readonly itemLimit?: number;
 	readonly byteLimit?: number;
@@ -44,7 +45,7 @@ export const codexSession = (options: CodexSessionProgramOptions): CodexSessionP
 				options.layer ??
 				CodexAiAgent.layer(settings).pipe(Layer.provide(KernelBridge.live(options.scope))),
 			config: {
-				cwd: options.cwd,
+				...(options.cwd === undefined ? {} : {cwd: options.cwd}),
 				...(options.itemLimit === undefined ? {} : {itemLimit: options.itemLimit}),
 				...(options.byteLimit === undefined ? {} : {byteLimit: options.byteLimit}),
 			},

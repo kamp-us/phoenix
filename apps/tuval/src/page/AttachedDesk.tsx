@@ -40,7 +40,7 @@ import {ProcessBoardOverlay} from "../shell/board/index.ts";
 import type {ShellMsg, ShellState} from "../shell/core/index.ts";
 import {openProcessMsg} from "../shell/core/machine.ts";
 import {windows} from "../shell/layout/index.ts";
-import type {PickerEntries} from "../shell/picker/browser.ts";
+import {offerEntries, type PickerEntries} from "../shell/picker/browser.ts";
 import type {AttachedProcess, PageAttachment, WireProgram} from "../shell/transport/browser.ts";
 import type {
 	AttachEvent,
@@ -143,17 +143,22 @@ const shownProcesses = (state: ShellState): ReadonlySet<string> => {
 /**
  * What the picker can offer this page: the kernel's windowed programs as they arrived on the
  * registry frame, and the processes already running. The headless test is not repeated here — a row
- * that cannot fill a window never crosses the wire (`../shell/transport/server.ts`).
+ * that cannot fill a window never crosses the wire (`../shell/transport/server.ts`). A session row
+ * is offered once per open project the projects frame names (#9694).
  */
 const entriesFrom = (
 	rows: ReadonlyMap<ProcessId, TableRow>,
 	catalog: ReadonlyMap<ProgramId, WireProgram>,
+	projects: ProjectLabels,
 ): PickerEntries => ({
-	programs: [...catalog.values()].map((program) => ({
-		_tag: "Program" as const,
-		programId: program.programId,
-		label: program.label,
-	})),
+	programs: offerEntries(
+		[...catalog.values()].map((program) => ({
+			programId: program.programId,
+			label: program.label,
+			folderAtStart: program.folderAtStart === true,
+		})),
+		projects.all,
+	),
 	processes: [...rows.values()].map((row) => ({
 		_tag: "Process" as const,
 		processId: row.id,
@@ -410,7 +415,7 @@ export function AttachedDesk({
 		[rows, attached, catalog, resolveRenderer, views, dispatch, windowTitles, projects],
 	);
 
-	const entries = useMemo(() => entriesFrom(rows, catalog), [rows, catalog]);
+	const entries = useMemo(() => entriesFrom(rows, catalog, projects), [rows, catalog, projects]);
 
 	// The board's own two operands. The rows are re-listed rather than handed the map's iterator: an
 	// iterator is a fresh object on every render, and the board memoizes its tile model on this value.

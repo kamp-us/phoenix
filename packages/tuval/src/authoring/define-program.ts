@@ -55,6 +55,7 @@ import type {
 import {isAsked, NO_REPLY, type ReplyTo} from "../process/inbox.ts";
 import {Processes} from "../process/Processes.ts";
 import {ProcessSelf} from "../process/self.ts";
+import {WorkingFolder} from "../process/working-folder.ts";
 import type {
 	AnyProgram,
 	CapabilityRequest,
@@ -462,10 +463,15 @@ const spawnHandler = (cmd: SpawnEffect) =>
 		// The parent is stamped here, off the process this interpretation is running for, and is
 		// never something the `spawn` effect carries (#8757). `on` rides along as that same
 		// process's routing table, so a named child port arrives as this process's own event.
+		// A child with no `cwd` runs in this process's own folder, inherited through the spawn set;
+		// a `cwd` is the other folder the program hands it, and its own children inherit that (#9694).
 		const start = processes.spawn(ProgramId.make(program), Option.some(self.id), cmd.on);
 		const child = yield* cmd.cwd === undefined
 			? start
-			: start.pipe(Effect.provideService(SessionOpening, {cwd: cmd.cwd, resume: null}));
+			: start.pipe(
+					Effect.provideService(SessionOpening, {cwd: cmd.cwd, resume: null}),
+					Effect.provideService(WorkingFolder, {path: cmd.cwd}),
+				);
 		return [spawned(child, program)];
 	});
 

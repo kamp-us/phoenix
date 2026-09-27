@@ -36,6 +36,7 @@ import type {PlannedProcesses} from "@kampus/tuval-sdk/kernel/process/PlannedPro
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import type {ProcessHandle} from "@kampus/tuval-sdk/kernel/process/process";
+import {WorkingFolder} from "@kampus/tuval-sdk/kernel/process/working-folder";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {Registry, RegistryRows} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/index";
@@ -328,11 +329,13 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 			);
 			yield* Effect.addFinalizer(() => stopOwned(id, kernel));
 
-			const launched = yield* launch(part, wiring, {services: kernel}).pipe(
+			// A project's processes run in its folder, and so does what they start (#9694).
+			const inFolder = Context.add(kernel, WorkingFolder, {path: project.folder});
+			const launched = yield* launch(part, wiring, {services: inFolder}).pipe(
 				Effect.provideContext(kernel),
 			);
 			// The store may be the desk's, so the restore reads only the entries this project owns.
-			const restored = yield* restore(kernel).pipe(
+			const restored = yield* restore(inFolder).pipe(
 				Effect.provideService(
 					Checkpoints,
 					ownedView(store, (entry) => id.owns(entry.programId)),

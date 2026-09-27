@@ -57,7 +57,10 @@ const BOX_SPELLS = DESK_SPELLS + sessionListSpells.length;
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));
 const bin = fileURLToPath(new URL("./bin.ts", import.meta.url));
-/** The config the box ships — its demo and session rows, no shell — read as a global layer over a throwaway project. */
+/**
+ * Tuval's own project config — its demo rows, the session list and the module demo; no shell and
+ * no harness rows (#9694) — read as a global layer over a throwaway project.
+ */
 const boxConfig = fileURLToPath(new URL("../.tuval/tuval.config.ts", import.meta.url));
 
 interface Run {
@@ -322,7 +325,7 @@ describe("boot", () => {
 			expect(first.stderr).toBe("");
 			expect(first.status).toBe(0);
 			expect(first.stdout).toContain(
-				`tuval: booted — 9 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
+				`tuval: booted — 5 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
 			);
 			expect(first.stdout).toContain(
 				"tuval: process shell program=shell parent=- ports=- state=running@0\n",
@@ -348,7 +351,7 @@ describe("boot", () => {
 			const second = await runUntilRunning(args, env);
 			expect(second.status).toBe(0);
 			expect(second.stdout).toContain(
-				`tuval: booted — 9 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${homeStateDir(project, home)}\n`,
+				`tuval: booted — 5 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${homeStateDir(project, home)}\n`,
 			);
 			expect(second.stdout).toContain("tuval: process log program=log parent=counter");
 		},

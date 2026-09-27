@@ -24,6 +24,13 @@
  *
  * The first pane keeps the flag off on purpose: the help row's absence is the containment #9447
  * states, and an on/off pair at one viewport is what makes that falsifiable by eye.
+ *
+ * The last three panes are #9694's: four harnesses in ten open projects, which is forty session
+ * entries, one group per project. One pane is the list as `<c-b> w` leaves it after two Page Downs,
+ * one is the same list narrowed to one harness across every project, and one is a desk with nothing
+ * open, where each harness is offered once for home. The entries are built by the picker's own
+ * `offerEntries` over labels `projectLabels` would give these folders — written out, because that
+ * module reads Node's path separator and this is a browser page.
  */
 
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
@@ -35,6 +42,8 @@ import type {ShellMsg} from "../../core/index.ts";
 import {WindowView} from "../../ui/WindowView.tsx";
 import {
 	mountPicker,
+	type OfferedProgram,
+	offerEntries,
 	type PickerEntries,
 	type PickerView as PickerViewState,
 	processPlanned,
@@ -95,17 +104,64 @@ if (REMOVABLE === undefined) throw new Error("the proof page offers no process t
 
 const onRemovableRow: PickerViewState = {...mountPicker(), cursor: FIRST_PROCESS};
 
+/** The four harness rows the repo's global layer registers, as the catalog frame carries them. */
+const HARNESSES: ReadonlyArray<OfferedProgram> = [
+	{programId: ProgramId.make("pi-session"), label: "Pi", folderAtStart: true},
+	{programId: ProgramId.make("claude-session"), label: "Claude", folderAtStart: true},
+	{programId: ProgramId.make("agy-session"), label: "agy", folderAtStart: true},
+	{programId: ProgramId.make("codex-session"), label: "codex", folderAtStart: true},
+];
+
+/** Two rows that keep their own folder: the list they sit under is the one after the sessions. */
+const PLAIN: ReadonlyArray<OfferedProgram> = [
+	{programId: ProgramId.make("ai-agent-sessions"), label: "Sessions", folderAtStart: false},
+	{programId: ProgramId.make("module-counter"), label: "Module counter", folderAtStart: false},
+];
+
+/**
+ * Ten open projects. The two phoenix checkouts clash on their folder name, so they carry a parent
+ * folder each, the way their tiles do.
+ */
+const OPEN_PROJECTS = [
+	"kamp-us/phoenix",
+	"usirin/phoenix",
+	"demlik",
+	"tea",
+	"sozluk",
+	"pano",
+	"atolye",
+	"gecit",
+	"fabrika",
+	"notes",
+].map((label, index) => ({key: `-code-project-${index}`, label}));
+
+const sessionEntries: PickerEntries = {
+	programs: offerEntries([...HARNESSES, ...PLAIN], OPEN_PROJECTS),
+	processes: [process("p-claude-phoenix", "claude-session", "claude-session")],
+};
+
+const homeEntries: PickerEntries = {
+	programs: offerEntries([...HARNESSES, ...PLAIN], []),
+	processes: [],
+};
+
+/** Two Page Downs from the top: the first row of the third project's group. */
+const onThirdProject: PickerViewState = {...mountPicker(), cursor: HARNESSES.length * 2};
+
 function Pane({
 	name,
 	start,
 	focused,
 	processRemove = false,
+	offered = entries,
 }: {
 	readonly name: string;
 	readonly start: PickerViewState;
 	readonly focused: boolean;
 	/** The operator's `processRemove` flag, passed through `WindowView` exactly as the desk passes it. */
 	readonly processRemove?: boolean;
+	/** What the picker offers; the first five panes share one small list. */
+	readonly offered?: PickerEntries;
 }) {
 	// The slot the desk would hold, at the desk's own type: `WindowView` reads it back through the
 	// real `asPickerView`, so the page proves the round trip rather than a narrowed object.
@@ -118,7 +174,7 @@ function Pane({
 				mount={empty}
 				focused={focused}
 				view={view}
-				entries={entries}
+				entries={offered}
 				dispatch={(msg: ShellMsg) => {
 					if (msg.type === "window.setView") setView(msg.view);
 					else globalThis.console.log(msg.type);
@@ -168,6 +224,26 @@ createRoot(host).render(
 				)}
 				focused={false}
 				processRemove={true}
+			/>
+			{/* #9694, three panes: forty session entries grouped by project with the highlight two
+			    groups down, the same list narrowed to one harness, and the home list. */}
+			<Pane
+				name="picker-sessions"
+				start={onThirdProject}
+				focused={false}
+				offered={sessionEntries}
+			/>
+			<Pane
+				name="picker-sessions-filtered"
+				start={withFilter(mountPicker(), "claude")}
+				focused={false}
+				offered={sessionEntries}
+			/>
+			<Pane
+				name="picker-sessions-home"
+				start={mountPicker()}
+				focused={false}
+				offered={homeEntries}
 			/>
 		</div>
 	</StrictMode>,

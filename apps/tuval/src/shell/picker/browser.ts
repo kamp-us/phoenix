@@ -8,7 +8,11 @@
 
 export {
 	flatten,
+	groupKeyOf,
 	noEntries,
+	type OfferedProgram,
+	offerEntries,
+	offeredOf,
 	type PickerEntries,
 	type PickerEntry,
 	type ProcessEntry,
@@ -40,12 +44,14 @@ export {
 	pickerCommandFor,
 	pickerCommands,
 } from "./intent.ts";
+export {HOME_PLACE, placeName, type SessionPlace} from "./place.ts";
 export {
 	isPickerRefusal,
 	type PickerRefusal,
 	processGone,
 	processPlanned,
 	programHeadless,
+	projectClosed,
 	refusalMessage,
 	removeFailed,
 	spawnFailed,

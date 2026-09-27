@@ -167,6 +167,7 @@ export const registryFrame = (rows: ReadonlyArray<AnyProgram>): RegistryFrame =>
 		// `inspector: undefined` is a different frame once it has been through `JSON.stringify`.
 		...(row.inspector === undefined ? {} : {inspector: row.inspector}),
 		...(row.status === undefined ? {} : {status: row.status}),
+		...(row.folderAtStart === true ? {folderAtStart: true as const} : {}),
 	})),
 });
 
