@@ -120,13 +120,19 @@ export const carriesDecisionsHeading = (body: string): boolean =>
 	sectionsOf(body).some((section) => section.heading === DECISIONS_SECTION);
 
 /**
+ * Compose and emit compare the same one-line text; the digest still covers the full source text.
+ * @ruling https://github.com/kamp-us/phoenix/issues/9849
+ */
+export const inlineDecisionText = (text: string): string => text.replace(/\s+/g, " ").trim();
+
+/**
  * One `## Decisions` entry's bytes.
  *
  * The source issue is **not** repeated per line — it is in the footer once. Repeating it made a
  * map-sourced line read as two issue numbers in a row (`· #<source> #<ref>`).
  */
 export const renderDecision = (row: DecisionRow): string =>
-	`- ${row.text} — **${row.provenance}** · ${row.ref}`;
+	`- ${inlineDecisionText(row.text)} — **${row.provenance}** · ${row.ref}`;
 
 export const renderDecisions = (rows: ReadonlyArray<DecisionRow>): string =>
 	rows.map(renderDecision).join("\n");

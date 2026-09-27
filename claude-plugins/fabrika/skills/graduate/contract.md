@@ -648,6 +648,9 @@ splices it between `## Solution` and `## Out of scope`, and leak-scans the whole
 `empty` (`16`) trail, so a spec can never be composed over an unmade decision even if the caller
 skipped the skill's own step 2.
 
+Each decision occupies one line. Runs of whitespace, including paragraph breaks, collapse to a
+single space; all words and bullet markers remain. The source trail retains the full text.
+
 **Errors**
 
 | Message (stderr) | Code | Kind |
@@ -739,12 +742,15 @@ fabrika graduate emit 9412 --spec spec.md --title "Cap moderation weight per top
 body's rendered `## Decisions` section** — that list, not a flag, is what says which subset this
 spec covers; re-derives the trail from `<source>` (the same dispatch `graduate trail` performs);
 **checks each parsed ref against the re-derived trail and refuses at `18` if any ref is absent from
-it or its provenance or text has changed** (refs on the trail but *absent from the spec* are the
+it or its provenance or rendered text has changed** (refs on the trail but *absent from the spec* are the
 remainder and are legal); computes the **spec digest** over the re-derived entries for exactly those
 refs; reads the source's emission markers and refuses at `15` if one already binds that spec digest;
 **appends the footer** carrying that digest; leak-scans the **composed whole, footer included**;
 creates the issue; applies **exactly** `status:needs-triage`; reads the issue back; then posts the
 marker carrying the digest and the covered refs.
+
+The text comparison uses compose's one-line whitespace normalization. Digests still cover the
+original re-derived decision text, including its line breaks.
 
 The footer is appended **before** the leak scan, never after, for the reason `report file` does the
 same: bytes added after a scan are bytes nobody scanned, and this footer interpolates a source
