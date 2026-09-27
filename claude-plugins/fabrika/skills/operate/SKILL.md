@@ -30,12 +30,14 @@ branch — that one is `ship`'s, once, at the tail.
 
 **The bar this skill is held to: a lane reaches its terminal with zero founder asks about the
 engine.** You are the human seat for every non-product cause — a collision, a drift, a dead shell, a
-spent budget, a park no recipe covers — and the founder is reached only when the cause is a product
-ruling. Every engine ask you send upward is a defect in this skill or in a verb, so file it with
-`/report` and take the move yourself. The authority is a recorded decision in the repository's own
-corpus — the one that rules a park's route out to be its cause's, and the driver's for every cause
-that is not a product call; the search is the phrase "park route". What it costs you is the weekly
-machinery review, where each rationale you recorded is read back.
+park no recipe covers — and the founder is reached only when the cause is a product ruling. A spent
+repair budget is the one cause whose seat the repo declares: it is yours when
+`parkCause.repairBudgetSpent` resolves `driver`, the shipped value, and a person's when it resolves
+`founder`, and then parking it on that person is the declared route, not an engine ask (step 4).
+Every other engine ask you send upward is a defect in this skill or in a verb, so file it with
+`/report` and take the move yourself. The authority is shipped, never remembered: a park's route is
+its cause's, off the closed cause table the CLI carries, and that one setting for a spent budget.
+What it costs you is the weekly machinery review, where each rationale you recorded is read back.
 
 Every lane verb is invoked through this repo's own fabrika entrypoint, which `<fabrika>` stands for
 in every command below:
@@ -1575,8 +1577,9 @@ node <fabrika> recipe unpark <lane-key> --task <task> --rationale "<why you are 
 
 That rationale lands on the recorded `UNBLOCKED` and reads back off the fold, which is the whole
 audit of a clear nothing else proves — so write the reason, not a restatement of the park. You still
-never compose the routing: whose park it is comes off the cause table, and a `founder` route is exit
-`12` and the park comment below, exactly as before.
+never compose the routing: whose park it is comes off the cause table, and for a spent repair budget
+off `parkCause.repairBudgetSpent` as well, and a `founder` route is exit `12` and the park comment
+below, exactly as before.
 
 **A founder-routed park is the one you cannot clear by hand**: post on the driven issue what is
 needed and from whom (the parking spawn's report names both; for `human:cp-approval` it is a
@@ -1589,7 +1592,7 @@ of those hands the founder an engine failure that was never theirs.
 emitted before the rename it wears an older name, `frozen` on a task and `human:epic-review` on an
 epic tail, and those are the same park, cleared here the same way. Whose park it is comes off one
 config setting, `parkCause.repairBudgetSpent`, and nothing else. Read its resolved value with
-`node packages/fabrika-cli/src/bin.ts status settings` — the `parkCause` row — before you take the
+`node <fabrika> status settings` — the `parkCause` row — before you take the
 seat:
 
 - `driver` (the shipped value) — the park is yours. You grant the round yourself on your own read,
@@ -1603,8 +1606,8 @@ table classes this park `Novel` and never clears it with a proving read. Two cal
 and the second is refused without the first:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane clear <lane> --task <task> --rationale "<your own read>"
-node packages/fabrika-cli/src/bin.ts lane transition <lane> UNBLOCKED --task <task> --rationale "<the same read>"
+node <fabrika> lane clear <lane> --task <task> --rationale "<your own read>"
+node <fabrika> lane transition <lane> UNBLOCKED --task <task> --rationale "<the same read>"
 ```
 
 **That one call buys both of the lane's repair budgets, which is the thing to know here.** A lane
@@ -1697,7 +1700,8 @@ proves the task left the park; and on a **driver-routed novel** park under exit 
 verb records it on your rationale, with no proving read behind it. Neither is a route out of the
 spent-budget park, whose cause carries no remedy, as that fence says. This section states no
 park-clearing authority of its own: which parks clear without the founder is the cause table's route
-field and the recipe table's rows, and you relay both. You relay that verb's exit into
+field, `parkCause.repairBudgetSpent` for a spent repair budget, and the recipe table's rows, and you
+relay all three. You relay that verb's exit into
 the chore lane's own event and type no `UNBLOCKED` anywhere.
 
 A chore lane has **no driven issue** — that is what a chore is — so a park it holds has nowhere to
