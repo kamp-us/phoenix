@@ -91,6 +91,7 @@ import {
 	SHIP_STATES,
 	traceDiagnosis,
 	tracePulls,
+	traceUnlinked,
 	type VerdictFact,
 } from "./prove.ts";
 import {type ChildRange, DEEPEN_REMEDY, locateRange} from "./range.ts";
@@ -371,6 +372,31 @@ const prove = (
 			]);
 		}
 		const repo = resolved.repo;
+
+		// Asked before the namespace reads: the rewind judges links, never verdicts.
+		if (claim._tag === "Unlinked") {
+			const unlinked = yield* traceOpenPull(repo, issue);
+			if (unlinked._tag === "Refused") return unlinked.outcome;
+			const scanned = [
+				`${VERB}: looked for an open PR in ${repo} whose body links #${issue} (any closing keyword, or Part of, anywhere in the body); ${unlinked.scanned} candidate(s) read.`,
+			];
+			const proof = traceUnlinked(issue, unlinked.trace);
+			if (proof._tag !== "Proven") return seat(proof, scanned);
+			return answer(
+				JSON.stringify(
+					{
+						proof: "proven",
+						event,
+						task: taskId,
+						issue,
+						evidence: {kind: "no-linking-pull", scanned: unlinked.scanned},
+					},
+					null,
+					2,
+				),
+				[...scanned, `${VERB}: ${proof.note}.`],
+			);
+		}
 
 		// Only the verdict arms need it: the two arms above prove commits and states, and neither asks
 		// what namespace a diff derives.

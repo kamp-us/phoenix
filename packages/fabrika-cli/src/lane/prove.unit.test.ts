@@ -13,6 +13,7 @@ import {
 	traceDiagnosis,
 	tracePulls,
 	traceRange,
+	traceUnlinked,
 } from "./prove.ts";
 
 const SINGLE = {_tag: "Single"} as const;
@@ -145,6 +146,12 @@ describe("claimOf", () => {
 		});
 		expect(claimOf("BLOCKED", "review", TAIL, "blocked")).toEqual({_tag: "ParkUncontradicted"});
 		expect(claimOf("BLOCKED", "review", CHILD, "blocked")._tag).toBe("None");
+	});
+
+	it("claims the rewind out of either review cell, and none for a child", () => {
+		expect(claimOf("WIP", "review", SINGLE, "queued")).toEqual({_tag: "Unlinked"});
+		expect(claimOf("WIP", "review:ui", SINGLE, "queued")).toEqual({_tag: "Unlinked"});
+		expect(claimOf("WIP", "review", CHILD, "queued")._tag).toBe("None");
 	});
 
 	it("claims nothing for the events no read can falsify, in either shape", () => {
@@ -459,6 +466,25 @@ describe("tracePulls", () => {
 		expect(closed).toEqual({
 			_tag: "None",
 			why: "read #4318 — every candidate has closed since it was nominated",
+		});
+	});
+});
+
+describe("traceUnlinked", () => {
+	it("proves the rewind when no candidate links the issue", () => {
+		expect(
+			traceUnlinked(7057, {_tag: "None", why: "read #9905 — no candidate's body links #7057"}),
+		).toMatchObject({_tag: "Proven"});
+	});
+
+	it("is contradicted by one linking PR, and by several", () => {
+		expect(traceUnlinked(7057, {_tag: "One", pr: 9905})).toMatchObject({
+			_tag: "Contradicted",
+			what: expect.stringContaining("#9905 still links #7057"),
+		});
+		expect(traceUnlinked(7057, {_tag: "Many", prs: [9905, 9906]})).toMatchObject({
+			_tag: "Contradicted",
+			what: expect.stringContaining("#9905, #9906 still link #7057"),
 		});
 	});
 });

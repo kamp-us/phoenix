@@ -8,15 +8,16 @@
  * adds and a range-bound verdict on the child issue. Everything here is the pure half — facts in,
  * one verdict out — so the whole table is testable without a network and without a checkout.
  *
- * **Three events carry a claim, and one of them claims a negative.** `DONE` out of a `build` state
+ * **Four events carry a claim, and two of them claim a negative.** `DONE` out of a `build` state
  * asserts the work exists, `PASS` out of a review state asserts the namespaces that state owes
  * judged it — every derived one out of `review:ui`, every one the plain `review` cell can itself
  * reach out of `review` (see {@link REVIEW_UI_STATE} for why the two differ). `BLOCKED` out of a
  * review state asserts the reviewer's run reached **no** verdict, which one still-binding `FAIL`
- * falsifies ({@link foldPark}). A `WIP`, an `UNBLOCKED`, a `FAIL`, a `BLOCKED` out of `build`, a
- * `DONE` out of `ship` or a `DONE` out of a child's `integrate` asserts nothing a read could
- * falsify — those answer {@link Claim} `None`, so a caller may prove *every* event and still only
- * pay for the three that can lie.
+ * falsifies ({@link foldPark}). `WIP` out of a review state asserts **no** open PR links the issue
+ * any more, which one linking PR falsifies ({@link traceUnlinked}). Any other `WIP`, an
+ * `UNBLOCKED`, a `FAIL`, a `BLOCKED` out of `build`, a `DONE` out of `ship` or a `DONE` out of a
+ * child's `integrate` asserts nothing a read could falsify — those answer {@link Claim} `None`, so
+ * a caller may prove *every* event and still only pay for the four that can lie.
  *
  * **What the two events claim is the same question asked of a different artifact**, and which
  * artifact is structural: {@link roleOf} reads it off the task's own name, exactly as the emitter
@@ -129,6 +130,16 @@ export type Claim =
 	 * {@link foldPark}.
 	 */
 	| {readonly _tag: "ParkUncontradicted"}
+	/**
+	 * A rewind out of a review cell, which claims no open PR links the task's issue any more — the
+	 * PR the review was for now serves another issue. It is the second negative claim, and it runs
+	 * the other way from the park: an unread board refuses it rather than letting it through, because
+	 * the rewind sends the lane back to `queued` and doing that over a PR that still links would drop
+	 * a review in flight. See {@link traceUnlinked}.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/9910
+	 */
+	| {readonly _tag: "Unlinked"}
 	| {readonly _tag: "RangeCommits"; readonly epic: number}
 	/**
 	 * `defers` is {@link Claim}'s one subtraction asked of a range instead of a head, and on this arm
@@ -192,9 +203,12 @@ export const claimOf = (
 	if (event === "BLOCKED" && (leaf === REVIEW_STATE || leaf === REVIEW_UI_STATE) && !child) {
 		return {_tag: "ParkUncontradicted"};
 	}
+	if (event === "WIP" && (leaf === REVIEW_STATE || leaf === REVIEW_UI_STATE) && !child) {
+		return {_tag: "Unlinked"};
+	}
 	return {
 		_tag: "None",
-		why: `${event} out of "${leaf}" asserts no artifact — only DONE out of ${BUILD_STATES.map((state) => `"${state}"`).join(" / ")}, PASS out of "${REVIEW_STATE}" / "${REVIEW_UI_STATE}" and BLOCKED out of those two review cells do`,
+		why: `${event} out of "${leaf}" asserts no artifact — only DONE out of ${BUILD_STATES.map((state) => `"${state}"`).join(" / ")}, PASS out of "${REVIEW_STATE}" / "${REVIEW_UI_STATE}" and BLOCKED or WIP out of those two review cells do`,
 	};
 };
 
@@ -397,6 +411,28 @@ export const tracePulls = (
 	return matched.length === 1
 		? {_tag: "One", pr: first.number}
 		: {_tag: "Many", prs: matched.map((fact) => fact.number)};
+};
+
+/**
+ * The verdict a rewind out of a review cell earns: proven only when no open PR links the issue.
+ *
+ * It reads the same trace a `DONE` stands on, with the polarity flipped. `None` is the rewind's
+ * evidence: the PR the review was for now points at another issue, so `lane brief` has nothing to
+ * hand a reviewer and the work is buildable again. `One` and `Many` both contradict it, because
+ * either way a PR still links the issue and the review cell still has a subject.
+ */
+export const traceUnlinked = (issue: number, trace: PullTrace): Proof => {
+	if (trace._tag === "None") {
+		return {
+			_tag: "Proven",
+			note: `${trace.why}, so the review cell has no PR to judge and #${issue} goes back to queued`,
+		};
+	}
+	const prs = trace._tag === "One" ? [trace.pr] : trace.prs;
+	return {
+		_tag: "Contradicted",
+		what: `${prs.map((pr) => `#${pr}`).join(", ")} still ${prs.length === 1 ? "links" : "link"} #${issue} — the review has a subject, so the lane stays in review and no rewind is recorded`,
+	};
 };
 
 /**
