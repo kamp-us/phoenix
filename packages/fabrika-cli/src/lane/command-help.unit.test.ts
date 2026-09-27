@@ -36,13 +36,26 @@ const MIGRATED_ROOTED_VERBS = [
 	"open",
 	"emit",
 	"amend",
+	"brief",
+	"dispatch",
+	"assembly",
+	"integrate",
+	"refresh",
+	"push",
+	"stale",
 ] as const;
 
 /** Every verb whose help points at the operate contract, and so needs its section there. */
-const CONTRACT_VERBS = [...MIGRATED_ROOTED_VERBS, "clear"] as const;
+const CONTRACT_VERBS = [
+	...MIGRATED_ROOTED_VERBS,
+	"clear",
+	"assembly-pr",
+	"assembly-body",
+	"retrigger",
+] as const;
 
 /** Rooted verbs still carrying the derivation prose in help, until their migration lands. */
-const ROOTED_VERBS = ["assembly", "push", "brief", "stale", "seats", "migrate"] as const;
+const ROOTED_VERBS = ["seats", "migrate"] as const;
 
 const leafNamed = (name: string): DescribedCommand => {
 	const leaf = leaves.find((candidate) => candidate.name === name);

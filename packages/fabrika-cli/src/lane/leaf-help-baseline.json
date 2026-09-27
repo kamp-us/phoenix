@@ -1,23 +1,13 @@
 {
 	"adopt": 1949,
 	"archive": 5966,
-	"assembly": 3483,
-	"assembly-body": 1920,
-	"assembly-pr": 2294,
 	"attach-integrate": 2047,
-	"brief": 3594,
 	"claim": 2238,
-	"dispatch": 1997,
-	"integrate": 4173,
 	"migrate": 4813,
-	"push": 1545,
 	"reconcile": 5388,
 	"recover": 6743,
-	"refresh": 3313,
 	"release": 1841,
-	"retrigger": 2372,
 	"scratch": 1486,
 	"seats": 2450,
-	"settle": 4480,
-	"stale": 3202
+	"settle": 4480
 }
