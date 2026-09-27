@@ -76,7 +76,8 @@
 											"actions": "incrementRetries"
 										},
 										{ "target": "human:budget-spent" }
-									]
+									],
+									"ISSUE.WIP": "queued"
 								}
 							},
 							"review:ui": {
@@ -98,7 +99,8 @@
 											"actions": "incrementRetries"
 										},
 										{ "target": "human:budget-spent" }
-									]
+									],
+									"ISSUE.WIP": "queued"
 								}
 							},
 							"ship": {
