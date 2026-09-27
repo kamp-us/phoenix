@@ -29,6 +29,8 @@ pnpm proof:chat       # the chat window in a real browser, on fixtures — see "
 pnpm proof:picker     # the window picker, open and filtering, in a real browser — see "Paint proofs"
 pnpm proof:pi-vertical   # the Pi vertical in a real browser, on Pi's faux provider — free
 pnpm proof:claude-real   # the Claude vertical on the REAL CLI — the founder's run, spends tokens
+pnpm build            # the packed desk into dist/ — see "The packed desk"
+pnpm proof:outside    # the author loop on the packed desk, from a folder outside the checkout
 ```
 
 ### Paint proofs
@@ -929,6 +931,27 @@ page may reach, and `index.ts` re-exports it — `src/shell/transport/browser.ts
 handshake and the server, `src/shell/picker/browser.ts` leaves out `open.ts` and the kernel behind
 it. A new Node-only module goes in `index.ts`, never `browser.ts`. The shape and the reasons are
 [`.patterns/tuval-shell-assembly.md`](../../.patterns/tuval-shell-assembly.md).
+
+## The packed desk
+
+The app is `@kampus-apps/tuval` in the workspace and packs as `@kampus/tuval`, with a `tuval` bin
+(#9690). `publishConfig.directory` points `pnpm pack` at `dist/`, and `prepack` runs `pnpm build`
+(`src/publish/build.bin.ts`), which writes three things there: the page built from `index.html`, the
+bin bundled from `src/bin.ts` under `server/`, and a `package.json` composed by
+`src/publish/manifest.ts`. The workspace packages the desk runs on are bundled in, since none of them
+is published. `@kampus/tuval-sdk` is not: it is a regular dependency, so the desk and every program
+load one copy, and the build fails if either bundle read a file of the SDK.
+
+The page is still served by Vite at run time, because a program's window is a module only a running
+page server can resolve. So the built page leaves React, Effect and the SDK as imports for that
+server to resolve once, for the page and the windows alike.
+
+Publishing stays a manual step: the app keeps `private: true`, so `pnpm -r publish` skips it, and a
+`pnpm publish` run in this directory publishes `dist/`. `pnpm proof:outside` (`src/publish/outside.bin.ts`,
+run in CI) packs both packages, installs them with npm in a temp folder outside the checkout, runs
+`tuval open .` over a program written there against a scratch home, trusts a second folder through
+the desk's own question, edits the program and sees the running process switch, and fails if the desk
+resolved a file inside the checkout or loaded a second SDK.
 
 ## The static root
 

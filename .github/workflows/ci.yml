@@ -584,6 +584,14 @@ jobs:
       # into a job with no Cloudflare token.
       - run: pnpm --filter @kampus-apps/tuval test:integration
 
+      # The packed desk as an outside author installs it (#9690): packs `@kampus/tuval-sdk` and
+      # `@kampus/tuval`, installs both with npm into a folder outside the checkout, runs
+      # `tuval open .` over a program written there against a scratch home, trusts a second folder
+      # through the desk's own question, edits the program and sees the running desk show the edit,
+      # and reds if the desk resolved a file inside the checkout or loaded a second SDK.
+      - name: Prove an outside author runs and hot-reloads a program on the packed Tuval desk
+        run: pnpm --filter @kampus-apps/tuval run proof:outside
+
   # The `packages/**` vitest suites (#760). Every workspace tooling/guard package
   # ships a `test` script (fabrika-cli — the single home for the consolidated guard/tooling
   # logic — plus ci-required, …) but CI ran only `@kampus/web`'s — so a
