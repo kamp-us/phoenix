@@ -103,11 +103,22 @@ over one strand write the same word. The lookup is total over every class that g
 | `ungated` | **review** | no verdict at any head; the gate is the next move |
 | `gated-unshipped` | **ship** | every namespace passes and nothing is armed |
 | `claim-stale` | **author** when the claim holder is this PR's author, **human** when anyone else | the holder is who stopped |
-| `linkage-refused` | **author** when nobody holds it, **build** when a lane does | step 6's two arms, picked by the holder |
-| `conflicted` | **build** | step 7 — the rebase is a repair round on a branch, and every PR here is agent-authored |
+| `linkage-refused` | **author** when nobody holds it, **build** when a lane does and the PR is ours | step 6's two arms, picked by the holder |
+| `conflicted` | **build** when the PR is ours, **author** otherwise | step 7 — the rebase is a repair round on a branch, and only a branch the pipeline owns is `build`'s |
 | `wedged` · `check-surface` | **human** | step 5 — the cancel lever and a required-context change are an operator's |
 | `blocked-human` | **human** | step 6 — correctly waiting on a person |
 | `red` | **nobody** | step 3 routes a red off its log signature, and the class alone carries none |
+
+<!-- anchor: PR-BELONGS-TO-ITS-AUTHOR --> **A PR belongs to its author, so `build` is reached only
+over a PR the pipeline owns.** Nothing here assumes a PR is agent-authored. `diagnose` prints an
+`author` line: `ours` when the author is one of the repo's own accounts (`ownAccounts`, or the
+running account alone when that set is empty), `granted` when a trusted
+[takeover grant](../../docs/wire-formats.md#takeover-grant) stands on it, `foreign` otherwise. Any
+arrow the table would point at **build** points at **author** unless that line reads `ours` or
+`granted` — and that includes `unknown`, a standing nobody could read. The same holds for step 3's
+`logic` route out of a `red`, so `diagnose` reads the line for `red` as well as for the arrows the
+table sends to **build**; every other class prints `unread`. Handing a foreign PR to the pipeline is
+a trusted account's act (`fabrika build takeover`), never this skill's.
 
 The scheduled sweep relays this rather than repeating it: `sweep` emits the lane as its row's sixth
 column, off [`lane.ts`](../../../../packages/fabrika-cli/src/heal-ci/lane.ts)'s lookup over the same
@@ -141,7 +152,10 @@ flake. There is no path from an ambiguous log to "safe to rerun". Each token lic
 
 - **`transient`** — a recognised transient signature. One rerun, step 4.
 - **`logic`** — a recognised logic-failure signature. Route to repair: `build`'s repair mode
-  consumes the current-head FAIL verdicts. You never edit code and never push.
+  consumes the current-head FAIL verdicts — on a PR the pipeline owns. `diagnose` reads the `author`
+  line for every `red`, so read it there: on anything but `ours` or `granted`, route it to its author
+  instead (§2's
+  [ownership rule](#2--the-green-stalls-nobody-is-holding-it)). You never edit code and never push.
 - **`unclassified`** — no signature matched. It leaves through the intake seam as an observation:
   fire the `fabrika:report` skill, whose verb owns the write and returns the number your
   `FILED — #N` terminal carries. Guessing "probably a flake" is how a rerun loop starts.
@@ -209,7 +223,9 @@ therefore no run for anything, which is `conflicted` at step 7 and not a setting
 carrying a non-closing reference is the live case: the seam sanctions `Fixes #N` and `Part of #N`,
 a correct revert wants neither, and the shipper nearly refused a good PR for it.
 
-Route it to the author or to `build` to reword the body, and stop. **Propose no new reference
+Route it to the author, or to `build` to reword the body when a lane holds it and the `author` line
+reads `ours` or `granted` (§2's
+[ownership rule](#2--the-green-stalls-nobody-is-holding-it)), and stop. **Propose no new reference
 token** — `Re: #N`, `Refs`, `See` and a bare `#N` stay banned, and the ruled fix is widening what
 `Part of #N` is stated to cover, not minting a token this skill would be the only reader of.
 
@@ -238,9 +254,10 @@ and the two want opposite repairs: one is a repository-settings change with an o
 it, this one is a rebase. The arm above `check-surface` is what keeps a conflicted PR out of the
 operator's queue.
 
-Name it and stop — the terminal is `ROUTED — build`. **You never rebase, merge or push**: this
+Name it and stop — the terminal is `ROUTED — build` on a PR the pipeline owns, and `ROUTED — author`
+on one it does not (§2's ownership rule). **You never rebase, merge or push**: this
 skill owns no branch and checks out nothing (§CAPABILITIES), and a rebase is a repair round on the
-branch, which is `build`'s. Post the class with `fabrika heal-ci note` exactly as §2 does and end.
+branch — `build`'s on a PR the pipeline owns, its author's on any other. Post the class with `fabrika heal-ci note` exactly as §2 does and end.
 
 `diagnose` reads this fact through `ship`'s own mergeability poll, so the two verbs never disagree
 about one PR. GitHub computes `mergeable` lazily, so a first read routinely answers "not computed

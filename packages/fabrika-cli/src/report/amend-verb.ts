@@ -13,6 +13,8 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {LEAK_NAMES, type LeakNames} from "../config/keys/leak-names.ts";
+import type {Read} from "../config/read-key.ts";
 import {
 	type Existence,
 	getIssue,
@@ -38,6 +40,8 @@ import {isBareAtReference, renderLeaks, scanBody} from "./leaks.ts";
 export interface AmendOptions {
 	readonly issue: number;
 	readonly redact: boolean;
+	/** The `leakNames` this checkout declares, read by the adapter; a refused read posts nothing. */
+	readonly leakNames: Read<LeakNames>;
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -116,11 +120,17 @@ export const runAmend = (
 			);
 		}
 
-		const scan = scanBody(sent);
+		if (options.leakNames._tag === "Refused") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`report amend: cannot read \`${LEAK_NAMES}\`: ${options.leakNames.reason} — which names this repo keeps private is UNKNOWN, so nothing was appended.`,
+			);
+		}
+		const scan = scanBody(sent, options.leakNames.value);
 		if (scan.leaks.length > 0 && !options.redact) {
 			return refuse(
 				LEAKED_PATH,
-				`report amend: the amendment carries ${scan.leaks.length} machine-local path(s) — refusing to append them to a public issue.`,
+				`report amend: the amendment carries ${scan.leaks.length} leak(s) — refusing to append them to a public issue.`,
 				renderLeaks(scan.leaks),
 			);
 		}
@@ -129,7 +139,7 @@ export const runAmend = (
 			? scan.leaks.map((leak) => ({line: leak.line, class: leak.class}))
 			: [];
 		const redactionNotes = redactions.map(
-			(r) => `report amend: redacted a machine-local path — line ${r.line}, ${r.class}`,
+			(r) => `report amend: redacted a leak — line ${r.line}, ${r.class}`,
 		);
 
 		const target = yield* getIssue(repo, issue);

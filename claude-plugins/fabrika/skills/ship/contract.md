@@ -219,6 +219,7 @@ authority.
 | `17` | refused: the nudge's close landed and the reopen is **unconfirmed — the PR may be left closed**; a human re-opens before anything else happens | `nudge` |
 | `18` | refused: the diff touches a governance root and its `governance` verdict is **not** a head-bound PASS — `absent`, `stale` or `fail`. The one red that means *a human owes this PR a verdict*, kept off `16` so a CI job can tell it from "the floor could not be resolved" | `floor` |
 | `19` | refused: the repository permits **no merge method at all** — squash, merge-commit and rebase are all disabled, so nothing can land directly. Its own seat rather than a fold into `16`, because the two route opposite ways: `16` sends the run to `ship enqueue`, `19` ends it at a human with repository-settings access | `merge` |
+| `22` | refused: the PR was opened by an author outside the repo's own accounts and **no valid takeover grant** stands on it — it is its author's to land, and nothing was armed or merged | `enqueue`, `merge` |
 | `23` | refused: a label this run would POST is absent from the repository's taxonomy — `plan flip`'s seat, imported, because both verbs prove one fact over one board's labels | `release` |
 | `33` | refused: the verb is standing in the repository's **main working tree** — the driver's own checkout, not a worktree of the shipper's own. `lane push`'s seat, imported, because both prove one fact off one read (`standingInLinkedWorktree`, git's `--git-dir`/`--git-common-dir` pair) and `lane` already documents it as *the branch is in the wrong tree* | `scope` |
 | `127` | the verb never ran (unresolved binary) | all |
@@ -1622,16 +1623,28 @@ the verb reads the PR back: `auto_merge: null` **post-enqueue is expected** (the
 consumes the intent) and is never read as a jam — the jam discriminator is the arm's error
 response, quoted verbatim on `8`.
 
+**A pull request belongs to its author.** After the live head is proven and before any read
+that leads to the write, the verb reads whose PR this is — the same gate, on the same clauses, as
+[`build claim`'s ownership gate](../build/contract.md#build-claim-build-confirm-build-release-build-adopt).
+The PR may be landed when its author is in `.fabrika.jsonc`'s `ownAccounts` at the base ref (the
+running, authenticated account alone when that key is absent, empty or unusable), or when a valid
+[`takeover-grant`](../../docs/wire-formats.md#takeover-grant) marker stands on it — posted by an
+account in the grant-author set (`capClearAuthors`), holding `write+`, who is not the PR's own
+author. Anything else refuses on `22` and writes nothing; a read the answer depends on that cannot
+complete is `11`. A PR whose author is ours costs the config read and, with no set declared, the
+running account; the comments and a granter's permission are read only for a PR that is not.
+
 **Exit status**
 
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404), closed, or already merged (an idempotent success belongs to `ship scope`'s answer, not to an arm) |
 | `8` | the arm request, or its confirming post-arm read-back, failed — the error quoted; whether an intent is parked is UNKNOWN, so the caller runs `ship disarm --site refuse` before stopping |
-| `11` | the live head could not be read, the mergeability could not be read, or the mergeability was still indefinite at the end of the poll window — nothing was armed |
+| `11` | the live head could not be read, whose PR it is could not be read, the mergeability could not be read, or the mergeability was still indefinite at the end of the poll window — nothing was armed |
 | `12` | the live head moved past `--sha` — every verdict upstream bound a tree that is gone; re-enter at step 1 |
 | `16` | the PR is **provably not mergeable** for a reason other than a conflicted base — a definite `mergeable: false` read; nothing was armed and no enqueue round was spent |
 | `21` | the base moved under the branch and the merge **conflicts** — a definite `mergeable_state: dirty`; nothing was armed. Report it as `BASE-CONFLICTED`, which spends a machinery lap instead of a repair round; the re-review is still owed |
+| `22` | the PR is not ours and no valid takeover grant stands on it — nothing was armed. It is its author's to land; `fabrika build takeover` is how a trusted account hands it over |
 
 **Errors**
 
@@ -1644,6 +1657,9 @@ response, quoted verbatim on `8`.
 | `ship enqueue: #<n>'s mergeable_state is still indefinite after <k> polls over <s>s — mergeability is UNKNOWN, never green; nothing was armed.` | 11 | refusal |
 | `ship enqueue: #<n> is not mergeable (mergeable_state: <state>) — a definite read; nothing was armed.` | 16 | refusal |
 | `ship enqueue: #<n>'s base moved under it and the merge conflicts (mergeable_state: dirty) — a definite read; nothing was armed. The re-review is owed: the moved base moves the merge-base blob every verdict's content digest covers, so route to repair against a rebased head.` | 21 | refusal |
+| `ship enqueue: PR #<n> is <author>'s to finish — nothing was armed. To hand it to the pipeline, an account the repo trusts to grant runs "fabrika build takeover <n> --authorization <file>".` | 22 | refusal |
+| `ship enqueue: cannot read whose PR #<n> is: <reason> — ownership is UNKNOWN, never ours; nothing was armed.` | 11 | refusal |
+| `ship enqueue: PR #<n> was opened by <author>, one of ours under <basis>.` (or `…, and <login> handed it over in comment <id>.`) | 0 | notice |
 | `ship enqueue: mergeable_state is <state> (mergeable: true) — a definite read; arming.` | 0 | notice |
 | `ship enqueue: the confirming timeline read never reached a terminal page — the entry is unproven, so this answers settling.` | 0 | notice |
 | `ship enqueue: the live head is <live>, gates ran at <sha> — refusing to arm a tree nobody verified.` | 12 | refusal |
@@ -1755,6 +1771,17 @@ merge call's own response is the writer's claim about its own write, and a `merg
 commit behind it is a claim with no evidence. An unreadable read-back is `8` and never a success,
 because whether the PR landed is exactly what is UNKNOWN there.
 
+**A pull request belongs to its author.** After the live head is proven and before any read
+that leads to the write, the verb reads whose PR this is — the same gate, on the same clauses, as
+[`build claim`'s ownership gate](../build/contract.md#build-claim-build-confirm-build-release-build-adopt).
+The PR may be landed when its author is in `.fabrika.jsonc`'s `ownAccounts` at the base ref (the
+running, authenticated account alone when that key is absent, empty or unusable), or when a valid
+[`takeover-grant`](../../docs/wire-formats.md#takeover-grant) marker stands on it — posted by an
+account in the grant-author set (`capClearAuthors`), holding `write+`, who is not the PR's own
+author. Anything else refuses on `22` and writes nothing; a read the answer depends on that cannot
+complete is `11`. A PR whose author is ours costs the config read and, with no set declared, the
+running account; the comments and a granter's permission are read only for a PR that is not.
+
 **Exit status**
 
 | Code | Trigger |
@@ -1762,10 +1789,11 @@ because whether the PR landed is exactly what is UNKNOWN there.
 | `7` | the PR is proven absent (404), closed, or already merged (an idempotent success belongs to `ship scope`'s answer, not to a landing) |
 | `8` | the merge request, or its confirming read-back, failed — whether the PR landed is UNKNOWN; re-read the PR before stopping |
 | `9` | the merge was sent and the read-back does not show it merged at a commit — the landing is not proven |
-| `11` | the live head, the landing path or the mergeability could not be read, or the mergeability was still indefinite at the end of the poll window — nothing was merged |
+| `11` | the live head, whose PR it is, the landing path or the mergeability could not be read, or the mergeability was still indefinite at the end of the poll window — nothing was merged |
 | `12` | the live head moved past `--sha` — every verdict upstream bound a tree that is gone; re-enter at step 1 |
 | `16` | proven: a merge queue governs the base (run `ship enqueue`), or the PR is definitely not mergeable — nothing was merged |
 | `19` | the repository permits no merge method at all — a human enables one in the repository settings |
+| `22` | the PR is not ours and no valid takeover grant stands on it — nothing was merged. It is its author's to land |
 
 **Errors**
 
@@ -1773,6 +1801,8 @@ because whether the PR landed is exactly what is UNKNOWN there.
 |---|---|---|
 | `ship merge: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship merge: PR #<n> is <closed\|merged> — nothing to merge.` | 7 | refusal |
+| `ship merge: PR #<n> is <author>'s to finish — nothing was merged. To hand it to the pipeline, an account the repo trusts to grant runs "fabrika build takeover <n> --authorization <file>".` | 22 | refusal |
+| `ship merge: cannot read whose PR #<n> is: <reason> — ownership is UNKNOWN, never ours; nothing was merged.` | 11 | refusal |
 | `ship merge: <base> is not queue-governed and <repo> permits <method> — landing directly.` | 0 | notice |
 | `ship merge: mergeable_state is <state> (mergeable: true) — a definite read; merging.` | 0 | notice |
 | `ship merge: cannot read #<n>'s live head: <reason> — nothing was merged.` | 11 | refusal |
@@ -1787,7 +1817,8 @@ because whether the PR landed is exactly what is UNKNOWN there.
 | `ship merge: the merge was sent and the confirming read-back failed: <reason> — whether #<n> landed is UNKNOWN; re-read the PR before stopping.` | 8 | refusal |
 | `ship merge: the merge was sent and the read-back shows merged: <bool> at merge commit <sha\|-> — the landing is not proven.` | 9 | refusal |
 
-**Scope** — one PR's live head, its base branch's active rules, the repository's permitted merge
+**Scope** — one PR's live head, whose PR it is (the config at its base ref, the running account
+and, for a PR not ours, its comments and a granter's permission), its base branch's active rules, the repository's permitted merge
 methods, the PR's mergeability (re-read until definite or refused), one merge request, one
 read-back of `merged` plus the merge commit.
 

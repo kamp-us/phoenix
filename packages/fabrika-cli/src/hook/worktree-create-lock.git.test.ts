@@ -12,7 +12,7 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/7057
  */
 import {spawn, spawnSync} from "node:child_process";
-import {chmodSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
+import {chmodSync, mkdirSync, readFileSync, realpathSync, writeFileSync} from "node:fs";
 import {hostname} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -104,8 +104,10 @@ describe("hook worktree-create under concurrent spawns", () => {
 		// As one object, so a red prints every loser's own stderr.
 		expect(results.filter((r) => r.code !== 0)).toEqual([]);
 		const listed = registered(clone);
+		// The hook plans at the primary tree git names, and git resolves symlinks (macOS's tmpdir is one).
+		const primary = realpathSync(clone);
 		for (const r of results) {
-			const path = join(clone, ".claude", "worktrees", r.name);
+			const path = join(primary, ".claude", "worktrees", r.name);
 			expect(r.stdout.trim()).toBe(path);
 			expect(listed).toContain(path);
 		}

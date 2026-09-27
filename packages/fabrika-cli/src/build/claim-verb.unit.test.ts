@@ -22,6 +22,7 @@ import {
 	NO_ACCEPTANCE_CRITERIA,
 	OFF_VOCABULARY,
 	OUT_OF_SCOPE,
+	PR_NOT_OURS,
 	PRECONDITION_UNKNOWN,
 	PRIOR_BUILD_MISMATCH,
 	READBACK_MISMATCH,
@@ -79,6 +80,31 @@ const POSTED = served({id: 9001, html_url: "https://example.test/o/r/issues/4312
 const ECHO = served({body: MINE});
 
 const labelled = (...names: ReadonlyArray<string>) => names.map((name) => ({name}));
+
+/** The PR record `build claim` reads for its author and base ref. */
+const PULL_RECORD = /^GET \S+\/repos\/o\/r\/pulls\/4312$/;
+/** The config at the PR's base ref, where `ownAccounts` and the grant-author set are read. */
+const CONFIG_AT_BASE = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
+/** The running account — who counts as ours when no `ownAccounts` is declared. */
+const VIEWER = /^GET \S+\/user$/;
+
+const pullBy = (author: string): HttpReply =>
+	served({
+		number: 4312,
+		state: "open",
+		head: {sha: "03135b9188d2be6c0a4b7bd0b7a3ff9c53f0f2b1"},
+		base: {ref: "main"},
+		body: "Fixes #5553\n",
+		changed_files: 1,
+		user: {login: author},
+	});
+
+/** A PR the running account opened, in a repo that declares no `ownAccounts`: ours, no grant. */
+const OWNED_BY_THE_RUNNING_ACCOUNT: ReadonlyArray<Scripted> = [
+	[PULL_RECORD, pullBy("agent")],
+	[CONFIG_AT_BASE, NOT_FOUND],
+	[VIEWER, served({login: "agent"})],
+];
 
 /** The claim path's default target: triaged, agent-ready, unhomed — admitted under an inert fence. */
 const CLAIMABLE = issue({labels: labelled("type:bug", "p1", "status:triaged", "ready-for:agent")});
@@ -644,6 +670,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 describe("runClaim — a PR number is judged by the issue it serves", () => {
 	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
 	const SERVED = /^GET \S+\/repos\/o\/r\/issues\/5553$/;
+	const owned = OWNED_BY_THE_RUNNING_ACCOUNT;
 
 	const pull = (body: string) =>
 		issue({
@@ -677,6 +704,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		const shell = unblocked([
 			[ISSUE, pull(body)],
 			[SERVED, servedRecord],
+			...owned,
 			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
@@ -821,6 +849,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 	it("admits an unresolvable PR while no campaign is active — an inert fence refuses nothing", async () => {
 		const shell = unblocked([
 			[ISSUE, pull("No reference at all.\n")],
+			...owned,
 			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
@@ -845,6 +874,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			const shell = unblocked([
 				[ISSUE, pull(body)],
 				...(servedRecord === null ? [] : ([[SERVED, servedRecord]] as ReadonlyArray<Scripted>)),
+				...owned,
 				unclaimed(),
 				[POST, POSTED],
 				[GET_COMMENT, ECHO],
@@ -2356,5 +2386,162 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 			expect(out.code).toBe(FAILED);
 			expect(out.stderr.at(-1)).toContain("--lane and --lane-root");
 		});
+	});
+});
+
+/**
+ * A PR belongs to its author. Repair pushes onto that author's branch, so the claim reads who opened
+ * the PR before it writes anything, and a PR outside the repo's own accounts needs a trusted grant.
+ */
+describe("runClaim — a PR is its author's until the pipeline owns it", () => {
+	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
+	const SERVED = /^GET \S+\/repos\/o\/r\/issues\/5553$/;
+	const servedTicket = served({
+		number: 5553,
+		title: "The ticket the lane serves",
+		body: CRITERIA_BODY,
+		state: "open",
+		labels: labelled("status:triaged", "ready-for:agent"),
+		html_url: "https://example.test/o/r/issues/5553",
+		milestone: {number: 44},
+		state_reason: null,
+	});
+	const asIssue = issue({
+		title: "fix(build): the repair lane",
+		body: "Fixes #5553\n",
+		labels: [],
+		milestone: null,
+		pull_request: {url: "https://api.github.com/repos/o/r/pulls/4312"},
+	});
+	const config = (value: Record<string, unknown>): HttpReply => ({
+		status: 200,
+		body: JSON.stringify(value),
+	});
+	const grant = (id: number, author: string) => ({
+		id,
+		author,
+		body: "takeover-granted: #4312 · 2026-09-26T07:16:03Z\n\nTake over #4312. — 2026-09-26\n",
+	});
+
+	const claimBy = (
+		author: string,
+		base: HttpReply,
+		grants: ReadonlyArray<{id: number; author: string; body: string}> = [],
+		extra: ReadonlyArray<Scripted> = [],
+	) => {
+		const shell = unblocked([
+			[ISSUE, asIssue],
+			[SERVED, servedTicket],
+			[PULL_RECORD, pullBy(author)],
+			[CONFIG_AT_BASE, base],
+			[VIEWER, served({login: "agent"})],
+			...extra,
+			unclaimed(),
+			...(grants.length === 0
+				? []
+				: ([[once(COMMENTS), comments(...grants)]] as ReadonlyArray<Scripted>)),
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[COMMENTS, comments(...grants, {id: 9001, body: MINE})],
+			[perm("agent"), WRITES],
+		]);
+		return Effect.runPromise(
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, IN_SCOPE.layer)),
+		).then((out) => ({out, shell}));
+	};
+
+	const posted = (shell: {readonly requests: ReadonlyArray<string>}) =>
+		shell.requests.some((line) => POST.test(line));
+
+	describe("with no ownAccounts declared, the running account alone is ours", () => {
+		it.each([
+			["the config is absent", NOT_FOUND],
+			["the key is absent", config({})],
+			["the key is empty", config({ownAccounts: []})],
+		])("repairs the running account's own PR with no grant when %s", async (_name, base) => {
+			const {out, shell} = await claimBy("agent", base);
+			expect(out.code).toBe(0);
+			expect(posted(shell)).toBe(true);
+			expect(out.stderr.join("\n")).toContain(
+				"opened by agent, one of ours under the running account",
+			);
+		});
+
+		it.each([
+			["the config is absent", NOT_FOUND],
+			["the key is empty", config({ownAccounts: []})],
+		])("refuses another author's PR at 37, writing nothing, when %s", async (_name, base) => {
+			const {out, shell} = await claimBy("ada", base);
+			expect(out.code).toBe(PR_NOT_OURS);
+			expect(posted(shell)).toBe(false);
+			expect(out.stderr.at(-1)).toContain("PR #4312 is ada's to finish");
+			expect(out.stderr.at(-1)).toContain("fabrika build takeover 4312");
+		});
+	});
+
+	describe("with ownAccounts declared", () => {
+		it("repairs a PR a configured account opened with no grant, and never asks who is running", async () => {
+			const {out, shell} = await claimBy("agent-bot", config({ownAccounts: ["@agent-bot"]}));
+			expect(out.code).toBe(0);
+			expect(shell.requests.some((line) => VIEWER.test(line))).toBe(false);
+		});
+
+		it("refuses the running account's PR when the declared set does not name it", async () => {
+			const {out, shell} = await claimBy("agent", config({ownAccounts: ["@agent-bot"]}));
+			expect(out.code).toBe(PR_NOT_OURS);
+			expect(posted(shell)).toBe(false);
+		});
+	});
+
+	describe("a takeover grant", () => {
+		const GRANTORS = config({capClearAuthors: ["@founder", "@ada"]});
+
+		it("hands a foreign PR over when a trusted, writing account posted it", async () => {
+			const {out, shell} = await claimBy(
+				"ada",
+				GRANTORS,
+				[grant(77, "founder")],
+				[[perm("founder"), WRITES]],
+			);
+			expect(out.code).toBe(0);
+			expect(posted(shell)).toBe(true);
+			expect(out.stderr.join("\n")).toContain("founder handed it over in comment 77");
+		});
+
+		it("ignores a grant the PR's own author wrote, even one in the grant-author set", async () => {
+			const {out, shell} = await claimBy(
+				"ada",
+				GRANTORS,
+				[grant(77, "ada")],
+				[[perm("ada"), WRITES]],
+			);
+			expect(out.code).toBe(PR_NOT_OURS);
+			expect(posted(shell)).toBe(false);
+			expect(out.stderr.join("\n")).toContain("an author cannot hand their own PR over");
+		});
+
+		it("ignores a grant from an account outside the grant-author set", async () => {
+			const {out, shell} = await claimBy(
+				"ada",
+				GRANTORS,
+				[grant(77, "mallory")],
+				[[perm("mallory"), WRITES]],
+			);
+			expect(out.code).toBe(PR_NOT_OURS);
+			expect(posted(shell)).toBe(false);
+			expect(out.stderr.join("\n")).toContain("mallory is not in the repo's grant-author set");
+		});
+
+		it("ignores every grant while the grant-author set is empty", async () => {
+			const {out} = await claimBy("ada", config({}), [grant(77, "founder")]);
+			expect(out.code).toBe(PR_NOT_OURS);
+		});
+	});
+
+	it("refuses at 11 when the config at the base cannot be read — never ours", async () => {
+		const {out, shell} = await claimBy("agent", GATEWAY);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(posted(shell)).toBe(false);
+		expect(out.stderr.at(-1)).toContain("ownership is UNKNOWN");
 	});
 });

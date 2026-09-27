@@ -130,7 +130,7 @@ const diagnose = leafCommand(
 			"Classifies one PR's stall; prints `stall\\t<token>\\t<head-sha>\\t<age-minutes>`, then evidence.",
 			"  Tokens: attended, ungated, gated-unshipped, claim-stale, red, check-surface, conflicted,",
 			"  linkage-refused, blocked-human, wedged, not-open; each one is an answer, not a refusal.",
-			"  Evidence lines, always present: owner, gates, ci, queue, link, facts.",
+			"  Evidence lines, always present: owner, author, gates, ci, queue, link, facts.",
 			"  7: the PR or --sha commit is absent, or the changed-file list is empty",
 			"  11: a read failed (UNKNOWN, never attended)",
 			"  13: an enumeration is provably partial",

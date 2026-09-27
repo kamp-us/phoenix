@@ -49,6 +49,7 @@ import {
 } from "./scope-admission.ts";
 import {runScratch} from "./scratch-verb.ts";
 import {DEFAULT_OLDER_THAN_MINUTES, runStaleClaims} from "./stale-claims-verb.ts";
+import {runTakeover} from "./takeover-verb.ts";
 import {runTree} from "./tree-verb.ts";
 import {runChildVerdicts, runVerdicts} from "./verdicts-verb.ts";
 
@@ -195,6 +196,7 @@ const CLAIM_OWN_EXITS: ReadonlyArray<{readonly code: number; readonly condition:
 	{code: 15, condition: "lost to another lane"},
 	{code: 16, condition: "blocked"},
 	{code: 31, condition: "disagrees with a standing verdict"},
+	{code: 37, condition: "PR not ours, no takeover grant"},
 ];
 
 /** The claim's exit lines, merged with the admission codes enumerated from the module rather than restated. */
@@ -1148,6 +1150,40 @@ const clear = leafCommand(
 	]),
 );
 
+const takeover = leafCommand(
+	"takeover",
+	{
+		pr: Argument.integer("pr").pipe(
+			Argument.withDescription(
+				"the open pull request another author opened, handed to the pipeline",
+			),
+		),
+		authorization: Flag.string("authorization").pipe(
+			Flag.withDescription(
+				'a file quoting the "take over #N" authorization verbatim, carrying an ISO-8601 date; posted under the marker, never summarized',
+			),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({pr, authorization, repo}) {
+		yield* emit(
+			yield* runTakeover({
+				pr,
+				authorizationPath: authorization,
+				authorization: document(authorization),
+				repo: Option.getOrNull(repo),
+				env: process.env,
+				now: () => new Date(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Hand a PR another author opened to the pipeline."),
+	Command.withDescription(
+		'Post the takeover grant on a PR whose author is outside the repo\'s ownAccounts (the running account alone when that set is empty), so build may repair it, ship may land it and heal-ci routes it to build rather than to its author. One comment: the first line is the marker "takeover-granted: #<pr> · <ISO>", the lines under it quote --authorization verbatim. Refuses unless the invoking account is in `.fabrika.jsonc`\'s `capClearAuthors` at the PR\'s base ref, holds write+ at the ACL, and did not open the PR itself — the same clauses the reader applies, so a grant this posts is one the reader honours. A PR one of ours opened needs no grant and refuses on 7; a PR already handed over answers {"resolvesTo":"already-granted"} and posts nothing. Prints {"pr":n,"author":"…","by":"…","comment":n,"at":"…","resolvesTo":"granted"}. Exits 5 (machine-local path), 6 (bare @ reference), 7 (PR proven absent or closed, or already ours), 8 (the write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed), 25 (the invoking account may not grant here, or opened the PR), 26 (--authorization missing, empty or undated). Example: fabrika build takeover 4321 --authorization authorization.md',
+	),
+);
+
 const adopt = leafCommand(
 	"adopt",
 	{
@@ -1227,6 +1263,7 @@ export const buildCommand = Command.make("build").pipe(
 		deviations,
 		verdicts,
 		clear,
+		takeover,
 	]),
 	Command.withShortDescription("Drive one construction lane from issue pick to open PR."),
 	Command.withDescription(

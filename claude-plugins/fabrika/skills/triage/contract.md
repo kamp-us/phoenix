@@ -36,6 +36,8 @@ makes the implementer guess.
 | `triage apply` | apply the whole triaged transition — type, priority, audience, class, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
 | `triage park` | park a human-filed issue on `status:needs-info` with questions | the label swap and comment are mechanical; the questions are judgment |
 | `triage kill` | close an agent-filed issue not-planned — or any issue being folded into a survivor with `--duplicate-of` — auditably, preserving a duplicate's content | the three-write envelope, the redacted fold and the human-filed refusal (which the fold lifts) are mechanical; the verdict is judgment |
+| `triage audit-set` | the whole open issue set under one caller-named label — the input of a read-only backlog audit | a paginated, untruncated label read that refuses an absent label is mechanical; which label to audit is judgment |
+| `triage audit-merge` | fold an audit's chunk results onto its input set, refusing a miscounted chunk, a doubled issue or a set that does not match | the row-shape decode and the three set checks are mechanical; each verdict is a reader's judgment |
 
 One existing verb gains one flag:
 
@@ -142,30 +144,34 @@ in one sweep reads one meaning. This spec calls `report dedup` (the `--exclude` 
 that verb reads from the same `report` table: `7` when `--label` is absent, `27`/`28` when the queue
 or the search index could not be read.
 
-| Code | Meaning | queue | claim | prov | homes | split | enrich | apply | park | kill | scratch |
-|---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `1` | usage error, unresolvable repo, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `3` | stdin was read and held nothing | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — |
-| `4` | *(deliberate gap — see below)* | — | — | — | — | — | — | — | — | — | — |
-| `5` | the **authored** text carries a machine-local path | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — |
-| `6` | the **authored** text is a bare `@` path reference — **not** redactable | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — |
-| `7` | zero scope: a read that succeeded over nothing, an absent label vocabulary, or a target issue **proven absent (404)** or closed — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| `8` | the write itself failed — the outcome is **UNKNOWN** | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| `9` | the write landed but the read-back does not match | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| `10` | the supplied value is not permitted here — off the closed vocabulary, a non-open milestone, or a slug that is not a kebab-case leaf | — | — | — | — | — | — | ✓ | — | — | ✓ |
-| `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `12` | refused: the issue is human-filed and this is not a `--duplicate-of` fold | — | — | — | — | — | — | — | — | ✓ | — |
-| `13` | refused: close-eligible, but the kill is unconfirmed | — | — | — | — | — | — | — | — | ✓ | — |
-| `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` | — | — | — | — | — | ✓ | — | — | — | — |
-| `16` | refused: the `ready-for:agent` audience over a body whose acceptance-criteria block the wire reader does not answer `Found` on — stamped by `--ready-for agent`, or composed by `enrich` over a target already carrying the label; the `epic` surface is exempt at both doors | — | — | — | — | — | ✓ | ✓ | — | — | — |
-| `17` | refused: a live claim marker on the target names a claimant other than the asking lane — another session, or another lane of this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — | — |
-| `19` | refused: the asking lane holds no live claim on the target | — | — | — | — | — | — | — | — | — | ✓ |
-| `20` | refused: the body this verb composed **states an ordering** the live `blocked_by` graph carries no edge for | — | — | — | — | — | ✓ | — | — | — | — |
-| `21` | refused: a `--blocked-by` target is a **pull request** — a blocking PR is named in the graph by the issue its merge closes | — | — | — | — | — | — | ✓ | — | — | — |
-| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Code | Meaning | queue | claim | prov | homes | split | enrich | apply | park | kill | scratch | aset | amerge |
+|---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `1` | usage error, unresolvable repo, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `3` | stdin was read and held nothing | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — | — | — |
+| `4` | *(deliberate gap — see below)* | — | — | — | — | — | — | — | — | — | — | — | — |
+| `5` | the **authored** text carries a machine-local path | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — | — | — |
+| `6` | the **authored** text is a bare `@` path reference — **not** redactable | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — | — | — |
+| `7` | zero scope: a read that succeeded over nothing, an absent label vocabulary, or a target issue **proven absent (404)** or closed — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
+| `8` | the write itself failed — the outcome is **UNKNOWN** | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — |
+| `9` | the write landed but the read-back does not match | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — |
+| `10` | the supplied value is not permitted here — off the closed vocabulary, a non-open milestone, or a slug that is not a kebab-case leaf | — | — | — | — | — | — | ✓ | — | — | ✓ | — | — |
+| `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `12` | refused: the issue is human-filed and this is not a `--duplicate-of` fold | — | — | — | — | — | — | — | — | ✓ | — | — | — |
+| `13` | refused: close-eligible, but the kill is unconfirmed | — | — | — | — | — | — | — | — | ✓ | — | — | — |
+| `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` | — | — | — | — | — | ✓ | — | — | — | — | — | — |
+| `16` | refused: the `ready-for:agent` audience over a body whose acceptance-criteria block the wire reader does not answer `Found` on — stamped by `--ready-for agent`, or composed by `enrich` over a target already carrying the label; the `epic` surface is exempt at both doors | — | — | — | — | — | ✓ | ✓ | — | — | — | — | — |
+| `17` | refused: a live claim marker on the target names a claimant other than the asking lane — another session, or another lane of this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — |
+| `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — | — | — | — |
+| `19` | refused: the asking lane holds no live claim on the target | — | — | — | — | — | — | — | — | — | ✓ | — | — |
+| `20` | refused: the body this verb composed **states an ordering** the live `blocked_by` graph carries no edge for | — | — | — | — | — | ✓ | — | — | — | — | — | — |
+| `21` | refused: a `--blocked-by` target is a **pull request** — a blocking PR is named in the graph by the issue its merge closes | — | — | — | — | — | — | ✓ | — | — | — | — | — |
+| `22` | refused: an audit document is not JSON, or a verdict row breaks the pinned shape — unknown verdict, no issue number, or a KILL with no value-bar clause | — | — | — | — | — | — | — | — | — | — | — | ✓ |
+| `23` | refused: a chunk's rows differ from the total it declared — no merged output | — | — | — | — | — | — | — | — | — | — | — | ✓ |
+| `24` | refused: an issue carries more than one verdict row across the chunks — no merged output | — | — | — | — | — | — | — | — | — | — | — | ✓ |
+| `25` | refused: the merged issue set is not the audited input set — an issue is missing or invented — no merged output | — | — | — | — | — | — | — | — | — | — | — | ✓ |
+| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
 this group can return `0`, `1`, `126` and `127` with the meanings above, and each of the four is stated
@@ -2469,6 +2475,165 @@ nothing, answering `would-repair` with the repairs it would make.
 
 **Write order.** Every repaired body gets one disclosure comment naming its repairs, posted after the
 read-back.
+
+---
+
+## `triage audit-set`
+
+**Invocation**
+
+```
+fabrika triage audit-set --label <name> [--repo <owner/name>] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--label` | string | yes | none | the label whose open issues form the audit set |
+| `--repo` | string | no | resolved (see Shared conventions) | the repository to read |
+| `--json` | boolean | no | `false` | emit the full result object instead of the line grammar |
+
+**Output** — machine channel. The first line is the outcome token alone: `set` or `empty`. On `set`,
+one **tab-separated** line per issue follows — `<number>`, `<title>` — ascending by number, never
+truncated.
+
+With `--json`, one object with keys `outcome`, `label`, `repo`, `issues` (array of
+`{number, title}`), and `scanned` (integer, equal to the length of `issues`). This object is the
+`--input` document `triage audit-merge` reads.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `7` | `--label` does not exist in the repository — the set would scan nothing |
+| `11` | the label set or the issue list could not be read — the set is UNKNOWN, never `empty` |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `triage audit-set: label <label> does not exist in <repo> — refusing to report an empty audit set over zero scope.` | 7 | refusal |
+| `triage audit-set: cannot read the label set of <repo>: <reason> — whether the <label> audit set exists is UNKNOWN, and so is the outcome.` | 11 | refusal |
+| `triage audit-set: cannot read the open <label> issues in <repo>: <reason> — the audit set is UNKNOWN, never "empty".` | 11 | refusal |
+| `triage audit-set: --label must name a label.` | 1 | usage error |
+
+**Scope** — every open issue in `--repo` carrying `--label`, read with pagination, pull requests
+excluded. It shares `triage queue`'s read and its label precondition, and differs in two ways an
+audit needs. **The label has no default**, so the set an audit judges is always the one its caller
+named. **Nothing is truncated**, because `audit-merge` checks its rows against this set and a capped
+set would let a merge pass over a subset.
+
+**It reads and never writes.** Its requests are the label-set read and the paged issue list, both
+`GET`s; its unit test asserts that every request it sends is one.
+
+**Examples**
+
+```
+$ fabrika triage audit-set --label status:triaged
+set
+4290	Retry helper swallows the abort reason
+4312	Definition editor loses focus after an entry is saved
+```
+
+```
+$ fabrika triage audit-set --label status:triaged --json
+{"outcome":"set","label":"status:triaged","repo":"<owner>/<repo>","issues":[{"number":4290,"title":"Retry helper swallows the abort reason"}],"scanned":1}
+```
+
+---
+
+## `triage audit-merge`
+
+**Invocation**
+
+```
+fabrika triage audit-merge --input <file> --chunk <file> [--chunk <file>…] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--input` | file | yes | none | the audited set, as `triage audit-set --json` printed it |
+| `--chunk` | file | yes, repeatable | none | one chunk result |
+| `--json` | boolean | no | `false` | emit the full result object instead of the line grammar |
+
+**The verdict row** — one pinned shape, decoded by `parseVerdictRow` in
+`packages/fabrika-cli/src/triage/audit.ts`:
+
+```json
+{"issue": 4312, "verdict": "KILL", "clause": "superseded", "evidence": "the retry helper rewrite already fixed it"}
+```
+
+| Key | Rule |
+|---|---|
+| `issue` | required; a positive integer |
+| `verdict` | required; exactly `KILL`, `DECIDE` or `KEEP` |
+| `clause` | required on a `KILL` and refused on any other verdict; one of `process-ceremony`, `self-generated-churn`, `hardening-with-no-incident`, `superseded`, `duplicate-of-parent` — the value bar's clauses in the skill |
+| `evidence` | required; one non-blank line, no tab or line break |
+
+Any other key is refused, so a misspelt `clause` cannot pass as an absent one.
+
+**The chunk** — `{"declared": <n>, "rows": [<verdict row>…]}`. `declared` is the number of rows the
+chunk says it holds, and it is kept apart from `rows` because comparing the two is the merge's first
+check.
+
+**Output** — machine channel. The first line is the outcome token `merged`, then one
+**tab-separated** line per audited issue, ascending — `<number>`, `<verdict>`, `<clause>` (`-` on a
+`DECIDE` or `KEEP`), `<evidence>`. Stderr carries the per-verdict counts. With `--json`, one object
+with keys `outcome`, `rows` (the verdict rows) and `counts` (`{KILL, DECIDE, KEEP}`).
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `7` | the input set lists no issues — a merge over zero scope proves nothing |
+| `11` | the input file or a chunk file could not be read — the merge is UNKNOWN |
+| `22` | a file is not JSON, the input set's `scanned` differs from the issues it lists, or a row breaks the pinned shape |
+| `23` | a chunk's rows differ from its `declared` total |
+| `24` | one issue carries more than one verdict row, within one chunk or across chunks |
+| `25` | the merged issue set is not the input set — an issue has no row, or a row names an issue the input set does not list |
+
+Every refusal prints nothing on stdout, so no merged output exists to act on.
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `triage audit-merge: the input set <file> lists no issues — refusing to merge over zero scope.` | 7 | refusal |
+| `triage audit-merge: cannot read <input set\|chunk> <file>: <reason> — the merge is UNKNOWN.` | 11 | refusal |
+| `triage audit-merge: <chunk>: row <k>: #<n>: a KILL names no value-bar clause.` | 22 | refusal |
+| `triage audit-merge: <chunk> declares <n> rows and carries <m>.` (one per chunk), then the refusal line | 23 | refusal |
+| `triage audit-merge: #<n> is judged in <chunk>, <chunk>.` (one per issue), then the refusal line | 24 | refusal |
+| `triage audit-merge: the merged rows are not the audited set — missing <#n…\|none>; not in the input set <#n…\|none>.` | 25 | refusal |
+| `triage audit-merge: name at least one --chunk.` | 1 | usage error |
+
+**Scope** — the checks run in a fixed order: every chunk's count first, because a short chunk would
+otherwise surface as a missing issue and hide which chunk lost it; then duplicates; then the set
+comparison. **The verb never repairs.** A missing row goes back to a reader; it is never rebuilt,
+because a rebuilt row is a verdict no reader gave.
+
+**It never touches the issue tracker.** Its only dependency is the filesystem — the
+`FileSystem` service is the whole of its requirement type — and its unit tests run it over a scripted
+filesystem with no HTTP seam provided.
+
+**Examples**
+
+```
+$ fabrika triage audit-merge --input set.json --chunk a.json --chunk b.json
+merged
+4290	KEEP	-	the abort reason is still dropped at main
+4312	KILL	superseded	the retry helper rewrite already fixed it
+```
+
+```
+$ fabrika triage audit-merge --input set.json --chunk a.json --chunk b.json
+triage audit-merge: b.json declares 2 rows and carries 1.
+triage audit-merge: 1 chunk(s) hold a different number of rows than they declare — re-collect them; a missing row is never rebuilt by hand.
+$ echo $?
+23
+```
 
 ---
 

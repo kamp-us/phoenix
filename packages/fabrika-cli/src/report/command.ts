@@ -18,6 +18,8 @@ import {randomUUID} from "node:crypto";
 import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {leakNamesKey} from "../config/keys/leak-names.ts";
+import {readKey} from "../config/read-key.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
@@ -46,7 +48,7 @@ const jsonFlag = Flag.boolean("json").pipe(
 const redactFlag = Flag.boolean("redact").pipe(
 	Flag.withDefault(false),
 	Flag.withDescription(
-		"mask each machine-local path down to its class root and post the masked body, instead of refusing",
+		"mask each leak — a path down to its class root, an email or a configured private name whole — and post the masked body, instead of refusing",
 	),
 );
 
@@ -145,6 +147,7 @@ const fileCmd = leafCommand(
 	Effect.fn(function* ({title, label, redact, repo, json}) {
 		yield* emit(
 			yield* runFile({
+				leakNames: yield* readKey(process.cwd(), leakNamesKey),
 				title,
 				label,
 				redact,
@@ -163,13 +166,13 @@ const fileCmd = leafCommand(
 			"Files the intake issue composed from the six stdin sections and prints `<number>\\t<url>`.",
 			"  3: empty stdin",
 			"  4: bad sections",
-			"  5: a machine-local path",
+			"  5: a leak: a machine-local path, an email address or a `leakNames` name",
 			"  6: a bare @ reference",
 			"  7: no such label",
 			"  8: the create failed (UNKNOWN)",
 			"  9: the read-back differs",
 			"  10: the title or label classifies",
-			"  11: the label set is unreadable",
+			"  11: the label set or `leakNames` is unreadable",
 			'  Derivation: the report skill\'s contract.md, "report file"',
 		].join("\n"),
 	),
@@ -189,6 +192,7 @@ const note = leafCommand(
 	Effect.fn(function* ({issue, redact, repo, json}) {
 		yield* emit(
 			yield* runNote({
+				leakNames: yield* readKey(process.cwd(), leakNamesKey),
 				issue,
 				redact,
 				repo: Option.getOrNull(repo),
@@ -204,12 +208,12 @@ const note = leafCommand(
 		[
 			"Adds a stdin note to an existing issue, reads it back and prints `<comment-id>\\t<url>`.",
 			"  3: empty stdin",
-			"  5: a machine-local path",
+			"  5: a leak: a machine-local path, an email address or a `leakNames` name",
 			"  6: a bare @ reference",
 			"  7: no such issue",
 			"  8: the post failed (UNKNOWN)",
 			"  9: the read-back differs",
-			"  11: the issue is unreadable",
+			"  11: the issue or `leakNames` is unreadable",
 			'  Derivation: the report skill\'s contract.md, "report note"',
 		].join("\n"),
 	),
@@ -252,6 +256,7 @@ const amend = leafCommand(
 	Effect.fn(function* ({issue, redact, repo, json}) {
 		yield* emit(
 			yield* runAmend({
+				leakNames: yield* readKey(process.cwd(), leakNamesKey),
 				issue,
 				redact,
 				repo: Option.getOrNull(repo),
@@ -269,12 +274,12 @@ const amend = leafCommand(
 			"Appends a dated stdin amendment under an issue's body and prints `<issue>\\t<url>`.",
 			"  The prior body is kept verbatim, never replaced.",
 			"  3: empty stdin",
-			"  5: a machine-local path",
+			"  5: a leak: a machine-local path, an email address or a `leakNames` name",
 			"  6: a bare @ reference",
 			"  7: no such issue",
 			"  8: the write failed (UNKNOWN)",
 			"  9: the read-back differs",
-			"  11: the issue is unreadable",
+			"  11: the issue or `leakNames` is unreadable",
 			'  Derivation: the report skill\'s contract.md, "report amend"',
 		].join("\n"),
 	),

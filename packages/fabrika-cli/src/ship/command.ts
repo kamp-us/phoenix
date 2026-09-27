@@ -379,10 +379,11 @@ const enqueue = leafCommand(
 		"Arms the merge queue's auto-merge at a pinned head and prints `enqueued`, queued or settling." +
 			"\n  7: the PR is absent, closed or already merged" +
 			"\n  8: the arm or its read-back failed; run `ship disarm --site refuse` before stopping" +
-			"\n  11: head or mergeability unread or still indefinite; nothing was armed" +
+			"\n  11: head, owner or mergeability unread or indefinite; nothing was armed" +
 			"\n  12: the live head moved past --sha" +
 			"\n  16: provably not mergeable for a reason other than a conflicted base" +
 			"\n  21: the base moved and the merge conflicts; report BASE-CONFLICTED" +
+			"\n  22: PR not ours, no takeover grant; nothing was armed" +
 			'\n  Derivation: the ship skill\'s contract.md, "ship enqueue"',
 	),
 	Command.withExamples([{command: "fabrika ship enqueue 4321 --sha 03135b91"}]),
@@ -414,12 +415,13 @@ const merge = leafCommand(
 	Command.withDescription(
 		"Lands one PR on a base no merge queue governs and prints the merge commit and method." +
 			"\n  7: the PR is absent, closed or already merged" +
-			"\n  8: the merge or its read-back failed; whether it landed is UNKNOWN" +
+			"\n  8: the merge or its read-back failed; landing is UNKNOWN" +
 			"\n  9: the read-back does not show it merged at a commit" +
-			"\n  11: head, landing path or mergeability unread or indefinite; nothing merged" +
+			"\n  11: a read failed or stayed indefinite; nothing merged" +
 			"\n  12: the live head moved past --sha" +
 			"\n  16: a merge queue governs the base (use `ship enqueue`), or not mergeable" +
 			"\n  19: the repository permits no merge method; a human must enable one" +
+			"\n  22: PR not ours, no takeover grant; nothing merged" +
 			'\n  Derivation: the ship skill\'s contract.md, "ship merge"',
 	),
 	Command.withExamples([{command: "fabrika ship merge 4321 --sha 03135b91"}]),
