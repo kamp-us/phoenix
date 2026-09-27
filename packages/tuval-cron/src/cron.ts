@@ -298,6 +298,7 @@ export const cronProgram = (options: CronOptions) => {
 	const args = argsFor(id);
 	return {
 		id,
+		sdk: "0.x",
 		args,
 		/**
 		 * Two ports, one each way.

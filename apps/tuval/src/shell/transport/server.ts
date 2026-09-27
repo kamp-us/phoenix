@@ -36,6 +36,9 @@ import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Deferred, Effect, type Option, type Redacted, Semaphore, Stream} from "effect";
 import {Socket, type SocketServer} from "effect/unstable/socket";
+import type {ProjectLabel} from "../../projects/labels.ts";
+import type {RecommendAnswer, RecommendPrompt} from "../../projects/recommend-prompt.ts";
+import type {TrustAnswer, TrustPrompt} from "../../projects/trust-prompt.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {showsInAWindow} from "../picker/entries.ts";
 import {checkHandshake, launchUrl, loopbackOrigins} from "./handshake.ts";
@@ -48,13 +51,16 @@ import {
 	keysFrame,
 	PROCESS_STATE_KIND,
 	type ProcessStateFrame,
+	projectsFrame,
 	REGISTRY_KIND,
 	type RegistryFrame,
+	recommendPromptsFrame,
 	type ServerFrame,
 	spellReplyFrame,
 	TABLE_KIND,
 	tableFrame,
 	toWireRow,
+	trustPromptsFrame,
 } from "./wire.ts";
 
 /**
@@ -93,16 +99,41 @@ export interface ServeOptions {
 	 */
 	readonly spells: SpellChannel;
 	readonly descriptions: Stream.Stream<RegistryDescription>;
+	/**
+	 * Every open project's label: the current list first, then the list after each open and close.
+	 * Each page is sent every list, so a tile's label follows a project that opens beside a
+	 * same-named one without the page asking (#9692).
+	 */
+	readonly projects: Stream.Stream<ReadonlyArray<ProjectLabel>>;
+	/** The "Trust this folder?" questions every page is sent, and where a page's answer goes. */
+	readonly trust: TrustChannel;
+	/** The recommended-package questions every page is sent, and where a page's answer goes. */
+	readonly recommend: RecommendChannel;
 }
+
+/**
+ * Questions the kernel waits on the person to answer (`../../projects/questions.ts`), as far as a
+ * socket needs them: the list to send, and the one place an answer is delivered.
+ */
+export interface QuestionChannel<P, A> {
+	readonly pending: Stream.Stream<ReadonlyArray<P>>;
+	readonly answer: (question: string, answer: A) => Effect.Effect<boolean>;
+}
+
+/** The trust questions an open is waiting on (#9693). */
+export type TrustChannel = QuestionChannel<TrustPrompt, TrustAnswer>;
+
+/** The recommended packages trusted projects are waiting on (#9695). */
+export type RecommendChannel = QuestionChannel<RecommendPrompt, RecommendAnswer>;
 
 export interface TransportServer {
 	readonly port: number;
 	/**
 	 * Re-read the registry and send its windowed programs to every attached page. A reload changes
 	 * what a kernel offers, and no spell answers the catalog, so the kernel pushes it rather than
-	 * waiting to be asked (#7617). Nothing calls this in production yet, and nothing can usefully:
-	 * `Registry.layer` builds one frozen map, so every call today would re-send the catalog the
-	 * socket already got on open (#7841). `Booted.reload` writes only the spell registry (#7743).
+	 * waiting to be asked (#7617). `src/bin.ts` calls it whenever a project opens or closes, since
+	 * that adds or removes registry rows (#9685). `Booted.reload` writes only the spell registry
+	 * (#7743), so a reload has nothing to push.
 	 */
 	readonly publishRegistry: Effect.Effect<void>;
 	/** The one URL the launch prints: the address plus the launch token, and nothing else secret. */
@@ -146,6 +177,7 @@ export const registryFrame = (rows: ReadonlyArray<AnyProgram>): RegistryFrame =>
 		// `inspector: undefined` is a different frame once it has been through `JSON.stringify`.
 		...(row.inspector === undefined ? {} : {inspector: row.inspector}),
 		...(row.status === undefined ? {} : {status: row.status}),
+		...(row.folderAtStart === true ? {folderAtStart: true as const} : {}),
 	})),
 });
 
@@ -214,6 +246,8 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 					options.handles,
 					options.spells,
 					options.descriptions,
+					options.projects,
+					{trust: options.trust, recommend: options.recommend},
 					options.table,
 					pages,
 					catalogLock,
@@ -244,6 +278,8 @@ export const session = Effect.fn("Tuval.transport.session")(function* (
 	handles: Handles,
 	spells: SpellChannel,
 	descriptions: Stream.Stream<RegistryDescription>,
+	projects: Stream.Stream<ReadonlyArray<ProjectLabel>>,
+	questions: Pick<ServeOptions, "trust" | "recommend">,
 	keyTable: PrefixTable,
 	pages: Attached,
 	catalogLock: Semaphore.Semaphore,
@@ -372,6 +408,12 @@ export const session = Effect.fn("Tuval.transport.session")(function* (
 				return Effect.sync(() => void state.attached.delete(frame.processId));
 			case "tuval/transport/dispatch/v1":
 				return dispatch(frame.seq, frame.processId, frame.msg);
+			case "tuval/transport/trust-answer/v1":
+				// An answer to a question no open is waiting on any more — a second page answered it
+				// first, or its open was interrupted — changes nothing, so there is nothing to say back.
+				return Effect.asVoid(questions.trust.answer(frame.question, frame.answer));
+			case "tuval/transport/recommend-answer/v1":
+				return Effect.asVoid(questions.recommend.answer(frame.question, frame.answer));
 			case "tuval/transport/spell-call/v1":
 				// Forked, because a call is the one frame that can take real time — the session list
 				// walks two stores off disk under a 10s deadline — and awaiting it here would stall the
@@ -418,6 +460,20 @@ export const session = Effect.fn("Tuval.transport.session")(function* (
 				// and reaches this page too.
 				yield* Effect.sync(() => void pages.add(send));
 			}),
+		);
+		yield* Effect.forkIn(
+			Stream.runForEach(projects, (labels) => send(projectsFrame(labels))),
+			scope,
+		);
+		yield* Effect.forkIn(
+			Stream.runForEach(questions.trust.pending, (prompts) => send(trustPromptsFrame(prompts))),
+			scope,
+		);
+		yield* Effect.forkIn(
+			Stream.runForEach(questions.recommend.pending, (prompts) =>
+				send(recommendPromptsFrame(prompts)),
+			),
+			scope,
 		);
 		// Forked after the table snapshot, never beside it: the page reads its first spell catalog as
 		// the end of that snapshot, and a shell missing from the table by then as no shell (#9375).

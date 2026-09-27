@@ -64,6 +64,7 @@ import {
 	seedSelfReport,
 	TITLE_PORT,
 } from "./self-report.ts";
+import {ProcessFolders, WorkingFolder} from "./working-folder.ts";
 
 export interface SpawnOptions {
 	readonly parent?: ProcessId;
@@ -159,7 +160,7 @@ export class Processes extends Context.Service<
 	 * forks from, so closing the layer stops every process (`LLMS.md` "Writing Effect services").
 	 */
 	static readonly layer: Layer.Layer<
-		Processes | ProcessTable | PlannedProcesses,
+		Processes | ProcessTable | PlannedProcesses | ProcessFolders,
 		never,
 		Registry | Checkpoints
 	> = Layer.effectContext(makeServices());
@@ -168,6 +169,8 @@ export class Processes extends Context.Service<
 interface Entry {
 	readonly row: ProcessRow;
 	readonly scope: Scope.Closeable;
+	/** The folder the spawn set carried, which `ProcessFolders` answers with. */
+	readonly folder: Option.Option<WorkingFolder["Service"]>;
 	/** tea's run behind the row. A row is what another process may see; this is what dispatches. */
 	readonly handle: ProcessHandle;
 	readonly swap: (program: AnyProgram) => Effect.Effect<SwapOutcome, SwapError>;
@@ -553,7 +556,13 @@ function makeServices() {
 						Effect.tap(() => dispatchResume(next, handle)),
 						Effect.withSpan("Tuval.Processes.swap"),
 					);
-			live.set(id, {row: spawnedRow, scope, handle, swap});
+			live.set(id, {
+				row: spawnedRow,
+				scope,
+				folder: Context.getOption(granted, WorkingFolder),
+				handle,
+				swap,
+			});
 			yield* publish({kind: "spawned", row: spawnedRow});
 			if (unpublished > 0) yield* publish({kind: "state-changed", row: spawnedRow});
 			return handle;
@@ -600,6 +609,12 @@ function makeServices() {
 						for (const id of ids) planned.add(id);
 					}),
 				isPlanned: (id) => Effect.sync(() => planned.has(id)),
+			}),
+			Context.add(ProcessFolders, {
+				folderOf: (id) =>
+					Effect.sync(() =>
+						Option.flatMap(Option.fromNullishOr(live.get(id)), (entry) => entry.folder),
+					),
 			}),
 		);
 	});

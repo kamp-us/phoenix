@@ -95,6 +95,8 @@ describe("a removal the kernel refuses", () => {
 						filter: null,
 						previous: "p-9",
 						refusal: {_tag: "ProcessPlanned", processId: target},
+						step: null,
+						landing: null,
 					},
 				},
 			]);

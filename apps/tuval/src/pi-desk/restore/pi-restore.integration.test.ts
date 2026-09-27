@@ -395,8 +395,8 @@ describe("a Pi session, stopped and booted back over its checkpoints", () => {
 	it("reconnects on its own after a restart, with nothing dispatched by the test", () => {
 		expect(
 			outcome.second.restoredCount,
-			"the second boot did not bring the agent and the window back from their checkpoints",
-		).toBe(2);
+			"the second boot did not bring the agent, the window and the desk's shell back from their checkpoints",
+		).toBe(3);
 		expect(
 			outcome.second.afterReconnect.length,
 			"the reconnect never reacquired the JSONL session, so the window came back to nothing",

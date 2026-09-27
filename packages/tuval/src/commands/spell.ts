@@ -8,7 +8,7 @@
 
 import {type Effect, Schema} from "effect";
 import type {ProcessId} from "../process/process.ts";
-import type {CapabilityRequest} from "../registry/program.ts";
+import type {CapabilityRequest, ProgramId} from "../registry/program.ts";
 
 // Type-only brands: plain strings at runtime, distinct types to the checker, like `ProgramId`.
 export const WindowId = Schema.String.pipe(Schema.brand("tuval/WindowId"));
@@ -30,6 +30,13 @@ export interface Scope {
 	readonly process?: ProcessId;
 	readonly workspace: WorkspaceId;
 	readonly client: ClientId;
+	/**
+	 * The registered id of the row whose spell is running, set by the executor from the row the
+	 * path reached and absent for a core spell. A project's copy of a row runs as `<project>/<id>`
+	 * while its compiled closures only know `<id>` (#9684), so this is the one place a spell reads
+	 * which copy it was called as.
+	 */
+	readonly program?: ProgramId;
 }
 
 /**

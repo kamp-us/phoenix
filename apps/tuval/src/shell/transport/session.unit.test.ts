@@ -76,7 +76,7 @@ const kernel = Effect.gen(function* () {
 	);
 	const processes = Context.get(context, Processes);
 	const handle = yield* processes.spawn(program.id, {id: processId, services: Context.empty()});
-	const pages: Parameters<typeof session>[5] = new Set();
+	const pages: Parameters<typeof session>[7] = new Set();
 	const lock = yield* Semaphore.make(1);
 	const run = (socket: Socket.Socket) =>
 		session(
@@ -84,6 +84,11 @@ const kernel = Effect.gen(function* () {
 			processes.handle,
 			Effect.succeed(() => Effect.die("unexpected spell")),
 			Stream.never,
+			Stream.never,
+			{
+				trust: {pending: Stream.never, answer: () => Effect.succeed(false)},
+				recommend: {pending: Stream.never, answer: () => Effect.succeed(false)},
+			},
 			defaultPrefixTable,
 			pages,
 			lock,

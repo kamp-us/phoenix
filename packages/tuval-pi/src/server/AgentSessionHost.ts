@@ -18,6 +18,7 @@ import {
 	DefaultResourceLoader,
 	type ModelRuntime,
 	type ResourceLoader,
+	type SessionHeader,
 	SessionManager,
 	SettingsManager,
 	type ToolDefinition,
@@ -44,10 +45,9 @@ export interface AgentSessionHostOptions {
 	/** Built-in tool suppression, passed straight through to `createAgentSession`. */
 	readonly noTools?: "all" | "builtin" | undefined;
 	/**
-	 * The cwd a session resumed by id is looked up under — the project root that booted the kernel
-	 * (founder ruling, 2026-09-02). One process runs one project, so one root locates every JSONL
-	 * this host could be asked to re-open. Absent means this host resumes nothing, and every
-	 * `resume` refuses.
+	 * The folder a resumed session runs in when its file's header records none, which only a file
+	 * written before Pi recorded one does. Every other session resumes in the folder its header
+	 * names, the one it started in (#9694).
 	 */
 	readonly projectRoot?: string;
 	/**
@@ -207,6 +207,22 @@ const call = <A>(
 				}),
 			),
 	});
+
+/**
+ * The folder a stored session resumes in: the one its file's header records, because a session's
+ * folder is set at start and never changes (#9694). Read from the header and never from
+ * `SessionManager.getCwd()`, which fills a missing header folder with the kernel process's own
+ * cwd. Only a header written before Pi recorded a folder has none; that falls back to the host's
+ * project root, and with no root there is no folder to resume in.
+ */
+export const resumeFolder = (
+	header: Pick<SessionHeader, "cwd"> | null,
+	projectRoot: string | undefined,
+): string | undefined => {
+	const recorded: unknown = header?.cwd;
+	if (typeof recorded === "string" && recorded !== "") return recorded;
+	return projectRoot === "" ? undefined : projectRoot;
+};
 
 /**
  * One session's JSONL, by id, in the directory this host writes them to.
@@ -375,19 +391,24 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 		 */
 		resume: (sessionId) =>
 			Effect.gen(function* () {
-				const cwd = options.projectRoot;
-				if (cwd === undefined) {
-					return yield* new SessionOpenFailed({
-						cwd: "",
-						detail: `this host holds no project root, so session ${sessionId} cannot be re-opened`,
-					});
-				}
-				const refuse = (detail: string) => new SessionOpenFailed({cwd, detail});
+				const unfound = (detail: string) =>
+					new SessionOpenFailed({cwd: options.projectRoot ?? "", detail});
 				const file = yield* Effect.try({
 					try: () => sessionFile(options.sessionDir, sessionId),
-					catch: (error) => retaining(error, refuse("Pi could not reopen the stored session")),
+					catch: (error) => retaining(error, unfound("Pi could not reopen the stored session")),
 				});
-				if (file === undefined) return yield* refuse("Pi could not find the stored session file");
+				if (file === undefined) return yield* unfound("Pi could not find the stored session file");
+				const manager = yield* Effect.try({
+					try: () => SessionManager.open(file, options.sessionDir),
+					catch: (error) => retaining(error, unfound("Pi could not reopen the stored session")),
+				});
+				const cwd = resumeFolder(manager.getHeader(), options.projectRoot);
+				if (cwd === undefined) {
+					return yield* unfound(
+						`session ${sessionId} records no folder and this host holds no project root, so it cannot be re-opened`,
+					);
+				}
+				const refuse = (detail: string) => new SessionOpenFailed({cwd, detail});
 
 				const session = yield* Effect.tryPromise({
 					try: async () => {

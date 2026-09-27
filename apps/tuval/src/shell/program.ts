@@ -1,6 +1,6 @@
 /**
- * The shell as one ordinary program row (#7558). There is no built-in shell: the desk is a
- * `Program` like the demo counter is, registered through the user-owned config module, spawned by
+ * The shell as one ordinary program row (#7558). The desk is a `Program` like the demo counter
+ * is, registered by the desk layer below every config file (`../desk-layer.ts`, #9683), spawned by
  * the graph as a root process, and checkpointed by the kernel's own durability. Nothing here opens
  * a store, and nothing under `src/shell/` may — the shell's desk comes back because
  * `src/durability/` brings every process back, not because the shell saves itself (#7514).
@@ -36,6 +36,7 @@ import {shellSpells, shellSpellsFor} from "./commands/spells.ts";
 import {commandIndexFor, type ShellCommandFeatures} from "./commands/table.ts";
 import {
 	isShellState,
+	type KeyBindingsSource,
 	type ShellCmd,
 	type ShellMsg,
 	type ShellState,
@@ -43,7 +44,7 @@ import {
 } from "./core/index.ts";
 import {windows} from "./layout/index.ts";
 
-/** The row's stable id. A founder rebinding the shell in their own config replaces this id's row. */
+/** The row's stable id, which no config file may declare: the desk layer supplies this row. */
 export const shellId = ProgramId.make("shell");
 
 /**
@@ -114,6 +115,10 @@ export const unwiredShellEffects: ShellEffects = {
 		Effect.logDebug(`shell: runCommand "${cmd.name}" names no command row — dropped`).pipe(
 			Effect.as([]),
 		),
+	runBinding: (cmd) =>
+		Effect.logDebug(
+			`shell: runBinding "${cmd.binding.key}" dropped — no spell executor attached`,
+		).pipe(Effect.as([])),
 	openProgram: (cmd) =>
 		Effect.logDebug(
 			`shell: openProgram "${cmd.programId}" dropped — no surface attached to spawn it`,
@@ -144,7 +149,7 @@ export interface ShellProgramOptions<E = never, R = never> {
 
 /**
  * The one place on the boot path that names `defaultPrefixTable`. Both readers go through it — the
- * row resolving its own option, and `shellPrefixTable` reading a config's rows back — so the value
+ * row resolving its own option, and `shellPrefixTable` reading the booted rows back — so the value
  * the kernel routes over and the value the transport sends cannot be two different tables (#7890,
  * the open consequence ADR 0353 left).
  */
@@ -219,10 +224,14 @@ const isShellRow = (program: AnyProgram): program is ShellRow =>
  * Gating is additive and lives in two lists, `boardBindings` in `packages/tuval-ui/src/shell/keys/table.ts` and
  * `boardCommands` in `./commands/table.ts`. Both are keyed on the one flag, so a key can never name
  * a row this build does not hold.
+ *
+ * `keys` is the same seam for the config's key bindings (#9687): the row is built before any of them
+ * compile, so the core is handed where to read them rather than the bindings themselves.
  */
 export const withShellFeatures = (
 	programs: ReadonlyArray<AnyProgram>,
 	features: ShellCommandFeatures,
+	keys?: KeyBindingsSource,
 ): ReadonlyArray<AnyProgram> =>
 	programs.map((program) => {
 		if (!isShellRow(program)) return program;
@@ -231,14 +240,14 @@ export const withShellFeatures = (
 		return {
 			...program,
 			table,
-			core: shellCore({table, commands}),
+			core: shellCore({table, commands, ...(keys === undefined ? {} : {keys})}),
 			spells: shellSpellsFor(features),
 		} satisfies ShellRow;
 	});
 
 /**
- * The key grammar a config's rows put the kernel on: the shell row's resolved table, or the same
- * default that row would have taken when the config registers no shell at all (a kernel with no
+ * The key grammar the booted rows put the kernel on: the shell row's resolved table, or the same
+ * default that row would have taken when the rows carry no shell at all (a kernel `start`ed with no
  * desk still serves a socket, and the grammar it sends a page is that default).
  *
  * `boot` reports this as `Booted.keyTable` and `src/bin.ts` hands that to `serveDesk`, which is
@@ -248,8 +257,8 @@ export const shellPrefixTable = (programs: ReadonlyArray<AnyProgram>): PrefixTab
 	resolveTable(programs.find(isShellRow)?.table);
 
 /**
- * The shell's node: a root — no `parent` — with no routes, because it speaks over no port. A config
- * module spreads this into its own graph, so a founder can drop the shell by dropping the node.
+ * The shell's node: a root — no `parent` — with no routes, because it speaks over no port. The desk
+ * layer plans it below every config file's graph.
  */
 export const shellGraphNode: GraphNode = {id: shellNode, program: shellId, on: []};
 

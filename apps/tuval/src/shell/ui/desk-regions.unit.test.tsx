@@ -57,6 +57,7 @@ const boundEverywhere: MountResolver = (windowId, processId) =>
 		: {
 				_tag: "Bound",
 				name: null,
+				project: null,
 				host: hostFor(windowId, processId),
 				render: (host) => <p>renderer for {String(host.processId)}</p>,
 			};

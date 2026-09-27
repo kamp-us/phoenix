@@ -63,13 +63,18 @@ export const resolveOwnProcess = Effect.fn("Tuval.Authoring.resolveOwnProcess")(
 	port: string,
 	scope: Scope,
 ) {
+	// `program` is the id the author declared, baked in when the row was compiled. A project's copy
+	// of the row runs under `<project>/<id>` beside a global row keeping `<id>` (#9684), so the id
+	// matched is the registered one the executor read off the called row, never the baked one alone:
+	// a global row's send cannot land in a project's process, nor the reverse.
+	const owner = scope.program ?? program;
 	const table = yield* ProcessTable;
 	const rows = yield* table.list;
-	const mine = rows.filter((row) => row.programId === program).map((row) => row.id);
+	const mine = rows.filter((row) => row.programId === owner).map((row) => row.id);
 	const [only] = mine;
-	if (only === undefined) return yield* new NoLiveProcess({program, port});
+	if (only === undefined) return yield* new NoLiveProcess({program: owner, port});
 	if (mine.length === 1) return only;
 	const caller = scope.process;
 	if (caller !== undefined && mine.includes(caller)) return caller;
-	return yield* new AmbiguousProcess({program, port, processes: mine});
+	return yield* new AmbiguousProcess({program: owner, port, processes: mine});
 });

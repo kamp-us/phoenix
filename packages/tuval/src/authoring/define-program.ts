@@ -55,6 +55,8 @@ import type {
 import {isAsked, NO_REPLY, type ReplyTo} from "../process/inbox.ts";
 import {Processes} from "../process/Processes.ts";
 import {ProcessSelf} from "../process/self.ts";
+import {type CrossingRefused, guardReach, guardSpawn} from "../process/subprojects.ts";
+import {WorkingFolder} from "../process/working-folder.ts";
 import type {
 	AnyProgram,
 	CapabilityRequest,
@@ -282,6 +284,16 @@ export interface AuthoredProgram<
 	 */
 	readonly renderer?: ModuleWindowRef;
 	/**
+	 * The `@kampus/tuval-sdk` versions this program supports, as a semver range — the program's
+	 * `engines.vscode`. A desk supplies its own copy of the SDK to every program and refuses one whose
+	 * range excludes that copy's version, naming the program, the range and the desk's version,
+	 * because two copies of the SDK in one process break every service lookup between them.
+	 *
+	 * Absent means every SDK of the desk's own major (`^<major>`). State it once a program relies on
+	 * something a later minor added, or supports more than one major: `"^1.4"`, `">=1 <3"`.
+	 */
+	readonly sdk?: string;
+	/**
 	 * What this program is sent when it comes back from a checkpoint (`./resume.ts`). A restored
 	 * process starts on its loaded state with no Cmds, so this is its only way back into the world.
 	 */
@@ -449,19 +461,28 @@ const spawnHandler = (cmd: SpawnEffect) =>
 		// only ever asked for a real id and both cases take this one line (#8762). The `spawned`
 		// event carries the same resolved id, so the author's `update` reads what actually started.
 		const program = yield* resolveSpawnTarget(cmd.program);
+		// A subproject's rows are behind its boundary, which only its opener crosses (#9689).
+		yield* guardSpawn(ProgramId.make(program));
 		// The parent is stamped here, off the process this interpretation is running for, and is
 		// never something the `spawn` effect carries (#8757). `on` rides along as that same
 		// process's routing table, so a named child port arrives as this process's own event.
+		// A child with no `cwd` runs in this process's own folder, inherited through the spawn set;
+		// a `cwd` is the other folder the program hands it, and its own children inherit that (#9694).
 		const start = processes.spawn(ProgramId.make(program), Option.some(self.id), cmd.on);
 		const child = yield* cmd.cwd === undefined
 			? start
-			: start.pipe(Effect.provideService(SessionOpening, {cwd: cmd.cwd, resume: null}));
+			: start.pipe(
+					Effect.provideService(SessionOpening, {cwd: cmd.cwd, resume: null}),
+					Effect.provideService(WorkingFolder, {path: cmd.cwd}),
+				);
 		return [spawned(child, program)];
 	});
 
 const sendHandler = (cmd: SendEffect) =>
 	Effect.gen(function* () {
 		const processes = yield* SpawnedProcesses;
+		// Asked about only for a cell's send: a command runs as no process, so there is no `from` (#9689).
+		yield* guardReach(cmd.to.process);
 		yield* processes.send(cmd.to.process, cmd.to.port, cmd.payload);
 		return NO_EVENTS;
 	});
@@ -476,6 +497,7 @@ const askHandler = (cmd: AskEffect) =>
 	Effect.gen(function* () {
 		const processes = yield* SpawnedProcesses;
 		const self = yield* ProcessSelf;
+		yield* guardReach(cmd.to.process);
 		yield* processes.ask(self.id, cmd.to.process, cmd.to.port, cmd.payload, cmd.reply);
 		return NO_EVENTS;
 	});
@@ -512,6 +534,7 @@ const replyHandler = (cmd: ReplyEffect) =>
 const stopHandler = (cmd: StopEffect) =>
 	Effect.gen(function* () {
 		const processes = yield* Processes;
+		yield* guardReach(cmd.process);
 		yield* processes.remove(cmd.process);
 		return NO_EVENTS;
 	});
@@ -532,7 +555,8 @@ export type EffectFailure =
 	| StoreFailed
 	| ProcessNotFound
 	| ProcessIsPlanned
-	| ForgetRefused;
+	| ForgetRefused
+	| CrossingRefused;
 
 export type EffectServices = ProcessPorts | ProcessSelf | SpawnedProcesses | Processes;
 
@@ -675,6 +699,21 @@ const compileSubs = (authored: AnyAuthoredProgram): AnyProgram["subs"] =>
 				Object.entries(authored.subscribe).map(([type, open]) => [type, disposerStream(open)]),
 			);
 
+/**
+ * Every field of the authored record that holds the author's code. The compiled row reaches most of
+ * it only through this layer's closures, whose text no edit to the author's file moves.
+ */
+const compileAuthoredCode = (authored: AnyAuthoredProgram): AnyProgram["authoredCode"] => ({
+	init: authored.init,
+	update: authored.update,
+	commands: authored.commands,
+	title: authored.title,
+	status: authored.status,
+	resume: authored.resume,
+	subs: authored.subs,
+	subscribe: authored.subscribe,
+});
+
 const compileIdentity = (authored: AnyAuthoredProgram): DefinitionIdentity => ({
 	...defaultIdentity(authored.id),
 	...authored.identity,
@@ -698,7 +737,9 @@ export const FIELD_COMPILERS = {
 	resume: (authored) => compileResume(authored),
 	derivedLines: (authored) => compileDerivedLines(authored),
 	renderer: (authored) => authored.renderer,
+	sdk: (authored) => authored.sdk,
 	capabilities: (authored) => authored.capabilities ?? NO_CAPABILITIES,
+	authoredCode: (authored) => compileAuthoredCode(authored),
 	identity: (authored) => compileIdentity(authored),
 	placement: (authored) => authored.placement ?? LOCAL,
 } satisfies FieldCompilers;

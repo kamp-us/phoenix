@@ -1,7 +1,7 @@
 ---
 id: 0407
 title: An app under `apps/` is never imported, so code another package needs ships as a package
-status: accepted
+status: amended-in-part by [0419](0419-one-desk-opens-many-projects.md)
 date: 2026-09-23
 tags: [repo-shape, apps, packages, tuval, sdk, publishing]
 ---

@@ -204,6 +204,7 @@ export const notifyProgram = (options: NotifyOptions) => {
 	const now = options.now ?? Date.now;
 	return {
 		id,
+		sdk: "0.x",
 		ports: {
 			/** Tell me something to deliver: an AI-agent `TurnResult` — see `MessageSchema`. */
 			message: port.in(MessageSchema),

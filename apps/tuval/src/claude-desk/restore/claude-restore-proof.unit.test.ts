@@ -347,12 +347,12 @@ describe("the claude-session row, driven through ports and booted back over its 
 		});
 	});
 
-	it("brings both processes back from the state directory, nothing fresh-booted", () => {
+	it("brings every process back from the state directory, nothing fresh-booted", () => {
 		expect(outcome.first.restoredCount).toBe(0);
 		expect(
 			outcome.second.restoredCount,
-			"the second boot did not bring the claude session and the window back from their checkpoints",
-		).toBe(2);
+			"the second boot did not bring the claude session, the window and the desk's shell back from their checkpoints",
+		).toBe(3);
 		expect(outcome.second.restored.sessionId).toBe(SESSION);
 	});
 

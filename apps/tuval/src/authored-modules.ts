@@ -54,6 +54,21 @@ export class AuthoredModules {
 	}
 
 	/**
+	 * These modules beside `other`'s, as a desk running several loads at once holds them: the desk's
+	 * load and each project opened after it (#9685). A file both loads read keeps `other`'s source,
+	 * the later read.
+	 */
+	union(other: AuthoredModules): AuthoredModules {
+		if (other.sources.size === 0) return this;
+		if (this.sources.size === 0) return other;
+		const imports = new Map<string, ReadonlySet<string>>(this.imports);
+		for (const [file, imported] of other.imports) {
+			imports.set(file, new Set([...(imports.get(file) ?? []), ...imported]));
+		}
+		return new AuthoredModules(new Map([...this.sources, ...other.sources]), imports);
+	}
+
+	/**
 	 * The files a function whose text is `text` could have been compiled from. A short text can sit
 	 * in several files, and every one of them is answered. A package's function sits in none: the
 	 * desk holds one copy of a package, which only a restart replaces.

@@ -26,6 +26,7 @@ import type {TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index
 import type {SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
 import type {Scope as SpellScope} from "@kampus/tuval-sdk/kernel/commands/spell";
 import type {AnyProgram, CapabilityRequest} from "@kampus/tuval-sdk/kernel/registry/program";
+import {localId} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
 import {Layer} from "effect";
 import {ClaudeAiAgent} from "./agent/index.ts";
 import {
@@ -55,8 +56,11 @@ export const CLAUDE_SESSION_CAPABILITIES: ReadonlyArray<CapabilityRequest> = [
 ];
 
 interface ClaudeSessionBase {
-	/** The project root that booted the kernel: the cwd a fresh session opens in (#7509). */
-	readonly cwd: string;
+	/**
+	 * A folder every fresh session opens in (#7509). Absent, a session takes its folder when it
+	 * starts: the picker entry's project, or the folder its spawner runs in (#9694).
+	 */
+	readonly cwd?: string;
 	readonly claude?: ClaudeSessionConfigInput;
 	readonly itemLimit?: number;
 	readonly byteLimit?: number;
@@ -105,7 +109,7 @@ export interface ClaudeSessionProgram extends AiAgentProgram<SpellBridge> {
 }
 
 const isClaudeSessionRow = (row: AnyProgram): row is ClaudeSessionProgram =>
-	row.id === CLAUDE_SESSION_PROGRAM && "settings" in row;
+	localId(row.id) === CLAUDE_SESSION_PROGRAM && "settings" in row;
 
 export const claudeSession = (options: ClaudeSessionProgramOptions): ClaudeSessionProgram => {
 	const settings = claudeSessionSettings(options.claude ?? {});
@@ -115,11 +119,12 @@ export const claudeSession = (options: ClaudeSessionProgramOptions): ClaudeSessi
 			layer:
 				options.layer === undefined ? claudeSessionLayer(settings, options.scope) : options.layer,
 			config: {
-				cwd: options.cwd,
+				...(options.cwd === undefined ? {} : {cwd: options.cwd}),
 				...(options.itemLimit === undefined ? {} : {itemLimit: options.itemLimit}),
 				...(options.byteLimit === undefined ? {} : {byteLimit: options.byteLimit}),
 			},
 			renderer: CLAUDE_CHAT_WINDOW_REF,
+			sdk: "0.x",
 			capabilities: CLAUDE_SESSION_CAPABILITIES,
 		}),
 		settings,

@@ -52,12 +52,12 @@ const view = (mount: WindowMount): ReactElement => (
 describe("a window whose process re-emits its title", () => {
 	it("moves the title and keeps the window mounted", () => {
 		const {rerender} = render(
-			view(mountNamed({title: "claude · fable · phoenix", programId: claude})),
+			view(mountNamed({title: "claude · fable · phoenix", program: claude})),
 		);
 		const body = screen.getByTestId("body");
 		expect(screen.getByText("claude · fable · phoenix")).toBeTruthy();
 
-		rerender(view(mountNamed({title: "claude · fable · reading #8721", programId: claude})));
+		rerender(view(mountNamed({title: "claude · fable · reading #8721", program: claude})));
 		expect(screen.getByText("claude · fable · reading #8721")).toBeTruthy();
 		expect(screen.queryByText("claude · fable · phoenix")).toBeNull();
 		expect(screen.getByTestId("body")).toBe(body);

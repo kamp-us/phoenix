@@ -130,7 +130,11 @@ Every read is a single `SubscriptionRef.get` and `swap` is a single `Subscriptio
 program's spells at once and no reader ever walks a half-replaced table.
 
 `lookupRow(table, path)` is the trie walk itself, exported so the registry, the binding compiler
-and `SpellSet` take one walk rather than three.
+and `SpellSet` take one walk rather than three. It reads the exact address first, so every row stays
+reachable at its own. On a miss whose first segment is a bare program id, it reads that id against
+the project-scoped rows (`<project>/<id>`, #9684): exactly one scoped row answering is that row, and
+two projects answering is no row. That is how a page's bare `session.list` call reaches a session
+list a project layer declares.
 
 Three layers build the service. `SpellRegistry.layer(table)` holds a table of its own and
 `SpellRegistry.scripted(spells)` builds one from a bare core list, which is the test seam; the
@@ -150,11 +154,15 @@ interface Scope {
 	readonly process?: ProcessId;
 	readonly workspace: WorkspaceId;
 	readonly client: ClientId;
+	readonly program?: ProgramId;
 }
 ```
 
 A workspace and a client are always known. A window and a process are known only when the caller was
-inside one.
+inside one. `program` is not about the caller: the executor sets it to the registered id of the row
+whose spell runs, and leaves it absent for a core spell. A project's copy of a row runs as
+`<project>/<id>` while its compiled closures know only `<id>`, so an authored command's bare `send`
+resolves its own process against this id (`authoring/own-process.ts`, #9684).
 
 `resolveScope` ([`scope.ts`](../packages/tuval/src/commands/scope.ts)) builds it. The wire lets a page
 name the window it called from and nothing else: the process and the workspace are looked up through
@@ -448,6 +456,13 @@ spells as one list.
   out-port into one of the spawner's own events. All three land through `deliver`
   ([`process/inbox.ts`](../packages/tuval/src/process/inbox.ts)), which needs only a live handle — so an
   answer reaches any process, not only one these spells spawned.
+- **`project open` / `project close` / `project list`**
+  ([`apps/tuval/src/projects/spells.ts`](../apps/tuval/src/projects/spells.ts)) are the desk's, not
+  the SDK's: they call the kernel's `Projects` service, which opens a folder into the running desk
+  and closes it again (#9685). They name the folder by its absolute path, because the kernel has no
+  working directory a relative one could be read against. `project close` passes the calling
+  process from the spell's scope, so a subproject closes only for the program that opened it,
+  the same rule `closeSubproject` keeps (#9689).
 
 ### The bridge
 
@@ -657,8 +672,8 @@ defect for the first caller. The layer lives in its own module rather than besid
 page's boundary test walks the runtime import graph from `src/page/main.tsx` and refuses any
 `node:` specifier, so the split is proven rather than remembered (#7910).
 
-`dispatch` fails typed rather than dying, because a desk is a process: a config that registers the
-shell row but plans no node for it answers `NoDesk`, and a desk that stopped mid-call answers the
+`dispatch` fails typed rather than dying, because a desk is a process: a `start` caller that hands
+rows without the shell answers `NoDesk`, and a desk that stopped mid-call answers the
 process's own `DispatchError`. Either way the executor turns it into a `SpellReplyError`, so `help`,
 a typed line and an agent's bridge all read a refusal instead of meeting a defect. The proof is
 [`src/shell/proof/dispatch.unit.test.ts`](../apps/tuval/src/shell/proof/dispatch.unit.test.ts),

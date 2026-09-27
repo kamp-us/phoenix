@@ -6,6 +6,7 @@ import {KernelBridge} from "@kampus/tuval-sdk/kernel/ai-agent/tools/KernelBridge
 import type {SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
 import type {Scope as SpellScope} from "@kampus/tuval-sdk/kernel/commands/spell";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
+import {localId} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
 import {Layer} from "effect";
 import {CodexAiAgent} from "./CodexAiAgent.ts";
 import {
@@ -18,7 +19,8 @@ import {CODEX_CHAT_WINDOW_REF, CODEX_SESSION_PROGRAM} from "./renderer-ref.ts";
 export {CODEX_SESSION_PROGRAM} from "./renderer-ref.ts";
 
 interface CodexSessionBase {
-	readonly cwd: string;
+	/** A folder every fresh session opens in. Absent, a session takes its folder at start (#9694). */
+	readonly cwd?: string;
 	readonly codex?: CodexSessionConfigInput;
 	readonly itemLimit?: number;
 	readonly byteLimit?: number;
@@ -32,7 +34,7 @@ export interface CodexSessionProgram extends AiAgentProgram<SpellBridge> {
 	readonly settings: CodexSessionSettings;
 }
 const isCodexSession = (row: AnyProgram): row is CodexSessionProgram =>
-	row.id === CODEX_SESSION_PROGRAM && "settings" in row;
+	localId(row.id) === CODEX_SESSION_PROGRAM && "settings" in row;
 
 export const codexSession = (options: CodexSessionProgramOptions): CodexSessionProgram => {
 	const settings = codexSessionSettings(options.codex ?? {});
@@ -43,11 +45,12 @@ export const codexSession = (options: CodexSessionProgramOptions): CodexSessionP
 				options.layer ??
 				CodexAiAgent.layer(settings).pipe(Layer.provide(KernelBridge.live(options.scope))),
 			config: {
-				cwd: options.cwd,
+				...(options.cwd === undefined ? {} : {cwd: options.cwd}),
 				...(options.itemLimit === undefined ? {} : {itemLimit: options.itemLimit}),
 				...(options.byteLimit === undefined ? {} : {byteLimit: options.byteLimit}),
 			},
 			renderer: CODEX_CHAT_WINDOW_REF,
+			sdk: "0.x",
 			capabilities: [
 				{
 					family: "process-control",
