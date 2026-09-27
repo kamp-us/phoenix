@@ -44,14 +44,18 @@ import {
 	dropBaseRefArgs,
 	fetchBaseArgs,
 	isCommitId,
-	planWorktree,
+	listWorktreesArgs,
+	locateToplevel,
+	planAtPrimary,
 	pruneWorktreesArgs,
 	REAP_LIMIT,
 	REAP_TIMEOUT_SECONDS,
 	RECOVERY_ATTEMPTS,
+	readWorktreeRequest,
 	reapArgs,
 	recoveryBackoffMs,
 	resolveBaseArgs,
+	showToplevelArgs,
 	type WorktreePlan,
 } from "./worktree-create.ts";
 
@@ -99,6 +103,9 @@ export const describeOutcome = (outcome: ChildOutcome): string => {
 
 const succeeded = (outcome: ChildOutcome): boolean =>
 	outcome._tag === "Ran" && !outcome.timedOut && outcome.exitCode === 0;
+
+const stdoutIfSucceeded = (outcome: ChildOutcome): string | null =>
+	succeeded(outcome) && outcome._tag === "Ran" ? new TextDecoder().decode(outcome.stdout) : null;
 
 /**
  * A command's whole stderr, for classification — not {@link describeOutcome}'s one quotable line.
@@ -384,16 +391,32 @@ export const runWorktreeCreate = ({
 			);
 		}
 
-		const planned = planWorktree(read.envelope.payload);
+		const requested = readWorktreeRequest(read.envelope.payload);
+		if (requested._tag === "Unplannable") {
+			return refuse(UNPLANNABLE_WORKTREE, `${VERB}: ${requested.reason}`);
+		}
+
+		const child = childEnv(env);
+		const resolved = yield* git(showToplevelArgs, requested.request.cwd, child);
+		const located = locateToplevel(requested.request, stdoutIfSucceeded(resolved));
+		if (located._tag === "Unplannable") {
+			return refuse(UNPLANNABLE_WORKTREE, `${VERB}: ${located.reason}`, [
+				`${VERB}: git rev-parse --show-toplevel: ${describeOutcome(resolved)}`,
+			]);
+		}
+
+		const listed = yield* git(listWorktreesArgs, located.toplevel, child);
+		const planned = planAtPrimary(requested.request, stdoutIfSucceeded(listed));
 		if (planned._tag === "Unplannable") {
-			return refuse(UNPLANNABLE_WORKTREE, `${VERB}: ${planned.reason}`);
+			return refuse(UNPLANNABLE_WORKTREE, `${VERB}: ${planned.reason}`, [
+				`${VERB}: git worktree list --porcelain -z: ${describeOutcome(listed)}`,
+			]);
 		}
 
 		const scope = `${VERB}: ${dryRun ? "would provision" : "provisioning"} ${planned.plan.worktreePath}`;
 		if (dryRun) return answer(planned.plan.worktreePath, [scope]);
 
 		const nonce = randomUUID().replaceAll("-", "").slice(0, 12);
-		const child = childEnv(env);
 		const swept = yield* reapFirst(cli, planned.plan.repoRoot, child);
 		return yield* provision(planned.plan, child, nonce).pipe(
 			Effect.map((outcome) => ({...outcome, stderr: [scope, ...swept, ...outcome.stderr]})),

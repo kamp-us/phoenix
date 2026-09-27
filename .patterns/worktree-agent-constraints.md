@@ -32,7 +32,15 @@ replaces the default worktree-creation logic is declared and live (ADR
 [0337](../.decisions/0337-worktree-provisioning-rehomed-onto-repo-settings.md)), so the
 base path is now ours to choose; it deliberately keeps laying trees at
 `<repo>/.claude/worktrees/<name>`, because moving them is a separate decision from
-provisioning them. A base with no `.claude/` substring would dodge the protected-path
+provisioning them. That base is single by construction, not by assumption: `<repo>` is
+the clone's primary working tree, the first record `git worktree list --porcelain`
+prints, never the envelope's `cwd` and never that `cwd`'s `--show-toplevel`. So a
+session launched in a subdirectory, or inside a linked tree such as an epic assembly
+tree or another agent's tree, still gets its child under the primary checkout, where
+removing the linked tree cannot delete it. A `cwd` in no repository, or in a clone
+whose primary tree is bare or unreadable, refuses the spawn rather than falling back
+to itself ([`worktree-create.ts`](../packages/fabrika-cli/src/hook/worktree-create.ts),
+`planAtPrimary`). A base with no `.claude/` substring would dodge the protected-path
 guard entirely. Making that move
 is NOT free: the biome config and [ADR 0060](../.decisions/0060-worktree-lint-changed-paths.md)
 key on the literal base segment `/.claude/worktrees/`, so both would have to track a new base in

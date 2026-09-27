@@ -37,6 +37,11 @@ const ADD = /^git worktree add --detach /;
 
 /** Everything the provisioning half needs to succeed, so only the sweep is under test. */
 const PROVISIONS: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]> = [
+	[/^git rev-parse --show-toplevel$/, okOut(`${REPO}\n`)],
+	[
+		/^git worktree list --porcelain -z$/,
+		okOut(`worktree ${REPO}\0HEAD ${HEAD}\0branch refs/heads/main\0\0`),
+	],
 	[/^git symbolic-ref /, okOut("origin/main\n")],
 	[/^git fetch /, okOut("")],
 	[/^git rev-parse --verify /, okOut(`${HEAD}\n`)],
@@ -69,7 +74,12 @@ describe("hook worktree-create reaps before it provisions", () => {
 
 		expect(out.code).toBe(0);
 		const swept = calls.findIndex((line) => REAP.test(line));
-		expect(swept).toBe(0);
+		// Only the two reads that locate the primary tree precede it: the sweep runs in that tree.
+		expect(calls.slice(0, 2)).toEqual([
+			"git rev-parse --show-toplevel",
+			"git worktree list --porcelain -z",
+		]);
+		expect(swept).toBe(2);
 		expect(calls[swept]).toContain(`build reap --execute --limit ${REAP_LIMIT}`);
 	});
 
