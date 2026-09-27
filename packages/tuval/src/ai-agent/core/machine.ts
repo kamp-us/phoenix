@@ -115,10 +115,9 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 	 * What a committed transition owes the queue, applied to every cell that can land the session
 	 * somewhere the queue's answer changes.
 	 *
-	 * A session back at `ready` is the running turn having ended, which is the one event a queued
-	 * prompt waits for — so its head is admitted here, on the same commit, and the window never sees
-	 * a gap where the agent looks idle with work still queued. A session at `gone` or `idle` will
-	 * never end that turn, so what is queued is released to the operator instead (`./queue.ts`).
+	 * Reaching `ready` after startup or a turn admits the head on the same commit, so the window
+	 * never sees an idle agent with work still queued. Reaching `gone` or `idle` releases the
+	 * waiting prompts to the operator instead (`./queue.ts`).
 	 * Every other phase leaves the queue exactly where it stands.
 	 */
 	const settleQueue = (step: Step): Step => {
@@ -253,13 +252,13 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			// exists because the operator sent it, and a backend's echo habits are not what a chat
 			// window showing your own message should depend on (#7978).
 			//
-			// A prompt written while the turn runs waits rather than being refused (#8159). Its send
+			// A prompt written during startup or a turn waits rather than being refused (#9805, #8159). Its send
 			// is recorded by nothing yet — neither refused nor in the layer's hands is the truth about
 			// it, and `readHeld` (`shell/chat/outgoing.ts`) reads a key it has no outcome for as
 			// "wait", which is exactly right. The refusing arms do record one, because a refusal is
 			// final and the window that minted the key is waiting on it (#8005).
 			prompt: (state, msg) => {
-				if (state.phase === "prompting") {
+				if (state.phase === "starting" || state.phase === "prompting") {
 					if (!isQueueFull(state.queued)) {
 						return [
 							{

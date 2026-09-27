@@ -291,14 +291,31 @@ describe("prompt", () => {
 		expect(twice.transcript.items.map((item) => item.id)).toEqual([promptItemId("k1")]);
 	});
 
-	it("is refused as data outside ready, and emits nothing", () => {
-		for (const phase of ["idle", "starting", "reconnecting", "gone"] as const) {
+	it("is refused while idle, reconnecting or gone, and emits nothing", () => {
+		for (const phase of ["idle", "reconnecting", "gone"] as const) {
 			const [state, cmds] = apply(started({phase}), prompt("hi", "k"));
 			expect(state.failure?.tag).toBe("tuval/ai-agent/PromptError");
 			expect(state.phase).toBe(phase);
 			expect(state.transcript.items).toEqual([]);
 			expect(cmds).toEqual([]);
 		}
+	});
+
+	it("holds startup prompts until the session opens, then admits only the first", () => {
+		const [opening] = apply(initialState("/repo"), {type: "start", cwd: "/repo", resume: null});
+		const [first] = apply(opening, prompt("first", "k1"));
+		const [queued, waiting] = apply(first, prompt("second", "k2"));
+		expect(queued.queued.map((item) => item.key)).toEqual(["k1", "k2"]);
+		expect(queued.transcript.items).toEqual([]);
+		expect(queued.sends).toEqual([]);
+		expect(waiting).toEqual([]);
+
+		const [sent, cmds] = apply(queued, {type: "started", sessionId: "session-1"});
+		expect(sent.phase).toBe("prompting");
+		expect(sent.transcript.items.map((item) => item.id)).toEqual([promptItemId("k1")]);
+		expect(sent.queued.map((item) => item.key)).toEqual(["k2"]);
+		expect(sent.sends).toEqual([{key: "k1", state: "pending", turn: "unstarted"}]);
+		expect(cmds).toEqual([{type: "aiAgent.prompt", text: "first", key: "k1"}]);
 	});
 
 	it("clears the interrupted marker, because a resend is a new send", () => {
@@ -308,7 +325,7 @@ describe("prompt", () => {
 });
 
 /**
- * #8159: a prompt written during a turn is the one prompt outside `ready` that is not a refusal.
+ * #8159: a prompt written during a turn waits in the session's queue.
  * The composer offers a "queue" button, so the core keeps a queue — and the turn's own end is the
  * only thing that admits from it.
  */
@@ -380,8 +397,11 @@ describe("a prompt written while the turn runs", () => {
 
 	// The newest is refused rather than the oldest evicted: silently dropping what an operator
 	// already wrote is the bug the queue exists to fix, and a refusal is recoverable.
-	it("refuses the one past the bound, against its own key", () => {
-		let state = running();
+	it.each([
+		"starting",
+		"prompting",
+	] as const)("refuses overflow while %s, against its own key", (phase) => {
+		let state = phase === "starting" ? {...initialState("/repo"), phase} : running();
 		for (let index = 0; index < queueLimit; index += 1) {
 			[state] = apply(state, prompt(`queued ${index}`, `q${index}`));
 		}
@@ -1130,7 +1150,15 @@ describe("reconnect", () => {
 
 describe("openFailed", () => {
 	it("advances a failed fresh open without inventing a session subscription", () => {
-		const opening = {...initialState("/repo"), phase: "starting" as const};
+		const [opening] = apply(
+			{...initialState("/repo"), phase: "starting"},
+			{
+				type: "prompt",
+				text: "first",
+				key: "k1",
+				timestamp: SENT_AT,
+			},
+		);
 		const failure = {tag: "tuval/ai-agent/StartError", reason: "refused", detail: "not accepted"};
 		const [state, cmds] = apply(opening, {type: "openFailed", failure});
 		expect(state).toMatchObject({
@@ -1140,6 +1168,12 @@ describe("openFailed", () => {
 			failure,
 		});
 		expect(desiredSubs(machine.subs, state)).toEqual([]);
+		expect(state.queued).toEqual([]);
+		expect(state.sends).toContainEqual({
+			key: "k1",
+			state: "refused",
+			failure: expect.objectContaining({reason: "refused"}),
+		});
 		expect(cmds).toEqual([]);
 	});
 });

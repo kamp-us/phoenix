@@ -960,7 +960,7 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 						Effect.gen(function* () {
 							const project = freshProject();
 							const app = yield* bootDesk(project);
-							const {page, desk, rows} = yield* attachDesk(app.server.launchUrl);
+							const {desk, rows} = yield* attachDesk(app.server.launchUrl);
 
 							const fresh = yield* liveWhere(desk.seen, "the first snapshot", () => true);
 							const window = windowsOf(fresh)[0] as string;
@@ -989,24 +989,22 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 							) as {readonly process: string};
 							assert.isString(spawned.process, "the spawn tool answered without a process id");
 
+							const sent = answered(
+								yield* callTool("send", () =>
+									tools.handlers.send({
+										process: spawned.process,
+										port: "prompt",
+										payload: {text: CHILD_PROMPT, key: "child-1", timestamp: Date.now()},
+									}),
+								),
+							) as {readonly delivered: boolean; readonly evicted: number};
+
 							const table = yield* where(rows, "the child's row in the process table", (list) =>
 								list.some((row: TableRow) => row.id === spawned.process),
 							);
 							const child = table.find(
 								(entry: TableRow) => entry.id === spawned.process,
 							) as TableRow;
-
-							// The child's session opens on its own after the spawn answers, and a prompt that
-							// lands before it is ready is refused (`promptRefused`), so the send waits for it
-							// the way a window would: off the transport, not off a handle.
-							const childView = yield* page.attachProcess<AiAgentSessionState, AiAgentSessionMsg>(
-								ProcessId.make(spawned.process),
-							);
-							yield* liveWhere(
-								(yield* watch(childView.readProcess)).seen,
-								"the child's session to open",
-								(state) => state.phase === "ready",
-							);
 
 							// An unstamped prompt is refused at the send (#7991). Asserted here because the
 							// alternative is the failure this case used to have: a delivered nobody could
@@ -1023,16 +1021,6 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 								true,
 								"the child's prompt port took a payload carrying no timestamp",
 							);
-
-							const sent = answered(
-								yield* callTool("send", () =>
-									tools.handlers.send({
-										process: spawned.process,
-										port: "prompt",
-										payload: {text: CHILD_PROMPT, key: "child-1", timestamp: Date.now()},
-									}),
-								),
-							) as {readonly delivered: boolean; readonly evicted: number};
 
 							// `read` answers the port's current value, so it is polled rather than waited on:
 							// the transcript is published before the prompt lands and again after the reply.

@@ -1,5 +1,5 @@
 /**
- * The prompts an operator wrote while a turn was running, waiting for that turn to end.
+ * Prompts waiting for startup or a running turn to finish.
  *
  * A composer that offers a "queue" button and a core that refuses every prompt outside `ready` were
  * two halves of one lie: the send was logged as queued, refused as data, and the operator's words
@@ -12,8 +12,8 @@
  *
  * See ADR 0357 (`.decisions/0357-tuval-prompts-queue-during-turn.md`).
  *
- * The queue flushes on exactly one event — the running turn's own end. Anything else that breaks
- * that continuity releases what is queued back to the operator as an unsent send (`./sends.ts`), so
+ * The queue admits its head when startup or a turn ends at `ready`. Losing that session
+ * releases what is queued back to the operator as an unsent send (`./sends.ts`), so
  * one recovery path covers a refused prompt and an abandoned queue alike.
  */
 
