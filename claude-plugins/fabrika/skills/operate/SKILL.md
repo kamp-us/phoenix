@@ -421,7 +421,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
 | a task's own final — `landed`, `shipped`, `diagnosed` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final. `diagnosed` is where an investigation ends — the builder's `SUCCESS-NO-PR`, proven off its diagnosis comment — and it is a finish, never a park: it needs no review, opens no PR, and owes you nothing |
-| `human:budget-spent` | park — step 4. The task spent its whole repair budget on content FAILs. It is an error final carrying a door, so it trips the phase where it sits; its cause is `repair-budget-spent`, which routes to **you**, and its door needs a cleared round behind it — `lane clear`, then the `UNBLOCKED` |
+| `human:budget-spent` | park — step 4. The task spent its whole repair budget on content FAILs. It is an error final carrying a door, so it trips the phase where it sits; its cause is `repair-budget-spent`, which routes to **you** unless the repo's `parkCause.repairBudgetSpent` says `founder`, and its door needs a cleared round behind it — `lane clear`, then the `UNBLOCKED` |
 | `frozen` | park — step 4, and **which** park depends on when the lane was emitted — read the lane's own `workflow.json` to tell: a lane carrying `human:budget-spent` is post-rename, and on it `frozen` is only where an emitted epic child boots, on a board close that was never a landing, so its door leads back to itself and that child is re-emitted rather than resumed. On a lane emitted before the rename — most of the ones on disk — `frozen` is the spent-budget fallthrough instead, and it takes the `human:budget-spent` route above: a granted round, then the `UNBLOCKED`. It is an error final either way, so it trips the phase where it sits and the fold says so |
 | `human:epic-review` | park — step 4. Only a lane emitted before the rename reaches it: it is the epic tail's spent review budget, the same shape as `human:budget-spent` above, so it takes the same route — its door needs a cleared round behind it, `lane clear`, then the `UNBLOCKED` |
 | `human:*` | park — step 4 |
@@ -1587,13 +1587,20 @@ of those hands the founder an engine failure that was never theirs.
 
 **`human:budget-spent` is the one park you clear by typing the grant yourself** — on a lane
 emitted before the rename it wears an older name, `frozen` on a task and `human:epic-review` on an
-epic tail, and those are the same park, cleared here the same way. Its cause routes
-to you, and the authority is a recorded decision in the repository's own corpus — the one that rules
-a spent budget's route out to be the driver's, acting on its own recommendation and logging it. Read
-it before you take the seat the first time; the search is the leaf's name. `recipe unpark` is not the
-way in: the cause carries no remedy, so the recipe table classes this park `Novel` and refuses it
-with the ledger untouched, which is correct. Two calls, in this order, and the second is refused
-without the first:
+epic tail, and those are the same park, cleared here the same way. Whose park it is comes off one
+config setting, `parkCause.repairBudgetSpent`, and nothing else. Read its resolved value with
+`node packages/fabrika-cli/src/bin.ts status settings` — the `parkCause` row — before you take the
+seat:
+
+- `driver` (the shipped value) — the park is yours. You grant the round yourself on your own read,
+  with the two calls below, and the rationale you type is the record of that call.
+- `founder` — the park is a human's, like any founder-routed park. Do not grant: post the park
+  comment below saying a spent repair budget needs a person's call, and end `LANE-PARKED`. `recipe
+  unpark` refuses this park on `12` and names the setting, which is the same answer.
+
+`recipe unpark` is not the way in under `driver` either: the cause carries no remedy, so the recipe
+table classes this park `Novel` and never clears it with a proving read. Two calls, in this order,
+and the second is refused without the first:
 
 ```bash
 node packages/fabrika-cli/src/bin.ts lane clear <lane> --task <task> --rationale "<your own read>"
@@ -1606,16 +1613,20 @@ the PR's FAIL rounds — and only the second stops a builder. `lane clear` grant
 act, posting your `--rationale` on the PR as the grant's dated authorization with the `cap-cleared`
 marker beside it, so the builder you dispatch next proceeds. You never run `build clear` to finish
 the job: that is the founder's verb for a bare PR-side grant with no lane clear behind it, and
-clearing only the lane half is what used to spend a whole shell on budget nobody could read. The
-decision record ruling both halves sits in the repository's own corpus, cited on the founder ruling
-it rests on; the search is this verb's name.
+clearing only the lane half is what used to spend a whole shell on budget nobody could read.
+
+**The pull-request half needs one more thing: the account you run as must be in `capClearAuthors`.**
+`parkCause.repairBudgetSpent` says whose call the round is; `capClearAuthors` says which accounts
+may record a round on a pull request, and its shipped value is empty. So on a lane with a pull
+request, a `driver` setting alone is not enough — `lane clear` refuses the PR half on exit `66` when
+your account is not in that list, and that `66` is the park.
 
 Read the verb's `pr` field rather than assuming which half it bought: `null` is a task with no pull
 request — an epic child, a chore lane — and `cleared`, `held` or `unspent` is what happened on the
 one it found. Two refusals are the PR half's and both leave the log unappended, so nothing is
 half-granted: exit `20` where two open PRs link the task's issue, and `66` where the account you are
-running as may not clear a round on that PR. Neither is yours to override; `66` is the one park here
-that is genuinely the founder's, and `build clear` from their account is the route.
+running as may not clear a round on that PR. Neither is yours to override; on `66` park the task on
+the founder, whose `build clear` from an account in `capClearAuthors` is the route.
 
 `lane clear` derives the round — one call, one round on each side — and refuses a blank rationale,
 because that line is the whole audit the weekly machinery review reads. Decide what the task actually
@@ -1679,8 +1690,8 @@ defective section and points at the verb that owns the repair — `triage repair
 and the who to the parking spawn's report. Clearing a **founder-routed** park is that founder's
 `UNBLOCKED`, recorded through the same `lane transition` verb, and you never record it — with three
 exceptions, all of them keyed on the park's route rather than on your judgment. The first is yours to
-type: `human:budget-spent` above, where you record the `UNBLOCKED` yourself after `lane clear`, on
-the authority of the recorded decision that fence names. The other two are the verb's: on a **known**
+type: `human:budget-spent` above, where you record the `UNBLOCKED` yourself after `lane clear`, when
+`parkCause.repairBudgetSpent` resolves `driver`. The other two are the verb's: on a **known**
 park a recipe verb owns, `recipe unpark` records the `UNBLOCKED` itself, and only after a re-fold
 proves the task left the park; and on a **driver-routed novel** park under exit `23` above, the same
 verb records it on your rationale, with no proving read behind it. Neither is a route out of the
@@ -1893,7 +1904,8 @@ are not error finals. From an error final carrying a door — `human:budget-spen
 and `human:epic-review` on every lane emitted before it was renamed — it needs a recorded `CLEARED`
 behind it first: a bare `UNBLOCKED` is refused on exit `36`, per the park-clearing paragraph in step 4 above. So its promise
 is "the round is granted, then the resume walks" — by you, through `lane clear`, which grants the
-lane's round and its pull request's in one act. A park reported as a
+lane's round and its pull request's in one act, or by a person where `parkCause.repairBudgetSpent`
+is `founder`. A park reported as a
 terminal destroys the caller's routing: the two differ in exactly who acts next. Follow-up
 observations leave through `/report` the moment you see them — never through scope creep in a
 lane you are only driving.

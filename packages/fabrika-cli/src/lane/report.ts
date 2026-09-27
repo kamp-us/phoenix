@@ -12,6 +12,7 @@
  * cause, the lane classes, the wait grant, and {@link floorQueueWait}, the elapsed-time floor a
  * queue re-fold clears before it may spend a wait.
  */
+import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
 import {type CompiledLane, MACHINERY_EVENT, type OperatorEvent, type TaskState} from "./machine.ts";
@@ -617,7 +618,9 @@ export const PARK_CAUSES = {
 	 * has none — the seat an epic child and a chore lane were missing entirely.
 	 *
 	 * Route `driver`: deciding what a stuck task needs next — another round, a re-scope, a park a
-	 * person reads — is the driver's own diagnosis, and only a product call goes past it.
+	 * person reads — is the driver's own diagnosis, and only a product call goes past it. This is the
+	 * one route a repo may re-declare: `parkCause.repairBudgetSpent` decides it, this entry is its
+	 * shipped value, and {@link routeUnder} is where the declared one wins.
 	 */
 	"repair-budget-spent": {
 		meaning:
@@ -750,6 +753,19 @@ export const routeForCause = (cause: string | null): ParkRoute =>
 	cause !== null && Object.hasOwn(PARK_CAUSES, cause)
 		? PARK_CAUSES[cause as ParkCause].route
 		: "founder";
+
+/**
+ * The route a park takes in a repo that declared its `parkCause` — {@link routeForCause}, with the
+ * one route a repo may re-declare read off its config instead of the table.
+ *
+ * Only `repair-budget-spent` is re-declarable, because whose call another round is depends on who
+ * runs the lane, while every other cause's route is a fact about the machinery that parked it.
+ */
+export const routeUnder = (
+	cause: string | null,
+	parkCause: Pick<ParkCauseSurface, "repairBudgetSpent">,
+): ParkRoute =>
+	cause === "repair-budget-spent" ? parkCause.repairBudgetSpent : routeForCause(cause);
 
 /**
  * The verb that removes a cause, read off the one table — the only place a remedy is written down.

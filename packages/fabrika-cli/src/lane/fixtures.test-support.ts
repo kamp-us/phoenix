@@ -3,7 +3,12 @@
  * idiom), and a two-phase document in the /prd-to-tasks shape small enough for a test to mutate.
  */
 import {Effect} from "effect";
-import type {DriverRouted, ParkCauseSurface, Uncaused} from "../config/keys/park-cause.ts";
+import type {
+	DriverRouted,
+	ParkCauseSurface,
+	RepairBudgetSpent,
+	Uncaused,
+} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
 import {answer, type VerbOutcome} from "../verb.ts";
@@ -92,10 +97,11 @@ export interface ProofFacts {
 export const parkCauseRead = (
 	uncaused: Uncaused = "record",
 	driverRouted: DriverRouted = "refuse",
+	repairBudgetSpent: RepairBudgetSpent = "driver",
 ): Read<ParkCauseSurface> => ({
 	_tag: "Value",
-	value: {uncaused, driverRouted},
-	note: `test fixture: parkCause.uncaused = ${uncaused}, parkCause.driverRouted = ${driverRouted}`,
+	value: {uncaused, driverRouted, repairBudgetSpent},
+	note: `test fixture: parkCause.uncaused = ${uncaused}, parkCause.driverRouted = ${driverRouted}, parkCause.repairBudgetSpent = ${repairBudgetSpent}`,
 });
 
 /**

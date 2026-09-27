@@ -402,7 +402,7 @@
 		},
 		"parkCause": {
 			"type": "object",
-			"description": "What this repo does with a lane park that names no cause, and with one whose cause routes to the driver.",
+			"description": "What this repo does with a lane park that names no cause, with one whose cause routes to the driver, and with a spent repair budget.",
 			"properties": {
 				"uncaused": {
 					"type": "string",
@@ -418,6 +418,14 @@
 					"enum": [
 						"refuse",
 						"clear"
+					]
+				},
+				"repairBudgetSpent": {
+					"type": "string",
+					"description": "Whose park a spent repair budget (`repair-budget-spent`) is: `driver` (the driver grants the next round itself with `lane clear`; the pull-request half still needs its account in `capClearAuthors`) or `founder` (the task parks on a human like any founder-routed park).",
+					"enum": [
+						"driver",
+						"founder"
 					]
 				}
 			},
