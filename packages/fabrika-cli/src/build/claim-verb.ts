@@ -70,6 +70,7 @@ import {
 	type IssueRecord,
 	listComments,
 } from "../io/issues.ts";
+import type {IntegrateFailure} from "../lane/integrate-failure.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {issueRefsOf} from "../review/classes.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -98,6 +99,12 @@ import {
 } from "./codes.ts";
 import {readDischargedGate} from "./discharge.ts";
 import {currentBranch, detachHead} from "./git.ts";
+import {
+	type ChildLedger,
+	type IntegrateRound,
+	readIntegrateRound,
+	readLedgerFlags,
+} from "./integrate-round.ts";
 import {composeToken, laneNumber, nonceOf, parseLaneBranch, parseToken} from "./lane.ts";
 import {failing, readRangeVerdicts} from "./range-verdicts.ts";
 import {
@@ -167,6 +174,13 @@ export interface ClaimOptions {
 	 * refuses on one that does.
 	 */
 	readonly resume: boolean;
+	/**
+	 * The epic lane whose ledger records this child's integrate `FAIL` — the brief's `lane` and
+	 * `root`, both or neither. An integrate `FAIL` writes no verdict on the child, so without them a
+	 * child that passed review and failed to integrate reads as finished (`./integrate-round.ts`).
+	 */
+	readonly lane: string | null;
+	readonly laneRoot: string | null;
 }
 
 // `cwd` is dropped with the claim-only fields: the scope fence is `build claim`'s, and confirm /
@@ -183,6 +197,8 @@ export type ProtocolOptions = Omit<
 	| "cwd"
 	| "resume"
 	| "issue"
+	| "lane"
+	| "laneRoot"
 > & {
 	/** The token `build claim` handed this lane — the identity it is asking under. */
 	readonly token: string;
@@ -227,7 +243,22 @@ const readOverride = (reason: string | null, lane: string | null): OverrideRead 
 
 type PriorBuildRead =
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
-	| {readonly _tag: "Read"; readonly notes: ReadonlyArray<string>};
+	| {
+			readonly _tag: "Read";
+			readonly notes: ReadonlyArray<string>;
+			/** The integrate `FAIL` a `--resume` claim was admitted on, or `null`. */
+			readonly integrate: IntegrateFailure | null;
+	  };
+
+/** What each integrate `FAIL` exit leaves a repair builder to fix, in the clause its note quotes. */
+const INTEGRATE_REPAIR: Readonly<Record<IntegrateFailure["exit"], string>> = {
+	42: "the child's range conflicts with the assembly branch",
+	43: "the merged lockfile does not install, or the install rewrote a tracked file",
+	44: "the merged tree fails a code validator — two ranges that each passed alone do not hold together",
+};
+
+const integrateClause = (failure: IntegrateFailure): string =>
+	`lane integrate exit ${failure.exit} against assembly head ${failure.head} (${INTEGRATE_REPAIR[failure.exit]})`;
 
 /**
  * The gate a fresh build claim on an epic child clears: has this child already been built and graded?
@@ -257,6 +288,7 @@ const readPriorBuild = (
 	number: number,
 	resume: boolean,
 	lines: ReadonlyArray<string>,
+	round: {readonly ledger: ChildLedger; readonly failure: IntegrateFailure | null} | null,
 ): Effect.Effect<PriorBuildRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const listed = yield* listComments(repo, number);
@@ -297,22 +329,23 @@ const readPriorBuild = (
 				),
 			};
 		}
-		if (read.standing.length > 0 && !resume) {
+		const integrated = round?.failure ?? null;
+		if ((read.standing.length > 0 || integrated !== null) && !resume) {
 			const graded = read.standing
 				.map((v) => `${v.namespace} ${v.polarity} over ${v.range} (comment ${v.commentId})`)
 				.join("; ");
+			const refusal =
+				failed.length > 0
+					? `${CLAIM}: #${number} already carries a build a reviewer failed — ${graded}. A fresh build would re-implement it; run "fabrika build resume-child ${number}" instead, which takes the repair lane and stands this tree on the branch that build left, in the one order those steps work in. Nothing was written.`
+					: integrated !== null && round !== null
+						? `${CLAIM}: #${number} was built and passed review, then failed to integrate — ${integrateClause(integrated)}. A fresh build would re-implement it; run "fabrika build resume-child ${number} --lane ${round.ledger.lane} --lane-root ${round.ledger.root}" instead, which takes the repair lane and stands this tree on the branch that build left. Nothing was written.`
+						: `${CLAIM}: #${number} is already built and graded — ${graded}. A fresh build would re-implement work a reviewer passed, and there is nothing to repair, so --resume does not apply either. The next step is the epic driver's: fold the branch that build left, then close the child. Nothing was written.`;
 			return {
 				_tag: "Refused" as const,
-				outcome: refuse(
-					PRIOR_BUILD_MISMATCH,
-					failed.length > 0
-						? `${CLAIM}: #${number} already carries a build a reviewer failed — ${graded}. A fresh build would re-implement it; run "fabrika build resume-child ${number}" instead, which takes the repair lane and stands this tree on the branch that build left, in the one order those steps work in. Nothing was written.`
-						: `${CLAIM}: #${number} is already built and graded — ${graded}. A fresh build would re-implement work a reviewer passed, and there is nothing to repair, so --resume does not apply either. The next step is the epic driver's: fold the branch that build left, then close the child. Nothing was written.`,
-					[...lines, ...notes],
-				),
+				outcome: refuse(PRIOR_BUILD_MISMATCH, refusal, [...lines, ...notes]),
 			};
 		}
-		if (failed.length === 0 && resume) {
+		if (failed.length === 0 && integrated === null && resume) {
 			return {
 				_tag: "Refused" as const,
 				outcome: refuse(
@@ -322,18 +355,21 @@ const readPriorBuild = (
 				),
 			};
 		}
+		const repairs = [
+			...failed.map((v) => `the ${v.namespace} FAIL over ${v.range}`),
+			...(integrated === null ? [] : [`the ${integrateClause(integrated)}`]),
+		];
 		return {
 			_tag: "Read" as const,
 			notes: resume
 				? [
 						...notes,
-						`${CLAIM}: resuming the build #${number} already carries — repair the ${failed
-							.map((v) => `${v.namespace} FAIL over ${v.range}`)
-							.join(
-								", ",
-							)} on the branch that build left ("fabrika build branch ${number} --resume-lane"), never a fresh one.`,
+						`${CLAIM}: resuming the build #${number} already carries — repair ${repairs.join(
+							", ",
+						)} on the branch that build left ("fabrika build branch ${number} --resume-lane"), never a fresh one.`,
 					]
 				: notes,
+			integrate: resume ? integrated : null,
 		};
 	});
 
@@ -393,6 +429,9 @@ export const runClaim = (
 		const overrideRead = readOverride(options.override, options.overrideLane);
 		if (overrideRead._tag === "Refused") return overrideRead.outcome;
 		const override = overrideRead.override;
+		const ledgerRead = readLedgerFlags(CLAIM, options.lane, options.laneRoot);
+		if (ledgerRead._tag === "Refused") return ledgerRead.outcome;
+		const ledger = ledgerRead.ledger;
 
 		const ready = yield* preflight(CLAIM, options);
 		if (ready._tag === "Refused") return ready.outcome;
@@ -520,6 +559,14 @@ export const runClaim = (
 		// the work that should happen while its blocker is still open.
 		const gateNotes: string[] = [];
 		const ownTarget = scopeSubjectOf(ready.issue)._tag === "Own";
+		if (ledger !== null && !(ownTarget && purpose === "build" && repair._tag === "NotRepair")) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${CLAIM}: --lane reads an epic child's integrate FAIL, which only a build claim on an issue asks about — drop --lane and --lane-root; nothing was written.`,
+				lines,
+			);
+		}
+		let integrate: IntegrateFailure | null = null;
 		if (ownTarget && purpose !== "build") {
 			gateNotes.push(purposeBlockednessLine(CLAIM, purpose));
 		} else if (ownTarget) {
@@ -547,9 +594,19 @@ export const runClaim = (
 			// fresh build-purpose claim asks — a repair claim names a PR, whose own verdicts
 			// `build verdicts` already folds.
 			if (repair._tag === "NotRepair") {
-				const prior = yield* readPriorBuild(repo, number, options.resume, lines);
+				const round: IntegrateRound | null =
+					ledger === null ? null : yield* readIntegrateRound(CLAIM, ledger, number, lines);
+				if (round?._tag === "Refused") return round.outcome;
+				const prior = yield* readPriorBuild(
+					repo,
+					number,
+					options.resume,
+					[...lines, ...(round === null ? [] : round.notes)],
+					ledger === null || round === null ? null : {ledger, failure: round.failure},
+				);
 				if (prior._tag === "Refused") return prior.outcome;
-				gateNotes.push(...prior.notes);
+				gateNotes.push(...(round === null ? [] : round.notes), ...prior.notes);
+				integrate = prior.integrate;
 			}
 		}
 
@@ -621,6 +678,7 @@ export const runClaim = (
 					purpose,
 					...(override === null ? {} : {override}),
 					...(citation._tag === "Cited" ? {cites: citation.url} : {}),
+					...(integrate === null ? {} : {integrate}),
 				}),
 				notes,
 			);

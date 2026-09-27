@@ -823,10 +823,26 @@ child opens none — so a child at its cap escalates to the driver, whose `lane 
 grant against the lane's own log instead. That is still not yours to run: you escalate, the driver
 diagnoses, and a granted round arrives as a fresh spawn.
 
-**A standing `PASS` refuses the same way and has no repair route.** That child is built,
+**A standing `PASS` refuses the same way and has no repair route** — unless the child then failed
+`lane integrate`, below. That child is built,
 graded and waiting on the epic driver's fold, so `--resume` is not the answer — it refuses on `31`
 too, saying to drop the flag. Nothing here is yours to build: report the refusal, and the fold and
 the close are the driver's. `--override` reaches neither polarity; this was never a scope question.
+
+**A child that passed review and then failed `lane integrate` is a repair, and only the ledger says
+so.** An integrate `FAIL` (exit `42`, `43` or `44`) writes no verdict on the child, so its comments
+read every verdict `PASS`. The driver records the `FAIL` on the lane's ledger with its exit and the
+assembly head it failed against, and the claim reads it there. So **on an epic child, always pass
+your brief's `lane` and `root`** to `build claim` and `build resume-child` as
+`--lane <lane> --lane-root <root>`. Without them the claim cannot see the `FAIL`, and it sends you
+to the driver's fold instead of the repair the machine routed you to. With them, a fresh claim
+refuses on `31` naming the integrate exit and head and pointing at
+`build resume-child <n> --lane <lane> --lane-root <root>`, and that entry opens the repair, printing
+`"integrate":{"exit","head"}` in its answer. There is no verdict for `verdicts --issue` to print, so
+that pair is your finding: `42` is a conflict with the assembly branch, `43` a lockfile the merged
+tree cannot install, `44` a validator the merged tree fails. Make the range hold on that head, then
+`build check`, `build commit` and `BUILT-NO-PR` as for any child repair. A later `DONE` retires the
+`FAIL`, so a lane that already repaired it refuses `--resume` on `31` like any finished child.
 
 ## Expectations you hold but never recompute
 
