@@ -1,0 +1,17 @@
+{
+	"checks": 2858,
+	"cp-approval": 1315,
+	"disarm": 811,
+	"enqueue": 1768,
+	"floor": 1823,
+	"floor-batch": 807,
+	"gate": 2266,
+	"merge": 1531,
+	"note": 593,
+	"nudge": 862,
+	"reconcile": 728,
+	"release": 1391,
+	"resolve": 841,
+	"scope": 1872,
+	"threads": 695
+}
