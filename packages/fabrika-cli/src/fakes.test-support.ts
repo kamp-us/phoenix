@@ -617,10 +617,16 @@ tags: []
 **Something is decided.** ${extra}
 `;
 
-/** One scripted HTTP answer. `headers` is where a `Link` completeness proof is scripted. */
+/**
+ * One scripted HTTP answer. `headers` is where a `Link` completeness proof is scripted. When the
+ * caller under test reads the response as BYTES (`restBytes` — a zip artifact), script `bytes`
+ * instead of `body`: UTF-8 round-tripping binary through a string corrupts the payload the
+ * magic-byte check is supposed to judge.
+ */
 export interface HttpReply {
 	readonly status: number;
 	readonly body: string;
+	readonly bytes?: Uint8Array | undefined;
 	readonly headers?: Readonly<Record<string, string>> | undefined;
 }
 
@@ -684,7 +690,7 @@ export const fakeHttp = (
 					request,
 					// undici throws on a body at a null-body status, so `204` — what GitHub answers a
 					// successful delete with — is only scriptable if the body is dropped here.
-					new Response(NULL_BODY_STATUSES.has(reply.status) ? null : reply.body, {
+					new Response(NULL_BODY_STATUSES.has(reply.status) ? null : (reply.bytes ?? reply.body), {
 						status: reply.status,
 						headers: {...reply.headers},
 					}),

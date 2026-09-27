@@ -1,0 +1,161 @@
+name: skill-evidence-guard
+
+# The skill-evidence gate (ADR 0406, founder ruling 2026-09-21): a change to a
+# skill under claude-plugins/fabrika/skills must carry committed benchmark
+# evidence — produced by the trusted in-repo producer workflow — proving the
+# skill's benefit vs a baseline at the PR's exact skill content. The rule lives
+# once in the verb (`fabrika guard skill-evidence-guard check`), never
+# re-derived here.
+#
+# ACTIVATION STATUS: advisory until the founder adds the job name
+# `skill benchmark evidence` to the main-protection ruleset. The producer
+# workflow (.github/workflows/skill-benchmark.yml) is a follow-up child — until
+# it exists, every real skill change reds for missing evidence (no producer,
+# no import; that is the point).
+on:
+  # No `push: main` (.patterns/repo-wide-gates-run-on-main.md): this gate's
+  # scope IS the diff (`git diff base...HEAD`), so a `main` run would re-judge
+  # history rather than the change under review.
+  pull_request:
+  # `skill benchmark evidence` is destined to be a branch-protection-REQUIRED
+  # status check, and the merge queue is ALLGREEN: without this trigger that
+  # required check never runs on the batched `merge_group` ref and every queued
+  # merge hangs (ADR 0132; #6968).
+  merge_group:
+  # Release-PR re-dispatch parity (#5718): the standing Release PR's branch is
+  # pushed by release-please with `secrets.GITHUB_TOKEN`, and an event raised
+  # with that token creates no workflow run — so `pull_request` above never
+  # fires there. `workflow_dispatch` always creates a run whatever token raised
+  # it. See the base resolution below for the diff basis a dispatched run uses.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+  # The verb reads GET /repos/<repo>/actions/runs/<runId> with the job token to
+  # verify the evidence's provenance.
+  actions: read
+
+jobs:
+  check:
+    name: skill benchmark evidence
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Full history so the base...head diff and the verb's git reads (skill
+      # trees at base/head, benchmark-commit reachability) resolve; the default
+      # shallow checkout has no merge-base for the comparison below.
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # base...head = files this change adds/changes/deletes vs the merge-base
+      # with the target branch. Unlike leak-guard, deletions count (ACMRD): a
+      # REMOVED skill needs no evidence but must be recorded in the verdict, and
+      # a deleted file inside a surviving skill must reach the typo arithmetic.
+      #
+      # On `pull_request` the base is `github.base_ref` (the target branch). On
+      # the merge queue's batched `merge_group` ref `base_ref` is empty, so we
+      # diff against the batch's `merge_group.base_sha` — the base commit the
+      # queue built the batch on (ADR 0132) — which yields exactly the files the
+      # batch adds vs main.
+      #
+      # On `workflow_dispatch` (#5718) BOTH are empty: a dispatch carries a ref,
+      # not a base. The dispatched ref is a branch targeting `main`, so `main`
+      # is the base, and the three-dot `<base>...HEAD` below already resolves it
+      # to the merge-base — the same file set the `pull_request` arm would
+      # judge. Ordering matters: `merge_group.base_sha` is tested for CONTENT
+      # rather than assumed from the event, so an empty one can never reach
+      # `git fetch origin ""` and judge against a base of nothing.
+      #
+      # HEAD is the commit the evidence must attest — the PR head on
+      # `pull_request`, the batch head on `merge_group` (`pull_request.head.sha`
+      # is empty there), the dispatched ref's head on `workflow_dispatch` (both
+      # event heads are empty there and `github.sha` IS the ref's head). The
+      # dispatch arm leads and tests `event_name` rather than trailing the `||`
+      # chain: falling through to `github.sha` would bind a `pull_request` run
+      # to the synthetic merge ref the moment `pull_request.head.sha` came back
+      # empty (run-evidence.yml's precedent).
+      - name: Check skill evidence over the PR diff
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "${HEAD_SHA:-}" ]; then
+            echo "::error::HEAD_SHA is empty on a '${{ github.event_name }}' event — refusing to judge evidence bound to no commit."
+            exit 1
+          fi
+          if [ -n "$BASE_REF" ]; then
+            # Full-depth, like the else arm: a --depth=1 fetch of a tip that advanced
+            # since checkout grafts it at its depth boundary (.git/shallow), leaving no
+            # merge base for the three-dot diff below (#4508; run 34000979042). Full
+            # history is already checked out, so nothing is lost by fetching it all.
+            git fetch --no-tags origin "$BASE_REF"
+            base="origin/$BASE_REF"
+          elif [ -n "$MERGE_GROUP_BASE_SHA" ]; then
+            git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+            base="$MERGE_GROUP_BASE_SHA"
+          else
+            # FETCH_HEAD and not `origin/main`: actions/checkout pins `remote.origin.fetch` to
+            # the ref it checked out, so a fetch of a DIFFERENT branch need not update that
+            # branch's remote-tracking ref, and `origin/main` can name nothing here. No
+            # `--depth` either — a shallow main has no merge base for the three-dot below.
+            git fetch --no-tags origin main
+            # `--verify`, and the resolution read inside an `if`: plain `git rev-parse` on an
+            # unresolvable ref prints the ref back on stdout and exits 128, so an
+            # emptiness test downstream would see a non-empty base and judge against
+            # nothing. `--verify` refuses instead, and the `if` is what lets this step say
+            # so rather than take the runner's bare errexit abort.
+            if ! base=$(git rev-parse --verify FETCH_HEAD); then
+              echo "::error::could not resolve a diff base from origin/main — refusing to report a clean gate over a base of nothing."
+              exit 1
+            fi
+          fi
+          # `if !` capture, not process substitution: under the runner's `bash -e`, a
+          # failing git diff inside `< <(…)` is invisible to errexit — mapfile exits 0
+          # and an unreadable diff reads as "No changed files" (#4508; observed live
+          # 2026-09-06, run 34000979042: the shallow main tip had no merge base with
+          # the merge ref, `git diff` died 128 inside the substitution, and the job
+          # went green over a diff that was never computed).
+          # The diff binds to $HEAD_SHA, NOT the checked-out HEAD: on `pull_request`
+          # the checkout is the synthetic merge ref while the verb audits trees and
+          # reports at $HEAD_SHA (the PR head). Scope and audit must name the same
+          # commit, or the diff's files and the audited content can diverge.
+          if ! diff_raw=$(git diff --name-only --diff-filter=ACMRD "$base...$HEAD_SHA"); then
+            echo "::error::git diff $base...$HEAD_SHA failed — refusing to report a clean gate over a diff that did not run."
+            exit 1
+          fi
+          changed=()
+          if [ -n "$diff_raw" ]; then
+            mapfile -t changed <<< "$diff_raw"
+          fi
+          if [ "${#changed[@]}" -eq 0 ]; then
+            echo "No changed files — nothing to gate."
+            exit 0
+          fi
+          printf 'Judging %d changed file(s):\n' "${#changed[@]}"
+          printf '  %s\n' "${changed[@]}"
+          # Non-zero when a gated skill lacks evidence, the evidence is stale or
+          # mis-provenanced, or a threshold fails (12), or a read the verdict
+          # rests on failed — policy, report, git, GitHub API (11). An empty
+          # file list reds too (7), though the empty-diff gate above means a
+          # live run reaches the verb with files. A diff touching no skill
+          # under the skills root is a clean skip (0). Report on stderr.
+          node packages/fabrika-cli/src/bin.ts guard skill-evidence-guard check \
+            --base "$base" --head "$HEAD_SHA" --repo "${{ github.repository }}" "${changed[@]}"
