@@ -1,7 +1,7 @@
 ---
 id: 0386
 title: Worktree accumulation is bounded at provisioning, by the sweep that creates one
-status: accepted
+status: amended-in-part by [0427](0427-retire-unlocks-a-released-worktree.md)
 date: 2026-09-10
 tags: [fabrika, pipeline-hardening, worktree, isolation]
 ---

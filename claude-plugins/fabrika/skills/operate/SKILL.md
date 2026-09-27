@@ -1081,8 +1081,9 @@ this order:
   lane branch checked out, which refuses the next repair round's `build branch --resume-lane` on
   exit `11`. The verb does the two dead-spawn steps in their order —
   salvage the tree's uncommitted work onto its own branch, then `git worktree remove` **without
-  `--force`**, and a remove that still refuses is an incident to file through
-  [`report`](../report/SKILL.md), never a force — and it removes nothing it holds no license for:
+  `--force`**, releasing a harness lock first on a tree it has licensed, because a lock is not
+  content. A remove that still refuses is an incident to file through
+  [`report`](../report/SKILL.md), never a force. The verb removes nothing it holds no license for:
   the ticket is terminal, or an adopt marker names the holding lane's session as gone, or **no claim
   marker holds that lane at all** — which is the state the release above just created, so the two
   steps compose in this order. That last arm is the

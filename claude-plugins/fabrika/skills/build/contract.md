@@ -1651,8 +1651,11 @@ carries holds before the tree is read at all.
 **Dirtiness is not a refusal.** An agent routinely leaves a worktree dirty after its ticket merged,
 and it costs nobody their only copy either: the salvage runs first, committing whatever the tree
 holds uncommitted onto its own branch, and only then is the tree removed **without `--force`**,
-which is banned on every path. A removal that still refuses (a locked tree does, however clean) is
-reported as an incident to file, never overridden. The removal takes the tree, never the branch. It
+which is banned on every path. A tree the harness locked is unlocked just before that plain remove,
+under the same license that released it: a lock is a harness artifact, not content, and a plain
+remove still refuses a tree holding anything unaccounted for. A held tree is never unlocked, and an
+unlock git refuses removes nothing. A removal that still refuses is reported as an incident to
+file, never overridden. The removal takes the tree, never the branch. It
 first prunes registrations whose directory is already gone, never removes the tree the run is
 standing in, and reads every removal back off a second worktree list.
 
@@ -1660,14 +1663,14 @@ A worktree-isolated caller may run it: the harness rule that refuses a typed cro
 not bind a verb's own child process.
 
 **Output** — machine, one JSON object:
-`{"answer": "retired" | "held" | "none", "number": n, "retired": […], "held": […]}`.
+`{"answer": "retired" | "held" | "none", "number": n, "retired": [{"path", "branch", "license", "salvaged", "unlocked"}…], "held": […]}`.
 
 **Exit status** (beyond the universal four)
 
 | Code | Trigger |
 |---|---|
 | `7` | `#<n>` is proven absent |
-| `8` | the salvage or the removal failed — UNKNOWN |
+| `8` | the salvage, the unlock or the removal failed — UNKNOWN |
 | `9` | git reported a removal and the registration survives |
 | `11` | a precondition read failed, including an unclaimed tree's status or its stranded-commit count |
 | `33` | a tree still holds the branch and no license releases it |
