@@ -43,6 +43,13 @@ const MIGRATED_ROOTED_VERBS = [
 	"refresh",
 	"push",
 	"stale",
+	"attach-integrate",
+	"seats",
+	"migrate",
+	"reconcile",
+	"recover",
+	"archive",
+	"settle",
 ] as const;
 
 /** Every verb whose help points at the operate contract, and so needs its section there. */
@@ -52,10 +59,11 @@ const CONTRACT_VERBS = [
 	"assembly-pr",
 	"assembly-body",
 	"retrigger",
+	"claim",
+	"release",
+	"adopt",
+	"scratch",
 ] as const;
-
-/** Rooted verbs still carrying the derivation prose in help, until their migration lands. */
-const ROOTED_VERBS = ["seats", "migrate"] as const;
 
 const leafNamed = (name: string): DescribedCommand => {
 	const leaf = leaves.find((candidate) => candidate.name === name);
@@ -72,18 +80,6 @@ const flagHelp = (leaf: DescribedCommand): string => {
 
 describe("the lane group's repository-root help contract", () => {
 	it.each(
-		ROOTED_VERBS,
-	)("lane %s describes repository derivation and both refusal seats", (name) => {
-		const description = leafNamed(name).description ?? "";
-
-		expect(description).toContain("owning repository");
-		expect(description).toContain("derive the default lanes root");
-		expect(description).toContain("unreadable repository identity is UNKNOWN at 11");
-		expect(description).not.toContain("neither .fabrika nor .git");
-		expect(description).not.toContain("relative lanes root");
-	});
-
-	it.each(
 		MIGRATED_ROOTED_VERBS,
 	)("lane %s names both lanes-root refusals on its own exit lines", (name) => {
 		const lines = (leafNamed(name).description ?? "").split("\n");
@@ -92,10 +88,9 @@ describe("the lane group's repository-root help contract", () => {
 		expect(lines).toContain(`  65: ${ROOT_EXITS[65]}`);
 	});
 
-	it.each([
-		...MIGRATED_ROOTED_VERBS,
-		...ROOTED_VERBS,
-	])("lane %s advertises the shared repository-owned --root default", (name) => {
+	it.each(
+		MIGRATED_ROOTED_VERBS,
+	)("lane %s advertises the shared repository-owned --root default", (name) => {
 		const help = flagHelp(leafNamed(name));
 
 		expect(help).toContain("the owning repository's .fabrika/lanes");
