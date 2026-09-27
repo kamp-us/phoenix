@@ -195,6 +195,8 @@ export interface WireProgram {
 	 */
 	readonly inspector?: RendererRef;
 	readonly status?: RendererRef;
+	/** The row's `folderAtStart`: the page offers it once per open project (#9694). */
+	readonly folderAtStart?: true;
 }
 
 /**
@@ -401,7 +403,8 @@ export const isWireProgram = (value: unknown): value is WireProgram =>
 	// Absent is legal, present must be a reference: an `inspector` key carrying junk is a malformed
 	// frame, not a program that declares no inspector.
 	(value.inspector === undefined || isRendererRef(value.inspector)) &&
-	(value.status === undefined || isRendererRef(value.status));
+	(value.status === undefined || isRendererRef(value.status)) &&
+	(value.folderAtStart === undefined || value.folderAtStart === true);
 
 export const isRegistryFrame = (value: unknown): value is RegistryFrame =>
 	Predicate.isObject(value) &&

@@ -24,7 +24,7 @@ import {noSelfReport} from "@kampus/tuval-sdk/kernel/process/self-report";
 import {type AnyProgram, ProgramId, programLabel} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Layer, Option, Schema, Stream} from "effect";
 import {expect} from "vitest";
-import config from "../../.tuval/tuval.config.ts";
+import config from "../../global/tuval.config.ts";
 import {prReview, prReviewProgram} from "./pr-review.ts";
 
 const source = readFileSync(resolve(import.meta.dirname, "pr-review.ts"), "utf8");
@@ -34,12 +34,11 @@ const body = source.slice(source.indexOf("*/") + 2).split("\n");
 
 /**
  * The reviewer the example is actually registered with: a *shipped* row, built the way
- * `.tuval/tuval.config.ts` builds it. `codexSession` composes its layer lazily, so the row exists
+ * `global/tuval.config.ts` builds it. `codexSession` composes its layer lazily, so the row exists
  * without the Codex CLI or any SDK behind it, and this is the row the structural check runs on —
  * not a fixture standing in for one (#8887).
  */
 const codexReviewer = codexSession({
-	cwd: "/tmp/tuval-pr-review-test",
 	scope: {workspace: WorkspaceId.make("tuval/test"), client: ClientId.make("tuval/test")},
 });
 
@@ -232,6 +231,7 @@ describe("authoring.example.pr-review, registered", () => {
 		expect(config.features?.prReviewExample).toBe(false);
 		const ids = config.programs.map((row) => (row as AnyProgram).id);
 		expect(ids).not.toContain("pr-review");
-		expect(config.graph.nodes.map((node) => node.program)).not.toContain("pr-review");
+		// The global layer plans nothing, so no graph node can start the row behind the flag's back.
+		expect("graph" in config).toBe(false);
 	});
 });

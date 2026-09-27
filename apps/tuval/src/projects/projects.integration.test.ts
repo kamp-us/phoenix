@@ -409,3 +409,39 @@ describe("the first open of a folder", () => {
 		TIMEOUT,
 	);
 });
+
+describe("the folder a process runs in (#9694)", () => {
+	/** The folder the process at `id` wrote into its state, once it has written one. */
+	const folderOf = (kernel: Context.Context<Kernel>, id: string) =>
+		eventually(
+			`process ${id} to report its folder`,
+			Context.get(kernel, ProcessTable)
+				.get(ProcessId.make(id))
+				.pipe(
+					Effect.map(
+						(row) => (row.stateSummary().state as {readonly folder: string | null}).folder,
+					),
+				),
+			(folder) => folder !== null,
+		);
+
+	it.live(
+		"is the home folder for the desk's own programs and each project's folder for its programs",
+		() =>
+			Effect.gen(function* () {
+				const home = scratchHome("projects-folder");
+				const first = projectWith("folder-probe");
+				const second = projectWith("folder-probe");
+				yield* saveOpenProjects(home, OpenProjects.none.trust(second));
+				const {kernel} = yield* boot({global: fixture("folder-probe"), project: first, home});
+
+				assert.strictEqual(yield* folderOf(kernel, "probe"), home);
+				assert.strictEqual(yield* folderOf(kernel, ProjectId.of(first).scope("probe")), first);
+
+				const opened = yield* spell(kernel, ["project", "open"], {folder: second});
+				assert.isTrue(opened.ok, JSON.stringify(opened));
+				assert.strictEqual(yield* folderOf(kernel, ProjectId.of(second).scope("probe")), second);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		TIMEOUT,
+	);
+});

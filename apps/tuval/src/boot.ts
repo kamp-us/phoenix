@@ -28,6 +28,7 @@ import {PlannedProcesses} from "@kampus/tuval-sdk/kernel/process/PlannedProcesse
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import type {ProcessHandle} from "@kampus/tuval-sdk/kernel/process/process";
+import {WorkingFolder} from "@kampus/tuval-sdk/kernel/process/working-folder";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry, RegistryRows} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {scopedIdParts} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
@@ -287,11 +288,15 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	// layer inside the merge above would be asking for itself.
 	const listing = Context.add(built, AiAgentSessionList, aiAgentSessionListKernel(built));
 	const transcripts = Context.add(listing, AiAgentTranscripts, aiAgentTranscriptsKernel(listing));
-	const kernel = Context.add(
+	const services = Context.add(
 		Context.add(transcripts, Projects, desk?.service ?? Projects.none),
 		TrustPrompts,
 		prompts,
 	);
+	// The desk's own processes run in the home folder, and so does whatever they start without
+	// naming another; a project's processes run in its folder instead (#9694).
+	const kernel =
+		projects === undefined ? services : Context.add(services, WorkingFolder, {path: projects.home});
 	yield* Deferred.succeed(filled, kernel);
 	// The kernel reaches a process's handlers on one route only, the `services` argument: a handler
 	// is sealed to its spawn set, so the ambient a spawner is called under can no longer stand in

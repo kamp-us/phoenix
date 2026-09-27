@@ -27,6 +27,11 @@ export class ProjectLabels {
 		return new ProjectLabels(new Map([...labels].map(({key, label}) => [key, label])));
 	}
 
+	/** Every open project's label, in the order the projects opened: what the picker offers (#9694). */
+	get all(): ReadonlyArray<ProjectLabel> {
+		return [...this.byKey].map(([key, label]) => ({key, label}));
+	}
+
 	/**
 	 * The label of the open project that owns `programId`. `null` for a global program, whose id is
 	 * bare, and for a project that has already closed while one of its processes is still stopping.

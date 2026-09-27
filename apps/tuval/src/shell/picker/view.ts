@@ -17,7 +17,7 @@ import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {normalize} from "@kampus/tuval-ui/keys";
 import {Result} from "effect";
-import {flatten, type PickerEntries, type PickerEntry} from "./entries.ts";
+import {flatten, groupKeyOf, type PickerEntries, type PickerEntry} from "./entries.ts";
 import {type PickerFilter, visibleEntries} from "./filter.ts";
 import {attachProcess, intentOf, type PickerIntent} from "./intent.ts";
 import {isPickerRefusal, type PickerRefusal} from "./refusal.ts";
@@ -156,6 +156,8 @@ const ignored: PickerKeyAnswer = {_tag: "Ignored"};
 
 const DOWN = ["<arrowdown>", "j", "<c-n>", "<tab>"];
 const UP = ["<arrowup>", "k", "<c-p>", "<s-tab>"];
+const NEXT_GROUP = ["<pagedown>"];
+const PREVIOUS_GROUP = ["<pageup>"];
 const FIRST = ["<home>", "g"];
 const LAST = ["<end>", "G"];
 const CHOOSE = ["<enter>", "<space>"];
@@ -185,6 +187,24 @@ export const noPickerKeyFeatures: PickerKeyFeatures = {processRemove: false};
 /** The keys these flags leave standing, empty for every flag that is off. */
 const removeKeysFor = (features: PickerKeyFeatures): ReadonlyArray<string> =>
 	features.processRemove ? REMOVE : [];
+
+/**
+ * Where Page Down and Page Up land (#9694): the first row of the next group, or of the group the
+ * cursor is in when it is past that group's first row, else of the previous group. With four
+ * harnesses in ten projects a group is a project, so this walks project by project. It clamps like
+ * every other move.
+ */
+const groupJump = (
+	rows: ReadonlyArray<PickerEntry>,
+	at: number,
+	direction: "next" | "previous",
+): number => {
+	const starts = rows.flatMap((row, index) =>
+		index === 0 || groupKeyOf(row) !== groupKeyOf(rows[index - 1] as PickerEntry) ? [index] : [],
+	);
+	if (direction === "next") return starts.find((start) => start > at) ?? at;
+	return [...starts].reverse().find((start) => start < at) ?? at;
+};
 
 /**
  * The one move. A move onto the row already under the cursor keeps a showing refusal, because
@@ -235,6 +255,9 @@ export const pickerKey = (
 
 	if (DOWN.includes(pressed)) return moveTo(clamp(at + 1, rows.length));
 	if (UP.includes(pressed)) return moveTo(clamp(at - 1, rows.length));
+	if (NEXT_GROUP.includes(pressed) || PREVIOUS_GROUP.includes(pressed)) {
+		return moveTo(groupJump(rows, at, NEXT_GROUP.includes(pressed) ? "next" : "previous"));
+	}
 	if (FIRST.includes(pressed)) return moveTo(0);
 	if (LAST.includes(pressed)) return moveTo(clamp(rows.length - 1, rows.length));
 	if (FILTER.includes(pressed)) {

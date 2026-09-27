@@ -50,6 +50,7 @@ import {
 	zoom,
 } from "../layout/index.ts";
 import type {ProgramOpening} from "../picker/intent.ts";
+import type {SessionPlace} from "../picker/place.ts";
 import {mountPicker} from "../picker/view.ts";
 import {
 	activeWorkspace,
@@ -94,6 +95,7 @@ export type KernelCmd =
 			readonly windowId: WindowId;
 			readonly programId: string;
 			readonly session?: ProgramOpening;
+			readonly place?: SessionPlace;
 			readonly view?: ViewState;
 	  }
 	| {
@@ -189,6 +191,8 @@ export type ShellMsg =
 			readonly windowId?: WindowId;
 			/** The session this open is for, when it is for one (`../picker/intent.ts`). */
 			readonly session?: ProgramOpening;
+			/** The folder a row that takes its folder at start opens in (`../picker/place.ts`). */
+			readonly place?: SessionPlace;
 	  }
 	| {
 			readonly type: "window.attach";
@@ -672,6 +676,7 @@ export const cellsFor = (
 								windowId: target,
 								programId: msg.programId,
 								...(msg.session === undefined ? {} : {session: msg.session}),
+								...(msg.place === undefined ? {} : {place: msg.place}),
 								...viewOf(state, target),
 							},
 						],

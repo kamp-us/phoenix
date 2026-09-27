@@ -24,3 +24,4 @@ export {
 	TITLE_PORT,
 	titlePort,
 } from "./self-report.ts";
+export {WorkingFolder} from "./working-folder.ts";

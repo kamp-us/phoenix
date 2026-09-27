@@ -126,6 +126,7 @@ describe("picker frame", () => {
 	it("publishes the keys it answers to, so the surface never invents its own help", () => {
 		expect(pickerFrame(window, entries, mountPicker()).keyHelp.map((row) => row.action)).toEqual([
 			"Move between rows",
+			"Jump to the previous or next group",
 			"Jump to the first or last row",
 			"Filter the rows by typing",
 			"Open or attach the highlighted row",

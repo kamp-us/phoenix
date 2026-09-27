@@ -15,9 +15,9 @@
  * entry and the key never stops there.
  *
  * The filter `/` opens is the one exception, and it is the command line's own shape (#8450): while
- * it holds focus the desk leaves it every press (`./text-entry.ts`), so the four keys the picker
- * still owns there — Enter, Escape and the two arrows — are read off the input's own `onKeyDown`
- * and answered by the same `pickerKey`. That is a React prop, not a second document listener.
+ * it holds focus the desk leaves it every press (`./text-entry.ts`), so the six keys the picker
+ * still owns there — Enter, Escape, the two arrows, Page Up and Page Down — are read off the
+ * input's own `onKeyDown` and answered by the same `pickerKey`. That is a React prop, not a second document listener.
  */
 
 import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
@@ -50,6 +50,8 @@ const FILTER_KEYS: Readonly<Record<string, string>> = {
 	Escape: "<escape>",
 	ArrowDown: "<arrowdown>",
 	ArrowUp: "<arrowup>",
+	PageDown: "<pagedown>",
+	PageUp: "<pageup>",
 };
 
 export interface PickerViewProps {
@@ -150,7 +152,12 @@ export function PickerView({
 				case "Chose":
 					dispatch(
 						answer.intent._tag === "OpenProgram"
-							? {type: "window.open", windowId, programId: answer.intent.programId}
+							? {
+									type: "window.open",
+									windowId,
+									programId: answer.intent.programId,
+									...(answer.intent.place === undefined ? {} : {place: answer.intent.place}),
+								}
 							: {type: "window.attach", windowId, processId: answer.intent.processId},
 					);
 					return;
@@ -164,7 +171,7 @@ export function PickerView({
 		[dispatch, windowId],
 	);
 
-	// The caret is in the filter, so the desk left this press here (`./text-entry.ts`). Only the four
+	// The caret is in the filter, so the desk left this press here (`./text-entry.ts`). Only the six
 	// keys the picker still owns are taken; every other one — `j`, `k`, `g`, `G` included — is a
 	// character the operator is typing and stays the input's.
 	const onFilterKeyDown = useCallback(

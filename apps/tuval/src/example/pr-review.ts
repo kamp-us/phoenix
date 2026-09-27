@@ -6,7 +6,7 @@
  *
  * It imports no other program's package. The reviewer arrives as an arg typed by its ports alone
  * (`Program.shape`), so this module names no reviewer and drags in no reviewer's SDK (R15.1); which
- * program fills it is `.tuval/tuval.config.ts`'s call, and `prReview` below is that call — it names
+ * program fills it is `global/tuval.config.ts`'s call, and `prReview` below is that call — it names
  * the reviewer this registration hands the arg, and the row's label says so.
  *
  * That call is `defineProgram`'s `fill`: the reviewer the config chose is checked against the

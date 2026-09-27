@@ -293,6 +293,13 @@ export interface Program<
 	 * becomes is the program's own Msg, and the shell never reads it.
 	 */
 	readonly takesKeys?: true;
+	/**
+	 * A process of this program takes its folder when it starts, from what started it, and not from
+	 * this row (#9694). Only `true` or absent. The picker offers such a row once per open project,
+	 * or once for the home folder when none is open, and the entry chosen names the folder
+	 * (`../process/working-folder.ts`). A row that fixes its own folder omits it.
+	 */
+	readonly folderAtStart?: true;
 	readonly renderer?: RendererRef;
 	/**
 	 * The two desk-level renderers, both optional: what this program shows in the desk inspector,

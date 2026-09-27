@@ -96,7 +96,8 @@ export type AiAgentSessionCmd =
 	 * from blocking on the session: the real `aiAgent.start` runs on the process's own tail after
 	 * the spawn has returned, rather than inside it.
 	 */
-	| {readonly type: "aiAgent.boot"; readonly cwd: string}
+	/** `cwd` is the row's own folder, or `null` for a row that takes its folder at start (#9694). */
+	| {readonly type: "aiAgent.boot"; readonly cwd: string | null}
 	| {
 			readonly type: "aiAgent.start";
 			readonly cwd: string;
