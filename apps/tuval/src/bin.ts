@@ -105,6 +105,11 @@ const tuval = Command.make(
 		}
 		// A program outside its SDK range costs that program and nothing else (#9686).
 		for (const refusal of report.refused) yield* Console.log(`tuval: ${refusal.message}`);
+		// The projects that were open when the desk last stopped (#9688). A folder that is gone or no
+		// longer trusted costs that folder and nothing else.
+		for (const folder of report.reopened)
+			yield* Console.log(`tuval: reopened the project ${folder}`);
+		for (const skip of report.skipped) yield* Console.log(`tuval: ${skip.message}`);
 		const rows = yield* ProcessTablePort.use((port) => port.rows).pipe(
 			Effect.provideContext(kernel),
 		);

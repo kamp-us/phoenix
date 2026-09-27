@@ -209,6 +209,8 @@ describe("boot", () => {
 					bindingCount: 0,
 					bindingErrors: [],
 					refused: [],
+					reopened: [],
+					skipped: [],
 					stateDir: homeStateDir(project, home),
 					adopted: {moved: [], kept: [], unowned: []},
 					scoped: {moved: []},
