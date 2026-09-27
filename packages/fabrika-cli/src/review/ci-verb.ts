@@ -248,9 +248,11 @@ export const runCi = (
 				scannedLine(VERB, runs.length, "check run", `${declared} declared`),
 			];
 			if (declared === 0) {
-				// The producer question is asked HERE and nowhere else on this path: an enumeration that
-				// returned runs already proves a producer. Empty is the one reading where "no CI at all"
-				// and "nothing has reported yet" are two different repos wearing one answer.
+				// The producer question is asked HERE and nowhere else on this path. A run proves no
+				// producer, since a platform `dynamic/*` workflow reports runs too; a non-empty
+				// enumeration skips the question, and gate coverage names the repo that authors nothing
+				// (`NoGates`). Empty is the one reading where "no CI at all" and "nothing has reported
+				// yet" are two different repos wearing one answer.
 				const inventory = yield* listWorkflowPaths(repo);
 				if (inventory._tag === "Failure") {
 					return done(

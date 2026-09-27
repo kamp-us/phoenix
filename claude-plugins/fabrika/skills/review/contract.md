@@ -824,15 +824,16 @@ is `red`, never silently dropped.
 
 **An empty enumeration asks one further question: does this repo produce CI at all?** The two
 facts are different and no longer share an answer — a repo whose checks have not reported yet is
-still going to report, and a repo with no Actions workflows never will. The evidence is the
+still going to report, and a repo with no workflow of its own never will. The evidence is the
 workflow *inventory* and nothing else: **existence is the whole test, and nothing inspects what a
 workflow does**. A producer is a workflow the repo authors itself, a `.github/workflows/*` path:
 the `dynamic/<provider>/<name>` entries the platform lists on the repo's behalf (default CodeQL
 setup, Dependabot, the Copilot reviewer) do not count. Zero repo-authored workflows refuses on
 `7`, unless the repo declares `ci.noProducer: "degrade"` in `.fabrika.jsonc`, which rolls up
 `no-producer` at exit `0` with `run\t0` — its own token, never `green` and never `pending`. The
-inventory is read only when the enumeration came back empty: a check run that reported already
-proves a producer.
+inventory is read only when the enumeration came back empty. A check run that reported proves no
+producer, because a `dynamic/*` workflow reports runs too: a non-empty enumeration skips the
+producer question, and gate coverage below names the repo that authors no workflow of its own.
 
 **A passing check set is not gate coverage, and the verb no longer lets the two share a word.**
 A complete, all-green enumeration that came from no workflow this repo authors is refused on `16`
