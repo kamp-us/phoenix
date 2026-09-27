@@ -31,7 +31,8 @@ import {
 	moduleRendererRefs,
 } from "@kampus/tuval-sdk/kernel/shell/window/renderer";
 import {Effect, FileSystem, Option, Schema, SchemaIssue} from "effect";
-import {generationUrl, nextGeneration, takeGenerationFiles} from "./module-generations.ts";
+import type {AuthoredModules} from "./authored-modules.ts";
+import {generationUrl, nextGeneration, takeGeneration} from "./module-generations.ts";
 
 export {DeclaredFeatures, TuvalConfig} from "@kampus/tuval-sdk/config";
 export {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
@@ -131,6 +132,8 @@ export interface LoadedConfig {
 	 * import by path, transitively (`./module-generations.ts`). Packages are not in it.
 	 */
 	readonly files: ReadonlyArray<string>;
+	/** The source this load compiled each of `files` from, and what each imports by path. */
+	readonly modules: AuthoredModules;
 }
 
 /**
@@ -183,7 +186,7 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 	).pipe(
 		Effect.catch((error) =>
 			Effect.gen(function* () {
-				const imported = takeGenerationFiles(load);
+				const imported = takeGeneration(load).files;
 				// The project layer loads second, so a refusal there read the global one first.
 				const global =
 					error.module === layers.project && (yield* present(layers.global)) ? [layers.global] : [];
@@ -195,9 +198,9 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 			}),
 		),
 		// A defect or an interrupt still drops the record; the refusal above already took it.
-		Effect.onError(() => Effect.sync(() => takeGenerationFiles(load))),
+		Effect.onError(() => Effect.sync(() => takeGeneration(load))),
 	);
-	const imported = takeGenerationFiles(load);
+	const {files: imported, modules} = takeGeneration(load);
 	const empty: TuvalConfig = {
 		version: 1,
 		programs: [],
@@ -232,5 +235,6 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 		],
 		sources,
 		files: [...new Set([...sources, ...imported])],
+		modules,
 	} satisfies LoadedConfig;
 });

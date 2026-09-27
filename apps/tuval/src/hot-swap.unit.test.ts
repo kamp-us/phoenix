@@ -65,6 +65,19 @@ describe("a reload over running processes", () => {
 			expect(seen.bumpedVersion).toEqual({switched: [], restoreRefused: ["tally"], pending: []});
 			expect(seen.afterVersion).toEqual({refused: {version: "1.0.0", count: 22, by: "v2"}});
 
+			// A reload with no file edited switches nothing (#9822).
+			expect(seen.echoBefore).toEqual({said: "HI!", restoredBy: "restore-v1"});
+			expect(seen.unedited).toEqual({switched: [], restoreRefused: [], pending: []});
+
+			// An edit confined to `restore`, the helper echo's `init` calls, switches echo and only
+			// echo: the switch ran the edited `restore` over the state it kept.
+			expect(seen.restoreEdited).toEqual({switched: ["echo"], restoreRefused: [], pending: []});
+			expect(seen.afterRestoreEdit).toEqual({said: "HI!", restoredBy: "restore-v2"});
+
+			// So does an edit confined to a file echo's program file imports.
+			expect(seen.shoutEdited).toEqual({switched: ["echo"], restoreRefused: [], pending: []});
+			expect(seen.afterShoutEdit).toEqual({said: "AGAIN?", restoredBy: "restore-v2"});
+
 			// The program nobody edited was never closed: its `init` ran once, and its state stands.
 			expect(seen.steady).toEqual({boots: 1, seen: 1});
 		},

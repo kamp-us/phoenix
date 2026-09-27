@@ -1,10 +1,11 @@
 /**
  * A config reload: read the config again, swap the spell registry and key bindings in one write,
  * then bring every live process up to the rows it just read. Running processes move to the new code
- * and keep their state: a process whose row's code changed is switched onto the reloaded row under
- * the same id (#9820, the founder's ruling recorded on that issue). Every process is then handed the
- * Msgs its own row says the re-read config means for it (`registry/program.ts`'s `configChanged`,
- * #7509 ruling 3).
+ * and keep their state: a process whose row's code changed, in the row's own functions or in an
+ * author file they stand on, is switched onto the reloaded row under the same id (#9820, the
+ * founder's ruling recorded on that issue; #9822). Every process is then handed the Msgs its own
+ * row says the re-read config means for it (`registry/program.ts`'s `configChanged`, #7509
+ * ruling 3).
  *
  * It sits beside `boot.ts` rather than in either slice because it is the one place the two
  * generations of program rows meet: the reloader holds the config it just read, and the processes
@@ -26,31 +27,43 @@ import type {Message, ProcessId} from "@kampus/tuval-sdk/kernel/process/process"
 import {ProcessSelf} from "@kampus/tuval-sdk/kernel/process/self";
 import type {AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Context, Effect, Layer, Option, Ref, Schema, Semaphore} from "effect";
+import {AuthoredModules} from "./authored-modules.ts";
 import {ConfigLoadError} from "./config.ts";
 
 const byId = (rows: ReadonlyArray<AnyProgram>): ReadonlyMap<ProgramId, AnyProgram> =>
 	new Map(rows.map((row) => [row.id, row]));
 
-const sourceOf = (value: unknown, seen: Set<object>): string => {
-	if (typeof value === "function") return value.toString();
+const sourceOf = (value: unknown, seen: Set<object>, functions: Set<string>): string => {
+	if (typeof value === "function") {
+		const text = value.toString();
+		functions.add(text);
+		return text;
+	}
 	// A primitive leaf is part of the row's text too: the version, and every migration's `to`.
 	if (typeof value !== "object" || value === null) return `${typeof value}:${String(value)}`;
 	if (seen.has(value)) return "";
 	seen.add(value);
 	return Object.entries(value)
-		.map(([key, field]) => `${key}(${sourceOf(field, seen)})`)
+		.map(([key, field]) => `${key}(${sourceOf(field, seen, functions)})`)
 		.join();
 };
 
 /**
- * The source text of everything on a row that runs, beside the version its state is written under.
- * Every module the config imports by path is evaluated again on each read, so a row's functions are
- * new objects whether or not anyone edited them; their text is what an edit moves. A value a
- * function closes over is config rather than code, and reaches a running process through
- * `configChanged`. An edit confined to a helper the row's functions call does not show here.
+ * The source text of everything on a row that runs, beside the version its state is written under,
+ * and the source of every author file that code stands on. Every module the config imports by path
+ * is evaluated again on each read, so a row's functions are new objects whether or not anyone edited
+ * them; their text is what an edit to them moves. A helper they call is not in their text, so
+ * `modules` adds each file that defines one of the row's functions and every file that one imports
+ * by path, transitively, as the load read them: an edit confined to such a helper moves the answer
+ * too. A value a function closes over is config rather than code, and reaches a running process
+ * through `configChanged`.
  */
-export const codeOf = (row: AnyProgram): string =>
-	sourceOf(
+export const codeOf = (
+	row: AnyProgram,
+	modules: AuthoredModules = AuthoredModules.none,
+): string => {
+	const functions = new Set<string>();
+	const own = sourceOf(
 		[
 			row.identity.version,
 			row.core,
@@ -65,7 +78,22 @@ export const codeOf = (row: AnyProgram): string =>
 			row.checkpointWorthy,
 		],
 		new Set(),
+		functions,
 	);
+	return `${own}|${modules.sourceBehind(functions)}`;
+};
+
+/** One read of the config's rows, beside the author's modules they were built from. */
+export interface ProgramGeneration {
+	readonly programs: ReadonlyArray<AnyProgram>;
+	readonly modules: AuthoredModules;
+}
+
+/** Rows no config load stands behind, as a kernel started from rows holds them. */
+export const rowsOnly = (programs: ReadonlyArray<AnyProgram>): ProgramGeneration => ({
+	programs,
+	modules: AuthoredModules.none,
+});
 
 /** What a reload did to the live processes, which `ReloadReport` carries. */
 export interface Applied {
@@ -86,16 +114,16 @@ const swapLine = (id: ProcessId, outcome: SwapOutcome): string =>
  * config dropped is left running and untold.
  */
 export const applyReload = (
-	previous: ReadonlyArray<AnyProgram>,
-	next: ReadonlyArray<AnyProgram>,
+	previous: ProgramGeneration,
+	next: ProgramGeneration,
 ): Effect.Effect<Applied, never, ProcessTable | Processes> =>
 	Effect.gen(function* () {
 		const table = yield* ProcessTable;
 		const processes = yield* Processes;
 		// The process whose own handler is running this reload, when a key asked for it.
 		const self = yield* Effect.serviceOption(ProcessSelf);
-		const running = byId(previous);
-		const reloaded = byId(next);
+		const running = byId(previous.programs);
+		const reloaded = byId(next.programs);
 		let notified = 0;
 		const switched: Array<ProcessId> = [];
 		const restoreRefused: Array<ProcessId> = [];
@@ -104,7 +132,7 @@ export const applyReload = (
 			const spawnedFrom = running.get(row.programId);
 			const replacement = reloaded.get(row.programId);
 			if (spawnedFrom === undefined || replacement === undefined) continue;
-			if (codeOf(spawnedFrom) !== codeOf(replacement)) {
+			if (codeOf(spawnedFrom, previous.modules) !== codeOf(replacement, next.modules)) {
 				const swap = processes.swap(row.id, replacement);
 				if (Option.isSome(self) && self.value.id === row.id) {
 					// A swap waits for the fold in flight, and here that fold is the one running this
@@ -143,9 +171,11 @@ export const applyReload = (
 		return {notified, switched, restoreRefused, pending} satisfies Applied;
 	}).pipe(Effect.withSpan("Tuval.reload.applyReload"));
 
-/** One read of the config, as `boot` runs it: the rows with their flags applied, and their keys. */
-export interface ConfigRead {
-	readonly programs: ReadonlyArray<AnyProgram>;
+/**
+ * One read of the config, as `boot` runs it: the rows with their flags applied, the author's modules
+ * they were built from, and their keys.
+ */
+export interface ConfigRead extends ProgramGeneration {
 	readonly keys: ReadonlyArray<BindingSource>;
 	/** The layer modules that existed, global first. */
 	readonly sources: ReadonlyArray<string>;
@@ -232,7 +262,7 @@ export interface FromConfigOptions {
 	/** The kernel's own spells, registered beside every reloaded row's. */
 	readonly core: ReadonlyArray<AnySpell>;
 	/** The generation the kernel was started with, so the first reload diffs against it. */
-	readonly initial: ReadonlyArray<AnyProgram>;
+	readonly initial: ProgramGeneration;
 	readonly read: Effect.Effect<ConfigRead, ConfigLoadError>;
 }
 
@@ -258,7 +288,7 @@ export class ConfigReloader extends Context.Service<
 			Effect.gen(function* () {
 				const services = yield* Effect.context<ProcessTable | Processes>();
 				const set = yield* SpellSet;
-				const generation = yield* Ref.make(initial);
+				const generation = yield* Ref.make<ProgramGeneration>(initial);
 				const lock = yield* Semaphore.make(1);
 				const reload = Effect.gen(function* () {
 					const next = yield* read.pipe(
@@ -267,10 +297,9 @@ export class ConfigReloader extends Context.Service<
 					yield* set
 						.reload({core, programs: next.programs, keys: next.keys})
 						.pipe(Effect.mapError((reason) => new ReloadRefused({reason, files: next.files})));
-					const applied = yield* applyReload(
-						yield* Ref.getAndSet(generation, next.programs),
-						next.programs,
-					).pipe(Effect.provideContext(services));
+					const applied = yield* applyReload(yield* Ref.getAndSet(generation, next), next).pipe(
+						Effect.provideContext(services),
+					);
 					const current = yield* set.read;
 					return {
 						sources: next.sources,
