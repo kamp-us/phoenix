@@ -97,9 +97,9 @@ Which exit carries which refusal is
 `--heading "The shared exit taxonomy for the writing verbs"`, and what counts as a leak is
 `--heading "The body-surface leak predicate"`.
 
-Use `--redact` when a machine-local path is genuinely part of the evidence — reporting a leak
-incident is the case it exists for. It masks each path down to its class and says so; it never
-silently rewrites what you wrote.
+Use `--redact` when a leak is genuinely part of the evidence — reporting a leak incident is the
+case it exists for. It masks every leak class, a path down to its class root and an email or a
+configured name whole, and says what it masked; it never silently rewrites what you wrote.
 
 **A refusal from the harness rather than from the verb has one other answer: stage the body, never
 trim it to fit.** The fence above puts the whole body inside one command string, and a
