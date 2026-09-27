@@ -18,6 +18,7 @@ import {subagentExtensionPaths} from "@kampus/tuval-pi/server";
 import {sessionListProgram} from "@kampus/tuval-sdk/kernel/ai-agent/session-list";
 import {Features} from "@kampus/tuval-sdk/kernel/feature-flags";
 import {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {homeStateDir, PROJECT_MARKER} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Context, Effect, Layer, Schema} from "effect";
 import {afterEach, expect} from "vitest";
@@ -31,7 +32,11 @@ import {
 } from "./boot.ts";
 import {ProjectId} from "./project-id.ts";
 import {DESK_SDK_VERSION} from "./sdk-admission.ts";
+import {ShellDispatch} from "./shell/commands/dispatch.ts";
 import {shellSpells} from "./shell/commands/spells.ts";
+import type {ShellMsg} from "./shell/core/index.ts";
+import {windows} from "./shell/layout/index.ts";
+import {shellId, shellStateOf} from "./shell/program.ts";
 
 /**
  * Every boot registers these, whatever the config declares: the kernel's own spells and the command
@@ -692,16 +697,13 @@ describe("the merged feature flags on the node side", () => {
 	);
 
 	// The direction that costs something: `piSubagents` defaults on, so an operator turning it off is
-	// a project layer stating `false` over a global `true` — and before this the layer read
+	// the global layer stating `false` over that default — and before #8595 the row's layer read
 	// `featuresDefault` and loaded the extension anyway.
 	it.effect(
-		"let the project layer's false beat the global layer's true",
+		"reach a row's layer as the global layer states them",
 		() =>
 			Effect.gen(function* () {
-				const booted = yield* bootDirect(
-					fixture("pi-subagents-on"),
-					projectWithConfig("pi-subagents-off"),
-				);
+				const booted = yield* bootDirect(fixture("pi-subagents-off"), freshProject());
 				const features = yield* flagsAtSpawn(booted);
 				assert.deepStrictEqual(features, {...featuresDefault, piSubagents: false});
 				assert.deepStrictEqual(subagentExtensionPaths(features), []);
@@ -709,18 +711,89 @@ describe("the merged feature flags on the node side", () => {
 		DIRECT_BOOT_MS,
 	);
 
+	// Flags are global only (#9687, ruling #9668 R4.2): a project layer stating one refuses the boot
+	// rather than overriding the global layer.
 	it.effect(
-		"let the project layer's true beat the global layer's false",
+		"refuse a boot whose project layer states one",
 		() =>
 			Effect.gen(function* () {
-				const booted = yield* bootDirect(
-					fixture("pi-subagents-off"),
-					projectWithConfig("pi-subagents-on"),
+				const error = yield* Effect.flip(
+					bootDirect(fixture("pi-subagents-on"), projectWithConfig("pi-subagents-off")),
 				);
-				const features = yield* flagsAtSpawn(booted);
-				assert.deepStrictEqual(features, {...featuresDefault, piSubagents: true});
-				assert.strictEqual(subagentExtensionPaths(features).length, 1);
+				assert.match(error.message, /states feature flags \(piSubagents\); flags are global only/);
 			}),
+		DIRECT_BOOT_MS,
+	);
+});
+
+describe("a booted desk's key bindings follow focus (#9687)", () => {
+	/**
+	 * The whole path a key takes in a running desk: a press dispatched into the shell process, routed
+	 * over the table its focus selects, and a fired binding's spell run by the host back into the
+	 * shell. Each binding splits a window, so what fired is read off the desk's window count.
+	 */
+	it.live(
+		"fires the global binding on an empty window and the board, and the project's only in its window",
+		() =>
+			Effect.gen(function* () {
+				const project = projectWithConfig("project-shell-key");
+				const booted = yield* boot({
+					global: fixture("global-shell-key"),
+					project,
+					home: freshHome(),
+				});
+				const inKernel = <A, E>(effect: Effect.Effect<A, E, Kernel>) =>
+					effect.pipe(Effect.provideContext(booted.kernel));
+				const send = (msg: ShellMsg) =>
+					inKernel(ShellDispatch.use((desk) => desk.dispatch(msg))).pipe(Effect.orDie);
+				const ctrl = (key: string): ShellMsg => ({
+					type: "keys.press",
+					key: {key, ctrlKey: true},
+				});
+				const windowCount = inKernel(
+					Effect.map(
+						ProcessTable.use((table) => table.list),
+						(rows) => {
+							const state = shellStateOf(
+								rows.find((row) => row.programId === shellId)?.stateSummary().state,
+							);
+							const workspace = state?.workspaces[state.activeWorkspace];
+							return workspace === undefined ? 0 : [...windows(workspace.layout.root)].length;
+						},
+					),
+				);
+				// A fired binding runs on a fiber of its own, so its split lands after the press returns.
+				const settlesAt = (count: number) =>
+					Effect.gen(function* () {
+						for (let tries = 0; tries < 200 && (yield* windowCount) < count; tries += 1) {
+							yield* Effect.sleep("10 millis");
+						}
+						yield* Effect.sleep("100 millis");
+						assert.strictEqual(yield* windowCount, count);
+					});
+
+				assert.strictEqual(yield* windowCount, 1);
+				// The focused window is empty, so it runs the global table: the project's key is not
+				// there, and the global one is.
+				yield* send(ctrl("g"));
+				yield* send(ctrl("y"));
+				yield* settlesAt(2);
+
+				yield* send({
+					type: "window.bind",
+					processId: "process-alpha",
+					program: ProjectId.of(project).scope("counter"),
+				});
+				yield* send(ctrl("g"));
+				yield* settlesAt(3);
+
+				// The board is the global config's: the project's key stays out, the global one fires.
+				yield* send({type: "desk.board.toggle"});
+				yield* send(ctrl("g"));
+				yield* settlesAt(3);
+				yield* send(ctrl("y"));
+				yield* settlesAt(4);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
 		DIRECT_BOOT_MS,
 	);
 });

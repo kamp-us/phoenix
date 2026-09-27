@@ -1,8 +1,9 @@
 import type {TuvalConfig} from "@kampus/tuval-sdk/config";
+import {featuresDefault} from "@kampus/tuval-sdk/kernel/features";
 import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {describe, expect, it} from "vitest";
-import {admitBySdk} from "./sdk-admission.ts";
+import {admitRows} from "./sdk-admission.ts";
 
 const node = (
 	id: string,
@@ -26,18 +27,18 @@ const config = (
 	keys: {},
 });
 
-describe("admitBySdk", () => {
+describe("admitRows", () => {
 	it("answers the layer untouched when every row's range admits the desk's SDK", () => {
 		const layer = config([{id: "a", sdk: "^1"}, {id: "b"}], [node("n", "a")]);
-		const admitted = admitBySdk(layer, {sdk: "1.2.0"});
+		const admitted = admitRows(layer, {sdk: "1.2.0", features: featuresDefault});
 		expect(admitted.config).toBe(layer);
 		expect(admitted.refused).toStrictEqual([]);
 	});
 
 	it("refuses a row out of range and a malformed one, keeping an absent one on the desk's major", () => {
-		const admitted = admitBySdk(
+		const admitted = admitRows(
 			config([{id: "old", sdk: "^1"}, {id: "bad", sdk: "one point oh"}, {id: "plain"}], []),
-			{sdk: "2.0.0"},
+			{sdk: "2.0.0", features: featuresDefault},
 		);
 		expect(admitted.config.programs).toStrictEqual([{id: "plain"}]);
 		expect(admitted.refused.map((refusal) => [refusal._tag, refusal.program])).toStrictEqual([
@@ -47,7 +48,7 @@ describe("admitBySdk", () => {
 	});
 
 	it("takes a refused row's nodes, their children and every route into them with it", () => {
-		const admitted = admitBySdk(
+		const admitted = admitRows(
 			config(
 				[{id: "new", sdk: ">=3"}, {id: "ok"}],
 				[
@@ -58,7 +59,7 @@ describe("admitBySdk", () => {
 					node("stays", "ok"),
 				],
 			),
-			{sdk: "2.0.0"},
+			{sdk: "2.0.0", features: featuresDefault},
 		);
 		expect(admitted.config.graph.nodes).toStrictEqual([node("feeder", "ok"), node("stays", "ok")]);
 		expect(admitted.removed).toStrictEqual({
@@ -69,7 +70,7 @@ describe("admitBySdk", () => {
 
 	it("drops what connects to an upstream layer's removals, though none of this layer's rows is refused", () => {
 		const upstream = {programs: new Set(["refused"]), nodes: new Set(["far"])};
-		const admitted = admitBySdk(
+		const admitted = admitRows(
 			config(
 				[{id: "ok"}],
 				[
@@ -79,11 +80,39 @@ describe("admitBySdk", () => {
 					node("feeder", "ok", {on: [{port: "out", to: {node: NodeId.make("far"), port: "in"}}]}),
 				],
 			),
-			{sdk: "2.0.0", upstream},
+			{sdk: "2.0.0", upstream, features: featuresDefault},
 		);
 		expect(admitted.refused).toStrictEqual([]);
 		expect(admitted.config.programs).toStrictEqual([{id: "ok"}]);
 		expect(admitted.config.graph.nodes).toStrictEqual([node("feeder", "ok")]);
 		expect(admitted.removed.programs).toStrictEqual(new Set());
+	});
+});
+
+describe("admitRows and the flags a row needs (#9687)", () => {
+	const flags = {...featuresDefault, processBoard: true, windowTitles: false};
+
+	it("refuses a row needing an off flag or an unknown one, naming the row and the flag", () => {
+		const admitted = admitRows(
+			config(
+				[
+					{id: "board", needsFeatures: ["processBoard"]},
+					{id: "titles", needsFeatures: ["processBoard", "windowTitles"]},
+					{id: "typo", needsFeatures: ["procesBoard"]},
+					{id: "plain"},
+				],
+				[node("titled", "titles"), node("kept", "board")],
+			),
+			{features: flags},
+		);
+		expect(admitted.config.programs).toStrictEqual([
+			{id: "board", needsFeatures: ["processBoard"]},
+			{id: "plain"},
+		]);
+		expect(admitted.config.graph.nodes).toStrictEqual([node("kept", "board")]);
+		expect(admitted.refused.map((refusal) => refusal.message)).toStrictEqual([
+			'program "titles" needs feature flag "windowTitles", which the global config leaves off; it was not loaded',
+			'program "typo" needs feature flag "procesBoard", which this desk does not have; it was not loaded',
+		]);
 	});
 });

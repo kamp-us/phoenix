@@ -6,6 +6,9 @@
  * refused rather than merged. The project layer's rows and nodes run under its project's scope
  * (`./config-scope.ts`, #9684), so no layer replaces another's row. A row whose SDK range excludes
  * the desk's SDK is refused on its own and the rest of its layer runs (`./sdk-admission.ts`, #9686).
+ * Flags and the desk's reserved keys are global only (#9687): a project layer that states a flag or
+ * binds a reserved key is refused, and a row needing a flag the global layer leaves off is refused
+ * on its own (`./flag-admission.ts`, `./keys/reserved.ts`).
  * The shape a module decodes against is the SDK's
  * (`@kampus/tuval-sdk/config`), because a config is written against it outside this app.
  *
@@ -30,18 +33,26 @@ import {
 import {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
 import type {Graph} from "@kampus/tuval-sdk/kernel/ports/graph";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
-import type {SdkRefused} from "@kampus/tuval-sdk/kernel/registry/sdk-range";
 import {
 	type DeclaredProgram,
 	type ModuleRendererRef,
 	moduleRendererRefs,
 } from "@kampus/tuval-sdk/kernel/shell/window/renderer";
+import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Effect, FileSystem, Option, Result, Schema, SchemaIssue} from "effect";
 import type {AuthoredModules} from "./authored-modules.ts";
 import {globalLayer, projectLayer, reservedSeparator} from "./config-scope.ts";
+import {projectStatesNoFlags, resolveFeatures} from "./flag-admission.ts";
+import {ReservedDeskKeys} from "./keys/reserved.ts";
 import {generationUrl, nextGeneration, takeGeneration} from "./module-generations.ts";
 import type {ProjectId} from "./project-id.ts";
-import {admitBySdk, nothingRemoved, type SdkAdmission, type SdkRemoved} from "./sdk-admission.ts";
+import {
+	admitRows,
+	nothingRemoved,
+	type RowRefused,
+	type SdkAdmission,
+	type SdkRemoved,
+} from "./sdk-admission.ts";
 
 export {DeclaredFeatures, TuvalConfig} from "@kampus/tuval-sdk/config";
 export {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
@@ -120,6 +131,8 @@ export interface DeskLayer {
 	readonly origin: string;
 	readonly programs: ReadonlyArray<AnyProgram>;
 	readonly graph: Graph;
+	/** The grammar the desk's shell row routes, whose reserved keys no project may bind. */
+	readonly table: PrefixTable;
 }
 
 export interface ConfigLayers {
@@ -145,15 +158,13 @@ export interface ProjectLayer {
  */
 export interface LayerConfig {
 	readonly programs: ReadonlyArray<unknown>;
-	/** The flags this owner's layers stated, global then project within it; unstated ones absent. */
-	readonly features: TuvalConfig["features"];
 	readonly moduleRenderers: ReadonlyArray<ModuleRendererRef>;
 	readonly graph: Graph;
 	readonly keys: ReadonlyArray<BindingSource>;
 	/** The layer modules that existed. */
 	readonly sources: ReadonlyArray<string>;
-	/** The rows refused for an SDK range that excludes the desk's (`./sdk-admission.ts`). */
-	readonly refused: ReadonlyArray<SdkRefused>;
+	/** The rows refused for their SDK range or a flag left off (`./sdk-admission.ts`). */
+	readonly refused: ReadonlyArray<RowRefused>;
 	/** What those refusals took out, which a project layer naming it by bare id loses too. */
 	readonly removed: SdkRemoved;
 }
@@ -179,7 +190,7 @@ export interface LoadedConfig {
 	readonly projects: ReadonlyArray<LoadedProject>;
 	/** The desk's rows, then the global layer's, then each project layer's under its project's scope. */
 	readonly programs: ReadonlyArray<unknown>;
-	/** The merged flags, project over global — one flag at a time, not one block replacing another. */
+	/** The global layer's flags over the defaults. Flags are global only; a project states none. */
 	readonly features: TuvalFeatures;
 	/**
 	 * The `kind: "module"` window specifiers the merged rows declared, each beside the layer module
@@ -196,8 +207,8 @@ export interface LoadedConfig {
 	readonly keys: ReadonlyArray<BindingSource>;
 	/** The layer modules that existed and were merged, global first. */
 	readonly sources: ReadonlyArray<string>;
-	/** Every owner's rows refused for their SDK range, global first; the rest of the config runs. */
-	readonly refused: ReadonlyArray<SdkRefused>;
+	/** Every owner's refused rows, global first; the rest of the config runs. */
+	readonly refused: ReadonlyArray<RowRefused>;
 	/**
 	 * Every file this load read the config from: the layer modules in `sources`, and each file they
 	 * import by path, transitively (`./module-generations.ts`). Packages are not in it.
@@ -259,6 +270,7 @@ const loadOptional = Effect.fn("Tuval.loadOptional")(function* (
 	desk: DeskLayer,
 	check: LayerCheck,
 	upstream: SdkRemoved,
+	features: (config: TuvalConfig) => TuvalFeatures,
 ) {
 	if (!(yield* present(modulePath))) return Option.none<SdkAdmission>();
 	const config = yield* loadConfigModule(modulePath, load);
@@ -270,7 +282,7 @@ const loadOptional = Effect.fn("Tuval.loadOptional")(function* (
 	if (Result.isFailure(checked)) return yield* refuse(checked.failure);
 	// After the scope check, so a refused project row is named by its scoped id and its nodes match,
 	// and a connection to a global row or node is still the bare id `upstream` names.
-	return Option.some(admitBySdk(checked.success, {upstream}));
+	return Option.some(admitRows(checked.success, {upstream, features: features(checked.success)}));
 });
 
 /**
@@ -288,7 +300,6 @@ const partOf = (
 			declared: [],
 			config: {
 				programs: [],
-				features: {},
 				moduleRenderers: [],
 				graph: {nodes: []},
 				keys: [],
@@ -306,7 +317,6 @@ const partOf = (
 			// Widened back: the loader checked each row's id and nothing else, and that is all a caller
 			// may assume of one.
 			programs: declared.map((program): unknown => program.row),
-			features: loaded.features,
 			moduleRenderers: moduleRendererRefs(declared),
 			graph: loaded.graph,
 			keys: [bindingSource(layer, module, loaded.keys)],
@@ -344,14 +354,25 @@ const deskPart = (desk: DeskLayer, global: string, loaded: Option.Option<SdkAdmi
 	} satisfies LayerConfig;
 };
 
+/** A project layer as it runs: no flags, no reserved desk key, and every id under its project. */
+const projectCheck =
+	(desk: DeskLayer, project: ProjectLayer): LayerCheck =>
+	(config) =>
+		Result.flatMap(projectStatesNoFlags(config), (stated) =>
+			Result.flatMap(ReservedDeskKeys.of(desk.table).refuseIn(stated.keys), () =>
+				projectLayer(project.id, stated),
+			),
+		);
+
 const loadProjectLayer = (
 	desk: DeskLayer,
 	project: ProjectLayer,
 	load: number,
 	global: SdkRemoved,
+	features: TuvalFeatures,
 ) =>
 	Effect.map(
-		loadOptional(project.module, load, desk, (config) => projectLayer(project.id, config), global),
+		loadOptional(project.module, load, desk, projectCheck(desk, project), global, () => features),
 		(loaded): LoadedProject => ({
 			layer: project,
 			config: partOf(loaded, project.module, "project").config,
@@ -412,17 +433,22 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 				layers.desk,
 				globalLayer,
 				nothingRemoved,
+				(config) => resolveFeatures(config.features),
 			);
 			const removed = Option.match(global, {
 				onNone: () => nothingRemoved,
 				onSome: (admission) => admission.removed,
 			});
+			const features = Option.match(global, {
+				onNone: () => featuresDefault,
+				onSome: (admission) => resolveFeatures(admission.config.features),
+			});
 			const projects = yield* Effect.forEach(
 				layers.projects,
-				(project) => loadProjectLayer(layers.desk, project, load, removed),
+				(project) => loadProjectLayer(layers.desk, project, load, removed, features),
 				{concurrency: 1},
 			);
-			return {global, projects};
+			return {global, projects, features};
 		}),
 		// A project layer loads after the global one, so a refusal there read the global one first.
 		(error) =>
@@ -437,7 +463,7 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 		desk,
 		projects: read.projects,
 		programs: parts.flatMap((part) => part.programs),
-		features: Object.assign({...featuresDefault}, ...parts.map((part) => part.features)),
+		features: read.features,
 		moduleRenderers: firstPerRef(parts.flatMap((part) => part.moduleRenderers)),
 		graph: {nodes: parts.flatMap((part) => part.graph.nodes)},
 		keys: parts.flatMap((part) => part.keys),
@@ -452,17 +478,19 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
  * One project's layer on its own, as a project opening into a running desk reads it (#9685). The
  * desk layer is what it may not redeclare; the global layer is not read again, because a project's
  * connections to a global row name its bare id and resolve against the running registry. `global`
- * is what the running desk's global layer lost to its SDK refusals, read with the graph it runs.
+ * is what the running desk's global layer lost to its refusals, read with the graph it runs, and
+ * `features` the flags it runs under, which a project row's `needsFeatures` is checked against.
  */
 export const loadProjectConfig = Effect.fn("Tuval.loadProjectConfig")(function* (
 	desk: DeskLayer,
 	project: ProjectLayer,
 	global: SdkRemoved,
+	features: TuvalFeatures,
 ) {
 	const load = nextGeneration();
 	const {value, imported, modules} = yield* recorded(
 		load,
-		loadProjectLayer(desk, project, load, global),
+		loadProjectLayer(desk, project, load, global, features),
 		() => Effect.succeed([]),
 	);
 	return {

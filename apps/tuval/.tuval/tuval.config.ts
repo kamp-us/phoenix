@@ -5,7 +5,7 @@
 // is a `Program` (the SDK's src/registry/program.ts); the eight in the box today are the demo
 // counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the agy
 // chat session (#8184), the codex chat session (#8600), the AI-agent session list (#8102) and the
-// module-window demo (#8946). One more row sits behind a flag in the `features` block below,
+// module-window demo (#8946). One more row sits behind this file's `optionalRows` switch below,
 // default-off, so a desk booted today carries the eight: the worked `pr-review` example (#8734)
 // behind `prReviewExample`. Flip that line and restart the desk to get the row, its graph node and
 // its spells.
@@ -65,15 +65,12 @@ export const claudeSessionScope = {
 const codexReviewer = codexSession({cwd: projectRoot, scope: claudeSessionScope});
 
 /**
- * This layer's stated flags — the `features` block ADR 0363 names, so turning a flag on is editing
- * the line below and restarting the desk. It is read twice: boot merges it over the global layer for
- * everything that takes the record off the `Features` service, and the `programs` list below reads
- * it directly, because a row is built while this module is being evaluated and the merge does not
- * exist yet (#8595). One consequence, and it is the whole difference between a row's flag and every
- * other one: a flag stated in the global `~/.tuval/tuval.config.ts` cannot add or remove a row here
- * — a row is this file's to state. ADR 0375 records that.
+ * Which optional rows this file states. Not a `features` block: flags are global only, and a project
+ * config that states one is refused at load (#9687), so the switch lives in this file and only the
+ * `programs` list below reads it. A row is this file's to state, so a flag in the global
+ * `~/.tuval/tuval.config.ts` cannot add or remove it (ADR 0375).
  */
-const features = {prReviewExample: false};
+const optionalRows = {prReviewExample: false};
 
 export default {
 	version: 1,
@@ -97,7 +94,7 @@ export default {
 		codexReviewer,
 		// The worked authoring example (#8734): thirty lines that spawn a reviewer and announce its
 		// verdict. Default-off, so a desk booted today is the one it was before this row existed.
-		...(features.prReviewExample ? [prReview({reviewer: codexReviewer})] : []),
+		...(optionalRows.prReviewExample ? [prReview({reviewer: codexReviewer})] : []),
 		// Windowed and, like the four sessions above, unplanned — nothing needs it running until you
 		// want to read it. Open it from the picker, or `window:open <project>/ai-agent-sessions`.
 		sessionListProgram(),
@@ -107,7 +104,6 @@ export default {
 		// window.
 		moduleCounter(),
 	],
-	features,
 	graph: {
 		nodes: demoGraph.nodes,
 	},

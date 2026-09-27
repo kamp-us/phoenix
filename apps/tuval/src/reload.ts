@@ -30,6 +30,7 @@ import {Context, Effect, Layer, Option, Ref, Schema, Semaphore} from "effect";
 import {AuthoredModules} from "./authored-modules.ts";
 import {ConfigLoadError, type ProjectLayer} from "./config.ts";
 import type {ConfigGeneration} from "./config-generation.ts";
+import type {LiveKeyBindings} from "./keys/live.ts";
 
 const byId = (rows: ReadonlyArray<AnyProgram>): ReadonlyMap<ProgramId, AnyProgram> =>
 	new Map(rows.map((row) => [row.id, row]));
@@ -259,6 +260,11 @@ export interface FromConfigOptions {
 	readonly read?: (
 		projects: ReadonlyArray<ProjectLayer>,
 	) => Effect.Effect<ConfigGeneration, ConfigLoadError>;
+	/**
+	 * Where the shell reads each focus owner's key bindings (#9687), recompiled from every generation
+	 * this installs. Absent for a kernel whose shell routes no config bindings.
+	 */
+	readonly keyBindings?: LiveKeyBindings;
 }
 
 /**
@@ -286,6 +292,7 @@ export class ConfigReloader extends Context.Service<
 		core,
 		initial,
 		read,
+		keyBindings,
 	}: FromConfigOptions): Layer.Layer<ConfigReloader, never, SpellSet | ProcessTable | Processes> =>
 		Layer.effect(
 			ConfigReloader,
@@ -295,9 +302,18 @@ export class ConfigReloader extends Context.Service<
 				const generation = yield* Ref.make(initial);
 				const lock = yield* Semaphore.make(1);
 				const install = (next: ConfigGeneration) =>
-					set
-						.reload({core, programs: next.programs, keys: next.keys})
-						.pipe(Effect.mapError((reason) => new ReloadRefused({reason, files: next.files})));
+					set.reload({core, programs: next.programs, keys: next.keys}).pipe(
+						Effect.mapError((reason) => new ReloadRefused({reason, files: next.files})),
+						// Compiled against the table just installed, so the shell never routes a binding
+						// to a spell the registry no longer holds.
+						Effect.tap(() =>
+							keyBindings === undefined
+								? Effect.void
+								: Effect.flatMap(set.read, (current) =>
+										keyBindings.install(next.ownerKeys, current.table),
+									),
+						),
+					);
 				const reload = Effect.gen(function* () {
 					if (read === undefined) {
 						return yield* new ReloadRefused({reason: new NoConfigToReload(), files: []});

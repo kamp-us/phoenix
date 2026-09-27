@@ -38,9 +38,9 @@ const GraphSchema = Schema.Struct({nodes: Schema.Array(GraphNode)});
 
 /**
  * The feature flags a layer *states*, one optional boolean key per key of `TuvalFeatures`. Every
- * key is optional, and that is the whole point: absent means "this layer says nothing", not "off",
- * so a project layer naming one flag cannot put back to its default a flag the global layer turned
- * on. `featuresDefault` is where a flag nobody stated lands.
+ * key is optional, and that is the whole point: absent means "this layer says nothing", not "off".
+ * `featuresDefault` is where a flag nobody stated lands. Flags are global only: the desk refuses a
+ * project config that states any (#9687).
  *
  * Derived rather than hand-listed, because hand-listing drifted twice: a key on `TuvalFeatures`
  * that nobody re-typed here was dropped by the decode, so a layer stating it moved the browser and

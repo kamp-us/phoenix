@@ -226,10 +226,11 @@ describe("authoring.example.pr-review, registered", () => {
 		);
 	});
 
-	it("is absent from the booted config while its flag is off", () => {
-		// The config layer's own block, not `featuresDefault`: that block is what gates the row, and a
-		// row is built before boot has a merged record to read (#8595, ADR 0375).
-		expect(config.features?.prReviewExample).toBe(false);
+	it("is absent from the booted config while its switch is off", () => {
+		// The project config's own switch gates the row: a row is built before boot has flags to read
+		// (#8595, ADR 0375), and a project config states no `features` block, because flags are global
+		// only (#9687).
+		expect("features" in config).toBe(false);
 		const ids = config.programs.map((row) => (row as AnyProgram).id);
 		expect(ids).not.toContain("pr-review");
 		expect(config.graph.nodes.map((node) => node.program)).not.toContain("pr-review");

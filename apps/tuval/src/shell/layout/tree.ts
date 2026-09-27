@@ -22,6 +22,7 @@ import {
 	resolveSizes,
 	type StackId,
 	type StackNode,
+	type WindowBinding,
 	type WindowId,
 	type WindowNode,
 } from "./node.ts";
@@ -291,17 +292,18 @@ export function resize(
 }
 
 /**
- * Attach or detach a window's process, and with it whether that process's program takes forwarded
- * keys. The two are one payload: `createWindow` drops the declaration whenever the process goes.
+ * Attach or detach a window's process, and with it what the window knows of that process's program:
+ * whether it takes forwarded keys, and its id. One payload: `createWindow` drops both whenever the
+ * process goes.
  */
 export function setProcess(
 	tree: LayoutTree,
 	windowId: WindowId,
 	processId: string | null,
-	takesKeys = false,
+	binding: WindowBinding = {},
 ): LayoutTree {
 	const root = mapWindow(tree.root, windowId, (window) =>
-		createWindow(window.id, processId, takesKeys),
+		createWindow(window.id, processId, binding),
 	);
 	return root ? {...tree, root} : tree;
 }
