@@ -13,15 +13,21 @@
  * with it (`./flag-admission.ts`, #9687).
  */
 
+import {createRequire} from "node:module";
 import type {TuvalConfig} from "@kampus/tuval-sdk/config";
 import type {TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
 import {admitSdk, type SdkRefused} from "@kampus/tuval-sdk/kernel/registry/sdk-range";
-import sdkPackage from "@kampus/tuval-sdk/package.json" with {type: "json"};
 import {Result} from "effect";
 import {admitFlags, type ProgramNeedsFlag} from "./flag-admission.ts";
 
-/** The version of the one SDK this desk runs and hands every program. */
-export const DESK_SDK_VERSION: string = sdkPackage.version;
+/**
+ * The version of the one SDK this desk runs and hands every program. Read at run time, from where
+ * the desk resolves the SDK, rather than through a JSON import: the packed desk's bundler drops a
+ * JSON import's `with {type: "json"}` attribute, and Node refuses a JSON import without it (#9690).
+ */
+export const DESK_SDK_VERSION: string = (
+	createRequire(import.meta.url)("@kampus/tuval-sdk/package.json") as {readonly version: string}
+).version;
 
 /** Why one row of a layer was refused while the rest of it runs. */
 export type RowRefused = SdkRefused | ProgramNeedsFlag;
