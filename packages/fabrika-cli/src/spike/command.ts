@@ -86,8 +86,29 @@ const open = leafCommand(
 ).pipe(
 	Command.withShortDescription("Mint the spike issue and workspace for one question."),
 	Command.withDescription(
-		'Mint the spike issue for one question, allocate this run\'s workspace under a freshly minted nonce, and bind the two in a manifest. Prints {"spike":n,"nonce":"…","kind":"…","workspace":"…","treeDigest":"…"}. Exits 4 (a workspace exists and its manifest does not parse), 5/6 (machine-local path, bare @ reference), 7 (no prototyping:spike label), 8/9 (the create failed, the read-back differs), 10 (off-grammar --nonce or --kind), 11 (a root, the label set or the tree state could not be read — nothing was minted), 12 (--nonce names no workspace), 13 (the workspace resolves inside the repository), 18 (a workspace under a different question or kind), 20 (the spike landed and the manifest could not be completed). Example: fabrika spike open --question "does better-auth mint a single-use token without a new table?" --kind logic',
+		[
+			"Mints the spike issue and a nonce-keyed workspace for one question and prints them as JSON.",
+			"  4: a workspace manifest does not parse",
+			"  5: a machine-local path leaked",
+			"  6: a bare @ reference",
+			"  7: no prototyping:spike label",
+			"  8: the create failed",
+			"  9: the read-back differs",
+			"  10: an off-grammar --nonce or --kind",
+			"  11: a read failed; nothing was minted",
+			"  12: --nonce names no workspace",
+			"  13: the workspace is inside the repository",
+			"  18: the workspace is for another question or kind",
+			"  20: the spike landed, the manifest is incomplete",
+			'  Derivation: the prototyping skill\'s contract.md, "spike open"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika spike open --question "does better-auth mint a single-use token without a new table?" --kind logic',
+		},
+	]),
 );
 
 const run = leafCommand(
@@ -129,8 +150,18 @@ const run = leafCommand(
 ).pipe(
 	Command.withShortDescription("Execute one command in the workspace and log the evidence."),
 	Command.withDescription(
-		'Execute one command in the workspace and append an immutable evidence record. Exit 0 means the command RAN and was recorded, whatever it returned — its own status rides in the payload as commandExit. Prints {"nonce":"…","seq":n,"command":[…],"commandExit":n,"timedOut":bool,"outBytes":n,"errBytes":n,"truncated":bool,"outSha256":"…","errSha256":"…"}. Exits 4 (the manifest or the log does not parse, or the log is not contiguous from 1), 10 (off-grammar --nonce, --timeout or --env), 11 (the command could NOT be executed — nothing was appended, and this is not an answer of no), 12 (no workspace for this nonce), 13 (the workspace resolves inside the repository). Example: fabrika spike run --nonce 7f3a9c21 -- node walkthrough.mjs',
+		[
+			"Runs one command in the workspace, appends an evidence record and prints the record as JSON.",
+			"  Success means the command ran and was recorded; its own status is `commandExit`.",
+			"  4: the manifest or log does not parse, or the log is not contiguous",
+			"  10: an off-grammar --nonce, --timeout or --env",
+			"  11: the command could not run; nothing was appended, and this is not a no",
+			"  12: no workspace for this nonce",
+			"  13: the workspace is inside the repository",
+			'  Derivation: the prototyping skill\'s contract.md, "spike run"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika spike run --nonce 7f3a9c21 -- node walkthrough.mjs"}]),
 );
 
 const capture = leafCommand(
@@ -157,8 +188,25 @@ const capture = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the decision on stdin with the run table, then close."),
 	Command.withDescription(
-		'Post the decision read from STDIN plus the log\'s own run table, read it back, and close the spike. Prints {"spike":n,"nonce":"…","commentId":id,"runs":k,"evidenceDigest":"…","state":"closed","discardedStdin":bool}. Exits 3 (stdin held nothing), 4 (the manifest or the log does not parse), 5/6 (leak), 7 (the spike is absent, or closed with nothing to supersede), 8/9 (the post or the close was unproven, the read-back differs), 10 (off-grammar --nonce), 11 (a precondition read failed — nothing was posted), 12 (no workspace), 14 (zero recorded runs — no evidence to decide over), 18 (the manifest names another spike), 19 (the author holds below write). Example: fabrika spike capture 9310 --nonce 7f3a9c21 < decision.md',
+		[
+			"Posts the stdin decision with the run table, reads it back, closes the spike and prints JSON.",
+			"  3: stdin held nothing",
+			"  4: the manifest or log does not parse",
+			"  5: a machine-local path leaked",
+			"  6: a bare @ reference",
+			"  7: the spike is absent, or closed with nothing to supersede",
+			"  8: the post or the close is unproven",
+			"  9: the read-back differs",
+			"  10: an off-grammar --nonce",
+			"  11: a read failed; nothing was posted",
+			"  12: no workspace",
+			"  14: zero recorded runs",
+			"  18: the manifest names another spike",
+			"  19: the author holds below write",
+			'  Derivation: the prototyping skill\'s contract.md, "spike capture"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika spike capture 9310 --nonce 7f3a9c21 < decision.md"}]),
 );
 
 const dispose = leafCommand(
@@ -187,8 +235,25 @@ const dispose = leafCommand(
 ).pipe(
 	Command.withShortDescription("Remove the workspace and prove the tree is unchanged."),
 	Command.withDescription(
-		'Prove the repository tree is unchanged and the capture still covers the log, remove the workspace, and prove it is gone. Prints {"spike":n,"nonce":"…","workspace":"removed","treeMatched":true,"runs":k,"forfeited":bool}. Exits 4 (the manifest or the log does not parse), 5/6 (leak in the forfeit note), 7 (the spike is proven absent), 8/9 (the note post or the close was unproven, the read-back differs), 10 (off-grammar --nonce), 11 (a read failed — nothing was removed), 12 (no workspace), 15 (no captured decision and no --forfeit), 16 (removed and still present on re-probe), 17 (the tree moved since open — NOTHING was removed), 21 (the log moved after the capture). Example: fabrika spike dispose --nonce 7f3a9c21',
+		[
+			"Proves the tree unchanged, removes the workspace and prints the proof as JSON.",
+			"  4: the manifest or log does not parse",
+			"  5: the note leaks a machine-local path",
+			"  6: the note is a bare @ reference",
+			"  7: the spike is absent",
+			"  8: the note or close is unproven",
+			"  9: the read-back differs",
+			"  10: an off-grammar --nonce",
+			"  11: a read failed; nothing was removed",
+			"  12: no workspace",
+			"  15: no capture and no --forfeit",
+			"  16: still present after removal",
+			"  17: the tree moved since open; nothing was removed",
+			"  21: the log moved after capture",
+			'  Derivation: the prototyping skill\'s contract.md, "spike dispose"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika spike dispose --nonce 7f3a9c21"}]),
 );
 
 const status = leafCommand(
@@ -207,8 +272,16 @@ const status = leafCommand(
 ).pipe(
 	Command.withShortDescription("One run's spike state, workspace and evidence count."),
 	Command.withDescription(
-		'One run\'s spike state, workspace presence and evidence count — near-total: an absent workspace is a FACT at exit 0. Prints {"nonce":"…","workspace":"present|absent","spike":n,"kind":"…","question":"…","spikeState":"open|closed|null","captured":bool,"runs":k,"lastCommandExit":n,"evidenceDigest":"…","treeMatched":bool}. Exits 4 (the manifest or the log exists and does not parse), 10 (off-grammar --nonce), 11 (the spike state, its comments or the tree state could not be read). Example: fabrika spike status --nonce 7f3a9c21',
+		[
+			"Prints one run's spike state, workspace presence and evidence count as JSON.",
+			"  An absent workspace is an answer, not a refusal.",
+			"  4: the manifest or log exists and does not parse",
+			"  10: an off-grammar --nonce",
+			"  11: the spike state, its comments or the tree state could not be read",
+			'  Derivation: the prototyping skill\'s contract.md, "spike status"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika spike status --nonce 7f3a9c21"}]),
 );
 
 export const spikeCommand = Command.make("spike").pipe(
