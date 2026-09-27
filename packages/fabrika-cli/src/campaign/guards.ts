@@ -67,7 +67,7 @@ export type LocateRead =
  *
  * `roadmapFile` is a plain path key with no declined form, so a config that will not decode is `22`
  * and no file is opened — never a silent fall back to `ROADMAP.md`, which would validate one file
- * while the fence read another.
+ * while `campaign` and `triage homes` read another.
  */
 export const locateRoadmap = (
 	verb: string,

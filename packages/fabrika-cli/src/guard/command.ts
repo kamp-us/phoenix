@@ -312,7 +312,7 @@ const roadmapGuard = Command.make("roadmap-guard").pipe(
 	Command.withSubcommands([roadmapCheck]),
 	Command.withShortDescription("ROADMAP.md and the milestone projection stay in sync."),
 	Command.withDescription(
-		"ROADMAP.md's founder-voice arc/campaign tables and the GitHub milestone projection they pin to must stay in sync. Sync-drift diligence is load-bearing — the focus fence every claim is judged against reads the same rows — so it is guarded fail-closed rather than left to vigilance.",
+		"ROADMAP.md's founder-voice arc/campaign tables and the GitHub milestone projection they pin to must stay in sync. Sync-drift diligence is load-bearing — `campaign` and `triage homes` read the same rows to say which milestones are being worked — so it is guarded fail-closed rather than left to vigilance.",
 	),
 );
 

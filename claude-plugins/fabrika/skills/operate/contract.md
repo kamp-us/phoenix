@@ -749,9 +749,10 @@ entrypoint is an installed copy the branch does not carry and is not judged.
 
 **The size stop.** Before any shell is briefed the table is read for the size stop: a table row
 standing for the issue (its own, its epic's, or a chain it blocks) that has spent
-`table.stopMultiple` times its size stops the brief at `71`. A repository with no table project is
-never stopped, and a table that could not be read is `11` once `.fabrika.jsonc` declares a `table`
-block. With no `table` block, any failed read (a token without the `project` scope, a rate limit, an
+`table.stopMultiple` times its size stops the brief at `71`. A repository that declares no
+`table.project.number` and has no table project is never stopped. A declared `table.project.number`
+that names no project is a failed read with a `table` block declared, so it refuses at `11`, as does
+any table that could not be read once `.fabrika.jsonc` declares a `table` block. With no `table` block, any failed read (a token without the `project` scope, a rate limit, an
 outage, a forbidden token, a malformed `lane-record` comment) briefs anyway and prints
 `size stop NOT checked` with the reason on stderr, since nothing says a table exists. Declare a
 `table` block to make that `11`.

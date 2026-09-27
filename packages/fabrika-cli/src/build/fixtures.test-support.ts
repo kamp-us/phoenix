@@ -211,7 +211,7 @@ export const candidates = (
 export const candidatePage = (...rows: ReadonlyArray<CandidateFixture>): HttpReply =>
 	served(candidates(...rows));
 
-/** A `ROADMAP.md` whose `## Campaigns` table marks these milestones `active` — the fence, on. */
+/** A `ROADMAP.md` whose `## Campaigns` table marks these milestones `active`. */
 export const campaignsTable = (milestones: number | ReadonlyArray<number>): string => {
 	const rows = (typeof milestones === "number" ? [milestones] : milestones)
 		.map((milestone) => `| Campaign ${milestone} | #${milestone} | active |`)
