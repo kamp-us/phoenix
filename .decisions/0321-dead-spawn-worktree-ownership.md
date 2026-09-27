@@ -1,7 +1,7 @@
 ---
 id: 0321
 title: The driver retires a dead spawn's worktree, salvaging its dirty work onto the branch first
-status: amended-in-part by [0323](0323-board-licensed-worktree-retirement.md)
+status: amended-in-part by [0323](0323-board-licensed-worktree-retirement.md), [0426](0426-retire-unlocks-a-released-worktree.md)
 date: 2026-08-21
 tags: [fabrika, pipeline-hardening, worktree, isolation]
 ---

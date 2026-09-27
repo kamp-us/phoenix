@@ -32,18 +32,33 @@ export interface Subject {
 	readonly path: string;
 	readonly branch: string;
 	readonly lane: LaneBranch;
+	/** Whether git reports the registration locked. A lock is no input to any verdict. */
+	readonly locked: boolean;
 }
 
-/** The subjects among `checkouts` whose branch is a lane branch claimed under `number`. */
+/** The subjects among `registrations` whose branch is a lane branch claimed under `number`. */
 export const subjectsFor = (
 	number: number,
-	checkouts: ReadonlyArray<{readonly path: string; readonly branch: string}>,
+	registrations: ReadonlyArray<{
+		readonly path: string;
+		readonly branch: string | null;
+		/** git's own lock reason, `""` when locked without one, `null` when unlocked. */
+		readonly locked: string | null;
+	}>,
 ): ReadonlyArray<Subject> =>
-	checkouts.flatMap((checkout) => {
-		const lane = parseLaneBranch(checkout.branch);
+	registrations.flatMap((registration) => {
+		if (registration.branch === null) return [];
+		const lane = parseLaneBranch(registration.branch);
 		return lane === null || laneNumber(lane) !== number
 			? []
-			: [{path: checkout.path, branch: checkout.branch, lane}];
+			: [
+					{
+						path: registration.path,
+						branch: registration.branch,
+						lane,
+						locked: registration.locked !== null,
+					},
+				];
 	});
 
 /**
@@ -80,6 +95,12 @@ export type Verdict =
 
 /** A verdict a caller acts on — every arm but the one {@link classify} defers to the tree. */
 export type Seated = Exclude<Verdict, {readonly _tag: "Unclaimed"}>;
+
+/**
+ * The verdict that licenses a removal, and the only one that licenses releasing the tree's lock
+ * before it — `./git.ts`'s `removeWorktree` takes one to unlock.
+ */
+export type Released = Extract<Verdict, {readonly _tag: "Release"}>;
 
 /** What a subject tree would take with it — the evidence the unclaimed arm turns on. */
 export interface Residue {

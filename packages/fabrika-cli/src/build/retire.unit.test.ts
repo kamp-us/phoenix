@@ -6,7 +6,7 @@ const BRANCH = `build/4312-editor-focus-loss-${NONCE}`;
 const PATH = "/trees/agent-a9bd";
 
 const subject = (branch = BRANCH, path = PATH) => {
-	const [only] = subjectsFor(4312, [{path, branch}]);
+	const [only] = subjectsFor(4312, [{path, branch, locked: null}]);
 	if (only === undefined) throw new Error(`${branch} is not a lane branch for #4312`);
 	return only;
 };
@@ -24,8 +24,8 @@ const NOBODY = new Set<string>();
 describe("subjectsFor", () => {
 	it("keeps the worktrees holding a lane branch of the number, in either lane mode", () => {
 		const held = subjectsFor(4312, [
-			{path: "/a", branch: BRANCH},
-			{path: "/b", branch: `build/pr-4312-${SIBLING_NONCE}`},
+			{path: "/a", branch: BRANCH, locked: null},
+			{path: "/b", branch: `build/pr-4312-${SIBLING_NONCE}`, locked: null},
 		]);
 
 		expect(held.map((s) => s.path)).toEqual(["/a", "/b"]);
@@ -33,12 +33,31 @@ describe("subjectsFor", () => {
 
 	it("keeps no worktree on another number's lane branch, or on no lane branch at all", () => {
 		const held = subjectsFor(4312, [
-			{path: "/a", branch: `build/4313-other-work-${NONCE}`},
-			{path: "/b", branch: "main"},
-			{path: "/c", branch: "worktree-agent-a9bd"},
+			{path: "/a", branch: `build/4313-other-work-${NONCE}`, locked: null},
+			{path: "/b", branch: "main", locked: null},
+			{path: "/c", branch: "worktree-agent-a9bd", locked: null},
+			{path: "/d", branch: null, locked: null},
 		]);
 
 		expect(held).toEqual([]);
+	});
+
+	it("carries git's lock onto the subject, with or without a reason", () => {
+		const held = subjectsFor(4312, [
+			{path: "/a", branch: BRANCH, locked: "claude agent a9bd (pid 4242)"},
+			{path: "/b", branch: `build/pr-4312-${SIBLING_NONCE}`, locked: ""},
+			{path: "/c", branch: BRANCH, locked: null},
+		]);
+
+		expect(held.map((s) => s.locked)).toEqual([true, true, false]);
+	});
+
+	it("reads no verdict off the lock — a locked tree seats exactly as an unlocked one", () => {
+		const [locked] = subjectsFor(4312, [{path: PATH, branch: BRANCH, locked: ""}]);
+		if (locked === undefined) throw new Error("no subject");
+		const terminal = board({terminal: true, describe: "is closed"});
+
+		expect(classify(locked, terminal, NOBODY)).toEqual(classify(subject(), terminal, NOBODY));
 	});
 });
 

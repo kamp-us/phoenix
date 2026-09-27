@@ -1,7 +1,7 @@
 ---
 id: 0323
 title: A verb retires an orphaned build worktree on a board-attested license, and a lane frees its own branch at its terminal
-status: accepted
+status: amended-in-part by [0426](0426-retire-unlocks-a-released-worktree.md)
 date: 2026-08-21
 tags: [fabrika, pipeline-hardening, worktree, isolation]
 ---
