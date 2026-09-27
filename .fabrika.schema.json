@@ -530,7 +530,7 @@
 		},
 		"uiCapture": {
 			"type": "object",
-			"description": "How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, and the storage state to browse as.",
+			"description": "How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, the storage state to browse as, and the locales a render can be seeded in.",
 			"properties": {
 				"viewport": {
 					"type": "object",
@@ -566,6 +566,35 @@
 					"description": "A repo-relative Playwright storage-state file to browse as. It is a credential — gitignore it, never inline the cookies.",
 					"minLength": 1,
 					"pattern": "^(?!/).+"
+				},
+				"locale": {
+					"type": [
+						"object",
+						"null"
+					],
+					"description": "The localStorage key the app reads its locale from and the closed set of values it accepts. `review-ui render --locale` seeds one of them before navigation and proves it against the page's `lang`. Null (or absent) renders at the app's default locale only.",
+					"properties": {
+						"storageKey": {
+							"type": "string",
+							"description": "The localStorage key the app reads its locale from.",
+							"minLength": 1
+						},
+						"values": {
+							"type": "array",
+							"description": "The accepted locale values, each the `lang` the page reads back when it renders in it.",
+							"items": {
+								"type": "string",
+								"pattern": "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
+							},
+							"minItems": 1,
+							"uniqueItems": true
+						}
+					},
+					"required": [
+						"storageKey",
+						"values"
+					],
+					"additionalProperties": false
 				}
 			},
 			"required": [],

@@ -16,7 +16,7 @@
  * allocated free ports at start, because a fixed port is not a per-worktree resource: two lanes
  * rendering at once would either collide or, worse, capture each other's tree.
  *
- * `uiCapture` is the list-level half — viewport, evidence store, storage state. `storageState` is the
+ * `uiCapture` is the list-level half — viewport, evidence store, storage state, locale. `storageState` is the
  * one field naming a file rather than a value: a Playwright storage-state snapshot, so a repo whose
  * surfaces sit behind a login can be rendered as a logged-in user. It is a credential, so it is a
  * path the repo gitignores — never the cookies inline.
@@ -61,6 +61,9 @@ const VIOLATION = {
 	height: `"${UI_CAPTURE}.viewport.height" is not a positive integer`,
 	evidenceStore: `"${UI_CAPTURE}.evidenceStore" is not a string`,
 	storageState: `"${UI_CAPTURE}.storageState" is not a repo-root-relative path`,
+	locale: `"${UI_CAPTURE}.locale" is not an object`,
+	storageKey: `"${UI_CAPTURE}.locale.storageKey" is missing or not a non-empty string`,
+	values: `"${UI_CAPTURE}.locale.values" is missing or not a non-empty list of distinct locale tags`,
 } as const;
 
 /**
@@ -136,6 +139,24 @@ const Surface = Schema.Struct({
 
 const SurfaceList = Schema.Array(Surface).annotate({message: VIOLATION.list});
 
+/** A BCP 47-shaped tag, the form `document.documentElement.lang` reads back in. */
+const LOCALE_TAG = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
+
+const isLocaleList = (values: ReadonlyArray<string>): boolean =>
+	values.length > 0 &&
+	new Set(values).size === values.length &&
+	values.every((value) => LOCALE_TAG.test(value));
+
+const Locale = Schema.Struct({
+	storageKey: Schema.String.annotate({message: VIOLATION.storageKey})
+		.check(Schema.makeFilter((value) => value.trim() !== "", {message: VIOLATION.storageKey}))
+		.annotateKey({messageMissingKey: VIOLATION.storageKey}),
+	values: Schema.Array(Schema.String)
+		.annotate({message: VIOLATION.values})
+		.check(Schema.makeFilter(isLocaleList, {message: VIOLATION.values}))
+		.annotateKey({messageMissingKey: VIOLATION.values}),
+}).annotate({message: VIOLATION.locale, messageUnexpectedKey: VIOLATION.unknownKey});
+
 const Capture = Schema.Struct({
 	viewport: Viewport,
 	evidenceStore: Schema.NullOr(Schema.String)
@@ -150,11 +171,14 @@ const Capture = Schema.Struct({
 	)
 		.annotate({message: VIOLATION.storageState})
 		.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	locale: Schema.NullOr(Locale)
+		.annotate({message: VIOLATION.locale})
+		.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
 }).annotate({message: VIOLATION.capture, messageUnexpectedKey: VIOLATION.unknownKey});
 
 /** One runnable app: where its source lives, how to start it, and what it serves. */
 export type UiSurface = typeof Surface.Type;
-/** The list-level capture settings — viewport, evidence store, storage state. */
+/** The list-level capture settings — viewport, evidence store, storage state, locale. */
 export type UiCapture = typeof Capture.Type;
 
 const decodeList = Schema.decodeUnknownResult(SurfaceList, {onExcessProperty: "error"});
@@ -296,6 +320,7 @@ const SHIPPED_CAPTURE: UiCapture = {
 	viewport: {...DEFAULT_VIEWPORT},
 	evidenceStore: null,
 	storageState: null,
+	locale: null,
 };
 
 export const uiCaptureKey: KeyGroup<UiCapture> = {
@@ -310,7 +335,7 @@ export const uiCaptureKey: KeyGroup<UiCapture> = {
 	jsonSchema: {
 		type: "object",
 		description:
-			"How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, and the storage state to browse as.",
+			"How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, the storage state to browse as, and the locales a render can be seeded in.",
 		properties: {
 			viewport: {
 				type: "object",
@@ -333,6 +358,28 @@ export const uiCaptureKey: KeyGroup<UiCapture> = {
 					"A repo-relative Playwright storage-state file to browse as. It is a credential — gitignore it, never inline the cookies.",
 				minLength: 1,
 				pattern: "^(?!/).+",
+			},
+			locale: {
+				type: ["object", "null"],
+				description:
+					"The localStorage key the app reads its locale from and the closed set of values it accepts. `review-ui render --locale` seeds one of them before navigation and proves it against the page's `lang`. Null (or absent) renders at the app's default locale only.",
+				properties: {
+					storageKey: {
+						type: "string",
+						description: "The localStorage key the app reads its locale from.",
+						minLength: 1,
+					},
+					values: {
+						type: "array",
+						description:
+							"The accepted locale values, each the `lang` the page reads back when it renders in it.",
+						items: {type: "string", pattern: "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"},
+						minItems: 1,
+						uniqueItems: true,
+					},
+				},
+				required: ["storageKey", "values"],
+				additionalProperties: false,
 			},
 		},
 		required: [],

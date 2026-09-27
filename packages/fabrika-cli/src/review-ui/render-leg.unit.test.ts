@@ -16,6 +16,7 @@ const request = {
 	outDir: "/tmp/shots",
 	cookies: [],
 	forcedFlags: NO_FORCED_FLAGS,
+	locale: null,
 };
 
 const failing =
@@ -312,5 +313,61 @@ describe("captureRenderLeg — the forced-flag proof", () => {
 			runForced(authShot({sessionProof: {_tag: "Anonymous"}, overrideProof: {_tag: "Forced"}}))
 				._tag,
 		).toBe("Unauthenticated");
+	});
+});
+
+/**
+ * The same class one axis over: a seed the app never read paints the default-locale page, a valid
+ * PNG under the requested locale's name.
+ */
+describe("captureRenderLeg — the locale proof", () => {
+	const SEED = {storageKey: "app.locale", value: "en"};
+	const localeRequest = {...request, locale: SEED};
+	const runLocale = (capture: CaptureShots): SurfaceRender =>
+		Effect.runSync(makeCaptureRenderLeg(capture)(localeRequest));
+
+	it("hands the seed to the capture, and seeds nothing when no locale was asked for", () => {
+		const asked: Array<unknown> = [];
+		const spy: CaptureShots = (_plan, _outDir, options) => {
+			asked.push(options?.locale);
+			return succeeding({localeProof: {_tag: "Seeded"}})([], "", {});
+		};
+		runLocale(spy);
+		run(spy);
+		expect(asked).toEqual([SEED, undefined]);
+	});
+
+	it("records the shot only when the page's lang named the seeded value", () => {
+		expect(runLocale(succeeding({localeProof: {_tag: "Seeded"}}))._tag).toBe("Rendered");
+	});
+
+	it("refuses a default-locale render under the seeded name, naming the lang it read", () => {
+		expect(runLocale(succeeding({localeProof: {_tag: "Mismatch", rendered: "tr"}}))).toEqual({
+			_tag: "WrongLocale",
+			wanted: "en",
+			reason: `the page's lang read back "tr"`,
+		});
+	});
+
+	it("refuses an unreadable lang and an absent proof — neither is a proof", () => {
+		expect(
+			runLocale(succeeding({localeProof: {_tag: "Unreadable", reason: "lang read failed: x"}})),
+		).toEqual({_tag: "WrongLocale", wanted: "en", reason: "lang read failed: x"});
+		expect(runLocale(succeeding({}))).toEqual({
+			_tag: "WrongLocale",
+			wanted: "en",
+			reason: "the capture returned no locale proof",
+		});
+	});
+
+	it("keeps a crash ahead of the locale proof — a page that threw set no lang", () => {
+		expect(
+			runLocale(
+				succeeding({
+					localeProof: {_tag: "Mismatch", rendered: "tr"},
+					pageErrors: [{kind: "pageerror", text: "TypeError: x is null"}],
+				}),
+			)._tag,
+		).toBe("Crashed");
 	});
 });

@@ -252,7 +252,7 @@ anchor at all is the proven `16`.
 **Invocation**
 
 ```
-fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--auth-secret-from <file>] [--app web] [--repo <owner/name>]
+fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--locale <value>] [--auth-secret-from <file>] [--app web] [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -264,6 +264,7 @@ fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/
 | `--surface` | string, repeatable | yes (≥1) | — | a surface id: a route (`/feed`), or a route plus a realized tier state (`/feed:auth`, `/feed:auth-caylak`); zero operands is `1` — no tool guesses surfaces from a diff |
 | `--viewport` | string, repeatable | no | `desktop` alone | a viewport to shoot every `--surface` at, over the closed set `desktop` (1280×800) and `mobile` (390×844); crossed with `--surface`, so two of each is four captures. A name outside the set, or one passed twice, is `10` |
 | `--flag` | string, repeatable | no | every flag at its default | force one flag for this run: `<key>=on` or `<key>=off`; anything else, or a key forced twice, is `10` |
+| `--locale` | string | no | the app's default locale, nothing seeded | render every shot in this locale — one of the values `.fabrika.jsonc`'s `uiCapture.locale` declares; with no declaration, or a value outside its list, it is `10` before a browser launches |
 | `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve. Whichever app is resolved, a `--surface` whose own `uiSurfaces` row belongs to an app this preview did not announce is `11` — omitting the flag routes around no fence |
 | `--auth-secret-from` | string | no | the ambient `$BETTER_AUTH_SECRET` | a file holding the `BETTER_AUTH_SECRET` the preview worker deploys with — one repo-wide value, exported from the ci-credentials stack's alchemy state, its one readable copy; a file that cannot be read is `11`, and so is a resolved value that is empty or carries the `insecure_` placeholder |
 | `--repo` | string | no | resolved | the repository |
@@ -330,6 +331,36 @@ cookie answers `!forced` for every key, which is `11` naming the inert keys. A k
 unevaluated, or a probe that cannot be read, is `11` too and is never folded into "the override was
 dropped" — that would be a fact about the override read off a probe nobody could read.
 
+**`--locale` shoots the surface in a locale other than the app's default**, so a PR whose visible
+change is only in another language is judged from its pixels. Where an app keeps the reader's locale
+only in `localStorage`, no URL or header can pick it, and before this operand every such state was
+disclosed as could-not-render. fabrika compiles in no app's key: the consumer declares it in
+`uiCapture.locale`, beside `storageState`:
+
+```jsonc
+"uiCapture": {"locale": {"storageKey": "kampus.locale", "values": ["tr", "en"]}}
+```
+
+`storageKey` is the non-empty `localStorage` key the app reads; `values` is the closed, non-empty
+list of distinct locale tags it accepts, each the `lang` the page carries when it renders in that
+locale. The schema refuses a malformed declaration, and an absent one (or `null`) leaves every
+render unchanged. The operand is read against that list before any network read or browser launch:
+`--locale` with no declaration, or with a value off the list, is `10`, the same class as a
+malformed `--flag`. A `--locale` run reads `uiCapture` too, so a declaration that does not decode is
+`11`; a run without the operand never reads it.
+
+The seed is a context init script, so the key is written in every document of each shot's context
+before any page script runs, and the app's first read already sees it. It applies to every surface,
+anonymous or tier-naming alike. Seeding a key is not the same as the app rendering in that locale, so
+— like the session and the override — the shot proves it. After navigation and before the
+screenshot, the verb waits (up to 10s) for `document.documentElement.lang` to name the requested
+value, because an app may set `lang` only once an asynchronously loaded catalog lands, then reads it
+back. A page whose `lang` names anything else, or one whose `lang` cannot be read, is `11` and
+records no capture: a seed the app never read paints the default-locale page cleanly under the
+requested name, and no byte check can tell the two apart. A page that threw during render is still
+`13` — the locale proof is read off the page, so a crash outranks it. Every stderr line of a seeded
+run names the shot `in locale <value>`.
+
 The refusal on every other token is the same fence v1 stated, kept for the same reason: v1 demanded
 `:focus-visible` captures with no mechanism to prove the state was realized, and a state that
 silently rendered unfocused PASSed its prohibition forever. Parsing a state is not rendering one —
@@ -393,8 +424,8 @@ re-invocation without it, on the record; never the tool's tolerance.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
-| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; or `--flag` was passed beside an anonymous surface |
-| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, or while `--auth-secret-from` names a file that could not be read; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; or a forced flag evaluated at its default anyway |
+| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; `--flag` was passed beside an anonymous surface; or `--locale` was passed with no `uiCapture.locale` declared, or with a value outside its declared list |
+| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read, or `--locale` was passed and the declared `uiCapture` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, or while `--auth-secret-from` names a file that could not be read; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; a forced flag evaluated at its default anyway; or a seeded shot's `document.documentElement.lang` did not read back as the `--locale` value |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -418,6 +449,8 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: --flag "<token>" is not a <key>=<on\|off> pair (<reason>) — an operand nothing can force would shoot the default state under the forced name.` | 10 | refusal |
 | `review-ui render: --flag was passed with the anonymous surface "<id>" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (auth, auth-caylak) on every surface.` | 10 | refusal |
 | `review-ui render: surface "<id>" at <viewport> did not render with its forced flags (<reason>) — the forced render is UNKNOWN, never the default one.` | 11 | refusal |
+| `review-ui render: --locale "<value>" cannot be seeded (<reason>) — an operand nothing seeds would shoot the default locale under the requested name.` | 10 | refusal |
+| `review-ui render: surface "<id>" at <viewport> in locale <value> did not render in its seeded locale (<reason>) — the seeded locale's render is UNKNOWN, never the default one.` | 11 | refusal |
 | `review-ui render: --viewport "<name>" is not a viewport this repo renders — the names are desktop, mobile.` | 10 | refusal |
 | `review-ui render: --viewport "<name>" was passed twice — the second shot would overwrite the first's file and evidence.` | 10 | refusal |
 | `review-ui render: surface "<id>" at <viewport> was asked for at <wanted>px and its bytes read back <actual>px wide — the requested viewport's render is UNKNOWN, never another width's.` | 19 | refusal |
