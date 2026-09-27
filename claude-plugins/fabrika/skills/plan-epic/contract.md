@@ -343,7 +343,7 @@ Every `ledger` verb obeys these; stated once.
 
   | File | Written by | Read by |
   |---|---|---|
-  | `run.json` — `{"epic","run","mode","cycleDoc","bodyDigest"}` | `ledger open` | `draft`, `child`, `topology`, `write`, `supersede` |
+  | `run.json` — `{"epic","run","mode","cycleDoc","bodyDigest"}` | `ledger open` | `draft`, `child`, `adopt`, `topology`, `write`, `supersede` |
 
   **`bodyDigest` on `run.json` is a record, never an input.** `draft` and `write` compare the live
   body against the `--digest` **flag** and nothing else; a verb that fell back to the recorded value
@@ -352,7 +352,7 @@ Every `ledger` verb obeys these; stated once.
   opened over.
   | `plan.md` | `ledger draft` | `write` |
   | `topology.md` | `ledger topology` | `write` |
-  | `children.jsonl` — one line per child | **seeded by `ledger open`** with the epic's existing children, appended to by `ledger child` | `topology`, `supersede` |
+  | `children.jsonl` — one line per child | **seeded by `ledger open`** with the epic's existing children, appended to by `ledger child`, a line recorded or replaced by `ledger adopt` | `adopt`, `topology`, `supersede` |
 
   `mode` and `cycleDoc` are decided **once**, by `ledger open`, and every later verb reads them from
   `run.json` rather than being told. A verb that re-derived `mode` from a live body could disagree

@@ -66,6 +66,14 @@ describe("judgeAdoption", () => {
 		expect(judgeAdoption(input({labels}))).toMatchObject({_tag: "Refused", code: OFF_VOCABULARY});
 	});
 
+	it("names the labels it never adds when one is missing", () => {
+		expect(judgeAdoption(input({labels: ["type:bug", "status:triaged"]}))).toMatchObject({
+			_tag: "Refused",
+			reason:
+				"it is missing a priority label — adoption never adds a type, status or priority label, so triage it first.",
+		});
+	});
+
 	it("ignores containment entirely while the cycle doc is not present", () => {
 		expect(
 			judgeAdoption(input({labels: ["type:feature", "p1", "status:triaged"], containment: "x"})),
