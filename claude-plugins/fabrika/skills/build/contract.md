@@ -2463,6 +2463,12 @@ still refuses `22`. `SURFACES` gains no member. A `.fabrika.jsonc` whose `config
 read or does not decode is `11` — but only over a diff holding an unclaimed file, the one diff whose
 answer depends on it.
 
+**Non-JS source takes the same key.** A `.java` file under a Gradle tree matches no surface's
+pattern either, and the extension patterns do not widen to take it: `pnpm typecheck` and Biome never
+open it. A repo declares its own build (for example `./gradlew testDebugUnitTest`) under
+`configValidators`, naming each source file the entry claims in `reads` — exact paths, as for config
+files — and a Java-only diff then greens or reds exactly as a config-only one does.
+
 Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`).
 
 **Exit status** (beyond the universal four)
@@ -2492,7 +2498,7 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | `build check: <n> workflow validator(s) ran, but none of them opened any of the <m> changed workflow file(s) (<files>) — actionlint did not run here (<reason>) and no declared validator reads them, so the verdict is UNKNOWN, never green.` | 11 | refusal |
 | `build check: no validator that ran opens <files> — reported in \`unvalidated\`, so this green claims nothing about them.` | 0 | scope note beside a green |
 | `build check: cannot read \`configValidators\` from .fabrika.jsonc (<reason>) — whether any of <files> has a declared validator is UNKNOWN, never green.` | 11 | refusal |
-| `build check: <n> changed config file(s) read by \`configValidators\` in .fabrika.jsonc: <files>.` | 0 | scope note |
+| `build check: <n> changed file(s) read by \`configValidators\` in .fabrika.jsonc: <files>.` | 0 | scope note |
 | `build check: <n> workflow validator(s) declared in .fabrika.jsonc.` | 0 | scope note |
 | `build check: no repo workflow validator is declared — <reason>.` | 0 | scope note |
 | `build check: actionlint did NOT run (<reason>) — <ci.gateWorkflow>'s actionlint job supersedes this verdict on workflow syntax.` | 0 | scope note beside a green |
