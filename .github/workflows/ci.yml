@@ -177,12 +177,12 @@ jobs:
       # cross-package read the scoped PR and queue runs below missed.
       packages_required: ${{ github.event_name == 'push' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.packages == 'true' }}
       # Which packages `packages-tests` runs (#10023), from the `packages-scope` step
-      # below: `scoped` (only `packages_selection`), `full` or `none`. An absent output
-      # (the step failed or was skipped) reads as `full`, and the Tuval SDK proof
-      # defaults to running, so a broken selection runs more, never less.
+      # below: `scoped` (only `packages_selection`), `full` or `none`. The step runs only
+      # on `pull_request` and `merge_group`, so on every other event its absent output
+      # reads as `full`, and the Tuval SDK proof defaults to running.
       packages_scope: ${{ steps.packages-scope.outputs.packages_scope || 'full' }}
       packages_selection: ${{ steps.packages-scope.outputs.packages_selection }}
-      packages_scope_reason: ${{ steps.packages-scope.outputs.packages_scope_reason || 'the scope step produced no answer' }}
+      packages_scope_reason: ${{ steps.packages-scope.outputs.packages_scope_reason || format('a {0} run always tests every package', github.event_name) }}
       tuval_sdk_proof: ${{ steps.packages-scope.outputs.tuval_sdk_proof || 'true' }}
       # `actionlint` lints `.github/workflows/**` (issue #568). Its single-sourced
       # required-ness is JUST the `workflows` path filter — actionlint is creds-free
@@ -498,12 +498,16 @@ jobs:
       # Package test scope (#10023): which packages `packages-tests` runs. The diff reads
       # the same base the `mergebase` step pins for dorny, so the path filter and the
       # scope see one changed-file set. The `@kampus/package-test-scope` bin owns the
-      # decision and falls back to the full run on any event but `pull_request` and
-      # `merge_group`, an empty base, a missing file list, or a path outside every
-      # workspace package. This step only relays the diff: a failed `git diff` leaves
-      # `CHANGED_FILES_FILE` unset, which the bin reads as an unknown diff.
+      # decision and falls back to the full run on an empty base, a missing file list,
+      # or a path outside every workspace package. This step only relays the diff: a
+      # failed `git diff` leaves `CHANGED_FILES_FILE` unset, which the bin reads as an
+      # unknown diff. The event gate keeps checked-out code from running on `push` and
+      # `workflow_dispatch`, which CodeQL reads as default-branch cache poisoning
+      # (`actions/cache-poisoning/poisonable-step`); those events take the full run
+      # from the `changes` output defaults above.
       - name: Scope the packages unit tests to the diff
         id: packages-scope
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         env:
           SCOPE_BASE: ${{ steps.mergebase.outputs.sha }}
         run: |
