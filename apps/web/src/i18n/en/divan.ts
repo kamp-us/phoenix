@@ -1,20 +1,20 @@
 import type {DivanKey} from "../tr/divan";
 
 // Lowercase like the Turkish side: a locale swap changes the language, never the typographic
-// voice. The brand nouns — divan, çaylak, yazar, kefil, sustur, engelle — read identically in both
-// catalogs; `brandNouns.unit.test.ts` is what holds that.
+// voice. No product name appears here; divan reads "Council", künye reads "Standing", and the other
+// Turkish words are translated (ADR 0414) — `brandNouns.unit.test.ts` is what holds that.
 export const divan = {
-	"divan.title": "divan",
+	"divan.title": "Council",
 	"divan.lead":
-		"you review what the çaylaklar produce here. the ones producing most and reviewed least sit on top.",
+		"you review what the newcomers produce here. the ones producing most and reviewed least sit on top.",
 	"divan.loading": "loading…",
 	"divan.cancel": "cancel",
 	"divan.action.failed": "the action failed.",
 	"divan.error.denied": "you do not have access to this area.",
-	"divan.error.load": "the divan could not load, try again.",
+	"divan.error.load": "the Council could not load, try again.",
 
-	"divan.nav.label": "divan sections",
-	"divan.nav.caylaklar": "çaylaklar",
+	"divan.nav.label": "Council sections",
+	"divan.nav.caylaklar": "newcomers",
 	"divan.nav.raporlar": "reports",
 
 	"divan.kind.definition": "definition",
@@ -33,15 +33,15 @@ export const divan = {
 	"divan.count.comments.one": "{count} comment",
 	"divan.count.comments.other": "{count} comments",
 
-	"divan.caylak.fallback": "çaylak",
+	"divan.caylak.fallback": "newcomer",
 
-	"divan.roster.paneLabel": "çaylak list",
-	"divan.roster.label": "çaylaklar under review",
-	"divan.roster.empty": "no çaylak waiting for review.",
+	"divan.roster.paneLabel": "newcomer list",
+	"divan.roster.label": "newcomers under review",
+	"divan.roster.empty": "no newcomer waiting for review.",
 	"divan.roster.counts": "{items} · {definitions}, {posts}, {comments}",
 
-	"divan.detail.label": "çaylak review",
-	"divan.detail.hint": "pick a çaylak to review.",
+	"divan.detail.label": "newcomer review",
+	"divan.detail.hint": "pick a newcomer to review.",
 	"divan.detail.backlogTitle": "content under review",
 	"divan.detail.backlogEmpty": "no content from this account is waiting for review.",
 	"divan.detail.previewEmpty": "(empty)",
@@ -50,21 +50,21 @@ export const divan = {
 	"divan.vote.withdraw": "withdraw upvote",
 
 	"divan.promote.busy": "promoting…",
-	"divan.promote.action": "make yazar",
-	"divan.promote.promoted": "the çaylak became a yazar.",
-	"divan.promote.alreadyYazar": "the user is already a yazar.",
+	"divan.promote.action": "make author",
+	"divan.promote.promoted": "the newcomer became an author.",
+	"divan.promote.alreadyYazar": "the user is already an author.",
 	"divan.promote.denied": "you do not have permission to do this.",
 
-	"divan.vouch.offer": "become kefil",
-	"divan.vouch.done": "you are kefil",
-	"divan.vouch.busy": "becoming kefil…",
-	"divan.vouch.description": "you are becoming kefil for the account you reviewed.",
+	"divan.vouch.offer": "vouch",
+	"divan.vouch.done": "you vouched",
+	"divan.vouch.busy": "vouching…",
+	"divan.vouch.description": "you are vouching for the newcomer you reviewed.",
 	"divan.vouch.stake":
-		"being a kefil is a commitment: you stake your own standing, and you can be kefil to at most three people at once. when the çaylak reaches enough karma, they become a yazar together with the person who backed them. you can withdraw whenever you want.",
-	"divan.vouch.promoted": "you are now kefil and the çaylak became a yazar.",
-	"divan.vouch.recorded": "you are now kefil. the çaylak becomes a yazar on enough karma.",
-	"divan.vouch.limit": "you can be kefil to at most three people at once.",
-	"divan.vouch.denied": "you must be a yazar to become kefil.",
+		"vouching is a commitment: you stake your own reputation, and you can vouch for at most three people at once. when the newcomer reaches enough karma, they become an author together with the person who backed them. you can withdraw your vouch whenever you want.",
+	"divan.vouch.promoted": "you vouched and the newcomer became an author.",
+	"divan.vouch.recorded": "you vouched. the newcomer becomes an author on enough karma.",
+	"divan.vouch.limit": "you can vouch for at most three people at once.",
+	"divan.vouch.denied": "you must be an author to vouch.",
 
 	"divan.raporlar.label": "open reports",
 	"divan.raporlar.empty": "no reports waiting — the queue is clear.",
@@ -107,7 +107,7 @@ export const divan = {
 	"divan.triage.legend.remove": "remove",
 	"divan.triage.legend.undo": "undo",
 	"divan.triage.legend.reveal": "show",
-	"divan.triage.legend.kunye": "künye",
+	"divan.triage.legend.kunye": "Standing",
 	"divan.triage.legend.chamber": "pane",
 	"divan.triage.legend.wave": "wave",
 
@@ -124,12 +124,12 @@ export const divan = {
 	"divan.wave.remove": "remove (Enter)",
 	"divan.wave.cancel": "cancel (Esc)",
 
-	"divan.actor.label": "actor künyesi",
+	"divan.actor.label": "actor's Standing",
 	"divan.actor.unknown": "actor unknown",
 	"divan.actor.tell.uretim": "output",
 	"divan.actor.tell.sicil": "record",
 	"divan.actor.tell.bildiren": "reported by",
-	"divan.actor.tell.kefil": "kefil",
+	"divan.actor.tell.kefil": "vouch",
 	"divan.actor.tell.buAktor": "this actor",
 	"divan.actor.uretim": "{definitions} · {posts} · {comments}",
 	"divan.actor.record.clean": "clean",
@@ -140,8 +140,8 @@ export const divan = {
 	"divan.actor.kefil.no": "not vouched",
 	"divan.actor.otherReported.none": "no other reported content",
 	"divan.actor.otherReported.some": "{count} reported items",
-	"divan.actor.guard": "the mod record informs, it does not make the kefil call.",
-	"divan.actor.hop.kefil": "kefil (V)",
+	"divan.actor.guard": "the mod record informs, it does not make the vouch call.",
+	"divan.actor.hop.kefil": "vouch (V)",
 	"divan.actor.hop.moderation": "moderation (M)",
 
 	"divan.ban.label": "banning",
@@ -169,14 +169,14 @@ export const divan = {
 		"the funnel from signup to promotion. the tier split of the human accounts on the platform right now.",
 	"divan.funnel.tierLabel": "tier split",
 	"divan.funnel.errorLoad": "the conversion data could not load, try again.",
-	"divan.funnel.promotionRate": "yazar conversion rate",
+	"divan.funnel.promotionRate": "author conversion rate",
 	"divan.funnel.firstContributionRate": "first contribution rate",
-	"divan.funnel.vouchRate": "kefil rate",
+	"divan.funnel.vouchRate": "vouch rate",
 	"divan.funnel.timeToPromotion": "time to promotion (median)",
 	"divan.funnel.notMeasurable": "not measurable yet",
-	"divan.funnel.notMeasurableCount": "{count} yazar not measurable yet",
-	"divan.funnel.caylak": "çaylak",
-	"divan.funnel.yazar": "yazar",
+	"divan.funnel.notMeasurableCount": "{count} authors not measurable yet",
+	"divan.funnel.caylak": "newcomer",
+	"divan.funnel.yazar": "author",
 	"divan.funnel.days": "{days} days",
 
 	"divan.funnel.cohorts.label": "cohort funnel",
@@ -189,12 +189,12 @@ export const divan = {
 	"divan.funnel.cohorts.colSignedUp": "signed up",
 	"divan.funnel.cohorts.colReturned": "returned days 2–7",
 	"divan.funnel.cohorts.colFirstContribution": "first contribution",
-	"divan.funnel.cohorts.colKefil": "kefil",
-	"divan.funnel.cohorts.colYazar": "yazar",
+	"divan.funnel.cohorts.colKefil": "vouched",
+	"divan.funnel.cohorts.colYazar": "author",
 	"divan.funnel.cohorts.colD1": "day 1 return",
 	"divan.funnel.cohorts.colD7": "day 7 return",
 	"divan.funnel.cohorts.foundingHole": "unmeasurable promotions",
-	"divan.funnel.cohorts.vouchHole": "yazar with no kefil record",
+	"divan.funnel.cohorts.vouchHole": "authors with no vouch record",
 	"divan.funnel.cohorts.holesNote":
 		"promotions in the founding generation were never stamped, and a withdrawn backing erases its record — those accounts are not counted and cannot be rebuilt after the fact.",
 } satisfies Record<DivanKey, string>;

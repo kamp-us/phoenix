@@ -33,15 +33,17 @@ const envelope: Effect.Effect<StdinRead> = Effect.succeed({
 });
 
 const REAP = new RegExp(`^${NODE} ${ENTRY} build reap `);
-const ADD = /^git worktree add --detach /;
+const ADD = /^git -c core\.hooksPath=\/dev\/null worktree add --detach /;
 
 /** Everything the provisioning half needs to succeed, so only the sweep is under test. */
 const PROVISIONS: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]> = [
+	[/^git rev-parse --path-format=absolute --git-common-dir$/, okOut(`${REPO}/.git\n`)],
 	[/^git symbolic-ref /, okOut("origin/main\n")],
 	[/^git fetch /, okOut("")],
 	[/^git rev-parse --verify /, okOut(`${HEAD}\n`)],
 	[/^git update-ref -d /, okOut("")],
 	[ADD, okOut("")],
+	[/^git hook run /, okOut("")],
 ];
 
 const PROVISIONED: FakeFsOptions = {directories: [TREE, `${TREE}/node_modules/.pnpm`]};

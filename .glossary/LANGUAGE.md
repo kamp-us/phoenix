@@ -604,7 +604,8 @@ and model-blind: none of them names a backend, a model or a session id. Source:
 ## 3. Product / brand nouns (Turkish surface)
 
 The naming convention is **Turkish for product / brand, English for technical**:
-product and brand names stay Turkish and are never translated; everything technical is
+product and brand names are Turkish (English copy keeps only the five product names below
+untranslated); everything technical is
 English — URL routes/paths, code identifiers, D1 table/column names, file names. The
 canonical example is that the route is `/search?q=`, not `/ara`.
 
@@ -612,8 +613,12 @@ canonical example is that the route is `/search?q=`, not `/ara`.
 (ADR [0347](../.decisions/0347-web-copy-behind-i18n-catalog.md)). The reader picks a
 **locale**; **Turkish is the default**, so a reader who picks nothing reads what the site
 always read. Both locales are served from one typed **catalog** per locale under
-`apps/web/src/i18n/`, and **the brand nouns in the table below are not translated in
-either one** — the English interface still says sözlük, pano, mecmua, yazar, çaylak.
+`apps/web/src/i18n/`. **Only five product names stay Turkish in English copy: sözlük,
+pano, kampus, mecmua and depo** (ADR
+[0414](../.decisions/0414-five-product-names-stay-turkish.md), amending 0347). In English,
+**divan** is **Council** and **künye** is **Standing**, capitalised as feature names; every
+other Turkish word in the table below is translated normally (yazar is "author", çaylak
+"newcomer", kefil "vouch", bildir "report", sustur "mute", engelle "block").
 Tuval, Fabrika and Demlik are English-only: only the product name is Turkish, and none of
 them coins a Turkish term.
 
@@ -644,9 +649,8 @@ language* (the name a concept carries in [`TERMS.md`](./TERMS.md)) and *UI copy 
   copy changes nothing on the glossary axis: a term is not re-decided because the page
   it appears on can now render in English.
 
-The `bildir` row below already models this split: the brand lexeme surfaces in the
-user-facing copy (`bildir` / `bildirildi`, in both locales — it is a brand noun) while its
-technical surface (`features/report`, the `Report` service, `content_report`) stays
+The `bildir` row below already models this split: the Turkish lexeme surfaces in the
+Turkish copy (`bildir` / `bildirildi`; English reads "report") while its technical surface (`features/report`, the `Report` service, `content_report`) stays
 English. The funnel is the mirror case — a technical concept whose *canonical term* is
 English (`funnel / conversion funnel`) whatever locale the surface it powers renders in.
 Collapsing the two axes ("the concept shows on a Turkish screen, so its glossary term must
@@ -665,20 +669,20 @@ This is the general rule for every showcase surface — Turkish-naming the compo
 the atölye-storyboard inversion the founder ruled a standing don't. Exhibit sample content
 is not a user surface, so it is exempt from the catalog and stays as authored.
 
-The Turkish product/brand nouns this repo uses:
+The Turkish product/brand nouns this repo uses, and what English copy calls each:
 
-| Noun | What it names |
-|---|---|
-| **sözlük** | the dictionary product (terms + definitions) |
-| **pano** | the link/discussion board product (posts + comments) |
-| **kampus** | the umbrella product / community |
-| **bildir** | the report / notify surface — the brand lexeme surfaces in the **user-facing copy** (the `ReportButton` labels `bildir` / `bildirildi` / `zaten bildirildi`); the technical surface (`features/report` dir, `Report` service, `content_report` table) is English per this convention |
-| **künye** | the per-user identity DO (karma, invite-only access, privileges) |
-| **depo** | the internal asset store/CDN (was imge) |
-| **divan** | the proving-ground reviewer surface — the gated `/divan` destination where yazar + moderatör review a çaylak's sandboxed work ("work goes before the divan") |
-| **mecmua** | the serious long-form blogging / publishing product (a third surface beside **sözlük** + **pano**, epic #2429) — a **yazar** authors and publishes a long-form post (başlık + markdown body) that anyone may read; a **çaylak** cannot publish (authorship is earned). v1 is a surface on the existing `apps/web` worker, not its own app. Turkish for "magazine / journal / anthology" |
-| **sustur** | mute — the **one-directional, silent, notification-suppressing** member-mute lever (epic #2571; v1 semantics fixed by ADR [0188](../.decisions/0188-mute-v1-semantics.md)). Muting a member both read-masks their content *and* suppresses the **bildirim** their interactions would generate to the muter; the muted member is never notified. Distinct from **engelle** (block) — mute is one-directional and lighter. Turkish for "silence / mute" |
-| **engelle** | block — the heavier, **mutual** interaction-prevention lever (preventing replies/mentions/mutual visibility, symmetry TBD). **Deferred from mute v1** and scoped to its own later decision/epic (ADR [0188](../.decisions/0188-mute-v1-semantics.md)); named here to keep it distinct from the lighter one-directional **sustur** (mute). Turkish for "block / obstruct" |
+| Noun | English copy | What it names |
+|---|---|---|
+| **sözlük** | sözlük (stays) | the dictionary product (terms + definitions) |
+| **pano** | pano (stays) | the link/discussion board product (posts + comments) |
+| **kampus** | kampus (stays) | the umbrella product / community |
+| **bildir** | report | the report / notify surface — the Turkish lexeme surfaces in the **Turkish copy** (the `ReportButton` labels `bildir` / `bildirildi` / `zaten bildirildi`); the technical surface (`features/report` dir, `Report` service, `content_report` table) is English per this convention |
+| **künye** | **Standing** | the per-user identity DO (karma, invite-only access, privileges) |
+| **depo** | depo (stays) | the internal asset store/CDN (was imge) |
+| **divan** | **Council** | the proving-ground reviewer surface — the gated `/divan` destination where yazar + moderatör review a çaylak's sandboxed work ("work goes before the divan") |
+| **mecmua** | mecmua (stays) | the serious long-form blogging / publishing product (a third surface beside **sözlük** + **pano**, epic #2429) — a **yazar** authors and publishes a long-form post (başlık + markdown body) that anyone may read; a **çaylak** cannot publish (authorship is earned). v1 is a surface on the existing `apps/web` worker, not its own app. Turkish for "magazine / journal / anthology" |
+| **sustur** | mute | mute — the **one-directional, silent, notification-suppressing** member-mute lever (epic #2571; v1 semantics fixed by ADR [0188](../.decisions/0188-mute-v1-semantics.md)). Muting a member both read-masks their content *and* suppresses the **bildirim** their interactions would generate to the muter; the muted member is never notified. Distinct from **engelle** (block) — mute is one-directional and lighter. Turkish for "silence / mute" |
+| **engelle** | block | block — the heavier, **mutual** interaction-prevention lever (preventing replies/mentions/mutual visibility, symmetry TBD). **Deferred from mute v1** and scoped to its own later decision/epic (ADR [0188](../.decisions/0188-mute-v1-semantics.md)); named here to keep it distinct from the lighter one-directional **sustur** (mute). Turkish for "block / obstruct" |
 
 > This is the brand-noun seed. The full domain-noun glossary (the entities and their
 > precise definitions) lives in its own `.glossary/TERMS.md`; this table fixes only the

@@ -162,3 +162,11 @@ dropped because its only consumer left with `packages/pipeline-cli/`.
 
 Read this file for the *why* — the race, the fail-closed polarity, the `--detach` rationale, the
 documented-vs-undocumented split — all of which 0337 rests on. Read 0337 for what is live.
+
+## Pointer (2026-09-27) — the rejected alternative is taken
+
+ADR [0420](0420-worktree-creation-locks-installs-outside.md) moves the install off the hook's own
+`git worktree add` and runs it separately, which is the alternative *Why this over decoupling the
+lefthook `post-checkout` install* rejects above. The `post-checkout` `bootstrap-deps` body is
+unchanged and still the one install, so that section's concern about 0109's contract does not
+arise. Everything else in this file reads as before.

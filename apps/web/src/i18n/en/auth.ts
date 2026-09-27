@@ -3,16 +3,16 @@ import type {AuthKey} from "../tr/auth";
 // Lowercase like the Turkish side: kamp.us speaks in lowercase, and a locale swap changes the
 // language, never the typographic voice.
 //
-// Where Turkish suffixes a brand noun into a longer word (`divanda`, `panoda`, `çaylaksın`) that
-// word is no longer a whole-word hit, so English must not spell the bare noun either or the
-// per-key counts diverge. English carries a placeholder instead — named `{panoNoun}`, never
-// `{pano}`, because the invariant's `\p{L}+` scan reads a placeholder's own name as a word.
+// Where Turkish suffixes a product name into a longer word (`panoda`, `sözlükte`) that word is no
+// longer a whole-word hit, so English must not spell the bare name either or the per-key counts
+// diverge (ADR 0414). English carries a placeholder instead — named `{panoNoun}`, never `{pano}`,
+// because the invariant's `\p{L}+` scan reads a placeholder's own name as a word.
 export const auth = {
 	"auth.brand.pano": "pano",
 	"auth.brand.sozluk": "sözlük",
-	"auth.brand.divan": "divan",
-	"auth.brand.caylak": "çaylak",
-	"auth.brand.yazar": "yazar",
+	"auth.brand.divan": "Council",
+	"auth.brand.caylak": "newcomer",
+	"auth.brand.yazar": "author",
 
 	"auth.signIn.title": "sign in",
 	"auth.signIn.sub": "pick up where you left off.",
@@ -23,7 +23,7 @@ export const auth = {
 	"auth.signUp.title": "sign up",
 	"auth.signUp.sub": "the door is open, a voice is earned.",
 	"auth.signUp.rite":
-		"opening an account is free to everyone. what you write first is reviewed as a çaylak in the {divanNoun}; as you contribute, a yazar vouches for you and you become one too — and from then on what you write goes live directly.",
+		"opening an account is free to everyone. what you write first is reviewed as a newcomer in the {divanNoun}; as you contribute, an author vouches for you and you become one too — and from then on what you write goes live directly.",
 	"auth.signUp.submit": "create account",
 	"auth.signUp.pending": "creating…",
 	"auth.signUp.failed": "sign-up failed",
@@ -62,18 +62,18 @@ export const auth = {
 
 	"auth.welcome.loading": "loading…",
 	"auth.welcome.title": "welcome",
-	"auth.welcome.titleCaylak": "welcome, çaylak",
+	"auth.welcome.titleCaylak": "welcome, newcomer",
 	"auth.welcome.lede":
 		"kamp.us is a slow corner where developers teach themselves. links and writing are shared on {panoNoun}; in {sozlukNoun} we write terms in our own words. no ads, no follower race — a voice is earned.",
 	"auth.welcome.standingHeading": "where you stand",
 	"auth.welcome.caylakLine": "your account is new; you are still a {caylakNoun}.",
 	"auth.welcome.karmaLabel": "karma",
-	"auth.welcome.vouchTerm": "kefil",
-	"auth.welcome.yazarNote": "you are already a {yazarNoun}; what you write goes live directly.",
+	"auth.welcome.vouchTerm": "vouched",
+	"auth.welcome.yazarNote": "you are already an {yazarNoun}; what you write goes live directly.",
 	"auth.welcome.standingLoading": "loading your standing.",
 	"auth.welcome.riteHeading": "the road ahead",
 	"auth.welcome.riteBody":
-		"as you contribute, a yazar becomes your kefil; once the vouch and the review are complete you become a yazar and what you write goes live directly.",
+		"as you contribute, an author vouches for you; once the vouch and the review are complete you become an author and what you write goes live directly.",
 	"auth.welcome.continue": "continue",
 
 	"auth.firstContribution.heading": "write your first contribution",
@@ -95,7 +95,7 @@ export const auth = {
 	"auth.landing.rite.doorBody": "opening an account is free to everyone.",
 	"auth.landing.rite.earnedLead": "a voice is earned:",
 	"auth.landing.rite.earnedBody":
-		"what you write first is reviewed as a çaylak in the {divanNoun}; as you contribute a yazar becomes your kefil and you become a yazar — and from then on what you write goes live directly.",
+		"what you write first is reviewed as a newcomer in the {divanNoun}; as you contribute an author vouches for you and you become an author — and from then on what you write goes live directly.",
 	"auth.landing.join.label": "create an account",
 	"auth.landing.join.sub": "the door is open · a voice is earned",
 	"auth.landing.browse.panoSub": "posts · discussions",
@@ -109,7 +109,7 @@ export const auth = {
 	"auth.landing.error": "could not load right now",
 	"auth.landing.stats.definitions": "definitions",
 	"auth.landing.stats.posts": "posts",
-	"auth.landing.stats.authors": "yazar",
+	"auth.landing.stats.authors": "authors",
 	"auth.landing.stats.comments": "comments",
 	"auth.landing.stats.version": "phoenix",
 	"auth.landing.stats.error": "no stats right now",
@@ -124,5 +124,5 @@ export const auth = {
 	"auth.onramp.heading.pano": "you're ready to share your first post",
 	"auth.onramp.heading.panoComment": "you're ready to write your first comment",
 	"auth.onramp.body":
-		"what you write as a çaylak is reviewed in a space only moderators see until you become a yazar — it is not visible to everyone right away. as you write and contribute you gather karma, and with a yazar's backing you become one; then what you write goes live directly.",
+		"what you write as a newcomer is reviewed in a space only moderators see until you become an author — it is not visible to everyone right away. as you write and contribute you gather karma, and with an author's backing you become one; then what you write goes live directly.",
 } satisfies Record<AuthKey, string>;
