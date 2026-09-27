@@ -346,6 +346,31 @@ describe("table setup reads the size dollars from appetiteSizes", () => {
 		expect(readme).toContain("- **L**: an epic, about $90 per child.");
 	});
 
+	it("reports each Size option whose description no longer shows a changed appetiteSizes, rewriting none", async () => {
+		const github = fakeProjects({repo: REPO});
+		expect((await setupOn(github)).code).toBe(0);
+
+		const outcome = await setupOn(github, withConfig({appetiteSizes: {S: 20, M: 50, L: 90}}));
+
+		expect(outcome.code).toBe(0);
+		expect(sizeDescriptions(github)).toEqual([
+			"About $15.",
+			"About $35.",
+			"About $40 per epic child.",
+		]);
+		expect(github.projects[0]?.readme ?? "").toContain("- **S**: about $20.");
+		const answered = JSON.parse(outcome.stdout);
+		expect(answered.answer).toBe("reconciled");
+		expect(answered.drift).toHaveLength(1);
+		const [drift] = answered.drift;
+		expect(drift).toContain('option "S" as "About $15." where the table says "About $20."');
+		expect(drift).toContain('option "M" as "About $35." where the table says "About $50."');
+		expect(drift).toContain(
+			'option "L" as "About $40 per epic child." where the table says "About $90 per epic child."',
+		);
+		expect(outcome.stderr.join("\n")).toContain(`drift: ${drift}`);
+	});
+
 	it("refuses a malformed appetiteSizes before reading GitHub", async () => {
 		const github = fakeProjects({repo: REPO});
 		const outcome = await setupOn(github, withConfig({appetiteSizes: {S: 50, M: 35, L: 40}}));

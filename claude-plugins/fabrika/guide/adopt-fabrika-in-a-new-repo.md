@@ -256,7 +256,10 @@ README's "One-time setup" section lists them:
 
 To tune the table, add a `table` block to `.fabrika.jsonc`: cadence and day, the agenda sections and
 their order, the agenda cap and every flag threshold. Leave out what you don't change. The size
-dollars are not in that block: set them in `appetiteSizes`, the key pitch-guard reads, and the Size
-options and the project README show the same amounts your pitches are approved against. To point
+dollars are not in that block: set them in `appetiteSizes`, the key pitch-guard reads. A new Size
+field and the project README then show the same amounts your pitches are approved against. If you
+change `appetiteSizes` after the Size field exists, re-run setup: it rewrites the README but never
+an existing field's options, so it prints a `drift:` line naming each Size option whose description
+still shows the old amount. Edit those descriptions by hand in the field's settings. To point
 setup at a project you already have, set `table.project.number` (and `table.project.owner` if it
 lives under another account). `fabrika config schema` documents each key.

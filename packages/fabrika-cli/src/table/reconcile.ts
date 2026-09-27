@@ -6,8 +6,9 @@
  * **Setup only adds and aligns; it never deletes or renames.** A field, view or option a person added
  * stays. A field whose name the table needs but whose type differs is a conflict, because changing
  * its type would drop every value it holds. A single-select field missing some of the table's
- * options is drift, reported for a person to add: the API that edits options replaces the whole
- * list, and a replace is one mistake away from deleting options that carry values.
+ * options, or holding one whose description differs from the table's, is drift, reported for a
+ * person to fix: the API that edits options replaces the whole list, and a replace is one mistake
+ * away from deleting options that carry values.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  */
@@ -40,11 +41,22 @@ export type Drift =
 			readonly options: ReadonlyArray<string>;
 	  }
 	| {
+			readonly _tag: "StaleDescriptions";
+			readonly field: string;
+			readonly options: ReadonlyArray<StaleDescription>;
+	  }
+	| {
 			readonly _tag: "IterationLength";
 			readonly field: string;
 			readonly days: number;
 			readonly wanted: number;
 	  };
+
+export interface StaleDescription {
+	readonly option: string;
+	readonly found: string;
+	readonly wanted: string;
+}
 
 export interface Conflict {
 	readonly field: string;
@@ -78,16 +90,31 @@ const matches = (spec: FieldSpec, field: ProjectField): boolean => {
 	}
 };
 
-const fieldDrift = (spec: FieldSpec, field: ProjectField): Drift | null => {
+const fieldDrift = (spec: FieldSpec, field: ProjectField): ReadonlyArray<Drift> => {
 	if (spec._tag === "SingleSelect" && field._tag === "SingleSelect") {
-		const have = new Set(field.options.map((option) => option.name));
+		const have = new Map(field.options.map((option) => [option.name, option.description] as const));
 		const missing = spec.options.map((option) => option.name).filter((name) => !have.has(name));
-		return missing.length > 0 ? {_tag: "MissingOptions", field: spec.name, options: missing} : null;
+		const stale = spec.options.flatMap((option): ReadonlyArray<StaleDescription> => {
+			const found = have.get(option.name);
+			return found === undefined || found === option.description
+				? []
+				: [{option: option.name, found, wanted: option.description}];
+		});
+		return [
+			...(missing.length > 0
+				? [{_tag: "MissingOptions", field: spec.name, options: missing} as const]
+				: []),
+			...(stale.length > 0
+				? [{_tag: "StaleDescriptions", field: spec.name, options: stale} as const]
+				: []),
+		];
 	}
 	if (spec._tag === "Iteration" && field._tag === "Iteration" && field.duration !== spec.duration) {
-		return {_tag: "IterationLength", field: spec.name, days: field.duration, wanted: spec.duration};
+		return [
+			{_tag: "IterationLength", field: spec.name, days: field.duration, wanted: spec.duration},
+		];
 	}
-	return null;
+	return [];
 };
 
 /**
@@ -123,8 +150,7 @@ export const plan = (shape: TableShape, project: ProjectSnapshot): Plan => {
 			conflicts.push({field: spec.name, wanted: spec._tag, found: kindOf(found)});
 			continue;
 		}
-		const off = fieldDrift(spec, found);
-		if (off !== null) drift.push(off);
+		drift.push(...fieldDrift(spec, found));
 	}
 
 	const idOf = new Map(project.fields.map((field) => [field.name, field.id] as const));
@@ -177,7 +203,13 @@ export const describeStep = (step: Step): string => {
 	}
 };
 
-export const describeDrift = (drift: Drift): string =>
-	drift._tag === "MissingOptions"
-		? `field ${drift.field} lacks the option(s) ${drift.options.map((name) => `"${name}"`).join(", ")} — add them by hand in the field's settings; setup never rewrites an existing field's options`
-		: `field ${drift.field} runs ${drift.days}-day iterations, the table's cadence wants ${drift.wanted} — change it by hand in the field's settings if that is not deliberate`;
+export const describeDrift = (drift: Drift): string => {
+	switch (drift._tag) {
+		case "MissingOptions":
+			return `field ${drift.field} lacks the option(s) ${drift.options.map((name) => `"${name}"`).join(", ")} — add them by hand in the field's settings; setup never rewrites an existing field's options`;
+		case "StaleDescriptions":
+			return `field ${drift.field} describes ${drift.options.map((stale) => `option "${stale.option}" as "${stale.found}" where the table says "${stale.wanted}"`).join(", ")} — edit the description(s) by hand in the field's settings; setup never rewrites an existing field's options`;
+		case "IterationLength":
+			return `field ${drift.field} runs ${drift.days}-day iterations, the table's cadence wants ${drift.wanted} — change it by hand in the field's settings if that is not deliberate`;
+	}
+};
