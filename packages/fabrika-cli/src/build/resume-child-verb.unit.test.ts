@@ -202,24 +202,46 @@ describe("runResumeChild — the sequenced repair entry", () => {
 	 * A child that passed review and then failed `lane integrate` carries only PASS verdicts; the
 	 * integrate FAIL lives on its epic lane's ledger, and the entry carries the ledger to the claim.
 	 */
-	it("opens the repair of an integrate FAIL on a PASS-graded child, naming exit and head", async () => {
-		const TASK = `issue_${CHILD}`;
-		const ASSEMBLY = "03135b917283a4b5c6d7e8f90a1b2c3d4e5f6071";
+	const TASK = `issue_${CHILD}`;
+	const ASSEMBLY = "03135b917283a4b5c6d7e8f90a1b2c3d4e5f6071";
+	const stamped = (event: string, minute: number, extra: Record<string, unknown> = {}) =>
+		`${JSON.stringify({task: TASK, event: `${TASK.toUpperCase()}.${event}`, at: `2026-09-26T00:0${minute}:00.000Z`, ...extra})}\n`;
+	/**
+	 * The same repair, reached two ways: `lane report` recorded the pair on the FAIL, or the FAIL
+	 * predates the pair and `lane attach-integrate` put it there with a CORRECTED line.
+	 */
+	it.each([
+		[
+			"recorded on the FAIL",
+			[
+				stamped("WIP", 0),
+				stamped("DONE", 1),
+				stamped("PASS", 2),
+				stamped("FAIL", 3, {integrate: {exit: 42, head: ASSEMBLY}}),
+			],
+		],
+		[
+			"attached to a FAIL recorded without it",
+			[
+				stamped("WIP", 0),
+				stamped("DONE", 1),
+				stamped("PASS", 2),
+				stamped("FAIL", 3),
+				stamped("CORRECTED", 4, {
+					corrects: "2026-09-26T00:03:00.000Z",
+					integrate: {exit: 42, head: ASSEMBLY},
+				}),
+			],
+		],
+	])("opens the repair of an integrate FAIL on a PASS-graded child, naming exit and head — pair %s", async (_how, events) => {
 		const emitted = emitMachine(900, `## Dependencies\n\n- phase 1: #${CHILD}\n`, [
 			{number: CHILD, state: "open", stateReason: null, classes: []},
 		]);
 		if (emitted._tag !== "Emitted") throw new Error("the epic fixture did not emit");
-		const line = (event: string, extra: Record<string, unknown> = {}) =>
-			`${JSON.stringify({task: TASK, event: `${TASK.toUpperCase()}.${event}`, at: "2026-09-26T00:00:00.000Z", ...extra})}\n`;
 		const ledger = fakeFs({
 			files: {
 				"/lanes/900/workflow.json": emitted.text,
-				"/lanes/900/events.jsonl": [
-					line("WIP"),
-					line("DONE"),
-					line("PASS"),
-					line("FAIL", {integrate: {exit: 42, head: ASSEMBLY}}),
-				].join(""),
+				"/lanes/900/events.jsonl": events.join(""),
 			},
 		});
 		const passedThread = comments(
