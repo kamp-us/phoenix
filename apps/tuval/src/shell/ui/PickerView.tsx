@@ -18,23 +18,37 @@
  * it holds focus the desk leaves it every press (`./text-entry.ts`), so the six keys the picker
  * still owns there — Enter, Escape, the two arrows, Page Up and Page Down — are read off the
  * input's own `onKeyDown` and answered by the same `pickerKey`. That is a React prop, not a second document listener.
+ *
+ * "Open project…" (#9697) is two more steps of this one listbox, never a second surface: the same
+ * element keeps DOM focus from the program list into each step and back, so focus is managed across
+ * the steps by never leaving. A step's frame (`../picker/open-project.ts`) has the program list's
+ * shape, so everything below binds either; only which key handler and which pointer handler answer
+ * differs, and `./use-open-project.ts` carries out what a step's answer asks of the kernel.
  */
 
 import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {useForwardedKey} from "@kampus/tuval-ui/forwarded-key";
 import type {KeyboardEvent, ReactElement} from "react";
-import {useCallback, useEffect, useRef, useState} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import type {ShellMsg} from "../core/index.ts";
 import {
+	openProjectFrame,
+	openProjectKey,
+	openProjectPointer,
 	type PickerEntries,
+	type PickerFrame,
 	type PickerKeyAnswer,
+	type PickerKeyFeatures,
+	type PickerPointer,
 	type PickerView as PickerViewState,
+	type ProjectOpener,
 	pickerFrame,
 	pickerKey,
 	pickerPointer,
 	withFilter,
 } from "../picker/browser.ts";
 import {isTextEntry} from "./text-entry.ts";
+import {useOpenProject} from "./use-open-project.ts";
 
 /**
  * How long the typing has to stop before the match count is announced. Founder-ruled on #8450:
@@ -69,6 +83,11 @@ export interface PickerViewProps {
 	 * declarations, so this file still decides nothing.
 	 */
 	readonly processRemove?: boolean;
+	/**
+	 * How this desk opens a project, when it can (#9697). Present, the program list ends on "Open
+	 * project…"; absent — a page with no kernel to ask — it offers nothing it could not do.
+	 */
+	readonly opener?: ProjectOpener | null;
 }
 
 export function PickerView({
@@ -79,8 +98,18 @@ export function PickerView({
 	reducedMotion,
 	focused,
 	processRemove = false,
+	opener = null,
 }: PickerViewProps): ReactElement {
-	const frame = pickerFrame(windowId, entries, view, {reducedMotion, processRemove});
+	const features = useMemo<PickerKeyFeatures>(
+		() => ({processRemove, openProject: opener !== null}),
+		[processRemove, opener],
+	);
+	const steps = useOpenProject({windowId, view, opener, dispatch});
+	const step = opener === null ? null : view.step;
+	const frame: PickerFrame<unknown> =
+		step === null
+			? pickerFrame(windowId, entries, view, {reducedMotion, ...features})
+			: openProjectFrame(windowId, step, steps.data, view, {reducedMotion, opening: steps.opening});
 	const listbox = useRef<HTMLDivElement>(null);
 	const filterInput = useRef<HTMLInputElement>(null);
 
@@ -147,6 +176,7 @@ export function PickerView({
 				case "Moved":
 				case "Cleared":
 				case "Filtering":
+				case "Stepped":
 					dispatch({type: "window.setView", windowId, view: answer.view});
 					return;
 				case "Chose":
@@ -171,6 +201,24 @@ export function PickerView({
 		[dispatch, windowId],
 	);
 
+	// One key, answered by whichever list is showing: the program list, or the step it is on.
+	const runStep = steps.run;
+	const stepData = steps.data;
+	const press = useCallback(
+		(key: string) => {
+			if (step === null) run(pickerKey(windowId, entries, view, key, features));
+			else runStep(openProjectKey(step, stepData, view, key));
+		},
+		[entries, features, run, runStep, step, stepData, view, windowId],
+	);
+	const point = useCallback(
+		(index: number, gesture: PickerPointer) => {
+			if (step === null) run(pickerPointer(windowId, entries, view, index, gesture, features));
+			else runStep(openProjectPointer(step, stepData, view, index, gesture));
+		},
+		[entries, features, run, runStep, step, stepData, view, windowId],
+	);
+
 	// The caret is in the filter, so the desk left this press here (`./text-entry.ts`). Only the six
 	// keys the picker still owns are taken; every other one — `j`, `k`, `g`, `G` included — is a
 	// character the operator is typing and stays the input's.
@@ -179,16 +227,16 @@ export function PickerView({
 			const spelled = FILTER_KEYS[event.key];
 			if (spelled === undefined) return;
 			event.preventDefault();
-			run(pickerKey(windowId, entries, view, spelled, {processRemove}));
+			press(spelled);
 		},
-		[entries, processRemove, run, view, windowId],
+		[press],
 	);
 
 	useForwardedKey(windowId, (key) => {
 		// A forwarded key means the desk considers this window focused. Re-claiming here is what
 		// carries focus back after the command line closes onto the desk container.
 		takeFocus();
-		run(pickerKey(windowId, entries, view, key, {processRemove}));
+		press(key);
 	});
 
 	return (
@@ -244,7 +292,11 @@ export function PickerView({
 					// `aria-activedescendant`.
 					// biome-ignore lint/a11y/useSemanticElements: no native element carries `group` inside a listbox
 					<div key={group.id} role="group" aria-labelledby={`${group.id}-label`}>
-						<div className="tuval-picker-group-label" id={`${group.id}-label`}>
+						<div
+							className="tuval-picker-group-label"
+							data-label-kind={group.labelKind}
+							id={`${group.id}-label`}
+						>
 							{group.label}
 						</div>
 						{group.emptyMessage === null ? null : (
@@ -259,14 +311,12 @@ export function PickerView({
 								role="option"
 								aria-selected={option.selected}
 								aria-label={option.name}
-								onPointerEnter={() =>
-									run(pickerPointer(windowId, entries, view, option.index, "hover"))
-								}
+								onPointerEnter={() => point(option.index, "hover")}
 								onClick={() => {
 									// A click must not cost the listbox its focus, or the next key press goes
 									// nowhere and `aria-activedescendant` is announced off nothing (#7499).
 									takeFocus();
-									run(pickerPointer(windowId, entries, view, option.index, "click"));
+									point(option.index, "click");
 								}}
 							>
 								<span aria-hidden="true">{option.marker}</span>

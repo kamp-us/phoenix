@@ -85,6 +85,7 @@ const press = (state: ShellState, entries: PickerEntries, windowId: WindowId, ke
 			case "Moved":
 			case "Cleared":
 			case "Filtering":
+			case "Stepped":
 				return apply(state, {type: "window.setView", windowId, view: answer.view});
 			case "Chose":
 				return yield* dispatch(
@@ -282,6 +283,8 @@ describe("window:pick returns a filled window to the picker", () => {
 			refusal: null,
 			previous: null,
 			filter: null,
+			step: null,
+			landing: null,
 		});
 	});
 });

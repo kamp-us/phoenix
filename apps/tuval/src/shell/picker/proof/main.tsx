@@ -31,6 +31,13 @@
  * open, where each harness is offered once for home. The entries are built by the picker's own
  * `offerEntries` over labels `projectLabels` would give these folders — written out, because that
  * module reads Node's path separator and this is a browser page.
+ *
+ * The last six panes are #9697's "Open project…", answered by a fixture kernel
+ * (`./open-project-fixtures.ts`): the program list ending on the new row with the highlight on it,
+ * the recent projects with two already open, a desk that has opened nothing yet, the folder browser,
+ * the browser narrowed by its filter, and the refusal a failed open leaves in the step. Each step is
+ * reached the way the desk reaches it, through the window's view slot, so the pane reads its rows off
+ * the fixture exactly as the page reads them off the kernel.
  */
 
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
@@ -41,16 +48,22 @@ import {createRoot} from "react-dom/client";
 import type {ShellMsg} from "../../core/index.ts";
 import {WindowView} from "../../ui/WindowView.tsx";
 import {
+	browseStep,
+	LAST_ROW,
 	mountPicker,
 	type OfferedProgram,
 	offerEntries,
 	type PickerEntries,
 	type PickerView as PickerViewState,
+	type ProjectOpener,
 	processPlanned,
+	projectNotOpened,
+	RECENT_STEP,
 	removeFailed,
 	withFilter,
 	withRefusal,
 } from "../browser.ts";
+import {CODE_FOLDER, fixtureOpener, RECENT_PROJECTS} from "./open-project-fixtures.ts";
 import "../../../page/styles.ts";
 import "./proof.css";
 
@@ -148,12 +161,28 @@ const homeEntries: PickerEntries = {
 /** Two Page Downs from the top: the first row of the third project's group. */
 const onThirdProject: PickerViewState = {...mountPicker(), cursor: HARNESSES.length * 2};
 
+/** Two projects open, so the picker offers each harness in both beside "Open project…". */
+const twoOpen: PickerEntries = {
+	programs: offerEntries(HARNESSES, [
+		{key: "-Users-ada-code-kamp-us-phoenix", label: "phoenix"},
+		{key: "-Users-ada-notes", label: "notes"},
+	]),
+	processes: [],
+};
+
+const withRecent = fixtureOpener(RECENT_PROJECTS);
+const withNoRecent = fixtureOpener([]);
+
+const onRecent: PickerViewState = {...mountPicker(), step: RECENT_STEP};
+const inCode: PickerViewState = {...mountPicker(), step: browseStep(CODE_FOLDER)};
+
 function Pane({
 	name,
 	start,
 	focused,
 	processRemove = false,
 	offered = entries,
+	opener = null,
 }: {
 	readonly name: string;
 	readonly start: PickerViewState;
@@ -162,6 +191,8 @@ function Pane({
 	readonly processRemove?: boolean;
 	/** What the picker offers; the first five panes share one small list. */
 	readonly offered?: PickerEntries;
+	/** The fixture kernel "Open project…" asks; absent, the pane offers no such row. */
+	readonly opener?: ProjectOpener | null;
 }) {
 	// The slot the desk would hold, at the desk's own type: `WindowView` reads it back through the
 	// real `asPickerView`, so the page proves the round trip rather than a narrowed object.
@@ -181,6 +212,7 @@ function Pane({
 				}}
 				reducedMotion={false}
 				processRemove={processRemove}
+				opener={opener}
 			/>
 		</div>
 	);
@@ -244,6 +276,56 @@ createRoot(host).render(
 				start={mountPicker()}
 				focused={false}
 				offered={homeEntries}
+			/>
+			{/* #9697, six panes: the row, both steps, the empty recent list, a narrowed browser, and
+			    an open's refusal. */}
+			<Pane
+				name="picker-open-project-row"
+				start={{...mountPicker(), cursor: LAST_ROW}}
+				focused={false}
+				offered={twoOpen}
+				opener={withRecent}
+			/>
+			<Pane
+				name="picker-open-project-recent"
+				start={onRecent}
+				focused={false}
+				offered={twoOpen}
+				opener={withRecent}
+			/>
+			<Pane
+				name="picker-open-project-none"
+				start={onRecent}
+				focused={false}
+				offered={homeEntries}
+				opener={withNoRecent}
+			/>
+			<Pane
+				name="picker-open-project-browse"
+				start={{...inCode, cursor: 3}}
+				focused={false}
+				offered={twoOpen}
+				opener={withRecent}
+			/>
+			<Pane
+				name="picker-open-project-browse-filtered"
+				start={withFilter(inCode, "so")}
+				focused={false}
+				offered={twoOpen}
+				opener={withRecent}
+			/>
+			<Pane
+				name="picker-open-project-refused"
+				start={withRefusal(
+					{...onRecent, cursor: 1},
+					projectNotOpened(
+						"/Users/ada/code/kamp-us/demlik",
+						"it is not trusted, so nothing from it ran",
+					),
+				)}
+				focused={false}
+				offered={twoOpen}
+				opener={withRecent}
 			/>
 		</div>
 	</StrictMode>,

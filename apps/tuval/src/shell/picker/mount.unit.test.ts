@@ -55,12 +55,21 @@ describe("a mount reads the world fresh", () => {
 	);
 
 	it("a fresh mount starts unplaced with no refusal, whatever the last one ended on", () => {
-		expect(mountPicker()).toEqual({cursor: null, refusal: null, previous: null, filter: null});
+		expect(mountPicker()).toEqual({
+			cursor: null,
+			refusal: null,
+			previous: null,
+			filter: null,
+			step: null,
+			landing: null,
+		});
 		expect(mountPicker("p-1")).toEqual({
 			cursor: null,
 			refusal: null,
 			previous: "p-1",
 			filter: null,
+			step: null,
+			landing: null,
 		});
 		expect(mountPicker()).not.toBe(mountPicker());
 	});

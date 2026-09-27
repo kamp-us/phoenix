@@ -15,6 +15,9 @@
  * A subproject is open beside the others and never saved (#9689, ruling #9668 R4.3 and #9673 R2):
  * the program that opened it is the one that restores it, so a restart has nothing of it to reopen.
  * Closing a project closes every subproject nested under it.
+ *
+ * The folders opened most recently ride beside it too, newest first, because the picker's "Open
+ * project…" lists them and a folder stays recent after it closes (#9697, ruling #9668 R6.1).
  */
 
 import {join, resolve, sep} from "node:path";
@@ -69,37 +72,63 @@ export class ProjectNotReopened extends Schema.TaggedError<ProjectNotReopened>()
 /** One folder's record in the saved list. */
 export const OpenProjectRecord = Schema.Struct({folder: Schema.String});
 
+/** How many recently opened folders the saved list keeps. */
+export const RECENT_LIMIT = 20;
+
+/** One recently opened folder, and whether it is open in this desk now. */
+export interface RecentProject {
+	readonly folder: string;
+	readonly id: ProjectId;
+	readonly open: boolean;
+}
+
 export const OpenProjectsRecord = Schema.Struct({
 	version: Schema.Literal(1),
 	projects: Schema.Array(OpenProjectRecord),
 	/** Every folder the person answered yes for, open or not. A list written before #9693 has none. */
 	trusted: Schema.Array(Schema.String).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
+	/** The folders opened most recently, newest first. A list written before #9697 has none. */
+	recent: Schema.Array(Schema.String).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
 });
 export type OpenProjectsRecord = typeof OpenProjectsRecord.Type;
 
 const keyOf = (folder: string): string => ProjectId.of(resolve(folder)).key;
 
+/** `folders` resolved, a folder listed twice kept at its first place, and at most `RECENT_LIMIT`. */
+const distinctRecent = (folders: ReadonlyArray<string>): ReadonlyArray<string> => {
+	const byKey = new Map<string, string>();
+	for (const folder of folders) {
+		const key = keyOf(folder);
+		if (!byKey.has(key)) byKey.set(key, resolve(folder));
+	}
+	return [...byKey.values()].slice(0, RECENT_LIMIT);
+};
+
 /**
- * The desk's open projects, in the order they opened, the folders trusted so far, and the folders a
- * restart has still to reopen. A folder is never both open and pending: opening it or skipping it
- * takes it off the pending list.
+ * The desk's open projects, in the order they opened, the folders trusted so far, the folders a
+ * restart has still to reopen, and the folders opened most recently. A folder is never both open
+ * and pending: opening it or skipping it takes it off the pending list.
  */
 export class OpenProjects {
-	static readonly none = new OpenProjects([], TrustedFolders.none, []);
+	static readonly none = new OpenProjects([], TrustedFolders.none, [], []);
 
 	readonly projects: ReadonlyArray<OpenProject>;
 	readonly trusted: TrustedFolders;
 	/** The saved list's open folders this desk has not yet reopened or skipped, in saved order. */
 	readonly pending: ReadonlyArray<string>;
+	/** The top-level folders opened most recently, newest first, open or not. */
+	readonly recent: ReadonlyArray<string>;
 
 	private constructor(
 		projects: ReadonlyArray<OpenProject>,
 		trusted: TrustedFolders,
 		pending: ReadonlyArray<string>,
+		recent: ReadonlyArray<string>,
 	) {
 		this.projects = projects;
 		this.trusted = trusted;
 		this.pending = pending;
+		this.recent = recent;
 	}
 
 	/**
@@ -112,19 +141,28 @@ export class OpenProjects {
 			const key = keyOf(folder);
 			if (!pending.has(key)) pending.set(key, resolve(folder));
 		}
-		return new OpenProjects([], TrustedFolders.of(record?.trusted ?? []), [...pending.values()]);
+		return new OpenProjects(
+			[],
+			TrustedFolders.of(record?.trusted ?? []),
+			[...pending.values()],
+			distinctRecent(record?.recent ?? []),
+		);
 	}
 
 	/** The same projects, with `folder` trusted from now on. */
 	trust(folder: string): OpenProjects {
 		const trusted = this.trusted.trust(folder);
-		return trusted === this.trusted ? this : new OpenProjects(this.projects, trusted, this.pending);
+		return trusted === this.trusted
+			? this
+			: new OpenProjects(this.projects, trusted, this.pending, this.recent);
 	}
 
 	/** The same projects, with `folder` no longer waiting to be reopened. */
 	skip(folder: string): OpenProjects {
 		const pending = this.withoutPending(folder);
-		return pending === this.pending ? this : new OpenProjects(this.projects, this.trusted, pending);
+		return pending === this.pending
+			? this
+			: new OpenProjects(this.projects, this.trusted, pending, this.recent);
 	}
 
 	private withoutPending(folder: string): ReadonlyArray<string> {
@@ -138,6 +176,15 @@ export class OpenProjects {
 	find(folder: string): OpenProject | undefined {
 		const key = keyOf(folder);
 		return this.projects.find((project) => project.id.key === key);
+	}
+
+	/** The recently opened folders, newest first, each saying whether it is open now. */
+	get recentProjects(): ReadonlyArray<RecentProject> {
+		return this.recent.map((folder) => ({
+			folder,
+			id: ProjectId.of(folder),
+			open: this.find(folder) !== undefined,
+		}));
 	}
 
 	open(
@@ -183,6 +230,8 @@ export class OpenProjects {
 				[...this.projects, project],
 				this.trusted,
 				this.withoutPending(absolute),
+				// A subproject is its opener's to bring back, so it is never offered as recent.
+				under === undefined ? distinctRecent([absolute, ...this.recent]) : this.recent,
 			),
 			project,
 		});
@@ -208,6 +257,7 @@ export class OpenProjects {
 				this.projects.filter((open) => !closed.includes(open)),
 				this.trusted,
 				this.pending,
+				this.recent,
 			),
 			project,
 			closed,
@@ -232,6 +282,7 @@ export class OpenProjects {
 				folder,
 			})),
 			trusted: this.trusted.folders,
+			recent: this.recent,
 		};
 	}
 }

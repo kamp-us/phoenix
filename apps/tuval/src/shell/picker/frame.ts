@@ -12,10 +12,16 @@
 
 import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
-import {flatten, groupKeyOf, type PickerEntries, type PickerEntry} from "./entries.ts";
+import {
+	flatten,
+	groupKeyOf,
+	type PickerEntries,
+	type PickerEntry,
+	type PickerRow,
+} from "./entries.ts";
 import {placeName} from "./place.ts";
 import {refusalMessage} from "./refusal.ts";
-import {cursorOf, type PickerView, visibleFor} from "./view.ts";
+import {cursorOf, type PickerView, rowsFor, visibleFor} from "./view.ts";
 
 /**
  * The role tokens the picker paints in, by name. Dark is the only scheme the shell has: Tuval is a
@@ -37,7 +43,8 @@ export interface PickerTheme {
 	};
 }
 
-export interface PickerOption {
+/** One option. `R` is what the row stands for: a program-list row, or an "Open project…" step's. */
+export interface PickerOption<R = PickerRow> {
 	readonly role: "option";
 	/** The DOM id `aria-activedescendant` points at. Window-scoped, so two pickers never collide. */
 	readonly id: string;
@@ -54,14 +61,19 @@ export interface PickerOption {
 	 * its section starts at.
 	 */
 	readonly index: number;
-	readonly entry: PickerEntry;
+	readonly entry: R;
 }
 
-export interface PickerGroup {
+export interface PickerGroup<R = PickerRow> {
 	readonly role: "group";
 	readonly id: string;
 	readonly label: string;
-	readonly options: ReadonlyArray<PickerOption>;
+	/**
+	 * A `path` label is a folder path, painted as one: never re-cased, and free to break anywhere,
+	 * because a path's case is part of it (#9697).
+	 */
+	readonly labelKind: "section" | "path";
+	readonly options: ReadonlyArray<PickerOption<R>>;
 	/** Why this group is empty, for the reader who would otherwise wonder. `null` when it is not. */
 	readonly emptyMessage: string | null;
 }
@@ -110,14 +122,14 @@ export interface PickerFilterFrame {
 	readonly total: number;
 }
 
-export interface PickerFrame {
+export interface PickerFrame<R = PickerRow> {
 	readonly role: "listbox";
 	readonly id: string;
 	readonly label: string;
 	readonly windowId: WindowId;
 	readonly activeDescendant: string | null;
 	readonly filter: PickerFilterFrame | null;
-	readonly groups: ReadonlyArray<PickerGroup>;
+	readonly groups: ReadonlyArray<PickerGroup<R>>;
 	readonly announcement: PickerAnnouncement;
 	readonly theme: PickerTheme;
 	/** The keys this frame answers to, as help text a surface may show and a test may read. */
@@ -133,9 +145,11 @@ export interface PickerFrameOptions {
 	 * whose does must say so, because a key nothing names is a key nobody finds.
 	 */
 	readonly processRemove?: boolean;
+	/** The desk can open projects from here, so the list ends on "Open project…" (#9697). */
+	readonly openProject?: boolean;
 }
 
-const themeFor = (options: PickerFrameOptions | undefined): PickerTheme => ({
+export const pickerTheme = (options: PickerFrameOptions | undefined): PickerTheme => ({
 	scheme: "dark",
 	motion: options?.reducedMotion === false ? "standard" : "none",
 	tokens: {
@@ -151,17 +165,37 @@ const themeFor = (options: PickerFrameOptions | undefined): PickerTheme => ({
 
 const shortId = (id: ProcessId): string => (id.length > 8 ? `${id.slice(0, 8)}…` : id);
 
-const nameOf = (entry: PickerEntry): string =>
-	entry._tag === "Program"
-		? `${entry.label} — program ${entry.programId}`
-		: `${entry.label} — process ${shortId(entry.processId)}, ${
+const nameOf = (entry: PickerRow): string => {
+	switch (entry._tag) {
+		case "Program":
+			return `${entry.label} — program ${entry.programId}`;
+		case "Process":
+			return `${entry.label} — process ${shortId(entry.processId)}, ${
 				entry.parentId === null ? "no parent" : `child of ${shortId(entry.parentId)}`
 			}`;
+		case "OpenProject":
+			return `${entry.label} — a recent project, or a folder to browse for`;
+	}
+};
 
-const detailOf = (entry: PickerEntry): string =>
-	entry._tag === "Program"
-		? entry.programId
-		: `${entry.processId}${entry.parentId === null ? "" : ` ← ${entry.parentId}`}`;
+const detailOf = (entry: PickerRow): string => {
+	switch (entry._tag) {
+		case "Program":
+			return entry.programId;
+		case "Process":
+			return `${entry.processId}${entry.parentId === null ? "" : ` ← ${entry.parentId}`}`;
+		case "OpenProject":
+			return "Recent projects, then a folder browser";
+	}
+};
+
+/** What the status region says first on a list "Open project…" just landed on. */
+const landingText = (view: PickerView): string =>
+	view.landing === null
+		? ""
+		: view.landing.how === "opened"
+			? `Opened ${view.landing.label}. `
+			: `${view.landing.label} is already open. `;
 
 /**
  * `section` cut where its group changes (`groupKeyOf`), each run beside the index its first entry
@@ -212,12 +246,17 @@ export const pickerFrame = (
 	view: PickerView,
 	options?: PickerFrameOptions,
 ): PickerFrame => {
+	const features = {
+		processRemove: options?.processRemove === true,
+		openProject: options?.openProject === true,
+	};
 	const visible = visibleFor(entries, view);
-	const rows = flatten(visible);
-	const at = cursorOf(entries, view);
+	const rows = rowsFor(entries, view, features);
+	const at = cursorOf(entries, view, features);
+	const entryCount = flatten(visible).length;
 	const optionId = (index: number) => `picker-${windowId}-option-${index}`;
 
-	const optionsFrom = (section: ReadonlyArray<PickerEntry>, offset: number) =>
+	const optionsFrom = (section: ReadonlyArray<PickerRow>, offset: number) =>
 		section.map((entry, index): PickerOption => {
 			const absolute = offset + index;
 			const selected = rows.length > 0 && absolute === at;
@@ -239,6 +278,7 @@ export const pickerFrame = (
 			? [
 					{
 						role: "group",
+						labelKind: "section",
 						id: `picker-${windowId}-programs`,
 						label: "Programs",
 						options: [],
@@ -252,6 +292,7 @@ export const pickerFrame = (
 					const place = first?._tag === "Program" ? first.place : undefined;
 					return {
 						role: "group",
+						labelKind: "section",
 						id:
 							place === undefined
 								? `picker-${windowId}-programs`
@@ -265,6 +306,7 @@ export const pickerFrame = (
 		...programGroups,
 		{
 			role: "group",
+			labelKind: "section",
 			id: `picker-${windowId}-processes`,
 			label: "Running processes",
 			options: optionsFrom(visible.processes, visible.programs.length),
@@ -275,6 +317,19 @@ export const pickerFrame = (
 						? "No running process matches this filter."
 						: "Nothing is running to attach to.",
 		},
+		// "Open project…" is the one row after the entries (`rowsFor`), in a group of its own.
+		...(rows.length > entryCount
+			? [
+					{
+						role: "group",
+						labelKind: "section",
+						id: `picker-${windowId}-projects`,
+						label: "Projects",
+						options: optionsFrom(rows.slice(entryCount), entryCount),
+						emptyMessage: null,
+					} satisfies PickerGroup,
+				]
+			: []),
 	];
 
 	const total = flatten(entries).length;
@@ -291,7 +346,7 @@ export const pickerFrame = (
 					role: "status",
 					live: "polite",
 					atomic: true,
-					text: filtering ? matchCount : counts,
+					text: filtering ? matchCount : `${landingText(view)}${counts}`,
 					alternates: filtering
 						? [`picker-${windowId}-status-a`, `picker-${windowId}-status-b`]
 						: null,
@@ -322,11 +377,7 @@ export const pickerFrame = (
 		filter,
 		groups,
 		announcement,
-		theme: themeFor(options),
-		keyHelp: [
-			...KEY_HELP,
-			...(options?.processRemove === true ? [REMOVE_HELP] : []),
-			escapeHelp(view),
-		],
+		theme: pickerTheme(options),
+		keyHelp: [...KEY_HELP, ...(features.processRemove ? [REMOVE_HELP] : []), escapeHelp(view)],
 	};
 };

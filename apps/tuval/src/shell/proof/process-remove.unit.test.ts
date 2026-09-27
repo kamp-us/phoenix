@@ -78,7 +78,7 @@ const pressRemove = Effect.fn("processRemove.pressRemove")(function* (
 	const window = focusedWindow(state);
 	// The cursor sits on the first process row: the programs come first in the flattened list.
 	const view = {...asPickerView(state.views[window]), cursor: entries.programs.length};
-	const answer = pickerKey(window, entries, view, "d", {processRemove: true});
+	const answer = pickerKey(window, entries, view, "d", {processRemove: true, openProject: false});
 	if (answer._tag !== "Removing") {
 		return yield* Effect.die(new Error(`test setup: "d" answered ${answer._tag}`));
 	}

@@ -1,6 +1,7 @@
 import {dirname} from "node:path";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Effect, FileSystem, Result} from "effect";
 import {ProjectId} from "../project-id.ts";
 import {scratchHome} from "../scratch-home.ts";
@@ -10,6 +11,7 @@ import {
 	ProjectAlreadyOpen,
 	ProjectNotOpen,
 	projectLabels,
+	RECENT_LIMIT,
 	readOpenProjects,
 	saveOpenProjects,
 } from "./open-projects.ts";
@@ -105,6 +107,7 @@ describe("OpenProjects", () => {
 			version: 1,
 			projects: [{folder: "/work/a"}, {folder: "/work/b"}],
 			trusted: [],
+			recent: ["/work/b", "/work/a"],
 		});
 		const closing = projects.close("/work/a");
 		if (Result.isFailure(closing)) throw closing.failure;
@@ -112,6 +115,7 @@ describe("OpenProjects", () => {
 			version: 1,
 			projects: [{folder: "/work/b"}],
 			trusted: [],
+			recent: ["/work/b", "/work/a"],
 		});
 	});
 
@@ -126,6 +130,7 @@ describe("OpenProjects", () => {
 			version: 1,
 			projects: [{folder: "/work/a"}],
 			trusted: ["/work/a", "/work/b"],
+			recent: ["/work/a"],
 		});
 	});
 
@@ -134,6 +139,7 @@ describe("OpenProjects", () => {
 			version: 1,
 			projects: [{folder: "/work/a"}, {folder: "/work/b"}, {folder: "/work/a/"}],
 			trusted: ["/work/a"],
+			recent: [],
 		});
 		assert.deepStrictEqual(restored.projects, []);
 		assert.deepStrictEqual(restored.pending, ["/work/a", "/work/b"]);
@@ -147,6 +153,7 @@ describe("OpenProjects", () => {
 			version: 1,
 			projects: [{folder: "/work/a"}, {folder: "/work/b"}, {folder: "/work/c"}],
 			trusted: [],
+			recent: [],
 		});
 		// The boot project opens first, whether or not the list had it.
 		const booted = opened(restored, "/work/z");
@@ -167,7 +174,12 @@ describe("OpenProjects", () => {
 
 	it("carries the pending folders across a trust and a close", () => {
 		const restored = opened(
-			OpenProjects.restoring({version: 1, projects: [{folder: "/work/a"}], trusted: []}),
+			OpenProjects.restoring({
+				version: 1,
+				projects: [{folder: "/work/a"}],
+				trusted: [],
+				recent: [],
+			}),
 			"/work/z",
 		);
 		const closing = restored.trust("/work/q").close("/work/z");
@@ -186,17 +198,19 @@ describe("the saved open-projects list", () => {
 				version: 1,
 				projects: [{folder: "/work/a"}, {folder: "/work/b"}],
 				trusted: [],
+				recent: ["/work/b", "/work/a"],
 			});
 			yield* saveOpenProjects(home, OpenProjects.none.trust("/work/c"));
 			assert.deepStrictEqual(yield* readOpenProjects(home), {
 				version: 1,
 				projects: [],
 				trusted: ["/work/c"],
+				recent: [],
 			});
 		}).pipe(Effect.provide(NodeFileSystem.layer)),
 	);
 
-	it.effect("reads a list written before trust was recorded as trusting nothing", () =>
+	it.effect("reads a list written before trust or recency was recorded as holding neither", () =>
 		Effect.gen(function* () {
 			const home = scratchHome("open-projects-untrusted");
 			const fs = yield* FileSystem.FileSystem;
@@ -209,7 +223,59 @@ describe("the saved open-projects list", () => {
 				version: 1,
 				projects: [{folder: "/work/a"}],
 				trusted: [],
+				recent: [],
 			});
 		}).pipe(Effect.provide(NodeFileSystem.layer)),
 	);
+});
+
+describe("recent projects", () => {
+	it("lists the folders opened most recently first, a closed one still listed and not open", () => {
+		const projects = opened(opened(opened(OpenProjects.none, "/work/a"), "/work/b"), "/work/c");
+		const closing = projects.close("/work/b");
+		if (Result.isFailure(closing)) throw closing.failure;
+		assert.deepStrictEqual(
+			closing.success.projects.recentProjects.map(({folder, open}) => ({folder, open})),
+			[
+				{folder: "/work/c", open: true},
+				{folder: "/work/b", open: false},
+				{folder: "/work/a", open: true},
+			],
+		);
+	});
+
+	it("moves a reopened folder to the front, under any spelling, and lists it once", () => {
+		const projects = opened(opened(OpenProjects.none, "/work/a"), "/work/b");
+		const closing = projects.close("/work/a");
+		if (Result.isFailure(closing)) throw closing.failure;
+		const reopened = opened(closing.success.projects, "/work/a/");
+		assert.deepStrictEqual(reopened.recent, ["/work/a", "/work/b"]);
+		assert.strictEqual(reopened.recentProjects[0]?.id.key, ProjectId.of("/work/a").key);
+	});
+
+	it("keeps at most RECENT_LIMIT folders, dropping the oldest", () => {
+		const folders = Array.from({length: RECENT_LIMIT + 3}, (_, index) => `/work/p${index}`);
+		const projects = folders.reduce(opened, OpenProjects.none);
+		assert.strictEqual(projects.recent.length, RECENT_LIMIT);
+		assert.strictEqual(projects.recent[0], `/work/p${RECENT_LIMIT + 2}`);
+		assert.notInclude(projects.recent, "/work/p0");
+	});
+
+	it("never lists a subproject as recent, because its opener brings it back", () => {
+		const parent = opened(OpenProjects.none, "/work/a");
+		const nested = parent.openUnder("/work/a/lane", "/work/a", ProcessId.make("opener"));
+		if (Result.isFailure(nested)) throw nested.failure;
+		assert.deepStrictEqual(nested.success.projects.recent, ["/work/a"]);
+	});
+
+	it("restores the saved recent folders in their order, a folder listed twice counted once", () => {
+		const restored = OpenProjects.restoring({
+			version: 1,
+			projects: [],
+			trusted: [],
+			recent: ["/work/b", "/work/a", "/work/b/"],
+		});
+		assert.deepStrictEqual(restored.recent, ["/work/b", "/work/a"]);
+		assert.isTrue(restored.recentProjects.every((project) => !project.open));
+	});
 });

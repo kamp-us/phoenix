@@ -19,7 +19,7 @@ import {Tag} from "@kampus/design";
 import type {ViewState, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import type {ReactElement} from "react";
 import type {ShellMsg} from "../core/index.ts";
-import {asPickerView, type PickerEntries} from "../picker/browser.ts";
+import {asPickerView, type PickerEntries, type ProjectOpener} from "../picker/browser.ts";
 import {ErrorBoundary} from "./ErrorBoundary.tsx";
 import {mountProject, type WindowMount} from "./mount.ts";
 import {PickerView} from "./PickerView.tsx";
@@ -35,6 +35,8 @@ export interface WindowViewProps {
 	readonly reducedMotion: boolean;
 	/** The operator's `processRemove` flag, for the picker an empty window mounts (`./PickerView.tsx`). */
 	readonly processRemove?: boolean;
+	/** How this desk opens a project, for the picker's "Open project…" (`./PickerView.tsx`). */
+	readonly opener?: ProjectOpener | null;
 }
 
 /**
@@ -60,6 +62,7 @@ export function WindowView({
 	dispatch,
 	reducedMotion,
 	processRemove = false,
+	opener = null,
 }: WindowViewProps): ReactElement {
 	const project = mountProject(mount);
 	return (
@@ -109,6 +112,7 @@ export function WindowView({
 						reducedMotion={reducedMotion}
 						focused={focused}
 						processRemove={processRemove}
+						opener={opener}
 					/>
 				) : (
 					<div className="tuval-placeholder" role="status">

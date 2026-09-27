@@ -87,7 +87,9 @@ import type {ConfigReloader} from "../reload.ts";
 import type {RowRefused, SdkRemoved} from "../sdk-admission.ts";
 import {withShellFeatures} from "../shell/program.ts";
 import {SubprojectBoundary} from "./boundary.ts";
+import {type FolderUnreadable, listFolders} from "./browse.ts";
 import {type CheckpointRoutes, ownedView} from "./checkpoint-routes.ts";
+import type {FolderListing} from "./open-project-wire.ts";
 import {
 	type OpenProject,
 	OpenProjects,
@@ -95,6 +97,7 @@ import {
 	type ProjectNotOpen,
 	ProjectNotReopened,
 	projectLabels,
+	type RecentProject,
 	readOpenProjects,
 	saveOpenProjects,
 } from "./open-projects.ts";
@@ -163,6 +166,15 @@ export class Projects extends Context.Service<
 			folder: string,
 		) => Effect.Effect<ProjectClosed, ProjectNotOpen | NoProjectsHere>;
 		readonly list: Effect.Effect<ReadonlyArray<OpenProject>>;
+		/** The folders opened most recently, newest first, each saying whether it is open now. */
+		readonly recent: Effect.Effect<ReadonlyArray<RecentProject>>;
+		/**
+		 * The subfolders of `folder`, or of the desk's home folder when none is named: what the
+		 * picker's folder browser lists (#9697).
+		 */
+		readonly browse: (
+			folder: string | undefined,
+		) => Effect.Effect<FolderListing, FolderUnreadable | NoProjectsHere>;
 		/** The open projects now, then after every open and close. */
 		readonly changes: Stream.Stream<ReadonlyArray<OpenProject>>;
 		/**
@@ -177,6 +189,8 @@ export class Projects extends Context.Service<
 		open: () => Effect.fail(new NoProjectsHere()),
 		close: () => Effect.fail(new NoProjectsHere()),
 		list: Effect.succeed([]),
+		recent: Effect.succeed([]),
+		browse: () => Effect.fail(new NoProjectsHere()),
 		changes: Stream.make([]),
 		renderers: Stream.make([]),
 	});
@@ -740,6 +754,11 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		open: openFolder,
 		close: closeFolder,
 		list: Effect.map(SubscriptionRef.get(openRef), (projects) => projects.projects),
+		recent: Effect.map(SubscriptionRef.get(openRef), (projects) => projects.recentProjects),
+		browse: (folder) =>
+			Effect.flatMap(SubscriptionRef.get(openRef), (projects) =>
+				listFolders(resolve(folder ?? home), (path) => projects.find(path) !== undefined),
+			).pipe(Effect.provideService(FileSystem.FileSystem, fs)),
 		changes: Stream.map(SubscriptionRef.changes(openRef), (projects) => projects.projects),
 		renderers: Stream.map(SubscriptionRef.changes(renderers), allRenderers),
 	});
