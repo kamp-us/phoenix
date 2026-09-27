@@ -219,3 +219,47 @@ durable issue the digest is upserted into, and then `absent` with `no digest blo
 `fabrika governance readout` writes one. Both are facts, not failed reads.
 
 Then file something with `/fabrika:report`, triage it with `/fabrika:triage`, and you are running.
+
+## 11. Set up the betting table
+
+The table is a GitHub project where your control-plane owners decide what fabrika bets on. It works
+with no config: `fabrika table setup` looks for an open project titled `<repo name> table`, first
+among the projects linked to your repo, then among all of the repo owner's projects. It reuses the
+one it finds and links it to your repo if it isn't already. If there is none, it creates one under
+the repo's owner and links it. It adds the fields, the
+weekly iteration, the five views (Agenda, Outside the bets, Lanes, Group members and Inbox) and a
+README that explains every column. Run it again any time: a project already in shape answers
+`unchanged` and nothing is written.
+
+```bash
+fabrika table setup
+```
+
+**The token needs the `project` scope.** GitHub Projects (v2) refuses a token without it, and
+`table setup` stops with this fix:
+
+```bash
+gh auth refresh -h github.com -s project
+```
+
+Use that exact line. A plain `gh auth refresh` fails in a non-interactive shell. With `GITHUB_TOKEN`
+or `GH_TOKEN` set, give that token the scope instead. Only the `table` verbs need it.
+
+**Two steps are yours, once.** GitHub's API cannot take them, so setup prints both and the project
+README's "One-time setup" section lists them:
+
+1. Grouping: in the Agenda view, set *Group by: Section* and save the view; in the Lanes view, set
+   *Column by: Stage* and save it.
+2. Inbox auto-add: in the project's **Workflows**, turn on *Auto-add to project* for your repo with
+   the filter `is:issue is:open no:label`, and save it. Every issue nobody labeled then lands in the
+   Inbox view (filtered `is:open no:label`), so nothing sits where triage can't see it.
+
+To tune the table, add a `table` block to `.fabrika.jsonc`: cadence and day, the agenda sections and
+their order, the agenda cap and every flag threshold. Leave out what you don't change. The size
+dollars are not in that block: set them in `appetiteSizes`, the key pitch-guard reads. A new Size
+field and the project README then show the same amounts your pitches are approved against. If you
+change `appetiteSizes` after the Size field exists, re-run setup: it rewrites the README but never
+an existing field's options, so it prints a `drift:` line naming each Size option whose description
+still shows the old amount. Edit those descriptions by hand in the field's settings. To point
+setup at a project you already have, set `table.project.number` (and `table.project.owner` if it
+lives under another account). `fabrika config schema` documents each key.

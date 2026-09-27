@@ -385,6 +385,18 @@ export const CAMPAIGN_SEATS: SharedSeats = {
 };
 
 /**
+ * `table`'s seats: `campaign`'s four, on the same reading. `table setup` addresses one project, so a
+ * configured number naming none is a target proven absent (`7`), and its writes and re-reads claim the
+ * write-shaped pair and the unreadable-precondition seat. It reads no stdin and composes no body.
+ */
+export const TABLE_SEATS: SharedSeats = {
+	NO_TARGET: "NO_TARGET",
+	WRITE_UNKNOWN: "WRITE_UNKNOWN",
+	READBACK_MISMATCH: "READBACK_MISMATCH",
+	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
+};
+
+/**
  * `report`'s seats: all nine, under the registry's own names.
  *
  * The group that authored the shared band first re-exports it verbatim (`report/codes.ts`), so its
@@ -432,6 +444,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	spend: SPEND_SEATS,
 	spike: SPIKE_SEATS,
 	status: SHARED_SEATS,
+	table: TABLE_SEATS,
 	ui: UI_SEATS,
 };
 
