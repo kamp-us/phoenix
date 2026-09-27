@@ -241,15 +241,10 @@ The `table` verbs are not the only readers. `lane brief` reads the table for the
 `pitch-guard` reads it because a `bet` row approves a pitch. So give the scope to every token that
 drives lanes, not only yours.
 
-**Declaring a `table` block turns a failed read into a refusal.** Any `table` block in
-`.fabrika.jsonc` counts, even one that only sets the cadence. With one, a table that `lane brief` or
-`build pick` cannot read, a missing scope included, stops them at exit 11. With none, any failed
-read lets them go on and say what they could not read: `lane brief` briefs and prints
-`size stop NOT checked`, and `build pick` keeps its own order. `lane record` and `pitch-guard`
-never refuse for the table: a sync that fails leaves the record standing, and an unread table
-approves no pitch. Sources:
-[`src/table/adoption.ts`](../../../packages/fabrika-cli/src/table/adoption.ts) and
-[`src/table/size-stop.ts`](../../../packages/fabrika-cli/src/table/size-stop.ts).
+Declare a `table` block (11.4) only once every one of those tokens has the scope. Until then a
+table read that fails lets lanes go on and says so; after it, the same failure stops them. What
+each reader does on a failed read is the "Readers outside the group" section of
+[`table-contract.md`](../docs/table-contract.md).
 
 ### 11.2 Create the project
 
@@ -351,10 +346,10 @@ fabrika table flags
 ```
 
 It names the rows that need a person, each with a one-line rec, and changes nothing. Bring those
-rows to the next table. A row is flagged over size once it spends past `table.flagMultiple` times
-its size (1 by default; at least 1 and below `table.stopMultiple`), and its lane keeps going. The
-one flag that acts on its own is the size stop: when a row has spent `table.stopMultiple` times its
-size, `lane brief` stops that lane at exit 71 and the driver parks it with cause `size-stop`.
+rows to the next table. A row flagged over size keeps its lanes going. Only the size stop acts on its
+own: a row that reaches it parks its lanes until the table extends, re-shapes or drops the bet. Where
+the flag and the stop fall, and how a stopped lane parks, are the "table flags" section of
+[`table-contract.md`](../docs/table-contract.md).
 
 The fabrika-share flag counts only issues carrying a label you name in `table.fabrikaShare.labels`,
 so name one if you want it read.

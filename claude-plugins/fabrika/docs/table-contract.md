@@ -15,6 +15,22 @@ fix is `gh auth refresh -h github.com -s project`. `lane brief`, `lane record`, 
 pitch guard read the table too; with no `table` block in `.fabrika.jsonc` they carry on when that
 read fails.
 
+## Readers outside the group
+
+Four callers outside this group read the table. Any `table` block in `.fabrika.jsonc`, even one that
+sets only the cadence, marks the table adopted, and adoption decides what a failed read does
+(`src/table/adoption.ts`):
+
+| Reader | Why it reads | A failed read, `table` block declared | A failed read, no `table` block |
+|---|---|---|---|
+| `lane brief` | the size stop (`src/table/size-stop.ts`) | exit `11`, UNKNOWN | briefs, printing `size stop NOT checked` |
+| `build pick` | to offer bets first | exit `11`, UNKNOWN | keeps its own order |
+| `lane record` | runs `table sync` after it posts | the record stands; the sync failure is reported | the same |
+| `pitch-guard` | a `bet` row approves a pitch | approves nothing through the table | the same |
+
+A missing `project` scope is one more failed read here, not the `20` this group's own verbs exit on.
+A repository with no table project at all is never stopped by `lane brief`.
+
 ## table setup
 
 Creates or reconciles the repository's betting table on GitHub Projects (v2).
@@ -118,8 +134,12 @@ no field and reverts no value.
 
 - `over-size` — Spent $ passes `table.flagMultiple` (1 shipped) times the Size's `appetiteSizes`
   dollars, where an epic row's size counts once per sub-issue. The lane keeps going, and the flag
-  reads `stopped` at `table.stopMultiple` times the size, where `lane brief` stops the lane (exit
-  `71`, park cause `size-stop`).
+  reads `stopped` at `table.stopMultiple` (2 shipped) times the size, where `lane brief` stops the
+  lane (exit `71`, park cause `size-stop`). `flagMultiple` is at least 1, `stopMultiple` is above 1,
+  and `flagMultiple` is below `stopMultiple`, or the `table` block does not decode (`12`). Spend is
+  a floor: a row whose measured spend alone reaches the stop reads `stopped` even with an unmeasured
+  lane. A row short of the stop on measured spend with an unmeasured lane is never stopped: the lane
+  goes on and `lane brief` names the unmeasured lanes.
 - `asks` — at `table.asksFlag` asks or more, whatever the size.
 - `stuck` — nothing happened on any of the group's issues (a lane record ending, or the Stage being
   set) for `table.stuckDays` days, naming the wait or park it knows of. Never while a lane record

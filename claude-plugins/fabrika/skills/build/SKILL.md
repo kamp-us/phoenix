@@ -716,7 +716,7 @@ never fetched the merge.
 data on the PR — an authorized account records it with `fabrika build clear`, and the fold counts it,
 so `capReached: false` beside a `clearances` row *is* the granted round and you simply build it. What
 you never do is grant one: `build clear` is the operator's verb, it refuses an account outside the
-repo's configured set or below `write` at the ACL, and an escalation is your whole move when the cap
+control-plane set `.github/CODEOWNERS` names or below `write` at the ACL, and an escalation is your whole move when the cap
 is reached. **Escalate to the driver, not to the founder** — a spent budget is machinery routed to
 the lane's own driver, and the grant is theirs to record on their own diagnosis: one `lane clear`,
 which grants this PR's round and the lane's in one act, whether or not the lane has a pull request.

@@ -549,8 +549,10 @@ so never clear it yourself. Anything short of the stop is a flag (`table flags`)
 going. In a repo whose `.fabrika.jsonc` declares no `table` block, a table read that fails for any
 reason (missing `project` scope, rate limit, outage, a malformed record) briefs anyway with
 `size stop NOT checked` on stderr, because nothing says a table exists. Declaring any `table` block
-turns that failed read into `11`. A row whose counted lanes include an unmeasured one is not
-stopped, and the brief's note says how many lanes went unmeasured.
+turns that failed read into `11`. Measured spend is a floor: a row whose measured spend alone has
+reached the stop is stopped even when some of its lanes went unmeasured, so a `71` over such a row is
+real. Only a row short of the stop on measured spend goes on, and the brief's note says how many
+lanes went unmeasured.
 
 **On a single-issue lane, one `20` is not a park: a `review` or `review:ui` brief with zero PRs,
 because the PR was re-pointed.** When a PR under review is edited to serve another issue, no
@@ -1802,9 +1804,10 @@ the chore lane's own event and type no `UNBLOCKED` anywhere.
 A chore lane has **no driven issue** — that is what a chore is — so a park it holds has nowhere to
 be commented. Report it to your caller instead, in the terminal line: the chore key, the state the
 fold reads (`human:novel-park` is the named park a recipe refusal folds to), and the verb exit and
-`why` that put it there, quoted off `recipe route --exit`. The transcript below is the artifact; a
-caller re-reads the ledger, never your summary. A resumed run that folds into a still-parked lane restates the park in one comment
-and ends `LANE-PARKED` again; the ledger, not your patience, decides when the lane moves.
+`why` that put it there, quoted off `recipe route --exit`. The `lane history` bytes you hand over at
+the terminal record step below are the artifact; a caller re-reads the ledger, never your summary. A
+resumed run that folds into a still-parked lane restates the park in one comment and ends
+`LANE-PARKED` again; the ledger, not your patience, decides when the lane moves.
 
 **A `tripped` fold that parks on a known date declares the wait before its record.** When the fold
 ends `LANE-PARKED` below and the need you are about to post waits on a person, a release or another
@@ -1836,7 +1839,11 @@ its answer leaves the record standing, and its stderr names the re-run. `69` mea
 ended, so read it again rather than posting. `5` means a machine-local path got past the scrub, and
 nothing was posted: name it in your terminal line. On a chore lane there is no issue to post to
 (`19`): print `lane history $lane_key` and hand those bytes to your caller, who owns where a chore's
-transcript is posted. Every other non-zero is UNKNOWN; name the code.
+transcript is posted. `8` means the post failed and may have landed anyway: re-run it, and a post
+that did land answers `unchanged`. Do not re-run on `4` or `9`. `4` means a record, a fact or a
+`lane-record` comment already on the issue does not read, and `9` means the posted comment does not
+read back as this terminal's record, so a re-run meets the same bytes. Name the code in your terminal
+line for a person. Every other non-zero is UNKNOWN; name the code.
 
 **Which terminal line the run ends on is the fold's.** Every terminal fold ends `LANE-TERMINAL`
 except a `tripped` one whose error task sits in a park with a door, so on `tripped` read which state

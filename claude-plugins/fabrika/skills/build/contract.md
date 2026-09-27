@@ -240,7 +240,7 @@ until one of them has run.
   its lane serves — the first closing keyword in its body, else `Part of #<n>`, the same reference
   `review scope` reads, or the member a repair's `--issue` names — and every axis then reads that
   issue. A PR whose body names no readable issue, or names one proven absent, is `refused:
-  no-served-issue` (`38`) whatever the campaigns say: its own record carries no label or criteria
+  no-served-issue` (`38`): its own record carries no label or criteria
   to refuse on, so judging it would let one missing body line walk any lane past every axis. A
   served issue that **cannot be read** is `unknown` (`11`, and not overridable), which is the
   `unknown` row below.
@@ -1260,8 +1260,7 @@ and body for the admission test, and — on a build-purpose claim only — its `
 edges with each blocker's state, plus, only when an edge is still undischarged, that issue's parent
 and the commits `epic/<parent>` adds over the trunk in this tree. A `plan` or `gate` claim reads no
 edges at all, so it costs neither the graph call nor the branch read. An unauthorized author's
-marker is counted and reported on stderr but never wins: content is not authority. `claim` reads no
-`## Campaigns` table and prints no campaigns line.
+marker is counted and reported on stderr but never wins: content is not authority.
 
 **Examples**
 
