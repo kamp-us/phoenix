@@ -131,7 +131,7 @@ authoring API live in the SDK package `packages/tuval` (`@kampus/tuval-sdk`):
 | `pnpm --filter @kampus-apps/tuval test:unit` | Just the `unit` project. This is the script CI's `pnpm --filter './apps/**' test:unit` gate calls. |
 | `pnpm --filter @kampus-apps/tuval test:integration` | Just the `integration` project. Slow, not remote: it drives a real Pi `AgentSession` over a real loopback socket on Pi's faux provider, so it needs no cloud credentials. CI's `integration tests` job runs it alongside `apps/web`'s remote suite. |
 | `pnpm --filter @kampus/tuval-sdk typecheck` | The SDK's own lens, `tsc -p tsconfig.json`. |
-| `pnpm --filter @kampus/tuval-sdk test` | The SDK's unit suite. CI's `packages-tests` job runs it with every other package's. |
+| `pnpm --filter @kampus/tuval-sdk test` | The SDK's unit suite. CI's `packages-tests` job runs it when a diff changes the SDK or something it depends on, and on every full run ([`@kampus/package-test-scope`](packages/package-test-scope/README.md) decides which). |
 
 Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — which pins the workspace binary (2.4.15). A bare `biome …` can resolve a stale **global** install (e.g. a homebrew 2.1.1) that doesn't recognize the GritQL node bindings our `biome-plugins/*.grit` rules use, so it prints spurious `Compile Error` lines while loading them. That noise is cosmetic (the run still exits `0`, unaffected via pnpm and in CI) and safe to ignore — but go through pnpm and it won't appear.
 

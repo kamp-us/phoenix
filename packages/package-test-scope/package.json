@@ -1,0 +1,24 @@
+{
+	"name": "@kampus/package-test-scope",
+	"version": "0.0.0",
+	"private": true,
+	"description": "package-test-scope — pure, zero-runtime-dep core deciding which workspace packages CI's `packages unit tests` job runs for a diff: the changed packages plus their dependents and cross-package readers, falling back to the full run on any doubt (issue #10023); the CI step runs `node src/bin.ts` with no install",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
+		"test": "vitest run",
+		"scope": "node src/bin.ts"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@types/node": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}

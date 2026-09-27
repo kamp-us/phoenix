@@ -172,8 +172,18 @@ jobs:
       # are creds-free node-pool unit runs (no fork/author guard, unlike
       # integration/e2e), so a fork PR that touches `packages/**` MUST still run +
       # pass them. A non-packages PR has `packages_required == false`, so the job's
-      # skip is a legitimate not-applicable PASS.
-      packages_required: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.packages == 'true' }}
+      # skip is a legitimate not-applicable PASS. Every `push` to `main` requires it
+      # whatever the filter says (#10023): the full run there is the backstop for a
+      # cross-package read the scoped PR and queue runs below missed.
+      packages_required: ${{ github.event_name == 'push' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.packages == 'true' }}
+      # Which packages `packages-tests` runs (#10023), from the `packages-scope` step
+      # below: `scoped` (only `packages_selection`), `full` or `none`. An absent output
+      # (the step failed or was skipped) reads as `full`, and the Tuval SDK proof
+      # defaults to running, so a broken selection runs more, never less.
+      packages_scope: ${{ steps.packages-scope.outputs.packages_scope || 'full' }}
+      packages_selection: ${{ steps.packages-scope.outputs.packages_selection }}
+      packages_scope_reason: ${{ steps.packages-scope.outputs.packages_scope_reason || 'the scope step produced no answer' }}
+      tuval_sdk_proof: ${{ steps.packages-scope.outputs.tuval_sdk_proof || 'true' }}
       # `actionlint` lints `.github/workflows/**` (issue #568). Its single-sourced
       # required-ness is JUST the `workflows` path filter — actionlint is creds-free
       # and fast (no author/fork guard), so any PR (incl. a fork) that touches a
@@ -485,6 +495,27 @@ jobs:
           CHANGED_FILES_FILE="$input_dir/files" LOCKFILE_DIFF_FILE="$input_dir/lockfile" \
             node packages/worker-relevance/src/bin.ts
 
+      # Package test scope (#10023): which packages `packages-tests` runs. The diff reads
+      # the same base the `mergebase` step pins for dorny, so the path filter and the
+      # scope see one changed-file set. The `@kampus/package-test-scope` bin owns the
+      # decision and falls back to the full run on any event but `pull_request` and
+      # `merge_group`, an empty base, a missing file list, or a path outside every
+      # workspace package. This step only relays the diff: a failed `git diff` leaves
+      # `CHANGED_FILES_FILE` unset, which the bin reads as an unknown diff.
+      - name: Scope the packages unit tests to the diff
+        id: packages-scope
+        env:
+          SCOPE_BASE: ${{ steps.mergebase.outputs.sha }}
+        run: |
+          set -uo pipefail
+          if [ -n "$SCOPE_BASE" ] && files="$(mktemp)" \
+             && git -c core.quotepath=off diff --name-only --no-renames -z "$SCOPE_BASE" HEAD > "$files"; then
+            export CHANGED_FILES_FILE="$files"
+          else
+            echo "::warning::packages-scope: no diff against '$SCOPE_BASE' — the bin falls back to the full run"
+          fi
+          node packages/package-test-scope/src/bin.ts
+
   check:
     name: lint / format / typecheck
     needs: changes
@@ -607,10 +638,17 @@ jobs:
   # declares one, so a new `packages/<x>` with tests is gated with no workflow edit.
   # `@kampus/infra` (the CI-credential stack, #1437) is named explicitly alongside
   # the `./packages/**` glob so its permission-group guard suite runs here too.
-  # These are node-pool unit suites (ADR 0082): no DB, no worker deploy, no creds —
-  # fast (~7s, ~500 tests), no sharding. Run FULL (no `--changed`): the `packages`
-  # path filter already scopes the JOB, and a full run has no zero-selection hole
-  # (ADR 0092) — same posture as `unit`.
+  # These are node-pool unit suites (ADR 0082): no DB, no worker deploy, no creds,
+  # no sharding.
+  #
+  # Scoped per package, never per test (#10023). On `pull_request` and `merge_group`
+  # the job runs only `changes.packages_selection`: the changed packages, their
+  # workspace dependents, and the packages whose tests read a changed file. Every other
+  # event, and any doubt the `packages-scope` step names, runs the full command below
+  # unchanged, and every `push` to `main` runs it as the backstop. A `none` scope passes
+  # only after printing why the diff selected no package; a `scoped` answer with an
+  # empty selection reds rather than running nothing (ADR 0092). No `vitest --changed`:
+  # it cannot see the files tests read through `fs`.
   #
   # Unlike `ci-required`'s zero-dep bin, the suites need their deps, so this job
   # installs (`--frozen-lockfile`). Run-ness is single-sourced from
@@ -631,15 +669,47 @@ jobs:
           node-version-file: package.json
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - name: Report which packages this run tests
+        env:
+          SCOPE: ${{ needs.changes.outputs.packages_scope }}
+          SELECTION: ${{ needs.changes.outputs.packages_selection }}
+          REASON: ${{ needs.changes.outputs.packages_scope_reason }}
+        run: |
+          case "$SCOPE" in
+            scoped) echo "::notice::packages unit tests: scoped to $SELECTION, because $REASON" ;;
+            none) echo "::notice::packages unit tests: selected no package, because $REASON" ;;
+            *) echo "::notice::packages unit tests: full run ($SCOPE), because $REASON" ;;
+          esac
 
-      - run: pnpm --filter './packages/**' --filter @kampus/infra run test
+      - if: needs.changes.outputs.packages_scope != 'none'
+        run: pnpm install --frozen-lockfile
+
+      - name: Run the package unit tests
+        if: needs.changes.outputs.packages_scope != 'none'
+        env:
+          SCOPE: ${{ needs.changes.outputs.packages_scope }}
+          SELECTION: ${{ needs.changes.outputs.packages_selection }}
+        run: |
+          set -euo pipefail
+          if [ "$SCOPE" != "scoped" ]; then
+            exec pnpm --filter './packages/**' --filter @kampus/infra run test
+          fi
+          filters=()
+          for package in $SELECTION; do filters+=(--filter "$package"); done
+          if [ "${#filters[@]}" -eq 0 ]; then
+            echo "::error::packages unit tests: the scope is 'scoped' but names no package — refusing to run nothing"
+            exit 1
+          fi
+          pnpm --fail-if-no-match "${filters[@]}" run test
 
       # The Tuval SDK as an outside author installs it (#9654): packs `@kampus/tuval-sdk`,
       # installs the tarball with npm into a temp directory outside the checkout, type-checks
       # and tests `packages/tuval/example` there, and reds if either phase resolved a file
       # inside the checkout.
+      # Runs whenever the selection holds `@kampus/tuval-sdk`, which a change to any of its
+      # dependencies puts there too, and on every full run.
       - name: Prove an outside program builds and tests against the packed Tuval SDK
+        if: needs.changes.outputs.tuval_sdk_proof != 'false'
         run: pnpm --filter @kampus/tuval-sdk run proof:outside
 
   # No package outside `apps/` depends on or imports an `@kampus-apps/*` app (#9660). It runs on
