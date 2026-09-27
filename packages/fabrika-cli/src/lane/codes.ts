@@ -674,3 +674,20 @@ export const ROUTE_UNDERIVED = 67;
  * @ruling https://github.com/kamp-us/phoenix/issues/9761
  */
 export const INTEGRATE_EVIDENCE = 68;
+
+/**
+ * `lane record` was asked for the record of a lane whose fold has not reached a terminal state.
+ * Nothing was read off the board and nothing was posted: a lane still moving has not finished.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9855
+ */
+export const LANE_NOT_TERMINAL = 69;
+
+/**
+ * A lane fact was refused before it was written: an origin outside the closed set on `lane open`,
+ * or a `lane wait` whose `--on` is not one non-blank line or whose `--until` is not a date still to
+ * come. Nothing was booted or appended.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9855
+ */
+export const FACT_REFUSED = 70;

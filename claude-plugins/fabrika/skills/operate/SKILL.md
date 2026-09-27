@@ -171,7 +171,9 @@ node <fabrika> lane open $lane_key
 
 `lane open` places the template the key selects — the coder workflow for an issue number, the chore
 workflow for `chore:<name>` — so a chore drive needs no document written by hand. Its
-already-exists refusal is tolerated as resume, not treated as an error.
+already-exists refusal is tolerated as resume, not treated as an error. Pass `--origin <kind>` when
+your caller named where the lane came from (the kinds are listed under the terminal step in §4); say
+nothing and it records `driver-pick`. `70` means the kind is not one of them, and nothing was booted.
 
 **Exit `51` out of `lane open` is the cap, and it is the same wait step 1's read exists to catch
 earlier.** A seat freed between the read and the boot in the wrong direction, or another driver took
@@ -1445,7 +1447,7 @@ unappended, and the remedies are `lane prove`'s. `8` means the append did not la
 
 Done when the fold reads a terminal state or a park.
 
-## 4 — Park, or end with the transcript — then release
+## 4 — Park, or end with the record — then release
 
 **An epic run gives back its assembly worktree when the lane reaches a terminal fold**, before the
 release below — the run owned that tree, and a tree nobody owns is one a later driver has to reason
@@ -1458,12 +1460,12 @@ node <fabrika> lane assembly $lane_key --remove
 It never forces, so a tree holding uncommitted work is refused rather than dropped. That refusal is
 exit `8`, and it carries git's own reason: uncommitted work sitting there is the usual one, a process
 still standing inside the tree (the `cd` in §3 is one) is the other. Read the reason it prints, name
-it in the transcript comment, and leave the tree. Neither a park nor a queue wait is a terminal, so a
+it in your terminal line, and leave the tree. Neither a park nor a queue wait is a terminal, so a
 `LANE-PARKED` and a `LANE-WAITING` run both leave the worktree in place for the successor that
 resumes the lane.
 
 Both ends of the loop release the claim, and it is the **last** thing the run does — after the park
-comment or the transcript has landed, so a successor that wins the lane the moment you let go finds
+comment or the record has landed, so a successor that wins the lane the moment you let go finds
 the artifact already there:
 
 ```bash
@@ -1697,16 +1699,28 @@ caller re-reads the ledger, never your summary. A resumed run that folds into a 
 and ends `LANE-PARKED` again; the ledger, not your patience, decides when the lane moves.
 
 **A terminal fold (`status: done` — `shipped`, `complete`, `diagnosed`, `tripped`, `board:cancelled`,
-`board:landed`, and a chore's `swept`) ends the run with the transcript**, posted to the driven issue straight off the verbs:
+`board:landed`, and a chore's `swept`) ends the run with the lane's record**, posted to the driven
+issue by the verb that composes it:
 
 ```bash
-node <fabrika> lane print $lane_key | gh issue comment $lane_key --body-file -
+node <fabrika> lane record $lane_key
 ```
 
-with `lane history $lane_key` appended the same way when the event log adds anything `print` does not
-show. Name the terminal state in the comment. End `LANE-TERMINAL`. On a chore lane the pipe has no
-issue to land on: print the same two verbs and hand their bytes to your caller, who owns where a
-chore's transcript is posted.
+The record is the lane's outcome, wall-clock, builds, reviews, parks, Spent $, asks, origin and PRs,
+with the whole log collapsed under it, and it is how the lane's history leaves this machine. Run it
+on every terminal fold, a `tripped` park's included. `posted` and `unchanged` both mean the record
+stands, and a re-run never stacks a second one, so after a crash just run it again. `69` means the
+fold has not ended, so read it again rather than posting. `5` means a machine-local path got past the
+scrub, and nothing was posted: name it in your terminal line. Every other non-zero is UNKNOWN; name
+the code. End `LANE-TERMINAL`. On a chore lane there is no issue to post to (`19`): print
+`lane history $lane_key` and hand those bytes to your caller, who owns where a chore's transcript is
+posted.
+
+A lane that is quiet on purpose says so with `node <fabrika> lane wait $lane_key --on "<what>" --until
+<date>`. Where the lane came from is set once at boot, with `lane open --origin`: `bet` when it
+drives a row the table bet on, `founder-start` when the founder started it by hand, `experiment`,
+`mid-lane-fix` for a fix found while driving another lane, and `driver-pick` — the default — for
+everything else.
 
 **A `complete` fold over an issue the board still calls buildable is a defect, and it has a repair.**
 It means the merge behind the ship's `DONE` carried `Part of #N` and the recorded line never said so,
@@ -1717,7 +1731,7 @@ as it reads — nothing here is yours to change — and name the two verbs that 
 line when re-run without the flag.
 
 **A `tripped` fold is not automatically a terminal** — read which state its error task sits in. On
-`human:budget-spent` and on `frozen` the run ends `LANE-PARKED` with the transcript and the need
+`human:budget-spent` and on `frozen` the run ends `LANE-PARKED` with the record and the need
 posted, and the two needs differ: the first needs a granted round behind its door, the second — an
 emitted epic child whose door leads back to itself — needs a re-emitted machine. On a lane emitted
 before the rename, `frozen` is the spent-budget fallthrough and `human:epic-review` is the tail's,
@@ -1867,7 +1881,7 @@ never read it as a lane that was judged and left.
 
 Every run ends as exactly one of — each naming what was recorded and what the fold reads after:
 **`LANE-TERMINAL`** (the machine folded to a final state with no door out — `shipped`, `complete`,
-`diagnosed`, `tripped`; no event recorded on top of a final fold; transcript posted on the driven issue) ·
+`diagnosed`, `tripped`; no event recorded on top of a final fold; the lane record posted on the driven issue) ·
 **`LANE-PARKED`** (the fold reads `blocked`, `human:*` or `frozen` — either it already did and no
 event was owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
 posted on the driven issue) · **`LANE-HELD`** (step 1's claim was proven lost — another driver owns
