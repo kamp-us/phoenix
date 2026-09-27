@@ -132,6 +132,7 @@ describe("runDiagnose answers", () => {
 			[
 				`stall\tungated\t${HEAD}\t35`,
 				"owner\t-\t-\t2026-08-08T00:25:00Z",
+				"author\tusirin\tunread",
 				"gates\tblocked\t0/1",
 				"ci\tgreen\t0",
 				"queue\tnone",
@@ -249,6 +250,62 @@ describe("runDiagnose answers", () => {
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe(`stall\tconflicted\t${HEAD}\t35`);
 		expect(out.stderr.join("\n")).toContain("conflicts with main");
+	});
+
+	/**
+	 * A conflicted PR is the class whose arrow names `build`, and a PR belongs to its author — so this
+	 * is the one class that reads whose PR it is before it names a lane.
+	 */
+	describe("whose conflicted PR it is", () => {
+		const CONFIG_AT_BASE = /^GET .*\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
+		const RUNNING_ACCOUNT = /^GET .*\/user$/;
+		const conflicted = (author: string) =>
+			reply(pull({mergeable: false, mergeableState: "dirty", updatedAt: PUSHED, author}));
+		const authorLine = (stdout: string) =>
+			stdout.split("\n").find((line) => line.startsWith("author\t"));
+
+		it("reads the running account's own PR as ours, so its arrow stays build", async () => {
+			const out = await run(
+				script([
+					[PULL, conflicted("usirin")],
+					[CONFIG_AT_BASE, {status: 404, body: '{"message":"Not Found"}'}],
+					[RUNNING_ACCOUNT, {status: 200, body: JSON.stringify({login: "usirin"})}],
+					[RULES, rules("ci-required", "code-scanning/codeql")],
+				]),
+			);
+			expect(out.code).toBe(0);
+			expect(authorLine(out.stdout)).toBe("author\tusirin\tours");
+		});
+
+		it("reads another author's ungranted PR as foreign — its author's, never build's", async () => {
+			const out = await run(
+				script([
+					[PULL, conflicted("ada")],
+					[CONFIG_AT_BASE, {status: 404, body: '{"message":"Not Found"}'}],
+					[RUNNING_ACCOUNT, {status: 200, body: JSON.stringify({login: "usirin"})}],
+					[RULES, rules("ci-required", "code-scanning/codeql")],
+				]),
+			);
+			expect(out.code).toBe(0);
+			expect(authorLine(out.stdout)).toBe("author\tada\tforeign");
+		});
+
+		it("still classifies when the standing cannot be read, and never calls it ours", async () => {
+			const out = await run(
+				script([
+					[PULL, conflicted("usirin")],
+					[CONFIG_AT_BASE, {status: 404, body: '{"message":"Not Found"}'}],
+					[
+						RUNNING_ACCOUNT,
+						{status: 403, body: '{"message":"Resource not accessible by integration"}'},
+					],
+					[RULES, rules("ci-required", "code-scanning/codeql")],
+				]),
+			);
+			expect(out.code).toBe(0);
+			expect(authorLine(out.stdout)).toBe("author\tusirin\tunknown");
+			expect(out.stderr.join("\n")).toContain("the arrow names its author, never build");
+		});
 	});
 
 	it("skips the conflict arm on an indefinite mergeability, leaving the class it had", async () => {
