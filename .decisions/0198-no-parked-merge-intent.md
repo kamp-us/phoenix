@@ -133,3 +133,11 @@ surviving parked intent costs an ungated enqueue.
   [0132](0132-merge-queue-for-base-freshness.md) (the queue owns the async merge; a live entry is
   never disturbed). Extends [0058](0058-sha-bound-verdict-contract.md)'s "a moved head invalidates
   what was bound to the old one" from verdicts and approvals to the **merge intent** itself.
+
+## Amendments
+
+- **#9841 — the run-evidence bundle is retired (2026-09-26).** [ADR 0410](0410-ship-checks-is-ship-ci-trust.md)
+  retired the SHA-bound run-evidence bundle, so it is no longer among the gates a ship run asserts
+  before it enqueues or re-enqueues, and a missing bundle is no longer a refusal. What replaced the
+  bundle is `fabrika ship checks` over the `ci-required` required context. Only this record's
+  run-evidence text is superseded; the rest stands.
