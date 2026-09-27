@@ -7,7 +7,7 @@
 
 import {assert, describe, it} from "@effect/vitest";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import {Effect, Stream} from "effect";
+import {Effect, Option, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import type {ShellMsg} from "../shell/core/index.ts";
 import type {AttachedProcess, PageAttachment} from "../shell/transport/browser.ts";
@@ -15,10 +15,12 @@ import {
 	defaultRecovery,
 	drive,
 	dropKind,
+	NoShellProcess,
 	nextAttempt,
 	noRecovery,
 	type PageLink,
 	type Recovery,
+	shellProcessOf,
 } from "./connection.ts";
 
 const closeWith = (code: number) =>
@@ -66,6 +68,10 @@ describe("reading what ended an attempt", () => {
 	it("calls anything that is not a socket error a plain drop", () => {
 		assert.strictEqual(dropKind(new Error("the kernel runs no shell process")), "dropped");
 	});
+
+	it("calls a kernel that runs no shell its own thing, whatever the socket did", () => {
+		assert.strictEqual(dropKind(new NoShellProcess()), "no-shell");
+	});
 });
 
 describe("choosing the next attempt", () => {
@@ -83,6 +89,14 @@ describe("choosing the next attempt", () => {
 		const next = nextAttempt(recovery, "protocol", 1, "1008: undecodable frame");
 		assert.strictEqual(next._tag, "Refuse");
 		assert.include(next._tag === "Refuse" ? next.reason : "", "disagree about the wire");
+	});
+
+	it("refuses a kernel running no shell at once, with the cause as the whole reason", () => {
+		const cause = new NoShellProcess().message;
+		assert.deepStrictEqual(nextAttempt(recovery, "no-shell", 1, cause), {
+			_tag: "Refuse",
+			reason: cause,
+		});
 	});
 
 	it("refuses once the budget is spent, and names the token as one of the two readings", () => {
@@ -206,6 +220,63 @@ describe("driving the lifecycle", () => {
 
 			assert.strictEqual(state.opened, 1);
 			assert.strictEqual(state.refusals.length, 1);
+		}),
+	);
+
+	it.effect("refuses a kernel running no shell on the first attempt, naming the config", () =>
+		Effect.gen(function* () {
+			const state = {opened: 0, refusals: [] as Array<string>};
+			yield* drive({
+				recovery: instant,
+				open: Effect.suspend(() => {
+					state.opened += 1;
+					return Effect.fail(new NoShellProcess());
+				}),
+				onLink: () => {},
+				onRefusal: (reason) => {
+					state.refusals.push(reason);
+				},
+			});
+
+			assert.strictEqual(state.opened, 1);
+			assert.deepStrictEqual(state.refusals, [new NoShellProcess().message]);
+			assert.include(state.refusals[0] ?? "", ".tuval/tuval.config.ts");
+		}),
+	);
+});
+
+describe("finding the shell process", () => {
+	type Page = Parameters<typeof shellProcessOf>[0];
+	const table = (...programIds: ReadonlyArray<string>): Page["rows"] =>
+		Stream.succeed(programIds.map((id) => ({id, programId: id})) as never);
+	const catalog: Page["spells"] = Stream.succeed([] as never);
+
+	it.effect("answers none once the greeting is over and the table holds no shell", () =>
+		Effect.gen(function* () {
+			const found = yield* shellProcessOf({rows: table("counter"), spells: catalog});
+			assert.isTrue(Option.isNone(found));
+		}),
+	);
+
+	it.effect("answers the shell's process id when the table holds one", () =>
+		Effect.gen(function* () {
+			const found = yield* shellProcessOf({rows: table("counter", "shell"), spells: catalog});
+			assert.deepStrictEqual(found, Option.some("shell"));
+		}),
+	);
+
+	it.effect("reads the table only after the first spell catalog lands", () =>
+		Effect.gen(function* () {
+			const order: Array<string> = [];
+			yield* shellProcessOf({
+				rows: Stream.fromEffect(Effect.sync(() => order.push("rows"))).pipe(
+					Stream.flatMap(() => table()),
+				),
+				spells: Stream.fromEffect(Effect.sync(() => order.push("spells"))).pipe(
+					Stream.flatMap(() => catalog),
+				),
+			});
+			assert.deepStrictEqual(order, ["spells", "rows"]);
 		}),
 	);
 });

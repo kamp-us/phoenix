@@ -277,6 +277,20 @@ describe("boot", () => {
 		spawnBudget(1),
 	);
 
+	it.effect(
+		"boots the desk's shell on a project with no config module, beside the global layer's rows",
+		() =>
+			Effect.gen(function* () {
+				const project = emptyProject();
+				const {report} = yield* bootDirect(fixture("two-rows"), project);
+				assert.deepStrictEqual(report.sources, [fixture("two-rows")]);
+				assert.strictEqual(report.programCount, DESK_PROGRAMS + 2);
+				assert.strictEqual(report.spellCount, DESK_SPELLS);
+				assert.strictEqual(report.processCount, 1);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
 	// #9375: this folder has no `.tuval` at all, and neither has the home dir. Before the desk
 	// supplied its shell, this boot planned no process and the page sat at "Attaching to the Tuval
 	// kernel…"; now the shell is live and the page is served over it.

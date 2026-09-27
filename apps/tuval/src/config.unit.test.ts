@@ -413,6 +413,42 @@ describe("loadLayeredConfig", () => {
 		}),
 	);
 
+	// #9375: a project with no config module still boots the desk. The desk layer stands in for the
+	// built-in project default main shipped, and it is there whether or not the project module is.
+	describe("with no project module", () => {
+		it.effect("supplies the desk's rows under the global layer's", () =>
+			Effect.gen(function* () {
+				const config = yield* layered(
+					fixture("global-layer"),
+					fixture("does-not-exist"),
+					fixtureDesk,
+				);
+				assert.deepStrictEqual(config.programs, [
+					{id: "desk"},
+					{id: "a"},
+					{id: "b", core: "global"},
+				]);
+				assert.deepStrictEqual(config.graph.nodes, [
+					...fixtureDesk.graph.nodes,
+					{id: NodeId.make("n"), program: ProgramId.make("a"), on: []},
+				]);
+				assert.deepStrictEqual(config.sources, [fixture("global-layer")]);
+			}),
+		);
+
+		it.effect("still supplies them once the project module exists", () =>
+			Effect.gen(function* () {
+				const config = yield* layered(fixture("does-not-exist"), fixture("two-rows"), fixtureDesk);
+				assert.deepStrictEqual(config.programs, [
+					{id: "desk"},
+					{id: alpha.scope("a")},
+					{id: alpha.scope("b")},
+				]);
+				assert.deepStrictEqual(config.graph.nodes, fixtureDesk.graph.nodes);
+			}),
+		);
+	});
+
 	it.effect("carries each layer's key bindings as its own source, named for the layer", () =>
 		Effect.gen(function* () {
 			const config = yield* layered(fixture("keys"), fixture("does-not-exist"));

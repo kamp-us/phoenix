@@ -322,6 +322,20 @@ field existed keep loading.
 tuval: program "<project>/notify" supports @kampus/tuval-sdk ^2, and this desk runs 0.0.0; it was not loaded
 ```
 
+### Running it on your own project
+
+`pnpm dev --project <dir>` opens any directory as a project, and that directory needs no files.
+When `<dir>/.tuval/tuval.config.ts` is absent, the project layer is empty and the desk layer still
+supplies the shell, so the desk attaches (#9375). The boot line names only the file layers it read:
+
+```
+tuval: booted — 1 program(s), … spell(s) registered from no config module; 1 process(es) live, 0 restored from ~/.tuval/projects/-Users-you-code-your-repo
+```
+
+Writing a project module adds that project's rows beside the shell and never removes it. If a
+kernel runs no shell process anyway, the page does not wait at "Attaching to the Tuval kernel…". It
+says the kernel is running no shell process and how to start one.
+
 ## The public API
 
 The program-author doors belong to the Tuval SDK, [`@kampus/tuval-sdk`](../../packages/tuval), which
