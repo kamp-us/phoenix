@@ -1180,8 +1180,21 @@ const takeover = leafCommand(
 ).pipe(
 	Command.withShortDescription("Hand a PR another author opened to the pipeline."),
 	Command.withDescription(
-		'Post the takeover grant on a PR whose author is outside the repo\'s ownAccounts (the running account alone when that set is empty), so build may repair it, ship may land it and heal-ci routes it to build rather than to its author. One comment: the first line is the marker "takeover-granted: #<pr> · <ISO>", the lines under it quote --authorization verbatim. Refuses unless the invoking account is in `.fabrika.jsonc`\'s `capClearAuthors` at the PR\'s base ref, holds write+ at the ACL, and did not open the PR itself — the same clauses the reader applies, so a grant this posts is one the reader honours. A PR one of ours opened needs no grant and refuses on 7; a PR already handed over answers {"resolvesTo":"already-granted"} and posts nothing. Prints {"pr":n,"author":"…","by":"…","comment":n,"at":"…","resolvesTo":"granted"}. Exits 5 (machine-local path), 6 (bare @ reference), 7 (PR proven absent or closed, or already ours), 8 (the write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed), 25 (the invoking account may not grant here, or opened the PR), 26 (--authorization missing, empty or undated). Example: fabrika build takeover 4321 --authorization authorization.md',
+		[
+			"Posts the grant that hands another author's PR to the pipeline and prints the grant as JSON.",
+			'  {"pr","author","by","comment","at","resolvesTo":"granted"|"already-granted"}',
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: the PR is absent, closed or already ours",
+			"  8: the write failed (UNKNOWN)",
+			"  9: the read-back differs",
+			"  11: a precondition read failed (UNKNOWN)",
+			"  25: the invoking account may not grant here, or opened the PR",
+			"  26: --authorization is missing, empty or undated",
+			`  Derivation: the build skill's contract.md, "build takeover"`,
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika build takeover 4321 --authorization authorization.md"}]),
 );
 
 const adopt = leafCommand(

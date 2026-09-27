@@ -2502,6 +2502,8 @@ With `--json`, one object with keys `outcome`, `label`, `repo`, `issues` (array 
 `{number, title}`), and `scanned` (integer, equal to the length of `issues`). This object is the
 `--input` document `triage audit-merge` reads.
 
+Stderr carries the scanned count as a scope line in both modes.
+
 **Exit status**
 
 | Code | Trigger |

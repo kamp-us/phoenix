@@ -693,8 +693,17 @@ const auditSet = leafCommand(
 ).pipe(
 	Command.withShortDescription("The whole open issue set a read-only audit judges, for one label."),
 	Command.withDescription(
-		"List every open issue carrying --label, ascending by number and never truncated — the input set of a read-only backlog audit. Reads only; writes nothing. First stdout line is the outcome token — set | empty — and a set adds one `<number>\\t<title>` line per issue; --json prints `{outcome, label, repo, issues:[{number,title}], scanned}`, the shape `triage audit-merge --input` reads. The scanned count is on stderr. Exits 7 (--label does not exist, so the set would scan nothing), 11 (the label set or the issue list could not be read — UNKNOWN, never `empty`). Example: fabrika triage audit-set --label status:triaged --json > set.json",
+		[
+			"Lists every open issue carrying --label, never truncated, as the set a read-only audit judges.",
+			"  First line `set` or `empty`; a set adds one `<number>\\t<title>` line per issue, ascending.",
+			"  7: --label does not exist",
+			"  11: the label set or the issue list is unreadable (UNKNOWN, never `empty`)",
+			'  Derivation: the triage skill\'s contract.md, "triage audit-set"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika triage audit-set --label status:triaged --json > set.json"},
+	]),
 );
 
 const auditMerge = leafCommand(
@@ -717,8 +726,22 @@ const auditMerge = leafCommand(
 ).pipe(
 	Command.withShortDescription("Merge a read-only audit's chunk results, checked against the set."),
 	Command.withDescription(
-		'Merge the verdict rows of a read-only backlog audit\'s chunks onto the audited set, refusing rather than repairing. A verdict row is `{"issue": <n>, "verdict": "KILL"|"DECIDE"|"KEEP", "clause": <value-bar clause, KILL only>, "evidence": <one line>}`; the clauses are process-ceremony, self-generated-churn, hardening-with-no-incident, superseded, duplicate-of-parent. Reads local files only and never touches the issue tracker. Prints `merged`, then one `<number>\\t<verdict>\\t<clause|->\\t<evidence>` line per issue, ascending; --json prints `{outcome, rows, counts}`. Every refusal prints nothing on stdout. Exits 7 (the input set lists no issues), 11 (a file could not be read — UNKNOWN), 22 (a file is not JSON, or a row breaks the pinned shape — unknown verdict, no issue number, a KILL with no value-bar clause), 23 (a chunk\'s rows differ from its declared total), 24 (an issue carries more than one row), 25 (the merged issues are not the input set — missing or invented). Example: fabrika triage audit-merge --input set.json --chunk a.json --chunk b.json',
+		[
+			"Merges an audit's chunk verdict rows onto the audited set, refusing rather than repairing.",
+			"  Prints `merged`, then `<number>\\t<verdict>\\t<clause|->\\t<evidence>` per issue, ascending.",
+			"  Reads local files only; every refusal prints nothing on stdout.",
+			"  7: the input set lists no issues",
+			"  11: a file could not be read (UNKNOWN)",
+			"  22: a file is not JSON, or a row breaks the pinned shape",
+			"  23: a chunk's rows differ from its declared total",
+			"  24: an issue carries more than one row",
+			"  25: the merged issues are not the input set",
+			'  Derivation: the triage skill\'s contract.md, "triage audit-merge"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika triage audit-merge --input set.json --chunk a.json --chunk b.json"},
+	]),
 );
 
 export const triageCommand = Command.make("triage").pipe(
