@@ -1,12 +1,12 @@
 ---
-id: 0426
+id: 0427
 title: build retire unlocks a tree it has released and removes it plainly, never with --force
 status: accepted
 date: 2026-09-27
 tags: [fabrika, pipeline-hardening, worktree]
 ---
 
-# 0426 — build retire unlocks a tree it has released and removes it plainly, never with --force
+# 0427 — build retire unlocks a tree it has released and removes it plainly, never with --force
 
 **What this decides:** when `build retire` has already licensed a worktree's removal, it may run
 `git worktree unlock` and then a plain `git worktree remove` on it. That pair is not the `--force`
