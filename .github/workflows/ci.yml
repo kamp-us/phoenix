@@ -644,7 +644,9 @@ jobs:
       # changed file, plus its whole suite when a changed file matches its `forceRerunTriggers`
       # (#10023). `push` to main and `workflow_dispatch` run everything, and so does any run
       # with no pinned base, or whose diff moves the lockfile or workspace manifest — a dependency
-      # change sits in `node_modules`, which vitest's import graph never follows.
+      # change sits in `node_modules`, which vitest's import graph never follows. A changed
+      # `vitest.config.*` runs everything too: vitest's default `**/{vitest,vite}.config.*/**`
+      # trigger never matches the config's own path, so `--changed` alone runs none of its tests.
       # `@kampus/fabrika-pi` runs `node --test`, which has no `--changed`, so it always runs whole.
       - name: Run package unit tests
         env:
@@ -655,8 +657,8 @@ jobs:
             echo "::notice::no pinned diff base — running every package's full suite"
             exec pnpm --filter './packages/**' --filter @kampus/infra run test
           fi
-          if ! git diff --quiet "$BASE...HEAD" -- pnpm-lock.yaml pnpm-workspace.yaml; then
-            echo "::notice::the diff moves pnpm-lock.yaml or pnpm-workspace.yaml — running every package's full suite"
+          if ! git diff --quiet "$BASE...HEAD" -- pnpm-lock.yaml pnpm-workspace.yaml ':(glob)**/vitest.config.*'; then
+            echo "::notice::the diff moves pnpm-lock.yaml, pnpm-workspace.yaml or a vitest config — running every package's full suite"
             exec pnpm --filter './packages/**' --filter @kampus/infra run test
           fi
           echo "::notice::running only the tests the diff since $BASE reaches (vitest --changed)"
