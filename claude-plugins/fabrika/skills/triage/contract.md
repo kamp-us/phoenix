@@ -26,7 +26,7 @@ makes the implementer guess.
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `triage queue` | the claimable `status:needs-triage` queue, with the count it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
+| `triage queue` | the claimable `status:needs-triage` queue plus every open issue with no label, with the counts it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
 | `triage claim` | take one lane's claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
 | `triage scratch` | the per-lane directory this lane's working files go under | keying a namespace on the claim nonce is mechanical; what the file holds is judgment |
 | `triage provenance` | was this issue reported by an agent or hand-typed by a human | a structural marker test over a fetched body, plus a membership test over the configured operator set — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
@@ -165,6 +165,7 @@ or the search index could not be read.
 | `19` | refused: the asking lane holds no live claim on the target | — | — | — | — | — | — | — | — | — | ✓ |
 | `20` | refused: the body this verb composed **states an ordering** the live `blocked_by` graph carries no edge for | — | — | — | — | — | ✓ | — | — | — | — |
 | `21` | refused: a `--blocked-by` target is a **pull request** — a blocking PR is named in the graph by the issue its merge closes | — | — | — | — | — | — | ✓ | — | — | — |
+| `22` | refused: the text `enrich` was sent carries no plain-language summary section, an empty one, or more than one | — | — | — | — | — | ✓ | — | — | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -287,7 +288,8 @@ fabrika triage queue [--label <name>] [--limit <n>] [--repo <owner/name>] [--jso
 
 **Output** — machine channel. The first line is the outcome token alone: `queued` or `empty`. On
 `queued`, one **tab-separated** line per issue follows — `<number>`, `<age-days>`, `<title>` — oldest
-first, capped at `--limit`. `<age-days>` is a whole number of days from the issue's `created_at` to
+first, capped at `--limit`. The rows are the open issues carrying `--label` **and every open issue
+carrying no label at all**, merged into one order; a row does not say which set it came from. `<age-days>` is a whole number of days from the issue's `created_at` to
 now, floored.
 
 With `--json`, one object with keys `outcome`, `issues` (array of `{number, ageDays, title}`, empty
@@ -300,23 +302,31 @@ so a PR could appear as a triageable row.
 
 | Code | Trigger |
 |---|---|
-| `7` | `--label` does not exist in the repository — the queue would scan nothing |
-| `11` | the queue read failed — the outcome is UNKNOWN, never `empty` |
+| `7` | `--label` does not exist in the repository — the labelled read would scan nothing |
+| `11` | the labelled read or the unlabeled read failed — the outcome is UNKNOWN, never `empty` |
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `triage queue: cannot read the <label> queue in <repo>: <reason> — the outcome is UNKNOWN, never "empty".` | 11 | refusal |
+| `triage queue: cannot read the open issues in <repo> that carry no label: <reason> — the outcome is UNKNOWN, never "empty".` | 11 | refusal |
 | `triage queue: label <label> does not exist in <repo> — refusing to report an empty queue over zero scope.` | 7 | refusal |
 | `triage queue: --limit must be 1 or greater.` | 1 | usage error |
 
-**Scope** — every open issue in `--repo` carrying `--label`, read with pagination. **`empty` and a
+**Scope** — every open issue in `--repo` carrying `--label`, plus every open issue carrying no
+label at all, both read with pagination. An issue filed with no label is otherwise one triage never
+sees; the project's Inbox view is the human's view of the same set. The unlabeled read pages the
+whole open list and keeps the bare rows, because the REST list has no "no label" filter and the
+search index's `no:label` lags a fresh filing — and this read decides whether a sweep is done. **`empty` and a
 failed read are different answers and never share a channel or a code.** The distinction is
 load-bearing because the skill uses this verb as a sweep's termination test: a renamed label or a
 scope-limited token returns HTTP 200 with `[]`, and v1 terminated the sweep on it and reported the
 queue drained. The label's existence is checked against the repository's label set, so a typo reds on
-`7` rather than answering `empty`. The scope line on stderr names the scanned count on every run.
+`7` rather than answering `empty`. That check guards the labelled read only: the unlabeled read has
+no label to prove, so its guard is the read itself, and a failure of it is `11` — never an empty half
+of the queue. Two scope lines on stderr name the labelled and the unlabeled scanned counts on every
+run.
 
 The read is this verb's whole answer rather than a step toward a write, so its failure is `11` for
 the same reason it is `11` everywhere else here: `1` would fuse an unreachable GitHub with a bad
@@ -1252,7 +1262,7 @@ The rewrite — or, with `--epic`, the pitch — arrives on **stdin only**, for 
 | `--token` | string | no | none | the claim token `triage claim` handed this lane; without it the guard reads the session alone and refuses once two lanes of it hold live markers |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
-| stdin | markdown | yes | — | the rewritten body that goes above the preserved original — with `--epic`, the pitch's five field lines instead: `**Problem:**`, `**Arc:**`, `**Appetite:** <S\|M\|L>`, `**Rabbit-holes:**`, `**No-gos:**`, one per line, plus the optional `**Success:**` line |
+| stdin | markdown | yes | — | one `## In plain words` section (below), plus the rewritten body that goes above the preserved original — with `--epic`, the pitch's five field lines instead: `**Problem:**`, `**Arc:**`, `**Appetite:** <S\|M\|L>`, `**Rabbit-holes:**`, `**No-gos:**`, one per line, plus the optional `**Success:**` line |
 
 **Output** — machine channel. One tab-separated line: `enriched`, `<number>`, `<redactions>`, where
 `<redactions>` is the count of machine-local paths masked in the preserved original. With `--json`,
@@ -1260,10 +1270,14 @@ an object with keys `outcome`, `number`, `redactions`, and `mode` (`rewrite` or 
 
 **The envelope, byte for byte.** The verb composes the new body itself, so the bytes are pinned here
 rather than left to an implementer who would then verify them against a read-back of their own
-invention. Default mode, where `<REWRITE>` is stdin verbatim and `<ORIGINAL>` is the redacted
-original:
+invention. Default mode, where `<SUMMARY>` is the paragraph under stdin's `## In plain words`
+heading, `<REWRITE>` is the rest of stdin verbatim, and `<ORIGINAL>` is the redacted original:
 
 ```
+## In plain words
+
+<SUMMARY>
+
 <REWRITE>
 
 ---
@@ -1278,9 +1292,13 @@ original:
 ```
 
 `--epic` mode emits the **pitch** instead of a rewrite, above a fixed header and the wrapped
-original, where `<PITCH>` is stdin verbatim:
+original, where `<PITCH>` is the rest of stdin verbatim:
 
 ```
+## In plain words
+
+<SUMMARY>
+
 ## Pitch
 
 <PITCH>
@@ -1297,6 +1315,18 @@ original, where `<PITCH>` is stdin verbatim:
 
 </details>
 ```
+
+**The plain-language summary leads every body, in both modes.** It is what a person deciding many
+rows reads first, and what agenda prep reads when it writes a row's "In plain words" line. The
+caller sends it as one
+`## In plain words` section anywhere on stdin; the verb lifts it out and writes it first, so its
+position is the verb's, never the author's. The section is the heading and **the one paragraph under
+it** — it ends at the first blank line after that paragraph, or at the next heading — because the
+pitch's field lines carry no heading that could end it. Write 2-3 everyday sentences: what is wrong,
+who it hurts, what we would do. It stays honest, not salesy, and says what the body below it says.
+A heading inside a fenced block is quoted content, not the section. Stdin with no such section, an
+empty one, or more than one is refused on `22`; a section with nothing else on stdin is `3`. The
+grammar is `packages/fabrika-cli/src/triage/plain-summary.ts`.
 
 **The `<!-- fabrika:enriched … -->` line is the re-enrich marker**, described in full under the
 detector below. It renders as nothing, it is the boundary between the region this verb owns and the
@@ -1369,8 +1399,8 @@ to bold text.**
 verdict on a gated question, which is the same reason a `triage pitch-check` verb is not derived.
 This verb refuses only what it can refuse about text the caller just wrote — empty (`3`), a
 machine-local path (`5`), a bare `@` reference (`6`), an acceptance-criteria block the wire
-reader rejects (`15`, below), and a missing one over a target already stamped `ready-for:agent`
-(`16`, below) — and `--epic` **adds no exit code of its own**: reaching those same
+reader rejects (`15`, below), a missing one over a target already stamped `ready-for:agent`
+(`16`, below), and a missing plain-language summary (`22`) — and `--epic` **adds no exit code of its own**: reaching those same
 refusals is the removal of a restriction, not a new outcome, and `16` is one it does not reach at
 all.
 
@@ -1641,7 +1671,7 @@ moves; a bypass costs a builder a claim on unstartable work.
 
 | Code | Trigger |
 |---|---|
-| `3` | stdin was read and held nothing — the rewrite, or the pitch with `--epic` |
+| `3` | stdin was read and held nothing — the rewrite, or the pitch with `--epic` — or held the `## In plain words` section and nothing else |
 | `5` | the **authored** text carries a machine-local path — the rewrite, or the pitch with `--epic` |
 | `6` | the **authored** text is a bare `@` path reference — the rewrite, or the pitch with `--epic` |
 | `7` | the issue is proven absent (404), is closed, or it was read and its body is empty — a read that succeeded over nothing |
@@ -1652,12 +1682,17 @@ moves; a bypass costs a builder a claim on unstartable work.
 | `15` | the composed body's **authored region** carries an acceptance-criteria block the wire reader classifies `Malformed` — a drifted heading, a checkbox with no text, or an outside-diff evidence marker whose keyword drifted or which names no source |
 | `16` | the issue's live labels carry `ready-for:agent` and the composed body's **authored region** carries no acceptance-criteria block the wire reader answers `Found` on — never with `--epic` |
 | `20` | the composed body's **authored region** states an ordering the issue's live `blocked_by` graph carries no edge for |
+| `22` | stdin carries no `## In plain words` section, an empty one, or more than one — nothing written |
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `triage enrich: no body on stdin — pipe the rewritten body in (with --epic, the pitch's five fields).` | 3 | refusal |
+| `triage enrich: <the rewrite\|the pitch> carries only the "## In plain words" section — send the rest of it below the summary. Nothing was written.` | 3 | refusal |
+| `triage enrich: <the rewrite\|the pitch> carries no "## In plain words" section — every enriched issue opens with one. Add the section with one paragraph of 2-3 everyday sentences (what is wrong, who it hurts, what we would do) that matches the body, and re-send. Nothing was written.` | 22 | refusal |
+| `triage enrich: the "## In plain words" section in <the rewrite\|the pitch> is empty — write one paragraph of 2-3 everyday sentences (what is wrong, who it hurts, what we would do) that matches the body under the heading, and re-send. Nothing was written.` | 22 | refusal |
+| `triage enrich: <the rewrite\|the pitch> carries <k> "## In plain words" sections — send exactly one, and re-send. Nothing was written.` | 22 | refusal |
 | `triage enrich: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage enrich: issue #<n> is already closed.` | 7 | refusal |
 | `triage enrich: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
@@ -1724,6 +1759,15 @@ Either author a "### Acceptance criteria" block into the rewrite and re-send, or
 label first with `fabrika triage apply 9 --ready-for human`. Nothing was written.
 $ echo $?
 16
+```
+
+```
+$ fabrika triage enrich 7 < no-summary.md
+triage enrich: the rewrite carries no "## In plain words" section — every enriched issue opens with
+one. Add the section with one paragraph of 2-3 everyday sentences (what is wrong, who it hurts, what
+we would do) that matches the body, and re-send. Nothing was written.
+$ echo $?
+22
 ```
 
 **Grounding**
