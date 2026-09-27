@@ -1357,7 +1357,7 @@ that lane's role publishes to, is a lane whose shell is gone and which will neve
 - The publication surface is the role's and not the leaf's. A single lane and an epic tail publish an
   open PR whose body links the issue. An epic child publishes onto its own lane branch and opens no
   PR at all, so on a child the branch read IS that conjunct and no board read is made.
-- That whole conjunction is the predicate, read through the same `../build/dead-claim.ts` budget
+- That whole conjunction is the predicate, read through the same `build/dead-claim.ts` budget
   proof the spawn-dead unpark row reads. Every answer short of it is a `working` row that changed
   nothing: a claim inside its budget (the live-but-quiet builder), a branch still carrying the dead
   builder's commits, an open PR, or no claim at all.
