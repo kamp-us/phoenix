@@ -30,6 +30,7 @@ import {cycleDocKey, decisionsDirKey, roadmapFileKey} from "./keys/paths.ts";
 import {portabilityKey} from "./keys/portability.ts";
 import {reviewSubsystemsKey} from "./keys/review-subsystems.ts";
 import {surfaceDispositionsKey} from "./keys/surface-dispositions.ts";
+import {tableKey} from "./keys/table.ts";
 import {triageFacetsKey} from "./keys/triage-facets.ts";
 import {uiCaptureKey, uiSurfacesKey} from "./keys/ui-surfaces.ts";
 import {workflowValidatorsKey} from "./keys/workflow-validators.ts";
@@ -60,6 +61,7 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(reviewSubsystemsKey),
 	register(roadmapFileKey),
 	register(surfaceDispositionsKey),
+	register(tableKey),
 	register(triageFacetsKey),
 	register(uiCaptureKey),
 	register(uiSurfacesKey),

@@ -13,8 +13,9 @@
  *   read proves completeness by `total_count`, a bare-array read declares no count at all and its
  *   proof is exhausted pagination — a terminal page carrying no `rel="next"` link.
  *
- * REST throughout, with exactly three carves: {@link graphqlRead} for review threads
- * and their mutations, the auto-merge mutation, and `pullsClosing` in `./pulls.ts`. Issue
+ * REST throughout, with exactly four carves: {@link graphqlRead} for review threads
+ * and their mutations, the auto-merge mutation, `pullsClosing` in `./pulls.ts`, and the Projects
+ * (v2) client in `./projects.ts`, which has no REST surface to use instead. Issue
  * *search* stays REST — this org's Projects-classic integration errors GraphQL search out.
  *
  * The credential is an argument to every leg *of this module*, never something a leg resolves —
@@ -542,8 +543,9 @@ export const pagedEnvelope = (
 /**
  * The one non-REST leg, and it is a carve rather than a default.
  *
- * Three things need it and nothing else may: review-thread resolution state with the reply and
- * resolve mutations, `enablePullRequestAutoMerge`, and `pullsClosing` in `./pulls.ts`. Issue
+ * Four things need it and nothing else may: review-thread resolution state with the reply and
+ * resolve mutations, `enablePullRequestAutoMerge`, `pullsClosing` in `./pulls.ts`, and the
+ * Projects (v2) client in `./projects.ts`. Issue
  * *search* stays REST — what this org's Projects-classic integration errors out is the GraphQL
  * search connection, not the `repository(...){issue(number:)}` node `pullsClosing` reaches.
  */

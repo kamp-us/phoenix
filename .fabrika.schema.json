@@ -544,6 +544,143 @@
 				]
 			}
 		},
+		"table": {
+			"type": "object",
+			"description": "The weekly betting table on GitHub Projects: its cadence, agenda and every threshold its flags read. Leave it out for a working table on the shipped values; declare only the sub-keys you want to change.",
+			"properties": {
+				"cadence": {
+					"type": "string",
+					"enum": [
+						"weekly",
+						"biweekly",
+						"on-demand"
+					],
+					"description": "How often the table meets. Default weekly. The project's iteration field runs 7 days for weekly and on-demand, 14 for biweekly."
+				},
+				"day": {
+					"type": "string",
+					"enum": [
+						"sunday",
+						"monday",
+						"tuesday",
+						"wednesday",
+						"thursday",
+						"friday",
+						"saturday"
+					],
+					"description": "The weekday the table meets and each iteration starts. Default monday."
+				},
+				"sections": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					},
+					"minItems": 1,
+					"uniqueItems": true,
+					"description": "Agenda sections in agenda order. Default Tails, Customers, New bets, Outside the bets. Must include \"Outside the bets\", where un-bet lanes land."
+				},
+				"agendaCap": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "The most proposed rows agenda prep adds for one table. Default 25."
+				},
+				"sizes": {
+					"type": "object",
+					"description": "Each size's dollar appetite. Default S 15, M 35, L 40 (L is per epic child).",
+					"properties": {
+						"S": {
+							"type": "number",
+							"minimum": 0,
+							"description": "Dollars for a size-S bet. Default 15."
+						},
+						"M": {
+							"type": "number",
+							"minimum": 0,
+							"description": "Dollars for a size-M bet. Default 35."
+						},
+						"L": {
+							"type": "number",
+							"minimum": 0,
+							"description": "Dollars per epic child for a size-L bet. Default 40."
+						}
+					},
+					"additionalProperties": false
+				},
+				"stopMultiple": {
+					"type": "number",
+					"minimum": 1,
+					"description": "A lane over its size keeps going and is flagged; at this multiple of its size it stops. Default 2. Must be above 1."
+				},
+				"asksFlag": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "The ask count at which a bet is flagged onto the next table. Default 3."
+				},
+				"stuckDays": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "Days without activity before a lane is flagged as stuck. Default 3."
+				},
+				"activeCampaignFlag": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "More active campaigns than this is flagged. Default 3."
+				},
+				"fabrikaShare": {
+					"type": "object",
+					"description": "The flagged target share of weekly spend on fabrika's own work. Default 40 percent for the first 4 tables, then 30.",
+					"properties": {
+						"percent": {
+							"type": "number",
+							"minimum": 0,
+							"maximum": 100,
+							"description": "The target share, in percent, for the first tables. Default 40."
+						},
+						"forTables": {
+							"type": "integer",
+							"minimum": 1,
+							"description": "How many tables the first share holds for. Default 4."
+						},
+						"thenPercent": {
+							"type": "number",
+							"minimum": 0,
+							"maximum": 100,
+							"description": "The target share, in percent, after that. Default 30."
+						}
+					},
+					"additionalProperties": false
+				},
+				"checkDelayDays": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "Days after ship before a bet returns as `check`. Default 14."
+				},
+				"project": {
+					"type": "object",
+					"description": "Which GitHub project holds the table. Leave both out to have `fabrika table setup` find or create one on the repository's own owner.",
+					"properties": {
+						"owner": {
+							"type": [
+								"string",
+								"null"
+							],
+							"description": "The user or organization that owns the project. Default: the repository's owner."
+						},
+						"number": {
+							"type": [
+								"integer",
+								"null"
+							],
+							"minimum": 1,
+							"description": "The project number. Default: the project `fabrika table setup` finds linked to this repository by its title, or creates."
+						}
+					},
+					"additionalProperties": false
+				}
+			},
+			"additionalProperties": false
+		},
 		"triageFacets": {
 			"type": "array",
 			"description": "What each triage facet owns and every label an input can make it keep. A facet declares its ownership as `owns` (a regex) or `ownsLabels` (an explicit set), never both.",

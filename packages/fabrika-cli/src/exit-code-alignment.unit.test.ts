@@ -45,6 +45,7 @@ import * as ship from "./ship/codes.ts";
 import * as spend from "./spend/codes.ts";
 import * as spike from "./spike/codes.ts";
 import * as status from "./status/codes.ts";
+import * as table from "./table/codes.ts";
 import * as triage from "./triage/codes.ts";
 import * as ui from "./ui/codes.ts";
 import * as wire from "./wire/codes.ts";
@@ -84,6 +85,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	spend,
 	spike,
 	status,
+	table,
 	triage,
 	ui,
 	wire,

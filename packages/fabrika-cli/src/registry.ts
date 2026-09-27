@@ -43,6 +43,7 @@ import {shipCommand} from "./ship/command.ts";
 import {spendCommand} from "./spend/command.ts";
 import {spikeCommand} from "./spike/command.ts";
 import {statusCommand} from "./status/command.ts";
+import {tableCommand} from "./table/command.ts";
 import {triageCommand} from "./triage/command.ts";
 import {uiCommand} from "./ui/command.ts";
 import {wireCommand} from "./wire/command.ts";
@@ -85,6 +86,7 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	spendCommand,
 	spikeCommand,
 	statusCommand,
+	tableCommand,
 	triageCommand,
 	uiCommand,
 	wireCommand,
