@@ -549,6 +549,23 @@ describe("boot", () => {
 	);
 
 	it.effect(
+		"boots when a project names a global row refused for its SDK range, dropping the nodes that name it",
+		() =>
+			Effect.gen(function* () {
+				const project = projectWithConfig("names-refused-global");
+				const {report} = yield* bootDirect(fixture("sdk-out-of-range-counter"), project);
+				assert.deepStrictEqual(
+					report.refused.map((refusal) => refusal.program),
+					["future-counter"],
+				);
+				// The desk's shell, the global `main` and the project's `own`.
+				assert.strictEqual(report.processCount, 3);
+				assert.strictEqual(report.programCount, DESK_PROGRAMS + 2);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it.effect(
 		"boots on checkpoints saved before project scoping, moving project rows and nodes onto scoped ids once",
 		() =>
 			Effect.gen(function* () {

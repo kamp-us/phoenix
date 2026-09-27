@@ -61,6 +61,7 @@ import {
 } from "./projects/Projects.ts";
 import {projectSpells} from "./projects/spells.ts";
 import {ConfigReloader, type ReloadRefused, type ReloadReport} from "./reload.ts";
+import type {SdkRemoved} from "./sdk-admission.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
 import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kernel.ts";
 import {shellId, shellPrefixTable, withShellFeatures} from "./shell/program.ts";
@@ -133,6 +134,8 @@ export interface DeskProjects {
 	readonly desk: DeskLayer;
 	/** The desk's and global layers' module renderers. */
 	readonly renderers: ReadonlyArray<ModuleRendererRef>;
+	/** What the global layer's SDK refusals took out of the graph this kernel runs (#9686). */
+	readonly removed: SdkRemoved;
 	readonly first?: FirstProject;
 	/** What a project's config and state are read through. */
 	readonly fs: FileSystem.FileSystem;
@@ -260,6 +263,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 					rows: Context.get(registry, RegistryRows),
 					reloader: Context.get(built, ConfigReloader),
 					deskGraph: graph,
+					deskRemoved: projects.removed,
 					deskWiring: wiring,
 					deskRenderers: projects.renderers,
 					scope: yield* Effect.scope,
@@ -442,6 +446,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 			home: options.home,
 			desk,
 			renderers: config.desk.moduleRenderers,
+			removed: config.desk.removed,
 			first: {folder, loaded, state},
 			fs,
 		},

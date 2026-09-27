@@ -40,7 +40,7 @@ import {Effect, FileSystem, Option, Result, Schema, SchemaIssue} from "effect";
 import {globalLayer, projectLayer, reservedSeparator} from "./config-scope.ts";
 import {generationUrl, nextGeneration, takeGenerationFiles} from "./module-generations.ts";
 import type {ProjectId} from "./project-id.ts";
-import {admitBySdk, type SdkAdmission} from "./sdk-admission.ts";
+import {admitBySdk, nothingRemoved, type SdkAdmission, type SdkRemoved} from "./sdk-admission.ts";
 
 export {DeclaredFeatures, TuvalConfig} from "@kampus/tuval-sdk/config";
 export {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
@@ -153,6 +153,8 @@ export interface LayerConfig {
 	readonly sources: ReadonlyArray<string>;
 	/** The rows refused for an SDK range that excludes the desk's (`./sdk-admission.ts`). */
 	readonly refused: ReadonlyArray<SdkRefused>;
+	/** What those refusals took out, which a project layer naming it by bare id loses too. */
+	readonly removed: SdkRemoved;
 }
 
 /** One project's layer as it was read. */
@@ -251,6 +253,7 @@ const loadOptional = Effect.fn("Tuval.loadOptional")(function* (
 	load: number,
 	desk: DeskLayer,
 	check: LayerCheck,
+	upstream: SdkRemoved,
 ) {
 	if (!(yield* present(modulePath))) return Option.none<SdkAdmission>();
 	const config = yield* loadConfigModule(modulePath, load);
@@ -260,8 +263,9 @@ const loadOptional = Effect.fn("Tuval.loadOptional")(function* (
 	if (Option.isSome(conflict)) return yield* refuse(conflict.value);
 	const checked = Result.flatMap(reservedSeparator(config), check);
 	if (Result.isFailure(checked)) return yield* refuse(checked.failure);
-	// After the scope check, so a refused project row is named by its scoped id and its nodes match.
-	return Option.some(admitBySdk(checked.success));
+	// After the scope check, so a refused project row is named by its scoped id and its nodes match,
+	// and a connection to a global row or node is still the bare id `upstream` names.
+	return Option.some(admitBySdk(checked.success, {upstream}));
 });
 
 /**
@@ -285,10 +289,11 @@ const partOf = (
 				keys: [],
 				sources: [],
 				refused: [],
+				removed: nothingRemoved,
 			},
 		};
 	}
-	const {config: loaded, refused} = admission.value;
+	const {config: loaded, refused, removed} = admission.value;
 	const declared = declaredIn(loaded, module);
 	return {
 		declared,
@@ -302,6 +307,7 @@ const partOf = (
 			keys: [bindingSource(layer, module, loaded.keys)],
 			sources: [module],
 			refused,
+			removed,
 		},
 	};
 };
@@ -333,9 +339,14 @@ const deskPart = (desk: DeskLayer, global: string, loaded: Option.Option<SdkAdmi
 	} satisfies LayerConfig;
 };
 
-const loadProjectLayer = (desk: DeskLayer, project: ProjectLayer, load: number) =>
+const loadProjectLayer = (
+	desk: DeskLayer,
+	project: ProjectLayer,
+	load: number,
+	global: SdkRemoved,
+) =>
 	Effect.map(
-		loadOptional(project.module, load, desk, (config) => projectLayer(project.id, config)),
+		loadOptional(project.module, load, desk, (config) => projectLayer(project.id, config), global),
 		(loaded): LoadedProject => ({
 			layer: project,
 			config: partOf(loaded, project.module, "project").config,
@@ -383,10 +394,20 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 	const {value: read, imported} = yield* recorded(
 		load,
 		Effect.gen(function* () {
-			const global = yield* loadOptional(layers.global, load, layers.desk, globalLayer);
+			const global = yield* loadOptional(
+				layers.global,
+				load,
+				layers.desk,
+				globalLayer,
+				nothingRemoved,
+			);
+			const removed = Option.match(global, {
+				onNone: () => nothingRemoved,
+				onSome: (admission) => admission.removed,
+			});
 			const projects = yield* Effect.forEach(
 				layers.projects,
-				(project) => loadProjectLayer(layers.desk, project, load),
+				(project) => loadProjectLayer(layers.desk, project, load, removed),
 				{concurrency: 1},
 			);
 			return {global, projects};
@@ -417,15 +438,19 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 /**
  * One project's layer on its own, as a project opening into a running desk reads it (#9685). The
  * desk layer is what it may not redeclare; the global layer is not read again, because a project's
- * connections to a global row name its bare id and resolve against the running registry.
+ * connections to a global row name its bare id and resolve against the running registry. `global`
+ * is what the running desk's global layer lost to its SDK refusals, read with the graph it runs.
  */
 export const loadProjectConfig = Effect.fn("Tuval.loadProjectConfig")(function* (
 	desk: DeskLayer,
 	project: ProjectLayer,
+	global: SdkRemoved,
 ) {
 	const load = nextGeneration();
-	const {value, imported} = yield* recorded(load, loadProjectLayer(desk, project, load), () =>
-		Effect.succeed([]),
+	const {value, imported} = yield* recorded(
+		load,
+		loadProjectLayer(desk, project, load, global),
+		() => Effect.succeed([]),
 	);
 	return {
 		...value,

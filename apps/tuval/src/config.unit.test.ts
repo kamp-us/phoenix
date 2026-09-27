@@ -11,6 +11,7 @@ import {
 	type LoadedConfig,
 	loadConfigModule,
 	loadLayeredConfig,
+	loadProjectConfig,
 } from "./config.ts";
 import {fixtureDesk, noDesk} from "./config-fixtures/desk-layers.ts";
 import {ProjectId} from "./project-id.ts";
@@ -275,6 +276,45 @@ describe("loadLayeredConfig and the SDK range (#9686)", () => {
 				[alpha.scope("kept"), alpha.scope("plain")],
 			);
 		}),
+	);
+
+	it.effect(
+		"drops a project's nodes that name a refused global row or its nodes by bare id, and loads the rest",
+		() =>
+			Effect.gen(function* () {
+				const config = yield* layered(
+					fixture("sdk-out-of-range-counter"),
+					fixture("names-refused-global"),
+				);
+				assert.deepStrictEqual(
+					config.refused.map((refusal) => refusal.program),
+					["future-counter"],
+				);
+				assert.deepStrictEqual(
+					config.graph.nodes.map((node) => ({id: node.id, on: node.on})),
+					[
+						{id: NodeId.make("main"), on: []},
+						{id: NodeId.make(alpha.scope("own")), on: []},
+					],
+				);
+			}),
+	);
+
+	it.effect("drops the same nodes when the project opens into a running desk", () =>
+		Effect.gen(function* () {
+			const layers = {desk: noDesk, projects: [], global: fixture("sdk-out-of-range-counter")};
+			const running = yield* loadLayeredConfig(layers);
+			const opened = yield* loadProjectConfig(
+				noDesk,
+				{id: alpha, module: fixture("names-refused-global")},
+				running.desk.removed,
+			);
+			assert.deepStrictEqual(opened.config.refused, []);
+			assert.deepStrictEqual(
+				opened.config.graph.nodes.map((node) => ({id: node.id, on: node.on})),
+				[{id: NodeId.make(alpha.scope("own")), on: []}],
+			);
+		}).pipe(Effect.provide(NodeFileSystem.layer)),
 	);
 });
 

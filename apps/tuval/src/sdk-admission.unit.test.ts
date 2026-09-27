@@ -29,7 +29,7 @@ const config = (
 describe("admitBySdk", () => {
 	it("answers the layer untouched when every row's range admits the desk's SDK", () => {
 		const layer = config([{id: "a", sdk: "^1"}, {id: "b"}], [node("n", "a")]);
-		const admitted = admitBySdk(layer, "1.2.0");
+		const admitted = admitBySdk(layer, {sdk: "1.2.0"});
 		expect(admitted.config).toBe(layer);
 		expect(admitted.refused).toStrictEqual([]);
 	});
@@ -37,7 +37,7 @@ describe("admitBySdk", () => {
 	it("refuses a row out of range and a malformed one, keeping an absent one on the desk's major", () => {
 		const admitted = admitBySdk(
 			config([{id: "old", sdk: "^1"}, {id: "bad", sdk: "one point oh"}, {id: "plain"}], []),
-			"2.0.0",
+			{sdk: "2.0.0"},
 		);
 		expect(admitted.config.programs).toStrictEqual([{id: "plain"}]);
 		expect(admitted.refused.map((refusal) => [refusal._tag, refusal.program])).toStrictEqual([
@@ -58,8 +58,32 @@ describe("admitBySdk", () => {
 					node("stays", "ok"),
 				],
 			),
-			"2.0.0",
+			{sdk: "2.0.0"},
 		);
 		expect(admitted.config.graph.nodes).toStrictEqual([node("feeder", "ok"), node("stays", "ok")]);
+		expect(admitted.removed).toStrictEqual({
+			programs: new Set(["new"]),
+			nodes: new Set(["gone", "under", "deeper"]),
+		});
+	});
+
+	it("drops what connects to an upstream layer's removals, though none of this layer's rows is refused", () => {
+		const upstream = {programs: new Set(["refused"]), nodes: new Set(["far"])};
+		const admitted = admitBySdk(
+			config(
+				[{id: "ok"}],
+				[
+					node("runs", "refused"),
+					node("under-far", "ok", {parent: NodeId.make("far")}),
+					node("under-runs", "ok", {parent: NodeId.make("runs")}),
+					node("feeder", "ok", {on: [{port: "out", to: {node: NodeId.make("far"), port: "in"}}]}),
+				],
+			),
+			{sdk: "2.0.0", upstream},
+		);
+		expect(admitted.refused).toStrictEqual([]);
+		expect(admitted.config.programs).toStrictEqual([{id: "ok"}]);
+		expect(admitted.config.graph.nodes).toStrictEqual([node("feeder", "ok")]);
+		expect(admitted.removed.programs).toStrictEqual(new Set());
 	});
 });
