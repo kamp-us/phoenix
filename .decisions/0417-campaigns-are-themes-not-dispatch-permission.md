@@ -93,6 +93,8 @@ not rediscover them:
 
 The live `write+` ACL check of ADR [0294](0294-config-narrows-the-acl-never-replaces-it.md) stays.
 The named set only changes where it is read from, so it still narrows the ACL and never replaces it.
+ADR [0393](0393-lane-clear-grants-both-repair-budgets.md) names the old place for `lane clear`, so
+this record amends it in part too.
 
 **Binding constraints.**
 
@@ -127,9 +129,17 @@ Fixes [#9852](https://github.com/kamp-us/phoenix/issues/9852). The code change i
 - Amends in part ADR [0294](0294-config-narrows-the-acl-never-replaces-it.md): the named set that
   narrows the live ACL for campaign authoring and round-clearing comes from CODEOWNERS instead of
   `.fabrika.jsonc`. Its two-clause rule stands.
-- ADRs [0393](0393-lane-clear-grants-both-repair-budgets.md) and
-  [0398](0398-machine-local-config-layer.md) name the two keys. Their rules stand, and they read
-  the folded set through 0294.
+- Amends in part ADR [0393](0393-lane-clear-grants-both-repair-budgets.md): its "The ACL does not
+  move" clause says the account posting a `lane clear` must be in `.fabrika.jsonc`'s
+  `capClearAuthors` at the PR's base ref. After the fold that account must be in the CODEOWNERS
+  control-plane set instead, and that set is not read at any base ref. The live `write+` check and
+  the rest of 0393 stand.
+- ADR [0398](0398-machine-local-config-layer.md) lists `capClearAuthors` and `campaignAuthors` among
+  the keys a machine-local layer may never override. Its rule stands: once the keys leave
+  `.fabrika.jsonc` there is nothing for a local layer to override.
+- ADR [0330](0330-codeowners-is-the-cp-boundary.md) calls the two keys adjacent ACLs that do not
+  bound the control-plane boundary. That was a description, not a rule. After the fold they read
+  the same CODEOWNERS rows, and they still do not bound it.
 - ADR [0354](0354-running-campaign-admits-p0-and-p1.md) is untouched. Its `running` marker narrows
   what triage homes on a milestone, and it refuses no lane.
 
