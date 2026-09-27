@@ -518,8 +518,16 @@ const issue = leafCommand(
 ).pipe(
 	Command.withShortDescription("The claimed issue's body and acceptance criteria."),
 	Command.withDescription(
-		'The claimed issue\'s body and acceptance criteria, through the content gate. Prints one JSON object with number, title, state, labels, body and criteria; criteria.state is found | absent | malformed — three facts the imported wire read keeps apart, so a drifted heading never reads as "no acceptance criteria". Each criterion carries its outside-diff evidence source as evidence, or null where the row is unmarked, and a marked contract also prints a stderr line quoting those rows — the evidence belongs in the PR body, because review post refuses a PASS that cites none of it (19). Exits 7 (issue proven absent or closed), 11 (the issue could not be read — its content is UNKNOWN). Example: fabrika build issue 4312',
+		[
+			"Prints one issue's body, labels and acceptance criteria as one JSON object.",
+			'  {"number","title","state","labels","body","criteria":{"state":"found|absent|malformed","items"}}',
+			"  Rows marking evidence outside the diff are quoted on stderr; cite that evidence in the PR body",
+			"  7: the issue is absent or closed",
+			"  11: the issue could not be read (UNKNOWN)",
+			`  Derivation: the build skill's contract.md, "build issue"`,
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika build issue 4312"}]),
 );
 
 const branch = leafCommand(
@@ -571,9 +579,36 @@ const branch = leafCommand(
 ).pipe(
 	Command.withShortDescription("Cut or resume the lane's branch off a freshly fetched base."),
 	Command.withDescription(
-		"Cut (or resume) the lane's nonce branch off a FRESHLY FETCHED base, never a stale local ref. Prints the checked-out branch name: build/<number>-<slug>-<nonce> in create mode, build/pr-<pr>-<nonce> in resume mode, where <nonce> is the first 8 hex of --token's UUID — the token THIS lane holds, proven against the live claim before the name is composed, so a lane cannot cut a branch on a nonce that holds nothing. The branch name IS the lane record — there is no stamp file. CREATE MODE DERIVES THE BASE when --base is absent: it reads <number>'s parent through GitHub's issue-parent endpoint and, on a parent, cuts off that epic's assembly branch epic/<parent>, fetched like any other base; a proven-standalone issue cuts off origin/main. An explicit --base is honoured verbatim on every lane, epic child included, and suppresses the derivation. It NEVER falls back to origin/main on a read it could not make — that fallback is the silent wrong base that had an epic child graded against a fork point its assembly branch never contained. EVERY BASE IS FETCHED FROM A REMOTE: a base naming no configured remote (--base main, --base epic/7497) is qualified against origin and read off FETCH_HEAD, so no spelling reaches a bare git fetch plus a rev-parse of an unmoved local ref; the one arm that reads refs/heads/ is a derived assembly branch origin is PROVEN to hold none of. Every run names the base it used and where it came from on stderr, and a create-mode success names the base COMMIT it ended on, so the cut is provable off this verb's own output. A re-run that finds the lane branch already there proves that branch carries the base this run resolved before switching to it, and refuses on 36 when it does not — the idempotent re-run is not a way for a wrong first cut to survive. --resume-lane is resume mode for an epic child, which opens no PR: it finds the one local branch this grammar says was cut for <number>, RE-KEYS it to this claim's nonce and checks it out, so the child's commits carry forward and exactly one branch keeps naming it — cutting a second is the underivable range lane prove refuses on. It fetches nothing, takes no --slug, and re-keys nothing when the name already matches. IN EVERY MODE, before any fetch, switch, rename or create, it refuses a tree it would carry work off or take from another lane — location-neutral, reading what the tree holds and never where it sits: 13 when the tree is dirty and the checkout would move HEAD (a tree already on the branch the verb ends on is admitted), 14 when the tree stands on another issue's or PR's lane branch. Exits 1 (--token is not a claim token of this session), 7 (--resume's PR is proven absent, closed or merged; --resume-lane found no local branch cut for <number>; or the derived assembly branch epic/<parent> is proven absent from both origin and this clone), 10 (--slug is not kebab-case, exceeds 5 words, or is flag-shaped, --resume-lane was combined with --resume or --slug, or --base names no configured remote and this clone has no origin to qualify it against — spelled one way when the clone has no remotes at all, another when it has several and none of them is origin), 11 (the fetch failed, the tree root, the branch it holds or the claim state could not be read, the parent read or the assembly-branch read failed so which base this lane belongs on is UNKNOWN, an existing lane branch's merge base with the resolved base could not be read, or --resume-lane found several candidate branches or could not re-key the one it found — the prior lane's worktree is likely still on it, which only an operator can release), 13 (uncommitted changes the checkout would carry onto the lane branch, or a status read that failed — UNKNOWN, never clean; nothing was changed), 14 (proven: this tree stands on another issue's or PR's lane branch; nothing was changed), 15 (proven: the claim is held by another lane), 36 (proven: the lane branch already exists and does not carry the base this run resolved, or shares no history with it at all — the refusal spells out the one git command that moves it onto the base, and deleting it is the other way out; build retire-branch does NOT clear this, because the branch a 36 names is never the superseded one it retires). Why the nonce, the derivation and the re-key are shaped this way is in claude-plugins/fabrika/skills/build/contract.md. Example: fabrika build branch 4312 --slug editor-focus-loss --token build:s-9f2e:c1a4d6f8-…",
+		[
+			"Cuts or resumes this lane's branch off a freshly fetched base and prints the branch name.",
+			"  7: the resume PR, prior child branch or derived epic/<parent> is absent",
+			"  10: a bad --slug, conflicting flags, or a --base with no remote to qualify",
+			"  11: a fetch or read failed, or --resume-lane cannot take the branch (UNKNOWN)",
+			"  13: the tree is dirty and the checkout would move HEAD",
+			"  14: the tree stands on another lane's branch",
+			"  15: the claim is held by another lane",
+			"  36: the lane branch exists and does not carry the base; clear it with git",
+			`  Derivation: the build skill's contract.md, "build branch"`,
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika build branch 4312 --slug editor-focus-loss --token build:s-9f2e:c1a4d6f8-…"},
+	]),
 );
+
+/** `resume-child`'s exits: each is the stopping step's, with the admission codes read off the module. */
+const resumeChildExitLines = [
+	{code: 7, condition: "the child or its branch is absent"},
+	{code: 10, condition: "a step refused its usage"},
+	{code: 11, condition: "a read is UNKNOWN, or the prior branch cannot be taken"},
+	{code: 13, condition: "the checkout is dirty"},
+	{code: 14, condition: "wrong lane, or no ledger task"},
+	{code: 15, condition: "the claim is another lane's"},
+	{code: 31, condition: "nothing to repair"},
+	...ADMISSION_EXIT_CODES.filter(({code}) => code >= 20),
+]
+	.sort((a, b) => a.code - b.code)
+	.map(({code, condition}) => `  ${code}: ${condition}`);
 
 const resumeChild = leafCommand(
 	"resume-child",
@@ -590,7 +625,7 @@ const resumeChild = leafCommand(
 		cites: Flag.string("cites").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				`the founder ruling comment a ${DECISION_TYPE_LABEL} child's repair transcribes, as ${CITATION_GRAMMAR} — forwarded unchanged to the claim step, which is the only step that reads it; needed on a first entry, never on a --token continuation`,
+				`the founder ruling comment a ${DECISION_TYPE_LABEL} child's repair transcribes, as ${CITATION_GRAMMAR} — forwarded unchanged to the claim step, which is the only step that reads it, and a malformed or foreign URL is a usage error there; needed on a first entry, never on a --token continuation`,
 			),
 		),
 		lane: laneFlag,
@@ -616,8 +651,14 @@ const resumeChild = leafCommand(
 ).pipe(
 	Command.withShortDescription("Open an epic child's standing-FAIL repair lane in one operation."),
 	Command.withDescription(
-		`Open the repair lane of an epic child carrying a standing FAIL, running the five ordered steps as one operation so their order is not a builder's to preserve (see claude-plugins/fabrika/skills/build/contract.md): "build claim <n> --resume" (which refuses on 31 unless a gate holds a standing FAIL over the child, or the --lane ledger holds a standing integrate FAIL for it), "build confirm", the UNARMED "build tree --require-clean" over the generic checkout, "build branch <n> --resume-lane" — the one mutation, which re-keys the single prior build/<n>-<slug>-<nonce> branch to this claim's nonce and checks it out — and finally the ARMED "build tree --issue <n>". Each step is the verb itself, so its refusal keeps its own exit code and its own words, and no step after a refusal runs; the branch is re-keyed only once the claim and cleanliness steps have passed. Prints {"answer":"resumed","issue":n,"token":"…","branch":"build/<n>-<slug>-<nonce>","root":"<absolute>","claim":{"number":n,"nonce":"…"}}, plus "integrate":{"exit","head"} when the claim step admitted the repair on an integrate FAIL. --lane <key> --lane-root <root> — the brief's lane and root — are carried to the claim step unchanged: an integrate FAIL writes no verdict on the child, so a child that passed review and failed lane integrate is repairable only when the claim can read its epic lane's ledger. --cites ${CITATION_GRAMMAR} is carried to the claim step unchanged and read by no other step: it opens that step's type axis on a ${DECISION_TYPE_LABEL} child whose choice a founder already recorded on it, so the one type a ruled child can carry is repairable through this entry rather than only by hand. It judges nothing itself — the URL must name this repository and this child, an omitted one on a decision is still 30, and a citation admits no other type. On any stop past the claim it prints the won token and the exact continuation, "fabrika build resume-child <n> --token <token>"; that is the whole way to continue the same lane, it needs no second citation because the claim answers off the standing marker, and a re-run WITHOUT --token mints a second claim, loses the earliest-wins tiebreak to this lane's own prior one and refuses on 15. Exits are the stopping step's: 1 (--cites is malformed, or names another repository or issue), 7 (the child is absent or closed, or no local branch was cut for it), 10 (a composed usage refusal), 11 (a read is UNKNOWN, several prior branches exist, or another worktree holds the branch — an operator's act to release), 13 (the generic checkout is dirty), 14 (the armed proof reads the wrong lane, or the --lane ledger holds no task for this child), 15 (the claim is foreign), 20/21/30/32 (the admission test), 31 (the child holds no standing FAIL and no standing integrate FAIL, so there is nothing to repair). Example: fabrika build resume-child 7162`,
+		[
+			"Opens an epic child's standing-FAIL repair lane in one run and prints the lane as JSON.",
+			"  Exits are the stopping step's; re-run a stopped lane with --token <printed token>",
+			...resumeChildExitLines,
+			`  Derivation: the build skill's contract.md, "build resume-child"`,
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika build resume-child 7162"}]),
 );
 
 const scratch = leafCommand(
@@ -645,8 +686,18 @@ const scratch = leafCommand(
 ).pipe(
 	Command.withShortDescription("The per-lane scratch directory path."),
 	Command.withDescription(
-		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-build/<session-id>/<issue>-<claim-nonce>/<slug>, one absolute path on stdout, the directory created if absent. --token's nonce is what keys the namespace per LANE rather than per session, so two lanes of one session cannot clobber each other. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created, no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, or --token is not a claim token of this session), 10 (--slug carries a path separator or is not kebab-case), 11 (the claim state could not be read), 15 (proven: the claim is held by another lane). Example: fabrika build scratch 4312 --slug notes --token build:s-9f2e:c1a4d6f8-…",
+		[
+			"Prints this lane's scratch directory path, creating the directory if absent.",
+			"  The path is machine-local; never put it in a posted comment or body",
+			"  10: --slug is not a kebab-case leaf",
+			"  11: the claim could not be read (UNKNOWN)",
+			"  15: the claim is held by another lane",
+			`  Derivation: the build skill's contract.md, "build scratch"`,
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika build scratch 4312 --slug notes --token build:s-9f2e:c1a4d6f8-…"},
+	]),
 );
 
 const commit = leafCommand(
@@ -674,8 +725,24 @@ const commit = leafCommand(
 ).pipe(
 	Command.withShortDescription("Commit the staged change and prove the message is this lane's."),
 	Command.withDescription(
-		'Create this lane\'s commit from the message on STDIN, then READ THE MESSAGE BACK off the created commit and refuse if it is not the one this lane authored — the refusal prints both. The message may name only numbers this lane holds a confirmed claim on. The carrying path is prescribed, not improvised: stdin (file-free), or --message-file pointing at a leaf under "fabrika build scratch"\'s claim-nonce-keyed directory; any other path is refused. No refusal repeats a machine-local path. Prints {"answer":"committed","sha":"…","subject":"…","carried":"stdin"|"scratch-leaf"}. Exits 3 (stdin held nothing), 4 (the message names an issue this lane does not hold, or --message-file is empty), 5 (machine-local path in the message), 6 (bare @ reference), 7 (nothing is staged), 8 (the commit ran but HEAD or its message could not be read back — UNKNOWN), 9 (proven: the created commit carries a message this lane did not author), 10 (--message-file is not a leaf in this lane\'s scratch directory), 11 (a precondition read failed — nothing was committed), 14 (the checked-out branch is not this lane\'s), 15 (this session does not hold the claim), 24 (proven: git commit ran and HEAD did not move). Example: fabrika build commit < message.txt',
+		[
+			"Commits the staged change with the message on stdin and prints the commit read back as JSON.",
+			"  3: stdin held nothing",
+			"  4: the message names an unclaimed issue, or --message-file is empty",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: nothing is staged",
+			"  8: committed, and not read back (UNKNOWN)",
+			"  9: the commit's message is not this lane's",
+			"  10: --message-file is outside this lane's scratch",
+			"  11: a read failed; nothing committed",
+			"  14: the branch is not this lane's",
+			"  15: the claim is another lane's",
+			"  24: HEAD did not move",
+			`  Derivation: the build skill's contract.md, "build commit"`,
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika build commit < message.txt"}]),
 );
 
 const check = leafCommand(
@@ -703,8 +770,20 @@ const check = leafCommand(
 		"Run this surface's validators and the local-tree guards, in this tree.",
 	),
 	Command.withDescription(
-		'Run this surface\'s validators IN THIS TREE — a green borrowed from another checkout has been another tree\'s answer. Whether a validator reads a build cache is the repo\'s own declaration, not this verb\'s. EVERY surface additionally sweeps the shipped local-tree guards — the ones that are argument-free and read only the checked-out tree — so a guard that reds in CI reds here first; membership is declared beside each guard\'s registration and the sweep is not anchored by --surface. Prints {"verdict":"green","surface":"…","tree":"…","ran":[…,"guard <name> <leaf>",…],"skipped":[…],"unvalidated":[…]}; red and unknown print nothing. A guard that exited 7 (zero scope) or 11 (UNKNOWN) is reported in `skipped` as "<name> (<reason>)" and is never folded into the green — CI\'s own gate answers that one. A workflows-only diff (.github/workflows/**) is --surface workflows: actionlint over the changed files when the tree has it, plus the commands `.fabrika.jsonc` declares under `workflowValidators` (each naming the files it `reads`); a changed workflow nothing opened is reported in `unvalidated`, and a run that opened none of them is UNKNOWN. EVERY surface also spawns each `.fabrika.jsonc` `configValidators` entry whose `reads` names a changed file no surface owns (a root config file such as lefthook.yml, or non-JS source such as a .java file), so a diff of such files alone greens or reds under any --surface. This verb predicts; the repo\'s CI gate decides, and supersedes it where they disagree. Exits 7 (the diff against the base is empty — zero scope), 10 (--surface is off-enum or provably mismatches the diff), 11 (the tree root could not be read, a validator could not be executed, `.fabrika.jsonc` could not be read, or the lane\'s claim could not be read — UNKNOWN, never green), 14 (the checked-out branch is not this lane\'s), 15 (the lane\'s claim is held by another session), 18 (proven red — a validator or a local-tree guard failed, and the failing line names it), 22 (no surface and no declared config validator covers any changed file). Example: fabrika build check --surface code',
+		[
+			"Runs this surface's validators and the local-tree guards in this tree and prints a green as JSON.",
+			'  {"verdict":"green","surface","tree","ran","skipped","unvalidated"}',
+			"  7: the diff is empty",
+			"  10: --surface is off-enum or contradicts the diff",
+			"  11: a validator, file, config or claim could not be read (UNKNOWN)",
+			"  14: the branch is not this lane's",
+			"  15: the claim is held by another lane",
+			"  18: red; the failing validator or guard is named on stderr",
+			"  22: no validator covers any changed file",
+			`  Derivation: the build skill's contract.md, "build check"`,
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika build check --surface code"}]),
 );
 
 /**
@@ -741,8 +820,22 @@ const push = leafCommand(
 ).pipe(
 	Command.withShortDescription("Push the lane's branch and confirm the remote ref moved."),
 	Command.withDescription(
-		"Publish the lane's branch and INDEPENDENTLY confirm the remote ref moved, by reading it back with git ls-remote. The whole report is stdout, single-stream, so `tail -1` of stdout on exit 0 is always `PUSH-VERDICT: MOVED`. Before pushing, the local head must CONTAIN the published remote head — on the force path too, where --force-with-lease proves nothing about this lane's own dropped commits. Exits 8 (pushed, but the remote ref could not be re-read — the outcome is UNKNOWN), 11 (the tree root or the lane's claim could not be read, or containment could not be proven — nothing was pushed), 14 (the checked-out branch is not this lane's), 15 (the claim is held by another session), 17 (proven: the remote ref did not move), 19 (refused before pushing: detached HEAD, or non-fast-forward without --force-with-lease), 23 (proven: the local head drops the remote head's commits — rebase, or pass --drop-remote-commits). Example: fabrika build push",
+		[
+			"Pushes this lane's branch, reads the remote ref back and ends stdout on PUSH-VERDICT: MOVED.",
+			"  8: pushed, and the remote ref could not be re-read (UNKNOWN)",
+			"  11: the claim or the remote head could not be read; nothing was pushed",
+			"  14: the branch is not this lane's",
+			"  15: the claim is held by another lane",
+			"  17: the remote ref did not move",
+			"  19: detached HEAD, or non-fast-forward without --force-with-lease",
+			"  23: the push would drop the published head's commits",
+			`  Derivation: the build skill's contract.md, "build push"`,
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika build push"},
+		{command: "fabrika build push --force-with-lease"},
+	]),
 );
 
 const pr = leafCommand(
@@ -771,8 +864,23 @@ const pr = leafCommand(
 ).pipe(
 	Command.withShortDescription("Open the PR from the body on stdin, guarded and read back."),
 	Command.withDescription(
-		'Open the PR from the body on STDIN, refusing the known defect shapes before any write, with a read-back through normalizeForReadback. Prints {"answer":"opened",…}, or {"answer":"existing",…} on exit 0 when this head branch already has an open PR — an idempotent re-run is an answer, not a duplicate. Exits 3 (stdin held nothing), 4 ("## Deviations" missing or empty, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts --partial), 5 (machine-local path), 6 (bare @ reference), 7 (issue proven absent or closed), 8 (the create failed — UNKNOWN; re-run), 9 (landed but does not read back), 10 (the body asserts a control-plane, type or priority classification — those verdicts are the gate\'s and triage\'s), 11 (a precondition read failed), 14 (the head branch is not this lane\'s), 15 (this session does not hold the claim). Example: fabrika build pr 4312 < body.md',
+		[
+			'Opens the PR from the body on stdin and prints {"answer":"opened"|"existing","number","url"}.',
+			"  3: stdin held nothing",
+			"  4: ## Deviations or the closing-keyword line is missing or malformed",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: the issue is absent or closed",
+			"  8: the create failed (UNKNOWN); re-run",
+			"  9: the PR landed and its body does not read back",
+			"  10: the body claims a control-plane, type or priority verdict",
+			"  11: a precondition read failed",
+			"  14: the branch is not this lane's",
+			"  15: the claim is held by another lane",
+			`  Derivation: the build skill's contract.md, "build pr"`,
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika build pr 4312 < body.md"}]),
 );
 
 const prBody = leafCommand(
@@ -803,8 +911,23 @@ const prBody = leafCommand(
 ).pipe(
 	Command.withShortDescription("Replace an open PR's body from stdin, guarded and read back."),
 	Command.withDescription(
-		'Replace an open pull request\'s body with the one on STDIN, running the same pre-write guards `build pr` runs on a create — leak scan, "## Deviations" shape, closing-keyword target, classification claim — and reading the body back through normalizeForReadback. Nothing but the body moves: no commit, no push, no branch. This is the route for a review FAIL whose whole fix is a body edit. The issue the closing keyword must name is read off the PR\'s own head branch, never off the body. Prints {"answer":"updated","number":n,"url":"…"}. Exits 3 (stdin held nothing), 4 ("## Deviations" missing or empty, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts --partial), 5 (machine-local path), 6 (bare @ reference), 7 (the PR is proven absent, closed or merged), 8 (the update failed — UNKNOWN; re-read the PR before retrying), 9 (replaced but does not read back), 10 (the body asserts a control-plane, type or priority classification), 11 (a precondition read failed), 14 (the PR\'s head is not a lane branch, or the checked-out branch does not serve this PR), 15 (this session does not hold the claim). Example: fabrika build pr-body 4318 < body.md',
+		[
+			'Replaces an open PR\'s body from stdin and prints {"answer":"updated","number","url"}.',
+			"  3: stdin held nothing",
+			"  4: ## Deviations or the closing-keyword line is missing or malformed",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: the PR is absent, closed or merged",
+			"  8: the update failed (UNKNOWN); re-read the PR",
+			"  9: the body does not read back",
+			"  10: the body claims a control-plane, type or priority verdict",
+			"  11: a precondition read failed",
+			"  14: the PR or this branch is not this lane's",
+			"  15: the claim is held by another lane",
+			`  Derivation: the build skill's contract.md, "build pr-body"`,
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika build pr-body 4318 < body.md"}]),
 );
 
 const note = leafCommand(
@@ -830,8 +953,23 @@ const note = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the progress or handoff note on stdin."),
 	Command.withDescription(
-		'Post the progress or handoff note on STDIN, leak-guarded and read back. When the number resolves to a PR the note is stamped with that PR\'s head SHA at post time, so a reader can see a note predates a later push. Runs ONLY the posting guards — never the tree assertions — so a stop-report stays postable from a refused tree. Prints {"answer":"posted","number":n,"commentId":n,"head":"…"|null}. Exits 1 (--token is not a claim token of this session), 3 (stdin held nothing), 5 (machine-local path), 6 (bare @ reference), 7 (target proven absent or closed), 8 (the write failed — UNKNOWN), 9 (posted but does not read back), 11 (a precondition read failed), 15 (this LANE does not hold the claim). Example: fabrika build note 4310 --token build:s-9f2e:c1a4d6f8-… < round-2.md',
+		[
+			'Posts the note on stdin and prints {"answer":"posted","number","commentId","head"}.',
+			"  head is the PR's head SHA at post time, null on an issue; tree state is never checked",
+			"  3: stdin held nothing",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: the target is absent or closed",
+			"  8: the write failed (UNKNOWN)",
+			"  9: posted, and it does not read back",
+			"  11: a precondition read failed",
+			"  15: the claim is held by another lane",
+			`  Derivation: the build skill's contract.md, "build note"`,
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika build note 4310 --token build:s-9f2e:c1a4d6f8-… < round-2.md"},
+	]),
 );
 
 const deviations = leafCommand(
@@ -864,8 +1002,26 @@ const deviations = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post an epic child's deviation disclosure as its one marker."),
 	Command.withDescription(
-		'Post the "## Deviations" section on STDIN as the epic child\'s build-deviations marker comment — the disclosure surface a child has instead of a PR body. ONE marker per issue: the standing marker is edited in place and every superseded one of this account\'s is retracted, so `fabrika wire read --format build-deviations` never meets two conforming headings. That marker discloses the WHOLE reviewed range, so the replacement is compared against the standing disclosure and refused when it drops an entry — an entry leaves only by restating it with a **Disposition:** saying what became of it. With --standing the verb reads instead: stdin is not read, nothing is written, and the standing section is printed for the round to carry forward (empty when the child carries no marker yet). The marker line is composed from the positional, so a disclosure cannot name an issue other than the one it sits on. The section is validated through the wire format before anything is written, and the landed comment is read back from live issue state. Prints {"answer":"posted","issue":n,"commentId":n,"upsert":"created"|"edited","retracted":n,"url":"…"}. Exits 1 (--token is not a claim token of this session), 3 (stdin held nothing), 4 (the "## Deviations" section is missing or malformed), 5 (machine-local path), 6 (bare @ reference), 7 (the issue is proven absent or closed), 8 (the write failed, or a superseded marker could not be retracted — UNKNOWN), 9 (posted but does not read back), 10 (the number is a pull request, which discloses in its body), 11 (a precondition read failed), 15 (this LANE does not hold the claim), 35 (the replacement drops a standing entry). Example: fabrika build deviations 6566 --token build:s-9f2e:c1a4d6f8-… < deviations.md',
+		[
+			"Posts the ## Deviations section on stdin as the epic child's one marker and prints it as JSON.",
+			"  3: stdin held nothing",
+			"  4: ## Deviations is missing or malformed",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: the issue is absent or closed",
+			"  8: a write or retraction failed (UNKNOWN)",
+			"  9: posted, and it does not read back",
+			"  10: the number is a pull request",
+			"  11: a precondition read failed",
+			"  15: the claim is held by another lane",
+			"  35: the section drops a standing entry",
+			`  Derivation: the build skill's contract.md, "build deviations"`,
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika build deviations 6566 --token build:s-9f2e:c1a4d6f8-… < deviations.md"},
+		{command: "fabrika build deviations 6566 --token build:s-9f2e:c1a4d6f8-… --standing"},
+	]),
 );
 
 const verdicts = leafCommand(
@@ -908,8 +1064,20 @@ const verdicts = leafCommand(
 ).pipe(
 	Command.withShortDescription("The latest gate verdict per namespace at a PR's live head."),
 	Command.withDescription(
-		'The paginated, per-gate verdict fold on a PR: every comment and every review, the latest marker per gate namespace judged against the live head through bindToContent — head equality first, then the marker\'s content: digest, so a rebase that changed no content keeps its verdicts and this verb cannot disagree with ship gate; a digest that could not be derived is Unbindable and reports current:false. Native reviews are their OWN row kind (never coerced), the per-head FAIL round count, capReached, the criteria frozen at or past the declared cap round, and the findings the freeze turned away entirely — escalatedFindings folds the tagged escalation comments review append-criterion posts on the linked issue when it may no longer append, each {round, commentId, body} with the body through the content gate, so a repair round past the freeze reads the finding through this verb instead of a comment id in a spawn prompt. The child arm folds the child issue\'s own escalations the same way. Prints one JSON object with head, mergeability, rows, rounds, capReached, frozenCriteria and escalatedFindings; {"rows":[]} on exit 0 is a proven "no verdicts" about the gates, readable against the scope line. mergeability is mergeable / conflicting / unknown, read off the same single-PR GET as the head, with GitHub\'s lazily computed null kept as unknown and never as clean: a PR conflicting against its base is repair work no gate emits a FAIL for, so an all-PASS fold over one is not a no-work answer. A stale marker prints as stale, never dropped. --issue <n> folds an epic child instead, whose verdicts are range-bound comments on the issue because a child opens no PR: each row names the range it was formed over rather than a head, a round is one graded tip, and clearances are empty with the reason on stderr — a clearance is recorded against a PR\'s base branch, and a child has none. Exits 7 (PR or issue proven absent or closed, or --issue names a PR), 10 (neither or both of --pr and --issue), 11 (the head, any comment page, any review page or the linked issue\'s comment page could not be read — UNKNOWN, never "none"). Example: fabrika build verdicts --pr 4310',
+		[
+			"Prints the latest gate verdict per namespace for a PR's head, or an epic child, as JSON.",
+			'  {"head","mergeability","rows","rounds","capReached","clearances","escalatedFindings",…}',
+			"  Empty rows is a proven no-verdict answer about the gates, never about mergeability",
+			"  7: the PR or issue is absent or closed, or --issue names a PR",
+			"  10: neither or both of --pr and --issue",
+			"  11: a page, the head or the linked issue could not be read (UNKNOWN)",
+			`  Derivation: the build skill's contract.md, "build verdicts"`,
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika build verdicts --pr 4310"},
+		{command: "fabrika build verdicts --issue 7162"},
+	]),
 );
 
 /** A file the adapter reads for a verb, so the verb itself touches no filesystem for it. */
@@ -961,8 +1129,23 @@ const clear = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record the founder's clearance of one extra repair round."),
 	Command.withDescription(
-		'Record one founder-cleared repair round on a PR, refusing without a verbatim dated authorization and an invoking account inside `.fabrika.jsonc`\'s `capClearAuthors` at the PR\'s base ref. Writes the authorization comment FIRST, the `cap-cleared` marker second, then carries the grant into the local lane so `build verdicts` and the lane guard spend the same round. One grant buys exactly the round it names: it survives the push it permits and expires when the next FAIL round lands. Prints {"pr":n,"round":n,"at":"…","by":"…","authorization":n,"marker":n,"cap":n,"lane":"…","resolvesTo":"cleared"}. Exits 5 (machine-local path), 6 (bare @ reference), 7 (PR proven absent or closed, or the budget is not spent — there is no round to clear), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed), 25 (the invoking account may not clear a round here), 26 (--authorization missing, empty or undated), 29 (recorded on the PR, and the local lane did not take it — re-run to reconcile). Example: fabrika build clear --pr 5953 --authorization authorization.md',
+		[
+			"Records one founder-cleared repair round on a PR and prints the grant as one JSON object.",
+			"  5: a machine-local path in the authorization",
+			"  6: a bare @ reference",
+			"  7: the PR is absent or closed, or its budget is not spent",
+			"  8: a write failed (UNKNOWN); read the PR before re-running",
+			"  9: the marker does not read back",
+			"  11: a precondition read failed",
+			"  25: this account may not clear a round here",
+			"  26: --authorization is missing, empty or undated",
+			"  29: recorded on the PR and not in the local lane; re-run to reconcile",
+			`  Derivation: the build skill's contract.md, "build clear"`,
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika build clear --pr 5953 --authorization authorization.md"},
+	]),
 );
 
 const adopt = leafCommand(
