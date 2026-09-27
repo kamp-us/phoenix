@@ -83,8 +83,9 @@ const codes = leafCommand(
 ).pipe(
 	Command.withShortDescription("Print the exit taxonomy this group allocates from."),
 	Command.withDescription(
-		"Print the exit taxonomy every verb in this group allocates from, one `<code>\\t<meaning>` line per code. Reads nothing and always exits 0. Example: fabrika triage codes",
+		"Prints the exit taxonomy this group allocates from, one `<code>\\t<meaning>` line per code.",
 	),
+	Command.withExamples([{command: "fabrika triage codes"}]),
 );
 
 const kill = leafCommand(
@@ -129,8 +130,24 @@ const kill = leafCommand(
 ).pipe(
 	Command.withShortDescription("Close an agent-filed issue not-planned, with a reason."),
 	Command.withDescription(
-		"Close an agent-filed issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the labels — every triage status stripped and closed-by-triage applied — then the close, and read back that it says not_planned carrying no triage status. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close, or still shows a triage status), 11 (a precondition read failed, including the claim on the issue), 12 (human-filed — no agent footer and no operator author, see $FABRIKA_OPERATOR_ACCOUNTS), 13 (unconfirmed), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
+		[
+			"Closes an issue not-planned, reason on stdin; prints `killed\\t<number>\\t<foldedInto|none>`.",
+			"  3: stdin was empty",
+			"  5: the reason carries a machine-local path",
+			"  6: the reason is a bare @ reference",
+			"  7: an issue is absent or closed, or closed-by-triage is missing",
+			"  8: a write failed (UNKNOWN)",
+			"  9: the read-back is not a clean not-planned close",
+			"  11: a precondition read failed, the claim included",
+			"  12: human-filed and not a --duplicate-of fold",
+			"  13: --confirm was absent",
+			"  17: another session or lane holds the claim",
+			'  Derivation: the triage skill\'s contract.md, "triage kill"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md"},
+	]),
 );
 
 /**
@@ -169,8 +186,22 @@ const split = leafCommand(
 ).pipe(
 	Command.withShortDescription("Create one child of a bundled report, exactly once."),
 	Command.withDescription(
-		'Create one child of a bundled report from the body on STDIN, exactly once, and cross-link the parent. Prints `<created|reused>\\t<number>\\t<url>`; both outcomes exit 0. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (parent absent or closed, or the queue label does not exist), 8 (create failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed, including the claim on the parent — never a silent create), 17 (a live claim marker on the parent names another session, or — with --token — another lane of this one). Example: fabrika triage split 4312 --title "Editor loses focus after save" < child.md',
+		[
+			"Creates one cross-linked split child from stdin, once; prints `<created|reused>\\t<number>\\t<url>`.",
+			"  3: stdin was empty",
+			"  5: the body carries a machine-local path",
+			"  6: the body is a bare @ reference",
+			"  7: the parent is absent or closed, or the queue label does not exist",
+			"  8: the create failed (UNKNOWN)",
+			"  9: the read-back does not match",
+			"  11: a precondition read failed, the claim included; nothing was created",
+			"  17: another session or lane holds the claim on the parent",
+			'  Derivation: the triage skill\'s contract.md, "triage split"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: 'fabrika triage split 4312 --title "Editor loses focus after save" < child.md'},
+	]),
 );
 
 /**
@@ -198,28 +229,32 @@ const apply = leafCommand(
 			),
 		),
 		readyFor: Flag.string("ready-for").pipe(
-			Flag.withDescription(`who picks it up; the default vocabulary is ${AUDIENCES.join(" or ")}`),
+			Flag.withDescription(
+				`who picks it up; the default vocabulary is ${AUDIENCES.join(" or ")}; with --type epic, agent stamps no label and the column prints none`,
+			),
 		),
 		home: Flag.integer("home").pipe(
 			Flag.optional,
-			Flag.withDescription("the number of an open milestone to home the issue in"),
+			Flag.withDescription(
+				"the number of an open milestone to home the issue in; exactly one of --home or --lane",
+			),
 		),
 		lane: Flag.string("lane").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				`a standing lane instead of a milestone; this repo's own set, defaulting to ${STANDING_LANES.join(" or ")}`,
+				`a standing lane instead of a milestone; this repo's own set, defaulting to ${STANDING_LANES.join(" or ")}; exactly one of --home or --lane`,
 			),
 		),
 		classes: Flag.string("class").pipe(
 			Flag.atLeast(0),
 			Flag.withDescription(
-				`the artifact class its lane routes shells off, as a class:<name> label; repeatable, one of ${CLASSES.join(", ")}`,
+				`the artifact class its lane routes shells off, as a class:<name> label; repeatable, one of ${CLASSES.join(", ")}; an off-set spelling refuses before any label is written`,
 			),
 		),
 		blockedBy: Flag.integer("blocked-by").pipe(
 			Flag.atLeast(0),
 			Flag.withDescription(
-				"an issue this one waits on, written as a native blocked_by edge; repeatable, idempotent, and never a pull request",
+				"an issue this one waits on, written as a native blocked_by edge; repeatable, idempotent, and never a pull request; the blocked-by column is only what this run read back",
 			),
 		),
 		token: laneTokenFlag,
@@ -262,8 +297,27 @@ const apply = leafCommand(
 		"Stamp the triaged transition and its blocked_by edges as one reconcile.",
 	),
 	Command.withDescription(
-		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Repeatable --blocked-by writes the issue's native blocked_by edges, resolving each target's internal id, skipping the edges already live so a re-run is idempotent, and reading the whole set back. Repeatable --class stamps the class:<name> labels a lane seeds its `context.<task>.classes` from, so a rendered-surface issue routes to build:ui on its first pass; the vocabulary is closed in code (CLASSES) and an off-set spelling refuses before any label is written. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>\\t<blocked-by>\\t<classes>`, where the blocked-by column is the edge set THIS RUN read back, as `#a,#b` — always empty without --blocked-by, whatever the graph holds, because the dependency endpoint is read only when the flag is there. --type epic --ready-for agent stamps NO audience label: that flip belongs to `check-epic-plan`, which writes it when the epic's plan floor comes back clean, so the ready-for column prints `none` (--json reports readyFor null) and a stamp an earlier gate run left is reconciled away. --ready-for human is unaffected on every type. Exits 7 (no such issue, it is closed, a label this run would write does not exist, or a --blocked-by target is proven absent — no edge written), 8 (a write failed — UNKNOWN), 9 (read-back mismatch, including a requested edge absent from the edge read-back), 10 (off-vocabulary value — including an off-set --class — or a non-open milestone), 11 (a precondition read failed, including the claim on the issue and the blocked_by read), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable), 21 (a --blocked-by target is a pull request — a blocking PR is named in the graph by the issue its merge closes, so pass that issue's number; no edge written). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --blocked-by 4311 --class ui",
+		[
+			"Stamps the triaged transition as one reconcile and prints its read-back line.",
+			"  `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>\\t<blocked-by>\\t<classes>`",
+			"  7: an issue, label or --blocked-by target is absent or closed",
+			"  8: a write failed (UNKNOWN)",
+			"  9: read-back mismatch",
+			"  10: off-vocabulary value or non-open milestone",
+			"  11: a precondition read failed",
+			"  16: --ready-for agent with no criteria block",
+			"  17: another session or lane holds the claim",
+			"  18: .fabrika.jsonc is unusable",
+			"  21: a --blocked-by target is a pull request",
+			'  Derivation: the triage skill\'s contract.md, "triage apply"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --blocked-by 4311 --class ui",
+		},
+	]),
 );
 
 const park = leafCommand(
@@ -285,8 +339,21 @@ const park = leafCommand(
 ).pipe(
 	Command.withShortDescription("Demote an issue to needs-info with the questions on stdin."),
 	Command.withDescription(
-		"Demote an issue to status:needs-info with the questions on STDIN, clearing every priced facet — type, priority, audience, lane and milestone. The comment is posted BEFORE the labels move. Prints `parked\\t<n>\\t<comment-url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue, it is closed, or status:needs-info does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed, including the claim on the issue), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable). Example: fabrika triage park 4290 < questions.md",
+		[
+			"Parks an issue on status:needs-info, questions on stdin; prints `parked\\t<n>\\t<comment-url>`.",
+			"  3: stdin was empty",
+			"  5: the questions carry a machine-local path",
+			"  6: the questions are a bare @ reference",
+			"  7: the issue is absent or closed, or status:needs-info does not exist",
+			"  8: a write failed (UNKNOWN)",
+			"  9: the read-back does not match",
+			"  11: a precondition read failed, the claim included",
+			"  17: another session or lane holds the claim",
+			"  18: .fabrika.jsonc yielded no usable value",
+			'  Derivation: the triage skill\'s contract.md, "triage park"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika triage park 4290 < questions.md"}]),
 );
 
 const claim = leafCommand(
@@ -294,7 +361,9 @@ const claim = leafCommand(
 	{
 		issue: Argument.integer("issue").pipe(Argument.withDescription("the issue number to claim")),
 		token: Flag.string("token").pipe(
-			Flag.withDescription("the token a previous claim handed this lane — re-enter it, never mint"),
+			Flag.withDescription(
+				"the token a previous claim handed this lane — re-enter it, never mint; it must be this session's",
+			),
 			Flag.optional,
 		),
 		repo: repoFlag,
@@ -316,8 +385,16 @@ const claim = leafCommand(
 ).pipe(
 	Command.withShortDescription("Take one lane's claim on one issue."),
 	Command.withDescription(
-		"Take one lane's claim on one issue, proven by re-reading the markers back. Prints `won\\t<claim-token>` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Keep the token: passing it back as --token re-enters this lane instead of minting a second one. Exits 1 (no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, or --token is not this session's), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read, or the comment list stayed shorter than the count the issue declares for itself — never \"won\"). Example: fabrika triage claim 4312",
+		[
+			"Takes one lane's claim on an issue; prints `won\\t<claim-token>` or `lost\\t<holder-session-id>`.",
+			"  7: the issue is absent or closed",
+			"  8: the marker write failed (UNKNOWN)",
+			"  9: the marker is absent on read-back, or a conceded marker was not deleted",
+			"  11: the issue or its comments could not be fully read (UNKNOWN, never won)",
+			'  Derivation: the triage skill\'s contract.md, "triage claim"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika triage claim 4312"}]),
 );
 
 const queue = leafCommand(
@@ -351,8 +428,15 @@ const queue = leafCommand(
 ).pipe(
 	Command.withShortDescription("The claimable intake queue, oldest first."),
 	Command.withDescription(
-		"List the claimable intake queue, oldest first. First stdout line is the outcome token — queued | empty — and a queued list adds one `<number>\\t<age-days>\\t<title>` line per issue; the scanned count is on stderr. Exits 7 (--label does not exist, so the queue would scan nothing), 11 (the queue read failed — UNKNOWN, never `empty`). Example: fabrika triage queue --limit 20",
+		[
+			"Prints the claimable intake queue, oldest first, under a first line of `queued` or `empty`.",
+			"  Each queued issue is one `<number>\\t<age-days>\\t<title>` line; the scanned count is on stderr.",
+			"  7: --label does not exist",
+			"  11: the queue read failed (UNKNOWN, never empty)",
+			'  Derivation: the triage skill\'s contract.md, "triage queue"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika triage queue --limit 20"}]),
 );
 
 const provenance = leafCommand(
@@ -370,8 +454,15 @@ const provenance = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether an issue was reported by an agent or a human."),
 	Command.withDescription(
-		"Say whether an issue was reported by an agent or typed by a human. Two agent signals: the anchored `Filed by an agent` footer, or an author in the operator set named by $FABRIKA_OPERATOR_ACCOUNTS — an operator's own filing is agent-reported footer or not. Prints `agent` or `human`; with no operator set configured this is the footer-only rule, a footerless non-operator filing answers `human`, an empty body answers `human` fail-closed, an unreadable one refuses. Exits 7 (issue proven absent), 11 (unreadable — the provenance is UNKNOWN, never `human`). Example: fabrika triage provenance 4312",
+		[
+			"Prints `agent` or `human`: whether an issue was reported by an agent or typed by a human.",
+			"  Operator accounts come from $FABRIKA_OPERATOR_ACCOUNTS; an empty body answers `human`.",
+			"  7: the issue is proven absent",
+			"  11: the issue is unreadable (UNKNOWN, never human)",
+			'  Derivation: the triage skill\'s contract.md, "triage provenance"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika triage provenance 4312"}]),
 );
 
 const homes = leafCommand(
@@ -380,7 +471,7 @@ const homes = leafCommand(
 		roadmap: Flag.string("roadmap").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"the roadmap file whose ## Arcs and ## Campaigns tables the open milestones join to (default: `roadmapFile` in .fabrika.jsonc, itself defaulting to ROADMAP.md)",
+				"the roadmap file whose ## Arcs and ## Campaigns tables the open milestones join to (default: `roadmapFile` in .fabrika.jsonc, itself defaulting to ROADMAP.md); an absent file lists every milestone with a null arc row",
 			),
 		),
 		repo: repoFlag,
@@ -420,8 +511,15 @@ const homes = leafCommand(
 ).pipe(
 	Command.withShortDescription("The assignable homes: open milestones and standing lanes."),
 	Command.withDescription(
-		"List the assignable homes: every OPEN milestone joined to its roadmap arc/campaign row by `#<number>`, plus every standing lane this repo BOTH declares in `.fabrika.jsonc` (`boardVocabulary.standingLanes`) and carries the label for — a repo whose board lacks a declared lane is offered none. First stdout line is `homes`, then one `<kind>\\t<key>\\t<label>` line per candidate; every `active` campaign's milestone carries a fourth column, `running: p0/p1 or blocker` (a `running` field under `--json`) — such a campaign is closed to new intake unless the work is p0 or p1, or blocks one of its own in-flight lanes. An ABSENT roadmap is not a refusal: every milestone lists with a null arc row and stderr says no roadmap was found. Exits 7 (zero open milestones, or a roadmap that exists and parsed to 0 arc rows), 11 (the milestone list, the repo's label set or a roadmap that exists could not be read or probed, or `.fabrika.jsonc` yielded no usable lane set). Example: fabrika triage homes",
+		[
+			"Prints `homes`, then one `<kind>\\t<key>\\t<label>` line per open milestone and standing lane.",
+			"  An active campaign's milestone adds a fourth column, `running: p0/p1 or blocker`.",
+			"  7: zero open milestones, or a roadmap that parsed to zero arc rows",
+			"  11: a milestone, label or roadmap read failed, or .fabrika.jsonc gave no lane set",
+			'  Derivation: the triage skill\'s contract.md, "triage homes"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika triage homes"}]),
 );
 
 /**
@@ -459,8 +557,23 @@ const enrich = leafCommand(
 ).pipe(
 	Command.withShortDescription("Replace an issue body with the rewrite on stdin."),
 	Command.withDescription(
-		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. The authored region is scanned for a stated ordering — an ordering phrase binding a #N, in the issue's own voice rather than a third-person report about another issue — and refused when the live blocked_by graph carries no edge for a number it names; there is no override, so wire the edge with `triage apply <n> --blocked-by <m>` or reword. A #N that is a pull request is not read as a prerequisite: a blocking PR is named in the graph by the issue its merge closes. A criteria-less rewrite is accepted, except over a target already carrying ready-for:agent: that label promises a builder can pick the issue up cold, so the write is refused rather than left standing over no contract — author the block and re-send, or drop the audience label first; --epic is exempt. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent or closed, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue, the claim on it, its blocked_by edges, or a number a stated ordering names could not be read), 15 (the authored region composes an acceptance-criteria block the wire reader classifies Malformed, which includes an outside-diff evidence marker `[evidence: <source>]` whose keyword drifted or which names no source; marked rows are counted and quoted on stderr), 16 (the target carries ready-for:agent and the authored region composes no criteria block the reader answers Found on — nothing written), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 20 (the authored region states an ordering the graph carries no edge for — nothing written). Example: fabrika triage enrich 4312 < enriched.md",
+		[
+			"Rewrites an issue body from stdin over its kept original; prints `enriched\\t<n>\\t<redactions>`.",
+			"  3: stdin was empty",
+			"  5: the text carries a machine-local path",
+			"  6: the text is a bare @ reference",
+			"  7: the issue is absent, closed or empty",
+			"  8: the write failed (UNKNOWN)",
+			"  9: the read-back does not match",
+			"  11: a precondition read failed",
+			"  15: the criteria block is malformed",
+			"  16: a ready-for:agent body with no criteria block",
+			"  17: another session or lane holds the claim",
+			"  20: the text states an ordering with no blocked_by edge",
+			'  Derivation: the triage skill\'s contract.md, "triage enrich"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika triage enrich 4312 < enriched.md"}]),
 );
 
 const repairCriteria = leafCommand(
@@ -473,7 +586,7 @@ const repairCriteria = leafCommand(
 		sweep: Flag.boolean("sweep").pipe(
 			Flag.withDefault(false),
 			Flag.withDescription(
-				"repair every repairable open issue in one run instead of one issue, with a per-issue outcome line",
+				"repair every repairable open issue in one run instead of one issue, under a `swept` tally line; an issue that changed since the board read answers `moved` unwritten",
 			),
 		),
 		dryRun: Flag.boolean("dry-run").pipe(
@@ -500,8 +613,21 @@ const repairCriteria = leafCommand(
 ).pipe(
 	Command.withShortDescription("Repair an acceptance-criteria block's shape, mechanically."),
 	Command.withDescription(
-		'Rewrite an acceptance-criteria block\'s shape: a level-drifted "## Acceptance criteria" heading to the conforming "### Acceptance criteria", and — when the block carries no checkbox at all — its plain list bullets to unchecked checkboxes, each item\'s text byte-for-byte unchanged. Authored region only, preserved originals byte-for-byte untouched, the repair pre-verified through the wire read before anything is written. One issue by number, or --sweep for every open issue with one `<repaired|conforming|no-block|refused|moved|would-repair>\\t<number>` line each; a sweep re-reads each issue immediately before its write and answers `moved` instead of writing when the body changed after the board snapshot. --dry-run plans everything and writes nothing, answering `would-repair` with the repairs it would make. Every repaired body gets one disclosure comment naming its repairs, posted after the read-back. Only a pure shape rewrite on the exact heading text is repaired; a drifted heading text, a block mixing prose or another block into the list, an empty item, a block that already carries a checkbox beside its bullets, and a converted bullet the reader counts no criterion at are all refused, never guessed — a `Repaired` plan reads back exactly one criterion per line it rewrote. Exits 7 (issue absent, closed, or a pull request), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (an issue or the open-issue list could not be read), 14 (not mechanically repairable — the refusal names what it read). Example: fabrika triage repair-criteria 5726',
+		[
+			"Repairs acceptance-criteria block shape, printing one `<outcome>\\t<number>` line per issue.",
+			"  Outcomes: repaired, conforming, no-block, refused, moved, would-repair.",
+			"  7: the issue is absent, closed, or a pull request",
+			"  8: the write failed (UNKNOWN)",
+			"  9: the read-back does not match",
+			"  11: an issue or the open-issue list could not be read",
+			"  14: not mechanically repairable; the refusal names what it read",
+			'  Derivation: the triage skill\'s contract.md, "triage repair-criteria"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika triage repair-criteria 5726"},
+		{command: "fabrika triage repair-criteria --sweep --dry-run"},
+	]),
 );
 
 const scratch = leafCommand(
@@ -534,8 +660,18 @@ const scratch = leafCommand(
 ).pipe(
 	Command.withShortDescription("The per-lane scratch path a triager's working files go under."),
 	Command.withDescription(
-		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-triage/<session-id>/<issue>-<claim-nonce>/<slug>, one absolute path on stdout, the directory created if absent. --token's nonce keys the namespace per LANE rather than per session. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created, no session id is set (the FABRIKA_SESSION_ID → CLAUDE_CODE_SESSION_ID → PI_SUBAGENT_PARENT_SESSION chain) or the id is not one path segment, --token is not a claim token of this session, or the repo does not resolve), 10 (--slug carries a path separator or is not kebab-case), 11 (the claim state could not be read — UNKNOWN), 19 (proven: this lane holds no live claim on the issue). Example: fabrika triage scratch 4312 --slug authored --token triage:s-9f2e:c1a4d6f8-…",
+		[
+			"Prints this lane's absolute scratch path, creating the directory if absent.",
+			"  Path: <temp root>/fabrika-triage/<session-id>/<issue>-<claim-nonce>/<slug>; never post it.",
+			"  10: --slug carries a path separator or is not kebab-case",
+			"  11: the claim state could not be read (UNKNOWN)",
+			"  19: this lane holds no live claim on the issue",
+			'  Derivation: the triage skill\'s contract.md, "triage scratch"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika triage scratch 4312 --slug authored --token triage:s-9f2e:c1a4d6f8-…"},
+	]),
 );
 
 export const triageCommand = Command.make("triage").pipe(
