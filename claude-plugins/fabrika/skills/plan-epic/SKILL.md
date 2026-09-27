@@ -487,16 +487,25 @@ with `report` and let the gate decide.
 with a walk.** `check-epic-plan` proceeds only once `plan approve` covers this ledger, and `plan
 approve` is the founder's verb, run by someone on the control-plane roster. The ask you hand him —
 in your terminal report, and in whatever your driver relays onward — walks him through the plan
-first, **one child per line**, and names `plan approve` last. Read the children off the epic, never
-off your memory of the run:
+first, **one child per line**, and names `plan approve` last. Read every field off the board, never
+off your memory of the run. `plan read` gives the children, the story numbers each one carries, and
+the edges; it prints no title and no story text, so those come from `build issue`:
 
 ```bash
-fabrika plan read $epic_number
+fabrika plan read $epic_number      # children[].number, children[].stories, topology.edges
+fabrika build issue <child>         # once per child: its title
+fabrika build issue $epic_number    # the body's ### User stories and ### Task-split rationale
+fabrika grill read <session>        # step 4's session: its ruled questions
 ```
+
+Each line fills from those reads alone: `<title>` is the child's `title`, the story is the
+`### User stories` item its `stories` number names, and each `topology.edges` pair `[a, b]` reads
+"`a` requires `b`". `Shape:` is the epic body's `### Task-split rationale` and `Grill:` is the
+questions `grill read` returns as ruled, one line each.
 
 ```text
 Epic #<epic> — <n> children:
-- #<child> <title> — <what it delivers>; requires #<other> (or: no prerequisites)
+- #<child> <title> — story <k>: <that story's text>; requires #<other> (or: no prerequisites)
 - …
 Shape: <each Task-split rationale choice, one line with its reason>
 Grill: #<session> — <each founder ruling, one line>
