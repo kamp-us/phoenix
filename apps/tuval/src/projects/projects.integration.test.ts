@@ -7,6 +7,9 @@
  * The trust cases (#9693) answer the "Trust this folder?" question the way a page does, through the
  * kernel's `TrustPrompts`, and read whether the folder's config module was ever imported off a file
  * that module writes as it is evaluated.
+ *
+ * The restart cases (#9688) stop a scratch-home desk and boot another over the same home, which is
+ * what a desk restart is: the second desk reads the saved list the first one left.
  */
 
 import {
@@ -15,6 +18,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	realpathSync,
+	rmSync,
 	writeFileSync,
 } from "node:fs";
 import {tmpdir} from "node:os";
@@ -405,6 +409,104 @@ describe("the first open of a folder", () => {
 				assert.isTrue(opened.ok, JSON.stringify(opened));
 				assert.deepStrictEqual(yield* pendingNow(kernel), []);
 				assert.deepStrictEqual((yield* readOpenProjects(home))?.trusted, []);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		TIMEOUT,
+	);
+});
+
+const openFolders = (kernel: Context.Context<Kernel>) =>
+	Effect.map(Context.get(kernel, Projects).list, (open) => open.map((project) => project.folder));
+
+const savedFolders = (home: string) =>
+	Effect.map(readOpenProjects(home), (saved) => saved?.projects.map(({folder}) => folder));
+
+describe("a desk restart", () => {
+	it.live(
+		"reopens the projects that were open, each restored from its own state, and a closed one stays closed",
+		() =>
+			Effect.gen(function* () {
+				const home = scratchHome("projects-restart");
+				const first = projectWith("planned-counter");
+				const second = projectWith("counter-into-global-log");
+				const closed = projectWith("counter-into-global-log");
+				const counter = ProjectId.of(second).scope("counter");
+
+				yield* Effect.gen(function* () {
+					const {kernel} = yield* boot({global: fixture("log-global"), project: first, home});
+					assert.isTrue((yield* openAnswering(kernel, second, "trust")).ok);
+					assert.isTrue((yield* openAnswering(kernel, closed, "trust")).ok);
+					yield* tick(kernel, counter);
+					yield* eventually(
+						"the log records the tick",
+						logLines(kernel),
+						(lines) => lines.length === 1,
+					);
+					const closing = yield* spell(kernel, ["project", "close"], {folder: closed});
+					assert.isTrue(closing.ok, JSON.stringify(closing));
+				}).pipe(Effect.scoped);
+
+				const {kernel, report} = yield* boot({global: fixture("log-global"), project: first, home});
+				assert.deepStrictEqual(yield* openFolders(kernel), [first, second]);
+				assert.deepStrictEqual(report.reopened, [second]);
+				assert.deepStrictEqual(report.skipped, []);
+				const live = yield* liveIds(kernel);
+				assert.includeMembers(
+					[...live],
+					["shell", "log", ProjectId.of(first).scope("main"), counter],
+				);
+				assert.notInclude(live, ProjectId.of(closed).scope("counter"));
+				// The counter comes back at its checkpoint, read from its own project's state directory.
+				assert.include(manifestIds(homeStateDir(second, home)), counter);
+				assert.notInclude(manifestIds(report.stateDir), counter);
+				yield* tick(kernel, counter);
+				const lines = yield* eventually(
+					"the log records the restored counter's tick",
+					logLines(kernel),
+					(recorded) => recorded.length === 2,
+				);
+				assert.deepStrictEqual(lines, [1, 2]);
+				assert.deepStrictEqual(yield* savedFolders(home), [first, second]);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		TIMEOUT,
+	);
+
+	it.live(
+		"skips a deleted folder and an untrusted one with a notice naming each, and opens the rest",
+		() =>
+			Effect.gen(function* () {
+				const home = scratchHome("projects-restart-skip");
+				const first = projectWith("planned-counter");
+				const gone = projectWith("counter-into-global-log");
+				const {folder: revoked, marker} = projectMarking("counter-into-global-log");
+				const kept = projectWith("counter-into-global-log");
+				// A desk that stopped with all three open. Since then one folder was deleted, and the other
+				// lost its trust: the saved list no longer names it among the trusted folders.
+				const stopped = OpenProjects.restoring({
+					version: 1,
+					projects: [gone, revoked, kept].map((folder) => ({folder})),
+					trusted: [gone, kept],
+				});
+				yield* saveOpenProjects(home, stopped);
+				rmSync(gone, {recursive: true, force: true});
+
+				const {kernel, report} = yield* boot({global: fixture("log-global"), project: first, home});
+				assert.deepStrictEqual(yield* openFolders(kernel), [first, kept]);
+				assert.deepStrictEqual(report.reopened, [kept]);
+				assert.deepStrictEqual(
+					report.skipped.map((skip) => skip.folder),
+					[gone, revoked],
+				);
+				assert.include(report.skipped[0]?.message, gone);
+				assert.include(report.skipped[1]?.message, revoked);
+				assert.include(report.skipped[1]?.message, "not trusted");
+				// Nothing from the untrusted folder ran, and nobody was asked about it.
+				assert.isFalse(existsSync(marker), "an untrusted folder's config module was imported");
+				assert.deepStrictEqual(yield* pendingNow(kernel), []);
+				const live = yield* liveIds(kernel);
+				assert.include(live, ProjectId.of(kept).scope("counter"));
+				assert.notInclude(live, ProjectId.of(revoked).scope("counter"));
+				// Neither skipped folder is open, so the saved list stops naming them.
+				assert.deepStrictEqual(yield* savedFolders(home), [first, kept]);
 			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
 		TIMEOUT,
 	);
