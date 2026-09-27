@@ -438,7 +438,8 @@ const retire = leafCommand(
 	Command.withDescription(
 		[
 			"Removes the worktrees holding an issue's lane branch where a license allows; prints the result.",
-			'  {"answer":"retired"|"held"|"none","number","retired":[{path,branch,license,salvaged,unlocked}…],"held":[…]}',
+			'  {"answer":"retired"|"held"|"none","number","retired":[…],"held":[…]}',
+			"  Each retired entry: {path, branch, license, salvaged, unlocked}",
 			"  7: the issue is absent",
 			"  8: the salvage, an unlock or a removal failed (UNKNOWN)",
 			"  9: a removed tree is still registered",
