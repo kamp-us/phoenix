@@ -80,6 +80,8 @@ export interface AiAgentProgramOptions<RIn = never> {
 	/** Merged over the row's own identity, for a caller that ships this program in its package. */
 	readonly identity?: Partial<DefinitionIdentity>;
 	readonly capabilities?: ReadonlyArray<CapabilityRequest>;
+	/** The SDK versions this row supports (`Program.sdk`); absent means the desk's own major. */
+	readonly sdk?: string;
 }
 
 /**
@@ -194,6 +196,7 @@ export const aiAgentProgram = <RIn = never>(
 		// Defaulted, never spread away: an ai-agent row with no inspector paints an empty desk panel
 		// and nothing in the types or the suite objects, which is how #9214 shipped (#9218).
 		inspector: options.inspector ?? AI_AGENT_INSPECTOR_REF,
+		...(options.sdk === undefined ? {} : {sdk: options.sdk}),
 		identity: {
 			package: "@kampus/tuval",
 			program: options.id,

@@ -238,6 +238,18 @@ tuval: refusing to boot — config module /path/to/tuval.config.ts: not a v1 con
 tuval: refusing to boot — config module /path/to/tuval.config.ts: declares program row "shell", which the desk supplies itself; remove the row and its graph node
 ```
 
+An SDK range refusal costs one row, not the config. A row's `sdk` field is the semver range of
+`@kampus/tuval-sdk` versions it supports, and the desk runs one copy of the SDK for every program
+(ruling #9668 R2.2). A row whose range excludes that copy's version, or whose range is not a semver
+range, is not loaded; its graph nodes, their children and the routes into them do not start, and the
+rest of the config runs. The boot line and `project open` name the row, its range and the desk's
+version. A row with no `sdk` supports every SDK of the desk's own major, so rows written before the
+field existed keep loading.
+
+```
+tuval: program "<project>/notify" supports @kampus/tuval-sdk ^2, and this desk runs 0.0.0; it was not loaded
+```
+
 ## The public API
 
 The program-author doors belong to the Tuval SDK, [`@kampus/tuval-sdk`](../../packages/tuval), which

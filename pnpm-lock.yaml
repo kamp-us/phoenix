@@ -111,6 +111,9 @@ catalogs:
     '@types/react-dom':
       specifier: ^19.2.3
       version: 19.2.3
+    '@types/semver':
+      specifier: 7.8.0
+      version: 7.8.0
     '@types/ws':
       specifier: ^8.18.1
       version: 8.18.1
@@ -174,6 +177,9 @@ catalogs:
     react-router:
       specifier: ^7.18.2
       version: 7.18.4
+    semver:
+      specifier: 7.8.5
+      version: 7.8.5
     turbo:
       specifier: ^2.9.14
       version: 2.10.3
@@ -1181,6 +1187,9 @@ importers:
       effect:
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112(patch_hash=aad6096dd5b19a9e6aa57e5f7752c4c561d1491ac6c22b311082497aee42cf11)
+      semver:
+        specifier: 'catalog:'
+        version: 7.8.5
     devDependencies:
       '@effect/platform-node':
         specifier: 4.0.0-rc.112
@@ -1194,6 +1203,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
+      '@types/semver':
+        specifier: 'catalog:'
+        version: 7.8.0
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -4296,6 +4308,9 @@ packages:
 
   '@types/retry@0.12.0':
     resolution: {integrity: sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA==}
+
+  '@types/semver@7.8.0':
+    resolution: {integrity: sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ==}
 
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
@@ -9527,6 +9542,8 @@ snapshots:
       csstype: 3.2.3
 
   '@types/retry@0.12.0': {}
+
+  '@types/semver@7.8.0': {}
 
   '@types/trusted-types@2.0.7':
     optional: true

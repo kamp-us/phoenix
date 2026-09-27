@@ -282,6 +282,16 @@ export interface AuthoredProgram<
 	 */
 	readonly renderer?: ModuleWindowRef;
 	/**
+	 * The `@kampus/tuval-sdk` versions this program supports, as a semver range — the program's
+	 * `engines.vscode`. A desk supplies its own copy of the SDK to every program and refuses one whose
+	 * range excludes that copy's version, naming the program, the range and the desk's version,
+	 * because two copies of the SDK in one process break every service lookup between them.
+	 *
+	 * Absent means every SDK of the desk's own major (`^<major>`). State it once a program relies on
+	 * something a later minor added, or supports more than one major: `"^1.4"`, `">=1 <3"`.
+	 */
+	readonly sdk?: string;
+	/**
 	 * What this program is sent when it comes back from a checkpoint (`./resume.ts`). A restored
 	 * process starts on its loaded state with no Cmds, so this is its only way back into the world.
 	 */
@@ -698,6 +708,7 @@ export const FIELD_COMPILERS = {
 	resume: (authored) => compileResume(authored),
 	derivedLines: (authored) => compileDerivedLines(authored),
 	renderer: (authored) => authored.renderer,
+	sdk: (authored) => authored.sdk,
 	capabilities: (authored) => authored.capabilities ?? NO_CAPABILITIES,
 	identity: (authored) => compileIdentity(authored),
 	placement: (authored) => authored.placement ?? LOCAL,

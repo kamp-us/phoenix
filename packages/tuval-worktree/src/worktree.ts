@@ -648,6 +648,7 @@ export const authoredWorktree = (settled: Settled) => {
 	};
 	return {
 		id,
+		sdk: "0.x",
 		args,
 
 		/**

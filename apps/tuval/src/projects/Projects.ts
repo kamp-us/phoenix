@@ -28,6 +28,7 @@ import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import type {ProcessHandle} from "@kampus/tuval-sdk/kernel/process/process";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {Registry, RegistryRows} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import type {SdkRefused} from "@kampus/tuval-sdk/kernel/registry/sdk-range";
 import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {
 	adoptInProjectState,
@@ -100,6 +101,8 @@ export interface ProjectOpened {
 	readonly project: OpenProject;
 	readonly state: ProjectState;
 	readonly programCount: number;
+	/** The project's rows refused for their SDK range, which the rest of the project runs without. */
+	readonly refused: ReadonlyArray<SdkRefused>;
 	/** The project's graph, in node order. */
 	readonly launched: ReadonlyArray<LaunchedProcess>;
 	/** The project's checkpointed processes its graph did not plan, spawned back. */
@@ -314,6 +317,7 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 				project,
 				state,
 				programCount: programs.length,
+				refused: loaded.config.refused,
 				launched,
 				restored,
 			} satisfies ProjectOpened;

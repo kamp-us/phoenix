@@ -31,6 +31,7 @@ import type {ProcessHandle} from "@kampus/tuval-sdk/kernel/process/process";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry, RegistryRows} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {scopedIdParts} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
+import type {SdkRefused} from "@kampus/tuval-sdk/kernel/registry/sdk-range";
 import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {homeTuvalDir, type StateAdoption, StateDir} from "@kampus/tuval-sdk/kernel/state-dir";
 import type {PrefixTable} from "@kampus/tuval-ui/keys";
@@ -340,6 +341,8 @@ export interface BootReport {
 	readonly bindingCount: number;
 	/** One per key binding that did not compile; the binding is dropped and the rest still run. */
 	readonly bindingErrors: ReadonlyArray<BindingError>;
+	/** One per row refused for its SDK range; the row is not loaded and the rest still run (#9686). */
+	readonly refused: ReadonlyArray<SdkRefused>;
 	/** The home-dir directory this desk's state lives in, keyed by the project's absolute path. */
 	readonly stateDir: string;
 	/** What ADR 0402 rule 7's one-time move lifted out of `<project>/.tuval` on this boot. */
@@ -458,6 +461,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 		spellCount: spells.table.rows.length,
 		bindingCount: spells.bindings.bindings.length,
 		bindingErrors: spells.bindings.errors,
+		refused: config.refused,
 		stateDir: state.stateDir,
 		adopted: state.adopted,
 		scoped: state.scoped,

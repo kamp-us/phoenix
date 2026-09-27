@@ -49,6 +49,7 @@ export const codexSession = (options: CodexSessionProgramOptions): CodexSessionP
 				...(options.byteLimit === undefined ? {} : {byteLimit: options.byteLimit}),
 			},
 			renderer: CODEX_CHAT_WINDOW_REF,
+			sdk: "0.x",
 			capabilities: [
 				{
 					family: "process-control",

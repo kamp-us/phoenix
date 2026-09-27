@@ -304,6 +304,13 @@ export interface Program<
 	 */
 	readonly inspector?: RendererRef;
 	readonly status?: RendererRef;
+	/**
+	 * The `@kampus/tuval-sdk` versions this program supports, as a semver range (`"^1.2"`,
+	 * `">=1.4 <3"`). A desk refuses a row whose range excludes the SDK it runs, and names the row,
+	 * the range and its own version. Absent means every SDK of the desk's own major
+	 * (`./sdk-range.ts`, #9686).
+	 */
+	readonly sdk?: string;
 	readonly identity: DefinitionIdentity;
 	readonly placement: Placement;
 }

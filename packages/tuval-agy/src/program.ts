@@ -48,4 +48,5 @@ export const agySessionProgram = (options: AgySessionProgramOptions): AiAgentPro
 		layer: options.layer ?? preflightedAgyLayer(options.agy ?? {}),
 		config: {cwd: options.cwd},
 		renderer: AGY_CHAT_WINDOW_REF,
+		sdk: "0.x",
 	});

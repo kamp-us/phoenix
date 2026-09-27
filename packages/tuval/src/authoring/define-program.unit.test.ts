@@ -127,6 +127,12 @@ describe("authoring.defineProgram", () => {
 		});
 	});
 
+	it("carries a declared SDK range onto the row, and leaves the field off when none is declared", () => {
+		const ranged = defineProgram({id: "ranged", sdk: "^0.4", init: () => 0, update: {}});
+		expect(ranged.sdk).toBe("^0.4");
+		expect("sdk" in counter).toBe(false);
+	});
+
 	it("fills the row's `handlers` itself, so no authored program carries one", () => {
 		expect(Object.keys(counter.handlers ?? {}).sort()).toEqual([
 			"ask",
