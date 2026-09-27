@@ -44,15 +44,19 @@ describe("the arrow SKILL.md §2 assigns each class", () => {
 		}
 	});
 
-	it("asks for the standing exactly where an arm would name build", () => {
+	// `red` is the one class whose route to `build` is not this arrow: SKILL.md §3's `logic` route
+	// names it after the log is read, and only on `ours` or `granted`, so its standing is read too.
+	it("asks for the standing exactly where the work can reach build", () => {
 		expect(buildBound("conflicted", null)).toBe(true);
 		expect(buildBound("linkage-refused", "someone-else")).toBe(true);
 		expect(buildBound("linkage-refused", null)).toBe(false);
+		expect(buildBound("red", null)).toBe(true);
+		expect(buildBound("red", "someone-else")).toBe(true);
 		for (const token of STALL_TOKENS) {
 			for (const facts of [NOBODY, HOLDER]) {
-				const reachesBuild = STANDINGS.some(
-					(standing) => laneFor(token, {...facts, standing}) === "build",
-				);
+				const reachesBuild =
+					token === "red" ||
+					STANDINGS.some((standing) => laneFor(token, {...facts, standing}) === "build");
 				expect(buildBound(token, facts.ownerLogin)).toBe(reachesBuild);
 			}
 		}

@@ -304,7 +304,45 @@ describe("runDiagnose answers", () => {
 			);
 			expect(out.code).toBe(0);
 			expect(authorLine(out.stdout)).toBe("author\tusirin\tunknown");
-			expect(out.stderr.join("\n")).toContain("the arrow names its author, never build");
+			expect(out.stderr.join("\n")).toContain("its work goes to its author, never build");
+		});
+	});
+
+	/**
+	 * A red's arrow is `nobody`, but SKILL.md §3's `logic` route sends it to `build` once the log is
+	 * read — on a PR the pipeline owns. So a red reads its standing too, or that route could never fire.
+	 */
+	describe("whose red PR it is", () => {
+		const CONFIG_AT_BASE = /^GET .*\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
+		const RUNNING_ACCOUNT = /^GET .*\/user$/;
+		const failing = reply(
+			checkRuns(1, [{name: "ci-required", status: "completed", conclusion: "failure"}]),
+		);
+		const red = (author: string, runningAccount: HttpReply) =>
+			run(
+				script([
+					[PULL, reply(pull({updatedAt: PUSHED, author}))],
+					[CHECK_RUNS, failing],
+					[CONFIG_AT_BASE, {status: 404, body: '{"message":"Not Found"}'}],
+					[RUNNING_ACCOUNT, runningAccount],
+				]),
+			);
+		const asUsirin: HttpReply = {status: 200, body: JSON.stringify({login: "usirin"})};
+
+		it("reads the running account's own red PR as ours, so §3's logic route can name build", async () => {
+			const out = await red("usirin", asUsirin);
+			expect(out.code).toBe(0);
+			const lines = out.stdout.split("\n");
+			expect(lines[0]).toBe(`stall\tred\t${HEAD}\t35`);
+			expect(lines).toContain("author\tusirin\tours");
+		});
+
+		it("reads another author's ungranted red PR as foreign", async () => {
+			const out = await red("ada", asUsirin);
+			expect(out.code).toBe(0);
+			const lines = out.stdout.split("\n");
+			expect(lines[0]).toBe(`stall\tred\t${HEAD}\t35`);
+			expect(lines).toContain("author\tada\tforeign");
 		});
 	});
 

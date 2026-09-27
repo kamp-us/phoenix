@@ -417,8 +417,10 @@ It is the pipeline's when its author is in the repo's `ownAccounts` (the running
 account alone when that set is empty or absent) — `ours` — or when a
 [`takeover-grant`](../../docs/wire-formats.md#takeover-grant) marker from an account in the
 grant-author set stands on it — `granted`. Otherwise it is `foreign`, and the arrow a class would
-point at `build` points at `author` instead. The standing is read only for such a class (`conflicted`,
-and `linkage-refused` with a holder), so every other class prints `unread`. A standing that cannot be
+point at `build` points at `author` instead. The standing is read only for a class whose work can
+reach `build`: the arrow's two (`conflicted`, and `linkage-refused` with a holder) and `red`, whose
+arrow is `nobody` but whose `logic` route (`SKILL.md` §3) names `build` only on `ours` or `granted`.
+Every other class prints `unread`. A standing that cannot be
 read — a GitHub App token cannot name its own account, for one — prints `unknown` with a stderr
 notice: the class is still proven, so it is not a refusal, and an unknown standing never reaches
 `build`.

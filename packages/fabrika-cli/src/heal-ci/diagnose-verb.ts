@@ -154,8 +154,8 @@ export interface Diagnosis {
 		readonly lastActivityAt: string | null;
 	};
 	/**
-	 * Who opened the PR, and whether the pipeline owns it. The standing is read only for a class that
-	 * would hand the PR to `build` (`./lane.ts`'s `buildBound`), and is `unread` otherwise.
+	 * Who opened the PR, and whether the pipeline owns it. The standing is read only for a class whose
+	 * work can reach `build` (`./lane.ts`'s `buildBound`), and is `unread` otherwise.
 	 */
 	readonly author: {readonly login: string; readonly standing: Standing};
 	readonly gates: {readonly state: string; readonly pass: number; readonly required: number};
@@ -542,9 +542,9 @@ export const diagnoseOne = (
 			dwellMinutes: params.dwellMinutes,
 			driftCommits: params.driftCommits,
 		});
-		// Read only where the arrow would name `build`: a PR belongs to its author, so that arrow needs
-		// proof the pipeline owns it, and no other arm reads the answer. An unreadable standing is not
-		// a refusal — the class is still proven — but it never reaches `build`.
+		// Read only where the work can reach `build` — this arrow, or §3's `logic` route over a red: a PR
+		// belongs to its author, so that route needs proof the pipeline owns it. An unreadable standing
+		// is not a refusal — the class is still proven — but it never reaches `build`.
 		let standing: Standing = "unread";
 		if (buildBound(verdict.token, owner)) {
 			const read = yield* readPrOwnership(
@@ -555,7 +555,7 @@ export const diagnoseOne = (
 			if (read._tag === "Unknown") {
 				standing = "unknown";
 				notices.push(
-					`${VERB}: cannot read whose PR #${pr} is: ${read.reason} — the arrow names its author, never build.`,
+					`${VERB}: cannot read whose PR #${pr} is: ${read.reason} — its work goes to its author, never build.`,
 				);
 			} else {
 				standing =

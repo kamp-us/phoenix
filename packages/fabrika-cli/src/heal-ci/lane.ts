@@ -25,8 +25,8 @@ export const LANE_TOKENS = ["build", "review", "ship", "author", "human", "nobod
 export type LaneToken = (typeof LANE_TOKENS)[number];
 
 /**
- * Whose PR this is, as the arrow reads it. `unread` is a standing nobody asked for, because no arm
- * over this class hands the work to `build` — see {@link buildBound}.
+ * Whose PR this is, as the arrow and the skill's later routes read it. `unread` is a standing nobody
+ * asked for, because no route over this class hands the work to `build` — see {@link buildBound}.
  */
 export const STANDINGS = ["ours", "granted", "foreign", "unknown", "unread"] as const;
 
@@ -46,13 +46,16 @@ const pipelineOr = (standing: Standing): LaneToken =>
 	standing === "ours" || standing === "granted" ? "build" : "author";
 
 /**
- * Whether this class would hand the PR to `build` — so whether its standing must be read at all.
+ * Whether this class's work can reach `build` — so whether its standing must be read at all.
  *
- * A caller reads ownership only when this is true: every other arm ignores it, and a read nobody
- * needs is one more way for a classification to fail.
+ * Two routes reach it: this arrow (`conflicted`, and `linkage-refused` with a holder), and `SKILL.md`
+ * §3's `logic` route over a `red`, which the arrow leaves at `nobody` because the log signature that
+ * picks it is read later. §3 sends that red to `build` only on `ours` or `granted`, so the standing
+ * is read here for it too. A caller reads ownership only when this is true: every other class ignores
+ * it, and a read nobody needs is one more way for a classification to fail.
  */
 export const buildBound = (token: StallToken, ownerLogin: string | null): boolean =>
-	token === "conflicted" || (token === "linkage-refused" && ownerLogin !== null);
+	token === "red" || token === "conflicted" || (token === "linkage-refused" && ownerLogin !== null);
 
 export const laneFor = (token: StallToken, facts: LaneFacts): LaneToken => {
 	switch (token) {
