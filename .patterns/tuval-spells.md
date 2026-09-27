@@ -456,6 +456,11 @@ spells as one list.
   out-port into one of the spawner's own events. All three land through `deliver`
   ([`process/inbox.ts`](../packages/tuval/src/process/inbox.ts)), which needs only a live handle — so an
   answer reaches any process, not only one these spells spawned.
+- **`project open` / `project close` / `project list`**
+  ([`apps/tuval/src/projects/spells.ts`](../apps/tuval/src/projects/spells.ts)) are the desk's, not
+  the SDK's: they call the kernel's `Projects` service, which opens a folder into the running desk
+  and closes it again (#9685). They name the folder by its absolute path, because the kernel has no
+  working directory a relative one could be read against.
 
 ### The bridge
 

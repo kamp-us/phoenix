@@ -25,7 +25,7 @@ if (project === undefined || edited === undefined || contents === undefined) {
 const read = loadLayeredConfig({
 	desk: noDesk,
 	global: join(project, "no-global-layer.ts"),
-	project: {id: ProjectId.of(project), module: join(project, ".tuval", "tuval.config.ts")},
+	projects: [{id: ProjectId.of(project), module: join(project, ".tuval", "tuval.config.ts")}],
 }).pipe(
 	Effect.match({
 		onSuccess: (config) => ({

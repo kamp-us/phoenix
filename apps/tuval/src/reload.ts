@@ -13,7 +13,7 @@
  * process refusing a Msg must not turn it into a refusal of the whole re-read.
  */
 
-import type {BindingError, BindingSource} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
+import type {BindingError} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
 import {DuplicateSpellPath, SpellNotDescribable} from "@kampus/tuval-sdk/kernel/commands/errors";
 import type {AnySpell} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
@@ -22,7 +22,8 @@ import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import type {Message} from "@kampus/tuval-sdk/kernel/process/process";
 import type {AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Context, Effect, Layer, Option, Ref, Schema, Semaphore} from "effect";
-import {ConfigLoadError} from "./config.ts";
+import {ConfigLoadError, type ProjectLayer} from "./config.ts";
+import type {ConfigGeneration} from "./config-generation.ts";
 
 const byId = (rows: ReadonlyArray<AnyProgram>): ReadonlyMap<ProgramId, AnyProgram> =>
 	new Map(rows.map((row) => [row.id, row]));
@@ -59,16 +60,6 @@ export const dispatchConfigChanged = (
 		}
 		return notified;
 	}).pipe(Effect.withSpan("Tuval.reload.dispatchConfigChanged"));
-
-/** One read of the config, as `boot` runs it: the rows with their flags applied, and their keys. */
-export interface ConfigRead {
-	readonly programs: ReadonlyArray<AnyProgram>;
-	readonly keys: ReadonlyArray<BindingSource>;
-	/** The layer modules that existed, global first. */
-	readonly sources: ReadonlyArray<string>;
-	/** Every file the read imported the config from (`LoadedConfig.files`). */
-	readonly files: ReadonlyArray<string>;
-}
 
 /** Refused by a kernel `start` was handed rows rather than a config to read them from. */
 export class NoConfigToReload extends Schema.TaggedError<NoConfigToReload>()(
@@ -124,8 +115,14 @@ export interface FromConfigOptions {
 	/** The kernel's own spells, registered beside every reloaded row's. */
 	readonly core: ReadonlyArray<AnySpell>;
 	/** The generation the kernel was started with, so the first reload diffs against it. */
-	readonly initial: ReadonlyArray<AnyProgram>;
-	readonly read: Effect.Effect<ConfigRead, ConfigLoadError>;
+	readonly initial: ConfigGeneration;
+	/**
+	 * How to read the config again, given the projects open when the reload runs. Absent for a kernel
+	 * handed rows and no config, and that kernel's reload refuses with `NoConfigToReload`.
+	 */
+	readonly read?: (
+		projects: ReadonlyArray<ProjectLayer>,
+	) => Effect.Effect<ConfigGeneration, ConfigLoadError>;
 }
 
 /**
@@ -133,10 +130,19 @@ export interface FromConfigOptions {
  * `R`. Nothing restarts and nothing respawns: a process keeps running under the row it was spawned
  * from, and what applies live is the row's own call. Reloads run one at a time, because each swaps
  * the generation the live processes are diffed against.
+ *
+ * `swap` is the other writer of that generation: a project opening or closing (#9685) moves whole
+ * rows in or out, and no live process runs under a row either one changes, so it tells none. It
+ * holds the same lock, so a reload never reads the open projects halfway through one.
  */
 export class ConfigReloader extends Context.Service<
 	ConfigReloader,
-	{readonly reload: Effect.Effect<ReloadReport, ReloadRefused>}
+	{
+		readonly reload: Effect.Effect<ReloadReport, ReloadRefused>;
+		readonly swap: <E>(
+			next: (current: ConfigGeneration) => Effect.Effect<ConfigGeneration, E>,
+		) => Effect.Effect<void, E | ReloadRefused>;
+	}
 >()("tuval/ConfigReloader") {
 	static readonly fromConfig = ({
 		core,
@@ -150,15 +156,20 @@ export class ConfigReloader extends Context.Service<
 				const set = yield* SpellSet;
 				const generation = yield* Ref.make(initial);
 				const lock = yield* Semaphore.make(1);
-				const reload = Effect.gen(function* () {
-					const next = yield* read.pipe(
-						Effect.mapError((reason) => new ReloadRefused({reason, files: reason.files})),
-					);
-					yield* set
+				const install = (next: ConfigGeneration) =>
+					set
 						.reload({core, programs: next.programs, keys: next.keys})
 						.pipe(Effect.mapError((reason) => new ReloadRefused({reason, files: next.files})));
+				const reload = Effect.gen(function* () {
+					if (read === undefined) {
+						return yield* new ReloadRefused({reason: new NoConfigToReload(), files: []});
+					}
+					const next = yield* read((yield* Ref.get(generation)).projects).pipe(
+						Effect.mapError((reason) => new ReloadRefused({reason, files: reason.files})),
+					);
+					yield* install(next);
 					const notified = yield* dispatchConfigChanged(
-						yield* Ref.getAndSet(generation, next.programs),
+						(yield* Ref.getAndSet(generation, next)).programs,
 						next.programs,
 					).pipe(Effect.provideContext(services));
 					const current = yield* set.read;
@@ -171,7 +182,15 @@ export class ConfigReloader extends Context.Service<
 						notified,
 					} satisfies ReloadReport;
 				}).pipe(lock.withPermits(1), Effect.withSpan("Tuval.reload"));
-				return ConfigReloader.of({reload});
+				const swap = <E>(
+					next: (current: ConfigGeneration) => Effect.Effect<ConfigGeneration, E>,
+				): Effect.Effect<void, E | ReloadRefused> =>
+					Effect.gen(function* () {
+						const swapped = yield* next(yield* Ref.get(generation));
+						yield* install(swapped);
+						yield* Ref.set(generation, swapped);
+					}).pipe(lock.withPermits(1), Effect.withSpan("Tuval.reload.swap"));
+				return ConfigReloader.of({reload, swap});
 			}),
 		);
 
@@ -180,6 +199,7 @@ export class ConfigReloader extends Context.Service<
 		ConfigReloader,
 		ConfigReloader.of({
 			reload: Effect.fail(new ReloadRefused({reason: new NoConfigToReload(), files: []})),
+			swap: () => Effect.fail(new ReloadRefused({reason: new NoConfigToReload(), files: []})),
 		}),
 	);
 }

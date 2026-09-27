@@ -30,8 +30,10 @@ const refusal = (name: string) =>
 /** The project a fixture project layer loads as; its key is what scopes that layer's ids. */
 const alpha = ProjectId.of("/work/alpha");
 
+/** The merge, without the per-owner parts it was assembled from. */
 const layered = (global: string, project: string, desk = noDesk, id = alpha) =>
-	loadLayeredConfig({desk, global, project: {id, module: project}}).pipe(
+	loadLayeredConfig({desk, global, projects: [{id, module: project}]}).pipe(
+		Effect.map(({desk: _desk, projects: _projects, ...merged}) => merged),
 		Effect.provide(NodeFileSystem.layer),
 	);
 
@@ -387,7 +389,7 @@ describe("loadLayeredConfig", () => {
 				loadLayeredConfig({
 					desk: noDesk,
 					global: fixture("throws"),
-					project: {id: alpha, module: fixture("two-rows")},
+					projects: [{id: alpha, module: fixture("two-rows")}],
 				}).pipe(Effect.provide(NodeFileSystem.layer)),
 			);
 			assert.instanceOf(error, ConfigLoadError);
@@ -477,7 +479,7 @@ describe("loadLayeredConfig", () => {
 });
 
 describe("project-scoped ids (#9684)", () => {
-	const node = (id: string) => (config: LoadedConfig) =>
+	const node = (id: string) => (config: Pick<LoadedConfig, "graph">) =>
 		config.graph.nodes.find((candidate) => candidate.id === id);
 
 	it.effect(

@@ -100,9 +100,9 @@ export interface TransportServer {
 	/**
 	 * Re-read the registry and send its windowed programs to every attached page. A reload changes
 	 * what a kernel offers, and no spell answers the catalog, so the kernel pushes it rather than
-	 * waiting to be asked (#7617). Nothing calls this in production yet, and nothing can usefully:
-	 * `Registry.layer` builds one frozen map, so every call today would re-send the catalog the
-	 * socket already got on open (#7841). `Booted.reload` writes only the spell registry (#7743).
+	 * waiting to be asked (#7617). `src/bin.ts` calls it whenever a project opens or closes, since
+	 * that adds or removes registry rows (#9685). `Booted.reload` writes only the spell registry
+	 * (#7743), so a reload has nothing to push.
 	 */
 	readonly publishRegistry: Effect.Effect<void>;
 	/** The one URL the launch prints: the address plus the launch token, and nothing else secret. */

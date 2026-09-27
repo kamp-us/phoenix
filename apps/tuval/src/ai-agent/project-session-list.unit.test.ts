@@ -35,7 +35,7 @@ const alpha = ProjectId.of("/work/alpha");
 const rows = loadLayeredConfig({
 	desk: noDesk,
 	global: fixture("absent-global"),
-	project: {id: alpha, module: fixture("project-session-list")},
+	projects: [{id: alpha, module: fixture("project-session-list")}],
 }).pipe(
 	Effect.map((config) => config.programs as ReadonlyArray<AnyProgram>),
 	Effect.provide(NodeFileSystem.layer),
